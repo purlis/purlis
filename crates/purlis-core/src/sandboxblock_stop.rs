@@ -68,6 +68,7 @@ fn block(target: Option<Target>, tool: Option<&str>, reported: Reported) -> Stop
         target,
         args: None,
         policy: None,
+        compiled_from: None,
     })
 }
 

@@ -4665,6 +4665,9 @@ pub fn run() {
                     }
                 });
             app.manage(batches.clone());
+            // A family in `log` writes its would-have-blocked line into the event log (spec
+            // §10.3), under the chat, by the plane's own writer: no store of its own.
+            decisions::writes_would_have_blocked_lines(app.handle().clone());
             // The registry is managed BEFORE a plane is opened, because opening one starts
             // programs, and a program that dies at once tells the board, which tells the
             // window, which asks this registry what the chat is called.

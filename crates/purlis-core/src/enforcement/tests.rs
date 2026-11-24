@@ -4,6 +4,7 @@
 use super::*;
 use crate::sandbox::local::OwnConfigHome;
 use crate::sandbox::policy::Locks;
+use std::path::PathBuf;
 
 const CHAT: &str = "01JABCDEFGHJKMNPQRSTVWXYZ0";
 
@@ -498,15 +499,6 @@ fn a_logged_refusal_is_one_quiet_line_of_rule_family_chat_and_host() {
     assert_eq!(log[0].family, "network");
     assert_eq!(log[0].chat, CHAT);
     assert_eq!(log[0].host.as_deref(), Some("example.com"));
-    let line =
-        std::fs::read_to_string(log_file(plane.path(), CHAT).expect("a file")).expect("the log");
-    let keys: Vec<String> =
-        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(line.trim())
-            .expect("one object")
-            .keys()
-            .cloned()
-            .collect();
-    assert_eq!(keys, ["at", "rule", "family", "chat", "host"]);
 }
 
 #[test]
@@ -532,7 +524,10 @@ fn an_off_refusal_allows_and_writes_nothing_and_an_enforced_one_refuses() {
         1,
     );
     assert_eq!(enforced, Some(1));
-    assert!(!log_dir(plane.path()).exists());
+    assert!(
+        read_log(plane.path(), CHAT).is_empty(),
+        "an off or an enforced refusal writes no line"
+    );
 }
 
 #[test]
@@ -868,18 +863,6 @@ fn a_head_git_cannot_read_is_strict_and_never_the_working_tree_file() {
     // A plane that is no repository at all reads its file as it stands.
     let plain = plane("[policy]\ntemplate = \"open\"\n", None);
     assert_eq!(Settings::read(plain.path()).template, Template::Open);
-}
-
-#[test]
-fn a_chats_log_stops_growing_at_its_most_lines() {
-    // The re-review of #6992, S3: a chat cannot fill the disk through its log.
-    let root = tempfile::tempdir().expect("a folder");
-    let path = log_file(root.path(), CHAT).expect("a log file");
-    std::fs::create_dir_all(path.parent().expect("its folder")).expect("its folder");
-    std::fs::write(&path, "{}\n".repeat(MOST_LINES)).expect("a full log");
-    write_line(root.path(), CHAT, Family::GuardsGit, "A3", None);
-    let kept = std::fs::read_to_string(&path).expect("the log");
-    assert_eq!(kept.lines().count(), MOST_LINES);
 }
 
 #[test]
@@ -1451,26 +1434,6 @@ fn a_git_folder_git_cannot_read_is_strict_and_never_the_working_tree_file() {
 }
 
 #[test]
-fn a_log_line_is_not_a_read_of_the_whole_log() {
-    // #7073: the cap counts the lines once and keeps the count, full or not.
-    let root = tempfile::tempdir().expect("a folder");
-    let path = log_file(root.path(), CHAT).expect("a log file");
-    std::fs::create_dir_all(path.parent().expect("its folder")).expect("its folder");
-    std::fs::write(&path, "{}\n".repeat(MOST_LINES - 2)).expect("a log near full");
-    let before = counted_whole();
-    for _ in 0..4 {
-        write_line(root.path(), CHAT, Family::GuardsGit, "A3", None);
-    }
-    assert_eq!(counted_whole() - before, 1, "counted once");
-    let kept = std::fs::read_to_string(&path).expect("the log");
-    assert_eq!(kept.lines().count(), MOST_LINES);
-    // A log taken away is counted again, from nothing.
-    std::fs::remove_file(&path).expect("the log gone");
-    write_line(root.path(), CHAT, Family::GuardsGit, "A3", None);
-    assert_eq!(read_log(root.path(), CHAT).len(), 1);
-}
-
-#[test]
 fn a_press_with_a_seal_key_another_program_made_says_how_to_recover_and_then_accepts() {
     // #7073: the app cannot delete an item another program owns, so the press says which item
     // to delete and how; once it is gone, the next press makes a key and accepts.
@@ -1523,7 +1486,7 @@ fn audit_is_a_family_and_reads_every_mode_as_enforce() {
 #[test]
 fn log_at_the_level_off_under_a_template_but_open_is_what_a_live_start_runs() {
     // M75-11, round 2: the template travels with the level, so the live reader (`in_force`), a
-    // dispatched chat (`for_chat`) and the `ENV` round trip agree with `Settings::mode`.
+    // dispatched chat (`for_chat`) and the spelled round trip agree with `Settings::mode`.
     let _home = OwnConfigHome::new();
     let root = plane("[policy]\ntemplate = \"watch\"\nsandbox = \"off\"\n", None);
     at_start(root.path());
@@ -1543,7 +1506,7 @@ fn log_at_the_level_off_under_a_template_but_open_is_what_a_live_start_runs() {
             .mode(Family::Sandbox),
         Mode::Log
     );
-    // The `ENV` round trip, and what an acceptance keeps.
+    // The spelled round trip, and what an acceptance keeps.
     assert_eq!(Resolved::parse(&asker), live);
     assert_eq!(Resolved::of_kept(&live.as_kept()), live);
     // `open` stays everything off, through the same trips.

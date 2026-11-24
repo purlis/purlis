@@ -985,3 +985,62 @@ fn the_start_event_records_the_compiled_rule_set() {
     let again: Record = serde_json::from_value(json).expect("a start event reads back");
     assert_eq!(again, record);
 }
+
+// ---- the log and the block source (M75-13) ----------------------------------------------
+
+/// **Log mode on a compiled rule** records the would-have-blocked line from the hook, where the
+/// hook sees the path: the compiled forbid's `@id`, the `sandbox` family, no path. Under any other
+/// mode, and for a path no forbid holds, there is no line; and the block a refusal is names the
+/// rule it was compiled from.
+#[test]
+fn log_mode_on_a_compiled_rule_records_the_hooks_would_have_blocked_line() {
+    use crate::enforcement::Mode;
+    let policy = policy_with(
+        "@id(\"sandbox-write-ledger\") @level(\"project\")\n\
+         forbid (principal, action == Action::\"write\", resource)\n\
+         when { resource in Path::\"/plane/workspaces/qa/ledger\" };\n",
+    );
+    let compiled = compiled(&policy, &qa("full"));
+    let held = path("/plane/workspaces/qa/ledger/2026.csv");
+    let free = path("/plane/workspaces/qa/notes.md");
+
+    let line = compiled
+        .write
+        .would_have_blocked(&held, Mode::Log)
+        .expect("a forbid under log is a line");
+    assert_eq!(line.rules, ["sandbox-write-ledger"]);
+    assert_eq!(line.family, "sandbox");
+    assert!(line.host.is_none());
+    let said = serde_json::to_string(&line).unwrap();
+    assert!(!said.contains("ledger/2026"), "never the path: {said}");
+
+    assert!(
+        compiled
+            .write
+            .would_have_blocked(&held, Mode::Enforce)
+            .is_none()
+    );
+    assert!(
+        compiled
+            .write
+            .would_have_blocked(&held, Mode::Off)
+            .is_none()
+    );
+    assert!(
+        compiled
+            .write
+            .would_have_blocked(&free, Mode::Log)
+            .is_none()
+    );
+    assert!(
+        compiled.read.would_have_blocked(&held, Mode::Log).is_none(),
+        "a rule on a write is no line for a read"
+    );
+
+    assert_eq!(
+        compiled.write.refused_by(&held).as_deref(),
+        Some("sandbox-write-ledger"),
+        "the block the sandbox raises names the rule it was compiled from"
+    );
+    assert_eq!(compiled.write.refused_by(&free), None);
+}

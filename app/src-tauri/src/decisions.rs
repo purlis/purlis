@@ -111,7 +111,12 @@ fn blocked(held: &Held, chat: u32, tool: &str, decision: &decide::Decision) {
     use purlis_core::eventlog::stops::{Block, Decided, Source, Stop, TARGET_CHARS, Target};
     let stop = Stop::Block(Block {
         tool: purlis_core::shown::readable(tool, TARGET_CHARS),
-        source: Source::Policy,
+        // A request that fits no schema was refused by no rule: purlis's own check refused it.
+        source: if decision.deciding.is_empty() {
+            Source::Guard
+        } else {
+            Source::Policy
+        },
         qualifier: None,
         target: decision
             .deciding
@@ -119,9 +124,34 @@ fn blocked(held: &Held, chat: u32, tool: &str, decision: &decide::Decision) {
             .and_then(|rule| Target::guard_arm(&rule.id).ok()),
         args: None,
         policy: Some(Decided::from(decision)),
+        compiled_from: None,
     });
     if let Err(why) = held.hooks().write_stop(chat, stop.clone()) {
         tracing::warn!("purlis: chat {chat}'s policy block was not recorded: {why}");
     }
     crate::pausing::stopped(held, chat, &stop, None);
+}
+
+/// **Where this app writes a would-have-blocked line** (spec §10.3): into the event log, under the
+/// chat's run, by the plane's one writer. A line the core records for a chat of a plane this app
+/// does not hold open, or a chat it has no number for, is dropped: best effort, as every line is.
+pub fn writes_would_have_blocked_lines(handle: tauri::AppHandle) {
+    purlis_core::enforcement::log_in_the_app(Box::new(move |root, chat, line| {
+        use tauri::Manager;
+        let Some(planes) = handle.try_state::<crate::planes::Planes>() else {
+            return;
+        };
+        let Some(held) = planes.held_at(root) else {
+            return;
+        };
+        let Some(number) = held.chats().session_of_id(chat) else {
+            return;
+        };
+        let stop = purlis_core::eventlog::stops::Stop::WouldBlock(line.clone());
+        if let Err(why) = held.hooks().write_stop(number, stop) {
+            tracing::warn!(
+                "purlis: chat {number}'s would-have-blocked line was not recorded: {why}"
+            );
+        }
+    }));
 }

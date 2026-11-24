@@ -1995,7 +1995,7 @@ struct FromOnDisk {
     /// `true` for a long-running task (#3905), or absent.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     long: bool,
-    /// The strictest `[policy]` along its chain (Q308a, Q308b), as `PURLIS_POLICY` spells it, or
+    /// The strictest `[policy]` along its chain (Q308a, Q308b), as [`crate::enforcement::Resolved::spelled`] spells it, or
     /// absent.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     policy: String,

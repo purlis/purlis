@@ -188,6 +188,21 @@ pub fn verdict(mode: Mode, cap: Option<i64>, used: i64) -> Verdict {
     }
 }
 
+/// **The would-have-blocked line of a cap** (M75-13, review round 3, C3 S4): under `limits = log`
+/// an exceeded cap is counted and let through ([`Verdict::Counted`]), and the host writes one
+/// event naming the limit's key and the `limits` family. None for any other verdict, and for a
+/// key the table does not hold: nothing that is no rule's id is written.
+pub fn would_block(key: &str, verdict: Verdict) -> Option<crate::eventlog::stops::WouldBlock> {
+    (verdict == Verdict::Counted && spec(key).is_some()).then(|| {
+        crate::eventlog::stops::WouldBlock {
+            rules: vec![key.to_owned()],
+            level: None,
+            family: crate::enforcement::Family::Limits.key().to_owned(),
+            host: None,
+        }
+    })
+}
+
 #[cfg(test)]
 #[path = "limits_tests.rs"]
 mod tests;

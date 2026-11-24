@@ -179,13 +179,20 @@ fn replay(row: &Value, blobs: &Mutex<Blobs>, bless: bool) -> (Vec<String>, Optio
     out
 }
 
-fn lay_out_plane(side: &Path, plane: &str) {
+/// `commit`: whether the replay makes the plane a repository with one commit, which a plane built
+/// on another gets unless the scenario's own `start` brings the repository it wants.
+fn lay_out_plane(side: &Path, plane: &str, commit: bool) {
     let root = side.join("plane");
     if plane.is_empty() {
         std::fs::create_dir_all(&root).expect("a directory that is not a plane yet");
     } else {
-        fixture::copy_plane(&fixture::planes().join(plane), &root);
-        let listing = fixture::planes().join(format!("{plane}.empty-dirs"));
+        let base = fixture::base_of(plane);
+        fixture::copy_plane(&fixture::planes().join(base), &root);
+        if base != plane {
+            // The files this plane adds, over the ones it is built on.
+            fixture::copy_plane(&fixture::planes().join(plane), &root);
+        }
+        let listing = fixture::planes().join(format!("{base}.empty-dirs"));
         if let Ok(text) = std::fs::read_to_string(listing) {
             for rel in text.split_whitespace() {
                 std::fs::create_dir_all(root.join(rel)).expect("an empty directory");
@@ -200,6 +207,10 @@ fn lay_out_plane(side: &Path, plane: &str) {
         &root,
         std::time::UNIX_EPOCH + std::time::Duration::from_secs(now),
     );
+    // After the stamp: a repository's objects are read-only, and the stamp writes each file.
+    if commit && fixture::is_committed(plane) {
+        fixture::commit_plane(&root);
+    }
     std::fs::create_dir_all(side.join("home")).expect("the side's home");
 }
 
@@ -346,7 +357,15 @@ fn run(
     let mut problems: Vec<String> = Vec::new();
     let mut new = row.clone();
 
-    lay_out_plane(side, row["plane"].as_str().unwrap_or_default());
+    // A scenario whose `start` lays down the plane's own repository brings the one it wants.
+    let brings_its_repository = row["start"]["set"]
+        .as_object()
+        .is_some_and(|set| set.contains_key("plane/.git"));
+    lay_out_plane(
+        side,
+        row["plane"].as_str().unwrap_or_default(),
+        !brings_its_repository,
+    );
     let tokens = Tokens::new(side);
     let modes = {
         let blobs = blobs.lock().expect("blobs");
@@ -530,6 +549,11 @@ fn run(
         .flatten()
         .map(|v| v.as_str().expect("a path").to_owned())
         .collect();
+    let mut ignore = ignore;
+    if fixture::is_committed(row["plane"].as_str().unwrap_or_default()) {
+        // The plane's own repository, which the replay made: its index and logs are git's.
+        ignore.push(".git".to_owned());
+    }
     let ignore = tree::in_either_layout(&ignore);
     let before_plane = tree::compared(&tree::under(&before, "plane"), &ignore);
     let got_plane = tree::compared(&tree::under(&after, "plane"), &ignore);

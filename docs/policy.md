@@ -15,9 +15,10 @@ guards.release = "log"     # one family, apart from the template
 ## Modes
 
 - **`off`**: the check does not run.
-- **`log`**: the check runs and allows. Nobody is shown anything; one quiet line in the chat's
-  enforcement log (`.purlis/app/enforcement/<chat>.jsonl`) names the rule, the family, the chat
-  and the host, never the command, a path or a value.
+- **`log`**: the check runs and allows. Nobody is shown anything; one quiet would-have-blocked
+  event in the event log, under the chat, names the rule, the family, the chat and the host,
+  never the command, a path or a value. (The enforcement log, `app/enforcement/<chat>.jsonl`,
+  is retired.)
 - **`enforce`**: the refusal, as purlis has always made it.
 
 ## Templates

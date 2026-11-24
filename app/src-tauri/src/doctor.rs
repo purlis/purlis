@@ -767,6 +767,15 @@ fn event_log(opened: Option<&Result<std::path::PathBuf, crate::EventLogRefused>>
         fix: None,
     };
     match opened {
+        // A chained log (a chat ran with the sandbox off) that no longer matches its chain or the
+        // head purlis sealed is a failure of its own, before any word of health (M75-13).
+        Some(Ok(dir)) if chain_broken(dir).is_some() => row(
+            DoctorStatus::Fail,
+            chain_broken(dir).unwrap_or_default(),
+            "keep a copy of that folder, then look at what ran with the sandbox off; purlis never \
+             rewrites the log, so it stays as it is"
+                .to_owned(),
+        ),
         Some(Ok(dir)) => row(
             DoctorStatus::Ok,
             format!(
@@ -803,6 +812,16 @@ fn event_log(opened: Option<&Result<std::path::PathBuf, crate::EventLogRefused>>
             "start purlis again; the log is opened as the app starts".to_owned(),
         ),
     }
+}
+
+/// **What the event log's hash chain and sealed head say of `dir`** (spec §10.3): the sentence
+/// naming the log and the first line that no longer matches, or none where it holds, where it was
+/// never chained, and where it cannot be read (the row says that on its own).
+fn chain_broken(dir: &std::path::Path) -> Option<String> {
+    let device = dir.file_name()?.to_str()?;
+    purlis_core::eventlog::chain::check(dir, device)
+        .ok()?
+        .said(dir)
 }
 
 /// `file events`: do the platform's file events keep the window up with the project (#756)?

@@ -31,6 +31,7 @@ fn reported(source: Source, qualifier: Option<Qualifier>, args: &str) -> Stop {
         qualifier,
         target: None,
         args: Some(args.to_owned()),
+        compiled_from: None,
     })
 }
 
@@ -124,6 +125,7 @@ fn guard_and_sandbox_blocks_count_toward_the_block_loop() {
             qualifier: None,
             target: Target::host("api.example.com").ok(),
             args: Some("aa".to_owned()),
+            compiled_from: None,
         })
     };
     let mut loops = Loops::default();
@@ -531,6 +533,7 @@ fn held_under(loops: &mut Loops, call: &str) -> Option<Why> {
         qualifier: None,
         target: Target::host("api.example.com").ok(),
         args: Some("aa".to_owned()),
+        compiled_from: None,
     });
     loops.stopped_under(CHAT, &stop, Some(call))
 }

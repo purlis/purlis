@@ -14,7 +14,14 @@ fn recorder(dir: &Path) -> Recorder {
 
 fn block(source: Source, qualifier: Option<Qualifier>) -> Block {
     Block {
-        policy: None,
+        // A policy block names the rules that decided it (M75-13).
+        policy: (source == Source::Policy).then(|| Decided {
+            rules: vec!["guards-merge-hold".to_owned()],
+            level: Some("project".to_owned()),
+            family: "guards.merge".to_owned(),
+            outcome: crate::policy::decide::Outcome::Deny,
+            after_mode: crate::policy::decide::Outcome::Deny,
+        }),
         tool: "Bash".to_owned(),
         source,
         qualifier,
@@ -22,6 +29,7 @@ fn block(source: Source, qualifier: Option<Qualifier>) -> Block {
         args: Some(crate::eventlog::args_hash(
             &serde_json::json!({"command": "git push --force"}),
         )),
+        compiled_from: None,
     }
 }
 
@@ -213,6 +221,7 @@ fn a_serialised_block_event_keeps_the_tool_source_target_summary_and_digest_and_
                 qualifier: None,
                 target: Some(Target::host("api.example.com").unwrap()),
                 args: Some(hash.clone()),
+                compiled_from: None,
             }),
         )
         .unwrap();
@@ -261,6 +270,7 @@ fn a_block_events_target_summary_is_clipped_short() {
                 qualifier: None,
                 target: Some(Target::folder(&long).unwrap()),
                 args: None,
+                compiled_from: None,
             }),
         )
         .unwrap();

@@ -74,6 +74,7 @@ fn block(qualifier: Option<Qualifier>) -> Stop {
         args: Some(crate::eventlog::args_hash(
             &serde_json::json!({"command": "git push --force"}),
         )),
+        compiled_from: None,
     })
 }
 
@@ -1097,6 +1098,7 @@ fn a_block_row_is_resolved_once_a_later_call_on_its_target_comes_back() {
             qualifier: None,
             target: None,
             args: Some(args.to_owned()),
+            compiled_from: None,
         }))
         .unwrap()
     };

@@ -152,13 +152,7 @@ impl Chat {
             .env("GIT_COMMITTER_NAME", "agent")
             .env("GIT_COMMITTER_EMAIL", "agent@example.invalid")
             .env("HOME", self.dir.path())
-            // Today's blocking, explicitly (Q308: the default is `watch`, under which personal
-            // data is logged, not refused). The variable can only make a family stricter.
-            .env(
-                purlis_core::enforcement::ENV,
-                purlis_core::enforcement::Resolved::all(purlis_core::enforcement::Mode::Enforce)
-                    .spelled(),
-            )
+            // Today's blocking is what a git hook no app answers runs: every family enforced.
             // A test that opens the editor names it with `core.editor`, which this would beat.
             .env_remove("GIT_EDITOR");
         if chat {
