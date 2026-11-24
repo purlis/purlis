@@ -428,7 +428,7 @@ fn machine_log_dir() -> Option<std::path::PathBuf> {
     if let Some(dir) = TEST_DIR.with(|held| held.borrow().clone()) {
         return Some(dir);
     }
-    super::Recorder::dir_on_this_machine()
+    super::Recorder::dir_to_look_at()
 }
 
 /// **What a chat's start says of the machine's event log** (spec §10.3, M75-13 round 2A, B2): the

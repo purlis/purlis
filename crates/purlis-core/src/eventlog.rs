@@ -1956,10 +1956,31 @@ impl Recorder {
     pub fn dir_on_this_machine() -> Option<PathBuf> {
         let config = crate::machine::config_root()?;
         let data = crate::datahome::root()?;
-        if crate::datahome::refusal(&data).is_some() {
+        Self::dir_in(&config, &data)
+    }
+
+    /// [`Recorder::dir_on_this_machine`] for a reader that only looks (a chat's start checking
+    /// the chain): the same lookup, with the fence asked rather than held. A fenced (test) build
+    /// finds no log where the config or data home is outside its fence, so a start that pinned
+    /// neither never reaches the machine's own stores, and the fence is not relaxed.
+    pub(crate) fn dir_to_look_at() -> Option<PathBuf> {
+        let config = crate::machine::config_root_unheld()?;
+        let data = crate::datahome::root_in(&crate::envvar::var)?;
+        #[cfg(feature = "fenced")]
+        {
+            let fence = crate::fence::fence();
+            if !crate::fence::inside(&config, &fence) || !crate::fence::inside(&data, &fence) {
+                return None;
+            }
+        }
+        Self::dir_in(&config, &data)
+    }
+
+    fn dir_in(config: &Path, data: &Path) -> Option<PathBuf> {
+        if crate::datahome::refusal(data).is_some() {
             return None;
         }
-        let device = crate::machine::device_id(&config).ok()?;
+        let device = crate::machine::device_id(config).ok()?;
         Some(data.join(EVENTS).join(device))
     }
 
