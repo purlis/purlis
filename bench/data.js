@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795522212279,
+  "lastUpdate": 1795523742859,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53634,6 +53634,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6854195,
             "unit": "ms",
             "extra": "median of 5 runs: 101.313, 101.545, 101.685, 102.253, 102.387 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9401f1f78e997d845a5509664e00be24bbe332f3",
+          "message": "CI flakes: held-action CLI tests wait for the hook's line on a loaded runner (#7436, #7452) (#7515)\n\n* Held-action tests: give the hook's tool line time to reach the app on a loaded runner\n\nThe hook gives its tool line 250 ms to be taken, then spools it. On a loaded runner\nthe test's listener missed it, Chat::rule() timed out and read no rule. A debug-only\nknob (PURLIS_TEST_HOOK_LINE_DEADLINE_MS) lifts that bound for the hooks the test starts.\nOne cause, one fix, for both tickets.\n\nCloses #7436\nCloses #7452\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86KH4X2JEPCMEKNFZ4R8V8C\nPurlis-Persona: steward\n\n* Line deadline knob: zero reads as unset, and say it is outside the hook's bound\n\nFrom the review of the previous commit.\n\nRefs #7436, #7452\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86KH4X2JEPCMEKNFZ4R8V8C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T11:56:34Z",
+          "tree_id": "3a4fe18c6e64f4675f1db853efb7cee167c0cda4",
+          "url": "https://github.com/purlis/purlis/commit/9401f1f78e997d845a5509664e00be24bbe332f3"
+        },
+        "date": 1795523735250,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5384975000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.535, 0.538, 0.538, 0.558, 0.565 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.441340000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.359, 16.439, 16.441, 16.454, 16.721 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.584197,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.168, 101.281, 101.584, 101.641, 102.943 ms"
           }
         ]
       }
