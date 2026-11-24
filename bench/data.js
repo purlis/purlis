@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795528169757,
+  "lastUpdate": 1795535400054,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53802,6 +53802,48 @@ window.BENCHMARK_DATA = {
             "value": 102.11605,
             "unit": "ms",
             "extra": "median of 5 runs: 100.816, 101.665, 102.116, 102.384, 103.156 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "434f08ffa1fdbc68f428cfdb31c1fe201f4b6d25",
+          "message": "Pool outage behaviour: Try now dials, starts wait 30 s, a 3-minute limit, five named states, Forget in every state (#7187) (#7236)\n\n* Try now forgets the forward's remembered failure and dials at once (Refs #7187)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAQH429XW5Q95WTRRBNPK1\nPurlis-Persona: steward\n\n* A start waits for a runner whose link is down, for every pool kind (Refs #7187)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAQH429XW5Q95WTRRBNPK1\nPurlis-Persona: steward\n\n* A start on a relayed runner is held to three minutes and names its stuck step (Refs #7187)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAQH429XW5Q95WTRRBNPK1\nPurlis-Persona: steward\n\n* Five remote states named in core and the window; Forget works in every state and lists what may be left (Refs #7187)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAQH429XW5Q95WTRRBNPK1\nPurlis-Persona: steward\n\n* Review fixes: a try begun before Try now does not write its failure back; clearer step and unit words (Refs #7187)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAQH429XW5Q95WTRRBNPK1\nPurlis-Persona: steward\n\n* Refused stops retrying (session protocol 1.94), Pool forgotten ends its chats, a waiting start says what it waits for (Refs #7187)\n\nlink_down gains refused; a refused machine is told once and not dialled on a timer, and a start does not wait on it. A forgotten pool's chats end as Pool forgotten, not with their runner. The start dialog says Waiting for <pool> - <reason>, with Cancel. Settings > Pools and the link notice read the state.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RD3RD4TD0DQ0MTS44YJ337\nPurlis-Persona: steward\n\n* Review fixes: Pool forgotten clears the pane's reconnecting overlay; a refused machine's refusal reads differently from a changed key's (Refs #7187)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RD3RD4TD0DQ0MTS44YJ337\nPurlis-Persona: steward\n\n* Try now's mark is pruned when a pool's link is back or the pool is gone (Refs #7187)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RFK35N412GSZY8BXT51EJV\nPurlis-Persona: steward\n\n* Host key changed is its own state: told on the wire (host_key_changed, 1.94), never retried, its chats dimmed and its start refused saying to trust it again (Refs #7187)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RFK35N412GSZY8BXT51EJV\nPurlis-Persona: steward\n\n* A start given up on after three minutes is closed on the runner if the runner began it (Refs #7187)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RFK35N412GSZY8BXT51EJV\nPurlis-Persona: steward\n\n* Refused offers Try now; Remove returns beside Forget where the machine answers; Host key changed has its notice; bindings regenerated with the specta generator (Refs #7187)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RFK35N412GSZY8BXT51EJV\nPurlis-Persona: steward\n\n* Review fixes: a retried chat's id is not closed by the late closer, Try now on an ended link clears the remembered failure, Dismiss keys include the state (Refs #7187)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RFK35N412GSZY8BXT51EJV\nPurlis-Persona: steward\n\n* A Docker that is still starting is Unreachable and retried; unreadable config is Refused; drop the unproduced RunnerGone and PoolForgotten link states (Refs #7187)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RJP8SWSKQV9EMAFGZ8ZSHN\nPurlis-Persona: steward\n\n* Review fixes for train A: Try now before the dial, trusted host key links back, Runner gone ends chats, one budget per start, Refused/Unreachable names match the glossary (Refs #7187)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RMV2NKZQNKSHX9JE3516S2\nPurlis-Persona: steward\n\n* Make the unreadable-config test independent of the umask (Refs #7187)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RMV2NKZQNKSHX9JE3516S2\nPurlis-Persona: steward\n\n* session-protocol: test doc names 1.95 for the refused link\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7S30V5MNVBER7TVACGEDY1Y\nPurlis-Persona: steward\n\n* rustfmt the train A files\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7S30V5MNVBER7TVACGEDY1Y\nPurlis-Persona: steward\n\n* clippy and prettier\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7S7WG99BVC3BY9QWEG0W69B\nPurlis-Persona: steward\n\n* Fix train A's CI: plural guard, limit group, copy rule, stale pin test\n\n- clusterpools.rs and host routing.rs say counts without an inline plural suffix\n- LATE_START_TRIES sorted as Internal tuning in the runner-limit list\n- the link notice's label says Blocked, not Refused (R-170)\n- PoolPinChangedNotice tests expect despiteItsCheck, which removeDockerPool now sends\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7SPAFRFDPRYVST6B7SSP9CW\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-24T15:00:54Z",
+          "tree_id": "ce8b99640960aaafee574869d0e84eac8200fe9f",
+          "url": "https://github.com/purlis/purlis/commit/434f08ffa1fdbc68f428cfdb31c1fe201f4b6d25"
+        },
+        "date": 1795535393131,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5521739999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.546, 0.551, 0.552, 0.554, 0.555 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.305798,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.238, 16.277, 16.306, 16.389, 16.409 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.7799215,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.358, 100.474, 100.780, 101.061, 102.095 ms"
           }
         ]
       }
