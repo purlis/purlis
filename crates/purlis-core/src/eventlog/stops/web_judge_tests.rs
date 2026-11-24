@@ -190,7 +190,7 @@ fn chat_of(events: &[Event]) -> String {
 /// How many blocks the Blocked log lists.
 fn listed(events: &[Event]) -> usize {
     let chat = chat_of(events);
-    blockedlog::listed(events, u64::MAX / 2, &|one| one == chat).len()
+    blockedlog::listed(events, 1_800_100_000_000, &|one| one == chat).len()
 }
 
 /// How many block rows the Chat log draws.
@@ -244,7 +244,7 @@ fn one_refused_web_fetch_is_counted_and_listed_once_and_both_causes_are_in_the_l
     );
     everywhere(&events, 1);
     let chat_id = chat_of(&events);
-    let shown = blockedlog::listed(&events, u64::MAX / 2, &|one| one == chat_id);
+    let shown = blockedlog::listed(&events, 1_800_100_000_000, &|one| one == chat_id);
     assert_eq!(shown[0].block.source, Source::Sandbox);
 }
 
