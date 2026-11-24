@@ -9,8 +9,12 @@
 //! repository on every push. On a large repo that took longer than the 120 s a network call is
 //! given ([`git::NETWORK`]), and every push was refused. Now:
 //!
-//! 1. The base (and the advertised tips, where a thin pack needs them) are fetched into **this
-//!    cache**, incrementally: its refs tell the forge what it holds.
+//! 1. The base (and the advertised tips, where a thin pack needs them or a push sends no new
+//!    objects) are fetched into **this cache**, incrementally: its refs tell the forge what it
+//!    holds. **Only this repo's own advertised history is ever fetched**: never a commit a chat
+//!    names, which a forge resolves by id even where it is a fork's or a dangling one, so a push's
+//!    tip is never fetched, kept as a base, or let by for being in the cache (a tip not in the
+//!    pack is accepted only where it is reachable from an advertised tip).
 //! 2. The quarantine names the cache's object store as an **alternate**
 //!    (`objects/info/alternates`), so its own store holds only the pushed pack.
 //!

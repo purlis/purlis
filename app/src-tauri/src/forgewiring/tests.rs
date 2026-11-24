@@ -288,6 +288,21 @@ impl BaseObjects for LocalForge {
         );
         out.map(|_| ())
     }
+
+    fn advertised(&self, _: &std::path::Path) -> Option<Vec<String>> {
+        let out = git_in(
+            &self.0,
+            &["for-each-ref", "--format=%(objectname)", "refs/heads"],
+        )
+        .ok()?;
+        Some(
+            String::from_utf8(out)
+                .ok()?
+                .lines()
+                .map(str::to_owned)
+                .collect(),
+        )
+    }
 }
 
 fn git_in(dir: &std::path::Path, args: &[&str]) -> Result<Vec<u8>, String> {
@@ -441,4 +456,52 @@ fn a_rebase_that_changes_a_ci_file_is_read_against_the_default_branchs_tip_not_t
     // binary, it could not be shown at all, and would be refused as binary.
     assert!(why.contains("held acts are not on here"), "{why}");
     assert!(!why.contains("binary"), "{why}");
+}
+
+// ---- a push that sends no new objects: its tip must be in a branch of this repo ----
+
+impl Rebase {
+    /// A commit the forge resolves by id and no branch holds: it was on a branch since deleted.
+    fn dangling(&self) -> HeadSha {
+        git_in(&self.forge, &["checkout", "-q", "-b", "gone", "main"]).unwrap();
+        let tip = commit_with(
+            &self.forge,
+            &[("secret.txt", b"a secret\n")],
+            "force-pushed away",
+        );
+        git_in(&self.forge, &["checkout", "-q", "main"]).unwrap();
+        git_in(&self.forge, &["branch", "-q", "-D", "gone"]).unwrap();
+        tip
+    }
+
+    /// The empty pack git sends when the forge has every object of `tip`.
+    fn empty(&self) -> Vec<u8> {
+        thin_pack(&self.forge, &self.default_tip, &[&self.default_tip])
+    }
+}
+
+#[test]
+fn an_empty_pack_naming_a_commit_a_branch_of_the_repo_holds_is_read_through_the_gate() {
+    let scene = rebase_scene();
+
+    let read = scene.read(&scene.default_tip, &scene.empty());
+
+    assert!(read.is_ok(), "{read:?}");
+}
+
+#[test]
+fn an_empty_pack_naming_a_commit_the_forge_resolves_but_no_branch_holds_is_refused_through_the_gate()
+ {
+    let scene = rebase_scene();
+    let dangling = scene.dangling();
+
+    let why = match scene.read(&dangling, &scene.empty()) {
+        Err(PushVerdict::Refuse(why)) => why,
+        other => panic!("not refused: {other:?}"),
+    };
+
+    assert!(
+        why.contains("neither in the push nor in a branch of this repo"),
+        "{why}"
+    );
 }

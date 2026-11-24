@@ -1080,6 +1080,16 @@ fn the_apps_own_git_for_a_chat_pushes_through_the_listener_and_a_held_push_reach
         .count();
     let held = push("ci-workflow");
     assert!(!held.ok(), "a held push was sent");
+    // Git prints purlis's reason, not "RPC failed; HTTP 403" (#7486).
+    assert!(
+        held.err.contains("[remote rejected]")
+            && held
+                .err
+                .contains("Held: Ask 1, a CI-file push in acme/app.")
+            && !held.err.contains("RPC failed"),
+        "{}",
+        held.err
+    );
     let after = s
         .forge
         .seen
@@ -1089,6 +1099,96 @@ fn the_apps_own_git_for_a_chat_pushes_through_the_listener_and_a_held_push_reach
         .filter(|r| r.method == "POST")
         .count();
     assert_eq!(before, after, "a held push reached the forge");
+}
+
+/// A gate that refuses a push of a branch named `later-…` as it refuses one whose base is not
+/// readable yet, and holds one named `ci-…`: either verdict, for any ref of the push, refuses the
+/// whole push.
+struct RefusesAndHolds;
+
+impl PushGate for RefusesAndHolds {
+    fn check(&self, _: &purlis_core::forge::proxy::ChatId, push: &PushRead) -> PushVerdict {
+        for update in &push.updates {
+            if update.name.starts_with("refs/heads/later-") {
+                return PushVerdict::Refuse(
+                    "purlis did not send this push: its base is not read yet, which is temporary; try again in a minute."
+                        .to_owned(),
+                );
+            }
+            if update.name.starts_with("refs/heads/ci-") {
+                return PushVerdict::Held(
+                    "purlis holds this push: it changes CI files and waits in Asks.".to_owned(),
+                );
+            }
+        }
+        PushVerdict::Forward
+    }
+}
+
+#[test]
+fn a_push_the_gate_refuses_or_holds_says_why_in_gits_own_output_for_each_ref_and_exits_non_zero() {
+    purlis_core::unsteered!();
+    if !tool("git") {
+        return;
+    }
+    use purlis_core::worktree::git::{Isolated, isolated, run_network};
+    let s = setup_with(Some(Arc::new(RefusesAndHolds)));
+    let work = s.dir.path().join("clone");
+    let (ok, text) = s.git(
+        s.dir.path(),
+        &[
+            "clone",
+            "https://github.com/acme/app.git",
+            work.to_str().unwrap(),
+        ],
+    );
+    assert!(ok, "{text}");
+    std::fs::write(work.join("a.txt"), "a\n").unwrap();
+    git_ok(&work, &["add", "-A"]);
+    git_ok(&work, &["commit", "-q", "-m", "a"]);
+    let route = production_route(&s, s.app_port(), &s.ca_file);
+    let isolation = Isolated::default().through_route(route);
+    // Every protocol git speaks to a server here: v0 (what a push uses by default) and v2.
+    for version in ["0", "2"] {
+        let config = format!("protocol.version={version}");
+        let push = |refs: &[&str]| {
+            let mut args = vec!["-c", config.as_str(), "push", "origin"];
+            args.extend(refs);
+            isolated(&isolation, || {
+                run_network(&work, Some("!'/nonexistent/gh' auth git-credential"), &args)
+            })
+            .expect("git ran")
+        };
+        let refused = push(&["HEAD:refs/heads/later-one"]);
+        assert!(!refused.ok(), "v{version}: a refused push was sent");
+        assert!(
+            refused.err.contains("[remote rejected]")
+                && refused
+                    .err
+                    .contains("which is temporary; try again in a minute")
+                && !refused.err.contains("RPC failed")
+                && !refused.err.contains("Everything up-to-date"),
+            "v{version}: {}",
+            refused.err
+        );
+        let held = push(&["HEAD:refs/heads/ci-one"]);
+        assert!(!held.ok(), "v{version}: a held push was sent");
+        assert!(
+            held.err.contains("[remote rejected]")
+                && held.err.contains("waits in Asks")
+                && !held.err.contains("RPC failed"),
+            "v{version}: {}",
+            held.err
+        );
+        // Two refs at once: git names each of them.
+        let both = push(&["HEAD:refs/heads/later-two", "HEAD:refs/heads/later-three"]);
+        assert!(!both.ok(), "v{version}: a refused push was sent");
+        assert!(
+            both.err.contains("later-two") && both.err.contains("later-three"),
+            "v{version}: {}",
+            both.err
+        );
+    }
 }
 
 /// A pin on `github.com`, as policy would set it.
