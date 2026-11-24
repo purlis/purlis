@@ -994,6 +994,10 @@ pub struct Standing {
     pub store_verified: bool,
     /// The Everywhere nevers that count: whatever the plane's state.
     pub everywhere: Vec<Entry>,
+    /// Whether the Everywhere store is there but not whole (missing its anchor, older, failing a
+    /// seal): [`Standing::everywhere`] is then empty, which must not read as "no nevers" (M75-20
+    /// review round 2, F6).
+    pub everywhere_unreadable: bool,
     /// Grants that are missing or fail their seal: "no answer", each as kind and digest.
     pub no_answer: Vec<String>,
     /// What the window says: sealed files the manifest does not list, ignored.
@@ -1008,6 +1012,7 @@ impl Standing {
             kept: Vec::new(),
             store_verified: false,
             everywhere: Vec::new(),
+            everywhere_unreadable: false,
             no_answer: Vec::new(),
             notices: Vec::new(),
         }
@@ -1420,6 +1425,7 @@ fn standing_with(root: &Path, import_counts: bool) -> Standing {
     }
     denies.extend(found.denies.iter().cloned());
     let mut standing = Standing::of(State::Fresh);
+    standing.everywhere_unreadable = !everywhere.denies.is_empty();
     standing.everywhere = if everywhere.denies.is_empty() {
         everywhere.entries.clone()
     } else {

@@ -1087,6 +1087,33 @@ fn a_floor_that_enforces_asks_puts_an_ask_back_on_a_connect_the_family_does_not_
     );
 }
 
+/// M75-20 review round 2, F3: the scope a deciding ask writes (`@keep`) follows the rules that
+/// decide after the floor puts the ask back, not the ones that decided before it.
+#[test]
+fn a_keep_an_ask_writes_still_caps_its_scope_where_the_floor_puts_the_ask_back() {
+    purlis_core::unsteered!();
+    use purlis_core::enforcement::Resolved;
+    let rules = format!(
+        "{SHADOW}@id(\"network-ask-once\") @ask(\"you\") @keep(\"once\")\n\
+         forbid (principal, action == Action::\"connect\", resource == Host::\"other.example\");\n"
+    );
+    let floor = Resolved::parse("network=off,asks=enforce");
+    let loaded = loaded(&asks_off("log"), Some(&rules));
+    let decided = decide::decide(&loaded, &unknown_host(), &empty_world());
+    assert_eq!(
+        (decided.outcome, decided.after_mode),
+        (Outcome::Deny, Outcome::Allow),
+        "{decided:?}"
+    );
+    let held = decided.held_to(&floor);
+    assert_eq!(held.after_mode, Outcome::Ask, "{held:?}");
+    assert!(
+        ids(&held).contains(&"network-ask-once"),
+        "the ask with the keep decides: {held:?}"
+    );
+    assert_eq!(held.keep.as_deref(), Some("once"), "{held:?}");
+}
+
 #[test]
 fn a_known_host_and_an_unknown_one_are_held_alike_by_a_floor() {
     purlis_core::unsteered!();

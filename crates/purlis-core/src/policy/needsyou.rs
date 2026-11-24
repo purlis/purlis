@@ -310,6 +310,29 @@ pub fn digest_of(action: &str, resource: &str, request: &str) -> String {
     digest_parts(&[action, resource, request])
 }
 
+/// **What binds an item's digest to what a sealed grant is matched on besides it** (review round 2,
+/// F4): the resource's kind and the narrowing context, with the digest of the request, each part
+/// length-prefixed and the narrowing's fields in name order. The digest catches damage, not a
+/// forger who writes a consistent item (the sandbox is the defence against that).
+pub fn bound_of(
+    digest: &str,
+    resource_kind: &str,
+    narrowing: &serde_json::Map<String, serde_json::Value>,
+) -> String {
+    let mut fields: Vec<(&String, String)> = narrowing
+        .iter()
+        .map(|(name, value)| (name, value.to_string()))
+        .collect();
+    fields.sort();
+    let mut parts: Vec<String> = vec![digest.to_owned(), resource_kind.to_owned()];
+    for (name, value) in fields {
+        parts.push(name.clone());
+        parts.push(value);
+    }
+    let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
+    digest_parts(&parts)
+}
+
 /// **What one needs-you item is for**: a rule, a resource, a workspace and a request digest.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Key {
@@ -360,6 +383,11 @@ pub struct Item {
     /// The narrowing context the request carried (`force`, `port`), which a sealed grant covers.
     #[serde(default)]
     pub narrowing: serde_json::Map<String, serde_json::Value>,
+    /// What binds the key's digest to the resource's kind and the narrowing ([`bound_of`]): an
+    /// Allow recomputes it, so a file whose kind or narrowing was edited grants nothing. Empty
+    /// (and so never allowed) where a file lacks it.
+    #[serde(default)]
+    pub bound: String,
     /// Why it is here (the cause of the last raise).
     pub why: Why,
     /// The chats that asked, each once.
@@ -507,6 +535,14 @@ pub struct Allowed {
     pub grant: Grant,
     /// For a Once grant, what the host holds in memory to serve the chat's same request once.
     pub deferred: Option<Deferred>,
+}
+
+impl Allowed {
+    /// **The line the sealed store is to keep for this Allow, if any** (review round 2, F9). A
+    /// Once Allow is the deferred grant's alone: sealing it too would let one Allow serve twice.
+    pub fn to_seal(&self) -> Option<String> {
+        Some(self.grant.text())
+    }
 }
 
 /// **A Once grant, deferred**: bound to a chat and a request digest, spent once, until a time.
@@ -683,6 +719,7 @@ impl Record {
                     action: raise.action.to_owned(),
                     said,
                     request: raise.request.to_owned(),
+                    bound: bound_of(&key.digest, &narrowed.resource_kind, &narrowed.narrowing),
                     resource_kind: narrowed.resource_kind,
                     narrowing: narrowed.narrowing,
                     why: raise.why,

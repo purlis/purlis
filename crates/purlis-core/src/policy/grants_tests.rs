@@ -14,9 +14,12 @@ use std::collections::BTreeSet;
 use super::*;
 use crate::enforcement::Mode;
 use crate::policy::decide::{self, Asker, Deciding, Decision, Outcome, Request, Sealed};
-use crate::policy::force::tests::{HEADER, STRICT, commit, host, machine, plane};
+use crate::policy::force::judge;
+use crate::policy::force::tests::{
+    HEADER, STRICT, accepted as accepted_entry, commit, host, machine, plane, sources, version,
+};
 use crate::policy::levels::Chat;
-use crate::secrets::answers::{self, Entry, Standing, State};
+use crate::secrets::answers::{self, Deny, Entry, Standing, State};
 
 const ULID: &str = "01M85WM43DT07ANNAQ6NQEJTXD";
 const OTHER: &str = "01M85WM43DT07ANNAQ6NQEJTXE";
@@ -586,4 +589,263 @@ fn a_removed_and_then_re_added_rule_does_not_revive_an_everywhere_grant() {
     let again = ask();
     assert_eq!(again.after_mode, Outcome::Ask, "{again:?}");
     assert!(again.grant.is_none(), "{again:?}");
+}
+
+// ---- review round 2 ---------------------------------------------------------------------------
+
+/// An ask on `exec`, by `id`, where `when` holds.
+fn exec_ask(id: &str, when: &str) -> String {
+    format!(
+        "@id(\"{id}\") @ask(\"you\")\nforbid (principal, action == Action::\"exec\", resource){when};\n"
+    )
+}
+
+#[test]
+fn an_ask_the_accepted_copy_holds_and_a_commit_dropped_still_needs_its_own_grant() {
+    // F1: HEAD asks by X alone, the accepted copy by X and Y (Y where nobody is at the chat). The
+    // tie picks HEAD's side, and X's grant must not serve what Y still asks.
+    let m = machine();
+    let x = exec_ask("processes-x", "");
+    let y = exec_ask("processes-y", " when { context.attended == false }");
+    let root = plane(
+        &m,
+        &[
+            ("purlis.toml", STRICT),
+            ("policy.cedar", &format!("{HEADER}{x}")),
+        ],
+    );
+    let accepted = accepted_entry(&version(STRICT, Some(&format!("{HEADER}{x}{y}"))));
+    let mut context = base();
+    context["attended"] = false.into();
+    let req = request("exec", ("Command", "ls"), context);
+    let judged = |entries: Vec<Entry>| {
+        let standing = holding(entries);
+        let decision = judge(&root, &sources(&root), &standing, &req, None).0;
+        apply(decision, &req, Some(ULID), &standing, &mut |_| true)
+    };
+    let gx = grant("processes-x", &req, Scope::Workspace, None);
+    let gy = grant("processes-y", &req, Scope::Workspace, None);
+    let only_x = judged(vec![accepted.clone(), gx.clone()]);
+    assert_eq!(only_x.after_mode, Outcome::Ask, "{only_x:?}");
+    assert!(only_x.grant.is_none(), "{only_x:?}");
+    let mut ids = only_x.ids();
+    ids.sort_unstable();
+    assert_eq!(ids, ["processes-x", "processes-y"], "{only_x:?}");
+    // Control: a grant for each of them serves.
+    let both = judged(vec![accepted, gx, gy]);
+    assert_eq!(both.after_mode, Outcome::Allow, "{both:?}");
+}
+
+#[test]
+fn a_scope_lock_caps_an_ask_a_family_mode_left_enforced_beside_a_lifted_plain_forbid() {
+    // F2: the family logs, so the plain forbid P is lifted; the ask A is enforced by its own
+    // entry. Cedar's outcome is a deny and what is enforced is an ask, and the lock must cap it.
+    let m = machine();
+    let rules = format!(
+        "{HEADER}@id(\"processes-p\")\nforbid (principal, action == Action::\"exec\", resource);\n{}",
+        exec_ask("processes-a", "")
+    );
+    let settings = format!(
+        "[policy]\ntemplate = \"strict\"\nprocesses = \"log\"\n\n\
+         [policy.rules]\n\"processes-a\" = \"enforce\"\n\n[policy.locks]\nkeep = \"once\"\n"
+    );
+    let root = plane(&m, &[("purlis.toml", &settings), ("policy.cedar", &rules)]);
+    let req = exec("ls");
+    let standing = holding(vec![grant("processes-a", &req, Scope::Everywhere, None)]);
+    let decision = judge(&root, &sources(&root), &standing, &req, None).0;
+    assert_eq!(
+        (decision.outcome, decision.after_mode),
+        (Outcome::Deny, Outcome::Ask),
+        "{decision:?}"
+    );
+    assert_eq!(decision.keep.as_deref(), Some("once"), "{decision:?}");
+    let said = apply(decision, &req, Some(ULID), &standing, &mut |_| true);
+    assert_eq!(said.after_mode, Outcome::Ask, "{said:?}");
+}
+
+#[test]
+fn a_never_on_a_start_holds_where_the_deny_state_set_the_stores_answers_aside() {
+    // F6: past the floor's cap the verified entries are in `kept` and `entries` is empty.
+    let start = request("start", ("Profile", "claude"), base());
+    let denied = Standing {
+        state: State::Deny(vec![Deny::PastTheFloorCap]),
+        kept: vec![never(&start, Scope::Workspace)],
+        ..Standing::fresh()
+    };
+    let said = after(lifted_by_open(&["processes-a"]), &start, Some(ULID), &denied);
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    assert_eq!(said.deciding[0].level, "you", "{said:?}");
+    // A kept never that does not read denies too.
+    let broken = Standing {
+        kept: vec![Entry::new(answers::NEVER, "{\"v\":99}")],
+        ..denied
+    };
+    let said = after(lifted_by_open(&["processes-a"]), &start, Some(ULID), &broken);
+    assert_eq!(said.deciding[0].id, UNREADABLE_ID, "{said:?}");
+}
+
+#[test]
+fn an_unreadable_everywhere_store_denies_a_start() {
+    // F6: its nevers are emptied from the standing, which must not read as "no nevers".
+    let start = request("start", ("Profile", "claude"), base());
+    let denied = Standing {
+        state: State::Deny(vec![Deny::PastTheFloorCap]),
+        everywhere_unreadable: true,
+        ..Standing::fresh()
+    };
+    let said = after(lifted_by_open(&["processes-a"]), &start, Some(ULID), &denied);
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    assert_eq!(said.deciding[0].id, UNREADABLE_ID, "{said:?}");
+}
+
+/// A plane of two asks on `exec`, registered, and the grants in the real store.
+fn two_asks(m: &crate::policy::force::tests::Machine) -> std::path::PathBuf {
+    let rules = format!("{HEADER}{}{}", exec_ask("processes-a", ""), exec_ask("processes-b", ""));
+    let root = plane(m, &[("purlis.toml", STRICT), ("policy.cedar", &rules)]);
+    answers::register(&root).expect("registered");
+    root
+}
+
+#[test]
+fn two_once_grants_are_spent_together_or_not_at_all() {
+    // F7: the store holds the Once grant of A and the standing the host read holds A's and B's
+    // (B's was spent by another decision a moment ago). A's must not be lost to an ask.
+    let m = machine();
+    let root = two_asks(&m);
+    let req = exec("ls");
+    let ga = grant("processes-a", &req, Scope::Once, Some(ULID));
+    let gb = grant("processes-b", &req, Scope::Once, Some(ULID));
+    answers::commit(&root, |draft| draft.add(&press(), answers::GRANT, &ga.text))
+        .expect("sealed");
+    let sealed = Sealed {
+        standing: holding(vec![ga.clone(), gb]),
+        machine: None,
+        chat: Some(ULID.to_owned()),
+    };
+    let said = decide::in_plane(&root, &asker(), "exec", ("Command", "ls"), &sealed);
+    assert_eq!(said.after_mode, Outcome::Ask, "{said:?}");
+    let kept = answers::standing(&root);
+    assert!(
+        kept.entries.iter().any(|entry| entry.text == ga.text),
+        "A's grant was lost though the ask was refused: {:?}",
+        kept.entries
+    );
+}
+
+#[test]
+fn a_once_grant_serves_only_one_of_two_decisions_that_read_the_store_before_either_spent() {
+    // The race of two decisions: the real `use_once_grant` lets one through.
+    let m = machine();
+    let root = two_asks(&m);
+    let req = exec("ls");
+    let once_a = grant("processes-a", &req, Scope::Once, Some(ULID));
+    let once_b = grant("processes-b", &req, Scope::Once, Some(ULID));
+    answers::commit(&root, |draft| {
+        draft.add(&press(), answers::GRANT, &once_a.text);
+        draft.add(&press(), answers::GRANT, &once_b.text);
+    })
+    .expect("sealed");
+    let read = || Sealed {
+        chat: Some(ULID.to_owned()),
+        ..Sealed::of(&root)
+    };
+    let (first, second) = (read(), read());
+    let a = decide::in_plane(&root, &asker(), "exec", ("Command", "ls"), &first);
+    let b = decide::in_plane(&root, &asker(), "exec", ("Command", "ls"), &second);
+    assert_eq!(a.after_mode, Outcome::Allow, "{a:?}");
+    assert_eq!(b.after_mode, Outcome::Ask, "{b:?}");
+    assert!(
+        answers::standing(&root)
+            .entries
+            .iter()
+            .all(|entry| entry.kind != answers::GRANT),
+        "both were spent by the one decision"
+    );
+}
+
+#[test]
+fn a_grant_given_for_the_merge_hold_serves_a_chat_the_floor_enforces_it_for() {
+    // F5 (b) and (c): the floor enforces `guards.merge`; the grant is applied after the floor, so
+    // it neither is undone by it nor spent for nothing.
+    use crate::enforcement::Resolved;
+    use crate::policy::decide::ChatFacts;
+    let facts = ChatFacts {
+        workspace: Some("web".to_owned()),
+        persona: None,
+        sandboxed: false,
+        attended: true,
+    };
+    let floor = Resolved::parse("guards.merge=enforce");
+    let mut context = base();
+    context["via"] = "hook".into();
+    let merge = request("merge", ("Branch", "acme/web#main"), context);
+    for scope in [Scope::Once, Scope::Workspace, Scope::Chat] {
+        let m = machine();
+        let root = plane(&m, &[("purlis.toml", STRICT)]);
+        answers::register(&root).expect("registered");
+        let given = grant("guards-merge-hold", &merge, scope, Some(ULID));
+        answers::commit(&root, |draft| draft.add(&press(), answers::GRANT, &given.text))
+            .expect("sealed");
+        let sealed = Sealed {
+            chat: Some(ULID.to_owned()),
+            ..Sealed::of(&root)
+        };
+        let said = decide::for_chat(
+            &root,
+            4,
+            Some(&facts),
+            &floor,
+            &sealed,
+            "merge",
+            ("Branch", "acme/web#main"),
+        )
+        .expect("a chat that is open");
+        assert_eq!(said.after_mode, Outcome::Allow, "{scope:?}: {said:?}");
+        assert!(said.grant.is_some(), "{scope:?}: {said:?}");
+        let held = answers::standing(&root)
+            .entries
+            .iter()
+            .any(|entry| entry.text == given.text);
+        assert_eq!(held, scope != Scope::Once, "{scope:?}: a Once grant is spent, no other is");
+    }
+}
+
+#[test]
+fn a_grant_of_a_rule_an_uncommitted_edit_took_from_the_tree_is_not_taken_out_of_the_store() {
+    // F8: the purge reads the versions a decision reads. A workspace folder removed from the tree
+    // (uncommitted) breaks the tree's reading of the project, while HEAD still holds the rule.
+    use crate::policy::force::in_force;
+    let m = machine();
+    let rules = format!("{HEADER}{}", exec_ask("processes-a", ""));
+    let tables = "[policy]\ntemplate = \"strict\"\n[policy.workspace.web]\n";
+    let root = plane(
+        &m,
+        &[
+            ("purlis.toml", tables),
+            ("policy.cedar", &rules),
+            ("workspaces/web/README.md", "web\n"),
+        ],
+    );
+    answers::register(&root).expect("registered");
+    let req = exec("ls");
+    let given = grant("processes-a", &req, Scope::Everywhere, None);
+    answers::commit(&root, |draft| draft.add(&press(), answers::GRANT, &given.text))
+        .expect("sealed");
+    std::fs::remove_dir_all(root.join("workspaces/web")).expect("removed, uncommitted");
+    let no_workspaces: [&str; 0] = [];
+    let sources = crate::policy::levels::Sources {
+        root: &root,
+        workspaces: &no_workspaces,
+        personas: &no_workspaces,
+        organisation: None,
+        accepted: None,
+    };
+    in_force(&root, &sources, &answers::standing(&root), &req, None);
+    assert!(
+        answers::standing(&root)
+            .entries
+            .iter()
+            .any(|entry| entry.text == given.text),
+        "HEAD still holds the rule, so its grant stays"
+    );
 }

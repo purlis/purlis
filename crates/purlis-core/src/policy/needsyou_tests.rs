@@ -951,3 +951,86 @@ fn a_grant_given_in_the_inbox_serves_the_same_ask_through_the_sealed_store_s_app
     );
     assert_eq!(said.after_mode, Outcome::Ask, "{said:?}");
 }
+
+#[test]
+fn an_item_whose_narrowing_or_kind_was_edited_in_the_file_grants_nothing() {
+    // Review round 2, F4: a chat that can write the needs-you folder must not turn a calm push
+    // into a force-push grant. The digest binds what a grant covers, not only what was shown.
+    let ask = || key("git push origin a");
+    let mut calm = Record::default();
+    raised_narrowed(&mut calm, false);
+    assert!(
+        calm.clone()
+            .allow(&press(), &ask(), Scope::Everywhere, NOW + 1)
+            .is_some(),
+        "the unedited item allows"
+    );
+    let mut forced = calm.clone();
+    forced.items[0]
+        .narrowing
+        .insert("force".to_owned(), true.into());
+    assert!(
+        forced
+            .allow(&press(), &ask(), Scope::Everywhere, NOW + 1)
+            .is_none(),
+        "an edited narrowing grants nothing"
+    );
+    let mut other_kind = calm.clone();
+    other_kind.items[0].resource_kind = "Repo".to_owned();
+    assert!(
+        other_kind
+            .allow(&press(), &ask(), Scope::Everywhere, NOW + 1)
+            .is_none(),
+        "an edited resource kind grants nothing"
+    );
+    let mut dropped = calm;
+    dropped.items[0].narrowing.clear();
+    assert!(
+        dropped
+            .allow(&press(), &ask(), Scope::Everywhere, NOW + 1)
+            .is_none(),
+        "a narrowing taken away grants nothing"
+    );
+}
+
+#[test]
+fn an_item_from_a_file_that_binds_nothing_grants_nothing() {
+    let mut record = Record::default();
+    raised_narrowed(&mut record, false);
+    record.items[0].bound.clear();
+    assert!(
+        record
+            .allow(&press(), &key("git push origin a"), Scope::Workspace, NOW + 1)
+            .is_none()
+    );
+}
+
+#[test]
+fn an_inbox_once_allow_is_served_once_by_the_deferred_grant_and_seals_no_grant_of_its_own() {
+    // Review round 2, F9: the Once Allow exists as a deferred grant; sealing it as well would let
+    // one Allow serve a late request and then the next ask.
+    let mut record = Record::default();
+    raised_narrowed(&mut record, false);
+    let once = record
+        .allow(
+            &press(),
+            &key("git push origin a"),
+            Scope::Once("c1".to_owned()),
+            NOW + 1,
+        )
+        .expect("there");
+    assert_eq!(once.to_seal(), None, "a Once Allow seals nothing");
+    let mut late = Late::default();
+    late.hold(once.deferred.expect("deferred"));
+    let digest = digest_of("merge", "acme/web#main", "git push origin a");
+    assert!(late.spend("c1", &digest, NOW + 2));
+    assert!(!late.spend("c1", &digest, NOW + 3), "served once");
+    // The wider scopes are sealed, and only they.
+    let mut record = Record::default();
+    raised_narrowed(&mut record, false);
+    let wide = record
+        .allow(&press(), &key("git push origin a"), Scope::Workspace, NOW + 1)
+        .expect("there");
+    assert_eq!(wide.to_seal(), Some(wide.grant.text()));
+    assert!(wide.deferred.is_none());
+}
