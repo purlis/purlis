@@ -177,11 +177,13 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
       (id: string, css: string) => {
         const row = document.getElementById(id);
         if (row === null) return false;
-        const holder = globalThis as { __openedInMs?: number };
+        const holder = globalThis as { __openedInMs?: number; __framesSince?: number };
         holder.__openedInMs = undefined;
+        holder.__framesSince = 0;
         const started = performance.now();
         row.click();
         const look = () => {
+          holder.__framesSince = (holder.__framesSince ?? 0) + 1;
           if (document.querySelector(css) === null) requestAnimationFrame(look);
           else
             requestAnimationFrame(() => {
@@ -211,9 +213,16 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
         if (!(error instanceof Error) || error.message !== noRow) throw error;
         // Said with what the frames say, so a red run says why (#4351): WebKit gives none while the
         // window is hidden or the screen is locked, and the rows past the first screen draw on one.
-        const look = await framesLook().catch(String);
-        const frames = typeof look === "string" ? look : noFrameSaid(look);
-        throw new Error(`${noRow} (opening #${n + 1}): ${frames}; ${openingsInOrder(samples)}`);
+        const during = await browser
+          .execute(() => (globalThis as { __framesSince?: number }).__framesSince)
+          .catch(() => undefined);
+        const now = await framesLook()
+          .then(noFrameSaid)
+          .catch((one: unknown) => `frames not probed: ${String(one)}`);
+        throw new Error(
+          `${noRow} (opening #${n + 1}): ${during ?? "an unknown number of"} frames ran from the press; ` +
+            `after the wait, ${now}; ${openingsInOrder(samples)}`,
+        );
       });
     samples.push(took as number);
   }
