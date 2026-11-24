@@ -1,0 +1,1 @@
+git check on 0.5.2-dev.2421, 2026-11-24T14:06:43Z; throwaway, to be deleted
