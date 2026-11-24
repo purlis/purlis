@@ -13,6 +13,8 @@
 #   "none" for no cap (off until set); "by-memory" for a value read from the device's memory.
 # - `loosens`: the direction that loosens it, "raised" or "lowered" (review round 1, S-B8). The
 #   value in force is the stricter of committed and accepted.
+# - `min`, `max` (optional): the least and the most a number may be. One outside reads as the
+#   nearest end, with a Notice (spec §5.1: the audit retention minimums).
 # - `source`: the ruling that names the key.
 # - `inventory`: the #6970 row it comes from, which `docs/research/policy-inventory-map.tsv`
 #   maps to a key of this table; empty for a key no row of the inventory holds.
@@ -316,21 +318,27 @@ key = "audit.event-log-days"
 shipped = 30
 unit = "days (7 at least and 90 at most, proposed)"
 loosens = "lowered"
+min = 7
+max = 90
 source = "Q313.4; review round 1, S5"
 inventory = "Other B #50"
 
 [[limit]]
 key = "audit.record-days"
 shipped = 365
-unit = "days (30 at least, proposed)"
+unit = "days (30 at least, proposed; 36500 at most, so no consumer's arithmetic overflows)"
 loosens = "lowered"
+min = 30
+max = 36500
 source = "Q313.4; review round 1, S5"
 inventory = ""
 
 [[limit]]
 key = "audit.record-max-bytes"
 shipped = 2147483648
-unit = "bytes"
+unit = "bytes (64 MiB at least, proposed, so a record cannot be sized to nothing; 1 PiB at most)"
 loosens = "lowered"
+min = 67108864
+max = 1125899906842624
 source = "Q313.4; review round 1, S5"
 inventory = ""

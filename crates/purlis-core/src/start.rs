@@ -811,6 +811,16 @@ fn ready_given_on(
                 crate::sandbox::Level::Full => "full",
                 crate::sandbox::Level::Floor => "floor",
             });
+        // The attendance fact this start sets, from the words the harness runs on (the profile's,
+        // less any a chat another chat asked for was started without, then charter's own), as the
+        // app builds it at the chat's start ([`crate::attendance::Fact::at_start`]).
+        let command: Vec<String> = argv.iter().chain(&added).cloned().collect();
+        let begun = if matches!(start.made, crate::sandbox::Made::Asked { .. }) {
+            crate::attendance::Begun::Task
+        } else {
+            crate::attendance::Begun::Person
+        };
+        let fact = crate::attendance::Fact::at_start(begun, harness, &command);
         let judged = crate::knowngaps::Judged {
             root,
             profile: &profile.name,
@@ -819,6 +829,8 @@ fn ready_given_on(
                 persona: start.persona.as_deref(),
             },
             sandbox: level,
+            attended: !fact.unattended(),
+            harness_mode: fact.start_mode(),
         };
         match crate::knowngaps::refusal(&judged, &facts, &declared, &floor) {
             Some(crate::knowngaps::Ruling::Refused(refused)) => return Err(refused),

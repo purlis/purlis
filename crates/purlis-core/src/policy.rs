@@ -37,9 +37,11 @@ use std::fmt;
 use std::str::FromStr as _;
 use std::sync::OnceLock;
 
+pub mod audit;
 pub mod decide;
 pub mod deny_state;
 pub mod force;
+pub mod grants;
 pub mod levels;
 pub mod limits;
 pub mod locality;
@@ -947,6 +949,27 @@ fn world_with_suffix_sets(
         .map_err(|e| e.to_string())
 }
 
+/// **A `Command` resource's program name**: the last part of its path (`/usr/bin/sudo` is `sudo`),
+/// as the sandbox level's escape denies read it ([`super::sandbox_level::named_by`]), so a rule
+/// that names a program meets it however the host spelt it. `None` where the id is already one.
+fn program_name(question: &Question<'_>) -> Option<String> {
+    let (kind, id) = question.resource;
+    if kind != "Command" {
+        return None;
+    }
+    let name = id.trim_end_matches('/').rsplit('/').next().unwrap_or(id);
+    (!name.is_empty() && name != id).then(|| name.to_owned())
+}
+
+/// The one canonical spelling of `question`'s resource: a `Host`'s ([`canonical_host`]) or a
+/// `Command`'s program name ([`program_name`]), or `None` where it is already one.
+fn canonical_resource(question: &Question<'_>) -> Result<Option<String>, String> {
+    match program_name(question) {
+        Some(name) => Ok(Some(name)),
+        None => canonical_host(question),
+    }
+}
+
 /// **A `Host` resource's one canonical spelling** (lower case, no final dot, a canonical IPv6
 /// address in brackets, no path), or `None` where the resource is no host. An id that is not a
 /// host, that carries a port (the port is the context's) or that is a wildcard cannot be asked:
@@ -1095,7 +1118,7 @@ impl Policy {
         // A `Host` resource is one spelling, whatever the caller typed: a rule that names
         // `evil.example` must meet `Evil.Example.` (M75-06 round 3, S1).
         let (canonical, spelt);
-        let question = match canonical_host(question) {
+        let question = match canonical_resource(question) {
             Ok(Some(id)) => {
                 spelt = id;
                 canonical = Question {

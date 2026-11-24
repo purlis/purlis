@@ -276,6 +276,7 @@ mod forge_one_start_asks_the_keychain_once;
 mod forge_state_is_read_from_a_cache_and_never_fetched;
 mod harness_profiles;
 mod known_gaps_are_declared_per_harness_and_os;
+mod mode_runners_consents_processes_and_audit_retention;
 mod no_automatic_read_takes_the_index_lock;
 mod no_count_says_thing_s;
 mod no_held_act_is_performed_without_the_persons_press;

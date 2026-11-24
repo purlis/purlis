@@ -124,10 +124,17 @@ impl ClaudeCodeMode {
             .map_or("unknown", |(said, _)| *said)
     }
 
-    /// **The mode `command` starts a chat in**: its last `--permission-mode`, attached or the
-    /// next word, quoted or spaced; the harness's default where it names none.
+    /// **The mode `command` starts a chat in**: the bypass where any word of it starts the
+    /// harness with its prompts or guards off, as [`crate::dispatchunattended::bypass_in`] reads
+    /// the line (`--dangerously-skip-permissions`, `--yolo`, `--safe-mode`, inline `--settings`
+    /// with a bypass `permissions.defaultMode`, and `--permission-mode bypassPermissions`: one
+    /// reading, so the two cannot disagree, M75-36 round 2); else its last `--permission-mode`,
+    /// attached or the next word, quoted or spaced; the harness's default where it names none.
     pub fn set_in(command: &[String]) -> Self {
         use crate::sandbox::codex::{is_flag, split};
+        if crate::dispatchunattended::bypass_in(command).is_some() {
+            return Self::BypassPermissions;
+        }
         let named = command
             .iter()
             .enumerate()
@@ -208,6 +215,11 @@ pub struct Fact {
     /// The mode purlis started a Claude Code chat in; `None` on any other harness, whose
     /// reports are not read.
     set: Option<ClaudeCodeMode>,
+    /// **The mode the host started the chat in**, as far as it knows it: [`Self::set`] where the
+    /// harness's mode is read, else the bypass where the profile's words are one the host knows
+    /// (`codex --full-auto`), else `None`. Never read from a report. Only the policy's
+    /// `context.harness_mode` reads it ([`Self::start_mode`]).
+    started: Option<ClaudeCodeMode>,
     /// The last mode the chat's armed hook reported.
     reported: Option<ClaudeCodeMode>,
     /// The last reported mode purlis didn't set, with the mode it set: what flipped the fact,
@@ -243,15 +255,17 @@ impl Fact {
     /// check (Q280): the mode set is kept to check its reports against only where it does, by
     /// the adapter's fact and never by which harness it is.
     fn at_start_reading(begun: Begun, reads_its_mode: bool, command: &[String]) -> Self {
-        let unattended =
-            begun.unattended() || crate::dispatchunattended::bypass_in(command).is_some();
+        let bypass = crate::dispatchunattended::bypass_in(command).is_some();
+        let unattended = begun.unattended() || bypass;
+        let set = reads_its_mode.then(|| ClaudeCodeMode::set_in(command));
         Self {
             attendance: if unattended {
                 Attendance::Unattended
             } else {
                 Attendance::Attended
             },
-            set: reads_its_mode.then(|| ClaudeCodeMode::set_in(command)),
+            set,
+            started: set.or(bypass.then_some(ClaudeCodeMode::BypassPermissions)),
             reported: None,
             differed: None,
         }
@@ -302,6 +316,7 @@ impl Fact {
         Self {
             attendance,
             set: None,
+            started: None,
             reported: None,
             differed: None,
         }
@@ -338,6 +353,19 @@ impl Fact {
     /// Whether the chat is attended.
     pub fn attendance(self) -> Attendance {
         self.attendance
+    }
+
+    /// **The mode purlis started the chat in**, from the host's own start record (Q320e R6-1):
+    /// what `context.harness_mode` carries. Never what the chat's hook later reported
+    /// ([`Self::reported`]) and never a line the chat sent: only [`Self::at_start`] sets it.
+    /// Claude Code's is its measured mode; for a harness whose mode purlis does not read (Codex,
+    /// opencode) it is the bypass where its profile's words are one the host knows
+    /// ([`crate::dispatchunattended::bypass_in`]: `--full-auto`, `--dangerously-bypass-approvals-and-sandbox`,
+    /// `-a never`). `None` otherwise, or where the fact is one a record kept ([`Self::kept`]): the
+    /// policy then reads `unknown`, which no rule lets through by naming a known mode. Owed to
+    /// slice 37: such a start is allowed by `mode-task-above-auto`.
+    pub fn start_mode(self) -> Option<ClaudeCodeMode> {
+        self.started
     }
 
     /// The last mode the chat's armed hook reported, where its harness's is read.

@@ -91,12 +91,22 @@ pub fn decision(
         attended: chats.attendance_of(chat).is_some_and(|fact| {
             fact.hearing(false, None) == purlis_core::dispatchunattended::Attendance::Attended
         }),
+        // The mode the host started the harness in, from its own start record: never a report
+        // of the chat's hook and never a word of its line (Q320e R6-1).
+        harness_mode: chats
+            .attendance_of(chat)
+            .and_then(purlis_core::attendance::Fact::start_mode),
     });
     // The accepted floor and the machine's locks, until slices 06 and 14 read them in the loader.
     let floor = purlis_core::enforcement::in_force(held.root());
     // What the app's sealed store says now: the deny state refuses every action but `start`, and
-    // `context.machine` is the device id the person confirmed (M75-07b).
-    let sealed = decide::Sealed::of(held.root());
+    // `context.machine` is the device id the person confirmed (M75-07b). `chat` is the chat's
+    // ULID, which a Once or This-chat grant is keyed on (M75-20): without it no grant of those
+    // scopes serves.
+    let sealed = decide::Sealed {
+        chat: chats.id_of(chat),
+        ..decide::Sealed::of(held.root())
+    };
     decide::for_chat(
         held.root(),
         chat,

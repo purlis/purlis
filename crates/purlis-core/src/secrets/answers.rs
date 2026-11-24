@@ -994,6 +994,10 @@ pub struct Standing {
     pub store_verified: bool,
     /// The Everywhere nevers that count: whatever the plane's state.
     pub everywhere: Vec<Entry>,
+    /// Whether the Everywhere store is there but not whole (missing its anchor, older, failing a
+    /// seal): [`Standing::everywhere`] is then empty, which must not read as "no nevers" (M75-20
+    /// review round 2, F6).
+    pub everywhere_unreadable: bool,
     /// Grants that are missing or fail their seal: "no answer", each as kind and digest.
     pub no_answer: Vec<String>,
     /// What the window says: sealed files the manifest does not list, ignored.
@@ -1008,6 +1012,7 @@ impl Standing {
             kept: Vec::new(),
             store_verified: false,
             everywhere: Vec::new(),
+            everywhere_unreadable: false,
             no_answer: Vec::new(),
             notices: Vec::new(),
         }
@@ -1420,6 +1425,7 @@ fn standing_with(root: &Path, import_counts: bool) -> Standing {
     }
     denies.extend(found.denies.iter().cloned());
     let mut standing = Standing::of(State::Fresh);
+    standing.everywhere_unreadable = !everywhere.denies.is_empty();
     standing.everywhere = if everywhere.denies.is_empty() {
         everywhere.entries.clone()
     } else {
@@ -1622,15 +1628,29 @@ pub fn commit(root: &Path, change: impl FnOnce(&mut Draft)) -> io::Result<u64> {
 /// grant's removal only narrows ([`Draft::remove_narrowing`]), so a host with no window may spend
 /// one, but where it cannot seal (no keyring, a locked key) the grant cannot be used there at all.
 pub fn use_once_grant(root: &Path, text: &str) -> io::Result<u64> {
-    let mut held = false;
+    use_once_grants(root, &[text])
+}
+
+/// **Spends several Once grants in one commit, all or none** (review round 2, F7): where an ask is
+/// decided by two rules, each with its own Once grant, a grant is lost only with the decision it
+/// serves. Every text must be held, or nothing is taken out and the call is a refusal.
+pub fn use_once_grants(root: &Path, texts: &[&str]) -> io::Result<u64> {
+    let mut all_held = false;
     let counter = commit(root, |draft| {
-        held = draft
-            .entries()
-            .iter()
-            .any(|e| e.kind == GRANT && e.text == text);
-        draft.remove_narrowing(GRANT, text);
+        all_held = !texts.is_empty()
+            && texts.iter().all(|text| {
+                draft
+                    .entries()
+                    .iter()
+                    .any(|e| e.kind == GRANT && e.text == *text)
+            });
+        if all_held {
+            for text in texts {
+                draft.remove_narrowing(GRANT, text);
+            }
+        }
     })?;
-    if held {
+    if all_held {
         Ok(counter)
     } else {
         Err(io::Error::other(

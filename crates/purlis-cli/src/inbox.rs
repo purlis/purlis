@@ -99,6 +99,32 @@ fn list(store: &Store, json: bool) -> ExitCode {
 const SHOWN_ACTION: usize = 64;
 const SHOWN_RESOURCE: usize = 160;
 const SHOWN_REQUEST: usize = 160;
+const SHOWN_NARROWING: usize = 160;
+
+/// **What an Allow would also cover**: the resource's kind and the narrowing the request carried
+/// (`force=true`, `port=8080`), which a grant is matched on, so the person sees them before they
+/// allow (review round 3, N2).
+fn narrowing_said(item: &Item) -> String {
+    let kind = if item.resource_kind.is_empty() {
+        "unknown"
+    } else {
+        &item.resource_kind
+    };
+    let narrowing = if item.narrowing.is_empty() {
+        "none".to_owned()
+    } else {
+        item.narrowing
+            .iter()
+            .map(|(name, value)| format!("{name}={value}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    format!(
+        "kind {}; narrowing {}",
+        shown::one_line(kind, SHOWN_ACTION),
+        shown::one_line(&narrowing, SHOWN_NARROWING)
+    )
+}
 
 /// **One item as `list` prints it**: its id, what it asks, where, who and when.
 fn line(item: &Item, now: u64) -> String {
@@ -110,7 +136,7 @@ fn line(item: &Item, now: u64) -> String {
     // What an Allow would cover is the action, the resource and the request, each marked and on
     // one line; `said` is only what the chat's host called it.
     format!(
-        "{}  {}  [{} in {}; rule {}]  {chats}, last {} ago ({})\n    resource: {}\n    request: {}",
+        "{}  {}  [{} in {}; rule {}]  {chats}, last {} ago ({})\n    resource: {}\n    covers: {}\n    request: {}",
         item.key.id(),
         item.said,
         shown::one_line(&item.action, SHOWN_ACTION),
@@ -119,6 +145,7 @@ fn line(item: &Item, now: u64) -> String {
         ago(now.saturating_sub(item.last)),
         because(item.why),
         shown::one_line(&item.key.resource, SHOWN_RESOURCE),
+        narrowing_said(item),
         shown::one_line(&item.request, SHOWN_REQUEST),
     )
 }

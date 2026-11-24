@@ -179,6 +179,12 @@ and its tab says once that the rule would have refused it. Mind what the rule sa
 are a gap on every system (`claude-code-reads`), and a lifted sandbox is one too; such a rule
 refuses every start.
 
+**Not closed yet (slice 37).** What the host reads of a start is Claude Code's mode, and for Codex
+the words it knows are a bypass (`--full-auto`, `--dangerously-bypass-approvals-and-sandbox`,
+`-a never`): any other Codex start, and every opencode start, has `context.harness_mode` `unknown`,
+which `mode-task-above-auto` allows. And `processes-elevation` reads the program a command names,
+by the last part of its path: a wrapper (`env sudo`, `command sudo`, `sh -c sudo`) is not read.
+
 An `@ask` forbid on `start` refuses too, until asking at a start is wired (slice 36): the refusal
 says the rule asks and that asking at a start is not wired yet. Write a plain forbid.
 
