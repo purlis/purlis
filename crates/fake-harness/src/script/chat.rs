@@ -1608,8 +1608,13 @@ impl Chat {
             Dialect::Codex => Spawn::Shell(shell_program()),
             Dialect::Claude => Spawn::Shell("/bin/sh"),
         };
+        // Esc ends the hooks of the turn it interrupted. The hooks that close a turn or the
+        // session run after it, with the Esc already spent (`interrupted` stays set until the
+        // next turn), so a held flag must not cancel them: that left the recording without its
+        // `sessionend` (and OpenCode's `Stop`).
+        let after_the_turn = matches!(event, "Stop" | "StopFailure" | "SessionEnd");
         hooks::run_all(&routes, spawn, &payload, &env, &self.cwd, &|| {
-            self.esc_pressed()
+            !after_the_turn && self.esc_pressed()
         })
     }
 
