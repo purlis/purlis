@@ -301,30 +301,77 @@ fn read(words: &[Word], measured: bool, clobber: bool, piped: bool) -> Segment {
     }
 }
 
-/// Programs that only print or search the words they are handed, so a forge CLI named among
-/// them runs nothing.
-const TEXT_PROGRAMS: [&str; 15] = [
-    "echo", "printf", "cat", "grep", "egrep", "fgrep", "rg", "ag", "sed", "awk", "head", "tail",
-    "wc", "type", "whereis",
+/// **Programs that never execute their operands** (#7423, round 11): a forge CLI named among
+/// them is a name, a file or a search word (`cp /usr/bin/gh ~`, `grep gh src/*`, `which gh`). Not
+/// here, and so a call: `find` (its `-exec` is read as a command of its own), `fd`, `xargs`,
+/// `parallel`, `env`, `rsync`, `tar`, every shell, `ssh`, `exec`, `brew bundle`.
+const NEVER_EXECUTES: &[&str] = &[
+    "echo", "printf", "type", "whereis", "cp", "mv", "ls", "ln", "rm", "install", "chmod", "chown",
+    "stat", "file", "diff", "cmp", "du", "shasum", "md5", "md5sum", "codesign", "xattr", "cat",
+    "head", "tail", "wc", "grep", "egrep", "fgrep", "rg", "ag", "ack", "less", "sed", "awk",
+    "which", "man", "tldr", "apropos", "locate", "mdfind", "cd", "pushd", "mkdir", "rmdir",
+    "touch", "realpath", "dirname", "basename", "readlink", "tee", "sort", "uniq", "cut", "tr",
+    "jq", "dpkg", "rpm", "pacman", "tree", "open",
 ];
 
-/// Programs that look a name up or install a package of that name, and never run it (`brew
-/// install gh $PKGS`, `which gh`, `man gh`).
-const NAMES_ONLY: [&str; 19] = [
-    "brew", "apt", "apt-get", "apk", "dnf", "yum", "pacman", "port", "choco", "scoop", "winget",
-    "dpkg", "rpm", "which", "man", "tldr", "apropos", "locate", "mdfind",
+/// Package managers: they name a package, and run nothing, for these subcommands only. `brew
+/// bundle exec gh …`, `mise exec -- gh …` and `npm exec gh` run it.
+const PACKAGE_MANAGERS: &[&str] = &[
+    "brew", "apt", "apt-get", "apk", "dnf", "yum", "port", "choco", "scoop", "winget", "asdf",
+    "mise", "snap", "npm", "pnpm", "yarn", "pip", "pip3", "cargo", "go", "gem", "flatpak",
 ];
 
-/// **The general wrapper rule** (#7423, rounds 7 and 8). The program placed is not a forge CLI,
-/// and a later word is one: whatever the program is (`taskset 1`, `chronic`, `ssh h`, `fd -x`, a
-/// wrapper no table lists), it may run that call. Only the plain printers of [`TEXT_PROGRAMS`],
-/// and the words of a `for … in` list, are left alone.
+/// The subcommands of a package manager that run none of its operands.
+const PACKAGE_SUBCOMMANDS: &[&str] = &[
+    "install", "info", "search", "upgrade", "uninstall", "list", "remove", "show", "update", "reinstall",
+    "latest", "current", "where", "outdated", "ls", "ls-remote", "versions", "plugin",
+];
+
+/// `git`'s subcommands that run none of their operands: `git grep gh`, `git log -- crates/*`.
+const GIT_SUBCOMMANDS: &[&str] = &[
+    "add", "grep", "log", "diff", "show", "status", "mv", "rm", "commit", "tag", "branch", "checkout",
+    "switch", "restore", "reset", "blame", "shortlog", "stash", "fetch", "pull", "push", "remote",
+];
+
+/// Whether the program placed in `argv` (`argv[0]`) never executes a word among its operands.
+fn never_executes(base: &str, argv: &[String]) -> bool {
+    if NEVER_EXECUTES.contains(&base) {
+        return true;
+    }
+    // `find`'s `-exec` runs are read as commands of their own ([`shellwrap::commands_a_find_runs`]).
+    if base == "find" {
+        return true;
+    }
+    let mut rest = argv.iter().skip(1);
+    if base == "git" {
+        // Its options that take a value apart (`-C dir`, `-c k=v`) come first.
+        let sub = loop {
+            match rest.next().map(String::as_str) {
+                Some("-C" | "-c") => {
+                    rest.next();
+                }
+                Some(flag) if flag.starts_with('-') => {}
+                other => break other,
+            }
+        };
+        return sub.is_some_and(|s| GIT_SUBCOMMANDS.contains(&s));
+    }
+    if PACKAGE_MANAGERS.contains(&base) {
+        let sub = rest.find(|w| !w.starts_with('-'));
+        return sub.is_some_and(|s| PACKAGE_SUBCOMMANDS.contains(&s.as_str()));
+    }
+    false
+}
+
+/// **The general wrapper rule** (#7423, rounds 7, 8 and 11). The program placed is not a forge
+/// CLI, and a later word is one: whatever the program is (`taskset 1`, `chronic`, `ssh h`,
+/// `fd -x`, a wrapper no table lists), it may run that call. Only a program that
+/// [`never_executes`] its operands, and the words of a `for … in` list, are left alone.
 ///
 /// Answers whether a shell-filled word stands before a held command, and the calls to read, each
-/// as a segment of its own. A
-/// forge word that is a path (`/opt/homebrew/bin/gh`, `crates/gh`), or is followed by a word the
-/// shell fills in, is a call only where a held verb stands after it, as a flag the reader cannot
-/// place is. A word the shell fills in (`$(which gh)`, `$GH`, `{gh,pr}`, `g[h]`) followed by a
+/// as a segment of its own. A word or a path that names a forge CLI (`gh`, `/opt/homebrew/bin/gh`)
+/// is always a call, read by the allowlist of [`super::placed`] with whatever the program may
+/// append. A word the shell fills in (`$(which gh)`, `$GH`, `{gh,pr}`, `g[h]`) followed by a
 /// held noun and verb may be the CLI. `purlis change land` is a held call as `gh pr merge` is.
 fn behind_an_unknown_program(
     inv: &shellwrap::Invocation,
@@ -337,7 +384,7 @@ fn behind_an_unknown_program(
         return none;
     }
     let base = shellwrap::base_lower(&inv.prog);
-    if TEXT_PROGRAMS.contains(&base.as_str()) || NAMES_ONLY.contains(&base.as_str()) {
+    if never_executes(&base, argv) {
         return none;
     }
     let in_a_list = argv[1] == "in"
@@ -358,24 +405,10 @@ fn behind_an_unknown_program(
         let base = shellwrap::base_lower(word);
         if names_a_forge(word) || matches!(base.as_str(), "purlis" | "charter") {
             let a_path = word.contains('/') || word.starts_with('~');
-            let after_spelled = spelled.get(k + 1..).unwrap_or(&[]);
-            if names_a_forge(word) {
-                // A path that names a forge CLI is a call only where a literal noun of a held
-                // command follows it (`/opt/homebrew/bin/gh pr …`); `cp /usr/bin/gh ~` names a
-                // file. A bare `gh` is a call, read by the rule for the words up to the verb
-                // ([`super::placed`], round 10).
-                // A held verb later on the line (`/usr/bin/gh $A merge 5`) makes it one too.
-                if a_path
-                    && !later[k + 1]
-                    && !super::placed::names_a_held_noun(
-                        &shellwrap::base_lower(word),
-                        &argv[k + 1..],
-                        after_spelled,
-                    )
-                {
-                    continue;
-                }
-            } else {
+            // A word or a path that names a forge CLI, behind a program that may run it, is a
+            // call (round 11): read by the allowlist ([`super::placed`]), with whatever the
+            // program may append. `cp /usr/bin/gh ~` is no call: `cp` never runs its operands.
+            if !names_a_forge(word) {
                 // `purlis change land` and `charter change land`: read as before (round 8).
                 let opaque_next = argv.get(k + 1).is_some_and(|w| super::merge::opaque(w));
                 if (a_path || opaque_next) && !later[k + 1] {
