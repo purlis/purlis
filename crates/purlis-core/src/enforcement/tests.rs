@@ -1233,7 +1233,6 @@ fn the_rules_of_the_nine_families_are_known_to_their_own_family_alone() {
     // The app keeps a line a chat's process hands over only for a rule it knows (#7061).
     for (family, rule) in [
         (Family::GuardsForge, RULE_FORGE_WORKSPACE),
-        (Family::GuardsForge, RULE_FORGE_LINEAGE),
         (Family::HarnessMode, RULE_ASKS_NOBODY),
         (Family::Tools, RULE_DENY_LIST),
         (Family::Trust, RULE_PROFILE_APPROVAL),
@@ -1484,4 +1483,225 @@ fn a_press_with_a_seal_key_another_program_made_says_how_to_recover_and_then_acc
     press(root.path(), &digest_of(root.path())).expect("accepted once the item is gone");
     assert!(!broken(root.path()));
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
+}
+
+// ---- lineage and protected branches: an allowance and a list read as `[policy]` is ---------------
+
+/// `text` written as the plane's committed file and committed.
+fn commit_file(root: &Path, text: &str) {
+    std::fs::write(root.join("charter.toml"), text).expect("written");
+    for args in [
+        &["add", "charter.toml"][..],
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "x",
+        ],
+    ] {
+        let ran = git_in(root, args);
+        assert!(ran.status.success(), "{args:?}: {ran:?}");
+    }
+}
+
+const DENY_LINEAGE: &str = "[policy]\nlineage = \"deny\"\n";
+
+#[test]
+fn lineage_is_on_where_nothing_is_set_and_guards_forge_has_no_say_in_it() {
+    let _home = OwnConfigHome::new();
+    for text in [
+        "",
+        "[policy]\n",
+        "[policy]\nlineage = \"allow\"\n",
+        "[policy]\nguards.forge = \"off\"\n",
+        "[policy]\nguards.forge = \"log\"\n",
+        "[policy]\nguards.forge = \"enforce\"\n",
+        "[policy]\ntemplate = \"strict\"\n",
+    ] {
+        let root = a_committed_plane(text);
+        assert!(lineage_in_force(root.path()), "{text}");
+    }
+}
+
+#[test]
+fn tightening_guards_forge_from_off_to_log_does_not_turn_lineage_on() {
+    let _home = OwnConfigHome::new();
+    for forge in ["off", "log", "enforce"] {
+        let root = a_committed_plane(&format!("{DENY_LINEAGE}guards.forge = \"{forge}\"\n"));
+        assert!(!lineage_in_force(root.path()), "{forge}");
+    }
+}
+
+#[test]
+fn a_commit_that_denies_lineage_takes_effect_at_once() {
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane("[policy]\n");
+    assert!(lineage_in_force(root.path()));
+    commit_file(root.path(), DENY_LINEAGE);
+    assert!(!lineage_in_force(root.path()));
+    assert!(!standing(root.path()).lineage_waiting);
+}
+
+#[test]
+fn a_commit_that_allows_lineage_again_waits_for_the_press() {
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane(DENY_LINEAGE);
+    assert!(!lineage_in_force(root.path()));
+    commit_file(root.path(), "[policy]\n");
+    assert!(!lineage_in_force(root.path()), "still denied until pressed");
+    let waiting = standing(root.path());
+    assert!(waiting.lineage_waiting);
+    press(root.path(), &waiting.digest).expect("pressed");
+    assert!(lineage_in_force(root.path()));
+    assert!(!standing(root.path()).lineage_waiting);
+}
+
+#[test]
+fn a_lock_holds_lineage_off_and_a_refused_lock_file_does_too() {
+    let policy = std::path::Path::new("/etc/purlis/policy.json");
+    let held = Locks::parse(r#"{"sandbox": {"lineage": false}}"#, policy);
+    assert!(held.forbids_lineage());
+    assert!(!Resolved::of(&said(""), &held).lineage());
+    assert!(!Locks::none().forbids_lineage());
+    assert!(Resolved::of(&said(""), &Locks::none()).lineage());
+    for text in [r#"{"sandbox": {"lineage": true}}"#, r#"{"sandbox": {}}"#] {
+        assert!(!Locks::parse(text, policy).forbids_lineage(), "{text}");
+    }
+    let refused = Locks::parse("not json", policy);
+    assert!(refused.forbids_lineage());
+    assert!(!Resolved::of(&said(""), &refused).lineage());
+}
+
+#[test]
+fn a_value_purlis_cannot_read_means_no_lineage() {
+    for text in [
+        "[policy]\nlineage = \"maybe\"\n",
+        "[policy]\nlineage = true\n",
+        "[policy]\nlineage = 1\n",
+        "[policy]\nlineage = [\"allow\"]\n",
+        "[policy]\ntemplate = \"loose\"\n",
+        "[policy]\nnot_a_family = \"off\"\n",
+        "policy = [unclosed\n",
+        "policy = 3\n",
+    ] {
+        let settings = said(text);
+        assert!(settings.lineage_denied, "{text}");
+        assert!(!Resolved::of(&settings, &Locks::none()).lineage(), "{text}");
+    }
+    assert!(!said("[policy]\nlineage = \"allow\"\n").lineage_denied);
+}
+
+#[test]
+fn a_head_git_cannot_read_means_no_lineage_and_is_never_kept() {
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane("[policy]\n");
+    assert!(lineage_in_force(root.path()));
+    std::fs::remove_file(the_files_blob(root.path())).expect("the blob gone");
+    assert!(!lineage_in_force(root.path()));
+}
+
+#[test]
+fn the_local_file_can_deny_lineage_and_never_allow_it() {
+    let denied = plane(DENY_LINEAGE, Some("[policy]\nlineage = \"allow\"\n"));
+    assert!(Settings::read(denied.path()).lineage_denied);
+    let local = plane("[policy]\n", Some(DENY_LINEAGE));
+    assert!(Settings::read(local.path()).lineage_denied);
+}
+
+#[test]
+fn lineage_in_the_working_tree_alone_changes_nothing() {
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane(DENY_LINEAGE);
+    assert!(!lineage_in_force(root.path()));
+    std::fs::write(root.path().join("charter.toml"), "[policy]\n").expect("edited, not committed");
+    assert!(!lineage_in_force(root.path()));
+}
+
+const PROTECT: &str = "[risk]\nprotected_branches = [\"m75-policy\", \"phase-1-proven\"]\n";
+
+#[test]
+fn the_protected_branches_are_read_from_head() {
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane(PROTECT);
+    assert_eq!(
+        protected_branches_in_force(root.path()),
+        ["m75-policy", "phase-1-proven"]
+    );
+}
+
+#[test]
+fn a_protected_list_edited_or_broken_in_the_working_tree_loses_nothing() {
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane(PROTECT);
+    assert_eq!(protected_branches_in_force(root.path()).len(), 2);
+    for edited in [
+        "",
+        "[risk]\nprotected_branches = [\"x\"]\n",
+        "risk = [unclosed\n",
+    ] {
+        std::fs::write(root.path().join("charter.toml"), edited).expect("not committed");
+        assert_eq!(
+            protected_branches_in_force(root.path()),
+            ["m75-policy", "phase-1-proven"],
+            "{edited}"
+        );
+    }
+}
+
+#[test]
+fn a_commit_that_drops_a_protection_waits_for_the_press_and_one_that_adds_holds_at_once() {
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane(PROTECT);
+    assert_eq!(protected_branches_in_force(root.path()).len(), 2);
+    // A name added: at once.
+    commit_file(
+        root.path(),
+        "[risk]\nprotected_branches = [\"m75-policy\", \"phase-1-proven\", \"lts/*\"]\n",
+    );
+    assert_eq!(
+        protected_branches_in_force(root.path()),
+        ["lts/*", "m75-policy", "phase-1-proven"]
+    );
+    // A name dropped: held until the person presses.
+    commit_file(
+        root.path(),
+        "[risk]\nprotected_branches = [\"m75-policy\"]\n",
+    );
+    assert_eq!(protected_branches_in_force(root.path()).len(), 3);
+    let waiting = standing(root.path());
+    assert_eq!(waiting.protection_lifted, ["lts/*", "phase-1-proven"]);
+    press(root.path(), &waiting.digest).expect("pressed");
+    assert_eq!(protected_branches_in_force(root.path()), ["m75-policy"]);
+}
+
+#[test]
+fn a_head_git_cannot_read_keeps_the_accepted_protected_list() {
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane(PROTECT);
+    assert_eq!(protected_branches_in_force(root.path()).len(), 2);
+    std::fs::remove_file(the_files_blob(root.path())).expect("the blob gone");
+    assert_eq!(
+        protected_branches_in_force(root.path()),
+        ["m75-policy", "phase-1-proven"]
+    );
+}
+
+#[test]
+fn the_protected_list_and_the_lineage_denial_are_kept_and_read_back() {
+    let settings = said(&format!("{DENY_LINEAGE}{PROTECT}"));
+    let resolved = Resolved::of(&settings, &Locks::none());
+    let kept = resolved.as_kept_for_test();
+    let back = Resolved::of_kept_for_test(&kept);
+    assert!(!resolved.lineage());
+    assert!(!back.lineage());
+    assert_eq!(back.protected_branches(), ["m75-policy", "phase-1-proven"]);
+    // An acceptance from before either key existed reads as allowed, with nothing protected.
+    let old = Resolved::of(&said(""), &Locks::none()).as_kept_for_test();
+    let read = Resolved::of_kept_for_test(&old);
+    assert!(read.lineage());
+    assert!(read.protected_branches().is_empty());
 }

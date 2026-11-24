@@ -445,6 +445,9 @@ fn where_a_folder_pushes_is_read_from_git_itself() {
 
 #[test]
 fn the_committed_protected_branches_are_the_risk_tables_and_nothing_else() {
+    // Not the app, and no repository: the file as it stands is all there is (the app's read, from
+    // `HEAD` and floored by the accepted copy, is `enforcement`'s).
+    crate::enforcement::set_in_the_app_for_this_test(false);
     let dir = tempfile::tempdir().unwrap();
     assert!(committed_protected_branches(dir.path()).is_empty());
     std::fs::write(
@@ -452,8 +455,7 @@ fn the_committed_protected_branches_are_the_risk_tables_and_nothing_else() {
         "[risk]\nprotected_branches = [\"stable\", \"m*-policy\", 3]\nproduction_hosts = [\"shop.test\"]\n",
     )
     .unwrap();
-    assert_eq!(
-        committed_protected_branches(dir.path()),
-        ["stable", "m*-policy"]
-    );
+    let got = committed_protected_branches(dir.path());
+    crate::enforcement::set_in_the_app_for_this_test(true);
+    assert_eq!(got, ["m*-policy", "stable"]);
 }

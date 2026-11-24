@@ -3615,16 +3615,78 @@ fn another_chat_than_the_asker_is_no_lineage() {
 }
 
 #[test]
-fn the_guards_forge_family_off_is_no_lineage_and_log_and_enforce_leave_it_on() {
-    use crate::enforcement::Mode;
+fn a_denied_allowance_is_no_lineage_whatever_the_records_say() {
     let (_d, root) = project();
     an_ended_task(&root, |_| {});
     let records = list(&root);
-    for (mode, on) in [(Mode::Off, false), (Mode::Log, true), (Mode::Enforce, true)] {
+    for (allowed, on) in [(false, false), (true, true)] {
         assert_eq!(
-            lineage_allows_under(mode, &records, PARENT, CHILD, CUT),
+            lineage_allows_under(allowed, &records, &[], PARENT, CHILD, CUT),
             on,
-            "{mode:?}"
+            "{allowed}"
         );
     }
+}
+
+#[test]
+fn a_running_handoff_of_the_child_is_no_lineage() {
+    let (_d, root) = project();
+    an_ended_task(&root, |_| {});
+    let mut opening = a_task_as_lineage_wants_it();
+    opening.mode = Mode::Handoff;
+    open(&root, opening, at("2026-11-24T11:00:00Z")).unwrap();
+    assert!(!lineage(&root, CUT));
+}
+
+#[test]
+fn an_ended_record_of_the_child_that_does_not_read_as_the_apps_own_is_no_lineage() {
+    let (_d, root) = project();
+    an_ended_task(&root, |_| {});
+    let records = list(&root);
+    assert!(ended_child_branch(&records, PARENT, CHILD, CUT));
+    let mut unsound = records[0].clone();
+    unsound.worker.chat.name = "a\u{202e}chat".to_owned();
+    assert!(!sound(&unsound));
+    assert!(!ended_child_branch(&[unsound], PARENT, CHILD, CUT));
+}
+
+#[test]
+fn a_torn_record_that_names_the_child_is_no_lineage() {
+    let (_d, root) = project();
+    an_ended_task(&root, |_| {});
+    let records = list(&root);
+    assert!(lineage_allows_under(
+        true,
+        &records,
+        &[],
+        PARENT,
+        CHILD,
+        CUT
+    ));
+    // A write cut short inside the record of a second, running task of the child.
+    let torn = vec![(
+        "01K6TORN000000000000000000".to_owned(),
+        format!("{{\"v\":1,\"worker\":{{\"chat\":{{\"id\":\"{CHILD}"),
+    )];
+    assert!(!lineage_allows_under(
+        true, &records, &torn, PARENT, CHILD, CUT
+    ));
+    // One that names someone else leaves the child's lineage as it was.
+    let other = vec![(
+        "01K6TORN000000000000000001".to_owned(),
+        "{\"v\":".to_owned(),
+    )];
+    assert!(lineage_allows_under(
+        true, &records, &other, PARENT, CHILD, CUT
+    ));
+}
+
+#[test]
+fn a_task_with_no_workspace_on_either_side_is_no_lineage() {
+    let (_d, root) = project();
+    an_ended_task(&root, |o| {
+        o.asker.workspace = None;
+        o.place.workspace = None;
+    });
+    assert!(!lineage(&root, CUT));
 }

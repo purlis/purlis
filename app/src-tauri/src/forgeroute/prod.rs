@@ -173,8 +173,9 @@ impl Recorded for ConfirmedRecorded {
             else {
                 continue;
             };
-            // The project's committed protected branches (`[risk] protected_branches`), beside the
-            // route's built-in ones: no push of a chat reaches them, a lineage push included.
+            // The project's protected branches (`[risk] protected_branches`, read from `HEAD` and
+            // never fewer than the person accepted), beside the route's built-in ones: no push of
+            // a chat reaches them, a lineage push included.
             let committed = purlis_core::askrisk::committed_protected_branches(project);
             let committed: Vec<&str> = committed.iter().map(String::as_str).collect();
             let mut allowed = allowed
@@ -207,8 +208,8 @@ impl Recorded for ConfirmedRecorded {
         let project_id = purlis_core::scaffold::planefile::id_to_hold_by(project).ok()?;
         // The branch purlis cut for an ended direct child of the same workspace and persona is its
         // parent's to follow up too (ADR 0128, amended 2026-11-24), from the app's own dispatch
-        // records and `guards.forge` (read only when the branch is another chat's), never a file
-        // a chat writes.
+        // records and `[policy] lineage` (an allowance, denied by `deny`, a lock or a value that
+        // does not read; read only when the branch is another chat's), never a file a chat writes.
         purlis_core::forge::createdbranches::tip_for(
             &self.config_root,
             &project_id,

@@ -2175,20 +2175,27 @@ pub fn read(root: &Path, id: &str) -> Option<Record> {
 /// ([`list`]). All of: a task record whose asker is `parent` and whose worker is `child`, both
 /// by ULID (**a direct child only**: no grandchild, no handoff); the record has `ended`, and no
 /// record of `child` as a worker still runs; the asker's workspace is the task's
-/// (`asker.workspace` is `place.workspace`); the asker's persona is the persona dispatched to,
-/// both named; and `branch` is exactly the record's `place.worktree.branch`. What the owner line
-/// of the branch says (a route push, not the person's Allow) is [`crate::forge::createdbranches`]'s.
-/// A record that does not read as one the app would have written ([`sound`]) is no link.
+/// (`asker.workspace` and `place.workspace` both named, and the same); the asker's persona is the
+/// persona dispatched to, both named; and `branch` is exactly the record's
+/// `place.worktree.branch`. **Fail closed on "ended"**: any record naming `child` as its worker,
+/// **of any mode** (a running handoff too) and whether or not it reads as the app's own, that has
+/// not ended, means the child still runs. What the owner line of the branch says (a route push,
+/// not the person's Allow) is [`crate::forge::createdbranches`]'s. A record that does not read as
+/// one the app would have written ([`sound`]) is no link.
 pub fn ended_child_branch(records: &[Record], parent: &str, child: &str, branch: &str) -> bool {
-    let of_child = |r: &&Record| {
-        r.mode == Mode::Task && sound(r) && r.worker.chat.id.as_deref() == Some(child)
-    };
-    if records.iter().filter(of_child).any(|r| r.ended.is_none()) {
+    let names_child = |r: &&Record| r.worker.chat.id.as_deref() == Some(child);
+    if records
+        .iter()
+        .filter(names_child)
+        .any(|r| r.ended.is_none() || !sound(r))
+    {
         return false;
     }
+    let of_child = |r: &&Record| r.mode == Mode::Task && names_child(r);
     records.iter().filter(of_child).any(|r| {
         r.asker.chat.id.as_deref() == Some(parent)
             && r.ended.is_some()
+            && r.asker.workspace.is_some()
             && r.asker.workspace == r.place.workspace
             && r.persona.is_some()
             && r.asker.chat.persona == r.persona
@@ -2202,29 +2209,36 @@ pub fn ended_child_branch(records: &[Record], parent: &str, child: &str, branch:
 
 /// **Whether the parent chat `parent` of the project at `project` may take up `branch`, the
 /// branch its ended direct child `child` was cut**: [`ended_child_branch`] over the project's
-/// dispatch records, **and only while `[policy]`'s `guards.forge` is not `off`** (rule
-/// [`crate::enforcement::RULE_FORGE_LINEAGE`]; an administrator's lock keeps it on). The
-/// production caller is the route's tip closure (`forgeroute`'s `own_tip`).
+/// dispatch records, **and only while lineage is allowed** ([`crate::enforcement::lineage_in_force`]:
+/// `[policy] lineage`, an allowance on by default whose strict value is `deny`, which an
+/// administrator's lock can hold and which a value purlis cannot read denies). **A record file
+/// that does not read as a record and names the child counts as the child still running**
+/// ([`unread`]). The production caller is the route's tip closure (`forgeroute`'s `own_tip`).
 pub fn lineage_allows(project: &Path, parent: &str, child: &str, branch: &str) -> bool {
     lineage_allows_under(
-        crate::enforcement::mode(project, crate::enforcement::Family::GuardsForge),
+        crate::enforcement::lineage_in_force(project),
         &list(project),
+        &unread(project),
         parent,
         child,
         branch,
     )
 }
 
-/// [`lineage_allows`] with the `guards.forge` mode and the records given: `off` is no lineage,
-/// `log` and `enforce` leave it on (an allowance has no refusal to log).
+/// [`lineage_allows`] with the answer of lineage's allowance, the records and the files that are
+/// not records given (`unread`: a record whose write was cut short, say, which names the child
+/// where it was the child's still running one).
 pub fn lineage_allows_under(
-    mode: crate::enforcement::Mode,
+    allowed: bool,
     records: &[Record],
+    unread: &[(String, String)],
     parent: &str,
     child: &str,
     branch: &str,
 ) -> bool {
-    mode != crate::enforcement::Mode::Off && ended_child_branch(records, parent, child, branch)
+    allowed
+        && !unread.iter().any(|(_, text)| text.contains(child))
+        && ended_child_branch(records, parent, child, branch)
 }
 
 /// The running dispatch whose persona chat is `chat`, where there is one: the newest. Read

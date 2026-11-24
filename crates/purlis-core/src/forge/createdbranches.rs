@@ -33,7 +33,8 @@
 //! that task, where the last line is a route-confirmed push ([`Via::Route`], never the person's
 //! Allow), from the same tip rule ([`tip_for`]). **The link is the app's own dispatch record**
 //! ([`crate::dispatchrecord::lineage_allows`], which no sandboxed chat can write and which obeys
-//! `[policy]`'s `guards.forge`), never a session record or any file a chat writes. It never
+//! `[policy]`'s `lineage`, an allowance on by default whose strict value is `deny`), never a
+//! session record or any file a chat writes. It never
 //! reaches a protected branch or a delete: the route refuses those before it reads an owner.
 //! **The confirmed push is then recorded under the pusher**, so the task can no longer move the
 //! branch. The link runs one way: a task never moves a branch of the chat that dispatched it.
@@ -144,6 +145,12 @@ pub fn record(
 
 /// [`record`], saying how the lines came to be written ([`Via`]): the route's confirmed push
 /// is [`Via::Route`] (`forgeroute`'s `record_created`), the person's Allow [`Via::Allow`].
+///
+/// **A branch a chat owns by the person's Allow, or by a line with no `via`, stays non-lineage
+/// when the chat pushes it again through the route**: the later line keeps the earlier one's
+/// marker, so the Allow never becomes a route push one push later and so never chains to the
+/// chat that asked for the child ([`tip_for`]). Only a branch the chat made through the route
+/// itself, or took up by lineage from another chat, is a route line.
 pub fn record_via(
     config_root: &Path,
     project_id: &str,
@@ -154,16 +161,33 @@ pub fn record_via(
     let lines: Vec<Line> = created
         .iter()
         .filter(|c| c.repo_id.is_some())
-        .map(|c| Line {
-            project_id: Some(project_id.to_owned()),
-            chat: chat.to_owned(),
-            host: c.host.clone(),
-            repo: c.repo.clone(),
-            repo_id: c.repo_id,
-            branch: c.branch.clone(),
-            tip: c.tip.clone(),
-            gone: false,
-            via,
+        .map(|c| {
+            let via = match (via, c.repo_id) {
+                (Some(Via::Route), Some(repo_id)) => {
+                    match owner_line(config_root, &c.host, repo_id, &c.branch) {
+                        Some(earlier)
+                            if earlier.project == project_id
+                                && earlier.chat == chat
+                                && earlier.via != Some(Via::Route) =>
+                        {
+                            earlier.via
+                        }
+                        _ => via,
+                    }
+                }
+                _ => via,
+            };
+            Line {
+                project_id: Some(project_id.to_owned()),
+                chat: chat.to_owned(),
+                host: c.host.clone(),
+                repo: c.repo.clone(),
+                repo_id: c.repo_id,
+                branch: c.branch.clone(),
+                tip: c.tip.clone(),
+                gone: false,
+                via,
+            }
         })
         .collect();
     append(config_root, &lines)
@@ -372,6 +396,121 @@ mod tests {
             );
             assert_eq!(tip.is_some(), lets, "{via:?}");
         }
+    }
+
+    #[test]
+    fn a_later_route_push_of_a_branch_the_person_allowed_stays_non_lineage() {
+        let dir = tempfile::tempdir().unwrap();
+        let yes = |_: &str| true;
+        let lineage = || {
+            tip_for(
+                dir.path(),
+                PROJECT,
+                "parent",
+                "github.com",
+                REPO_ID,
+                "cut",
+                &yes,
+            )
+        };
+        record_via(
+            dir.path(),
+            PROJECT,
+            "child",
+            &[made("cut")],
+            Some(Via::Allow),
+        )
+        .unwrap();
+        record_via(
+            dir.path(),
+            PROJECT,
+            "child",
+            &[made("cut")],
+            Some(Via::Route),
+        )
+        .unwrap();
+        record_via(
+            dir.path(),
+            PROJECT,
+            "child",
+            &[made("cut")],
+            Some(Via::Route),
+        )
+        .unwrap();
+        assert_eq!(
+            lineage(),
+            None,
+            "the Allow is not a route push, however often it moves"
+        );
+        let owner = owner_line(dir.path(), "github.com", REPO_ID, "cut").unwrap();
+        assert_eq!(owner.via, Some(Via::Allow));
+        // An unmarked line stays unmarked.
+        record(dir.path(), PROJECT, "child", &[made("old")]).unwrap();
+        record_via(
+            dir.path(),
+            PROJECT,
+            "child",
+            &[made("old")],
+            Some(Via::Route),
+        )
+        .unwrap();
+        let owner = owner_line(dir.path(), "github.com", REPO_ID, "old").unwrap();
+        assert_eq!(owner.via, None);
+    }
+
+    #[test]
+    fn a_branch_a_chat_made_through_the_route_stays_a_route_line_and_a_new_owner_starts_one() {
+        let dir = tempfile::tempdir().unwrap();
+        record_via(
+            dir.path(),
+            PROJECT,
+            "child",
+            &[made("cut")],
+            Some(Via::Route),
+        )
+        .unwrap();
+        record_via(
+            dir.path(),
+            PROJECT,
+            "child",
+            &[made("cut")],
+            Some(Via::Route),
+        )
+        .unwrap();
+        let via = |branch: &str| {
+            owner_line(dir.path(), "github.com", REPO_ID, branch)
+                .unwrap()
+                .via
+        };
+        assert_eq!(via("cut"), Some(Via::Route));
+        // The person's Allow of a branch another chat owned does not make the new owner's later
+        // route push a route line; a route push of another chat's branch (lineage) does.
+        record_via(
+            dir.path(),
+            PROJECT,
+            "other",
+            &[made("cut")],
+            Some(Via::Allow),
+        )
+        .unwrap();
+        record_via(
+            dir.path(),
+            PROJECT,
+            "other",
+            &[made("cut")],
+            Some(Via::Route),
+        )
+        .unwrap();
+        assert_eq!(via("cut"), Some(Via::Allow));
+        record_via(
+            dir.path(),
+            PROJECT,
+            "third",
+            &[made("cut")],
+            Some(Via::Route),
+        )
+        .unwrap();
+        assert_eq!(via("cut"), Some(Via::Route));
     }
 
     #[test]

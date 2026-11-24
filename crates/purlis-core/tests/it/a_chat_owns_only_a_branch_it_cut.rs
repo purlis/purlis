@@ -1026,6 +1026,105 @@ fn a_parent_is_refused_the_branch_of_a_task_that_fails_any_one_condition_of_line
     }
 }
 
+/// What a project commits to protect its integration branches: exact names.
+const PROTECTING: &str = "[risk]\nprotected_branches = [\"m75-policy\", \"phase-1-proven\"]\n";
+
+#[test]
+fn a_task_branch_shaped_like_a_slice_is_taken_up_whether_or_not_the_project_protects_its_milestones()
+ {
+    purlis_core::unsteered!();
+    for branch in [
+        "m75-20-grants-and-nevers-7029-me7gkfx1",
+        "phase-1-proven-prs-take-the-new-base-d0d8j23f",
+        "m76-3-foo",
+    ] {
+        for committed in [None, Some(PROTECTING)] {
+            let (config, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+            if let Some(text) = committed {
+                std::fs::write(project.path().join("charter.toml"), text).unwrap();
+            }
+            let w = a_world_whose_chat_dispatched_the_task_that_made(
+                config.path(),
+                project.path(),
+                branch,
+            );
+            assert_eq!(the_chat_pushes(&w, branch), 200, "{branch} {committed:?}");
+        }
+    }
+}
+
+#[test]
+fn a_project_that_denies_lineage_refuses_a_parent_the_branch_and_one_that_says_nothing_allows_it() {
+    purlis_core::unsteered!();
+    for (policy, status) in [
+        (None, 200),
+        (Some("[policy]\nlineage = \"allow\"\n"), 200),
+        (Some("[policy]\nguards.forge = \"off\"\n"), 200),
+        (Some("[policy]\nlineage = \"deny\"\n"), REFUSED),
+        (
+            Some("[policy]\nlineage = \"deny\"\nguards.forge = \"off\"\n"),
+            REFUSED,
+        ),
+    ] {
+        let (config, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        if let Some(text) = policy {
+            std::fs::write(project.path().join("charter.toml"), text).unwrap();
+        }
+        let w = a_world_whose_chat_dispatched_the_task_that_made(
+            config.path(),
+            project.path(),
+            "task/work",
+        );
+        assert_eq!(the_chat_pushes(&w, "task/work"), status, "{policy:?}");
+        if status == REFUSED {
+            assert!(w.fake.requests().is_empty(), "{policy:?}: never sent");
+        }
+    }
+}
+
+#[test]
+fn a_branch_the_person_allowed_is_no_lineage_after_the_child_pushes_it_again_through_the_route() {
+    purlis_core::unsteered!();
+    let (config, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let w = a_world_with(
+        config.path(),
+        project.path(),
+        &Task {
+            via: Some(createdbranches::Via::Allow),
+            ..Task::good("task/work")
+        },
+    );
+    // The child's next push, confirmed by the forge through the route, as `record_created` writes it.
+    createdbranches::record_via(
+        config.path(),
+        PROJECT,
+        "task-chat",
+        &[CreatedBranch {
+            tip: "2".repeat(40),
+            ..made("task/work")
+        }],
+        Some(createdbranches::Via::Route),
+    )
+    .unwrap();
+    // The child has ended (the world's task did), and the parent, from the child's new tip, is
+    // still refused.
+    assert_eq!(
+        push_moving(
+            &w,
+            "task/work",
+            &"2".repeat(40),
+            &"3".repeat(40),
+            accepted("task/work")
+        ),
+        REFUSED
+    );
+    assert!(w.fake.requests().is_empty(), "never sent");
+    assert_eq!(
+        createdbranches::owner_of(config.path(), HOST, REPO_ID, "task/work").map(|o| o.1),
+        Some("task-chat".to_owned())
+    );
+}
+
 #[test]
 fn a_protected_or_integration_branch_is_refused_even_where_lineage_would_allow_it() {
     purlis_core::unsteered!();
@@ -1037,6 +1136,8 @@ fn a_protected_or_integration_branch_is_refused_even_where_lineage_would_allow_i
         "m75-policy",
     ] {
         let (config, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        // The project names its integration branches itself, exactly.
+        std::fs::write(project.path().join("charter.toml"), PROTECTING).unwrap();
         let w =
             a_world_whose_chat_dispatched_the_task_that_made(config.path(), project.path(), branch);
         // The record would let the parent have it...
