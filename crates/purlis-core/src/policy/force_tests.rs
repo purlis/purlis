@@ -1033,6 +1033,7 @@ fn start_in(root: &Path, standing: Standing) -> Decision {
         &crate::policy::decide::Sealed {
             standing,
             machine: None,
+            chat: None,
         },
     )
 }

@@ -5019,6 +5019,24 @@ write into this folder cannot make its own text arrive as the person's.
   included), `imported_nevers` the mark that the person's existing nevers were imported once
   (Q320). Kinds: `accepted`, `acceptance`, `grant`, `never`, `never-marker`, `pass`, `floor`,
   `past-the-cap`.
+- **Grants and nevers at an ask** (M75 slice 20, #7029; spec §6.6, §8.6 to §8.9; no new store, a
+  format for two kinds of this one). A `grant` entry's text is one JSON object `{v: 1, kind:
+  "ask-grant", scope, rule, action, resource_kind, resource, narrowing, chat?, workspace?}`:
+  `scope` is `once`, `this chat`, `this workspace` or `everywhere`; `rule` the `@id` it covers;
+  `narrowing` the context fields the request carried besides the host's own (`sandbox`,
+  `attended`, `machine`, `harness_mode`, `depth`), such as `force` or `port`; `chat` the asking
+  chat's ULID (required for `once` and `this chat`) and `workspace` (required for `this
+  workspace`). It serves only an ask whose deciding rule, action, resource and narrowing all
+  equal its own, only within the scope the deciding rules' `@keep` and `[policy.locks] keep` still
+  offer, and only for that chat or workspace; a text that does not read is no answer. Grants of
+  every scope are sealed in the plane's own store (a plane holds several workspaces). **A Once
+  grant is taken out of the store, under a commit, before it serves.** A grant whose rule is no
+  longer deciding serves nothing (`policy::grants::lost` names the ones to take out of the store;
+  taking them out is not wired yet). A `never` entry's text is either this build's
+  `{v: 1, kind: "ask-never", scope, action, resource_kind, resource, workspace?}` (`scope` `this
+  workspace`, in the plane's store, or `everywhere`, in the machine-level entry) or an earlier
+  build's `asking -> target` (the dispatch family's); **a text that is neither denies every
+  action in every mode**. Same store, same tier.
 - **The accepted copy and the accepted floor** (M75 slice 14, #7023; spec §9.1): the `accepted`
   entry's text and each `floor` entry's is **one JSON object, a version of the project as it was
   held**: `settings_file` and `settings` (the project file's name and text as `HEAD` held them),

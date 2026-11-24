@@ -42,6 +42,7 @@ use crate::secrets::answers::{self, Standing};
 
 use super::deny_state::{self, DenyState};
 use super::force;
+use super::grants;
 use super::levels::{self, Chat, Loaded, Named};
 use super::organisation;
 use super::{EVERYTHING_ELSE, File, Level, Question, World, family_of, read_file};
@@ -466,9 +467,27 @@ fn scoped(loaded: &Loaded, mut decision: Decision) -> Decision {
         .filter_map(|d| loaded.policy.rule(&d.id))
         .collect();
     let at = |w: &String| super::KEEPS.iter().position(|k| k == w).unwrap_or(0);
+    // The scope lock (`[policy.locks] keep`, for everything or per family) caps every ask: the
+    // narrowest of the rules' `@keep` and the locks' words is the widest scope offered (M75-20).
+    let locked: Vec<String> = if decision.outcome == Outcome::Ask {
+        [&loaded.organisation_locks, &loaded.project_locks]
+            .into_iter()
+            .flat_map(|locks| {
+                locks.keep.iter().chain(
+                    [&decision.family, &decision.mode_family]
+                        .into_iter()
+                        .filter_map(|family| locks.keep_per_family.get(family)),
+                )
+            })
+            .cloned()
+            .collect()
+    } else {
+        Vec::new()
+    };
     decision.keep = rules
         .iter()
         .filter_map(|r| r.keep.clone())
+        .chain(locked)
         .min_by_key(|w| at(w));
     let rank = |w: &String| match super::TIMEDS.iter().position(|t| t == w).unwrap_or(0) {
         2 => 0,
@@ -617,6 +636,9 @@ pub struct Sealed {
     pub standing: Standing,
     /// The confirmed device id ([`answers::context_machine`]); unset until the person confirmed it.
     pub machine: Option<String>,
+    /// The asking chat's ULID, which a Once or This-chat grant is keyed on (M75-20). Unset, no
+    /// grant of those scopes serves.
+    pub chat: Option<String>,
 }
 
 impl Sealed {
@@ -625,6 +647,7 @@ impl Sealed {
         Self {
             standing: answers::standing(root),
             machine: answers::context_machine(),
+            chat: None,
         }
     }
 
@@ -642,6 +665,7 @@ impl Sealed {
         Self {
             standing: Standing::fresh(),
             machine: None,
+            chat: None,
         }
     }
 }
@@ -702,7 +726,16 @@ pub fn in_plane_held_to(
     };
     // The policy in force: the project as committed now and what the person accepted, the
     // stricter winning, and what the app saw tighten sealed into the accepted floor (M75-14).
-    force::in_force(root, &sources, &sealed.standing, &request, floor)
+    let decision = force::in_force(root, &sources, &sealed.standing, &request, floor);
+    // The person's answers: nevers in every mode, then a grant at an ask (M75-20). A Once grant's
+    // use is recorded first, and a use that cannot be recorded does not serve.
+    grants::apply(
+        decision,
+        &request,
+        sealed.chat.as_deref(),
+        &sealed.standing,
+        &mut |text| answers::use_once_grant(root, text).is_ok(),
+    )
 }
 
 /// **Whether an enforcement point asks the host about `action` on a `kind` of resource**: only
