@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795518587004,
+  "lastUpdate": 1795521532732,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53550,6 +53550,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5855185,
             "unit": "ms",
             "extra": "median of 5 runs: 100.879, 101.116, 101.586, 101.618, 101.865 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8842c94058c2334e112373c67bfd7ca553268235",
+          "message": "Stories: Chromium baselines for the Accounts story Clones To Confirm (drawn by main's stories run 45350118571, shard chromium 6/12) (#7512)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86HXPEGFZYX26WVADDMK6GX\nPurlis-Persona: steward",
+          "timestamp": "2026-11-24T11:24:38Z",
+          "tree_id": "92e8a5e8edbf76ffbfc22c8d0c8af5321bbe7aea",
+          "url": "https://github.com/purlis/purlis/commit/8842c94058c2334e112373c67bfd7ca553268235"
+        },
+        "date": 1795521523541,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6906685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.673, 0.677, 0.691, 0.693, 0.700 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.65725,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.589, 16.635, 16.657, 16.687, 16.735 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.083557,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.158, 102.491, 103.084, 103.400, 104.279 ms"
           }
         ]
       }
