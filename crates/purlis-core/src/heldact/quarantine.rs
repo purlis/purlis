@@ -398,6 +398,7 @@ impl Quarantine {
     }
 
     fn read_in(&self, pack: Vec<u8>, tip: &HeadSha, base: &HeadSha) -> Result<(), Refused> {
+        let sent = object_count(&pack);
         let done = git::run_with_input(
             &self.path,
             &["index-pack", "--stdin", "--fix-thin", "--strict"],
@@ -422,12 +423,16 @@ impl Quarantine {
                 },
             );
         }
-        // A tip that is not here is Refused::TipNotHere, which the caller may answer; any other
-        // failure to look is not.
-        match self.has(tip) {
-            Ok(()) => {}
-            Err(Some(why)) => return Err(Refused::Otherwise(why)),
-            Err(None) => return Err(Refused::TipNotHere),
+        // **Only a tip that is an object of the pushed pack is taken here.** Asking the quarantine
+        // (`cat-file -e`) reads through the object cache as an alternate, which holds more than the
+        // advertised history: old base tips since force-pushed away, and the objects of dropped
+        // refs, until gc. Any other tip is Refused::TipNotHere, which the caller answers with the
+        // reachability test; a failure to look is not that.
+        if !self
+            .in_the_pack(&done.out, sent, tip)
+            .map_err(Refused::Otherwise)?
+        {
+            return Err(Refused::TipNotHere);
         }
         // Every object of the push is here: a tip whose tree or blobs are missing has no diff.
         // `--quiet` lists nothing, so a pack of millions of objects needs no cap: only the exit
@@ -445,6 +450,55 @@ impl Quarantine {
         } else {
             Refused::Otherwise(why)
         })
+    }
+
+    /// Whether `tip` is one of the `sent` objects the pack itself held. `index_pack_said` is what
+    /// `index-pack --stdin` printed (`pack\t<name>`); the pack's index lists its objects by offset,
+    /// and the ones `--fix-thin` appended (a delta's base, read through the cache) come after the
+    /// pack's own, so they are left out. Not found, or not readable, is "no": it fails closed.
+    fn in_the_pack(
+        &self,
+        index_pack_said: &[u8],
+        sent: usize,
+        tip: &HeadSha,
+    ) -> Result<bool, String> {
+        let said = String::from_utf8_lossy(index_pack_said);
+        let Some(name) = said
+            .lines()
+            .find_map(|line| line.strip_prefix("pack\t"))
+            .map(str::trim)
+            .filter(|name| !name.is_empty() && name.bytes().all(|b| b.is_ascii_hexdigit()))
+        else {
+            return Ok(false);
+        };
+        if sent == 0 {
+            return Ok(false);
+        }
+        let idx = self
+            .path
+            .join(".git")
+            .join("objects")
+            .join("pack")
+            .join(format!("pack-{name}.idx"));
+        let idx = std::fs::read(idx).map_err(|why| why.to_string())?;
+        let listed = git::run_with_input(&self.path, &["show-index"], idx, git::READ)
+            .map_err(|why| why.to_string())?;
+        if listed.code != Some(0) {
+            return Err("git could not read the pushed pack's index".to_owned());
+        }
+        let mut objects: Vec<(u64, String)> = String::from_utf8_lossy(&listed.out)
+            .lines()
+            .filter_map(|line| {
+                let mut fields = line.split_whitespace();
+                let offset = fields.next()?.parse().ok()?;
+                Some((offset, fields.next()?.to_ascii_lowercase()))
+            })
+            .collect();
+        objects.sort_unstable();
+        Ok(objects
+            .iter()
+            .take(sent)
+            .any(|(_, id)| id == &tip.as_str().to_ascii_lowercase()))
     }
 
     fn walk(&self, tip: &HeadSha, base: &HeadSha, missing: &str) -> Result<git::Run, Refused> {
@@ -499,7 +553,7 @@ impl Quarantine {
             Err(Refused::TipNotHere) => return self.take_in_from_refs(tip, base, from),
             Err(Refused::ForWantOfObjects(why)) => why,
         };
-        let tips = self.advertised_tips(from);
+        let (tips, cut) = self.advertised_tips(from);
         if tips.is_empty() {
             return Err(first);
         }
@@ -507,24 +561,29 @@ impl Quarantine {
         match self.read_in(pack.to_vec(), tip, base) {
             Ok(()) => Ok(()),
             // A pack of other objects, with the tip in none of them.
-            Err(Refused::TipNotHere) => self.reachable_from(&tips, tip, base),
+            Err(Refused::TipNotHere) => self.reachable_from(&tips, cut, tip, base),
             Err(Refused::ForWantOfObjects(why) | Refused::Otherwise(why)) => Err(why),
         }
     }
 
     /// The advertised branch tips: distinct, full ids, at most [`KNOWN_AT_MOST`]; empty where the
-    /// forge did not answer.
-    fn advertised_tips(&self, from: &dyn BaseObjects) -> Vec<HeadSha> {
+    /// forge did not answer. The flag is whether more were advertised than were kept.
+    fn advertised_tips(&self, from: &dyn BaseObjects) -> (Vec<HeadSha>, bool) {
         let Some(advertised) = from.advertised(&self.path) else {
-            return Vec::new();
+            return (Vec::new(), false);
         };
         let mut seen = std::collections::HashSet::new();
-        advertised
+        let distinct: Vec<&String> = advertised
             .iter()
             .filter(|id| seen.insert(id.to_ascii_lowercase()))
+            .collect();
+        let cut = distinct.len() > KNOWN_AT_MOST;
+        let tips = distinct
+            .into_iter()
             .take(KNOWN_AT_MOST)
             .filter_map(|id| HeadSha::try_from(id.as_str()).ok())
-            .collect()
+            .collect();
+        (tips, cut)
     }
 
     /// The pushed tip is no object of the pack: it is taken only if it is in this repo's own
@@ -535,7 +594,7 @@ impl Quarantine {
         base: &HeadSha,
         from: &dyn BaseObjects,
     ) -> Result<(), String> {
-        let tips = self.advertised_tips(from);
+        let (tips, cut) = self.advertised_tips(from);
         if tips.is_empty() {
             return Err(
                 "the repo's branches could not be read from the forge, so the commit could not be \
@@ -544,7 +603,7 @@ impl Quarantine {
             );
         }
         from.fetch_all(&self.path, &tips)?;
-        self.reachable_from(&tips, tip, base)
+        self.reachable_from(&tips, cut, tip, base)
     }
 
     /// `tip` is here, and reachable from one of `tips` (fetched), and the range from `base` is
@@ -552,14 +611,25 @@ impl Quarantine {
     fn reachable_from(
         &self,
         tips: &[HeadSha],
+        cut: bool,
         tip: &HeadSha,
         base: &HeadSha,
     ) -> Result<(), String> {
         let unknown = || {
-            format!(
-                "it names commit {}, which is neither in the push nor in a branch of this repo",
-                short(tip)
-            )
+            if cut {
+                // Not found among the first KNOWN_AT_MOST branches: it may be on one past them.
+                format!(
+                    "it names commit {}, which is not in the push, and this repo has more branches \
+                     than the {KNOWN_AT_MOST} that can be checked, so the branch list was too long \
+                     to check it against",
+                    short(tip)
+                )
+            } else {
+                format!(
+                    "it names commit {}, which is neither in the push nor in a branch of this repo",
+                    short(tip)
+                )
+            }
         };
         match self.has(tip) {
             Ok(()) => {}
@@ -627,6 +697,15 @@ impl Drop for Quarantine {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.path);
     }
+}
+
+/// The object count in a pack's header (`PACK`, a version, the count), 0 where there is no header.
+fn object_count(pack: &[u8]) -> usize {
+    pack.get(8..12)
+        .filter(|_| pack.starts_with(b"PACK"))
+        .map_or(0, |bytes| {
+            u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize
+        })
 }
 
 fn short(commit: &HeadSha) -> &str {

@@ -13,7 +13,7 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use purlis_core::forge::Kind;
-use purlis_core::heldact::{BaseObjects, PushCheck, Quarantine, check_push_since};
+use purlis_core::heldact::{BaseObjects, ObjectCache, PushCheck, Quarantine, check_push_since};
 use purlis_core::mergehold::HeadSha;
 
 use crate::support::git;
@@ -761,4 +761,92 @@ fn a_pushed_tip_is_never_fetched_by_name() {
     for tip in [&s.fork_only, &s.dangling] {
         assert!(!named.contains(tip), "{tip:?} was asked of the forge by id");
     }
+}
+
+/// A forge whose objects a quarantine also reads through a cache that holds `dangling`: an old
+/// base tip, since force-pushed away, that no advertised branch reaches.
+struct CachedForge {
+    inner: LocalForge,
+    cache: std::sync::Arc<ObjectCache>,
+}
+
+impl BaseObjects for CachedForge {
+    fn fetch(&self, into: &Path, base: &HeadSha) -> Result<(), String> {
+        self.inner.fetch(into, base)
+    }
+
+    fn advertised(&self, into: &Path) -> Option<Vec<String>> {
+        self.inner.advertised(into)
+    }
+
+    fn cache(&self) -> Option<std::sync::Arc<ObjectCache>> {
+        Some(self.cache.clone())
+    }
+}
+
+fn forge_with_the_dangling_commit_cached(s: &Scene, parent: &Path) -> CachedForge {
+    let cache = ObjectCache::of(parent, "example.test", "owner/repo");
+    std::fs::create_dir_all(cache.path()).unwrap();
+    git(cache.path(), &["init", "-q", "."]);
+    git(
+        cache.path(),
+        &[
+            "fetch",
+            "-q",
+            "--no-tags",
+            &s.forge.to_string_lossy(),
+            s.dangling.as_str(),
+        ],
+    );
+    CachedForge {
+        inner: forge_of(s, false),
+        cache,
+    }
+}
+
+#[test]
+fn a_tip_only_the_object_cache_holds_is_refused_as_an_empty_pack() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let parent = tempfile::tempdir().unwrap();
+    let forge = forge_with_the_dangling_commit_cached(&s, parent.path());
+    let why = pushed(
+        &s,
+        &forge,
+        &s.default_tip,
+        false,
+        &s.dangling,
+        &empty_pack(&s),
+    )
+    .expect_err("refused");
+    assert!(why.contains(OUTSIDE), "{why}");
+}
+
+#[test]
+fn a_tip_only_the_object_cache_holds_is_refused_beside_a_pack_of_other_objects() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let parent = tempfile::tempdir().unwrap();
+    let forge = forge_with_the_dangling_commit_cached(&s, parent.path());
+    let other = task_commit(&s, |chat| write(chat, "src/new.txt", "new\n"));
+    let pack = pack_of(&s.chat, &other, &s.integration);
+    let why = pushed(&s, &forge, &s.default_tip, false, &s.dangling, &pack).expect_err("refused");
+    assert!(why.contains(OUTSIDE), "{why}");
+}
+
+#[test]
+fn a_tip_a_branch_holds_is_still_read_where_the_object_cache_holds_it_too() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let parent = tempfile::tempdir().unwrap();
+    let forge = forge_with_the_dangling_commit_cached(&s, parent.path());
+    pushed(
+        &s,
+        &forge,
+        &s.default_tip,
+        false,
+        &s.integration,
+        &empty_pack(&s),
+    )
+    .expect("read");
 }

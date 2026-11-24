@@ -707,7 +707,7 @@ fn the_tips_the_forge_no_longer_advertises_are_dropped() {
 }
 
 #[test]
-fn a_push_of_commits_the_cache_holds_but_the_base_does_not_is_still_held_for_its_ci_files() {
+fn a_push_of_a_commit_the_cache_holds_is_held_for_its_ci_files_when_the_pack_carries_it() {
     purlis_core::unsteered!();
     let s = scene();
     // Another branch of the forge changes the CI file, and the cache comes to hold its commit.
@@ -728,12 +728,18 @@ fn a_push_of_commits_the_cache_holds_but_the_base_does_not_is_still_held_for_its
         s.cache().path(),
         &["cat-file", "-e", &format!("{}^{{commit}}", evil.as_str())],
     );
-    // The chat pushes that commit with a pack that leaves out everything the cache holds.
     git(&s.chat, &["fetch", "-q", "origin", "other"]);
+    // A pack that leaves out everything the cache holds does not make the tip an object of the
+    // push: the cache is no proof a branch reaches it, so it is refused.
+    let bare = Quarantine::open(s.quarantines.path(), &s.base, &s.from()).unwrap();
+    assert!(
+        bare.take_in(pack_of(&s.chat, &evil, &evil), &evil, &s.base)
+            .is_err()
+    );
+    // The commit sent in the pack is taken in, and its CI file read against the base.
     let quarantine = Quarantine::open(s.quarantines.path(), &s.base, &s.from()).unwrap();
-    // The pack is taken in: the check below is of what the cache supplies, not of a refusal.
     quarantine
-        .take_in(pack_of(&s.chat, &evil, &evil), &evil, &s.base)
+        .take_in(pack_of(&s.chat, &evil, &s.base), &evil, &s.base)
         .expect("git takes the pack in");
     match check_push_since(
         Kind::GitHub,
