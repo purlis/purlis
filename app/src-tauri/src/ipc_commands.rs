@@ -602,6 +602,7 @@ macro_rules! app_commands {
                 knowngaps::chat_known_gaps,
                 answers::answers_shown,
                 answers::confirm_device_id,
+                answers::set_windows_hello,
                 blockways::tell_chat_blocked,
                 dispatched::task_question,
                 dispatched::task_question_answered,

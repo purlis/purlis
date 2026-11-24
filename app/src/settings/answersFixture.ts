@@ -12,7 +12,19 @@ export const HOLDS: AnswersShown = {
   import_failed: null,
   notices: [],
   device: { state: "confirmed", id: "01JABCDEFGHJKMNPQRSTVWXYZ0" },
+  hello: { state: "unavailable", gap: null },
 };
+
+const FULL_GAP =
+  "declared gap: on Windows any program you run can read the key purlis seals your answers with.";
+const NARROWED_GAP =
+  "declared gap, narrowed: the seal key is released only after Windows Hello at each start.";
+
+/** A Windows machine with the opt-in off: the full gap. */
+export const HELLO_OFF: AnswersShown = { ...HOLDS, hello: { state: "off", gap: FULL_GAP } };
+
+/** A Windows machine with the opt-in on: the gap narrowed, never closed. */
+export const HELLO_ON: AnswersShown = { ...HOLDS, hello: { state: "on", gap: NARROWED_GAP } };
 
 export const WAITING_FOR_CONFIRM: AnswersShown = {
   ...HOLDS,

@@ -31,19 +31,16 @@ const MOVED: &str = "answers moved plane";
 
 /// **The declared seal gap** (Q309 point 4, Q319 C6, Q320a N1 and N4), as the research words it.
 /// `None` on macOS, where the Keychain holds the seal key to the app.
-pub(super) fn seal_gap_row(os: Os) -> Option<Row> {
+pub(super) fn seal_gap_row(os: Os, hello_on: bool) -> Option<Row> {
     let detail = match os {
+        // With the opt-in on the gap is narrowed, and said to be (Q320a N1; review round 2, F2-B1).
+        Os::Windows if hello_on => crate::secrets::hello::NARROWED,
         Os::Linux => {
             "declared gap: on Linux any program you run can read the key purlis seals your \
              answers with, so the seal stops a hand edit and a sandboxed chat only. Asking for a \
              password each time purlis starts narrows the gap and does not close it."
         }
-        Os::Windows => {
-            "declared gap: on Windows any program you run can read the key purlis seals your \
-             answers with, and purlis has no Windows sandbox yet, so the seal stops hand edits \
-             only. Confirming with Windows Hello each time purlis starts narrows the gap and does \
-             not close it."
-        }
+        Os::Windows => crate::secrets::hello::FULL,
         Os::MacOs | Os::Other => return None,
     };
     Some(Row::ok(SEAL, detail))
@@ -198,7 +195,10 @@ pub(super) fn answers(d: &Doctor) -> Vec<Row> {
         return Vec::new();
     }
     let mut rows = Vec::new();
-    rows.extend(seal_gap_row(Os::this()));
+    rows.extend(seal_gap_row(
+        Os::this(),
+        crate::secrets::seal::hello_is_on(),
+    ));
     let standing = answers::standing(&d.root);
     let view = if standing.state == State::Unverifiable {
         DeviceView::NotChecked

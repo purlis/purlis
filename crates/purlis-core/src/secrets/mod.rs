@@ -38,6 +38,7 @@ pub mod dotenv;
 pub mod exec;
 pub mod fingerprint;
 pub mod handedto;
+pub mod hello;
 pub mod identity;
 pub mod keyhold;
 pub mod keyring;

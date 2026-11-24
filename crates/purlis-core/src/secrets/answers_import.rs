@@ -85,6 +85,13 @@ pub fn import_nevers(root: &Path) -> io::Result<Import> {
                  stay as they were, and nothing is allowed until the key opens",
             ));
         }
+        KeyState::Unconfirmed => {
+            return Err(io::Error::other(
+                "Windows Hello was not confirmed when purlis started, so it did not import your \
+                 nevers: they stay as they were, and nothing is allowed until you quit purlis, \
+                 open it again and confirm",
+            ));
+        }
     }
     let _turn = store_lock()?;
     let here = standing_with(root, false);

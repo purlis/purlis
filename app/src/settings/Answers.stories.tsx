@@ -9,7 +9,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent } from "storybook/test";
 import { AnswersView } from "./Answers";
-import { DENIED, HOLDS, WAITING_FOR_CONFIRM } from "./answersFixture";
+import { DENIED, HELLO_OFF, HELLO_ON, HOLDS, WAITING_FOR_CONFIRM } from "./answersFixture";
 import { expectFocusInSight, untilFocused } from "../stories.testkit";
 
 const meta = {
@@ -18,6 +18,7 @@ const meta = {
     shown: HOLDS,
     busy: false,
     onConfirm: fn(),
+    onHello: fn(),
     ids: { id: "sealed-answers", labelledBy: undefined },
   },
   parameters: { screenshot: "page" },
@@ -55,5 +56,36 @@ export const Denied: Story = {
   play: async ({ canvas }) => {
     await expect(canvas.getByText(/deny state/)).toBeVisible();
     await expect(canvas.queryByRole("button")).toBeNull();
+  },
+};
+
+/** Windows, the opt-in off: the full gap is declared, and the keyboard reaches Turn on. */
+export const WindowsHelloOff: Story = {
+  args: { shown: HELLO_OFF },
+  play: async ({ canvas, args }) => {
+    await expect(canvas.getByText(/Declared gap: on Windows/)).toBeVisible();
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Turn on Windows Hello…" }),
+      "the keyboard reaches Turn on Windows Hello",
+    );
+    expectFocusInSight();
+    await userEvent.keyboard("{Enter}");
+    await expect(args.onHello).toHaveBeenCalledWith(true);
+  },
+};
+
+/** Windows, the opt-in on: the gap is narrowed, never closed, and Turn off asks Hello again. */
+export const WindowsHelloOn: Story = {
+  args: { shown: HELLO_ON },
+  play: async ({ canvas, args }) => {
+    await expect(canvas.getByText(/Declared gap, narrowed/)).toBeVisible();
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Turn off Windows Hello…" }),
+      "the keyboard reaches Turn off Windows Hello",
+    );
+    await userEvent.keyboard("{Enter}");
+    await expect(args.onHello).toHaveBeenCalledWith(false);
   },
 };

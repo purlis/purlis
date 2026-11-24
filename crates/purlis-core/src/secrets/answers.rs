@@ -204,6 +204,12 @@ pub struct Registered {
 pub const NO_KEYRING_NOTICE: &str = "This machine has no keyring purlis can use, so it cannot seal \
      your answers and the shipped default applies. Nothing you answer is kept.";
 
+/// What the window says where Windows Hello was not confirmed on a fresh install: nothing was
+/// sealed, so the shipped default applies and nothing is lost.
+pub const HELLO_UNCONFIRMED_NOTICE: &str = "Windows Hello was not confirmed when purlis started, so \
+     it cannot seal your answers and the shipped default applies. Quit purlis and open it again \
+     to confirm.";
+
 /// What doctor says of the answer store.
 ///
 /// The declared seal gap on Linux and Windows is the keyring's own ([`super::keyring::Held`]);
@@ -1348,6 +1354,18 @@ fn standing_with(root: &Path, import_counts: bool) -> Standing {
             return standing;
         }
         KeyState::Locked => return Standing::of(State::Deny(vec![Deny::SealKeyLocked])),
+        // The Windows Hello opt-in is on and was not confirmed: the key stays locked. On an
+        // anchored plane (a store is kept here) that is the deny state; only on a fresh install
+        // does the shipped default apply (spec §4.6; review round 5, FB5-B1).
+        KeyState::Unconfirmed => {
+            return if on_disk {
+                Standing::of(State::Deny(vec![Deny::SealKeyLocked]))
+            } else {
+                let mut standing = Standing::of(State::Fresh);
+                standing.notices.push(HELLO_UNCONFIRMED_NOTICE.to_owned());
+                standing
+            };
+        }
         KeyState::Usable | KeyState::NotTheApp => {}
     }
     let registry = read_registry();
@@ -1469,6 +1487,16 @@ pub fn everywhere_standing() -> Standing {
     }
     if key == KeyState::Locked {
         return Standing::of(State::Deny(vec![Deny::SealKeyLocked]));
+    }
+    if key == KeyState::Unconfirmed {
+        let kept = everywhere_place().is_some_and(|place| store_exists(&place));
+        return if kept {
+            Standing::of(State::Deny(vec![Deny::SealKeyLocked]))
+        } else {
+            let mut standing = Standing::of(State::Fresh);
+            standing.notices.push(HELLO_UNCONFIRMED_NOTICE.to_owned());
+            standing
+        };
     }
     let found = read_everywhere();
     let mut standing = Standing::of(State::Fresh);
@@ -2004,4 +2032,4 @@ pub use moved::{Moved, follow_move};
 
 #[cfg(test)]
 #[path = "answers_tests.rs"]
-mod tests;
+pub(crate) mod tests;

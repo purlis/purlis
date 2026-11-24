@@ -17,6 +17,7 @@ fn machine() -> Machine {
     seal::set_foreign_for_this_test(false);
     seal::set_locked_for_this_test(false);
     seal::set_no_keyring_for_this_test(false);
+    seal::set_unconfirmed_for_this_test(false);
     Machine {
         _home: home,
         dir: tempfile::tempdir().expect("a folder for planes"),
@@ -34,7 +35,7 @@ impl Machine {
 
 /// The person's press in the window.
 #[allow(clippy::disallowed_methods, reason = "a test plays the person's press")]
-fn press() -> Press {
+pub(crate) fn press() -> Press {
     Press::of_the_persons_press()
 }
 
@@ -2192,4 +2193,43 @@ fn a_nested_path_through_a_link_is_not_still_a_folder_of_its_own() {
         "the old project path is a link, so a plane under it is not a folder there"
     );
     assert!(!still_a_folder(&real.join("gone")));
+}
+
+#[test]
+fn a_cancelled_hello_on_an_anchored_plane_is_the_deny_state() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(ACCEPTED, "one")]);
+    // A store is kept for the Everywhere entry too, while the key is still usable.
+    commit_everywhere(|d| d.add(&press(), NEVER, "rm -rf /")).expect("sealed");
+    // The Windows Hello opt-in is on and the person cancelled at the start.
+    seal::set_unconfirmed_for_this_test(true);
+    let standing = standing(&root);
+    assert!(
+        denied_by(&standing, |c| matches!(c, Deny::SealKeyLocked)),
+        "{standing:?}"
+    );
+    let everywhere = everywhere_standing();
+    assert!(
+        matches!(everywhere.state, State::Deny(_)),
+        "{:?}",
+        everywhere.state
+    );
+}
+
+#[test]
+fn a_cancelled_hello_on_a_fresh_install_runs_the_shipped_default() {
+    let m = machine();
+    let root = m.plane("fresh");
+    seal::set_unconfirmed_for_this_test(true);
+    let standing = standing(&root);
+    assert!(matches!(standing.state, State::Fresh), "{standing:?}");
+    assert!(
+        standing
+            .notices
+            .iter()
+            .any(|notice| notice.contains("Windows Hello was not confirmed")),
+        "the window says why: {standing:?}"
+    );
+    assert!(matches!(everywhere_standing().state, State::Fresh));
 }

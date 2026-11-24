@@ -1705,6 +1705,7 @@ export const commands = {
 	chatKnownGaps: (plane: PlaneId, session: number) => typedError<KnownGapShown[], string>(__TAURI_INVOKE("chat_known_gaps", { plane, session })),
 	answersShown: __WINDOW_ONLY_RESULT,
 	confirmDeviceId: __WINDOW_ONLY_RESULT,
+	setWindowsHello: __WINDOW_ONLY_RESULT,
 	tellChatBlocked: __WINDOW_ONLY_RESULT,
 	taskQuestion: __WINDOW_ONLY_RESULT,
 	taskQuestionAnswered: __WINDOW_ONLY_RESULT,
@@ -3356,6 +3357,8 @@ export type AnswersShown = {
 	notices: string[],
 	/**  The device id. */
 	device: DeviceShown,
+	/**  The Windows Hello opt-in. */
+	hello: HelloShown,
 };
 
 /**
@@ -8223,6 +8226,17 @@ export type HeldRemoval = {
 export type HeldRowShown = {
 	label: string,
 	value: string,
+};
+
+/**  The Windows Hello opt-in, as Settings shows it (M75-43). */
+export type HelloShown = {
+	/**  `unavailable` (not Windows: the row offers nothing), `off` or `on`. */
+	state: string,
+	/**
+	 *  The seal's declared gap in force, full with the opt-in off and narrowed with it on, never
+	 *  closed; none where the machine has no such gap to declare.
+	 */
+	gap: string | null,
 };
 
 /**
