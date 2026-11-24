@@ -681,7 +681,14 @@ mod tests {
                 &|owner| owner == "task" && chat == "asker",
             )
         };
-        record(dir.path(), PROJECT, "task", &[made("work")]).unwrap();
+        record_via(
+            dir.path(),
+            PROJECT,
+            "task",
+            &[made("work")],
+            Some(Via::Route),
+        )
+        .unwrap();
         // The task is the owner; its dispatcher may move the branch from the recorded tip.
         assert_eq!(tip("task", PROJECT, REPO_ID), Some("a".repeat(40)));
         assert_eq!(tip("asker", PROJECT, REPO_ID), Some("a".repeat(40)));

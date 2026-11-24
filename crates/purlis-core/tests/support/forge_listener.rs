@@ -214,6 +214,27 @@ impl World {
         )
     }
 
+    /// [`Self::recording_with_dispatches`], the repos also protecting `names` exactly, as the app
+    /// wires a project's `[risk] protected_branches` (`forgeroute`'s `repos`).
+    pub fn recording_with_dispatches_protecting(
+        config: std::path::PathBuf,
+        project: std::path::PathBuf,
+        names: &[&str],
+    ) -> Self {
+        let repos = Self::default_repos()
+            .into_iter()
+            .map(|repo| repo.with_protected_branches(names))
+            .collect();
+        Self::build(
+            repos,
+            Arc::new(purlis_core::forge::pin::NoPin),
+            None,
+            Some(config),
+            Some(project),
+            None,
+        )
+    }
+
     /// [`Self::recording_to`], where an update of a branch the chat has no record of raises the
     /// ask to let it push, in the project at `project`, as the app wires it
     /// ([`purlis_core::windowonly::PushAsks`]): the chat is session [`SESSION`] of that project.

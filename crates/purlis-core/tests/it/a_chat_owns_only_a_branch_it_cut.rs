@@ -709,6 +709,8 @@ struct Task {
     other_workspace: bool,
     /// The chat is the task's grandparent: a chat it asked for asked for the task.
     grandchild: bool,
+    /// The names the project protects, exactly, as the route is wired with them.
+    protecting: &'static [&'static str],
 }
 
 impl Task {
@@ -721,6 +723,7 @@ impl Task {
             other_persona: false,
             other_workspace: false,
             grandchild: false,
+            protecting: &[],
         }
     }
 }
@@ -811,7 +814,11 @@ fn a_world_with(config: &Path, project: &Path, task: &Task) -> World {
         task.via,
     )
     .unwrap();
-    World::recording_with_dispatches(config.to_owned(), project.to_owned())
+    World::recording_with_dispatches_protecting(
+        config.to_owned(),
+        project.to_owned(),
+        task.protecting,
+    )
 }
 
 #[test]
@@ -1138,8 +1145,14 @@ fn a_protected_or_integration_branch_is_refused_even_where_lineage_would_allow_i
         let (config, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         // The project names its integration branches itself, exactly.
         std::fs::write(project.path().join("charter.toml"), PROTECTING).unwrap();
-        let w =
-            a_world_whose_chat_dispatched_the_task_that_made(config.path(), project.path(), branch);
+        let w = a_world_with(
+            config.path(),
+            project.path(),
+            &Task {
+                protecting: &["m75-policy", "phase-1-proven"],
+                ..Task::good(branch)
+            },
+        );
         // The record would let the parent have it...
         let records =
             purlis_core::dispatchrecord::list(&std::fs::canonicalize(project.path()).unwrap());
