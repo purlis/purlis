@@ -56,15 +56,14 @@ pub enum Requested {
 
 impl Requested {
     /// The merge of request `number` of `repo`: what the GraphQL reading hands over for a
-    /// `mergePullRequest` or an `enablePullRequestAutoMerge` it resolved to a recorded repository.
+    /// `mergePullRequest` it resolved to a recorded repository.
     pub fn merge_of(repo: Repo, number: u64) -> Requested {
         Requested::land_of(repo, number, LandAs::Merge)
     }
 
     /// Request `number` of `repo` to be landed by `act`: what the GraphQL reading hands over for
-    /// a `mergePullRequest` ([`LandAs::Merge`]), an `enqueuePullRequest` ([`LandAs::Enqueue`]) or
-    /// an `enablePullRequestAutoMerge` ([`LandAs::AutoMerge`]) it resolved to a recorded
-    /// repository. The person's press performs that act and no other (#7543).
+    /// a `mergePullRequest` ([`LandAs::Merge`]) or an `enqueuePullRequest` ([`LandAs::Enqueue`])
+    /// it resolved to a recorded repository. The person's press performs that act and no other (#7543).
     pub fn land_of(repo: Repo, number: u64, act: LandAs) -> Requested {
         Requested::Merge(Request {
             repo: Some(repo),
@@ -80,10 +79,6 @@ impl Requested {
                 act: LandAs::Enqueue,
                 ..
             }) => "merge-queue entry",
-            Requested::Merge(Request {
-                act: LandAs::AutoMerge,
-                ..
-            }) => "auto-merge",
             Requested::Merge(_) => "merge",
             Requested::Tag { .. } => "tag",
             Requested::Release { .. } => "release",

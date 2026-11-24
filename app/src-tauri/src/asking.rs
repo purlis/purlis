@@ -338,6 +338,7 @@ impl MergeShown {
         base: &str,
         look: purlis_core::mergehold::Look,
         pushed_here: bool,
+        act: purlis_core::mergehold::LandAs,
     ) -> Self {
         use purlis_core::mergehold::Look;
         let (look, approved_by, since_viewed) = match look {
@@ -356,7 +357,7 @@ impl MergeShown {
             approved_by,
             since_viewed,
             pushed_here,
-            digest: facts.digest(),
+            digest: facts.digest(act),
         }
     }
 }
@@ -2191,12 +2192,6 @@ pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
                 key.repo.as_str(),
                 &key.head.as_str()[..12]
             ),
-            LandAs::AutoMerge => format!(
-                "Turn on auto-merge for request {} of {} at {}?",
-                key.number,
-                key.repo.as_str(),
-                &key.head.as_str()[..12]
-            ),
         }),
         options: vec![
             Offered {
@@ -2204,7 +2199,6 @@ pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
                 label: match waits.act {
                     LandAs::Merge => "Merge",
                     LandAs::Enqueue => "Enqueue",
-                    LandAs::AutoMerge => "Turn on auto-merge",
                 }
                 .to_owned(),
                 allows: true,
@@ -2224,6 +2218,7 @@ pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
                 key.base.as_str(),
                 waits.look.clone(),
                 waits.pushed_here,
+                waits.act,
             ),
         },
         // Since when is the registry's to say, as for every ask (`Waiting::since`).

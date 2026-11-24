@@ -575,22 +575,31 @@ fn reread_shown(
     head: &str,
 ) -> Result<MergeReread, String> {
     let (now, facts, _) = reread(held, session, repo, number, head, Reread::AsksOnceMore)?;
-    let (look, pushed_here) = looked(held.merge_holds(), session, &now);
+    let (look, pushed_here, act) = looked(held.merge_holds(), session, &now);
     Ok(MergeReread {
         head: now.head.as_str().to_owned(),
-        facts: MergeShown::of(&facts, now.base.as_str(), look, pushed_here),
+        facts: MergeShown::of(&facts, now.base.as_str(), look, pushed_here, act),
     })
 }
 
 /// What the person has seen of chat `session`'s ask at `key`, and whether its chat pushed it.
-fn looked(holds: &MergeHolds, session: u32, key: &MergeKey) -> (mergehold::Look, bool) {
+fn looked(
+    holds: &MergeHolds,
+    session: u32,
+    key: &MergeKey,
+) -> (mergehold::Look, bool, mergehold::LandAs) {
     holds
         .every()
         .into_iter()
         .find(|one| one.session == session && one.key == *key)
-        .map_or((mergehold::Look::NotViewed { since: None }, false), |one| {
-            (one.look, one.pushed_here)
-        })
+        .map_or(
+            (
+                mergehold::Look::NotViewed { since: None },
+                false,
+                mergehold::LandAs::Merge,
+            ),
+            |one| (one.look, one.pushed_here, one.act),
+        )
 }
 
 /// **View changes**, pressed on chat `session`'s merge ask (R-302): the changes of request

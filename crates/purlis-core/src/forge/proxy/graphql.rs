@@ -159,9 +159,10 @@ fn merge_mutation(kind: Kind, name: &str) -> bool {
 }
 
 /// **The act a merge mutation asks for**, which the person's press performs (#7543): a merge
-/// now, a place in the merge queue, or auto-merge. Each is held as the act it names and never as
-/// another: the press of an enqueue enqueues and never merges. Undoing one
-/// (`disablePullRequestAutoMerge`, `dequeuePullRequest`) is never held.
+/// now or a place in the merge queue. Each is held as the act it names and never as another: the
+/// press of an enqueue enqueues and never merges. Auto-merge is not held
+/// ([`unheld_merge_said`]), and undoing one (`disablePullRequestAutoMerge`,
+/// `dequeuePullRequest`) is never held.
 pub(super) fn merge_act(kind: Kind, name: &str) -> Option<crate::mergehold::LandAs> {
     use crate::mergehold::LandAs;
     match (kind, name) {
@@ -169,8 +170,49 @@ pub(super) fn merge_act(kind: Kind, name: &str) -> Option<crate::mergehold::Land
             Some(LandAs::Merge)
         }
         (Kind::GitHub, "enqueuePullRequest") => Some(LandAs::Enqueue),
-        (Kind::GitHub, "enablePullRequestAutoMerge") => Some(LandAs::AutoMerge),
         _ => None,
+    }
+}
+
+/// What a chat is told when it asks for auto-merge, which is refused and never held: it pins the
+/// head only when it is turned on, so the forge would merge any head pushed later, unseen.
+pub(super) fn unheld_merge_said(kind: Kind, name: &str) -> Option<&'static str> {
+    match (kind, name) {
+        (Kind::GitHub, "enablePullRequestAutoMerge") => Some(
+            "auto-merge would merge any head pushed later, unseen, so purlis does not hold it. \
+             Ask the person to merge it, or ask to enqueue it",
+        ),
+        _ => None,
+    }
+}
+
+/// What a chat is told when a GitLab accept sets a merge strategy: `strategy` and
+/// `autoMergeStrategy` ask GitLab to merge when the pipeline succeeds or through a train, which
+/// the person's press does not do ([`Merged::Now`](crate::mergehold::Merged)).
+const STRATEGY_SAID: &str = "this merge sets a merge strategy (merge when the pipeline succeeds, \
+                             or a merge train), which purlis does not hold: its press merges at \
+                             once. Ask the person to merge it, or merge now without a strategy";
+
+/// Whether a GitLab `mergeRequestAccept` document sets `strategy` or `autoMergeStrategy`, to a
+/// value or a variable: the document asks for more than a merge now, so it is refused with
+/// [`STRATEGY_SAID`] where `body` is one. `None` where it is not one or cannot be read.
+pub(super) fn strategy_said(kind: Kind, body: &[u8]) -> Option<&'static str> {
+    if kind != Kind::GitLab {
+        return None;
+    }
+    let (name, arguments) = mutation_arguments(body)?;
+    (name == "mergeRequestAccept" && has_key(&arguments, &["strategy", "autoMergeStrategy"]))
+        .then_some(STRATEGY_SAID)
+}
+
+/// Whether `val` holds any of `keys` as a field, at any depth.
+fn has_key(val: &Val, keys: &[&str]) -> bool {
+    match val {
+        Val::Obj(fields) => fields
+            .iter()
+            .any(|(k, v)| keys.contains(&k.as_str()) || has_key(v, keys)),
+        Val::List(items) => items.iter().any(|v| has_key(v, keys)),
+        _ => false,
     }
 }
 
@@ -186,18 +228,10 @@ fn find_str<'v>(val: &'v Val, key: &str) -> Option<&'v str> {
     }
 }
 
-/// **The pull request a merge document is about**: the path of the one recorded repo of `repos`
-/// it is in and its number, for a document that is exactly one holdable merge mutation
-/// ([`merge_act`]), with that act. On GitHub the node id is resolved by `objects`; on GitLab the
-/// project path and `iid` are in the document. `None` where any of it is missing or not a plain
-/// number.
-/// Never decides whether the request is allowed: [`decide`] does that.
-pub(super) fn merge_target(
-    kind: Kind,
-    repos: &[&AllowedRepo],
-    body: &[u8],
-    objects: &dyn ObjectRepo,
-) -> Option<(String, u64, crate::mergehold::LandAs)> {
+/// **The one mutation a document is**, as its field's name and its arguments, variables
+/// resolved: `None` where the document is not exactly one mutation with one field, or an
+/// argument cannot be resolved.
+fn mutation_arguments(body: &[u8]) -> Option<(String, Val)> {
     let json: Json = serde_json::from_slice(body).ok()?;
     let Json::Object(object) = &json else {
         return None;
@@ -225,7 +259,6 @@ pub(super) fn merge_target(
     let [Selection::Field(field)] = mutation.selection_set.items.as_slice() else {
         return None;
     };
-    let act = merge_act(kind, &field.name)?;
     let vars = Vars {
         given,
         defaults: defaults(&mutation.variable_definitions),
@@ -235,6 +268,23 @@ pub(super) fn merge_target(
         arguments.push((name.clone(), vars.resolve(value).ok()?));
     }
     let arguments = Val::Obj(arguments);
+    Some((field.name.clone(), arguments))
+}
+
+/// **The pull request a merge document is about**: the path of the one recorded repo of `repos`
+/// it is in and its number, for a document that is exactly one holdable merge mutation
+/// ([`merge_act`]), with that act. On GitHub the node id is resolved by `objects`; on GitLab the
+/// project path and `iid` are in the document. `None` where any of it is missing or not a plain
+/// number.
+/// Never decides whether the request is allowed: [`decide`] does that.
+pub(super) fn merge_target(
+    kind: Kind,
+    repos: &[&AllowedRepo],
+    body: &[u8],
+    objects: &dyn ObjectRepo,
+) -> Option<(String, u64, crate::mergehold::LandAs)> {
+    let (name, arguments) = mutation_arguments(body)?;
+    let act = merge_act(kind, &name)?;
     match kind {
         Kind::GitHub => {
             let id = find_str(&arguments, "pullRequestId")?;

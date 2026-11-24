@@ -1684,7 +1684,9 @@ fn a_held_merge_is_one_ask_in_asks_offering_merge_and_dont_merge() {
                 approved_by: None,
                 since_viewed: None,
                 pushed_here: false,
-                digest: a_held_merge(3).facts.digest(),
+                digest: a_held_merge(3)
+                    .facts
+                    .digest(purlis_core::mergehold::LandAs::Merge),
             },
         }
     );

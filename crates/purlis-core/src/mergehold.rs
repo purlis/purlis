@@ -200,8 +200,8 @@ pub struct Request {
 }
 
 /// **The act a held request asks for**, which the person's press performs and nothing else
-/// (#7543): a merge now, a place in the repo's merge queue, or auto-merge. Dequeuing and turning
-/// auto-merge off undo one and are never held.
+/// (#7543): a merge now or a place in the repo's merge queue. Auto-merge is not held (it would
+/// merge any head pushed later, unseen), and dequeuing undoes one and is never held.
 #[derive(
     Debug, Default, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -213,8 +213,6 @@ pub enum LandAs {
     Merge,
     /// Put it in its base branch's merge queue. Never a merge: a repo with no queue is refused.
     Enqueue,
-    /// Turn on the forge's auto-merge, which merges it at this head once its checks pass.
-    AutoMerge,
 }
 
 impl LandAs {
@@ -227,7 +225,6 @@ impl LandAs {
         match self {
             LandAs::Merge => "Merge",
             LandAs::Enqueue => "Enqueue",
-            LandAs::AutoMerge => "Turn on auto-merge for",
         }
     }
 }
@@ -642,10 +639,6 @@ pub fn handed_said(request: &Request) -> String {
             "put in the merge queue",
             "do not merge it or queue it another way",
         ),
-        LandAs::AutoMerge => (
-            "turn on auto-merge for",
-            "do not merge it or turn on auto-merge another way",
-        ),
     };
     format!(
         "The person is asked in Asks to {does} {}{}. Carry on with other work; {not}.",
@@ -858,8 +851,6 @@ pub enum Merged {
     Now,
     /// Put in its base branch's merge queue or train, which merges it in its turn.
     Queued,
-    /// The forge will merge it at its head once its checks pass: auto-merge is on.
-    AutoMerge,
 }
 
 /// **Whether the project's inventory lists the repo at `path` on `forge`** (Q239): a row of the
@@ -898,11 +889,6 @@ pub trait MergeForge {
     /// `key.head`, and **never merges it**: a repo with no queue is an error.
     fn enqueue_at(&self, _key: &MergeKey, _squash: bool) -> Result<Merged, String> {
         Err("this forge cannot put a request in a merge queue".to_owned())
-    }
-    /// Turns on the forge's auto-merge, only while its head is `key.head`, and never merges
-    /// it now: a forge that cannot say it will wait for this head is an error.
-    fn auto_merge_at(&self, _key: &MergeKey) -> Result<Merged, String> {
-        Err("this forge has no auto-merge".to_owned())
     }
 }
 
@@ -993,26 +979,6 @@ impl MergeForge for ByForge<'_> {
             .map(|()| Merged::Queued)
             .map_err(|why| why.to_string())
     }
-
-    fn auto_merge_at(&self, key: &MergeKey) -> Result<Merged, String> {
-        use crate::forge::pr::AutoMerge;
-        match self
-            .backend
-            .request_auto_merge(&self.caller, &self.path, &Self::pr(key), key.head.as_str())
-            .map_err(|why| why.to_string())?
-        {
-            AutoMerge::Queued => Ok(Merged::AutoMerge),
-            AutoMerge::JoinedTrain => Ok(Merged::Queued),
-            AutoMerge::NotQueued(why) => Err(format!("{why}. Auto-merge was not turned on")),
-            AutoMerge::Unavailable(why) => Err(match why.reason {
-                crate::forge::backend::Reason::NotAllowed(words) => {
-                    format!("{words}. Auto-merge was not turned on")
-                }
-                _ => "the forge has no auto-merge for this repo. Auto-merge was not turned on"
-                    .to_owned(),
-            }),
-        }
-    }
 }
 
 /// The merge method a squash flag names, as an ask says it.
@@ -1049,9 +1015,10 @@ pub struct Waits {
 impl Facts {
     /// **The digest of what these facts show the person** (the follow-up Q269 named): the
     /// title, the author, the checks' word, the ruleset state and who approves (by login,
-    /// Q277), never when they were read. The window hands it back with a press, which merges only while the ask shows
-    /// the same ([`Holds::shows`]).
-    pub fn digest(&self) -> String {
+    /// Q277) and **the act the press performs** (`act`), never when they were read. The window
+    /// hands it back with a press, which acts only while the ask shows the same
+    /// ([`Holds::shows`]), so a press made against a row with another act is refused as changed.
+    pub fn digest(&self, act: LandAs) -> String {
         use sha2::Digest;
         let shown = [
             self.title.as_str(),
@@ -1067,6 +1034,10 @@ impl Facts {
                 None => "\u{1f}not approved",
             },
             method_word(self.squash),
+            match act {
+                LandAs::Merge => "merge",
+                LandAs::Enqueue => "enqueue",
+            },
         ]
         .join("\u{1e}");
         sha2::Sha256::digest(shown.as_bytes())
@@ -1420,9 +1391,9 @@ impl Holds {
     /// **Whether chat `session`'s ask for `key` shows what `digest` is of** ([`Facts::digest`]):
     /// what a press hands back of its row.
     pub fn shows(&self, session: u32, key: &MergeKey, digest: &str) -> bool {
-        self.lock()
-            .iter()
-            .any(|one| one.session == session && one.key == *key && one.facts.digest() == digest)
+        self.lock().iter().any(|one| {
+            one.session == session && one.key == *key && one.facts.digest(one.act) == digest
+        })
     }
 
     /// **The watch of every waiting ask's request** (R-125): `read` says where the forge has
@@ -1543,12 +1514,11 @@ impl Holds {
                 }
             })
             .and_then(|at| {
-                // Each act is performed by its own call, pinned to `key.head`; an enqueue or
-                // auto-merge never falls back to a merge.
+                // Each act is performed by its own call, pinned to `key.head`; an enqueue
+                // never falls back to a merge.
                 match act {
                     LandAs::Merge => forge.merge_at(key, at.squash),
                     LandAs::Enqueue => forge.enqueue_at(key, at.squash),
-                    LandAs::AutoMerge => forge.auto_merge_at(key),
                 }
                 .map_err(NotMerged::Forge)
             });

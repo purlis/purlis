@@ -21,7 +21,6 @@ fn words(requested: &Requested) -> (&'static str, &'static str, &'static str) {
                 "enqueue",
                 "putting it in the merge queue",
             ),
-            LandAs::AutoMerge => ("auto-merges", "turn on", "turning on auto-merge"),
         },
         Requested::Tag { .. } => ("tags", "tag", "the tag"),
         Requested::Release { .. } => ("releases", "release", "the release"),

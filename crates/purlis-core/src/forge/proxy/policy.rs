@@ -674,8 +674,9 @@ impl ChatPolicy {
     ///   not say its number): refused, and the chat is told why.
     /// - `Some(Ok(requested))` where it is one and the pull request is named.
     ///
-    /// The merge, auto-merge and merge-queue mutations are each held as the act they name, which
-    /// the person's press performs and no other; undoing one never is.
+    /// The merge and merge-queue mutations are each held as the act they name, which the
+    /// person's press performs and no other. Auto-merge, and a GitLab accept that sets a merge
+    /// strategy, are refused with a reason; undoing one is never held.
     pub(super) fn held_graphql_merge(
         &self,
         head: &RequestHead,
@@ -695,7 +696,13 @@ impl ChatPolicy {
             .filter(|r| r.serves(&host, head.port))
             .collect();
         let kind = repos.first()?.kind;
+        if let Some(said) = graphql::unheld_merge_said(kind, name) {
+            return Some(Err(said));
+        }
         graphql::merge_act(kind, name)?;
+        if let Some(said) = graphql::strategy_said(kind, body) {
+            return Some(Err(said));
+        }
         let named = graphql::merge_target(kind, &repos, body, objects)
             .and_then(|(path, number, act)| {
                 let repo = crate::mergehold::Repo::try_from(path).ok()?;

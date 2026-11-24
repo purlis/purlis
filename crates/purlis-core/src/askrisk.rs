@@ -408,7 +408,7 @@ pub fn merge_of(repo: &str, number: u64, head: &str, base: &str) -> Risk {
 }
 
 /// **A held request landed by `act`** (#7543): [`merge_of`]'s sentences for a merge, and for a
-/// place in the merge queue or auto-merge the act the press performs, named as it is.
+/// place in the merge queue the act the press performs, named as it is.
 pub fn land_of(
     repo: &str,
     number: u64,
@@ -426,16 +426,9 @@ pub fn land_of(
         LandAs::Enqueue => (
             format!(
                 "Puts request {number} of {repo} at {short} in the merge queue for {base}, which \
-                 merges it in its turn"
+                 merges it in its turn, by the queue's own method"
             ),
             format!("Enqueue request {number} of {repo} at {short} in the merge queue for {base}?"),
-        ),
-        LandAs::AutoMerge => (
-            format!(
-                "Turns on auto-merge for request {number} of {repo} at {short} into {base}, \
-                 which merges it once its checks pass"
-            ),
-            format!("Turn on auto-merge for request {number} of {repo} at {short} into {base}?"),
         ),
     };
     Risk {
