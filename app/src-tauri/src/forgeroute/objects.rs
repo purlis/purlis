@@ -57,6 +57,8 @@ const QUERY: &str = "query($id: ID!) { node(id: $id) { __typename \
     ... on PullRequest { repository { nameWithOwner } } \
     ... on Issue { repository { nameWithOwner } } } }";
 
+const NUMBER_QUERY: &str = "query($id: ID!) { node(id: $id) { ... on PullRequest { number } } }";
+
 /// What asks the forge which repo a node id is in. A trait so a test stands where the network
 /// would.
 pub trait NodeRepos: Send + Sync {
@@ -65,6 +67,17 @@ pub trait NodeRepos: Send + Sync {
     /// `request` carries the credential's terms: the run's chat and a recorded repo on the host.
     fn repo_of_node(&self, request: &CredentialRequest, id: &str)
     -> Result<Option<String>, String>;
+
+    /// `Ok(Some(number))` for a pull request, `Ok(None)` for any other node, `Err` when the forge
+    /// could not be asked: what a held merge names (#7543). A lookup that cannot say answers
+    /// `Ok(None)`, and the merge is refused with a reason instead of asked about.
+    fn pull_number_of_node(
+        &self,
+        _request: &CredentialRequest,
+        _id: &str,
+    ) -> Result<Option<u64>, String> {
+        Ok(None)
+    }
 }
 
 /// The production [`NodeRepos`]: GitHub's GraphQL, over HTTPS, sending the run's credential.
@@ -122,6 +135,38 @@ impl NodeRepos for ForgeLookup {
         }
         repo_in(&reply.out)
     }
+
+    fn pull_number_of_node(
+        &self,
+        request: &CredentialRequest,
+        id: &str,
+    ) -> Result<Option<u64>, String> {
+        let forge = Forge {
+            kind: ForgeKind::GitHub,
+            host: api_host(&request.host, request.port),
+        };
+        let tokens = Arc::new(RouteToken {
+            credentials: self.credentials.clone(),
+            request: request.clone(),
+        });
+        let transport = over_https(&forge, tokens).map_err(|e| e.to_string())?;
+        let call = Call::graphql(NUMBER_QUERY, vec![Field::text("id", id)], LOOKUP_TIMEOUT);
+        let reply = transport
+            .send(&forge, &call)
+            .map_err(|why| why.said().to_owned())?;
+        if !reply.ok() {
+            return Err(reply.said(ForgeKind::GitHub));
+        }
+        number_in(&reply.out)
+    }
+}
+
+/// The pull request number a lookup's answer names. `Ok(None)` where the node is not there or is
+/// not a pull request; `Err` for an answer that is not JSON.
+fn number_in(answer: &str) -> Result<Option<u64>, String> {
+    let json: serde_json::Value = serde_json::from_str(answer)
+        .map_err(|e| format!("the forge's answer was not JSON: {e}"))?;
+    Ok(json["data"]["node"]["number"].as_u64().filter(|n| *n > 0))
 }
 
 /// The host the lookup's API root is made from: the recorded repo's own port is part of it unless
@@ -221,6 +266,29 @@ impl RunObjects {
 }
 
 impl ObjectRepo for RunObjects {
+    fn pull_of(
+        &self,
+        kind: purlis_core::forge::proxy::Kind,
+        host: &str,
+        node_id: &str,
+    ) -> Option<(String, u64)> {
+        let repo = self.repo_of(kind, host, node_id)?;
+        let recorded = self
+            .repos
+            .iter()
+            .find(|r| r.kind() == kind && r.host().eq_ignore_ascii_case(host))?;
+        let request = CredentialRequest {
+            kind,
+            host: recorded.host().to_owned(),
+            port: recorded.port(),
+            repo_id: recorded.forge_id(),
+            chat: self.chat.clone(),
+            repo: recorded.path().to_owned(),
+        };
+        let number = self.lookup.pull_number_of_node(&request, node_id).ok()??;
+        Some((repo, number))
+    }
+
     fn repo_of(
         &self,
         kind: purlis_core::forge::proxy::Kind,

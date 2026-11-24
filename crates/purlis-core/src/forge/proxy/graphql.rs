@@ -158,6 +158,105 @@ fn merge_mutation(kind: Kind, name: &str) -> bool {
     }
 }
 
+/// The merge mutations a held merge can stand for: the merge, auto-merge on and the merge queue.
+/// Undoing one (`disablePullRequestAutoMerge`, `dequeuePullRequest`) is never held.
+pub(super) fn holdable_merge(kind: Kind, name: &str) -> bool {
+    match kind {
+        Kind::GitHub => matches!(
+            name,
+            "mergePullRequest" | "enablePullRequestAutoMerge" | "enqueuePullRequest"
+        ),
+        Kind::GitLab => name == "mergeRequestAccept",
+    }
+}
+
+/// The first string `key` holds in `val`, at any depth.
+fn find_str<'v>(val: &'v Val, key: &str) -> Option<&'v str> {
+    match val {
+        Val::Obj(fields) => fields.iter().find_map(|(k, v)| match v {
+            Val::Str(s) if k == key => Some(s.as_str()),
+            _ => find_str(v, key),
+        }),
+        Val::List(items) => items.iter().find_map(|v| find_str(v, key)),
+        _ => None,
+    }
+}
+
+/// **The pull request a merge document is about**: the path of the one recorded repo of `repos`
+/// it is in and its number, for a document that is exactly one holdable merge mutation
+/// ([`holdable_merge`]). On GitHub the node id is resolved by `objects`; on GitLab the project
+/// path and `iid` are in the document. `None` where any of it is missing or not a plain number.
+/// Never decides whether the request is allowed: [`decide`] does that.
+pub(super) fn merge_target(
+    kind: Kind,
+    repos: &[&AllowedRepo],
+    body: &[u8],
+    objects: &dyn ObjectRepo,
+) -> Option<(String, u64)> {
+    let json: Json = serde_json::from_slice(body).ok()?;
+    let Json::Object(object) = &json else {
+        return None;
+    };
+    let Some(Json::String(query)) = object.get("query") else {
+        return None;
+    };
+    let empty = serde_json::Map::new();
+    let given = match object.get("variables") {
+        None | Some(Json::Null) => &empty,
+        Some(Json::Object(map)) => map,
+        Some(_) => return None,
+    };
+    let parsed: Document<'_, String> = parse_query(query).ok()?;
+    let mut operations = parsed.definitions.iter().filter_map(|d| match d {
+        Definition::Operation(operation) => Some(operation),
+        Definition::Fragment(_) => None,
+    });
+    let Some(OperationDefinition::Mutation(mutation)) = operations.next() else {
+        return None;
+    };
+    if operations.next().is_some() {
+        return None;
+    }
+    let [Selection::Field(field)] = mutation.selection_set.items.as_slice() else {
+        return None;
+    };
+    if !holdable_merge(kind, &field.name) {
+        return None;
+    }
+    let vars = Vars {
+        given,
+        defaults: defaults(&mutation.variable_definitions),
+    };
+    let mut arguments = Vec::new();
+    for (name, value) in &field.arguments {
+        arguments.push((name.clone(), vars.resolve(value).ok()?));
+    }
+    let arguments = Val::Obj(arguments);
+    match kind {
+        Kind::GitHub => {
+            let id = find_str(&arguments, "pullRequestId")?;
+            repos.iter().filter(|r| r.kind == kind).find_map(|r| {
+                objects
+                    .pull_of(r.kind, &r.host, id)
+                    .filter(|(path, number)| *path == r.path && *number > 0)
+            })
+        }
+        Kind::GitLab => {
+            let project = find_str(&arguments, "projectPath")?;
+            let iid = find_str(&arguments, "iid")?;
+            let number = iid
+                .parse::<u64>()
+                .ok()
+                .filter(|n| *n > 0 && iid.bytes().all(|b| b.is_ascii_digit()))?;
+            let path = normalise_repo_path(kind, project).ok()?;
+            repos
+                .iter()
+                .find(|r| r.kind == kind && r.path == path)
+                .map(|r| (r.path.clone(), number))
+        }
+    }
+}
+
 /// What a mutation not on the list is, by its name, so the refusal says so.
 fn named_mutation_refusal(name: &str) -> Refusal {
     let n = name.to_ascii_lowercase();

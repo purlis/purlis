@@ -233,6 +233,13 @@ pub enum BodyNeed {
 pub trait ObjectRepo: Send + Sync {
     /// The normalised `owner/repo` path of the repo `node_id` is in, on `host`.
     fn repo_of(&self, kind: Kind, host: &str, node_id: &str) -> Option<String>;
+
+    /// The normalised `owner/repo` path and the number of the pull request `node_id` is, on
+    /// `host`: what a held merge names (#7543). `None` where the id is not a pull request or the
+    /// forge could not say, and the merge is then not asked about.
+    fn pull_of(&self, _kind: Kind, _host: &str, _node_id: &str) -> Option<(String, u64)> {
+        None
+    }
 }
 
 /// The resolver that knows nothing, so every mutation on an object is refused.
@@ -655,6 +662,48 @@ impl ChatPolicy {
         objects: &dyn ObjectRepo,
     ) -> Decision {
         self.decide_as(head, body, objects, true)
+    }
+
+    /// **The merge a GraphQL merge mutation asks for, to be held for the person** (#7543): what
+    /// `enforce` refuses as [`Refusal::Merge`] and the person's Merge press can perform.
+    ///
+    /// - `None` where the request is not a merge mutation the merge routes would let through: it
+    ///   passes every check of any write (a recorded repo, no merge command in its text), so a
+    ///   document that is anything else is refused as it was and nobody is asked.
+    /// - `Some(Err(why))` where it is one, but the pull request cannot be named (the forge did
+    ///   not say its number): refused, and the chat is told why.
+    /// - `Some(Ok(requested))` where it is one and the pull request is named.
+    ///
+    /// Only the merge, auto-merge and merge-queue mutations are held; undoing one never is.
+    pub(super) fn held_graphql_merge(
+        &self,
+        head: &RequestHead,
+        body: &[u8],
+        objects: &dyn ObjectRepo,
+    ) -> Option<Result<crate::heldact::Requested, &'static str>> {
+        let Decision::Allow(allowed) = self.decide_merging(head, body, objects) else {
+            return None;
+        };
+        let Class::GraphqlMutation(name) = &allowed.class else {
+            return None;
+        };
+        let host = request::host(head).ok()?;
+        let repos: Vec<&AllowedRepo> = self
+            .repos
+            .iter()
+            .filter(|r| r.serves(&host, head.port))
+            .collect();
+        let kind = repos.first()?.kind;
+        if !graphql::holdable_merge(kind, name) {
+            return None;
+        }
+        let named = graphql::merge_target(kind, &repos, body, objects)
+            .and_then(|(path, number)| {
+                let repo = crate::mergehold::Repo::try_from(path).ok()?;
+                Some(crate::heldact::Requested::merge_of(repo, number))
+            })
+            .ok_or("the forge did not say which pull request it is, so purlis cannot ask about it; ask the person to merge it");
+        Some(named)
     }
 
     fn decide_as(

@@ -145,3 +145,25 @@ fn a_push_of_several_unowned_branches_hands_each_once_to_the_ask() {
         [vec!["theirs".to_owned(), "other".to_owned()]]
     );
 }
+
+/// A sink that raises nothing: the person's policy does not ask, or the chat is not open.
+struct Declines;
+
+impl BranchAsk for Declines {
+    fn ask(&self, _: &ChatId, _: &[NotYours]) -> Option<String> {
+        None
+    }
+}
+
+#[test]
+fn a_sink_that_raises_no_ask_leaves_the_push_refused_and_nothing_is_held() {
+    purlis_core::unsteered!();
+    let s = Scene::tuned(Objects::default(), |proxy| {
+        proxy
+            .with_tips(Arc::new(|_, _, _| None))
+            .with_branch_ask(Box::new(Declines))
+    });
+    s.advertise("gitlab.com", "group/proj", &["main", "theirs"]);
+    let out = push(&s, &[("update", "refs/heads/theirs")]);
+    assert!(is_refused(&out, Refusal::NotYourBranch), "{out:?}");
+}
