@@ -967,7 +967,10 @@ fn a_link_that_fails_after_a_slow_check_says_why_and_where_to_look_not_that_it_w
     })
     .unwrap_err();
     assert_ne!(said, LATE);
-    assert!(said.contains("did not finish the link's handshake within"), "{said}");
+    assert!(
+        said.contains("did not finish the link's handshake within"),
+        "{said}"
+    );
     assert!(said.contains("Pool setup"), "{said}");
 }
 
