@@ -173,6 +173,19 @@ impl Engine {
     /// Starts the engine `launch` describes, in a new process group led by `keeper`, and waits
     /// until it answers over its pipe.
     pub fn start(launch: &Launch, keeper: &Keeper) -> Result<Self, StartError> {
+        Self::start_within(launch, keeper, FIRST_ANSWER)
+    }
+
+    /// [`Engine::start`], the engine given `first_answer` to answer over its pipe where
+    /// [`FIRST_ANSWER`] is not what the caller wants: a test run on a starved runner, where one
+    /// cold start has taken most of a minute (#7445, #7446, #7447, #7448). Public only because
+    /// the integration tests are outside the crate: the product starts with [`Engine::start`].
+    #[doc(hidden)]
+    pub fn start_within(
+        launch: &Launch,
+        keeper: &Keeper,
+        first_answer: Duration,
+    ) -> Result<Self, StartError> {
         launch.prepare_data_dir().map_err(StartError::DataFolder)?;
         let group = EngineGroup::start(keeper).map_err(StartError::Spawn)?;
         let (engine_reads, host_writes) = io::pipe().map_err(StartError::Spawn)?;
@@ -204,7 +217,7 @@ impl Engine {
         };
         engine
             .devtools()
-            .call_within("Browser.getVersion", json!({}), None, FIRST_ANSWER)
+            .call_within("Browser.getVersion", json!({}), None, first_answer)
             .map_err(StartError::NoAnswer)?;
         Ok(engine)
     }

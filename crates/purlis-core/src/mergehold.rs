@@ -592,6 +592,20 @@ impl Request {
     }
 }
 
+/// **What the chat is told when the hook's time ran out while the app was still taking its
+/// merge** (#7542): the merge is held for the person's press, as every merge of a chat is, and it
+/// is not a timeout. It names the request, never advises a retry or a split, and says the Ask is
+/// the person's (the app names the Ask's number only once it has answered).
+pub fn waiting(request: &Request) -> String {
+    format!(
+        "{OPENS} The merge of {}{} did not run: purlis was still asking the app to hold it for \
+         the person's press of Merge when its check ended, and could not confirm the app took it. \
+         Look in Asks for it, or ask the person to merge it; do not merge it another way. {NO_YES}",
+        request.number_said(),
+        request.repo_said()
+    )
+}
+
 /// **What the app tells the chat it holds the merge**, once it has read the request from the
 /// forge and an ask waits for it.
 pub fn handed_said(request: &Request) -> String {

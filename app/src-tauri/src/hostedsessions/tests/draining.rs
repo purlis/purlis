@@ -699,7 +699,7 @@ fn a_chat_of_a_removed_pool_ended_with_its_runner() {
     let chat = started(&sessions).expect("it starts");
 
     assert!(!sessions.lost_with_its_runner(chat));
-    pool.connection.pool_removed("builds");
+    pool.connection.pool_removed("builds", false);
 
     let until = std::time::Instant::now() + Duration::from_secs(10);
     while !sessions.lost_with_its_host(chat) && std::time::Instant::now() < until {
@@ -707,6 +707,32 @@ fn a_chat_of_a_removed_pool_ended_with_its_runner() {
     }
     assert!(sessions.lost_with_its_host(chat), "its link ended");
     assert!(sessions.lost_with_its_runner(chat));
+}
+
+/// **A chat on a forgotten pool ends as Pool forgotten** (#7187): its runner and home may be
+/// there still, so it did not end with its runner (#4350), and nothing is left to resume from
+/// here.
+#[test]
+fn a_chat_of_a_forgotten_pool_ends_as_pool_forgotten_and_not_with_its_runner() {
+    let runtime = a_runtime();
+    let pool = Pool::on(&runtime);
+    let (_dir, root) = a_project();
+    let sessions = routed(&pool, &root);
+    let chat = started(&sessions).expect("it starts");
+
+    assert!(!sessions.lost_with_its_pool_forgotten(chat));
+    pool.connection.pool_removed("builds", true);
+
+    let until = std::time::Instant::now() + Duration::from_secs(10);
+    while !sessions.lost_with_its_host(chat) && std::time::Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(sessions.lost_with_its_host(chat), "its link ended");
+    assert!(sessions.lost_with_its_pool_forgotten(chat));
+    assert!(
+        !sessions.lost_with_its_runner(chat),
+        "its runner is not lost"
+    );
 }
 
 /// A host that answers a program's start only after `after`, and counts what it closes.
@@ -1079,6 +1105,7 @@ fn a_gone_runner_tells_only_the_chats_lost_on_it_and_only_once() {
             id,
             LostChat {
                 with_the_runner: false,
+                pool_forgotten: false,
                 on: Some(on.to_owned()),
             },
         );
@@ -1100,7 +1127,7 @@ fn a_gone_runner_tells_only_the_chats_lost_on_it_and_only_once() {
     assert!(chats.lost_with_its_runner(1));
     assert!(!chats.lost_with_its_runner(2));
 
-    window.pool_removed("builds");
+    window.pool_removed("builds", false);
 
     assert_eq!(told_now(2), vec![1, 2], "a removed pool's runners all went");
 }

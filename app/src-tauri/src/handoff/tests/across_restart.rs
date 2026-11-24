@@ -1580,13 +1580,10 @@ fn a_shell_a_chat_started_in_a_session_of_its_own_ends_when_the_next_host_settle
 #[cfg(unix)]
 const LETS_GO_THEN_EXITS: &str = "while [ ! -e @RUNS@/go ]; do sleep 0.05; done; exit 0";
 
-/// How long the window is given to note a chat's strays once its tool's hook is heard: the
-/// note is listed on a thread of its own, one `ps` run on macOS.
-#[cfg(unix)]
-const NOTED_WITHIN: std::time::Duration = std::time::Duration::from_secs(2);
-
 /// Chat `chat`'s tool says it started a background shell, as Claude Code's hook does when it
-/// starts one (#5750), and the window is given [`NOTED_WITHIN`] to note what that left.
+/// starts one (#5750). Returns once the window has noted what that left, not after a guess at how
+/// long a loaded runner takes to list it (#7431): a shell not yet noted when the harness goes
+/// is nobody's, and nothing ends it.
 #[cfg(unix)]
 fn its_tool_says_it_started_its_shell(held: &Held, chat: u32) {
     its_tool_starts(
@@ -1599,7 +1596,7 @@ fn its_tool_says_it_started_its_shell(held: &Held, chat: u32) {
         )
         .expect("a piece"),
     );
-    std::thread::sleep(NOTED_WITHIN);
+    held.chats().sessions().notes_have_settled();
 }
 
 /// #5806: a harness that exits on its own, with its background shell still running, used to

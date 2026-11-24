@@ -64,7 +64,9 @@ describe("a runner whose link stays down", () => {
     const onCheckPool = vi.fn();
     render(<RunnerLinkDownNotice plane={PLANE} onCheckPool={onCheckPool} />);
 
-    down = [{ pool: "docker", why: "the link to it ended", since: nowSecs() }];
+    down = [
+      { pool: "docker", why: "the link to it ended", since: nowSecs(), state: "unreachable" },
+    ];
     await told({});
     expect(notice()).toBeNull();
 
@@ -89,15 +91,46 @@ describe("a runner whose link stays down", () => {
     await waitFor(() => expect(notice()).toBeNull());
   });
 
+  it("says a refused pool at once, offering Try now and Check pool though purlis stopped trying (#7187)", async () => {
+    aCore(() => [
+      { pool: "docker", why: "sign-in was refused", since: nowSecs(), state: "refused" },
+    ]);
+    const onCheckPool = vi.fn();
+    render(<RunnerLinkDownNotice plane={PLANE} onCheckPool={onCheckPool} />);
+    await waitFor(() => expect(notice()).not.toBeNull());
+    expect(notice()?.textContent).toContain("purlis stopped trying");
+    expect(notice()?.textContent).toContain("sign-in was refused");
+    // The machine may only be starting after a reboot: the person may try it again.
+    expect(screen.getByRole("button", { name: "Try now" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Check pool docker" }));
+    expect(onCheckPool).toHaveBeenCalledWith("docker");
+  });
+
+  it("says a changed host key at once as its own state: no Try now, and a way to trust it again (#7187)", async () => {
+    aCore(() => [
+      { pool: "docker", why: "another host key", since: nowSecs(), state: "host_key_changed" },
+    ]);
+    const onCheckPool = vi.fn();
+    render(<RunnerLinkDownNotice plane={PLANE} onCheckPool={onCheckPool} />);
+    await waitFor(() => expect(notice()).not.toBeNull());
+    expect(notice()?.textContent).toContain("another host key");
+    expect(notice()?.textContent).toContain("never tries it again on its own");
+    expect(screen.queryByRole("button", { name: "Try now" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Check and trust pool docker" }));
+    expect(onCheckPool).toHaveBeenCalledWith("docker");
+  });
+
   it("is said at once to a window drawn long into the outage", async () => {
-    aCore(() => [{ pool: "docker", why: WHY, since: nowSecs() - 6 * 60 }]);
+    aCore(() => [{ pool: "docker", why: WHY, since: nowSecs() - 6 * 60, state: "unreachable" }]);
     render(<RunnerLinkDownNotice plane={PLANE} onCheckPool={() => {}} />);
     await waitFor(() => expect(notice()).not.toBeNull());
     expect(notice()?.textContent).toContain("6 minutes");
   });
 
   it("is put away by Dismiss until the reason changes", async () => {
-    let down: RunnerLinkDown[] = [{ pool: "docker", why: WHY, since: nowSecs() - 60 }];
+    let down: RunnerLinkDown[] = [
+      { pool: "docker", why: WHY, since: nowSecs() - 60, state: "unreachable" },
+    ];
     aCore(() => down);
     render(<RunnerLinkDownNotice plane={PLANE} onCheckPool={() => {}} />);
     await waitFor(() => expect(notice()).not.toBeNull());
@@ -113,7 +146,9 @@ describe("a runner whose link stays down", () => {
   });
 
   it("is said again for the next outage after Dismiss once the link was back", async () => {
-    let down: RunnerLinkDown[] = [{ pool: "docker", why: WHY, since: nowSecs() - 60 }];
+    let down: RunnerLinkDown[] = [
+      { pool: "docker", why: WHY, since: nowSecs() - 60, state: "unreachable" },
+    ];
     aCore(() => down);
     render(<RunnerLinkDownNotice plane={PLANE} onCheckPool={() => {}} />);
     await waitFor(() => expect(notice()).not.toBeNull());
@@ -122,7 +157,7 @@ describe("a runner whose link stays down", () => {
 
     down = [];
     await told({ reconnection: "reconnected" });
-    down = [{ pool: "docker", why: WHY, since: nowSecs() - 60 }];
+    down = [{ pool: "docker", why: WHY, since: nowSecs() - 60, state: "unreachable" }];
     await told({});
     await waitFor(() => expect(notice()).not.toBeNull());
   });

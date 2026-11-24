@@ -212,8 +212,10 @@ impl ToARunner {
             // amended 2026-10-17, item 2): anything else refuses the link and runs nothing.
             Arc::new(move || {
                 if let Some((local, pool)) = &forwarding {
-                    purlis_core::sshroute::pool::docker_of_named(&config, local, pool)
-                        .map_err(NotChecked::Refused)?;
+                    // A machine that answers and refuses is not dialled again on a timer
+                    // (#7187): the link says why once, and Check pool says what changed.
+                    purlis_core::sshroute::pool::docker_of_named_in_state(&config, local, pool)
+                        .map_err(|(why, state)| not_checked_as(why, state))?;
                 }
                 let checked = checked_or_woken(&checking, &config, &of, resumes);
                 // A refusal of a container Docker no longer lists is a runner removed outside
@@ -223,9 +225,9 @@ impl ToARunner {
                 checked.map_err(|why| match checking.missing(&made, of.engine.as_deref()) {
                     Ok(Some(Missing::Removed(gone))) => NotChecked::Gone(gone_said(&of, gone)),
                     Ok(Some(Missing::OnAnotherEngine)) => {
-                        NotChecked::Refused(on_another_engine_said(&of))
+                        NotChecked::Unreachable(on_another_engine_said(&of))
                     }
-                    _ => NotChecked::Refused(why.0),
+                    _ => NotChecked::Unreachable(why.0),
                 })
             }),
         )
@@ -301,7 +303,11 @@ impl ToARunner {
 
     /// A link kept to the runner for as long as what it answers is held
     /// ([`hostlink::keep_linked`]).
+    ///
+    /// **Try now forgets what the forward remembers of its failure** (#7187): a click dials
+    /// at once, and the 5 to 120 second wait is for purlis's own tries only.
     pub fn keep(&self) -> hostlink::Links {
+        let pool = self.pool.clone();
         hostlink::keep_linked(
             self.connector.clone(),
             Handshake::THIS_BUILD,
@@ -312,6 +318,7 @@ impl ToARunner {
             self.pinned.clone(),
             Liveness::default(),
         )
+        .with_try_now(move || purlis_core::sshroute::pool::try_now(&pool))
     }
 }
 
@@ -341,6 +348,21 @@ pub fn on_another_engine_said(kept: &Kept) -> String {
     )
 }
 
+/// **A forward's failure, said to the link by the state it puts the pool in** (#7187): a
+/// machine that does not answer is tried again; one that answers and refuses, or whose key or
+/// engine changed, is not.
+pub fn not_checked_as(
+    why: String,
+    state: purlis_core::sshroute::connect::RemoteState,
+) -> NotChecked {
+    use purlis_core::sshroute::connect::RemoteState;
+    match state {
+        RemoteState::HostKeyChanged => NotChecked::HostKeyChanged(why),
+        state if state.retries() => NotChecked::Unreachable(why),
+        _ => NotChecked::Refused(why),
+    }
+}
+
 /// **A cluster runner's check, said to the link** (#3292): a changed runner key or a changed
 /// cluster operator key is a changed key, which the window asks the person about.
 pub fn not_checked(why: purlis_core::clusterpool::Refused) -> NotChecked {
@@ -350,7 +372,7 @@ pub fn not_checked(why: purlis_core::clusterpool::Refused) -> NotChecked {
             NotChecked::KeyChanged(why.to_string())
         }
         Refused::NotVouched(_) | Refused::WaitRanOut(_) | Refused::Other(_) => {
-            NotChecked::Refused(why.to_string())
+            NotChecked::Unreachable(why.to_string())
         }
     }
 }
@@ -660,7 +682,9 @@ pub fn count_of(
             u32::try_from(listed.iter().filter(|program| !program.ended).count())
                 .unwrap_or(u32::MAX),
         ),
-        Err(PoolLink::Down { why }) => Err(crate::devices::shown_safely(&why)),
+        Err(
+            PoolLink::Down { why } | PoolLink::Refused { why } | PoolLink::HostKeyChanged { why },
+        ) => Err(crate::devices::shown_safely(&why)),
         Err(PoolLink::KeyChanged) => {
             Err("the runner answered with another key than the one pinned for it".to_owned())
         }
@@ -729,7 +753,9 @@ fn with_a_way_on(pool: &str, mut down: hostlink::Down) -> hostlink::Down {
     if down.gone {
         return down;
     }
-    let way_on = if down.key_changed {
+    let way_on = if down.host_key_changed {
+        format!("Check pool {pool} in Pool setup, and trust it again if the change is expected")
+    } else if down.key_changed {
         format!("To pair it again, remove pool {pool} in Pool setup and add it again")
     } else {
         format!("Check pool {pool} in Pool setup")
@@ -1340,6 +1366,14 @@ pub fn link_of(down: hostlink::Down) -> crate::dockerpools::PoolLink {
     use crate::dockerpools::PoolLink;
     if down.key_changed {
         PoolLink::KeyChanged
+    } else if down.host_key_changed {
+        PoolLink::HostKeyChanged {
+            why: crate::devices::shown_safely(&down.why),
+        }
+    } else if down.refused {
+        PoolLink::Refused {
+            why: crate::devices::shown_safely(&down.why),
+        }
     } else {
         PoolLink::Down {
             why: crate::devices::shown_safely(&down.why),
