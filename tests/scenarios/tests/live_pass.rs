@@ -393,9 +393,25 @@ fn b0() -> Batch {
     Batch::from_value(serde_json::from_str(&text).unwrap()).expect("B0")
 }
 
-fn chat_682() -> Value {
+/// Chat 682's log as it was drawn (before #6674 was fixed): every held ask wrote `ask.raised`
+/// twice, so M-PRB-01, -02 and -03 each failed `require[0]` observing 2.
+fn chat_682_as_drawn() -> Value {
     let text = fs::read_to_string(root().join("tests/fixtures/chat-682-b0.json")).unwrap();
     serde_json::from_str(&text).unwrap()
+}
+
+/// Chat 682's log as a chat run today would draw it: #6674 is fixed and its marks are gone from
+/// B0, so the double raise the record saw is dropped, as `cells.rs` does for the same record.
+/// Everything else the record lists is still pinned by B0's marks.
+fn chat_682() -> Value {
+    let mut log = chat_682_as_drawn();
+    for id in ["M-PRB-01", "M-PRB-02", "M-PRB-03"] {
+        let failed = log["cells"][id]["failed"].as_array_mut().expect("failed");
+        let before = failed.len();
+        failed.retain(|f| !(f[0] == "require[0]" && f[1] == 2));
+        assert_eq!(before - failed.len(), 1, "{id}: the record's double raise");
+    }
+    log
 }
 
 fn suite(row: &str, verdict: ReportVerdict, leg: ReportLeg) -> Recorded {
@@ -424,12 +440,17 @@ fn chat_682_judged_by_the_live_report_is_what_matrix_check_said() {
         .iter()
         .map(|r| (r.leg.row.as_str(), r.leg.verdict))
         .collect();
-    // every failure in chat 682 is pinned by B0's marks, and each mark pinned something
+    // every failure left in chat 682 is pinned by B0's marks, and each mark pinned something;
+    // M-PRB-03's only failure was the doubled ask (#6674, fixed), so it passes
     assert_eq!(seen.len(), 7, "{seen:?}");
-    assert!(
-        seen.iter().all(|(_, v)| *v == ReportVerdict::ExpectedFail),
-        "{seen:?}"
-    );
+    for (row, v) in &seen {
+        let want = if *row == "M-PRB-03" {
+            ReportVerdict::Pass
+        } else {
+            ReportVerdict::ExpectedFail
+        };
+        assert_eq!(*v, want, "{row}: {seen:?}");
+    }
     assert!(
         live.iter()
             .all(|r| r.leg.leg == ReportLeg::Live && r.leg.os == Os::Macos)

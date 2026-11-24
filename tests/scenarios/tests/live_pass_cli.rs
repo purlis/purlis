@@ -45,14 +45,32 @@ fn chat_682_path() -> PathBuf {
     root().join("tests/fixtures/chat-682-b0.json")
 }
 
-/// `report` on chat 682's log, written to `dir/live.jsonl`.
+/// Chat 682's log as a chat run today would draw it, written to `dir/chat-682-fixed.json`: the
+/// record was drawn before #6674 was fixed, and B0 no longer carries its marks, so the double
+/// raise it saw (`require[0]` observing 2 in M-PRB-01, -02 and -03) is dropped, as `cells.rs`
+/// does for the same record. Every other failure the record lists is still pinned by B0.
+fn chat_682_after_6674(dir: &Path) -> PathBuf {
+    let mut log: Value =
+        serde_json::from_str(&fs::read_to_string(chat_682_path()).unwrap()).unwrap();
+    for id in ["M-PRB-01", "M-PRB-02", "M-PRB-03"] {
+        let failed = log["cells"][id]["failed"].as_array_mut().expect("failed");
+        let before = failed.len();
+        failed.retain(|f| !(f[0] == "require[0]" && f[1] == 2));
+        assert_eq!(before - failed.len(), 1, "{id}: the record's double raise");
+    }
+    let path = dir.join("chat-682-fixed.json");
+    fs::write(&path, log.to_string()).unwrap();
+    path
+}
+
+/// `report` on chat 682's log (after #6674), written to `dir/live.jsonl`.
 fn live_report_file(dir: &Path) -> PathBuf {
     let out = live_pass(&[
         "report",
         "--cells",
         p(&b0_path()),
         "--log",
-        p(&chat_682_path()),
+        p(&chat_682_after_6674(dir)),
         "--harness",
         "claude",
         "--os",
