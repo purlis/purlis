@@ -25,6 +25,8 @@ use std::path::Path;
 
 mod oracle;
 
+pub mod generator;
+
 use purlis_core::enforcement::{Family, Mode, Template};
 use purlis_core::policy::decide::{self, Outcome};
 use purlis_core::policy::levels::{self, Chat, Held, Sources};

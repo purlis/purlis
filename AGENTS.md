@@ -243,3 +243,10 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   `floor_tests`; failures that say `Operation not permitted` (creating a `.charter/vaults` folder,
   binding a port, `sandbox_apply`) are the chat's sandbox, not the code: CI is their first run.
   A grant check that walks `place.denied` must honour `Reach::Itself` (`grant::holds_the_folder`).
+- Generated policies (M75-42) are `policy_proof/generator.rs`: `generate(seed)`, `cells()`, `seeds()`
+  (`PURLIS_PROOF_SEEDS=a,b,c` replays a night; the lib's sandbox differential reads it too). The
+  oracle asks over no entities, so an action whose shipped rule reads `principal.*` (`dispatch-to`,
+  `use`) cannot be a generated cell yet. A sandbox rule may carry one condition only. The workflow
+  is `policy-nightly.yml`; `tools/cedar-bump.sh <base> <head>` says whether a cedar crate moved.
+  The equality test takes about 50 s; `df -g /` fell to 2 GB after three cold test builds, so
+  remove `target/` between runs.

@@ -1,0 +1,134 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: policy-nightly
+
+# **The nightly policy proof** (M75 slice 42, #7051; spec §14.6 and §14.11, Q317 points 6 and 12):
+# policies generated within the subset the load check admits (`policy_proof::generator`), asked
+# the fixed cells in a shuffled order and compared with the oracle (`generated_policies_agree_
+# with_enforcement_on_every_cell`), and the sandbox's differential against the authorizer
+# (`the_compiled_sandbox_equals_the_authorizer…`, slice 22), three times over, each time on a
+# seed of its own. A pull request already runs both on the three fixed seeds (`ci.yml`); what
+# this adds is new seeds every night.
+#
+# **It runs on a cedar bump's pull request too.** A change that moves a `cedar-policy*` package
+# in Cargo.lock (`tools/cedar-bump.sh`) runs the set on its own pull request, since a new
+# evaluator is exactly when the host's answer and the oracle's could part. Any other pull request
+# touching those two files skips it.
+#
+# Seeds: the three are derived from the date, printed in the log, and replayed by
+# `PURLIS_PROOF_SEEDS=<n>,<n>,<n> cargo test -p purlis-core --lib --test it -- <the tests>`; a
+# dispatch can name its own in `seeds`.
+#
+# Not a required check, and no secrets: it reads the repository and builds, as `ci.yml`'s Rust
+# job does. A red run is a mismatch (read the seed and the policy in the failure) or a build
+# that broke; a mismatch where enforcement is looser than the policy is an escape (a public
+# p0, fixed first; Q317 point 7).
+on:
+  schedule:
+    # 04:07 UTC, after `scale`'s nightly (03:23) has had its runners.
+    - cron: "7 4 * * *"
+  workflow_dispatch:
+    inputs:
+      seeds:
+        description: "Three seeds, 0 to 255, comma-separated (default: derived from the date)"
+        type: string
+        default: ""
+  pull_request:
+    paths:
+      - .github/workflows/policy-nightly.yml
+      - tools/cedar-bump.sh
+      - Cargo.lock
+      - crates/purlis-core/Cargo.toml
+
+concurrency:
+  group: policy-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+# Nothing by default: each job names what it needs.
+permissions: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bump:
+    name: a cedar bump?
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      bumped: ${{ steps.bump.outputs.bumped }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: base
+        uses: ./.github/actions/change-base
+      - id: bump
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+        run: tools/cedar-bump.sh "$BASE" HEAD | tee -a "$GITHUB_OUTPUT"
+
+  prove:
+    name: generated policies, three seeds
+    needs: bump
+    # `needs` skips this when `bump` is skipped, so `always()` lets the nightly and a dispatch
+    # through; the condition then names each way in. A pull request without a bump skips it.
+    if: >-
+      always() && (
+        github.event_name == 'schedule' ||
+        github.event_name == 'workflow_dispatch' ||
+        needs.bump.outputs.bumped == 'true' ||
+        needs.bump.result == 'failure'
+      )
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-toolchain
+      # Restores the Rust job's cache and saves none (`stress.yml`'s reason: the repository's
+      # caches are at the limit GitHub allows).
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: rust
+          save-if: false
+      - name: Build the tests once
+        run: cargo test --locked -p purlis-core --lib --test it --no-run
+      - name: The seeds
+        id: seeds
+        env:
+          GIVEN: ${{ inputs.seeds }}
+        run: |
+          set -euo pipefail
+          if [ -n "${GIVEN:-}" ]; then
+            seeds="$GIVEN"
+          else
+            day=$((10#$(date -u +%j) + 366 * ($(date -u +%Y) - 2026)))
+            seeds="$((day % 256)),$(((day * 7 + 1) % 256)),$(((day * 13 + 2) % 256))"
+          fi
+          echo "seeds=$seeds" >> "$GITHUB_OUTPUT"
+          echo "::notice title=seeds::PURLIS_PROOF_SEEDS=$seeds"
+      # Three runs, one seed each: a red run names the seed that replays it.
+      - name: Generated policies against the oracle, and the sandbox differential
+        env:
+          SEEDS: ${{ steps.seeds.outputs.seeds }}
+        run: |
+          set -euo pipefail
+          status=0
+          IFS=,
+          for seed in $SEEDS; do
+            echo "::group::seed $seed"
+            PURLIS_PROOF_SEEDS="$seed" cargo test --locked -p purlis-core --lib --test it -- \
+              generated_policies_agree_with_enforcement_on_every_cell \
+              the_compiled_sandbox_equals_the_authorizer || status=1
+            echo "::endgroup::"
+          done
+          exit $status

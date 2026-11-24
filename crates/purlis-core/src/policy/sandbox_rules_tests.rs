@@ -269,6 +269,24 @@ fn generated_chat() -> impl Strategy<Value = Chat<'static>> {
         })
 }
 
+/// The seeds of the runs below: the three fixed ones on every pull request, and the nightly's
+/// own from `PURLIS_PROOF_SEEDS` (M75-42, the same variable the generated cells read in
+/// `tests/it`), so a red night names the seed that replays it. A value that is not wholly seeds
+/// panics: a night that fell back to the fixed ones would prove nothing new.
+fn proof_seeds() -> Vec<u8> {
+    match std::env::var("PURLIS_PROOF_SEEDS") {
+        Ok(value) if !value.trim().is_empty() => value
+            .split(',')
+            .map(|seed| {
+                seed.trim()
+                    .parse()
+                    .unwrap_or_else(|_| panic!("PURLIS_PROOF_SEEDS holds `{seed}`, not 0 to 255"))
+            })
+            .collect(),
+        _ => vec![1, 7, 42],
+    }
+}
+
 /// The seeded runs of the differential and the profile property: `check` is told what the
 /// policy compiled to for the generated chat, and the generated paths.
 fn over_generated_policies(
@@ -284,7 +302,7 @@ fn over_generated_policies_from(
     with_shipped_default: bool,
     check: impl Fn(&Policy, &Chat<'_>, &Compiled, &[String], &str) -> Result<(), TestCaseError>,
 ) {
-    for seed in [1u8, 7, 42] {
+    for seed in proof_seeds() {
         let mut runner = TestRunner::new_with_rng(
             Config {
                 cases: 80,
