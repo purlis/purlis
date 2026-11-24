@@ -141,6 +141,7 @@ fn gh_pr_update_branch_on_the_chats_pull_request_is_answered_and_on_another_is_r
 
 #[test]
 fn a_refusal_as_another_repo_names_the_rest_routes_that_work() {
+    purlis_core::unsteered!();
     let said = Refusal::GraphqlOtherRepo.advice().expect("advice");
     assert!(said.contains("repos/OWNER/REPO/pulls -X POST"), "{said}");
     assert!(said.contains("pulls/N/update-branch"), "{said}");
