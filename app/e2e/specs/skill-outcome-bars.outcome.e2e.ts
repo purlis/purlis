@@ -12,8 +12,11 @@ import {
   OPENINGS,
   SKILLS_AT_THE_BAR,
   type Effort,
+  type FramesLook,
   harnessUnderTest,
+  noFrameSaid,
   openJudged,
+  openingsInOrder,
   openVerdict,
   reasonProblem,
   useVerdict,
@@ -138,6 +141,24 @@ async function theSkillsViewUnfolded(): Promise<void> {
   });
 }
 
+/** How long {@link framesLook} waits for a frame: a few frames' worth is plenty where any come. */
+const FRAME_WAIT_MS = 2000;
+
+/** Whether the page is visible and a frame comes within {@link FRAME_WAIT_MS}. Runs in the page. */
+function framesLook(): Promise<FramesLook> {
+  return browser.executeAsync((waitedMs: number, done: (look: FramesLook) => void) => {
+    const started = performance.now();
+    let settled = false;
+    const say = (frameAfterMs: number | null) => {
+      if (settled) return;
+      settled = true;
+      done({ visibility: document.visibilityState, frameAfterMs, waitedMs });
+    };
+    requestAnimationFrame(() => say(performance.now() - started));
+    setTimeout(() => say(null), waitedMs);
+  }, FRAME_WAIT_MS);
+}
+
 /** **Opens the studio from the palette `OPENINGS` times**, each a new tab that reads the project
  *  afresh, and answers how long each took to draw its first row. */
 async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
@@ -175,13 +196,25 @@ async function theOpenings(wereOpen: readonly string[]): Promise<number[]> {
     );
     expect(armed).toBe(true);
     let took: number | undefined;
-    await browser.waitUntil(
-      async () => {
-        took = await browser.execute(() => (globalThis as { __openedInMs?: number }).__openedInMs);
-        return took !== undefined && took !== null;
-      },
-      { timeout: 30_000, interval: 100, timeoutMsg: "the studio's Library drew no row in 30 s" },
-    );
+    const noRow = "the studio's Library drew no row in 30 s";
+    await browser
+      .waitUntil(
+        async () => {
+          took = await browser.execute(
+            () => (globalThis as { __openedInMs?: number }).__openedInMs,
+          );
+          return took !== undefined && took !== null;
+        },
+        { timeout: 30_000, interval: 100, timeoutMsg: noRow },
+      )
+      .catch(async (error: unknown) => {
+        if (!(error instanceof Error) || error.message !== noRow) throw error;
+        // Said with what the frames say, so a red run says why (#4351): WebKit gives none while the
+        // window is hidden or the screen is locked, and the rows past the first screen draw on one.
+        const look = await framesLook().catch(String);
+        const frames = typeof look === "string" ? look : noFrameSaid(look);
+        throw new Error(`${noRow} (opening #${n + 1}): ${frames}; ${openingsInOrder(samples)}`);
+      });
     samples.push(took as number);
   }
   return samples;
@@ -469,6 +502,7 @@ describe(`the Skill studio's outcome bars on ${harness.kind}'s stand-in`, functi
       const verdict = openJudged(openings, { ci, platform: process.platform });
       if (ci) report(`${openVerdict(openings).said}: said, not judged, on CI`);
       report(verdict.said);
+      report(`the openings ${openingsInOrder(openings)}`);
       if (!verdict.met) throw new Error(`missed: ${verdict.said}`);
     });
   });

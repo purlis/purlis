@@ -9,7 +9,9 @@ import {
   USE_BUDGET_MS,
   aPersonsTime,
   harnessUnderTest,
+  noFrameSaid,
   openJudged,
+  openingsInOrder,
   openVerdict,
   reasonProblem,
   useVerdict,
@@ -139,5 +141,46 @@ describe("the harness a run is about", () => {
   it("refuses a run that names none, rather than checking nothing", () => {
     expect(() => harnessUnderTest(undefined)).toThrow(/PURLIS_OUTCOME_HARNESS/);
     expect(() => harnessUnderTest("cursor")).toThrow(/PURLIS_OUTCOME_HARNESS/);
+  });
+});
+
+describe("the openings, in the order they were taken", () => {
+  it("keep each sample at its position, so a no-frame outlier is seen where it fell", () => {
+    expect(openingsInOrder([120.4, 118, 8536.2, 119])).toBe(
+      "in the order taken: #1 120 ms, #2 118 ms, #3 8536 ms, #4 119 ms",
+    );
+  });
+
+  it("say so when none was taken, as a timeout on the first opening has none", () => {
+    expect(openingsInOrder([])).toBe("in the order taken: none yet");
+  });
+});
+
+describe("what a wait for the Library's first row says when no frame came", () => {
+  it("names a hidden page and a rAF that never fired, the WebKit cause", () => {
+    expect(noFrameSaid({ visibility: "hidden", frameAfterMs: null, waitedMs: 2000 })).toBe(
+      "the page is hidden and no requestAnimationFrame callback fired in 2000 ms: " +
+        "the window gives no frames while hidden or the screen is locked",
+    );
+  });
+
+  it("says frames came when the page is visible and one fired, so the row is the thing missing", () => {
+    expect(noFrameSaid({ visibility: "visible", frameAfterMs: 17.3, waitedMs: 2000 })).toBe(
+      "the page is visible and a requestAnimationFrame callback fired after 17 ms: " +
+        "frames are drawn, so the Library itself drew no row",
+    );
+  });
+
+  it("does not blame the window for a visible page with no frame", () => {
+    expect(noFrameSaid({ visibility: "visible", frameAfterMs: null, waitedMs: 2000 })).toBe(
+      "the page is visible and no requestAnimationFrame callback fired in 2000 ms",
+    );
+  });
+
+  it("says a hidden page that still got a frame, so hidden alone is not the cause", () => {
+    expect(noFrameSaid({ visibility: "hidden", frameAfterMs: 40, waitedMs: 2000 })).toBe(
+      "the page is hidden and a requestAnimationFrame callback fired after 40 ms: " +
+        "frames are drawn, so the Library itself drew no row",
+    );
   });
 });
