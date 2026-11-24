@@ -2732,7 +2732,7 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
         // a decision not made in time is a refusal (#1355, #928). The budget is what keeps the
         // harness's own timeout, which may run the tool, from ever being reached.
         let (text, answered) = if is_a_pretooluse_hook(name) {
-            let budget = guard::Budget::start();
+            let budget = guard::Budget::start(name);
             let Some(text) = payload_within(budget.left()) else {
                 guard::out_of_time()
             };

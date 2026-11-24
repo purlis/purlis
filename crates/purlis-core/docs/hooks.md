@@ -1006,10 +1006,13 @@ the harness's choice. Read from each harness's own source and changelog (2026-10
 So a guard that is still reading when the harness gives up is an allow on two of the three.
 purlis never lets it come to that:
 
-- **Every `PreToolUse` hook decides within one budget of two seconds**, counted from the moment
-  purlis's `hook` entry point starts: reading its payload, then every guard and gate it runs,
-  on a thread with a deep stack. Two seconds is well inside the smallest timeout purlis sets
-  (five), and far more than an ordinary command takes.
+- **Every `PreToolUse` hook decides within one budget**, counted from the moment purlis's
+  `hook` entry point starts: reading its payload, then every guard and gate it runs, on a thread
+  with a deep stack. The Read, Edit and dispatch hooks have two seconds, well inside their
+  five-second timeout and far more than an ordinary command takes. **The Bash hook has five**,
+  half of its ten-second timeout: it is the only hook that merges, and a merge waits on the
+  session host to decide it and to take a hold, each ask reading who is asking first, so four
+  reads of at most 1.25 s, 1.25 s, 1 s and 1 s (4.5 s) fit inside it.
 - **The budget starts when `hook` does, not when the process does.** What comes before it,
   starting the process, is outside it, and on macOS the first run of a binary just installed or
   updated can wait seconds while the system assesses it. Nothing inside the process can bound

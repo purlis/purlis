@@ -251,8 +251,11 @@ pub(crate) fn attendance_of_this_chat(
 }
 
 /// How long the guard waits for the session host to decide a merge: it loads the plane's
-/// committed policy and decides, which is a few git reads. With [`A_MERGE_IS_TAKEN_WITHIN`] after
-/// it, inside the hook's [`BUDGET`] (`a_merge_decided_and_then_taken_fits_the_budget`).
+/// committed policy and decides, which is a few git reads. **It bounds each read, not the ask**:
+/// the ask first reads who is asking (`hookwire::reach`'s `WhoAmI`) and then the decision, each
+/// for this long, so a merge decided and then taken spends twice this and twice
+/// [`A_MERGE_IS_TAKEN_WITHIN`], inside the Bash hook's [`BASH_BUDGET`]
+/// (`a_merge_decided_and_then_taken_fits_the_budget`).
 ///
 /// **A silence this long is an `EAGAIN`, not a bug in the read**: the socket's read timeout
 /// expires as `WouldBlock` (os error 11 on Linux, 35 on macOS), and `hookwire::Asking` reports it
@@ -279,7 +282,7 @@ enum MergeJudged {
 /// answer, is refused, and never decides here (§6). Asked only of a chat the app started: a
 /// process it did not start is judged by where it is ([`judged_without_a_chat`], slice 07b).
 fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
-    use purlis_core::hookwire::{Answer, Ask, DecideAsk, UNKNOWN_LINE};
+    use purlis_core::hookwire::{Ask, DecideAsk};
     use purlis_core::mergehold;
     use purlis_core::policy::decide::Outcome;
     // A relative path in the line is read against the payload's directory (#7195).
@@ -298,60 +301,9 @@ fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
         },
         A_MERGE_IS_DECIDED_WITHIN,
     );
-    let refused = |reason: &str, denial: String| {
-        MergeJudged::Refused(toolgate::Verdict {
-            arm: None,
-            reason: reason.to_owned(),
-            shape: None,
-            denial,
-        })
-    };
-    let decision = match asked {
-        Ok(Ok(Answer::Decided(decision))) => decision,
-        // An app of another build could not read the ask: refused in the words that say so and
-        // name what to do (#6960), never decided here.
-        Ok(Ok(Answer::No { why })) if why == UNKNOWN_LINE => {
-            // The hook is the app's own binary, so it is the newer one: a bundle replaced under
-            // the running app (#7177). Another hook is a plugin of another build.
-            let app = if is_the_apps_own_binary() {
-                mergehold::AppSaid::OlderApp
-            } else {
-                mergehold::AppSaid::OtherBuild
-            };
-            return Some(refused(
-                mergehold::reason(&held, &app),
-                mergehold::refusal(&held, &app),
-            ));
-        }
-        Ok(Ok(Answer::No { why })) => {
-            return Some(refused(
-                mergehold::REASON_UNDECIDED,
-                mergehold::undecided(&why),
-            ));
-        }
-        Ok(Ok(_)) => {
-            return Some(refused(
-                mergehold::REASON_UNDECIDED,
-                mergehold::undecided("the app answered something else"),
-            ));
-        }
-        Ok(Err(e)) => {
-            return Some(refused(
-                mergehold::REASON_UNDECIDED,
-                mergehold::undecided(&format!("no answer: {e}")),
-            ));
-        }
-        // Whether this is a chat's is the app's to say, by its ancestry, as well as its
-        // environment's (#6995): a process that is no chat's is judged by where it is (07b).
-        Err(crate::brokered::NotTaken::NotAChat) => {
-            return judged_without_a_chat(&held, command, cwd);
-        }
-        Err(_) => {
-            return Some(refused(
-                mergehold::REASON_UNDECIDED,
-                mergehold::undecided("no session host answered"),
-            ));
-        }
+    let decision = match decided(asked, &held, command, cwd) {
+        Ok(decision) => decision,
+        Err(judged) => return judged,
     };
     match decision.after_mode {
         Outcome::Allow if decision.would_have_blocked() => {
@@ -369,6 +321,67 @@ fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
         )),
         Outcome::Ask => Some(MergeJudged::Refused(held_merge(
             &held, command, cwd, &decision,
+        ))),
+    }
+}
+
+/// A merge refused to the chat, for `reason`, in the words of `denial`.
+fn refused(reason: &str, denial: String) -> MergeJudged {
+    MergeJudged::Refused(toolgate::Verdict {
+        arm: None,
+        reason: reason.to_owned(),
+        shape: None,
+        denial,
+    })
+}
+
+/// **What the host's answer to a merge's ask leaves**: its decision, or the refusal to the
+/// chat (`Err(Some(..))`) of every answer that is not one, which fails closed. A read that
+/// timed out (`WouldBlock`, `EAGAIN`) is no answer and so a refusal; so is a socket that
+/// failed. A process that is no chat's is judged by where it is ([`judged_without_a_chat`]).
+fn decided(
+    asked: Result<std::io::Result<purlis_core::hookwire::Answer>, crate::brokered::NotTaken>,
+    held: &purlis_core::mergehold::Held,
+    command: &str,
+    cwd: &str,
+) -> Result<Box<purlis_core::policy::decide::Decision>, Option<MergeJudged>> {
+    use purlis_core::hookwire::{Answer, UNKNOWN_LINE};
+    use purlis_core::mergehold;
+    match asked {
+        Ok(Ok(Answer::Decided(decision))) => Ok(decision),
+        // An app of another build could not read the ask: refused in the words that say so and
+        // name what to do (#6960), never decided here.
+        Ok(Ok(Answer::No { why })) if why == UNKNOWN_LINE => {
+            // The hook is the app's own binary, so it is the newer one: a bundle replaced under
+            // the running app (#7177). Another hook is a plugin of another build.
+            let app = if is_the_apps_own_binary() {
+                mergehold::AppSaid::OlderApp
+            } else {
+                mergehold::AppSaid::OtherBuild
+            };
+            Err(Some(refused(
+                mergehold::reason(held, &app),
+                mergehold::refusal(held, &app),
+            )))
+        }
+        Ok(Ok(Answer::No { why })) => Err(Some(refused(
+            mergehold::REASON_UNDECIDED,
+            mergehold::undecided(&why),
+        ))),
+        Ok(Ok(_)) => Err(Some(refused(
+            mergehold::REASON_UNDECIDED,
+            mergehold::undecided("the app answered something else"),
+        ))),
+        Ok(Err(e)) => Err(Some(refused(
+            mergehold::REASON_UNDECIDED,
+            mergehold::undecided(&format!("no answer: {e}")),
+        ))),
+        // Whether this is a chat's is the app's to say, by its ancestry, as well as its
+        // environment's (#6995): a process that is no chat's is judged by where it is (07b).
+        Err(crate::brokered::NotTaken::NotAChat) => Err(judged_without_a_chat(held, command, cwd)),
+        Err(_) => Err(Some(refused(
+            mergehold::REASON_UNDECIDED,
+            mergehold::undecided("no session host answered"),
         ))),
     }
 }
@@ -495,8 +508,9 @@ fn say_the_gap(gap: Option<&str>) {
 
 /// How long the guard waits for the app to take a held merge: the app reads the request from
 /// the forge before it answers, within [`purlis_core::mergehold::THE_FORGE_IS_READ_WITHIN`], so
-/// the chat is told the person is asked only where an ask waits (Q239). Inside the hook's
-/// [`BUDGET`].
+/// the chat is told the person is asked only where an ask waits (Q239). Like
+/// [`A_MERGE_IS_DECIDED_WITHIN`] it bounds each read, so twice it is inside the Bash hook's
+/// [`BASH_BUDGET`].
 const A_MERGE_IS_TAKEN_WITHIN: Duration = Duration::from_millis(1_000);
 
 /// **The merge hold** (R-114, R-115, [`purlis_core::mergehold`]): the refusal of `held`, run in
@@ -683,13 +697,13 @@ fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate:
 /// touches are ever committed, so the reservation costs nothing a person could notice.
 const GUARD_STACK: usize = 256 * 1024 * 1024;
 
-/// The time every `PreToolUse` hook decides within, from the moment it starts: reading the
-/// payload, then every guard and gate it runs (#1355).
+/// The time every `PreToolUse` hook but the Bash one decides within, from the moment it starts:
+/// reading the payload, then every guard and gate it runs (#1355). The Bash hook has [`BASH_BUDGET`].
 ///
 /// A harness gives a hook a timeout of its own, and whether the tool call runs when it passes is
 /// the harness's choice: Codex and Claude Code run it (see `docs/hooks.md` → When a hook runs
 /// out of time). So purlis never lets a harness time a guard out. It decides inside this budget,
-/// and a decision not made in time is a refusal. Two and a half seconds, half of the smallest
+/// and a decision not made in time is a refusal. Two seconds, well inside the smallest
 /// `PreToolUse` timeout purlis registers (`the_budget_is_well_inside_every_harness_timeout`),
 /// and far more than an ordinary command takes. The caps in front of the guards
 /// ([`purlis_core::guardcaps`]) bound how slow a command inside them can be, and purlis-core's
@@ -698,7 +712,16 @@ const GUARD_STACK: usize = 256 * 1024 * 1024;
 ///
 /// It starts in `hook`, not when the process does: the time to start the process is outside it
 /// (`docs/hooks.md` → When a hook runs out of time).
-pub(crate) const BUDGET: Duration = Duration::from_millis(2_500);
+pub(crate) const BUDGET: Duration = Duration::from_secs(2);
+
+/// The Bash hook's own budget, the only hook that merges and so the only one that waits on the
+/// session host for a decision: a merge asks it to decide (who is asking, then the decision, each
+/// within [`A_MERGE_IS_DECIDED_WITHIN`]) and, where the policy holds it, to take the hold (the
+/// same two reads, each within [`A_MERGE_IS_TAKEN_WITHIN`]). That is 2 x 1.25 s + 2 x 1.0 s =
+/// 4.5 s of waiting, and this is five seconds: half of the Bash hook's ten-second timeout
+/// (`the_bash_budget_is_inside_the_bash_hook_s_timeout_with_room`). The Read, Edit and dispatch
+/// hooks keep [`BUDGET`], inside their five seconds.
+pub(crate) const BASH_BUDGET: Duration = Duration::from_secs(5);
 
 /// What sets the budget in milliseconds instead, in a debug build, for the tests that reach it.
 #[cfg(debug_assertions)]
@@ -718,10 +741,11 @@ pub(crate) struct Budget {
 }
 
 impl Budget {
-    /// The budget, from now.
-    pub(crate) fn start() -> Self {
+    /// The budget of the `PreToolUse` hook `word` names, from now: [`BASH_BUDGET`] for the Bash
+    /// hook, [`BUDGET`] for the rest.
+    pub(crate) fn start(word: &str) -> Self {
         Self {
-            ends: Instant::now() + budget(),
+            ends: Instant::now() + budget(word),
         }
     }
 
@@ -731,7 +755,7 @@ impl Budget {
     }
 }
 
-fn budget() -> Duration {
+fn budget(word: &str) -> Duration {
     #[cfg(debug_assertions)]
     if let Some(ms) = std::env::var(BUDGET_ON_PURPOSE_ENV)
         .ok()
@@ -739,7 +763,11 @@ fn budget() -> Duration {
     {
         return Duration::from_millis(ms);
     }
-    BUDGET
+    if word == crate::GUARDED_TOOL_HOOK {
+        BASH_BUDGET
+    } else {
+        BUDGET
+    }
 }
 
 /// The hook ran out of its budget: refused, by the panic hook ([`refuse_on_a_crash`]), which
@@ -856,8 +884,11 @@ pub(crate) fn deny(verdict: &toolgate::Verdict) -> ExitCode {
 mod budget_tests {
     use super::*;
 
-    /// The budget, and the bounded wait to tell the app after it, end well before any harness
-    /// would time a `PreToolUse` hook out: the hook always decides, and is never decided for.
+    /// The budget of each `PreToolUse` hook, and the bounded wait to tell the app after it, end
+    /// well before the harness would time that hook out: the hook always decides, and is never
+    /// decided for. **Each hook is held to its own budget**: only the Bash hook (ten seconds)
+    /// has [`BASH_BUDGET`], so a Read, Edit or dispatch hook (five seconds) can never be given
+    /// the Bash hook's room.
     #[test]
     fn the_budget_is_well_inside_every_harness_timeout() {
         for hook in purlis_core::hookreg::HANDLERS
@@ -865,37 +896,126 @@ mod budget_tests {
             .filter(|hook| hook.event == "PreToolUse")
         {
             let harness = Duration::from_secs(u64::from(hook.timeout));
+            let budget = if hook.name == crate::GUARDED_TOOL_HOOK {
+                BASH_BUDGET
+            } else {
+                BUDGET
+            };
             assert!(
-                BUDGET * 2 <= harness,
-                "{}: {BUDGET:?} of {harness:?}",
+                budget * 2 <= harness,
+                "{}: {budget:?} of {harness:?}",
                 hook.name
             );
             // And with the app frozen: the tool call's line, then the two lines nothing
             // records (the touched file, what the chat is doing), each with its own bound.
             #[cfg(unix)]
             assert!(
-                BUDGET + purlis_core::hookwire::A_TOOL_HOOK_TELLS_WITHIN <= harness,
-                "{}: {BUDGET:?} and {:?} of {harness:?}",
+                budget + purlis_core::hookwire::A_TOOL_HOOK_TELLS_WITHIN <= harness,
+                "{}: {budget:?} and {:?} of {harness:?}",
                 hook.name,
                 purlis_core::hookwire::A_TOOL_HOOK_TELLS_WITHIN
             );
         }
     }
 
-    /// M75-04 round 2: a merge asks the app twice, to decide it and then to take it, and both waits
-    /// end inside the hook's [`BUDGET`] with room left for the arms before them. The second outlasts
-    /// the app's read of the forge, or a hold it raised would be reported as unheard.
+    /// The hooks that never merge keep the two seconds they had, and only the Bash hook (the one
+    /// registered for `Bash`) is given [`BASH_BUDGET`].
+    #[test]
+    fn only_the_bash_hook_has_the_bash_budget() {
+        assert_eq!(BUDGET, Duration::from_secs(2));
+        let bash: Vec<_> = purlis_core::hookreg::HANDLERS
+            .iter()
+            .filter(|hook| hook.event == "PreToolUse" && hook.matcher == Some("Bash"))
+            .map(|hook| hook.name)
+            .collect();
+        assert_eq!(bash, [crate::GUARDED_TOOL_HOOK]);
+        let bash_hook = purlis_core::hookreg::find(crate::GUARDED_TOOL_HOOK).expect("registered");
+        assert!(BASH_BUDGET * 2 <= Duration::from_secs(u64::from(bash_hook.timeout)));
+        assert_eq!(budget(crate::GUARDED_TOOL_HOOK), BASH_BUDGET);
+        assert_eq!(budget("pretooluse-read"), BUDGET);
+        assert_eq!(budget("pretooluse-edit"), BUDGET);
+        assert_eq!(budget("pretooluse-dispatch"), BUDGET);
+    }
+
+    /// M75-04 round 2: a merge asks the app twice, to decide it and then to take it, and each ask
+    /// first reads who is asking, so four reads in all, each bounded on its own. All four end
+    /// inside the Bash hook's [`BASH_BUDGET`] with room left for the arms before them. The second
+    /// ask outlasts the app's read of the forge, or a hold it raised would be reported as unheard.
     #[test]
     fn a_merge_decided_and_then_taken_fits_the_budget() {
         let slack = Duration::from_millis(250);
+        let reads = 2 * A_MERGE_IS_DECIDED_WITHIN + 2 * A_MERGE_IS_TAKEN_WITHIN;
         assert!(
-            A_MERGE_IS_DECIDED_WITHIN + A_MERGE_IS_TAKEN_WITHIN + slack <= BUDGET,
-            "{A_MERGE_IS_DECIDED_WITHIN:?} and {A_MERGE_IS_TAKEN_WITHIN:?} of {BUDGET:?}"
+            reads + slack <= BASH_BUDGET,
+            "{reads:?} of {BASH_BUDGET:?}: {A_MERGE_IS_DECIDED_WITHIN:?} and {A_MERGE_IS_TAKEN_WITHIN:?}, each twice"
         );
         assert!(
             A_MERGE_IS_TAKEN_WITHIN > purlis_core::mergehold::THE_FORGE_IS_READ_WITHIN,
             "the app reads the forge for {:?}",
             purlis_core::mergehold::THE_FORGE_IS_READ_WITHIN
         );
+    }
+
+    /// A host that answers `delay` after it is asked, over a connection of its own.
+    #[cfg(unix)]
+    fn a_host_answering_after(
+        delay: Duration,
+    ) -> (purlis_core::hookwire::Asking, std::thread::JoinHandle<()>) {
+        use purlis_core::hookwire::{Answer, Asking};
+        use std::io::{BufRead, Write};
+        let (ours, theirs) = std::os::unix::net::UnixStream::pair().expect("a pair");
+        let host = std::thread::spawn(move || {
+            let mut theirs = theirs;
+            let mut asked = String::new();
+            std::io::BufReader::new(theirs.try_clone().expect("a clone"))
+                .read_line(&mut asked)
+                .expect("the ask");
+            std::thread::sleep(delay);
+            let _ = writeln!(
+                theirs,
+                "{}",
+                serde_json::to_string(&Answer::Attended { attended: true }).unwrap()
+            );
+        });
+        (Asking::over(ours, None), host)
+    }
+
+    /// The 700 ms this window was fell to `EAGAIN` on a loaded runner. A host that takes 900 ms,
+    /// as one does there, is heard through the guard's own constant, so shrinking it back fails.
+    #[test]
+    #[cfg(unix)]
+    fn a_host_that_decides_in_900_ms_is_heard_inside_the_merge_window() {
+        use purlis_core::hookwire::{Answer, Ask, AttendanceAsk};
+        assert!(
+            A_MERGE_IS_DECIDED_WITHIN > Duration::from_millis(900) + Duration::from_millis(250)
+        );
+        let (mut asking, host) = a_host_answering_after(Duration::from_millis(900));
+        let ask = Ask::Attendance(AttendanceAsk::read(1, None, &|_| None));
+        let answer = asking.ask(&ask, A_MERGE_IS_DECIDED_WITHIN);
+        host.join().unwrap();
+        assert!(
+            matches!(answer, Ok(Answer::Attended { attended: true })),
+            "{answer:?}"
+        );
+    }
+
+    /// Whatever the read gave up with (`EAGAIN` is `WouldBlock`; a timeout may be `TimedOut`) is
+    /// no answer, and no answer refuses the merge: it is never decided here, never let through.
+    #[test]
+    fn a_read_that_gave_up_refuses_the_merge() {
+        use purlis_core::mergehold::Held;
+        for kind in [
+            std::io::ErrorKind::WouldBlock,
+            std::io::ErrorKind::TimedOut,
+            std::io::ErrorKind::UnexpectedEof,
+        ] {
+            let asked = Ok(Err(std::io::Error::from(kind)));
+            let judged = decided(asked, &Held::Unreadable, "gh pr merge 1", "/");
+            let Err(Some(MergeJudged::Refused(verdict))) = judged else {
+                panic!("{kind:?} did not refuse the merge");
+            };
+            assert_eq!(verdict.reason, purlis_core::mergehold::REASON_UNDECIDED);
+            assert!(verdict.denial.contains("no answer"), "{}", verdict.denial);
+        }
     }
 }
