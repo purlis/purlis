@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795548066213,
+  "lastUpdate": 1795556238206,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54096,6 +54096,48 @@ window.BENCHMARK_DATA = {
             "value": 101.469049,
             "unit": "ms",
             "extra": "median of 5 runs: 101.263, 101.346, 101.469, 102.487, 102.577 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "2a8222c0fc5f9231bcec5e27975c1a9ab961c649",
+          "message": "ci-health: a run before a ticket's close never reopens it (#7583)\n\n* ci-health: a flake counts against a closed ticket only if its run started after the close (#7324)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M87JEMGA2GNKYRW22N0YGHJW\nPurlis-Persona: steward\n\n* ci-health: a reopened ticket remembers the pre-close runs its fix answered (review)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M87JEMGA2GNKYRW22N0YGHJW\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T20:50:15Z",
+          "tree_id": "98af0cf5b662b23409bed0d1930beed101acf7c3",
+          "url": "https://github.com/purlis/purlis/commit/2a8222c0fc5f9231bcec5e27975c1a9ab961c649"
+        },
+        "date": 1795556231729,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3204275,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.315, 0.317, 0.320, 0.333, 0.343 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.462444500000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.147, 16.163, 16.462, 16.609, 16.633 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.155654,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.258, 100.671, 101.156, 101.884, 102.066 ms"
           }
         ]
       }
