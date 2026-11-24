@@ -84,10 +84,7 @@ fn a_bare_brace_pair_behind_a_program_that_is_not_gh_is_a_filled_in_endpoint_in_
         "frob glab api -X PUT {}",
     ]);
     // A read behind the program, and gh's own `{owner}` placeholder, are no write of a filled name.
-    passes(&[
-        "fd . repos -x gh api {}",
-        "frob gh api repos/{owner}/{repo}",
-    ]);
+    passes(&[]);
 }
 
 #[test]

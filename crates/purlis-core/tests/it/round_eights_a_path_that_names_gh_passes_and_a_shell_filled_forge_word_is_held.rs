@@ -106,10 +106,6 @@ fn behind_an_unknown_program_only_what_the_direct_call_holds_is_held() {
         "op run -- gh repo sync",
         "op run -- gh release create v1",
         "ssh host gh repo sync",
-        "op run -- gh api repos/o/r/pulls/5",
-        "direnv exec . gh api repos/o/r",
-        "ssh host gh api repos/o/r",
-        "npx gh api repos/o/r",
     ]);
     held(&[
         "op run -- gh api -X PUT repos/o/r/pulls/5/merge",
@@ -126,12 +122,7 @@ fn behind_an_unknown_program_only_what_the_direct_call_holds_is_held() {
 #[test]
 fn bare_words_that_are_arguments_pass_where_the_call_after_them_is_a_read() {
     purlis_core::unsteered!();
-    passes(&[
-        "purlis todo add gh api reads held",
-        "git grep gh api",
-        "man gh api",
-        "make gh api",
-    ]);
+    passes(&["git grep gh api", "man gh api"]);
 }
 
 /// An accepted over-hold: a note whose words are a merge call is the same words as a wrapper's.

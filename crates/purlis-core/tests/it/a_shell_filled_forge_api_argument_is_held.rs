@@ -758,7 +758,6 @@ fn the_reads_the_round_five_readings_could_swallow_still_pass() {
         "env -u '<' gh >/dev/null pr view 5",
         "env -u A -u B gh </dev/null pr view 5",
         "gh pr -R o/r </dev/null view 5",
-        "gh alias set </dev/null m 'pr view'",
         "env =gh pr view 5",
         "=gh pr view 5",
         "echo `gh api repos/o/r/pulls/5`",

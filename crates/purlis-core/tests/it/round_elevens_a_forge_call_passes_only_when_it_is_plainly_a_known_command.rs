@@ -234,3 +234,39 @@ fn a_names_only_program_with_a_subcommand_that_runs_things_is_not_names_only() {
         "git rebase --exec 'true' main; git submodule foreach gh pr merge 5",
     ]);
 }
+
+/// What earlier rounds let through and the allowlist holds, each a false hold the refusal says
+/// how to rewrite: a `gh api` read behind a program that may append words (a `-XPUT`), a verb or
+/// noun no table knows, and a `gh` word that a program with no table may complete.
+#[test]
+fn what_earlier_rounds_passed_and_the_allowlist_holds() {
+    purlis_core::unsteered!();
+    held(&[
+        // a read of `api` behind a program that may append words
+        "op run -- gh api repos/o/r/pulls/5",
+        "direnv exec . gh api repos/o/r",
+        "ssh host gh api repos/o/r",
+        "npx gh api repos/o/r",
+        "make gh api",
+        "fd . repos -x gh api {}",
+        "frob gh api repos/{owner}/{repo}",
+        // a text a purlis command carries, whose words read as a `gh api` call
+        "purlis todo add gh api reads held",
+        // a noun or verb no table names, or a verb the shell fills in
+        "gh issue $(echo view) 3",
+        "gh >! f pr view 5",
+        "gh alias set </dev/null m 'pr view'",
+        "xe gh",
+    ]);
+}
+
+/// The double-quoted value of `--repo=` is `--repo=` and a value, at worst empty: it shifts
+/// nothing, so it passes where `-R"$X"` (which may be a bare `-R`) is held.
+#[test]
+fn a_quoted_value_glued_to_the_long_repo_flag_shifts_nothing() {
+    purlis_core::unsteered!();
+    passes(&[
+        "gh pr --repo=\"$REPO\" view 12",
+        "glab mr --repo=\"$REPO\" view 12",
+    ]);
+}

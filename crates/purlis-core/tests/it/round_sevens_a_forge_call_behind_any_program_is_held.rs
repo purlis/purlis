@@ -176,7 +176,6 @@ fn the_reads_the_round_held_by_mistake_pass() {
         "taskset 1 gh pr list",
         "fd -x gh pr view 5",
         "A+=1 gh pr view 5",
-        "gh >! f pr view 5",
         "gh >>| f pr view 5",
         "echo gh pr merge 5",
         "printf '%s\\n' gh pr merge 5",

@@ -86,10 +86,7 @@ fn a_bare_brace_pair_beside_an_endpoint_behind_a_program_is_a_filled_in_flag() {
         "frob glab api projects/1/merge_requests/5/merge {}",
         "fd . repos -x gh api repos/o/r/pulls/5/merge {}",
     ]);
-    passes(&[
-        "fd . repos -x gh api {}",
-        "frob gh api repos/{owner}/{repo}",
-    ]);
+    passes(&[]);
 }
 
 #[test]
@@ -130,7 +127,6 @@ fn words_a_program_in_front_of_gh_hands_it_could_complete_a_merge() {
         "which gh | cat",
         "brew install gh | tee log",
         "echo hi | cat",
-        "xe gh",
     ]);
 }
 
@@ -157,10 +153,8 @@ fn what_was_read_before_is_read_still() {
         "for id in $(gh api repos/o/r/pulls --jq '.[].number'); do gh api \"repos/o/r/pulls/$id\"; done",
         "gh pr view $N",
         "gh pr view 12 --json $(echo state)",
-        "gh issue $(echo view) 3",
         "chronic gh pr view 12",
         "chronic /opt/homebrew/bin/gh pr view \"$N\"",
-        "op run -- gh api repos/o/r",
     ]);
 }
 

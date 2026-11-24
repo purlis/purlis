@@ -96,23 +96,94 @@ pub(super) fn fill_of(text: &str, spelled: &str) -> Fill {
     }
 }
 
-
 /// **The commands the walk knows, by CLI: `(noun, verbs)`.** A call whose noun and verb are not
 /// here (and not a command the floor already holds, [`merge::held_commands`]) is held, whatever
 /// it is: a gh alias or extension can stand for a merge, and a table that listed what is
 /// dangerous would leak whatever it forgot. A command missing here costs a false hold, never a
 /// bypass. The first rows are reads; the rest are ordinary writes that cannot land code.
-const KNOWN: &[(&str, &[(&str, &[&str])])] = &[
+/// A noun and the verbs of it that the walk knows.
+type Verbs = (&'static str, &'static [&'static str]);
+
+const KNOWN: &[(&str, &[Verbs])] = &[
     (
         "gh",
         &[
-            ("pr", &["view", "create", "list", "diff", "checks", "status", "checkout", "comment", "edit", "close", "reopen", "ready", "review", "update-branch", "lock", "unlock", "revert"]),
-            ("issue", &["view", "list", "status", "create", "edit", "close", "reopen", "comment", "delete", "lock", "unlock", "pin", "unpin", "transfer", "develop"]),
-            ("repo", &["view", "list", "clone", "create", "fork", "edit", "archive", "unarchive", "delete", "rename", "set-default", "deploy-key", "gitignore", "license", "autolink"]),
-            ("run", &["view", "list", "watch", "rerun", "cancel", "delete", "download"]),
+            (
+                "pr",
+                &[
+                    "view",
+                    "create",
+                    "list",
+                    "diff",
+                    "checks",
+                    "status",
+                    "checkout",
+                    "comment",
+                    "edit",
+                    "close",
+                    "reopen",
+                    "ready",
+                    "review",
+                    "update-branch",
+                    "lock",
+                    "unlock",
+                    "revert",
+                ],
+            ),
+            (
+                "issue",
+                &[
+                    "view", "list", "status", "create", "edit", "close", "reopen", "comment",
+                    "delete", "lock", "unlock", "pin", "unpin", "transfer", "develop",
+                ],
+            ),
+            (
+                "repo",
+                &[
+                    "view",
+                    "list",
+                    "clone",
+                    "create",
+                    "fork",
+                    "edit",
+                    "archive",
+                    "unarchive",
+                    "delete",
+                    "rename",
+                    "set-default",
+                    "deploy-key",
+                    "gitignore",
+                    "license",
+                    "autolink",
+                ],
+            ),
+            (
+                "run",
+                &[
+                    "view", "list", "watch", "rerun", "cancel", "delete", "download",
+                ],
+            ),
             ("workflow", &["view", "list", "run", "enable", "disable"]),
-            ("release", &["view", "list", "download", "upload", "delete", "delete-asset", "edit", "verify", "verify-asset"]),
-            ("gist", &["view", "list", "create", "edit", "delete", "clone", "rename"]),
+            (
+                "release",
+                &[
+                    "view",
+                    "list",
+                    "download",
+                    "upload",
+                    "delete",
+                    "delete-asset",
+                    "edit",
+                    "verify",
+                    "verify-asset",
+                ],
+            ),
+            (
+                "gist",
+                &[
+                    "view", "list", "create", "edit", "delete", "clone", "rename",
+                ],
+            ),
             ("label", &["list", "create", "edit", "delete", "clone"]),
             ("secret", &["list", "set", "delete"]),
             ("variable", &["list", "get", "set", "delete"]),
@@ -123,21 +194,116 @@ const KNOWN: &[(&str, &[(&str, &[&str])])] = &[
             ("org", &["list"]),
             ("search", &["repos", "issues", "prs", "commits", "code"]),
             ("config", &["list", "set", "clear-cache"]),
-            ("extension", &["list", "search", "browse", "install", "remove", "upgrade", "create"]),
-            ("project", &["list", "view", "create", "edit", "close", "delete", "copy", "link", "unlink", "field-list", "field-create", "field-delete", "item-list", "item-add", "item-create", "item-edit", "item-archive", "item-delete", "mark-template"]),
+            (
+                "extension",
+                &[
+                    "list", "search", "browse", "install", "remove", "upgrade", "create",
+                ],
+            ),
+            (
+                "project",
+                &[
+                    "list",
+                    "view",
+                    "create",
+                    "edit",
+                    "close",
+                    "delete",
+                    "copy",
+                    "link",
+                    "unlink",
+                    "field-list",
+                    "field-create",
+                    "field-delete",
+                    "item-list",
+                    "item-add",
+                    "item-create",
+                    "item-edit",
+                    "item-archive",
+                    "item-delete",
+                    "mark-template",
+                ],
+            ),
         ],
     ),
     (
         "glab",
         &[
-            ("mr", &["view", "list", "diff", "approve", "unapprove", "note", "subscribe", "unsubscribe", "update", "rebase", "close", "reopen", "todo", "issues", "checkout", "delete", "approvers"]),
-            ("issue", &["view", "list", "create", "update", "close", "reopen", "note", "subscribe", "unsubscribe", "delete", "board"]),
-            ("repo", &["view", "list", "clone", "fork", "create", "archive", "delete", "search", "contributors", "members", "transfer", "publish", "mirror"]),
-            ("ci", &["list", "status", "view", "trace", "run", "retry", "cancel", "lint", "get", "delete"]),
-            ("pipeline", &["list", "status", "view", "trace", "run", "retry", "cancel", "get", "delete"]),
+            (
+                "mr",
+                &[
+                    "view",
+                    "list",
+                    "diff",
+                    "approve",
+                    "unapprove",
+                    "note",
+                    "subscribe",
+                    "unsubscribe",
+                    "update",
+                    "rebase",
+                    "close",
+                    "reopen",
+                    "todo",
+                    "issues",
+                    "checkout",
+                    "delete",
+                    "approvers",
+                ],
+            ),
+            (
+                "issue",
+                &[
+                    "view",
+                    "list",
+                    "create",
+                    "update",
+                    "close",
+                    "reopen",
+                    "note",
+                    "subscribe",
+                    "unsubscribe",
+                    "delete",
+                    "board",
+                ],
+            ),
+            (
+                "repo",
+                &[
+                    "view",
+                    "list",
+                    "clone",
+                    "fork",
+                    "create",
+                    "archive",
+                    "delete",
+                    "search",
+                    "contributors",
+                    "members",
+                    "transfer",
+                    "publish",
+                    "mirror",
+                ],
+            ),
+            (
+                "ci",
+                &[
+                    "list", "status", "view", "trace", "run", "retry", "cancel", "lint", "get",
+                    "delete",
+                ],
+            ),
+            (
+                "pipeline",
+                &[
+                    "list", "status", "view", "trace", "run", "retry", "cancel", "get", "delete",
+                ],
+            ),
             ("release", &["view", "list", "download", "upload", "delete"]),
             ("label", &["list", "create", "edit", "delete"]),
-            ("variable", &["list", "get", "set", "update", "delete", "export"]),
+            (
+                "variable",
+                &["list", "get", "set", "update", "delete", "export"],
+            ),
             ("schedule", &["list", "create", "delete", "run", "update"]),
             ("snippet", &["create"]),
             ("ssh-key", &["list", "add", "delete", "get"]),
@@ -145,7 +311,18 @@ const KNOWN: &[(&str, &[(&str, &[&str])])] = &[
             ("user", &["events"]),
             ("config", &["set", "edit"]),
             ("milestone", &["list", "view", "create", "edit", "delete"]),
-            ("incident", &["list", "view", "close", "reopen", "note", "subscribe", "unsubscribe"]),
+            (
+                "incident",
+                &[
+                    "list",
+                    "view",
+                    "close",
+                    "reopen",
+                    "note",
+                    "subscribe",
+                    "unsubscribe",
+                ],
+            ),
         ],
     ),
 ];
@@ -233,6 +410,12 @@ fn walk(name: &str, call: &[String], spelled: &[String]) -> Ended {
     while k < args.len() {
         let text = args[k].as_str();
         let f = fill(k);
+        // `--repo="$REPO"` is `--repo=` and a value at worst empty: it takes no word after it, so
+        // it shifts nothing. (`-R"$REPO"` may be a bare `-R`, which takes the next word: held.)
+        if text.starts_with("--repo=") && f != Fill::Open {
+            k += 1;
+            continue;
+        }
         if f != Fill::Literal || text.is_empty() {
             return Ended::Held(refusal(name, text, "The word"));
         }
@@ -241,7 +424,8 @@ fn walk(name: &str, call: &[String], spelled: &[String]) -> Ended {
                 // A value is one word whatever it holds (`-R "$REPO"`), but not an empty literal
                 // and not one the shell may split or drop.
                 if let Some(value) = args.get(k + 1)
-                    && (fill(k + 1) == Fill::Open || value.is_empty() && fill(k + 1) == Fill::Literal)
+                    && (fill(k + 1) == Fill::Open
+                        || value.is_empty() && fill(k + 1) == Fill::Literal)
                 {
                     return Ended::Held(refusal(name, value, "The value of the repository flag"));
                 }
@@ -322,9 +506,8 @@ mod tests {
                 for verb in &verbs {
                     let call = words(&format!("{name} {noun} {verb}"));
                     let ended = walk(name, &call, &[]);
-                    let known = known_command(name, noun, verb)
-                        || noun_alone(name, noun)
-                        || *noun == "api";
+                    let known =
+                        known_command(name, noun, verb) || noun_alone(name, noun) || *noun == "api";
                     assert_eq!(
                         matches!(ended, Ended::Known | Ended::Api),
                         known,

@@ -174,9 +174,14 @@ const ROUND_SEVEN_HOLD: &str = "A substitution here holds a comment, a heredoc o
 /// The sentences of the two holds round 3 of #7423 adds to a line the Python let through: a flag
 /// before a forge CLI's noun that may take the noun as its value (`gh -c x merge`), and a word
 /// of a line the lexer rejects that holds an expansion character.
-const ROUND_THREE_HOLDS: [&str; 2] = [
+const ROUND_THREE_HOLDS: [&str; 4] = [
     "stands before the command and may take the next word as its value",
     "is filled in by the shell, which may split it",
+    // Round 11 of #7423 (the allowlist): a forge CLI call whose noun or verb is no command the
+    // table knows, or that a program in front of it may complete, is held. The Python let a
+    // mistyped `gh push` or `glab -c x clone` through.
+    "is empty, filled in by the shell, or not a command purlis knows",
+    "may hand it words (a pipe, a file, a here-string, the names it finds)",
 ];
 
 #[test]

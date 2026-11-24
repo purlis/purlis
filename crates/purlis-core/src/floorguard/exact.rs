@@ -44,9 +44,6 @@ pub(super) struct Segment {
     call: Option<Vec<String>>,
     /// Each word of the call as the source spells it, `""` where nothing measured it.
     call_spelled: Vec<String>,
-    /// Whether the segment is handed words: it stands after a `|`, or has a redirection that
-    /// feeds its stdin (a file, a heredoc, a here-string).
-    pub fed: bool,
     /// The call again without a digit word that stands apart from the redirection after it
     /// (`gh 5 >f pr merge 5`): the shell makes it an argument, and a reader that took it for a
     /// descriptor would see another call. Read too, so that no earlier reading's refusal is lost.
@@ -293,7 +290,6 @@ fn read(words: &[Word], measured: bool, clobber: bool, piped: bool) -> Segment {
         spelled,
         call,
         call_spelled,
-        fed,
         also,
         refusal,
         clobber: None,
@@ -323,14 +319,31 @@ const PACKAGE_MANAGERS: &[&str] = &[
 
 /// The subcommands of a package manager that run none of its operands.
 const PACKAGE_SUBCOMMANDS: &[&str] = &[
-    "install", "info", "search", "upgrade", "uninstall", "list", "remove", "show", "update", "reinstall",
-    "latest", "current", "where", "outdated", "ls", "ls-remote", "versions", "plugin",
+    "install",
+    "info",
+    "search",
+    "upgrade",
+    "uninstall",
+    "list",
+    "remove",
+    "show",
+    "update",
+    "reinstall",
+    "latest",
+    "current",
+    "where",
+    "outdated",
+    "ls",
+    "ls-remote",
+    "versions",
+    "plugin",
 ];
 
 /// `git`'s subcommands that run none of their operands: `git grep gh`, `git log -- crates/*`.
 const GIT_SUBCOMMANDS: &[&str] = &[
-    "add", "grep", "log", "diff", "show", "status", "mv", "rm", "commit", "tag", "branch", "checkout",
-    "switch", "restore", "reset", "blame", "shortlog", "stash", "fetch", "pull", "push", "remote",
+    "add", "grep", "log", "diff", "show", "status", "mv", "rm", "commit", "tag", "branch",
+    "checkout", "switch", "restore", "reset", "blame", "shortlog", "stash", "fetch", "pull",
+    "push", "remote",
 ];
 
 /// Whether the program placed in `argv` (`argv[0]`) never executes a word among its operands.
