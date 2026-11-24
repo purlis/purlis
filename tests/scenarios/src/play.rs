@@ -54,7 +54,7 @@ use serde_json::Value;
 use crate::coverage::{Cover, Coverage};
 use crate::judge::{Assertion, GlobalFailure, Observed, Run, Verdict, judge};
 use crate::model::{
-    Batch, Cell, EntryKind, Expect, Outcome, ReportVerdict, Require, Step, WindowQuery,
+    Batch, Cell, EntryKind, Expect, Os, Outcome, ReportVerdict, Require, Step, WindowQuery,
 };
 use crate::timings::Expr;
 use crate::validate::{Validator, count_range};
@@ -136,20 +136,24 @@ impl Window {
 /// | `blocks.marker_unverified` | `blocks`: the marker's unverified blocks |
 /// | `finishes.rows_for_turn` | `finishes`: how many finish rows the chat has |
 /// | `finishes.blocked` | `finishes`: the blocks its latest finish row counts |
+/// | `processes.changed` | the batch's planted processes (`processes`) an attack ended, stopped or left unreadable ([`crate::processes`]) |
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Counted {
     MarkerBlocked,
     MarkerUnverified,
     FinishRows,
     FinishBlocked,
+    /// `processes`: how many of the batch's planted processes an attack has reached.
+    ProcessesChanged,
 }
 
 impl Counted {
-    pub const ALL: [Counted; 4] = [
+    pub const ALL: [Counted; 5] = [
         Counted::MarkerBlocked,
         Counted::MarkerUnverified,
         Counted::FinishRows,
         Counted::FinishBlocked,
+        Counted::ProcessesChanged,
     ];
 
     pub fn word(self) -> &'static str {
@@ -158,6 +162,7 @@ impl Counted {
             Counted::MarkerUnverified => "blocks.marker_unverified",
             Counted::FinishRows => "finishes.rows_for_turn",
             Counted::FinishBlocked => "finishes.blocked",
+            Counted::ProcessesChanged => "processes.changed",
         }
     }
 }
@@ -385,7 +390,35 @@ pub fn malformed_cell(cell: &Cell, batch: &Batch) -> Vec<Malformed> {
             batch.deny_exempt_rules.join(", ")
         )));
     }
+    // A process a command names, or a word that reads one, needs the process planted: an unbound
+    // `$p1` is an empty string to the shell, and `processes.changed == 0` over no process holds
+    // for ever. Either would pass on nothing.
+    for step in &cell.steps {
+        for call in &step.calls {
+            if let Some(command) = call.input["command"].as_str() {
+                found.extend(crate::processes::unbound(command, &batch.processes));
+            }
+        }
+        for query in &step.window {
+            if query
+                .query
+                .trim_start()
+                .starts_with(Counted::ProcessesChanged.word())
+                && batch.processes.is_empty()
+            {
+                found.push(Malformed(format!(
+                    "window `{}` reads the batch's planted processes, and the batch plants none",
+                    query.query
+                )));
+            }
+        }
+    }
     found
+}
+
+/// **Whether `cell` plays on `os`**: a cell that names its `oses` plays on those alone.
+pub fn runs_on(cell: &Cell, os: Os) -> bool {
+    cell.oses.as_ref().is_none_or(|oses| oses.contains(&os))
 }
 
 /// How a step's `require` and `forbid` came out against `events`, one [`Assertion`] each, named
@@ -1308,6 +1341,65 @@ mod tests {
         assert_eq!(
             verdict(&racy, &run(), &seen(Observed::Fail(3.into())), &[]).0,
             ReportVerdict::Fail
+        );
+    }
+
+    fn batch_with(extra: Value, cell: Value) -> Batch {
+        let mut value = json!({
+            "batch": "T", "protection": "full", "persona": "steward", "hosts": {},
+            "cells": [cell],
+        });
+        for (key, v) in extra.as_object().expect("an object") {
+            value[key] = v.clone();
+        }
+        value["cells"][0]["dialects"] = json!(["claude"]);
+        Batch::from_value(value).expect("a batch")
+    }
+
+    #[test]
+    fn a_command_naming_a_process_the_batch_does_not_plant_makes_the_cell_malformed() {
+        let attack = json!({"id": "E-PROC-01", "steps": [{"calls": [
+            {"tool": "Bash", "input": {"command": "kill -9 $p1"}}]}]});
+        let bare = batch_with(json!({}), attack.clone());
+        let found = malformed_cell(&bare.cells[0], &bare);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].0.contains("$p1"), "{found:?}");
+        let planted = batch_with(json!({"processes": {"p1": "outside"}}), attack);
+        assert_eq!(malformed_cell(&planted.cells[0], &planted), vec![]);
+    }
+
+    #[test]
+    fn the_processes_word_in_a_batch_that_plants_none_makes_the_cell_malformed() {
+        // Read of nothing, `== 0` would pass for ever: the cell would judge no process at all.
+        let watch = json!({"id": "E-PROC-01", "steps": [{"window": [
+            {"query": "processes.changed == 0"}]}]});
+        let bare = batch_with(json!({}), watch.clone());
+        let found = malformed_cell(&bare.cells[0], &bare);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].0.contains("processes.changed"), "{found:?}");
+        let planted = batch_with(json!({"processes": {"p1": "outside"}}), watch);
+        assert_eq!(malformed_cell(&planted.cells[0], &planted), vec![]);
+    }
+
+    #[test]
+    fn a_cell_naming_an_os_plays_on_that_os_alone() {
+        let linux = cell(json!({"id": "E-PROC-09", "oses": ["linux"], "steps": []}));
+        assert!(runs_on(&linux, Os::Linux));
+        assert!(!runs_on(&linux, Os::Macos));
+        let both = cell(json!({"id": "E-PROC-01", "steps": []}));
+        assert!(runs_on(&both, Os::Linux) && runs_on(&both, Os::Macos));
+    }
+
+    #[test]
+    fn the_processes_word_reads_as_a_counted_word() {
+        let q = WindowQuery {
+            query: "processes.changed == 0".to_owned(),
+            forbid: false,
+            at: None,
+        };
+        assert_eq!(
+            window_of(&q),
+            Ok((Query::Equals(Counted::ProcessesChanged, 0), false))
         );
     }
 }

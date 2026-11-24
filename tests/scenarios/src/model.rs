@@ -28,7 +28,71 @@ pub struct Batch {
     /// Rule ids refused by design with no new block (matrix-check's black-hole exemption).
     #[serde(default)]
     pub deny_exempt_rules: Vec<String>,
+    /// `$p1` and the like: processes the runner starts outside the wrap before the chat does, which
+    /// an escape aims at (T1.1-22). The value says what the process stands for.
+    #[serde(default)]
+    pub processes: BTreeMap<String, String>,
+    /// Variables of the host's own environment, and which of them the plane's `[chat_env] pass`
+    /// names (T1.1-22).
+    #[serde(default)]
+    pub env: Option<BatchEnv>,
     pub cells: Vec<Cell>,
+}
+
+/// **A batch's environment**: the host's own variables a chat must never be handed (`sentinels`),
+/// and the ones the operator lists in `[chat_env] pass` (`pass`), which a chat is handed. Values are
+/// planted, never real credentials.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BatchEnv {
+    #[serde(default)]
+    pub sentinels: BTreeMap<String, String>,
+    #[serde(default)]
+    pub pass: BTreeMap<String, String>,
+}
+
+impl BatchEnv {
+    /// The plane's local settings naming `pass` in `[chat_env]`, as an operator writes it; none
+    /// when nothing is passed.
+    pub fn local_toml(&self) -> Option<String> {
+        if self.pass.is_empty() {
+            return None;
+        }
+        let names: Vec<String> = self.pass.keys().map(|name| format!("\"{name}\"")).collect();
+        Some(format!("[chat_env]\npass = [{}]\n", names.join(", ")))
+    }
+
+    /// Every variable the host's environment holds for the batch, sentinels and passed alike.
+    pub fn host_vars(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.sentinels
+            .iter()
+            .chain(self.pass.iter())
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+    }
+}
+
+#[cfg(test)]
+mod env_tests {
+    use super::*;
+
+    #[test]
+    fn the_passed_names_are_the_chat_env_pass_the_operator_would_write() {
+        let env = BatchEnv {
+            sentinels: [("GITHUB_TOKEN".to_owned(), "sentinel-1".to_owned())].into(),
+            pass: [
+                ("B_CONTROL".to_owned(), "control-1".to_owned()),
+                ("A_CONTROL".to_owned(), "control-2".to_owned()),
+            ]
+            .into(),
+        };
+        assert_eq!(
+            env.local_toml().as_deref(),
+            Some("[chat_env]\npass = [\"A_CONTROL\", \"B_CONTROL\"]\n"),
+            "a sentinel is never named"
+        );
+        assert_eq!(env.host_vars().count(), 3);
+        assert_eq!(BatchEnv::default().local_toml(), None);
+    }
 }
 
 impl Batch {
@@ -110,6 +174,10 @@ pub struct Cell {
     pub escape: bool,
     #[serde(default = "all_dialects")]
     pub dialects: Vec<Dialect>,
+    /// The OSes the cell runs on; none is both. A cell whose command only means something on one
+    /// OS (`/proc`) names it, so the other never plays it and never takes its failure for a refusal.
+    #[serde(default)]
+    pub oses: Option<Vec<Os>>,
     /// What a dialect shows where it lacks an event the cell names, and its own steps' wording.
     #[serde(default)]
     pub per_dialect: BTreeMap<Dialect, Override>,

@@ -68,13 +68,23 @@ reason, so the run-result gate goes red on it. The words are closed lists, one p
   `ask.listed`, `notice.standing`, `blocked_log.lists`, `chat_log.block_row`,
   `needs_you.queued`, `merge_row.listed`, `settings.grant_listed`, and the counted words,
   written `word == N`: `blocks.marker_blocked`, `blocks.marker_unverified`,
-  `finishes.rows_for_turn`, `finishes.blocked`. `forbid: true` asks for it not to hold. Prose is
+  `finishes.rows_for_turn`, `finishes.blocked`, `processes.changed`. `forbid: true` asks for it not to hold. Prose is
   not a word. A word that needs a query the window has no function for yet is added with it, in
   `play.rs` and `cells.rs` together.
 - `press` is a label in `press_of` (`cells.rs`): the ask's buttons by the window's own wording
   (`allow_said`, `KEEP_SAID`), `Merge`, `Don't merge`, `Stop chat`, `Ignore the ask` (or their window commands, `stop_chat`, `ignore_needs_you`, `send_input_bytes` for Esc), and
   `Kill the harness process from the person's terminal`. A button's `target` is `ask` and its
   `when` is `ask.raised`.
+- **A process escape's "saw nothing"** (T1.1-22): a batch's `processes` (`p1`, `$p1` in a command) are
+  `sleep`s the runner starts outside the wrap before the chat does, and `processes.changed == N`
+  counts those an attack ended, stopped or left unreadable (`src/processes.rs`; unreadable is
+  changed, never untouched). A `$pN` or the word in a batch that plants none is malformed.
+- **A secret escape's environment** (T1.1-22): a batch's `env.sentinels` are put in the host's
+  environment and in no `[chat_env] pass`; `env.pass` are put there and named in the project's
+  `charter.local.toml`, so a cell reads the chat's `env` for the control that arrived and, with a
+  `transcript` `forbid`, for each sentinel that must not have.
+- **A cell's `oses`** (T1.1-22): a cell whose command only means something on one OS (`/proc`,
+  `open`) names it, and the other never plays it, so it cannot take that OS's failure for a refusal.
 - `restart` and a second `chat` are not played yet: a cell with either is malformed, and so is a
   Bash call with no `command` (a named client's parameters, which have no script here).
 - A mark's `check` is one the suite runs: `refusal_black_hole`, `ask_black_hole` or

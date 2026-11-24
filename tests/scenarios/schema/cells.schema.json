@@ -21,6 +21,21 @@
           "additionalProperties": {"type": "string", "minLength": 1}
         },
         "deny_exempt_rules": {"type": "array", "items": {"type": "string"}},
+        "processes": {
+          "description": "$p1 and the like: processes the runner starts outside the wrap before the chat does, which an escape aims at (T1.1-22). The value says what the process stands for.",
+          "type": "object",
+          "propertyNames": {"pattern": "^p[0-9]+$"},
+          "additionalProperties": {"type": "string", "minLength": 1}
+        },
+        "env": {
+          "description": "Variables of the host's own environment (T1.1-22): `sentinels` a chat must never be handed, and `pass`, which the plane's `[chat_env] pass` names so a chat is handed them. Planted values, never real credentials.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sentinels": {"type": "object", "propertyNames": {"pattern": "^[A-Z][A-Z0-9_]*$"}, "additionalProperties": {"type": "string", "minLength": 8}},
+            "pass": {"type": "object", "propertyNames": {"pattern": "^[A-Z][A-Z0-9_]*$"}, "additionalProperties": {"type": "string", "minLength": 8}}
+          }
+        },
         "cells": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/cell"}}
       }
     },
@@ -57,6 +72,13 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": {"$ref": "#/$defs/dialect"}
+        },
+        "oses": {
+          "description": "The OSes the cell runs on; default both.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/os"}
         },
         "per_dialect": {
           "type": "object",
