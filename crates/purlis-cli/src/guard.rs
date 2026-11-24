@@ -220,8 +220,8 @@ fn log_verdict(root: &Path, chat: Option<&str>, family: Family, verdict: &toolga
 }
 
 /// How long the guard waits for the app to say whether this chat is attended (R-109): the app
-/// answers from what it holds, so this is the time a slow app may take, inside the hook's
-/// [`BUDGET`].
+/// answers from what it holds, so this is the time a slow app may take, inside the Bash hook's
+/// [`BASH_BUDGET`].
 const ATTENDANCE_IS_ANSWERED_WITHIN: Duration = Duration::from_millis(500);
 
 /// **This chat's attendance fact, as the app holds it** (R-109, T1-18,
@@ -588,7 +588,7 @@ fn is_the_apps_own_binary() -> bool {
 
 /// How long the guard waits, in all, for the app to judge a line's branch folder claims
 /// (#3931): each is a check and one appended line, and the whole wait stays well inside the
-/// hook's [`BUDGET`], whatever the arms before it took.
+/// Bash hook's [`BASH_BUDGET`], whatever the arms before it took.
 const CLAIMS_ARE_ANSWERED_WITHIN: Duration = Duration::from_millis(900);
 
 /// **The one-writer guard on a chat's plain git** (#3931): the refusal of `command`, run in
@@ -717,9 +717,10 @@ pub(crate) const BUDGET: Duration = Duration::from_secs(2);
 /// The Bash hook's own budget, the only hook that merges and so the only one that waits on the
 /// session host for a decision: a merge asks it to decide (who is asking, then the decision, each
 /// within [`A_MERGE_IS_DECIDED_WITHIN`]) and, where the policy holds it, to take the hold (the
-/// same two reads, each within [`A_MERGE_IS_TAKEN_WITHIN`]). That is 2 x 1.25 s + 2 x 1.0 s =
-/// 4.5 s of waiting, and this is five seconds: half of the Bash hook's ten-second timeout
-/// (`the_bash_budget_is_inside_the_bash_hook_s_timeout_with_room`). The Read, Edit and dispatch
+/// same two reads, each within [`A_MERGE_IS_TAKEN_WITHIN`]). That is typically 2 x 1.25 s + 2 x 1.0 s =
+/// 4.5 s of waiting (more sockets knocked at means more reads, and running out still refuses),
+/// and this is five seconds: half of the Bash hook's ten-second timeout
+/// (`only_the_bash_hook_has_the_bash_budget`). The Read, Edit and dispatch
 /// hooks keep [`BUDGET`], inside their five seconds.
 pub(crate) const BASH_BUDGET: Duration = Duration::from_secs(5);
 
@@ -896,11 +897,7 @@ mod budget_tests {
             .filter(|hook| hook.event == "PreToolUse")
         {
             let harness = Duration::from_secs(u64::from(hook.timeout));
-            let budget = if hook.name == crate::GUARDED_TOOL_HOOK {
-                BASH_BUDGET
-            } else {
-                BUDGET
-            };
+            let budget = budget(hook.name);
             assert!(
                 budget * 2 <= harness,
                 "{}: {budget:?} of {harness:?}",
@@ -980,16 +977,17 @@ mod budget_tests {
         (Asking::over(ours, None), host)
     }
 
-    /// The 700 ms this window was fell to `EAGAIN` on a loaded runner. A host that takes 900 ms,
-    /// as one does there, is heard through the guard's own constant, so shrinking it back fails.
+    /// The 700 ms this window was fell to `EAGAIN` on a loaded runner, where a host took 900 ms:
+    /// the window is pinned above that, and a late host is heard through the guard's own constant
+    /// (400 ms here, so a stalled runner has room).
     #[test]
     #[cfg(unix)]
-    fn a_host_that_decides_in_900_ms_is_heard_inside_the_merge_window() {
+    fn a_late_host_is_heard_inside_the_merge_window() {
         use purlis_core::hookwire::{Answer, Ask, AttendanceAsk};
         assert!(
             A_MERGE_IS_DECIDED_WITHIN > Duration::from_millis(900) + Duration::from_millis(250)
         );
-        let (mut asking, host) = a_host_answering_after(Duration::from_millis(900));
+        let (mut asking, host) = a_host_answering_after(Duration::from_millis(400));
         let ask = Ask::Attendance(AttendanceAsk::read(1, None, &|_| None));
         let answer = asking.ask(&ask, A_MERGE_IS_DECIDED_WITHIN);
         host.join().unwrap();
