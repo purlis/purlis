@@ -27,6 +27,17 @@
 //! them, and neither does a chat of another project with the same id; the route refuses every
 //! update it makes to such a branch: the person pushes it.
 //!
+//! **One exception: the chat that asked for the work** (ADR 0128, amended 2026-11-23). A branch a
+//! *task* made is the dispatching chat's to follow up after the task ends, so an update is also
+//! let through when the branch's recorded owner is a chat the pusher dispatched, directly or up
+//! the chain ([`tip_for`]), from the same tip rule: the old id is the recorded tip. **The link is
+//! the app's own dispatch record** ([`crate::dispatchrecord`], which no sandboxed chat can write), never a
+//! session record or any file a chat writes; where the record shows no such link the update is
+//! refused. **The confirmed push is then recorded under the pusher** ([`record`]'s one line,
+//! which makes the last line the dispatcher's): the task, if it still runs, is no longer the
+//! owner and its next update is refused, so the task and the dispatcher cannot both keep moving
+//! the branch. The link runs one way: a task never moves a branch of the chat that dispatched it.
+//!
 //! **A `gone` line is an earlier end of the record**, not the guard: the route reads the forge's
 //! advertisement of the repo before a push, and a recorded branch it does not list gets a `gone`
 //! line ([`forget`]). A branch made again, by this chat or another through the route, is a new
@@ -150,7 +161,7 @@ pub fn forget(config_root: &Path, gone: &[CreatedBranch]) -> io::Result<()> {
 }
 
 /// A full commit id: 40 (SHA-1) or 64 (SHA-256) hex digits.
-fn is_commit_id(id: &str) -> bool {
+pub fn is_commit_id(id: &str) -> bool {
     matches!(id.len(), 40 | 64) && id.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
@@ -186,6 +197,49 @@ fn decided(
         }
     }
     decided
+}
+
+/// Who the last line for `branch` of the repo `repo_id` on `host` makes its owner, and the tip it
+/// left: `(project id, chat, tip)`, **read from the file now**. `None` unless that line is a
+/// push with a project, a chat and a tip that reads.
+pub fn owner_of(
+    config_root: &Path,
+    host: &str,
+    repo_id: u64,
+    branch: &str,
+) -> Option<(String, String, String)> {
+    let text = std::fs::read_to_string(file_in(config_root)).ok()?;
+    let mut last: Option<Line> = None;
+    for line in text.lines() {
+        let Ok(line) = serde_json::from_str::<Line>(line) else {
+            continue;
+        };
+        if line.host == host && line.repo_id == Some(repo_id) && line.branch == branch {
+            last = Some(line);
+        }
+    }
+    let line = last.filter(|l| !l.gone && is_commit_id(&l.tip))?;
+    let project = line.project_id.filter(|p| !p.is_empty())?;
+    (!line.chat.is_empty()).then(|| (project, line.chat, line.tip.to_ascii_lowercase()))
+}
+
+/// [`tip_of`], or, where the branch is the record of a chat of the same project that `chat`
+/// dispatched, that chat's tip. `dispatched(owner)` says whether `chat` dispatched the chat `owner`,
+/// from the app's dispatch record (asked only when the branch is another chat's).
+pub fn tip_for(
+    config_root: &Path,
+    project_id: &str,
+    chat: &str,
+    host: &str,
+    repo_id: u64,
+    branch: &str,
+    dispatched: &dyn Fn(&str) -> bool,
+) -> Option<String> {
+    if let Some(tip) = tip_of(config_root, project_id, chat, host, repo_id, branch) {
+        return Some(tip);
+    }
+    let (project, owner, tip) = owner_of(config_root, host, repo_id, branch)?;
+    (project == project_id && owner != chat && dispatched(&owner)).then_some(tip)
 }
 
 /// The tip `chat` of the project `project_id` last put on `branch` of the repo with forge id
@@ -335,6 +389,71 @@ mod tests {
         f.write_all(b"not json\n").unwrap();
         record(dir.path(), PROJECT, "chat-a", &[made("two")]).unwrap();
         assert_eq!(own(dir.path(), PROJECT, "chat-a"), ["one", "two"]);
+    }
+
+    #[test]
+    fn the_last_owner_is_who_pushed_last_with_the_tip_it_left() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(owner_of(dir.path(), "github.com", REPO_ID, "work").is_none());
+        record(dir.path(), PROJECT, "task", &[made("work")]).unwrap();
+        let mut moved = made("work");
+        moved.tip = "b".repeat(40);
+        record(dir.path(), PROJECT, "asker", &[moved]).unwrap();
+        assert_eq!(
+            owner_of(dir.path(), "github.com", REPO_ID, "work"),
+            Some((PROJECT.to_owned(), "asker".to_owned(), "b".repeat(40)))
+        );
+        forget(dir.path(), &[made("work")]).unwrap();
+        assert!(owner_of(dir.path(), "github.com", REPO_ID, "work").is_none());
+    }
+
+    #[test]
+    fn a_dispatcher_takes_up_its_tasks_branch_and_the_task_then_loses_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let tip = |chat: &str, project: &str, repo_id: u64| {
+            tip_for(
+                dir.path(),
+                project,
+                chat,
+                "github.com",
+                repo_id,
+                "work",
+                &|owner| owner == "task" && chat == "asker",
+            )
+        };
+        record(dir.path(), PROJECT, "task", &[made("work")]).unwrap();
+        // The task is the owner; its dispatcher may move the branch from the recorded tip.
+        assert_eq!(tip("task", PROJECT, REPO_ID), Some("a".repeat(40)));
+        assert_eq!(tip("asker", PROJECT, REPO_ID), Some("a".repeat(40)));
+        // Not another chat, another project's chat of the same id, or another repo.
+        assert_eq!(tip("other", PROJECT, REPO_ID), None);
+        assert_eq!(tip("asker", OTHER_PROJECT, REPO_ID), None);
+        assert_eq!(tip("asker", PROJECT, REPO_ID + 1), None);
+        // The dispatcher's confirmed push is recorded under it: now the task cannot move it.
+        let mut moved = made("work");
+        moved.tip = "c".repeat(40);
+        record(dir.path(), PROJECT, "asker", &[moved]).unwrap();
+        assert_eq!(tip("asker", PROJECT, REPO_ID), Some("c".repeat(40)));
+        assert_eq!(tip("task", PROJECT, REPO_ID), None);
+    }
+
+    #[test]
+    fn a_branch_nobody_dispatched_from_is_not_taken_up() {
+        let dir = tempfile::tempdir().unwrap();
+        record(dir.path(), PROJECT, "task", &[made("work")]).unwrap();
+        let never = |_: &str| false;
+        assert_eq!(
+            tip_for(
+                dir.path(),
+                PROJECT,
+                "asker",
+                "github.com",
+                REPO_ID,
+                "work",
+                &never
+            ),
+            None
+        );
     }
 
     #[test]

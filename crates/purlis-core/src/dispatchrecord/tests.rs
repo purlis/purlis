@@ -3431,3 +3431,74 @@ fn a_drawing_hands_history_a_task_once_it_ended_after_it_was_drawn_running() {
         [(devops().id.unwrap(), "ended".to_owned())]
     );
 }
+
+/// A task of `asker` to `worker`, opened in `root`.
+fn a_task(root: &Path, asker: ChatRef, worker: ChatRef) {
+    let mut opening = a_handoff();
+    opening.mode = Mode::Task;
+    opening.asker.chat = asker;
+    opening.worker.chat = worker;
+    open(root, opening, at("2026-10-07T12:00:00Z")).unwrap();
+}
+
+fn chat_of(id: &str) -> ChatRef {
+    ChatRef {
+        chat: 1,
+        id: Some(id.to_owned()),
+        name: "a chat".to_owned(),
+        persona: None,
+    }
+}
+
+const ASKER: &str = "01K6ASKER0000000000000000A";
+const TASK: &str = "01K6W0RKER000000000000000B";
+const SUBTASK: &str = "01K6SUBTASK00000000000000C";
+
+#[test]
+fn a_chat_dispatched_the_tasks_it_asked_for_directly_or_up_the_chain_and_no_others() {
+    let (_d, root) = project();
+    a_task(&root, chat_of(ASKER), chat_of(TASK));
+    a_task(&root, chat_of(TASK), chat_of(SUBTASK));
+    let records = list(&root);
+    assert!(dispatched_by(&records, ASKER, TASK));
+    assert!(dispatched_by(&records, ASKER, SUBTASK), "up the chain");
+    assert!(dispatched_by(&records, TASK, SUBTASK));
+    // One way only: a task never dispatched the chat that asked for it.
+    assert!(!dispatched_by(&records, TASK, ASKER));
+    assert!(!dispatched_by(&records, SUBTASK, ASKER));
+    // Nor a chat nothing links, nor a chat with another ULID, nor itself.
+    assert!(!dispatched_by(
+        &records,
+        "01K6UNRELATED0000000000000D",
+        TASK
+    ));
+    assert!(!dispatched_by(
+        &records,
+        ASKER,
+        "01K6UNRELATED0000000000000D"
+    ));
+    assert!(!dispatched_by(&records, ASKER, ASKER));
+    assert!(!dispatched_by(&[], ASKER, TASK));
+}
+
+#[test]
+fn a_handoff_is_no_link_because_the_work_moved() {
+    let (_d, root) = project();
+    let mut opening = a_handoff();
+    opening.asker.chat = chat_of(ASKER);
+    opening.worker.chat = chat_of(TASK);
+    open(&root, opening, at("2026-10-07T12:00:00Z")).unwrap();
+    assert!(!dispatched_by(&list(&root), ASKER, TASK));
+}
+
+#[test]
+fn a_loop_of_records_ends_and_is_no_link() {
+    let (_d, root) = project();
+    a_task(&root, chat_of(ASKER), chat_of(TASK));
+    a_task(&root, chat_of(TASK), chat_of(ASKER));
+    assert!(!dispatched_by(
+        &list(&root),
+        "01K6UNRELATED0000000000000D",
+        TASK
+    ));
+}

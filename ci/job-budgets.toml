@@ -31,8 +31,12 @@ id = "stale-group"
 p50 = 42  # waits for the group it guards; 4 runs
 
 [[job]]
+id = "rust-build"
+p50 = 14  # an estimate, not yet measured: the 9.2-minute build p50 of the old parts, plus the archive's upload
+
+[[job]]
 id = "rust"
-p50 = 27  # pools its four parts
+p50 = 27  # pools its four parts; no longer builds, so lower it once the first runs are measured
 
 [[job]]
 id = "git-lfs"
@@ -167,13 +171,20 @@ p50 = 30  # added on main after seeding, no runs measured: seeded above its Linu
 # slower, ADR 0092); R0's run 45069887140 measured the old two-run job at 101 min on dev-release,
 # which no longer exists. Reset each on the median of its first clean runs once R1's pull
 # requests have landed.
+#
+# `lto = "off"` for `dev-release` (R7, #7418, ADR 0092 amended 2026-11-24). Run 45137164155 built
+# it on the one-cargo-run job with each LTO setting: Linux compiled in 24.0 and 18.7 min with LTO
+# off against 32.2 and 31.2 with thin, so the Linux dev budget drops from 35 to 28. macOS compiled
+# in 111.2 and 91.3 against 114.6 and 107.2 (dsymutil 1.5 against 10), but its six jobs shared the
+# runners and swapped, so those absolute times are no basis for a lower budget: it stays 91 until a
+# dev publish with the new profile has run.
 
 [[job]]
 id = "release-macos-dev"
 workflow = "release"
 profile = "dev-release"
 check = "macOS (.app)"
-run = 45069994116  # 90.2 min, `release` profile: a ceiling for dev-release
+run = 45069994116  # 90.2 min, `release` profile: still a ceiling; R7's contended runs cannot support a lower one
 p50 = 91
 
 [[job]]
@@ -189,8 +200,8 @@ id = "release-linux-dev"
 workflow = "release"
 profile = "dev-release"
 check = "Linux (.deb, AppImage)"
-run = 45069887140  # R0's linux-base, dev-release: 35 min
-p50 = 35
+run = 45137164155  # R7, LTO off: compile 18.7 and 24.0 min, plus about 4 min of setup and bundling
+p50 = 28
 
 [[job]]
 id = "release-linux-release"

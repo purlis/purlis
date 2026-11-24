@@ -210,7 +210,14 @@ fn a_request_inside_the_tunnel_that_names_another_host_is_refused() {
         );
         let reply =
             tls(&w, &ca, "github.com", 443, "github.com", request.as_bytes()).expect("a handshake");
-        assert_eq!(reply.status, 403, "{host}: {}", reply.text());
+        // Refused in git's own words (an `ERR` pkt-line git prints), or a plain 403 where the
+        // request is not one git reads that way; never forwarded either way.
+        assert!(
+            reply.status == 403 || (reply.status == 200 && reply.text().contains("ERR purlis")),
+            "{host}: {} {}",
+            reply.status,
+            reply.text()
+        );
     }
     assert!(w.fake.requests().is_empty());
 }
@@ -451,7 +458,9 @@ fn a_git_request_with_no_credential_is_challenged_so_git_asks_its_helper_and_a_w
         basic("x-access-token", "not-the-sentinel")
     );
     let wrong = tls(&w, &ca, "github.com", 443, "github.com", wrong.as_bytes()).unwrap();
-    assert_eq!(wrong.status, 403, "{}", wrong.text());
+    // Refused in git's own words, so git says why instead of asking its helper again.
+    assert_eq!(wrong.status, 200, "{}", wrong.text());
+    assert!(wrong.text().contains("ERR purlis"), "{}", wrong.text());
     assert!(w.fake.requests().is_empty());
     // And with the helper's answer the request goes through.
     w.fake

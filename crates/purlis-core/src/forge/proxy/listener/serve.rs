@@ -31,6 +31,7 @@ use super::super::{
     BodyNeed, Class, Forwarded, GITLAB_COM, Inbound, Kind, Outcome, Refusal, RequestHead,
     is_ci_storage_host, is_download_host, is_gitlab_ci_storage,
 };
+use super::gitsay;
 use super::http::{
     BodyError, Framed, Framing, Head, HeadError, finish_chunks, framing_of, message, write_answer,
     write_chunk, write_head,
@@ -121,6 +122,9 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
                     w.proxy.note_refused(&w.chat, &asked, refusal);
                     let said = (refusal == Refusal::Pinned)
                         .then(|| w.proxy.alias_pin_said(&w.chat, &host));
+                    if git_refused(&mut framed.stream, &method, &target, &[], refusal, &said)? {
+                        return Ok(());
+                    }
                     return refused_saying(&mut framed.stream, refusal, said);
                 }
                 None => (
@@ -176,11 +180,34 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
     match outcome {
         Outcome::Refused(refusal) => {
             let said = (refusal == Refusal::Pinned).then(|| w.proxy.pin_said(&rh.host, rh.port));
+            if git_refused(
+                &mut framed.stream,
+                &rh.method,
+                &rh.target,
+                &body,
+                refusal,
+                &said,
+            )? {
+                return Ok(());
+            }
             refused_saying(&mut framed.stream, refusal, said)
         }
         // A held act (slice F2): the ask is raised, and the chat is told its number and that
         // nothing was sent. The act itself waits for the person's press.
-        Outcome::Held(held) => write_answer(&mut framed.stream, 403, &message(&held.said)),
+        Outcome::Held(held) => {
+            let said = Some(held.said.clone());
+            if git_refused(
+                &mut framed.stream,
+                &rh.method,
+                &rh.target,
+                &body,
+                held.refusal,
+                &said,
+            )? {
+                return Ok(());
+            }
+            write_answer(&mut framed.stream, 403, &message(&held.said))
+        }
         Outcome::Forward(forwarded) => {
             // A push is checked for CI files before any of it goes on (ADR 0128 D8.3): the
             // listener forwards only what the gate lets through.
@@ -195,7 +222,7 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
                 match w.push.check(&w.chat, &push) {
                     PushVerdict::Forward => {}
                     PushVerdict::Refuse(why) | PushVerdict::Held(why) => {
-                        return write_answer(&mut framed.stream, 403, &message(&why));
+                        return gate_refused(&mut framed.stream, &rh.target, &body, &why);
                     }
                 }
             }
@@ -266,6 +293,43 @@ fn read_push(forwarded: &Forwarded, port: u16, body: &[u8]) -> Option<PushRead> 
 /// Forty or sixty-four hex digits.
 fn is_object_id(word: &str) -> bool {
     matches!(word.len(), 40 | 64) && word.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// **A refused push or advertisement, answered in git's own words** ([`gitsay`]): whether it
+/// was, for the caller to answer anything else as it did. `said` is the sentence purlis already
+/// tells the chat (a pin's, a held act's), used in place of the refusal's own.
+fn git_refused<W: Write>(
+    out: &mut W,
+    method: &str,
+    target: &str,
+    body: &[u8],
+    refusal: Refusal,
+    said: &Option<String>,
+) -> io::Result<bool> {
+    // A request with no credential is challenged, so that git asks its helper (below).
+    if refusal == Refusal::NoSentinel {
+        return Ok(false);
+    }
+    let Some(call) = gitsay::call_of(method, target) else {
+        return Ok(false);
+    };
+    let reason = said
+        .as_deref()
+        .unwrap_or_else(|| gitsay::reason_for(refusal));
+    gitsay::answer(out, &call, body, reason)
+}
+
+/// **A push the gate refused or held, answered in git's own words** (#7486): `200` with a
+/// report-status naming `why` for each ref, which git prints as `! [remote rejected] <ref>
+/// (<why>)` and exits non-zero on. A push whose commands do not read is answered `403` with `why`
+/// in the body, as before.
+fn gate_refused<W: Write>(out: &mut W, target: &str, body: &[u8], why: &str) -> io::Result<()> {
+    if gitsay::call_of("POST", target) == Some(gitsay::Call::ReceivePack)
+        && gitsay::answer(out, &gitsay::Call::ReceivePack, body, why)?
+    {
+        return Ok(());
+    }
+    write_answer(out, 403, &message(why))
 }
 
 fn refused<W: Write>(out: &mut W, refusal: Refusal) -> io::Result<()> {
@@ -813,5 +877,43 @@ mod tests {
         let push = read(&[&format!("{zero} {tip} refs/heads/work")]).expect("a push");
 
         assert_eq!(push.updates[0].new, tip);
+    }
+
+    fn answered_with(target: &str, body: &[u8], why: &str) -> String {
+        let mut out = Vec::new();
+        gate_refused(&mut out, target, body, why).unwrap();
+        String::from_utf8_lossy(&out).into_owned()
+    }
+
+    #[test]
+    fn a_push_the_gate_refuses_is_a_report_status_naming_each_ref_and_the_reason() {
+        let body = push_of(&[
+            &format!("{ZERO} {TIP} refs/heads/one\0 report-status side-band-64k"),
+            &format!("{ZERO} {TIP} refs/heads/two"),
+        ]);
+        let said = answered_with(
+            "/o/r.git/git-receive-pack",
+            &body,
+            "purlis did not send this push: its base is not read yet; try again in a minute.",
+        );
+        assert!(said.starts_with("HTTP/1.1 200"), "{said}");
+        assert!(
+            said.contains("application/x-git-receive-pack-result"),
+            "{said}"
+        );
+        for want in [
+            "unpack ok",
+            "ng refs/heads/one purlis did not send this push: its base is not read yet",
+            "ng refs/heads/two purlis did not send this push: its base is not read yet",
+        ] {
+            assert!(said.contains(want), "{want}: {said}");
+        }
+    }
+
+    #[test]
+    fn a_push_whose_commands_do_not_read_is_still_a_403_with_the_reason() {
+        let said = answered_with("/o/r.git/git-receive-pack", b"0000", "purlis: no");
+        assert!(said.starts_with("HTTP/1.1 403"), "{said}");
+        assert!(said.contains("purlis: no"), "{said}");
     }
 }

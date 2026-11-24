@@ -30,6 +30,8 @@ use purlis_core::hookwire::{
 use purlis_core::mergehold::{self, Facts, Holds, MergeKey, Raised};
 
 const CHAT: u32 = 4;
+/// The milliseconds a hook's line may take to be taken by the app here, [`Chat::denial_with`].
+const A_LINE_PATIENCE: &str = "10000";
 const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
 
 /// A plane, a home that is not the operator's, and the app that started chat [`CHAT`] in it.
@@ -236,6 +238,11 @@ impl Chat {
             .env("PATH", "/usr/bin:/bin")
             .env(SOCKET_ENV, &self.socket)
             .env(CHAT_ENV, CHAT.to_string())
+            // The hook's tool line is spooled, not sent, when the app does not take it in a
+            // quarter of a second, and `rule()` reads what the app was sent: on a loaded runner
+            // that misses, and the test reads no rule (#7436, #7452). Lifted, as the guard
+            // budget is for the large bodies.
+            .env("PURLIS_TEST_HOOK_LINE_DEADLINE_MS", A_LINE_PATIENCE)
             .envs(self.token.iter().map(|token| (TOKEN_ENV, token.expose())))
             .envs(env.iter().copied())
             .stdin(Stdio::piped())

@@ -1365,15 +1365,16 @@ fn a_lock_set_while_a_fill_waits_stops_the_run_the_value_was_for() {
                     asks: &asks,
                     within: Duration::from_secs(60),
                     // Policy comes to lock them once the notice is up, on the run's own thread.
+                    // Told when the ask is raised, so unconditional: the person's thread may have
+                    // answered and closed the ask before this runs, and a check that the ask is
+                    // still open would then skip the lock and let the run go on.
                     moved: &|| {
-                        if !asks.open_runs().is_empty() {
-                            crate::sandbox::policy::set_for_this_test(
-                                crate::sandbox::policy::Locks::parse(
-                                    r#"{"sandbox": {"run-grants": false}}"#,
-                                    Path::new("/etc/purlis/policy.json"),
-                                ),
-                            );
-                        }
+                        crate::sandbox::policy::set_for_this_test(
+                            crate::sandbox::policy::Locks::parse(
+                                r#"{"sandbox": {"run-grants": false}}"#,
+                                Path::new("/etc/purlis/policy.json"),
+                            ),
+                        );
                     },
                     run_gate: None,
                 },

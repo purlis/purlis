@@ -986,6 +986,7 @@ export const commands = {
 	forgeProjectAccounts: __WINDOW_ONLY_RESULT,
 	forgeChooseProjectAccount: __WINDOW_ONLY_RESULT,
 	forgeTrustCloneRepo: __WINDOW_ONLY_RESULT,
+	forgeUnconfirmedClones: __WINDOW_ONLY_RESULT,
 	forgeCiPermissionStart: __WINDOW_ONLY_RESULT,
 	forgeCiPermissionWait: __WINDOW_ONLY_RESULT,
 	forgeCiPermissionCancel: __WINDOW_ONLY,
@@ -1739,6 +1740,8 @@ export const commands = {
 	fixStaleClone: __WINDOW_ONLY_RESULT,
 	clonesToVouch: __WINDOW_ONLY_RESULT,
 	vouchClone: __WINDOW_ONLY_RESULT,
+	allowChatPush: __WINDOW_ONLY_RESULT,
+	keepChatPushBlocked: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Make a workspace: `charter workspace create <name>`, with the vision when one was typed.
 	 * 
@@ -3316,6 +3319,13 @@ export type AnswerPath =
  */
 { via: "trust-clone"; folder: string; place: string } | 
 /**
+ *  `allow_chat_push` for Allow and `keep_chat_push_blocked` for Keep blocked, each for the
+ *  ask the refusal raised: chat `chat`'s update of `branch` in `repo` (lower case) at `host`,
+ *  the repo the forge numbers `repo_id`. Allow records the chat as the owner at the branch's
+ *  tip **read from the forge as the person when pressed**, never one the chat said.
+ */
+{ via: "let-chat-push"; chat: string; host: string; repo: string; repo_id: string; branch: string } | 
+/**
  *  `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
  *  clone Notice's own command, and each clone it trusts leaves the ask (R-336).
  */
@@ -3821,6 +3831,14 @@ export type AskSource =
  *  as the clone's own Notice does, and the chat's next mint goes through.
  */
 "trust-clone" | 
+/**
+ *  **A chat refused an update of a branch it has no record of** (ADR 0128, amended
+ *  2026-11-23, #7363): pushed before the route existed, or by another chat. Allow records the
+ *  chat as its owner at the commit the forge holds when pressed, and Keep blocked leaves it
+ *  refused. One per chat and branch, and never for a protected, default, deploy or pages
+ *  branch.
+ */
+"let-chat-push" | 
 /**
  *  **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
  *  never one per clone. Trust all records each, as its Notice's Trust this clone does.
@@ -17979,6 +17997,14 @@ undo: string[] | null };
 export type TurnPick = {
 	chat: string,
 	number: number,
+};
+
+/**  A clone the person trusted that is not confirmed with the forge, so no chat's route serves it. */
+export type UnconfirmedClone = {
+	/**  Its folder, relative to the project. */
+	folder: string,
+	/**  The `<host>/<owner>/<repo>` the trust list holds for it. */
+	place: string,
 };
 
 /**  What an undo came to. */

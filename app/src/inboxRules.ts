@@ -120,6 +120,9 @@ const ON_A_PANE: ReadonlySet<Shown["source"]> = new Set([
   "looping",
   // A merge its chat's hook held (T1-39, R-114): Merge and Don't merge, on its pane too.
   "merge-hold",
+  // A push its chat was refused for a branch it has no record of (ADR 0128, amended 2026-11-23):
+  // Allow and Keep blocked, on its pane too.
+  "let-chat-push",
 ]);
 
 /**
