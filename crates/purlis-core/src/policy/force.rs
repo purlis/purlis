@@ -624,7 +624,43 @@ pub fn in_force(
     if let Some(seen) = seen {
         seal(root, &seen);
     }
+    retire_lost_grants(root, sources, standing);
     decision
+}
+
+/// **Takes out of the store every grant whose rule is in no side in force** (M75-20, spec §8.7: a
+/// grant is lost when its rule is removed). The sides are the ones a decision is judged by: the
+/// project as committed now, the accepted copy and every floor version, so a rule one of them
+/// still holds still decides, and its grants stay. A rule written again after every side lost it
+/// then finds no grant to revive. Only a store that holds is touched, and only where it holds a
+/// grant (so a plane with none pays nothing); a side that does not read stops it, since a rule
+/// it holds cannot be told from one it lost. Best effort: a store that cannot be written changes
+/// nothing, and the grant then serves only where its rule still decides.
+pub fn retire_lost_grants(root: &Path, sources: &Sources<'_>, standing: &Standing) {
+    if !matches!(standing.state, State::Holds)
+        || !standing.entries.iter().any(|e| e.kind == answers::GRANT)
+    {
+        return;
+    }
+    let mut known = BTreeSet::new();
+    for side in limit_sides(sources, standing) {
+        match side {
+            LimitSide::Read(loaded) => known.extend(loaded.policy.rules()),
+            LimitSide::Unread => return,
+        }
+    }
+    let gone = super::grants::lost(&standing.entries, &known);
+    if gone.is_empty() {
+        return;
+    }
+    let taken = answers::commit(root, |draft| {
+        for entry in &gone {
+            draft.remove_narrowing(answers::GRANT, &entry.text);
+        }
+    });
+    if let Err(why) = taken {
+        tracing::debug!("purlis: a grant of a removed rule was not taken out ({why})");
+    }
 }
 
 /// **One decision by the policy in force, and the version the app saw that it should seal**

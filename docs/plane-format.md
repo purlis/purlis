@@ -5031,8 +5031,11 @@ write into this folder cannot make its own text arrive as the person's.
   offer, and only for that chat or workspace; a text that does not read is no answer. Grants of
   every scope are sealed in the plane's own store (a plane holds several workspaces). **A Once
   grant is taken out of the store, under a commit, before it serves.** A grant whose rule is no
-  longer deciding serves nothing (`policy::grants::lost` names the ones to take out of the store;
-  taking them out is not wired yet). A `never` entry's text is either this build's
+  longer deciding serves nothing, and **one whose rule is in no side in force** (the project as
+  committed now, the accepted copy, every floor version) **is taken out of the store** at the
+  next decision (`policy::force::retire_lost_grants`), so a rule written again does not revive
+  it; a side that does not read stops the purge. A grant given in the inbox is this same
+  format (`needsyou::Grant::text`), carrying the item's resource kind and narrowing context. A `never` entry's text is either this build's
   `{v: 1, kind: "ask-never", scope, action, resource_kind, resource, workspace?}` (`scope` `this
   workspace`, in the plane's store, or `everywhere`, in the machine-level entry) or an earlier
   build's `asking -> target` (the dispatch family's); **a text that is neither denies every

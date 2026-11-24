@@ -359,18 +359,8 @@ fn a_project_lock_on_the_widest_scope_caps_every_ask() {
     assert_eq!(said.keep.as_deref(), Some("this chat"), "{said:?}");
 }
 
-/// A plane under the `open` template, and the app's view of it for chat 1.
-fn open_plane_and_asker() -> (
-    crate::policy::force::tests::Machine,
-    std::path::PathBuf,
-    Asker<'static>,
-) {
-    let m = machine();
-    let root = plane(
-        &m,
-        &[("purlis.toml", "[policy]\ntemplate = \"open\"\n")],
-    );
-    let asker = Asker {
+fn asker() -> Asker<'static> {
+    Asker {
         chat: 1,
         of: Chat {
             workspace: Some("web"),
@@ -382,8 +372,18 @@ fn open_plane_and_asker() -> (
         depth: 0,
         via: "hook",
         start: None,
-    };
-    (m, root, asker)
+    }
+}
+
+/// A plane under the `open` template, and the app's view of it for chat 1.
+fn open_plane_and_asker() -> (
+    crate::policy::force::tests::Machine,
+    std::path::PathBuf,
+    Asker<'static>,
+) {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", "[policy]\ntemplate = \"open\"\n")]);
+    (m, root, asker())
 }
 
 #[test]
@@ -531,4 +531,60 @@ fn a_once_grant_is_spent_by_the_one_request_it_serves() {
         &mut |_| false,
     );
     assert_eq!(refused.after_mode, Outcome::Ask, "{refused:?}");
+}
+
+#[allow(clippy::disallowed_methods, reason = "a test plays the person's press")]
+fn press() -> answers::Press {
+    answers::Press::of_the_persons_press()
+}
+
+#[test]
+fn a_removed_and_then_re_added_rule_does_not_revive_an_everywhere_grant() {
+    let m = machine();
+    let with_rule = format!(
+        "{HEADER}@id(\"processes-a\") @ask(\"you\") @keep(\"everywhere\")\n\
+         forbid (principal, action == Action::\"exec\", resource);\n"
+    );
+    let root = plane(&m, &[("purlis.toml", STRICT), ("policy.cedar", &with_rule)]);
+    answers::register(&root).expect("registered");
+    let req = exec("ls");
+    let given = grant("processes-a", &req, Scope::Everywhere, None);
+    answers::commit(&root, |draft| draft.add(&press(), answers::GRANT, &given.text))
+        .expect("sealed");
+    let ask = || {
+        let sealed = Sealed {
+            chat: Some(ULID.to_owned()),
+            ..Sealed::of(&root)
+        };
+        decide::in_plane(&root, &asker(), "exec", ("Command", "ls"), &sealed)
+    };
+    let holds_a_grant = || {
+        answers::standing(&root)
+            .entries
+            .iter()
+            .any(|entry| entry.kind == answers::GRANT)
+    };
+    // While the rule decides, the grant serves.
+    assert_eq!(ask().after_mode, Outcome::Allow);
+    // The rule is removed from the project, but the accepted floor still holds the version that
+    // had it, so it still decides and its grant stays.
+    commit(&root, &[("policy.cedar", HEADER)]);
+    assert_eq!(ask().after_mode, Outcome::Allow);
+    assert!(holds_a_grant());
+    // The person's press starts the floor again: no side holds the rule, and its grant is taken
+    // out of the store at the next decision.
+    let kept: Vec<Entry> = answers::standing(&root)
+        .entries
+        .into_iter()
+        .filter(|entry| entry.kind != answers::FLOOR)
+        .collect();
+    answers::recommit(&root, &press(), &kept).expect("pressed");
+    assert!(holds_a_grant(), "the press keeps the person's grants");
+    ask();
+    assert!(!holds_a_grant(), "a grant of a rule in no side is lost");
+    // The rule written again does not find it: the ask asks.
+    commit(&root, &[("policy.cedar", &with_rule)]);
+    let again = ask();
+    assert_eq!(again.after_mode, Outcome::Ask, "{again:?}");
+    assert!(again.grant.is_none(), "{again:?}");
 }

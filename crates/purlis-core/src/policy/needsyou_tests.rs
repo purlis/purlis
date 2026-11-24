@@ -315,14 +315,12 @@ fn an_allow_from_needs_you_grants_only_the_request_it_showed() {
         .allow(&press(), &shown, Scope::Everywhere, NOW + 5)
         .expect("there");
     let text = allowed.grant.text();
-    // The digest is in the grant, so a different request is no part of it.
-    assert!(text.contains(&shown.digest), "{text}");
-    assert!(!text.contains(&key("git push --force origin a").digest));
+    // The grant is the sealed store's own, for the rule, action and resource that were shown; the
+    // digest was checked at the Allow, so what was shown is what it covers.
     let fields: serde_json::Value = serde_json::from_str(&text).expect("one JSON object");
     assert_eq!(fields["rule"], "guards-merge-hold");
     assert_eq!(fields["action"], "merge");
     assert_eq!(fields["resource"], "acme/web#main");
-    assert_eq!(fields["digest"], shown.digest.as_str());
     assert_eq!(allowed.grant.key, shown);
 }
 
@@ -842,4 +840,114 @@ fn no_rule_offer_after_two_allows() {
         );
         assert!(!text.contains("RuleOffered"), "{}", file.display());
     }
+}
+
+/// An item raised with its narrowing context, as the host raises one for a force push.
+fn raised_narrowed(record: &mut Record, force: bool) {
+    record.raise_narrowed(
+        raising("git push origin a", "c1", Why::Unattended),
+        Narrowed {
+            resource_kind: "Branch".to_owned(),
+            narrowing: serde_json::json!({"force": force, "via": "hook"})
+                .as_object()
+                .cloned()
+                .expect("an object"),
+        },
+        NOW,
+        caps(),
+    );
+}
+
+/// The decision of the one ask `guards-merge-hold`, as the engine makes it.
+fn asked_by_the_merge_hold() -> crate::policy::decide::Decision {
+    use crate::policy::decide::{Deciding, Decision, Outcome};
+    Decision {
+        outcome: Outcome::Ask,
+        deciding: vec![Deciding {
+            id: "guards-merge-hold".to_owned(),
+            level: "project".to_owned(),
+            owner: "purlis default".to_owned(),
+            file: "default.cedar".to_owned(),
+            line: 1,
+            off: false,
+        }],
+        family: "guards.merge".to_owned(),
+        mode_family: "guards.merge".to_owned(),
+        mode: crate::enforcement::Mode::Enforce,
+        after_mode: Outcome::Ask,
+        lifted: Vec::new(),
+        asked: Vec::new(),
+        lock: None,
+        grant: None,
+        unasked: None,
+        keep: None,
+        timed: None,
+        deny_state: None,
+    }
+}
+
+#[test]
+fn a_grant_given_in_the_inbox_serves_the_same_ask_through_the_sealed_store_s_apply() {
+    use crate::policy::decide::{Outcome, Request};
+    use crate::policy::grants;
+    use crate::policy::levels::Chat;
+    use crate::secrets::answers::{self, Entry, Standing, State};
+
+    let mut record = Record::default();
+    raised_narrowed(&mut record, false);
+    let allowed = record
+        .allow(&press(), &key("git push origin a"), Scope::Workspace, NOW + 1)
+        .expect("there");
+    // The text is what the store would seal, and it reads as the store's own grant.
+    let sealed = grants::Grant::parse(&allowed.grant.text()).expect("the store's own format");
+    assert_eq!(sealed, allowed.grant.sealed());
+    let standing = Standing {
+        state: State::Holds,
+        entries: vec![Entry::new(answers::GRANT, &allowed.grant.text())],
+        ..Standing::fresh()
+    };
+    let request = |force: bool| Request {
+        chat: "1",
+        of: Chat {
+            workspace: Some("web"),
+            persona: None,
+        },
+        action: "merge",
+        resource: ("Branch", "acme/web#main"),
+        context: serde_json::json!({
+            "sandbox": "floor", "attended": true, "harness_mode": "default", "depth": 0,
+            "force": force, "via": "hook"
+        }),
+    };
+    let apply = |force: bool| {
+        grants::apply(
+            asked_by_the_merge_hold(),
+            &request(force),
+            Some("01M85WM43DT07ANNAQ6NQEJTXD"),
+            &standing,
+            &mut |_| true,
+        )
+    };
+    // The ask it was given for is served; the same ask with another context is not.
+    assert_eq!(apply(false).after_mode, Outcome::Allow);
+    assert_eq!(apply(true).after_mode, Outcome::Ask);
+    // An item raised with no narrowing and no kind makes a grant that matches nothing.
+    let mut bare = Record::default();
+    bare.raise(raising("a", "c1", Why::Unattended), NOW, caps());
+    let made = bare
+        .allow(&press(), &key("a"), Scope::Everywhere, NOW)
+        .expect("there");
+    let none = Standing {
+        state: State::Holds,
+        entries: vec![Entry::new(answers::GRANT, &made.grant.text())],
+        ..Standing::fresh()
+    };
+    let said = grants::apply(
+        asked_by_the_merge_hold(),
+        &request(false),
+        None,
+        &none,
+        &mut |_| true,
+    );
+    assert_eq!(said.after_mode, Outcome::Ask, "{said:?}");
 }

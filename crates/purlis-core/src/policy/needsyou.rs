@@ -14,7 +14,9 @@
 //!   chats that asked and the last time. The digest is in the key, and the item keeps the request
 //!   it is the digest of, so an Allow recomputes it and grants only what the item showed (review
 //!   round 2, S2-SF4): a file whose digest no longer matches its request grants nothing.
-//!   [`Grant::text`] carries it. The digest catches damage, not a forger who writes a consistent
+//!   [`Grant::text`] is the sealed store's own grant ([`crate::policy::grants`]), carrying the
+//!   request's narrowing context, so an inbox grant serves the same ask a window grant does. The
+//!   digest catches damage, not a forger who writes a consistent
 //!   item with a benign `said`: the defence against that is the sandbox, which denies a chat
 //!   reading and writing the folder. So what the person is shown to Allow is made from the
 //!   item's action, resource and request, never from `said`.
@@ -351,6 +353,13 @@ pub struct Item {
     /// what is granted is what was raised. Empty (and so never allowed) where a file lacks it.
     #[serde(default)]
     pub request: String,
+    /// The kind of the resource (`Branch`), which a sealed grant is matched on. Empty where a file
+    /// lacks it: the grant made from it then matches nothing.
+    #[serde(default)]
+    pub resource_kind: String,
+    /// The narrowing context the request carried (`force`, `port`), which a sealed grant covers.
+    #[serde(default)]
+    pub narrowing: serde_json::Map<String, serde_json::Value>,
     /// Why it is here (the cause of the last raise).
     pub why: Why,
     /// The chats that asked, each once.
@@ -366,6 +375,16 @@ impl Item {
     pub fn chat_count(&self) -> usize {
         self.chats.len()
     }
+}
+
+/// **What a sealed grant is matched on, besides what a [`Key`] holds**: the resource's kind and the
+/// narrowing context the request carried ([`crate::policy::grants::narrowing_of`]).
+#[derive(Debug, Clone, Default)]
+pub struct Narrowed {
+    /// The resource's kind, `Branch`.
+    pub resource_kind: String,
+    /// The narrowing context.
+    pub narrowing: serde_json::Map<String, serde_json::Value>,
 }
 
 /// **What raises an item.**
@@ -430,35 +449,54 @@ pub enum Answer {
     Denied,
 }
 
-/// **A grant an Allow becomes**, for slice 20's sealed store to keep: it covers one rule, one
-/// action, one resource and the request digest it was given under.
+/// **A grant an Allow becomes**, for the sealed store: it covers one rule, one action, one
+/// resource and the narrowing context the request carried (M75-20).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Grant {
     /// What it covers.
     pub key: Key,
     /// The action it covers.
     pub action: String,
+    /// The kind of the resource.
+    pub resource_kind: String,
+    /// The narrowing context it was given under.
+    pub narrowing: serde_json::Map<String, serde_json::Value>,
     /// How far it reaches.
     pub scope: Scope,
 }
 
 impl Grant {
+    /// **The grant as the sealed store keeps it** ([`crate::policy::grants::Grant`]), the one form
+    /// [`crate::policy::grants::apply`] reads, so a grant given in the inbox serves the same ask a
+    /// grant given in the window does. This workspace is the item's workspace; Once and This chat
+    /// are the chat's.
+    pub fn sealed(&self) -> crate::policy::grants::Grant {
+        use crate::policy::grants::{Grant as Sealed, Scope as Reach};
+        let (scope, chat) = match &self.scope {
+            Scope::Once(chat) => (Reach::Once, Some(chat.clone())),
+            Scope::Chat(chat) => (Reach::Chat, Some(chat.clone())),
+            Scope::Workspace => (Reach::Workspace, None),
+            Scope::Everywhere => (Reach::Everywhere, None),
+        };
+        Sealed {
+            rule: self.key.rule.clone(),
+            action: self.action.clone(),
+            resource_kind: self.resource_kind.clone(),
+            resource: self.key.resource.clone(),
+            narrowing: self.narrowing.clone(),
+            scope,
+            chat,
+            workspace: matches!(self.scope, Scope::Workspace)
+                .then(|| self.key.workspace.clone()),
+        }
+    }
+
     /// **The grant as one line of the sealed store** ([`crate::secrets::answers::GRANT`]): one
     /// JSON object, so a value holding a space, an `=` or a quote cannot pass for another field.
+    /// What the person was shown is what it covers: the item's digest was checked at the Allow
+    /// ([`Record::allow`]), and the grant carries the request's own narrowing.
     pub fn text(&self) -> String {
-        let mut fields = serde_json::json!({
-            "kind": "needs-you",
-            "scope": self.scope.word(),
-            "rule": self.key.rule,
-            "action": self.action,
-            "resource": self.key.resource,
-            "workspace": self.key.workspace,
-            "digest": self.key.digest,
-        });
-        if let Some(chat) = self.scope.chat() {
-            fields["chat"] = serde_json::Value::from(chat);
-        }
-        fields.to_string()
+        self.sealed().text()
     }
 }
 
@@ -604,7 +642,20 @@ impl Record {
     /// the caps let it go at once (a re-raise past the most days), and the chat is not to be told
     /// it is there.
     pub fn raise(&mut self, raise: Raise<'_>, now: u64, caps: Caps) -> bool {
-        if !fits(&raise) {
+        self.raise_narrowed(raise, Narrowed::default(), now, caps)
+    }
+
+    /// [`Record::raise`], with what a sealed grant is matched on besides the rule, the action and
+    /// the resource's id: the resource's kind and the narrowing context (M75-20). An item raised
+    /// without them makes a grant that matches nothing.
+    pub fn raise_narrowed(
+        &mut self,
+        raise: Raise<'_>,
+        narrowed: Narrowed,
+        now: u64,
+        caps: Caps,
+    ) -> bool {
+        if !fits(&raise) || narrowed.resource_kind.chars().count() > MOST_FIELD {
             return false;
         }
         // What a reader sees is marked, so a line end or a bidirectional control cannot forge a
@@ -632,6 +683,8 @@ impl Record {
                     action: raise.action.to_owned(),
                     said,
                     request: raise.request.to_owned(),
+                    resource_kind: narrowed.resource_kind,
+                    narrowing: narrowed.narrowing,
                     why: raise.why,
                     chats: vec![raise.chat.to_owned()],
                     first: now,
@@ -768,6 +821,8 @@ impl Record {
             grant: Grant {
                 key: item.key,
                 action: item.action,
+                resource_kind: item.resource_kind,
+                narrowing: item.narrowing,
                 scope,
             },
             deferred,
