@@ -1465,16 +1465,30 @@ const SETS_WIDENING_TIGHTENS: [&str; 3] =
 /// **The rules, assembled into a policy**, or, where the policy set refuses them, the policy of
 /// `fallback`: the shipped default with the Organisation's rules, so the Organisation's forbids
 /// still bind (review of #7132, S4). The problem is returned to be told.
-fn assemble_or_fallback(rules: Vec<Rule>, fallback: Vec<Rule>) -> (Policy, Option<Problem>) {
-    match assemble(rules) {
-        Ok(policy) => (policy, None),
-        Err(problem) => {
-            let policy = assemble(fallback).unwrap_or_else(|_| {
+fn assemble_or_fallback(rules: Vec<Rule>, fallback: Vec<Rule>) -> (Policy, Vec<Problem>) {
+    match assemble_checked(rules) {
+        Ok(policy) => (policy, Vec::new()),
+        Err(problems) => {
+            let policy = assemble_checked(fallback).unwrap_or_else(|_| {
                 assemble(read_file(&File::shipped_default()).unwrap_or_default())
                     .expect("the shipped default assembles")
             });
-            (policy, Some(problem))
+            (policy, problems)
         }
+    }
+}
+
+/// [`assemble`], then the sandbox's own check of its rules (M75-22, spec §11.2, §11.3): a rule on
+/// a sandbox action that no fixed profile can follow is refused here, naming it, like one the set
+/// refuses. The check is cached per rule set ([`Policy::sandbox_problems_cached`]).
+fn assemble_checked(rules: Vec<Rule>) -> Result<Policy, Vec<Problem>> {
+    let policy = assemble(rules).map_err(|problem| vec![problem])?;
+    let mut named = policy.path_literal_problems();
+    named.extend(policy.sandbox_problems_cached());
+    if named.is_empty() {
+        Ok(policy)
+    } else {
+        Err(named)
     }
 }
 
@@ -1709,11 +1723,11 @@ impl Loaded {
             .collect();
         let fallback: Vec<Rule> = rules.clone();
         let (policy, refused) = assemble_or_fallback(rules, fallback);
-        let dropped = refused.is_some()
+        let dropped = !refused.is_empty()
             && organisation_rules
                 .iter()
                 .any(|id| policy.rule(id).is_none());
-        if let Some(problem) = refused {
+        for problem in refused {
             loaded.notices.push(problem_notice(
                 problem,
                 Level::Organisation,
@@ -2379,15 +2393,17 @@ fn load_with(
 
     // ── the policy: where the set refuses it, strict, keeping the Organisation's rules ──
     let (policy, refused) = assemble_or_fallback(rules.clone(), fallback);
-    if let Some(problem) = refused {
+    if !refused.is_empty() {
         broken = true;
-        notices.push(problem_notice(
-            problem,
-            Level::Project,
-            org_owner,
-            "The policy could not be assembled: the project reads as strict, and only the Organisation's rules and the shipped default run, under the full sandbox",
-            &rules,
-        ));
+        for problem in refused {
+            notices.push(problem_notice(
+                problem,
+                Level::Project,
+                org_owner,
+                "The policy could not be assembled: the project reads as strict, and only the Organisation's rules and the shipped default run, under the full sandbox",
+                &rules,
+            ));
+        }
         project_tables = Tables {
             locks: project_tables.locks,
             ..Tables::strict()
@@ -2457,7 +2473,7 @@ mod tests {
 
         let (policy, refused) = assemble_or_fallback(rules, fallback);
         assert_eq!(
-            refused.and_then(|p| p.rule).as_deref(),
+            refused.first().and_then(|p| p.rule.as_deref()),
             Some("guards-merge-a")
         );
         assert!(
