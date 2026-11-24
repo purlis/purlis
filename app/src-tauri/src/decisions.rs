@@ -11,7 +11,7 @@
 //! as committed at the plane root's `HEAD` ([`purlis_core::policy::decide::in_plane`]), never a
 //! file the line names.
 
-use purlis_core::hookwire::{Answer, DecideAsk};
+use purlis_core::hookwire::{Answer, DecideAsk, WhyAsk};
 use purlis_core::policy::decide;
 
 use crate::planes::Held;
@@ -68,16 +68,11 @@ fn with_its_repo(held: &Held, asked: &DecideAsk) -> String {
     }
 }
 
-/// **What the project's policy decides of chat `chat` doing `action` to `resource`**, by this
-/// app's record of the chat: none for a chat this app does not have open.
-pub fn decision(
-    held: &Held,
-    chat: u32,
-    action: &str,
-    resource: (&str, &str),
-) -> Option<decide::Decision> {
+/// **What the app records of chat `chat`** that a decision about it is made from: none for a chat
+/// this app does not have open.
+fn facts_of(held: &Held, chat: u32) -> Option<decide::ChatFacts> {
     let chats = held.chats();
-    let facts = chats.workspace_of(chat).map(|workspace| decide::ChatFacts {
+    chats.workspace_of(chat).map(|workspace| decide::ChatFacts {
         workspace,
         persona: chats
             .persona_of(chat)
@@ -92,26 +87,62 @@ pub fn decision(
         harness_mode: chats
             .attendance_of(chat)
             .and_then(purlis_core::attendance::Fact::start_mode),
-    });
+    })
+}
+
+/// **What the app's sealed store says now, for chat `chat`**: the deny state refuses every action
+/// but `start`, and `context.machine` is the device id the person confirmed (M75-07b). `chat` is
+/// the chat's ULID, which a Once or This-chat grant is keyed on (M75-20): without it no grant of
+/// those scopes serves.
+fn sealed_for(held: &Held, chat: u32) -> decide::Sealed {
+    decide::Sealed {
+        chat: held.chats().id_of(chat),
+        ..decide::Sealed::of(held.root())
+    }
+}
+
+/// **What the project's policy decides of chat `chat` doing `action` to `resource`**, by this
+/// app's record of the chat: none for a chat this app does not have open.
+pub fn decision(
+    held: &Held,
+    chat: u32,
+    action: &str,
+    resource: (&str, &str),
+) -> Option<decide::Decision> {
+    let facts = facts_of(held, chat);
     // The accepted floor and the machine's locks, until slices 06 and 14 read them in the loader.
     let floor = purlis_core::enforcement::in_force(held.root());
-    // What the app's sealed store says now: the deny state refuses every action but `start`, and
-    // `context.machine` is the device id the person confirmed (M75-07b). `chat` is the chat's
-    // ULID, which a Once or This-chat grant is keyed on (M75-20): without it no grant of those
-    // scopes serves.
-    let sealed = decide::Sealed {
-        chat: chats.id_of(chat),
-        ..decide::Sealed::of(held.root())
-    };
     decide::for_chat(
         held.root(),
         chat,
         facts.as_ref(),
         &floor,
-        &sealed,
+        &sealed_for(held, chat),
         action,
         resource,
     )
+}
+
+/// **Answers chat `asked.chat`'s ask why an action is decided as it is** (M75 slice 18): the
+/// decision the host would give that chat, named in full, by this app's record of it. Refused for
+/// a chat this app does not have open. Nothing is sealed, spent, blocked or written: a chat that
+/// asks why learns what it would be told, and moves nothing by asking.
+pub fn why(held: &Held, asked: &WhyAsk) -> Answer {
+    let chat = asked.chat;
+    let Some(facts) = facts_of(held, chat) else {
+        return Answer::No {
+            why: format!("chat {chat} is not one this app has open, so nothing was decided."),
+        };
+    };
+    let floor = purlis_core::enforcement::in_force(held.root());
+    Answer::Why(Box::new(purlis_core::policy::why::for_chat(
+        held.root(),
+        chat,
+        &facts,
+        &floor,
+        &sealed_for(held, chat),
+        (&asked.action, (&asked.kind, &asked.id)),
+    )))
 }
 
 /// **Writes the block a deny is**, as the host decided it (Q313.3): source `policy`, aimed at

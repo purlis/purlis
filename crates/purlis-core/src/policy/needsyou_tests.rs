@@ -921,6 +921,7 @@ fn asked_by_the_merge_hold() -> crate::policy::decide::Decision {
         timed: None,
         lifted_scopes: None,
         asked_scopes: None,
+        overrode: Vec::new(),
         deny_state: None,
     }
 }

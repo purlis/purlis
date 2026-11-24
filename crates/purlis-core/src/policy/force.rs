@@ -148,6 +148,38 @@ impl Version {
         Head::Unread
     }
 
+    /// **The project as a branch, tag or commit holds it** (`policy why --policy <branch>`): read
+    /// from that one commit as `HEAD` is, with the local file as it is now. `Err` says why not: a
+    /// name that is no commit here, or a commit git could not read stably.
+    pub fn at_rev(root: &Path, rev: &str) -> Result<Self, String> {
+        // A name that starts with a dash would be read by git as an option.
+        if rev.is_empty() || rev.starts_with('-') {
+            return Err(format!("`{rev}` is not a branch name"));
+        }
+        let spelled = format!("{rev}^{{commit}}");
+        let run = crate::worktree::git::run_as_written(
+            root,
+            &["rev-parse", "--verify", "--quiet", &spelled],
+            GIT_WAIT,
+        )
+        .map_err(|why| format!("git did not answer for `{rev}`: {why}"))?;
+        if !run.ok() {
+            return Err(format!(
+                "`{rev}` is neither a file nor a branch of this project"
+            ));
+        }
+        Self::read_head(root, run.out.trim())
+            .ok_or_else(|| format!("the project's files at `{rev}` could not be read"))
+    }
+
+    /// This version with `rules` as its `policy.cedar`: the project as it would be with that file.
+    pub fn with_rules(&self, rules: String) -> Self {
+        Self {
+            rules: Some(rules),
+            ..self.clone()
+        }
+    }
+
     fn read_head(root: &Path, sha: &str) -> Option<Self> {
         let names: Vec<&'static str> = crate::names::PLANE_MANIFEST.spellings().collect();
         let mut read = committed_files_at(root, sha, &[&names, &[RULES_FILE], &[VAULTS_FILE]]);
@@ -563,7 +595,7 @@ fn held(decision: Decision, floor: Option<&Resolved>) -> Decision {
 }
 
 /// One side's decision: `version` judged by its own policy and its own world.
-fn side(
+pub(super) fn side(
     sources: &Sources<'_>,
     version: &Version,
     root: &Path,
@@ -751,8 +783,28 @@ pub fn judge(
     floor: Option<&Resolved>,
 ) -> (Decision, Option<Seen>) {
     // HEAD is read once, and the current side is built from that one read.
+    judge_at(
+        root,
+        sources,
+        standing,
+        request,
+        floor,
+        Version::at_head(root),
+    )
+}
+
+/// **[`judge`] with the current side read from `head`**, which the caller chose: what `policy why
+/// --policy <branch>` asks, and nothing else. Nothing is sealed here either: [`in_force`] does it.
+pub fn judge_at(
+    root: &Path,
+    sources: &Sources<'_>,
+    standing: &Standing,
+    request: &Request<'_>,
+    floor: Option<&Resolved>,
+    head: Head,
+) -> (Decision, Option<Seen>) {
     let none = Version::default();
-    let (here, current, first) = match Version::at_head(root) {
+    let (here, current, first) = match head {
         Head::Read(version) => {
             let loaded = loaded_for(sources, &version);
             let first = decided(&loaded, &version, root, request, floor);

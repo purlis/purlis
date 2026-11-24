@@ -396,6 +396,9 @@ pub fn answer(
         // The chat is the one whose token the line carries, and what the policy reads of it is
         // this app's record; the line names only the action and its resource.
         Ask::Decide(asked) => crate::decisions::asked(held, &asked),
+        // Why the session host decides an action as it does (M75 slice 18): a chat's own question
+        // about itself, which moves nothing and writes nothing.
+        Ask::Why(asked) => crate::decisions::why(held, &asked),
         // The ref tips a remote has, for the pre-push scan (#7302): asked by the app, outside the
         // chat's sandbox, on the route of the run of the chat whose token the line carries, and
         // only of a repository recorded for that run. Never a route or a chat the line names.

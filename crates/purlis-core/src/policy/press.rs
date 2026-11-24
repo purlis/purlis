@@ -55,7 +55,8 @@ const NO_CHAT: Chat<'static> = Chat {
 
 /// What a change does to what a chat may do. In the order a change is kept when two bases give
 /// it two labels: the worst wins.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Kind {
     /// It narrows what a chat may do.
     Tightens,
@@ -77,7 +78,7 @@ impl Kind {
 }
 
 /// One rule that differs, by its `@id`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct RuleChange {
     /// Its `@id`.
     pub id: String,
@@ -89,7 +90,7 @@ pub struct RuleChange {
 }
 
 /// One family's, or one rule's (`rules.<@id>`), mode that differs.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ModeChange {
     /// The family's key, or `rules.<@id>`.
     pub key: String,
@@ -102,7 +103,7 @@ pub struct ModeChange {
 }
 
 /// One `[policy.limits]` number that differs.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct LimitChange {
     /// The key, `<family>.<kebab>`.
     pub key: String,
@@ -116,7 +117,7 @@ pub struct LimitChange {
 
 /// One tightening of the You level's local file that is sealed and no longer in the file, or no
 /// longer as strict there: a loosening that waits for the press and has no commit (Q322).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct LocalLoosening {
     /// What it sets: `template`, a family's key, or `rules.<@id>`.
     pub key: String,
@@ -127,7 +128,7 @@ pub struct LocalLoosening {
 }
 
 /// **What differs between the policy in force and the project as it stands.**
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
 pub struct Diff {
     /// Each rule that differs.
     pub rules: Vec<RuleChange>,
@@ -145,7 +146,7 @@ pub struct Diff {
 }
 
 /// One part of the policy no typed row covers, that differs.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct OtherChange {
     /// What differs, as the window says it: `policy.sets.protected-branches`.
     pub part: String,
@@ -522,28 +523,12 @@ fn entries_of(standing: &Standing) -> &[answers::Entry] {
     }
 }
 
-/// **The press `head` raises for the plane at `root`**, or none where nothing waits.
-///
-/// In the deny state a store that was lost raises the re-press, diffed against the shipped
-/// default; a commit past the cap raises its own, diffed against what the store set aside.
-pub fn of_head(
-    root: &Path,
-    sources: &Sources<'_>,
-    standing: &Standing,
-    head: &Head,
-) -> Option<Press> {
-    let Head::Read(version) = head else {
-        return None;
-    };
-    let causes = standing.causes();
-    let lost_store = causes
-        .iter()
-        .any(|cause| cause.a_chat_can_reach() && !matches!(cause, Deny::PastTheFloorCap));
-    let past_the_cap = causes.contains(&Deny::PastTheFloorCap);
-    if standing.is_deny() && !lost_store && !past_the_cap {
-        // Only the keyring is at fault: no press mends it.
-        return None;
-    }
+/// **What a project is diffed against** (spec §9.2): the accepted copy (the shipped default until
+/// there is one) and every version of the accepted floor, or the shipped default alone where the
+/// store was lost; and what does not read, which is a row and never a silent removal. The press
+/// ([`of_head`]) and the dry run ([`dry_run`]) both take their bases from here, so they show the
+/// same diff.
+fn held_against(standing: &Standing, lost_store: bool) -> (Vec<Version>, Vec<&'static str>) {
     let none = Version::default();
     let entries = entries_of(standing);
     let mut held: Vec<Version> = Vec::new();
@@ -572,6 +557,44 @@ pub fn of_head(
             }
         }
     }
+    (held, unread)
+}
+
+/// **The diff of `after` against the policy in force**, as the press would show it were `after`
+/// the project's `HEAD` (`policy why --policy`, spec §10.2): the same bases ([`held_against`]) and
+/// the same rows ([`diff_all`]). Nothing is raised, sealed or accepted.
+pub fn dry_run(sources: &Sources<'_>, standing: &Standing, after: &Version) -> Diff {
+    let lost_store = standing
+        .causes()
+        .iter()
+        .any(|cause| cause.a_chat_can_reach() && !matches!(cause, Deny::PastTheFloorCap));
+    let (held, unread) = held_against(standing, lost_store);
+    diff_all(sources, &held, &unread, after)
+}
+
+/// **The press `head` raises for the plane at `root`**, or none where nothing waits.
+///
+/// In the deny state a store that was lost raises the re-press, diffed against the shipped
+/// default; a commit past the cap raises its own, diffed against what the store set aside.
+pub fn of_head(
+    root: &Path,
+    sources: &Sources<'_>,
+    standing: &Standing,
+    head: &Head,
+) -> Option<Press> {
+    let Head::Read(version) = head else {
+        return None;
+    };
+    let causes = standing.causes();
+    let lost_store = causes
+        .iter()
+        .any(|cause| cause.a_chat_can_reach() && !matches!(cause, Deny::PastTheFloorCap));
+    let past_the_cap = causes.contains(&Deny::PastTheFloorCap);
+    if standing.is_deny() && !lost_store && !past_the_cap {
+        // Only the keyring is at fault: no press mends it.
+        return None;
+    }
+    let (held, unread) = held_against(standing, lost_store);
     let mut diff = diff_all(sources, &held, &unread, version);
     // What the project alone changes, each base under the shipped default this build ships: a
     // shipped default's own change is the update's, never a commit's (spec §7.8).
@@ -702,7 +725,7 @@ fn diff_all(
 
 /// The sources the window judges the project with: its own files and the project's workspaces and
 /// personas, with no Organisation's folder read here.
-fn with_sources<T>(root: &Path, then: impl FnOnce(&Sources<'_>) -> T) -> T {
+pub(super) fn with_sources<T>(root: &Path, then: impl FnOnce(&Sources<'_>) -> T) -> T {
     let plane = crate::workspaces::Plane::open(root);
     let workspaces = plane.workspaces().unwrap_or_default();
     let personas = plane.personas().unwrap_or_default();

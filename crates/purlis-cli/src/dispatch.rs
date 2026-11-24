@@ -508,6 +508,7 @@ pub fn send(
             | Answer::Attended { .. }
             | Answer::Policy { .. }
             | Answer::Decided(_)
+            | Answer::Why(_)
             | Answer::RemoteRefs { .. }
             | Answer::MergeHeld { .. }
             | Answer::Recorded { .. }
@@ -802,6 +803,7 @@ pub fn report(outcome: &str, text: &str, changed: Option<&str>) -> Result<String
             | Answer::Attended { .. }
             | Answer::Policy { .. }
             | Answer::Decided(_)
+            | Answer::Why(_)
             | Answer::RemoteRefs { .. }
             | Answer::MergeHeld { .. },
         ) => Err(CliError::internal(format!(

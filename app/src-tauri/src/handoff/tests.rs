@@ -3310,6 +3310,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::PolicyLog(_) => 27,
             Ask::Decide(_) => 28,
             Ask::RemoteRefs(_) => 29,
+            Ask::Why(_) => 30,
         }
     }
     let asks = vec![
@@ -3501,10 +3502,17 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             chat,
             url: "https://github.com/acme/app.git".to_owned(),
         }),
+        // Why the host decides an action as it does (M75 slice 18): moves nothing.
+        Ask::Why(purlis_core::hookwire::WhyAsk {
+            chat,
+            action: "merge".to_owned(),
+            kind: "Branch".to_owned(),
+            id: "acme/web#12".to_owned(),
+        }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=29).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=30).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 

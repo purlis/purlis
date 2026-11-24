@@ -1707,6 +1707,12 @@ pub enum Ask {
     /// whose host cannot be asked never runs the action, nor decides it itself (§6). No ticket,
     /// for a record's reason: it names only the chat whose token it carries, and moves nothing.
     Decide(DecideAsk),
+    /// **A chat's ask why the policy decides an action as it does** (M75 slice 18, spec §10.1):
+    /// `purlis policy why` run inside a chat. The host answers [`Answer::Why`] for the chat whose
+    /// token the line carries and for nothing else: a chat may ask only about itself, so the line
+    /// has no workspace, persona or level to name, and what the policy reads of the chat is the
+    /// host's record. Nothing is sealed, spent or written to answer it.
+    Why(WhyAsk),
     /// **A hook's ask for the ref tips a remote has** (#7302): `pre-push`'s ask of the remote,
     /// which a chat's sandbox cannot make for itself under the one login. The app asks the remote
     /// outside the sandbox, on the chat's own run's route, and only for a repository recorded for
@@ -1736,6 +1742,20 @@ pub struct DecideAsk {
     /// Nothing a rule reads, and a host that cannot find it decides on the id as it came.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+}
+
+/// **A chat's ask why an action is decided as it is** ([`Ask::Why`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WhyAsk {
+    /// The chat asking: the chat whose token the line must carry.
+    pub chat: u32,
+    /// The action, a verb of the policy's schema (`merge`).
+    pub action: String,
+    /// The resource's entity type (`Branch`).
+    pub kind: String,
+    /// The resource's id (`acme/web#12`).
+    pub id: String,
 }
 
 /// **A hook's ask for a remote's ref tips** ([`Ask::RemoteRefs`]).
@@ -2612,6 +2632,10 @@ pub enum Answer {
     /// deciding rules with their level and owner, the family, the mode and the outcome after it.
     /// Boxed: it carries the rules.
     Decided(Box<crate::policy::decide::Decision>),
+    /// **Why the session host decides an action as it does** ([`Ask::Why`], M75 slice 18): the
+    /// decision named in full, the permits a forbid overrode and the levels that could loosen it.
+    /// Boxed: it carries the rules.
+    Why(Box<crate::policy::why::Why>),
     /// **The commits a remote's branches and tags are at** ([`Ask::RemoteRefs`], #7302), full
     /// object ids as `ls-remote` names them.
     RemoteRefs { tips: Vec<String> },
@@ -2956,6 +2980,7 @@ impl Ask {
             Self::Policy(asked) => asked.chat,
             Self::PolicyLog(line) => line.chat,
             Self::Decide(asked) => asked.chat,
+            Self::Why(asked) => asked.chat,
             Self::RemoteRefs(asked) => asked.chat,
         }
     }
