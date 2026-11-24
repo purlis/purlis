@@ -475,6 +475,17 @@ impl Quarantine {
     /// every object, and `tip` must be a commit whose objects are all here. What the objects
     /// are read against is the caller's: a pack built on an integration branch is judged against
     /// the default branch's tip like any other.
+    ///
+    /// **A push may also send no new objects** because the repo
+    /// has them all: a fast-forward to an integration branch's tip, or a branch made at a commit
+    /// the repo already has, is an empty pack. When git took the pack in and `tip` is still not
+    /// here, the repo's advertised branch tips are fetched with their history (the same tips, at
+    /// most [`KNOWN_AT_MOST`], that a thin pack uses) and `tip` is accepted **only if it is
+    /// reachable from one of them**. Whether "the forge has the commit" is no test: a forge
+    /// resolves a commit of any fork, and a dangling one (force-pushed away), by its id, and such
+    /// a commit is in none of this repo's refs. The fetched objects get the connectivity walk
+    /// from `base` (every object of the range is here), not git's per-object check a pack gets, but
+    /// they are the repo's own history. The caller's scans still run on `tip` against `base`.
     pub fn take_in_known(
         &self,
         pack: &[u8],
@@ -482,73 +493,95 @@ impl Quarantine {
         base: &HeadSha,
         from: &dyn BaseObjects,
     ) -> Result<(), String> {
-        self.take_in_known_or_on_forge(pack, tip, base, from, &|_| false)
-    }
-
-    /// **[`Self::take_in_known`], where a push may send no new objects** because the forge has
-    /// them all: a fast-forward to a commit that is on the forge, or a branch made at one, is an
-    /// empty pack. When git took the pack in and `tip` is still not here, `forge_has` is asked
-    /// whether the forge has that commit, and only if it does is the commit fetched, with its
-    /// history, into the object cache the quarantine reads through, and the range from `base` read
-    /// as for any push. **Nothing is let by**: a commit the forge does not have is refused, the
-    /// fetched commit's objects are checked whole like a pack's, and the caller's scans still
-    /// run on `tip` against `base`.
-    pub fn take_in_known_or_on_forge(
-        &self,
-        pack: &[u8],
-        tip: &HeadSha,
-        base: &HeadSha,
-        from: &dyn BaseObjects,
-        forge_has: &dyn Fn(&HeadSha) -> bool,
-    ) -> Result<(), String> {
         let first = match self.read_in(pack.to_vec(), tip, base) {
             Ok(()) => return Ok(()),
             Err(Refused::Otherwise(why)) => return Err(why),
-            Err(Refused::TipNotHere) => return self.take_in_from_forge(tip, base, from, forge_has),
+            Err(Refused::TipNotHere) => return self.take_in_from_refs(tip, base, from),
             Err(Refused::ForWantOfObjects(why)) => why,
         };
-        let Some(advertised) = from.advertised(&self.path) else {
-            return Err(first);
-        };
-        let mut seen = std::collections::HashSet::new();
-        let tips: Vec<HeadSha> = advertised
-            .iter()
-            .filter(|id| seen.insert(id.to_ascii_lowercase()))
-            .take(KNOWN_AT_MOST)
-            .filter_map(|id| HeadSha::try_from(id.as_str()).ok())
-            .collect();
+        let tips = self.advertised_tips(from);
         if tips.is_empty() {
             return Err(first);
         }
         from.fetch_all(&self.path, &tips)?;
-        self.take_in(pack.to_vec(), tip, base)
+        match self.read_in(pack.to_vec(), tip, base) {
+            Ok(()) => Ok(()),
+            // A pack of other objects, with the tip in none of them.
+            Err(Refused::TipNotHere) => self.reachable_from(&tips, tip, base),
+            Err(Refused::ForWantOfObjects(why) | Refused::Otherwise(why)) => Err(why),
+        }
     }
 
-    /// The pushed tip is no object of the pack: take it from the forge, if the forge has it.
-    fn take_in_from_forge(
+    /// The advertised branch tips: distinct, full ids, at most [`KNOWN_AT_MOST`]; empty where the
+    /// forge did not answer.
+    fn advertised_tips(&self, from: &dyn BaseObjects) -> Vec<HeadSha> {
+        let Some(advertised) = from.advertised(&self.path) else {
+            return Vec::new();
+        };
+        let mut seen = std::collections::HashSet::new();
+        advertised
+            .iter()
+            .filter(|id| seen.insert(id.to_ascii_lowercase()))
+            .take(KNOWN_AT_MOST)
+            .filter_map(|id| HeadSha::try_from(id.as_str()).ok())
+            .collect()
+    }
+
+    /// The pushed tip is no object of the pack: it is taken only if it is in this repo's own
+    /// advertised history.
+    fn take_in_from_refs(
         &self,
         tip: &HeadSha,
         base: &HeadSha,
         from: &dyn BaseObjects,
-        forge_has: &dyn Fn(&HeadSha) -> bool,
+    ) -> Result<(), String> {
+        let tips = self.advertised_tips(from);
+        if tips.is_empty() {
+            return Err(
+                "the repo's branches could not be read from the forge, so the commit could not be \
+                 checked against them; try again in a minute"
+                    .to_owned(),
+            );
+        }
+        from.fetch_all(&self.path, &tips)?;
+        self.reachable_from(&tips, tip, base)
+    }
+
+    /// `tip` is here, and reachable from one of `tips` (fetched), and the range from `base` is
+    /// whole.
+    fn reachable_from(
+        &self,
+        tips: &[HeadSha],
+        tip: &HeadSha,
+        base: &HeadSha,
     ) -> Result<(), String> {
         let unknown = || {
             format!(
-                "it names commit {}, which neither the push nor the forge has",
+                "it names commit {}, which is neither in the push nor in a branch of this repo",
                 short(tip)
             )
         };
-        if !forge_has(tip) {
+        match self.has(tip) {
+            Ok(()) => {}
+            Err(None) => return Err(unknown()),
+            Err(Some(why)) => return Err(why),
+        }
+        // Reachable from an advertised tip: nothing of `tip` is outside what they hold. A tip the
+        // fetch skipped (a branch deleted since it was listed) is ignored, and `tip` is here
+        // (checked above), so an ignored `tip` cannot pass for an empty answer.
+        let mut args = vec!["rev-list", "-n1", "--ignore-missing", tip.as_str(), "--not"];
+        args.extend(tips.iter().map(HeadSha::as_str));
+        let outside = git::run(&self.path, &args, TAKING_IN).map_err(|why| why.to_string())?;
+        if !outside.ok() || !outside.out.trim().is_empty() {
             return Err(unknown());
         }
-        from.fetch(&self.path, tip)?;
-        if self.has(tip).is_err() {
-            return Err(unknown());
-        }
-        // The same check a pack's objects get: the range from the base is whole.
+        // The range from the base is whole.
         match self.walk(tip, base, "error") {
             Ok(walked) if walked.ok() => Ok(()),
-            Ok(walked) => Err(first_line(&walked.err, "the commit's objects are not whole")),
+            Ok(walked) => Err(first_line(
+                &walked.err,
+                "the commit's objects are not whole",
+            )),
             Err(Refused::ForWantOfObjects(why) | Refused::Otherwise(why)) => Err(why),
             Err(Refused::TipNotHere) => Err(unknown()),
         }

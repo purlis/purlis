@@ -228,6 +228,54 @@ mod tests {
         )
     }
 
+    /// The pkt-lines of a bare (no side-band) report, up to its flush.
+    fn lines_of(report: &[u8]) -> Vec<String> {
+        let (mut at, mut lines) = (0, Vec::new());
+        loop {
+            let len = usize::from_str_radix(std::str::from_utf8(&report[at..at + 4]).unwrap(), 16)
+                .unwrap();
+            if len == 0 {
+                assert_eq!(at + 4, report.len(), "nothing after the flush");
+                return lines;
+            }
+            lines.push(String::from_utf8(report[at + 4..at + len].to_vec()).unwrap());
+            at += len;
+        }
+    }
+
+    #[test]
+    fn a_hostile_reason_stays_inside_its_one_ng_line_per_ref() {
+        let body = push("report-status", &["refs/heads/a", "refs/heads/b"]);
+        for reason in [
+            "x\n0000\n",
+            "x\n000eunpack ok\n",
+            "x\nok refs/heads/a\n0000",
+            "x\r\n0000ok refs/heads/b",
+            "\u{0}0000",
+        ] {
+            let (_, report) = body_of_answer(&Call::ReceivePack, &body, reason);
+            let lines = lines_of(&report);
+            assert_eq!(lines.len(), 3, "{reason:?}: {lines:?}");
+            assert_eq!(lines[0], "unpack ok\n");
+            for (line, name) in lines[1..].iter().zip(["refs/heads/a", "refs/heads/b"]) {
+                assert!(
+                    line.starts_with(&format!("ng {name} ")),
+                    "{reason:?}: {line:?}"
+                );
+                assert_eq!(line.matches('\n').count(), 1, "{reason:?}: {line:?}");
+                assert!(line.ends_with('\n'));
+            }
+        }
+    }
+
+    #[test]
+    fn a_very_long_hostile_reason_is_cut_and_the_report_still_reads() {
+        let body = push("report-status", &["refs/heads/a"]);
+        let reason = format!("0000\n{}", "é".repeat(100_000));
+        let (_, report) = body_of_answer(&Call::ReceivePack, &body, &reason);
+        assert_eq!(lines_of(&report).len(), 2);
+    }
+
     #[test]
     fn a_refused_push_is_a_report_status_in_the_side_band_the_client_asked_for() {
         let body = push(

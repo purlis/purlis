@@ -897,7 +897,10 @@ mod tests {
             "purlis did not send this push: its base is not read yet; try again in a minute.",
         );
         assert!(said.starts_with("HTTP/1.1 200"), "{said}");
-        assert!(said.contains("application/x-git-receive-pack-result"), "{said}");
+        assert!(
+            said.contains("application/x-git-receive-pack-result"),
+            "{said}"
+        );
         for want in [
             "unpack ok",
             "ng refs/heads/one purlis did not send this push: its base is not read yet",

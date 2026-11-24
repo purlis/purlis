@@ -1083,7 +1083,9 @@ fn the_apps_own_git_for_a_chat_pushes_through_the_listener_and_a_held_push_reach
     // Git prints purlis's reason, not "RPC failed; HTTP 403" (#7486).
     assert!(
         held.err.contains("[remote rejected]")
-            && held.err.contains("Held: Ask 1, a CI-file push in acme/app.")
+            && held
+                .err
+                .contains("Held: Ask 1, a CI-file push in acme/app.")
             && !held.err.contains("RPC failed"),
         "{}",
         held.err
@@ -1153,11 +1155,7 @@ fn a_push_the_gate_refuses_or_holds_says_why_in_gits_own_output_for_each_ref_and
             let mut args = vec!["-c", config.as_str(), "push", "origin"];
             args.extend(refs);
             isolated(&isolation, || {
-                run_network(
-                    &work,
-                    Some("!'/nonexistent/gh' auth git-credential"),
-                    &args,
-                )
+                run_network(&work, Some("!'/nonexistent/gh' auth git-credential"), &args)
             })
             .expect("git ran")
         };
@@ -1165,7 +1163,9 @@ fn a_push_the_gate_refuses_or_holds_says_why_in_gits_own_output_for_each_ref_and
         assert!(!refused.ok(), "v{version}: a refused push was sent");
         assert!(
             refused.err.contains("[remote rejected]")
-                && refused.err.contains("which is temporary; try again in a minute")
+                && refused
+                    .err
+                    .contains("which is temporary; try again in a minute")
                 && !refused.err.contains("RPC failed")
                 && !refused.err.contains("Everything up-to-date"),
             "v{version}: {}",

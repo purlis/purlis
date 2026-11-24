@@ -651,16 +651,11 @@ impl CiPushGate {
             ));
         }
         // A thin pack may be built on any branch the forge advertises (an integration branch a
-        // task branch is cut from): those tips are fetched only if the pack needs them.
-        // A push may send no new objects because the forge has them all (an empty pack): the
-        // forge is then asked whether it has the tip, and the range is read as for any push.
-        let forge_has = |commit: &HeadSha| {
-            forge
-                .rev_commit(repo, commit.as_str())
-                .is_ok_and(|found| found.as_str().eq_ignore_ascii_case(commit.as_str()))
-        };
-        if let Err(why) = quarantine.take_in_known_or_on_forge(pack, tip, &base, from, &forge_has)
-        {
+        // task branch is cut from), and a push may send no new objects at all (an empty pack) when
+        // its tip is already in the repo: either way the advertised tips are fetched, and only if
+        // the pack needs them. A tip that is in none of them is refused, whatever the forge
+        // resolves by id (a fork's commit, a dangling one).
+        if let Err(why) = quarantine.take_in_known(pack, tip, &base, from) {
             return refuse(format!("git did not take its objects in ({why})."));
         }
         let trees = quarantine.trees();
