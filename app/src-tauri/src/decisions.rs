@@ -87,6 +87,11 @@ pub fn decision(
         attended: chats.attendance_of(chat).is_some_and(|fact| {
             fact.hearing(false, None) == purlis_core::dispatchunattended::Attendance::Attended
         }),
+        // The mode the host started the harness in, from its own start record: never a report
+        // of the chat's hook and never a word of its line (Q320e R6-1).
+        harness_mode: chats
+            .attendance_of(chat)
+            .and_then(purlis_core::attendance::Fact::start_mode),
     });
     // The accepted floor and the machine's locks, until slices 06 and 14 read them in the loader.
     let floor = purlis_core::enforcement::in_force(held.root());

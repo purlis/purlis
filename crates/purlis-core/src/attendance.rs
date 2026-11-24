@@ -340,6 +340,15 @@ impl Fact {
         self.attendance
     }
 
+    /// **The mode purlis started the chat in**, from the host's own start record (Q320e R6-1):
+    /// what `context.harness_mode` carries. Never what the chat's hook later reported
+    /// ([`Self::reported`]) and never a line the chat sent: only [`Self::at_start`] sets it. `None`
+    /// where the harness's mode is not one purlis reads, or the fact is one a record kept
+    /// ([`Self::kept`]): the policy then reads `unknown`.
+    pub fn start_mode(self) -> Option<ClaudeCodeMode> {
+        self.set
+    }
+
     /// The last mode the chat's armed hook reported, where its harness's is read.
     pub fn reported(self) -> Option<ClaudeCodeMode> {
         self.reported

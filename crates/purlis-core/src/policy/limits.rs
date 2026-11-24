@@ -49,6 +49,19 @@ pub struct Spec {
     pub shipped: Shipped,
     /// The direction that loosens it.
     pub loosens: Direction,
+    /// The least a number may be: a smaller one reads as this (spec §5.1's retention minimums).
+    pub least: Option<i64>,
+    /// The most a number may be: a bigger one reads as this.
+    pub most: Option<i64>,
+}
+
+impl Spec {
+    /// **`number` as it reads for this key**: held to the key's least and most. The same number
+    /// where the table sets neither.
+    pub fn bounded(&self, number: i64) -> i64 {
+        let number = self.least.map_or(number, |least| number.max(least));
+        self.most.map_or(number, |most| number.min(most))
+    }
 }
 
 /// Every key of the table, in the table's order.
@@ -85,7 +98,15 @@ pub fn table() -> &'static [Spec] {
                         "limits.toml: {key}'s loosens is {other:?}, not \"raised\" or \"lowered\""
                     ),
                 };
+                let bound = |name: &str| match row.get(name) {
+                    None => None,
+                    Some(item) => Some(item.as_integer().unwrap_or_else(|| {
+                        panic!("limits.toml: {key}'s {name} is not a whole number")
+                    })),
+                };
                 Spec {
+                    least: bound("min"),
+                    most: bound("max"),
                     key,
                     shipped,
                     loosens,
@@ -146,6 +167,8 @@ pub fn in_force(
         .chain(sides.into_iter().map(|said| said.or(shipped)))
         .reduce(|a, b| stricter(spec.loosens, a, b))
         .unwrap_or(shipped)
+        // A number outside the key's least and most reads as the nearest end (spec §5.1).
+        .map(|number| spec.bounded(number))
 }
 
 /// What a limit does to the thing that met it.

@@ -235,3 +235,8 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   `floor_tests`; failures that say `Operation not permitted` (creating a `.charter/vaults` folder,
   binding a port, `sandbox_apply`) are the chat's sandbox, not the code: CI is their first run.
   A grant check that walks `place.denied` must honour `Reach::Itself` (`grant::holds_the_folder`).
+- A limits-table key may carry `min` and `max` (`limits.toml`; `Spec::bounded`): a number outside
+  reads as the nearest end, with a Notice. `[policy] limits = "off"` and a `[policy.limits]` table
+  are the same TOML key, so one file cannot say both: a test of the mode and of the numbers
+  loads two. `cargo test --lib --test it` stops at the lib's first (sandbox) failure and never
+  runs `it`: run `--test it` alone.

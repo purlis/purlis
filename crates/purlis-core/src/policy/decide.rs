@@ -730,6 +730,17 @@ pub struct ChatFacts {
     pub level: Option<crate::enforcement::SandboxLevel>,
     /// Whether the person is at it.
     pub attended: bool,
+    /// **The mode the host started the chat's harness in** ([`crate::attendance::Fact::start_mode`]),
+    /// the host's own record and never a word of the chat's (Q320e R6-1). `None` where the host
+    /// holds none: `context.harness_mode` then reads `unknown`.
+    pub harness_mode: Option<crate::attendance::ClaudeCodeMode>,
+}
+
+/// **The word `context.harness_mode` carries for a start mode** (Q320e R6-1): Claude Code's own
+/// measured words (`default`, `acceptEdits`, `plan`, `auto`, `bypassPermissions`), and `unknown`
+/// for a mode the host holds no record of, which no rule written for a known mode lets through.
+pub fn harness_mode_word(mode: Option<crate::attendance::ClaudeCodeMode>) -> &'static str {
+    mode.map_or("unknown", crate::attendance::ClaudeCodeMode::as_str)
 }
 
 /// **The session host's decision for chat `chat`, by what it records of it** (`facts`, `None` for
@@ -761,7 +772,7 @@ pub fn for_chat(
             "off"
         },
         attended: facts.attended,
-        harness_mode: "default",
+        harness_mode: harness_mode_word(facts.harness_mode),
         depth: 0,
         via: "hook",
         start: None,

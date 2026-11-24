@@ -160,6 +160,10 @@ struct Limit {
     shipped: toml::Value,
     unit: String,
     loosens: String,
+    #[serde(default)]
+    min: Option<i64>,
+    #[serde(default)]
+    max: Option<i64>,
     source: String,
     #[serde(default)]
     inventory: String,

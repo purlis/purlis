@@ -16,3 +16,5 @@ browser-unknown-site	browse	browser-site	The ask for a site new to the project.
 vaults-use	use	vault	The vault ask.
 dispatch-other-persona	dispatch-to	dispatch	The dispatch grant ask (Asks #32).
 skills-unlisted	install,load	none	Today an unlisted skill is refused by [skill_policy], with no ask.
+runners-offload	offload	none	Today a dispatch from a chat on a pool's runner is held for the person's Approve (Dispatch #76), as a dispatch hold and no ask kind.
+runners-forward	forward	none	Today a runner chat's write is held as a proposal for the person to Apply (Other A #33, Other B #9), as a proposal and no ask kind.

@@ -62,6 +62,35 @@ forbid (principal, action == Action::"dispatch-to", resource) when { context.dep
 forbid (principal, action in [Action::"install", Action::"load"], resource)
   unless { resource in SkillSet::"allowed-skills" };
 
+// ── mode (M75-36; Dispatch #42, Mode #6, #9) ───────────────────────────────────────────────
+// A task is capped at auto: one started with its prompts off is above it. The person's own chat
+// is never judged by this (attended). `context.harness_mode` is the host's start record, never
+// the chat's word (Q320e.R6-1).
+@id("mode-task-above-auto") @level("project")
+forbid (principal, action == Action::"enter", resource)
+  when { !context.attended && context.harness_mode == "bypassPermissions" };
+
+// ── runners (M75-36; Dispatch #76, Other B #7, #9) ─────────────────────────────────────────
+// Work handed to a runner, and a request handed back from one, is the person's to approve, once.
+@id("runners-offload") @level("project") @ask("you") @keep("once")
+forbid (principal, action == Action::"offload", resource);
+
+@id("runners-forward") @level("project") @ask("you") @keep("once")
+forbid (principal, action == Action::"forward", resource);
+
+// ── consents (M75-36; Other A, Asks #44) ───────────────────────────────────────────────────
+// A report or a promote releases a credential, publishes or sends data off the machine: only the
+// window's press makes one, so a chat never does.
+@id("consents-window-only") @level("project")
+forbid (principal, action in [Action::"report", Action::"promote"], resource);
+
+// ── processes (M75-36): what the floor and the full sandbox add beyond the escape denies ───
+// The escape denies (`launchctl` and the rest) are the sandbox level's own step, never a rule
+// (§3.5). The host names a Command by its program's name, not its path.
+@id("processes-elevation") @level("project")
+forbid (principal, action == Action::"exec", resource)
+  when { resource == Command::"sudo" || resource == Command::"doas" || resource == Command::"pkexec" };
+
 // ── the catch-all (Q316.1; its id, Q326) ──────────────────────────────────────────────────
 @id("policy-everything-else") @level("project")
 permit (principal, action, resource);

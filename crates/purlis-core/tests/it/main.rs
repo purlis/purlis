@@ -297,6 +297,7 @@ mod profiles_are_refused_when_git_would_carry_them;
 mod project_skills_move_without_a_chat_losing_one;
 mod project_templates;
 mod provisioning_is_the_persons_press_in_the_window_only;
+mod mode_runners_consents_processes_and_audit_retention;
 mod recall_reads_only_the_plane;
 mod recall_through_the_index_finds_what_the_scan_finds;
 mod recorded_corpus;
