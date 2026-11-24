@@ -112,6 +112,9 @@ impl Refusal {
                 "set labels through the API's labels field, not a /label, /unlabel or /relabel line, and leave other quick actions out of the text",
             ),
             Self::LabelById => Some("name labels in the API's labels field, not by id"),
+            Self::GraphqlOtherRepo => Some(
+                "if the repo is this chat's own, the REST route for the same act is answered: `gh api repos/OWNER/REPO/pulls -X POST -f title=... -f head=BRANCH -f base=main` for gh pr create, `gh api -X PUT repos/OWNER/REPO/pulls/N/update-branch` for gh pr update-branch",
+            ),
             _ => None,
         }
     }
