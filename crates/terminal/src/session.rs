@@ -2227,7 +2227,12 @@ mod tests {
     fn until_it_leads_a_session_of_its_own(pid: u32) {
         let id = rustix::process::Pid::from_raw(pid as i32).expect("a pid");
         let until = Instant::now() + PATIENCE;
-        while rustix::process::getsid(Some(id)).ok() != Some(id) {
+        loop {
+            match rustix::process::getsid(Some(id)) {
+                Ok(session) if session == id => return,
+                Ok(_) => {}
+                Err(error) => panic!("precondition: {pid}'s session cannot be read: {error}"),
+            }
             assert!(
                 Instant::now() < until,
                 "precondition: {pid} never led a session of its own"
@@ -2238,7 +2243,12 @@ mod tests {
 
     /// Whether `pid` has gone within a few seconds.
     fn gone_soon(pid: u32) -> bool {
-        let until = Instant::now() + Duration::from_secs(5);
+        gone_within(pid, Duration::from_secs(5))
+    }
+
+    /// Whether `pid` has gone within `time`.
+    fn gone_within(pid: u32, time: Duration) -> bool {
+        let until = Instant::now() + time;
         while Instant::now() < until {
             if !alive(pid) {
                 return true;
@@ -2335,12 +2345,16 @@ mod tests {
         session.write(b"\r").unwrap();
 
         // Whatever ends with the program ends inside this call, before it returns the exit
-        // (`Held::try_wait` ends what the group left first), so nothing is left to wait out.
+        // (`Held::try_wait` ends what the group left first). A short bounded look after it
+        // still catches a kill that ever moves to another thread.
         assert!(
             session.wait(Duration::from_secs(5)).unwrap().is_some(),
             "precondition: the program exits"
         );
-        assert!(alive(shell), "its shell {shell} was ended with the tab");
+        assert!(
+            !gone_within(shell, Duration::from_millis(300)),
+            "its shell {shell} was ended with the tab"
+        );
     }
 
     #[test]
