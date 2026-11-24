@@ -553,7 +553,7 @@ impl Blocks {
                 match fed {
                     // A deny a recorded block holds is the same refusal: held for its `seq` (the
                     // look's point), counting for nothing.
-                    super::web_repeats::Fed::Repeat => {}
+                    super::web_repeats::Fed::Repeat(_) => {}
                     // The block that holds an earlier deny: the refusal keeps the deny's `seq`,
                     // so one already looked at is not shown again as this later block, but it
                     // takes the block's tally, because the block is the proxy's own plain report

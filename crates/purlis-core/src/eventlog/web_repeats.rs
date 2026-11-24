@@ -19,6 +19,12 @@
 //! an open ask) counts as the refusal it is, and counts the same once the block is written, so a
 //! fetch is counted at most once, and at least once except in one bounded case.
 //!
+//! **A pair is one refusal, aimed at the deny's own call.** A block is written late by
+//! `became_a_block` (a refusal held as an ask that timed out), with the tool and arguments of the
+//! chat's latest call when it left, which may be a later command than the fetch; so what a pair is
+//! resolved by, in a turn's finish, is the deny's own tool and arguments, and only the block's
+//! qualifier and source are read from the block ([`super::finishes`]).
+//!
 //! **The bounded undercount**: a plain block says nothing of its tool, so a `Bash` command's own
 //! refusal of host X, written within [`BEFORE_MS`] before a `WebFetch` deny of X, absorbs that
 //! deny, and two refusals count as one. It costs at most one count per plain block, never two for
@@ -44,8 +50,8 @@ use super::stops::{self, Block, Source, Target};
 const BEFORE_MS: u64 = 15_000;
 
 /// How long after a deny the proxy's block may be written: a refusal held as an ask is written as
-/// a block when its ask leaves ([`crate::sandboxblock::stop`]), up to a quiet person's hold
-/// (15 minutes) and a little more.
+/// a block when its ask leaves (`became_a_block`, in the app's `chats.rs`, the late writer, with
+/// [`crate::sandboxblock::stop`]), up to a quiet person's hold (15 minutes) and a little more.
 const AFTER_MS: u64 = 20 * 60_000;
 
 /// The most unpaired blocks of each side held per chat: past it the oldest are let go, which
@@ -57,8 +63,8 @@ const HELD: usize = 64;
 pub enum Fed<K> {
     /// It counts: a block of any other kind, a deny no recorded block holds, or a sandbox block.
     Counts,
-    /// It is a deny a recorded sandbox block already holds: it counts for nothing.
-    Repeat,
+    /// It is a deny the earlier sandbox block `K` already holds: it counts for nothing.
+    Repeat(K),
     /// A sandbox block that paired with the earlier deny `K`, which counted when it was fed and
     /// counts no more.
     Retires(K),
@@ -193,8 +199,7 @@ impl<K: Copy> Pairing<K> {
                 .min_by_key(|(_, one)| one.at_ms.abs_diff(at_ms))
                 .map(|(at, _)| at);
             if let Some(at) = nearest {
-                held.sandbox.remove(at);
-                return Fed::Repeat;
+                return Fed::Repeat(held.sandbox.remove(at).key);
             }
             held.denies.push(waiting);
             let_go_of_the_oldest(&mut held.denies);
@@ -218,8 +223,9 @@ impl<K: Copy> Pairing<K> {
 /// **How a log's web denies and sandbox blocks pair**, by the events' places in the log.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Pairs {
-    /// Denies written after the block that holds them: they count for nothing.
-    pub after_block: BTreeSet<usize>,
+    /// Denies written after the block that holds them, by deny, with that block's place: they
+    /// count for nothing.
+    pub after_block: BTreeMap<usize, usize>,
     /// Denies written before the block that holds them, by deny, with that block's place. The
     /// deny counted when it was written, in its own turn.
     pub before_block: BTreeMap<usize, usize>,
@@ -229,7 +235,7 @@ impl Pairs {
     /// Every deny a recorded block holds, whichever was written first.
     pub fn denies(&self) -> BTreeSet<usize> {
         self.after_block
-            .iter()
+            .keys()
             .chain(self.before_block.keys())
             .copied()
             .collect()
@@ -252,8 +258,8 @@ pub fn pairs(events: &[Event]) -> Pairs {
         };
         match pairing.feed(chat, at, super::written_at_ms(&event.ulid), &block) {
             Fed::Counts => {}
-            Fed::Repeat => {
-                pairs.after_block.insert(at);
+            Fed::Repeat(block) => {
+                pairs.after_block.insert(at, block);
             }
             Fed::Retires(deny) => {
                 pairs.before_block.insert(deny, at);

@@ -111,6 +111,8 @@ struct Aim {
 /// chat's harness when it was blocked.
 #[derive(Debug, Clone)]
 struct Shown {
+    /// Who reported it, as its row names it: a pair's plain block's, not the deny's.
+    source: Source,
     target: Option<Target>,
     qualifier: Option<Qualifier>,
     harness: String,
@@ -125,17 +127,21 @@ struct Turn {
 }
 
 impl Turn {
-    fn blocked(&mut self, block: Block, harness: &str) {
+    /// A block aimed at `aim`'s tool and arguments, shown as `shown` says (its qualifier, source
+    /// and first target): the same block, unless a web deny and a plain block hold one refusal,
+    /// whose aim is the deny's own call, never the late block's (#7465).
+    fn blocked(&mut self, aim: Block, shown: &Block, harness: &str) {
         let shown = Shown {
-            target: block.target.clone(),
-            qualifier: block.qualifier,
+            source: shown.source,
+            target: shown.target.clone(),
+            qualifier: shown.qualifier,
             harness: harness.to_owned(),
         };
-        let target = block.target.filter(|_| block.args.is_none());
+        let target = aim.target.filter(|_| aim.args.is_none());
         let aim = Aim {
-            source: block.source,
-            tool: block.tool,
-            args: block.args,
+            source: aim.source,
+            tool: aim.tool,
+            args: aim.args,
             target,
         };
         if !self.unresolved.iter().any(|(held, _)| *held == aim) {
@@ -163,8 +169,8 @@ impl Turn {
     fn named(&self) -> Vec<Unresolved> {
         self.unresolved
             .iter()
-            .map(|(aim, shown)| Unresolved {
-                source: aim.source,
+            .map(|(_, shown)| Unresolved {
+                source: shown.source,
                 qualifier: shown.qualifier,
                 target: shown.target.clone(),
                 harness: shown.harness.clone(),
@@ -187,9 +193,21 @@ pub fn finishes(events: &[Event], chat: &str) -> Vec<Finish> {
     let pairs = super::web_repeats::pairs(events);
     let repeats: std::collections::BTreeSet<usize> = pairs
         .after_block
-        .iter()
+        .keys()
         .chain(pairs.before_block.values())
         .copied()
+        .collect();
+    // The deny each plain block of a pair is held with, whichever was written first.
+    let denies_of: std::collections::BTreeMap<usize, usize> = pairs
+        .after_block
+        .iter()
+        .map(|(deny, block)| (*block, *deny))
+        .chain(
+            pairs
+                .before_block
+                .iter()
+                .map(|(deny, block)| (*block, *deny)),
+        )
         .collect();
     for (at, event) in events
         .iter()
@@ -197,9 +215,6 @@ pub fn finishes(events: &[Event], chat: &str) -> Vec<Finish> {
         .filter(|(_, event)| event.chat.as_deref() == Some(chat))
         .filter(|(at, _)| !repeats.contains(at))
     {
-        // A deny that a later block holds is that block's refusal in the deny's turn, and the
-        // block is the plain member: it keeps the block's qualifier and source (#7465).
-        let held_by = pairs.before_block.get(&at).map(|block| &events[*block]);
         if event.kind == "run.started" {
             // As the Chat log reads it (`chatlog::rows`): the latest start's word.
             harness = event
@@ -233,9 +248,25 @@ pub fn finishes(events: &[Event], chat: &str) -> Vec<Finish> {
             stops::BLOCK => {
                 // Every block the marker's tally reads back (`chatlog::Tally`), whoever blocked it
                 // and however much its report is worth (Q280).
-                let body = held_by.map_or(&event.body, |block| &block.body);
-                if let Ok(block) = serde_json::from_value::<Block>(body.clone()) {
-                    turn.blocked(block, &harness);
+                // A pair of a web deny and a plain block is one refusal, counted where the first
+                // of the two was written. It is aimed at the deny's own tool and arguments: the
+                // plain block's are the chat's latest call when it was written (`became_a_block`,
+                // late), which a later command's success or an Allow must not resolve it by. It
+                // shows the plain block's source and qualifier (#7465).
+                let read = |body: &serde_json::Value| serde_json::from_value::<Block>(body.clone());
+                let pair = pairs
+                    .before_block
+                    .get(&at)
+                    .map(|block| (at, *block))
+                    .or_else(|| denies_of.get(&at).map(|deny| (*deny, at)));
+                if let Some((deny, block)) = pair {
+                    if let (Ok(deny), Ok(block)) =
+                        (read(&events[deny].body), read(&events[block].body))
+                    {
+                        turn.blocked(deny, &block, &harness);
+                    }
+                } else if let Ok(block) = read(&event.body) {
+                    turn.blocked(block.clone(), &block, &harness);
                 }
             }
             stops::ASK_ANSWERED => {

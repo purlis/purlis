@@ -398,6 +398,31 @@ fn a_block_stamped_with_another_tool_still_pairs_with_the_web_fetchs_deny() {
         );
         everywhere(&chat.events(), 1);
     }
+
+    // The shape `became_a_block` writes a held refusal in: plain, with the tool and the arguments
+    // of the chat's latest call.
+    for tool in ["Bash", "Read", "WebFetch"] {
+        let late = |chat: &mut Chat| {
+            let Stop::Block(mut block) =
+                block_of("stamped.example.com", Some(tool), Reported::ByTheProxy)
+            else {
+                panic!("a sandbox block");
+            };
+            block.args = Some("digest-of-latest-call".to_owned());
+            chat.host
+                .stop(Path::new(PLANE), Some(CHAT), &Stop::Block(block))
+                .unwrap();
+        };
+        let mut chat = Chat::begun();
+        late(&mut chat);
+        chat.refuses("stamped.example.com");
+        everywhere(&chat.events(), 1);
+
+        let mut chat = Chat::begun();
+        chat.refuses("stamped.example.com");
+        late(&mut chat);
+        everywhere(&chat.events(), 1);
+    }
 }
 
 /// A sandbox block the chat's own hook line wrote (unverified) is the chat's word: it must not
@@ -483,7 +508,7 @@ fn a_block_of_another_chat_never_pairs() {
             3,
             blocks("chat-a", Source::Guard, "x.example.com")
         ),
-        Fed::Repeat,
+        Fed::Repeat(1),
         "its own chat's deny is"
     );
 }
