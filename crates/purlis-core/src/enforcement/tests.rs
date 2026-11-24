@@ -45,7 +45,7 @@ fn a_project_that_says_nothing_runs_the_watch_template() {
             assert_eq!(settings.mode(family), want, "{}", family.key());
         }
     }
-    assert_eq!(Template::Watch.sandbox_level(), Some(SandboxLevel::Floor));
+    assert_eq!(Template::Watch.sandbox_level(), SandboxLevel::Floor);
 }
 
 #[test]
@@ -91,11 +91,11 @@ fn each_template_runs_each_family_as_the_ruling_says() {
             template
         );
     }
-    assert_eq!(Template::Open.sandbox_level(), Some(SandboxLevel::Off));
-    assert_eq!(Template::Hold.sandbox_level(), Some(SandboxLevel::Floor));
-    assert_eq!(Template::Team.sandbox_level(), Some(SandboxLevel::Full));
+    assert_eq!(Template::Open.sandbox_level(), SandboxLevel::Off);
+    assert_eq!(Template::Hold.sandbox_level(), SandboxLevel::Floor);
+    assert_eq!(Template::Team.sandbox_level(), SandboxLevel::Full);
     // Strict is today's purlis: `[sandbox]` decides, the floor unless its mode is on (Q316).
-    assert_eq!(Template::Strict.sandbox_level(), None);
+    assert_eq!(Template::Strict.sandbox_level(), SandboxLevel::Floor);
 }
 
 /// Q325: the person's own credential files are held at the floor by `team` and `strict` alone;
@@ -219,10 +219,17 @@ fn vaults_are_never_logged() {
 }
 
 #[test]
-fn the_sandbox_is_no_key_of_policy() {
-    let settings = said("[policy]\ntemplate = \"strict\"\nsandbox = \"off\"\n");
-    assert_eq!(settings.mode(Family::Sandbox), Mode::Enforce);
-    assert_eq!(settings.refused.len(), 1);
+fn policy_sandbox_takes_a_level_never_a_mode() {
+    let off = said("[policy]\ntemplate = \"strict\"\nsandbox = \"off\"\n");
+    assert_eq!(off.level(), SandboxLevel::Off);
+    assert!(off.refused.is_empty(), "{:?}", off.refused);
+    for word in ["log", "enforce", "on", "never"] {
+        let bad = said(&format!(
+            "[policy]\ntemplate = \"open\"\nsandbox = \"{word}\"\n"
+        ));
+        assert_eq!(bad.level(), SandboxLevel::Full, "{word}");
+        assert_eq!(bad.refused.len(), 1, "{word}");
+    }
 }
 
 #[test]
@@ -936,7 +943,7 @@ fn the_sandbox_level_is_the_sandbox_mode_else_the_templates() {
         assert_eq!(settings.level(), level, "{text:?}");
         assert_eq!(
             settings.mode(Family::Sandbox),
-            mode_of_level(level),
+            mode_of_level_under(level, settings.template),
             "{text:?}"
         );
         assert_eq!(
@@ -1511,4 +1518,76 @@ fn audit_is_a_family_and_reads_every_mode_as_enforce() {
         said("[policy]\naudit = \"enforce\"\n").refused,
         Vec::<String>::new()
     );
+}
+
+#[test]
+fn log_at_the_level_off_under_a_template_but_open_is_what_a_live_start_runs() {
+    // M75-11, round 2: the template travels with the level, so the live reader (`in_force`), a
+    // dispatched chat (`for_chat`) and the `ENV` round trip agree with `Settings::mode`.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"watch\"\nsandbox = \"off\"\n", None);
+    at_start(root.path());
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    let live = in_force(root.path());
+    assert_eq!(live.level(), SandboxLevel::Off);
+    assert_eq!(live.mode(Family::Sandbox), Mode::Log);
+    // A dispatched chat, whether its asker's spelling names the template or an older one does not.
+    let asker = live.spelled();
+    assert_eq!(
+        live.clone().for_chat(Some(&asker)).mode(Family::Sandbox),
+        Mode::Log
+    );
+    assert_eq!(
+        live.clone()
+            .for_chat(Some("sandbox=off"))
+            .mode(Family::Sandbox),
+        Mode::Log
+    );
+    // The `ENV` round trip, and what an acceptance keeps.
+    assert_eq!(Resolved::parse(&asker), live);
+    assert_eq!(Resolved::of_kept(&live.as_kept()), live);
+    // `open` stays everything off, through the same trips.
+    let open = Resolved::of(&said("[policy]\ntemplate = \"open\"\n"), &Locks::none());
+    assert_eq!(open.mode(Family::Sandbox), Mode::Off);
+    assert_eq!(Resolved::parse(&open.spelled()), open);
+    assert_eq!(Resolved::of_kept(&open.as_kept()), open);
+    assert_eq!(Resolved::all(Mode::Off).mode(Family::Sandbox), Mode::Off);
+    assert_eq!(
+        Resolved::parse(&Resolved::all(Mode::Off).spelled()).mode(Family::Sandbox),
+        Mode::Off
+    );
+    // The stricter of two keeps the log, and any level above `off` enforces.
+    assert_eq!(live.stricter(&open).mode(Family::Sandbox), Mode::Log);
+    assert_eq!(open.stricter(&live).mode(Family::Sandbox), Mode::Log);
+    assert_eq!(
+        live.stricter(&Resolved::all(Mode::Enforce))
+            .mode(Family::Sandbox),
+        Mode::Enforce
+    );
+}
+
+#[test]
+fn sandbox_policy_never_raises_the_live_level_to_full_whatever_policy_sandbox_says() {
+    // M75-11, round 2: as the levels reader raises it, so does the live reader.
+    for word in ["off", "floor", "full"] {
+        let text = format!("[sandbox]\npolicy = \"never\"\n\n[policy]\nsandbox = \"{word}\"\n");
+        let settings = said(&text);
+        assert_eq!(settings.level(), SandboxLevel::Full, "{word}");
+        assert_eq!(
+            Resolved::of(&settings, &Locks::none()).level(),
+            SandboxLevel::Full,
+            "{word}"
+        );
+        assert_eq!(settings.mode(Family::Sandbox), Mode::Enforce, "{word}");
+    }
+    // The template's own level is raised too, and the local file's `never` raises no project's.
+    assert_eq!(
+        said("[policy]\ntemplate = \"watch\"\n[sandbox]\npolicy = \"never\"\n").level(),
+        SandboxLevel::Full
+    );
+    let local = plane(
+        "[policy]\nsandbox = \"off\"\n",
+        Some("[sandbox]\npolicy = \"never\"\n"),
+    );
+    assert_eq!(Settings::read(local.path()).level(), SandboxLevel::Off);
 }

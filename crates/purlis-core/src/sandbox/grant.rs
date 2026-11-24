@@ -644,6 +644,15 @@ fn inside_any(resolved: &Path, outer: &Path, place: &Place<'_>) -> bool {
     resolved.starts_with(key(outer, place)) || resolved.starts_with(key(&super::real(outer), place))
 }
 
+/// Whether `denial` holds `folder`: the denied path and all below it, or, for an entry held alone
+/// (the plane root's own, a later-code name), only that entry and nothing below it (#2752).
+fn holds_the_folder(denial: &super::Denial, folder: &Path, place: &Place<'_>) -> bool {
+    match denial.reach {
+        super::Reach::AndBelow => inside_any(folder, &denial.path, place),
+        super::Reach::Itself => folder == denial.path || folder == super::real(&denial.path),
+    }
+}
+
 /// Whether `resolved` holds `inner`, under either of `inner`'s spellings.
 fn holds_any(resolved: &Path, inner: &Path, place: &Place<'_>) -> bool {
     let resolved = key(resolved, place);
@@ -827,11 +836,11 @@ fn judged(typed: &str, place: &Place<'_>) -> Result<PathBuf, Refused> {
     {
         return Err(Refused::Never(brokered_route(Class::Integrity).to_owned()));
     }
-    if let Some(denial) = place.denied.iter().find(|denial| match denial.reach {
-        super::Reach::AndBelow => inside_any(&resolved, &denial.path, place),
-        // An entry held alone holds nothing below it (#2752).
-        super::Reach::Itself => resolved == denial.path || resolved == super::real(&denial.path),
-    }) {
+    if let Some(denial) = place
+        .denied
+        .iter()
+        .find(|denial| holds_the_folder(denial, &resolved, place))
+    {
         return Err(Refused::Never(brokered_route(denial.class).to_owned()));
     }
     // A project manifest too, wherever it is: a granted folder is written past what the chat's
@@ -896,7 +905,7 @@ pub fn lift(typed: &str, ground: &Ground) -> Result<PathBuf, Refused> {
     if let Some(denial) = place
         .denied
         .iter()
-        .find(|denial| inside_any(&folder, &denial.path, &place))
+        .find(|denial| holds_the_folder(denial, &folder, &place))
     {
         return Err(Refused::Never(brokered_route(denial.class).to_owned()));
     }

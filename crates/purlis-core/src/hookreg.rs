@@ -117,7 +117,7 @@ impl Handler {
     /// Only the families `[policy]` switches count ([`crate::enforcement::Family::switchable`]):
     /// one that is not yet switchable keeps its refusal while the guard lives and, as before
     /// Q308, does not hold a call when it dies. Its wiring will count it. `sandbox` counts like
-    /// any other (ruling Q327): its mode is its level's ([`crate::enforcement::mode_of_level`]),
+    /// any other (ruling Q327): its mode is its level's ([`crate::enforcement::mode_of_level_under`]),
     /// enforced wherever a wrap is applied and off where there is none, as under `open`, so a
     /// dead guard refuses where the sandbox it judges is in force and continues where it is not.
     ///

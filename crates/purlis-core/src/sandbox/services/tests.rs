@@ -156,6 +156,10 @@ fn a_service_is_named_whole_and_never_a_keychains() {
     ] {
         assert!(matches!(service(never), Err(Refused::Never(_))), "{never}");
     }
+    // The escape step's mach services are no grant's either (M75-11).
+    for held in crate::policy::sandbox_level::MACH_SERVICES {
+        assert!(matches!(service(held), Err(Refused::Outside(_))), "{held}");
+    }
 }
 
 #[test]

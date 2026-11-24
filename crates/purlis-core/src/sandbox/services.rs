@@ -652,7 +652,7 @@ fn shape(path: &Path) -> Shape {
 const NEVER_SERVICES: [&str; 4] = ["securityserver", "securityd", "secd", "keychain"];
 
 /// **`typed` as a system service a grant names**, or why not: a reverse-DNS name, whole, never
-/// a pattern; never a keychain's.
+/// a pattern; never a keychain's, nor Launch Services' or Apple events'.
 pub fn service(typed: &str) -> Result<String, Refused> {
     let name = typed.trim();
     let shaped = name.contains('.')
@@ -670,6 +670,17 @@ pub fn service(typed: &str) -> Result<String, Refused> {
     }
     if is_name_lookup_service(name) {
         return Err(Refused::Outside(NAME_LOOKUP_REFUSED.to_owned()));
+    }
+    // The escape step's own services (M75-11): no grant lifts what holds a chat inside the wrap.
+    if crate::policy::sandbox_level::MACH_SERVICES
+        .iter()
+        .any(|held| held.eq_ignore_ascii_case(name))
+    {
+        return Err(Refused::Outside(
+            "purlis never allows Launch Services or Apple events. They would let a chat start \
+             a program outside its sandbox."
+                .to_owned(),
+        ));
     }
     let lower = name.to_ascii_lowercase();
     if NEVER_SERVICES.iter().any(|part| lower.contains(part)) {
