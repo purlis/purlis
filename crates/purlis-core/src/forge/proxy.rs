@@ -84,8 +84,8 @@ pub use graphql::mutation_repo;
 pub use held::{BranchAsk, Held, HeldSink};
 pub use policy::{
     Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, GITLAB_COM, GithubAlias,
-    NoObjects, NotYours, ObjectRepo, RecordedBranches, Refusal, TipSource, TouchedRepo,
-    is_ci_storage_host, is_download_host, is_gitlab_ci_storage,
+    NoObjects, NotYours, ObjectRepo, PullHead, PullRef, RecordedBranches, Refusal, TipSource,
+    TouchedRepo, is_ci_storage_host, is_download_host, is_gitlab_ci_storage,
 };
 pub use repo::{AddressError, AllowedRepo, ForgeRepoId, Kind};
 pub use request::RequestHead;

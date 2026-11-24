@@ -164,3 +164,39 @@ fn neither_a_fill_nor_the_read_of_a_field_for_one_goes_to_a_runner_too_old_for_i
     }
     assert_eq!(no_fill_for(&Command::List, before), None);
 }
+
+/// Links that ended and remember why: Try now is let go to them, as a connector's memory is.
+struct Remembering(Arc<std::sync::atomic::AtomicUsize>);
+
+impl Taken for Remembering {
+    fn next(&mut self) -> BoxFuture<'_, Option<Linked>> {
+        Box::pin(async { None })
+    }
+
+    fn moved(&self) {}
+
+    fn try_now(&self) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// #7187: a Try now pressed on links that are over lets go of the connector's memory before the
+/// new links are taken (which dial at once), not after: the click is never answered from a
+/// remembered Refused.
+#[tokio::test]
+async fn a_try_now_on_ended_links_is_let_go_of_before_new_links_are_taken() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let forgot = Arc::new(AtomicUsize::new(0));
+    let mut ended = Remembering(Arc::clone(&forgot));
+    let (again, try_now) = (Notify::new(), Notify::new());
+    // What `link_now` does on over links: Try now first, then take links anew.
+    try_now.notify_one();
+    again.notify_one();
+    waits_for_links_anew(&mut ended, &again, &try_now).await;
+    // The caller takes `source()` only now: the memory is already let go of.
+    assert_eq!(forgot.load(Ordering::SeqCst), 1);
+    // An ask with no click leaves the memory alone (the automatic path keeps its wait).
+    again.notify_one();
+    waits_for_links_anew(&mut ended, &again, &try_now).await;
+    assert_eq!(forgot.load(Ordering::SeqCst), 1);
+}

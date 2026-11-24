@@ -169,6 +169,11 @@ impl Recorded for ConfirmedRecorded {
                 purlis_core::forge::Kind::GitHub => Kind::GitHub,
                 purlis_core::forge::Kind::GitLab => Kind::GitLab,
             };
+            // The default branch is read here, once, when the route is built (#7526): a repo whose
+            // default is renamed mid-run keeps the old name until the next route. The ownership gate
+            // on update-branch and rebase does not rest on it, so a stale name only widens what
+            // `protects` names. `with_protected_branches` has no caller: the forge read carries no
+            // branch-protection rules, and the gate refuses every branch the chat has no tip on.
             let Ok(allowed) = AllowedRepo::new(kind, &host, port, &repo.path, &read.default_branch)
             else {
                 continue;
@@ -189,7 +194,7 @@ impl Recorded for ConfirmedRecorded {
 
     /// The tip `chat` last put on `branch`: the app's own record under the machine config root
     /// ([`purlis_core::forge::createdbranches`]), read now, keyed by the project's stable id and
-    /// the forge's id of the repo. A project with no stored id owns none.
+    /// the forge's id of the repo. The id is the one the session host holds the project by, so a plane with no stored `[project] id` owns its chats' branches too.
     fn own_tip(
         &self,
         project: &Path,
@@ -198,7 +203,7 @@ impl Recorded for ConfirmedRecorded {
         repo_id: u64,
         branch: &str,
     ) -> Option<String> {
-        let project_id = purlis_core::scaffold::planefile::project_id(project)?;
+        let project_id = purlis_core::scaffold::planefile::id_to_hold_by(project).ok()?;
         // The branch of a chat this one dispatched is its to follow up too, from the app's own
         // dispatch records (read only when the branch is another chat's), never a file a chat
         // writes.
@@ -225,7 +230,7 @@ impl Recorded for ConfirmedRecorded {
     }
 
     fn own_branches(&self, project: &Path, chat: &str, host: &str, repo_id: u64) -> Vec<String> {
-        let Some(project_id) = purlis_core::scaffold::planefile::project_id(project) else {
+        let Ok(project_id) = purlis_core::scaffold::planefile::id_to_hold_by(project) else {
             return Vec::new();
         };
         purlis_core::forge::createdbranches::created_by(
@@ -238,7 +243,7 @@ impl Recorded for ConfirmedRecorded {
     }
 
     fn record_created(&self, project: &Path, chat: &str, created: &[CreatedBranch]) {
-        let Some(project_id) = purlis_core::scaffold::planefile::project_id(project) else {
+        let Ok(project_id) = purlis_core::scaffold::planefile::id_to_hold_by(project) else {
             tracing::warn!("purlis: a branch a chat created was not recorded: no project id");
             return;
         };
@@ -299,5 +304,44 @@ impl Gate for ChatGate {
 
     fn credential(&self, request: &CredentialRequest) -> Result<Credential, CredentialError> {
         self.route.credential_for(request)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The route's record of a branch a chat made, for a project that stores no `[project] id`
+    /// (a plane): the same id keys the write and every read.
+    #[test]
+    fn a_project_with_no_stored_id_owns_the_branches_its_chats_make() {
+        let config = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        assert!(purlis_core::scaffold::planefile::project_id(project.path()).is_none());
+        let recorded = ConfirmedRecorded::new(config.path().to_owned());
+        let tip = "1".repeat(40);
+        recorded.record_created(
+            project.path(),
+            "chat-1",
+            &[CreatedBranch {
+                host: "github.com".into(),
+                repo: "acme/app".into(),
+                repo_id: Some(7),
+                branch: "mine".into(),
+                tip: tip.clone(),
+            }],
+        );
+
+        let own =
+            |chat: &str, project: &Path| recorded.own_tip(project, chat, "github.com", 7, "mine");
+        assert_eq!(own("chat-1", project.path()), Some(tip));
+        assert_eq!(
+            recorded.own_branches(project.path(), "chat-1", "github.com", 7),
+            ["mine"]
+        );
+        // Another chat, and another project, own nothing.
+        assert_eq!(own("chat-2", project.path()), None);
+        let other = tempfile::tempdir().unwrap();
+        assert_eq!(own("chat-1", other.path()), None);
     }
 }

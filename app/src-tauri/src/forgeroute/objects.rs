@@ -27,6 +27,14 @@
 //!   twice (the hold and the merge stance read it again), and a chat repeats itself. A forge that
 //!   could not be asked is **not** cached, so the next request asks again.
 //!
+//! **A pull request's head** ([`ObjectRepo::pull_head`]) is asked the same way, for update-branch
+//! and a GitLab rebase, which write to the head (#7494, #7526): `headRefName`, `headRefOid` and
+//! `headRepository { nameWithOwner }` by node id or by repo and number; GitLab's `sourceBranch`,
+//! `diffHeadSha` and `sourceProject { fullPath }` by project path and iid. The core compares the
+//! tip with the record the push rule uses. Not cached, and fail closed: a pull request the forge does not know, a
+//! head repo that is gone (a deleted fork), an answer of another shape and a forge that could not
+//! be reached all answer `None`, and the core refuses the update.
+//!
 //! **Tier** (ADR 0069): nothing is stored. The cache is this run's memory.
 
 use std::collections::{HashMap, VecDeque};
@@ -37,7 +45,7 @@ use purlis_core::forge::accounts::over_https;
 use purlis_core::forge::http::TokenSource;
 use purlis_core::forge::proxy::{
     AllowedRepo, ChatId, Credential, CredentialError, CredentialRequest, CredentialSource,
-    ObjectRepo,
+    ObjectRepo, PullHead, PullRef,
 };
 use purlis_core::forge::transport::{Call, Field};
 use purlis_core::forge::{Failure, Forge, ForgeError, Kind as ForgeKind};
@@ -59,6 +67,21 @@ const QUERY: &str = "query($id: ID!) { node(id: $id) { __typename \
 
 const NUMBER_QUERY: &str = "query($id: ID!) { node(id: $id) { ... on PullRequest { number } } }";
 
+const HEAD_BY_NODE: &str = "query($id: ID!) { node(id: $id) { \
+    ... on PullRequest { headRefName headRefOid headRepository { nameWithOwner } } } }";
+
+const HEAD_OF_MERGE_REQUEST: &str = "query($path: ID!, $iid: String!) { project(fullPath: $path) { \
+    mergeRequest(iid: $iid) { sourceBranch diffHeadSha sourceProject { fullPath } } } }";
+
+/// By number: `number` is a parsed integer, so it is written into the query, and the repo's owner
+/// and name go as variables.
+fn head_by_number(number: u64) -> String {
+    format!(
+        "query($owner: String!, $name: String!) {{ repository(owner: $owner, name: $name) {{ \
+         pullRequest(number: {number}) {{ headRefName headRefOid headRepository {{ nameWithOwner }} }} }} }}"
+    )
+}
+
 /// What asks the forge which repo a node id is in. A trait so a test stands where the network
 /// would.
 pub trait NodeRepos: Send + Sync {
@@ -77,6 +100,17 @@ pub trait NodeRepos: Send + Sync {
         _id: &str,
     ) -> Result<Option<u64>, String> {
         Ok(None)
+    }
+
+    /// `Ok(Some(head))` for a pull request whose head repo and branch the forge names,
+    /// `Ok(None)` for anything else it answered (no such pull request, a head repo that is
+    /// gone), `Err` when it could not be asked. The default cannot ask.
+    fn pull_head(
+        &self,
+        _request: &CredentialRequest,
+        _pull: PullRef<'_>,
+    ) -> Result<Option<PullHead>, String> {
+        Err("this lookup does not read a pull request's head".to_owned())
     }
 }
 
@@ -111,14 +145,19 @@ impl TokenSource for RouteToken {
     }
 }
 
-impl NodeRepos for ForgeLookup {
-    fn repo_of_node(
+impl ForgeLookup {
+    /// One GraphQL call as the run's credential, and the answer's text.
+    fn ask(
         &self,
         request: &CredentialRequest,
-        id: &str,
-    ) -> Result<Option<String>, String> {
+        query: &str,
+        variables: Vec<Field>,
+    ) -> Result<String, String> {
         let forge = Forge {
-            kind: ForgeKind::GitHub,
+            kind: match request.kind {
+                purlis_core::forge::proxy::Kind::GitHub => ForgeKind::GitHub,
+                purlis_core::forge::proxy::Kind::GitLab => ForgeKind::GitLab,
+            },
             host: api_host(&request.host, request.port),
         };
         let tokens = Arc::new(RouteToken {
@@ -126,14 +165,14 @@ impl NodeRepos for ForgeLookup {
             request: request.clone(),
         });
         let transport = over_https(&forge, tokens).map_err(|e| e.to_string())?;
-        let call = Call::graphql(QUERY, vec![Field::text("id", id)], LOOKUP_TIMEOUT);
+        let call = Call::graphql(query, variables, LOOKUP_TIMEOUT);
         let reply = transport
             .send(&forge, &call)
             .map_err(|why| why.said().to_owned())?;
         if !reply.ok() {
-            return Err(reply.said(ForgeKind::GitHub));
+            return Err(reply.said(forge.kind));
         }
-        repo_in(&reply.out)
+        Ok(reply.out)
     }
 
     fn pull_number_of_node(
@@ -169,6 +208,99 @@ fn number_in(answer: &str) -> Result<Option<u64>, String> {
     Ok(json["data"]["node"]["number"].as_u64().filter(|n| *n > 0))
 }
 
+impl NodeRepos for ForgeLookup {
+    fn repo_of_node(
+        &self,
+        request: &CredentialRequest,
+        id: &str,
+    ) -> Result<Option<String>, String> {
+        repo_in(&self.ask(request, QUERY, vec![Field::text("id", id)])?)
+    }
+
+    fn pull_head(
+        &self,
+        request: &CredentialRequest,
+        pull: PullRef<'_>,
+    ) -> Result<Option<PullHead>, String> {
+        if request.kind == purlis_core::forge::proxy::Kind::GitLab {
+            let PullRef::Number { repo, number } = pull else {
+                return Ok(None);
+            };
+            let answer = self.ask(
+                request,
+                HEAD_OF_MERGE_REQUEST,
+                vec![
+                    Field::text("path", repo),
+                    Field::text("iid", &number.to_string()),
+                ],
+            )?;
+            let json: serde_json::Value = serde_json::from_str(&answer)
+                .map_err(|e| format!("the forge's answer was not JSON: {e}"))?;
+            return merge_request_head_in(&json["data"]["project"]["mergeRequest"]);
+        }
+        let answer = match pull {
+            PullRef::Node(id) => self.ask(request, HEAD_BY_NODE, vec![Field::text("id", id)])?,
+            PullRef::Number { repo, number } => {
+                let (owner, name) = repo
+                    .split_once('/')
+                    .ok_or_else(|| "the repo is not owner/name".to_owned())?;
+                self.ask(
+                    request,
+                    &head_by_number(number),
+                    vec![Field::text("owner", owner), Field::text("name", name)],
+                )?
+            }
+        };
+        let json: serde_json::Value = serde_json::from_str(&answer)
+            .map_err(|e| format!("the forge's answer was not JSON: {e}"))?;
+        let pull = if matches!(pull, PullRef::Node(_)) {
+            &json["data"]["node"]
+        } else {
+            &json["data"]["repository"]["pullRequest"]
+        };
+        head_in(pull)
+    }
+}
+
+/// The head a pull request's answer names: its branch and the lower-case repo it is in. `Ok(None)`
+/// where either is missing (a head repo that is gone, a node that is not a pull request).
+fn head_in(pull: &serde_json::Value) -> Result<Option<PullHead>, String> {
+    let (Some(branch), Some(oid), Some(repo)) = (
+        pull["headRefName"].as_str(),
+        pull["headRefOid"].as_str(),
+        pull["headRepository"]["nameWithOwner"].as_str(),
+    ) else {
+        return Ok(None);
+    };
+    let Some(repo) = repo_in_name(repo)? else {
+        return Ok(None);
+    };
+    Ok(Some(PullHead {
+        repo,
+        branch: branch.to_owned(),
+        oid: oid.to_owned(),
+    }))
+}
+
+/// A GitLab merge request's source: its branch, tip and the lower-case project path it is in.
+fn merge_request_head_in(mr: &serde_json::Value) -> Result<Option<PullHead>, String> {
+    let (Some(branch), Some(oid), Some(repo)) = (
+        mr["sourceBranch"].as_str(),
+        mr["diffHeadSha"].as_str(),
+        mr["sourceProject"]["fullPath"].as_str(),
+    ) else {
+        return Ok(None);
+    };
+    let Some(repo) = repo_in_name(repo)? else {
+        return Ok(None);
+    };
+    Ok(Some(PullHead {
+        repo,
+        branch: branch.to_owned(),
+        oid: oid.to_owned(),
+    }))
+}
+
 /// The host the lookup's API root is made from: the recorded repo's own port is part of it unless
 /// it is HTTPS's default, so a GHES on `:8443` is asked there and not on `:443`.
 fn api_host(host: &str, port: u16) -> String {
@@ -192,6 +324,11 @@ fn repo_in(answer: &str) -> Result<Option<String>, String> {
     let Some(name) = node["repository"]["nameWithOwner"].as_str() else {
         return Ok(None);
     };
+    repo_in_name(name)
+}
+
+/// `owner/name` as a plain, lower-case repo path; `Err` for anything else.
+fn repo_in_name(name: &str) -> Result<Option<String>, String> {
     let name = name.to_ascii_lowercase();
     let mut parts = name.split('/');
     let plain = |s: &str| {
@@ -265,6 +402,28 @@ impl RunObjects {
     }
 }
 
+impl RunObjects {
+    /// The credential's terms for a recorded repo of this run on `host`, if it has one.
+    fn request_on(
+        &self,
+        kind: purlis_core::forge::proxy::Kind,
+        host: &str,
+    ) -> Option<CredentialRequest> {
+        let repo = self
+            .repos
+            .iter()
+            .find(|r| r.kind() == kind && r.host().eq_ignore_ascii_case(host))?;
+        Some(CredentialRequest {
+            kind,
+            host: repo.host().to_owned(),
+            port: repo.port(),
+            repo_id: repo.forge_id(),
+            chat: self.chat.clone(),
+            repo: repo.path().to_owned(),
+        })
+    }
+}
+
 impl ObjectRepo for RunObjects {
     fn pull_of(
         &self,
@@ -310,18 +469,7 @@ impl ObjectRepo for RunObjects {
         }
         // The credential is the one a recorded repo of this run on that host is given; a host the
         // run has no repo on is nobody's to ask.
-        let repo = self
-            .repos
-            .iter()
-            .find(|r| r.kind() == kind && r.host().eq_ignore_ascii_case(host))?;
-        let request = CredentialRequest {
-            kind,
-            host: repo.host().to_owned(),
-            port: repo.port(),
-            repo_id: repo.forge_id(),
-            chat: self.chat.clone(),
-            repo: repo.path().to_owned(),
-        };
+        let request = self.request_on(kind, host)?;
         // Not held across the network: another request may ask meanwhile, and both answers are
         // the forge's.
         let answer = self.lookup.repo_of_node(&request, node_id).ok()?;
@@ -330,6 +478,19 @@ impl ObjectRepo for RunObjects {
             .unwrap_or_else(PoisonError::into_inner)
             .put(key, answer.clone());
         answer
+    }
+
+    fn pull_head(
+        &self,
+        kind: purlis_core::forge::proxy::Kind,
+        host: &str,
+        pull: PullRef<'_>,
+    ) -> Option<PullHead> {
+        if matches!(pull, PullRef::Node(id) if !is_node_id(id)) {
+            return None;
+        }
+        let request = self.request_on(kind, host)?;
+        self.lookup.pull_head(&request, pull).ok().flatten()
     }
 }
 

@@ -615,9 +615,17 @@ use crate::view::{Limits, Views};
 /// host tells each ([`SandboxTold::Lifted`]) so the window logs it under the chat. A host
 /// before 1.94 reads no families, and enforces both, as before; a runner applies its own locks over
 /// them.
+///
+/// 1.95 tells a window that a runner's host answers and refuses (#7187): `link_down` may say
+/// `refused` where the machine a pool reaches it through answers but its sign-in, Docker or
+/// forwarding fails, which the relaying host does not retry on its own, and `host_key_changed`
+/// where the machine presents another host key, CA or engine than the pinned one, a security stop
+/// that is never retried on its own. A window before 1.95 ignores both fields and reads the link
+/// as any link that is down, so its Reconnecting notice and Try now go on as they did; nothing is
+/// sent to a host of any version for either.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 94,
+    minor: 95,
 };
 
 /// The version that first lists a browser's pages and downloads to its views and takes the
@@ -3201,6 +3209,18 @@ pub enum Pushed {
         /// refused.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         gone: bool,
+        /// The other host answers, but refuses (1.95, #7187): its sign-in, Docker or forwarding
+        /// fails. The relaying host does not link to it again on its own; until something asks
+        /// again, each command that needs it tries once and is refused. A window before 1.95
+        /// ignores the field and reads it as any link that is down, which it waits on.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        refused: bool,
+        /// The machine the other host is reached through presents another host key, CA or
+        /// engine than the pinned one (1.95, #7187): a security stop, never linked again on
+        /// its own; the person says it is all right in the pool's settings. A window before
+        /// 1.95 ignores the field and reads it as any link that is down.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        host_key_changed: bool,
     },
     /// The link a relaying host reaches the other host over is back (1.17, #2496), with what the
     /// client's link stands on carried over to it: its views draw again, each from a snapshot.

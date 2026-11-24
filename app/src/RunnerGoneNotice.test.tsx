@@ -36,7 +36,7 @@ const told = (said: Partial<ChatsReconnecting>) =>
 const notice = () => document.querySelector(`[data-cause="runner-gone:${PLANE}:first"]`);
 
 describe("a runner removed outside purlis", () => {
-  it("is said with Make the runner again, which makes it and puts the Notice away", async () => {
+  it("is said with Start again on this pool, which makes it and puts the Notice away", async () => {
     const asked: string[] = [];
     mockIPC(
       (cmd, args) => {
@@ -60,7 +60,7 @@ describe("a runner removed outside purlis", () => {
     expect(screen.getByText(/removed outside purlis/)).toBeTruthy();
     expect(screen.getByText(/sign-ins kept there/)).toBeTruthy();
 
-    await userEvent.click(screen.getByRole("button", { name: "Make the runner again" }));
+    await userEvent.click(screen.getByRole("button", { name: "Start again on this pool" }));
     await waitFor(() => expect(notice()).toBeNull());
     expect(asked).toContain("docker_pool_make_again");
   });
