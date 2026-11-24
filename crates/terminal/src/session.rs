@@ -2329,15 +2329,17 @@ mod tests {
         // `setsid`s a job and exits leaves the job running, noted or not.
         let (session, shell, _ends) =
             a_program_with_a_shell_of_its_own_then("", "read _; exit 0", false);
+        until_it_leads_a_session_of_its_own(shell);
         session.program().note_strays();
 
         session.write(b"\r").unwrap();
 
+        // Whatever ends with the program ends inside this call, before it returns the exit
+        // (`Held::try_wait` ends what the group left first), so nothing is left to wait out.
         assert!(
             session.wait(Duration::from_secs(5)).unwrap().is_some(),
             "precondition: the program exits"
         );
-        thread::sleep(Duration::from_millis(800));
         assert!(alive(shell), "its shell {shell} was ended with the tab");
     }
 
