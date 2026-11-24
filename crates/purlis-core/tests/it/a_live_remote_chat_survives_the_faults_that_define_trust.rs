@@ -658,6 +658,18 @@ fn a_host_key_changed_under_a_live_chat_is_not_retried_and_the_chat_comes_back_a
         let fault_at = rig.fault(&["rotate-hostkey"]);
         kept.until_down(fault_at, QUIET_LIMIT).await;
         told_within(&kept.told(), fault_at, QUIET_LIMIT);
+        // The first Down is the link the fault ended; the keeper then tries once more, and that
+        // try meets the new key. The quiet window starts at the stop it ends in, not at the
+        // first Down, so a try the fault itself caused is not counted as a retry.
+        let stop_by = Instant::now() + START_LIMIT;
+        while seam::state_named(&kept.told()) != "Host key changed" {
+            assert!(
+                Instant::now() < stop_by,
+                "the changed key was never told: {:?}",
+                kept.told()
+            );
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
         // No automatic retry: for as long again as the longest pause between tries, no link.
         let settled = kept.now();
         tokio::time::sleep(Duration::from_secs(45)).await;

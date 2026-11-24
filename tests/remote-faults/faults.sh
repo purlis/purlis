@@ -119,15 +119,17 @@ keep_hostkey() {
   inside "$machine" "mkdir -p $KEEP && test -e $KEEP/ssh_host_ed25519_key || cp -p /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key.pub $KEEP/"
 }
 
-# The sshd's sessions end, and the daemon reads its configuration and key again.
+# The daemon reads its configuration and key again, and then the sessions end. In that order:
+# ending the sessions first leaves a window in which the old daemon, with the old host key,
+# still takes the link's retry, which links on the key the fault has just replaced (#7188).
 restart_sshd() {
-  # A session is `sshd: keeper@notty` or `sshd-session: keeper [priv]`; the listener's is `sshd: /usr/sbin/sshd`.
-  inside "$machine" "pkill -KILL -f '^sshd(-session)?: [a-z]' || true"
   if [ "$init" = systemd ]; then
     inside "$machine" "systemctl restart ssh"
   else
     inside "$machine" "kill -HUP 1"
   fi
+  # A session is `sshd: keeper@notty` or `sshd-session: keeper [priv]`; the listener's is `sshd: /usr/sbin/sshd`.
+  inside "$machine" "pkill -KILL -f '^sshd(-session)?: [a-z]' || true"
 }
 
 case $verb in

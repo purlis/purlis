@@ -125,3 +125,17 @@ test("kill-runner on a docker machine kills the runners' containers, on a system
 test("break-registry stops the registry inside dind, whichever machine is named", () => {
   assert.match(run(["--machine", "sshd", "break-registry"]).stdout, /docker exec dind docker stop registry/);
 });
+
+test("an sshd restart reloads the daemon before it ends the sessions, on either machine", () => {
+  // The other order leaves a window in which the old daemon, with the old host key, still takes
+  // the keeper's retry: a link made on the key the fault just replaced (#7188, case 4).
+  for (const machine of ["sshd", "ssh-runner-systemd"]) {
+    for (const verb of ["restart-sshd", "rotate-hostkey"]) {
+      const lines = run(["--machine", machine, verb]).stdout.split("\n");
+      const reload = lines.findIndex((line) => /kill -HUP 1|systemctl restart ssh/.test(line));
+      const sessions = lines.findIndex((line) => /pkill -KILL -f '\^sshd/.test(line));
+      assert.ok(reload >= 0 && sessions >= 0, `${machine} ${verb}: ${lines.join(" | ")}`);
+      assert.ok(reload < sessions, `${machine} ${verb} ends the sessions before the reload`);
+    }
+  }
+});
