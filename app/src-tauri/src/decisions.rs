@@ -68,16 +68,11 @@ fn with_its_repo(held: &Held, asked: &DecideAsk) -> String {
     }
 }
 
-/// **What the project's policy decides of chat `chat` doing `action` to `resource`**, by this
-/// app's record of the chat: none for a chat this app does not have open.
-pub fn decision(
-    held: &Held,
-    chat: u32,
-    action: &str,
-    resource: (&str, &str),
-) -> Option<decide::Decision> {
+/// **What the app records of chat `chat`**, which every decision about it is made from: none for a
+/// chat this app does not have open.
+fn facts_of(held: &Held, chat: u32) -> Option<decide::ChatFacts> {
     let chats = held.chats();
-    let facts = chats.workspace_of(chat).map(|workspace| decide::ChatFacts {
+    chats.workspace_of(chat).map(|workspace| decide::ChatFacts {
         workspace,
         persona: chats
             .persona_of(chat)
@@ -92,17 +87,37 @@ pub fn decision(
         harness_mode: chats
             .attendance_of(chat)
             .and_then(purlis_core::attendance::Fact::start_mode),
-    });
+    })
+}
+
+/// What the app's sealed store says now: the deny state refuses every action but `start`, and
+/// `context.machine` is the device id the person confirmed (M75-07b). `chat` is the chat's ULID,
+/// which a Once, timed or This-chat grant is keyed on (M75-20, M75-21): without it no grant of
+/// those scopes serves.
+fn sealed_of(held: &Held, chat: u32) -> decide::Sealed {
+    decide::Sealed {
+        chat: held.chats().id_of(chat),
+        ..decide::Sealed::of(held.root())
+    }
+}
+
+/// **What the project's policy decides of chat `chat` doing `action` to `resource`**, by this
+/// app's record of the chat: none for a chat this app does not have open.
+///
+/// **The timed grants this decision found ended are taken out of the store here**, with their
+/// Journal line (M75-21): an expired one serves nothing either way, so the sweep only keeps the
+/// store and the Journal true.
+pub fn decision(
+    held: &Held,
+    chat: u32,
+    action: &str,
+    resource: (&str, &str),
+) -> Option<decide::Decision> {
+    let facts = facts_of(held, chat);
     // The accepted floor and the machine's locks, until slices 06 and 14 read them in the loader.
     let floor = purlis_core::enforcement::in_force(held.root());
-    // What the app's sealed store says now: the deny state refuses every action but `start`, and
-    // `context.machine` is the device id the person confirmed (M75-07b). `chat` is the chat's
-    // ULID, which a Once or This-chat grant is keyed on (M75-20): without it no grant of those
-    // scopes serves.
-    let sealed = decide::Sealed {
-        chat: chats.id_of(chat),
-        ..decide::Sealed::of(held.root())
-    };
+    let sealed = sealed_of(held, chat);
+    crate::timedgrants::sweep(held.root(), held.hooks(), &sealed.standing, sealed.at());
     decide::for_chat(
         held.root(),
         chat,
@@ -111,6 +126,43 @@ pub fn decision(
         &sealed,
         action,
         resource,
+    )
+}
+
+/// **What the person is offered at chat `chat`'s ask** ([`grants::offer`]): the scopes, the timed
+/// grant's lengths, Never and Don't allow, or, at a deny, the one way out. None for a chat this app
+/// does not have open.
+pub fn offered(
+    held: &Held,
+    chat: u32,
+    action: &str,
+    resource: (&str, &str),
+) -> Option<purlis_core::policy::grants::Offer> {
+    decision(held, chat, action, resource)
+        .map(|decision| purlis_core::policy::grants::offer(&decision))
+}
+
+/// **The timed grants that answer chat `chat`'s ask**, for the person's `reason`, made by the host
+/// from what it decides now ([`decide::timed_for_chat`]). Nothing is sealed here: the caller holds
+/// the person's press.
+pub fn timed_grants(
+    held: &Held,
+    chat: u32,
+    action: &str,
+    resource: (&str, &str),
+    given: (purlis_core::policy::grants::Span, &str),
+) -> Option<Result<Vec<purlis_core::policy::grants::Grant>, purlis_core::policy::grants::Refused>> {
+    let facts = facts_of(held, chat);
+    let floor = purlis_core::enforcement::in_force(held.root());
+    decide::timed_for_chat(
+        held.root(),
+        chat,
+        facts.as_ref(),
+        &floor,
+        &sealed_of(held, chat),
+        action,
+        resource,
+        given,
     )
 }
 

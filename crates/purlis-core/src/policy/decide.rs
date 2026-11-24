@@ -568,6 +568,10 @@ fn scopes_of(loaded: &Loaded, rules: &[Deciding], families: [&str; 2]) -> Scopes
         0 => 1,
         _ => 2,
     };
+    // The timed-grant lock (`[policy.locks] timed`) caps every ask, as the scope lock does (M75-21).
+    let timed_locks = [&loaded.organisation_locks, &loaded.project_locks]
+        .into_iter()
+        .filter_map(|locks| locks.timed.clone());
     Scopes {
         keep: rules
             .iter()
@@ -577,6 +581,7 @@ fn scopes_of(loaded: &Loaded, rules: &[Deciding], families: [&str; 2]) -> Scopes
         timed: rules
             .iter()
             .filter_map(|r| r.timed.clone())
+            .chain(timed_locks)
             .min_by_key(|w| rank(w)),
     }
 }
@@ -740,15 +745,28 @@ pub struct Sealed {
     /// The asking chat's ULID, which a Once or This-chat grant is keyed on (M75-20). Unset, no
     /// grant of those scopes serves.
     pub chat: Option<String>,
+    /// The time the decision is made at, in seconds since 1970, which a timed grant is read
+    /// against (M75-21). Unset reads the clock; a test sets it.
+    pub now: Option<u64>,
 }
 
 impl Sealed {
+    /// The time a decision is made at: the one set, or now.
+    pub fn at(&self) -> u64 {
+        self.now.unwrap_or_else(|| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |since| since.as_secs())
+        })
+    }
+
     /// What the sealed store of the plane at `root` says now.
     pub fn of(root: &std::path::Path) -> Self {
         Self {
             standing: answers::standing(root),
             machine: answers::context_machine(),
             chat: None,
+            now: None,
         }
     }
 
@@ -767,6 +785,7 @@ impl Sealed {
             standing: Standing::fresh(),
             machine: None,
             chat: None,
+            now: None,
         }
     }
 }
@@ -825,8 +844,48 @@ fn judged_in_plane(
     floor: Option<&crate::enforcement::Resolved>,
     settle: impl FnOnce(Decision, &Request<'_>) -> Decision,
 ) -> Decision {
+    judged_then(
+        root,
+        asker,
+        action,
+        resource,
+        sealed,
+        floor,
+        settle,
+        |refusal| refusal,
+        |decision, request| {
+            // The person's answers: nevers in every mode, then a grant at an ask (M75-20). A Once
+            // grant's use is recorded first, and a use that cannot be recorded does not serve.
+            grants::apply(
+                decision,
+                request,
+                sealed.chat.as_deref(),
+                &sealed.standing,
+                sealed.at(),
+                &mut |texts| answers::use_once_grants(root, texts).is_ok(),
+            )
+        },
+    )
+}
+
+/// The decision the policy in force makes and `settle` settles, handed to `finish` with the request
+/// it was made for, **before any answer of the person's is applied**: what [`judged_in_plane`]
+/// applies them to, and what a grant is given for ([`timed_for_chat`]). `refused` takes the deny
+/// state's refusal, which is never judged further.
+#[allow(clippy::too_many_arguments)]
+fn judged_then<T>(
+    root: &std::path::Path,
+    asker: &Asker<'_>,
+    action: &str,
+    resource: (&str, &str),
+    sealed: &Sealed,
+    floor: Option<&crate::enforcement::Resolved>,
+    settle: impl FnOnce(Decision, &Request<'_>) -> Decision,
+    refused: impl FnOnce(Decision) -> T,
+    finish: impl FnOnce(Decision, &Request<'_>) -> T,
+) -> T {
     if let Some(refusal) = deny_state::refused(action, &sealed.standing) {
-        return refusal;
+        return refused(refusal);
     }
     let plane = crate::workspaces::Plane::open(root);
     let workspaces = plane.workspaces().unwrap_or_default();
@@ -853,15 +912,7 @@ fn judged_in_plane(
     // stricter winning, and what the app saw tighten sealed into the accepted floor (M75-14).
     let decision = force::in_force(root, &sources, &sealed.standing, &request, floor);
     let decision = settle(decision, &request);
-    // The person's answers: nevers in every mode, then a grant at an ask (M75-20). A Once grant's
-    // use is recorded first, and a use that cannot be recorded does not serve.
-    grants::apply(
-        decision,
-        &request,
-        sealed.chat.as_deref(),
-        &sealed.standing,
-        &mut |texts| answers::use_once_grants(root, texts).is_ok(),
-    )
+    finish(decision, &request)
 }
 
 /// **Whether an enforcement point asks the host about `action` on a `kind` of resource**: only
@@ -919,7 +970,61 @@ pub fn for_chat(
     resource: (&str, &str),
 ) -> Option<Decision> {
     let facts = facts?;
-    let asker = Asker {
+    let asker = chat_asker(chat, facts);
+    Some(judged_in_plane(
+        root,
+        &asker,
+        action,
+        resource,
+        sealed,
+        Some(floor),
+        |decision, request| settled_for_chat(decision, request, floor),
+    ))
+}
+
+/// **The timed grants the person gives chat `chat` at its ask** (M75-21): the decision the host
+/// makes for `action` on `resource`, before any answer is applied, handed to [`grants::give_timed`]
+/// so what is granted is what the host decides now, never what a window says the ask was. `None`
+/// for a chat the host does not have open. `Err` says why nothing was given ([`grants::Refused`]),
+/// and that the sealed answers are in the deny state counts as no ask.
+#[allow(clippy::too_many_arguments)]
+pub fn timed_for_chat(
+    root: &std::path::Path,
+    chat: u32,
+    facts: Option<&ChatFacts>,
+    floor: &crate::enforcement::Resolved,
+    sealed: &Sealed,
+    action: &str,
+    resource: (&str, &str),
+    (span, reason): (grants::Span, &str),
+) -> Option<Result<Vec<grants::Grant>, grants::Refused>> {
+    let facts = facts?;
+    let asker = chat_asker(chat, facts);
+    Some(judged_then(
+        root,
+        &asker,
+        action,
+        resource,
+        sealed,
+        Some(floor),
+        |decision, request| settled_for_chat(decision, request, floor),
+        |_| Err(grants::Refused::NotAnAsk),
+        |decision, request| {
+            grants::give_timed(
+                &decision,
+                request,
+                sealed.chat.as_deref(),
+                span,
+                reason,
+                sealed.at(),
+            )
+        },
+    ))
+}
+
+/// What the host records of a chat, as the asker a decision is made for.
+fn chat_asker(chat: u32, facts: &ChatFacts) -> Asker<'_> {
+    Asker {
         chat,
         of: Chat {
             workspace: facts.workspace.as_deref(),
@@ -938,46 +1043,44 @@ pub fn for_chat(
         depth: 0,
         via: "hook",
         start: None,
-    };
-    Some(judged_in_plane(
-        root,
-        &asker,
-        action,
-        resource,
-        sealed,
-        Some(floor),
-        |decision, request| {
-            let mut decision = decision.held_to(floor);
-            // A rule the project set `off` is not in its policy at all, so no mode brings it
-            // back: where the floor enforces the merge hold and the project's rules let the
-            // merge through, the shipped default under `strict`, which is the hold as it always
-            // ran, answers instead. Where the project's own ask stands (its own rule, accepted),
-            // the hold it set aside is asked beside it, so a grant for the project's ask alone
-            // never lets the merge through (review round 3, N1). The person's grants apply to
-            // whichever stands.
-            if decision.family != MERGE_FAMILY
-                || !matches!(decision.after_mode, Outcome::Allow | Outcome::Ask)
-                || !floor_enforces(floor, &decision.family)
-            {
-                return decision;
+    }
+}
+
+/// A chat's decision held to `floor`, and the merge hold put back where the floor enforces it.
+fn settled_for_chat(
+    decision: Decision,
+    request: &Request<'_>,
+    floor: &crate::enforcement::Resolved,
+) -> Decision {
+    let mut decision = decision.held_to(floor);
+    // A rule the project set `off` is not in its policy at all, so no mode brings it
+    // back: where the floor enforces the merge hold and the project's rules let the
+    // merge through, the shipped default under `strict`, which is the hold as it always
+    // ran, answers instead. Where the project's own ask stands (its own rule, accepted),
+    // the hold it set aside is asked beside it, so a grant for the project's ask alone
+    // never lets the merge through (review round 3, N1). The person's grants apply to
+    // whichever stands.
+    if decision.family != MERGE_FAMILY
+        || !matches!(decision.after_mode, Outcome::Allow | Outcome::Ask)
+        || !floor_enforces(floor, &decision.family)
+    {
+        return decision;
+    }
+    let shipped = decide_locally(request);
+    if shipped.after_mode == Outcome::Ask && decision.after_mode == Outcome::Ask {
+        for rule in shipped.deciding {
+            if !decision.deciding.iter().any(|one| one.id == rule.id) {
+                decision.deciding.push(rule);
             }
-            let shipped = decide_locally(request);
-            if shipped.after_mode == Outcome::Ask && decision.after_mode == Outcome::Ask {
-                for rule in shipped.deciding {
-                    if !decision.deciding.iter().any(|one| one.id == rule.id) {
-                        decision.deciding.push(rule);
-                    }
-                }
-                decision.keep = force::narrower_keep(decision.keep.take(), shipped.keep);
-                decision.timed = force::stricter_timed(decision.timed.take(), shipped.timed);
-                decision
-            } else if shipped.after_mode == Outcome::Allow {
-                decision
-            } else {
-                shipped
-            }
-        },
-    ))
+        }
+        decision.keep = force::narrower_keep(decision.keep.take(), shipped.keep);
+        decision.timed = force::stricter_timed(decision.timed.take(), shipped.timed);
+        decision
+    } else if shipped.after_mode == Outcome::Allow {
+        decision
+    } else {
+        shipped
+    }
 }
 
 /// The family whose hold a floor keeps whatever the project's rules say, until slices 06 and 14.

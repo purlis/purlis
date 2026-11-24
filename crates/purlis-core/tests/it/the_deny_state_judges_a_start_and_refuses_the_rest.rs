@@ -73,6 +73,7 @@ fn in_the_deny_state() -> Sealed {
         },
         machine: None,
         chat: None,
+        now: None,
     }
 }
 

@@ -5062,6 +5062,22 @@ write into this folder cannot make its own text arrive as the person's.
   workspace`, in the plane's store, or `everywhere`, in the machine-level entry) or an earlier
   build's `asking -> target` (the dispatch family's); **a text that is neither denies every
   action in every mode**. Same store, same tier.
+- **The timed grant** (M75 slice 21, #7030; spec §8.8; Q312; no new store, one more shape of the
+  `grant` kind above). `scope` is `timed` and the object also carries `span` (`15m` or `1h`, the
+  most a line can say: an hour is the hard cap, so any other word is no grant), `given` (seconds
+  since 1970) and `reason` (the person's one marked line, never blank, kept on this machine and
+  nowhere else). `chat` is required, since it is keyed on the chat's ULID: **a dispatched chat has
+  its own ULID and so never has it**. It serves one ask, like any grant, and only **before
+  `given` plus `span`**, only while `@timed` and the locks' `timed` still allow its length, and
+  only while the deciding rules' `@keep` reaches as far as `timed`; a tightening applies at once.
+  A line that says `scope: "timed"` without a length, a time or a reason, or that says a length
+  without being timed, does not read. It **ends at its time or with its chat's close**, whichever
+  comes first: the app takes the entry out of the store, under a commit that needs no press (its
+  removal only narrows), and writes **one** quiet line to the Journal (the host's event log, an
+  `Audited` entry of kind `policy.timed-grant.ended` with `what`, `ended` (`time` or `chat
+  closed`), `chat`, `rule`, `action`, `resource_kind`, `resource` and `span`, never the reason).
+  The entry is taken out where a decision, the Allowed list or the chat's close finds it ended;
+  one that outlives its end in the store serves nothing in the meantime. Same store, same tier.
 - **The accepted copy and the accepted floor** (M75 slice 14, #7023; spec §9.1): the `accepted`
   entry's text and each `floor` entry's is **one JSON object, a version of the project as it was
   held**: `settings_file` and `settings` (the project file's name and text as `HEAD` held them),

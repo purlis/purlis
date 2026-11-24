@@ -3446,6 +3446,24 @@ impl Hooks {
             .map_err(|why| format!("the event log refused it: {why}"))
     }
 
+    /// **Writes the quiet Journal line a timed grant's end is** (M75-21): its time ran out or its
+    /// chat closed. Under chat `number` where the end came with that chat's close. Refused where
+    /// this machine has no event log open, or the log refused it; the end is not undone for that.
+    pub fn record_timed_grant_ended(
+        &self,
+        root: &Path,
+        number: Option<u32>,
+        ended: &purlis_core::policy::grants::Ended,
+    ) -> Result<(), String> {
+        self.audit(
+            root,
+            number,
+            purlis_core::policy::grants::ENDED_KIND,
+            ended.body(),
+            ("recorded", "timed grant's end"),
+        )
+    }
+
     /// **Audits a dispatch grant or revoke** (#1437) in the host's event log, under chat
     /// `number` where it was allowed from one, and made durable before it answers. Refused
     /// where this machine has no event log open: a grant nobody recorded is never made.

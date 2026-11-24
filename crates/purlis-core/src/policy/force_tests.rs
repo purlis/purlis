@@ -1138,6 +1138,7 @@ fn start_in(root: &Path, standing: Standing) -> Decision {
             standing,
             machine: None,
             chat: None,
+            now: None,
         },
     )
 }

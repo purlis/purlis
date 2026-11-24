@@ -207,6 +207,13 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The person's press that confirms the device id (M75-07a, spec §9.4): only a press in a
     // window accepts, so no link and no chat reaches it.
     "confirm_device_id",
+    // The timed grant and the Allowed list (M75-21, spec §8.8): what an ask offers, the person's
+    // press that allows it for a while, and the list that shows and removes what was allowed.
+    // Only the person in their window answers an ask, so no link and no chat reaches them.
+    "ask_offered",
+    "give_timed_grant",
+    "allowed_answers",
+    "remove_allowed_answer",
     "answer_ask",
     // A hunk of a branch's file put back (#5406): the person's edit, recorded as theirs.
     "discard_hunk",

@@ -964,6 +964,7 @@ fn a_grant_given_in_the_inbox_serves_the_same_ask_through_the_sealed_store_s_app
             &request(force),
             Some("01M85WM43DT07ANNAQ6NQEJTXD"),
             &standing,
+            NOW,
             &mut |_| true,
         )
     };
@@ -986,6 +987,7 @@ fn a_grant_given_in_the_inbox_serves_the_same_ask_through_the_sealed_store_s_app
         &request(false),
         None,
         &none,
+        NOW,
         &mut |_| true,
     );
     assert_eq!(said.after_mode, Outcome::Ask, "{said:?}");
