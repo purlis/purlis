@@ -808,6 +808,7 @@ fn a_grant_given_for_the_merge_hold_serves_a_chat_the_floor_enforces_it_for() {
         workspace: Some("web".to_owned()),
         persona: None,
         sandboxed: false,
+        level: None,
         attended: true,
     };
     let floor = Resolved::parse("guards.merge=enforce");
@@ -909,6 +910,7 @@ fn a_chat() -> decide::ChatFacts {
         workspace: Some("web".to_owned()),
         persona: None,
         sandboxed: false,
+        level: None,
         attended: true,
     }
 }
