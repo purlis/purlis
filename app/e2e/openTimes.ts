@@ -14,6 +14,13 @@
  *   moves it: this is the guard that catches a regression;
  * - **the p90** is what a bad open costs: a few slow opens pass, a run that is slow often does not;
  * - **a hang** is one open that took longer than any loaded runner explains, and fails alone.
+ *
+ * **A swapping runner is not judged on speed.** Each open records the runner (swap, free memory,
+ * load; `judgeOpens`). When swap in use grew by more than `SWAP_GROWTH_MB` across the run, a
+ * median or p90 over its limit is *inconclusive*, not red: the slowdown tracks the machine's
+ * memory. A hang and an empty run fail regardless. The opens are timed with the cheap
+ * `harnessesRunningCheaply` probe (250 ms), so the limits' basis (older runs, 100 ms probe with
+ * two full `ps` listings) was, if anything, measured slower than what is read now.
  */
 
 /** A start that is slower than this on its own is a hang, not load: it fails by its number. */
@@ -83,8 +90,10 @@ export function parseSwapUsedMb(text: string): number | null {
 }
 
 /** Whether swap use grew across the opens by more than {@link SWAP_GROWTH_MB}. */
-export function runnerWasSwapping(opens: readonly Open[]): boolean {
-  const swaps = opens.flatMap((open) => (open.runner?.swapMb == null ? [] : [open.runner.swapMb]));
+export function runnerWasSwapping(opens: readonly Open[], before: number | null = null): boolean {
+  const swaps = (before === null ? [] : [before]).concat(
+    opens.flatMap((open) => (open.runner?.swapMb == null ? [] : [open.runner.swapMb])),
+  );
   return swaps.length >= 2 && Math.max(...swaps) - swaps[0] > SWAP_GROWTH_MB;
 }
 
@@ -112,14 +121,19 @@ export interface OpensJudgment {
  * limit fails on a runner that was not swapping, and is **inconclusive** on one that was: the
  * slowdown then tracks the machine's memory, and a red `main` would blame the product for it.
  */
-export function judgeOpens(opens: readonly Open[]): OpensJudgment {
-  const trouble = opensVerdict(opens.map((open) => open.ms));
+export function judgeOpens(
+  opens: readonly Open[],
+  swapBefore: number | null = null,
+): OpensJudgment {
+  const samples = opens.map((open) => open.ms);
+  const trouble = opensVerdict(samples);
   if (trouble === null) return { state: "held", said: null };
   const said = `${trouble}; ${runnerSummary(opens)}`;
-  if (trouble.startsWith("an open hung") || trouble.startsWith("no open")) {
+  // By the numbers, not the message's words: a hang, or nothing timed, always fails.
+  if (samples.length === 0 || Math.max(...samples) > OPEN_HANG_MS) {
     return { state: "failed", said };
   }
-  if (runnerWasSwapping(opens)) {
+  if (runnerWasSwapping(opens, swapBefore)) {
     return {
       state: "inconclusive",
       said: `the runner was swapping, so the open times say nothing about the app: ${said}`,

@@ -84,6 +84,12 @@ describe("judging the opens beside the runner", () => {
     expect(judgeOpens(opens).state).toBe("failed");
   });
 
+  it("counts swap that jumped before the first open's sample, from the baseline taken before the run", () => {
+    const opens = Array.from({ length: 50 }, () => open(OPEN_MEDIAN_MS + 500, 900));
+    expect(judgeOpens(opens).state).toBe("failed");
+    expect(judgeOpens(opens, 0).state).toBe("inconclusive");
+  });
+
   it("does not call a run swapping when the platform gave no swap figure", () => {
     const opens = Array.from({ length: 50 }, () => open(OPEN_MEDIAN_MS + 500, null));
     expect(judgeOpens(opens).state).toBe("failed");

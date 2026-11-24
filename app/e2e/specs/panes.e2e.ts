@@ -149,6 +149,9 @@ interface Opening {
   done: Promise<Open[]>;
 }
 
+/** Swap in use before the first open, the baseline its growth is read from. */
+let swapBefore: number | null = null;
+
 /** The opening the fifty-sessions test started, while it may still run: `null` when none. */
 let opening: Opening | null = null;
 
@@ -169,6 +172,7 @@ function openUntilFifty(): Opening {
 /** The loop of one {@link Opening}, stopped by that run's flag alone. */
 async function openFor(run: Opening): Promise<Open[]> {
   const times: Open[] = [];
+  swapBefore = runnerNow().swapMb;
   for (let opened = 1; harnessesRunning() < FIFTY; opened++) {
     if (run.stopped)
       throw new Error(
@@ -312,12 +316,15 @@ describe("the window", function () {
 
     expect(harnessesRunning()).toBe(FIFTY);
     // Judged as a set, once all fifty run: one slow open does not stop the rest from opening.
-    const judged = judgeOpens(times);
+    const judged = judgeOpens(times, swapBefore);
     if (judged.state === "failed") throw new Error(judged.said ?? "the opens failed");
     // A swapping runner says nothing about the app's speed: said, not red. Fifty sessions
     // running and a usable app are still asserted below, and a hang failed above.
-    if (judged.state === "inconclusive") console.warn(`open times inconclusive: ${judged.said}`);
-    else console.log(`open times held; ${runnerSummary(times)}`);
+    if (judged.state === "inconclusive") {
+      // `::warning::` is a GitHub Actions annotation: visible on the run, not buried in a log.
+      console.warn(`::warning title=fifty-opens timing inconclusive::${judged.said}`);
+      logLine("fifty-opens.jsonl", { verdict: "inconclusive", said: judged.said });
+    } else console.log(`open times held; ${runnerSummary(times)}`);
     const [pane] = await panes();
     await until(pane, READY);
     await type(pane, "with fifty sessions running");
