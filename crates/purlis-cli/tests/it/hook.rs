@@ -21,7 +21,8 @@ use purlis_core::state::{Detail, Event};
 const CHARTER: &str = support::PURLIS;
 
 /// **What these tests hold is the verdict, not the clock** (#3476). A `PreToolUse` word that has
-/// not decided within `guard::BUDGET` (2 s, timed inside the hook) refuses with exit 2, and
+/// not decided within its budget (`guard::BUDGET`, 2 s, or `guard::BASH_BUDGET`, 5 s, for the
+/// Bash hook; timed inside the hook) refuses with exit 2, and
 /// `a_guard_decides_within_its_budget.rs` holds that budget on its own. On a runner whose cores
 /// are all busy, a debug build has met it on an ordinary command (`grep -rn "charter handoff"
 /// docs` came back exit 2, once, and passed on the rerun), and that is the one way an allowed
@@ -1331,7 +1332,7 @@ fn a_hook_reading_a_payload_that_never_ends_still_gets_out_of_the_way() {
     // **What is measured is that it leaves while its stdin is still open** (#1287): a hook
     // that waited for the payload to end could not exit at all. No wall-clock margin on how
     // long a loaded machine takes to start it; the bound only keeps a hang from hanging the
-    // suite, and is far past the hook's own deadline (two seconds) and the harness's.
+    // suite, and is far past the hook's own deadline (two or five seconds) and the harness's.
     let hang = Instant::now() + Duration::from_secs(120);
     let status = loop {
         if let Some(status) = child.try_wait().expect("charter is asked") {

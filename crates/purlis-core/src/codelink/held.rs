@@ -235,6 +235,7 @@ pub const PURLIS_KEEPS: &[&str] = &[
     "inbox",
     "index",
     "local-project",
+    "needs-you",
     "network",
     "profiles",
     "protection",

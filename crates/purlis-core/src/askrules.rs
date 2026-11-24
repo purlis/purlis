@@ -2,14 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **Ask less** (ADR 0121 decision 7, #6010): the answers the person gave to requests in Asks,
-//! the rules they made from an offer, and the cool-offs repeated Don't allow started.
+//! the rules they made, and the cool-offs repeated Don't allow started. There is no offer of a
+//! rule after two Allows any more (Q314.15, M75 slice 19): a rule is the person's own.
 //!
-//! - **An offer.** After the same Allow to the same request twice within
-//!   [`OFFER_WINDOW_SECS`], the request's next ask offers a rule ([`offer`]). What it needs to
-//!   have prevented the asks is said as a [`Scope`]: this chat where every ask was its, this
-//!   project where every ask was the project's, this machine otherwise. Which grants the ask may
-//!   offer as a rule, and where each is written, are its source's: this module only counts.
-//! - **Rules I made.** Each rule made from an offer is kept ([`Rule`]) with the grant it wrote,
+//! - **Rules I made.** Each rule the person made is kept ([`Rule`]) with the grant it wrote,
 //!   so it can be reviewed and undone. How many asks it saved is read, never kept
 //!   ([`measures::saved_by`]).
 //! - **The measures** (ADR 0121 decision 18, #6021): each project's asks this week, the median
@@ -23,7 +19,7 @@
 //!
 //! # Where and how
 //!
-//! `<data>/inbox/rules.json`, one JSON object for the whole machine (an offer may need every
+//! `<data>/inbox/rules.json`, one JSON object for the whole machine (a rule may reach every
 //! project), rewritten whole under the same lock on its folder as the Inbox's updates, `0600`. A
 //! write lets go of answers past the window and past [`AT_MOST_ANSWERS`], of endings past a day,
 //! and of rules past [`AT_MOST_RULES`], oldest first. A file this build cannot read, or one
@@ -36,11 +32,9 @@ use std::path::{Path, PathBuf};
 /// The file, in the Inbox's folder under purlis's data home.
 pub const FILE: &str = "rules.json";
 
-/// **How far back the same answer counts towards an offer**: a week.
-pub const OFFER_WINDOW_SECS: u64 = 7 * 24 * 60 * 60;
-
-/// **How many times the same Allow to the same request offers a rule.**
-pub const OFFER_AFTER: usize = 2;
+/// **How long an answer is kept**: a week, for the week's measures. It counted towards an offer
+/// of a rule too until M75 slice 19 (Q314.15); no rule is offered now.
+pub const ANSWERS_KEPT_SECS: u64 = 7 * 24 * 60 * 60;
 
 /// **How many Don't allows from one chat to one request start a cool-off.**
 pub const COOL_AFTER: usize = 2;
@@ -96,7 +90,7 @@ pub struct Asked {
 pub struct Answered {
     pub project: String,
     pub session: u32,
-    /// The request's name; empty where the ask names none, which offers no rule and starts no
+    /// The request's name; empty where the ask names none, which starts no
     /// cool-off, and counts only in the week's measures (#6021).
     pub request: String,
     /// The answer's id, as its ask offered it.
@@ -169,66 +163,6 @@ pub struct Record {
     pub rules: Vec<Rule>,
     #[serde(default)]
     pub ended: Vec<Ended>,
-}
-
-/// **A rule an ask offers**: the Allow given each time, how many times, and the narrowest scope
-/// that would have prevented every one of the asks.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Offer {
-    pub answered: String,
-    pub times: u32,
-    pub needs: Scope,
-}
-
-/// **What `asked`'s ask offers** under `record` at `now`: a rule, where the last Allow given its
-/// request was given at least [`OFFER_AFTER`] times in the window since any rule was made for
-/// it, and no other answer came between.
-pub fn offer(record: &Record, asked: &Asked, now: u64) -> Option<Offer> {
-    // A rule made for the request starts the count again: what asks after it is another need.
-    let since = record
-        .rules
-        .iter()
-        .filter(|rule| rule.request == asked.request)
-        .map(|rule| rule.at)
-        .max()
-        .unwrap_or(0);
-    let answers: Vec<&Answered> = record
-        .answered
-        .iter()
-        .filter(|one| {
-            !one.request.is_empty()
-                && one.request == asked.request
-                && one.at > since
-                && now.saturating_sub(one.at) <= OFFER_WINDOW_SECS
-        })
-        .collect();
-    let last = answers.iter().max_by_key(|one| one.at)?;
-    if !last.allows {
-        return None;
-    }
-    // The same answer each time, and nothing else between: two Allows that differ are no habit.
-    let alike: Vec<&&Answered> = answers
-        .iter()
-        .filter(|one| one.option == last.option)
-        .collect();
-    if alike.len() < OFFER_AFTER || alike.len() != answers.len() {
-        return None;
-    }
-    let needs = if alike
-        .iter()
-        .all(|one| one.project == asked.project && one.session == asked.session)
-    {
-        Scope::Chat
-    } else if alike.iter().all(|one| one.project == asked.project) {
-        Scope::Project
-    } else {
-        Scope::Machine
-    };
-    Some(Offer {
-        answered: last.option.clone(),
-        times: u32::try_from(alike.len()).unwrap_or(u32::MAX),
-        needs,
-    })
 }
 
 /// **Until when `asked`'s ask is held in a cool-off** under `record` at `now`, if it is: its
@@ -406,7 +340,7 @@ impl Store {
         if now > 0 {
             record
                 .answered
-                .retain(|one| now.saturating_sub(one.at) <= OFFER_WINDOW_SECS);
+                .retain(|one| now.saturating_sub(one.at) <= ANSWERS_KEPT_SECS);
             record
                 .ended
                 .retain(|one| now.saturating_sub(one.at) <= ENDED_KEPT_SECS);

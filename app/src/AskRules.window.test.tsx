@@ -6,17 +6,16 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Inbox } from "./Inbox";
-import { END_COOL_OFF, RULES_I_MADE, alwaysLineSaid } from "./AskRules";
+import { END_COOL_OFF, RULES_I_MADE } from "./AskRules";
 import { runAsk } from "./secretAsk.testkit";
-import { SETTLE_MS } from "./TaskBlocksNotice";
 import { forgetInbox } from "./inboxRules";
 import { forgetProjectViews } from "./projectViews";
 import type { RuleMadeShown, Shown } from "./bindings";
 
 /**
- * **Ask less** (ADR 0121 decision 7, #6010): after the same Allow twice, an ask's row offers its
- * wider grants as a rule, the suggested one first; a rule made is kept in Rules I made, where it
- * is undone; and the asks a cool-off holds are said at the head of Asks, with End cool-off.
+ * **Ask less** (ADR 0121 decision 7, #6010): no ask's row offers a rule any more (M75 slice 19,
+ * Q314.15); a rule made before is kept in Rules I made, where it is undone; and the asks a
+ * cool-off holds are said at the head of Asks, with End cool-off.
  */
 
 beforeEach(() => {
@@ -34,10 +33,7 @@ afterEach(() => {
 const PLANE = "/home/dev/plane";
 const REQUEST = '["sandbox-host","api.example.com"]';
 
-/** The person reads what is drawn for longer than an Allow waits. */
-const read = () => act(() => vi.advanceTimersByTime(SETTLE_MS + 1));
-
-const host = (session: number, offer?: string[]): Shown => ({
+const host = (session: number): Shown => ({
   session,
   ask: `block:${session}:connect:host:api.example.com`,
   says: "The sandbox refused api.example.com",
@@ -53,10 +49,7 @@ const host = (session: number, offer?: string[]): Shown => ({
     via: "sandbox-block",
     shown: { operation: "connect", kind: "host", what: "host", target: "api.example.com" },
   },
-  rule: {
-    request: REQUEST,
-    ...(offer === undefined ? {} : { offer: { answered: "chat", times: 2, options: offer } }),
-  },
+  rule: { request: REQUEST },
 });
 
 const RULE: RuleMadeShown = {
@@ -89,75 +82,10 @@ function core(answers: Record<string, (args: Record<string, unknown>) => unknown
 
 const sent = (calls: Call[], cmd: string) => calls.filter((one) => one.cmd === cmd);
 
-describe("a rule offered on an ask's row (#6010)", () => {
-  it("offers nothing on an ask answered fewer than twice", () => {
-    core();
-    render(<Inbox plane={PLANE} asks={[host(4)]} onGo={vi.fn()} onLeave={vi.fn()} />);
-    expect(screen.queryByRole("group", { name: "Make a rule for steward 4" })).toBeNull();
-  });
-
-  it("offers its wider grants, the suggested one first", () => {
-    core();
-    render(
-      <Inbox plane={PLANE} asks={[host(4, ["you", "project"])]} onGo={vi.fn()} onLeave={vi.fn()} />,
-    );
-    const rule = screen.getByRole("group", { name: "Make a rule for steward 4" });
-    expect(
-      within(rule)
-        .getAllByRole("button")
-        .map((one) => one.textContent),
-    ).toEqual(["Allow for me on this machine", "Allow for everyone in this project"]);
-    expect(screen.getByText(/the same Allow 2 times this week\. Make it a rule/)).toBeTruthy();
-  });
-
-  it("answers the ask with the grant pressed, and keeps it as a rule", async () => {
-    const calls = core();
-    render(
-      <Inbox plane={PLANE} asks={[host(4, ["you", "project"])]} onGo={vi.fn()} onLeave={vi.fn()} />,
-    );
-    read();
-    const rule = screen.getByRole("group", { name: "Make a rule for steward 4" });
-    await userEvent.click(
-      within(rule).getByRole("button", { name: /Allow for me on this machine/ }),
-    );
-    await waitFor(() => expect(sent(calls, "rule_made")).toHaveLength(1));
-    expect(sent(calls, "allow_sandbox_block")[0].args).toMatchObject({ session: 4, level: "you" });
-    expect(sent(calls, "rule_made")[0].args.made).toMatchObject({
-      session: 4,
-      request: REQUEST,
-      option: "you",
-      scope: "project",
-      what: "host",
-      target: "api.example.com",
-    });
-    // And the answer is noted against its request, as every answer is.
-    expect(sent(calls, "ask_answered")[0].args).toMatchObject({
-      session: 4,
-      request: REQUEST,
-      option: "you",
-      allows: true,
-    });
-  });
-
-  it("makes no rule pressed just after it was drawn", async () => {
-    const calls = core();
-    render(
-      <Inbox plane={PLANE} asks={[host(4, ["you", "project"])]} onGo={vi.fn()} onLeave={vi.fn()} />,
-    );
-    const rule = screen.getByRole("group", { name: "Make a rule for steward 4" });
-    await userEvent.click(
-      within(rule).getByRole("button", { name: /Allow for me on this machine/ }),
-    );
-    expect(sent(calls, "allow_sandbox_block")).toEqual([]);
-    expect(sent(calls, "rule_made")).toEqual([]);
-  });
-});
-
 const RUN_REQUEST = '["run-grant","[\\"/usr/bin/curl\\"]"]';
-const LINE = 'curl = { vault = "team", as = "STRIPE_API_KEY env", key = "STRIPE_API_KEY" }';
 
-/** A reviewed program's ask, whose rule offers `offer` after the same Allow twice. */
-const run = (offer: string[], risky = false): Shown => ({
+/** A reviewed program's ask, with the answers Allow once, for this chat and Always allow. */
+const run = (): Shown => ({
   ...runAsk({ fills: [], remember: null }),
   options: [
     { id: "allow-once", label: "Allow once", allows: true },
@@ -165,50 +93,22 @@ const run = (offer: string[], risky = false): Shown => ({
     { id: "allow-always", label: "Always allow", allows: true, scope: "project" },
     { id: "keep", label: "Don't allow", allows: false },
   ],
-  rule: { request: RUN_REQUEST, offer: { answered: "allow-chat", times: 2, options: offer } },
-  ...(risky
-    ? {
-        risk: {
-          class: "production-host" as const,
-          why: "Looks like production",
-          confirm: "Allow it?",
-        },
-      }
-    : {}),
+  rule: { request: RUN_REQUEST },
 });
 
-describe("a run's Always allow, offered as a rule (#6177)", () => {
-  it("shows the line it writes before it is pressed", () => {
+describe("no rule is offered on an ask's row (M75 slice 19, Q314.15)", () => {
+  it("offers none on a host's ask, whatever the person answered before", () => {
     core();
-    render(<Inbox plane={PLANE} asks={[run(["allow-always"])]} onGo={vi.fn()} onLeave={vi.fn()} />);
-    const rule = screen.getByRole("group", { name: "Make a rule for developer 7" });
-    expect(within(rule).getByRole("button", { name: /Always allow/ })).toBeTruthy();
-    expect(screen.getByText(alwaysLineSaid("devops"))).toBeTruthy();
-    expect(screen.getAllByText(LINE).length).toBeGreaterThan(0);
+    render(<Inbox plane={PLANE} asks={[host(4)]} onGo={vi.fn()} onLeave={vi.fn()} />);
+    expect(screen.queryByRole("group", { name: "Make a rule for steward 4" })).toBeNull();
+    expect(screen.queryByText(/Make it a rule/)).toBeNull();
   });
 
-  it("answers the ask with Always allow and keeps its line with the rule, for Undo", async () => {
-    const calls = core({ answer_run_grant: () => ({}) });
-    render(<Inbox plane={PLANE} asks={[run(["allow-always"])]} onGo={vi.fn()} onLeave={vi.fn()} />);
-    read();
-    const rule = screen.getByRole("group", { name: "Make a rule for developer 7" });
-    await userEvent.click(within(rule).getByRole("button", { name: /Always allow/ }));
-    await waitFor(() => expect(sent(calls, "rule_made")).toHaveLength(1));
-    expect(sent(calls, "answer_run_grant")[0].args).toMatchObject({ id: 9, press: "always" });
-    expect(sent(calls, "rule_made")[0].args.made).toMatchObject({
-      request: RUN_REQUEST,
-      option: "allow-always",
-      scope: "project",
-      declared: { persona: "devops", line: LINE },
-    });
-  });
-
-  it("is never offered on an ask marked risky", () => {
+  it("offers none on a run's ask, and Always allow stays one of its answers", () => {
     core();
-    render(
-      <Inbox plane={PLANE} asks={[run(["allow-always"], true)]} onGo={vi.fn()} onLeave={vi.fn()} />,
-    );
+    render(<Inbox plane={PLANE} asks={[run()]} onGo={vi.fn()} onLeave={vi.fn()} />);
     expect(screen.queryByRole("group", { name: "Make a rule for developer 7" })).toBeNull();
+    expect(screen.queryByText(/Make it a rule/)).toBeNull();
   });
 });
 

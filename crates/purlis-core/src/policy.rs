@@ -43,6 +43,7 @@ pub mod force;
 pub mod levels;
 pub mod limits;
 pub mod locality;
+pub mod needsyou;
 pub mod organisation;
 pub mod press;
 pub mod selfchange;
