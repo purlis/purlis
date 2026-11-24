@@ -221,3 +221,23 @@ fn the_rest_advice_is_said_only_for_the_two_pull_request_mutations() {
         "{out:?}"
     );
 }
+
+#[test]
+fn a_ghes_api_root_with_its_trailing_slash_is_read_as_the_root_and_no_other_trailing_slash_is() {
+    purlis_core::unsteered!();
+    // Two GitHub hosts, so the root names no one host and is refused as ambiguous: what is
+    // asked here is that `/api/v3/` is read as `/api/v3` (a refusal of the same kind) and not
+    // refused as a malformed path, as the policy refuses any other trailing slash.
+    let s = Scene::with_two_github_hosts(TokenKind::Oauth, Objects::default());
+    let bare = s.send("GET", crate::support::forge_proxy::GHES, "/api/v3", b"");
+    let slash = s.send("GET", crate::support::forge_proxy::GHES, "/api/v3/", b"");
+    assert!(is_refused(&bare, Refusal::AmbiguousHost), "{bare:?}");
+    assert!(is_refused(&slash, Refusal::AmbiguousHost), "{slash:?}");
+    for target in ["/api/v3/user/", "/api/v3//", "/api/v3/rate_limit/"] {
+        let out = s.send("GET", crate::support::forge_proxy::GHES, target, b"");
+        assert!(
+            is_refused(&out, Refusal::MalformedRequest),
+            "{target}: {out:?}"
+        );
+    }
+}
