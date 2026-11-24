@@ -424,6 +424,7 @@ mod for_a_chat {
             workspace: workspace.map(str::to_owned),
             persona: None,
             sandboxed: false,
+            level: None,
             attended: true,
         }
     }
@@ -1162,6 +1163,7 @@ mod a_floor_holds_a_chats_merge {
             workspace: None,
             persona: None,
             sandboxed: false,
+            level: None,
             attended: true,
         };
         let merge = |floor: &str| {
@@ -1186,5 +1188,62 @@ mod a_floor_holds_a_chats_merge {
         // Without the floor the project's own `log` stands, and the hold asks.
         let loose = merge("guards.merge=log");
         assert_eq!(loose.after_mode, Outcome::Ask, "{loose:?}");
+    }
+}
+
+mod the_level_a_start_applied {
+    use super::*;
+    use purlis_core::enforcement::{Resolved, SandboxLevel};
+    use purlis_core::policy::decide::ChatFacts;
+
+    /// A merge held by a rule that reads `context.sandbox`.
+    const FULL_ONLY: &str = "// purlis-policy 1\n\
+         @id(\"guards-merge-full-only\")\n\
+         forbid (principal, action == Action::\"merge\", resource) \
+         when { context.sandbox == \"full\" };\n";
+
+    fn merge_under(sandboxed: bool, level: Option<SandboxLevel>) -> Decision {
+        let dir = plane("[policy]\ntemplate = \"strict\"\n", Some(FULL_ONLY));
+        let facts = ChatFacts {
+            workspace: None,
+            persona: None,
+            sandboxed,
+            level,
+            attended: true,
+        };
+        decide::for_chat(
+            dir.path(),
+            4,
+            Some(&facts),
+            &Resolved::parse("guards.merge=enforce"),
+            &decide::Sealed::unsealed(),
+            "merge",
+            ("Branch", "o/r#12"),
+        )
+        .expect("decided")
+    }
+
+    #[test]
+    fn context_sandbox_is_the_level_the_host_recorded_for_a_sandboxed_chat() {
+        purlis_core::unsteered!();
+        let full = merge_under(true, Some(SandboxLevel::Full));
+        assert!(full.ids().contains(&"guards-merge-full-only"), "{full:?}");
+        for level in [Some(SandboxLevel::Floor), None] {
+            let held = merge_under(true, level);
+            assert!(
+                !held.ids().contains(&"guards-merge-full-only"),
+                "{level:?}: {held:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_chat_that_is_not_sandboxed_never_claims_a_level() {
+        purlis_core::unsteered!();
+        let said_full = merge_under(false, Some(SandboxLevel::Full));
+        assert!(
+            !said_full.ids().contains(&"guards-merge-full-only"),
+            "{said_full:?}"
+        );
     }
 }

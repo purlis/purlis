@@ -2063,6 +2063,12 @@ impl Denied {
             any_case: false,
         });
 
+        // The plane root's own folder entry, at the floor and the full sandbox alike (M75-11;
+        // spec §8.10): never renamed, moved or removed, so a chat cannot `mv` its plane away and
+        // link the old path to it. What is below it is written as usual. Where a sandbox cannot
+        // hold a rename, or at the level `off`, there is no such hold: a declared gap of slice 37.
+        paths.push(plane_root_held(root));
+
         // 5. Later code: the project root's manifests, under every name (#1336); those between
         // the root and the chat's folder are added where the folder is known
         // ([`Applied::form_in`]).
@@ -3318,6 +3324,19 @@ impl fmt::Display for KeptNote {
                 folder.display()
             ),
         }
+    }
+}
+
+/// **The plane root's own entry, held against rename** (M75-11): the entry alone
+/// ([`Reach::Itself`]), never what is below it.
+pub fn plane_root_held(root: &Path) -> Denial {
+    Denial {
+        class: Class::Integrity,
+        path: root.to_path_buf(),
+        access: Access::Write,
+        named: None,
+        reach: Reach::Itself,
+        any_case: false,
     }
 }
 

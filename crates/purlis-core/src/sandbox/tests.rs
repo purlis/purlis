@@ -384,6 +384,8 @@ fn a_chat_never_writes_charters_integrity_state() {
     for state in [".purlis", ".charter"] {
         held.extend(SKILL_STUDIO_RECORDS.map(|record| plane.path().join(state).join(record)));
     }
+    // The plane root's own entry, held against rename (M75-11).
+    held.push(plane.path().to_path_buf());
     assert_eq!(paths(&denied, Class::Integrity, Access::Write), held);
 }
 
@@ -4851,8 +4853,26 @@ fn charters_own_wrap_never_lets_a_chat_ask_the_keychains_service() {
         for service in ["SecurityServer", "securityd", "com.apple.security"] {
             assert!(!text.contains(service), "{service} is reachable:\n{text}");
         }
-        for line in text.lines().filter(|line| line.contains("mach-lookup")) {
-            assert_eq!(line, "(allow mach-lookup", "a lookup not by name: {line}");
+        // A lookup is allowed only as a block of names (`(allow mach-lookup`, then its names).
+        // The one other lookup rule is the escape step's deny of the two escape services
+        // (M75-11), which names exactly those two and so can never reach the keychain's.
+        let lines: Vec<&str> = text.lines().collect();
+        for (at, line) in lines.iter().enumerate() {
+            if !line.contains("mach-lookup") {
+                continue;
+            }
+            if *line == "(deny mach-lookup" {
+                assert_eq!(
+                    lines[at + 1..at + 3],
+                    [
+                        "  (global-name \"com.apple.coreservices.launchservicesd\")",
+                        "  (global-name \"com.apple.coreservices.appleevents\"))",
+                    ],
+                    "a denied lookup that is not the escape services':\n{text}"
+                );
+            } else {
+                assert_eq!(*line, "(allow mach-lookup", "a lookup not by name: {line}");
+            }
         }
     }
 }
@@ -8948,7 +8968,11 @@ fn a_cluster_pools_program_whose_package_is_inside_the_project_is_held_with_its_
     assert!(held(&plugin, Reach::Itself), "{:?}", denied.paths);
     assert!(held(&package, Reach::AndBelow), "{:?}", denied.paths);
     assert!(
-        !denied.paths.iter().any(|it| it.path == project),
+        // Its own entry is held against rename (M75-11), never what is below it.
+        !denied
+            .paths
+            .iter()
+            .any(|it| it.path == project && it.reach == Reach::AndBelow),
         "the project itself is the chat's: {:?}",
         denied.paths
     );

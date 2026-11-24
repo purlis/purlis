@@ -1821,9 +1821,19 @@ of that name at that level replaces it.
 - **Format:** one TOML table in the committed settings file (`purlis.toml`, or `charter.toml`
   on a project that still has that name): `template`, and one key per family to override it.
   The `guards.*` families are dotted keys (`guards.merge = "enforce"`), so a `[policy.guards]`
-  table with `git`, `merge`, `release`, `save` and `credential` says the same. There is no
-  `sandbox` key: the template sets the sandbox, and `[sandbox] mode` sets it apart from the
-  template.
+  table with `git`, `merge`, `release`, `save` and `credential` says the same.
+  **`sandbox = "off"`, `"floor"` or `"full"`** (M75 slice 11, #7020) is the `sandbox` family's
+  one key: a level, never a mode, so `log` and `enforce` break the file (a broken file runs the
+  full sandbox). It sets the level apart from the template (`open` is `off`, `watch` and `hold`
+  `floor`, `team` `full`, and `strict` the floor where the key names none), is the `context.sandbox`
+  a chat's rules read, and replaces `[sandbox] mode`. What the hooks do with the `read` and
+  `write` forbids follows from it: enforced at `floor` and `full`, and at `off` they follow the
+  template, off under `open` and `log` under any other. **`[sandbox] mode` and `[sandbox] policy`
+  read as moved keys** in the Project's and the Organisation's file: `policy = "never"` is a
+  Project lock on the `sandbox` family, which freezes its minimum level (at `full` where nothing
+  says otherwise), and `mode` is the level it names (`"off"`, or `full`; `never` refuses the
+  `off`), each with a Notice naming `[policy] sandbox`; a `[policy] sandbox` beside them wins.
+  A lock on `sandbox` lets a lower level raise the level, never lower it.
 - **Status:** **purlis only** (rulings Q308 and Q308a,
   [ADR 0125](adr/0125-blocks-are-off-by-default-and-opt-in-per-family.md); the first slice of
   the project policy, map #6969, which keeps these keys).
@@ -1897,7 +1907,19 @@ and its tab says so (#3787).
   value that is no whole number from 0, makes the file broken. Each key declares the direction
   that loosens it, and the value in force is the stricter of the Organisation's, the committed
   file's, the accepted copy's and the accepted floor's, so a raised cap or a lowered retention
-  waits for the press. `[policy] sandbox` (slice 11) is read by a later slice.
+  waits for the press. `[policy] sandbox` (slice 11) is read by
+  `purlis_core::policy::levels::Loaded::sandbox_level_for` (see [`[policy]`](#policy--which-of-purliss-refusals-run)).
+- **The escape denies** (slice 11; `purlis_core::policy::sandbox_level`): the floor's process
+  denies (`launchctl`, `osascript`, `open`, `crontab`, `at`, job creation, Apple events, Launch
+  Services) and the session-bus and mach-service `dial`s hold wherever the level is `floor` or
+  `full`, **whatever any family's mode says**: `processes = "off"` and `watch`'s `log` never lift
+  one. A rule whose scope names one (`exec` on one of those `Command`s, `dial` on one of those
+  `Socket`s) is refused at load, so the file is broken. With the level `off`, `network`, `ports`
+  and `processes` are reported as not in force.
+- **The plane root's own folder entry is held against rename** (slice 11) at the level `floor`
+  or `full`, in the list a start compiles its sandbox from (`sandbox::plane_root_held`): the
+  entry alone, so what is below it is written as usual. Where the sandbox cannot hold a rename,
+  or at the level `off`, it is a declared gap.
 - **Status:** **purlis only**, experimental (M75; ADR 0127 on its branch). Read by
   `purlis_core::policy::levels::load`, which nothing in the app calls yet.
 - **Tier:** Plane — committed, in the file whose tier it is; the local settings file is its You
@@ -5092,7 +5114,7 @@ write into this folder cannot make its own text arrive as the person's.
   `sandbox::local::record_moved`): the old store is verified against its own anchor, every entry
   is sealed again for the new clone key and path, the counter rises, and the registry follows the
   plane's id. A process that is not the app leaves the store where it was, and the new place
-  reads as moved. **Still open until slice 11:** a plane moved without the app, across
+  reads as moved. **Still open (slice 11 held the plane root's own entry, but a move made outside any sandbox is not stopped):** a plane moved without the app, across
   filesystems, with no link left (a copy has a new `.git` identity); doctor declares it.
 
 ### `~/.config/purlis/app/answers/sealed-here/` — the plane's sealed marker (outside the plane)

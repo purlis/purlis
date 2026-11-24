@@ -46,6 +46,7 @@ pub mod locality;
 pub mod needsyou;
 pub mod organisation;
 pub mod press;
+pub mod sandbox_level;
 pub mod selfchange;
 
 use cedar_policy::{

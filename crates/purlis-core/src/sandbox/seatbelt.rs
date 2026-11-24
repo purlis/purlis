@@ -887,6 +887,15 @@ pub fn profile(
     for rule in hook_socket_again(own, hook_socket)? {
         line(rule);
     }
+    // The escape step holds at full as at the floor (M75-11, round 2): `BASE` allows every
+    // `process-exec`, so the denies come after every allow, where the last match wins. Just
+    // before the vaults' rules, which stay the profile's last word: they deny file operations
+    // and this step denies starting programs and Apple events, so neither gives the other back.
+    line(
+        escape_step(crate::enforcement::SandboxLevel::Full)
+            .trim_end()
+            .to_owned(),
+    );
     // Last, so nothing given back reaches them: no project's vaults are read (#2071).
     for rule in vaults_everywhere_rules()? {
         line(rule);
@@ -923,7 +932,7 @@ pub fn floor_profile(
     // launchd, Launch Services or cron runs is outside every wrap, where a chat could read the
     // vaults and write the project's settings (the review of #6992, B1). Part of the floor, not
     // of the `processes` family.
-    out.push_str(FLOOR_PROCESSES);
+    out.push_str(escape_step(crate::enforcement::SandboxLevel::Floor));
     out.push_str(FLOOR_HELD);
     out.push_str(&terminal_rules());
     let mut line = |text: String| {
@@ -1163,6 +1172,18 @@ pub const FLOOR_PROCESSES: &str = "(deny appleevent-send)
   (literal \"/usr/bin/at\")
   (literal \"/usr/bin/batch\"))
 ";
+
+/// **The escape denies, as a step of their own** (M75-11): [`FLOOR_PROCESSES`] wherever the
+/// sandbox level is `floor` or `full`, nothing at `off`. It takes the level and nothing else, so
+/// no family's mode (`processes = "off"`, the `watch` template's `log`) lifts one
+/// ([`crate::policy::sandbox_level`]).
+pub fn escape_step(level: crate::enforcement::SandboxLevel) -> &'static str {
+    if crate::policy::sandbox_level::in_force(level) {
+        FLOOR_PROCESSES
+    } else {
+        ""
+    }
+}
 
 /// What the floor holds besides files and programs ([`floor_profile`]): no unix socket and no
 /// port of this machine. The hook socket, the proxy's ports and what a person allowed are given

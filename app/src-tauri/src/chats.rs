@@ -8301,6 +8301,28 @@ impl Chats {
         })
     }
 
+    /// **The sandbox level chat `session` was started at**, as its start compiled it
+    /// ([`purlis_core::sandbox::Confines::level`]), for the `context.sandbox` its rules read
+    /// (M75-11); `None` where [`Self::runs_sandboxed`] is false, so a chat never claims more
+    /// confinement than it has.
+    pub fn applied_sandbox_level(
+        &self,
+        session: u32,
+    ) -> Option<purlis_core::enforcement::SandboxLevel> {
+        use purlis_core::enforcement::SandboxLevel;
+        use purlis_core::sandbox::Level;
+        if !self.runs_sandboxed(session) {
+            return None;
+        }
+        lock(&self.open)
+            .get(&session)
+            .and_then(|running| running.confines.as_ref())
+            .map(|confines| match confines.level {
+                Level::Full => SandboxLevel::Full,
+                Level::Floor => SandboxLevel::Floor,
+            })
+    }
+
     /// Chat `session` as though its start had compiled `confines` and its run were recorded as
     /// `ran`, for a test of a path that reads them (#2692).
     #[cfg(test)]
