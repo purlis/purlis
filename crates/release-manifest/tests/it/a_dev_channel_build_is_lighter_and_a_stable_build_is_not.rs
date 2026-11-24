@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! The two channels differ in optimisation profile and bundle set, and in nothing else
-//! (ADR 0092, #1429).
+//! The two channels differ in optimisation profile, bundle set and link-time optimisation, and
+//! in nothing else (ADR 0092, #1429, amended 2026-11-24).
 //!
 //! A **dev channel build** is compiled with `dev-release` and makes no `.dmg`. A **stable
 //! build** is compiled with `release` and makes every bundle. A build started by hand is a
@@ -49,7 +49,7 @@ fn profile(name: &str) -> Vec<String> {
 }
 
 #[test]
-fn release_links_as_dev_release_does_and_dev_release_changes_nothing_else() {
+fn dev_release_differs_from_release_in_lto_and_nothing_else() {
     // The stable build's profile: thin LTO across sixteen units since one fat pass over one unit
     // stopped fitting the hosted runners (ADR 0092 amended 2026-11-06, #4833), and line tables in
     // a packed dSYM beside a still stripped binary, for the Report intake to symbolicate a native
@@ -66,15 +66,13 @@ fn release_links_as_dev_release_does_and_dev_release_changes_nothing_else() {
             "strip = true",
         ]
     );
-    // `opt-level`, `panic`, `strip` and the debug symbols are inherited. A third setting here is
-    // a second way the channels differ, which is the operator's to decide (ADR 0092).
+    // `dev-release` sets `lto = "off"` and inherits everything else: `codegen-units`, `opt-level`,
+    // `panic`, `strip` and the debug symbols. A second setting here, or a restated copy of one of
+    // `release`'s, is another way the channels differ, which is the operator's to decide (ADR 0092
+    // amended 2026-11-24, #7418). The guard builds `release`, so thin LTO is still built nightly.
     assert_eq!(
         profile("dev-release"),
-        [
-            "codegen-units = 16",
-            r#"inherits = "release""#,
-            r#"lto = "thin""#,
-        ]
+        [r#"inherits = "release""#, r#"lto = "off""#]
     );
 }
 
@@ -85,7 +83,7 @@ fn both_channels_build_the_app_crate_at_opt_level_1_and_nothing_else_is_overridd
     assert_eq!(profile("release.package.purlis-app"), ["opt-level = 1"]);
 
     // On `release` alone, so `dev-release` carries it by inheritance. A table of the
-    // dev profile's own could make the channels differ in it; another crate's override is a
+    // dev profile's own could make the channels differ in it beyond LTO; another crate's override is a
     // new measurement and a new amendment.
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
     let overrides: Vec<String> = workflow::read(&path)

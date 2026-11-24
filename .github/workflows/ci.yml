@@ -2182,8 +2182,8 @@ jobs:
         # build would hold its Mac for the job's 6 h default, so it fails at 110 (#6189).
         timeout-minutes: 110
         # The outcome bars are judged on a release build (the operator's ruling of 2026-11-03,
-        # #4351): `dev-release`, release with thin LTO over sixteen codegen units, what the dev
-        # channel ships. Every other leg builds debug.
+        # #4351): `dev-release`, release with LTO off (ADR 0092 amended 2026-11-24, #7418), what the dev
+        # channel ships. Cold start showed no cost from it, within the runs' noise. Every other leg builds debug.
         #
         # Without the line tables the dev channel's own build writes for the crash handler
         # (`debug`, `split-debuginfo` in Cargo.toml's `release`, #5692): they change no code the
