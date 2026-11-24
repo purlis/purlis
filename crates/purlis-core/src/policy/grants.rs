@@ -69,9 +69,14 @@ impl Scope {
 
     /// The scope a word names.
     pub fn from_word(word: &str) -> Option<Self> {
-        [Scope::Once, Scope::Chat, Scope::Workspace, Scope::Everywhere]
-            .into_iter()
-            .find(|scope| scope.word() == word)
+        [
+            Scope::Once,
+            Scope::Chat,
+            Scope::Workspace,
+            Scope::Everywhere,
+        ]
+        .into_iter()
+        .find(|scope| scope.word() == word)
     }
 
     /// **The widest scope a `keep` allows**: no `@keep` and no lock allow every scope; `timed` is
@@ -86,10 +91,15 @@ impl Scope {
     /// The scopes `keep` offers, narrowest first.
     pub fn offered(keep: Option<&str>) -> Vec<Scope> {
         let widest = Self::widest(keep);
-        [Scope::Once, Scope::Chat, Scope::Workspace, Scope::Everywhere]
-            .into_iter()
-            .filter(|scope| *scope <= widest)
-            .collect()
+        [
+            Scope::Once,
+            Scope::Chat,
+            Scope::Workspace,
+            Scope::Everywhere,
+        ]
+        .into_iter()
+        .filter(|scope| *scope <= widest)
+        .collect()
     }
 }
 
@@ -213,18 +223,11 @@ impl Grant {
     }
 
     /// Whether it serves `rule`'s ask on `request` by the chat `chat`, within `widest`.
-    fn serves(
-        &self,
-        rule: &str,
-        request: &Request<'_>,
-        chat: Option<&str>,
-        widest: Scope,
-    ) -> bool {
+    fn serves(&self, rule: &str, request: &Request<'_>, chat: Option<&str>, widest: Scope) -> bool {
         let keyed = match self.scope {
             Scope::Once | Scope::Chat => chat.is_some() && self.chat.as_deref() == chat,
             Scope::Workspace => {
-                request.of.workspace.is_some()
-                    && self.workspace.as_deref() == request.of.workspace
+                request.of.workspace.is_some() && self.workspace.as_deref() == request.of.workspace
             }
             Scope::Everywhere => true,
         };
