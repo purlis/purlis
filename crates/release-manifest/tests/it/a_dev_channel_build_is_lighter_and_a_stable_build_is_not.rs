@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! The two channels differ in optimisation profile, bundle set and link-time optimisation, and
-//! in nothing else (ADR 0092, #1429, amended 2026-11-24).
+//! The two channels differ in optimisation profile (link-time optimisation and their dependencies'
+//! debug info) and bundle set, and in nothing else (ADR 0092, #1429, amended 2026-11-24).
 //!
 //! A **dev channel build** is compiled with `dev-release` and makes no `.dmg`. A **stable
 //! build** is compiled with `release` and makes every bundle. A build started by hand is a
@@ -49,7 +49,7 @@ fn profile(name: &str) -> Vec<String> {
 }
 
 #[test]
-fn dev_release_differs_from_release_in_lto_and_nothing_else() {
+fn dev_release_differs_from_release_in_lto_and_dependency_debug_info_and_nothing_else() {
     // The stable build's profile: thin LTO across sixteen units since one fat pass over one unit
     // stopped fitting the hosted runners (ADR 0092 amended 2026-11-06, #4833), and line tables in
     // a packed dSYM beside a still stripped binary, for the Report intake to symbolicate a native
@@ -67,7 +67,8 @@ fn dev_release_differs_from_release_in_lto_and_nothing_else() {
         ]
     );
     // `dev-release` sets `lto = "off"` and inherits everything else: `codegen-units`, `opt-level`,
-    // `panic`, `strip` and the debug symbols. A second setting here, or a restated copy of one of
+    // `panic`, `strip` and the workspace's debug symbols; its one other difference is the
+    // dependency table held by the test below. A further setting here, or a restated copy of one of
     // `release`'s, is another way the channels differ, which is the operator's to decide (ADR 0092
     // amended 2026-11-24, #7418). The guard builds `release`, so thin LTO is still built nightly.
     assert_eq!(
@@ -91,7 +92,30 @@ fn both_channels_build_the_app_crate_at_opt_level_1_and_nothing_else_is_overridd
         .filter(|l| l.starts_with("[profile.release.") || l.starts_with("[profile.dev-release."))
         .map(str::to_owned)
         .collect();
-    assert_eq!(overrides, ["[profile.release.package.purlis-app]"]);
+    assert_eq!(
+        overrides,
+        [
+            "[profile.release.package.purlis-app]",
+            r#"[profile.dev-release.package."*"]"#
+        ]
+    );
+}
+
+#[test]
+fn dev_release_gives_third_party_crates_no_debug_info_and_the_workspace_keeps_its_line_tables() {
+    // The one setting the dev profile has of its own below its two (ADR 0092 amended 2026-11-24):
+    // every crate that is not a workspace member is compiled with `debug = 0`, which cuts object
+    // size and the linker's peak memory on the 7.5 GB macOS runner. The `"*"` table never
+    // reaches a workspace member, so `release`'s `line-tables-only` and packed dSYM, which the
+    // `symbols` job and the Report intake read, are the workspace's still. `release` has no such
+    // table: a stable build keeps its dependencies' line tables.
+    assert_eq!(profile(r#"dev-release.package."*""#), ["debug = 0"]);
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
+    let text = workflow::read(&path);
+    assert!(
+        !text.contains(r#"[profile.release.package."*"]"#),
+        "a stable build's dependencies keep their line tables"
+    );
 }
 
 /// The lines of `plan`'s decision for one event: from its `case` arm to the next arm.

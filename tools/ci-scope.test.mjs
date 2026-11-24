@@ -30,6 +30,7 @@ import {
   scopesOf,
   scopesOfPath,
   shipsOf,
+  PARTIAL_DEV_BUILDS,
   askShips,
   storiesBrowsers,
   webParts,
@@ -1561,4 +1562,104 @@ test("`workflow <file> <base>` says whether the change since base meets the work
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// ---- `ships` per platform: no macOS dev build when only Linux-only paths changed (#7324) ----
+
+const platforms = (paths, partial = true) => {
+  const { macos, linux } = shipsOf({ kind: "dev", paths, partial });
+  return { macos, linux };
+};
+
+test("a change to Linux-only paths builds Linux and not macOS", () => {
+  for (const path of [
+    "runner-image/Dockerfile",
+    "runner-image/fetch-forge-programs.sh",
+    ".github/workflows/runner-image.yml",
+    "app/src-tauri/packaging/deb/postinst",
+    "crates/linux-sandbox/src/linux/filter.rs",
+    "crates/linux-sandbox/src/linux/notify.rs",
+    "crates/linux-sandbox/src/loopback.rs",
+  ]) {
+    assert.deepEqual(platforms([path]), { macos: false, linux: true }, path);
+    // Docs and tests beside it change nothing.
+    assert.deepEqual(platforms(["docs/spec.md", path]), { macos: false, linux: true }, path);
+  }
+  assert.deepEqual(
+    platforms(["runner-image/Dockerfile", "app/src-tauri/packaging/deb/postrm"]),
+    { macos: false, linux: true },
+  );
+});
+
+test("one path macOS compiles or bundles builds both platforms", () => {
+  for (const path of [
+    // The sandbox crate's cross-platform modules are in every build's graph (purlis-core
+    // depends on it unconditionally), so only its `linux/` and `loopback` files are Linux-only.
+    "crates/linux-sandbox/src/lib.rs",
+    "crates/linux-sandbox/src/profile.rs",
+    "crates/linux-sandbox/Cargo.toml",
+    "crates/purlis-core/src/lib.rs",
+    "app/src/App.tsx",
+    "Cargo.lock",
+    ".github/workflows/release.yml",
+    "CHANGELOG.md",
+    "something/new/nobody-heard-of.bin",
+  ]) {
+    assert.deepEqual(platforms([path]), { macos: true, linux: true }, path);
+    assert.deepEqual(
+      platforms(["runner-image/Dockerfile", path]),
+      { macos: true, linux: true },
+      `${path} beside a Linux-only path`,
+    );
+  }
+});
+
+test("a change that ships nothing builds neither platform", () => {
+  assert.deepEqual(platforms(["docs/spec.md", "changes/a.md"]), { macos: false, linux: false });
+  assert.equal(shipsOf({ kind: "dev", paths: ["docs/spec.md"], partial: true }).ships, false);
+});
+
+test("ships is true when either platform builds", () => {
+  const answer = shipsOf({ kind: "dev", paths: ["runner-image/Dockerfile"], partial: true });
+  assert.equal(answer.ships, true);
+  assert.match(answer.why, /Linux/);
+});
+
+test("a build that cannot be measured, or is not a dev build, builds both platforms", () => {
+  for (const [kind, paths] of [
+    ["dev", null],
+    ["dev", []],
+    ["stable", ["runner-image/Dockerfile"]],
+    ["dispatch", ["runner-image/Dockerfile"]],
+    ["schedule", ["runner-image/Dockerfile"]],
+  ]) {
+    const { macos, linux } = shipsOf({ kind, paths, partial: true });
+    assert.deepEqual({ macos, linux }, { macos: true, linux: true }, `${kind} ${paths}`);
+  }
+});
+
+test("partial dev builds are OFF: macOS builds whenever Linux does, until a partial publish is safe", () => {
+  // One manifest names one version for both platforms, so a dev.json for a Linux-only build
+  // would announce a version whose macOS asset is an older build's (docs/adr/0092/2026-11-24-…,
+  // the PR body of #7324). The decision is made and held back by `PARTIAL_DEV_BUILDS`.
+  assert.equal(PARTIAL_DEV_BUILDS, false);
+  const { macos, linux, ships } = shipsOf({ kind: "dev", paths: ["runner-image/Dockerfile"] });
+  assert.deepEqual({ macos, linux, ships }, { macos: true, linux: true, ships: true });
+  assert.equal(shipsOf({ kind: "dev", paths: ["docs/spec.md"] }).macos, false);
+});
+
+test("askShips carries the platforms through, measured from the published commit", () => {
+  const answer = askShips({
+    repo: "purlis/purlis",
+    kind: "dev",
+    sha: PUSHED,
+    partial: true,
+    api: forge({ files: ["runner-image/Dockerfile", "docs/spec.md"] }),
+  });
+  assert.deepEqual(
+    { ships: answer.ships, macos: answer.macos, linux: answer.linux },
+    { ships: true, macos: false, linux: true },
+  );
+  const unreadable = askShips({ repo: "purlis/purlis", kind: "dev", sha: PUSHED, partial: true, api: () => { throw new Error("down"); } });
+  assert.deepEqual({ macos: unreadable.macos, linux: unreadable.linux }, { macos: true, linux: true });
 });

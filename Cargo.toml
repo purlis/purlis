@@ -139,16 +139,24 @@ strip = true
 [profile.release.package.purlis-app]
 opt-level = 1
 
-# What a dev channel build is compiled with (ADR 0092, #1429). It inherits `release` and turns
-# link-time optimisation off: the one setting in which the two differ (ADR 0092 amended
-# 2026-11-24, #7418). Off, a dev build compiles about ten minutes faster on Linux and ten to
-# twenty on macOS, mostly dsymutil, and the app is about 8% larger. `codegen-units`, `opt-level`,
-# `panic`, `strip`, the debug info and the app crate's `opt-level` above are `release`'s, by
-# inheritance, and nothing else may be set here. A stable build, a build started by hand and the
-# nightly profile guard all use `release` itself, so thin LTO is still built every night.
+# What a dev channel build is compiled with (ADR 0092, #1429). It inherits `release` and differs in
+# two things only: link-time optimisation is off (ADR 0092 amended 2026-11-24, #7418; off, a dev
+# build compiles about ten minutes faster on Linux and ten to twenty on macOS, mostly dsymutil, and
+# the app is about 8% larger) and third-party crates carry no debug info (the table below, ADR 0092
+# amended 2026-11-24, #7324). `codegen-units`, `opt-level`, `panic`, `strip`, the workspace's debug
+# info and the app crate's `opt-level` above are `release`'s, by inheritance, and nothing else may
+# be set here. A stable build, a build started by hand and the nightly profile guard all use
+# `release` itself, so thin LTO and dependency line tables are still built every night.
 [profile.dev-release]
 inherits = "release"
 lto = "off"
+
+# No debug info for third-party crates in a dev build: the macOS build is memory-bound on a 7.5 GB
+# runner and `"*"` never reaches a workspace member, so the workspace keeps `release`'s
+# `line-tables-only` and its packed dSYM, which the `symbols` job reads. `release` has no such
+# table: a stable build's dependencies keep their line tables.
+[profile.dev-release.package."*"]
+debug = 0
 
 # The scenario tests' embedded WebDriver server (the app's `e2e` feature only, in no build anyone
 # is given), patched so a window holding an artifact's child webview stays reachable: upstream
