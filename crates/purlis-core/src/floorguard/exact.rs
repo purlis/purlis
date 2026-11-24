@@ -14,6 +14,13 @@
 //! and followed by its target word. Each is taken out wherever it stands in the segment, once.
 //! What is left is the command, and the wrapper grammar of [`shellwrap`] places its program.
 //!
+//! **What is not read** (round 13): a command inside ONE quoted word that a program other than a
+//! shell runs (an editor or pager config value, `awk`'s `system()`, `GIT_EDITOR`, a `find`
+//! `-exec` that is itself a string of another program) is never split into words, so it is not
+//! seen. Programs that cannot run a word are the minimal [`NAMES_ONLY`] list; behind every other
+//! program a forge word is a call. Under `guards.merge = enforce` the forge route is the boundary
+//! for what the text guard does not read.
+//!
 //! **What cannot be read exactly is held**, for a segment that speaks of a forge CLI: a wrapper
 //! flag no table lists (it may take the next word as its value), a wrapper no table knows, and,
 //! for words that carry no facts, a digit that may be a descriptor. The refusal says what to do.
@@ -297,86 +304,96 @@ fn read(words: &[Word], measured: bool, clobber: bool, piped: bool) -> Segment {
     }
 }
 
-/// **Programs that never execute their operands** (#7423, round 11): a forge CLI named among
-/// them is a name, a file or a search word (`cp /usr/bin/gh ~`, `grep gh src/*`, `which gh`). Not
-/// here, and so a call: `find` (its `-exec` is read as a command of its own), `fd`, `xargs`,
-/// `parallel`, `env`, `rsync`, `tar`, every shell, `ssh`, `exec`, `brew bundle`.
-const NEVER_EXECUTES: &[&str] = &[
-    "echo", "printf", "type", "whereis", "cp", "mv", "ls", "ln", "rm", "install", "chmod", "chown",
-    "stat", "file", "diff", "cmp", "du", "shasum", "md5", "md5sum", "codesign", "xattr", "cat",
-    "head", "tail", "wc", "grep", "egrep", "fgrep", "rg", "ag", "ack", "less", "sed", "awk",
-    "which", "man", "tldr", "apropos", "locate", "mdfind", "cd", "pushd", "mkdir", "rmdir",
-    "touch", "realpath", "dirname", "basename", "readlink", "tee", "sort", "uniq", "cut", "tr",
-    "jq", "dpkg", "rpm", "pacman", "tree", "open",
-];
-
-/// Package managers: they name a package, and run nothing, for these subcommands only. `brew
-/// bundle exec gh …`, `mise exec -- gh …` and `npm exec gh` run it.
-const PACKAGE_MANAGERS: &[&str] = &[
-    "brew", "apt", "apt-get", "apk", "dnf", "yum", "port", "choco", "scoop", "winget", "asdf",
-    "mise", "snap", "npm", "pnpm", "yarn", "pip", "pip3", "cargo", "go", "gem", "flatpak",
-];
-
-/// The subcommands of a package manager that run none of its operands.
-const PACKAGE_SUBCOMMANDS: &[&str] = &[
-    "install",
-    "info",
-    "search",
-    "upgrade",
-    "uninstall",
-    "list",
-    "remove",
-    "show",
-    "update",
-    "reinstall",
-    "latest",
-    "current",
-    "where",
-    "outdated",
-    "ls",
-    "ls-remote",
-    "versions",
-    "plugin",
+/// **Programs that provably never execute a word operand** (#7423, rounds 11 and 13): a forge
+/// CLI named among their words is a name, a file or a search word (`cp /usr/bin/gh ~`, `grep gh
+/// src/*`, `which gh`). The list is MINIMAL on purpose: every program not on it may run a word
+/// (a package manager's hooks, `sed`'s `e`, `awk`'s `system()`, `find -exec`, `tee`, a pager),
+/// and each round that kept a longer table found a hole in it. A name behind any other program
+/// is a call, held unless it passes the allowlist. `echo` and `printf` print their words.
+const NAMES_ONLY: &[&str] = &[
+    "cp", "mv", "ln", "rm", "ls", "stat", "file", "du", "cat", "head", "tail", "wc", "diff", "cmp",
+    "shasum", "md5", "md5sum", "sha256sum", "grep", "rg", "mkdir", "touch", "chmod", "chown",
+    "which", "type", "man", "echo", "printf",
 ];
 
 /// `git`'s subcommands that run none of their operands: `git grep gh`, `git log -- crates/*`.
+/// Not here: `commit`, `checkout`, `switch`, `restore`, `reset`, `stash`, `pull`, `push`.
 const GIT_SUBCOMMANDS: &[&str] = &[
-    "add", "grep", "log", "diff", "show", "status", "mv", "rm", "commit", "tag", "branch",
-    "checkout", "switch", "restore", "reset", "blame", "shortlog", "stash", "fetch", "pull",
-    "push", "remote",
+    "add", "status", "log", "diff", "show", "blame", "shortlog", "grep", "mv", "rm", "branch",
+    "tag", "fetch", "remote",
 ];
 
-/// Whether the program placed in `argv` (`argv[0]`) never executes a word among its operands.
-fn never_executes(base: &str, argv: &[String]) -> bool {
-    if NEVER_EXECUTES.contains(&base) {
+/// Whether a `git -c key=value` key names a program git runs.
+fn git_config_runs_a_program(pair: &str) -> bool {
+    let key = pair.split('=').next().unwrap_or(pair).to_ascii_lowercase();
+    matches!(
+        key.as_str(),
+        "core.editor"
+            | "core.pager"
+            | "core.fsmonitor"
+            | "core.hookspath"
+            | "core.sshcommand"
+            | "core.askpass"
+            | "core.gitproxy"
+            | "sequence.editor"
+            | "diff.external"
+            | "credential.helper"
+    ) || key.ends_with(".textconv")
+        || key.ends_with(".command")
+        || key.ends_with(".program")
+        || key.ends_with(".clean")
+        || key.ends_with(".smudge")
+        || key.ends_with(".process")
+        || key.starts_with("alias.")
+        || key.starts_with("pager.")
+}
+
+/// Whether the program placed in `argv` (`argv[0]`), with the assignments `env` in front of it,
+/// provably never executes a word among its operands.
+fn never_executes(base: &str, argv: &[String], env: &[String]) -> bool {
+    if base == "rg" {
+        // `--pre` and `--pre-glob` run a program on every file.
+        return !argv.iter().any(|w| w.starts_with("--pre"));
+    }
+    if NAMES_ONLY.contains(&base) {
         return true;
     }
-    // `find`'s `-exec` runs are read as commands of their own ([`shellwrap::commands_a_find_runs`]).
-    if base == "find" {
-        return true;
+    if base != "git" {
+        return false;
+    }
+    // A `GIT_*` assignment may name an editor, a pager or an ssh command.
+    if env.iter().any(|w| w.starts_with("GIT_")) {
+        return false;
     }
     // **Names only when the subcommand is the first word** (round 12): any other flag before it
-    // may take a value that is itself a listed subcommand (`git --namespace log bisect run gh …`,
-    // `npm --loglevel info exec -- gh …`), so the real subcommand is behind it and the call is read.
+    // may take a value that is itself a listed subcommand (`git --namespace log bisect run gh …`),
+    // so the real subcommand is behind it. Only `-C <dir>` and `-c <k=v>` pairs may come first:
+    // each is known to take one value, and a `-c` value may name a program (round 13).
     let mut rest = argv.iter().skip(1);
-    if base == "git" {
-        // Only `-C <dir>` and `-c <k=v>` pairs may come first: each is known to take one value.
-        let sub = loop {
-            match rest.next().map(String::as_str) {
-                Some("-C" | "-c") => {
-                    rest.next();
-                }
-                other => break other,
+    let sub = loop {
+        match rest.next().map(String::as_str) {
+            Some("-C") => {
+                rest.next();
             }
-        };
-        return sub.is_some_and(|s| GIT_SUBCOMMANDS.contains(&s));
+            Some("-c") => {
+                if rest.next().is_some_and(|v| git_config_runs_a_program(v)) {
+                    return false;
+                }
+            }
+            other => break other,
+        }
+    };
+    let Some(sub) = sub else { return false };
+    if !GIT_SUBCOMMANDS.contains(&sub) {
+        return false;
     }
-    if PACKAGE_MANAGERS.contains(&base) {
-        return rest
-            .next()
-            .is_some_and(|s| PACKAGE_SUBCOMMANDS.contains(&s.as_str()));
-    }
-    false
+    // `git grep -O` opens each match in a pager command; `git fetch --upload-pack` runs one.
+    let runs = |w: &String| match sub {
+        "grep" => w.starts_with("-O") || w.starts_with("--open-files-in-pager"),
+        "fetch" => w.starts_with("--upload-pack") || w.starts_with("--receive-pack"),
+        _ => false,
+    };
+    !rest.any(runs)
 }
 
 /// **The general wrapper rule** (#7423, rounds 7, 8 and 11). The program placed is not a forge
@@ -400,7 +417,7 @@ fn behind_an_unknown_program(
         return none;
     }
     let base = shellwrap::base_lower(&inv.prog);
-    if never_executes(&base, argv) {
+    if never_executes(&base, argv, &inv.env) {
         return none;
     }
     let in_a_list = argv[1] == "in"

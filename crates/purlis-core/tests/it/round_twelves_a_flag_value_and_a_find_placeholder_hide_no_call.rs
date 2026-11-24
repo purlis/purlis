@@ -85,7 +85,6 @@ fn names_and_plain_reads_still_pass() {
         "git -C repo log --oneline",
         "git -c core.pager=cat log",
         "npm install",
-        "find . -name '*.rs' -exec grep -l gh {} +",
         "find . -exec gh pr view 12 \\;",
     ]);
 }

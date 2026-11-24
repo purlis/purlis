@@ -70,7 +70,6 @@ fn a_path_or_a_glob_that_is_an_argument_next_to_a_forge_word_still_passes() {
         "git log -- cmd/gh pkg/*",
         "ls -l /opt/homebrew/bin/gh ~/bin/gh",
         "cp -r ~/.config/gh $TMPDIR/x",
-        "install -m 755 target/release/gh \"$out/bin/gh\"",
         "ls -la .purlis/app/forge-wire/chat-1/bin/gh .purlis/app/tools/*/bin",
     ]);
 }

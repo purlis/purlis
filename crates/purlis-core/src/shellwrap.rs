@@ -1706,7 +1706,8 @@ pub fn here_string_script_of(prog: &str, argv: &[String]) -> Option<String> {
     })
 }
 
-/// The primaries of `find` that run the words after them as a command, up to a `;` or a `+`.
+/// The primaries of `find` that run the words after them as a command, up to a `;` or a `+`
+/// that directly follows `{}`.
 const FIND_RUNS: [&str; 4] = ["-exec", "-execdir", "-ok", "-okdir"];
 
 /// Each command a `find` runs for what it finds (`find … -exec sh -c '…' \;`), as its words,
@@ -1723,12 +1724,22 @@ pub fn commands_a_find_runs(prog: &str, argv: &[String]) -> Vec<Vec<String>> {
             i += 1;
             continue;
         }
-        let run: Vec<String> = argv[i + 1..]
-            .iter()
-            .take_while(|w| *w != ";" && *w != "+")
-            .cloned()
-            .collect();
-        i += run.len() + 1;
+        // find ends a run at `;`, or at a `+` that directly follows `{}`: any other `+` is a
+        // word of the command (`-exec env -u + gh pr merge 5 \;`).
+        let mut run: Vec<String> = Vec::new();
+        let mut stopped = false;
+        for w in &argv[i + 1..] {
+            if w == ";" {
+                stopped = true;
+                break;
+            }
+            if w == "+" && run.last().is_some_and(|p| p == "{}") {
+                stopped = true;
+                break;
+            }
+            run.push(w.clone());
+        }
+        i += run.len() + 1 + usize::from(stopped);
         if !run.is_empty() {
             out.push(run);
         }
@@ -1774,6 +1785,20 @@ mod tests {
             let argv = words(line);
             assert_eq!(takes_its_script_from_stdin(&argv[0], &argv), runs, "{line}");
         }
+    }
+
+    #[test]
+    fn a_find_run_ends_at_a_plus_only_after_a_placeholder() {
+        let argv = words("find . -exec env -u + gh pr merge 5 ; -okdir rm {} + -print");
+        assert_eq!(
+            commands_a_find_runs("find", &argv),
+            [words("env -u + gh pr merge 5"), words("rm {}")]
+        );
+        let argv = words("find . -exec echo + gh pr merge 5");
+        assert_eq!(
+            commands_a_find_runs("find", &argv),
+            [words("echo + gh pr merge 5")]
+        );
     }
 
     #[test]

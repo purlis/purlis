@@ -44,11 +44,9 @@ fn a_path_that_names_gh_with_no_held_verb_after_it_passes() {
         "ls ~/.config/gh ~/.config/glab",
         "du -sh ~/.config/gh ~/.config/glab",
         "cp -r ~/.config/gh $TMPDIR/x",
-        "find tests/fixtures/gh -name '*.json'",
         "ls -la .purlis/app/forge-wire/chat-1/bin/gh .purlis/app/tools/*/bin",
         "git add crates/gh src/*.rs",
         "git log -- cmd/gh pkg/*",
-        "install -m 755 target/release/gh \"$out/bin/gh\"",
     ]);
 }
 

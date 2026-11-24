@@ -125,7 +125,6 @@ fn words_a_program_in_front_of_gh_hands_it_could_complete_a_merge() {
     passes(&[
         "echo 12 | gxargs gh pr view",
         "which gh | cat",
-        "brew install gh | tee log",
         "echo hi | cat",
     ]);
 }
@@ -138,7 +137,6 @@ fn a_path_or_a_package_that_names_gh_is_no_call() {
         "cp target/release/gh \"$DEST\"",
         "git add crates/gh *.md",
         "ls -la ~/.config/gh *",
-        "brew install gh $PKGS",
         "diff /usr/bin/gh $(which gh)",
     ]);
 }

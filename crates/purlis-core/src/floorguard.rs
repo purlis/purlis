@@ -997,7 +997,10 @@ fn fed_said(name: &str) -> String {
     format!(
         "{} A program in front of `{name}` may hand it words (a pipe, a file, a here-string, the \
          names it finds) that could be its noun and verb, or a method. Write the whole command \
-         out, noun and verb on the line (`{name} pr view 12`), with the flags after them.",
+         out, noun and verb on the line (`{name} pr view 12`), with the flags after them. Only a \
+         short list of programs (`cp`, `grep`, `which`, `git log` and the like) is known never to \
+         run a word: if `{name}` is only a name here (`brew install {name}`, `git commit -m fix \
+         {name}`), run the `{name}` command first, on its own, or say what you want done.",
         merge::UNREADABLE
     )
 }
