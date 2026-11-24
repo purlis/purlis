@@ -10,15 +10,27 @@
 # `bumped=true`, so the nightly set runs rather than a bump going unproven.
 set -u
 
+# Two commits, both named: an empty argument would read the index (`git show :Cargo.lock`).
+if [ "$#" -ne 2 ] || [ -z "$1" ] || [ -z "$2" ]; then
+  echo "bumped=true"
+  exit 0
+fi
+
+# Each cedar package's name, version, source and checksum: a `[patch]` or a git source at the same
+# version is a move too.
 cedar() {
   git show "$1:Cargo.lock" 2>/dev/null | awk '
+    /^\[\[package\]\]/ { if (name != "") print name, version, source, checksum; name = ""; version = ""; source = ""; checksum = ""; next }
     /^name = "cedar-policy/ { name = $3; next }
-    name != "" && /^version = / { print name, $3; name = "" }
+    name != "" && /^version = / { version = $3; next }
+    name != "" && /^source = / { source = $3; next }
+    name != "" && /^checksum = / { checksum = $3; next }
+    END { if (name != "") print name, version, source, checksum }
   ' | sort
 }
 
-base=$(cedar "${1:-}")
-head=$(cedar "${2:-}")
+base=$(cedar "$1")
+head=$(cedar "$2")
 
 if [ -z "$base" ] || [ -z "$head" ] || [ "$base" != "$head" ]; then
   echo "bumped=true"

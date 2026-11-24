@@ -42,7 +42,8 @@ on:
       - crates/purlis-core/Cargo.toml
 
 concurrency:
-  group: policy-nightly-${{ github.ref }}
+  # The event is in the key, so a dispatch on main and the nightly never cancel each other.
+  group: policy-nightly-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 # Nothing by default: each job names what it needs.
@@ -69,21 +70,24 @@ jobs:
       - id: base
         uses: ./.github/actions/change-base
       - id: bump
+        shell: bash
         env:
           BASE: ${{ steps.base.outputs.sha }}
-        run: tools/cedar-bump.sh "$BASE" HEAD | tee -a "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          tools/cedar-bump.sh "$BASE" HEAD | tee -a "$GITHUB_OUTPUT"
 
   prove:
     name: generated policies, three seeds
     needs: bump
-    # `needs` skips this when `bump` is skipped, so `always()` lets the nightly and a dispatch
-    # through; the condition then names each way in. A pull request without a bump skips it.
+    # `needs` skips this when `bump` is skipped, so `!cancelled()` lets the nightly and a dispatch
+    # through; the condition then names each way in. A pull request skips it only when `bump`
+    # said `bumped=false` in so many words: a failed, empty or unreadable answer runs the set.
     if: >-
-      always() && (
+      !cancelled() && (
         github.event_name == 'schedule' ||
         github.event_name == 'workflow_dispatch' ||
-        needs.bump.outputs.bumped == 'true' ||
-        needs.bump.result == 'failure'
+        needs.bump.outputs.bumped != 'false'
       )
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -109,6 +113,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "${GIVEN:-}" ]; then
+            # A dispatch names its seeds exactly: numbers with single commas between, nothing else,
+            # so an empty element never falls back to the fixed seeds.
+            if ! printf '%s' "$GIVEN" | grep -Eq '^[0-9]{1,10}(,[0-9]{1,10})*$'; then
+              echo "::error title=seeds::the seeds are numbers separated by single commas, got: $GIVEN"
+              exit 1
+            fi
             seeds="$GIVEN"
           else
             day=$((10#$(date -u +%j) + 366 * ($(date -u +%Y) - 2026)))
@@ -126,9 +136,18 @@ jobs:
           IFS=,
           for seed in $SEEDS; do
             echo "::group::seed $seed"
-            PURLIS_PROOF_SEEDS="$seed" cargo test --locked -p purlis-core --lib --test it -- \
+            log="$RUNNER_TEMP/seed-$seed.log"
+            PURLIS_PROOF_SEEDS="$seed" cargo test --locked --no-fail-fast -p purlis-core --lib --test it -- \
               generated_policies_agree_with_enforcement_on_every_cell \
-              the_compiled_sandbox_equals_the_authorizer || status=1
+              the_compiled_sandbox_equals_the_authorizer 2>&1 | tee "$log" || status=1
+            # A renamed test would leave the filter matching nothing and the run green: each named
+            # test must have run.
+            for name in generated_policies_agree_with_enforcement_on_every_cell the_compiled_sandbox_equals_the_authorizer; do
+              if ! grep -q "$name \.\.\. " "$log"; then
+                echo "::error title=seed $seed::$name did not run"
+                status=1
+              fi
+            done
             echo "::endgroup::"
           done
           exit $status

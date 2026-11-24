@@ -190,7 +190,9 @@ fn a_cedar_version_bump_runs_the_nightly_set() {
         "the job does not ask the script"
     );
     assert!(
-        yml.contains("needs.bump.outputs.bumped == 'true'")
+        // Fail closed: the set is skipped only on an explicit `bumped=false`.
+        yml.contains("needs.bump.outputs.bumped != 'false'")
+            && yml.contains("set -euo pipefail")
             && yml.contains("github.event_name == 'schedule'")
             && yml.contains("github.event_name == 'workflow_dispatch'"),
         "the set's condition names no bump, no night and no dispatch"
@@ -281,8 +283,32 @@ fn the_bump_script_says_true_only_when_a_cedar_crate_moved() {
         bumped(&lock("4.14.1", "1.0.0"), &lock("4.14.1", "1.0.0")),
         "bumped=false"
     );
+    // A cedar crate taken from another source at the same version is a move too.
+    let git_sourced = lock("4.14.1", "1.0.0").replacen(
+        "version = \"4.14.1\"\n",
+        "version = \"4.14.1\"\nsource = \"git+https://example.invalid/cedar#abc\"\n",
+        1,
+    );
+    assert_eq!(
+        bumped(&lock("4.14.1", "1.0.0"), &git_sourced),
+        "bumped=true"
+    );
     // Fail closed: a base that has no lockfile, or a commit that does not exist, runs the set.
     let (dir, _, second) = lock_history(&lock("4.14.1", "1.0.0"), &lock("4.14.1", "1.0.0"));
+    // An empty or missing commit would read the index: it runs the set.
+    for args in [vec!["", second.as_str()], vec![second.as_str()]] {
+        let out = Command::new("sh")
+            .arg(repo_root().join("tools/cedar-bump.sh"))
+            .args(&args)
+            .current_dir(dir.path())
+            .output()
+            .expect("sh runs");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            "bumped=true",
+            "{args:?}"
+        );
+    }
     let out = Command::new("sh")
         .arg(repo_root().join("tools/cedar-bump.sh"))
         .args(["0000000000000000000000000000000000000000", &second])
