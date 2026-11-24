@@ -152,9 +152,17 @@ impl ProgressReader {
                 moved = true;
             }
         }
+        // A line git never ends (a stream that is not git's progress) is not kept without bound.
+        if self.carry.len() > MOST_CARRIED {
+            self.carry.clear();
+        }
         moved.then_some(self.last)
     }
 }
+
+/// The most of an unfinished line a [`ProgressReader`] keeps (64 KiB): git's own lines are far
+/// shorter.
+const MOST_CARRIED: usize = 64 * 1024;
 
 enum Seen {
     Receiving {
@@ -169,14 +177,17 @@ enum Seen {
 /// byte figure is absent on the first lines, and the last ends `, done.`) or
 /// `Resolving deltas:  10% (10/100)`. Anything else is `None`.
 fn parse_progress_line(line: &str) -> Option<Seen> {
+    // Git's own lines start with the keyword (after the `\r` of the line before it); a line that
+    // merely contains it, such as `remote: Receiving objects: ...`, is the forge's to say.
+    let line = line.trim_start_matches('\r');
     // A pack of fewer than `transfer.unpackLimit` objects is unpacked, not indexed.
     let counted = line
-        .split_once("Receiving objects:")
-        .or_else(|| line.split_once("Unpacking objects:"));
-    let (receiving, rest) = if let Some((_, rest)) = counted {
+        .strip_prefix("Receiving objects:")
+        .or_else(|| line.strip_prefix("Unpacking objects:"));
+    let (receiving, rest) = if let Some(rest) = counted {
         (true, rest)
     } else {
-        (false, line.split_once("Resolving deltas:")?.1)
+        (false, line.strip_prefix("Resolving deltas:")?)
     };
     let open = rest.find('(')?;
     let close = open + rest[open..].find(')')?;
@@ -219,6 +230,17 @@ fn about(left: Duration) -> String {
     }
 }
 
+/// How long a fill that has read `seen.received` of `seen.total` objects in `elapsed` has still to
+/// run, at the rate so far. Never more than what is left of [`FILL`], the most a fill runs: a
+/// figure that has not moved, or a total git (or a forge) made up, cannot promise more than that,
+/// and cannot overflow a [`Duration`].
+fn estimate(seen: &Progress, elapsed: Duration) -> Duration {
+    let cap = FILL.saturating_sub(elapsed);
+    let rest = elapsed.as_secs_f64() * (seen.total - seen.received.min(seen.total)) as f64
+        / seen.received.max(1) as f64;
+    Duration::try_from_secs_f64(rest).map_or(cap, |rest| rest.min(cap))
+}
+
 /// What fetches into a cache: the repository it is given, and how long it may take. It is owned,
 /// so that a fill can go on after the push that began it has been answered.
 pub type Fetch = Arc<dyn Fn(&Path, Duration) -> Result<(), String> + Send + Sync>;
@@ -242,6 +264,9 @@ pub struct ObjectCache {
     failure: Mutex<Option<String>>,
     /// How far the running fill has got, and when it began.
     progress: Mutex<Option<(Progress, Instant)>>,
+    /// The fill's own `git fetch` is running, under the cache's lock: only then is what the sink
+    /// hears the fill's progress. A top-up run inline for a push shares the sink, and is not it.
+    fetching: AtomicBool,
 }
 
 /// Resets [`ObjectCache::filling`] when the cache's thread ends, however it ends: a panic or an
@@ -259,6 +284,9 @@ impl Drop for Filling {
                 .unwrap_or_else(PoisonError::into_inner) =
                 Some("the read stopped unexpectedly".to_owned());
         }
+        // What a fill read is no word on the next one, however this one ended.
+        self.0.fetching.store(false, Ordering::Release);
+        self.0.clear_progress();
         self.0.filling.store(false, Ordering::Release);
     }
 }
@@ -336,6 +364,7 @@ impl ObjectCache {
                     rebuilt_for_history: AtomicBool::new(false),
                     failure: Mutex::new(None),
                     progress: Mutex::new(None),
+                    fetching: AtomicBool::new(false),
                 })
             })
             .clone()
@@ -405,17 +434,12 @@ impl ObjectCache {
             None if seen.received == 0 => {
                 format!("{} objects to read; try again in a few minutes", seen.total)
             }
-            None => {
-                let rest = began.elapsed().as_secs_f64()
-                    * (seen.total - seen.received.min(seen.total)) as f64
-                    / seen.received as f64;
-                format!(
-                    "{} of {} objects ({megabytes:.0} MB); try again in about {}",
-                    seen.received,
-                    seen.total,
-                    about(Duration::from_secs_f64(rest))
-                )
-            }
+            None => format!(
+                "{} of {} objects ({megabytes:.0} MB); try again in about {}",
+                seen.received,
+                seen.total,
+                about(estimate(&seen, began.elapsed()))
+            ),
         };
         format!("purlis is reading {} {when}{last}: {wait}", self.label)
     }
@@ -432,6 +456,9 @@ impl ObjectCache {
                 .unwrap_or_else(PoisonError::into_inner)
                 .feed(chunk);
             let Some(seen) = moved else { return };
+            if !cache.fetching.load(Ordering::Acquire) {
+                return;
+            }
             let mut state = cache
                 .progress
                 .lock()
@@ -451,6 +478,13 @@ impl ObjectCache {
                 );
             }
         })
+    }
+
+    fn clear_progress(&self) {
+        *self
+            .progress
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = None;
     }
 
     /// The figure the running fill is at, where git has said one.
@@ -625,6 +659,9 @@ impl ObjectCache {
         if self.filling.swap(true, Ordering::AcqRel) {
             return Ok(());
         }
+        // The last fill's figures and start are not this one's, and a push refused before it says
+        // anything must not be told them.
+        self.clear_progress();
         // Moved into the thread; dropped with the closure where the thread does not start.
         let ending = Filling(self.clone());
         let cache = self.clone();
@@ -637,11 +674,10 @@ impl ObjectCache {
                     // No lease of this thread's own: one held is another push's quarantine.
                     cache.make_ready(0).and_then(|()| {
                         let first = !cache.is_filled();
-                        *cache
-                            .progress
-                            .lock()
-                            .unwrap_or_else(PoisonError::into_inner) = None;
-                        fetch(&cache.path, FILL).map_err(|why| cache.scrub(why))?;
+                        cache.fetching.store(true, Ordering::Release);
+                        let fetched = fetch(&cache.path, FILL);
+                        cache.fetching.store(false, Ordering::Release);
+                        fetched.map_err(|why| cache.scrub(why))?;
                         if first {
                             cache.mark_filled()?;
                         }
@@ -867,3 +903,6 @@ pub(super) fn size(dir: &Path) -> u64 {
         })
         .sum()
 }
+
+#[cfg(test)]
+mod tests;

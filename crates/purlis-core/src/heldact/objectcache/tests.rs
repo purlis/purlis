@@ -1,0 +1,78 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! The figures a refusal tells, and the reader that takes them from git: what they do with a
+//! total git (or a forge's `remote:` line) made up, and with a figure that has stopped moving.
+
+use super::*;
+
+fn at(received: u64, total: u64) -> Progress {
+    Progress {
+        received,
+        total,
+        ..Progress::default()
+    }
+}
+
+#[test]
+fn the_estimate_is_the_rate_so_far_applied_to_what_is_left() {
+    let left = estimate(&at(4500, 10_000), Duration::from_secs(90));
+    assert_eq!(left, Duration::from_secs(110));
+}
+
+#[test]
+fn an_absurd_total_does_not_panic_the_estimate_and_promises_no_more_than_the_fill_may_take() {
+    let elapsed = Duration::from_secs(100);
+    let left = estimate(&at(1, u64::MAX), elapsed);
+    assert_eq!(left, FILL - elapsed);
+}
+
+#[test]
+fn a_figure_that_has_stopped_moving_promises_no_more_than_what_is_left_of_the_fill() {
+    // 1 of 10,000 objects after ten minutes is seventy days at that rate: the fill ends at fifteen
+    // minutes whatever it has read.
+    let left = estimate(&at(1, 10_000), Duration::from_secs(600));
+    assert_eq!(left, Duration::from_secs(300));
+    assert_eq!(
+        estimate(&at(1, 10_000), FILL + Duration::from_secs(60)),
+        Duration::ZERO,
+        "a fill past its time has none left"
+    );
+}
+
+#[test]
+fn a_line_the_forge_said_is_not_a_figure_of_git_s() {
+    let mut reader = ProgressReader::default();
+    assert_eq!(
+        reader.feed("remote: Receiving objects:  45% (4500/10000), 12.50 MiB | 3.10 MiB/s\r"),
+        None
+    );
+    assert_eq!(
+        reader.feed("remote: Resolving deltas:  50% (50/100)\n"),
+        None
+    );
+    let own = reader
+        .feed("\rReceiving objects:  45% (4500/10000), 12.50 MiB | 3.10 MiB/s\r")
+        .unwrap();
+    assert_eq!((own.received, own.total), (4500, 10_000));
+}
+
+#[test]
+fn a_total_past_what_a_duration_holds_is_read_without_a_panic() {
+    let mut reader = ProgressReader::default();
+    let seen = reader
+        .feed("Receiving objects:   0% (1/18446744073709551615)\r")
+        .unwrap();
+    assert_eq!((seen.received, seen.total), (1, u64::MAX));
+}
+
+#[test]
+fn a_line_that_never_ends_is_not_kept_without_bound() {
+    let mut reader = ProgressReader::default();
+    for _ in 0..8 {
+        reader.feed(&"x".repeat(32 * 1024));
+    }
+    assert!(reader.carry.len() <= MOST_CARRIED, "{}", reader.carry.len());
+    // Git's next line is read all the same.
+    assert!(reader.feed("\rReceiving objects:   1% (1/10)\r").is_some());
+}
