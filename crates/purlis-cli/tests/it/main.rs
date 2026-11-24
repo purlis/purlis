@@ -114,6 +114,7 @@ mod pool_setup;
 mod profile_create;
 mod profile_list;
 mod profile_sign_in;
+mod purlis_inbox_lists_denies_and_dismisses_and_has_no_allow_verb;
 mod purlis_landlock_prints_the_kernels_landlock_version;
 mod purlis_queries_lists_the_catalogue;
 mod purlis_serve_confines_a_chat_with_its_own_proxy;

@@ -49,6 +49,7 @@ mod gradelink;
 mod guard;
 mod handoff;
 mod hooks;
+mod inbox;
 mod internal;
 #[cfg(unix)]
 mod listen;
@@ -262,6 +263,11 @@ enum Command {
     /// The project policy: the Cedar rules that judge what a chat may do (M75, ADR 0127).
     #[command(subcommand)]
     Policy(policy::PolicyCommand),
+
+    /// Needs-you: the asks refused because nobody could be asked. List them, deny one or dismiss
+    /// it. Allowing is the window's alone, so there is no allow here (M75, ADR 0127).
+    #[command(subcommand)]
+    Inbox(inbox::InboxCommand),
 
     /// Profiles: one identity of a harness each, and how it signs in.
     #[command(subcommand)]
@@ -1576,6 +1582,8 @@ fn read_only_standing(command: &Command) -> ReadOnly {
         | Command::Theme(_)
         // The shipped default is compiled in: nothing of a project's is read.
         | Command::Policy(_)
+        // Needs-you is under this machine's data home, never in a project.
+        | Command::Inbox(_)
         | Command::Root => ReadOnly::Runs,
         // Each one is here because a test runs it on a lived-in read-only project, sees it
         // print what it read, and finds every file unchanged
@@ -3905,6 +3913,7 @@ fn run(command: Command) -> Result<u8, clierror::CliError> {
         | Command::Queries { .. }
         | Command::Theme(_)
         | Command::Policy(_)
+        | Command::Inbox(_)
         | Command::Stop { .. }
         | Command::Update { .. }
         | Command::Version { .. }
@@ -5994,6 +6003,8 @@ fn main() -> ExitCode {
         Command::Theme(command) => return theme::run(command),
         // The shipped default is compiled in: no project is looked for.
         Command::Policy(command) => return policy::run(command),
+        // Needs-you is this machine's, kept under its data home: no project is looked for.
+        Command::Inbox(command) => return inbox::run(command),
         // `news` and `update` say several lines of their own on both streams and choose their
         // own exit status, exactly as `init` does.
         Command::News(news) => {
