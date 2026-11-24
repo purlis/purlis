@@ -243,3 +243,4 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   `floor_tests`; failures that say `Operation not permitted` (creating a `.charter/vaults` folder,
   binding a port, `sandbox_apply`) are the chat's sandbox, not the code: CI is their first run.
   A grant check that walks `place.denied` must honour `Reach::Itself` (`grant::holds_the_folder`).
+- A wall-clock test (`every_guard_reads_a_hostile_command_in_linear_time::the_whole_verdict_…`) is run alone and last under nextest (`threads-required = "num-cpus"`, `.config/nextest.toml`, #7514). In a loaded sandbox its release run reads 0.9 to 1.0 s on the two slowest shapes against a 1 s bound, on `main` as on `m75-policy`: judge a regression by comparing both on one machine, and set `TIMING_OUT`-style file logging, because this test binary swallows stdout and stderr even with `--nocapture`.

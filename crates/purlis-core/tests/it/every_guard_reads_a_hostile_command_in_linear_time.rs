@@ -540,12 +540,6 @@ fn the_whole_verdict_at_the_largest_and_deepest_command_stays_well_inside_the_bu
                 } else {
                     first.min(run())
                 };
-                {
-                    use std::io::Write;
-                    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(std::env::var("TIMING_OUT").unwrap_or_default()) {
-                        let _ = writeln!(f, "{} {first:?} {shape}, {deep} deep, {mode}", first.as_millis());
-                    }
-                }
                 if took > slowest.0 {
                     slowest = (took, format!("{shape}, {deep} deep, {mode}"));
                 }
