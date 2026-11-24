@@ -306,9 +306,7 @@ fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
         Err(judged) => return judged,
     };
     match decision.after_mode {
-        Outcome::Allow if decision.would_have_blocked() => {
-            Some(MergeJudged::Logged)
-        }
+        Outcome::Allow if decision.would_have_blocked() => Some(MergeJudged::Logged),
         Outcome::Allow => None,
         Outcome::Deny => Some(refused(
             mergehold::REASON_DENIED,

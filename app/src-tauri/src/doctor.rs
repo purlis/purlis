@@ -784,7 +784,11 @@ fn event_log(opened: Option<&Result<std::path::PathBuf, crate::EventLogRefused>>
              rewrites the log, so it stays as it is"
                 .to_owned(),
         ),
-        Some(Ok(dir)) if chained.as_ref().is_some_and(|state| state.warned(dir).is_some()) => {
+        Some(Ok(dir))
+            if chained
+                .as_ref()
+                .is_some_and(|state| state.warned(dir).is_some()) =>
+        {
             row(
                 DoctorStatus::Warn,
                 chained
@@ -1394,14 +1398,23 @@ mod tests {
             let mut log = purlis_core::eventlog::Log::open(&dir, device).unwrap();
             log.chain().unwrap();
             for n in 0..3 {
-                log.append(Some("c"), None, None, "tool.called", serde_json::json!({ "n": n }))
-                    .unwrap();
+                log.append(
+                    Some("c"),
+                    None,
+                    None,
+                    "tool.called",
+                    serde_json::json!({ "n": n }),
+                )
+                .unwrap();
             }
         }
 
         let unsealed = event_log(Some(&Ok(dir.clone())));
         assert_eq!(unsealed.status, DoctorStatus::Warn, "{unsealed:?}");
-        assert!(unsealed.detail.contains("nothing could be checked"), "{unsealed:?}");
+        assert!(
+            unsealed.detail.contains("nothing could be checked"),
+            "{unsealed:?}"
+        );
 
         let file = dir.join("events.jsonl");
         let text = std::fs::read_to_string(&file).unwrap();

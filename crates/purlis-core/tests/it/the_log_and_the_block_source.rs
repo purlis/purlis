@@ -443,7 +443,11 @@ fn recorded_behaviour_selects_strict_from_strict_planes_committed_head() {
         .expect("the fixture folder")
         .map(|entry| entry.expect("an entry").file_name())
         .collect();
-    assert_eq!(files, ["charter.toml"], "nothing else is laid over daily's files");
+    assert_eq!(
+        files,
+        ["charter.toml"],
+        "nothing else is laid over daily's files"
+    );
     // What a host answers for that HEAD is every family enforced, so the fallback a process gets
     // where no host answers is the same answer by construction, not by luck.
     let resolved = purlis_core::enforcement::Resolved::of(
@@ -495,10 +499,26 @@ fn the_writer_holds_a_would_have_blocked_line_to_tokens_and_a_bare_host() {
     let long = "r".repeat(300);
     let lines = [
         (vec![long.clone()], "guards.merge", Some("github.com:443")),
-        (vec!["a/b c?d".to_owned()], "guards/merge", Some("https://evil.example/p?q=1")),
-        (vec!["ok-rule".to_owned()], "guards.merge", Some("/home/me/.ssh/id_ed25519")),
-        (vec!["ok-rule".to_owned()], "guards.merge", Some("two words:80")),
-        (vec!["ok-rule".to_owned()], "guards.merge", Some("[::1]:8080")),
+        (
+            vec!["a/b c?d".to_owned()],
+            "guards/merge",
+            Some("https://evil.example/p?q=1"),
+        ),
+        (
+            vec!["ok-rule".to_owned()],
+            "guards.merge",
+            Some("/home/me/.ssh/id_ed25519"),
+        ),
+        (
+            vec!["ok-rule".to_owned()],
+            "guards.merge",
+            Some("two words:80"),
+        ),
+        (
+            vec!["ok-rule".to_owned()],
+            "guards.merge",
+            Some("[::1]:8080"),
+        ),
         (Vec::new(), "guards.merge", None),
     ];
     for (rules, family, at) in &lines {
@@ -530,11 +550,17 @@ fn the_writer_holds_a_would_have_blocked_line_to_tokens_and_a_bare_host() {
         for rule in event.body["rules"].as_array().expect("rules") {
             assert!(is_token(rule.as_str().unwrap()), "{event:?}");
         }
-        assert!(is_token(event.body["family"].as_str().unwrap()), "{event:?}");
+        assert!(
+            is_token(event.body["family"].as_str().unwrap()),
+            "{event:?}"
+        );
         assert!(is_token(event.body["level"].as_str().unwrap()), "{event:?}");
         if let Some(at) = event.body.get("host") {
             let at = at.as_str().unwrap();
-            assert!(!at.contains('/') && !at.contains('?') && !at.contains(' '), "{at}");
+            assert!(
+                !at.contains('/') && !at.contains('?') && !at.contains(' '),
+                "{at}"
+            );
         }
     }
     let hosts: Vec<_> = wrote
@@ -543,9 +569,20 @@ fn the_writer_holds_a_would_have_blocked_line_to_tokens_and_a_bare_host() {
         .collect();
     assert_eq!(
         hosts,
-        [Some("github.com:443"), None, None, None, Some("[::1]:8080"), None]
+        [
+            Some("github.com:443"),
+            None,
+            None,
+            None,
+            Some("[::1]:8080"),
+            None
+        ]
     );
-    assert_eq!(wrote[0].body["rules"][0], "r".repeat(64), "held to 64, not dropped");
+    assert_eq!(
+        wrote[0].body["rules"][0],
+        "r".repeat(64),
+        "held to 64, not dropped"
+    );
 }
 
 /// **A deny whose rule `@id` is no token is still in the log** (round 2B, S1): a rule id over 64
@@ -556,7 +593,11 @@ fn the_writer_holds_a_would_have_blocked_line_to_tokens_and_a_bare_host() {
 fn a_deny_whose_rule_id_is_no_token_is_written_changed_never_dropped() {
     let dir = tempfile::tempdir().unwrap();
     let mut host = recorder(dir.path());
-    for id in ["x".repeat(80), "has space/and:slash".to_owned(), String::new()] {
+    for id in [
+        "x".repeat(80),
+        "has space/and:slash".to_owned(),
+        String::new(),
+    ] {
         let decision: decide::Decision = serde_json::from_value(serde_json::json!({
             "outcome": "deny",
             "deciding": [{

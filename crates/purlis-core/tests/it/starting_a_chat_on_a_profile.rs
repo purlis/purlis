@@ -2095,13 +2095,22 @@ fn a_chat_s_start_raises_a_notice_when_the_chained_event_log_was_changed() {
     plane.plain_profile("claude", &bin, "");
 
     let machine = tempfile::tempdir().unwrap();
-    let dir = machine.path().join("events").join("01J9ZZDEVICE0000000000000");
+    let dir = machine
+        .path()
+        .join("events")
+        .join("01J9ZZDEVICE0000000000000");
     {
         let mut log = Log::open(&dir, "01J9ZZDEVICE0000000000000").unwrap();
         log.chain().unwrap();
         for n in 0..3 {
-            log.append(Some("c"), None, None, "tool.called", serde_json::json!({ "n": n }))
-                .unwrap();
+            log.append(
+                Some("c"),
+                None,
+                None,
+                "tool.called",
+                serde_json::json!({ "n": n }),
+            )
+            .unwrap();
         }
     }
     chain::log_dir_for_this_thread(Some(dir.clone()));

@@ -326,7 +326,11 @@ fn a_deleted_log_or_one_with_every_chain_key_stripped_is_broken() {
         .map(|line| String::from_utf8(split(line.as_bytes()).unwrap().0).unwrap())
         .collect();
     write_lines(dir.path(), &stripped);
-    assert_eq!(check(dir.path(), DEVICE).unwrap(), gone, "every chain key stripped");
+    assert_eq!(
+        check(dir.path(), DEVICE).unwrap(),
+        gone,
+        "every chain key stripped"
+    );
     assert!(gone.said(dir.path()).unwrap().contains("holds none"));
 
     std::fs::remove_file(dir.path().join(FILE)).unwrap();
@@ -337,7 +341,10 @@ fn a_deleted_log_or_one_with_every_chain_key_stripped_is_broken() {
     let other = tempfile::tempdir().unwrap();
     let mut log = Log::open(other.path(), "another-device").unwrap();
     append(&mut log, "tool.called", 0);
-    assert_eq!(check(other.path(), "another-device").unwrap(), Checked::NotChained);
+    assert_eq!(
+        check(other.path(), "another-device").unwrap(),
+        Checked::NotChained
+    );
 }
 
 /// A writer that opens a log which no longer matches its seals carries on chained but never
@@ -434,9 +441,18 @@ fn a_run_that_starts_with_no_sandbox_chains_the_log() {
         ArgsKey::open(dir.path()).unwrap(),
     );
     let started = |sandbox: &str| serde_json::json!({ "sandbox": sandbox });
-    host.write(Some("c"), Some("r"), None, "run.started", started("seatbelt"))
-        .unwrap();
-    assert!(split(lines(dir.path())[0].as_bytes()).is_none(), "sandboxed: not chained");
+    host.write(
+        Some("c"),
+        Some("r"),
+        None,
+        "run.started",
+        started("seatbelt"),
+    )
+    .unwrap();
+    assert!(
+        split(lines(dir.path())[0].as_bytes()).is_none(),
+        "sandboxed: not chained"
+    );
     host.write(Some("c"), Some("r2"), None, "run.started", started("none"))
         .unwrap();
     assert!(
@@ -473,7 +489,7 @@ fn a_prune_by_the_writer_moves_the_sealed_start_and_a_deletion_by_anyone_else_do
     }
     drop(log);
     assert!(
-        segments(dir.path()).unwrap().len() >= 1,
+        !segments(dir.path()).unwrap().is_empty(),
         "segments were sealed"
     );
     assert!(

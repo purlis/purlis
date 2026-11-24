@@ -1382,12 +1382,18 @@ fn a_commit_past_its_rate_under_limits_log_goes_through_with_one_line_naming_the
     let root = tempfile::tempdir().unwrap();
     let rate = crate::brokered::Rate::new(1, std::time::Duration::from_secs(600));
     let now = std::time::Instant::now();
-    assert!(pace_under(root.path(), &rate, 4, now, Mode::Enforce).is_ok(), "within the cap");
+    assert!(
+        pace_under(root.path(), &rate, 4, now, Mode::Enforce).is_ok(),
+        "within the cap"
+    );
     assert!(
         pace_under(root.path(), &rate, 4, now, Mode::Enforce).is_err(),
         "past the cap, enforced"
     );
-    assert!(read_log(root.path(), UNKNOWN_CHAT).is_empty(), "enforce writes no line");
+    assert!(
+        read_log(root.path(), UNKNOWN_CHAT).is_empty(),
+        "enforce writes no line"
+    );
 
     assert!(
         pace_under(root.path(), &rate, 4, now, Mode::Log).is_ok(),
@@ -1398,6 +1404,13 @@ fn a_commit_past_its_rate_under_limits_log_goes_through_with_one_line_naming_the
     assert_eq!(lines[0].rule, RULE_COMMIT_RATE);
     assert_eq!(lines[0].family, "limits");
 
-    assert!(pace_under(root.path(), &rate, 4, now, Mode::Off).is_ok(), "off lets it through");
-    assert_eq!(read_log(root.path(), UNKNOWN_CHAT).len(), 1, "and writes nothing");
+    assert!(
+        pace_under(root.path(), &rate, 4, now, Mode::Off).is_ok(),
+        "off lets it through"
+    );
+    assert_eq!(
+        read_log(root.path(), UNKNOWN_CHAT).len(),
+        1,
+        "and writes nothing"
+    );
 }

@@ -140,7 +140,8 @@ pub fn first_chain(dir: &Path) -> io::Result<Option<(u64, String)>> {
             Err(why) => return Err(why),
         };
         for line in text.split(|byte| *byte == b'\n') {
-            if let (Ok(event), Some((_, chain))) = (serde_json::from_slice::<Event>(line), split(line))
+            if let (Ok(event), Some((_, chain))) =
+                (serde_json::from_slice::<Event>(line), split(line))
             {
                 return Ok(Some((event.seq, chain.to_owned())));
             }
