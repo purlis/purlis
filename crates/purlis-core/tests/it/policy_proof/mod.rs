@@ -159,8 +159,13 @@ fn empty_world() -> World {
 
 /// **The engine's answer** to `cell` under `input`: [`decide::decide`] over the loaded policy.
 pub fn engine(input: &PolicyInput, cell: &Cell) -> Answer {
+    engine_over(&input.loaded(), cell)
+}
+
+/// [`engine`] over a policy already loaded, for many cells under one policy.
+pub fn engine_over(loaded: &levels::Loaded, cell: &Cell) -> Answer {
     let decision = decide::decide(
-        &input.loaded(),
+        loaded,
         &decide::Request {
             chat: CHAT,
             of: no_chat(),
@@ -235,4 +240,33 @@ pub fn compare(expected: &Answer, observed: &Observed, gap: Option<&str>) -> Res
 pub fn equality(batch: &Batch, cell: &Cell) -> Result<(), Mismatch> {
     let input = batch.policy_of(cell);
     compare(&oracle(&input, cell), &engine(&input, cell), cell.gap)
+}
+
+/// **A batch of cells under one policy, each judged**: the policy is loaded and prepared once,
+/// not once per cell. Returns, for each cell in order, the oracle's answer when it equals the
+/// engine's, else the first mismatch with its cell's index.
+pub fn equality_of_one_policy(
+    input: &PolicyInput,
+    cells: &[Cell],
+) -> Result<Vec<Answer>, (usize, Mismatch)> {
+    let loaded = input.loaded();
+    let oracle_for = oracle::Prepared::new(input);
+    cells
+        .iter()
+        .enumerate()
+        .map(|(at, cell)| {
+            let family = family_of(cell.action)
+                .and_then(Family::of_key)
+                .unwrap_or_else(|| panic!("the schema has no family for the action of {cell:?}"));
+            assert_eq!(
+                input.template.mode(family),
+                Mode::Enforce,
+                "the oracle judges what a template enforces; the other modes are slice 10's"
+            );
+            let expected = oracle_for.judge(cell);
+            compare(&expected, &engine_over(&loaded, cell), cell.gap)
+                .map(|()| expected)
+                .map_err(|mismatch| (at, mismatch))
+        })
+        .collect()
 }

@@ -12,11 +12,15 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::policy_proof::PolicyInput;
 use crate::policy_proof::generator::{
     self, FIXED_SEEDS, POLICIES_PER_SEED, SEEDS_VARIABLE, cells, generate, seeds, seeds_from,
     shuffled,
 };
-use crate::policy_proof::{Batch, equality};
+use crate::policy_proof::{Answer, equality_of_one_policy, oracle};
+use purlis_core::enforcement::Template;
+use purlis_core::forklock;
+use purlis_core::policy::decide::Outcome;
 use purlis_core::policy::{File, Level, load};
 
 fn repo_root() -> PathBuf {
@@ -34,7 +38,7 @@ fn the_generator_emits_only_subset_policies() {
     // A hundred and more seeds' worth: the subset is a property of what the generator can say,
     // not of the three seeds a pull request runs.
     let mut written = 0;
-    for seed in 0..=40u8 {
+    for seed in 0..=40u64 {
         for policy in generate(seed) {
             let file = policy.file_text();
             if let Err(problems) = load(&[
@@ -72,34 +76,84 @@ fn the_subset_check_refuses_what_the_generator_must_never_say() {
     );
 }
 
+/// Whether a generated rule (its `@id` carries `-gen-`) is among the rules that decided.
+fn decided_by_a_generated_rule(answer: &Answer) -> bool {
+    answer.deciding.iter().any(|id| id.contains("-gen-"))
+}
+
 #[test]
 fn generated_policies_agree_with_enforcement_on_every_cell() {
     purlis_core::unsteered!();
+    let baseline: Vec<Answer> = {
+        let none = PolicyInput::template(Template::Strict);
+        cells().iter().map(|c| oracle(&none, c)).collect()
+    };
     let mut asked = 0;
     for seed in seeds() {
-        // Each seed asks its own order: an answer that depends on what came before it differs
-        // between seeds.
+        let mut decided = 0;
+        let mut moved = 0;
         for policy in generate(seed) {
-            let batch = Batch {
-                policy: Some(policy.input()),
-                cells: shuffled(seed, cells()),
+            // Each seed asks its own order: an answer that depends on what came before it differs
+            // between seeds.
+            let ordered = shuffled(seed, cells().into_iter().enumerate().collect::<Vec<_>>());
+            let (positions, asked_cells): (Vec<usize>, Vec<_>) = ordered.into_iter().unzip();
+            let answers = match equality_of_one_policy(&policy.input(), &asked_cells) {
+                Ok(answers) => answers,
+                Err((at, mismatch)) => panic!(
+                    "{mismatch:?} on {:?}\nseed {} ({SEEDS_VARIABLE}={} replays it), policy {}:\n{}",
+                    asked_cells[at],
+                    policy.seed,
+                    policy.seed,
+                    policy.index,
+                    policy.file_text()
+                ),
             };
-            for cell in &batch.cells {
-                if let Err(mismatch) = equality(&batch, cell) {
-                    panic!(
-                        "{mismatch:?} on {cell:?}\nseed {} ({SEEDS_VARIABLE}={} replays \
-                         it), policy {}:\n{}",
-                        policy.seed,
-                        policy.seed,
-                        policy.index,
-                        policy.file_text()
-                    );
-                }
-                asked += 1;
+            for (answer, at) in answers.iter().zip(&positions) {
+                decided += usize::from(decided_by_a_generated_rule(answer));
+                moved += usize::from(answer != &baseline[*at]);
             }
+            asked += answers.len();
         }
+        // The rules must decide, not only parse and agree: a seed whose rules never fire on any
+        // cell, or never move an answer off the bare `strict` one, proved nothing.
+        assert!(
+            decided > 0,
+            "seed {seed}: no generated rule decided any cell ({SEEDS_VARIABLE}={seed} replays it)"
+        );
+        assert!(
+            moved > 0,
+            "seed {seed}: no generated rule changed an answer ({SEEDS_VARIABLE}={seed} replays it)"
+        );
     }
     assert_eq!(asked, seeds().len() * POLICIES_PER_SEED * cells().len());
+}
+
+#[test]
+fn a_rule_that_never_fires_is_not_one_that_decided() {
+    purlis_core::unsteered!();
+    let by = |ids: &[&str]| Answer {
+        outcome: Outcome::Deny,
+        deciding: ids.iter().map(|s| (*s).to_owned()).collect(),
+        after_mode: Outcome::Deny,
+    };
+    assert!(decided_by_a_generated_rule(&by(&["guards-git-gen-2"])));
+    assert!(!decided_by_a_generated_rule(&by(&[
+        "policy-everything-else"
+    ])));
+    assert!(!decided_by_a_generated_rule(&by(&[])));
+}
+
+#[test]
+fn seeds_are_u64_end_to_end_and_the_high_bits_change_the_policies() {
+    purlis_core::unsteered!();
+    let big = u64::MAX - 3;
+    assert_eq!(seeds_from(Some(&big.to_string())), vec![big]);
+    assert_eq!(seeds_from(Some("18446744073709551615")), vec![u64::MAX]);
+    assert!(std::panic::catch_unwind(|| seeds_from(Some("18446744073709551616"))).is_err());
+    let text = |seed| -> Vec<String> { generate(seed).into_iter().map(|g| g.rules).collect() };
+    // Seeds that differ only above the low byte write different policies.
+    assert_ne!(text(1), text(1 + (1 << 8)));
+    assert_ne!(text(1), text(1 + (1 << 40)));
 }
 
 #[test]
@@ -129,7 +183,7 @@ fn the_nightly_seeds_come_from_the_environment_and_a_bad_one_is_refused() {
     assert_eq!(seeds_from(None), FIXED_SEEDS);
     assert_eq!(seeds_from(Some("")), FIXED_SEEDS);
     assert_eq!(seeds_from(Some("11, 23,200")), vec![11, 23, 200]);
-    for bad in ["300", "x", "1,,2"] {
+    for bad in ["-1", "x", "1,,2"] {
         let caught = std::panic::catch_unwind(|| seeds_from(Some(bad)));
         assert!(caught.is_err(), "`{bad}` was taken for seeds");
     }
@@ -215,13 +269,14 @@ fn a_cedar_version_bump_runs_the_nightly_set() {
 fn lock_history(base: &str, head: &str) -> (tempfile::TempDir, String, String) {
     let dir = tempfile::tempdir().expect("a temp dir");
     let git = |args: &[&str]| {
-        let out = Command::new("git")
-            .args(args)
-            .current_dir(dir.path())
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_SYSTEM", "/dev/null")
-            .output()
-            .expect("git runs");
+        let out = forklock::output(
+            Command::new("git")
+                .args(args)
+                .current_dir(dir.path())
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_SYSTEM", "/dev/null"),
+        )
+        .expect("git runs");
         assert!(
             out.status.success(),
             "git {args:?}: {}",
@@ -253,12 +308,13 @@ fn lock(cedar: &str, other: &str) -> String {
 
 fn bumped(base: &str, head: &str) -> String {
     let (dir, first, second) = lock_history(base, head);
-    let out = Command::new("sh")
-        .arg(repo_root().join("tools/cedar-bump.sh"))
-        .args([&first, &second])
-        .current_dir(dir.path())
-        .output()
-        .expect("sh runs");
+    let out = forklock::output(
+        Command::new("sh")
+            .arg(repo_root().join("tools/cedar-bump.sh"))
+            .args([&first, &second])
+            .current_dir(dir.path()),
+    )
+    .expect("sh runs");
     assert!(
         out.status.success(),
         "{}",
@@ -297,23 +353,25 @@ fn the_bump_script_says_true_only_when_a_cedar_crate_moved() {
     let (dir, _, second) = lock_history(&lock("4.14.1", "1.0.0"), &lock("4.14.1", "1.0.0"));
     // An empty or missing commit would read the index: it runs the set.
     for args in [vec!["", second.as_str()], vec![second.as_str()]] {
-        let out = Command::new("sh")
-            .arg(repo_root().join("tools/cedar-bump.sh"))
-            .args(&args)
-            .current_dir(dir.path())
-            .output()
-            .expect("sh runs");
+        let out = forklock::output(
+            Command::new("sh")
+                .arg(repo_root().join("tools/cedar-bump.sh"))
+                .args(&args)
+                .current_dir(dir.path()),
+        )
+        .expect("sh runs");
         assert_eq!(
             String::from_utf8_lossy(&out.stdout).trim(),
             "bumped=true",
             "{args:?}"
         );
     }
-    let out = Command::new("sh")
-        .arg(repo_root().join("tools/cedar-bump.sh"))
-        .args(["0000000000000000000000000000000000000000", &second])
-        .current_dir(dir.path())
-        .output()
-        .expect("sh runs");
+    let out = forklock::output(
+        Command::new("sh")
+            .arg(repo_root().join("tools/cedar-bump.sh"))
+            .args(["0000000000000000000000000000000000000000", &second])
+            .current_dir(dir.path()),
+    )
+    .expect("sh runs");
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "bumped=true");
 }

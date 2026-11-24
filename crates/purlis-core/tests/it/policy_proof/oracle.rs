@@ -41,57 +41,80 @@ use super::{Answer, CHAT, Cell, Outcome, PolicyInput};
 ///
 /// On a cell the schema cannot ask, or one that makes Cedar err: either is a broken cell.
 pub fn judge(input: &PolicyInput, cell: &Cell) -> Answer {
-    let mut files = vec![File::shipped_default()];
-    if let Some(rules) = &input.rules {
-        files.push(File::at("policy.cedar", rules, Level::Project));
-    }
-    load(&files).expect("the policy of a cell loads");
+    Prepared::new(input).judge(cell)
+}
 
-    let (all, asks) = policies(
-        [Some(DEFAULT), input.rules.as_deref()]
-            .into_iter()
-            .flatten()
-            .collect(),
-    );
-    let request = request(cell);
-    let authorizer = Authorizer::new();
-    let response = authorizer.is_authorized(&request, &all, &Entities::empty());
-    let erred: Vec<String> = response
-        .diagnostics()
-        .errors()
-        .map(|e| e.to_string())
-        .collect();
-    assert!(erred.is_empty(), "a rule erred on {cell:?}: {erred:?}");
-    let mut reasons: Vec<String> = response
-        .diagnostics()
-        .reason()
-        .map(|id| id.to_string())
-        .collect();
-    reasons.sort();
-    let no_permit = vec!["policy-everything-else".to_owned()];
+/// **A policy made ready once** for many cells: the gate, the parsed rules and the schema, so a
+/// batch of cells under one policy pays for them once and not once per cell.
+pub struct Prepared {
+    all: PolicySet,
+    asks: Vec<String>,
+    schema: Schema,
+}
 
-    let (outcome, deciding) = match response.decision() {
-        Decision::Allow => (Outcome::Allow, reasons),
-        Decision::Deny if reasons.is_empty() => (Outcome::Deny, no_permit),
-        Decision::Deny => {
-            let plain: Vec<String> = reasons
-                .iter()
-                .filter(|id| !asks.contains(id))
-                .cloned()
-                .collect();
-            if !plain.is_empty() {
-                (Outcome::Deny, plain)
-            } else if permits_stand(&authorizer, &request, &all) {
-                (Outcome::Ask, reasons)
-            } else {
-                (Outcome::Deny, no_permit)
-            }
+impl Prepared {
+    /// Run the gate and parse the shipped default and the project's rules.
+    pub fn new(input: &PolicyInput) -> Self {
+        let mut files = vec![File::shipped_default()];
+        if let Some(rules) = &input.rules {
+            files.push(File::at("policy.cedar", rules, Level::Project));
         }
-    };
-    Answer {
-        outcome,
-        deciding,
-        after_mode: outcome,
+        load(&files).expect("the policy of a cell loads");
+
+        let (all, asks) = policies(
+            [Some(DEFAULT), input.rules.as_deref()]
+                .into_iter()
+                .flatten()
+                .collect(),
+        );
+        let (schema, _) = Schema::from_cedarschema_str(SCHEMA).expect("the shipped schema parses");
+        Self { all, asks, schema }
+    }
+
+    /// The expectation for `cell`.
+    pub fn judge(&self, cell: &Cell) -> Answer {
+        let all = &self.all;
+        let asks = &self.asks;
+        let request = request(&self.schema, cell);
+        let authorizer = Authorizer::new();
+        let response = authorizer.is_authorized(&request, all, &Entities::empty());
+        let erred: Vec<String> = response
+            .diagnostics()
+            .errors()
+            .map(|e| e.to_string())
+            .collect();
+        assert!(erred.is_empty(), "a rule erred on {cell:?}: {erred:?}");
+        let mut reasons: Vec<String> = response
+            .diagnostics()
+            .reason()
+            .map(|id| id.to_string())
+            .collect();
+        reasons.sort();
+        let no_permit = vec!["policy-everything-else".to_owned()];
+
+        let (outcome, deciding) = match response.decision() {
+            Decision::Allow => (Outcome::Allow, reasons),
+            Decision::Deny if reasons.is_empty() => (Outcome::Deny, no_permit),
+            Decision::Deny => {
+                let plain: Vec<String> = reasons
+                    .iter()
+                    .filter(|id| !asks.contains(id))
+                    .cloned()
+                    .collect();
+                if !plain.is_empty() {
+                    (Outcome::Deny, plain)
+                } else if permits_stand(&authorizer, &request, all) {
+                    (Outcome::Ask, reasons)
+                } else {
+                    (Outcome::Deny, no_permit)
+                }
+            }
+        };
+        Answer {
+            outcome,
+            deciding,
+            after_mode: outcome,
+        }
     }
 }
 
@@ -138,12 +161,11 @@ fn permits_stand(authorizer: &Authorizer, request: &Request, all: &PolicySet) ->
 }
 
 /// The Cedar request `cell` writes, checked against the schema.
-fn request(cell: &Cell) -> Request {
+fn request(schema: &Schema, cell: &Cell) -> Request {
     assert!(
         cell.resource.0 != "Host",
         "the oracle does not spell hosts yet: {cell:?}"
     );
-    let (schema, _) = Schema::from_cedarschema_str(SCHEMA).expect("the shipped schema parses");
     let uid = |kind: &str, id: &str| {
         EntityUid::from_type_name_and_id(
             EntityTypeName::from_str(kind).expect("an entity type name"),
@@ -151,14 +173,14 @@ fn request(cell: &Cell) -> Request {
         )
     };
     let action = uid("Action", cell.action);
-    let context = Context::from_json_value(cell.context.clone(), Some((&schema, &action)))
+    let context = Context::from_json_value(cell.context.clone(), Some((schema, &action)))
         .unwrap_or_else(|e| panic!("the schema cannot ask {cell:?}: its context: {e}"));
     Request::new(
         uid("Chat", CHAT),
         action,
         uid(cell.resource.0, cell.resource.1),
         context,
-        Some(&schema),
+        Some(schema),
     )
     .unwrap_or_else(|e| panic!("the schema cannot ask {cell:?}: {e}"))
 }

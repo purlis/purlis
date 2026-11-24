@@ -273,14 +273,14 @@ fn generated_chat() -> impl Strategy<Value = Chat<'static>> {
 /// own from `PURLIS_PROOF_SEEDS` (M75-42, the same variable the generated cells read in
 /// `tests/it`), so a red night names the seed that replays it. A value that is not wholly seeds
 /// panics: a night that fell back to the fixed ones would prove nothing new.
-fn proof_seeds() -> Vec<u8> {
+fn proof_seeds() -> Vec<u64> {
     match std::env::var("PURLIS_PROOF_SEEDS") {
         Ok(value) if !value.trim().is_empty() => value
             .split(',')
             .map(|seed| {
                 seed.trim()
                     .parse()
-                    .unwrap_or_else(|_| panic!("PURLIS_PROOF_SEEDS holds `{seed}`, not 0 to 255"))
+                    .unwrap_or_else(|_| panic!("PURLIS_PROOF_SEEDS holds `{seed}`, not a u64 seed"))
             })
             .collect(),
         _ => vec![1, 7, 42],
@@ -309,7 +309,7 @@ fn over_generated_policies_from(
                 failure_persistence: None,
                 ..Config::default()
             },
-            TestRng::from_seed(RngAlgorithm::ChaCha, &[seed; 32]),
+            TestRng::from_seed(RngAlgorithm::ChaCha, &seed.to_le_bytes().repeat(4)),
         );
         let strategy = (
             prop::collection::vec(rule_spec(), 0..6),

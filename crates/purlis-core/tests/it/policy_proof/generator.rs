@@ -22,37 +22,41 @@ use super::{Cell, PolicyInput, RULES_HEADER};
 use purlis_core::enforcement::Template;
 
 /// The seeds every pull request runs, when `PURLIS_PROOF_SEEDS` names none.
-pub const FIXED_SEEDS: [u8; 3] = [1, 7, 42];
+pub const FIXED_SEEDS: [u64; 3] = [1, 7, 42];
 
-/// The variable the nightly sets: a comma-separated list of seeds, each `0..=255`.
+/// The variable the nightly sets: a comma-separated list of seeds, each a `u64`.
 pub const SEEDS_VARIABLE: &str = "PURLIS_PROOF_SEEDS";
 
 /// How many policies a seed writes.
 pub const POLICIES_PER_SEED: usize = 10;
 
 /// **The seeds to run**: `PURLIS_PROOF_SEEDS` when it is set, else [`FIXED_SEEDS`].
-pub fn seeds() -> Vec<u8> {
+pub fn seeds() -> Vec<u64> {
     seeds_from(std::env::var(SEEDS_VARIABLE).ok().as_deref())
 }
 
 /// [`seeds`] over a value: a list that is not wholly seeds panics, because a nightly that quietly
 /// fell back to the fixed ones would prove nothing new and say it had.
-pub fn seeds_from(value: Option<&str>) -> Vec<u8> {
+pub fn seeds_from(value: Option<&str>) -> Vec<u64> {
     let Some(value) = value.filter(|v| !v.trim().is_empty()) else {
         return FIXED_SEEDS.to_vec();
     };
     value
         .split(',')
         .map(|seed| {
-            seed.trim().parse::<u8>().unwrap_or_else(|_| {
-                panic!("{SEEDS_VARIABLE} holds `{seed}`, which is not 0 to 255")
+            seed.trim().parse::<u64>().unwrap_or_else(|_| {
+                panic!("{SEEDS_VARIABLE} holds `{seed}`, which is not a u64 seed")
             })
         })
         .collect()
 }
 
-fn rng(seed: u8) -> TestRng {
-    TestRng::from_seed(RngAlgorithm::ChaCha, &[seed; 32])
+/// The generator's stream: all 64 bits of the seed reach the ChaCha key (its bytes four times
+/// over), so two seeds never share a stream.
+fn rng(seed: u64) -> TestRng {
+    let bytes = seed.to_le_bytes();
+    let key: Vec<u8> = bytes.iter().copied().cycle().take(32).collect();
+    TestRng::from_seed(RngAlgorithm::ChaCha, &key)
 }
 
 fn pick(rng: &mut TestRng, below: usize) -> usize {
@@ -60,8 +64,8 @@ fn pick(rng: &mut TestRng, below: usize) -> usize {
 }
 
 /// **The cells in another order**, from the seed: a Fisher–Yates shuffle over the seeded stream.
-pub fn shuffled<T>(seed: u8, mut items: Vec<T>) -> Vec<T> {
-    let mut rng = rng(seed.wrapping_add(0x5a));
+pub fn shuffled<T>(seed: u64, mut items: Vec<T>) -> Vec<T> {
+    let mut rng = rng(seed.wrapping_add(0x5a5a_5a5a_5a5a_5a5a));
     for at in (1..items.len()).rev() {
         items.swap(at, pick(&mut rng, at + 1));
     }
@@ -72,7 +76,7 @@ pub fn shuffled<T>(seed: u8, mut items: Vec<T>) -> Vec<T> {
 #[derive(Debug, Clone)]
 pub struct Generated {
     /// The seed that wrote it.
-    pub seed: u8,
+    pub seed: u64,
     /// Its place among that seed's policies.
     pub index: usize,
     /// The rules, without the version line.
@@ -234,7 +238,7 @@ fn rule(rng: &mut TestRng, n: usize) -> String {
 }
 
 /// **The policies `seed` writes**: [`POLICIES_PER_SEED`] of them, each of one to four rules.
-pub fn generate(seed: u8) -> Vec<Generated> {
+pub fn generate(seed: u64) -> Vec<Generated> {
     let mut rng = rng(seed);
     (0..POLICIES_PER_SEED)
         .map(|index| {

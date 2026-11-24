@@ -248,7 +248,8 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   oracle asks over no entities, so an action whose shipped rule reads `principal.*` (`dispatch-to`,
   `use`) cannot be a generated cell yet. A sandbox rule may carry one condition only. The workflow
   is `policy-nightly.yml`; `tools/cedar-bump.sh <base> <head>` says whether a cedar crate moved.
-  The equality test takes about 50 s; `df -g /` fell to 2 GB after three cold test builds, so
+  Seeds are `u64`. The equality test loads each policy once (`equality_of_one_policy`, `oracle::Prepared`):
+  13 to 40 s warm, and it asserts that a generated rule decides. `df -g /` fell to 2 GB after three cold test builds, so
   remove `target/` between runs.
 - A limits-table key may carry `min` and `max` (`limits.toml`; `Spec::bounded`): a number outside
   reads as the nearest end, with a Notice. `[policy] limits = "off"` and a `[policy.limits]` table
