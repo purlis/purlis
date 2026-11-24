@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795557630070,
+  "lastUpdate": 1795557945264,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54222,6 +54222,48 @@ window.BENCHMARK_DATA = {
             "value": 102.39179899999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.918, 102.279, 102.392, 103.929, 104.009 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "70a277d400185011a011f69a18b97ff4fec62f5f",
+          "message": "Forge route: a parent pushes its ended child's cut branch (lineage ruling), integration branches protected by pattern (#7552)\n\n* A chat's own new branch is recorded as its own, in a plane too; it may delete it at its tip (#7529)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86Y96NJ4KENH8DXZCPDWSXK\nPurlis-Persona: steward\n\n* Format and doc comment for #7529\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86Y96NJ4KENH8DXZCPDWSXK\nPurlis-Persona: steward\n\n* A chat deletes no branch through the forge route: drop the own-tip delete allowance (#7530 round 2)\n\nThe ownership-record fix stays. The delete arm and own_tip_of are gone, so every\nbranch delete is refused as on main. plane-format.md and windowonly.rs say what\nis true about the derived project id; the changes fragment says no delete.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86ZHER167NFXEN5HT6GGZ7F\nPurlis-Persona: steward\n\n* Lineage: a parent pushes its ended child's cut branch through the forge route\n\nBuild the person's ruling of 2026-11-24 (ADR 0128 amendment):\n- the created-branch record gains an optional `via` marker (route | allow)\n- dispatchrecord::ended_child_branch / lineage_allows replace dispatched_by: a direct,\n  ended, same-workspace, same-persona child's cut branch only, on a route-push line\n- guards.forge: rule forge.lineage (off = no lineage)\n- with_protected_branches gets its production caller, fed from [risk] protected_branches;\n  phase-*, integration/* and m<N>-* are protected by name\n- plane-format.md, ADR amendment, changelog fragment\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M8723HMGT63H12DVR582KH61\nPurlis-Persona: steward\n\n* Lineage round 2: own allowance, exact protected names, Allow stays non-lineage (#7552)\n\nF1: drop the m<N>-* and phase-* prefix shapes from the route's protected set; exact names and integration/* only.\nF2: lineage is [policy] lineage = allow|deny (deny strict; lock sandbox.lineage; unreadable means deny), no longer a guards.forge row.\nF3: a later route push keeps an Allow/unmarked owner line's marker.\nF4: protected branches read from HEAD, floored by the accepted copy.\nF6/F7: workspace must be named; any non-ended, unsound or torn record naming the child means it still runs.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M8732A44GQVW9XKGZ6ZH2HQG\nPurlis-Persona: steward\n\n* WIP: lineage tests: mark the task's line as a route push, wire exact protected names into the test world\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M87C4ETJEH0TNVZZJPHA9DKT\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T21:19:52Z",
+          "tree_id": "81fe49c03dba379d37409b6980ad34f6898b99f6",
+          "url": "https://github.com/purlis/purlis/commit/70a277d400185011a011f69a18b97ff4fec62f5f"
+        },
+        "date": 1795557939158,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.549653,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.543, 0.548, 0.550, 0.550, 0.551 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.024252,
+            "unit": "ms",
+            "extra": "median of 5 runs: 15.975, 15.992, 16.024, 16.082, 16.148 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.105494,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.758, 101.020, 101.105, 101.596, 102.989 ms"
           }
         ]
       }
