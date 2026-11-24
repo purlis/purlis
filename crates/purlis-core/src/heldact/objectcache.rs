@@ -481,10 +481,7 @@ impl ObjectCache {
     }
 
     fn clear_progress(&self) {
-        *self
-            .progress
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = None;
+        *self.progress.lock().unwrap_or_else(PoisonError::into_inner) = None;
     }
 
     /// The figure the running fill is at, where git has said one.

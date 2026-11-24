@@ -976,14 +976,13 @@ fn a_real_git_fetch_fills_the_progress_the_refusal_reads() {
     let probe = cache.clone();
     let fetch: purlis_core::heldact::Fetch = std::sync::Arc::new(move |dir, _| {
         use std::io::Read;
-        let mut child = std::process::Command::new("git")
-            .current_dir(dir)
+        let mut git = std::process::Command::new("git");
+        git.current_dir(dir)
             .args(["fetch", "--progress", "--no-tags"])
             .arg(&forge)
             .arg("+HEAD:refs/quarantine/default")
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|why| why.to_string())?;
+            .stderr(Stdio::piped());
+        let mut child = purlis_core::forklock::spawn(&mut git).map_err(|why| why.to_string())?;
         let mut stderr = child.stderr.take().unwrap();
         let mut buf = [0u8; 4096];
         while let Ok(n) = stderr.read(&mut buf) {
@@ -1053,12 +1052,15 @@ fn a_fill_that_fails_partway_leaves_the_refusal_its_reason_and_none_of_its_figur
         .unwrap_err();
     heard.recv().unwrap();
     assert!(
-        refused.starts_with("purlis is still reading forge.test/owner/repo again (the last read failed: the forge hung up)"),
+        refused.starts_with("purlis is still reading forge.test/owner/repo from the forge again (the last read failed: the forge hung up)"),
         "{refused}"
     );
     let again = cache.update(soon(), ok_fetch()).unwrap_err();
     assert_eq!(again, refused, "still nothing of the failed fill's 4500");
-    assert!(!again.contains("4500") && !again.contains("objects ("), "{again}");
+    assert!(
+        !again.contains("4500") && !again.contains("objects ("),
+        "{again}"
+    );
     finish.send(()).unwrap();
     wait_until_idle(&cache);
 }
@@ -1078,6 +1080,8 @@ fn a_new_fill_does_not_show_the_start_or_figure_of_the_one_before_it() {
     finish.send(()).unwrap();
     wait_until_idle(&cache);
     assert_eq!(cache.progress(), None, "cleared as the fill ends");
+    // A filled cache tops up inline, so make it not filled, as a failed fill leaves it.
+    std::fs::remove_file(cache.path().join(".git").join("purlis-filled")).unwrap();
     // A second fill that has said nothing yet is refused with no figure, however fast the push.
     let (said, heard) = mpsc::channel();
     let (finish, release) = mpsc::channel();
@@ -1156,7 +1160,9 @@ fn a_top_up_that_has_no_time_left_is_refused_unless_the_cache_holds_the_base() {
         )
         .unwrap_err();
     assert!(
-        refused.starts_with("purlis could not finish reading forge.test/owner/repo from the forge within 240 s"),
+        refused.starts_with(
+            "purlis could not finish reading forge.test/owner/repo from the forge within 240 s"
+        ),
         "{refused}"
     );
     wait_until_idle(&cache);
@@ -1190,10 +1196,13 @@ fn a_top_up_that_fails_after_the_pushs_time_is_refused_unless_the_cache_holds_th
     wait_until_idle(&cache);
     cache.update_having(within(), outrun(), &held).unwrap();
     wait_until_idle(&cache);
+    // The outrun fills failed, which leaves the cache not filled: fill it again.
+    cache.update_having(soon(), ok_fetch(), &held).unwrap();
+    wait_until_idle(&cache);
+    assert!(cache.is_filled(), "filled again");
     // A failure inside the push's time is its own reason, not a timeout.
-    let failing: purlis_core::heldact::Fetch = std::sync::Arc::new(|_, _| Err("no route".to_owned()));
-    let why = cache
-        .update_having(soon(), failing, &held)
-        .unwrap_err();
+    let failing: purlis_core::heldact::Fetch =
+        std::sync::Arc::new(|_, _| Err("no route".to_owned()));
+    let why = cache.update_having(soon(), failing, &held).unwrap_err();
     assert_eq!(why, "no route");
 }
