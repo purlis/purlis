@@ -33,6 +33,8 @@ pub enum Told {
         why: String,
         key_changed: bool,
         gone: bool,
+        refused: bool,
+        host_key_changed: bool,
     },
 }
 
@@ -125,6 +127,8 @@ impl Kept {
                                 why: down.why,
                                 key_changed: down.key_changed,
                                 gone: down.gone,
+                                refused: down.refused,
+                                host_key_changed: down.host_key_changed,
                             },
                         ));
                     }
@@ -211,6 +215,8 @@ mod rules {
             why: why.to_owned(),
             key_changed: false,
             gone: false,
+            refused: false,
+            host_key_changed: false,
         }
     }
 

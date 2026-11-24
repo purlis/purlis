@@ -63,6 +63,10 @@ id = "remote-parity"
 p50 = 33
 
 [[job]]
+id = "remote-faults-notice"
+p50 = 1  # runs on the nightly schedule only (skipped on every pull request and push run, so none measured): one `gh` call on a bare runner, the floor of one; measure after a week of nightlies
+
+[[job]]
 id = "deny"
 p50 = 1
 

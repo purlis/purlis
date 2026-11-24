@@ -17,9 +17,10 @@
 //! states"): nothing silent for more than 30 s (the link says why it is down within
 //! [`QUIET_LIMIT`] of the fault, [`told_within`]); nothing started waits past three minutes
 //! ([`START_LIMIT`]); and where a state has a name, it is the name. **Each of the five is asserted
-//! by one case, and each is train A's, so each of those cases is `#[ignore]`d** and reads the
-//! state through [`seam::state_named`] (Refused, of a pool with no chat, through
-//! [`seam::pool_state_named`]): Unreachable by the 90 s drop
+//! by one case, and each is train A's (#7187, on `main`)** and reads the state through
+//! [`seam::state_named`] from what the kept link told (Refused, of a pool with no chat, through
+//! [`seam::pool_state_named`]; Runner gone and Pool forgotten are still `#[ignore]`d, see their
+//! reasons): Unreachable by the 90 s drop
 //! (`a_90_second_drop_is_named_unreachable_while_it_lasts`), Refused by the registry down
 //! (`a_registry_that_is_down_names_the_pool_refused`), Host key changed by case 3, Runner gone by
 //! case 4, Pool forgotten by case 7.
@@ -30,12 +31,10 @@
 //! `--retries 0` and one at a time, and a flake is a lifecycle bug (ruling 6; a quarantine needs
 //! a linked issue and expires in 7 days).
 //!
-//! **What is not on `main` yet.** The named states and what the window does with them (`Refused`,
-//! `Pool forgotten`, `Runner gone`, `Try now`) are train A's (#7187), the browsers' are train D's
-//! (#7190). A case that needs them is `#[ignore]`d with that reason and reads the state through
-//! [`seam`], whose functions say what to put there when the train merges; the rest of the case,
-//! the fault, the clock and the rules, is real now. **Those ignores are lifted when the trains
-//! merge** (`cargo test -p purlis-core --test it -- --ignored a_live_remote_chat`).
+//! **What is not wired yet.** Train A (#7187) is on `main`, and its cases that the link tells
+//! are lifted; the browsers' are train D's (#7190). A case that needs them is `#[ignore]`d with
+//! its reason and reads the state through [`seam`]. **Train D's ignores are lifted when it
+//! merges** (`cargo test -p purlis-core --test it -- --ignored a_live_remote_chat`).
 //!
 //! It needs the systemd runner fixture, `SSH_RUNNER_SYSTEMD_TEST_ROUTE`,
 //! `SSH_RUNNER_SYSTEMD_TEST_MACHINE` and `SSH_RUNNER_TEST_PURLIS` (`tests/ssh-runner/up-systemd.sh`),
@@ -439,14 +438,32 @@ async fn a_chat(rig: &Rig, client: &Client, tag: &str) -> String {
 /// merges; until then a case that calls one is `#[ignore]`d with the train's name.
 mod seam {
     use super::Rig;
+    use crate::support::outage::Told;
+    use std::time::Duration;
 
-    /// The name of the state the pool or runner is in, as the window words it: `Unreachable`,
-    /// `Refused`, `Host key changed`, `Runner gone` or `Pool forgotten` (#7187, CONTEXT.md).
-    ///
-    /// Train A: read `purlis_core::sshroute::connect::RemoteState` of the link's `Down` (its
-    /// `host_key_changed`, `gone` and `refused` fields) and word it as `RunnerLinkDownNotice` does.
-    pub fn state_named(_rig: &Rig, _chat: &str) -> String {
-        todo!("needs #7187 train A: the pool or runner's RemoteState, as the window names it")
+    /// The name of the state the link is in, as the window words it, read from the last thing
+    /// the kept link told (#7187, train A): the `Down`'s `host_key_changed` (or `key_changed`),
+    /// `gone` and `refused` fields, else `Unreachable` for a link that is down and retried.
+    /// `Runner gone` of an ssh runner and `Pool forgotten` end a chat in the app, not the link,
+    /// so their cases stay `#[ignore]`d.
+    pub fn state_named(told: &[(Duration, Told)]) -> String {
+        match told.last() {
+            Some((
+                _,
+                Told::Down {
+                    host_key_changed: true,
+                    ..
+                }
+                | Told::Down {
+                    key_changed: true, ..
+                },
+            )) => "Host key changed",
+            Some((_, Told::Down { gone: true, .. })) => "Runner gone",
+            Some((_, Told::Down { refused: true, .. })) => "Refused",
+            Some((_, Told::Down { .. })) => "Unreachable",
+            _ => "Up",
+        }
+        .to_owned()
     }
 
     /// The name of the state a pool is in, as the window words it, for a pool with no chat of its
@@ -563,7 +580,6 @@ fn a_link_drop_of_90_seconds_says_why_within_30_seconds_and_the_chat_takes_input
 
 /// Case 1's 90 s drop, the state it is named while it lasts: Unreachable (train A, #7187).
 #[test]
-#[ignore = "needs #7187 train A: the pool's state named Unreachable"]
 fn a_90_second_drop_is_named_unreachable_while_it_lasts() {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
@@ -576,7 +592,7 @@ fn a_90_second_drop_is_named_unreachable_while_it_lasts() {
         // Past the 30 s rule and well inside the drop: the window says what the state is.
         tokio::time::sleep(QUIET_LIMIT + Duration::from_secs(5)).await;
         told_within(&kept.told(), fault_at, QUIET_LIMIT);
-        assert_eq!(seam::state_named(&rig, &chat), "Unreachable");
+        assert_eq!(seam::state_named(&kept.told()), "Unreachable");
         rig.restore();
         let after = kept
             .until_working(START_LIMIT, "the link after the drop")
@@ -631,7 +647,6 @@ fn an_sshd_restart_reopens_the_link_with_no_new_key_prompt_and_the_chat_survives
 }
 
 #[test]
-#[ignore = "needs #7187 train A: Host key changed is its own state, never retried, and re-trust ends it"]
 fn a_host_key_changed_under_a_live_chat_is_not_retried_and_the_chat_comes_back_after_re_trust() {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
@@ -651,7 +666,7 @@ fn a_host_key_changed_under_a_live_chat_is_not_retried_and_the_chat_comes_back_a
             None,
             "a changed key is never retried on its own"
         );
-        assert_eq!(seam::state_named(&rig, &chat), "Host key changed");
+        assert_eq!(seam::state_named(&kept.told()), "Host key changed");
         // Re-trust: the new key is met and pinned, and a link on it finds the chat.
         let key = connect::meet(
             &rig.reach.ssh,
@@ -692,7 +707,7 @@ fn a_host_key_changed_under_a_live_chat_is_not_retried_and_the_chat_comes_back_a
 }
 
 #[test]
-#[ignore = "needs #7187 train A: Runner gone, and a start on a dead host held to three minutes"]
+#[ignore = "Runner gone of an ssh runner is told by the app's chat-end path, not the link (`Down::gone` is a Docker runner's): read it where the app does"]
 fn a_killed_runner_ends_its_chat_as_runner_gone_never_reconnecting_for_ever_and_the_next_chat_starts_a_new_host()
  {
     purlis_core::unsteered!();
@@ -717,7 +732,7 @@ fn a_killed_runner_ends_its_chat_as_runner_gone_never_reconnecting_for_ever_and_
             assert!(Instant::now() < deadline, "the chat was never ended");
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
-        assert_eq!(seam::state_named(&rig, &chat), "Runner gone");
+        assert_eq!(seam::state_named(&kept.told()), "Runner gone");
         // The next chat starts a new host's chat, inside the limit.
         let began = Instant::now();
         let next = typing_chat(&after, "killed-next").await;
@@ -778,7 +793,7 @@ fn an_app_restart_reattaches_each_chat_to_its_own_pool() {
 }
 
 #[test]
-#[ignore = "needs #7187 train A: Pool forgotten ends its chats, and Forget lists what is left on the machine"]
+#[ignore = "Pool forgotten and Forget's list are the app's (app/src-tauri hostlost.rs), not reachable from purlis-core, and the rig is not a pool"]
 fn a_pool_forgotten_during_a_chat_ends_it_as_pool_forgotten_and_lists_what_is_left_on_the_machine()
 {
     purlis_core::unsteered!();
@@ -787,7 +802,7 @@ fn a_pool_forgotten_during_a_chat_ends_it_as_pool_forgotten_and_lists_what_is_le
     rt.block_on(async {
         let kept = rig.keep().await;
         let client = kept.client().expect("linked");
-        let chat = a_chat(&rig, &client, "forgotten").await;
+        let _chat = a_chat(&rig, &client, "forgotten").await;
         let began = Instant::now();
         let left = seam::forget_the_pool(&rig);
         assert!(
@@ -795,7 +810,7 @@ fn a_pool_forgotten_during_a_chat_ends_it_as_pool_forgotten_and_lists_what_is_le
             "Forget took {:?}",
             began.elapsed()
         );
-        assert_eq!(seam::state_named(&rig, &chat), "Pool forgotten");
+        assert_eq!(seam::state_named(&kept.told()), "Pool forgotten");
         // What is left on the machine is listed: the runner's host is still there, and says so.
         assert!(
             left.iter()
@@ -836,7 +851,6 @@ fn a_15_second_slow_link_keeps_a_live_link_up_inside_the_budgets_and_the_chat_wo
 }
 
 #[test]
-#[ignore = "needs #7187 train A: a start held to three minutes that names its stuck step"]
 fn a_link_slower_than_the_budgets_fails_naming_the_step_inside_the_limit_with_no_hang() {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
@@ -920,7 +934,7 @@ fn a_registry_that_is_down_fails_the_check_within_its_budget_as_image_unreachabl
 
 /// Case 9's other half, the state the window names for it: Refused (train A, #7187).
 #[test]
-#[ignore = "needs #7187 train A: the pool's state named Refused"]
+#[ignore = "A maps Finding::ImageUnreachable to RemoteState::Unreachable, the case says Refused: one of them is wrong (#7187)"]
 fn a_registry_that_is_down_names_the_pool_refused() {
     purlis_core::unsteered!();
     a_registry_that_is_down(true);
