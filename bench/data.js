@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795523742859,
+  "lastUpdate": 1795525667395,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53676,6 +53676,48 @@ window.BENCHMARK_DATA = {
             "value": 101.584197,
             "unit": "ms",
             "extra": "median of 5 runs: 101.168, 101.281, 101.584, 101.641, 102.943 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e7d06f06224e85f995ea694215b47946dfdbbc1d",
+          "message": "CI: compile the Rust tests once for all four parts; mold on Linux (#7496)\n\n* CI: compile the Rust tests once, in a nextest archive the four parts run (#7324)\n\nrust-build runs cargo nextest archive --workspace --locked --profile ci and uploads\nthe archive; each of the four parts downloads it and runs its hash:N/4 quarter with\n--archive-file ... --extract-to . --workspace-remap ., keeping the quarantine filter, the\ndocker-pool exclusion, the no-orphans wrapper and the harness steps. The probes and the\nfake harness the tests look for beside their own binary are built once in rust-build and\nnamed in [profile.ci.archive]. The swap and the memory report move to the one job that\ncompiles. Check names are unchanged (the new job is 'rust tests (build)', and the required\n'rust (fmt, clippy, test)' now also needs it).\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86EF2H72N19FB2VYMEQDJF2\nPurlis-Persona: steward\n\n* CI: link the Linux Rust test and build jobs with mold (#7324)\n\nmold 2.30.0, the Ubuntu 24.04 package, from linux-packages' cache of the image; a step\nfails when the image ships another. RUSTFLAGS gains -C link-arg=-fuse-ld=mold in rust-build,\nthe four parts, rust-doctests and git-lfs, which share one Rust cache and so one RUSTFLAGS.\nA report step says whether the linked binary carries mold's mark. release.yml is untouched.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86EF2H72N19FB2VYMEQDJF2\nPurlis-Persona: steward\n\n* CI: review fixes: recorded takes mold with the cache it restores; the archive keeps three days (#7324)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86EF2H72N19FB2VYMEQDJF2\nPurlis-Persona: steward\n\n* CI: make target/tmp before the archived tests run (CARGO_TARGET_TMPDIR)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* CI: fetch the locked crates before the archived tests run (offline guards)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T12:16:51Z",
+          "tree_id": "2add81e7497f6f93613ed60c9d364456ad4f9f4d",
+          "url": "https://github.com/purlis/purlis/commit/e7d06f06224e85f995ea694215b47946dfdbbc1d"
+        },
+        "date": 1795525657225,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6873755,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.663, 0.671, 0.687, 0.690, 0.745 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.697076000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.473, 16.608, 16.697, 16.702, 16.714 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.371465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.308, 101.801, 102.371, 102.579, 102.904 ms"
           }
         ]
       }
