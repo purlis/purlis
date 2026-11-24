@@ -4842,8 +4842,26 @@ fn charters_own_wrap_never_lets_a_chat_ask_the_keychains_service() {
         for service in ["SecurityServer", "securityd", "com.apple.security"] {
             assert!(!text.contains(service), "{service} is reachable:\n{text}");
         }
-        for line in text.lines().filter(|line| line.contains("mach-lookup")) {
-            assert_eq!(line, "(allow mach-lookup", "a lookup not by name: {line}");
+        // A lookup is allowed only as a block of names (`(allow mach-lookup`, then its names).
+        // The one other lookup rule is the escape step's deny of the two escape services
+        // (M75-11), which names exactly those two and so can never reach the keychain's.
+        let lines: Vec<&str> = text.lines().collect();
+        for (at, line) in lines.iter().enumerate() {
+            if !line.contains("mach-lookup") {
+                continue;
+            }
+            if *line == "(deny mach-lookup" {
+                assert_eq!(
+                    lines[at + 1..at + 3],
+                    [
+                        "  (global-name \"com.apple.coreservices.launchservicesd\")",
+                        "  (global-name \"com.apple.coreservices.appleevents\"))",
+                    ],
+                    "a denied lookup that is not the escape services':\n{text}"
+                );
+            } else {
+                assert_eq!(*line, "(allow mach-lookup", "a lookup not by name: {line}");
+            }
         }
     }
 }
