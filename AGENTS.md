@@ -231,3 +231,7 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
 - The anchored planes the hook can read are `app/anchored-planes/` (the app writes it as the
   registry gains a plane, `answers::anchored_roots` reads the union): the sealed registry is
   unreadable outside the app.
+- A sandboxed chat can run `cargo test -j 2 -p purlis-core --test it -- <filters>` and the lib's
+  `floor_tests`; failures that say `Operation not permitted` (creating a `.charter/vaults` folder,
+  binding a port, `sandbox_apply`) are the chat's sandbox, not the code: CI is their first run.
+  A grant check that walks `place.denied` must honour `Reach::Itself` (`grant::holds_the_folder`).

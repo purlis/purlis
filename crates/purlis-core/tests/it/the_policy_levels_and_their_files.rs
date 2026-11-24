@@ -1226,13 +1226,11 @@ fn each_template_gives_its_mode_table() {
             );
         }
     }
-    // The sandbox level each template sets (slice 11 makes it `[policy] sandbox` for `strict`).
+    // The sandbox level each template sets; `strict` is the floor, and `[policy] sandbox` sets
+    // the level apart from any template (slice 11).
     use purlis_core::enforcement::SandboxLevel::{Floor, Full, Off};
     let levels: Vec<_> = Template::ALL.map(Template::sandbox_level).into();
-    assert_eq!(
-        levels,
-        [Some(Off), Some(Floor), Some(Floor), Some(Full), None]
-    );
+    assert_eq!(levels, [Off, Floor, Floor, Full, Floor]);
 }
 
 #[test]
@@ -1417,4 +1415,532 @@ fn a_project_cannot_replace_a_rule_the_organisation_names_in_its_rule_modes() {
         ..sources(root.path())
     });
     assert!(merge(&loaded).allows(), "{:?}", merge(&loaded));
+}
+
+// ── M75 slice 11 (#7020): the sandbox level, the escape denies, `[sandbox] mode` and `policy` ──
+
+/// A plane whose committed project file is `settings`.
+fn with_settings(settings: &str) -> tempfile::TempDir {
+    plane(&[("charter.toml", settings)])
+}
+
+/// The level `settings` runs `chat` at.
+fn level_of(settings: &str, chat: Chat<'_>) -> SandboxLevel {
+    let root = with_settings(settings);
+    levels::load(&sources(root.path())).sandbox_level_for(chat)
+}
+
+#[test]
+fn policy_sandbox_full_sets_the_full_sandbox_and_context_sandbox() {
+    purlis_core::unsteered!();
+    let settings = "[policy]\ntemplate = \"watch\"\nsandbox = \"full\"\n";
+    let root = with_settings(settings);
+    let loaded = levels::load(&sources(root.path()));
+    assert_eq!(loaded.sandbox_level_for(ANYONE), SandboxLevel::Full);
+    assert_eq!(
+        purlis_core::enforcement::Settings::from_text(Some(settings)).level(),
+        SandboxLevel::Full
+    );
+    // `context.sandbox` is the level's word, and a rule reading it sees `full`.
+    let rules = plane(&[
+        ("charter.toml", settings),
+        (
+            "policy.cedar",
+            "// purlis-policy 1\n@id(\"skills-full-only\")\n\
+             forbid (principal, action == Action::\"install\", resource) \
+             when { context.sandbox == \"full\" };\n",
+        ),
+    ]);
+    let loaded = levels::load(&sources(rules.path()));
+    let decide = |level: SandboxLevel| {
+        let mut context = context();
+        context["sandbox"] = level.word().into();
+        loaded.policy.decide(
+            &Question {
+                chat: "web/builder",
+                action: "install",
+                resource: ("Skill", "tdd"),
+                context,
+            },
+            &world(),
+        )
+    };
+    assert_eq!(
+        decide(loaded.sandbox_level_for(ANYONE)),
+        denied("skills-full-only")
+    );
+    assert_eq!(decide(SandboxLevel::Floor), allowed());
+}
+
+#[test]
+fn under_strict_policy_sandbox_sets_the_level_else_floor() {
+    purlis_core::unsteered!();
+    let strict = |extra: &str| format!("[policy]\ntemplate = \"strict\"\n{extra}");
+    assert_eq!(level_of(&strict(""), ANYONE), SandboxLevel::Floor);
+    for level in SandboxLevel::ALL {
+        let settings = strict(&format!("sandbox = \"{}\"\n", level.word()));
+        assert_eq!(level_of(&settings, ANYONE), level, "{settings}");
+        assert_eq!(
+            purlis_core::enforcement::Settings::from_text(Some(&settings)).level(),
+            level,
+            "{settings}"
+        );
+    }
+    assert_eq!(
+        purlis_core::enforcement::Settings::from_text(Some(&strict(""))).level(),
+        SandboxLevel::Floor
+    );
+}
+
+#[test]
+fn policy_sandbox_takes_a_level_never_off_log_or_enforce() {
+    purlis_core::unsteered!();
+    for level in SandboxLevel::ALL {
+        let root = with_settings(&format!("[policy]\nsandbox = \"{}\"\n", level.word()));
+        let loaded = levels::load(&sources(root.path()));
+        assert!(
+            loaded.notices.is_empty(),
+            "{level:?}: {:#?}",
+            loaded.notices
+        );
+        assert_eq!(loaded.sandbox_at_least, None, "{level:?}");
+    }
+    // A mode, a word that is none or a value of another type is no level: the file is broken, so
+    // the full sandbox runs.
+    for bad in ["\"log\"", "\"enforce\"", "\"on\"", "\"never\"", "3", "true"] {
+        let root = with_settings(&format!("[policy]\nsandbox = {bad}\n"));
+        let loaded = levels::load(&sources(root.path()));
+        let said = notice(&loaded, "is not one of off, floor or full");
+        assert_eq!(
+            (said.file.as_str(), said.line),
+            ("charter.toml", 2),
+            "{bad}"
+        );
+        assert_eq!(loaded.sandbox_at_least, Some(SandboxLevel::Full), "{bad}");
+        assert_eq!(
+            loaded.sandbox_level_for(ANYONE),
+            SandboxLevel::Full,
+            "{bad}"
+        );
+    }
+}
+
+#[test]
+fn at_level_full_and_floor_hook_side_read_and_write_forbids_enforce() {
+    purlis_core::unsteered!();
+    // Whatever the template says of the rest, the level decides this family's hooks.
+    for template in Template::ALL {
+        for level in [SandboxLevel::Floor, SandboxLevel::Full] {
+            let settings = format!(
+                "[policy]\ntemplate = \"{}\"\nsandbox = \"{}\"\n",
+                template.word(),
+                level.word()
+            );
+            let root = with_settings(&settings);
+            let loaded = levels::load(&sources(root.path()));
+            assert_eq!(
+                loaded.mode_for("sandbox", ANYONE),
+                Mode::Enforce,
+                "{settings}"
+            );
+            assert_eq!(
+                purlis_core::enforcement::Settings::from_text(Some(&settings))
+                    .mode(purlis_core::enforcement::Family::Sandbox),
+                Mode::Enforce,
+                "{settings}"
+            );
+        }
+    }
+}
+
+#[test]
+fn under_watch_hook_side_read_and_write_forbids_enforce() {
+    purlis_core::unsteered!();
+    // `watch` logs most families, and runs the sandbox at the floor, which enforces.
+    let root = with_settings("[policy]\ntemplate = \"watch\"\n");
+    let loaded = levels::load(&sources(root.path()));
+    assert_eq!(loaded.sandbox_level_for(ANYONE), SandboxLevel::Floor);
+    assert_eq!(loaded.mode_for("sandbox", ANYONE), Mode::Enforce);
+    assert_eq!(loaded.mode_for("processes", ANYONE), Mode::Log);
+}
+
+#[test]
+fn at_level_off_under_open_hook_side_read_and_write_forbids_are_off() {
+    purlis_core::unsteered!();
+    let root = with_settings("[policy]\ntemplate = \"open\"\n");
+    let loaded = levels::load(&sources(root.path()));
+    assert_eq!(loaded.sandbox_level_for(ANYONE), SandboxLevel::Off);
+    assert_eq!(loaded.mode_for("sandbox", ANYONE), Mode::Off);
+    // The same with the level said: `open` stays "everything off".
+    let root = with_settings("[policy]\ntemplate = \"open\"\nsandbox = \"off\"\n");
+    let loaded = levels::load(&sources(root.path()));
+    assert_eq!(loaded.mode_for("sandbox", ANYONE), Mode::Off);
+}
+
+#[test]
+fn at_level_off_under_another_template_hook_side_read_and_write_forbids_log() {
+    purlis_core::unsteered!();
+    for template in [
+        Template::Watch,
+        Template::Hold,
+        Template::Team,
+        Template::Strict,
+    ] {
+        let settings = format!(
+            "[policy]\ntemplate = \"{}\"\nsandbox = \"off\"\n",
+            template.word()
+        );
+        let root = with_settings(&settings);
+        let loaded = levels::load(&sources(root.path()));
+        assert_eq!(
+            loaded.sandbox_level_for(ANYONE),
+            SandboxLevel::Off,
+            "{settings}"
+        );
+        assert_eq!(loaded.mode_for("sandbox", ANYONE), Mode::Log, "{settings}");
+        assert_eq!(
+            purlis_core::enforcement::Settings::from_text(Some(&settings))
+                .mode(purlis_core::enforcement::Family::Sandbox),
+            Mode::Log,
+            "{settings}"
+        );
+    }
+}
+
+#[test]
+fn with_the_sandbox_level_off_network_ports_and_processes_are_reported_not_in_force() {
+    purlis_core::unsteered!();
+    let all = ["network", "ports", "processes"];
+    for (settings, reported) in [
+        ("[policy]\ntemplate = \"open\"\n", &all[..]),
+        (
+            "[policy]\ntemplate = \"watch\"\nsandbox = \"off\"\n",
+            &all[..],
+        ),
+        ("[policy]\ntemplate = \"watch\"\n", &[][..]),
+        (
+            "[policy]\ntemplate = \"open\"\nsandbox = \"floor\"\n",
+            &[][..],
+        ),
+        ("[policy]\ntemplate = \"team\"\n", &[][..]),
+    ] {
+        let root = with_settings(settings);
+        let loaded = levels::load(&sources(root.path()));
+        assert_eq!(loaded.not_in_force_for(ANYONE), reported, "{settings}");
+    }
+}
+
+#[test]
+fn a_sandbox_lock_freezes_the_minimum_level() {
+    purlis_core::unsteered!();
+    let project = |lower: &str| {
+        format!(
+            "[policy]\nsandbox = \"floor\"\n\n[policy.locks]\nfamilies = [\"sandbox\"]\n\n{lower}"
+        )
+    };
+    let workspace =
+        |level: &str| project(&format!("[policy.workspace.web]\nsandbox = \"{level}\"\n"));
+    let web = Chat {
+        workspace: Some("web"),
+        persona: None,
+    };
+    // A lower level may raise the level above the lock's, never lower it.
+    assert_eq!(level_of(&workspace("off"), web), SandboxLevel::Floor);
+    assert_eq!(level_of(&workspace("floor"), web), SandboxLevel::Floor);
+    assert_eq!(level_of(&workspace("full"), web), SandboxLevel::Full);
+    let persona = project("[policy.persona.builder]\nsandbox = \"off\"\n");
+    let builder = Chat {
+        workspace: None,
+        persona: Some("builder"),
+    };
+    assert_eq!(level_of(&persona, builder), SandboxLevel::Floor);
+    // Without the lock the workspace's own level stands, lower or not.
+    let unlocked = "[policy]\nsandbox = \"floor\"\n\n[policy.workspace.web]\nsandbox = \"off\"\n";
+    assert_eq!(level_of(unlocked, web), SandboxLevel::Off);
+    // The Organisation's lock freezes its own level over the project's.
+    let root = with_settings("[policy]\nsandbox = \"off\"\n");
+    let loaded = levels::load(&Sources {
+        organisation: Some(organisation(
+            None,
+            Some("[policy]\nsandbox = \"full\"\n\n[policy.locks]\nfamilies = [\"sandbox\"]\n"),
+        )),
+        ..sources(root.path())
+    });
+    assert_eq!(loaded.sandbox_level_for(ANYONE), SandboxLevel::Full);
+}
+
+#[test]
+fn sandbox_policy_never_becomes_a_project_lock() {
+    purlis_core::unsteered!();
+    let root = with_settings("[sandbox]\npolicy = \"never\"\n");
+    let loaded = levels::load(&sources(root.path()));
+    let said = notice(&loaded, "has moved");
+    assert_eq!((said.file.as_str(), said.line), ("charter.toml", 2));
+    assert!(
+        said.what.contains("lock on the sandbox family"),
+        "{}",
+        said.what
+    );
+    // The lock holds: it names its owner, and it freezes the level at full.
+    assert!(loaded.lock_on("sandbox", "read").is_some());
+    assert_eq!(loaded.sandbox_level_for(ANYONE), SandboxLevel::Full);
+    assert_eq!(loaded.mode_for("sandbox", ANYONE), Mode::Enforce);
+    // A lower level cannot lower it.
+    let root = with_settings(
+        "[sandbox]\npolicy = \"never\"\n\n[policy.workspace.web]\nsandbox = \"off\"\n",
+    );
+    let loaded = levels::load(&sources(root.path()));
+    let web = Chat {
+        workspace: Some("web"),
+        persona: None,
+    };
+    assert_eq!(loaded.sandbox_level_for(web), SandboxLevel::Full);
+    // `[sandbox] mode = "off"` beside it is refused, as it was, and `local` locks nothing.
+    let root = with_settings("[sandbox]\nmode = \"off\"\npolicy = \"never\"\n");
+    let loaded = levels::load(&sources(root.path()));
+    assert_eq!(loaded.sandbox_level_for(ANYONE), SandboxLevel::Full);
+    let root = with_settings("[sandbox]\npolicy = \"local\"\n");
+    let loaded = levels::load(&sources(root.path()));
+    assert!(loaded.lock_on("sandbox", "read").is_none());
+    assert!(loaded.notices.is_empty(), "{:#?}", loaded.notices);
+    // A word that is none is `never`, the stricter, as the team's reader has it.
+    let root = with_settings("[sandbox]\npolicy = \"nope\"\n");
+    assert!(
+        levels::load(&sources(root.path()))
+            .lock_on("sandbox", "read")
+            .is_some()
+    );
+}
+
+#[test]
+fn sandbox_policy_never_raises_policy_sandbox_off_and_floor_to_full() {
+    purlis_core::unsteered!();
+    for word in ["off", "floor", "full"] {
+        let root = with_settings(&format!(
+            "[sandbox]\npolicy = \"never\"\n\n[policy]\nsandbox = \"{word}\"\n"
+        ));
+        let loaded = levels::load(&sources(root.path()));
+        assert_eq!(
+            loaded.sandbox_level_for(ANYONE),
+            SandboxLevel::Full,
+            "{word}"
+        );
+        // The live reader agrees with the levels reader.
+        let settings = purlis_core::enforcement::Settings::read(root.path());
+        assert_eq!(settings.level(), SandboxLevel::Full, "{word}");
+    }
+}
+
+#[test]
+fn sandbox_mode_reads_as_the_moved_policy_sandbox() {
+    purlis_core::unsteered!();
+    for (text, level) in [
+        ("[sandbox]\nmode = \"on\"\n", SandboxLevel::Full),
+        ("[sandbox]\nmode = \"off\"\n", SandboxLevel::Off),
+        ("[sandbox]\nmode = \"maybe\"\n", SandboxLevel::Full),
+        // The new spelling beside the old wins.
+        (
+            "[sandbox]\nmode = \"on\"\n\n[policy]\nsandbox = \"floor\"\n",
+            SandboxLevel::Floor,
+        ),
+    ] {
+        let root = with_settings(text);
+        let loaded = levels::load(&sources(root.path()));
+        assert_eq!(loaded.sandbox_level_for(ANYONE), level, "{text}");
+        if text.starts_with("[sandbox]") {
+            let said = notice(&loaded, "[sandbox] mode has moved to [policy] sandbox");
+            assert_eq!(
+                (said.file.as_str(), said.line),
+                ("charter.toml", 2),
+                "{text}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_rule_naming_an_escape_deny_is_refused_at_load() {
+    purlis_core::unsteered!();
+    for (id, rule) in [
+        (
+            "processes-launchctl",
+            "forbid (principal, action == Action::\"exec\", resource == Command::\"launchctl\");",
+        ),
+        (
+            "processes-allow-osascript",
+            "permit (principal, action == Action::\"exec\", resource == Command::\"/usr/bin/osascript\");",
+        ),
+        (
+            "processes-allow-open",
+            "permit (principal, action, resource == Command::\"open\");",
+        ),
+        (
+            "network-session-bus",
+            "permit (principal, action == Action::\"dial\", resource == Socket::\"session-bus\");",
+        ),
+        (
+            "network-launch-services",
+            "forbid (principal, action == Action::\"dial\", resource == Socket::\"com.apple.coreservices.launchservicesd\");",
+        ),
+    ] {
+        let root = plane(&[("policy.cedar", &format!("{VERSION}@id(\"{id}\")\n{rule}\n"))]);
+        let loaded = levels::load(&sources(root.path()));
+        let said = notice(&loaded, "an escape deny");
+        assert_eq!((said.file.as_str(), said.line), ("policy.cedar", 2), "{id}");
+        assert_eq!(said.rules[0].id, id);
+        // Refused, not loaded: the file is broken, so the full sandbox runs.
+        assert!(loaded.named(id).is_none(), "{id}");
+        assert_eq!(loaded.sandbox_at_least, Some(SandboxLevel::Full), "{id}");
+    }
+    // A rule about any other program or socket loads as it did.
+    let root = plane(&[(
+        "policy.cedar",
+        &format!(
+            "{VERSION}@id(\"processes-ls\")\n\
+             forbid (principal, action == Action::\"exec\", resource == Command::\"ls\");\n"
+        ),
+    )]);
+    let loaded = levels::load(&sources(root.path()));
+    assert!(loaded.notices.is_empty(), "{:#?}", loaded.notices);
+    assert!(loaded.named("processes-ls").is_some());
+}
+
+/// A floor profile with nothing else in it.
+fn floor_profile() -> String {
+    purlis_core::sandbox::seatbelt::floor_profile(
+        &[],
+        &[],
+        &purlis_core::sandbox::seatbelt::Own::default(),
+        &[],
+        None,
+    )
+    .expect("a profile")
+}
+
+fn full_profile() -> String {
+    purlis_core::sandbox::seatbelt::profile(
+        &[],
+        &purlis_core::sandbox::seatbelt::Own::default(),
+        std::path::Path::new("/nonexistent/project"),
+        std::path::Path::new("/nonexistent/tmp"),
+        &[],
+        None,
+    )
+    .expect("a profile")
+}
+
+/// What the escape step holds of programs: each one, Apple events, Launch Services and job
+/// creation.
+fn holds_the_process_escapes(text: &str) {
+    for program in [
+        "/bin/launchctl",
+        "/usr/bin/osascript",
+        "/usr/bin/open",
+        "/usr/bin/crontab",
+        "/usr/bin/at",
+    ] {
+        assert!(text.contains("(deny process-exec"), "{program}");
+        assert!(text.contains(program), "{program}");
+    }
+    for held in [
+        "(deny appleevent-send)",
+        "(deny lsopen)",
+        "(deny job-creation)",
+        "com.apple.coreservices.launchservicesd",
+    ] {
+        assert!(text.contains(held), "{held}");
+    }
+}
+
+/// What a floor profile holds of the escapes: the step, and every unix socket, the session bus
+/// among them.
+fn holds_the_escapes(profile: &str) {
+    holds_the_process_escapes(profile);
+    assert!(profile.contains("(deny network-outbound (remote unix-socket))"));
+}
+
+#[test]
+fn under_watch_the_escape_denies_still_hold() {
+    purlis_core::unsteered!();
+    let root = with_settings("[policy]\ntemplate = \"watch\"\n");
+    let loaded = levels::load(&sources(root.path()));
+    let level = loaded.sandbox_level_for(ANYONE);
+    assert_eq!(level, SandboxLevel::Floor);
+    // `watch` logs the `processes` family, and still never logs an escape.
+    assert_eq!(loaded.mode_for("processes", ANYONE), Mode::Log);
+    assert!(purlis_core::policy::sandbox_level::in_force(level));
+    holds_the_process_escapes(purlis_core::sandbox::seatbelt::escape_step(level));
+    holds_the_escapes(&floor_profile());
+}
+
+#[test]
+fn processes_off_never_lifts_an_escape_deny() {
+    purlis_core::unsteered!();
+    let root = with_settings("[policy]\ntemplate = \"watch\"\nprocesses = \"off\"\n");
+    let loaded = levels::load(&sources(root.path()));
+    assert_eq!(loaded.mode_for("processes", ANYONE), Mode::Off);
+    let level = loaded.sandbox_level_for(ANYONE);
+    assert!(purlis_core::policy::sandbox_level::in_force(level));
+    holds_the_process_escapes(purlis_core::sandbox::seatbelt::escape_step(level));
+    holds_the_escapes(&floor_profile());
+    // Nor does a lock or the Organisation's `processes = "off"`.
+    let loaded = levels::load(&Sources {
+        organisation: Some(organisation(None, Some("[policy]\nprocesses = \"off\"\n"))),
+        ..sources(root.path())
+    });
+    assert!(purlis_core::policy::sandbox_level::in_force(
+        loaded.sandbox_level_for(ANYONE)
+    ));
+}
+
+#[test]
+fn the_escape_denies_are_a_step_of_their_own_not_a_fixed_thing() {
+    purlis_core::unsteered!();
+    use purlis_core::policy::sandbox_level;
+    use purlis_core::sandbox::seatbelt;
+    // The step takes the level and nothing else: none at `off`, the same step at `floor` and
+    // `full`.
+    assert_eq!(seatbelt::escape_step(SandboxLevel::Off), "");
+    assert_eq!(
+        seatbelt::escape_step(SandboxLevel::Floor),
+        seatbelt::escape_step(SandboxLevel::Full)
+    );
+    assert!(!seatbelt::escape_step(SandboxLevel::Floor).is_empty());
+    assert!(!sandbox_level::in_force(SandboxLevel::Off));
+    // Every program the step names is the policy's list, so a rule's scope and the profile agree.
+    let step = seatbelt::escape_step(SandboxLevel::Floor);
+    for program in sandbox_level::PROGRAMS {
+        assert!(step.contains(&format!("/{program}\"")), "{program}");
+    }
+    for service in sandbox_level::MACH_SERVICES {
+        assert!(step.contains(service), "{service}");
+    }
+    // And the floor's profile is made of it, as the full profile is, after every allow of it
+    // (Seatbelt takes the last match, and the full profile's `BASE` allows every `process-exec`).
+    // Only the vaults' denies of file operations follow it, which the step does not touch.
+    assert!(floor_profile().contains(step));
+    let full = full_profile();
+    let at = full.rfind(step).expect("the full profile holds the step");
+    assert!(
+        !full[at + step.len()..].contains("(allow"),
+        "an allow follows the step"
+    );
+    holds_the_process_escapes(&full_profile());
+    // No `[policy]` word takes it away: no family mode, template or level but `off` reaches it.
+    for template in Template::ALL {
+        for family in ["processes", "network", "sandbox"] {
+            let root = with_settings(&format!(
+                "[policy]\ntemplate = \"{}\"\n{family} = \"{}\"\n",
+                template.word(),
+                if family == "sandbox" { "floor" } else { "off" }
+            ));
+            let loaded = levels::load(&sources(root.path()));
+            assert!(
+                sandbox_level::in_force(loaded.sandbox_level_for(ANYONE))
+                    || template == Template::Open && family != "sandbox",
+                "{} {family}",
+                template.word()
+            );
+        }
+    }
 }

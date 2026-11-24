@@ -882,6 +882,11 @@ pub struct ChatFacts {
     pub persona: Option<String>,
     /// Whether it runs under a sandbox.
     pub sandboxed: bool,
+    /// **The sandbox level its start applied** (M75-11), as the host recorded it: what
+    /// `context.sandbox` carries. `None` where the host recorded none: a sandboxed chat then reads
+    /// as the floor, and an unsandboxed one is `off` whatever this says, so a chat never claims
+    /// more confinement than it has.
+    pub level: Option<crate::enforcement::SandboxLevel>,
     /// Whether the person is at it.
     pub attended: bool,
 }
@@ -906,9 +911,14 @@ pub fn for_chat(
             workspace: facts.workspace.as_deref(),
             persona: facts.persona.as_deref(),
         },
-        // Which of the two levels a sandboxed chat runs at is slice 11's to say: `floor` never
-        // claims more confinement than the chat has.
-        sandbox: if facts.sandboxed { "floor" } else { "off" },
+        sandbox: if facts.sandboxed {
+            facts
+                .level
+                .filter(|level| *level != crate::enforcement::SandboxLevel::Off)
+                .map_or("floor", crate::enforcement::SandboxLevel::word)
+        } else {
+            "off"
+        },
         attended: facts.attended,
         harness_mode: "default",
         depth: 0,

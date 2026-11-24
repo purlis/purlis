@@ -397,7 +397,7 @@ impl Template {
             Template::Watch | Template::Hold | Template::Team => Mode::Log,
         };
         if family == Family::Sandbox {
-            return mode_of_level(self.sandbox_level().unwrap_or(SandboxLevel::Floor));
+            return mode_of_level_under(self.sandbox_level(), self);
         }
         if mode == Mode::Log && !family.logs() {
             Mode::Enforce
@@ -406,15 +406,14 @@ impl Template {
         }
     }
 
-    /// **The sandbox level the template sets** (Q308a, Q316), or `None` for `strict`, under
-    /// which the project's `[sandbox]` decides it as it always has: the floor, unless
-    /// `[sandbox] mode = "on"`.
-    pub fn sandbox_level(self) -> Option<SandboxLevel> {
+    /// **The sandbox level the template sets** (Q308a, Q316, M75-11): `[policy] sandbox` sets it
+    /// apart from the template, and `strict`, which leaves the level to that key, is the floor
+    /// where it names none (**proposed**; Q318 point 9).
+    pub fn sandbox_level(self) -> SandboxLevel {
         match self {
-            Template::Open => Some(SandboxLevel::Off),
-            Template::Watch | Template::Hold => Some(SandboxLevel::Floor),
-            Template::Team => Some(SandboxLevel::Full),
-            Template::Strict => None,
+            Template::Open => SandboxLevel::Off,
+            Template::Watch | Template::Hold | Template::Strict => SandboxLevel::Floor,
+            Template::Team => SandboxLevel::Full,
         }
     }
 }
@@ -444,6 +443,13 @@ impl SandboxLevel {
         }
     }
 
+    /// **The level `[policy] sandbox` names** (M75-11): `off`, `floor` or `full`, and nothing
+    /// else. `log` and `enforce` are modes of a family, not levels of the sandbox, so neither is
+    /// read ([`Self::parse`] reads `enforce` only for an acceptance kept before the level).
+    pub fn of_policy_word(word: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|level| level.word() == word)
+    }
+
     /// The level whose word is `word`, or none. `enforce`, which an acceptance kept before the
     /// level was wired spelled the sandbox with, is the floor: the least a wrap held then.
     pub fn parse(word: &str) -> Option<Self> {
@@ -470,13 +476,15 @@ impl SandboxLevel {
     }
 }
 
-/// The sandbox family's mode at `level`: off where there is no wrap, enforced wherever one is
-/// applied.
-pub fn mode_of_level(level: SandboxLevel) -> Mode {
-    if level == SandboxLevel::Off {
-        Mode::Off
-    } else {
-        Mode::Enforce
+/// **What the hooks do with the `read` and `write` forbids at `level`, under `template`**
+/// (M75-11; Q311 point 8, Q320b R2-2): `full` and `floor` enforce them, and `watch` runs at the
+/// floor. At the level `off` they follow the template's general mode: `off` under `open`, so
+/// `open` stays "everything off", and `log` under any other template that sets the level `off`.
+pub fn mode_of_level_under(level: SandboxLevel, template: Template) -> Mode {
+    match (level, template) {
+        (SandboxLevel::Off, Template::Open) => Mode::Off,
+        (SandboxLevel::Off, _) => Mode::Log,
+        _ => Mode::Enforce,
     }
 }
 
@@ -493,6 +501,10 @@ pub struct Settings {
     /// names one ([`SandboxLevel::of_sandbox_mode`]): the `sandbox` family's override. Never a
     /// key of `[policy]`, so there are never two switches (Q308a).
     pub sandbox: Option<SandboxLevel>,
+    /// **What `[policy] sandbox` itself says** (M75-11): the level the key names, which replaces
+    /// `[sandbox] mode` and wins over it where a file has both. Apart from [`Self::sandbox`] so
+    /// your own file's `[sandbox] mode` is never read as a tightening of the project's level.
+    policy_sandbox: Option<SandboxLevel>,
     /// What the table holds that purlis could not read, one sentence each, for the window's
     /// Notice. Each was taken in the strict direction.
     pub refused: Vec<String>,
@@ -517,6 +529,15 @@ impl Settings {
     pub fn from_text(text: Option<&str>) -> Self {
         let mut said = Self::read_text(text);
         said.denies = crate::dispatchgrant::Denied::of_text(text);
+        // **`[sandbox] policy = "never"` is a lock on the level** (M75-11): nobody runs below the
+        // full sandbox, whatever `[policy] sandbox` or the template says, as the levels reader
+        // raises it. The local file's own `never` raises only what is read here, never the
+        // project's ([`Self::read`] takes the local file's `policy_sandbox` and template alone).
+        if text.is_some_and(|text| {
+            crate::sandbox::team::Team::of_text(text).policy == crate::sandbox::team::Policy::Never
+        }) {
+            said.sandbox = Some(SandboxLevel::Full);
+        }
         // **Any value purlis cannot read means `strict`**, with the sentence for the Notice (the
         // review of #6992, S6): a file that is not TOML, a key that is no family, a mode or a
         // template that is none.
@@ -615,10 +636,21 @@ impl Settings {
             return;
         };
         if family == Family::Sandbox {
-            self.refused.push(format!(
-                "{TABLE}.sandbox is not read: the template sets the sandbox, and [sandbox] mode \
-                 sets it apart from the template"
-            ));
+            // `[policy] sandbox` is the family's one switch (M75-11): a level, never a mode.
+            match value.as_str().and_then(SandboxLevel::of_policy_word) {
+                Some(level) => {
+                    self.sandbox = Some(level);
+                    self.policy_sandbox = Some(level);
+                }
+                None => {
+                    self.sandbox = Some(SandboxLevel::Full);
+                    self.policy_sandbox = Some(SandboxLevel::Full);
+                    self.refused.push(format!(
+                        "{TABLE}.sandbox takes off, floor or full (a level, never log or \
+                         enforce), so the sandbox is full"
+                    ));
+                }
+            }
             return;
         }
         match value.as_str().and_then(Mode::parse) {
@@ -674,6 +706,7 @@ impl Settings {
                             template_said: true,
                             overrides: BTreeMap::new(),
                             sandbox: None,
+                            policy_sandbox: None,
                             refused: vec![
                                 "purlis could not read the project's settings file, so its \
                                  [policy] is enforced"
@@ -694,6 +727,7 @@ impl Settings {
                 overrides: BTreeMap::new(),
                 // No level of its own: what this person accepted holds, never a looser one.
                 sandbox: None,
+                policy_sandbox: None,
                 refused: vec![
                     "git could not read the project's last commit, so its [policy] is enforced"
                         .to_owned(),
@@ -719,12 +753,14 @@ impl Settings {
                 project.overrides.insert(family, mine);
             }
         }
-        // The local file's template may raise the level, never lower it; its `[sandbox]` is
-        // the person's own level, read where a start reads it, and not the project's.
+        // The local file's template and its `[policy] sandbox` may raise the level, never lower
+        // it; its `[sandbox]` is the person's own level, read where a start reads it, and not
+        // the project's.
         if let Some(mine) = local
-            .template_said
-            .then(|| local.template.sandbox_level())
-            .flatten()
+            .policy_sandbox
+            .into_iter()
+            .chain(local.template_said.then(|| local.template.sandbox_level()))
+            .max()
             && mine > project.level()
         {
             project.sandbox = Some(mine);
@@ -733,18 +769,18 @@ impl Settings {
         project
     }
 
-    /// **The sandbox level the settings set** (Q308a, Q316): `[sandbox] mode` where the file names
-    /// one, else the template's; under `strict`, whose template leaves it to `[sandbox]`, the
-    /// floor where `[sandbox]` names no mode, as before Q308.
+    /// **The sandbox level the settings set** (Q308a, Q316, M75-11): `[policy] sandbox` where the
+    /// file names one, else the legacy `[sandbox] mode`, else the template's (the floor under
+    /// `strict`).
     pub fn level(&self) -> SandboxLevel {
         self.sandbox
-            .unwrap_or_else(|| self.template.sandbox_level().unwrap_or(SandboxLevel::Floor))
+            .unwrap_or_else(|| self.template.sandbox_level())
     }
 
     /// How the settings run `family`, before any lock or acceptance.
     pub fn mode(&self, family: Family) -> Mode {
         if family == Family::Sandbox {
-            return mode_of_level(self.level());
+            return mode_of_level_under(self.level(), self.template);
         }
         let own = self
             .overrides
@@ -1072,14 +1108,21 @@ fn digest(resolved: &Resolved) -> String {
 /// The key an acceptance keeps the denies it accepted under: no family's key.
 const DENIES_KEPT: &str = "dispatch.denies";
 
+/// The key the template is spelled and kept under, at the level `off` only: no family's key.
+const TEMPLATE_KEPT: &str = "template";
+
 /// How every family runs for one chat: what [`at_start`] resolved, the sandbox's level, and the
 /// dispatch denies.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resolved {
     modes: BTreeMap<Family, Mode>,
-    /// The project's sandbox level ([`SandboxLevel`]); the `sandbox` family's mode follows it
-    /// ([`mode_of_level`]).
+    /// The project's sandbox level ([`SandboxLevel`]); the `sandbox` family's mode follows it and
+    /// the template ([`mode_of_level_under`]).
     level: SandboxLevel,
+    /// The template the level was resolved under: at the level `off` it decides whether the
+    /// `sandbox` family logs or is off ([`mode_of_level_under`]), so it travels with the level
+    /// through [`Self::stricter`], [`Self::spelled`] and [`Self::parse`].
+    template: Template,
     /// The dispatch denies (`[dispatch.denies]`, ticket T1.1-73).
     denies: crate::dispatchgrant::Denied,
 }
@@ -1089,10 +1132,10 @@ impl Resolved {
     /// process with no answer runs ([`Mode::Enforce`]), where the project's `[sandbox]` may still
     /// raise the level ([`sandbox_level`]); and no dispatch denied.
     pub fn all(mode: Mode) -> Self {
-        let level = if mode == Mode::Off {
-            SandboxLevel::Off
+        let (level, template) = if mode == Mode::Off {
+            (SandboxLevel::Off, Template::Open)
         } else {
-            SandboxLevel::Floor
+            (SandboxLevel::Floor, Template::default())
         };
         Self::of_modes(
             Family::ALL
@@ -1100,6 +1143,7 @@ impl Resolved {
                 .map(|family| (family, mode))
                 .collect(),
             level,
+            template,
             crate::dispatchgrant::Denied::default(),
         )
     }
@@ -1113,16 +1157,26 @@ impl Resolved {
         }
     }
 
-    /// `modes` at `level`, the `sandbox` family's mode set by the level, with `denies`.
+    /// `modes` at `level` under `template`, the `sandbox` family's mode set by both
+    /// ([`mode_of_level_under`]), with `denies`.
     fn of_modes(
         mut modes: BTreeMap<Family, Mode>,
         level: SandboxLevel,
+        template: Template,
         denies: crate::dispatchgrant::Denied,
     ) -> Self {
-        modes.insert(Family::Sandbox, mode_of_level(level));
+        modes.insert(Family::Sandbox, mode_of_level_under(level, template));
+        // The template matters only at the level `off`, so it is kept only there: two resolved
+        // policies that run alike are equal, whatever template each came from.
+        let template = if level == SandboxLevel::Off {
+            template
+        } else {
+            Template::default()
+        };
         Self {
             modes,
             level,
+            template,
             denies,
         }
     }
@@ -1135,12 +1189,15 @@ impl Resolved {
         if locks.enforcement_floor(Family::Sandbox).is_some() {
             level = level.max(SandboxLevel::Floor);
         }
+        // What the hooks do with the `read` and `write` forbids follows the level and the
+        // template (M75-11): `log` at the level `off` under any template but `open`.
         Self::of_modes(
             Family::ALL
                 .into_iter()
                 .map(|family| (family, under(settings, locks, family)))
                 .collect(),
             level,
+            settings.template,
             settings.denies.clone(),
         )
     }
@@ -1183,6 +1240,12 @@ impl Resolved {
                 .map(|family| (family, self.mode(family).max(other.mode(family))))
                 .collect(),
             self.level.max(other.level),
+            // Either side's template that is not `open` logs at the level `off`: the stricter.
+            if self.template == Template::Open {
+                other.template
+            } else {
+                self.template
+            },
             self.denies.with(&other.denies),
         )
     }
@@ -1213,7 +1276,8 @@ impl Resolved {
     /// As [`ENV`] carries it: `family=mode` pairs, comma-separated, the sandbox's by its level.
     /// The denies are not carried: only the app judges a dispatch.
     pub fn spelled(&self) -> String {
-        self.modes
+        let mut pairs: Vec<String> = self
+            .modes
             .iter()
             .map(|(family, mode)| {
                 let word = if *family == Family::Sandbox {
@@ -1223,8 +1287,13 @@ impl Resolved {
                 };
                 format!("{}={word}", family.key())
             })
-            .collect::<Vec<_>>()
-            .join(",")
+            .collect();
+        // The template matters only at the level `off`, so it is spelled only there and every
+        // other spelling (and digest) is as it was.
+        if self.level == SandboxLevel::Off {
+            pairs.push(format!("{TEMPLATE_KEPT}={}", self.template.word()));
+        }
+        pairs.join(",")
     }
 
     /// What [`Self::spelled`] spelled. A pair it cannot read, or a family it does not name, is
@@ -1243,12 +1312,20 @@ impl Resolved {
             .find(|(family, _)| *family == Family::Sandbox.key())
             .and_then(|(_, word)| SandboxLevel::parse(word))
             .unwrap_or(SandboxLevel::Full);
+        // A template that is not said is the default's, which logs at the level `off`: never
+        // looser than a template that is said.
+        let template = pairs
+            .iter()
+            .find(|(key, _)| *key == TEMPLATE_KEPT)
+            .and_then(|(_, word)| Template::parse(word))
+            .unwrap_or_default();
         Self::of_modes(
             Family::ALL
                 .into_iter()
                 .map(|family| (family, said.get(&family).copied().unwrap_or(Mode::Enforce)))
                 .collect(),
             level,
+            template,
             crate::dispatchgrant::Denied::default(),
         )
     }
@@ -1268,6 +1345,9 @@ impl Resolved {
                 (family.key().to_owned(), word.to_owned())
             })
             .collect();
+        if self.level == SandboxLevel::Off {
+            kept.insert(TEMPLATE_KEPT.to_owned(), self.template.word().to_owned());
+        }
         if !self.denies.is_empty() {
             kept.insert(DENIES_KEPT.to_owned(), self.denies.spelled());
         }
@@ -1291,10 +1371,8 @@ impl Resolved {
 
     /// This, at `level` where that is looser or stricter: what the team's answer to its off
     /// makes of an acceptance ([`accepted`]).
-    fn at_level(mut self, level: SandboxLevel) -> Self {
-        self.level = level;
-        self.modes.insert(Family::Sandbox, mode_of_level(level));
-        self
+    fn at_level(self, level: SandboxLevel) -> Self {
+        Self::of_modes(self.modes, level, self.template, self.denies)
     }
 }
 

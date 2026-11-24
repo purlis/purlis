@@ -83,6 +83,7 @@ pub fn decision(
             .persona_of(chat)
             .and_then(|persona| persona.started_as),
         sandboxed: chats.runs_sandboxed(chat),
+        level: chats.applied_sandbox_level(chat),
         attended: chats.attendance_of(chat).is_some_and(|fact| {
             fact.hearing(false, None) == purlis_core::dispatchunattended::Attendance::Attended
         }),
