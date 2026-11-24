@@ -38,6 +38,7 @@ fn recording_a_clone_racing_another_writer_loses_neither_change() {
                     author: "tester",
                     hosts: None,
                     watch: None,
+                    chat: None,
                 },
                 &["widget".to_owned()],
                 &mut |line| said.push(line),
@@ -101,6 +102,7 @@ fn a_clone_for_a_sandboxed_chat_never_runs_git_against_a_host_it_may_not_reach()
             author: "tester",
             hosts: Some(&["gitlab.com".to_owned()]),
             watch: None,
+            chat: None,
         },
         &mut |line| said.push(line),
     );
@@ -147,6 +149,7 @@ fn clone_widget(root: &Path, ws: &str, hosts: Option<&[String]>) -> (u8, Vec<Say
             author: "tester",
             hosts,
             watch: None,
+            chat: None,
         },
         &mut |line| said.push(line),
     );

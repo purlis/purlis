@@ -18,6 +18,9 @@ use serde_json::json;
 
 const HOST: &str = "forge.example";
 
+/// The chat the app clones for in these tests.
+const A_CHAT: u32 = 31;
+
 /// A plane with `repos` in its inventory, each a bare repository of one commit.
 struct World {
     _plane: tempfile::TempDir,
@@ -114,6 +117,7 @@ impl World {
                         author: "tester",
                         hosts: None,
                         watch: Some(watch),
+                        chat: None,
                     },
                     &mut |line| said.push(line),
                 )
@@ -138,6 +142,7 @@ impl World {
                     author: "tester",
                     hosts: Some(&hosts),
                     watch: Some(watch),
+                    chat: Some(A_CHAT),
                 },
                 &mut |line| said.push(line),
             )
@@ -731,10 +736,12 @@ fn a_chats_clone_with_no_forge_cli_here_names_none() {
         assert!(!names_a_forge_cli(&text), "{text}");
         assert!(text.contains("widget"), "{text}");
     }
-    // Refused: where it can be cloned instead, since a chat's clone never has the sign-in.
+    // Refused: the way on is the person's own sign-in, which a chat's clone never has, and the
+    // chat is told to ask for it, never pointed at "the window" with no control.
     let text = a_chats_failure(&world, &refused, false);
     assert!(text.contains(HOST), "{text}");
-    assert!(text.contains("window"), "{text}");
+    assert!(text.contains("sign-in"), "{text}");
+    assert!(!text.contains("from the window"), "{text}");
 }
 
 #[test]
@@ -765,6 +772,7 @@ fn a_chats_clone_never_gets_the_persons_sign_in() {
         url: &url,
         forge: &forge,
         watch: None,
+        chat: None,
     };
     let exe = Path::new("/Applications/purlis.app/Contents/MacOS/purlis-app");
     let (window, chat) = as_the_window(&HostScope::for_a_test(), exe, home.path(), || {
@@ -1025,6 +1033,7 @@ fn a_clone_whose_repos_was_taken_away_before_its_claim_still_lands() {
         url: &url,
         forge: &forge,
         watch: Some(&watch),
+        chat: None,
     };
     let landed = as_the_window(
         &HostScope::for_a_test(),
@@ -1037,3 +1046,48 @@ fn a_clone_whose_repos_was_taken_away_before_its_claim_still_lands() {
 }
 
 mod real_lfs;
+
+#[test]
+fn only_the_chat_without_a_cli_arm_raises_clone_it() {
+    let world = World::holding(&["widget"]);
+    // Under the `strict` template, set explicitly (Q308).
+    let manifest = crate::names::manifest(&world.root);
+    let mut text = std::fs::read_to_string(&manifest).unwrap();
+    text.push_str("\n[policy]\ntemplate = \"strict\"\n");
+    std::fs::write(&manifest, text).unwrap();
+    crate::windowonly::telling(&world.root, std::sync::Arc::new(|| {}));
+    let refused =
+        format!("echo \"fatal: Authentication failed for 'https://{HOST}/'\" >&2; exit 128");
+
+    // The arm with a forge CLI here names `<cli> auth login`: a way out with no press.
+    let said = a_chats_failure(&world, &refused, true);
+    assert!(!said.contains("Asks"), "{said}");
+    assert_eq!(crate::windowonly::every(&world.root), []);
+
+    // The window's own clone is the window's: nothing is raised for it.
+    let off = AtomicBool::new(false);
+    let heard = |_: Stage, _: u8| {};
+    let watch = world.watching(&heard, &off, Duration::from_secs(60), Some(&refused));
+    world.clone_as_the_window(&["widget"], &watch);
+    assert_eq!(crate::windowonly::every(&world.root), []);
+
+    // The chat's clone with no CLI raises Clone it, naming where it clones and whose sign-in.
+    let said = a_chats_failure(&world, &refused, false);
+    assert!(said.contains("asked the person in Asks"), "{said}");
+    assert!(!said.contains("from the window"), "{said}");
+    let raised = crate::windowonly::every(&world.root);
+    assert_eq!(raised.len(), 1, "{raised:?}");
+    assert_eq!(raised[0].session, A_CHAT);
+    assert_eq!(
+        raised[0].control,
+        crate::windowonly::Control::CloneWithSignIn {
+            workspace: "alpha".to_owned(),
+            repo: format!("{HOST}/acme/widget"),
+        }
+    );
+    let row = raised[0].control.says();
+    for shown in [HOST, "acme", "widget", "workspaces/alpha", "your sign-in"] {
+        assert!(row.contains(shown), "{row}");
+    }
+    crate::windowonly::project_ended(&world.root);
+}

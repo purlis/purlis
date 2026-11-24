@@ -49,8 +49,8 @@ fn a_window_only_refusal_raises_one_ask_carrying_its_control() {
     });
 
     // The same chat refused twice for the same reason is one ask, and the window is told once.
-    assert!(raise(root, 4, trust_api()));
-    assert!(!raise(root, 4, trust_api()));
+    assert!(raise(root, 4, trust_api()).new);
+    assert!(!raise(root, 4, trust_api()).new);
     let raised = every(root);
     assert_eq!(raised.len(), 1, "{raised:?}");
     assert_eq!(raised[0].session, 4);
@@ -130,7 +130,7 @@ fn a_new_ask_for_a_clone_at_another_place_replaces_the_chat_s_old_one() {
 
     // The clone's remote changed: chat 4's old ask would be a dead button, so the new one
     // replaces it rather than stacking. Chat 5's stays until chat 5 is refused again.
-    assert!(raise(root, 4, moved.clone()));
+    assert!(raise(root, 4, moved.clone()).new);
 
     let left: Vec<(u32, Control)> = every(root)
         .into_iter()
@@ -185,4 +185,247 @@ fn a_window_only_refusal_is_raised_as_an_ask_as_policy_consents_runs() {
                 .all(|line| line.family == "consents" && line.rule == "window-only.ask")
         );
     }
+}
+
+#[test]
+fn raise_answers_whether_the_ask_is_new_and_whether_a_window_listens() {
+    let plane = tempfile::tempdir().unwrap();
+    let root = plane.path();
+
+    // No window listens for this project: the ask is kept, and the answer says nobody hears it.
+    assert!(!listens(root));
+    assert_eq!(
+        raise(root, 4, trust_api()),
+        Raised {
+            new: true,
+            listened: false
+        }
+    );
+
+    telling(root, Arc::new(|| {}));
+    assert!(listens(root));
+    assert_eq!(
+        raise(root, 4, trust_api()),
+        Raised {
+            new: false,
+            listened: true
+        }
+    );
+    assert_eq!(
+        raise(root, 5, trust_api()),
+        Raised {
+            new: true,
+            listened: true
+        }
+    );
+
+    // A project that ended has no listener again.
+    project_ended(root);
+    assert!(!listens(root));
+}
+
+#[test]
+fn each_new_clone_kind_has_its_label_and_says_what_its_press_does() {
+    let one = Control::OneAddress {
+        folder: "workspaces/ws/api".to_owned(),
+        fetch: "github.com/acme/api".to_owned(),
+        push: "github.com/acme/fork".to_owned(),
+        to: "github.com/acme/api".to_owned(),
+    };
+    assert_eq!(one.label(), "Use one address");
+    let said = one.says();
+    // The row shows the address it will set, and the two it found (Q4).
+    for shown in [
+        "workspaces/ws/api",
+        "github.com/acme/api",
+        "github.com/acme/fork",
+    ] {
+        assert!(said.contains(shown), "{said}");
+    }
+
+    let clone = Control::CloneWithSignIn {
+        workspace: "ws".to_owned(),
+        repo: "github.com/acme/private".to_owned(),
+    };
+    assert_eq!(clone.label(), "Clone it");
+    let said = clone.says();
+    // Host, owner, repo and the destination folder, and plainly the person's own sign-in.
+    for shown in ["github.com", "acme", "private", "workspaces/ws"] {
+        assert!(said.contains(shown), "{said}");
+    }
+    assert!(said.contains("your sign-in"), "{said}");
+}
+
+#[test]
+fn a_press_on_a_new_kind_clears_every_chat_that_waited_on_it() {
+    let plane = tempfile::tempdir().unwrap();
+    let root = plane.path();
+    let clone = Control::CloneWithSignIn {
+        workspace: "ws".to_owned(),
+        repo: "github.com/acme/private".to_owned(),
+    };
+    raise(root, 4, clone.clone());
+    raise(root, 5, clone.clone());
+    raise(root, 5, trust_api());
+
+    pressed_by_the_window(root, &clone);
+
+    let left: Vec<Control> = every(root).into_iter().map(|one| one.control).collect();
+    assert_eq!(left, [trust_api()]);
+    project_ended(root);
+}
+
+#[test]
+fn nobody_asked_says_so_and_names_the_way_out_in_words() {
+    let plane = tempfile::tempdir().unwrap();
+    let root = plane.path().join("acme");
+    let said = nobody_asked(&root, "press Use one address on the clone");
+    assert!(said.starts_with("Nobody was asked"), "{said}");
+    assert!(
+        said.contains("open purlis on acme, then press Use one address"),
+        "{said}"
+    );
+    assert!(!said.contains("asked the person in Asks"), "{said}");
+}
+
+#[test]
+fn use_one_address_sets_exactly_the_shown_address_and_fails_if_origin_changed() {
+    let plane = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let root = plane.path();
+    let clone = a_clone(root, "api", "https://github.com/acme/api.git");
+    git(
+        &clone,
+        &[
+            "remote",
+            "set-url",
+            "--push",
+            "origin",
+            "https://github.com/acme/fork.git",
+        ],
+    );
+    let shown = || Control::OneAddress {
+        folder: "workspaces/ws/api".to_owned(),
+        fetch: "github.com/acme/api".to_owned(),
+        push: "github.com/acme/fork".to_owned(),
+        to: "github.com/acme/api".to_owned(),
+    };
+    raise(root, 4, shown());
+
+    // Origin moved since the row was raised: the press fails, changes nothing, says so.
+    git(
+        &clone,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://github.com/acme/elsewhere.git",
+        ],
+    );
+    let refused = use_one_address(&HostScope::for_a_test(), home.path(), root, &shown());
+    assert!(refused.is_err(), "{refused:?}");
+    assert!(refused.unwrap_err().contains("changed since"), "said");
+    assert_eq!(
+        crate::forge::gitcredential::remote::places_now(&clone).unwrap(),
+        ["github.com/acme/elsewhere", "github.com/acme/fork"]
+    );
+    assert_eq!(every(root).len(), 1, "the ask stays");
+
+    // Origin as the row showed it: the push address is set to the one shown, and nothing else.
+    git(
+        &clone,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://github.com/acme/api.git",
+        ],
+    );
+    let set = use_one_address(&HostScope::for_a_test(), home.path(), root, &shown()).unwrap();
+    assert_eq!(set, "github.com/acme/api");
+    assert_eq!(
+        crate::forge::gitcredential::remote::places_now(&clone).unwrap(),
+        ["github.com/acme/api", "github.com/acme/api"]
+    );
+    // Setting an address is never trusting: the clone still has no record, and the chat that
+    // waited is now offered Trust this clone for the one address it has: a second press.
+    assert!(!crate::forge::gitcredential::vouch::trusted(
+        home.path(),
+        &clone
+    ));
+    let left: Vec<(u32, Control)> = every(root)
+        .into_iter()
+        .map(|one| (one.session, one.control))
+        .collect();
+    assert_eq!(
+        left,
+        [(
+            4,
+            Control::TrustClone {
+                folder: "workspaces/ws/api".to_owned(),
+                place: "github.com/acme/api".to_owned()
+            }
+        )]
+    );
+    project_ended(root);
+}
+
+#[test]
+fn use_one_address_shows_the_recorded_address_or_the_fetch_one() {
+    let plane = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let root = plane.path();
+    let clone = a_clone(root, "api", "https://github.com/acme/api.git");
+    git(
+        &clone,
+        &[
+            "remote",
+            "set-url",
+            "--push",
+            "origin",
+            "https://github.com/acme/fork.git",
+        ],
+    );
+
+    // Nothing recorded: the fetch address.
+    let shown = one_address_for(home.path(), root, "workspaces/ws/api").unwrap();
+    assert_eq!(
+        shown,
+        Control::OneAddress {
+            folder: "workspaces/ws/api".to_owned(),
+            fetch: "github.com/acme/api".to_owned(),
+            push: "github.com/acme/fork".to_owned(),
+            to: "github.com/acme/api".to_owned(),
+        }
+    );
+
+    // One recorded for the clone: that address.
+    crate::forge::gitcredential::remote::record_for_a_test(
+        home.path(),
+        &clone,
+        "github.com/acme/saved",
+    )
+    .unwrap();
+    let Control::OneAddress { to, .. } =
+        one_address_for(home.path(), root, "workspaces/ws/api").unwrap()
+    else {
+        panic!("not a Use one address");
+    };
+    assert_eq!(to, "github.com/acme/saved");
+
+    // An origin that already has one address needs no press.
+    git(
+        &clone,
+        &[
+            "remote",
+            "set-url",
+            "--push",
+            "origin",
+            "https://github.com/acme/api.git",
+        ],
+    );
+    assert_eq!(
+        one_address_for(home.path(), root, "workspaces/ws/api"),
+        None
+    );
 }

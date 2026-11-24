@@ -1138,3 +1138,61 @@ fn a_chats_save_in_a_project_that_signs_every_save_is_committed_unsigned_and_say
     let commit = crate::testgit::run(&root, &["cat-file", "commit", "HEAD"]).out;
     assert!(!commit.contains("\ngpgsig "), "{commit}");
 }
+
+#[test]
+fn a_push_that_did_not_go_for_a_split_origin_raises_use_one_address_for_the_chat() {
+    let (_dir, root) = tree();
+    let config = tempfile::tempdir().unwrap();
+    // Under the `strict` template, set explicitly (Q308).
+    std::fs::write(
+        crate::names::manifest(&root),
+        "[policy]\ntemplate = \"strict\"\n",
+    )
+    .unwrap();
+    let clone = crate::repofolder::folder(&root, "alpha", "widget").unwrap();
+    std::fs::create_dir_all(&clone).unwrap();
+    for args in [
+        &["init", "-q"][..],
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/acme/widget.git",
+        ][..],
+        &[
+            "remote",
+            "set-url",
+            "--push",
+            "origin",
+            "https://github.com/acme/fork.git",
+        ][..],
+    ] {
+        let mut c = std::process::Command::new("git");
+        c.arg("-C").arg(&clone).args(args);
+        assert!(crate::forklock::output(&mut c).unwrap().status.success());
+    }
+    let push = GitWork::WorktreePush {
+        repo: "widget".to_owned(),
+        piece: "p".to_owned(),
+        lease: false,
+    };
+
+    // Work that does not push says nothing; one that does is told of the ask, not "the window".
+    let update = GitWork::CloneUpdate {
+        repo: "widget".to_owned(),
+        step: crate::hookwire::UpdateStep::Start { base: None },
+    };
+    assert_eq!(
+        split_origin_asked(&root, config.path(), 4, "alpha", &update),
+        None
+    );
+    crate::windowonly::telling(&root, std::sync::Arc::new(|| {}));
+    let said = split_origin_asked(&root, config.path(), 4, "alpha", &push).unwrap();
+    assert!(said.contains("asked the person in Asks"), "{said}");
+    assert!(said.contains("Use one address"), "{said}");
+    let raised = crate::windowonly::every(&root);
+    assert_eq!(raised.len(), 1, "{raised:?}");
+    assert_eq!(raised[0].session, 4);
+    assert_eq!(raised[0].control.label(), "Use one address");
+    crate::windowonly::project_ended(&root);
+}

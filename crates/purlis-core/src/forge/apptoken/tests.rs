@@ -816,6 +816,8 @@ fn a_token_mint_refused_for_an_unrecorded_clone_raises_trust_this_clone() {
         })
     };
 
+    // A window listens for the project, so the ask is seen (rule H).
+    crate::windowonly::telling(root, std::sync::Arc::new(|| {}));
     // Refused, twice: one ask, carrying Trust this clone for that clone at its remote.
     let said = mint().unwrap_err();
     mint().unwrap_err();
@@ -1358,4 +1360,181 @@ fn a_422_about_permissions_says_none_was_widened_and_another_422_does_not() {
     assert!(!super::permission_refusal(&reply(
         "Validation Failed: repository not accessible (HTTP 422)"
     )));
+}
+
+/// Under the `strict` template, set explicitly (Q308).
+fn strict(root: &Path) {
+    std::fs::write(
+        crate::names::manifest(root),
+        "[policy]\ntemplate = \"strict\"\n",
+    )
+    .unwrap();
+}
+
+/// The chat `chat` of the project at `root`, standing at `here`, with `config` as its config home.
+fn standing<'a>(
+    root: &'a Path,
+    ws: &'a Path,
+    config: &'a Path,
+    chat: u32,
+    here: Option<&'a Path>,
+) -> For<'a> {
+    For {
+        root,
+        chat,
+        folder: Some(ws),
+        here,
+        writes: &[],
+        started: None,
+        on_a_runner: false,
+        config_root: Some(config),
+        ends_seen: None,
+    }
+}
+
+#[test]
+fn the_mint_says_asked_in_asks_only_where_a_window_listens() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    strict(root);
+    a_clone(root, "api", "https://github.com/acme/api.git");
+    let config = tempfile::tempdir().unwrap();
+    let ws = root.join("workspaces/ws");
+    let gh = minted_gh();
+    let blocks = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    crate::windowonly::blocking(root, {
+        let blocks = std::sync::Arc::clone(&blocks);
+        std::sync::Arc::new(move |chat, stop| blocks.lock().unwrap().push((chat, stop)))
+    });
+    let mint = |chat| {
+        token_for(
+            &standing(root, &ws, config.path(), chat, None),
+            &gh,
+            &|| Err("the key is read only to mint".to_owned()),
+        )
+        .unwrap_err()
+    };
+
+    // No window listens: the chat is told nobody was asked, with the way out in words, and one
+    // block is written for it.
+    let said = mint(5);
+    assert!(said.contains("Nobody was asked"), "{said}");
+    assert!(said.contains("then press Trust this clone"), "{said}");
+    assert!(!said.contains("asked the person in Asks"), "{said}");
+    let written = blocks.lock().unwrap().len();
+    assert_eq!(written, 1);
+    assert!(matches!(
+        &blocks.lock().unwrap()[0],
+        (5, crate::eventlog::stops::Stop::Block(block))
+            if block.source == crate::eventlog::stops::Source::Guard
+    ));
+
+    // A window listens: the words are the ones that hold.
+    crate::windowonly::telling(root, std::sync::Arc::new(|| {}));
+    let said = mint(5);
+    assert!(said.contains("asked the person in Asks"), "{said}");
+    assert!(!said.contains("Nobody was asked"), "{said}");
+    assert_eq!(
+        blocks.lock().unwrap().len(),
+        written,
+        "no block where asked"
+    );
+    crate::windowonly::project_ended(root);
+}
+
+#[test]
+fn a_run_in_an_unrecorded_clone_beside_a_recorded_one_is_refused_and_raises_trust_this_clone() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    strict(root);
+    let recorded = a_clone(root, "api", "https://github.com/acme/api.git");
+    let unrecorded = a_clone(root, "web", "https://github.com/acme/web.git");
+    let config = tempfile::tempdir().unwrap();
+    crate::forge::gitcredential::remote::record_for_a_test(
+        config.path(),
+        &recorded,
+        "github.com/acme/api",
+    )
+    .unwrap();
+    let ws = root.join("workspaces/ws");
+    let gh = minted_gh();
+    crate::windowonly::telling(root, std::sync::Arc::new(|| {}));
+    let mint = |here: &Path| {
+        token_for(
+            &standing(root, &ws, config.path(), 8, Some(here)),
+            &gh,
+            &|| Err("the key is read only to mint".to_owned()),
+        )
+        .unwrap_err()
+    };
+
+    // A run elsewhere mints as today: it reaches the key, and raises nothing.
+    assert_eq!(mint(&recorded), "the key is read only to mint");
+    assert_eq!(mint(&ws), "the key is read only to mint");
+    assert_eq!(crate::windowonly::every(root), []);
+
+    // A run inside the unrecorded clone is refused, with the words of the ask raised for it.
+    let said = mint(&unrecorded);
+    assert!(said.contains("workspaces/ws/web"), "{said}");
+    assert!(said.contains("asked the person in Asks"), "{said}");
+    let raised = crate::windowonly::every(root);
+    assert_eq!(raised.len(), 1, "{raised:?}");
+    assert_eq!(
+        raised[0].control,
+        crate::windowonly::Control::TrustClone {
+            folder: "workspaces/ws/web".to_owned(),
+            place: "github.com/acme/web".to_owned()
+        }
+    );
+    crate::windowonly::project_ended(root);
+}
+
+#[test]
+fn a_multi_address_origin_raises_use_one_address_and_never_answers_no_recorded_clone() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    strict(root);
+    let clone = a_clone(root, "api", "https://github.com/acme/api.git");
+    git(
+        &clone,
+        &[
+            "remote",
+            "set-url",
+            "--push",
+            "origin",
+            "https://github.com/acme/fork.git",
+        ],
+    );
+    let config = tempfile::tempdir().unwrap();
+    let ws = root.join("workspaces/ws");
+    let gh = minted_gh();
+    crate::windowonly::telling(root, std::sync::Arc::new(|| {}));
+    let said = token_for(&standing(root, &ws, config.path(), 9, None), &gh, &|| {
+        Err("the key is read only to mint".to_owned())
+    })
+    .unwrap_err();
+    assert_ne!(said, super::NO_RECORDED_CLONE);
+    assert!(said.contains("Use one address"), "{said}");
+    assert!(said.contains("second press"), "{said}");
+    let raised = crate::windowonly::every(root);
+    assert_eq!(raised.len(), 1, "{raised:?}");
+    assert_eq!(raised[0].control.label(), "Use one address");
+
+    // The press sets the address; the clone is still not trusted, and the chat is now offered
+    // Trust this clone, a second press.
+    crate::windowonly::use_one_address(
+        &crate::forge::route::HostScope::for_a_test(),
+        config.path(),
+        root,
+        &raised[0].control,
+    )
+    .unwrap();
+    assert!(!crate::forge::gitcredential::vouch::trusted(
+        config.path(),
+        &clone
+    ));
+    let raised = crate::windowonly::every(root);
+    assert_eq!(raised.len(), 1, "{raised:?}");
+    assert_eq!(raised[0].control.label(), "Trust this clone");
+    crate::windowonly::project_ended(root);
 }

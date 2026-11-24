@@ -305,6 +305,8 @@ export const DECISIONS: ReadonlySet<Shown["source"]> = new Set<Shown["source"]>(
   // A window-only refusal's control, and the clones' one ask (T1-42, R-330, R-337): the press
   // is on the row, as Q181 has it.
   "trust-clone",
+  "one-address",
+  "clone-for-chat",
   "trust-clones",
 ]);
 
@@ -337,6 +339,8 @@ const QUESTION: Partial<Record<Shown["source"], string>> = {
   budget: "Let it go on past its budget?",
   looping: "Let it go on?",
   "trust-clone": "Trust this clone?",
+  "one-address": "Give this clone's origin one address?",
+  "clone-for-chat": "Clone it with your sign-in?",
   "trust-clones": "Trust these clones?",
 };
 
@@ -551,6 +555,8 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   looping: "Paused, as it may be looping",
   "merge-hold": "Asks you to merge a request",
   "trust-clone": "Asks you to trust a clone",
+  "one-address": "Asks you to give a clone's origin one address",
+  "clone-for-chat": "Asks to clone a private repo with your sign-in",
   "trust-clones": "Asks you to trust clones purlis did not clone",
 };
 

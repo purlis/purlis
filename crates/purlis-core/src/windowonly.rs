@@ -44,6 +44,29 @@ pub enum Control {
         /// `<host>/<owner>/<repo>`, the address it is trusted at.
         place: String,
     },
+    /// **Use one address** on a clone whose origin fetches from one address and pushes to
+    /// another (A1), or names several (A5): the window sets origin's push URL to `to`, the
+    /// address purlis recorded for the clone or, where it recorded none, its fetch address. The
+    /// row shows `to` before the press (Q4), and the press sets exactly it, and only while
+    /// origin is still as the row showed it. Trusting the clone stays a second press.
+    OneAddress {
+        /// Its folder, relative to the project.
+        folder: String,
+        /// The address origin fetches from when the row was raised, `<host>/<owner>/<repo>`.
+        fetch: String,
+        /// The address origin pushes to then.
+        push: String,
+        /// The address the press sets.
+        to: String,
+    },
+    /// **Clone it** (A2): the window clones `repo` into `workspace` with the person's own
+    /// sign-in, as its own clone, for a chat whose clone of a private repo failed for want of a
+    /// forge CLI.
+    CloneWithSignIn {
+        workspace: String,
+        /// `<host>/<owner>/<repo>`.
+        repo: String,
+    },
 }
 
 impl Control {
@@ -51,6 +74,19 @@ impl Control {
     pub fn label(&self) -> &'static str {
         match self {
             Self::TrustClone { .. } => TRUST_THIS_CLONE,
+            Self::OneAddress { .. } => USE_ONE_ADDRESS,
+            Self::CloneWithSignIn { .. } => CLONE_IT,
+        }
+    }
+
+    /// What identifies the ask a chat's newer one of the same kind replaces: the folder of a
+    /// clone's asks (its remote may have changed since), the workspace and repo of a clone-it.
+    fn slot(&self) -> (&'static str, &str) {
+        match self {
+            Self::TrustClone { folder, .. } | Self::OneAddress { folder, .. } => {
+                (self.label(), folder)
+            }
+            Self::CloneWithSignIn { repo, .. } => (self.label(), repo),
         }
     }
 
@@ -61,9 +97,34 @@ impl Control {
                 "{TRUST_SO_CHATS_CAN_USE_GITHUB}: {folder} was not cloned by purlis, and its \
                  remote is {place}. Trust it only if you made this clone yourself."
             ),
+            Self::OneAddress {
+                folder,
+                fetch,
+                push,
+                to,
+            } => format!(
+                "Give origin one address: the remote of {folder} fetches from {fetch} and pushes                  to {push}, so purlis will not sign in for it. Pressing sets its push address                  to {to}, and nothing else. Trusting the clone is a separate press."
+            ),
+            Self::CloneWithSignIn { workspace, repo } => {
+                let mut parts = repo.splitn(3, '/');
+                let (host, owner, name) = (
+                    parts.next().unwrap_or_default(),
+                    parts.next().unwrap_or_default(),
+                    parts.next().unwrap_or_default(),
+                );
+                format!(
+                    "Clone {name} for a chat: it is {owner}'s repository on {host}, and no forge                      command line is signed in here. Pressing clones it into workspaces/{workspace}                      with your sign-in, which purlis never gives a chat."
+                )
+            }
         }
     }
 }
+
+/// The label of the control that gives a clone's origin one address.
+pub const USE_ONE_ADDRESS: &str = "Use one address";
+
+/// The label of the control that clones a repo for a chat with the person's sign-in.
+pub const CLONE_IT: &str = "Clone it";
 
 /// The label of the control that trusts a clone made outside purlis.
 pub const TRUST_THIS_CLONE: &str = "Trust this clone";
@@ -128,19 +189,108 @@ pub fn asks(root: &Path) -> bool {
     .is_some()
 }
 
+/// **What [`raise`] answers** (Q6, rule H): whether the ask is new, and whether a window listens
+/// for the project, so that the person will see it. A refusal says "asked the person in Asks"
+/// only where `listened`, and says nobody was asked otherwise ([`nobody_asked`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Raised {
+    /// The chat had no such ask yet; the window was told.
+    pub new: bool,
+    /// A window listens for the project's asks ([`listens`]).
+    pub listened: bool,
+}
+
+/// **Whether a window listens for the asks of the project at `root`** ([`telling`]): the app
+/// that holds the project. Where none does, an ask raised is kept but nobody sees it.
+pub fn listens(root: &Path) -> bool {
+    TOLD.lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .any(|(at, _)| at == root)
+}
+
+/// **What a chat is told where no window listens for its project** (Q6, rule H), in place of
+/// "asked the person in Asks": plainly that nobody was asked, with the way out in words,
+/// `then` being what the person does once purlis is open on the project ("press Use one address
+/// on the clone").
+pub fn nobody_asked(root: &Path, then: &str) -> String {
+    let project = root.file_name().map_or_else(
+        || "this project".to_owned(),
+        |n| n.to_string_lossy().into_owned(),
+    );
+    format!(
+        "Nobody was asked: no purlis window is open on {project}, so open purlis on {project}, \
+         then {then}"
+    )
+}
+
+/// Where a block is written for a chat of a project ([`blocking`]).
+type Blocks = Arc<dyn Fn(u32, crate::eventlog::stops::Stop) + Send + Sync>;
+
+/// Who writes a block for a chat, by project: the app's Chat log writer.
+static BLOCKS: Mutex<Vec<(PathBuf, Blocks)>> = Mutex::new(Vec::new());
+
+/// From now on, `write` writes the blocks of project `root`'s chats ([`nobody_asked_block`]): one
+/// writer per project, the last one set.
+pub fn blocking(root: &Path, write: Blocks) {
+    let mut held = BLOCKS.lock().unwrap_or_else(|e| e.into_inner());
+    held.retain(|(at, _)| at != root);
+    held.push((root.to_path_buf(), write));
+}
+
+/// The guard arm a "nobody was asked" block names.
+pub const NOBODY_ASKED_ARM: &str = "no-window";
+
+/// **Writes the block of a refusal nobody was asked about** (Q6): chat `session` of the project
+/// at `root` was refused and no window listens, so the stop is written to its Chat log, source
+/// Guard. Answers whether a writer took it.
+pub fn nobody_asked_block(root: &Path, session: u32) -> bool {
+    let write = BLOCKS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .find(|(at, _)| at == root)
+        .map(|(_, write)| Arc::clone(write));
+    let Some(write) = write else {
+        return false;
+    };
+    use crate::eventlog::stops::{Block, Source, Stop, Target};
+    write(
+        session,
+        Stop::Block(Block {
+            tool: "purlis".to_owned(),
+            source: Source::Guard,
+            qualifier: None,
+            target: Target::guard_arm(NOBODY_ASKED_ARM).ok(),
+            args: None,
+        }),
+    );
+    true
+}
+
+/// **What a chat is told of a refusal it raised `control` for** (rule H): the `asked` words where
+/// a window listens, with `then` its way out in words; otherwise that nobody was asked, with the
+/// same way out, and a block written. One place for every refusal that raises an ask.
+pub fn told_of(root: &Path, session: u32, raised: Raised, then: &str) -> String {
+    if raised.listened {
+        return format!("purlis asked the person in Asks. {then}");
+    }
+    nobody_asked_block(root, session);
+    nobody_asked(root, then)
+}
+
 /// **Raises chat `session`'s refusal in the project at `root`, whose way out is `control`**:
-/// one ask per chat and control. A chat's earlier Trust this clone for the same folder at
-/// another place goes: its remote changed, so that ask's press would trust nothing, and the new
-/// ask replaces it rather than stacking. Answers whether it is new.
-pub fn raise(root: &Path, session: u32, control: Control) -> bool {
+/// one ask per chat and control. A chat's earlier ask of the same kind for the same clone at
+/// another place goes: its remote changed, so that ask's press would act on nothing, and the new
+/// ask replaces it rather than stacking. Answers whether it is new and whether a window listens
+/// ([`Raised`]).
+pub fn raise(root: &Path, session: u32, control: Control) -> Raised {
     let new = {
         let mut raised = RAISED.lock().unwrap_or_else(|e| e.into_inner());
-        let Control::TrustClone { folder, .. } = &control;
         raised.retain(|one| {
-            let Control::TrustClone { folder: theirs, .. } = &one.control;
             !(one.root == root
                 && one.session == session
-                && theirs == folder
+                && one.control.slot() == control.slot()
                 && one.control != control)
         });
         let already = raised
@@ -159,7 +309,10 @@ pub fn raise(root: &Path, session: u32, control: Control) -> bool {
     if new {
         tell(root);
     }
-    new
+    Raised {
+        new,
+        listened: listens(root),
+    }
 }
 
 /// **Every refusal raised in the project at `root`** and not yet cleared, oldest first.
@@ -171,6 +324,12 @@ pub fn every(root: &Path) -> Vec<Refusal> {
         .filter(|one| one.root == root)
         .cloned()
         .collect()
+}
+
+/// **The person pressed `control` in the project at `root`, and what it asks was done** (Clone
+/// it's press, made by the window): every chat's refusal it clears goes.
+pub fn pressed_by_the_window(root: &Path, control: &Control) {
+    pressed(root, control);
 }
 
 /// **The person pressed `control` in the project at `root`**: every chat's refusal it clears
@@ -214,6 +373,10 @@ pub fn project_ended(root: &Path) {
     TOLD.lock()
         .unwrap_or_else(|e| e.into_inner())
         .retain(|(at, _)| at != root);
+    BLOCKS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|(at, _)| at != root);
 }
 
 /// From now on, `told` is told each time project `root`'s refusals move: one listener per
@@ -252,6 +415,100 @@ pub fn trust_this_clone(
     );
     clone_trusted(root, folder);
     Ok(trusted)
+}
+
+/// **The Use one address the clone at `folder` (relative to the project at `root`) needs**, as
+/// its row would show it (Q4): `None` where its origin names one address, or git cannot say.
+/// `to` is the address purlis recorded for the clone in the config home at `config_root`, or its
+/// fetch address where it recorded none. Read from the clone now, never from a chat's words.
+pub fn one_address_for(config_root: &Path, root: &Path, folder: &str) -> Option<Control> {
+    let clone = root.join(folder);
+    let places = crate::forge::gitcredential::remote::places_now(&clone)?;
+    let (fetch, push) = (places.first()?.clone(), places.last()?.clone());
+    if places.iter().all(|place| *place == fetch) {
+        return None;
+    }
+    let to = crate::forge::gitcredential::vouch::recorded_remote(config_root, &clone)
+        .unwrap_or_else(|| fetch.clone());
+    Some(Control::OneAddress {
+        folder: folder.to_owned(),
+        fetch,
+        push,
+        to,
+    })
+}
+
+/// **The person's Use one address**: sets the push URL of the origin of the clone at
+/// `shown.folder` to exactly `shown.to`, the address its row showed, and clears every chat's ask
+/// for it. Answers the address set. Refused, with a sentence, nothing changed and the ask kept,
+/// where origin is no longer as the row showed it (`fetch` and `push`), or `to` is neither the
+/// address recorded for the clone nor its fetch address.
+///
+/// **Setting an address is never trusting** (Q4, Q181, Q257): the clone is not recorded here. Where
+/// it has no record, each chat that waited on this press is given Trust this clone for the one
+/// address it now has, a second press.
+pub fn use_one_address(
+    _host: &HostScope,
+    config_root: &Path,
+    root: &Path,
+    shown: &Control,
+) -> Result<String, String> {
+    let Control::OneAddress {
+        folder,
+        fetch,
+        push,
+        to,
+    } = shown
+    else {
+        return Err(format!("{} is not a Use one address", shown.label()));
+    };
+    let clone = root.join(folder);
+    let changed = || {
+        format!(
+            "The remote of {folder} changed since the window showed it, so purlis changed \
+             nothing. Look at it again and choose"
+        )
+    };
+    let places = crate::forge::gitcredential::remote::places_now(&clone).ok_or_else(changed)?;
+    let as_shown = places.first() == Some(fetch)
+        && places.last() == Some(push)
+        && places.iter().all(|place| place == fetch || place == push);
+    let recorded = crate::forge::gitcredential::vouch::recorded_remote(config_root, &clone);
+    if !as_shown || !(to == fetch || recorded.as_deref() == Some(to)) {
+        return Err(changed());
+    }
+    let url = format!("https://{to}");
+    let set = crate::worktree::git::run(
+        &clone,
+        &["remote", "set-url", "--push", "origin", &url],
+        crate::worktree::git::READ,
+    )
+    .map_err(|why| format!("purlis could not start git: {why}"))?;
+    if !set.ok() {
+        return Err(format!(
+            "git would not set the push address of {folder}: {}",
+            set.err.trim()
+        ));
+    }
+    let waiting: Vec<u32> = every(root)
+        .into_iter()
+        .filter(|one| one.control == *shown)
+        .map(|one| one.session)
+        .collect();
+    pressed(root, shown);
+    if !crate::forge::gitcredential::vouch::trusted(config_root, &clone) {
+        for session in waiting {
+            raise(
+                root,
+                session,
+                Control::TrustClone {
+                    folder: folder.clone(),
+                    place: to.clone(),
+                },
+            );
+        }
+    }
+    Ok(to.clone())
 }
 
 /// The label of the one ask for the project's clones purlis has no record of (R-336).

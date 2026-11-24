@@ -311,7 +311,6 @@ const FROM_THE_WINDOW: ReadonlyArray<readonly [path: string, starts: string, why
     NO_ASK_YET,
   ],
   ["crates/purlis-core/src/dispatchguard.rs", "this call runs `purlis worktree", NO_ASK_YET],
-  ["crates/purlis-core/src/forge/gitcredential.rs", "this repository's remote pushes", NO_ASK_YET],
   ["crates/purlis-core/src/hoststart.rs", "this chat's profile hands its program", NO_ASK_YET],
   ["crates/purlis-core/src/hoststart.rs", "this session host composes", NO_ASK_YET],
   ["crates/purlis-core/src/mergehold.rs", "{OPENS} `purlis change land`", NO_ASK_YET],
@@ -319,11 +318,6 @@ const FROM_THE_WINDOW: ReadonlyArray<readonly [path: string, starts: string, why
   ["crates/purlis-core/src/piececmd.rs", "{why}. Nothing was removed", NO_ASK_YET],
   ["crates/purlis-core/src/planegit/bringin.rs", "{target} comes in from the window", NO_ASK_YET],
   ["crates/purlis-core/src/planegit/prsave.rs", "{request} merged, and {target} moves", NO_ASK_YET],
-  [
-    "crates/purlis-core/src/repocmd/clone/landing.rs",
-    "{name}: {host} refused this clone",
-    NO_ASK_YET,
-  ],
 ];
 
 /** The entries of {@link FROM_THE_WINDOW} that hold `one`, a `<path>: <message>`. */

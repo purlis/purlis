@@ -181,6 +181,7 @@ pub fn create(request: &Request, say: Sink) -> u8 {
                 author: &author,
                 hosts: request.hosts,
                 watch: None,
+                chat: None,
             },
             say,
         );

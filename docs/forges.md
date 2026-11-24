@@ -36,6 +36,24 @@ A chat reaches the repos **you cloned from the window**, or that you told purlis
 gives it**. A repo renamed away and replaced under its old name by another one has another number,
 so it is not served. A clone made from your own terminal is outside the list until you trust it.
 
+## When a chat is refused for a clone or a remote
+
+Where a chat is stopped by something only your press can change, Asks shows a row with that
+press, and the chat is told it was asked. Nothing is trusted by a side effect.
+
+| The chat was stopped by | The row | What the press does |
+| --- | --- | --- |
+| A clone whose origin fetches from one address and pushes to another, or names several | **Use one address** | Sets origin's push address to the address purlis recorded for the clone, or to its fetch address where it recorded none. The row shows that address first, and the press sets exactly it. If origin changed since the row was raised, the press fails and changes nothing. It does not trust the clone: **Trust this clone** is a second row, raised once it has one address. |
+| A private repo its clone could not reach, on a machine with no forge command line | **Clone it** | Clones it into the chat's workspace with **your** sign-in, as the window's own clone. The row shows the host, owner, repo and folder, and says it uses your sign-in. |
+| A GitHub App token for a run inside a clone purlis has no record of, while another clone is recorded | **Trust this clone** | Records that clone. A run elsewhere mints as before. |
+
+**With no window open on the project, nobody can be asked.** The chat is then told so plainly
+("Nobody was asked … open purlis on the project, then press …"), and a block is written to its
+Chat log. "Asked the person in Asks" is said only where a window listens.
+
+Use one address and Clone it use your sign-in, so they belong to the `vaults` family: `off`
+turns the check off, and `log` is never available for them.
+
 ## What a chat can do
 
 In those repos, as you:

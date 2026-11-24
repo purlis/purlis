@@ -4176,6 +4176,16 @@ impl Planes {
                 }
             })
         });
+        // A refusal nobody was asked about is a block in the chat's Chat log (Q6, rule H): the
+        // same writer as every other block. Weak for the handoff's reason.
+        purlis_core::windowonly::blocking(held.root(), {
+            let weak = Arc::downgrade(&held);
+            Arc::new(move |chat, stop| {
+                if let Some(strong) = weak.upgrade() {
+                    let _ = strong.hooks.write_stop(chat, stop);
+                }
+            })
+        });
         // Every sandbox block is written here, one road (Q254): a held connection a chat
         // stopped waiting on (R-290, Q154; a chat's next tool call is when it stops waiting),
         // every other refusal once its ask leaves, and one never asked. Where an ask left, the

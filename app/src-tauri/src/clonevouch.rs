@@ -128,3 +128,75 @@ pub async fn vouch_clone(
     .await
     .map_err(|err| format!("trusting the clone did not finish: {err}"))?
 }
+
+/// **The person's Use one address** (A1, A5; Q4): sets the push address of the clone at `folder`
+/// (relative to the project) to `to`, the address its row showed, and only while its origin still
+/// fetches from `fetch` and pushes to `push`, as the row showed. Answers the address set, or why
+/// nothing was changed. It trusts nothing: the chat that waited is offered Trust this clone next,
+/// a second press.
+///
+/// Window only (`WINDOW_ONLY`): the push address decides where the person's sign-in is sent.
+#[tauri::command]
+#[specta::specta]
+pub async fn use_one_address(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    folder: String,
+    fetch: String,
+    push: String,
+    to: String,
+) -> Result<String, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        let scope = HostScope::claim()
+            .ok_or_else(|| "An address is set from the window alone.".to_owned())?;
+        let config_root = purlis_core::machine::config_root().ok_or_else(|| {
+            "purlis found no home directory its record of clones is in".to_owned()
+        })?;
+        purlis_core::windowonly::use_one_address(
+            &scope,
+            &config_root,
+            &root,
+            &purlis_core::windowonly::Control::OneAddress {
+                folder,
+                fetch,
+                push,
+                to,
+            },
+        )
+    })
+    .await
+    .map_err(|err| format!("setting the address did not finish: {err}"))?
+}
+
+/// **The person's Clone it** (A2): clones `repo` (`<host>/<owner>/<repo>`, as the ask showed it)
+/// into `workspace` with their own sign-in, as the window's own clone, which records it. Answers
+/// what the clone said, or why it did not land. The ask is cleared for every chat that waited
+/// on it once the clone is made.
+///
+/// Window only (`WINDOW_ONLY`): it releases the person's sign-in.
+#[tauri::command]
+#[specta::specta]
+pub async fn clone_with_sign_in(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    repo: String,
+) -> Result<String, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        HostScope::claim()
+            .ok_or_else(|| "A clone uses your sign-in from the window alone.".to_owned())?;
+        let control = purlis_core::windowonly::Control::CloneWithSignIn {
+            workspace: workspace.clone(),
+            repo: repo.clone(),
+        };
+        // The inventory names a repo by the last part of its address.
+        let name = repo.rsplit('/').next().unwrap_or_default().to_owned();
+        crate::workspaces::clone_for_the_person(&root, &workspace, &name)?;
+        purlis_core::windowonly::pressed_by_the_window(&root, &control);
+        Ok(format!("{repo} was cloned into {workspace}"))
+    })
+    .await
+    .map_err(|err| format!("the clone did not finish: {err}"))?
+}
