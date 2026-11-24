@@ -412,8 +412,12 @@ jobs:
           path: ${{ runner.temp }}/rust-tests
       # One word list for every `cargo nextest run` of this job: each unpacks the archive over
       # `target/` again (`--extract-overwrite`), and runs only what its `-E` says.
+      # `target/tmp` is the `CARGO_TARGET_TMPDIR` each test binary was compiled with, and an archive
+      # does not carry it: without it every test that makes a folder there fails (NotFound).
       - name: The archive's flags, for the runs below
-        run: echo "ARCHIVE_RUN=--archive-file $RUNNER_TEMP/rust-tests/purlis-tests.tar.zst --extract-to . --extract-overwrite --workspace-remap ." >> "$GITHUB_ENV"
+        run: |
+          mkdir -p target/tmp
+          echo "ARCHIVE_RUN=--archive-file $RUNNER_TEMP/rust-tests/purlis-tests.tar.zst --extract-to . --extract-overwrite --workspace-remap ." >> "$GITHUB_ENV"
       # **The real harnesses' steps run before the suite, on the archive above, not after it** (Q324).
       # (Nothing here compiles the workspace any more, so that rebuild cannot happen from a
       # `cargo nextest run`; the order stays, since it is the one these steps were measured in.)
