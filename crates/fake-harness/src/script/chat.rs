@@ -547,6 +547,14 @@ impl Chat {
             },
             agent,
         );
+        // Esc while a hook was held ended it: the call never ran. OpenCode's abort is heard as
+        // the call's own (1.19.5: Stop, the aborted call's PostToolUse, then Stop again).
+        if self.interrupted.load(Ordering::SeqCst) {
+            if self.dialect == Dialect::Opencode {
+                self.after(&checked, Outcome::Interrupted, agent);
+            }
+            return None;
+        }
         if let Some(refusal) = self.refusal(&fired, "PreToolUse") {
             let text = self.frame_refusal(&checked, &refusal);
             self.transcript.tool_result(&ToolResult {
@@ -875,6 +883,7 @@ impl Chat {
                             payload,
                             env,
                             &self.cwd,
+                            &|| false,
                         )
                     })
                 })
@@ -991,10 +1000,7 @@ impl Chat {
                 break Some(status.code().unwrap_or(-1));
             }
             if self.esc_pressed() {
-                let _ = Command::new("kill")
-                    .args(["-9", &format!("-{}", child.id())])
-                    .stderr(Stdio::null())
-                    .status();
+                hooks::kill_group(child.id());
                 let _ = child.kill();
                 let _ = child.wait();
                 break None;
@@ -1602,7 +1608,9 @@ impl Chat {
             Dialect::Codex => Spawn::Shell(shell_program()),
             Dialect::Claude => Spawn::Shell("/bin/sh"),
         };
-        hooks::run_all(&routes, spawn, &payload, &env, &self.cwd)
+        hooks::run_all(&routes, spawn, &payload, &env, &self.cwd, &|| {
+            self.esc_pressed()
+        })
     }
 
     fn transcript_path(&self) -> PathBuf {

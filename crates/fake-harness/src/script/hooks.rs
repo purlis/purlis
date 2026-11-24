@@ -9,6 +9,7 @@
 use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -37,23 +38,33 @@ pub enum Spawn<'a> {
 }
 
 /// Each of `routes` run at once, each with `payload` on its standard input, answered in the
-/// order armed.
+/// order armed. Where `interrupted` turns true (the person pressed Esc) the hooks still running
+/// are ended with their groups, as the harnesses end them, and the caller goes on.
 pub fn run_all(
     routes: &[&Route],
     spawn: Spawn<'_>,
     payload: &Value,
     env: &[(String, String)],
     cwd: &Path,
+    interrupted: &dyn Fn() -> bool,
 ) -> Vec<Fired> {
+    let cancel = AtomicBool::new(false);
     std::thread::scope(|scope| {
         let running: Vec<_> = routes
             .iter()
             .map(|route| {
                 let started = start(route, spawn, payload, env, cwd);
+                let cancel = &cancel;
                 // Started in the order armed: each process is begun before the next.
-                scope.spawn(move || finish(route, started))
+                scope.spawn(move || finish(route, started, cancel))
             })
             .collect();
+        while !running.iter().all(|r| r.is_finished()) {
+            if !cancel.load(Ordering::SeqCst) && interrupted() {
+                cancel.store(true, Ordering::SeqCst);
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
         running
             .into_iter()
             .map(|r| r.join().unwrap_or_else(|_| panicked()))
@@ -113,7 +124,7 @@ fn start(
     Ok(child)
 }
 
-fn finish(route: &Route, started: Started) -> Fired {
+fn finish(route: &Route, started: Started, cancel: &AtomicBool) -> Fired {
     let mut fired = Fired {
         word: route.word.clone(),
         event: route.event.clone(),
@@ -153,7 +164,7 @@ fn finish(route: &Route, started: Started) -> Fired {
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
-            Ok(None) if Instant::now() >= deadline => break None,
+            Ok(None) if cancel.load(Ordering::SeqCst) || Instant::now() >= deadline => break None,
             Ok(None) => std::thread::sleep(Duration::from_millis(5)),
             Err(_) => break None,
         }
@@ -165,13 +176,17 @@ fn finish(route: &Route, started: Started) -> Fired {
             fired.stderr = err.join().unwrap_or_default();
         }
         None => {
-            // Past its timeout: the hook and whatever it started are ended, and what it wrote
-            // is not read, as the harness reads nothing of a hook it cut off.
+            // Past its timeout, or interrupted: the hook and whatever it started are ended, and
+            // what it wrote is not read, as the harness reads nothing of a hook it cut off.
             super::trace(format_args!(
-                "hook {} ({}) is past its {} s: ending its group {}",
+                "hook {} ({}) is {}: ending its group {}",
                 route.word,
                 route.event,
-                route.timeout,
+                if cancel.load(Ordering::SeqCst) {
+                    "interrupted".to_owned()
+                } else {
+                    format!("past its {} s", route.timeout)
+                },
                 child.id()
             ));
             kill_group(child.id());
@@ -187,7 +202,7 @@ fn finish(route: &Route, started: Started) -> Fired {
 /// Ends the hook's process group (it leads its own, `process_group(0)` in [`start`]) in this
 /// process: no external `kill` to find on the `PATH`, to start under the wrap, or to parse
 /// `-9 -<pid>` (the shell tool's path signals in-process for the same reason, `chat.rs`).
-fn kill_group(pid: u32) {
+pub(super) fn kill_group(pid: u32) {
     if let Some(leader) = i32::try_from(pid)
         .ok()
         .and_then(rustix::process::Pid::from_raw)
@@ -294,6 +309,7 @@ mod tests {
             &serde_json::json!({}),
             &[],
             dir.path(),
+            &|| false,
         );
         assert_eq!(fired.len(), 1);
         assert_eq!(fired[0].exit, None, "a cut-off hook has no exit");
@@ -313,5 +329,48 @@ mod tests {
             rustix::process::test_kill_process(pid).is_err()
         });
         assert!(gone, "what the hook started is still running");
+    }
+
+    fn alive(pid: i32) -> bool {
+        let pid = rustix::process::Pid::from_raw(pid).expect("a pid");
+        rustix::process::test_kill_process(pid).is_ok()
+    }
+
+    #[test]
+    fn ending_a_hooks_group_ends_only_that_group_never_the_callers() {
+        use std::os::unix::process::CommandExt;
+        // A sibling in this process's own group, and a leader of a group of its own.
+        let mut sibling = Command::new("sleep").arg("60").spawn().expect("a sibling");
+        let mut hook = Command::new("sleep");
+        hook.arg("60").process_group(0);
+        let mut hook = hook.spawn().expect("a hook");
+        kill_group(hook.id());
+        let status = hook.wait().expect("the hook ended");
+        let alive_after = alive(i32::try_from(sibling.id()).expect("a pid"));
+        let _ = sibling.kill();
+        let _ = sibling.wait();
+        assert!(!status.success(), "the hook's group was not ended");
+        assert!(alive_after, "the caller's group was ended with the hook's");
+    }
+
+    #[test]
+    fn a_hook_still_running_when_the_person_interrupts_is_ended_and_the_caller_goes_on() {
+        let dir = tempfile::tempdir().expect("a folder");
+        let held = route("sleep 60".to_owned(), 600);
+        let started = Instant::now();
+        let fired = run_all(
+            &[&held],
+            Spawn::Shell("/bin/sh"),
+            &serde_json::json!({}),
+            &[],
+            dir.path(),
+            &|| started.elapsed() > Duration::from_millis(300),
+        );
+        assert_eq!(fired[0].exit, None, "an interrupted hook has no exit");
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the interrupt was not heard: {:?}",
+            started.elapsed()
+        );
     }
 }
