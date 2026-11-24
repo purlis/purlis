@@ -1471,9 +1471,24 @@ fn two_drains_at_once_hand_on_each_line_once_between_them() {
         append(&spool, 4, &token, &call(4, &format!("{n:02}"))).expect("spooled");
     }
 
+    // A drain waits for the other's lock at most THE_KEYS_ARE_WAITED_FOR_AT_MOST and, past it,
+    // reads nothing and answers TimedOut (#1426): what a slow runner turns the second into when
+    // the first is still fsyncing its sixty lines. That is the bound working, so it counts as a
+    // drain that found nothing; any other error, or a timed-out drain that read a line, fails.
+    let drain_or_wait_out = || {
+        let mut all = Vec::new();
+        match drain(&spool, &mut |item| {
+            all.push(item);
+            Ok(())
+        }) {
+            Ok(()) => all,
+            Err(why) if why.kind() == io::ErrorKind::TimedOut && all.is_empty() => all,
+            Err(why) => panic!("the spool did not drain: {why} after {all:?}"),
+        }
+    };
     let (one, other) = std::thread::scope(|scope| {
-        let one = scope.spawn(|| drained(&spool));
-        let other = scope.spawn(|| drained(&spool));
+        let one = scope.spawn(drain_or_wait_out);
+        let other = scope.spawn(drain_or_wait_out);
         (one.join().expect("a drain"), other.join().expect("a drain"))
     });
 
