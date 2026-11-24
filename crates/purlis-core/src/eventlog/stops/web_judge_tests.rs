@@ -97,6 +97,11 @@ struct Chat {
 impl Chat {
     /// Chat 4 begun under a verified sandbox.
     fn begun() -> Self {
+        Self::begun_under("seatbelt")
+    }
+
+    /// Chat 4 begun under `sandbox`: `landlock` leaves the hook's reports unverified.
+    fn begun_under(sandbox: &str) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let mut host = Recorder::new(
             Log::open(dir.path(), DEVICE).unwrap(),
@@ -113,7 +118,7 @@ impl Chat {
             Began::Start,
             &Attributes {
                 harness: Some("claude-code".to_owned()),
-                sandbox: Some("seatbelt".to_owned()),
+                sandbox: Some(sandbox.to_owned()),
                 ..Attributes::default()
             },
         )
@@ -789,4 +794,121 @@ fn lines_the_log_lost_let_go_of_the_pairing_too() {
         1,
         "the deny is no repeat of a block the stream let go of"
     );
+}
+
+/// **A chat begun under landlock writes its deny unverified, and the proxy's block is plain**
+/// (R-174): whichever is written first, the one refusal counts once, and as the plain block says
+/// it, verified, in the marker's tally, the Blocked count and a turn's finish alike.
+#[test]
+fn a_deny_unverified_under_landlock_is_counted_as_the_plain_block_that_holds_it() {
+    for deny_first in [true, false] {
+        let mut chat = Chat::begun_under("landlock");
+        if deny_first {
+            chat.refuses("land.example.com")
+                .proxy_blocks("land.example.com");
+        } else {
+            chat.proxy_blocks("land.example.com")
+                .refuses("land.example.com");
+        }
+        let events = chat.events();
+        let deny = blocks_in(&events)
+            .into_iter()
+            .find(|block| block.source == Source::Guard)
+            .unwrap();
+        assert_eq!(
+            deny.qualifier,
+            Some(Qualifier::Unverified),
+            "the premise: the deny is unverified under landlock"
+        );
+        everywhere(&events, 1);
+        let chat_id = chat_of(&events);
+        let mut blocks = Blocks::default();
+        for event in &events {
+            blocks.take(Delivery::Event(event.clone()));
+        }
+        let tally = blocks.since(&chat_id, None).tally;
+        assert_eq!(
+            (tally.blocks, tally.unverified_blocks),
+            (1, 0),
+            "deny first: {deny_first}: the marker reads one verified block"
+        );
+        assert_eq!(counted_verified(&events), 1, "the Blocked count agrees");
+    }
+}
+
+/// What the Blocked count says is verified.
+fn counted_verified(events: &[Event]) -> u32 {
+    chatlog::counts(events).all.blocks
+}
+
+/// A turn's finish names the plain block's source and qualifier for a deny it holds.
+#[test]
+fn a_turn_names_the_plain_block_that_holds_an_unverified_deny() {
+    let mut chat = Chat::begun_under("landlock");
+    chat.refuses("named.example.com")
+        .proxy_blocks("named.example.com");
+    let mut events = read(chat.dir.path()).unwrap();
+    let template = events[0].clone();
+    let mark = |kind: &str| Event {
+        kind: kind.to_owned(),
+        body: serde_json::json!({}),
+        ..template.clone()
+    };
+    events.insert(1, mark("hook.userpromptsubmit"));
+    events.push(mark("hook.stop"));
+    let events = stamped(events);
+    let chat_id = chat_of(&events);
+    let finished = finishes::finishes(&events, &chat_id);
+    assert_eq!(finished.len(), 1);
+    assert_eq!(finished[0].blocked, 1);
+    assert_eq!(finished[0].unresolved[0].source, Source::Sandbox);
+    assert_eq!(finished[0].unresolved[0].qualifier, None);
+}
+
+/// **The bounded undercount**: a plain block of a `Bash` command's own refusal of a host absorbs
+/// a `WebFetch` deny of it within the window, so the two count as one; it absorbs one deny and
+/// never two, and not one outside the window.
+#[test]
+fn a_bash_commands_plain_block_absorbs_at_most_one_web_deny_of_its_host_inside_the_window() {
+    let bash = |chat: &mut Chat| {
+        chat.blocks("curl.example.com", Some("Bash"), Reported::ByTheProxy);
+    };
+    let mut chat = Chat::begun();
+    bash(&mut chat);
+    chat.refuses("curl.example.com");
+    assert_eq!(
+        blocks_in(&chat.events())[0].tool,
+        "Bash",
+        "the premise: the block is a Bash command's"
+    );
+    everywhere(&chat.events(), 1);
+
+    let mut chat = Chat::begun();
+    bash(&mut chat);
+    chat.refuses("curl.example.com").refuses("curl.example.com");
+    everywhere(&chat.events(), 2);
+
+    // Outside the window (the proxy writes as it answers: the deny follows in seconds).
+    let mut chat = Chat::begun();
+    bash(&mut chat);
+    chat.refuses("curl.example.com");
+    let mut events = chat.events();
+    written_at(&mut events, 1, 1_800_000_000_000 + 30_000);
+    everywhere(&events, 2);
+}
+
+/// Two long hosts that share their first hundred characters are two hosts.
+#[test]
+fn two_long_hosts_sharing_their_first_hundred_characters_never_pair() {
+    let first = format!("{}.{}", "a".repeat(60), "b".repeat(50));
+    let (one, other) = (
+        format!("{first}.one.example.com"),
+        format!("{first}.two.example.com"),
+    );
+    let mut chat = Chat::begun();
+    chat.proxy_blocks(&one).refuses(&other);
+    everywhere(&chat.events(), 2);
+    let mut chat = Chat::begun();
+    chat.proxy_blocks(&one).refuses(&one);
+    everywhere(&chat.events(), 1);
 }

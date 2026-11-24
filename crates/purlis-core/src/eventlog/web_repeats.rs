@@ -14,10 +14,19 @@
 //! verified refusal), **never the block's tool**: the proxy's block takes the tool of the chat's
 //! latest call, and the web hook tells the host of its own call only after its verdict, so a block
 //! held for a `WebFetch` is usually stamped with the call before it. The host is compared as
-//! [`host_key`] says, one spelling for both sides. A deny with no such block (the proxy answered 502 or 503, a host
-//! kept blocked that the proxy refuses without writing again, a refusal still an open ask) counts
-//! as the refusal it is, and counts the same once the block is written, so a fetch is counted at
-//! least once and at most once.
+//! [`host_key`] says, one spelling for both sides. A deny with no such block (the proxy answered
+//! 502 or 503, a host kept blocked that the proxy refuses without writing again, a refusal still
+//! an open ask) counts as the refusal it is, and counts the same once the block is written, so a
+//! fetch is counted at most once, and at least once except in one bounded case.
+//!
+//! **The bounded undercount**: a plain block says nothing of its tool, so a `Bash` command's own
+//! refusal of host X, written within [`BEFORE_MS`] before a `WebFetch` deny of X, absorbs that
+//! deny, and two refusals count as one. It costs at most one count per plain block, never two for
+//! one refusal and never more than the block's own, and only for the same chat and host in the
+//! window.
+//!
+//! **Known residual**: a host `url` accepts that [`stops::Target::host`] refuses (`~ ! * + , ; =`
+//! in a name) gets no target on either side, so nothing pairs and its refusal counts twice.
 //!
 //! [`Pairing`] is fed a log's blocks in order, whether read whole ([`repeats`]) or delivered one
 //! by one ([`super::chatlog::Blocks`]), and answers in either order of the two.
@@ -27,10 +36,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::Event;
 use super::stops::{self, Block, Source, Target};
 
-/// How long before a deny the proxy's block may have been written: the hook waits on the proxy up
-/// to its own timeout ([`crate::toolhooks::WEB_JUDGE_WAIT`]), and the proxy writes its block as it
-/// answers, so the block is at most that long before the deny.
-const BEFORE_MS: u64 = 120_000;
+/// How long before a deny the proxy's block may have been written: the proxy writes its block as
+/// it answers, and the hook's deny follows by the hook's own latency (a loopback round trip and
+/// the host's write), not by the proxy's wait, so a few seconds are all it takes. Kept short
+/// because a longer window lets another call's plain block of the host absorb the deny (see the
+/// bounded undercount in the module doc).
+const BEFORE_MS: u64 = 15_000;
 
 /// How long after a deny the proxy's block may be written: a refusal held as an ask is written as
 /// a block when its ask leaves ([`crate::sandboxblock::stop`]), up to a quiet person's hold
@@ -58,7 +69,7 @@ pub enum Fed<K> {
 struct Waiting<K> {
     key: K,
     at_ms: u64,
-    host: String,
+    host: HostKey,
 }
 
 #[derive(Debug)]
@@ -90,17 +101,35 @@ impl<K> Default for Pairing<K> {
     }
 }
 
-/// How much of a host two blocks compare: a target is clipped to [`stops::TARGET_CHARS`] as it is
-/// written, and clips differently with a port than without, so only a prefix every spelling of
-/// the same host keeps whole is compared.
-const MATCHED_CHARS: usize = 100;
+/// **A host as both sides of a pair are compared**: its whole name, and whether the target it was
+/// read from was clipped (a block's target is clipped to [`stops::TARGET_CHARS`] as it is written,
+/// differently with a port than without; the deny's never is).
+#[derive(Debug, PartialEq, Eq)]
+pub struct HostKey {
+    name: String,
+    clipped: bool,
+}
+
+impl HostKey {
+    /// Whether both name one host: the whole names are equal, or, where a side was clipped, the
+    /// clipped one is the beginning of the other.
+    fn is(&self, other: &Self) -> bool {
+        if self.clipped || other.clipped {
+            self.name.starts_with(&other.name) || other.name.starts_with(&self.name)
+        } else {
+            self.name == other.name
+        }
+    }
+}
 
 /// **A host as both sides of a pair are compared**, from the target as a block holds it (the
 /// deny's, written bare by the web judge, and the proxy's, `host:port` as the sandbox names it):
-/// lower case, without a port, brackets, a trailing dot or the mark of a clipped target, an IPv6
-/// address as Rust writes it, and no more than [`MATCHED_CHARS`] of it.
-pub fn host_key(target: &str) -> String {
-    let lowered = target.trim().trim_end_matches("...").to_ascii_lowercase();
+/// lower case, without a port, brackets, a trailing dot or the mark of a clipped target, and an
+/// IPv6 address as Rust writes it.
+pub fn host_key(target: &str) -> HostKey {
+    let trimmed = target.trim();
+    let clipped = trimmed.ends_with("...");
+    let lowered = trimmed.trim_end_matches("...").to_ascii_lowercase();
     let name = if let Some(inner) = lowered.strip_prefix('[') {
         inner.split(']').next().unwrap_or(inner)
     } else if lowered.parse::<std::net::Ipv6Addr>().is_ok() {
@@ -116,12 +145,12 @@ pub fn host_key(target: &str) -> String {
         |_| name.trim_end_matches('.').to_owned(),
         |address| address.to_string(),
     );
-    name.chars().take(MATCHED_CHARS).collect()
+    HostKey { name, clipped }
 }
 
 /// The host a block names, and whether it is the web judge's deny (`true`) or a plain sandbox
 /// block the proxy could have written for a `WebFetch` (`false`); `None` for any other block.
-fn side(block: &Block) -> Option<(bool, String)> {
+fn side(block: &Block) -> Option<(bool, HostKey)> {
     let Some(Target::Host(host)) = &block.target else {
         return None;
     };
@@ -160,7 +189,7 @@ impl<K: Copy> Pairing<K> {
                 .sandbox
                 .iter()
                 .enumerate()
-                .filter(|(_, one)| one.host == waiting.host && within(one.at_ms, at_ms))
+                .filter(|(_, one)| one.host.is(&waiting.host) && within(one.at_ms, at_ms))
                 .min_by_key(|(_, one)| one.at_ms.abs_diff(at_ms))
                 .map(|(at, _)| at);
             if let Some(at) = nearest {
@@ -175,7 +204,7 @@ impl<K: Copy> Pairing<K> {
             let earliest = held
                 .denies
                 .iter()
-                .position(|one| one.host == waiting.host && within(at_ms, one.at_ms));
+                .position(|one| one.host.is(&waiting.host) && within(at_ms, one.at_ms));
             if let Some(at) = earliest {
                 return Fed::Retires(held.denies.remove(at).key);
             }

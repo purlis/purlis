@@ -191,12 +191,15 @@ pub fn finishes(events: &[Event], chat: &str) -> Vec<Finish> {
         .chain(pairs.before_block.values())
         .copied()
         .collect();
-    for (_, event) in events
+    for (at, event) in events
         .iter()
         .enumerate()
         .filter(|(_, event)| event.chat.as_deref() == Some(chat))
         .filter(|(at, _)| !repeats.contains(at))
     {
+        // A deny that a later block holds is that block's refusal in the deny's turn, and the
+        // block is the plain member: it keeps the block's qualifier and source (#7465).
+        let held_by = pairs.before_block.get(&at).map(|block| &events[*block]);
         if event.kind == "run.started" {
             // As the Chat log reads it (`chatlog::rows`): the latest start's word.
             harness = event
@@ -230,7 +233,8 @@ pub fn finishes(events: &[Event], chat: &str) -> Vec<Finish> {
             stops::BLOCK => {
                 // Every block the marker's tally reads back (`chatlog::Tally`), whoever blocked it
                 // and however much its report is worth (Q280).
-                if let Ok(block) = serde_json::from_value::<Block>(event.body.clone()) {
+                let body = held_by.map_or(&event.body, |block| &block.body);
+                if let Ok(block) = serde_json::from_value::<Block>(body.clone()) {
                     turn.blocked(block, &harness);
                 }
             }

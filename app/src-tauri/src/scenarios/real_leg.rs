@@ -2464,6 +2464,20 @@ mod tests {
             "the proxy's refusal was not recorded as a sandbox block of {host}: {kinds:?}\n{}",
             scenario.said()
         );
+        // The premise of a fetch after a command: the proxy stamped its block with the command's
+        // tool, not the fetch's, so the pairing cannot have leaned on the tool.
+        if !before.is_empty() {
+            let stamped: Vec<&str> = gained
+                .iter()
+                .filter(|event| sandbox_block(event))
+                .filter_map(|event| event.body["tool"].as_str())
+                .collect();
+            assert!(
+                !stamped.is_empty() && stamped.iter().all(|tool| *tool != "WebFetch"),
+                "the sandbox block was not stamped with the command's tool: {stamped:?}\n{}",
+                scenario.said()
+            );
+        }
         let counted = purlis_core::eventlog::chatlog::counts(&gained).all;
         assert_eq!(
             counted.blocks + counted.unverified_blocks,

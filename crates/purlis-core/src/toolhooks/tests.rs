@@ -1633,6 +1633,25 @@ mod web {
         assert_eq!(web_deny_host(WEB_PROXY_REFUSED), None);
     }
 
+    /// The tally's rule is the web judge's two rules without the host, and any other rule as it is.
+    #[test]
+    fn stable_rule_drops_only_the_web_judges_host() {
+        for said in [WEB_PROXY_REFUSED, WEB_PROXY_UNREACHED] {
+            assert_eq!(stable_rule(&format!("{said}: a.example.com")), said);
+            assert_eq!(stable_rule(&format!("{said}: b.example.com")), said);
+            assert_eq!(stable_rule(said), said, "no host named, as it is");
+        }
+        assert_eq!(
+            stable_rule("a rule of some other deny"),
+            "a rule of some other deny"
+        );
+        assert_eq!(
+            stable_rule(&format!("{WEB_PROXY_REFUSED} and more: x.example.com")),
+            format!("{WEB_PROXY_REFUSED} and more: x.example.com"),
+            "a rule that only starts like one is kept"
+        );
+    }
+
     #[test]
     fn a_web_fetch_names_its_own_port_and_an_http_scheme_is_judged_as_https_is() {
         let (_, asked) = judged(

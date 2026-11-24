@@ -554,14 +554,18 @@ impl Blocks {
                     // A deny a recorded block holds is the same refusal: held for its `seq` (the
                     // look's point), counting for nothing.
                     super::web_repeats::Fed::Repeat => {}
-                    // The block that holds an earlier deny: the deny keeps the count, at its own
-                    // `seq`, so a refusal already looked at is not shown again as this later
-                    // block. The block counts itself only where the deny is no longer held.
-                    super::web_repeats::Fed::Retires(deny)
-                        if held.iter().any(|(seq, _)| *seq == deny) => {}
-                    super::web_repeats::Fed::Retires(_) | super::web_repeats::Fed::Counts => {
+                    // The block that holds an earlier deny: the refusal keeps the deny's `seq`,
+                    // so one already looked at is not shown again as this later block, but it
+                    // takes the block's tally, because the block is the proxy's own plain report
+                    // and the deny may be unverified (landlock, a chat with no run). Where the
+                    // deny is no longer held the block counts itself.
+                    super::web_repeats::Fed::Retires(deny) => {
                         one.add(&event);
+                        if let Some((_, theirs)) = held.iter_mut().find(|(seq, _)| *seq == deny) {
+                            *theirs = std::mem::take(&mut one);
+                        }
                     }
+                    super::web_repeats::Fed::Counts => one.add(&event),
                 }
                 held.push_back((event.seq, one));
                 if held.len() > BLOCKS_HELD {
