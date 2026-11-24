@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795521532732,
+  "lastUpdate": 1795522212279,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53592,6 +53592,48 @@ window.BENCHMARK_DATA = {
             "value": 103.083557,
             "unit": "ms",
             "extra": "median of 5 runs: 102.158, 102.491, 103.084, 103.400, 104.279 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c47de538e26513422d17be538974b7507343ad05",
+          "message": "Forge route: gh pr create and gh pr update-branch work on the chat's own repo (#7493)\n\n* Forge route: answer gh pr create and gh pr update-branch on the chat's own repo (#7485)\n\ngh pr create's RepositoryInfo query asks a fork's parent for fields the parent's table lacked,\nand a fragment on Repository could not be spread there; update-branch's updateMethod: MERGE read as\na merge label. The refusal as another repo now names the REST routes that work.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M8676MMZZVG8E7J6QT008B1K\nPurlis-Persona: steward\n\n* Test: the refusal-advice test opens by shedding the shell's steering (#7485)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86HHS3SH34J4EPHJ90PKVVR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T11:24:29Z",
+          "tree_id": "60e23577ce4e73b0eb045cef3a8e158779824c2b",
+          "url": "https://github.com/purlis/purlis/commit/c47de538e26513422d17be538974b7507343ad05"
+        },
+        "date": 1795522204016,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6879045,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.669, 0.672, 0.688, 0.693, 0.696 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.66404,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.420, 16.637, 16.664, 16.665, 16.667 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6854195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.313, 101.545, 101.685, 102.253, 102.387 ms"
           }
         ]
       }
