@@ -5709,3 +5709,58 @@ fn a_remote_refs_ask_and_its_answer_cross_the_wire_unchanged() {
     let line = serde_json::to_string(&answer).unwrap();
     assert_eq!(serde_json::from_str::<Answer>(&line).unwrap(), answer);
 }
+
+/// A host that answers some time after the ask, over a connection of its own.
+fn a_host_answering_after(delay: std::time::Duration) -> (Asking, std::thread::JoinHandle<()>) {
+    use std::io::{BufRead, Write};
+    let (ours, theirs) = std::os::unix::net::UnixStream::pair().expect("a pair");
+    let host = std::thread::spawn(move || {
+        let mut theirs = theirs;
+        let mut asked = String::new();
+        std::io::BufReader::new(theirs.try_clone().expect("a clone"))
+            .read_line(&mut asked)
+            .expect("the ask");
+        std::thread::sleep(delay);
+        let _ = writeln!(
+            theirs,
+            "{}",
+            serde_json::to_string(&Answer::Attended { attended: true }).unwrap()
+        );
+    });
+    (Asking::over(ours, None), host)
+}
+
+fn an_attendance_ask() -> Ask {
+    Ask::Attendance(AttendanceAsk::read(1, None, &|_| None))
+}
+
+#[test]
+fn a_host_that_answers_late_but_inside_the_window_is_heard() {
+    // The read waits out the whole window, so a first load that is slow is not "no answer".
+    let (mut asking, host) = a_host_answering_after(std::time::Duration::from_millis(300));
+    let answer = asking.ask(&an_attendance_ask(), std::time::Duration::from_secs(5));
+    host.join().unwrap();
+    assert!(
+        matches!(answer, Ok(Answer::Attended { attended: true })),
+        "{answer:?}"
+    );
+}
+
+#[test]
+fn a_host_silent_past_the_window_is_a_would_block_and_so_no_answer() {
+    // The `EAGAIN` the merge guard showed: the socket's read timeout expiring. It is the deadline
+    // spent, not a read to retry, so the ask fails closed.
+    let (mut asking, host) = a_host_answering_after(std::time::Duration::from_millis(600));
+    let started = std::time::Instant::now();
+    let answer = asking.ask(&an_attendance_ask(), std::time::Duration::from_millis(100));
+    assert!(started.elapsed() < std::time::Duration::from_millis(500));
+    host.join().unwrap();
+    let kind = answer.expect_err("no answer in time").kind();
+    assert!(
+        matches!(
+            kind,
+            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+        ),
+        "{kind:?}"
+    );
+}

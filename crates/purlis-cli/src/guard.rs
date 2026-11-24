@@ -253,7 +253,13 @@ pub(crate) fn attendance_of_this_chat(
 /// How long the guard waits for the session host to decide a merge: it loads the plane's
 /// committed policy and decides, which is a few git reads. With [`A_MERGE_IS_TAKEN_WITHIN`] after
 /// it, inside the hook's [`BUDGET`] (`a_merge_decided_and_then_taken_fits_the_budget`).
-const A_MERGE_IS_DECIDED_WITHIN: Duration = Duration::from_millis(700);
+///
+/// **A silence this long is an `EAGAIN`, not a bug in the read**: the socket's read timeout
+/// expires as `WouldBlock` (os error 11 on Linux, 35 on macOS), and `hookwire::Asking` reports it
+/// as "no answer". 700 ms was too tight: a debug build decides in about 170 ms warm and 310 ms
+/// for the first load on an idle machine, and a CI runner that is also running the other tests
+/// is several times slower. 1.25 s is four times the cold figure.
+const A_MERGE_IS_DECIDED_WITHIN: Duration = Duration::from_millis(1_250);
 
 /// What the policy left of a merge.
 enum MergeJudged {
@@ -683,7 +689,7 @@ const GUARD_STACK: usize = 256 * 1024 * 1024;
 /// A harness gives a hook a timeout of its own, and whether the tool call runs when it passes is
 /// the harness's choice: Codex and Claude Code run it (see `docs/hooks.md` → When a hook runs
 /// out of time). So purlis never lets a harness time a guard out. It decides inside this budget,
-/// and a decision not made in time is a refusal. Two seconds, well inside the smallest
+/// and a decision not made in time is a refusal. Two and a half seconds, half of the smallest
 /// `PreToolUse` timeout purlis registers (`the_budget_is_well_inside_every_harness_timeout`),
 /// and far more than an ordinary command takes. The caps in front of the guards
 /// ([`purlis_core::guardcaps`]) bound how slow a command inside them can be, and purlis-core's
@@ -692,7 +698,7 @@ const GUARD_STACK: usize = 256 * 1024 * 1024;
 ///
 /// It starts in `hook`, not when the process does: the time to start the process is outside it
 /// (`docs/hooks.md` → When a hook runs out of time).
-pub(crate) const BUDGET: Duration = Duration::from_secs(2);
+pub(crate) const BUDGET: Duration = Duration::from_millis(2_500);
 
 /// What sets the budget in milliseconds instead, in a debug build, for the tests that reach it.
 #[cfg(debug_assertions)]
