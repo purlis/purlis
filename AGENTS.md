@@ -231,6 +231,14 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
 - The anchored planes the hook can read are `app/anchored-planes/` (the app writes it as the
   registry gains a plane, `answers::anchored_roots` reads the union): the sealed registry is
   unreadable outside the app.
+- The sandbox compile (M75-22) is `policy/sandbox_rules.rs` (Cedar TPE; `compile`, `terms_of`) over
+  `policy/resolver.rs` (the one path resolver). TPE writes `a != b` as `!(a == b)`, so a residual
+  reader must take both. Its tests are lib tests: `cargo test -p purlis-core --lib --
+  policy::sandbox_rules` (about 10 s warm). loading a policy (`levels::load_with`, `assemble_checked`) refuses `attended`,
+  `harness_mode`, `like`, a residual outside the subset (`Policy::sandbox_problems_cached`, about 24
+  compiles: free when every sandbox rule is the shipped default's, else cached per rule set) and a `Path` literal not spelt normally, on any action; `force::world_of` builds a `Path`'s world
+  with the same resolver. An unguarded `context.machine` does not validate, so no loaded rule errs
+  on a missing device: build `ActionRules.erred` by hand to test it.
 - A sandboxed chat can run `cargo test -j 2 -p purlis-core --test it -- <filters>` and the lib's
   `floor_tests`; failures that say `Operation not permitted` (creating a `.charter/vaults` folder,
   binding a port, `sandbox_apply`) are the chat's sandbox, not the code: CI is their first run.
@@ -246,3 +254,4 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   `git checkout -- <file>` is refused (index.lock): restore a file with `git show HEAD:<path> > <path>`.
   A cold lib-test build can pass the 10-minute tool limit: run it in the background and read its
   output file, and print `^error` lines too, or a compile failure looks like a silent pass.
+- A wall-clock test (`every_guard_reads_a_hostile_command_in_linear_time::the_whole_verdict_…`) is run alone and last under nextest (`threads-required = "num-cpus"`, `.config/nextest.toml`, #7514). In a loaded sandbox its release run reads 0.9 to 1.0 s on the two slowest shapes against a 1 s bound, on `main` as on `m75-policy`: judge a regression by comparing both on one machine, and set `TIMING_OUT`-style file logging, because this test binary swallows stdout and stderr even with `--nocapture`.
