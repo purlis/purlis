@@ -674,20 +674,20 @@ fn a_chats_clone_lands_through_the_hidden_folder_too() {
     );
 }
 
-/// The stall limit is wall-clock silence, so what this judges is the ratio of the limit to the
-/// longest silence the script leaves. Every silence is a gap of `GAP` between two lines: the
-/// work around the lines (the shell's start, `git init`) is done before the first one is said,
-/// so a runner slow at it is not a stall, and nothing runs after the last. The limit is ten
-/// gaps, and the clone runs fifteen of them, so it ends well past the limit only by saying
-/// something every gap.
+/// The stall limit is wall-clock silence, counted from the clone's start (`cloning::follow`), so
+/// what this judges is the ratio of the limit to the longest silence the script leaves: the
+/// shell's start plus `git init` before the first line, then a gap of `GAP` between lines.
+/// Nothing runs after the last line. The limit is ten gaps (1 s), and the clone runs twenty of
+/// them, so it ends at twice the limit only by saying something every gap. A `git init` that took
+/// 0.5 s still passed (2026-11-24).
 #[test]
 fn a_chats_clone_that_keeps_making_progress_outlasts_the_stall_limit() {
     const GAP: &str = "0.1";
     const LIMIT: Duration = Duration::from_millis(1000);
     let world = World::holding(&["widget"]);
     let script = format!(
-        "git init -q \"$1\"; i=0; while [ $i -lt 15 ]; do i=$((i+1)); \
-         printf 'Receiving objects: %d%% (%d/15)\\r' $((i*100/15)) $i >&2; sleep {GAP}; done"
+        "git init -q \"$1\"; i=0; while [ $i -lt 20 ]; do i=$((i+1)); \
+         printf 'Receiving objects: %d%% (%d/20)\\r' $((i*5)) $i >&2; sleep {GAP}; done"
     );
     let off = AtomicBool::new(false);
     let heard = |_: Stage, _: u8| {};
