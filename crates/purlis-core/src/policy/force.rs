@@ -36,6 +36,7 @@ use crate::secrets::answers::{self, Standing, State};
 
 use super::decide::{Decision, Request, decide};
 use super::levels::{self, Held, RULES_FILE, Sources};
+use super::resolver;
 use super::{KEEPS, TIMEDS, World};
 
 /// The shared registry of vaults, at the plane root.
@@ -326,17 +327,41 @@ fn set_type(kind: &str) -> Option<&'static str> {
     })
 }
 
-/// Whether the set member `member` names the `kind` resource `id`: a path by itself or the folder
-/// it is in, a branch by its id or its name, anything else by its id.
+/// Whether the set member `member` names the `kind` resource `id`: a branch by its id or its name,
+/// anything else by its id. (A path's sets are read by [`resolver::resolve`], with its folders.)
 fn names(kind: &str, member: &str, id: &str) -> bool {
     match kind {
-        "Path" => {
-            let folder = member.trim_end_matches('/');
-            id == member || id == folder || id.starts_with(&format!("{folder}/"))
-        }
         "Branch" => id == member || id.rsplit('#').next() == Some(member),
         _ => id == member,
     }
+}
+
+/// The plane's layout this version holds, for [`resolver::resolve`]: the root and the workspaces
+/// at `HEAD`. A version records no clones, so a path is in a `Repo` here only as a branch folder
+/// of `.worktrees/<repo>`.
+fn layout_of(version: &Version, root: &Path) -> Option<resolver::Layout> {
+    Some(resolver::Layout {
+        root: root.to_str()?.to_owned(),
+        workspaces: version.workspaces.clone(),
+        clones: Vec::new(),
+    })
+}
+
+/// **A `Path` request's resource as the one resolver spells it** (a relative one is the plane's
+/// root's), or none where it cannot be read: the side is then undecidable, a deny.
+fn resolved_path(
+    loaded: &levels::Loaded,
+    version: &Version,
+    root: &Path,
+    id: &str,
+) -> Option<resolver::Resolved> {
+    let layout = layout_of(version, root)?;
+    let absolute = if id.starts_with('/') {
+        id.to_owned()
+    } else {
+        format!("{}/{id}", layout.root.trim_end_matches('/'))
+    };
+    resolver::resolve(&layout, &loaded.sets, &absolute)
 }
 
 /// **The world one side decides over**: the request's resource, in the named sets *this side's*
@@ -357,33 +382,33 @@ fn world_of(
         id.to_owned()
     };
     let mut parents: Vec<serde_json::Value> = Vec::new();
-    if let Some(set) = set_type(kind) {
-        for (name, members) in &loaded.sets {
-            if members.iter().any(|member| names(kind, member, &id)) {
-                parents.push(serde_json::json!({"type": set, "id": name}));
+    // A path's world is the resolver's: its folders, workspace, repo, branch folder and sets,
+    // the one the sandbox compile reads too.
+    let mut entity = match kind {
+        "Path" => resolved_path(loaded, version, root, &id)
+            .ok_or(())?
+            .entity_json(),
+        _ => {
+            if let Some(set) = set_type(kind) {
+                for (name, members) in &loaded.sets {
+                    if members.iter().any(|member| names(kind, member, &id)) {
+                        parents.push(serde_json::json!({"type": set, "id": name}));
+                    }
+                }
             }
+            serde_json::json!({"uid": {"type": kind, "id": id}, "attrs": {}})
+        }
+    };
+    if kind == "Vault" {
+        let (tags, persona) = vault_in(version, &id);
+        entity["tags"] = tags;
+        if let Some(persona) = persona {
+            parents.push(serde_json::json!({"type": "Persona", "id": persona}));
         }
     }
-    let mut entity = serde_json::json!({"uid": {"type": kind, "id": id}, "attrs": {}});
-    match kind {
-        "Path" => {
-            if let Some(workspace) = owning_workspace(version, root, &id) {
-                entity["attrs"] = serde_json::json!({
-                    "workspace": {"__entity": {"type": "Workspace", "id": workspace}}
-                });
-                parents.push(serde_json::json!({"type": "Workspace", "id": workspace}));
-            }
-        }
-        "Vault" => {
-            let (tags, persona) = vault_in(version, &id);
-            entity["tags"] = tags;
-            if let Some(persona) = persona {
-                parents.push(serde_json::json!({"type": "Persona", "id": persona}));
-            }
-        }
-        _ => {}
+    if kind != "Path" {
+        entity["parents"] = parents.into();
     }
-    entity["parents"] = parents.into();
     let mut entities = vec![entity];
     // The asking chat, in its workspace and persona, where the host knows both: a rule that reads
     // `principal.workspace` or `principal.persona` finds them, and a `dispatch.locked` pair names
@@ -427,27 +452,6 @@ fn has_gaps(request: &Request<'_>) -> bool {
 fn sandbox_is_off(request: &Request<'_>) -> bool {
     request.action == "start"
         && request.context.get("sandbox").and_then(|s| s.as_str()) == Some("off")
-}
-
-/// The workspace of this version that holds the path `id`, from the plane root: the first folder
-/// of the path, or the one after `workspaces/`.
-fn owning_workspace(version: &Version, root: &Path, id: &str) -> Option<String> {
-    let relative = Path::new(id).strip_prefix(root).unwrap_or(Path::new(id));
-    let mut parts = relative
-        .components()
-        .filter_map(|c| c.as_os_str().to_str())
-        .filter(|part| *part != "/");
-    let first = parts.next()?;
-    let name = if first == "workspaces" {
-        parts.next()?
-    } else {
-        first
-    };
-    version
-        .workspaces
-        .iter()
-        .any(|w| w == name)
-        .then(|| name.to_owned())
 }
 
 /// A vault's tags (its string fields but its config) and its Persona, from the version's shared
@@ -521,6 +525,27 @@ fn decided(
     request: &Request<'_>,
     floor: Option<&Resolved>,
 ) -> Decision {
+    // A path is asked about as the resolver spells it, so the world's entity is the one asked.
+    let (spelling, spelt);
+    let request = match request.resource {
+        ("Path", id) => match resolved_path(loaded, version, root, id) {
+            Some(resolved) => {
+                spelling = resolved.path;
+                spelt = Request {
+                    resource: ("Path", &spelling),
+                    ..request.clone()
+                };
+                &spelt
+            }
+            None => {
+                return held(
+                    undecidable(request, "the path is not one the plane's layout can read"),
+                    floor,
+                );
+            }
+        },
+        _ => request,
+    };
     let decision = match world_of(loaded, version, root, request) {
         Ok(world) => decide(loaded, request, &world),
         Err(()) => undecidable(request, "a policy version's world does not fit the schema"),
