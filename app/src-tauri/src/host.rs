@@ -637,6 +637,11 @@ pub trait SessionHost: Send + Sync {
     /// note them, or the program's start did not ask its strays to end with it.
     fn note_strays(&self, _id: u32) {}
 
+    /// Returns once every [`SessionHost::note_strays`] asked so far has been listed (#7431).
+    /// Tests only: the note is on a thread of its own, and a sleep is a guess at its length.
+    #[cfg(test)]
+    fn notes_have_settled(&self) {}
+
     /// **Holds session `id`'s program still, its whole process group, or lets it go on** (ADR
     /// 0076 §4, #6015): what a chat paused at its budget or in a loop is, until the person
     /// answers. Nothing where the host cannot hold it: the chat is asked about all the same.
