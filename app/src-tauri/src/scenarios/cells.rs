@@ -43,7 +43,7 @@ use purlis_scenarios::model::{
     Batch, Button, Cell, Dialect as CellDialect, Leg, Outcome, Press as CellPress, ReportVerdict,
     Restart, Step, TimingsMode,
 };
-use purlis_scenarios::net::{Origin, Scheme, TestCa, Variant};
+use purlis_scenarios::net::{DirectTarget, Origin, Scheme, TestCa, Variant};
 use purlis_scenarios::plan::{Scheduled, Trigger, schedule};
 use purlis_scenarios::play::{self, Counted, Hosts, Malformed, Query, Seen, Window};
 use purlis_scenarios::timings::{CoreTimings, catalogue};
@@ -186,7 +186,7 @@ fn holds(scenario: &Scenario, word: Window, chat: u32) -> bool {
 
 /// **Whether `query` is what the window shows** for `chat`: a word that holds ([`holds`]), or a
 /// number the window's own query gives that equals the cell's.
-fn shows(scenario: &Scenario, query: &Query, chat: u32, hosts: &Hosts) -> bool {
+fn shows(scenario: &Scenario, query: &Query, chat: u32, hosts: &Hosts, net: &Net<'_>) -> bool {
     match query {
         Query::Holds(word) => holds(scenario, *word, chat),
         Query::AskFor(key) => hosts.get(key).is_some_and(|name| {
@@ -199,14 +199,20 @@ fn shows(scenario: &Scenario, query: &Query, chat: u32, hosts: &Hosts) -> bool {
                 )
             })
         }),
-        Query::Equals(word, n) => counted_of(scenario, *word, chat) == *n,
+        Query::Equals(word, n) => counted_of(scenario, *word, chat, net) == *n,
     }
 }
 
 /// **The number the window shows** for `word`, for `chat`.
-fn counted_of(scenario: &Scenario, word: Counted, chat: u32) -> u64 {
+fn counted_of(scenario: &Scenario, word: Counted, chat: u32, net: &Net<'_>) -> u64 {
     let queries = scenario.queries();
     match word {
+        Counted::NamesLookups
+        | Counted::NamesDials
+        | Counted::NamesOriginHits
+        | Counted::OriginRequests
+        | Counted::DirectConnections
+        | Counted::DirectQueries => return net.since(word),
         Counted::MarkerBlocked => u64::from(queries.blocks(chat, None).blocks),
         Counted::MarkerUnverified => u64::from(queries.blocks(chat, None).unverified),
         Counted::FinishRows => queries.finishes(chat).len() as u64,
@@ -225,10 +231,11 @@ fn window_observed(
     forbid: bool,
     chat: u32,
     hosts: &Hosts,
+    net: &Net<'_>,
 ) -> Observed {
     match query {
         Query::Equals(word, n) => {
-            let seen = counted_of(scenario, *word, chat);
+            let seen = counted_of(scenario, *word, chat, net);
             if (seen == *n) != forbid {
                 Observed::Pass
             } else {
@@ -236,12 +243,139 @@ fn window_observed(
             }
         }
         _ => {
-            let shown = shows(scenario, query, chat, hosts);
+            let shown = shows(scenario, query, chat, hosts, net);
             if shown != forbid {
                 Observed::Pass
             } else {
                 Observed::Fail(shown.into())
             }
+        }
+    }
+}
+
+/// **What an attack reached** ("saw nothing", T1.1-20): the resolver seam's record, the batch's
+/// own origin and, where the batch binds a `direct:` host, the direct target, each counted from
+/// the mark taken as the step began, so one step's reach is never another's.
+pub(crate) struct Net<'a> {
+    names: &'a purlis_core::sandbox::names::Names,
+    origin: &'a Origin,
+    direct: Option<&'a DirectTarget>,
+    /// The counts when the step began, by word.
+    before: BTreeMap<Counted, u64>,
+}
+
+impl<'a> Net<'a> {
+    const WORDS: [Counted; 6] = [
+        Counted::NamesLookups,
+        Counted::NamesDials,
+        Counted::NamesOriginHits,
+        Counted::OriginRequests,
+        Counted::DirectConnections,
+        Counted::DirectQueries,
+    ];
+
+    pub(crate) fn new(
+        names: &'a purlis_core::sandbox::names::Names,
+        origin: &'a Origin,
+        direct: Option<&'a DirectTarget>,
+    ) -> Self {
+        let mut net = Net {
+            names,
+            origin,
+            direct,
+            before: BTreeMap::new(),
+        };
+        net.mark();
+        net
+    }
+
+    /// The total so far for `word`.
+    fn total(&self, word: Counted) -> u64 {
+        let n = match word {
+            Counted::NamesLookups => self.names.lookups().len(),
+            Counted::NamesDials => self.names.dials().len(),
+            Counted::NamesOriginHits => self.names.origin_hits().len(),
+            Counted::OriginRequests => self.origin.requests().len(),
+            Counted::DirectConnections => self.direct.map_or(0, |d| d.connections().len()),
+            Counted::DirectQueries => self.direct.map_or(0, |d| d.queries().len()),
+            _ => 0,
+        };
+        n as u64
+    }
+
+    /// Takes the mark a step's counts are read from: called as each step begins.
+    pub(crate) fn mark(&mut self) {
+        self.before = Self::WORDS.map(|w| (w, self.total(w))).into();
+    }
+
+    /// How many `word` counts since the mark.
+    fn since(&self, word: Counted) -> u64 {
+        self.total(word)
+            .saturating_sub(self.before.get(&word).copied().unwrap_or(0))
+    }
+}
+
+/// **A batch's direct host bindings** (`"h5": "direct:tcp"`): the value a command's `$h5` is
+/// replaced by, from the direct target's own address. `tcp` and `udp` are `ip:port`; `ip` is the
+/// address alone; `decimal`, `hex` and `octal` are that IPv4 address as one integer, as `0x…`
+/// and as dotted octal (what `inet_aton` reads); `mapped` is its IPv4-mapped IPv6 form in
+/// brackets; `port` is the TCP port and `origin_port` the batch's own origin's.
+pub(crate) fn direct_binding(
+    word: &str,
+    target: &DirectTarget,
+    origin_port: u16,
+) -> Option<String> {
+    spelled(word, target.tcp(), target.udp(), origin_port)
+}
+
+/// [`direct_binding`] for given addresses: the spellings, with no socket.
+fn spelled(
+    word: &str,
+    tcp: std::net::SocketAddr,
+    udp: std::net::SocketAddr,
+    origin_port: u16,
+) -> Option<String> {
+    let std::net::SocketAddr::V4(v4) = tcp else {
+        return None;
+    };
+    let ip = *v4.ip();
+    let n = u32::from(ip);
+    let o = ip.octets();
+    Some(match word {
+        "tcp" => tcp.to_string(),
+        "udp" => udp.to_string(),
+        "ip" => ip.to_string(),
+        "decimal" => n.to_string(),
+        "hex" => format!("0x{n:x}"),
+        "octal" => format!("0{:o}.0{:o}.0{:o}.0{:o}", o[0], o[1], o[2], o[3]),
+        "mapped" => format!("[::ffff:{ip}]"),
+        "port" => v4.port().to_string(),
+        "origin_port" => origin_port.to_string(),
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod direct_tests {
+    use super::*;
+
+    #[test]
+    fn a_direct_host_is_the_targets_address_in_the_spelling_it_names() {
+        let tcp: std::net::SocketAddr = "192.168.1.10:4000".parse().unwrap();
+        let udp: std::net::SocketAddr = "192.168.1.10:5000".parse().unwrap();
+        let said = |word| spelled(word, tcp, udp, 6000).unwrap();
+        assert_eq!(said("tcp"), "192.168.1.10:4000");
+        assert_eq!(said("udp"), "192.168.1.10:5000");
+        assert_eq!(said("ip"), "192.168.1.10");
+        assert_eq!(said("decimal"), "3232235786");
+        assert_eq!(said("hex"), "0xc0a8010a");
+        assert_eq!(said("octal"), "0300.0250.01.012");
+        assert_eq!(said("mapped"), "[::ffff:192.168.1.10]");
+        assert_eq!(said("port"), "4000");
+        assert_eq!(said("origin_port"), "6000");
+        assert_eq!(spelled("nothing", tcp, udp, 6000), None);
+        for word in purlis_scenarios::play::DIRECT_WORDS {
+            assert!(spelled(word, tcp, udp, 6000).is_some(), "{word}");
         }
     }
 }
@@ -398,8 +532,9 @@ fn unplayable(cell: &Cell, dialect: CellDialect, batch: &Batch, why: &str) {
 fn hosts_of(batch: &Batch) -> Hosts {
     batch
         .hosts
-        .keys()
-        .map(|key| (key.clone(), format!("{key}.cells.test")))
+        .iter()
+        .filter(|(_, value)| !value.starts_with("direct:"))
+        .map(|(key, _)| (key.clone(), format!("{key}.cells.test")))
         .collect()
 }
 
@@ -493,6 +628,27 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
     for name in &names {
         scenario.names.origin(name, 443, origin.addr());
     }
+    // A `direct:` host is the direct target's address in some spelling: what an escape that goes
+    // around the proxy aims at, and which "saw nothing" reads.
+    let wants_direct = batch.hosts.values().any(|v| v.starts_with("direct:"));
+    let direct = wants_direct.then(|| {
+        DirectTarget::start().unwrap_or_else(|why| {
+            panic!("the batch binds a `direct:` host and this machine has no target for it: {why}")
+        })
+    });
+    let mut bindings = hosts.clone();
+    if let Some(target) = &direct {
+        for (key, value) in &batch.hosts {
+            if let Some(word) = value.strip_prefix("direct:") {
+                let bound =
+                    direct_binding(word, target, origin.addr().port()).unwrap_or_else(|| {
+                        panic!("`{value}` is no direct binding (checked before the run)")
+                    });
+                bindings.insert(key.clone(), bound);
+            }
+        }
+    }
+    let mut net = Net::new(&scenario.names, &origin, direct.as_ref());
     let folder = scenario.root.join("matrix-client");
     std::fs::create_dir_all(&folder).expect("the client's folder");
     let bundle = ca.bundle(&folder).expect("the CA bundle");
@@ -503,12 +659,13 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
         .map(|(name, value)| format!("export {name}='{}'; ", value.to_string_lossy()))
         .collect();
 
-    let script = script_of(&playable, &hosts, &client, &trust, &batch.batch);
+    let script = script_of(&playable, &bindings, &client, &trust, &batch.batch);
     let mut chat = None;
     let mut played: Vec<Played> = Vec::new();
     for cell in &playable {
         for (n, step) in cell.steps.iter().enumerate() {
             let since = scenario.latest_seq();
+            net.mark();
             let transcript_from = scenario.transcript().len();
             let id = match chat {
                 None => {
@@ -555,7 +712,7 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
                 .iter()
                 .map(|q| {
                     let (query, forbid) = play::window_of(q).expect("checked before the run");
-                    window_observed(&scenario, &query, forbid, id, &hosts)
+                    window_observed(&scenario, &query, forbid, id, &hosts, &net)
                 })
                 .collect();
             played.push(Played {

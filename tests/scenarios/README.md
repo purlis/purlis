@@ -9,6 +9,7 @@ expectations (T1.1-05, #6852; M74.1's spec principles 2 to 4).
 | `cells/*.json` | Batches: cells run in order in one chat. Checked by `schema/cells.schema.json`. |
 | `pins/<dialect>.json` | A dialect's defaults (ticket 3), in a `per_dialect` entry's shape. Checked by the same schema's `$defs/pins_file`. |
 | `rows.json` | The row table (ticket 43, from test-matrix §3.22): per matrix row × dialect × OS, whether its Log, Window and Chat state an expectation. Ticket 8's list takes it in; the validator's `RowTable` reads its shape. A dialect a row doesn't apply to has no entries. Draft until the person approves the matrix's §3.22. |
+| `network-rules.json` | The network deny rules `seatbelt.rs` writes, by shape, and the escapes whose cells are aimed at them (T1.1-20); `tests/network.rs`'s `every_network_deny_rule_has_an_escape_cell` reads the source, so a new rule fails it until it is mapped or named as debt with why. Linux's rules and Claude Code's keys are not enumerated yet. |
 | `escapes.json` | The escape table (ticket 43): every escape × protection (Full, Basic, off) with what purlis owes, its positive control, dialects, OSes, and the real-binary (ticket 53) and live (tickets 37, 44) columns, for ticket 8's gate and tickets 20–22. Generated on the plane with the matrix's `escape-table.md`; draft until the person approves it. |
 | `coverage.json` | The matrix coverage list (ticket 8): a cover for every row × dialect × OS of `rows.json`, every row §3.20 leaves to fixtures, each dialect's real-binary network and file probes, and every escape × protection of `escapes.json`, with the caps on each reason. Generated once by `tools/scenario-coverage.mjs` and owned here: a suite replaces a row's `pending: <ticket>` with its cover. |
 | `issues.json` | The issues the cells' `expected_fail` marks name, whether each is open, and when it was opened: a local cache. `sandbox-scenarios-linux` and the nightly `coverage-issues` entry refresh it from GitHub before the gate reads it (`node tools/scenario-coverage.mjs issues`), so a change's own edit of it decides nothing in CI. |
@@ -60,6 +61,15 @@ What a cell means is
 decided in `src/play.rs`, which has no chat and is tested on its own: a step's `require` and
 `forbid` read against the events its chat wrote (`step_assertions`; the file's docs say what
 `count`, `before`, `at`, `within` and `args` mean), and the verdict (`verdict`).
+
+**"Saw nothing" (T1.1-20).** An attack cell reads what it reached with six counted window words,
+each counted from the step's start: `names.lookups`, `names.dials`, `names.origin_hits` (the resolver
+seam), `origin.requests` (the batch's own origin) and `direct.connections`, `direct.queries` (the
+direct target). A batch host written `"direct:<spelling>"` is that target's address in the
+spelling (`play::DIRECT_WORDS`: `tcp`, `udp`, `ip`, `decimal`, `hex`, `octal`, `mapped`, `port`,
+`origin_port`), so a command's `$h5` is an IP literal, and the runner starts the target for such a
+batch. `N20F`, `N20B` and `N20O` are the network escapes at Full, Basic and off; a cell at off
+asserts the table's *allowed by design*, and each escape's control is a `-CTL` cell.
 
 **An unknown word is malformed, never passed.** A cell with one is reported `fail` with every
 reason, so the run-result gate goes red on it. The words are closed lists, one place each:

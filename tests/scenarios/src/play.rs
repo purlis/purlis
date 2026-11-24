@@ -127,6 +127,22 @@ impl Window {
     }
 }
 
+/// **The spellings a batch's `direct:` host takes** (T1.1-20): the direct target's address as
+/// `ip:port` (`tcp`, `udp`), alone (`ip`), as an integer, hex or dotted octal IPv4 address
+/// (`decimal`, `hex`, `octal`), IPv4-mapped IPv6 (`mapped`), its TCP port (`port`), or the port
+/// of the batch's own origin on loopback (`origin_port`: another loopback port, E-NET-22).
+pub const DIRECT_WORDS: [&str; 9] = [
+    "tcp",
+    "udp",
+    "ip",
+    "decimal",
+    "hex",
+    "octal",
+    "mapped",
+    "port",
+    "origin_port",
+];
+
 /// **The closed list of counted window expectations**, each a number the window shows for the
 /// chat (`word == N`):
 ///
@@ -136,20 +152,41 @@ impl Window {
 /// | `blocks.marker_unverified` | `blocks`: the marker's unverified blocks |
 /// | `finishes.rows_for_turn` | `finishes`: how many finish rows the chat has |
 /// | `finishes.blocked` | `finishes`: the blocks its latest finish row counts |
+/// | `names.lookups` | the resolver seam: names a proxy looked up during the step |
+/// | `names.dials` | the resolver seam: connections a proxy dialled during the step |
+/// | `names.origin_hits` | the resolver seam: dials that reached a named origin during the step |
+/// | `origin.requests` | the batch's own origin: requests it recorded during the step |
+/// | `direct.connections` | the direct target (a `direct:` host): TCP connections during the step |
+/// | `direct.queries` | the direct target: DNS queries it was asked during the step |
+///
+/// The last six are "saw nothing" (T1.1-20): what an attack reached, counted from the step's
+/// start, so an escape cell asserts `== 0` and its positive control `== 1`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Counted {
     MarkerBlocked,
     MarkerUnverified,
     FinishRows,
     FinishBlocked,
+    NamesLookups,
+    NamesDials,
+    NamesOriginHits,
+    OriginRequests,
+    DirectConnections,
+    DirectQueries,
 }
 
 impl Counted {
-    pub const ALL: [Counted; 4] = [
+    pub const ALL: [Counted; 10] = [
         Counted::MarkerBlocked,
         Counted::MarkerUnverified,
         Counted::FinishRows,
         Counted::FinishBlocked,
+        Counted::NamesLookups,
+        Counted::NamesDials,
+        Counted::NamesOriginHits,
+        Counted::OriginRequests,
+        Counted::DirectConnections,
+        Counted::DirectQueries,
     ];
 
     pub fn word(self) -> &'static str {
@@ -158,6 +195,12 @@ impl Counted {
             Counted::MarkerUnverified => "blocks.marker_unverified",
             Counted::FinishRows => "finishes.rows_for_turn",
             Counted::FinishBlocked => "finishes.blocked",
+            Counted::NamesLookups => "names.lookups",
+            Counted::NamesDials => "names.dials",
+            Counted::NamesOriginHits => "names.origin_hits",
+            Counted::OriginRequests => "origin.requests",
+            Counted::DirectConnections => "direct.connections",
+            Counted::DirectQueries => "direct.queries",
         }
     }
 }
@@ -374,6 +417,16 @@ pub fn malformed_step(
 /// for, so each makes the cell malformed.
 pub fn malformed_cell(cell: &Cell, batch: &Batch) -> Vec<Malformed> {
     let mut found = Vec::new();
+    for (key, value) in &batch.hosts {
+        if let Some(word) = value.strip_prefix("direct:")
+            && !DIRECT_WORDS.contains(&word)
+        {
+            found.push(Malformed(format!(
+                "host `{key}`: `{value}` is no direct binding ({})",
+                DIRECT_WORDS.join(", ")
+            )));
+        }
+    }
     if let Some(template) = &cell.template {
         found.push(Malformed(format!(
             "`template: {template}` is not played: a batch's chats all start under one policy"
@@ -778,6 +831,27 @@ mod tests {
             timings: TimingsMode::Scaled,
             seconds: seconds(),
         }
+    }
+
+    #[test]
+    fn a_direct_host_off_the_list_makes_the_batch_malformed() {
+        let batch = |value: &str| {
+            let mut b = json!({
+                "batch": "T", "protection": "full", "persona": "steward",
+                "hosts": {"h1": value},
+                "cells": [{"id": "E-NET-99", "steps": [{"calls": []}]}],
+            });
+            b["cells"][0]["dialects"] = json!(["claude"]);
+            Batch::from_value(b).expect("a batch")
+        };
+        for word in DIRECT_WORDS {
+            let b = batch(&format!("direct:{word}"));
+            assert_eq!(malformed_cell(&b.cells[0], &b), vec![], "{word}");
+        }
+        let b = batch("direct:binary");
+        assert_eq!(malformed_cell(&b.cells[0], &b).len(), 1);
+        let b = batch("one.test");
+        assert_eq!(malformed_cell(&b.cells[0], &b), vec![]);
     }
 
     #[test]

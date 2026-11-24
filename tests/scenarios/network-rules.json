@@ -1,0 +1,31 @@
+{
+  "$comment": "T1.1-20: each network deny rule that crates/purlis-core/src/sandbox/seatbelt.rs writes, by its shape (the rule's text up to its first `{`, `#`, `)` or `*`, which ends the shape), and the escapes of escapes.json (ticket 20's) whose cells are aimed at it. `every_network_deny_rule_has_an_escape_cell` reads the source, so a new network deny rule fails the test until it is listed here; a rule whose escape has no scenario cover yet is listed under `debt`, with why, and leaves the list when its cell lands. Linux's rules (crates/linux-sandbox) and the keys sandbox/claude.rs writes are not enumerated yet: see the pull request.",
+  "source": "crates/purlis-core/src/sandbox/seatbelt.rs",
+  "rules": [
+    {
+      "shape": "(deny network-outbound (remote ip \\\"localhost:*",
+      "what": "the floor: no port of this machine",
+      "escapes": ["E-NET-08", "E-NET-22"]
+    }
+  ],
+  "debt": [
+    {
+      "shape": "(deny network-outbound (remote ip \\\"localhost:{",
+      "what": "another chat's proxy ports",
+      "escapes": ["E-NET-19"],
+      "why": "E-NET-19 has no cell yet"
+    },
+    {
+      "shape": "(deny network-outbound (remote unix-socket",
+      "what": "the floor: no unix socket",
+      "escapes": ["E-GRANT-06"],
+      "why": "E-GRANT-06 has no cell yet"
+    },
+    {
+      "shape": "(deny network-outbound (remote unix-socket (path-regex ",
+      "what": "a chat's own socket folders",
+      "escapes": ["E-GRANT-06"],
+      "why": "E-GRANT-06 has no cell yet"
+    }
+  ]
+}
