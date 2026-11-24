@@ -181,8 +181,7 @@ pub fn policy_version(root: &Path, policy: &str) -> Result<(Version, Option<Stri
             "`{policy}` is neither a file nor a branch of this project"
         ));
     }
-    let text = read_bounded(&path)
-        .map_err(|why| format!("`{policy}` could not be read: {why}"))?;
+    let text = read_bounded(&path).map_err(|why| format!("`{policy}` could not be read: {why}"))?;
     match Version::at_head(root) {
         Head::Read(version) => Ok((version.with_rules(text), None)),
         Head::NoCommit | Head::Unread => Err(format!(

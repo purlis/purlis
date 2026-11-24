@@ -157,8 +157,16 @@ fn policy_why_with_a_branch_policy_answers_as_the_branch_would_through_the_binar
     .expect("JSON");
     assert_eq!(json["dry_run"]["policy"], "ban");
     // It says which commits it was computed for and against.
-    assert!(json["dry_run"]["head"].as_str().is_some_and(|sha| sha.len() == 40));
-    assert!(json["dry_run"]["resolved"].as_str().is_some_and(|sha| sha.len() == 40));
+    assert!(
+        json["dry_run"]["head"]
+            .as_str()
+            .is_some_and(|sha| sha.len() == 40)
+    );
+    assert!(
+        json["dry_run"]["resolved"]
+            .as_str()
+            .is_some_and(|sha| sha.len() == 40)
+    );
     assert!(branch.contains("computed for HEAD "), "{branch}");
     assert_eq!(json["dry_run"]["diff"]["rules"][0]["kind"], "tightens");
     // A name that is neither a file nor a branch is refused, and says so.

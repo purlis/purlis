@@ -527,6 +527,12 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
     // only. A `log` would read as a would-have-blocked line over an allow, which it is not, so
     // `policy why` reads `enforce` for it; an `off` family stays `off`, as it says (Q319 C2).
     let by_no_permit = rules.iter().any(|r| r.id == EVERYTHING_ELSE);
+    let lock_level = reference.iter().find_map(|r| {
+        r.lock.as_ref()?;
+        loaded
+            .lock_level_on(&family, request.action)
+            .or_else(|| loaded.lock_level_on(&r.mode_family, request.action))
+    });
     scoped(
         loaded,
         Decision {
@@ -542,12 +548,7 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
             lifted,
             asked,
             lock: reference.iter().find_map(|r| r.lock.clone()),
-            lock_level: reference.iter().find_map(|r| {
-                r.lock.as_ref()?;
-                loaded
-                    .lock_level_on(&family, request.action)
-                    .or_else(|| loaded.lock_level_on(&r.mode_family, request.action))
-            }),
+            lock_level,
             grant: None,
             unasked: None,
             keep: None,

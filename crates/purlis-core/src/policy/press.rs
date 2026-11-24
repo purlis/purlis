@@ -53,9 +53,15 @@ const NO_CHAT: Chat<'static> = Chat {
     persona: None,
 };
 
+/// A word of a row. An alias, so serde does not read it as a borrow: the rows below read it back
+/// from the wire as one of the static words they hold ([`a_word_of`]).
+pub type Word = &'static str;
+
 /// What a change does to what a chat may do. In the order a change is kept when two bases give
 /// it two labels: the worst wins.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Kind {
     /// It narrows what a chat may do.
@@ -123,7 +129,7 @@ pub struct RuleChange {
     /// What happened to it: `added`, `removed`, `edited`, `now permits`, `now forbids`, `now
     /// asks` or `no longer asks`.
     #[serde(deserialize_with = "a_word_of_a_rule_change")]
-    pub what: &'static str,
+    pub what: Word,
 }
 
 /// One family's, or one rule's (`rules.<@id>`), mode that differs.
@@ -133,10 +139,10 @@ pub struct ModeChange {
     pub key: String,
     /// The mode in force before: `off`, `log` or `enforce`.
     #[serde(deserialize_with = "a_mode_word")]
-    pub before: &'static str,
+    pub before: Word,
     /// The mode after.
     #[serde(deserialize_with = "a_mode_word")]
-    pub after: &'static str,
+    pub after: Word,
     /// What the change does.
     pub kind: Kind,
 }

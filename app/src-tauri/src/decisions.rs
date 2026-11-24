@@ -32,7 +32,13 @@ pub fn asked(held: &Held, asked: &DecideAsk) -> Answer {
             ),
         };
     }
-    let id = with_its_repo(held, asked.chat, &asked.action, &asked.id, asked.cwd.as_deref());
+    let id = with_its_repo(
+        held,
+        asked.chat,
+        &asked.action,
+        &asked.id,
+        asked.cwd.as_deref(),
+    );
     let Some(decision) = decision(held, chat, &asked.action, (&asked.kind, &id)) else {
         return Answer::No {
             why: format!("chat {chat} is not one this app has open, so nothing was decided."),
@@ -48,13 +54,7 @@ pub fn asked(held: &Held, asked: &DecideAsk) -> Answer {
 /// merge the command gave no repo (`#12`) is of the repo of the clone the hook ran in
 /// ([`crate::mergeholds::found`]). The id as it came where it cannot be found: the merge is
 /// refused later all the same, and nothing here decides on a guess.
-fn with_its_repo(
-    held: &Held,
-    chat: u32,
-    action: &str,
-    id: &str,
-    cwd: Option<&str>,
-) -> String {
+fn with_its_repo(held: &Held, chat: u32, action: &str, id: &str, cwd: Option<&str>) -> String {
     use purlis_core::hookwire::MergeAsk;
     let number = id.strip_prefix('#').and_then(|n| n.parse::<u64>().ok());
     let (Some(number), Some(cwd), "merge") = (number, cwd, action) else {

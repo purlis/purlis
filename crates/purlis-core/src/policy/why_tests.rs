@@ -199,7 +199,10 @@ fn policy_why_with_a_branch_policy_answers_as_the_branch_would() {
     assert_eq!(row.map(|r| r.kind), Some(Kind::Tightens), "{dry:?}");
     assert_eq!(dry.policy, "ban");
     // It says which commits it was computed for: HEAD, and the one the branch resolved to.
-    assert_eq!(dry.head.as_deref(), Some(git_out(&root, &["rev-parse", "HEAD"]).as_str()));
+    assert_eq!(
+        dry.head.as_deref(),
+        Some(git_out(&root, &["rev-parse", "HEAD"]).as_str())
+    );
     assert_eq!(
         dry.resolved.as_deref(),
         Some(git_out(&root, &["rev-parse", "ban"]).as_str())
@@ -252,8 +255,11 @@ fn a_policy_file_answers_as_the_project_with_that_file_would() {
     assert_eq!(dry.resolved, None);
     assert!(text(&why, ("merge", "acme/web#main")).contains("as it reads now"));
     // A relative name is the plane root's, never the folder the command runs in.
-    std::fs::write(root.join("candidate.cedar"), forbid_merge("guards-merge-rel", ""))
-        .expect("a candidate in the plane");
+    std::fs::write(
+        root.join("candidate.cedar"),
+        forbid_merge("guards-merge-rel", ""),
+    )
+    .expect("a candidate in the plane");
     let relative = dry_run(
         &root,
         &asker(),
@@ -263,7 +269,11 @@ fn a_policy_file_answers_as_the_project_with_that_file_would() {
         "candidate.cedar",
     )
     .expect("a file of the plane");
-    assert_eq!(relative.decision.ids(), ["guards-merge-rel"], "{relative:?}");
+    assert_eq!(
+        relative.decision.ids(),
+        ["guards-merge-rel"],
+        "{relative:?}"
+    );
 }
 
 #[test]
@@ -373,11 +383,12 @@ fn a_request_names_its_resource_kind_from_the_schema() {
 
 /// `git rev-parse` output, trimmed.
 fn git_out(root: &Path, args: &[&str]) -> String {
-    let out = std::process::Command::new("git")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .expect("git runs");
+    let out = crate::forklock::output(
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(root),
+    )
+    .expect("git runs");
     String::from_utf8_lossy(&out.stdout).trim().to_owned()
 }
 
@@ -403,10 +414,17 @@ fn a_dry_run_names_the_shipped_default_row_the_press_names() {
     let root = plane(&m, &[("purlis.toml", STRICT)]);
     git(&root, &["branch", "same"]);
     let standing = accepted_under_a_shipped_ban();
-    let dry = dry_run(&root, &asker(), MERGE, &sealed(standing.clone()), None, "same")
-        .expect("a branch of the project")
-        .dry_run
-        .expect("a dry run");
+    let dry = dry_run(
+        &root,
+        &asker(),
+        MERGE,
+        &sealed(standing.clone()),
+        None,
+        "same",
+    )
+    .expect("a branch of the project")
+    .dry_run
+    .expect("a dry run");
     let named = |diff: &Diff| {
         diff.other
             .iter()
@@ -421,7 +439,10 @@ fn a_dry_run_names_the_shipped_default_row_the_press_names() {
         &head,
     )
     .expect("a shipped default's change raises a press");
-    assert_eq!(dry.diff, press.diff, "the dry run and the press show one diff");
+    assert_eq!(
+        dry.diff, press.diff,
+        "the dry run and the press show one diff"
+    );
 }
 
 #[test]
@@ -461,7 +482,12 @@ fn a_once_grant_is_shown_as_serving_and_left_unspent() {
     }
     // And the grant a real store would hold is still unspent after the app asked.
     let after = crate::secrets::answers::standing(&root);
-    assert!(after.entries.iter().all(|entry| entry.kind != crate::secrets::answers::GRANT));
+    assert!(
+        after
+            .entries
+            .iter()
+            .all(|entry| entry.kind != crate::secrets::answers::GRANT)
+    );
 }
 
 #[test]
@@ -516,17 +542,33 @@ fn a_why_and_its_dry_run_cross_the_wire_whole() {
     git(&root, &["checkout", "-q", "main"]);
     let why = dry_run(&root, &asker(), MERGE, &sealed(standing), None, "drop")
         .expect("a branch of the project");
-    assert!(!why.dry_run.as_ref().expect("a dry run").diff.rules.is_empty());
+    assert!(
+        !why.dry_run
+            .as_ref()
+            .expect("a dry run")
+            .diff
+            .rules
+            .is_empty()
+    );
     let line = serde_json::to_string(&Answer::Why(Box::new(why.clone()))).expect("JSON");
     let Ok(Answer::Why(back)) = serde_json::from_str::<Answer>(&line) else {
         panic!("{line}");
     };
-    assert_eq!(*back, why);
+    // Not on the wire: the permits a forbid overrode travel as `Why::overrode`, never in the
+    // decision (an older hook parses the decision).
+    let mut on_the_wire = why.clone();
+    on_the_wire.decision.overrode.clear();
+    assert_eq!(*back, on_the_wire);
     // A note on the sealed side travels too.
     let mut unread = why_now(&root, Standing::fresh());
     unread.sealed_unread = Some(SEALED_UNREAD.to_owned());
     let line = serde_json::to_string(&unread).expect("JSON");
-    assert_eq!(serde_json::from_str::<Why>(&line).expect("read back"), unread);
+    let mut on_the_wire = unread.clone();
+    on_the_wire.decision.overrode.clear();
+    assert_eq!(
+        serde_json::from_str::<Why>(&line).expect("read back"),
+        on_the_wire
+    );
     // Both asks round-trip.
     let asks = [
         Ask::Why(WhyAsk {
@@ -552,7 +594,11 @@ fn a_why_and_its_dry_run_cross_the_wire_whole() {
     ];
     for ask in asks {
         let line = serde_json::to_string(&ask).expect("JSON");
-        assert_eq!(serde_json::from_str::<Ask>(&line).expect("read back"), ask, "{line}");
+        assert_eq!(
+            serde_json::from_str::<Ask>(&line).expect("read back"),
+            ask,
+            "{line}"
+        );
     }
 }
 
@@ -576,7 +622,11 @@ fn a_never_that_denies_is_said_as_the_persons_own_answer_with_no_file_and_line()
     assert!(said.contains("decided by: a never you gave"), "{said}");
     assert!(!said.contains("sealed answers:0"), "{said}");
     let first = why.loosen.first().expect("the person can remove it");
-    assert_eq!((first.level.as_str(), first.press), ("you", false), "{first:?}");
+    assert_eq!(
+        (first.level.as_str(), first.press),
+        ("you", false),
+        "{first:?}"
+    );
     assert!(!first.how.contains("sealed answers"), "{first:?}");
 }
 
@@ -591,35 +641,27 @@ fn a_project_lock_names_the_project_and_the_catch_all_names_the_chats_nearest_ow
         .iter()
         .find(|one| one.how.contains("lift the lock"))
         .expect("the lock is named");
-    assert_eq!((lock.level.as_str(), lock.owner.as_str()), ("project", "this project"));
+    assert_eq!(
+        (lock.level.as_str(), lock.owner.as_str()),
+        ("project", "this project")
+    );
     // Where no permit applies the nearest level is the persona's, and its owner is named, not
     // the owner of the shipped catch-all rule.
-    let open_ban = "[policy]\ntemplate = \"strict\"\n";
-    let root = plane(&machine(), &[("purlis.toml", open_ban)]);
-    let nothing = decide::explained(
-        &root,
-        &asker(),
-        ("exec", ("Command", "rm")),
-        &sealed(Standing::fresh()),
-        None,
-        How::Explain(Version::at_head(&root)),
-    );
-    let loosen = loosening(
-        &Decision {
-            deciding: vec![Deciding {
-                id: EVERYTHING_ELSE.to_owned(),
-                level: "project".to_owned(),
-                owner: "purlis default 1".to_owned(),
-                file: "default".to_owned(),
-                line: 1,
-                off: false,
-            }],
-            outcome: Outcome::Deny,
-            after_mode: Outcome::Deny,
-            ..nothing
-        },
-        asker().of,
-    );
+    let mut none_applies = why_now(&root, Standing::fresh()).decision;
+    none_applies.deciding = vec![Deciding {
+        id: EVERYTHING_ELSE.to_owned(),
+        level: "project".to_owned(),
+        owner: "purlis default 1".to_owned(),
+        file: "default".to_owned(),
+        line: 1,
+        off: false,
+    }];
+    none_applies.outcome = Outcome::Deny;
+    none_applies.after_mode = Outcome::Deny;
+    none_applies.deny_state = None;
+    none_applies.lock = None;
+    none_applies.lock_level = None;
+    let loosen = loosening(&none_applies, asker().of);
     assert_eq!(loosen[0].level, "persona", "{loosen:?}");
     assert_eq!(loosen[0].owner, "persona builder", "{loosen:?}");
 }

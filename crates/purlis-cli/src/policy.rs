@@ -296,19 +296,22 @@ fn as_the_person(
              --workspace, --persona, --unattended, --sandbox and --depth off"
         ));
     }
-    let heard = asked_as_the_person(purlis_core::hookwire::PersonWhyAsk {
-        action: action.to_owned(),
-        kind: kind.to_owned(),
-        id: id.to_owned(),
-        cwd: Some(cwd.display().to_string()),
-        chat: args.chat,
-        workspace: args.workspace.clone(),
-        persona: args.persona.clone(),
-        unattended: args.unattended,
-        sandbox: args.sandbox.clone(),
-        depth: args.depth,
-        policy: args.policy.clone(),
-    }, cwd);
+    let heard = asked_as_the_person(
+        purlis_core::hookwire::PersonWhyAsk {
+            action: action.to_owned(),
+            kind: kind.to_owned(),
+            id: id.to_owned(),
+            cwd: Some(cwd.display().to_string()),
+            chat: args.chat,
+            workspace: args.workspace.clone(),
+            persona: args.persona.clone(),
+            unattended: args.unattended,
+            sandbox: args.sandbox.clone(),
+            depth: args.depth,
+            policy: args.policy.clone(),
+        },
+        cwd,
+    );
     match heard {
         Heard::Said(why) => Ok(*why),
         Heard::Refused(why) => Err(why),
@@ -444,7 +447,8 @@ mod tests {
                 },
             ),
         ] {
-            let refused = only_itself(&asked, Some(7)).unwrap_or_else(|| panic!("{flag} is allowed"));
+            let refused =
+                only_itself(&asked, Some(7)).unwrap_or_else(|| panic!("{flag} is allowed"));
             assert!(refused.contains(flag), "{refused}");
             assert!(refused.contains("only about itself"), "{refused}");
         }
