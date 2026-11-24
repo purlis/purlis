@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795516772614,
+  "lastUpdate": 1795518587004,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53508,6 +53508,48 @@ window.BENCHMARK_DATA = {
             "value": 102.7522945,
             "unit": "ms",
             "extra": "median of 5 runs: 100.756, 101.910, 102.752, 102.762, 104.207 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ed919a99c4d4146f7efadb7b86b4681d89e27c08",
+          "message": "P0: the merge guard holds a gh/glab api call whose arguments the shell fills in (#7423)\n\n* Merge guard: hold a gh/glab api call whose arguments the shell fills in (#7416)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M83WWF6Z92CPK8TRMP669PXT\nPurlis-Persona: steward\n\n* Merge guard: read every gh/glab api word or hold it, find the call as the floor does (#7423)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M840KEVFDCZY6JXHFQK65YQS\nPurlis-Persona: steward\n\n* Merge guard round 3: redirections, zsh dash, flags before the noun, linear digit binding, glob rule, honest ADR (#7423)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M8454FED2X84PJ0603Q2ASQM\nPurlis-Persona: steward\n\n* Merge guard round 4: zsh qualifiers and tilde, option values, flags between noun and verb, input redirections, escaped expansions in inner shell strings (#7423)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M849PQAV7YV3X71WNB078G8C\nPurlis-Persona: steward\n\n* Merge guard round 5: nothing round 3 or 4 holds passes; redirections after -R, several option values, alias stdin, =gh behind a wrapper, expansion-led program, backtick escapes (#7423)\n\nsegment_reason reads each way the lexer's split allows (digits as descriptors or values, a - as precommand or value, input redirections stripped until the verb or kept), counting from where the program really is. Quoted-operator values are read by position.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M84CWSGJWDJ415RKDTR3QV4Z\nPurlis-Persona: steward\n\n* Merge guard round 6: one exact reading of redirections, wrappers held when unplaceable, backticks from the lexer's quoting (#7423)\n\nThe lexer keeps whether a word was quoted and whether it is glued to the one before, so a redirection is read once as the shell reads it. The 16-reading machinery is gone: a run of values and descriptors reads in linear time. A segment naming gh or glab whose prefix cannot be placed exactly is held, with a way out. watch is read as an inner shell string.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M84ZGGE7XDZGZ3QN135J1GFC\nPurlis-Persona: steward\n\n* Merge guard round 7: a forge call behind any program is held, zsh clobber operators, += assignments, dash &>, env -S separators, bare \"$@\" (#7423)\n\nA general wrapper rule replaces more lists: a forge CLI named behind a program no table knows, with a merge or api after it, is held. timeout takes its first operand as the duration however it is spelled. The no-value long flags of timeout, sudo, env and watch, and nice -10, let their reads pass.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M855MTANSKDYEJMTV6X6YGJQ\nPurlis-Persona: steward\n\n* Merge guard round 8: paths that name gh pass, a wrapper's call is read as the direct call, zsh append-both operators, shell-filled forge words, a for over a forge read (#7423)\n\nA forge word that is a path, or is followed by a shell-filled word, is a call only where a held verb follows. Behind an unknown program the call is read as it is without it. A shell-filled word before a held noun and verb is held. A for loop over a gh api substitution may use its variable in a flag-less read.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M859ZS9YBKS7CRYWNMZZ9RBT\nPurlis-Persona: steward\n\n* Merge guard round 9: a shell-filled noun or verb after a forge word is held, a bare {} behind an unknown program in a write is held, a for variable is read only quoted (#7423)\n\nThe skip for a forge word that is a path, or is followed by a shell-filled word, applies only where no shell-filled word stands as the noun or verb after it. A bare {} in a write behind a program that is not gh is a filled-in endpoint. In bash and dash an unquoted variable from a forge answer is split and globbed, so a for loop over a gh api substitution is read only with the variable quoted (a deliberate contract change; the main test case is now the quoted form). The sixty-thousand-references test checks a 15k-to-60k ratio with a 30 s debug ceiling.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M85E0768XG8KZZ64Q7Q94KQ7\nPurlis-Persona: steward\n\n* Merge guard round 10: one structural rule for the words up to a forge verb (#7423)\n\nA shell-filled word at or before a gh/glab verb (noun, verb, flag, flag value, or a word a value flag shifts) is held, read with the lexer's word model, on the direct path, behind an unknown program and in the for-shape. Any method flag in any spelling makes an api call a write. A path that names gh is a call only before a literal held noun. A bare {} beside an endpoint, and words a pipe hands a program before gh, are held.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M85WGWPGHDFARJZTJA25RNKC\nPurlis-Persona: steward\n\n* Round 10 leaves AGENTS.md as it was: the sandboxed-chat notes belong in their own change (#7423)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* WIP: merge guard round 11 allowlist (placed.rs walk, exact.rs never-executes lists, round_elevens tests); full guard suite not yet run, changelog fragment not yet written\n\nAssisted-by: claude-code\nPurlis-Chat: 01M8605MGRWTV9B8HDGP05007F\nPurlis-Persona: steward\n\n* Merge guard round 11: allowlist for forge calls, flipped earlier holds, changelog (#7423)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M8605MGRWTV9B8HDGP05007F\nPurlis-Persona: steward\n\n* Merge guard round 12: a flag before a subcommand is not names-only; a find run still short of its verb is held (#7423)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M865YSNDARFKZBWC0FG67Q1D\nPurlis-Persona: steward\n\n* Merge guard round 13: a minimal names-only list; a find run ends at + only after {} (#7423)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M867WED7JJJ1F38JG7VTC2VJ\nPurlis-Persona: steward\n\n* Merge guard round 13: rustfmt (#7423)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T10:26:24Z",
+          "tree_id": "4b5c030d285e33a14a961e87ac5cdc3b78ea6cb1",
+          "url": "https://github.com/purlis/purlis/commit/ed919a99c4d4146f7efadb7b86b4681d89e27c08"
+        },
+        "date": 1795518580140,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.345044,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.327, 0.338, 0.345, 0.361, 0.364 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6652945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.229, 16.263, 16.665, 16.873, 16.880 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5855185,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.879, 101.116, 101.586, 101.618, 101.865 ms"
           }
         ]
       }
