@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795557945264,
+  "lastUpdate": 1795564123791,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54264,6 +54264,48 @@ window.BENCHMARK_DATA = {
             "value": 101.105494,
             "unit": "ms",
             "extra": "median of 5 runs: 100.758, 101.020, 101.105, 101.596, 102.989 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4f094a6fb0fb4bf77fb3eb14b336510996ada77d",
+          "message": "Object cache: a first fill is staged and resumes, and is cut by a stall, not a wall clock (#7587) (#7591)\n\nThe fill of a large repo's object cache was killed at 900 s and started again\nfrom zero. It is now ended only when git writes nothing for three minutes (two\nhours at most), and the base is fetched in stages (200 commits, 5000, all) whose\nprogress is kept in the cache, so an interrupted fill resumes at its stage. A\ncache is marked filled only once whole. A failed top-up no longer un-fills a\nfilled cache, and the refusal says an interrupted read resumes.\n\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M87NZZFR35Y92R2FR1N968XE\nPurlis-Persona: steward\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T23:08:23Z",
+          "tree_id": "b85ed168e8d34b7f2e44fbdc2948239ec607dbc3",
+          "url": "https://github.com/purlis/purlis/commit/4f094a6fb0fb4bf77fb3eb14b336510996ada77d"
+        },
+        "date": 1795564115686,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.340768,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.323, 0.340, 0.341, 0.346, 0.376 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6359635,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.125, 16.320, 16.636, 16.716, 16.855 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.47732250000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.073, 101.449, 101.477, 102.267, 102.946 ms"
           }
         ]
       }
