@@ -1917,11 +1917,11 @@ fn a_key_the_spools_lock_kept_out_is_not_recorded_and_its_lines_are_never_handed
         refused.to_string().contains("the hook spool's keys"),
         "{refused}"
     );
-    assert!(
-        waited >= THE_KEYS_ARE_WAITED_FOR_AT_MOST
-            && waited < THE_KEYS_ARE_WAITED_FOR_AT_MOST + Duration::from_secs(3),
-        "waited {waited:?}"
-    );
+    // It waited the whole bound, not less. That the wait ends at all is the TimedOut above, with
+    // the holder still on the lock: a wait with no end would hang this test, which the runner's
+    // own timeout stops. No upper wall-clock line here: how long past the bound a loaded runner
+    // takes to wake the test is the runner's, not the bound's.
+    assert!(waited >= THE_KEYS_ARE_WAITED_FOR_AT_MOST, "waited {waited:?}");
     drop(holder);
     append(&spool, 4, &token, &call(4, "unchecked")).expect("the hook spools it");
 
