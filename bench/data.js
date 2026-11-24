@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795506368008,
+  "lastUpdate": 1795516772614,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53466,6 +53466,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8640335,
             "unit": "ms",
             "extra": "median of 5 runs: 101.234, 101.487, 101.864, 102.104, 102.266 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "61d5279d18ab38ffe4cd4e0a90bb2d6b35078d14",
+          "message": "A chat can push a commit the forge has, and a refused push says why in git's output (#7489)\n\n* Push route: a push of a commit the forge has is read, and a refusal says why in git's output (#7487, #7486)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M8636NXFFSDJZ3D88G0V84YB\nPurlis-Persona: steward\n\n* Push route: an empty pack's tip is accepted only if a branch of this repo reaches it (#7487, #7486)\n\nA commits-API lookup resolves a fork's commit and a dangling one by id, so a chat could\npoint its branch at content that was never in this repo. The tip is now accepted only when\nit is reachable from the repo's advertised branch tips, which are fetched as for a thin\npack; a pushed tip is never fetched by name or kept as a base, so a chat cannot grow or\nchurn the shared object cache. A forge that cannot be read says so.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M864T53NV6FY5FT6088XEAGY\nPurlis-Persona: steward\n\n* Push route: a tip is read only if it is in the pushed pack or a branch of this repo reaches it, never because the object cache holds it (#7487, #7486)\n\nThe quarantine's cat-file -e reads through the object cache as an alternate, so a tip the cache still held (an old base tip, a dropped ref's objects) skipped the reachability test. read_in now takes a tip only if it is an object of the pack's own index (objects fix-thin appended are left out); any other tip goes through the reachability test. A tip reachable only from a branch past KNOWN_AT_MOST now says the branch list was too long to check.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M867BKMAPKBGBNZWY3Y40R4H\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T09:57:11Z",
+          "tree_id": "cad010acaa764b00c66286b7c7afe86ace73e46f",
+          "url": "https://github.com/purlis/purlis/commit/61d5279d18ab38ffe4cd4e0a90bb2d6b35078d14"
+        },
+        "date": 1795516764683,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6994605,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.681, 0.686, 0.699, 0.704, 0.706 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.701036000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.569, 16.690, 16.701, 16.817, 16.837 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.7522945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.756, 101.910, 102.752, 102.762, 104.207 ms"
           }
         ]
       }
