@@ -2408,6 +2408,32 @@ mod tests {
             scenario.said()
         );
         scenario.keeps_listed_asks_blocked();
+
+        // #7465: the one refusal is two events (the hook's guard block, aimed at the host, and the
+        // proxy's sandbox block, written when the person's Keep blocked ended the ask), and the
+        // Blocked count holds it once, from the recorded events and not from any reply.
+        let sandbox_block = |event: &purlis_core::eventlog::Event| {
+            event.kind == "stop.block"
+                && event.body["source"] == "sandbox"
+                && event.body["target"]["host"]
+                    .as_str()
+                    .is_some_and(|target| target.starts_with(host))
+        };
+        let gained = events_once(&scenario, since, |events| events.iter().any(sandbox_block));
+        let kinds: Vec<&str> = gained.iter().map(|event| event.kind.as_str()).collect();
+        assert!(
+            gained.iter().any(sandbox_block),
+            "the proxy's refusal was not recorded as a sandbox block of {host}: {kinds:?}\n{}",
+            scenario.said()
+        );
+        let counted = purlis_core::eventlog::chatlog::counts(&gained).all;
+        assert_eq!(
+            counted.blocks + counted.unverified_blocks,
+            1,
+            "one refused WebFetch must count once in Blocked (the guard's block and the proxy's \
+             are one refusal): {kinds:?}\n{}",
+            scenario.said()
+        );
     }
 
     /// **An allowed host is let through by the hook** (T1.1-39): the person allows the host for

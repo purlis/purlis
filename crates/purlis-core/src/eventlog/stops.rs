@@ -27,12 +27,6 @@ use super::{Event, Recorder};
 
 /// A block: a refusal that does not stop the chat on its own.
 pub const BLOCK: &str = "stop.block";
-/// **The guard-arm target of a `WebFetch` deny that repeats the proxy's block** (#7465): the
-/// `pretooluse-web` hook asks the chat's proxy for the host, the proxy refuses and writes a
-/// sandbox block, and the hook's deny is written as a guard's block beside it. Both stay in the
-/// log (two causes); [`Block::repeats_the_proxys`] is how the Blocked count and list tell the one
-/// refusal from two.
-pub const PROXY_REFUSAL_ARM: &str = "web-proxy";
 
 /// A hold: an action purlis refuses to the chat and raises as an ask.
 pub const HOLD: &str = "stop.hold";
@@ -271,14 +265,6 @@ pub struct Block {
     pub target: Option<Target>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub args: Option<String>,
-}
-
-impl Block {
-    /// Whether this is a guard's deny that repeats a refusal the chat's proxy wrote as a sandbox
-    /// block ([`PROXY_REFUSAL_ARM`]): recorded, and left out of every count of blocks.
-    pub fn repeats_the_proxys(&self) -> bool {
-        self.source == Source::Guard && self.target == Target::guard_arm(PROXY_REFUSAL_ARM).ok()
-    }
 }
 
 /// **A hold**: the tool purlis refused to the chat and raised as an ask, what it was aimed at,
@@ -530,16 +516,30 @@ fn guard_block(call: &crate::hookwire::ToolCall, verified: bool) -> Option<Block
         tool: line_tool(call),
         source: Source::Guard,
         qualifier: (!verified).then_some(Qualifier::Unverified),
-        target: if call.rule.as_deref() == Some(crate::toolhooks::WEB_PROXY_REFUSED) {
-            Target::guard_arm(PROXY_REFUSAL_ARM).ok()
-        } else {
-            call.arm
-                .as_deref()
-                .and_then(crate::toolgate::Arm::of_id)
-                .and_then(|arm| Target::guard_arm(arm.id()).ok())
-        },
+        target: web_deny_host(call).map_or_else(
+            || {
+                call.arm
+                    .as_deref()
+                    .and_then(crate::toolgate::Arm::of_id)
+                    .and_then(|arm| Target::guard_arm(arm.id()).ok())
+            },
+            Some,
+        ),
         args: call.args.clone(),
     })
+}
+
+/// **The host a `WebFetch` deny of the web judge hook names** (#7465), as a guard block's target:
+/// only the `pretooluse-web` hook's own deny of a `WebFetch` ([`crate::toolhooks::web_deny_host`]).
+/// A guard block aimed at a host is this and nothing else, which is how
+/// [`super::web_repeats`] tells it from the proxy's own sandbox block for the same host. None
+/// where the rule names no host the log admits, so such a deny stays a plain, counted block.
+fn web_deny_host(call: &crate::hookwire::ToolCall) -> Option<Target> {
+    if call.tool_hook != crate::hookreg::WEB_JUDGE || call.tool.as_deref() != Some("WebFetch") {
+        return None;
+    }
+    let host = crate::toolhooks::web_deny_host(call.rule.as_deref()?)?;
+    Target::host(host).ok()
 }
 
 /// **The block the harness's own check is** (R-094, R-325): for the line of the hook that hears

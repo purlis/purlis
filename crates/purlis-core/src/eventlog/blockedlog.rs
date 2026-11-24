@@ -51,17 +51,16 @@ pub struct Listed {
 pub fn listed(events: &[Event], now_ms: u64, is_ours: &dyn Fn(&str) -> bool) -> Vec<Listed> {
     let window = u64::try_from(KEPT.as_millis()).unwrap_or(u64::MAX);
     let since = now_ms.saturating_sub(window);
+    // The web judge's denies a recorded sandbox block of the proxy's lists already (#7465).
+    let repeats = super::web_repeats::repeats(events);
     let mut listed: Vec<Listed> = events
         .iter()
-        .filter(|event| event.kind == stops::BLOCK)
-        .filter_map(|event| {
+        .enumerate()
+        .filter(|(at, event)| event.kind == stops::BLOCK && !repeats.contains(at))
+        .filter_map(|(_, event)| {
             let chat = event.chat.as_deref().filter(|chat| is_ours(chat))?;
             let at_ms = super::written_at_ms(&event.ulid).filter(|at| *at >= since)?;
             let block: Block = serde_json::from_value(event.body.clone()).ok()?;
-            // The guard's deny of a refusal the proxy's block lists already (#7465).
-            if block.repeats_the_proxys() {
-                return None;
-            }
             Some(Listed {
                 at_ms,
                 seq: event.seq,

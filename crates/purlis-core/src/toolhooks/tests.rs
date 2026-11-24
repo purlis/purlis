@@ -1617,20 +1617,20 @@ mod web {
     }
 
     #[test]
-    fn a_proxy_refusal_is_the_one_deny_that_names_the_proxy_as_its_rule() {
+    fn a_proxy_refusal_and_a_silent_proxy_each_name_the_host_in_their_rule() {
         let rule =
             |answer| match judged(&sandboxed(), fetch("https://never.example.com/"), answer).0 {
                 Answer::Deny(verdict) => verdict.reason,
                 other => panic!("not refused: {other:?}"),
             };
-        assert_eq!(
-            rule(Tunnel::Refused("HTTP/1.1 403 Forbidden".into())),
-            WEB_PROXY_REFUSED
-        );
-        assert_ne!(
-            rule(Tunnel::Unreached("the proxy did not answer".into())),
-            WEB_PROXY_REFUSED
-        );
+        let refused = rule(Tunnel::Refused("HTTP/1.1 403 Forbidden".into()));
+        let silent = rule(Tunnel::Unreached("the proxy did not answer".into()));
+        assert_eq!(refused, format!("{WEB_PROXY_REFUSED}: never.example.com"));
+        assert_eq!(silent, format!("{WEB_PROXY_UNREACHED}: never.example.com"));
+        assert_eq!(web_deny_host(&refused), Some("never.example.com"));
+        assert_eq!(web_deny_host(&silent), Some("never.example.com"));
+        assert_eq!(web_deny_host("a rule of some other deny"), None);
+        assert_eq!(web_deny_host(WEB_PROXY_REFUSED), None);
     }
 
     #[test]

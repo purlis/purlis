@@ -180,9 +180,14 @@ pub fn finishes(events: &[Event], chat: &str) -> Vec<Finish> {
     let mut out = Vec::new();
     let mut turn = Turn::default();
     let mut harness = super::UNKNOWN.to_owned();
-    for event in events
+    // A web judge's deny a recorded sandbox block holds already is no second block (#7465); one
+    // that no block holds stays the turn's block.
+    let repeats = super::web_repeats::repeats(events);
+    for (_, event) in events
         .iter()
-        .filter(|event| event.chat.as_deref() == Some(chat))
+        .enumerate()
+        .filter(|(_, event)| event.chat.as_deref() == Some(chat))
+        .filter(|(at, _)| !repeats.contains(at))
     {
         if event.kind == "run.started" {
             // As the Chat log reads it (`chatlog::rows`): the latest start's word.
@@ -217,9 +222,7 @@ pub fn finishes(events: &[Event], chat: &str) -> Vec<Finish> {
             stops::BLOCK => {
                 // Every block the marker's tally reads back (`chatlog::Tally`), whoever blocked it
                 // and however much its report is worth (Q280).
-                if let Ok(block) = serde_json::from_value::<Block>(event.body.clone())
-                    && !block.repeats_the_proxys()
-                {
+                if let Ok(block) = serde_json::from_value::<Block>(event.body.clone()) {
                     turn.blocked(block, &harness);
                 }
             }

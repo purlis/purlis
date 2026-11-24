@@ -389,11 +389,24 @@ pub enum Tunnel {
     Unreached(String),
 }
 
-/// **The rule of a `WebFetch` deny that is the chat's proxy's own refusal** (#7465): the proxy
-/// answered and said no, and it wrote that as a sandbox block. The host writes the hook's deny
-/// as a block too, aimed at [`crate::eventlog::stops::PROXY_REFUSAL_ARM`], which the Blocked
-/// count and list leave out, since the same refusal is already there once.
+/// **The rule of a `WebFetch` deny the chat's proxy answered** (#7465): the proxy said no. The
+/// rule names the host (`<this>: <host>`, [`web_deny_host`]), so the block the host writes for
+/// the deny is aimed at the host, and a reader can pair it with the proxy's own sandbox block
+/// for the same host: the pair is one refusal, counted once
+/// ([`crate::eventlog::web_repeats`]).
 pub const WEB_PROXY_REFUSED: &str = "the chat's proxy refused the host of a WebFetch";
+
+/// **The rule of a `WebFetch` deny the chat's proxy never answered** (the hook could not connect
+/// or read in its wait), named as [`WEB_PROXY_REFUSED`] is. The proxy may still write a block
+/// for the host later (a held ask that ends), and a reader then counts the pair once.
+pub const WEB_PROXY_UNREACHED: &str = "the chat's proxy did not answer a WebFetch's host";
+
+/// The host a `WebFetch` deny's `rule` names, where it is one of the two above.
+pub fn web_deny_host(rule: &str) -> Option<&str> {
+    [WEB_PROXY_REFUSED, WEB_PROXY_UNREACHED]
+        .into_iter()
+        .find_map(|said| rule.strip_prefix(said)?.strip_prefix(": "))
+}
 
 /// How long the web tools' judge waits on the proxy, which holds a connection to a host nothing
 /// lists while the person is asked: a little under the hook's own timeout
@@ -450,17 +463,20 @@ pub fn pretooluse_web(hook: &Hook, tunnel: &dyn Fn(&str, &str, u16) -> Tunnel) -
     match tunnel(&proxy, &host, port) {
         Tunnel::Open => Answer::Nothing,
         Tunnel::Refused(said) => Answer::Deny(Verdict {
-            reason: WEB_PROXY_REFUSED.to_owned(),
+            reason: format!("{WEB_PROXY_REFUSED}: {host}"),
             ..refused(format!(
                 "WebFetch of {host} was refused: this chat may not reach it ({said}). The \
                  person can allow the host if it is needed."
             ))
         }),
-        // No proxy heard it, so no proxy block holds it: this deny is the only record.
-        Tunnel::Unreached(said) => deny(format!(
-            "WebFetch of {host} was refused: this chat may not reach it ({said}). The person \
-             can allow the host if it is needed."
-        )),
+        // No proxy heard it: this deny is its record until a block of the proxy's pairs with it.
+        Tunnel::Unreached(said) => Answer::Deny(Verdict {
+            reason: format!("{WEB_PROXY_UNREACHED}: {host}"),
+            ..refused(format!(
+                "WebFetch of {host} was refused: this chat may not reach it ({said}). The \
+                 person can allow the host if it is needed."
+            ))
+        }),
     }
 }
 

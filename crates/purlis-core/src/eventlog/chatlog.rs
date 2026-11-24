@@ -172,9 +172,13 @@ pub fn rows(events: &[Event], chat: &str) -> Vec<Row> {
     // Each block row not yet resolved: where it is, who blocked it, and its call's tool and
     // arguments' digest, where it names one.
     let mut standing: Vec<(usize, Source, String, Option<String>)> = Vec::new();
-    for event in events
+    // A web judge's deny a recorded sandbox block holds already has no row of its own (#7465): the
+    // rows are the count's, one for the one refusal. It stays in the log.
+    let repeats = super::web_repeats::repeats(events);
+    for (place, event) in events
         .iter()
-        .filter(|event| event.chat.as_deref() == Some(chat))
+        .enumerate()
+        .filter(|(_, event)| event.chat.as_deref() == Some(chat))
     {
         let previous = before.replace(event);
         if super::finishes::came_back(&event.kind) {
@@ -258,6 +262,7 @@ pub fn rows(events: &[Event], chat: &str) -> Vec<Row> {
                 sub_agent: !own,
             }),
             stops::LOOP_PAUSE => read(event).map(|pause| Row::LoopPaused { at_ms, pause }),
+            stops::BLOCK if repeats.contains(&place) => None,
             stops::BLOCK => {
                 let block: Option<Block> = serde_json::from_value(event.body.clone()).ok();
                 if let Some(block) = &block {
@@ -427,8 +432,6 @@ impl Tally {
     fn add(&mut self, event: &Event) {
         let count = match event.kind.as_str() {
             stops::BLOCK => match serde_json::from_value::<Block>(event.body.clone()) {
-                // The guard's deny of a refusal the proxy's block already holds (#7465).
-                Ok(block) if block.repeats_the_proxys() => return,
                 Ok(Block { qualifier, .. }) => match qualifier {
                     None => &mut self.blocks,
                     Some(Qualifier::Unverified) => &mut self.unverified_blocks,
@@ -458,7 +461,12 @@ pub struct Counts {
 /// The fleet counts of `events`.
 pub fn counts(events: &[Event]) -> Counts {
     let mut counts = Counts::default();
-    for event in events {
+    // A web judge's deny a recorded sandbox block holds already is the same refusal (#7465).
+    let repeats = super::web_repeats::repeats(events);
+    for (place, event) in events.iter().enumerate() {
+        if repeats.contains(&place) {
+            continue;
+        }
         counts.all.add(event);
         if let Some(chat) = &event.chat
             && is_stop(&event.kind)
@@ -510,6 +518,9 @@ pub const BLOCKS_HELD: usize = 1000;
 #[derive(Debug, Default)]
 pub struct Blocks {
     per_chat: BTreeMap<String, std::collections::VecDeque<(u64, Tally)>>,
+    /// Which web judge's denies a recorded sandbox block holds ([`super::web_repeats`]), by the
+    /// deny's `seq`: a deny counts when it arrives, and stops counting if its block arrives after.
+    pairing: super::web_repeats::Pairing<u64>,
 }
 
 impl Blocks {
@@ -528,8 +539,27 @@ impl Blocks {
                     return;
                 }
                 let mut one = Tally::default();
-                one.add(&event);
+                let fed = serde_json::from_value::<Block>(event.body.clone())
+                    .map(|block| {
+                        self.pairing.feed(
+                            &chat,
+                            event.seq,
+                            super::written_at_ms(&event.ulid),
+                            &block,
+                        )
+                    })
+                    .unwrap_or(super::web_repeats::Fed::Counts);
+                // A deny a recorded block holds is the same refusal: held for its `seq` (the
+                // look's point), counting for nothing.
+                if fed != super::web_repeats::Fed::Repeat {
+                    one.add(&event);
+                }
                 let held = self.per_chat.entry(chat).or_default();
+                if let super::web_repeats::Fed::Retires(deny) = fed
+                    && let Some((_, counted)) = held.iter_mut().find(|(seq, _)| *seq == deny)
+                {
+                    *counted = Tally::default();
+                }
                 held.push_back((event.seq, one));
                 if held.len() > BLOCKS_HELD {
                     held.pop_front();

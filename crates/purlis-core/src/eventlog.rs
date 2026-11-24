@@ -51,6 +51,7 @@ pub mod questions;
 pub mod reasons;
 pub mod secretasks;
 pub mod stops;
+pub mod web_repeats;
 pub use entry::Entry;
 
 /// One event, in ADR 0066's envelope.
