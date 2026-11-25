@@ -52,13 +52,18 @@
 //! with one name, refuses the commit, is unstaged, and its blob is taken out of the object
 //! store where it is a loose object nothing else reaches.
 //!
-//! # What the git record is held to (#7553)
+//! # What the git record is held to (#7553, #7594)
 //!
 //! Where a chat may write the worktree's record (`.git/worktrees/<piece>/`), it can plant a
-//! link for git to write through, or repoint `HEAD`. So before any git runs, the record and what
-//! git reads or writes in it must be regular files and folders ([`worktree::record`]), and the
-//! branch `HEAD` names must be the one purlis cut the folder for: the folder's own name, which
-//! is the app's record and not the chat's. A detached or another branch is refused.
+//! link for git to write through, repoint `HEAD`, or put `ref: refs/heads/<another>` in a
+//! pseudo-ref (`ORIG_HEAD`). So before any git runs, the record and what git reads or writes in
+//! it must be regular files and folders, no pseudo-ref may be symbolic ([`worktree::record`]),
+//! and `HEAD` must be exactly `ref: refs/heads/<the branch the cut noted>`: that note is the
+//! app's own (`app/worktree-updates/<id>/purlis-branch`), not the folder's name, which `--branch`
+//! makes a different string and a chat can choose. A detached `HEAD` or another branch is refused.
+//! The record is looked at again after git ran, and reported if it changed. A link planted
+//! *while* git runs is not prevented: that window stays, as does the one on a rebase's plan; and
+//! with the sandbox off the notes folder of a piece is writable too.
 //!
 //! # One at a time, and never left half done
 //!
@@ -129,7 +134,9 @@ const NOTE: &str = "purlis-brokered-commit";
 /// editor (`--no-edit`), no signer and no upkeep after it, whatever the repository's
 /// configuration says (#1476). Its hooks are off as every call's are (the hooks folder), and a
 /// hook a configuration defines is refused before any git runs ([`super::runs_a_program`]).
-const COMMIT: [&str; 10] = [
+const COMMIT: [&str; 12] = [
+    "-c",
+    "core.logAllRefUpdates=false",
     "-c",
     "gc.auto=0",
     "-c",
@@ -573,13 +580,22 @@ fn made(
         "this folder is not on a branch (a detached HEAD), so there is no branch to \
          commit on",
     )?;
-    here.on_its_own_branch(&branch)?;
+    let own = worktree::record::held(root, &here.git_dir, &here.top, &branch)?;
     here.mid_nothing()?;
     let before = ran(
         top,
         &["diff", "--cached", "--quiet", "--ignore-submodules=none"],
     )?;
     let mut lines = Vec::new();
+    if own.is_some_and(|own| own.noted_now) {
+        lines.push(Say::Warn(
+            format!(
+                "this folder was cut before purlis kept a note of its branch, so purlis noted \
+                 {branch} now, the branch it is on, which has a base recorded by its cut"
+            )
+            .into(),
+        ));
+    }
     match before.code {
         Some(0) => here.forget(root),
         Some(1) if here.left_by_an_interrupted_commit(root) => {
@@ -696,6 +712,13 @@ fn made(
     }
     here.forget(root);
     let made = said(top, &["rev-parse", "HEAD"])?.unwrap_or_default();
+    // Looked at again, now git has run: a link planted while it did is not prevented (#7594),
+    // only reported.
+    if let Err(why) = worktree::record::refused(&here.git_dir) {
+        lines.push(Say::Warn(
+            format!("the record changed while git ran: {why}").into(),
+        ));
+    }
     let (id, signed) = signed(top, &branch, made, identity.signer(), &mut lines);
     lines.insert(
         0,
@@ -963,11 +986,6 @@ impl Here {
         Ok(())
     }
 
-    /// [`on_its_own_branch`] for this folder.
-    fn on_its_own_branch(&self, branch: &str) -> Result<(), String> {
-        on_its_own_branch(&self.top, branch)
-    }
-
     /// Where the app's notes for this folder are: outside every git directory.
     fn notes(&self, root: &Path) -> PathBuf {
         crate::pieceupdate::notes_of(root, &self.git_dir)
@@ -1011,23 +1029,6 @@ impl Here {
             .filter(|name| runs(&dir.join(name)))
             .collect()
     }
-}
-
-/// Why `HEAD` names `branch`, which is not the one purlis cut the branch folder `top` for, or
-/// nothing (#7553). That branch is the folder's own name (`<workspace>/.worktrees/<repo>/<piece>`,
-/// the app's record): `HEAD` is a file the chat may write, so what it names is a claim, and a
-/// repointed one would have the commit made on another branch.
-pub(crate) fn on_its_own_branch(top: &Path, branch: &str) -> Result<(), String> {
-    let piece = top.file_name().and_then(|name| name.to_str());
-    if piece == Some(branch) {
-        return Ok(());
-    }
-    Err(format!(
-        "this folder was cut for branch {} and its HEAD names {}, so purlis will not commit on \
-         it. Nothing was committed. Put the folder back on its own branch from your own terminal",
-        shown(piece.unwrap_or("?")),
-        shown(branch)
-    ))
 }
 
 /// Whether `hook` is a file git would run.

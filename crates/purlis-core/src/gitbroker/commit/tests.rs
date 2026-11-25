@@ -468,6 +468,8 @@ fn tree() -> Tree {
             &top.display().to_string(),
         ],
     ));
+    // As a cut notes it (#7594).
+    worktree::record::note_branch(&root, &top, "piece").expect("noted");
     let here = Here {
         cwd: top.clone(),
         git_dir: store.join("worktrees/piece"),
@@ -1423,9 +1425,7 @@ fn a_record_entry_that_is_not_a_file_or_a_folder_is_refused() {
     std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
     let pipe = t.here.git_dir.join("FETCH_HEAD");
     assert!(
-        std::process::Command::new("mkfifo")
-            .arg(&pipe)
-            .status()
+        crate::forklock::status(std::process::Command::new("mkfifo").arg(&pipe))
             .unwrap()
             .success()
     );
@@ -1487,6 +1487,146 @@ fn the_apps_note_is_kept_outside_the_git_directory_and_written_through_no_link()
         Some((false, false)),
         "no note in git's directory, and the planted link replaced by the app's own file"
     );
+    assert_eq!(
+        std::fs::read_to_string(&victim).unwrap(),
+        "the person's own file\n"
+    );
+}
+
+/// The branch the cut noted is the folder's own, however it is named: a piece cut with
+/// `--branch` has a `/` in it and is not the folder's name.
+#[test]
+fn a_piece_cut_on_a_branch_unlike_its_folder_commits() {
+    let t = tree();
+    t.git(&["branch", "-m", "piece", "fix/6494-piece-token"]);
+    worktree::record::note_branch(&t.root, &t.here.top, "fix/6494-piece-token").unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+
+    let lines = t.asked(staging(&["README.md"])).expect("committed");
+
+    assert!(
+        format!("{lines:?}").contains("on fix/6494-piece-token"),
+        "{lines:?}"
+    );
+}
+
+/// The folder's name is not the record: a folder named after another branch, with `HEAD`
+/// repointed to it, is refused, and that branch does not move.
+#[test]
+fn a_head_repointed_to_the_folders_own_name_is_refused_when_the_cut_noted_another_branch() {
+    let t = tree();
+    t.git(&["branch", "-m", "piece", "fix/real"]);
+    worktree::record::note_branch(&t.root, &t.here.top, "fix/real").unwrap();
+    t.git(&["branch", "piece"]);
+    let piece = t.git(&["rev-parse", "refs/heads/piece"]);
+    std::fs::write(t.here.git_dir.join("HEAD"), "ref: refs/heads/piece\n").unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+
+    let said = t.asked(staging(&["README.md"])).expect_err("refused");
+
+    assert!(
+        said.contains("fix/real") && said.contains("`piece`"),
+        "{said}"
+    );
+    assert_eq!(t.git(&["rev-parse", "refs/heads/piece"]), piece);
+    assert!(t.nothing_staged());
+}
+
+/// `HEAD` is exactly `ref: refs/heads/<the branch>`: nothing after it.
+#[test]
+fn a_head_that_is_more_than_the_one_line_is_refused() {
+    for head in [
+        "ref: refs/heads/piece\nref: refs/heads/other\n",
+        "ref: refs/heads/piece \n",
+        "ref:  refs/heads/piece\n",
+    ] {
+        let t = tree();
+        std::fs::write(t.here.git_dir.join("HEAD"), head).unwrap();
+        std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+        let said = t.asked(staging(&["README.md"])).expect_err(head);
+        assert!(said.contains("HEAD"), "{head:?}: {said}");
+    }
+}
+
+/// #7594: a pseudo-ref that is a regular file holding `ref: <name>` makes a rebase or a reset
+/// move the branch it names. The type check passed it; its content does not.
+#[test]
+fn a_pseudo_ref_that_holds_a_symbolic_ref_is_refused_and_the_branch_it_names_does_not_move() {
+    for name in [
+        "ORIG_HEAD",
+        "REBASE_HEAD",
+        "AUTO_MERGE",
+        "MERGE_HEAD",
+        "CHERRY_PICK_HEAD",
+        "REVERT_HEAD",
+        "FETCH_HEAD",
+    ] {
+        let t = tree();
+        t.git(&["branch", "victim"]);
+        let victim = t.git(&["rev-parse", "refs/heads/victim"]);
+        std::fs::write(t.here.git_dir.join(name), "ref: refs/heads/victim\n").unwrap();
+        std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+
+        let said = t.asked(staging(&["README.md"])).expect_err(name);
+
+        assert!(said.contains("symbolic ref"), "{name}: {said}");
+        assert_eq!(t.git(&["rev-parse", "refs/heads/victim"]), victim, "{name}");
+        assert!(t.nothing_staged(), "{name}");
+    }
+}
+
+/// A pseudo-ref that holds an id, as git writes one, is fine.
+#[test]
+fn a_pseudo_ref_that_holds_an_id_is_fine() {
+    let t = tree();
+    let id = t.git(&["rev-parse", "HEAD"]);
+    std::fs::write(t.here.git_dir.join("ORIG_HEAD"), format!("{id}\n")).unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+    t.asked(staging(&["README.md"])).expect("committed");
+}
+
+/// A piece cut before the app kept the branch note: the branch it is on is noted now, said, and
+/// held to from then on. One `HEAD` was repointed to before that is refused.
+#[test]
+fn a_piece_cut_before_the_note_is_noted_from_its_own_branch_and_a_repointed_head_is_refused() {
+    let t = tree();
+    let notes = crate::pieceupdate::notes_of(&t.root, &t.here.git_dir);
+    let noted = notes.join(worktree::record::BRANCH_NOTE);
+    std::fs::remove_file(&noted).unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+
+    let lines = t.asked(staging(&["README.md"])).expect("committed");
+
+    assert!(
+        format!("{lines:?}").contains("noted piece now"),
+        "{lines:?}"
+    );
+    assert_eq!(std::fs::read_to_string(&noted).unwrap(), "piece\n");
+
+    std::fs::remove_file(&noted).unwrap();
+    t.git(&["branch", "other"]);
+    std::fs::write(t.here.git_dir.join("HEAD"), "ref: refs/heads/other\n").unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed again\n").unwrap();
+    let said = t.asked(staging(&["README.md"])).expect_err("refused");
+    assert!(said.contains("`other`"), "{said}");
+    assert!(!noted.exists(), "a branch it was repointed to was noted");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_on_the_shared_reflog_of_the_branch_is_refused_and_written_through_by_nothing() {
+    let t = tree();
+    let victim = t.root.join("victim.txt");
+    std::fs::write(&victim, "the person's own file\n").unwrap();
+    let log = t.here.common.join("logs/refs/heads/piece");
+    std::fs::create_dir_all(log.parent().unwrap()).unwrap();
+    let _ = std::fs::remove_file(&log);
+    std::os::unix::fs::symlink(&victim, &log).unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+
+    let said = t.asked(staging(&["README.md"])).expect_err("refused");
+
+    assert!(said.contains("is a link"), "{said}");
     assert_eq!(
         std::fs::read_to_string(&victim).unwrap(),
         "the person's own file\n"

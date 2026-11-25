@@ -65,7 +65,6 @@ pub fn commit(placed: &Placed, message: &str) -> Result<Vec<Say>, String> {
     let branch = read(top, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok_or(
         "this folder is not on a branch (a detached HEAD), so there is no branch to commit on",
     )?;
-    super::on_its_own_branch(top, &branch)?;
     let staging = match &placed.stage {
         Stage::Tracked => ran(top, &["add", "--update"], None),
         Stage::Paths(paths) => ran(

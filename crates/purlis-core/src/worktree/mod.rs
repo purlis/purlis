@@ -1003,6 +1003,16 @@ pub fn add_vetted(
         });
     }
 
+    // The branch this folder is cut for, in the app's own notes (#7594): the app's git holds
+    // `HEAD` to it, never to the folder's name, which `--branch` makes a different string. A
+    // piece without the note is noted from the branch it is on at its first use.
+    if let Err(why) = record::note_branch(plane, &path, &branch) {
+        tracing::debug!(
+            "purlis: the branch of {} was not noted ({why})",
+            path.display()
+        );
+    }
+
     // Recorded on the BRANCH, which `--branch` makes a different string from the piece, and
     // with `--replace-all`, because a key already holding two values cannot be overwritten by
     // a plain `git config` (exit 5).

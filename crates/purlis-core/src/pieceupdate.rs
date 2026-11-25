@@ -87,13 +87,15 @@ pub struct Reach<'a> {
 
 /// The settings every rebase here runs with, whatever the repository's config says: no editor,
 /// no signer, no upkeep after it, and no other branch moved with it.
-const REBASE: [&str; 16] = [
+const REBASE: [&str; 18] = [
     "-c",
     "rebase.backend=merge",
     "-c",
     "core.editor=:",
     "-c",
-    "sequence.editor=true",
+    "sequence.editor=:",
+    "-c",
+    "core.logAllRefUpdates=false",
     "-c",
     "commit.gpgSign=false",
     "-c",
@@ -118,7 +120,8 @@ pub fn update(piece: &Piece, step: &UpdateStep, reach: &Reach, say: &mut dyn FnM
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         // Before any git that writes runs in the folder (#7553).
         worktree::record::refused(&here.git_dir)?;
-        match step {
+        here.say_if_noted_now(say);
+        let went = match step {
             UpdateStep::Start { base } => start(piece, &here, base.as_deref(), reach, say),
             UpdateStep::Merge {
                 base,
@@ -134,7 +137,9 @@ pub fn update(piece: &Piece, step: &UpdateStep, reach: &Reach, say: &mut dyn FnM
             UpdateStep::Continue => go_on(&here, say),
             UpdateStep::Abort => abort(&here, reach.sandboxed_at.map(|at| (piece.root, at)), say),
             UpdateStep::FetchOnly => fetched_piece(piece, &here, reach, say),
-        }
+        };
+        here.say_if_the_record_changed(say);
+        went
     });
     ran.unwrap_or_else(|why| {
         say(Say::Fail(why.into()));
@@ -245,7 +250,10 @@ pub fn push_sent(
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         worktree::record::refused(&here.git_dir)?;
-        pushed(piece, &here, reach, say, &mut unsigned, &mut sent)
+        here.say_if_noted_now(say);
+        let went = pushed(piece, &here, reach, say, &mut unsigned, &mut sent);
+        here.say_if_the_record_changed(say);
+        went
     });
     let code = ran.unwrap_or_else(|why| {
         say(Say::Fail(why.into()));
@@ -295,6 +303,9 @@ struct Here {
     /// Whether a rebase stopped here goes on or back by the asking chat's own git, in its
     /// sandbox: a clone, for a sandboxed chat ([`settled_by_the_chat`]).
     chat_resumes: bool,
+    /// Whether the app noted this folder's branch only now, because it was cut before the app
+    /// kept the note ([`worktree::record::own_branch`]).
+    noted_now: bool,
 }
 
 /// The folder under the project's state that holds purlis's notes of its updates of the folder
@@ -365,9 +376,12 @@ impl Here {
                  update or push"
             ));
         }
+        // `HEAD` is the branch the cut noted, exactly, or (mid-rebase) a bare commit id (#7594).
+        let own = worktree::record::held(root, &git_dir, &folder, &branch)?;
         Ok(Self {
             notes: notes_of(root, &git_dir),
             chat_resumes: false,
+            noted_now: own.is_some_and(|own| own.noted_now),
             root: root.to_path_buf(),
             folder,
             clone,
@@ -402,6 +416,7 @@ impl Here {
         Ok(Self {
             notes: notes_of(root, &git_dir),
             chat_resumes: false,
+            noted_now: false,
             root: root.to_path_buf(),
             folder: clone.clone(),
             clone,
@@ -409,6 +424,32 @@ impl Here {
             branch,
             label: repo.to_owned(),
         })
+    }
+}
+
+impl Here {
+    /// Says that the folder's branch was noted now, where it was.
+    fn say_if_noted_now(&self, say: &mut dyn FnMut(Say)) {
+        if self.noted_now {
+            say(Say::Warn(
+                format!(
+                    "{} was cut before purlis kept a note of its branch, so purlis noted {} now, \
+                     the branch it is on and the one its cut recorded a base for",
+                    self.label, self.branch
+                )
+                .into(),
+            ));
+        }
+    }
+
+    /// Looks at the record again, now git has run: what a chat wrote while it ran is reported,
+    /// not prevented (#7594).
+    fn say_if_the_record_changed(&self, say: &mut dyn FnMut(Say)) {
+        if let Err(why) = worktree::record::refused(&self.git_dir) {
+            say(Say::Warn(
+                format!("the record of {} changed while git ran: {why}", self.label).into(),
+            ));
+        }
     }
 }
 
@@ -570,9 +611,6 @@ fn stopped_said(here: &Here, git_said: &str, say: &mut dyn FnMut(Say)) -> u8 {
             } else {
                 format!(" on a conflict in {}", stopped.unmerged.join(", "))
             };
-            if !here.chat_resumes {
-                keep_the_plan(here);
-            }
             let next = if here.chat_resumes {
                 format!(
                     "Resolve them and `git add` them in the clone, then {GO_ON_YOURSELF}; or \
@@ -909,6 +947,15 @@ fn rebased(
         lease,
     };
     record.write(here)?;
+    // The range the rebase replays, noted: its plan is derived from this, never taken back from
+    // the plan's file (#7594).
+    note(
+        &here.root,
+        &here.notes,
+        RANGE,
+        &format!("{from_id}\n{onto_id}\n"),
+    )
+    .map_err(|why| format!("purlis could not note the range it rebases: {why}"))?;
     NewBase::write(here, own.new_base.as_deref())?;
     let mut args: Vec<&str> = REBASE.to_vec();
     args.extend([
@@ -1061,32 +1108,20 @@ fn go_on(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
              your own terminal"
         )
     })?;
-    only_what_purlis_planned(&here.git_dir, Resume::GoOn).map_err(|odd| {
-        format!(
-            "the rebase stopped in {label} holds {odd}, which purlis's update does not plan, so \
-             purlis does not run it: finish it from your own terminal"
-        )
-    })?;
+    before_git(here, &record, Resume::GoOn)?;
     let files = stopped.unmerged;
     if !files.is_empty() {
         stage_resolved(here, &files)?;
     }
     // What the rebase replays onto, read before git finishes it and takes its notes away: the
     // commits after it are the ones it made, and the ones the app signs (#5480).
-    let onto = state_text(&here.git_dir.join("rebase-merge"), "onto")
-        .ok()
-        .map(|onto| onto.trim().to_owned())
-        .filter(|onto| full_id(onto));
+    let onto = Range::read(&here.notes).map(|range| range.onto);
     let mut args: Vec<&str> = REBASE.to_vec();
     args.extend(["rebase", "--continue"]);
-    // Looked at again as late as it can be, with nothing between it and git: what git reads is
-    // what purlis left (#7553). A chat that writes it after this look is the window left.
-    only_the_plan_purlis_left(here).map_err(|odd| {
-        format!(
-            "the rebase stopped in {label} holds {odd}, which purlis's update does not plan, so \
-             purlis does not run it: finish it from your own terminal"
-        )
-    })?;
+    // The whole set again, as late as it can be, with nothing between it and git: what git reads
+    // is what purlis left (#7553, #7594). A chat that writes it after this look is the window
+    // left.
+    before_git(here, &record, Resume::GoOn)?;
     let went = git::run_untimed(&here.folder, &args).map_err(|e| e.to_string())?;
     if !went.ok() && went.err.contains("no rebase in progress") {
         return Err(format!(
@@ -1364,6 +1399,7 @@ fn finish(
     say: &mut dyn FnMut(Say),
 ) -> Result<(), String> {
     let _ = std::fs::remove_file(here.notes.join(UNDER_WAY));
+    forget_the_range(&here.notes);
     let new = commit_of(&here.folder, "HEAD").ok_or("git did not say where the rebase ended")?;
     let new = match onto {
         Some(onto) => signed_since(&here.folder, new, &[onto], say),
@@ -1612,25 +1648,20 @@ fn abort(
     }
     // Only a rebase purlis started for an update, as `--continue` holds it: one the person
     // started is theirs to finish or abort.
-    if Record::of_the_stopped_rebase(here).is_none() {
+    let Some(record) = Record::of_the_stopped_rebase(here) else {
         return Err(format!(
             "the rebase stopped in {label} is not one purlis started: finish or abort it from \
              your own terminal"
         ));
-    }
-    only_what_purlis_planned(&here.git_dir, Resume::GoBack).map_err(|odd| {
-        format!(
-            "the rebase stopped in {label} holds {odd}, which purlis's update does not plan, so \
-             purlis does not put it back: abort it from your own terminal"
-        )
-    })?;
+    };
     let mut args: Vec<&str> = REBASE.to_vec();
     args.extend(["rebase", "--abort"]);
+    // Everything git reads for it, checked right before git (#7594).
+    before_git(here, &record, Resume::GoBack)?;
     let back = git::run_untimed(&here.folder, &args).map_err(|e| e.to_string())?;
     // git's own answer settles whether one was stopped, whatever the markers said.
-    if back.ok()
-        && let Some(record) = Record::read(&here.notes)
-    {
+    if back.ok() {
+        forget_the_range(&here.notes);
         back_on_its_branch(here, &record);
     }
     if !back.ok() && back.err.contains("no rebase in progress") {
@@ -1749,15 +1780,76 @@ enum Resume {
 }
 
 /// The state files of git's rebase that purlis's update never asks for: each makes the resume
-/// run or restore something more than the commits it replays.
-const NOT_PLANNED: [&str; 3] = ["autostash", "gpg_sign_opt", "strategy_opts"];
+/// run or restore something more than the commits it replays, or move another ref.
+const NOT_PLANNED: [&str; 5] = [
+    "autostash",
+    "gpg_sign_opt",
+    "strategy_opts",
+    "update-refs",
+    "amend",
+];
 
-/// `Ok` where the rebase stopped under `git_dir` is one purlis's update could have left: by the
-/// merge machinery ([`REBASE`] asks for it), on a detached head, as [`rebased`] runs it, with
-/// nothing it would restore or sign; and, to go on, with nothing left in its plan but commits to
-/// pick. Otherwise what is not, as a sentence names it. A file of it that is there and cannot be
-/// read is not one purlis's update left.
-fn only_what_purlis_planned(git_dir: &Path, way: Resume) -> Result<(), String> {
+/// What the app noted of the commits an update's rebase replays ([`Range`]): the commit the
+/// replay starts after, then the one it goes onto, a line each. Written when the update starts
+/// ([`rebased`]), taken away when it finishes or is put back.
+const RANGE: &str = "purlis-update-range";
+
+/// The note of an earlier version, which kept the rebase's plan itself. Never read; taken away.
+const PLAN: &str = "purlis-update-todo";
+
+/// The range an update's rebase replays, from the app's own note: `from..head` is its plan, and
+/// `onto` where it lands.
+struct Range {
+    from: String,
+    onto: String,
+}
+
+impl Range {
+    fn read(notes: &Path) -> Option<Self> {
+        let text = std::fs::read_to_string(notes.join(RANGE)).ok()?;
+        let mut lines = text.lines();
+        let (from, onto) = (lines.next()?.to_owned(), lines.next()?.to_owned());
+        (full_id(&from) && full_id(&onto) && lines.next().is_none()).then_some(Self { from, onto })
+    }
+}
+
+/// The notes of a rebase's range taken away, and the plan an earlier version kept.
+fn forget_the_range(notes: &Path) {
+    let _ = std::fs::remove_file(notes.join(RANGE));
+    let _ = std::fs::remove_file(notes.join(PLAN));
+}
+
+/// **Everything git reads from a stopped rebase's record, checked, immediately before the git
+/// call that resumes it** (#7594): the record's files and pseudo-refs, `HEAD` as a bare id, and
+/// what [`only_what_purlis_planned`] holds the rebase to. Run on `--continue` and `--abort`, right
+/// before git, with nothing between. A chat that writes the record after this look is the window
+/// left (#7594, H3).
+fn before_git(here: &Here, record: &Record, way: Resume) -> Result<(), String> {
+    worktree::record::refused(&here.git_dir)?;
+    worktree::record::held(&here.root, &here.git_dir, &here.folder, "")?;
+    only_what_purlis_planned(here, record, way).map_err(|odd| {
+        let (does, then) = match way {
+            Resume::GoOn => ("run it", "finish it"),
+            Resume::GoBack => ("put it back", "abort it"),
+        };
+        format!(
+            "the rebase stopped in {} holds {odd}, which purlis's update does not plan, so \
+             purlis does not {does}: {then} from your own terminal",
+            here.label
+        )
+    })
+}
+
+/// `Ok` where the rebase stopped in `here` is one purlis's update could have left, as the app
+/// recorded it: by the merge machinery ([`REBASE`] asks for it), on a detached head, from the
+/// commit the update recorded (`orig-head`), onto the one it noted (`onto`), with nothing it
+/// would restore, sign or move ([`NOT_PLANNED`]) and an `author-script` that is only an author.
+/// To go on, with a plan that is exactly the commits the update replays after the one it stopped
+/// on, derived from the app's own record and never taken from the plan's file ([`the_plan`]).
+/// Otherwise what is not, as a sentence names it. A file of it that is there and cannot be read
+/// is not one purlis's update left.
+fn only_what_purlis_planned(here: &Here, record: &Record, way: Resume) -> Result<(), String> {
+    let git_dir = &here.git_dir;
     if git_dir.join("rebase-apply").symlink_metadata().is_ok() {
         return Err("the state of another kind of rebase".to_owned());
     }
@@ -1777,60 +1869,105 @@ fn only_what_purlis_planned(git_dir: &Path, way: Resume) -> Result<(), String> {
     if !matches!(strategy.trim(), "" | "ort" | "recursive") {
         return Err("a merge strategy of its own".to_owned());
     }
+    // The update rebases a commit id, never a branch: git records a detached head, and the app
+    // puts the branch on the result itself ([`finish`]).
     if state_text(&state, "head-name")?.trim() != "detached HEAD" {
         return Err("a branch to go back to".to_owned());
     }
-    if way == Resume::GoOn
-        && let Some(step) = state_bytes(&state, "git-rebase-todo")?
-            .split(|byte| *byte == b'\n')
-            .find_map(a_step_not_planned)
-    {
-        return Err(format!("the step `{step}`"));
+    if state_text(&state, "orig-head")?.trim() != record.head {
+        return Err("a commit to go back to that purlis did not start from".to_owned());
+    }
+    let range = Range::read(&here.notes)
+        .ok_or_else(|| "no range that purlis noted when it started".to_owned())?;
+    if state_text(&state, "onto")?.trim() != range.onto {
+        return Err("an `onto` that is not the commit purlis rebased onto".to_owned());
+    }
+    an_author_only(&state)?;
+    if way == Resume::GoOn {
+        the_plan(here, record, &range, &state)?;
     }
     Ok(())
 }
 
-/// The file the plan of a stopped rebase is kept in, in the folder's notes ([`keep_the_plan`]).
-const PLAN: &str = "purlis-update-todo";
-
-/// The rebase's remaining plan as git left it when it stopped, kept in the folder's notes, which
-/// no chat writes (#7553): `--continue` goes on only with this very plan. Taken as soon as the
-/// run that stopped has ended. A plan that is not only commits to pick, or a rebase that is to
-/// move another ref (`update-refs`), keeps nothing, so nothing goes on.
-fn keep_the_plan(here: &Here) {
-    let kept = here.notes.join(PLAN);
-    let state = here.git_dir.join("rebase-merge");
-    let plan = state_bytes(&state, "git-rebase-todo").ok().filter(|plan| {
-        state.join("update-refs").symlink_metadata().is_err()
-            && plan
-                .split(|byte| *byte == b'\n')
-                .all(|line| a_step_not_planned(line).is_none())
-    });
-    match plan {
-        Some(plan) => {
-            if note_bytes(&here.root, &here.notes, PLAN, &plan).is_err() {
-                let _ = std::fs::remove_file(&kept);
-            }
-        }
-        None => {
-            let _ = std::fs::remove_file(&kept);
-        }
-    }
+/// `Ok` where `author-script` is there as git writes it for a commit that stopped on a conflict
+/// (three lines, `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_AUTHOR_DATE`, each quoted), or not
+/// there. `--continue` reads it for the commit it makes.
+fn an_author_only(state: &Path) -> Result<(), String> {
+    let text = state_text(state, "author-script")?;
+    let keys = ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE"];
+    let lines: Vec<&str> = text.lines().collect();
+    let shaped = text.is_empty()
+        || (lines.len() == 3
+            && lines.iter().zip(keys).all(|(line, key)| {
+                line.strip_prefix(key)
+                    .and_then(|rest| rest.strip_prefix("='"))
+                    .is_some_and(|value| value.ends_with('\''))
+            }));
+    shaped
+        .then_some(())
+        .ok_or_else(|| "an `author-script` that is not an author".to_owned())
 }
 
-/// `Ok` where the plan of the rebase stopped in `here` is byte for byte the one purlis kept when
-/// it stopped, and no `update-refs` is there. Otherwise what is, as a sentence names it.
-fn only_the_plan_purlis_left(here: &Here) -> Result<(), String> {
-    let state = here.git_dir.join("rebase-merge");
-    if state.join("update-refs").symlink_metadata().is_ok() {
-        return Err("an `update-refs` file".to_owned());
+/// `Ok` where the rest of the rebase's plan is exactly what the update replays after the commit
+/// it stopped on. Derived from the app's own record: the commits of `from...head` that git
+/// replays (`rev-list --right-only --cherry-pick --no-merges`, in git's own order), each noted
+/// by `from` and `head` when the update started, never read back from the plan's file. The file
+/// is then only read to compare: its `pick` ids, as git abbreviates them, are the plan after
+/// `msgnum` (git's count of commits it has stopped on or done), and `end` is the plan's length.
+fn the_plan(here: &Here, record: &Record, range: &Range, state: &Path) -> Result<(), String> {
+    let range = format!("{}...{}", range.from, record.head);
+    let planned = git::run(
+        &here.folder,
+        &[
+            "--no-replace-objects",
+            "rev-list",
+            "--reverse",
+            "--topo-order",
+            "--right-only",
+            "--cherry-pick",
+            "--no-merges",
+            &range,
+        ],
+        git::READ,
+    )
+    .map_err(|e| e.to_string())?;
+    if !planned.ok() {
+        return Err("a range purlis cannot read".to_owned());
     }
-    let kept = std::fs::read(here.notes.join(PLAN))
-        .map_err(|_| "no plan that purlis kept when it stopped".to_owned())?;
-    if state_bytes(&state, "git-rebase-todo")? != kept {
-        return Err("a plan that is not the one purlis left".to_owned());
+    let plan: Vec<&str> = planned.out.lines().map(str::trim).collect();
+    let count = |file: &str| -> Result<usize, String> {
+        state_text(state, file)?
+            .trim()
+            .parse()
+            .map_err(|_| format!("a `{file}` purlis cannot read"))
+    };
+    let (done, end) = (count("msgnum")?, count("end")?);
+    if end != plan.len() || done == 0 || done > end {
+        return Err("a plan of another length than the update's".to_owned());
     }
-    Ok(())
+    let mut ids = Vec::new();
+    for line in state_bytes(state, "git-rebase-todo")?.split(|byte| *byte == b'\n') {
+        if let Some(step) = a_step_not_planned(line) {
+            return Err(format!("the step `{step}`"));
+        }
+        let line = line.trim_ascii();
+        if line.is_empty() || line.starts_with(b"#") || line == b"noop" {
+            continue;
+        }
+        let id = line
+            .split(u8::is_ascii_whitespace)
+            .nth(1)
+            .unwrap_or_default();
+        ids.push(String::from_utf8_lossy(id).into_owned());
+    }
+    let rest = &plan[done..];
+    let ours = ids.len() == rest.len()
+        && ids.iter().zip(rest).all(|(id, full)| {
+            id.len() >= 4 && id.bytes().all(|b| b.is_ascii_hexdigit()) && full.starts_with(id)
+        });
+    ours.then_some(()).ok_or_else(|| {
+        "a plan that is not the commits the update replays after the one it stopped on".to_owned()
+    })
 }
 
 /// The bytes of `file` in a rebase's state folder, empty where it is not there; refused where it
@@ -2031,8 +2168,12 @@ fn pushed(
         tip: &ours,
         remote: &remote,
     })?;
+    // No reflog is written for it where there is none (#7594): a link planted as one is looked
+    // at before git runs, and not written through where none was.
+    let mut sending = vec!["-c", "core.logAllRefUpdates=false"];
+    sending.extend(args.iter().copied());
     let sent =
-        git::run_network(&here.folder, helper.as_deref(), &args).map_err(|e| e.to_string())?;
+        git::run_network(&here.folder, helper.as_deref(), &sending).map_err(|e| e.to_string())?;
     if !sent.ok() {
         // GitHub's words for a branch that takes only signed commits (#5630): told apart, so the
         // window can put the setup in front of the person.
@@ -2305,56 +2446,102 @@ mod tests {
         }
     }
 
+    const START: &str = "1111111111111111111111111111111111111111";
+    const ONTO: &str = "2222222222222222222222222222222222222222";
+
+    /// A folder whose record holds a stopped rebase as purlis's update leaves it, and the app's
+    /// notes for it: the plan is checked against git where the integration tests run one.
+    fn stopped_as_left(dir: &Path) -> (Here, Record, PathBuf) {
+        let state = dir.join("rebase-merge");
+        std::fs::create_dir(&state).unwrap();
+        for (file, text) in [
+            ("head-name", "detached HEAD\n".to_owned()),
+            ("orig-head", format!("{START}\n")),
+            ("onto", format!("{ONTO}\n")),
+        ] {
+            std::fs::write(state.join(file), text).unwrap();
+        }
+        let notes = dir.join("notes");
+        std::fs::create_dir(&notes).unwrap();
+        std::fs::write(notes.join(RANGE), format!("{START}\n{ONTO}\n")).unwrap();
+        let here = Here {
+            root: dir.to_path_buf(),
+            folder: dir.to_path_buf(),
+            clone: dir.to_path_buf(),
+            git_dir: dir.to_path_buf(),
+            branch: String::new(),
+            label: "widget · p".to_owned(),
+            notes,
+            chat_resumes: false,
+            noted_now: false,
+        };
+        let record = Record {
+            branch: "p".to_owned(),
+            head: START.to_owned(),
+            lease: None,
+        };
+        (here, record, state)
+    }
+
     #[test]
     fn a_stopped_rebase_is_resumed_only_as_purlis_left_it() {
         let dir = tempfile::tempdir().unwrap();
-        let state = dir.path().join("rebase-merge");
-        std::fs::create_dir(&state).unwrap();
-        std::fs::write(state.join("head-name"), "detached HEAD\n").unwrap();
-        std::fs::write(state.join("git-rebase-todo"), "pick abc # one\n").unwrap();
-        assert_eq!(only_what_purlis_planned(dir.path(), Resume::GoOn), Ok(()));
-
-        std::fs::write(state.join("git-rebase-todo"), "pick abc # one\nexec true\n").unwrap();
-        assert!(only_what_purlis_planned(dir.path(), Resume::GoOn).is_err());
-        // Going back runs no step of the plan.
-        assert_eq!(only_what_purlis_planned(dir.path(), Resume::GoBack), Ok(()));
-
-        // A plan whose subject is not UTF-8 is still read, step by step.
-        std::fs::write(
-            state.join("git-rebase-todo"),
-            b"pick abc caf\xe9\nexec true\n",
-        )
-        .unwrap();
-        assert!(only_what_purlis_planned(dir.path(), Resume::GoOn).is_err());
-        std::fs::write(state.join("git-rebase-todo"), b"pick abc caf\xe9\n").unwrap();
-        assert_eq!(only_what_purlis_planned(dir.path(), Resume::GoOn), Ok(()));
+        let (here, record, state) = stopped_as_left(dir.path());
+        let back = |here: &Here| only_what_purlis_planned(here, &record, Resume::GoBack);
+        assert_eq!(back(&here), Ok(()));
 
         // A file of its state that cannot be read as what it is, is not one purlis left.
         std::fs::write(state.join("head-name"), b"detached\xff HEAD\n").unwrap();
-        assert!(only_what_purlis_planned(dir.path(), Resume::GoBack).is_err());
+        assert!(back(&here).is_err());
         std::fs::write(state.join("head-name"), "detached HEAD\n").unwrap();
-        std::fs::remove_file(state.join("git-rebase-todo")).unwrap();
-        std::fs::create_dir(state.join("git-rebase-todo")).unwrap();
-        assert!(only_what_purlis_planned(dir.path(), Resume::GoOn).is_err());
-        std::fs::remove_dir(state.join("git-rebase-todo")).unwrap();
 
         // Another kind of rebase's state is not what this update runs.
         std::fs::create_dir(dir.path().join("rebase-apply")).unwrap();
-        assert!(only_what_purlis_planned(dir.path(), Resume::GoBack).is_err());
+        assert!(back(&here).is_err());
         std::fs::remove_dir(dir.path().join("rebase-apply")).unwrap();
 
-        std::fs::write(state.join("git-rebase-todo"), "").unwrap();
         std::fs::write(state.join("strategy"), "something-of-its-own\n").unwrap();
-        assert!(only_what_purlis_planned(dir.path(), Resume::GoOn).is_err());
+        assert!(back(&here).is_err());
         std::fs::write(state.join("strategy"), "ort\n").unwrap();
-        assert_eq!(only_what_purlis_planned(dir.path(), Resume::GoOn), Ok(()));
+        assert_eq!(back(&here), Ok(()));
 
-        std::fs::write(state.join("head-name"), "refs/heads/main\n").unwrap();
-        assert!(only_what_purlis_planned(dir.path(), Resume::GoBack).is_err());
-        std::fs::write(state.join("head-name"), "detached HEAD\n").unwrap();
+        // A branch to go back to, or a commit other than the one the update started from or
+        // went onto, is a chat's (#7594).
+        for (file, tampered) in [
+            ("head-name", "refs/heads/main\n".to_owned()),
+            ("orig-head", format!("{ONTO}\n")),
+            ("onto", format!("{START}\n")),
+        ] {
+            let kept = std::fs::read(state.join(file)).unwrap();
+            std::fs::write(state.join(file), tampered).unwrap();
+            assert!(back(&here).is_err(), "{file}");
+            std::fs::write(state.join(file), kept).unwrap();
+        }
+        assert_eq!(back(&here), Ok(()));
 
-        std::fs::write(state.join("autostash"), "abc\n").unwrap();
-        assert!(only_what_purlis_planned(dir.path(), Resume::GoBack).is_err());
+        // What it would restore, sign or move; and an author that is more than an author.
+        for file in NOT_PLANNED {
+            std::fs::write(state.join(file), "abc\n").unwrap();
+            assert!(back(&here).is_err(), "{file}");
+            std::fs::remove_file(state.join(file)).unwrap();
+        }
+        std::fs::write(
+            state.join("author-script"),
+            "GIT_AUTHOR_NAME='n'\nGIT_AUTHOR_EMAIL='a@b.c'\nGIT_AUTHOR_DATE='@1 +0000'\n",
+        )
+        .unwrap();
+        assert_eq!(back(&here), Ok(()));
+        std::fs::write(
+            state.join("author-script"),
+            "GIT_AUTHOR_NAME='n'\nGIT_AUTHOR_EMAIL='a@b.c'\nGIT_AUTHOR_DATE='@1 +0000'\nexec x\n",
+        )
+        .unwrap();
+        assert!(back(&here).is_err());
+        std::fs::remove_file(state.join("author-script")).unwrap();
+
+        // No note of the range: the update did not start it.
+        std::fs::remove_file(here.notes.join(RANGE)).unwrap();
+        assert!(back(&here).is_err());
     }
 
     #[test]

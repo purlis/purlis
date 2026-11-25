@@ -7177,17 +7177,32 @@ down rather than read off the code.
 
 ### `app/worktree-updates/<id>/`
 - **Format:** one folder per git directory an update has run in, named by the SHA-256 of that
-  directory's real path, so a branch folder and its clone never share one. It holds up to six
+  directory's real path, so a branch folder and its clone never share one. It holds up to seven
   files, each replaced whole (`rewrite::replace`, mode 0600, written through no link): `purlis-update`, while an update
   is under way, and `purlis-updated`, for the update last left and not yet pushed, each with the
   branch, then the commit, then the remote and the commit it had where a push may go over it, a line
   each; `purlis-update-merge`, while a merge is stopped, with the branch, the commit it was at, what
   it merged and that base's name, a line each; `purlis-update-base`, the base to record once the
-  branch is on it; `purlis-update-todo`, the bytes of the stopped rebase's remaining plan as git left
-  it, which `--continue` requires byte for byte before git reads the plan again (#7553); and
+  branch is on it; `purlis-update-range`, while a rebase is stopped: the commit its replay starts
+  after, then the one it goes onto, a line each, from which `--continue` derives the rebase's plan
+  (`rev-list --right-only --cherry-pick --no-merges`) and requires the plan's file to be exactly
+  the rest of it (#7594; an earlier version kept the plan's bytes in `purlis-update-todo`, which is
+  no longer read and is taken away); `purlis-branch`, **the branch the piece was cut for**, one
+  line, written when the piece is cut (`worktree::record::note_branch`): the app's git holds
+  `HEAD` to exactly `ref: refs/heads/<that branch>`, never to the folder's name, which `--branch`
+  makes a different string (a piece cut before it was kept has it noted from the branch it is on,
+  where that branch is the folder's name or one the clone recorded a base for, and says so); and
   `purlis-brokered-commit`, while a brokered commit stages: empty, then the id of the tree it
   staged (it was kept in the worktree's git directory, which a chat may write; that one is not
   read, and a link where it was refuses the commit).
+- **What the app does not prevent (#7553, #7594):** where a chat can write the worktree's git
+  record (sandbox level off), the app looks at the record before each git call it makes (links,
+  pseudo-refs that hold `ref:`, `HEAD`, a rebase's state) and again after it, and tells the
+  person if it changed. It does **not** prevent a link planted *while* git runs (H3), nor a write
+  to a rebase's plan between the last look and git reading it (M3). At level off the notes folder
+  above is writable by the chat too (M4), so these notes are the app's, not a chat-proof record.
+  A fuller fix (committing through `commit-tree` and `update-ref`, so no file of the record is
+  written by git) is a follow-up.
 - **Status:** **internal** — written and read by `purlis worktree update` and `push`, wherever they
   run. Earlier versions kept these in the git directory, and those are not read.
 - **Tier:** Clone state — what the app itself did to this clone's branches, never rebuilt from the
