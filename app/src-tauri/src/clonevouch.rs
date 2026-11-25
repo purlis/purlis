@@ -226,7 +226,11 @@ pub async fn record_repo(
     let writes = live_writes(&held);
     tauri::async_runtime::spawn_blocking(move || {
         HostScope::claim().ok_or_else(|| "A repo is recorded from the window alone.".to_owned())?;
+        let config_root = purlis_core::machine::config_root().ok_or_else(|| {
+            "purlis found no home directory to read the trusted clones in".to_owned()
+        })?;
         purlis_core::windowonly::record_this_repo(
+            &config_root,
             &root,
             &purlis_core::windowonly::Control::RecordRepo {
                 workspace,

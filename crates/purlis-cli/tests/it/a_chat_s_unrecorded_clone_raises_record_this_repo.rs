@@ -48,7 +48,15 @@ fn a_project() -> tempfile::TempDir {
         &clone,
         &["remote", "add", "origin", "https://github.com/acme/api.git"],
     );
-    std::fs::create_dir_all(dir.path().join("home")).unwrap();
+    // purlis cloned it: the config home records it at this address.
+    let home = dir.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    purlis_core::forge::gitcredential::remote::record_for_a_test(
+        &home,
+        &clone,
+        "github.com/acme/api",
+    )
+    .unwrap();
     dir
 }
 
@@ -105,6 +113,7 @@ fn as_the_app(root: &std::path::Path, ask: &Ask) -> Answer {
     };
     let WindowOnlyRefusal::RecordRepo { clone } = &asked.refused;
     match windowonly::ask_to_record(
+        &root.parent().unwrap().join("home"),
         root,
         asked.chat,
         "alpha",
@@ -162,6 +171,7 @@ fn forge_milestones_over_mcp(tmp: &tempfile::TempDir, env: &[(String, String)]) 
 fn a_chat_s_unrecorded_clone_raises_record_this_repo_and_the_chat_is_told_the_person_was_asked() {
     let tmp = a_project();
     let root = root(&tmp);
+    let home = tmp.path().join("home");
     // A window listens for the project.
     windowonly::telling(&root, Arc::new(|| {}));
     let app = an_app(&tmp, as_the_app);
@@ -191,7 +201,7 @@ fn a_chat_s_unrecorded_clone_raises_record_this_repo_and_the_chat_is_told_the_pe
     assert!(!root.join("inventory/repos.json").exists());
 
     // The person's press records it, and clears the ask.
-    windowonly::record_this_repo(&root, &raised[0].control, &[]).unwrap();
+    windowonly::record_this_repo(&home, &root, &raised[0].control, &[]).unwrap();
     assert_eq!(windowonly::every(&root), []);
     assert!(root.join("inventory/repos.json").exists());
     windowonly::project_ended(&root);

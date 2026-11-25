@@ -636,12 +636,13 @@ fn recordable(
 /// repo on a forge the project declares, or the project records it already or another repo for
 /// it ([`recordable`]). Read from the clone now, never from a chat's words.
 pub fn record_repo_for(
+    config_root: &Path,
     root: &Path,
     workspace: &str,
     clone: &str,
     reach: Reach<'_>,
 ) -> Result<Control, String> {
-    let live = live_repo_of(root, workspace, clone, reach)?;
+    let live = live_repo_of(config_root, root, workspace, clone, reach)?;
     let place = recordable(root, clone, &live, false)?;
     Ok(Control::RecordRepo {
         workspace: workspace.to_owned(),
@@ -651,8 +652,13 @@ pub fn record_repo_for(
 }
 
 /// The repo the origin of the clone `clone` of `workspace` names now, on a forge the project
-/// declares, among the clones `reach` allows.
+/// declares, among the clones `reach` allows. **Only a clone purlis cloned or the person
+/// vouched for counts, at the address recorded for it then** (#7607), as the GitHub App mint
+/// counts one ([`crate::forge::apptoken::remotes_of_workspace`]): a folder an earlier chat made
+/// in the workspace, at an origin it chose, is there at the next chat's start and names no repo
+/// of the person's.
 fn live_repo_of(
+    config_root: &Path,
     root: &Path,
     workspace: &str,
     clone: &str,
@@ -680,7 +686,20 @@ fn live_repo_of(
             crate::shown::short(workspace)
         ));
     };
-    crate::forge::pr::Repo::of_clone(root, &found.path)
+    let live = crate::forge::pr::Repo::of_clone(root, &found.path)?;
+    let vouched = crate::forge::gitcredential::vouch::recorded_remote(config_root, &found.path)
+        .is_some_and(|place| {
+            place.eq_ignore_ascii_case(&format!("{}/{}", live.forge.host, live.path))
+        });
+    if !vouched {
+        return Err(format!(
+            "{} is a clone purlis did not clone and the person has not trusted, or its origin is \
+             not the address recorded for it, so nothing was offered to record. Trust it first, \
+             or record it with `purlis discover`.",
+            crate::shown::short(clone)
+        ));
+    }
+    Ok(live)
 }
 
 /// **Whether the inventory's row `name` has the address `repo`** (`<host>/<owner>/<repo>`), the
@@ -714,6 +733,7 @@ pub fn clone_it_matches(root: &Path, name: &str, repo: &str) -> Result<(), Strin
 /// name ([`record_repo_for`]), the chat was not refused ([`refused_for_want_of_a_record`]), or
 /// `[policy] consents` raises none.
 pub fn ask_to_record(
+    config_root: &Path,
     root: &Path,
     session: u32,
     workspace: &str,
@@ -729,7 +749,7 @@ pub fn ask_to_record(
             crate::shown::short(clone)
         ));
     }
-    let control = record_repo_for(root, workspace, clone, reach)?;
+    let control = record_repo_for(config_root, root, workspace, clone, reach)?;
     if !asks(root) {
         return Err(format!(
             "The project records no repo for {}. Record it with `purlis discover`.",
@@ -802,6 +822,7 @@ pub fn record_repo_refusal(root: &Path, clone: &str, app: AppSaid) -> String {
 /// ([`crate::inventory::record`]), which nothing reads to choose a branch (`clone` checks out the
 /// remote's own HEAD). Its SSH address is the forge's own form ([`ssh_url_for`]).
 pub fn record_this_repo(
+    config_root: &Path,
     root: &Path,
     shown: &Control,
     writes: &[PathBuf],
@@ -824,7 +845,7 @@ pub fn record_this_repo(
         started: None,
         writes,
     };
-    let live = live_repo_of(root, workspace, clone, reach).map_err(|_| changed())?;
+    let live = live_repo_of(config_root, root, workspace, clone, reach).map_err(|_| changed())?;
     let now = recordable(root, clone, &live, true)?;
     if now != *place {
         return Err(changed());

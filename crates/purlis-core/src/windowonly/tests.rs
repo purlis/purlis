@@ -20,11 +20,30 @@ fn git(dir: &Path, args: &[&str]) {
 }
 
 /// A clone `name` in workspace `ws` of the plane at `root`, its `origin` at `url`.
-fn a_clone(root: &Path, name: &str, url: &str) -> PathBuf {
+/// A folder with a git directory at `url`, in workspace `ws`, that nothing vouches for: as one a
+/// chat made in the workspace, at an origin it chose.
+fn an_unvouched_clone(root: &Path, name: &str, url: &str) -> PathBuf {
     let clone = root.join("workspaces/ws").join(name);
     std::fs::create_dir_all(&clone).unwrap();
     git(&clone, &["init", "-q"]);
     git(&clone, &["remote", "add", "origin", url]);
+    clone
+}
+
+/// The config home of the project at `root` in these tests, where purlis records the clones it
+/// cloned.
+fn home_of(root: &Path) -> PathBuf {
+    root.join("cfg-home")
+}
+
+/// A clone purlis cloned: at `url`, and recorded for it in [`home_of`].
+fn a_clone(root: &Path, name: &str, url: &str) -> PathBuf {
+    let clone = an_unvouched_clone(root, name, url);
+    let place = url
+        .trim_start_matches("https://")
+        .trim_end_matches(".git")
+        .to_owned();
+    crate::forge::gitcredential::remote::record_for_a_test(&home_of(root), &clone, &place).unwrap();
     clone
 }
 
@@ -452,7 +471,7 @@ fn record_this_repo_is_raised_for_an_unrecorded_clone_and_its_press_records_that
     a_clone(root, "api", "https://github.com/acme/api.git");
     a_clone(root, "web", "https://github.com/acme/web.git");
 
-    let control = record_repo_for(root, "ws", "api", Reach::default()).unwrap();
+    let control = record_repo_for(&home_of(root), root, "ws", "api", Reach::default()).unwrap();
     assert_eq!(
         control,
         Control::RecordRepo {
@@ -472,7 +491,7 @@ fn record_this_repo_is_raised_for_an_unrecorded_clone_and_its_press_records_that
 
     // The press records that clone's repo, as `purlis discover` does, and no other clone's.
     assert_eq!(
-        record_this_repo(root, &control, &[]).unwrap(),
+        record_this_repo(&home_of(root), root, &control, &[]).unwrap(),
         "github.com/acme/api"
     );
     assert!(crate::catalogue::milestones::recorded(root, "api").is_some());
@@ -486,7 +505,7 @@ fn record_this_repo_fails_and_records_nothing_where_origin_changed_since_its_row
     let plane = a_plane();
     let root = plane.path();
     let clone = a_clone(root, "api", "https://github.com/acme/api.git");
-    let control = record_repo_for(root, "ws", "api", Reach::default()).unwrap();
+    let control = record_repo_for(&home_of(root), root, "ws", "api", Reach::default()).unwrap();
     raise(root, 4, control.clone());
 
     git(
@@ -498,11 +517,74 @@ fn record_this_repo_fails_and_records_nothing_where_origin_changed_since_its_row
             "https://github.com/evil/api.git",
         ],
     );
-    let why = record_this_repo(root, &control, &[]).unwrap_err();
+    let why = record_this_repo(&home_of(root), root, &control, &[]).unwrap_err();
     assert!(why.contains("changed since"), "{why}");
     assert!(crate::catalogue::milestones::recorded(root, "api").is_none());
     assert!(!root.join("inventory/repos.json").exists());
     assert_eq!(every(root).len(), 1, "the ask is kept");
+}
+
+#[test]
+fn record_this_repo_is_refused_for_a_folder_a_previous_chat_made_with_an_origin_it_chose() {
+    // #7607: the folder is there when the next chat starts, and outside the chat's grants, but
+    // nobody cloned it and nobody trusted it.
+    let plane = a_plane();
+    let root = plane.path();
+    let made = an_unvouched_clone(root, "api", "https://github.com/acme/api.git");
+    let started = crate::forge::apptoken::Started {
+        clone: crate::sandbox::real(&made),
+        git: {
+            use std::os::unix::fs::MetadataExt as _;
+            let meta = std::fs::metadata(made.join(".git")).unwrap();
+            Some((meta.dev(), meta.ino()))
+        },
+    };
+    let then = [started];
+    let reach = Reach {
+        started: Some(&then),
+        writes: &[],
+    };
+
+    let why = record_repo_for(&home_of(root), root, "ws", "api", reach).unwrap_err();
+    assert!(why.contains("did not clone"), "{why}");
+    // Nor does the person's press record it.
+    let shown = Control::RecordRepo {
+        workspace: "ws".to_owned(),
+        clone: "api".to_owned(),
+        place: "github.com/acme/api".to_owned(),
+    };
+    assert!(record_this_repo(&home_of(root), root, &shown, &[]).is_err());
+    assert!(crate::catalogue::milestones::recorded(root, "api").is_none());
+
+    // Once the person vouches for that address it is offered; at another address it is not.
+    crate::forge::gitcredential::remote::record_for_a_test(
+        &home_of(root),
+        &made,
+        "github.com/acme/api",
+    )
+    .unwrap();
+    assert!(record_repo_for(&home_of(root), root, "ws", "api", reach).is_ok());
+    git(
+        &made,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://github.com/evil/api.git",
+        ],
+    );
+    assert!(record_repo_for(&home_of(root), root, "ws", "api", reach).is_err());
+}
+
+#[test]
+fn record_this_repo_is_still_offered_for_a_clone_purlis_cloned() {
+    let plane = a_plane();
+    let root = plane.path();
+    a_clone(root, "api", "https://github.com/acme/api.git");
+
+    let control = record_repo_for(&home_of(root), root, "ws", "api", Reach::default()).unwrap();
+
+    assert_eq!(control.label(), "Record this repo");
 }
 
 #[test]
@@ -512,21 +594,21 @@ fn a_clone_the_project_records_or_no_declared_host_names_has_nothing_to_record()
     a_clone(root, "api", "https://github.com/acme/api.git");
     a_clone(root, "far", "https://example.org/acme/far.git");
     a_clone(root, "gone", "https://github.com/acme/gone.git");
-    let control = record_repo_for(root, "ws", "api", Reach::default()).unwrap();
-    record_this_repo(root, &control, &[]).unwrap();
+    let control = record_repo_for(&home_of(root), root, "ws", "api", Reach::default()).unwrap();
+    record_this_repo(&home_of(root), root, &control, &[]).unwrap();
 
     assert!(
-        record_repo_for(root, "ws", "api", Reach::default())
+        record_repo_for(&home_of(root), root, "ws", "api", Reach::default())
             .unwrap_err()
             .contains("already")
     );
-    assert!(record_repo_for(root, "ws", "far", Reach::default()).is_err());
+    assert!(record_repo_for(&home_of(root), root, "ws", "far", Reach::default()).is_err());
     assert!(
-        record_repo_for(root, "ws", "nope", Reach::default())
+        record_repo_for(&home_of(root), root, "ws", "nope", Reach::default())
             .unwrap_err()
             .contains("not a repo")
     );
-    assert!(record_repo_for(root, "ws", "gone", Reach::default()).is_ok());
+    assert!(record_repo_for(&home_of(root), root, "ws", "gone", Reach::default()).is_ok());
 }
 
 #[test]
@@ -535,13 +617,13 @@ fn asking_to_record_says_asked_in_asks_only_where_a_window_listens() {
     let root = plane.path();
     a_clone(root, "api", "https://github.com/acme/api.git");
 
-    let none = ask_to_record(root, 4, "ws", "api", Reach::default()).unwrap();
+    let none = ask_to_record(&home_of(root), root, 4, "ws", "api", Reach::default()).unwrap();
     assert!(none.starts_with("Nobody was asked"), "{none}");
     assert!(none.contains("purlis discover"), "{none}");
     assert!(!none.contains("asked the person in Asks"), "{none}");
 
     telling(root, Arc::new(|| {}));
-    let some = ask_to_record(root, 5, "ws", "api", Reach::default()).unwrap();
+    let some = ask_to_record(&home_of(root), root, 5, "ws", "api", Reach::default()).unwrap();
     assert!(
         some.starts_with("purlis asked the person in Asks"),
         "{some}"
@@ -589,7 +671,8 @@ fn asking_to_record_raises_no_ask_where_policy_consents_do_not_ask() {
         .unwrap();
         a_clone(root, "api", "https://github.com/acme/api.git");
 
-        let why = ask_to_record(root, 4, "ws", "api", Reach::default()).unwrap_err();
+        let why =
+            ask_to_record(&home_of(root), root, 4, "ws", "api", Reach::default()).unwrap_err();
 
         assert!(why.contains("`purlis discover`"), "{policy}: {why}");
         assert_eq!(every(root), [], "{policy}");
@@ -634,7 +717,7 @@ fn each_clone_and_remote_refusal_raises_its_own_ask() {
         name: "widget".to_owned(),
         repo: "github.com/acme/widget".to_owned(),
     };
-    let record = record_repo_for(root, "ws", "web", Reach::default()).unwrap();
+    let record = record_repo_for(&home_of(root), root, "ws", "web", Reach::default()).unwrap();
     for control in [&one, &clone, &record] {
         assert!(raise(root, 4, control.clone()).new, "{control:?}");
     }
@@ -650,7 +733,7 @@ fn each_clone_and_remote_refusal_raises_its_own_ask() {
     );
 
     // Record this repo's press clears its own ask.
-    record_this_repo(root, &record, &[]).unwrap();
+    record_this_repo(&home_of(root), root, &record, &[]).unwrap();
     assert_eq!(labels(), ["Use one address", "Clone it"]);
     // Clone it's press (the window cloned) clears its own.
     pressed_by_the_window(root, &clone);
@@ -750,7 +833,7 @@ fn a_clone_or_remote_refusal_with_no_window_says_nobody_was_asked_and_writes_a_b
         );
     }
     // A3 says it through the app's answer to the chat's refusal.
-    let said = ask_to_record(root, 7, "ws", "api", Reach::default()).unwrap();
+    let said = ask_to_record(&home_of(root), root, 7, "ws", "api", Reach::default()).unwrap();
     assert!(said.starts_with("Nobody was asked"), "{said}");
     assert!(said.contains("`purlis discover`"), "{said}");
 
@@ -786,11 +869,11 @@ fn record_this_repo_is_raised_only_for_a_clone_a_chat_could_not_have_made() {
         started: Some(&then),
         writes: &[],
     };
-    assert!(record_repo_for(root, "ws", "api", kept).is_ok());
+    assert!(record_repo_for(&home_of(root), root, "ws", "api", kept).is_ok());
 
     // A clone made after the chat started is no repo of the person's: its origin is the chat's.
     a_clone(root, "later", "https://github.com/acme/later.git");
-    let why = record_repo_for(root, "ws", "later", kept).unwrap_err();
+    let why = record_repo_for(&home_of(root), root, "ws", "later", kept).unwrap_err();
     assert!(why.contains("not a repo of workspace"), "{why}");
 
     // A clone whose git directory a chat may write is the chat's too, however old it is.
@@ -799,11 +882,11 @@ fn record_this_repo_is_raised_only_for_a_clone_a_chat_could_not_have_made() {
         started: Some(&then),
         writes: &writes,
     };
-    let why = record_repo_for(root, "ws", "api", held).unwrap_err();
+    let why = record_repo_for(&home_of(root), root, "ws", "api", held).unwrap_err();
     assert!(why.contains("not a repo of workspace"), "{why}");
     // And the person's press holds the same line.
-    let control = record_repo_for(root, "ws", "api", kept).unwrap();
-    let why = record_this_repo(root, &control, &writes).unwrap_err();
+    let control = record_repo_for(&home_of(root), root, "ws", "api", kept).unwrap();
+    let why = record_this_repo(&home_of(root), root, &control, &writes).unwrap_err();
     assert!(why.contains("changed since"), "{why}");
     assert!(crate::catalogue::milestones::recorded(root, "api").is_none());
 }
@@ -824,7 +907,7 @@ fn asking_to_record_is_raised_only_after_a_refusal_policy_makes() {
         &settings,
         &crate::sandbox::policy::Locks::default(),
     )));
-    let why = ask_to_record(root, 4, "ws", "api", Reach::default()).unwrap_err();
+    let why = ask_to_record(&home_of(root), root, 4, "ws", "api", Reach::default()).unwrap_err();
     crate::enforcement::set_in_the_app_for_this_test(true);
     assert!(why.contains("does not refuse"), "{why}");
     assert_eq!(every(root), []);
@@ -847,8 +930,8 @@ fn record_this_repo_keys_the_record_by_the_origin_s_bare_name_and_says_what_its_
     let plane = a_plane();
     let root = plane.path();
     a_clone(root, "api", "https://github.com/acme/api.git");
-    let control = record_repo_for(root, "ws", "api", Reach::default()).unwrap();
-    record_this_repo(root, &control, &[]).unwrap();
+    let control = record_repo_for(&home_of(root), root, "ws", "api", Reach::default()).unwrap();
+    record_this_repo(&home_of(root), root, &control, &[]).unwrap();
 
     let row = crate::catalogue::milestones::row_named(root, "api").unwrap();
     assert_eq!(row.name, "api");
@@ -861,7 +944,7 @@ fn record_this_repo_keys_the_record_by_the_origin_s_bare_name_and_says_what_its_
     // A clone in a folder that origin does not name is not recorded under the folder's name, nor
     // under another: `purlis discover` is the way out.
     a_clone(root, "x", "https://github.com/acme/y.git");
-    let why = record_repo_for(root, "ws", "x", Reach::default()).unwrap_err();
+    let why = record_repo_for(&home_of(root), root, "ws", "x", Reach::default()).unwrap_err();
     assert!(why.contains("`purlis discover`"), "{why}");
     assert!(crate::catalogue::milestones::row_named(root, "x").is_none());
     assert!(crate::catalogue::milestones::row_named(root, "y").is_none());
@@ -888,12 +971,12 @@ fn nothing_is_raised_where_the_project_records_another_repo_for_the_clone_or_it_
     a_clone(root, "lab", "https://gitlab.com/acme/lab.git");
 
     // A GitLab clone is `purlis discover`'s: the record built here is GitHub's.
-    let why = record_repo_for(root, "ws", "lab", Reach::default()).unwrap_err();
+    let why = record_repo_for(&home_of(root), root, "ws", "lab", Reach::default()).unwrap_err();
     assert!(why.contains("GitLab"), "{why}");
 
     // The project records `other/api` for the clone `api`: a chat's origin does not replace it.
-    let control = record_repo_for(root, "ws", "api", Reach::default()).unwrap();
-    record_this_repo(root, &control, &[]).unwrap();
+    let control = record_repo_for(&home_of(root), root, "ws", "api", Reach::default()).unwrap();
+    record_this_repo(&home_of(root), root, &control, &[]).unwrap();
     let a_clone_at = root.join("workspaces/ws/api");
     git(
         &a_clone_at,
@@ -904,10 +987,20 @@ fn nothing_is_raised_where_the_project_records_another_repo_for_the_clone_or_it_
             "https://github.com/other/api.git",
         ],
     );
-    let why = record_repo_for(root, "ws", "api", Reach::default()).unwrap_err();
+    // An origin other than the vouched one is refused as unvouched; vouched again, it is the
+    // project's record that holds.
+    let why = record_repo_for(&home_of(root), root, "ws", "api", Reach::default()).unwrap_err();
+    assert!(why.contains("did not clone"), "{why}");
+    crate::forge::gitcredential::remote::record_for_a_test(
+        &home_of(root),
+        &a_clone_at,
+        "github.com/other/api",
+    )
+    .unwrap();
+    let why = record_repo_for(&home_of(root), root, "ws", "api", Reach::default()).unwrap_err();
     assert!(why.contains("different repo"), "{why}");
     // And the press holds the same line: nothing is replaced.
-    let why = record_this_repo(root, &control, &[]).unwrap_err();
+    let why = record_this_repo(&home_of(root), root, &control, &[]).unwrap_err();
     assert!(why.contains("different repo"), "{why}");
     assert_eq!(
         crate::catalogue::milestones::row_named(root, "api")
@@ -928,7 +1021,7 @@ fn an_origin_with_a_space_or_a_control_character_or_too_long_is_never_shown() {
     ] {
         git(&clone, &["remote", "set-url", "origin", &url]);
         assert!(
-            record_repo_for(root, "ws", "api", Reach::default()).is_err(),
+            record_repo_for(&home_of(root), root, "ws", "api", Reach::default()).is_err(),
             "{url:?}"
         );
     }
