@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795577912430,
+  "lastUpdate": 1795578088967,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54432,6 +54432,48 @@ window.BENCHMARK_DATA = {
             "value": 102.1606115,
             "unit": "ms",
             "extra": "median of 5 runs: 100.154, 102.138, 102.161, 102.194, 103.125 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "cefbbec1cde78b8dc147845b10abcc57f717b783",
+          "message": "CI: a guard test keeps mold installed on every job that links with it (#7586)\n\n* CI: the recorded job installs mold on every run (#7240)\n\nRUSTFLAGS names mold, but the install step ran only when rust was in scope; the whole-tree guards (every draft PR) then linked without it. A test holds every mold job to an unconditional install.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M879V209CBTB4K5XKB0BAKVK\nPurlis-Persona: steward\n\n* Changelog fragment for the recorded job's mold install\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M879V209CBTB4K5XKB0BAKVK\nPurlis-Persona: steward\n\n* Changelog: the mold install is on main; the guard test keeps it there\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4VQ5VQ0NTF7EFFJKJB9E649\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T02:57:56Z",
+          "tree_id": "689e7037f0b0c2e56ccafd707e6dc8d3b2ce4761",
+          "url": "https://github.com/purlis/purlis/commit/cefbbec1cde78b8dc147845b10abcc57f717b783"
+        },
+        "date": 1795578081533,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.535093,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.512, 0.527, 0.535, 0.549, 0.551 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.192561499999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.110, 16.177, 16.193, 16.246, 16.433 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.27872450000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.996, 101.640, 102.279, 102.567, 103.326 ms"
           }
         ]
       }
