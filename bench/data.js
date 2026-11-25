@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795603711295,
+  "lastUpdate": 1795609232570,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54726,6 +54726,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0529075,
             "unit": "ms",
             "extra": "median of 5 runs: 101.673, 101.781, 102.053, 102.056, 102.818 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "723315453b9d6710716ed79a417b1e4283b0301a",
+          "message": "Forge listener and hook channel free a connection slot before the client sees EOF (#7608) (#7622)\n\n* Forge listener and hook channel give a connection's slot back before its stream closes (#7608)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M88XQ83RC8TVDM6ZJAFJSR7W\nPurlis-Persona: steward\n\n* Forge listener: a tunnel keeps its connection slot until both legs have ended, so the cap still bounds tunnels (#7608 review)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T11:35:36Z",
+          "tree_id": "36a83d3ed234867fc0fcb0045db5cdbc82b18902",
+          "url": "https://github.com/purlis/purlis/commit/723315453b9d6710716ed79a417b1e4283b0301a"
+        },
+        "date": 1795609225222,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.38540800000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.359, 0.374, 0.385, 0.386, 0.390 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.402092,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.321, 16.383, 16.402, 16.424, 16.517 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.67731549999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.958, 101.136, 101.677, 101.687, 101.774 ms"
           }
         ]
       }
