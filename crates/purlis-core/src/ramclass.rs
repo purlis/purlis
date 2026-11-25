@@ -3,9 +3,11 @@
 
 //! **A device's RAM class and its hot-chat target** (ADR 0082 §3, SC-4f #7635).
 //!
-//! The class is the largest of 8, 16, 32 and 64 GB that is not more than the device's physical
-//! memory (a 12 GB machine is in the 8 GB class); a machine under 8 GB has no class and targets
-//! one hot chat. The target is §3's formula, at most half of the class's memory for purlis and
+//! The class is the largest of 8, 16, 32 and 64 GB that the device's installed physical memory
+//! reaches (a 12 GB machine is in the 8 GB class); a machine under 8 GB has no class and targets
+//! one hot chat. **An operating system reports a little less than is installed** (Linux's
+//! `MemTotal` leaves out what the kernel keeps), so a reported total of at least 94% of a class
+//! is that class: 15.5 GB is a 16 GB machine and 7.6 GB an 8 GB one, while 14 GB is still 8. The target is §3's formula, at most half of the class's memory for purlis and
 //! its harnesses, capped at the top class's 50:
 //!
 //! ```text
@@ -31,26 +33,25 @@ const PER_CHAT: u64 = (385 * 10) + 202;
 
 const GIB: u64 = 1024 * 1024 * 1024;
 
+/// The share of a class, in percent, a reported total must reach to be that class.
+const REACHES: u128 = 94;
+
 /// A device's RAM class: what it reaches, and so how many hot chats it targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RamClass(Option<u64>);
 
 impl RamClass {
-    /// The class of a device with `bytes` of physical memory.
+    /// The class of a device whose operating system reports `bytes` of physical memory: the
+    /// largest class it reaches at least 94% of.
     pub fn of(bytes: u64) -> Self {
-        let gigabytes = bytes / GIB;
-        Self(CLASSES.into_iter().rfind(|class| *class <= gigabytes))
+        let reaches = |class: &u64| u128::from(bytes) * 100 >= u128::from(class * GIB) * REACHES;
+        Self(CLASSES.into_iter().rfind(reaches))
     }
 
-    /// The class of a device whose memory was read as `total`; an unread memory is no class,
-    /// which targets one chat, the way a machine under 8 GB does.
-    pub fn of_total(total: Option<u64>) -> Self {
-        total.map_or(Self(None), Self::of)
-    }
-
-    /// This machine's class, read from the operating system.
-    pub fn read() -> Self {
-        Self::of_total(crate::memorypressure::total())
+    /// This machine's class, read from the operating system; `None` where its memory could not
+    /// be read, which is no class at all rather than one under 8 GB.
+    pub fn read() -> Option<Self> {
+        crate::memorypressure::total().map(Self::of)
     }
 
     /// A class named in GB, as a test names one (`None`: under 8 GB), rounded down to the class

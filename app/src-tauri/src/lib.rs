@@ -4449,9 +4449,8 @@ pub fn run() {
             panics::send_waiting();
             app.manage(Quitting::default());
             // The device's RAM class, read from the operating system when the app starts (ADR
-            // 0082 §3, amended 2026-11-25), off the setup thread: the read runs a process.
-            let handle = app.handle().clone();
-            std::thread::spawn(move || handle.state::<diagnostics::Device>().read_now());
+            // 0082 §3), on a thread of its own: the read runs a process.
+            app.state::<diagnostics::Device>().begin_reading();
             // What a quit does, read at each one: to the background while something keeps the
             // session host running (FD-17).
             #[cfg(unix)]

@@ -6116,8 +6116,8 @@ export const commands = {
 	 */
 	aboutCharter: () => __TAURI_INVOKE<About>("about_charter"),
 	/**
-	 *  Copy diagnostics' answer: the system, and the open and hot chats of every project held.
-	 *  Read from memory only, so it costs nothing on the window's thread.
+	 *  Copy diagnostics' answer: the system, the open and hot chats of every project held, and the
+	 *  device's class. Read from memory only, so it costs nothing on the window's thread.
 	 */
 	diagnosticsHere: () => __TAURI_INVOKE<DiagnosticsHere>("diagnostics_here"),
 	/**
@@ -9117,6 +9117,19 @@ export type DeletesCutShort = {
 	unsettled: string[],
 };
 
+/**  What Diagnostics says of the device's RAM class (ADR 0082 §3). */
+export type DeviceClass = 
+/**  The machine's memory is still being read. */
+{ kind: "reading" } | 
+/**  The machine's memory could not be read: no class is known, and so no target. */
+{ kind: "not_known" } | 
+/**  The class, and the hot target it gives: a budget, never a cap. */
+{ kind: "known"; 
+/**  The class in GB (8, 16, 32 or 64), or `None` under 8 GB. */
+class_gb: number | null; 
+/**  How many hot chats the device targets. */
+hot_target: number };
+
 /**
  *  **What the Devices view draws first** (#2052): this machine's version, where everything the
  *  window has open runs, and each pool's limits.
@@ -9147,14 +9160,12 @@ export type DiagnosticsHere = {
 	/**  The chats open in every project this app holds, a shell tab not among them. */
 	open: number,
 	/**
-	 *  The open chats whose run has a program (the glossary's **hot chat**): any not done or
-	 *  failed.
+	 *  The open chats whose run has a process (the glossary's **hot chat**): `starting`,
+	 *  `working`, `input-required` or `paused`. A queued or hibernated run is open, not hot.
 	 */
 	hot: number,
-	/**  The device's RAM class in GB (8, 16, 32 or 64), or `None` under 8 GB (ADR 0082 §3). */
-	ram_class_gb: number | null,
-	/**  How many hot chats the device targets: a budget, never a cap. */
-	hot_target: number,
+	/**  The device's RAM class and its hot target. */
+	device: DeviceClass,
 };
 
 /**  What a discard is checked against. */
