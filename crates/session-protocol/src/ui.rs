@@ -243,6 +243,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // window draws, and read back. A link has no native window of its own here.
     "draw_native_window",
     "native_window_drawn",
+    // The device's RAM class stood in for the machine's in a scenario test (SC-4f, #7635): the
+    // `e2e` build only, and no chat's to set.
+    "ram_class_stand_in",
     // Whether the open project's forge would let everyone else sign in (one login, slice D):
     // read over the person's own forge sign-in, which no chat has (ADR D5, D10.1), and shown
     // in their Settings. A link is refused it, so a chat never reads the person's forge
