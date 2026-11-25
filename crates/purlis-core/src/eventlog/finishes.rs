@@ -248,18 +248,59 @@ fn finishes_among<'a>(events: impl Iterator<Item = &'a Event>, chat: &str) -> Ve
     out
 }
 
+/// **Whether the turn or the run of `chat` that its first events in `events` belong to began
+/// before them**: its first event that depends on what came earlier is not preceded by what
+/// settles it. A block, an Allow, a call that came back or a turn's end needs the prompt that
+/// began its turn (or the run's end that cleared it); a block needs, besides, the run's start
+/// that names the chat's harness. With neither missing, nothing before `events` can change
+/// what [`finishes_among`] answers of `chat`.
+fn needs_older<'a>(events: impl Iterator<Item = &'a Event>, chat: &str) -> bool {
+    let (mut started, mut reset) = (false, false);
+    for event in events.filter(|event| event.chat.as_deref() == Some(chat)) {
+        let own = event.parent_run.is_none();
+        let settled = match event.kind.as_str() {
+            "run.started" => {
+                started = true;
+                true
+            }
+            PROMPT | "run.ended" if own => {
+                reset = true;
+                true
+            }
+            TURN_ENDED if own => reset,
+            stops::BLOCK => started && reset,
+            stops::ASK_ANSWERED => reset,
+            kind if came_back(kind) => reset,
+            _ => true,
+        };
+        if !settled {
+            return true;
+        }
+        if started && reset {
+            return false;
+        }
+    }
+    false
+}
+
 /// **The log's recent files, parsed once and kept while they do not change** (felt speed round 5,
 /// H15). The window asks for finishes as each chat's turn ends, and each ask used to read and
 /// parse the whole log (30 days) for it: with about fifty chats that was a storm of parses of
 /// 100 MB, and the commands beside it waited on the cores it took.
 ///
-/// An ask reads only the files that can hold an event of its window: the live one, every
-/// sealed one written to since `since`, and the newest one before them, which gives the turn
-/// that straddles the window's start its blocks. A file is parsed again only when its length or
-/// its modified time is not what it was kept at, **stat'ed once the ask holds the lock**, so no
-/// answer is made from a file as it was before its ask. The lock is held while a file is parsed,
-/// so asks that come meanwhile share that parse and wait for it, as asks of a [`crate::burst`]
-/// do.
+/// An ask reads the live file, which it reads first (as [`super::read_back`] does, so a file
+/// sealed meanwhile is listed after, never missed), and every sealed file written to since
+/// `since`. **Then, for each asked chat, the older ones until its first turn and its run's start
+/// are in what was read** ([`needs_older`]), so a turn that began before the window keeps its
+/// early blocks and a block its harness, and the answer is the whole log's for every turn the
+/// window reaches. A chat that began no turn the window reaches reads nothing older.
+///
+/// A file is parsed again only when it is not what it was kept at: **stat'ed once the ask holds
+/// the lock**, so no answer is made from a file as it was before its ask. One that only grew (the
+/// same file, longer) has just what it gained parsed, from the end of the last whole line it was
+/// parsed to; one that shrank, or is another file (its length, modified time and identity), is
+/// parsed whole. The lock is held while a file is parsed, so asks that come meanwhile share that
+/// parse and wait for it, as asks of a [`crate::burst`] do.
 ///
 /// In memory and in this process only: nothing is written, so there is no store to give a tier
 /// (ADR 0069).
@@ -274,11 +315,65 @@ pub struct Recent {
     lines: std::sync::atomic::AtomicUsize,
 }
 
-#[derive(Debug)]
-struct KeptFile {
+/// What a file was when it was read: what tells it is not the same file, nor the same length.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Stamp {
     len: u64,
     modified: Option<std::time::SystemTime>,
-    events: std::sync::Arc<Vec<Event>>,
+    /// Which file it is where the platform says (its inode), so one put in its place is seen.
+    id: Option<u64>,
+}
+
+impl Stamp {
+    fn of(meta: &std::fs::Metadata) -> Self {
+        Self {
+            len: meta.len(),
+            modified: meta.modified().ok(),
+            id: file_id(meta),
+        }
+    }
+}
+
+#[cfg(unix)]
+fn file_id(meta: &std::fs::Metadata) -> Option<u64> {
+    use std::os::unix::fs::MetadataExt;
+    Some(meta.ino())
+}
+
+#[cfg(not(unix))]
+fn file_id(_: &std::fs::Metadata) -> Option<u64> {
+    None
+}
+
+/// The stamp of `path`, or none where it is not there (the live file before its first event, or
+/// a segment pruned since). Any other failure is the ask's, as it is [`super::read`]'s.
+fn stamp(path: &Path) -> io::Result<Option<Stamp>> {
+    match std::fs::metadata(path) {
+        Ok(meta) => Ok(Some(Stamp::of(&meta))),
+        Err(why) if why.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(why) => Err(why),
+    }
+}
+
+/// Kept pieces of events, each with the number its events must pass to count, if any.
+type Chunks = Vec<(std::sync::Arc<Vec<Event>>, Option<u64>)>;
+
+/// The events of `chunks` that count, in order.
+fn events_of(chunks: &Chunks) -> impl Iterator<Item = &Event> {
+    chunks.iter().flat_map(|(piece, after)| {
+        piece
+            .iter()
+            .filter(move |event| after.is_none_or(|seq| event.seq > seq))
+    })
+}
+
+#[derive(Debug)]
+struct KeptFile {
+    stamp: Stamp,
+    /// How far the file is parsed: the end of its last whole line.
+    offset: u64,
+    /// Its events: the file as first parsed, then each piece it gained.
+    chunks: Vec<std::sync::Arc<Vec<Event>>>,
 }
 
 impl Recent {
@@ -293,7 +388,8 @@ impl Recent {
     }
 
     /// **The finishes of each of `chats`** in the log in `dir`, oldest first, as [`finishes_in`]
-    /// answers them from the whole log, for a window that starts at `since` seconds since 1970.
+    /// answers them from the whole log, for every turn that ends at or after `since` seconds
+    /// since 1970 (and others the files read happen to hold).
     pub fn finishes(
         &self,
         dir: &Path,
@@ -301,78 +397,156 @@ impl Recent {
         since: u64,
     ) -> io::Result<std::collections::HashMap<String, Vec<Finish>>> {
         let mut kept = self.files.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut paths: Vec<std::path::PathBuf> = super::segments(dir)?
-            .into_iter()
-            .map(|(_, path)| path)
-            .collect();
-        paths.push(dir.join(super::FILE));
+        // The live file first: a seal after it is read leaves its events in a segment listed below
+        // (and dropped as the repeat they are), where one before would leave them in neither.
+        let live_path = dir.join(super::FILE);
+        let live = stamp(&live_path)?;
+        if let Some(live) = &live {
+            self.bring_up_to_date(&mut kept, &live_path, live)?;
+        }
+        // Newest first.
+        let mut sealed = Vec::new();
+        for (_, path) in super::segments(dir)?.into_iter().rev() {
+            if let Some(stamp) = stamp(&path)? {
+                sealed.push((path, stamp));
+            }
+        }
         let since = std::time::UNIX_EPOCH + std::time::Duration::from_secs(since);
-        // Newest first, until a file written before the window: it is the last one read.
-        let mut chosen = Vec::new();
-        for path in paths.into_iter().rev() {
-            let Ok(meta) = std::fs::metadata(&path) else {
-                // Not there (the live file before its first event, or a segment pruned since).
-                continue;
-            };
-            let modified = meta.modified().ok();
-            let before_window = modified.is_some_and(|written| written < since);
-            chosen.push((path, meta.len(), modified));
-            if before_window {
-                break;
+        let mut taken = sealed
+            .iter()
+            .take_while(|(_, stamp)| stamp.modified.is_none_or(|written| written >= since))
+            .count();
+        let chunks = loop {
+            for (path, stamp) in &sealed[..taken] {
+                self.bring_up_to_date(&mut kept, path, stamp)?;
             }
-        }
-        chosen.reverse();
-        let mut files = Vec::new();
-        for (path, len, modified) in &chosen {
-            let current = kept
-                .get(path)
-                .filter(|one| one.len == *len && one.modified == *modified);
-            if let Some(one) = current {
-                files.push(one.events.clone());
-                continue;
+            let chunks = Self::in_order(&kept, &live_path, &sealed[..taken]);
+            let more = taken < sealed.len()
+                && chats
+                    .iter()
+                    .any(|chat| needs_older(events_of(&chunks), chat));
+            if !more {
+                break chunks;
             }
-            let events = std::sync::Arc::new(parse(path)?);
-            #[cfg(test)]
-            {
-                self.parsed
-                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                self.lines
-                    .fetch_add(events.len(), std::sync::atomic::Ordering::SeqCst);
-            }
-            kept.insert(
-                path.clone(),
-                KeptFile {
-                    len: *len,
-                    modified: *modified,
-                    events: events.clone(),
-                },
-            );
-            files.push(events);
-        }
-        kept.retain(|path, _| chosen.iter().any(|(one, ..)| one == path));
+            taken += 1;
+        };
+        kept.retain(|path, _| {
+            *path == live_path || sealed[..taken].iter().any(|(one, _)| one == path)
+        });
         drop(kept);
         Ok(chats
             .iter()
-            .map(|chat| {
-                let all = files.iter().flat_map(|file| file.iter());
-                ((*chat).to_owned(), finishes_among(all, chat))
-            })
+            .map(|chat| ((*chat).to_owned(), finishes_among(events_of(&chunks), chat)))
             .collect())
+    }
+
+    /// The kept events of the files in `sealed` (newest first) and the live file, oldest first,
+    /// each piece with the number its events must pass to count: the live file's pieces repeat
+    /// what was sealed meanwhile (the live file was read before it was sealed), so only an event
+    /// newer than the newest sealed one counts.
+    fn in_order(
+        kept: &std::collections::HashMap<std::path::PathBuf, KeptFile>,
+        live: &Path,
+        sealed: &[(std::path::PathBuf, Stamp)],
+    ) -> Chunks {
+        let pieces = |path: &Path| -> Vec<std::sync::Arc<Vec<Event>>> {
+            kept.get(path)
+                .map(|one| one.chunks.clone())
+                .unwrap_or_default()
+        };
+        let mut out = Chunks::new();
+        for (path, _) in sealed.iter().rev() {
+            out.extend(pieces(path).into_iter().map(|piece| (piece, None)));
+        }
+        let newest = out
+            .iter()
+            .filter_map(|(piece, _)| piece.last().map(|event| event.seq))
+            .max();
+        out.extend(pieces(live).into_iter().map(|piece| (piece, newest)));
+        out
+    }
+
+    /// Makes what is kept of `path` what `stamp` says it is now, reading as little as that takes.
+    fn bring_up_to_date(
+        &self,
+        kept: &mut std::collections::HashMap<std::path::PathBuf, KeptFile>,
+        path: &Path,
+        stamp: &Stamp,
+    ) -> io::Result<()> {
+        let from = match kept.get(path) {
+            Some(one) if one.stamp == *stamp => return Ok(()),
+            // The same file, longer: only what it gained.
+            Some(one)
+                if stamp.id.is_some() && one.stamp.id == stamp.id && one.stamp.len < stamp.len =>
+            {
+                Some(one.offset)
+            }
+            _ => None,
+        };
+        let (events, offset) = read_from(path, from.unwrap_or(0))?;
+        #[cfg(test)]
+        {
+            if from.is_none() {
+                self.parsed
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+            self.lines
+                .fetch_add(events.len(), std::sync::atomic::Ordering::SeqCst);
+        }
+        let events = std::sync::Arc::new(events);
+        match (from, kept.get_mut(path)) {
+            (Some(_), Some(one)) => {
+                one.stamp = *stamp;
+                one.offset = offset;
+                one.chunks.push(events);
+            }
+            _ => {
+                kept.insert(
+                    path.to_path_buf(),
+                    KeptFile {
+                        stamp: *stamp,
+                        offset,
+                        chunks: vec![events],
+                    },
+                );
+            }
+        }
+        Ok(())
     }
 }
 
-/// The events in `path`, a line that is not one skipped, as [`super::read`] reads a file; none for
-/// a file that is not there.
-fn parse(path: &Path) -> io::Result<Vec<Event>> {
-    let text = match std::fs::read(path) {
-        Ok(text) => text,
-        Err(why) if why.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+/// The events in `path` from byte `from`, a line that is not one skipped, as [`super::read`]
+/// reads a file, and where the last whole line ends: a last line with no end that is not an
+/// event is half written, and is left to be read once it is whole. None for a file that is not
+/// there.
+fn read_from(path: &Path, from: u64) -> io::Result<(Vec<Event>, u64)> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(why) if why.kind() == io::ErrorKind::NotFound => return Ok((Vec::new(), 0)),
         Err(why) => return Err(why),
     };
-    Ok(text
-        .split(|byte| *byte == b'\n')
-        .filter_map(|line| serde_json::from_slice::<Event>(line).ok())
-        .collect())
+    file.seek(SeekFrom::Start(from))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    let mut events = Vec::new();
+    let mut done = 0;
+    let mut rest = bytes.as_slice();
+    while !rest.is_empty() {
+        let (line, whole) = match rest.iter().position(|byte| *byte == b'\n') {
+            Some(end) => (&rest[..end], true),
+            None => (rest, false),
+        };
+        let event = serde_json::from_slice::<Event>(line).ok();
+        if event.is_none() && !whole {
+            break;
+        }
+        events.extend(event);
+        let used = line.len() + usize::from(whole);
+        done += used;
+        rest = &rest[used..];
+    }
+    Ok((events, from + done as u64))
 }
 
 /// [`finishes`] of the log in `dir`, read through [`super::read`].

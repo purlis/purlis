@@ -581,7 +581,11 @@ fn a_file_that_is_gone_from_the_log_is_not_kept() {
     assert_eq!(said[CHAT], finishes_in(dir.path(), CHAT).unwrap());
     let kept = recent.files.lock().unwrap();
     assert!(!kept.contains_key(&files[0]), "the pruned segment is kept");
-    assert_eq!(kept.len(), files.len(), "the segments left and the live file");
+    assert_eq!(
+        kept.len(),
+        files.len(),
+        "the segments left and the live file"
+    );
 }
 
 fn live(dir: &Path) -> std::path::PathBuf {
@@ -638,9 +642,15 @@ fn a_line_half_written_is_read_once_it_is_whole() {
 #[test]
 fn a_live_file_replaced_by_another_of_the_same_length_and_time_is_read_again() {
     let dir = tempfile::tempdir().unwrap();
-    Turns::in_dir(dir.path(), CHAT).prompt().block(PUSH, None).stop();
+    Turns::in_dir(dir.path(), CHAT)
+        .prompt()
+        .block(PUSH, None)
+        .stop();
     let recent = Recent::default();
-    assert_eq!(recent.finishes(dir.path(), &[CHAT], 0).unwrap()[CHAT].len(), 1);
+    assert_eq!(
+        recent.finishes(dir.path(), &[CHAT], 0).unwrap()[CHAT].len(),
+        1
+    );
     let path = live(dir.path());
     let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
     // The same bytes but for the chat: as long, and no longer anyone's turn of CHAT.
@@ -665,7 +675,10 @@ fn a_live_file_that_shrank_is_read_whole_again() {
     let mut written = Turns::in_dir(dir.path(), CHAT);
     written.prompt().block(PUSH, None).stop().prompt().stop();
     let recent = Recent::default();
-    assert_eq!(recent.finishes(dir.path(), &[CHAT], 0).unwrap()[CHAT].len(), 2);
+    assert_eq!(
+        recent.finishes(dir.path(), &[CHAT], 0).unwrap()[CHAT].len(),
+        2
+    );
     let path = live(dir.path());
     let text = std::fs::read(&path).unwrap();
     let cut = text.iter().rposition(|b| *b == b'\n').unwrap();

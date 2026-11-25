@@ -4124,17 +4124,20 @@ fn asks_waiting_asked_together_share_one_read_that_starts_after_them() {
     let dir = tempfile::tempdir().expect("a directory");
     let root = dir.path().join("project");
     std::fs::create_dir_all(&root).expect("the project");
-    let planes =
-        crate::planes::Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None);
+    let planes = crate::planes::Planes::telling(
+        std::sync::Arc::new(|_| {}),
+        crate::Shipped::default(),
+        None,
+    );
     let id = planes.open(&root);
     let held = planes.held(&id).expect("held");
     let blank = every_ask(&held);
     let reads = AtomicU32::new(0);
     // A read tells the number it started as, in the field that is nothing else here.
-    let read = |hold: Option<&std::sync::mpsc::Receiver<()>>| {
+    let read = |hold: Option<&std::sync::Mutex<std::sync::mpsc::Receiver<()>>>| {
         let number = reads.fetch_add(1, Ordering::SeqCst) + 1;
         if let Some(hold) = hold {
-            hold.recv().expect("let go");
+            hold.lock().expect("held").recv().expect("let go");
         }
         Asking {
             snoozed_until: Some(number),
@@ -4143,6 +4146,7 @@ fn asks_waiting_asked_together_share_one_read_that_starts_after_them() {
     };
     let (inside, started) = std::sync::mpsc::channel::<()>();
     let (release, hold) = std::sync::mpsc::channel::<()>();
+    let hold = std::sync::Mutex::new(hold);
     let (first, second) = std::thread::scope(|scope| {
         let first = scope.spawn(|| {
             counted_in_a_burst(&held, || {
@@ -4164,7 +4168,11 @@ fn asks_waiting_asked_together_share_one_read_that_starts_after_them() {
     });
     assert_eq!(first.snoozed_until, Some(1));
     for answer in &second {
-        assert_eq!(answer.snoozed_until, Some(2), "not the read that was running");
+        assert_eq!(
+            answer.snoozed_until,
+            Some(2),
+            "not the read that was running"
+        );
     }
     assert_eq!(reads.load(Ordering::SeqCst), 2);
 }
@@ -4177,8 +4185,11 @@ fn asks_waiting_once_reads_the_project_again_for_an_ask_after_a_change() {
     let root = dir.path().join("project");
     std::fs::create_dir_all(&root).expect("the project");
     std::fs::write(purlis_core::names::manifest(&root), "schema = 1\n").expect("its manifest");
-    let planes =
-        crate::planes::Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None);
+    let planes = crate::planes::Planes::telling(
+        std::sync::Arc::new(|_| {}),
+        crate::Shipped::default(),
+        None,
+    );
     let id = planes.open(&root);
     let held = planes.held(&id).expect("held");
     let persona_asks = || {

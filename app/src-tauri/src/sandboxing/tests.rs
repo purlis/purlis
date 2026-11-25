@@ -3983,17 +3983,20 @@ fn sandbox_state_asked_together_shares_one_read_that_starts_after_them() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("project");
     std::fs::create_dir_all(&root).unwrap();
-    let planes =
-        crate::planes::Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None);
+    let planes = crate::planes::Planes::telling(
+        std::sync::Arc::new(|_| {}),
+        crate::Shipped::default(),
+        None,
+    );
     let id = planes.open(&root);
     let held = planes.held(&id).unwrap();
     let blank = state_of(&root);
     let reads = AtomicU32::new(0);
     // A read tells the number it started as, in the count that is nothing else here.
-    let read = |hold: Option<&std::sync::mpsc::Receiver<()>>| {
+    let read = |hold: Option<&std::sync::Mutex<std::sync::mpsc::Receiver<()>>>| {
         let number = reads.fetch_add(1, Ordering::SeqCst) + 1;
         if let Some(hold) = hold {
-            hold.recv().unwrap();
+            hold.lock().unwrap().recv().unwrap();
         }
         SandboxState {
             never: vec![number.to_string()],
@@ -4002,6 +4005,7 @@ fn sandbox_state_asked_together_shares_one_read_that_starts_after_them() {
     };
     let (inside, started) = std::sync::mpsc::channel::<()>();
     let (release, hold) = std::sync::mpsc::channel::<()>();
+    let hold = std::sync::Mutex::new(hold);
     let (first, second) = std::thread::scope(|scope| {
         let first = scope.spawn(|| {
             state_in_a_burst(&held, || {
@@ -4036,8 +4040,11 @@ fn sandbox_state_once_reads_the_project_again_for_an_ask_after_a_change() {
     let root = dir.path().join("project");
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(purlis_core::names::manifest(&root), "schema = 1\n").unwrap();
-    let planes =
-        crate::planes::Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None);
+    let planes = crate::planes::Planes::telling(
+        std::sync::Arc::new(|_| {}),
+        crate::Shipped::default(),
+        None,
+    );
     let id = planes.open(&root);
     let held = planes.held(&id).unwrap();
     assert!(!state_once(&held).on);
