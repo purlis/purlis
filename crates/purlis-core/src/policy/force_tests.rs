@@ -184,6 +184,7 @@ pub(in crate::policy) fn host(root: &Path, request: &Request<'_>) -> Decision {
         request,
         None,
     )
+    .0
 }
 
 /// One decision with a standing built by hand, and nothing sealed.
@@ -873,7 +874,7 @@ fn disk_sources_host(root: &Path, request: &Request<'_>) -> Decision {
         organisation: None,
         accepted: None,
     };
-    in_force(root, &sources, &answers::standing(root), request, None)
+    in_force(root, &sources, &answers::standing(root), request, None).0
 }
 
 const TABLES: &str =
@@ -1138,6 +1139,8 @@ fn start_in(root: &Path, standing: Standing) -> Decision {
             standing,
             machine: None,
             chat: None,
+            now: None,
+            retired: Default::default(),
         },
     )
 }
@@ -1697,10 +1700,10 @@ fn a_head_that_was_not_read_stably_purges_no_grant() {
         matches!(sides.first(), Some(LimitSide::Unread)),
         "the current side is unread"
     );
-    retire_lost_grants(&root, &sources(&root), &answers::standing(&root), None);
+    let _ = retire_lost_grants(&root, &sources(&root), &answers::standing(&root), None);
     seam::set(None);
     assert!(holds(), "nothing is purged on a guess");
     // Control: HEAD read, no side holds the rule, and the grant goes.
-    retire_lost_grants(&root, &sources(&root), &answers::standing(&root), None);
+    let _ = retire_lost_grants(&root, &sources(&root), &answers::standing(&root), None);
     assert!(!holds(), "a grant of a rule in no side is lost");
 }

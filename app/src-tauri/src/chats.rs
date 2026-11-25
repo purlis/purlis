@@ -3609,6 +3609,20 @@ impl Chats {
             .any(|one| one.chat.identity.id.as_deref() == Some(id))
     }
 
+    /// **Runs `keep` only while a session of the chat whose id is `id` is open**, under the lock a
+    /// close takes, so the chat cannot close between the check and `keep` (as
+    /// [`Self::commit_grant`] does). `None` where it is not open and `keep` did not run. `keep`
+    /// must not take this chat's locks.
+    pub(crate) fn while_open<T>(&self, id: &str, keep: impl FnOnce() -> T) -> Option<T> {
+        let open = lock(&self.open);
+        let still = open
+            .values()
+            .any(|one| one.chat.identity.id.as_deref() == Some(id));
+        let kept = still.then(keep);
+        drop(open);
+        kept
+    }
+
     /// Chat `session`'s board of live asks (#1666), where its proxy holds a connection while
     /// the person is asked.
     pub fn board_of(&self, session: u32) -> Option<Arc<dyn purlis_core::sandbox::Board>> {

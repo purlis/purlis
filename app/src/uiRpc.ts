@@ -1705,6 +1705,10 @@ export const commands = {
 	chatKnownGaps: (plane: PlaneId, session: number) => typedError<KnownGapShown[], string>(__TAURI_INVOKE("chat_known_gaps", { plane, session })),
 	answersShown: __WINDOW_ONLY_RESULT,
 	confirmDeviceId: __WINDOW_ONLY_RESULT,
+	askOffered: __WINDOW_ONLY_RESULT,
+	giveTimedGrant: __WINDOW_ONLY_RESULT,
+	allowedAnswers: __WINDOW_ONLY_RESULT,
+	removeAllowedAnswer: __WINDOW_ONLY_RESULT,
 	tellChatBlocked: __WINDOW_ONLY_RESULT,
 	taskQuestion: __WINDOW_ONLY_RESULT,
 	taskQuestionAnswered: __WINDOW_ONLY_RESULT,
@@ -3151,6 +3155,37 @@ export type Allowed = {
 	 *  carries on, and nothing restarts, so the window owes the chat no restart.
 	 */
 	live: boolean,
+};
+
+/**  One row of the Allowed list: a grant or a timed grant. */
+export type AllowedAnswer = {
+	/**  What Remove names it by. */
+	id: string,
+	/**  `once`, `timed`, `this chat`, `this workspace` or `everywhere`. */
+	scope: string,
+	/**  The rule it covers. */
+	rule: string,
+	/**  The action. */
+	action: string,
+	/**  What it covers. */
+	resource: string,
+	/**  The chat's ULID, for Once, timed and This chat. */
+	chat: string | null,
+	/**  The workspace, for This workspace. */
+	workspace: string | null,
+	/**  The reason, for a timed grant. */
+	reason: string | null,
+	/**  When a timed grant ends, in seconds since 1970. */
+	until: number | null,
+	/**  How many seconds it has left as this list was read. */
+	left: number | null,
+	/**  The chat's name, where it is open now: what a timed row names its chat by. */
+	chat_name: string | null,
+	/**
+	 *  Whether it serves now. A timed grant stops serving when a cap tightens (`@timed`, a lock)
+	 *  or its rule no longer asks: it stays on the list, said so, until it ends or is removed.
+	 */
+	serving: boolean,
 };
 
 /**
@@ -9829,6 +9864,20 @@ export type Offer = {
 	channel: string,
 	/**  The release notes, as the manifest carries them. */
 	notes: string,
+};
+
+/**  What the person is offered at an ask, as the window draws it. */
+export type OfferShown = {
+	/**  The grant scopes, narrowest first, in the words `@keep` uses. */
+	scopes: string[],
+	/**  The timed grant's lengths (`15m`, `1h`), shortest first; none where it is not offered. */
+	timed: string[],
+	/**  Whether Don't allow is offered. */
+	dont_allow: boolean,
+	/**  The scopes a Never can be given at. */
+	never: string[],
+	/**  What a deny offers instead of the rest: the button's words. */
+	way_out: string | null,
 };
 
 /**  One answer an ask offers. */
@@ -18039,6 +18088,14 @@ export type ThisMachine = {
 	dropped: string[],
 	/**  Why this machine keeps no store at all, or null when it does. */
 	forgetful: string | null,
+};
+
+/**  What a timed grant given says. */
+export type TimedGiven = {
+	/**  The rules it answers (one grant each). */
+	rules: string[],
+	/**  When it ends, in seconds since 1970. */
+	until: number,
 };
 
 /**  Who drove a browser at a moment of its chat's timeline (#2017). */

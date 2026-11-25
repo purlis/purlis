@@ -1749,6 +1749,10 @@ impl Held {
         let closed = self.chats.close(session);
         let ended = id.filter(|id| !self.chats.id_is_open(id));
         self.dispatch_grants.chat_closed(session, ended.as_deref());
+        // Its timed grants end with it (M75-21), where no session of the chat is left open.
+        if let Some(id) = ended.as_deref() {
+            crate::timedgrants::chat_closed(self.root(), &self.hooks, session, Some(id));
+        }
         // What it asked for and waited on goes with it, and so does how it was taken to run:
         // a chat started again in its place is marked afresh.
         self.held_dispatches.forget(session);

@@ -73,6 +73,7 @@ mod chatlog;
 mod knowngaps;
 // The sealed answers, for the window (M75-07a, #7015).
 mod answers;
+mod timedgrants;
 // The Devices view (#2052).
 mod clusterpools;
 mod devices;

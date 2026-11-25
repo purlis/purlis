@@ -23,6 +23,8 @@ use crate::secrets::answers::{self, Deny, Entry, Standing, State};
 
 const ULID: &str = "01M85WM43DT07ANNAQ6NQEJTXD";
 const OTHER: &str = "01M85WM43DT07ANNAQ6NQEJTXE";
+/// The time the tests decide at, in seconds since 1970.
+const NOW: u64 = 1_800_000_000;
 
 fn base() -> serde_json::Value {
     serde_json::json!({
@@ -125,7 +127,7 @@ fn after(
     chat: Option<&str>,
     standing: &Standing,
 ) -> Decision {
-    apply(decision, request, chat, standing, &mut |_| true)
+    apply(decision, request, chat, standing, NOW, &mut |_| true)
 }
 
 fn grant(rule: &str, request: &Request<'_>, scope: Scope, chat: Option<&str>) -> Entry {
@@ -414,6 +416,8 @@ fn a_never_holds_under_the_open_template() {
         standing: holding(entries),
         machine: None,
         chat: Some(ULID.to_owned()),
+        now: None,
+        retired: Default::default(),
     };
     let ask = |sealed: &Sealed, resource| {
         decide::in_plane(&root, &asker, "merge", ("Branch", resource), sealed)
@@ -447,6 +451,8 @@ fn a_never_holds_under_the_open_template() {
         standing,
         machine: None,
         chat: Some(ULID.to_owned()),
+        now: None,
+        retired: Default::default(),
     };
     let everywhere = ask(&sealed, "acme/web#main");
     assert_eq!(everywhere.after_mode, Outcome::Deny, "{everywhere:?}");
@@ -504,6 +510,8 @@ fn an_unreadable_nevers_store_denies_in_every_mode() {
         standing: holding(vec![broken]),
         machine: None,
         chat: Some(ULID.to_owned()),
+        now: None,
+        retired: Default::default(),
     };
     let said = decide::in_plane(&root, &asker, "exec", ("Command", "ls"), &sealed);
     assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
@@ -536,6 +544,7 @@ fn a_once_grant_is_spent_by_the_one_request_it_serves() {
         &req,
         Some(ULID),
         &standing,
+        NOW,
         &mut |texts| {
             spent.extend(texts.iter().map(|text| (*text).to_owned()));
             true
@@ -549,6 +558,7 @@ fn a_once_grant_is_spent_by_the_one_request_it_serves() {
         &req,
         Some(ULID),
         &standing,
+        NOW,
         &mut |_| false,
     );
     assert_eq!(refused.after_mode, Outcome::Ask, "{refused:?}");
@@ -642,7 +652,7 @@ fn an_ask_the_accepted_copy_holds_and_a_commit_dropped_still_needs_its_own_grant
     let judged = |entries: Vec<Entry>| {
         let standing = holding(entries);
         let decision = judge(&root, &sources(&root), &standing, &req, None).0;
-        apply(decision, &req, Some(ULID), &standing, &mut |_| true)
+        apply(decision, &req, Some(ULID), &standing, NOW, &mut |_| true)
     };
     let gx = grant("processes-x", &req, Scope::Workspace, None);
     let gy = grant("processes-y", &req, Scope::Workspace, None);
@@ -678,7 +688,7 @@ fn a_scope_lock_caps_an_ask_a_family_mode_left_enforced_beside_a_lifted_plain_fo
         "{decision:?}"
     );
     assert_eq!(decision.keep.as_deref(), Some("once"), "{decision:?}");
-    let said = apply(decision, &req, Some(ULID), &standing, &mut |_| true);
+    let said = apply(decision, &req, Some(ULID), &standing, NOW, &mut |_| true);
     assert_eq!(said.after_mode, Outcome::Ask, "{said:?}");
 }
 
@@ -758,6 +768,8 @@ fn two_once_grants_are_spent_together_or_not_at_all() {
         standing: holding(vec![ga.clone(), gb]),
         machine: None,
         chat: Some(ULID.to_owned()),
+        now: None,
+        retired: Default::default(),
     };
     let said = decide::in_plane(&root, &asker(), "exec", ("Command", "ls"), &sealed);
     assert_eq!(said.after_mode, Outcome::Ask, "{said:?}");
@@ -959,6 +971,8 @@ fn a_grant_for_the_projects_own_merge_ask_does_not_serve_while_the_floor_holds_t
         standing: holding(entries),
         machine: None,
         chat: Some(ULID.to_owned()),
+        now: None,
+        retired: Default::default(),
     };
     let said = for_the_merge(
         &root,
@@ -1083,7 +1097,7 @@ fn an_ask_held_by_the_floor_version_and_the_accepted_copy_needs_a_grant_for_each
         entries.extend(grants);
         let standing = holding(entries);
         let decision = judge(&root, &sources(&root), &standing, &req, None).0;
-        apply(decision, &req, Some(ULID), &standing, &mut |_| true)
+        apply(decision, &req, Some(ULID), &standing, NOW, &mut |_| true)
     };
     let once = |rule: &str| grant(rule, &req, Scope::Once, Some(ULID));
     let wide = |rule: &str| grant(rule, &req, Scope::Everywhere, None);
@@ -1149,4 +1163,353 @@ fn a_workspace_never_on_a_start_is_not_applied_where_the_sealed_store_cannot_be_
         &verified,
     );
     assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+}
+
+// ---- the timed grant (M75-21, #7030) --------------------------------------------------------
+
+/// The timed grants `give_timed` makes for `decision` under `req`, as sealed entries.
+fn timed(decision: &Decision, req: &Request<'_>, span: Span, reason: &str, at: u64) -> Vec<Entry> {
+    give_timed(decision, req, Some(ULID), span, reason, at)
+        .expect("a timed grant is given at an ask")
+        .iter()
+        .map(Grant::entry)
+        .collect()
+}
+
+fn after_at(
+    decision: Decision,
+    req: &Request<'_>,
+    chat: &str,
+    entries: &[Entry],
+    at: u64,
+) -> Outcome {
+    let standing = holding(entries.to_vec());
+    apply(decision, req, Some(chat), &standing, at, &mut |_| true).after_mode
+}
+
+#[test]
+fn a_timed_grant_ends_at_its_time_or_the_chats_close_whichever_first() {
+    let req = exec("ls");
+    let said = asked(&["processes-a"], None);
+    let quarter = timed(&said, &req, Span::Quarter, "run the build", NOW);
+    // It serves up to its time and not at it.
+    assert_eq!(
+        after_at(said.clone(), &req, ULID, &quarter, NOW + 899),
+        Outcome::Allow
+    );
+    assert_eq!(
+        after_at(said.clone(), &req, ULID, &quarter, NOW + 900),
+        Outcome::Ask
+    );
+    let hour = timed(&said, &req, Span::Hour, "run the build", NOW);
+    assert_eq!(
+        after_at(said.clone(), &req, ULID, &hour, NOW + 3599),
+        Outcome::Allow
+    );
+    assert_eq!(
+        after_at(said.clone(), &req, ULID, &hour, NOW + 3600),
+        Outcome::Ask
+    );
+    // Ended by the time, or by the chat's close, whichever came first.
+    assert!(ended(&hour, None, NOW + 10).is_empty(), "still running");
+    assert!(
+        ended(&hour, Some(OTHER), NOW + 10).is_empty(),
+        "another chat's close"
+    );
+    let closed = ended(&hour, Some(ULID), NOW + 10);
+    assert_eq!(closed.len(), 1);
+    assert_eq!(closed[0].how, Ending::ChatClosed);
+    let ran_out = ended(&hour, None, NOW + 3600);
+    assert_eq!(ran_out[0].how, Ending::Time);
+    // Its time ran out before anyone closed the chat: the time is what ended it.
+    let both = ended(&quarter, Some(ULID), NOW + 901);
+    assert_eq!(both[0].how, Ending::Time);
+    // A grant that outlives the hard cap does not read: an hour is the most a line can say.
+    let long = Grant::parse(&hour[0].text.replace("\"1h\"", "\"2h\""));
+    assert!(long.is_none(), "{long:?}");
+    // It survives a restart: what the store holds reads back whole.
+    let back = Grant::parse(&hour[0].text).expect("reads");
+    assert_eq!(back.timed.expect("timed").until(), NOW + 3600);
+}
+
+#[test]
+fn a_timed_grant_needs_a_reason_and_is_not_inherited_by_a_dispatched_chat() {
+    let req = exec("ls");
+    let said = asked(&["processes-a"], None);
+    for blank in ["", "   ", "\n"] {
+        let refused = give_timed(&said, &req, Some(ULID), Span::Quarter, blank, NOW);
+        assert_eq!(refused, Err(Refused::NoReason), "{blank:?}");
+    }
+    assert_eq!(
+        give_timed(&said, &req, None, Span::Quarter, "because", NOW),
+        Err(Refused::NoChat)
+    );
+    // A line a person edited to drop the reason is no grant.
+    let entries = timed(&said, &req, Span::Quarter, "because", NOW);
+    let bare = entries[0].text.replace(",\"reason\":\"because\"", "");
+    assert!(Grant::parse(&bare).is_none(), "{bare}");
+    // The reason is one marked line, cut: a line end cannot forge a second row.
+    let one = give_timed(&said, &req, Some(ULID), Span::Quarter, "a\nb", NOW).expect("given");
+    assert!(!one[0].timed.as_ref().expect("timed").reason.contains('\n'));
+    // A chat it dispatched is another chat, with its own ULID: the grant is not its.
+    assert_eq!(
+        after_at(said.clone(), &req, ULID, &entries, NOW + 1),
+        Outcome::Allow
+    );
+    assert_eq!(after_at(said, &req, OTHER, &entries, NOW + 1), Outcome::Ask);
+}
+
+#[test]
+fn a_timed_grant_ends_with_a_quiet_journal_line() {
+    let req = exec("ls");
+    let said = asked(&["processes-a"], None);
+    let entries = timed(&said, &req, Span::Quarter, "private reason", NOW);
+    let ending = ended(&entries, Some(ULID), NOW + 5);
+    // One line for the one grant, and none the second time the store is read without it.
+    assert_eq!(ending.len(), 1);
+    let line = ending[0].body();
+    assert_eq!(line["what"], "timed grant");
+    assert_eq!(line["ended"], "chat closed");
+    assert_eq!(line["rule"], "processes-a");
+    assert_eq!(line["action"], "exec");
+    assert_eq!(line["span"], "15m");
+    assert!(
+        !line.to_string().contains("private reason"),
+        "never the reason: {line}"
+    );
+    let rest: Vec<Entry> = entries
+        .iter()
+        .filter(|e| *e != &ending[0].entry)
+        .cloned()
+        .collect();
+    assert!(ended(&rest, Some(ULID), NOW + 6).is_empty());
+    assert_eq!(ENDED_KIND, "trust.timed_grant.ended");
+}
+
+#[test]
+fn a_timed_grant_is_offered_for_any_family_whose_rule_asks() {
+    for family in ["processes", "network", "guards.merge", "trust", "sandbox"] {
+        let said = Decision {
+            family: family.to_owned(),
+            mode_family: family.to_owned(),
+            ..asked(&["x-a"], None)
+        };
+        assert_eq!(offer(&said).timed, [Span::Quarter, Span::Hour], "{family}");
+    }
+    // At an ask only: not at an allow a mode lifted, not at a deny.
+    assert!(offer(&lifted_by_open(&["processes-a"])).timed.is_empty());
+    assert!(offer(&denied(&["processes-a"])).timed.is_empty());
+    // `@keep("once")` reaches no further than Once, so no timed grant; `@keep("timed")` reaches it
+    // and no further.
+    assert!(
+        offer(&asked(&["processes-a"], Some("once")))
+            .timed
+            .is_empty()
+    );
+    let timed_keep = offer(&asked(&["processes-a"], Some("timed")));
+    assert_eq!(timed_keep.timed, [Span::Quarter, Span::Hour]);
+    assert_eq!(timed_keep.scopes, [Scope::Once]);
+    // `@timed` caps the length.
+    let quarter = Decision {
+        timed: Some("15m".to_owned()),
+        ..asked(&["processes-a"], None)
+    };
+    assert_eq!(offer(&quarter).timed, [Span::Quarter]);
+    assert_eq!(
+        give_timed(&quarter, &exec("ls"), Some(ULID), Span::Hour, "why", NOW),
+        Err(Refused::NotOffered)
+    );
+    // Through the real policy, a rule of a family that is not the merge hold's.
+    let m = machine();
+    let rules = format!(
+        "{HEADER}@id(\"processes-a\") @ask(\"you\") @timed(\"15m\")\n\
+         forbid (principal, action == Action::\"exec\", resource);\n"
+    );
+    let root = plane(&m, &[("purlis.toml", STRICT), ("policy.cedar", &rules)]);
+    let said = host(&root, &exec("ls"));
+    assert_eq!(said.timed.as_deref(), Some("15m"), "{said:?}");
+    assert_eq!(offer(&said).timed, [Span::Quarter]);
+}
+
+#[test]
+fn timed_off_in_the_locks_offers_no_timed_grant() {
+    let m = machine();
+    let rules = format!(
+        "{HEADER}@id(\"processes-a\") @ask(\"you\")\n\
+         forbid (principal, action == Action::\"exec\", resource);\n"
+    );
+    let unlocked = plane(&m, &[("purlis.toml", STRICT), ("policy.cedar", &rules)]);
+    assert_eq!(
+        offer(&host(&unlocked, &exec("ls"))).timed,
+        [Span::Quarter, Span::Hour]
+    );
+    for (lock, left) in [("off", vec![]), ("15m", vec![Span::Quarter])] {
+        let m = machine();
+        let locked = format!("{STRICT}[policy.locks]\ntimed = \"{lock}\"\n");
+        let root = plane(&m, &[("purlis.toml", &locked), ("policy.cedar", &rules)]);
+        let said = host(&root, &exec("ls"));
+        assert_eq!(said.after_mode, Outcome::Ask, "{said:?}");
+        assert_eq!(said.timed.as_deref(), Some(lock), "{said:?}");
+        assert_eq!(offer(&said).timed, left, "{lock}");
+        if lock == "off" {
+            // Nothing is given, and one given before the lock came on stops counting at once.
+            assert_eq!(
+                give_timed(&said, &exec("ls"), Some(ULID), Span::Quarter, "why", NOW),
+                Err(Refused::NotOffered)
+            );
+            let before = timed(
+                &asked(&["processes-a"], None),
+                &exec("ls"),
+                Span::Quarter,
+                "why",
+                NOW,
+            );
+            assert_eq!(
+                after_at(said, &exec("ls"), ULID, &before, NOW + 1),
+                Outcome::Ask
+            );
+        }
+    }
+}
+
+#[test]
+fn a_deny_offers_propose_a_project_change_never_turn_off_for_this_chat() {
+    let said = denied(&["processes-a"]);
+    let offered = offer(&said);
+    assert_eq!(offered.way_out, Some(WayOut::ProposeProjectChange));
+    assert_eq!(
+        WayOut::ProposeProjectChange.label(),
+        "Propose a project change…"
+    );
+    // Only that: no scope, no timed grant, no Never, no Allow.
+    assert!(offered.scopes.is_empty() && offered.timed.is_empty() && offered.never.is_empty());
+    assert!(!offered.dont_allow);
+    // No timed grant lifts a deny, and the refusal names the one way out.
+    let refused = give_timed(&said, &exec("ls"), Some(ULID), Span::Quarter, "why", NOW)
+        .expect_err("a deny is not lifted");
+    assert_eq!(refused, Refused::Deny);
+    assert!(
+        refused.said().contains("Propose a project change…"),
+        "{}",
+        refused.said()
+    );
+    assert!(!refused.said().contains("Turn off for this chat"));
+    // An ask offers no way out of that kind.
+    assert_eq!(offer(&asked(&["processes-a"], None)).way_out, None);
+}
+
+#[test]
+fn the_hosts_timed_grant_serves_the_chat_and_ends_at_its_time_through_the_production_decision() {
+    // The path the window takes: the host decides the ask, `timed_for_chat` gives the grant for
+    // that decision, and `for_chat` (what a hook asks) reads it back.
+    let m = machine();
+    let rules = format!(
+        "{HEADER}@id(\"processes-a\") @ask(\"you\")\n\
+         forbid (principal, action == Action::\"exec\", resource);\n"
+    );
+    let root = plane(&m, &[("purlis.toml", STRICT), ("policy.cedar", &rules)]);
+    let floor = crate::enforcement::Resolved::parse("processes=enforce");
+    let facts = a_chat();
+    let sealed_at = |entries: Vec<Entry>, chat: &str, now: u64| Sealed {
+        standing: holding(entries),
+        chat: Some(chat.to_owned()),
+        now: Some(now),
+        ..Sealed::unsealed()
+    };
+    let given = decide::timed_for_chat(
+        &root,
+        4,
+        Some(&facts),
+        &floor,
+        &sealed_at(Vec::new(), ULID, NOW),
+        "exec",
+        ("Command", "ls"),
+        (Span::Quarter, "run the build"),
+    )
+    .expect("a chat that is open")
+    .expect("an ask is allowed for a while");
+    assert_eq!(given.len(), 1);
+    let entries: Vec<Entry> = given.iter().map(Grant::entry).collect();
+    let ask = |entries: &[Entry], chat: &str, now: u64| {
+        decide::for_chat(
+            &root,
+            4,
+            Some(&facts),
+            &floor,
+            &sealed_at(entries.to_vec(), chat, now),
+            "exec",
+            ("Command", "ls"),
+        )
+        .expect("a chat that is open")
+    };
+    let served = ask(&entries, ULID, NOW + 60);
+    assert_eq!(served.after_mode, Outcome::Allow, "{served:?}");
+    assert!(
+        served
+            .grant
+            .as_deref()
+            .is_some_and(|g| g.contains("timed grant")),
+        "{served:?}"
+    );
+    // Another command is another resource: the grant is for the ask the host decided.
+    let other = decide::for_chat(
+        &root,
+        4,
+        Some(&facts),
+        &floor,
+        &sealed_at(entries.clone(), ULID, NOW + 60),
+        "exec",
+        ("Command", "rm"),
+    )
+    .expect("open");
+    assert_eq!(other.after_mode, Outcome::Ask, "{other:?}");
+    assert_eq!(
+        ask(&entries, OTHER, NOW + 60).after_mode,
+        Outcome::Ask,
+        "a dispatched chat"
+    );
+    assert_eq!(
+        ask(&entries, ULID, NOW + 900).after_mode,
+        Outcome::Ask,
+        "past its time"
+    );
+    // A reason is required here too, and a chat with no ULID is given nothing.
+    let none = decide::timed_for_chat(
+        &root,
+        4,
+        Some(&facts),
+        &floor,
+        &sealed_at(Vec::new(), ULID, NOW),
+        "exec",
+        ("Command", "ls"),
+        (Span::Quarter, " "),
+    )
+    .expect("open");
+    assert_eq!(none, Err(Refused::NoReason));
+}
+
+#[test]
+fn the_allowed_list_shows_a_timed_grant_with_its_reason_and_countdown() {
+    let req = exec("ls");
+    let said = asked(&["processes-a"], None);
+    let mut entries = timed(&said, &req, Span::Quarter, "run the build", NOW);
+    entries.push(grant("processes-a", &req, Scope::Workspace, None));
+    let shown = rows(&entries, NOW + 60);
+    assert_eq!(shown.len(), 2);
+    let one = shown
+        .iter()
+        .find(|row| row.scope == Scope::Timed)
+        .expect("a timed row");
+    assert_eq!(one.reason.as_deref(), Some("run the build"));
+    assert_eq!(one.left, Some(840));
+    assert_eq!(one.until, Some(NOW + 900));
+    assert_eq!(one.chat.as_deref(), Some(ULID));
+    let lasting = shown
+        .iter()
+        .find(|row| row.scope == Scope::Workspace)
+        .expect("a grant row");
+    assert_eq!((lasting.left, lasting.reason.as_deref()), (None, None));
+    assert_ne!(one.id, lasting.id);
+    // One past its end is not shown: it counts for nothing and is about to be taken out.
+    assert_eq!(rows(&entries, NOW + 900).len(), 1);
 }

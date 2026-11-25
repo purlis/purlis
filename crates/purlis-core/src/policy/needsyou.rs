@@ -81,7 +81,7 @@ pub const MOST_BYTES: u64 = 4 * 1024 * 1024;
 pub const MOST_TOLD: usize = 500;
 
 /// The most characters of what an item says.
-const MOST_SAID: usize = 400;
+pub(crate) const MOST_SAID: usize = 400;
 
 /// The most characters of a rule id, an action, a chat id or a workspace; of a resource or a
 /// request, [`MOST_RESOURCE`] and [`MOST_REQUEST`]. A raise past one is not kept.
@@ -600,6 +600,7 @@ impl Grant {
             scope,
             chat,
             workspace: matches!(self.scope, Scope::Workspace).then(|| self.key.workspace.clone()),
+            timed: None,
         }
     }
 

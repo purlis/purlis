@@ -39,6 +39,8 @@ fn sealed(standing: Standing) -> Sealed {
         standing,
         machine: None,
         chat: None,
+        now: None,
+        retired: Default::default(),
     }
 }
 
@@ -505,6 +507,8 @@ fn a_once_grant_is_shown_as_serving_and_left_unspent() {
         standing: holding(entries),
         machine: None,
         chat: Some(ULID.to_owned()),
+        now: None,
+        retired: Default::default(),
     };
     // It is shown as serving, however often it is asked: asking spends nothing.
     for _ in 0..2 {

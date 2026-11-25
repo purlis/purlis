@@ -294,6 +294,7 @@ impl Shared {
             &self.standing,
             facts.workspace.as_deref(),
             facts.chat.as_deref(),
+            grants::clock_now(),
         );
         let chat = sandbox_rules::Chat {
             chat: facts.chat.as_deref().unwrap_or_default(),

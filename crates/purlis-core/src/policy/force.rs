@@ -713,13 +713,13 @@ pub fn in_force(
     standing: &Standing,
     request: &Request<'_>,
     floor: Option<&Resolved>,
-) -> Decision {
+) -> (Decision, Vec<super::grants::Ended>) {
     let (decision, seen) = judge(root, sources, standing, request, floor);
     if let Some(seen) = seen {
         seal(root, &seen);
     }
-    retire_lost_grants(root, sources, standing, floor);
-    decision
+    let retired = retire_lost_grants(root, sources, standing, floor);
+    (decision, retired)
 }
 
 /// **Takes out of the store every grant whose rule is in no side in force** (M75-20, spec §8.7: a
@@ -734,22 +734,28 @@ pub fn in_force(
 /// A shipped rule that no side holds still decides where `floor` enforces its family (the merge
 /// hold where every side has it off, [`super::decide::for_chat`]), so its grants stay (review round
 /// 3, N5).
+///
+/// **A timed grant that was lost is not taken out here but handed back** (its `Ended`, `how`
+/// [`super::grants::Ending::RuleRemoved`]): its end is one line in the Journal, which only the
+/// app writes, and the line is written before the entry goes so that a failed write loses
+/// neither. Until the caller ends it the grant serves nothing, as its rule decides nothing.
+#[must_use = "a lost timed grant is ended with its Journal line by the caller"]
 pub fn retire_lost_grants(
     root: &Path,
     sources: &Sources<'_>,
     standing: &Standing,
     floor: Option<&Resolved>,
-) {
+) -> Vec<super::grants::Ended> {
     if !matches!(standing.state, State::Holds)
         || !standing.entries.iter().any(|e| e.kind == answers::GRANT)
     {
-        return;
+        return Vec::new();
     }
     let mut known = BTreeSet::new();
     for side in decided_sides(sources, standing) {
         match side {
             LimitSide::Read(loaded) => known.extend(loaded.policy.rules()),
-            LimitSide::Unread => return,
+            LimitSide::Unread => return Vec::new(),
         }
     }
     if let Some(floor) = floor {
@@ -757,16 +763,24 @@ pub fn retire_lost_grants(
     }
     let gone = super::grants::lost(&standing.entries, &known);
     if gone.is_empty() {
-        return;
+        return Vec::new();
     }
+    let timed: Vec<super::grants::Ended> = gone
+        .iter()
+        .filter_map(|entry| super::grants::Ended::of(entry, super::grants::Ending::RuleRemoved))
+        .collect();
     let taken = answers::commit(root, |draft| {
-        for entry in &gone {
+        for entry in gone
+            .iter()
+            .filter(|entry| !timed.iter().any(|one| one.entry == **entry))
+        {
             draft.remove_narrowing(answers::GRANT, &entry.text);
         }
     });
     if let Err(why) = taken {
         tracing::debug!("purlis: a grant of a removed rule was not taken out ({why})");
     }
+    timed
 }
 
 /// **The shipped default's rules that a `floor` keeps in force** whatever the project says: those

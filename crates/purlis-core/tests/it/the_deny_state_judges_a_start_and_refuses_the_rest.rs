@@ -71,8 +71,7 @@ fn in_the_deny_state() -> Sealed {
             state: State::Deny(vec![Deny::CloneKeySwapped]),
             ..Standing::fresh()
         },
-        machine: None,
-        chat: None,
+        ..Sealed::unsealed()
     }
 }
 

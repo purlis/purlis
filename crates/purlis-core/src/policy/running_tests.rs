@@ -114,6 +114,7 @@ fn a_grant(scope: Scope) -> Grant {
         scope,
         chat: Some(CHAT.to_owned()),
         workspace: Some("web".to_owned()),
+        timed: None,
     }
 }
 
@@ -163,6 +164,8 @@ fn a_loosening_reaches_the_running_chats_decisions_at_once_after_the_press() {
         standing: holding(vec![accepted(&version(STRICT, rules))]),
         machine: None,
         chat: None,
+        now: None,
+        retired: Default::default(),
     };
     let running = started(&root);
     assert_eq!(

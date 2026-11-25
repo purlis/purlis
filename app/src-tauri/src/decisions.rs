@@ -95,8 +95,8 @@ fn facts_of(held: &Held, chat: u32) -> Option<decide::ChatFacts> {
 
 /// **What the app's sealed store says now, for chat `chat`**: the deny state refuses every action
 /// but `start`, and `context.machine` is the device id the person confirmed (M75-07b). `chat` is
-/// the chat's ULID, which a Once or This-chat grant is keyed on (M75-20): without it no grant of
-/// those scopes serves.
+/// the chat's ULID, which a Once, timed or This-chat grant is keyed on (M75-20, M75-21): without
+/// it no grant of those scopes serves.
 fn sealed_for(held: &Held, chat: u32) -> decide::Sealed {
     decide::Sealed {
         chat: held.chats().id_of(chat),
@@ -106,6 +106,10 @@ fn sealed_for(held: &Held, chat: u32) -> decide::Sealed {
 
 /// **What the project's policy decides of chat `chat` doing `action` to `resource`**, by this
 /// app's record of the chat: none for a chat this app does not have open.
+///
+/// **The timed grants this decision found ended, or lost with their rule, are taken out of the
+/// store here**, each after its Journal line (M75-21): such a grant serves nothing either way, so
+/// the sweep only keeps the store and the Journal true.
 pub fn decision(
     held: &Held,
     chat: u32,
@@ -115,7 +119,71 @@ pub fn decision(
     let facts = facts_of(held, chat);
     // The accepted floor and the machine's locks, until slices 06 and 14 read them in the loader.
     let floor = purlis_core::enforcement::in_force(held.root());
-    decide::for_chat(
+    let sealed = sealed_for(held, chat);
+    crate::timedgrants::sweep(held.root(), held.hooks(), &sealed.standing, sealed.at());
+    let decided = decide::for_chat(
+        held.root(),
+        chat,
+        facts.as_ref(),
+        &floor,
+        &sealed,
+        action,
+        resource,
+    );
+    crate::timedgrants::end_quietly(held.root(), held.hooks(), None, &sealed.take_retired());
+    decided
+}
+
+/// **What the policy decides of chat `chat`'s ask before any answer is applied**, read without
+/// spending a Once grant: what the Allowed list asks to tell whether a timed grant still serves.
+pub fn unanswered(
+    held: &Held,
+    chat: u32,
+    action: &str,
+    resource: (&str, &str),
+) -> Option<decide::Decision> {
+    let facts = facts_of(held, chat);
+    let floor = purlis_core::enforcement::in_force(held.root());
+    let sealed = sealed_for(held, chat);
+    let decided = decide::unanswered_for_chat(
+        held.root(),
+        chat,
+        facts.as_ref(),
+        &floor,
+        &sealed,
+        action,
+        resource,
+    );
+    crate::timedgrants::end_quietly(held.root(), held.hooks(), None, &sealed.take_retired());
+    decided
+}
+
+/// **What the person is offered at chat `chat`'s ask** ([`grants::offer`]): the scopes, the timed
+/// grant's lengths, Never and Don't allow, or, at a deny, the one way out. None for a chat this app
+/// does not have open.
+pub fn offered(
+    held: &Held,
+    chat: u32,
+    action: &str,
+    resource: (&str, &str),
+) -> Option<purlis_core::policy::grants::Offer> {
+    decision(held, chat, action, resource)
+        .map(|decision| purlis_core::policy::grants::offer(&decision))
+}
+
+/// **The timed grants that answer chat `chat`'s ask**, for the person's `reason`, made by the host
+/// from what it decides now ([`decide::timed_for_chat`]). Nothing is sealed here: the caller holds
+/// the person's press.
+pub fn timed_grants(
+    held: &Held,
+    chat: u32,
+    action: &str,
+    resource: (&str, &str),
+    given: (purlis_core::policy::grants::Span, &str),
+) -> Option<Result<Vec<purlis_core::policy::grants::Grant>, purlis_core::policy::grants::Refused>> {
+    let facts = facts_of(held, chat);
+    let floor = purlis_core::enforcement::in_force(held.root());
+    decide::timed_for_chat(
         held.root(),
         chat,
         facts.as_ref(),
@@ -123,6 +191,7 @@ pub fn decision(
         &sealed_for(held, chat),
         action,
         resource,
+        given,
     )
 }
 

@@ -592,6 +592,10 @@ fn scopes_of(loaded: &Loaded, rules: &[Deciding], families: [&str; 2]) -> Scopes
         0 => 1,
         _ => 2,
     };
+    // The timed-grant lock (`[policy.locks] timed`) caps every ask, as the scope lock does (M75-21).
+    let timed_locks = [&loaded.organisation_locks, &loaded.project_locks]
+        .into_iter()
+        .filter_map(|locks| locks.timed.clone());
     Scopes {
         keep: rules
             .iter()
@@ -601,6 +605,7 @@ fn scopes_of(loaded: &Loaded, rules: &[Deciding], families: [&str; 2]) -> Scopes
         timed: rules
             .iter()
             .filter_map(|r| r.timed.clone())
+            .chain(timed_locks)
             .min_by_key(|w| rank(w)),
     }
 }
@@ -764,15 +769,40 @@ pub struct Sealed {
     /// The asking chat's ULID, which a Once or This-chat grant is keyed on (M75-20). Unset, no
     /// grant of those scopes serves.
     pub chat: Option<String>,
+    /// The time the decision is made at, in seconds since 1970, which a timed grant is read
+    /// against (M75-21). Unset reads the clock; a test sets it.
+    pub now: Option<u64>,
+    /// The timed grants this decision found lost with their rule and left in the store, for the
+    /// caller to end with their Journal line ([`force::retire_lost_grants`]): the core has no
+    /// Journal, the app has. Filled by the decision, taken by the caller; a clone shares it.
+    pub retired: std::sync::Arc<std::sync::Mutex<Vec<grants::Ended>>>,
 }
 
 impl Sealed {
+    /// The time a decision is made at: the one set, or now ([`grants::clock_now`], which reads a
+    /// clock that fails as the end of time, so a timed grant is then ended, never served).
+    pub fn at(&self) -> u64 {
+        self.now.unwrap_or_else(grants::clock_now)
+    }
+
+    /// The timed grants the decisions made with this found lost with their rule, taken once.
+    pub fn take_retired(&self) -> Vec<grants::Ended> {
+        std::mem::take(
+            &mut *self
+                .retired
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+
     /// What the sealed store of the plane at `root` says now.
     pub fn of(root: &std::path::Path) -> Self {
         Self {
             standing: answers::standing(root),
             machine: answers::context_machine(),
             chat: None,
+            now: None,
+            retired: Default::default(),
         }
     }
 
@@ -791,6 +821,8 @@ impl Sealed {
             standing: Standing::fresh(),
             machine: None,
             chat: None,
+            now: None,
+            retired: Default::default(),
         }
     }
 }
@@ -896,7 +928,10 @@ pub(super) enum How {
     Alone(force::Version),
 }
 
-#[allow(clippy::too_many_arguments, reason = "one decision, its seven inputs")]
+/// **One decision, then the person's answers applied to it**: [`judged_then`] with the answers
+/// of M75-20 as its finish. Explaining records nothing: a Once grant is shown as serving, and stays
+/// unspent.
+#[allow(clippy::too_many_arguments, reason = "one decision, its eight inputs")]
 fn judged(
     root: &std::path::Path,
     asker: &Asker<'_>,
@@ -907,8 +942,51 @@ fn judged(
     how: How,
     settle: impl FnOnce(Decision, &Request<'_>) -> Decision,
 ) -> Decision {
+    let explaining = !matches!(how, How::Host);
+    judged_then(
+        root,
+        asker,
+        action,
+        resource,
+        sealed,
+        floor,
+        how,
+        settle,
+        |refusal| refusal,
+        |decision, request| {
+            // The person's answers: nevers in every mode, then a grant at an ask (M75-20). A Once
+            // grant's use is recorded first, and a use that cannot be recorded does not serve.
+            grants::apply(
+                decision,
+                request,
+                sealed.chat.as_deref(),
+                &sealed.standing,
+                sealed.at(),
+                &mut |texts| explaining || answers::use_once_grants(root, texts).is_ok(),
+            )
+        },
+    )
+}
+
+/// The decision the policy in force makes and `settle` settles, handed to `finish` with the request
+/// it was made for, **before any answer of the person's is applied**: what [`judged`] applies them
+/// to, and what a grant is given for ([`timed_for_chat`]). `refused` takes the deny state's
+/// refusal, which is never judged further.
+#[allow(clippy::too_many_arguments, reason = "one decision, its nine inputs")]
+fn judged_then<T>(
+    root: &std::path::Path,
+    asker: &Asker<'_>,
+    action: &str,
+    resource: (&str, &str),
+    sealed: &Sealed,
+    floor: Option<&crate::enforcement::Resolved>,
+    how: How,
+    settle: impl FnOnce(Decision, &Request<'_>) -> Decision,
+    refused: impl FnOnce(Decision) -> T,
+    finish: impl FnOnce(Decision, &Request<'_>) -> T,
+) -> T {
     if let Some(refusal) = deny_state::refused(action, &sealed.standing) {
-        return refusal;
+        return refused(refusal);
     }
     with_sources(root, |sources| {
         let chat = asker.chat.to_string();
@@ -921,25 +999,26 @@ fn judged(
         };
         // The policy in force: the project as committed now and what the person accepted, the
         // stricter winning, and what the app saw tighten sealed into the accepted floor (M75-14).
-        let explaining = !matches!(how, How::Host);
         let decision = match how {
-            How::Host => force::in_force(root, sources, &sealed.standing, &request, floor),
+            How::Host => {
+                let (decision, retired) =
+                    force::in_force(root, sources, &sealed.standing, &request, floor);
+                if !retired.is_empty() {
+                    sealed
+                        .retired
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .extend(retired);
+                }
+                decision
+            }
             How::Explain(head) => {
                 force::judge_at(root, sources, &sealed.standing, &request, floor, head).0
             }
             How::Alone(version) => force::side(sources, &version, root, &request, floor),
         };
         let decision = settle(decision, &request);
-        // The person's answers: nevers in every mode, then a grant at an ask (M75-20). A Once grant's
-        // use is recorded first, and a use that cannot be recorded does not serve. Explaining records
-        // nothing: a Once grant is shown as serving, and stays unspent.
-        grants::apply(
-            decision,
-            &request,
-            sealed.chat.as_deref(),
-            &sealed.standing,
-            &mut |texts| explaining || answers::use_once_grants(root, texts).is_ok(),
-        )
+        finish(decision, &request)
     })
 }
 
@@ -1007,6 +1086,77 @@ pub fn for_chat(
         sealed,
         Some(floor),
         |decision, request| settled_by_the_floor(decision, request, floor),
+    ))
+}
+
+/// **The timed grants the person gives chat `chat` at its ask** (M75-21): the decision the host
+/// makes for `action` on `resource`, before any answer is applied, handed to [`grants::give_timed`]
+/// so what is granted is what the host decides now, never what a window says the ask was. `None`
+/// for a chat the host does not have open. `Err` says why nothing was given ([`grants::Refused`]),
+/// and that the sealed answers are in the deny state counts as no ask.
+#[allow(clippy::too_many_arguments)]
+pub fn timed_for_chat(
+    root: &std::path::Path,
+    chat: u32,
+    facts: Option<&ChatFacts>,
+    floor: &crate::enforcement::Resolved,
+    sealed: &Sealed,
+    action: &str,
+    resource: (&str, &str),
+    (span, reason): (grants::Span, &str),
+) -> Option<Result<Vec<grants::Grant>, grants::Refused>> {
+    let facts = facts?;
+    let asker = asker_of(chat, facts);
+    Some(judged_then(
+        root,
+        &asker,
+        action,
+        resource,
+        sealed,
+        Some(floor),
+        How::Host,
+        |decision, request| settled_by_the_floor(decision, request, floor),
+        |_| Err(grants::Refused::NotAnAsk),
+        |decision, request| {
+            grants::give_timed(
+                &decision,
+                request,
+                sealed.chat.as_deref(),
+                span,
+                reason,
+                sealed.at(),
+            )
+        },
+    ))
+}
+
+/// **What the policy in force decides of chat `chat`'s `action` on `resource` before any answer of
+/// the person's is applied** (M75-21): the decision [`timed_for_chat`] gives a grant for, read
+/// without spending a Once grant or applying a never. For a read that must change nothing, such
+/// as whether a timed grant on the Allowed list still serves. `None` for a chat the host does not
+/// have open.
+pub fn unanswered_for_chat(
+    root: &std::path::Path,
+    chat: u32,
+    facts: Option<&ChatFacts>,
+    floor: &crate::enforcement::Resolved,
+    sealed: &Sealed,
+    action: &str,
+    resource: (&str, &str),
+) -> Option<Decision> {
+    let facts = facts?;
+    let asker = asker_of(chat, facts);
+    Some(judged_then(
+        root,
+        &asker,
+        action,
+        resource,
+        sealed,
+        Some(floor),
+        How::Host,
+        |decision, request| settled_by_the_floor(decision, request, floor),
+        |refusal| refusal,
+        |decision, _| decision,
     ))
 }
 
