@@ -1910,7 +1910,9 @@ fn a_program_is_an_init_script_only_where_it_or_a_link_on_the_way_sits_in_init_d
 #[test]
 fn a_guarded_glab_says_to_sign_in_and_names_no_token_flow() {
     let said = crate::sandbox::tools::undeclared_glab_said("dev", Some("gitlab.com"));
-    assert!(said.contains("Settings › Forges"), "{said}");
+    assert!(said.contains("Settings › Accounts"), "{said}");
+    assert!(!said.contains("Settings › Forges"), "{said}");
+    assert!(!said.contains("never uses the person's own"), "{said}");
     assert!(!said.contains("gitlab access"), "{said}");
     assert_eq!(
         crate::sandbox::tools::declared_glab_not_running_said("dev"),

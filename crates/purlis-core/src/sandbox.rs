@@ -5682,6 +5682,21 @@ impl Applied {
                 widened.forge_socket = Some(socket);
             }
         }
+        // Where the route covers a GitLab host the chat's `glab` runs for real, wired to it, so the
+        // guard written at the start (before any route is known, [`guard_forges_in`]) is taken
+        // out: its shim would come first on the `PATH` and `glab` would never reach the route.
+        if cfg!(feature = "forge-wiring")
+            && inputs
+                .repos
+                .iter()
+                .any(|repo| repo.kind() == crate::forgewire::ForgeKind::GitLab)
+        {
+            self.tools = self
+                .tools
+                .take()
+                .and_then(|resolved| tools::without_guard(*resolved, &self.root, "glab"))
+                .map(Box::new);
+        }
         self.forge = Some(Box::new(inputs));
         self
     }

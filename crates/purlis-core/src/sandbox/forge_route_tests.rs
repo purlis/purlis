@@ -26,8 +26,20 @@ struct Started {
 }
 
 fn started(harness: Harness, os: Os) -> Started {
+    started_as(harness, os, None)
+}
+
+/// [`started`], for a chat running as `persona`.
+fn started_as(harness: Harness, os: Os, persona: Option<&str>) -> Started {
     let plane = tempfile::tempdir().expect("a plane");
-    std::fs::write(plane.path().join("charter.toml"), "schema = 1\n").expect("charter.toml");
+    // A persona's chat is guarded only where the sandbox holds the person's credentials back,
+    // which the full sandbox does and the plain floor does not.
+    let manifest = if persona.is_some() {
+        "[sandbox]\nmode = \"on\"\negress = [\"model-providers\"]\n"
+    } else {
+        "schema = 1\n"
+    };
+    std::fs::write(plane.path().join("charter.toml"), manifest).expect("charter.toml");
     let project = real(plane.path());
     let cwd = project.join("w");
     std::fs::create_dir_all(&cwd).expect("a chat's folder");
@@ -47,7 +59,7 @@ fn started(harness: Harness, os: Os) -> Started {
     let root = crate::forgewire::route_root(&machine).expect("a route folder");
     assert!(root.starts_with(&runtime_path), "{}", root.display());
     std::fs::create_dir_all(&root).expect("the app makes the route folder");
-    let applied = for_start(harness, &project, &machine, &|_| true)
+    let applied = for_start_as(harness, &project, &machine, &|_| true, persona)
         .expect("starts")
         .expect("sandboxed");
     Started {
@@ -87,6 +99,38 @@ fn inputs(root: &Path, socket: PathBuf, ca_cert: PathBuf) -> crate::forgewire::I
         hosts: vec!["github.com".to_owned()],
         root: root.to_path_buf(),
     }
+}
+
+/// A route for the chat's run over repos on `forges`, and the hosts they are on.
+fn inputs_over(
+    it: &Started,
+    forges: &[(&str, crate::forgewire::ForgeKind)],
+) -> crate::forgewire::Inputs {
+    let (socket, ca) = run_in(&it.root, "100-aaaaaaaa");
+    let mut route = inputs(&it.root, socket, ca);
+    route.repos = forges
+        .iter()
+        .map(|(host, kind)| {
+            crate::forgewire::Repo::new(host, "acme", "app", *kind).expect("a repo")
+        })
+        .collect();
+    route.hosts = forges.iter().map(|(host, _)| (*host).to_owned()).collect();
+    route
+}
+
+/// The programs the chat's persona has a guard shim for.
+fn guarded(applied: &Applied) -> Vec<String> {
+    applied
+        .tools
+        .as_ref()
+        .map(|resolved| {
+            resolved
+                .guards
+                .iter()
+                .map(|(name, _)| name.clone())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn profile_of(applied: &Applied, cwd: &Path) -> String {
@@ -320,4 +364,32 @@ fn a_chat_with_ports_off_still_reaches_its_own_socket_and_no_other_runs() {
             "{harness:?}: another run's socket is named"
         );
     }
+}
+
+#[test]
+fn an_unwired_chat_with_a_persona_is_still_guarded_from_a_bare_glab() {
+    let it = started_as(Harness::Codex, Os::MacOs, Some("dev"));
+    assert_eq!(guarded(&it.applied), ["glab"]);
+}
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn a_wired_chat_with_a_gitlab_host_runs_the_real_tool_with_no_guard_in_front_of_it() {
+    use crate::forgewire::ForgeKind::{GitHub, GitLab};
+    for harness in [Harness::Codex, Harness::Opencode, Harness::ClaudeCode] {
+        let it = started_as(harness, Os::MacOs, Some("dev"));
+        let route = inputs_over(&it, &[("gitlab.com", GitLab), ("github.com", GitHub)]);
+        let wired = it.applied.clone().with_forge_route(route);
+        assert_eq!(guarded(&wired), Vec::<String>::new(), "{harness:?}");
+    }
+}
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn a_wired_chat_with_no_gitlab_host_keeps_the_guard() {
+    use crate::forgewire::ForgeKind::GitHub;
+    let it = started_as(Harness::Codex, Os::MacOs, Some("dev"));
+    let route = inputs_over(&it, &[("github.com", GitHub)]);
+    let wired = it.applied.clone().with_forge_route(route);
+    assert_eq!(guarded(&wired), ["glab"]);
 }
