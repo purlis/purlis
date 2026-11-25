@@ -453,7 +453,8 @@ pub fn remove(
     )
 }
 
-/// [`remove`] for chat `chat`, never forced: refused besides where the folder holds files git
+/// [`remove`] for chat `chat` (the app's record of it, which holds the folder's claim and its
+/// checked folder already), never forced: refused besides where the folder holds files git
 /// ignores that are not a build's ([`ignored_would_go`]), and then naming in the same refusal
 /// whatever else would keep it (#4500), so a chat meets every reason in one try.
 ///
@@ -468,7 +469,7 @@ pub fn remove_for_a_chat(
     repo: &str,
     piece: &str,
     delete_branch: bool,
-    chat: u32,
+    chat: &crate::windowonly::Asking<'_>,
     forge: crate::finished::Forge<'_>,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
@@ -487,10 +488,10 @@ pub fn remove_for_a_chat(
 
 /// Who a removal is for: the person's own terminal, or a chat that is refused what a plain
 /// removal would delete and whose refusal is raised as an ask.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Asking {
+#[derive(Clone, Copy)]
+enum Asking<'a> {
     Nobody,
-    Chat(u32),
+    Chat(&'a crate::windowonly::Asking<'a>),
 }
 
 /// Whether `refusal` is git's guard over work a removal would lose.
@@ -507,17 +508,19 @@ fn loses_work(refusal: &Refusal) -> bool {
 }
 
 /// Raises the removal of `repo` · `piece` as an ask for the chat refused it, and says what the
-/// chat is told of it: that the person was asked, or that nobody was.
+/// chat is told of it: that the person was asked, or that nobody was. `Some(0)` where
+/// `guards.plane` lifted the ask and the removal then ran, held to every guard but the ask: the
+/// refusal that came before is not the answer any more.
 fn ask_the_person(
     plane: &Path,
     ws: &str,
     repo: &str,
     piece: &str,
-    asking: Asking,
+    asking: Asking<'_>,
     say: &mut dyn FnMut(Say),
-) {
-    let Asking::Chat(session) = asking else {
-        return;
+) -> Option<u8> {
+    let Asking::Chat(chat) = asking else {
+        return None;
     };
     let removing = crate::hookwire::Removing::BranchFolder {
         repo: repo.to_owned(),
@@ -525,8 +528,30 @@ fn ask_the_person(
         force: false,
         ignored: false,
     };
-    match crate::windowonly::ask_to_remove(plane, session, Some(ws), &removing) {
-        Ok(words) | Err(words) => say(Say::Info(words.into())),
+    match crate::windowonly::ask_to_remove(plane, chat, Some(ws), &removing) {
+        crate::windowonly::Removal::Asked(Ok(words) | Err(words)) => {
+            say(Say::Info(words.into()));
+            None
+        }
+        crate::windowonly::Removal::Ran(Ok(words)) => {
+            say(Say::Info(
+                format!(
+                    "guards.plane lifted the ask, so purlis removed it without asking, as a plain \
+                     removal. {words}"
+                )
+                .into(),
+            ));
+            Some(0)
+        }
+        // The removal's own words are the refusal said just before: not said twice.
+        crate::windowonly::Removal::Ran(Err(_)) => {
+            say(Say::Info(
+                "guards.plane lifted the ask, so purlis ran the removal without asking, and its \
+                 own guards still refused it: nothing was removed"
+                    .into(),
+            ));
+            None
+        }
     }
 }
 
@@ -538,11 +563,11 @@ fn remove_as(
     piece: &str,
     force: bool,
     delete_branch: bool,
-    asking: Asking,
+    asking: Asking<'_>,
     forge: crate::finished::Forge<'_>,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
-    let refuse_ignored = asking != Asking::Nobody;
+    let refuse_ignored = matches!(asking, Asking::Chat(_));
     say(Say::Info(format!("workspace: {ws}").into()));
     let no_discard_there = || {
         // A clone purlis cannot find is one the brokered route runs no git in either.
@@ -609,8 +634,7 @@ fn remove_as(
             forge_said(say);
         }
         say(Say::Fail(why.into()));
-        ask_the_person(plane, ws, repo, piece, asking, say);
-        return 1;
+        return ask_the_person(plane, ws, repo, piece, asking, say).unwrap_or(1);
     }
     let removed = if carried {
         worktree::remove_keeping_branch(plane, ws, repo, piece)
@@ -718,8 +742,10 @@ fn remove_as(
         Err(refusal) => {
             say(Say::Fail(refusal.to_string().into()));
             forge_said(say);
-            if loses_work(&refusal) {
-                ask_the_person(plane, ws, repo, piece, asking, say);
+            if loses_work(&refusal)
+                && let Some(code) = ask_the_person(plane, ws, repo, piece, asking, say)
+            {
+                return code;
             }
             if matches!(refusal, Refusal::NoSuchPiece { .. }) {
                 say(Say::Info(

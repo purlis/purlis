@@ -76,7 +76,7 @@ fn signing_isolation(held: &Held) -> purlis_core::worktree::git::Isolated {
 }
 
 /// The app's own record of chat `chat`, or the answer where it has none open.
-fn asker(held: &Held, chat: u32) -> Result<Asker, Answer> {
+pub(crate) fn asker(held: &Held, chat: u32) -> Result<Asker, Answer> {
     let Some(open) = held
         .chats()
         .open_now()

@@ -330,6 +330,30 @@ describe("no message says from the window without its control (R-328)", () => {
     ).toEqual([]);
   });
 
+  it("the removal entries are gone from NO_ASK_YET: a removal a chat asks for raises the removal ask (T1.1-67)", () => {
+    // The five refusals a chat's persona, workspace, forced and ignored-file removals were
+    // held with, each now answered by an ask (or, with no window, by words that say nobody was
+    // asked): none is in the list, and none is still said.
+    const removals = [
+      "a chat does not force a branch folder's",
+      "a sandboxed chat does not remove a persona",
+      "a sandboxed chat does not remove a workspace",
+      "this call runs `purlis worktree",
+      "{repo} · {piece} holds files git ignores",
+      "{why}. Nothing was removed",
+    ];
+    for (const starts of removals) {
+      expect(
+        FROM_THE_WINDOW.filter(([, held]) => held.startsWith(starts)),
+        starts,
+      ).toEqual([]);
+      expect(
+        bare.filter((one) => one.includes(`: ${starts}`)),
+        starts,
+      ).toEqual([]);
+    }
+  });
+
   it("holds every message that says from the window with no control in the exact list, each once", () => {
     expect(bare.filter((one) => heldBy(one).length !== 1)).toEqual([]);
     const unused = FROM_THE_WINDOW.filter((entry) =>

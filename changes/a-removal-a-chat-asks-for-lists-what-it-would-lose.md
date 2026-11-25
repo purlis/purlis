@@ -5,8 +5,9 @@
   a plain removal would lose or files git ignores used to stop the chat with no way on. Asks now
   shows a row that names the thing and lists what goes, with **Remove persona**, **Remove and
   discard** or **Remove with these files**, and **Keep**. The press reads the thing again and
-  removes nothing if it holds anything the row did not list; where purlis could not list everything,
-  the row offers Keep only. With no window open the chat is told nobody was asked, and how to have
+  removes nothing if it holds anything the row did not list, an edit to a listed file or a swap
+  past the eighth entry included; where purlis could not list everything, the row offers Keep only,
+  and Keep clears it. With no window open the chat is told nobody was asked, and how to have
   it asked (T1.1-67, #6956).
 
 ### Changed

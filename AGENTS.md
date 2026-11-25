@@ -280,3 +280,7 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   when this chat's process is above it: cut it with `git worktree add -b <piece> <folder>` instead.
 - The app's handoff tests (`handoff::tests::a_chat_asking_*`) fail in a sandboxed chat with "the
   program lives where this chat can write": they are CI's.
+- A removal whose ask `guards.plane` lifted (`log`, and `off` before the person accepted it) is
+  run under the folder's claim and in its checked folder, never forced: its test is a lib test in
+  `windowonly/tests.rs`. A row's listing carries a digest of everything that goes, so a listing
+  with a file git quotes with an escape (a non-ASCII name) is a cheap way to get an inexact one.

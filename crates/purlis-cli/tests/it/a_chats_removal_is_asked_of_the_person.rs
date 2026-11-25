@@ -156,9 +156,25 @@ fn as_the_app(root: &Path, ask: &Ask) -> Answer {
             why: "not a removal".to_owned(),
         };
     };
-    match windowonly::ask_to_remove(root, asked.chat, Some("alpha"), &asked.removing) {
-        Ok(why) | Err(why) => Answer::No { why },
+    let who = purlis_core::pieces::Who::here(None, Some(asked.chat.to_string()), None);
+    let asking = windowonly::Asking {
+        session: asked.chat,
+        who: &who,
+        live: Some(&[]),
+        claimed: false,
+    };
+    Answer::No {
+        why: windowonly::ask_to_remove(root, &asking, Some("alpha"), &asked.removing).words(),
     }
+}
+
+/// The person's press, as the window makes it.
+fn pressed(root: &Path, control: &Control) -> Result<String, String> {
+    windowonly::remove_listed(
+        root,
+        control,
+        &purlis_core::pieces::Who::here(None, None, None),
+    )
 }
 
 #[test]
@@ -201,7 +217,7 @@ fn a_chat_removing_a_persona_raises_the_one_removal_ask_and_is_told_the_person_w
     assert!(root.join("personas/steward/persona.md").is_file());
 
     // The person's press removes exactly that, and clears the ask.
-    windowonly::remove_listed(&root, &raised[0].control).unwrap();
+    pressed(&root, &raised[0].control).unwrap();
     assert!(!root.join("personas/steward").exists());
     assert_eq!(windowonly::every(&root), []);
     windowonly::project_ended(&root);
@@ -253,7 +269,7 @@ fn a_chat_forcing_a_branch_folder_removal_raises_the_one_removal_ask_listing_wha
     );
 
     // The press discards exactly what was listed, and only while it still holds exactly that.
-    windowonly::remove_listed(&root, &raised[0].control).unwrap();
+    pressed(&root, &raised[0].control).unwrap();
     assert!(!piece.exists());
     windowonly::project_ended(&root);
 }
@@ -333,4 +349,49 @@ fn with_no_app_at_all_the_chat_is_told_nobody_was_asked_and_nothing_is_removed()
         said(&ran)
     );
     assert!(root(&tmp).join("personas/steward/persona.md").is_file());
+}
+
+#[test]
+fn a_workspace_removal_asks_as_today_while_an_app_answers() {
+    // The workspace's removal is not widened by the removal ask: the app answers it as it did
+    // (`removalask::asked_said`), the chat is told the person was asked, and nothing is removed.
+    let tmp = a_project();
+    let root = root(&tmp);
+    let app = an_app(&tmp, |_, ask| {
+        let Ask::Removal(asked) = ask else {
+            return Answer::No {
+                why: "not a removal".to_owned(),
+            };
+        };
+        let Removing::Workspace { name } = &asked.removing else {
+            return Answer::No {
+                why: "not a workspace".to_owned(),
+            };
+        };
+        Answer::No {
+            why: purlis_core::removalask::asked_said(name),
+        }
+    });
+
+    let ran = purlis(&tmp, &["ws", "remove", "alpha"], &app.env);
+
+    assert_eq!(ran.status.code(), Some(1), "{}", said(&ran));
+    assert!(
+        said(&ran).contains("asked the person, in its window, whether to remove 'alpha'"),
+        "{}",
+        said(&ran)
+    );
+    assert!(
+        said(&ran).contains("Wait for their answer"),
+        "{}",
+        said(&ran)
+    );
+    assert!(!said(&ran).contains("nobody was asked"), "{}", said(&ran));
+    // Only the name travelled, and nothing was removed.
+    assert!(matches!(
+        app.asked.lock().unwrap().as_slice(),
+        [Ask::Removal(asked)]
+            if asked.removing == Removing::Workspace { name: "alpha".to_owned() }
+    ));
+    assert!(root.join("workspaces/alpha").exists());
 }

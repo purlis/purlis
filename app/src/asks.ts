@@ -968,6 +968,8 @@ export async function answerTaken(
           force: path.force,
           ignored: path.ignored,
           listed: path.listed,
+          exact: path.exact,
+          digest: path.digest,
         };
         if (option === "press") {
           const removed = await commands.removeListed(plane, row);

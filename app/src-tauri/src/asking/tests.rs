@@ -3886,6 +3886,11 @@ fn removing_steward(session: u32, exact: bool) -> purlis_core::windowonly::Refus
                 "personas/steward/memory: 3 memories".to_owned(),
             ],
             exact,
+            digest: if exact {
+                "d1".to_owned()
+            } else {
+                String::new()
+            },
         },
         since: 1_700_000_000,
     }
@@ -3915,13 +3920,20 @@ fn a_removal_row_lists_what_goes_and_offers_its_press_only_on_an_exact_listing()
         shown.says
     );
     let AnswerPath::Removal {
-        what, name, listed, ..
+        what,
+        name,
+        listed,
+        exact,
+        digest,
+        ..
     } = &shown.answer
     else {
         panic!("{:?}", shown.answer);
     };
     assert_eq!((what.as_str(), name.as_str()), ("persona", "steward"));
     assert_eq!(listed.len(), 2);
+    // What the press and Keep send back names the row exactly as it was raised.
+    assert_eq!((*exact, digest.as_str()), (true, "d1"));
     assert!(shown.source.is_window_only());
 
     // Not exact: Keep only, and the row says why.

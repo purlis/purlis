@@ -302,6 +302,9 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
         "use_one_address",
         "clone_with_sign_in",
         "record_repo",
+        // A removal a chat asked for (T1.1-67): for good, so the press and Keep are the window's.
+        "remove_listed",
+        "keep_removal",
     ] {
         assert!(ui::WINDOW_ONLY.contains(&command), "{command}");
     }

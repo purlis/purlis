@@ -947,6 +947,10 @@ pub enum AnswerPath {
         force: bool,
         ignored: bool,
         listed: Vec<String>,
+        /// Whether `listed` is everything that goes, and the digest of everything that goes,
+        /// whole: sent back so the press and Keep name the row exactly as it was raised.
+        exact: bool,
+        digest: String,
     },
     /// `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
     /// clone Notice's own command, and each clone it trusts leaves the ask (R-336).
@@ -2301,9 +2305,10 @@ fn window_only_key(session: u32, control: &purlis_core::windowonly::Control) -> 
             removing,
             workspace,
             listed,
+            digest,
             ..
         } => format!(
-            "removal:{session}:{workspace}|{}|{}",
+            "removal:{session}:{workspace}|{}|{}|{digest}",
             serde_json::to_string(removing).unwrap_or_default(),
             listed.join("\n")
         ),
@@ -2350,7 +2355,8 @@ pub fn window_only(refused: &purlis_core::windowonly::Refusal) -> Shown {
             removing,
             workspace,
             listed,
-            ..
+            exact,
+            digest,
         } => {
             use purlis_core::hookwire::Removing;
             let (what, name, piece, force, ignored) = match removing {
@@ -2372,6 +2378,8 @@ pub fn window_only(refused: &purlis_core::windowonly::Refusal) -> Shown {
                 force,
                 ignored,
                 listed: listed.clone(),
+                exact: *exact,
+                digest: digest.clone(),
             }
         }
     };

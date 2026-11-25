@@ -179,14 +179,25 @@ pub fn asked(held: &Held, ask: &RemovalAsk) -> Answer {
         // ask, listing exactly what goes (T1.1-67): the chat's workspace is the app's own record.
         other => {
             let workspace = held.chats().workspace_of(ask.chat).flatten();
-            return match purlis_core::windowonly::ask_to_remove(
+            // The chat is the app's own record of it, whose claim a lifted ask is held to.
+            let asker = match crate::gitbroker::asker(held, ask.chat) {
+                Ok(asker) => asker,
+                Err(answer) => return answer,
+            };
+            let who = purlis_core::gitbroker::who(&asker);
+            let asking = purlis_core::windowonly::Asking {
+                session: ask.chat,
+                who: &who,
+                live: asker.live.as_deref(),
+                claimed: false,
+            };
+            return no(purlis_core::windowonly::ask_to_remove(
                 held.root(),
-                ask.chat,
+                &asking,
                 workspace.as_deref(),
                 other,
-            ) {
-                Ok(said) | Err(said) => no(said),
-            };
+            )
+            .words());
         }
     };
     let (said, news) = asked_in(

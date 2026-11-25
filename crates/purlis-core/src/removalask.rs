@@ -99,10 +99,148 @@ pub struct Listing {
     /// whole is not exact, and its row offers Keep only: nothing is removed on a list that may
     /// leave something out.
     pub exact: bool,
+    /// **A digest of everything that goes, whole**: every entry of the thing, not the few the
+    /// lines name, with the size and the time last written of each file it lists. Two listings
+    /// are the same only if the digest is, so an entry swapped past the lines' eighth, or an edit
+    /// to a file already listed, moves it. Empty where the listing is not exact.
+    pub digest: String,
 }
 
 /// How many of a long list a row names before it counts the rest.
 const NAMED: usize = 8;
+
+/// The most entries one digest reads below the paths a listing names. A listing that holds more
+/// is not exact: past them a change would not be seen.
+const MOST_STAMPED: usize = 100_000;
+
+/// **What the things a listing names hold, as one digest**: their text, and for each path its
+/// kind, its size and when it was last written, below a folder too, read without following a
+/// link. A path that is gone is stamped as gone, and one that cannot be read, or too many
+/// entries, leave the digest `whole == false`.
+struct Stamp {
+    hash: sha2::Sha256,
+    left: usize,
+    whole: bool,
+}
+
+impl Stamp {
+    fn new() -> Self {
+        use sha2::Digest as _;
+        Self {
+            hash: sha2::Sha256::new(),
+            left: MOST_STAMPED,
+            whole: true,
+        }
+    }
+
+    /// Adds `text`, length first, so two texts never run into one.
+    fn text(&mut self, text: &str) {
+        use sha2::Digest as _;
+        self.hash.update((text.len() as u64).to_le_bytes());
+        self.hash.update(text.as_bytes());
+    }
+
+    /// Adds what `path` holds, and what is below it.
+    fn path(&mut self, path: &Path) {
+        let meta = match std::fs::symlink_metadata(path) {
+            Ok(meta) => meta,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                self.text("gone");
+                return;
+            }
+            Err(_) => {
+                self.whole = false;
+                return;
+            }
+        };
+        if self.left == 0 {
+            self.whole = false;
+            return;
+        }
+        self.left -= 1;
+        let written = meta
+            .modified()
+            .ok()
+            .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |since| since.as_nanos());
+        let kind = if meta.is_dir() {
+            "dir"
+        } else if meta.is_symlink() {
+            "link"
+        } else {
+            "file"
+        };
+        self.text(&format!("{kind}|{}|{written}", meta.len()));
+        if meta.is_symlink() {
+            match std::fs::read_link(path) {
+                Ok(to) => self.text(&to.to_string_lossy()),
+                Err(_) => self.whole = false,
+            }
+        } else if meta.is_dir() {
+            let Ok(entries) = std::fs::read_dir(path) else {
+                self.whole = false;
+                return;
+            };
+            let mut names: Vec<std::ffi::OsString> = entries
+                .filter_map(Result::ok)
+                .map(|entry| entry.file_name())
+                .collect();
+            names.sort();
+            for name in names {
+                self.text(&name.to_string_lossy());
+                self.path(&path.join(&name));
+            }
+        }
+    }
+
+    /// The path a `git status --porcelain` line names, below `folder`: its status and a rename's
+    /// old half dropped, a quoted name read as it is. `false` where the name is one git quoted
+    /// with an escape, which cannot be read back here.
+    fn porcelain(&mut self, folder: &Path, line: &str) {
+        let named = line.get(3..).unwrap_or(line);
+        let named = named.rsplit(" -> ").next().unwrap_or(named);
+        let named = named
+            .strip_prefix('"')
+            .and_then(|inner| inner.strip_suffix('"'))
+            .unwrap_or(named);
+        if named.contains('\\') {
+            self.whole = false;
+            return;
+        }
+        self.path(&folder.join(named.trim_end_matches('/')));
+    }
+
+    /// The digest, or `None` where it did not read everything.
+    fn finish(self) -> Option<String> {
+        use sha2::Digest as _;
+        self.whole.then(|| {
+            self.hash
+                .finalize()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect()
+        })
+    }
+}
+
+impl Listing {
+    /// The listing of `lines`, whole where `exact` and the `stamp` read everything.
+    fn from(mut lines: Vec<String>, mut exact: bool, stamp: Stamp) -> Self {
+        let digest = stamp.finish();
+        if exact && digest.is_none() {
+            lines.push(
+                "more than purlis could read in full, so it cannot tell whether it changes"
+                    .to_owned(),
+            );
+        }
+        exact &= digest.is_some();
+        Listing {
+            lines,
+            exact,
+            digest: digest.filter(|_| exact).unwrap_or_default(),
+        }
+    }
+}
 
 /// `lines`, the first [`NAMED`] each prefixed by `what`, and a count of the rest.
 fn named_lines(what: &str, lines: impl IntoIterator<Item = String>) -> Vec<String> {
@@ -119,9 +257,11 @@ fn named_lines(what: &str, lines: impl IntoIterator<Item = String>) -> Vec<Strin
 }
 
 /// What removing persona `name` of the project at `root` deletes: its definition, and the
-/// memory and curation actions kept in its folder, one line each as the folder holds them.
-/// `Err` with the sentence that says why nothing is asked: a name that cannot be a persona's,
-/// or no persona of this project.
+/// memory and curation actions kept in its folder, one line each as the folder holds them; the
+/// generated sub-agent `.claude/agents/<name>.md` that goes with it; and the dispatch grants on
+/// this machine that name it, which are in force for no chat once it is gone. `Err` with the
+/// sentence that says why nothing is asked: a name that cannot be a persona's, or no persona of
+/// this project.
 pub fn persona_listing(root: &Path, name: &str) -> Result<Listing, String> {
     let no_such = || {
         format!(
@@ -139,6 +279,7 @@ pub fn persona_listing(root: &Path, name: &str) -> Result<Listing, String> {
     let dir = root.join("personas").join(name);
     let mut lines = Vec::new();
     let mut exact = true;
+    let mut stamp = Stamp::new();
     if definition.file_name().is_some_and(|f| f == "persona.md") {
         match std::fs::read_dir(&dir) {
             Ok(entries) => {
@@ -155,16 +296,37 @@ pub fn persona_listing(root: &Path, name: &str) -> Result<Listing, String> {
                         format!("personas/{name}/{entry}")
                     });
                 }
+                // Everything below the folder, so a memory added or a file edited moves it.
+                stamp.path(&dir);
             }
             Err(_) => exact = false,
         }
     } else {
         lines.push(format!("personas/{name}.md"));
+        stamp.path(&definition);
+    }
+    // The sub-agent persona remove takes with it, when purlis wrote it.
+    let agent = crate::personaverbs::retired::agents_dir(root).join(format!("{name}.md"));
+    if crate::personaverbs::retired::is_generated(root, &agent, name) {
+        lines.push(format!(".claude/agents/{name}.md"));
+        stamp.text("agent");
+        stamp.path(&agent);
+    }
+    if crate::sandbox::local::dispatch_granted_names(root)
+        .iter()
+        .any(|one| one == name)
+    {
+        lines.push(
+            "the dispatch grants on this machine that name it, which are in force for no chat \
+             once it is gone"
+                .to_owned(),
+        );
+        stamp.text("grants");
     }
     if lines.is_empty() {
         exact = false;
     }
-    Ok(Listing { lines, exact })
+    Ok(Listing::from(lines, exact, stamp))
 }
 
 /// **What removing a branch folder would lose, and why a plain removal is not enough**: the
@@ -178,9 +340,22 @@ pub struct Loss {
     pub listing: Listing,
 }
 
-/// What removing `piece` of `repo` in workspace `ws` of the plane at `plane` loses, read now.
-/// `Err` says why nothing can be asked: the folder is not there, or git would not be read.
+/// What removing `piece` of `repo` in workspace `ws` of the plane at `plane` loses, read now,
+/// with git run in the folder's checked clone and folder only
+/// ([`crate::gitbroker::in_a_checked_folder`]), as a chat's own removal reads them. `Err` says
+/// why nothing can be asked: the folder is not there, or git would not be read.
 pub fn folder_loss(plane: &Path, ws: &str, repo: &str, piece: &str) -> Result<Loss, String> {
+    let held = crate::worktree::git::isolation().unwrap_or_default();
+    crate::gitbroker::in_a_checked_folder(plane, ws, repo, piece, &held, || {
+        read_loss(plane, ws, repo, piece)
+    })
+    .map_err(|not_run| match not_run {
+        crate::gitbroker::NotRun::Repo(why) => why,
+        crate::gitbroker::NotRun::Folder(why) => why.to_string(),
+    })?
+}
+
+fn read_loss(plane: &Path, ws: &str, repo: &str, piece: &str) -> Result<Loss, String> {
     let risk = match crate::worktree::standing::at_risk(plane, ws, repo, piece) {
         Ok(Some(risk)) => risk,
         Ok(None) => {
@@ -190,12 +365,23 @@ pub fn folder_loss(plane: &Path, ws: &str, repo: &str, piece: &str) -> Result<Lo
         }
         Err(refusal) => return Err(refusal.to_string()),
     };
+    let Ok(folder) = crate::worktree::path_for(plane, ws, repo, piece) else {
+        return Err(format!(
+            "{repo} · {piece} has no folder to remove, so the person was not asked"
+        ));
+    };
     let mut lines = Vec::new();
     let mut exact = true;
     let mut force = false;
+    let mut stamp = Stamp::new();
     match &risk.changes {
         Some(changes) if !changes.is_empty() => {
             force = true;
+            stamp.text("changes");
+            for change in changes {
+                stamp.text(change);
+                stamp.porcelain(&folder, change);
+            }
             lines.extend(named_lines("uncommitted", changes.iter().cloned()));
         }
         Some(_) => {}
@@ -207,12 +393,25 @@ pub fn folder_loss(plane: &Path, ws: &str, repo: &str, piece: &str) -> Result<Lo
     }
     match risk.unmerged {
         Some(0) => {}
-        Some(_) => {
+        Some(count) => {
             force = true;
+            stamp.text(&format!("commits {count}"));
+            for commit in &risk.commits {
+                stamp.text(commit);
+            }
             lines.extend(named_lines(
                 "commit no other branch reaches",
                 risk.commits.iter().cloned(),
             ));
+            // The commits git named are fewer than it counted: the rest are not listed.
+            let named = u32::try_from(risk.commits.len()).unwrap_or(u32::MAX);
+            if count > named {
+                exact = false;
+                lines.push(format!(
+                    "{} more commits no other branch reaches, which git did not name",
+                    count - named
+                ));
+            }
         }
         None => {
             force = true;
@@ -223,7 +422,12 @@ pub fn folder_loss(plane: &Path, ws: &str, repo: &str, piece: &str) -> Result<Lo
     match &risk.own {
         Some(own) if !own.is_empty() => {
             force = true;
-            lines.extend(own.said());
+            let said = own.said();
+            stamp.text("own");
+            for line in &said {
+                stamp.text(line);
+            }
+            lines.extend(said);
         }
         Some(_) => {}
         None => {
@@ -236,6 +440,11 @@ pub fn folder_loss(plane: &Path, ws: &str, repo: &str, piece: &str) -> Result<Lo
     match crate::piececmd::ignored_kept(plane, ws, repo, piece) {
         Some(Ok(kept)) if !kept.is_empty() => {
             ignored = true;
+            stamp.text("ignored");
+            for path in &kept {
+                stamp.text(path);
+                stamp.path(&folder.join(path.trim_end_matches('/')));
+            }
             lines.extend(named_lines("ignored file", kept));
         }
         Some(Ok(_)) | None => {}
@@ -248,7 +457,7 @@ pub fn folder_loss(plane: &Path, ws: &str, repo: &str, piece: &str) -> Result<Lo
     Ok(Loss {
         force,
         ignored,
-        listing: Listing { lines, exact },
+        listing: Listing::from(lines, exact, stamp),
     })
 }
 

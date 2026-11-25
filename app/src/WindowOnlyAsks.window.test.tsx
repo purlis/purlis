@@ -319,6 +319,8 @@ describe("a window-only ask, Blocking or on its chat's finish row (T1-42, R-329)
           force: false,
           ignored: false,
           listed: ["personas/steward/persona.md", "personas/steward/memory: 3 memories"],
+          exact: true,
+          digest: "d1",
         },
       },
       ask: {
@@ -339,6 +341,8 @@ describe("a window-only ask, Blocking or on its chat's finish row (T1-42, R-329)
           force: false,
           ignored: false,
           listed: ["personas/steward/persona.md", "personas/steward/memory: 3 memories"],
+          exact: true,
+          digest: "d1",
         },
       },
     },
