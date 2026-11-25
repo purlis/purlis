@@ -52,10 +52,20 @@ run-name: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 
 #   Developer ID (APPLE_CERTIFICATE…) — what macOS checks. **Optional** (ADR 0042, amended
 #     2026-09-23), because it costs an Apple Developer account and the updater's trust does not
 #     come from it. When the three secrets are set the bundle is Developer ID signed; when they
-#     are not it is **ad-hoc** signed. Either way the signature is verified on the built bundle
+#     are not it is **ad-hoc** signed. Either way the signature is verified on the signed bundle
 #     rather than assumed from a secret being set, and the check asserts the signing that was
 #     ASKED for — an ad-hoc bundle must not slip through a Developer ID check, or the reverse.
 #
+# **The Developer ID key is imported on a GitHub-hosted macOS runner and nowhere else** (ADR 0042,
+# amended 2026-11-25). `build` compiles and bundles on whatever runner it is given, a self-hosted
+# Mac among them, and seals the bundle ad-hoc: it names no Developer ID secret and makes no
+# updater archive. The `sign-macos` job, behind the gate, in the `release` environment and on a
+# `macos-` runner GitHub hosts, takes that bundle, signs every nested executable and the bundle
+# with the Developer ID (hardened runtime, no entitlements), notarizes a stable build, and makes
+# what a build used to make after signing: the `.app.zip`, the updater's `.app.tar.gz` and its
+# minisign signature, and the `.dmg`.
+#
+
 # **macOS signing is never skipped, only downgraded.** On Apple Silicon a Mach-O with no
 # signature at all does not execute, so "unsigned" is not one of the options. Leaving
 # APPLE_SIGNING_IDENTITY unset does not produce an unsigned app either — it produces a bundle
@@ -63,9 +73,12 @@ run-name: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 
 # `codesign --verify` rejects and which is the worst of both. So this workflow always names an
 # identity: a Developer ID one when it has it, `-` (ad-hoc) when it does not.
 #
-# **Apple notarization is declined** (ADR 0042), so no APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID
-# / APPLE_API_* is passed anywhere, and a first install from a browser meets Gatekeeper. The
-# job summary says what that looks like and what to do about it.
+# **A stable build is notarized, a dev build is not** (ADR 0042, amended 2026-11-25), with an App
+# Store Connect API key: APPLE_API_ISSUER, APPLE_API_KEY (the key id) and APPLE_API_KEY_P8 (the
+# `.p8`), read by `sign-macos` alone. A dev build reaches people through the updater, which sets
+# no quarantine flag, so it is Developer ID signed and left un-notarized; a first install of one
+# from a browser meets Gatekeeper, and the job summary says what that looks like. No APPLE_ID or
+# APPLE_PASSWORD is used anywhere.
 #
 # **Every published file also carries SLSA build provenance** (#583), the update manifests
 # included (#778), attested by the `provenance` job before `publish` runs, and the attestation's
@@ -448,6 +461,7 @@ jobs:
       skip: ${{ steps.keys.outputs.skip }}
       signed: ${{ steps.keys.outputs.signed }}
       macos_signing: ${{ steps.keys.outputs.macos_signing }}
+      notarize: ${{ steps.keys.outputs.notarize }}
     steps:
       - name: Which signing this run does, and what a publish still needs from the operator
         id: keys
@@ -465,6 +479,10 @@ jobs:
           HAS_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
           HAS_CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD != '' }}
           HAS_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY != '' }}
+          # The App Store Connect API key notarization uses, counted the same way.
+          HAS_API_ISSUER: ${{ secrets.APPLE_API_ISSUER != '' }}
+          HAS_API_KEY: ${{ secrets.APPLE_API_KEY != '' }}
+          HAS_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 != '' }}
         run: |
           set -euo pipefail
           publish=$PUBLISH
@@ -492,11 +510,27 @@ jobs:
             0) macos_signing=ad-hoc ;;
             *) macos_signing=partial ;;
           esac
+          # Notarization is a second group of three, decided the same way: all, none, or half.
+          api_parts=0
+          for present in "$HAS_API_ISSUER" "$HAS_API_KEY" "$HAS_API_KEY_P8"; do
+            if [ "$present" = "true" ]; then api_parts=$((api_parts + 1)); fi
+          done
+          case "$api_parts" in
+            3) notary=all ;;
+            0) notary=none ;;
+            *) notary=partial ;;
+          esac
+          # Only a STABLE build with a Developer ID and the whole key is notarized (ADR 0042,
+          # amended 2026-11-25). A dev build is never notarized, whatever is set.
+          notarize=false
+          if [ "$CHANNEL" = stable ] && [ "$macos_signing" = developer-id ] && [ "$notary" = all ]; then
+            notarize=true
+          fi
           {
             echo "publish=$publish"; echo "skip=$skip"; echo "signed=$HAS_UPDATER_KEY"
-            echo "macos_signing=$macos_signing"
+            echo "macos_signing=$macos_signing"; echo "notarize=$notarize"
           } >> "$GITHUB_OUTPUT"
-          echo "publish=$publish skip=$skip updater-key=$HAS_UPDATER_KEY macos-signing=$macos_signing"
+          echo "publish=$publish skip=$skip updater-key=$HAS_UPDATER_KEY macos-signing=$macos_signing notarization-secrets=$notary notarize=$notarize"
           # Everything a publish needs that a human has to provide, checked BEFORE twenty minutes
           # of building, each failure naming the one thing to do. See docs/updating.md. (The
           # updater's public key in `tauri.conf.json` is checked by `build`, which has the checkout.)
@@ -510,7 +544,11 @@ jobs:
           # knowing which signing this run does, so it is said once, here, before the build.
           case "$macos_signing" in
             developer-id)
-              echo "::notice::macOS: Developer ID signed. Not notarized (ADR 0042), so a browser-downloaded first install still meets Gatekeeper once."
+              if [ "$CHANNEL" = stable ]; then
+                echo "::notice::macOS: Developer ID signed and notarized, on a GitHub-hosted runner (ADR 0042, amended 2026-11-25)."
+              else
+                echo "::notice::macOS: Developer ID signed on a GitHub-hosted runner, and not notarized: a dev build reaches people through the updater, which sets no quarantine flag (ADR 0042, amended 2026-11-25)."
+              fi
               ;;
             ad-hoc)
               echo "::notice::macOS: ad-hoc signed — no Apple Developer account is configured, which is a supported way to publish (ADR 0042). The updater is unaffected: its trust is the minisign key, not Apple's. The cost is a rougher first install; see docs/updating.md, step 3."
@@ -524,6 +562,21 @@ jobs:
               fail=1
               ;;
           esac
+          # The notarization key is all or none on any publish, and a STABLE build is either ad-hoc
+          # with none of the six or Developer ID signed with all six: a stable build that has one
+          # group and not the other would ship un-notarized, or notarize nothing, in silence.
+          if [ "$notary" = partial ]; then
+            echo "::error::the notarization secrets are half set — APPLE_API_ISSUER=$HAS_API_ISSUER, APPLE_API_KEY=$HAS_API_KEY, APPLE_API_KEY_P8=$HAS_API_KEY_P8. Set all three to notarize a stable build, or none. See docs/updating.md, step 3."
+            fail=1
+          elif [ "$CHANNEL" = stable ]; then
+            if [ "$macos_signing" = developer-id ] && [ "$notary" = none ]; then
+              echo "::error::a stable build is notarized, and the Developer ID is set without APPLE_API_ISSUER, APPLE_API_KEY and APPLE_API_KEY_P8. Set the three, or remove the Developer ID secrets to ad-hoc sign. See docs/updating.md, step 3."
+              fail=1
+            elif [ "$macos_signing" = ad-hoc ] && [ "$notary" = all ]; then
+              echo "::error::the notarization secrets are set without a Developer ID, and nothing ad-hoc signed can be notarized. Set APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD and APPLE_SIGNING_IDENTITY, or remove the notarization secrets. See docs/updating.md, step 3."
+              fail=1
+            fi
+          fi
           if [ "$CHANNEL" = "dev" ]; then
             # The dev channel's address is a prerelease named `dev`. It is created ONCE, by the
             # operator, because nothing in CI creates a tag.
@@ -739,11 +792,19 @@ jobs:
             x86_64-unknown-linux-gnu) slug=linux-x86_64; updater=linux-x86_64-appimage ;;
             *) echo "::error::$triple has no updater target in purlis_core::updates::TARGETS"; exit 1 ;;
           esac
+          # **The macOS bundle of a publish is handed to `sign-macos` under a name of its own**, and
+          # the name every later job downloads, `purlis-macos-arm64-<version>`, is the one that job
+          # uploads once it has signed (ADR 0042, amended 2026-11-25). Nothing that publishes
+          # downloads the unsigned one.
+          artifact="purlis-$slug-${VERSION}"
+          if [ "$slug" = macos-arm64 ] && [ "$PUBLISH" = true ]; then
+            artifact="purlis-$slug-unsigned-${VERSION}"
+          fi
           {
             echo "triple=$triple"
             echo "slug=$slug"
             echo "updater=$updater"
-            echo "artifact=purlis-$slug-${VERSION}"
+            echo "artifact=$artifact"
           } >> "$GITHUB_OUTPUT"
 
       # **Every crate is compiled once, by Tauri's own cargo run** (R1, #7380). The app, the
@@ -806,11 +867,13 @@ jobs:
       # signature's trusted comment — the pairing `requireSignedVersion` and `release-manifest`
       # both check.
       #
-      # One exception, and it is the ONLY way this workflow ever builds without updater
-      # artifacts: a `workflow_dispatch` build. It runs outside the `release` environment, so
-      # it never has the signing key. It publishes nothing, its summary says it is unsigned,
-      # and `release-manifest` never sees it. A publish with no key never gets here — `plan`
-      # refused it.
+      # Two exceptions, the only ways this workflow builds without updater artifacts. A
+      # `workflow_dispatch` build runs outside the `release` environment, so it never has the
+      # signing key: it publishes nothing, its summary says it is unsigned, and `release-manifest`
+      # never sees it. A publish with no key never gets here — `plan` refused it. And the macOS
+      # leg never makes one: its bundle is sealed ad-hoc here and signed after the gate by
+      # `sign-macos`, which makes the updater archive from the signed bundle and signs it with
+      # the minisign key, so that key is never read on the runner `build` was given.
       - name: This build's config
         env:
           SIGNED: ${{ needs.keys.outputs.signed }}
@@ -819,7 +882,11 @@ jobs:
           jq -n --arg v "$VERSION" '{version: $v, build: {beforeBuildCommand: ""}}' \
             > app/src-tauri/tauri.compile.conf.json
           cat app/src-tauri/tauri.compile.conf.json
-          if [ "$PUBLISH" != "true" ] && [ "$SIGNED" != "true" ]; then
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            echo "the macOS bundle is sealed ad-hoc here and signed by sign-macos: no updater artifacts from this job"
+            jq --arg v "$VERSION" '. + {version: $v} | .bundle.createUpdaterArtifacts = false' \
+              app/src-tauri/tauri.release.conf.json > app/src-tauri/tauri.build.conf.json
+          elif [ "$PUBLISH" != "true" ] && [ "$SIGNED" != "true" ]; then
             echo "::warning::no TAURI_SIGNING_PRIVATE_KEY — this on-demand build makes no updater artifacts and is published nowhere"
             jq --arg v "$VERSION" '. + {version: $v} | .bundle.createUpdaterArtifacts = false' \
               app/src-tauri/tauri.release.conf.json > app/src-tauri/tauri.build.conf.json
@@ -1006,42 +1073,24 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-      # Only the variables that are SET reach the bundler. Tauri reads the Apple variables'
-      # presence as "sign", so an empty APPLE_CERTIFICATE makes it try to import nothing and
-      # fail; exporting only what exists keeps an on-demand build on a repository with no
-      # secrets working.
-      #
-      # Then the one addition that makes an account-less publish possible: when no Developer ID
-      # is configured, APPLE_SIGNING_IDENTITY is set to `-`, which is codesign's spelling of
-      # ad-hoc. This is NOT the same as leaving it unset. The bundler's `keychain()` returns
-      # `None` for an absent identity and then signs nothing at all, which on Apple Silicon
-      # leaves each Mach-O carrying only the linker's own ad-hoc signature and the BUNDLE with
-      # no seal — `codesign --verify --deep --strict` rejects that, and so does the check
-      # further down. With `-` the bundler takes its `with_signing_identity` branch, imports no
-      # keychain (there is nothing to import) and runs `codesign --force -s -`, sealing the
-      # bundle. It must go through a named identity rather than a `codesign` call of our own,
-      # because signing has to happen BEFORE the bundler writes `purlis.app.tar.gz` and
-      # minisigns it; anything signed afterwards would not be the bytes the updater verifies.
-      #
-      # Deliberately absent: APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID, APPLE_API_KEY,
-      # APPLE_API_ISSUER, APPLE_API_KEY_PATH. Those are notarization, which ADR 0042 declines.
+      # **Linux: only the variables that are SET reach the bundler**, and only the updater's key:
+      # Tauri reads a variable's presence as "sign", so an empty one makes it try to import
+      # nothing and fail, and exporting only what exists keeps an on-demand build on a repository
+      # with no secrets working. No Apple variable is read here, on any runner (ADR 0042, amended
+      # 2026-11-25): the Developer ID key is imported by `sign-macos` on a GitHub-hosted runner
+      # and nowhere else, and a rule in `crates/release-manifest` fails on a mention of one in this job.
       - name: Signing material
-        if: steps.ci.outputs.green == 'true'
+        if: steps.ci.outputs.green == 'true' && runner.os == 'Linux'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          MACOS_SIGNING: ${{ needs.keys.outputs.macos_signing }}
         run: |
           set -euo pipefail
-          for name in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
-                      APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY; do
+          for name in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
             value="${!name}"
             if [ -n "$value" ]; then
-              # A multi-line value (the Tauri key is one line of base64, the certificate too,
-              # but nothing guarantees it) goes through GITHUB_ENV's heredoc form.
+              # A multi-line value (the Tauri key is one line of base64, but nothing guarantees
+              # it) goes through GITHUB_ENV's heredoc form.
               delim="EOF_$(openssl rand -hex 8)"
               { echo "$name<<$delim"; echo "$value"; echo "$delim"; } >> "$GITHUB_ENV"
               echo "$name: set"
@@ -1049,10 +1098,22 @@ jobs:
               echo "$name: not set"
             fi
           done
-          if [ "$RUNNER_OS" = "macOS" ] && [ "$MACOS_SIGNING" = "ad-hoc" ]; then
-            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
-            echo "APPLE_SIGNING_IDENTITY: '-' (ad-hoc; no Developer ID configured)"
-          fi
+
+      # **macOS: ad-hoc, always, and no secret.** `APPLE_SIGNING_IDENTITY=-` is codesign's
+      # spelling of ad-hoc, and it is NOT the same as leaving it unset. The bundler's `keychain()`
+      # returns `None` for an absent identity and then signs nothing at all, which on Apple
+      # Silicon leaves each Mach-O carrying only the linker's own ad-hoc signature and the BUNDLE
+      # with no seal; `codesign --verify --deep --strict` rejects that, and so does the check
+      # further down. With `-` the bundler imports no keychain, runs `codesign --force -s -` and
+      # seals the bundle. A publish's bundle is then signed with the Developer ID, or sealed
+      # ad-hoc again, by `sign-macos`, after the gate and on a hosted runner; a build that
+      # publishes nothing stays ad-hoc.
+      - name: Ad-hoc identity (macOS)
+        if: steps.ci.outputs.green == 'true' && runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+          echo "the identity is '-' (ad-hoc); a Developer ID is signed on after the gate, on a hosted runner"
 
       # The AppImage bundler's two tools, put where `tauri build` looks before it downloads them
       # (tauri-bundler 2.12 `linuxdeploy.rs`: `~/.cache/tauri`, names as there). Through the API,
@@ -1106,7 +1167,8 @@ jobs:
       # The extra bundle as a step of its own, which is allowed to fail: a build that lost
       # its `.dmg`, or a try-a-branch build that lost its AppImage, still has the bundle the
       # step above made. Skipped when that step already made it, and for the `.dmg` of a dev
-      # channel build, which has none. It runs no cargo either.
+      # channel build, which has none, and for the `.dmg` of a publish, which `sign-macos` makes
+      # from the signed app (a `.dmg` made here would carry an ad-hoc app). It runs no cargo either.
       #
       # Both targets, not just the extra one: Tauri DELETES a bundle it had to build only as
       # an intermediate. Asking for `dmg` alone builds `purlis.app`, wraps it, then prints
@@ -1114,7 +1176,7 @@ jobs:
       # this workflow lost the .app it had already built. Naming both keeps both.
       - name: Bundle the extra bundle
         id: extra
-        if: ${{ steps.ci.outputs.green == 'true' && !(matrix.extra_required && needs.plan.outputs.appimage_required == 'true') && !(matrix.extra_bundles == 'dmg' && needs.plan.outputs.dmg != 'true') }}
+        if: ${{ steps.ci.outputs.green == 'true' && !(matrix.extra_required && needs.plan.outputs.appimage_required == 'true') && !(matrix.extra_bundles == 'dmg' && needs.plan.outputs.dmg != 'true') && !(matrix.extra_bundles == 'dmg' && needs.keys.outputs.publish == 'true') }}
         continue-on-error: true
         working-directory: app
         run: npx tauri bundle --config src-tauri/tauri.build.conf.json --bundles ${{ matrix.bundles }},${{ matrix.extra_bundles }}
@@ -1133,25 +1195,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          slug=${{ steps.names.outputs.slug }}; up=${{ steps.names.outputs.updater }}
+          slug=${{ steps.names.outputs.slug }}
           ditto -c -k --sequesterRsrc --keepParent \
             "target/$PROFILE/bundle/macos/purlis.app" "dist/purlis-$slug.app.zip"
           for dmg in "target/$PROFILE"/bundle/dmg/*.dmg; do
             [ -e "$dmg" ] && cp "$dmg" "dist/purlis-$slug.dmg"
           done
-          if [ "$DMG" != "true" ]; then
+          if [ "$PUBLISH" = "true" ]; then
+            echo "no .dmg, no updater archive: sign-macos makes them from the signed app (ADR 0042, amended 2026-11-25)"
+          elif [ "$DMG" != "true" ]; then
             echo "no .dmg — a dev channel build makes none (ADR 0092)"
           elif [ ! -e "dist/purlis-$slug.dmg" ]; then
             echo "no .dmg — its bundler failed, see the step above"
-          fi
-          # The updater's own artifact and the signature over it. The name inside the
-          # signature's trusted comment is the bundler's; minisign does not check it, and the
-          # version beside it is what `release-manifest` does check.
-          if [ -e "target/$PROFILE/bundle/macos/purlis.app.tar.gz" ]; then
-            cp "target/$PROFILE/bundle/macos/purlis.app.tar.gz" "dist/purlis-$up.app.tar.gz"
-          fi
-          if [ -e "target/$PROFILE/bundle/macos/purlis.app.tar.gz.sig" ]; then
-            cp "target/$PROFILE/bundle/macos/purlis.app.tar.gz.sig" "dist/purlis-$up.app.tar.gz.sig"
           fi
           ls -l dist
 
@@ -1174,8 +1229,10 @@ jobs:
 
       # A publish carries the signed updater artifact, or this build is not one. The manifest
       # step would refuse later anyway; this says which platform, while its log is on screen.
+      # Linux only: the macOS archive and its signature are made, from the signed app, by
+      # `sign-macos`, which checks them itself.
       - name: The updater artifact and its signature are both here
-        if: steps.ci.outputs.green == 'true' && needs.keys.outputs.publish == 'true'
+        if: steps.ci.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && runner.os == 'Linux'
         run: |
           set -euo pipefail
           up=${{ steps.names.outputs.updater }}
@@ -1185,56 +1242,31 @@ jobs:
           [ -s "$art.sig" ] || { echo "::error::$art has no .sig beside it — the bundler signed nothing"; exit 1; }
           echo "$art and $art.sig"
 
-      # The signing decision, checked on the thing that was built rather than assumed from the
-      # secrets. This has to assert the signing that was ASKED for, in both directions. A
-      # certificate secret that is set but wrong — expired, the wrong identity, an Apple
-      # *Development* cert instead of Developer ID — produces a bundle signed with something
-      # else, or ad-hoc, and nothing downstream notices until an operator's Mac does. Since
-      # ad-hoc became a legitimate outcome, the reverse matters too: a Developer ID run that
-      # quietly produced an ad-hoc bundle must not pass a check that only asked "is it signed".
+      # The signing decision, checked on the thing that was built rather than assumed. In `build`
+      # that decision is always ad-hoc (ADR 0042, amended 2026-11-25), and it is asserted in both
+      # halves, or the assertion is worth nothing: `Signature=adhoc` alone is also what an
+      # unsealed bundle's linker signature prints, and a bundle that came out Developer ID signed
+      # here would mean a Developer ID key reached a runner `build` may have been given. The
+      # Developer ID signing is verified by `sign-macos`, on the final signed artifact.
       #
-      # `codesign --verify --deep --strict` runs FIRST and in both modes, because it is the one
-      # thing an ad-hoc bundle can still fail: it is what separates "the bundler sealed this
-      # bundle ad-hoc" from "nobody signed the bundle and its executables merely carry the
-      # linker's ad-hoc signature". Those two print the same `Signature=adhoc`.
-      - name: The macOS bundle carries the signature this run asked for, sidecar included
-        if: steps.ci.outputs.green == 'true' && runner.os == 'macOS' && needs.keys.outputs.publish == 'true'
-        env:
-          MACOS_SIGNING: ${{ needs.keys.outputs.macos_signing }}
+      # `codesign --verify --deep --strict` runs FIRST, because it is the one thing an ad-hoc
+      # bundle can still fail: it is what separates "the bundler sealed this bundle ad-hoc" from
+      # "nobody signed the bundle and its executables merely carry the linker's ad-hoc signature".
+      - name: The macOS bundle is sealed ad-hoc, sidecar included, and holds no Developer ID
+        if: steps.ci.outputs.green == 'true' && runner.os == 'macOS'
         run: |
           set -euo pipefail
           bundle=target/$PROFILE/bundle/macos/purlis.app
-          echo "this run asked for: $MACOS_SIGNING"
           codesign --verify --deep --strict --verbose=2 "$bundle"
           for path in "$bundle" "$bundle/Contents/MacOS/purlis" "$bundle/Contents/MacOS/charter"; do
             info=$(codesign -dv --verbose=4 "$path" 2>&1)
             echo "--- $path"
             echo "$info" | grep -E '^(Authority|TeamIdentifier|Signature|CodeDirectory)=' || true
-            case "$MACOS_SIGNING" in
-              developer-id)
-                echo "$info" | grep -q '^Authority=Developer ID Application:' \
-                  || { echo "::error::$path is not signed with a Developer ID Application certificate, but this run had all three Apple secrets set"; exit 1; }
-                ;;
-              ad-hoc)
-                # Both halves, or the assertion is worth nothing: `Signature=adhoc` alone is
-                # also what an unsealed bundle's linker signature prints, and a bundle that
-                # somehow came out Developer ID signed here would mean the secrets are not
-                # where this workflow thinks they are.
-                echo "$info" | grep -q '^Signature=adhoc' \
-                  || { echo "::error::$path is not ad-hoc signed, and ad-hoc is what this run asked for"; exit 1; }
-                echo "$info" | grep -q '^TeamIdentifier=not set' \
-                  || { echo "::error::$path carries a team identifier, so it is not the ad-hoc signature this run asked for"; exit 1; }
-                ;;
-              *)
-                echo "::error::unknown macOS signing mode '$MACOS_SIGNING'"; exit 1 ;;
-            esac
+            echo "$info" | grep -q '^Signature=adhoc' \
+              || { echo "::error::$path is not ad-hoc signed, and ad-hoc is all build signs with"; exit 1; }
+            echo "$info" | grep -q '^TeamIdentifier=not set' \
+              || { echo "::error::$path carries a team identifier, so something other than the ad-hoc identity signed it"; exit 1; }
           done
-          # Declined, and said so. A notarized build would print a stapled ticket here; a
-          # Developer ID one prints 'Unnotarized Developer ID'; an ad-hoc one prints
-          # 'rejected'. None of the three is an error, and none of them is the updater's
-          # business — this is Gatekeeper's verdict on a FIRST install, nothing more.
-          echo "notarization: not requested (ADR 0042). spctl's verdict on a first install:"
-          spctl -a -vv -t exec "$bundle" 2>&1 || true
 
       # **The hardened runtime, read off the signed app** (ruling V90a, #1180). A keyring item is
       # held to the app, and that holds only while no other code can run as the app: the
@@ -1244,6 +1276,8 @@ jobs:
       # modes and on every macOS build, the profile guard's and a hand-started one's included,
       # so a bundler that stops passing `--options runtime` is found on a night, not on a tag.
       # The seal is verified first, so a linker's own signature never answers for the bundle.
+      # This reads the ad-hoc bundle `build` made; `sign-macos` reads the same off the final
+      # signed artifact.
       #
       # **Report-only on a dev publish, until a runner has measured it** (train 79 review). The
       # bundler passes `--options runtime` for an ad-hoc identity too (tauri-macos-sign's
@@ -1448,7 +1482,6 @@ jobs:
           SLUG: ${{ steps.names.outputs.slug }}
           CHANNEL: ${{ needs.plan.outputs.channel }}
           SIGNED: ${{ needs.keys.outputs.signed }}
-          MACOS_SIGNING: ${{ needs.keys.outputs.macos_signing }}
         run: |
           set -euo pipefail
           {
@@ -1462,64 +1495,8 @@ jobs:
             echo
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$RUNNER_OS" = "macOS" ]; then
-            if [ "$PUBLISH" = "true" ] && [ "$MACOS_SIGNING" = "developer-id" ]; then
-              cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
-          ### A first install on macOS meets Gatekeeper, and this is expected
-
-          This build is **signed with a Developer ID and not notarized** (ADR 0042). A
-          browser marks everything it downloads as quarantined, and macOS 15 and later answer a
-          quarantined app that Apple has not notarized with a dialog — **"purlis" Not Opened**,
-          *Apple could not verify "purlis" is free of malware* — offering only *Done* and
-          *Move to Trash*. Nothing is wrong with the download. To open it the first time:
-
-          1. Drag `purlis.app` into `/Applications`, open it once, and click **Done**.
-          2. Open **System Settings → Privacy & Security**, scroll to **Security**, and click
-             **Open Anyway** beside the line about charter. Confirm with your password.
-          3. charter opens, and macOS does not ask again.
-
-          Or, in a terminal, before the first launch:
-
-          ```sh
-          xattr -dr com.apple.quarantine /Applications/purlis.app
-          ```
-
-          **This happens once.** charter updates itself in place after that, and an update
-          does not meet this dialog: the quarantine flag is set by the browser that downloaded
-          a file, and charter's updater downloads into memory, verifies the minisign signature
-          and unpacks the new bundle itself — nothing it writes is quarantined.
-          EOF
-            elif [ "$PUBLISH" = "true" ]; then
-              cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
-          ### A first install on macOS needs one command, and this is expected
-
-          This build is **ad-hoc signed**: charter has no Apple Developer account behind it
-          (ADR 0042, amended 2026-09-23). The app is signed — on Apple Silicon nothing
-          unsigned runs at all — but it is signed by nobody in particular, so Gatekeeper has no
-          developer to check and refuses a *quarantined* copy. A browser marks everything it
-          downloads as quarantined. Before the first launch, run:
-
-          ```sh
-          xattr -dr com.apple.quarantine /Applications/purlis.app
-          ```
-
-          That removes the flag Gatekeeper assesses, so there is nothing left to refuse. It is
-          the instruction that works whatever dialog your macOS version would otherwise show —
-          **System Settings → Privacy & Security → Open Anyway** may also work, but it has not
-          been measured for an ad-hoc build and the dialog an ad-hoc bundle raises is not
-          necessarily the one an un-notarized Developer ID bundle raises.
-
-          **This happens once, and it is not what the updater does.** charter's updater is not
-          trusted because Apple signed it; it is trusted because every update carries a
-          **minisign** signature made by the operator's key, which the app verifies before it
-          unpacks anything. Nothing about ad-hoc signing weakens that. The updater downloads
-          into memory, verifies the signature, unpacks the bundle itself and renames it into
-          place, so nothing it writes is quarantined and no dialog is involved.
-
-          Measured on macOS 26.2 (Apple Silicon) against the updater's own install path, from
-          inside an ad-hoc-signed app in `/Applications`: the replacement succeeded, **no App
-          Management permission was asked for and none was recorded**, a quarantine flag on the
-          old bundle did not survive onto the new one, and the replaced bundle launched again.
-          EOF
+            if [ "$PUBLISH" = "true" ]; then
+              echo "This job sealed the bundle **ad-hoc** and handed it on: the \`sign-macos\` job signs it with the Developer ID (or ad-hoc again, when none is configured), on a GitHub-hosted runner, and its summary says what a first install looks like (ADR 0042, amended 2026-11-25)." >> "$GITHUB_STEP_SUMMARY"
             else
               {
                 echo '```sh'
@@ -1585,18 +1562,15 @@ jobs:
             "$dir/$name" --version
           done
 
-      # **Nothing of a signed build stays on a persistent runner.** The bundler imports the
-      # Developer ID certificate into a keychain it creates for the signing and lists it in the
-      # user's search list; on a hosted runner the machine is thrown away, on a self-hosted Mac
-      # it is not. Whatever the build left (a failed or cancelled build included, hence
-      # `always()`) goes. Nothing is imported before the wait for `ci` above, so a run that never
-      # got past it has no keychain and no need of this. Every keychain in the runner user's
-      # search list that is neither the login keychain nor a system one is deleted, the list is
-      # set back to the login keychain, and any keychain file under this job's temporary folder
-      # is removed with the job's own folders (a run that never got past the wait leaves them to
-      # the runner, which empties `$RUNNER_TEMP` before its next job). This is why the runner's
-      # service runs as a user of its own (docs/updating.md): that user's keychains are the
-      # runner's to delete. An ad-hoc build made no keychain and this finds none.
+      # **Nothing of a build stays on a persistent runner.** `build` signs ad-hoc and imports no
+      # Developer ID key (that is `sign-macos`, hosted only), so it makes no keychain of its own;
+      # this step still empties what a self-hosted Mac would keep: any keychain a build tool
+      # added to the runner user's search list (a failed or cancelled build included, hence
+      # `always()`), and the job's own home folders. Every keychain in that list that is neither
+      # the login keychain nor a system one is deleted and the list is set back to the login
+      # keychain. A run that never got past the wait for `ci` above has made none of this and
+      # finds nothing. This is why the runner's service runs as a user of its own
+      # (docs/updating.md): that user's keychains are the runner's to delete.
       - name: A self-hosted runner keeps no keychain, certificate or job folder
         if: steps.ci.outputs.green == 'true' && always() && runner.environment == 'self-hosted' && runner.os == 'macOS'
         shell: bash
@@ -1613,6 +1587,461 @@ jobs:
           find "$RUNNER_TEMP" -name '*.keychain*' -exec rm -rf {} + 2>/dev/null || true
           rm -rf "$RUNNER_TEMP/job-home"
           security list-keychains -d user
+
+  # **The one job that holds the Developer ID key, and it runs on a GitHub-hosted macOS runner and
+  # nowhere else** (ADR 0042, amended 2026-11-25). `build` may be given a self-hosted Mac, so it
+  # never names a Developer ID or notarization secret and seals its bundle ad-hoc; this job takes
+  # that bundle after the gate and signs it, notarizes a stable build, and makes what `build`
+  # made after signing before: the `.app.zip`, the updater's `.app.tar.gz` with its minisign
+  # signature, and the `.dmg`. `runs-on` is a literal hosted label, never a variable, and a rule
+  # in `crates/release-manifest` fails on anything else.
+  #
+  # **What it signs.** Every Mach-O file and bundle nested in the app, deepest first, then the app,
+  # each with the hardened runtime and a secure timestamp, and no entitlement (ruling V90a: the app
+  # carries none, so nothing here passes `--entitlements`). The signing identity is the one named
+  # by `APPLE_SIGNING_IDENTITY`, looked up in a keychain this job makes and deletes; with no
+  # Developer ID secrets it is `-`, ad-hoc, and this job still makes the archive and its signature.
+  #
+  # **What it checks, on the final artifacts.** The `.app.zip`, the `.app.tar.gz` and the `.dmg`
+  # are each unpacked and held to the signing that was asked for: `codesign --verify --deep
+  # --strict`, the Developer ID authority and a team on the app, its sidecars and every nested
+  # executable (or `Signature=adhoc` and no team, ad-hoc), one code directory hash across all
+  # of them, the hardened runtime and no entitlement, and for a stable build `stapler validate`
+  # and Gatekeeper's `Notarized Developer ID`.
+  #
+  # **The risk it does not remove, plainly.** The bundle it signs was made by `build`, on a runner
+  # that may be self-hosted, so what that runner put in the bundle is what gets signed. The key is
+  # not there; the trust in the bundle's bytes is (ADR 0042, amended 2026-11-25).
+  sign-macos:
+    name: macOS, signed and notarized
+    needs: [gate, plan, keys, build]
+    if: ${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && needs.plan.result == 'success' && needs.keys.result == 'success' && needs.build.result == 'success' }}
+    environment: release
+    runs-on: macos-latest
+    # A notarization is usually minutes: the app is allowed forty here and the .dmg fifteen, and
+    # the rest is a few minutes, so the job's own deadline never cuts the optional .dmg short.
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      CHANNEL: ${{ needs.plan.outputs.channel }}
+      DMG: ${{ needs.plan.outputs.dmg }}
+      MACOS_SIGNING: ${{ needs.keys.outputs.macos_signing }}
+      NOTARIZE: ${{ needs.keys.outputs.notarize }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      # No cache, as every job that holds a key.
+      - uses: ./.github/actions/rust-toolchain
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: purlis-macos-arm64-unsigned-${{ needs.plan.outputs.version }}
+          path: unsigned
+      # Compiled with no key in reach, as `runner-binaries`' signer is: this step names no
+      # secret, and the step that signs with the updater's key compiles nothing.
+      - name: The updater archive's signer, built with no key in reach
+        run: cargo build --locked --release -p release-manifest --bin sign-updater-archive
+
+      - name: The bundle `build` made
+        run: |
+          set -euo pipefail
+          test -s unsigned/purlis-macos-arm64.app.zip \
+            || { echo "::error::no purlis-macos-arm64.app.zip came from build"; exit 1; }
+          mkdir -p work dist
+          ditto -x -k unsigned/purlis-macos-arm64.app.zip work
+          test -d work/purlis.app || { echo "::error::the zip holds no purlis.app"; exit 1; }
+          # It is what `build` sealed: ad-hoc, and nothing of a Developer ID. A bundle that
+          # already carries a team came from somewhere this job does not trust.
+          codesign --verify --deep --strict work/purlis.app
+          info=$(codesign -dv --verbose=4 work/purlis.app 2>&1)
+          echo "$info" | grep -q '^Signature=adhoc' \
+            || { echo "::error::the bundle from build is not the ad-hoc one build seals"; exit 1; }
+
+      # The Developer ID certificate, in a keychain of this job and nowhere else. The `.p12` is a
+      # file of this step alone and is removed with it; the keychain is deleted by the last step.
+      - name: The Developer ID certificate, in a keychain of this job
+        if: needs.keys.outputs.macos_signing == 'developer-id'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/purlis-signing.keychain-db"
+          p12="$RUNNER_TEMP/developer-id.p12"
+          pass=$(openssl rand -hex 24)
+          trap 'rm -f "$p12"' EXIT
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$p12"
+          security create-keychain -p "$pass" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$pass" "$keychain"
+          security import "$p12" -P "$APPLE_CERTIFICATE_PASSWORD" -f pkcs12 -t agg \
+            -T /usr/bin/codesign -T /usr/bin/security -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$pass" "$keychain" > /dev/null
+          # Searched by codesign beside the user's own, which a hosted runner has none of.
+          chains=("$keychain")
+          while IFS= read -r existing; do
+            if [ -n "$existing" ]; then chains+=("$existing"); fi
+          done < <(security list-keychains -d user | sed -e 's/^ *"//' -e 's/"$//')
+          security list-keychains -d user -s "${chains[@]}"
+          echo "KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          security find-identity -v -p codesigning "$keychain"
+
+      # The notarization key, as the file notarytool reads it, `umask 077`, and removed by the last
+      # step. Only a stable build with the whole key has one (`keys`).
+      - name: The notarization key, in a file of this job
+        if: needs.keys.outputs.notarize == 'true'
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          file="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY.p8"
+          printf '%s\n' "$APPLE_API_KEY_P8" > "$file"
+          echo "NOTARY_KEY_FILE=$file" >> "$GITHUB_ENV"
+
+      # **Inside out**: each nested Mach-O file, then each nested bundle, deepest first, then the
+      # app. `--options runtime` and no `--entitlements`, ever. The secure timestamp is Apple's
+      # server's, which an ad-hoc signature has no use for.
+      - name: Sign the app, every nested executable first
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          app=work/purlis.app
+          if [ "$MACOS_SIGNING" = developer-id ]; then
+            identity=$APPLE_SIGNING_IDENTITY
+            security find-identity -v -p codesigning "$KEYCHAIN" | grep -F -- "$identity" > /dev/null \
+              || { echo "::error::APPLE_SIGNING_IDENTITY names no identity in the imported certificate; security find-identity lists: $(security find-identity -v -p codesigning "$KEYCHAIN")"; exit 1; }
+            flags=(--force --options runtime --timestamp --keychain "$KEYCHAIN")
+          else
+            identity=-
+            flags=(--force --options runtime --timestamp=none)
+          fi
+          depth() { awk '{ print gsub("/", "/") " " $0 }' | sort -rn | cut -d' ' -f2-; }
+          find "$app/Contents" -type f -print0 | while IFS= read -r -d '' f; do
+            if file -b "$f" | grep -q 'Mach-O'; then echo "$f"; fi
+          done | depth > "$RUNNER_TEMP/machos.txt"
+          find "$app/Contents" -type d \( -name '*.framework' -o -name '*.app' -o -name '*.xpc' -o -name '*.appex' -o -name '*.bundle' \) \
+            | depth > "$RUNNER_TEMP/bundles.txt"
+          echo "$(wc -l < "$RUNNER_TEMP/machos.txt" | tr -d ' ') nested executables, $(wc -l < "$RUNNER_TEMP/bundles.txt" | tr -d ' ') nested bundles"
+          while IFS= read -r f; do
+            codesign "${flags[@]}" --sign "$identity" "$f"
+          done < "$RUNNER_TEMP/machos.txt"
+          while IFS= read -r b; do
+            codesign "${flags[@]}" --sign "$identity" "$b"
+          done < "$RUNNER_TEMP/bundles.txt"
+          codesign "${flags[@]}" --sign "$identity" "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+      # A stable build, notarized: submitted as a zip, waited for, and the ticket stapled into the
+      # app, so the archives below carry it. An answer other than Accepted prints Apple's log and
+      # fails the job: nothing unnotarized is published as stable.
+      - name: Notarize and staple the app
+        if: needs.keys.outputs.notarize == 'true'
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          set -euo pipefail
+          zip="$RUNNER_TEMP/notarize-app.zip"
+          ditto -c -k --keepParent work/purlis.app "$zip"
+          # A rejected submission can exit non-zero: its JSON and Apple's log are still printed.
+          out=$(xcrun notarytool submit "$zip" --key "$NOTARY_KEY_FILE" --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER" --wait --timeout 40m --output-format json) || true
+          echo "$out"
+          id=$(jq -r '.id // empty' <<<"$out")
+          status=$(jq -r '.status // empty' <<<"$out")
+          if [ "$status" != Accepted ]; then
+            if [ -n "$id" ]; then
+              xcrun notarytool log "$id" --key "$NOTARY_KEY_FILE" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" || true
+            fi
+            echo "::error::Apple answered '$status' for the app's notarization, so this stable build is not published"
+            exit 1
+          fi
+          xcrun stapler staple work/purlis.app
+          xcrun stapler validate work/purlis.app
+
+      # What `build` made after signing before: the zip people download and the sbom reads, the
+      # updater's archive (`COPYFILE_DISABLE`: no `._` files, so the archive is the app and
+      # nothing else), and the minisign signature over its exact bytes. The key is read in the
+      # signature step alone, which compiles nothing.
+      - name: The app.zip and the updater archive, from the signed app
+        run: |
+          set -euo pipefail
+          ditto -c -k --sequesterRsrc --keepParent work/purlis.app dist/purlis-macos-arm64.app.zip
+          COPYFILE_DISABLE=1 tar -czf dist/purlis-darwin-aarch64.app.tar.gz -C work purlis.app
+          ls -l dist
+      - name: The updater archive's signature
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is not set, so the updater archive cannot be signed. It has to be a secret of the release environment. See docs/updating.md, steps 0 and 1."
+            exit 1
+          fi
+          target/release/sign-updater-archive dist/purlis-darwin-aarch64.app.tar.gz "$VERSION"
+          test -s dist/purlis-darwin-aarch64.app.tar.gz.sig \
+            || { echo "::error::no signature beside the updater archive"; exit 1; }
+
+      # The `.dmg` is allowed to fail, as it always was: a build that lost it still has the app
+      # and the updater archive, and a dmg that was not signed and, on a stable build, notarized
+      # is removed, never published half done. Built from the signed app with `hdiutil`, with the
+      # `Applications` link beside it; the Finder-styled window Tauri's bundler scripts is gone.
+      - name: The .dmg, signed and, for a stable build, notarized
+        if: needs.plan.outputs.dmg == 'true'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          dmg=dist/purlis-macos-arm64.dmg
+          # A script of its own, so `set -e` holds inside it: in `if ! ( ... )` bash would switch
+          # it off for the whole body.
+          cat > "$RUNNER_TEMP/dmg.sh" <<'SH'
+          set -euo pipefail
+          stage=$(mktemp -d)
+          ditto work/purlis.app "$stage/purlis.app"
+          ln -s /Applications "$stage/Applications"
+          hdiutil create -volname purlis -srcfolder "$stage" -ov -format UDZO -fs HFS+ "$DMG_PATH"
+          if [ "$MACOS_SIGNING" = developer-id ]; then
+            codesign --force --timestamp --keychain "$KEYCHAIN" --sign "$APPLE_SIGNING_IDENTITY" "$DMG_PATH"
+          else
+            codesign --force --timestamp=none --sign - "$DMG_PATH"
+          fi
+          if [ "$NOTARIZE" = true ]; then
+            out=$(xcrun notarytool submit "$DMG_PATH" --key "$NOTARY_KEY_FILE" --key-id "$APPLE_API_KEY" \
+              --issuer "$APPLE_API_ISSUER" --wait --timeout 15m --output-format json) || true
+            echo "$out"
+            [ "$(jq -r '.status // empty' <<<"$out")" = Accepted ] || { echo "Apple did not accept the .dmg"; exit 1; }
+            xcrun stapler staple "$DMG_PATH"
+            xcrun stapler validate "$DMG_PATH"
+          fi
+          SH
+          if ! DMG_PATH="$dmg" bash "$RUNNER_TEMP/dmg.sh"; then
+            rm -f "$dmg"
+            echo "::warning::no .dmg: it could not be made, signed or notarized, so this release has none. The app and the updater archive are unaffected."
+            # A stable release is announced with its .dmg, so it does not go out without one.
+            if [ "$CHANNEL" = stable ]; then
+              echo "::error::a stable build has no .dmg, so it is not published"
+              exit 1
+            fi
+          fi
+          rm -f "$RUNNER_TEMP/dmg.sh"
+          ls -l dist
+
+      # **Checked on the final artifacts**, each unpacked as a person or the updater would unpack
+      # it, and held to the signing that was asked for in both directions. The first line of each
+      # is the seal; `Signature=adhoc` alone is also what an unsealed bundle's linker signature
+      # prints. Every nested executable carries the app's team, and the four copies of the app
+      # (the one signed here and the one in each artifact) have one code directory hash.
+      - name: The final artifacts carry the signature this run asked for
+        run: |
+          set -euo pipefail
+          echo "this run asked for: $MACOS_SIGNING (notarize: $NOTARIZE)"
+          check_bundle() {
+            b=$1
+            codesign --verify --deep --strict --verbose=2 "$b"
+            for path in "$b" "$b/Contents/MacOS/purlis" "$b/Contents/MacOS/charter"; do
+              info=$(codesign -dv --verbose=4 "$path" 2>&1)
+              echo "--- $path"
+              echo "$info" | grep -E '^(Authority|TeamIdentifier|Signature|CodeDirectory|Timestamp)=' || true
+              case "$MACOS_SIGNING" in
+                developer-id)
+                  echo "$info" | grep -q '^Authority=Developer ID Application:' \
+                    || { echo "::error::$path is not signed with a Developer ID Application certificate"; exit 1; }
+                  echo "$info" | grep -q '^TeamIdentifier=not set' \
+                    && { echo "::error::$path has no team identifier"; exit 1; }
+                  echo "$info" | grep -q '^Timestamp=' \
+                    || { echo "::error::$path carries no secure timestamp, which notarization and a lasting signature need"; exit 1; }
+                  ;;
+                ad-hoc)
+                  echo "$info" | grep -q '^Signature=adhoc' \
+                    || { echo "::error::$path is not ad-hoc signed, and ad-hoc is what this run asked for"; exit 1; }
+                  echo "$info" | grep -q '^TeamIdentifier=not set' \
+                    || { echo "::error::$path carries a team identifier, so it is not the ad-hoc signature this run asked for"; exit 1; }
+                  ;;
+                *) echo "::error::unknown macOS signing mode '$MACOS_SIGNING'"; exit 1 ;;
+              esac
+            done
+            # Every nested executable carries the app's own team.
+            team=$(codesign -dv --verbose=4 "$b" 2>&1 | sed -n 's/^TeamIdentifier=//p')
+            find "$b/Contents" -type f -print0 | while IFS= read -r -d '' f; do
+              if file -b "$f" | grep -q 'Mach-O'; then
+                [ "$(codesign -dv --verbose=4 "$f" 2>&1 | sed -n 's/^TeamIdentifier=//p')" = "$team" ] \
+                  || { echo "::error::$f is not signed by the app's own team ($team)"; exit 1; }
+              fi
+            done
+            CDHASH=$(codesign -dv --verbose=4 "$b" 2>&1 | sed -n 's/^CDHash=//p')
+            [ -n "$CDHASH" ] || { echo "::error::no code directory hash for $b"; exit 1; }
+          }
+          # Called directly and never inside an `if` or a pipe, which would switch `set -e` off
+          # for everything the function does; the hash is handed back in `CDHASH`.
+          check_bundle work/purlis.app
+          signed=$CDHASH
+          unpack=$(mktemp -d)
+          mkdir "$unpack/zip" "$unpack/tar" "$unpack/dmg"
+          ditto -x -k dist/purlis-macos-arm64.app.zip "$unpack/zip"
+          tar -xzf dist/purlis-darwin-aarch64.app.tar.gz -C "$unpack/tar"
+          copies=("$unpack/zip" "$unpack/tar")
+          mounted=""
+          if [ -e dist/purlis-macos-arm64.dmg ]; then
+            hdiutil attach -readonly -nobrowse -mountpoint "$unpack/dmg" dist/purlis-macos-arm64.dmg > /dev/null
+            mounted=$unpack/dmg
+            copies+=("$unpack/dmg")
+          fi
+          for dir in "${copies[@]}"; do
+            echo "=== $dir"
+            check_bundle "$dir/purlis.app"
+            [ "$CDHASH" = "$signed" ] \
+              || { echo "::error::the app in $dir is not the one signed here (CDHash $CDHASH, signed $signed)"; exit 1; }
+          done
+          if [ -n "$mounted" ]; then hdiutil detach "$mounted" > /dev/null; fi
+          # The archive the minisign signature is over holds the runnable extension, as the
+          # build's check asks of the updater archive.
+          listing=$(tar -tzvf dist/purlis-darwin-aarch64.app.tar.gz)
+          grep -qE '^-rwx.*extensions/persona-statistics/bin/persona-statistics$' <<<"$listing" \
+            || { echo "::error::the updater archive lacks a runnable persona-statistics"; exit 1; }
+
+      # **The hardened runtime, read off the final signed app** (ruling V90a, #1180): the same
+      # check `build` makes of its ad-hoc bundle, now of the bundle that ships, and of every
+      # nested executable. Report-only on a dev publish and blocking on a stable one, as it is in
+      # `build`, until a runner has measured the flags' spelling.
+      - name: The app keeps the hardened runtime and carries no entitlement
+        continue-on-error: ${{ needs.plan.outputs.channel == 'dev' }}
+        run: |
+          set -euo pipefail
+          unpack=$(mktemp -d)
+          ditto -x -k dist/purlis-macos-arm64.app.zip "$unpack"
+          bundle=$unpack/purlis.app
+          codesign --verify --deep --strict "$bundle"
+          runtime() {
+            info=$(codesign -dv --verbose=4 "$1" 2>&1)
+            flags=$(sed -n 's/^CodeDirectory .*flags=\(0x[0-9a-f]*([^)]*)\).*/\1/p' <<<"$info")
+            echo "flags of $1: ${flags:-none}"
+            case "$flags" in
+              *runtime*) ;;
+              *) echo "::error::$1 is signed without the hardened runtime (flags: ${flags:-none})"; exit 1 ;;
+            esac
+          }
+          runtime "$bundle"
+          find "$bundle/Contents" -type f -print0 | while IFS= read -r -d '' f; do
+            if file -b "$f" | grep -q 'Mach-O'; then runtime "$f"; fi
+          done
+          entitlements=$(codesign -d --entitlements - --xml "$bundle" 2>/dev/null)
+          if grep -q '<key>' <<<"$entitlements"; then
+            echo "::error::$bundle carries entitlements, and the app carries none: $entitlements"
+            exit 1
+          fi
+          echo "hardened runtime on, no entitlements"
+
+      # Notarization, read off the final artifacts, on a stable build: the ticket is stapled and
+      # Gatekeeper's own assessment is `Notarized Developer ID`. A dev build prints what Gatekeeper
+      # says and requires nothing: it is not notarized, on purpose.
+      - name: What Gatekeeper says of the final artifacts
+        run: |
+          set -euo pipefail
+          unpack=$(mktemp -d)
+          ditto -x -k dist/purlis-macos-arm64.app.zip "$unpack"
+          app=$unpack/purlis.app
+          verdict=$(spctl -a -vv -t exec "$app" 2>&1 || true)
+          echo "$verdict"
+          if [ "$NOTARIZE" = true ]; then
+            xcrun stapler validate "$app"
+            grep -q 'source=Notarized Developer ID' <<<"$verdict" \
+              || { echo "::error::Gatekeeper does not call the app a Notarized Developer ID, and this stable build was notarized"; exit 1; }
+            if [ -e dist/purlis-macos-arm64.dmg ]; then
+              xcrun stapler validate dist/purlis-macos-arm64.dmg
+              dmgverdict=$(spctl -a -vv -t open --context context:primary-signature dist/purlis-macos-arm64.dmg 2>&1 || true)
+              echo "$dmgverdict"
+              grep -q 'source=Notarized Developer ID' <<<"$dmgverdict" \
+                || { echo "::error::Gatekeeper does not call the .dmg a Notarized Developer ID"; exit 1; }
+            fi
+          else
+            echo "notarization: not requested for this build (ADR 0042, amended 2026-11-25); spctl's verdict is above."
+          fi
+
+      - name: Upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: purlis-macos-arm64-${{ needs.plan.outputs.version }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 90
+          # Compressed already, as `build`'s upload is.
+          compression-level: 0
+
+      - name: What a person sees when they install it
+        run: |
+          set -euo pipefail
+          {
+            echo "## macOS — purlis $VERSION, signed on a GitHub-hosted runner"
+            echo
+            echo "Signing: **$MACOS_SIGNING**. Notarized: **$NOTARIZE**. \`$CHANNEL\` channel."
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$NOTARIZE" = true ]; then
+            cat >> "$GITHUB_STEP_SUMMARY" <<'MD'
+          ### A first install on macOS opens without a warning
+
+          This build is **Developer ID signed and notarized**, with the ticket stapled to the app
+          and the `.dmg` (ADR 0042, amended 2026-11-25), so Gatekeeper accepts a copy a browser
+          downloaded and the first launch needs no extra step.
+          MD
+          elif [ "$MACOS_SIGNING" = developer-id ]; then
+            cat >> "$GITHUB_STEP_SUMMARY" <<'MD'
+          ### A first install of this dev build meets Gatekeeper, and this is expected
+
+          This build is **signed with a Developer ID and not notarized**: a dev build is not, on
+          purpose (ADR 0042, amended 2026-11-25), because it reaches people through the updater. A
+          browser marks everything it downloads as quarantined, and macOS 15 and later answer a
+          quarantined app that Apple has not notarized with a dialog — **"purlis" Not Opened**,
+          offering only *Done* and *Move to Trash*. To open it the first time, drag `purlis.app`
+          into `/Applications`, open it once and click **Done**, then open **System Settings →
+          Privacy & Security**, click **Open Anyway** beside purlis and confirm. Or, before the
+          first launch:
+
+          ```sh
+          xattr -dr com.apple.quarantine /Applications/purlis.app
+          ```
+
+          **An update does not meet this dialog.** The quarantine flag is set by the browser that
+          downloaded a file, and the updater downloads into memory, verifies the minisign
+          signature and unpacks the new bundle itself: nothing it writes is quarantined.
+          MD
+          else
+            cat >> "$GITHUB_STEP_SUMMARY" <<'MD'
+          ### A first install on macOS needs one command, and this is expected
+
+          This build is **ad-hoc signed**: no Apple Developer account is configured (ADR 0042,
+          amended 2026-09-23). The app is signed, since on Apple Silicon nothing unsigned runs at
+          all, but by nobody in particular, so Gatekeeper has no developer to check and refuses a
+          *quarantined* copy. Before the first launch, run:
+
+          ```sh
+          xattr -dr com.apple.quarantine /Applications/purlis.app
+          ```
+
+          **This happens once, and it is not what the updater does.** The updater is trusted
+          because every update carries a **minisign** signature made by the operator's key, which
+          the app verifies before it unpacks anything, and it writes nothing quarantined.
+          MD
+          fi
+
+      # The keychain and the notarization key leave with the job, however it ended. A hosted
+      # runner is thrown away, and these are removed anyway.
+      - name: The keychain and the notarization key are removed
+        if: always()
+        run: |
+          if [ -n "${KEYCHAIN:-}" ]; then security delete-keychain "$KEYCHAIN" || true; fi
+          if [ -n "${NOTARY_KEY_FILE:-}" ]; then rm -f "$NOTARY_KEY_FILE"; fi
+          rm -f "$RUNNER_TEMP"/developer-id.p12 "$RUNNER_TEMP"/AuthKey_*.p8
+          echo "removed"
 
   # **The runner image of this release** (#2749, ruled 2026-10-20): `runner-image.yml`, called
   # for the commit and the version this run publishes, so purlis's runner image says the
@@ -1965,8 +2394,10 @@ jobs:
   # `purlis-<platform>.cdx.json`.
   sbom:
     name: SBOM
-    needs: [gate, plan, build]
-    if: needs.gate.outputs.green == 'true'
+    # The macOS bundle it reads is `build`'s on a run that publishes nothing, and `sign-macos`'s
+    # on one that publishes (ADR 0042, amended 2026-11-25): the artifact is the same name.
+    needs: [gate, plan, keys, build, sign-macos]
+    if: ${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.plan.result == 'success' && needs.keys.result == 'success' && needs.build.result == 'success' && (needs.keys.outputs.publish != 'true' || needs.sign-macos.result == 'success') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -2053,11 +2484,11 @@ jobs:
   # would reject.
   manifest:
     name: update manifest
-    needs: [gate, plan, keys, build, runner-image-signature]
+    needs: [gate, plan, keys, build, sign-macos, runner-image-signature]
     # **A runner image that failed never holds the desktop back** (#2880): this runs whatever
     # became of the image, naming it only where it was signed, and asks for each job the desktop
     # needs by name.
-    if: ${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && needs.plan.result == 'success' && needs.keys.result == 'success' && needs.build.result == 'success' }}
+    if: ${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && needs.plan.result == 'success' && needs.keys.result == 'success' && needs.build.result == 'success' && needs.sign-macos.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -2158,10 +2589,10 @@ jobs:
   # A hand-started build publishes nothing, so it is not attested.
   provenance:
     name: build provenance
-    needs: [gate, plan, keys, build, runner-binaries, sbom, manifest]
+    needs: [gate, plan, keys, build, sign-macos, runner-binaries, sbom, manifest]
     # Asked of each job it needs by name, so a runner image that failed before it holds nothing
     # back (#2880), and a runner binary that did not build or sign holds everything back (#723).
-    if: ${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && needs.plan.result == 'success' && needs.keys.result == 'success' && needs.build.result == 'success' && needs.runner-binaries.result == 'success' && needs.sbom.result == 'success' && needs.manifest.result == 'success' }}
+    if: ${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && needs.plan.result == 'success' && needs.keys.result == 'success' && needs.build.result == 'success' && needs.sign-macos.result == 'success' && needs.runner-binaries.result == 'success' && needs.sbom.result == 'success' && needs.manifest.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     # `id-token` mints the token Sigstore signs with; `attestations` stores the result. Nothing
@@ -2262,10 +2693,10 @@ jobs:
 
   publish:
     name: publish to the ${{ needs.plan.outputs.channel }} channel
-    needs: [gate, plan, keys, build, runner-binaries, manifest, provenance]
+    needs: [gate, plan, keys, build, sign-macos, runner-binaries, manifest, provenance]
     # Asked of each job it needs by name, so a runner image that failed before it holds nothing
     # back (#2880), and a runner binary that did not build or sign holds everything back (#723).
-    if: ${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && needs.plan.result == 'success' && needs.keys.result == 'success' && needs.build.result == 'success' && needs.runner-binaries.result == 'success' && needs.manifest.result == 'success' && needs.provenance.result == 'success' }}
+    if: ${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && needs.plan.result == 'success' && needs.keys.result == 'success' && needs.build.result == 'success' && needs.sign-macos.result == 'success' && needs.runner-binaries.result == 'success' && needs.manifest.result == 'success' && needs.provenance.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     # It holds no signing key, but it is what a release IS, so it runs under the same

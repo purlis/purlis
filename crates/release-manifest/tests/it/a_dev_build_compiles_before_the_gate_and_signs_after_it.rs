@@ -1105,8 +1105,8 @@ fn a_step_after_the_wait_with_no_if_is_refused() {
 fn a_step_after_the_wait_whose_green_an_or_can_skip_is_refused() {
     for (from, to) in [
         (
-            "        if: steps.ci.outputs.green == 'true' && runner.os == 'macOS' && needs.keys.outputs.publish == 'true'",
-            "        if: steps.ci.outputs.green == 'true' && runner.os == 'macOS' || needs.keys.outputs.publish == 'true'",
+            "        if: steps.ci.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && runner.os == 'Linux'",
+            "        if: steps.ci.outputs.green == 'true' && needs.keys.outputs.publish == 'true' || runner.os == 'Linux'",
         ),
         (
             "        if: steps.ci.outputs.green == 'true' && always()",
