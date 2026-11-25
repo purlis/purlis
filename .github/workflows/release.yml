@@ -1588,6 +1588,55 @@ jobs:
           rm -rf "$RUNNER_TEMP/job-home"
           security list-keychains -d user
 
+  # **The updater archive's signer, compiled where no key is** (ADR 0042, amended 2026-11-25).
+  # `sign-macos` runs `sign-updater-archive` with the updater's key in its environment, so the
+  # signer is compiled where that key is not: a build script or a proc macro of the signer's
+  # dependency tree runs here, in a job that names no secret, takes no environment and holds
+  # `contents: read`, and never in the job that holds the key. It is the same separation as
+  # `runner-binaries`' signer, a job apart instead of a step apart, so that it compiles while
+  # `build` does: it needs `plan` alone, not `build` and not the gate, and `sign-macos` only
+  # signs (11 of its 19 minutes were this compile, run 45663417909).
+  #
+  # **What it hands on, and how it is held to it.** The one binary, under one exact name, and
+  # its sha256 as this job's output. `sign-macos` downloads it, compares its bytes with that
+  # output before anything runs it, and compiles nothing. It runs on a literal GitHub-hosted
+  # label, never `MACOS_RELEASE_RUNNER`, in this run, from the run's commit, with no cache (the
+  # rules in `crates/release-manifest` hold each of these): the signer is trusted as if it held
+  # the key, because the next job hands it the key. Uploading before the gate is not
+  # publishing: the artifact is read by `sign-macos` alone, which runs only on the gate's green.
+  build-signer:
+    name: the updater archive's signer, built with no key in reach
+    needs: plan
+    if: ${{ needs.plan.outputs.publish == 'true' && needs.plan.outputs.skip != 'true' }}
+    runs-on: macos-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      sha256: ${{ steps.signer.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      # No cache: what this job builds is run with the updater's key.
+      - uses: ./.github/actions/rust-toolchain
+      - name: The updater archive's signer, built with no key in reach
+        id: signer
+        run: |
+          set -euo pipefail
+          cargo build --locked --release -p release-manifest --bin sign-updater-archive
+          sha=$(shasum -a 256 target/release/sign-updater-archive | cut -d' ' -f1)
+          [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::no sha256 of the signer: '$sha'"; exit 1; }
+          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+          echo "sign-updater-archive: sha256 $sha"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: purlis-updater-signer-${{ needs.plan.outputs.version }}
+          path: target/release/sign-updater-archive
+          if-no-files-found: error
+          retention-days: 1
+
   # **The one job that holds the Developer ID key, and it runs on a GitHub-hosted macOS runner and
   # nowhere else** (ADR 0042, amended 2026-11-25). `build` may be given a self-hosted Mac, so it
   # never names a Developer ID or notarization secret and seals its bundle ad-hoc; this job takes
@@ -1614,8 +1663,8 @@ jobs:
   # not there; the trust in the bundle's bytes is (ADR 0042, amended 2026-11-25).
   sign-macos:
     name: macOS, signed and notarized
-    needs: [gate, plan, keys, build]
-    if: ${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && needs.plan.result == 'success' && needs.keys.result == 'success' && needs.build.result == 'success' }}
+    needs: [gate, plan, keys, build, build-signer]
+    if: ${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && needs.plan.result == 'success' && needs.keys.result == 'success' && needs.build.result == 'success' && needs.build-signer.result == 'success' }}
     environment: release
     runs-on: macos-latest
     # A notarization is usually minutes: the app is allowed forty here and the .dmg fifteen, and
@@ -1629,21 +1678,33 @@ jobs:
       DMG: ${{ needs.plan.outputs.dmg }}
       MACOS_SIGNING: ${{ needs.keys.outputs.macos_signing }}
       NOTARIZE: ${{ needs.keys.outputs.notarize }}
+    # No checkout and no toolchain: this job compiles nothing and runs nothing of the commit's
+    # but the signer `build-signer` compiled, and no cache, as every job that holds a key.
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.plan.outputs.sha }}
-          persist-credentials: false
-      # No cache, as every job that holds a key.
-      - uses: ./.github/actions/rust-toolchain
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: purlis-macos-arm64-unsigned-${{ needs.plan.outputs.version }}
           path: unsigned
-      # Compiled with no key in reach, as `runner-binaries`' signer is: this step names no
-      # secret, and the step that signs with the updater's key compiles nothing.
-      - name: The updater archive's signer, built with no key in reach
-        run: cargo build --locked --release -p release-manifest --bin sign-updater-archive
+      # Compiled with no key in reach, by `build-signer`, as `runner-binaries`' signer is: this
+      # job compiles nothing, and the bytes it runs with the updater's key are the bytes that job
+      # hashed, or nothing runs.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: purlis-updater-signer-${{ needs.plan.outputs.version }}
+          path: signer
+      - name: The signer is the one build-signer built
+        env:
+          SIGNER_SHA256: ${{ needs.build-signer.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$SIGNER_SHA256" =~ ^[0-9a-f]{64}$ ]] \
+            || { echo "::error::build-signer gave no sha256 of the signer: '$SIGNER_SHA256'"; exit 1; }
+          got=$(shasum -a 256 signer/sign-updater-archive | cut -d' ' -f1)
+          [ "$got" = "$SIGNER_SHA256" ] \
+            || { echo "::error::the downloaded signer's sha256 is $got, and build-signer built $SIGNER_SHA256"; exit 1; }
+          # An artifact keeps no file mode.
+          chmod 0755 signer/sign-updater-archive
+          echo "sign-updater-archive: sha256 $got, as build-signer built it"
 
       - name: The bundle `build` made
         run: |
@@ -1785,7 +1846,7 @@ jobs:
             echo "::error::TAURI_SIGNING_PRIVATE_KEY is not set, so the updater archive cannot be signed. It has to be a secret of the release environment. See docs/updating.md, steps 0 and 1."
             exit 1
           fi
-          target/release/sign-updater-archive dist/purlis-darwin-aarch64.app.tar.gz "$VERSION"
+          signer/sign-updater-archive dist/purlis-darwin-aarch64.app.tar.gz "$VERSION"
           test -s dist/purlis-darwin-aarch64.app.tar.gz.sig \
             || { echo "::error::no signature beside the updater archive"; exit 1; }
 
