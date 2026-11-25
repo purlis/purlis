@@ -58,6 +58,10 @@ const ALLOWED: [(&str, &str); 12] = [
         "a test plays the person's press",
     ),
     (
+        "crates/purlis-core/src/policy/running_tests.rs",
+        "a test plays the person's press: it gives a Never or a grant while a chat runs",
+    ),
+    (
         "app/src-tauri/src/policypress.rs",
         "the window's command layer: the person's press on the project's policy (M75-15)",
     ),

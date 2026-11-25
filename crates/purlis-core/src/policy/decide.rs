@@ -868,6 +868,28 @@ pub fn in_plane_held_to(
     )
 }
 
+/// **The sources the policy is loaded from for the plane at `root`**, built as a decision builds
+/// them (the plane's workspaces and personas now, the Organisation's files) and lent to `with`
+/// (M75-23: a running chat's sandbox is compiled from the same ones).
+pub(super) fn with_sources<R>(
+    root: &std::path::Path,
+    with: impl FnOnce(&levels::Sources<'_>) -> R,
+) -> R {
+    let plane = crate::workspaces::Plane::open(root);
+    let workspaces = plane.workspaces().unwrap_or_default();
+    let personas = plane.personas().unwrap_or_default();
+    let workspaces: Vec<&str> = workspaces.iter().map(String::as_str).collect();
+    let personas: Vec<&str> = personas.iter().map(String::as_str).collect();
+    let organisation = organisation::in_force();
+    with(&levels::Sources {
+        root,
+        workspaces: &workspaces,
+        personas: &personas,
+        organisation: organisation.as_ref().map(organisation::Found::as_sources),
+        accepted: None,
+    })
+}
+
 /// **The policy in force's decision, then `settle`, then the person's answers** (M75-20): `settle`
 /// makes every change that can turn the answer into an ask (a floor put back, the shipped hold),
 /// so a Once grant is spent only on the decision that stands, never before a later step undoes it
@@ -966,49 +988,38 @@ fn judged_then<T>(
     if let Some(refusal) = deny_state::refused(action, &sealed.standing) {
         return refused(refusal);
     }
-    let plane = crate::workspaces::Plane::open(root);
-    let workspaces = plane.workspaces().unwrap_or_default();
-    let personas = plane.personas().unwrap_or_default();
-    let workspaces: Vec<&str> = workspaces.iter().map(String::as_str).collect();
-    let personas: Vec<&str> = personas.iter().map(String::as_str).collect();
-    let organisation = organisation::in_force();
-    let sources = levels::Sources {
-        root,
-        workspaces: &workspaces,
-        personas: &personas,
-        organisation: organisation.as_ref().map(organisation::Found::as_sources),
-        accepted: None,
-    };
-    let chat = asker.chat.to_string();
-    let request = Request {
-        chat: &chat,
-        of: asker.of,
-        action,
-        resource,
-        context: asker.context(action, sealed.machine.as_deref()),
-    };
-    // The policy in force: the project as committed now and what the person accepted, the
-    // stricter winning, and what the app saw tighten sealed into the accepted floor (M75-14).
-    let decision = match how {
-        How::Host => {
-            let (decision, retired) =
-                force::in_force(root, &sources, &sealed.standing, &request, floor);
-            if !retired.is_empty() {
-                sealed
-                    .retired
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .extend(retired);
+    with_sources(root, |sources| {
+        let chat = asker.chat.to_string();
+        let request = Request {
+            chat: &chat,
+            of: asker.of,
+            action,
+            resource,
+            context: asker.context(action, sealed.machine.as_deref()),
+        };
+        // The policy in force: the project as committed now and what the person accepted, the
+        // stricter winning, and what the app saw tighten sealed into the accepted floor (M75-14).
+        let decision = match how {
+            How::Host => {
+                let (decision, retired) =
+                    force::in_force(root, sources, &sealed.standing, &request, floor);
+                if !retired.is_empty() {
+                    sealed
+                        .retired
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .extend(retired);
+                }
+                decision
             }
-            decision
-        }
-        How::Explain(head) => {
-            force::judge_at(root, &sources, &sealed.standing, &request, floor, head).0
-        }
-        How::Alone(version) => force::side(&sources, &version, root, &request, floor),
-    };
-    let decision = settle(decision, &request);
-    finish(decision, &request)
+            How::Explain(head) => {
+                force::judge_at(root, sources, &sealed.standing, &request, floor, head).0
+            }
+            How::Alone(version) => force::side(sources, &version, root, &request, floor),
+        };
+        let decision = settle(decision, &request);
+        finish(decision, &request)
+    })
 }
 
 /// **Whether an enforcement point asks the host about `action` on a `kind` of resource**: only

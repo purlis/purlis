@@ -8324,6 +8324,84 @@ fn the_state_folder_is_held_whole_in_purlis_s_wrap() {
     assert_eq!(wrapped_harnesses, 2);
 }
 
+/// #7605: the folder `$PURLIS_HOME` puts the state in is held whole as the two default spellings
+/// are, in the seatbelt profile (macOS) and the one Linux reads, and a Claude Code chat is not
+/// handed the entry, as for them (its sandbox holds what is below a path, so it would hold
+/// what the chat writes there too).
+#[test]
+fn the_state_folder_purlis_home_names_is_held_whole_as_the_default_spellings_are() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let home = tempfile::tempdir().expect("a state folder elsewhere");
+    let state = home.path().join("state");
+    std::fs::create_dir(&state).expect("a state folder");
+    for os in [Os::MacOs, Os::Linux] {
+        let on = machine_with_state(os, Some(state.to_str().expect("utf-8")));
+        let denied = Denied::of(plane.path(), &on);
+        let whole: Vec<&Denial> = denied
+            .paths
+            .iter()
+            .filter(|it| it.path == state && it.reach == Reach::Itself)
+            .collect();
+        assert_eq!(whole.len(), 1, "{os:?}: {:?}", denied.paths);
+        assert_eq!(whole[0].class, Class::Integrity);
+        assert_eq!(whole[0].access, Access::Write);
+        let rules = seatbelt::denial_rules(whole[0]).expect("rules");
+        assert!(!rules.is_empty());
+        for harness in [Harness::Codex, Harness::Opencode] {
+            let applied = applied_for(
+                harness,
+                &policy_of(&[], false),
+                &Plane::of(None),
+                plane.path(),
+                &on,
+            )
+            .expect("compiles");
+            let profile = seatbelt::profile(
+                applied.form().denied().expect("a wrap"),
+                &seatbelt::Own::default(),
+                plane.path(),
+                std::path::Path::new("/private/tmp/chat"),
+                &[4040],
+                None,
+            )
+            .expect("a profile");
+            for rule in &rules {
+                assert!(profile.contains(rule), "{os:?} {harness:?}: {rule} missing");
+            }
+        }
+        if let Form::ClaudeCode(settings) = applied_for(
+            Harness::ClaudeCode,
+            &policy_of(&[], false),
+            &Plane::of(None),
+            plane.path(),
+            &on,
+        )
+        .expect("compiles")
+        .form()
+        {
+            let deny_write = settings.sandbox["filesystem"]["denyWrite"].to_string();
+            let named = super::real(&state).display().to_string();
+            assert!(
+                !deny_write.contains(&format!("\"{named}\"")),
+                "{os:?}: the whole folder is not denied: {deny_write}"
+            );
+        }
+    }
+    // A state folder that is not there is left to the rows that deny making one, as before:
+    // nothing whole is held for it.
+    let absent = home.path().join("absent");
+    let denied = Denied::of(
+        plane.path(),
+        &machine_with_state(Os::MacOs, Some(absent.to_str().expect("utf-8"))),
+    );
+    assert!(
+        !denied
+            .paths
+            .iter()
+            .any(|it| it.path == absent && it.reach == Reach::Itself)
+    );
+}
+
 /// #3718: the app's state of every project, in the data home, is purlis's own and read back to
 /// decide. No chat writes it, nor renames or replaces it or the data home that holds it, in what
 /// every harness is compiled; every chat reads it (a Try it's chat reads its laid-out skill there).

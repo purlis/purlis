@@ -2740,9 +2740,20 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
     // …and the state folder that is there is held whole: the entry itself is never renamed,
     // moved or removed, so what purlis holds below it stays where purlis holds it. What is below
     // it is held as the rows above say.
+    // …and so is the folder `$PURLIS_HOME` puts the state in, when it is not one of the spellings
+    // (#7605): the plane's key and every store held below it are read where it is, so a chat that
+    // renamed, moved or removed it and made another would hand purlis a state folder of its own.
     let held_whole: Vec<Denial> = crate::names::STATE_DIR
         .spellings()
         .map(|state| root.join(state))
+        .chain(std::iter::once(ctx.state.clone()))
+        .fold(Vec::<PathBuf>::new(), |mut folders, folder| {
+            if !folders.contains(&folder) {
+                folders.push(folder);
+            }
+            folders
+        })
+        .into_iter()
         .filter(|folder| std::fs::symlink_metadata(folder).is_ok_and(|meta| meta.is_dir()))
         .map(|folder| Denial {
             class: Class::Integrity,

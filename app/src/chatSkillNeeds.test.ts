@@ -33,6 +33,7 @@ const CHANGED: PlaneUpdated = {
   skills_added: ["triage"],
   skills_gone: [],
   skills_edited: [],
+  policy: [],
 };
 
 describe("a chat's needs as a whole", () => {

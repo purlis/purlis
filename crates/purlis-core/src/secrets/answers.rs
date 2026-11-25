@@ -1823,7 +1823,71 @@ fn cannot_seal() -> io::Error {
     )
 }
 
+/// Told when a store is written (M75-23): see [`tell_when_written`].
+pub type Told = std::sync::Arc<dyn Fn() + Send + Sync>;
+
+/// Who is told when the store of a plane is written, by the plane's anchor key.
+static TOLD: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, Told>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// **Names who is told when the sealed store of the plane at `root`, or the Everywhere store, is
+/// written in this process** (`None` names nobody): a Never added or lifted, a grant given or
+/// taken out, a Once grant spent, a press. A running chat's sandbox was compiled under what the
+/// store held, so the app asks again which chats are out of date
+/// ([`crate::policy::running`]). `told` runs after the store's files are written and while its
+/// commit lock is held, so it may only say that something moved and never read the store. A write
+/// by another process is not heard.
+pub fn tell_when_written(root: &Path, told: Option<Told>) {
+    let mut all = TOLD
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    match told {
+        Some(told) => {
+            all.insert(anchor_key(root), told);
+        }
+        None => {
+            all.remove(&anchor_key(root));
+        }
+    }
+}
+
+/// Tells who named the plane written (`Some`), or every plane (the Everywhere store, `None`).
+fn written(plane: Option<&Path>) {
+    let told: Vec<Told> = {
+        let all = TOLD
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match plane {
+            Some(root) => all.get(&anchor_key(root)).cloned().into_iter().collect(),
+            None => all.values().cloned().collect(),
+        }
+    };
+    for told in told {
+        told();
+    }
+}
+
+/// **A write of the store of the plane at `root`, said without one** (a test build only): what a
+/// test of the app's wiring uses, since the app's tests cannot seal an answer.
+#[cfg(any(test, feature = "test-support"))]
+pub fn written_for_test(root: &Path) {
+    written(Some(root));
+}
+
 fn write(
+    place: &Place,
+    plane: Option<(&Path, &str)>,
+    draft: Draft,
+    anchor: Option<Anchor>,
+    manifest_counter: u64,
+) -> io::Result<u64> {
+    let root = plane.map(|(root, _)| root);
+    let counter = write_sealed(place, plane, draft, anchor, manifest_counter)?;
+    written(root);
+    Ok(counter)
+}
+
+fn write_sealed(
     place: &Place,
     plane: Option<(&Path, &str)>,
     draft: Draft,
