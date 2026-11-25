@@ -232,6 +232,32 @@ fn a_dispatch_whose_chat_the_host_stopped_is_not_ended_as_unreported() {
 }
 
 #[test]
+fn a_hibernated_chat_writes_no_run_ended_and_its_dispatch_is_not_ended_unreported() {
+    let (logs, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let log = a_log_in(logs.path());
+    a_chat_with_a_sub_agent(&log, project.path(), 4);
+    let dispatched = a_dispatch_worked_by(project.path(), 4);
+
+    // No window held the project, which would end an unwatched chat's dispatch as unreported.
+    log.ended(&an_end(
+        project.path(),
+        4,
+        Exit::Signal("Terminated".into()),
+        Some(purlis_host::Stopped::Hibernated),
+        false,
+    ));
+
+    assert_eq!(sub_agents_ended(logs.path()), [], "no sub-agent run ends");
+    assert_eq!(own_runs_ended(logs.path()), [], "its own run does not end either");
+    assert!(
+        dispatchrecord::read(project.path(), &dispatched)
+            .expect("the record")
+            .running(),
+        "a hibernation is not an end the dispatch ledger reads"
+    );
+}
+
+#[test]
 fn a_chat_its_last_host_left_running_ends_its_sub_agents_runs_as_a_crash() {
     let (logs, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let log = a_log_in(logs.path());

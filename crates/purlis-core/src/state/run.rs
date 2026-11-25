@@ -166,6 +166,10 @@ pub enum Cause {
     Pause(PauseBy),
     Unpaused,
     Idle,
+    /// The operator hibernated the run, from a chat's row (ADR 0076 as amended 2026-11-25): the
+    /// `hibernated | operator` row. Its own variant: the word is already [`Cause::Pause`]'s and
+    /// [`Cause::Stop`]'s, and this one is neither.
+    Operator,
     Superseded,
     Exited(Exit),
     SpawnFailed,
@@ -190,7 +194,9 @@ impl Cause {
             Self::TurnEnded => "turn-ended",
             Self::Pause(PauseBy::Budget) => "budget",
             Self::Pause(PauseBy::Policy) => "policy",
-            Self::Pause(PauseBy::Operator) | Self::Stop(StopBy::Operator) => "operator",
+            Self::Pause(PauseBy::Operator) | Self::Stop(StopBy::Operator) | Self::Operator => {
+                "operator"
+            }
             Self::Unpaused => "unpaused",
             Self::Idle => "idle",
             Self::Superseded => "superseded",
@@ -464,7 +470,7 @@ impl Run {
             Some(Step::Stay) => Ok(None),
             Some(Step::To(to)) => {
                 if from.has_a_process()
-                    && matches!(cause, Cause::Stop(_) | Cause::Idle)
+                    && matches!(cause, Cause::Stop(_) | Cause::Idle | Cause::Operator)
                     && self.exit.is_none()
                 {
                     self.exit_owed = true;
@@ -517,7 +523,9 @@ impl Run {
             | Cause::Answered
             | Cause::Asked
             | Cause::TurnEnded => self.turn_step(cause),
-            Cause::Pause(_) | Cause::Unpaused | Cause::Idle => self.hold_step(cause),
+            Cause::Pause(_) | Cause::Unpaused | Cause::Idle | Cause::Operator => {
+                self.hold_step(cause)
+            }
             Cause::Stop(by) => self.stop_step(by),
             Cause::Superseded => Some(Step::To(RunState::Completed)),
             Cause::ChannelLost | Cause::HostCrash => self.failure_step(cause),
@@ -574,7 +582,7 @@ impl Run {
         let to = match (self.state, cause) {
             (RunState::Working | RunState::InputRequired(_), Cause::Pause(_)) => RunState::Paused,
             (RunState::Paused, Cause::Unpaused) => self.paused.map(|(back, _)| back)?,
-            (RunState::InputRequired(_), Cause::Idle) if self.can_hibernate() => {
+            (RunState::InputRequired(_), Cause::Idle | Cause::Operator) if self.can_hibernate() => {
                 RunState::Hibernated
             }
             _ => return None,
@@ -905,6 +913,57 @@ mod tests {
             "the ask would be lost with the process"
         );
         assert!(at(RunState::Working).apply(Cause::Idle).is_err());
+    }
+
+    #[test]
+    fn the_operator_hibernates_an_idle_run_at_a_turn_boundary_on_a_harness_that_resumes_natively()
+    {
+        for reason in [Reason::Ready, Reason::TurnEnded] {
+            let mut run = at(RunState::InputRequired(reason));
+            assert_eq!(
+                run.apply(Cause::Operator),
+                moved(
+                    RunState::InputRequired(reason),
+                    RunState::Hibernated,
+                    Cause::Operator
+                )
+            );
+        }
+        assert!(
+            at(RunState::InputRequired(Reason::Asked))
+                .apply(Cause::Operator)
+                .is_err(),
+            "the ask would be lost with the process"
+        );
+        assert!(at(RunState::Working).apply(Cause::Operator).is_err());
+        let mut cannot = starting(Facts {
+            resumes_natively: false,
+            ..TWO
+        });
+        cannot.apply(Cause::SessionReported).unwrap();
+        assert!(cannot.apply(Cause::Operator).is_err());
+    }
+
+    #[test]
+    fn the_exit_a_hibernation_by_the_operator_leaves_behind_is_recorded_and_moves_nothing() {
+        let mut run = at(RunState::InputRequired(Reason::TurnEnded));
+        run.apply(Cause::Operator).unwrap();
+        assert_eq!(run.apply(Cause::Exited(Exit::Signal)), Ok(None));
+        assert_eq!(run.state(), RunState::Hibernated);
+    }
+
+    #[test]
+    fn a_hibernated_run_is_woken_by_a_new_run_and_ends_superseded() {
+        let mut run = at(RunState::InputRequired(Reason::TurnEnded));
+        run.apply(Cause::Operator).unwrap();
+        assert_eq!(
+            run.apply(Cause::Superseded),
+            moved(
+                RunState::Hibernated,
+                RunState::Completed,
+                Cause::Superseded
+            )
+        );
     }
 
     #[test]
@@ -1728,10 +1787,11 @@ mod tests {
             Cause::Stop(StopBy::Drained) => 23,
             Cause::ChildEnded => 24,
             Cause::Observed(_) => 25,
+            Cause::Operator => 26,
         }
     }
 
-    const EVERY_CAUSE: [Cause; 26] = [
+    const EVERY_CAUSE: [Cause; 27] = [
         Cause::Admitted,
         Cause::Refused(Gate::KillSwitch),
         Cause::SessionReported,
@@ -1758,6 +1818,7 @@ mod tests {
         Cause::Stop(StopBy::Drained),
         Cause::ChildEnded,
         Cause::Observed(RunState::Working),
+        Cause::Operator,
     ];
 
     /// The cause a row's word and target stand for, and the facts its prose assumes: a level-1

@@ -110,11 +110,16 @@ impl purlis_host::Record for EventLog {
         let Some(log) = self.recorder() else { return };
         let (root, number) = (ended.project_path, ended.number);
         what_it_spooled_is_recorded(&log, root, number);
+        // **A hibernation writes no `run.ended`** (#7630): the run is `hibernated`, and the wake
+        // run's start supersedes it. Nor is the dispatch it worked ended: it is not an end.
+        if ended.stopped == Some(purlis_host::Stopped::Hibernated) {
+            return;
+        }
         let exit = match &ended.exit {
             session::Exit::Code(code) => crate::session::Exit::Code(*code),
             session::Exit::Signal(signal) => crate::session::Exit::Signal(signal.clone()),
         };
-        let (state, cause) = how_its_run_ended(ended.stopped.map(stop_by), &exit);
+        let (state, cause) = how_its_run_ended(ended.stopped.and_then(stop_by), &exit);
         its_run_ends(&log, root, number, state, cause);
         if ended.watched || ended.stopped.is_some() {
             return;
@@ -161,13 +166,15 @@ fn what_it_spooled_is_recorded(log: &Mutex<Recorder>, root: &Path, number: u32) 
 }
 
 /// The host's own act that ended a program, as a run's end names it (ADR 0076 §2).
-fn stop_by(stopped: purlis_host::Stopped) -> StopBy {
-    match stopped {
+fn stop_by(stopped: purlis_host::Stopped) -> Option<StopBy> {
+    Some(match stopped {
+        // Not a stop of the run: a hibernation's end is handled before it gets here.
+        purlis_host::Stopped::Hibernated => return None,
         purlis_host::Stopped::Closed => StopBy::Closed,
         purlis_host::Stopped::Operator => StopBy::Operator,
         purlis_host::Stopped::Quit => StopBy::Quit,
         purlis_host::Stopped::Killed => StopBy::Killed,
-    }
+    })
 }
 
 /// **The end state and cause of a chat's run whose program ended with `exit`**, stopped by the
