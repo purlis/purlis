@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795633852706,
+  "lastUpdate": 1795634582427,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55062,6 +55062,48 @@ window.BENCHMARK_DATA = {
             "value": 100.927682,
             "unit": "ms",
             "extra": "median of 5 runs: 100.637, 100.862, 100.928, 101.419, 102.261 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f78bcbc33ae69bb34b7251a76c10ea3caf862ad9",
+          "message": "Release: every checkout leaves out the story screenshot baselines (1,085 MB to 135 MB) (#7660)\n\n* Release: checkouts leave out the story screenshot baselines, so a slow runner stops downloading 950 MB it never reads\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M89WND9FNCKDD1ZK6XAKVDEB\nPurlis-Persona: steward\n\n* Guard: every release checkout leaves the story baselines out\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M89WND9FNCKDD1ZK6XAKVDEB\nPurlis-Persona: steward\n\n* Release: sign-macos's checkout leaves out the story baselines too, as every other checkout does\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M89X8Q27S6FD7NFG5W4ZZJ4N\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T18:25:15Z",
+          "tree_id": "ab056f6751b07ee40d4fa31991454f86c2c6f336",
+          "url": "https://github.com/purlis/purlis/commit/f78bcbc33ae69bb34b7251a76c10ea3caf862ad9"
+        },
+        "date": 1795634577060,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3240425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.310, 0.316, 0.324, 0.329, 0.330 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.600138,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.331, 16.537, 16.600, 16.708, 16.713 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.690644,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.117, 101.640, 101.691, 101.752, 102.455 ms"
           }
         ]
       }
