@@ -57,6 +57,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use crate::freshread::Fresh;
+
 /// The table of the committed settings file that holds these keys.
 pub const TABLE: &str = "policy";
 
@@ -764,6 +766,25 @@ const GIT_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 /// reads as `strict`, where the plane is a repository whose `HEAD` git could not read or did not
 /// read in time: never the working tree's file then (the re-review of #6992).
 pub fn committed_text(root: &Path) -> Result<Option<String>, String> {
+    // Every chat's guard asks the app for its policy before every tool call, and each answer
+    // read this file from git, twice: the guard's wait grew with the chats open. Askers
+    // that arrive together share a read that began after each arrived, so a commit made before
+    // an ask is still seen by it.
+    static FLIGHTS: std::sync::Mutex<BTreeMap<PathBuf, std::sync::Arc<Fresh<CommittedText>>>> =
+        std::sync::Mutex::new(BTreeMap::new());
+    let flight = {
+        let mut flights = FLIGHTS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        std::sync::Arc::clone(flights.entry(root.to_path_buf()).or_default())
+    };
+    flight.get(|| committed_text_from_git(root))
+}
+
+/// What reading the committed file said ([`committed_text`]).
+type CommittedText = Result<Option<String>, String>;
+
+fn committed_text_from_git(root: &Path) -> CommittedText {
     use crate::settings::Which;
     let unread =
         || "git could not read the project's last commit, so its [policy] is enforced".to_owned();
