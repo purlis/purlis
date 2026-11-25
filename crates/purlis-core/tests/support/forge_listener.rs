@@ -198,6 +198,18 @@ impl World {
         )
     }
 
+    /// [`Self::recording_to`] over `repos` in place of [`Self::new`]'s.
+    pub fn recording_repos(repos: Vec<AllowedRepo>, config: std::path::PathBuf) -> Self {
+        Self::build(
+            repos,
+            Arc::new(purlis_core::forge::pin::NoPin),
+            None,
+            Some(config),
+            None,
+            None,
+        )
+    }
+
     /// [`Self::recording_to`], where the chat may also move a branch a chat it dispatched made,
     /// by the dispatch records of the project at `project`, as the app reads them.
     pub fn recording_with_dispatches(
@@ -206,6 +218,27 @@ impl World {
     ) -> Self {
         Self::build(
             Self::default_repos(),
+            Arc::new(purlis_core::forge::pin::NoPin),
+            None,
+            Some(config),
+            Some(project),
+            None,
+        )
+    }
+
+    /// [`Self::recording_with_dispatches`], the repos also protecting `names` exactly, as the app
+    /// wires a project's `[risk] protected_branches` (`forgeroute`'s `repos`).
+    pub fn recording_with_dispatches_protecting(
+        config: std::path::PathBuf,
+        project: std::path::PathBuf,
+        names: &[&str],
+    ) -> Self {
+        let repos = Self::default_repos()
+            .into_iter()
+            .map(|repo| repo.with_protected_branches(names))
+            .collect();
+        Self::build(
+            repos,
             Arc::new(purlis_core::forge::pin::NoPin),
             None,
             Some(config),
@@ -257,21 +290,23 @@ impl World {
                     branch,
                     &|owner| {
                         dispatches.as_ref().is_some_and(|project| {
-                            purlis_core::dispatchrecord::dispatched_by(
-                                &purlis_core::dispatchrecord::list(project),
+                            purlis_core::dispatchrecord::lineage_allows(
+                                project,
                                 "chat-listener",
                                 owner,
+                                branch,
                             )
                         })
                     },
                 )
             }));
             proxy = proxy.with_created(Box::new(move |created| {
-                purlis_core::forge::createdbranches::record(
+                purlis_core::forge::createdbranches::record_via(
                     &config,
                     PROJECT_ID,
                     "chat-listener",
                     created,
+                    Some(purlis_core::forge::createdbranches::Via::Route),
                 )
                 .expect("the record is written");
             }));

@@ -1531,7 +1531,9 @@ fn refusal_words(refusal: Refusal) -> &'static str {
             "the pull request's head is the default or a protected branch, or not a branch of the chat's repo that purlis can see"
         }
         Refusal::GraphqlUnknownMutation => "the GraphQL mutation is not on the list",
-        Refusal::GraphqlOtherRepo => "the GraphQL document reaches a repo that is not the chat's",
+        Refusal::GraphqlOtherRepo | Refusal::GraphqlPullRequestOtherRepo => {
+            "the GraphQL document reaches a repo that is not the chat's"
+        }
         Refusal::CredentialInQuery => "a credential was in the query string",
         Refusal::Multipart => "a multipart body is not allowed here",
         Refusal::CredentialInBody => "a credential was in the request body",

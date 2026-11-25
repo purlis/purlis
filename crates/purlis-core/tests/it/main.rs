@@ -74,6 +74,8 @@ mod a_chat_with_no_mint_has_no_forge_credential;
 #[cfg(all(unix, feature = "forge-wiring"))]
 mod a_chats_forge_listener_follows_a_gitlab_com_artifact_redirect_once_and_no_other;
 #[cfg(all(unix, feature = "forge-wiring"))]
+mod a_chats_forge_listener_keeps_serving_after_a_request_handler_panics;
+#[cfg(all(unix, feature = "forge-wiring"))]
 mod a_chats_forge_listener_reads_one_request_and_never_hands_the_chat_a_credential;
 #[cfg(all(unix, feature = "forge-wiring"))]
 mod a_chats_forge_listener_serves_a_real_unix_socket_and_a_real_connect_port;
@@ -96,6 +98,7 @@ mod a_chats_forge_proxy_reads_a_header_a_body_and_a_label_the_way_the_forge_does
 mod a_chats_forge_proxy_reads_a_request_the_way_the_forge_will;
 mod a_chats_forge_proxy_reads_public_repos_anonymously_and_refuses_login_flows;
 mod a_chats_forge_proxy_records_each_answer_without_the_token;
+mod a_chats_forge_proxy_refuses_a_graphql_block_string_the_parser_cannot_read;
 mod a_chats_forge_proxy_refuses_a_graphql_document_it_cannot_tie_to_the_chats_repos;
 mod a_chats_forge_proxy_refuses_a_pull_request_from_a_protected_head_and_an_update_branch_that_writes_to_one;
 mod a_chats_forge_proxy_refuses_another_repo_a_lookalike_host_and_a_prefix_path;
@@ -134,6 +137,7 @@ mod a_file_of_a_piece_opens_in_your_editor_at_a_line;
 mod a_file_shows_what_its_branch_changed;
 mod a_filed_case_six_report_records_a_miss;
 mod a_finished_task_folder_is_removed_without_force;
+mod a_first_fill_that_is_interrupted_resumes_where_it_stopped;
 mod a_folder_too_deep_to_read_costs_only_itself;
 mod a_folder_whose_pull_request_ended_is_removed_in_one_try;
 mod a_folders_git_link_is_checked_before_git_runs_there;
@@ -218,6 +222,7 @@ mod a_sandboxed_chat_commits_in_its_branch_folder_through_the_app;
 mod a_sandboxed_chat_listens_nowhere_under_seatbelt;
 mod a_shell_built_forge_command_and_its_ref_routes_are_held;
 mod a_shell_filled_forge_api_argument_is_held;
+mod a_shipped_binary_survives_a_graphql_block_string_the_parser_panics_on;
 mod a_sign_in_keeps_the_right_credential_for_each_host;
 mod a_signed_in_forge_token_never_reaches_a_chat;
 mod a_skill_can_only_narrow_a_chat;
@@ -282,6 +287,7 @@ mod forge_contract;
 mod forge_device_sign_in;
 mod forge_one_start_asks_the_keychain_once;
 mod forge_state_is_read_from_a_cache_and_never_fetched;
+mod gh_auth_status_and_own_repo_issue_search_are_answered_on_the_chats_repo;
 mod gh_pr_create_and_update_branch_are_answered_on_the_chats_repo;
 mod harness_profiles;
 mod no_automatic_read_takes_the_index_lock;

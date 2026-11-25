@@ -4082,12 +4082,28 @@ fn a_curation_prompt_is_dropped_when_its_chat_ends_before_it_starts() {
     let (planes, _told) = planes_telling();
     let plane = planes.open(&root);
     let held = planes.held(&plane).expect("it is held");
+    // A harness that ends when told to, so the prompt is held before its chat can end: a chat
+    // that ended first (`/usr/bin/true`) was one the prompt was never dropped for (#7564).
+    let gate = dir.path().join("gate");
+    let program = stand_in::program(
+        dir.path(),
+        "stand-in-harness",
+        &format!(
+            "#!/bin/sh\nwhile [ ! -e '{}' ]; do sleep 0.02; done\n",
+            gate.display()
+        ),
+    );
     let session = held
         .chats()
-        .start(&one_chat_on("/usr/bin/true").chats[0], STARTING)
+        .start(
+            &one_chat_on(&program.display().to_string()).chats[0],
+            STARTING,
+        )
         .expect("the chat starts");
     held.typed().hold(session, "Compact steward.".to_owned());
+    assert!(held.typed().waiting(session), "the prompt waits to start");
 
+    std::fs::write(&gate, "").expect("the chat is told to end");
     assert!(
         becomes(|| !held.typed().waiting(session)),
         "the prompt outlived its chat"

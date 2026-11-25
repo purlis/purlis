@@ -52,6 +52,7 @@
 //!     "proposed-changes": "off",
 //!     "undeclared-secret-asks": false,
 //!     "run-grants": false,
+//!     "lineage": false,
 //!     "allow-scopes": ["you", "machine"],
 //!     "never-hosts": ["*.paste.example"],
 //!     "relayed-internal": ["10.96.0.1:443", "*.svc.cluster.local"]
@@ -109,6 +110,10 @@
 //!   program its persona does not declare raises no Allow and uses no grant given before, and the
 //!   chat hears why. A key that command misses can still be filled. `persona-tools` `false` has the
 //!   same effect. Absent is allowed.
+//! - `lineage`: `false` holds lineage off (ADR 0128, amended 2026-11-24): a parent chat may not
+//!   take up its ended child's cut branch through the forge route, whatever a project's
+//!   `[policy] lineage` says. An allowance whose strict value is the denial; absent is allowed.
+//!   A file refused closed holds it off too.
 //! - `allow-scopes`: the scopes an Allow may keep anything at, of `once` (this chat's next run
 //!   alone: a local socket or a system service only), `chat` (only this chat), `you` (this
 //!   project on this machine), `machine` (this machine, for every project: a local socket or a
@@ -214,6 +219,9 @@ pub struct Locks {
     no_undeclared_secret_asks: bool,
     /// Whether Run grants are turned off (ADR 0112, #5243).
     no_run_grants: bool,
+    /// Whether lineage (a parent taking up its ended child's cut branch through the forge route)
+    /// is held off.
+    no_lineage: bool,
     /// The scopes an Allow may keep anything at, where the policy fixes them (#1666): `machine`
     /// among them only where the policy names it (ruling C3).
     allow_scopes: Option<Vec<grant::Level>>,
@@ -367,6 +375,7 @@ impl Locks {
             no_proposed_changes: true,
             no_undeclared_secret_asks: true,
             no_run_grants: true,
+            no_lineage: true,
             allow_scopes: Some(Vec::new()),
             never_hosts: Vec::new(),
             relayed_internal: Vec::new(),
@@ -803,6 +812,12 @@ impl Locks {
         })
     }
 
+    /// Whether policy holds lineage off: a parent chat may not take up its ended child's cut
+    /// branch through the forge route.
+    pub fn forbids_lineage(&self) -> bool {
+        self.no_lineage
+    }
+
     /// Whether policy forbids every dispatch from one chat to another (#1437).
     pub fn forbids_dispatch(&self) -> bool {
         self.no_dispatch
@@ -903,7 +918,7 @@ impl Locks {
 }
 
 /// The keys `sandbox` may hold, each a lock.
-const KEYS: [&str; 16] = [
+const KEYS: [&str; 17] = [
     "presets",
     "hosts",
     "personal-hosts",
@@ -917,6 +932,7 @@ const KEYS: [&str; 16] = [
     "proposed-changes",
     "undeclared-secret-asks",
     "run-grants",
+    "lineage",
     "allow-scopes",
     "never-hosts",
     "relayed-internal",
@@ -1059,6 +1075,7 @@ fn parsed(text: &str, file: &Path) -> Result<Locks, String> {
         no_proposed_changes,
         no_undeclared_secret_asks: forbids("undeclared-secret-asks")?,
         no_run_grants: forbids("run-grants")?,
+        no_lineage: forbids("lineage")?,
         allow_scopes,
         never_hosts,
         relayed_internal,
