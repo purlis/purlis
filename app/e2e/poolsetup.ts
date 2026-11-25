@@ -132,6 +132,24 @@ export async function pickTheMachine(name: string, timeout = 30_000): Promise<vo
 }
 
 /**
+ * **Trusts the machine Connect just read, on the merged page** (#7191): where Connect and Pool are
+ * one, the check of the key (or of the CA, over TLS) sits beside "Name the pool" and "Who can sign
+ * in to <host>?". The pool is named there, the machine is trusted with **Trust this machine only**,
+ * and the Pool step goes on from it, where the runner image is given by its digest: a build with no
+ * release image of its own (`runner_image_of_this_version`, as these runs' are) cannot make the
+ * pool in the one press of **Trust and create the pool**, which takes the image the build names.
+ */
+export async function trustTheMachineOnTheMergedPage(pool: string): Promise<void> {
+  const name = await $("aria/Name the pool");
+  await name.waitForDisplayed({ timeout: MAKING }).catch(async () => {
+    throw new Error(`Connect never showed the merged page: ${await theStepSays()}`);
+  });
+  await name.setValue(pool);
+  await $("aria/Trust and create the pool").waitForDisplayed({ timeout: 30_000 });
+  await press("Trust this machine only", MAKING);
+}
+
+/**
  * **Pool setup's walk to Docker on another machine, to a real chat** (#6266, #7188): from Add a
  * pool… to Try it's last screen against the fixture of `tests/remote-docker/up.sh`. Shared by the
  * walk's own spec and the link-down notice's, which needs the pool made and a chat running before
@@ -147,7 +165,7 @@ export async function addAndTryARemoteDockerPool(of: {
   await press("Another machine with Docker");
   await press("Set up Docker on another machine");
 
-  // Connect: the address typed, the key read, then trusted.
+  // Connect: the address typed, the key read, then trusted on the merged page (the pool named there).
   await on("Connect");
   // Another machine than those this one's SSH settings or Podman connections name, where it
   // names any.
@@ -156,7 +174,7 @@ export async function addAndTryARemoteDockerPool(of: {
   await address.waitForDisplayed();
   await address.setValue(of.address);
   await press("Connect to 127.0.0.1", MAKING);
-  await press("Trust this machine", MAKING);
+  await trustTheMachineOnTheMergedPage(of.pool);
 
   // Every check passed, the machine is trusted, and setup goes on to the pool.
   // Pool: its name and the image, made on the other machine.

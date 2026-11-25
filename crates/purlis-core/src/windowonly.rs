@@ -446,7 +446,7 @@ pub fn let_chat_push(
     if !crate::forge::createdbranches::is_commit_id(&tip) {
         return Err(format!("The forge did not give a commit for {branch}."));
     }
-    crate::forge::createdbranches::record(
+    crate::forge::createdbranches::record_via(
         config_root,
         &project_id,
         chat,
@@ -457,6 +457,7 @@ pub fn let_chat_push(
             branch: branch.clone(),
             tip: tip.clone(),
         }],
+        Some(crate::forge::createdbranches::Via::Allow),
     )
     .map_err(|why| format!("purlis could not record the branch: {why}"))?;
     pressed(root, control);

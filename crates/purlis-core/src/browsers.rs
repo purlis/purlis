@@ -606,6 +606,10 @@ impl Fetch for Progressing<'_> {
         self.inner.still_wanted()
     }
 
+    fn cancelled(&self) -> bool {
+        self.download.is_cancelled()
+    }
+
     fn fetch(&self, url: &str) -> std::io::Result<Box<dyn std::io::Read + '_>> {
         let (body, total) = self.inner.fetch_sized(url)?;
         Ok(Box::new(Counted {

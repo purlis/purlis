@@ -56,6 +56,12 @@ pub(super) const STEPS: Family = Family {
             description: "A short line under its name: what it settled on, or what it needs.",
             properties: WORDS,
         },
+        Part {
+            name: "took",
+            since: super::NEXT,
+            description: "How long a step took, under its line (`took 4 s`, #7191).",
+            properties: WORDS,
+        },
     ],
     variants: &[
         Variant {
@@ -106,7 +112,11 @@ pub(super) const STEPS: Family = Family {
     defaults: steps_look,
     states: &[],
     focused: "[data-focus-visible]",
-    words: &[("count", "text.muted"), ("line", "text.muted")],
+    words: &[
+        ("count", "text.muted"),
+        ("line", "text.muted"),
+        ("took", "text.muted"),
+    ],
     corner_most: None,
     around: &[],
     fills: &[],

@@ -29,7 +29,7 @@ use std::collections::HashMap;
 
 use graphql_parser::query::{
     Definition, Document, Field, FragmentDefinition, OperationDefinition, Selection, SelectionSet,
-    TypeCondition, Value, VariableDefinition, parse_query,
+    TypeCondition, Value, VariableDefinition,
 };
 use serde_json::Value as Json;
 
@@ -45,6 +45,43 @@ const MAX_DEPTH: usize = 16;
 
 /// The largest document read.
 const MAX_BODY: usize = 1 << 20;
+
+/// Whether `graphql-parser` 0.4.1 could panic reading `query` (#7589, #7596).
+///
+/// Its `unquote_block_string` (`common.rs`) takes `str::lines()` of a block string, sets the
+/// common indent to the least byte length of leading whitespace (`trim_start`, so
+/// `char::is_whitespace`) over every non-blank line after the first, and then cuts every line
+/// after the first, blank ones too, at `&line[common_indent..]`. That cut panics when it lands
+/// inside a character. If every line's leading whitespace is ASCII, `common_indent` is a count of
+/// ASCII bytes that each non-blank line starts with (it is the least of them) and a blank line
+/// too short for it is not cut, so the cut is always on a boundary. A panic therefore needs a
+/// line whose leading whitespace holds a non-ASCII character. The block string's lines are lines
+/// of the query (`lines()` and `split('\n')` cut alike; a lone `\r` is whitespace and a
+/// trailing `\r` is dropped by `lines()`, neither of which changes a line's leading whitespace),
+/// so this reads every line of the whole query: it also refuses a non-ASCII indent outside any
+/// block string, which no chat writes, and the first line of a block string, which the parser
+/// never cuts, in exchange for needing no tokenizer of its own.
+fn could_panic_the_parser(query: &str) -> bool {
+    query.contains("\"\"\"")
+        && query.split('\n').any(|line| {
+            line.chars()
+                .take_while(|c| c.is_whitespace())
+                .any(|c| !c.is_ascii())
+        })
+}
+
+/// The document `query` is, or none when it is not one the parser reads or could panic on. A
+/// shipped build aborts on any panic before it unwinds ([`crate::panicend::fatal`]), so the
+/// panic is never raised: such a query is refused before the parser sees it. The `catch_unwind`
+/// is a second line for debug and test builds only, which unwind.
+fn parse(query: &str) -> Option<Document<'_, String>> {
+    if could_panic_the_parser(query) {
+        return None;
+    }
+    std::panic::catch_unwind(|| graphql_parser::query::parse_query::<String>(query))
+        .ok()?
+        .ok()
+}
 
 /// What a value resolved to.
 #[derive(Debug, Clone)]
@@ -260,7 +297,7 @@ pub(crate) fn decide<'a>(
         Some(Json::Object(map)) => map,
         Some(_) => return Err(Refusal::GraphqlParse),
     };
-    let document: Document<'_, String> = parse_query(query).map_err(|_| Refusal::GraphqlParse)?;
+    let document = parse(query).ok_or(Refusal::GraphqlParse)?;
 
     let mut fragments = HashMap::new();
     for definition in &document.definitions {
@@ -302,7 +339,22 @@ pub(crate) fn decide<'a>(
                     defaults: defaults(defs),
                 };
                 if is_mutation {
-                    class = ctx.check_mutation(selection_set, &vars)?;
+                    class = ctx
+                        .check_mutation(selection_set, &vars)
+                        .map_err(|refusal| {
+                            // Only these two have a REST route to be told of (`Refusal::advice`).
+                            let names_one = selection_set.items.iter().any(|s| {
+                                matches!(s, Selection::Field(f) if matches!(
+                                    f.name.as_str(),
+                                    "createPullRequest" | "updatePullRequestBranch"
+                                ))
+                            });
+                            if refusal == Refusal::GraphqlOtherRepo && names_one {
+                                Refusal::GraphqlPullRequestOtherRepo
+                            } else {
+                                refusal
+                            }
+                        })?;
                 } else {
                     ctx.check_query(selection_set, &vars)?;
                 }
@@ -316,6 +368,64 @@ pub(crate) fn decide<'a>(
         .map(|at| repos[at])
         .collect();
     Ok(Decided { class, touched })
+}
+
+/// The index in `repos` of the one repo a search query names, or `None` when it is not a search
+/// of exactly one of them (GraphQL's `search(query:)` and REST's `GET /search/issues?q=`).
+pub(crate) fn search_repo(query: &str, repos: &[&AllowedRepo]) -> Option<usize> {
+    // A zero-width space or a control character is a separator or nothing to the forge and a
+    // letter of a word to this reading: only printable ASCII and the space are read.
+    if !query.bytes().all(|b| b == b' ' || b.is_ascii_graphic()) {
+        return None;
+    }
+    // A quote hides a qualifier from this reading and not from the forge's.
+    if query.contains(['"', '\'', '\\', '`']) {
+        return None;
+    }
+    // Without a boolean operator or a group, every other term only narrows the one repo's
+    // results; with one, `repo:a OR is:issue` widens them to the whole forge.
+    if query.contains(['(', ')']) {
+        return None;
+    }
+    let mut paths = Vec::new();
+    for token in query.split_whitespace() {
+        if ["or", "and", "not"]
+            .iter()
+            .any(|op| token.eq_ignore_ascii_case(op))
+        {
+            return None;
+        }
+        // `|`, `||`, `&` and `&&` are not the forge's operators as far as is known, but a token
+        // of nothing else is refused rather than guessed at.
+        if token.chars().all(|c| c == '|' || c == '&') {
+            return None;
+        }
+        let lower = token
+            .trim_start_matches(['(', '-', '+', '!'])
+            .to_ascii_lowercase();
+        if let Some(path) = lower.strip_prefix("repo:") {
+            // The qualifier is read only as the forge surely reads it: the token starts with
+            // `repo:` itself. A prefix (`+repo:`, `-repo:`, `!repo:`) may make it plain text to
+            // the forge, which would leave the search unscoped.
+            if !token.to_ascii_lowercase().starts_with("repo:")
+                || path.contains(['(', ')', ',', '*'])
+            {
+                return None;
+            }
+            paths.push(path.to_string());
+        } else if ["org:", "user:", "owner:", "team:", "enterprise:"]
+            .iter()
+            .any(|q| lower.starts_with(q))
+        {
+            return None;
+        }
+    }
+    let [path] = paths.as_slice() else {
+        return None;
+    };
+    // The recorded path as it is, case aside: not what `normalise_repo_path` makes of a
+    // prefix or a `.git` suffix, which the forge's search does not read as the repo.
+    repos.iter().position(|r| r.path.eq_ignore_ascii_case(path))
 }
 
 fn defaults<'a>(defs: &[VariableDefinition<'a, String>]) -> Vec<(String, Value<'a, String>)> {
@@ -452,10 +562,18 @@ impl<'d> Context<'_, 'd> {
                 return Err(refuse);
             }
         }
-        let is_issue = field
-            .arguments
-            .iter()
-            .any(|(n, v)| n == "type" && matches!(v, Value::Enum(e) if e == "ISSUE"));
+        // `gh issue list --search` sends the type as a variable (`$type: SearchType!`, given
+        // `"ISSUE"`), which is read by its value like the query's.
+        let is_issue = field.arguments.iter().any(|(n, v)| {
+            n == "type"
+                && match v {
+                    Value::Enum(e) => e == "ISSUE",
+                    Value::Variable(_) => {
+                        matches!(vars.resolve(v), Ok(Val::Str(s)) if s == "ISSUE")
+                    }
+                    _ => false,
+                }
+        });
         if !is_issue {
             return Err(refuse);
         }
@@ -469,53 +587,7 @@ impl<'d> Context<'_, 'd> {
                 _ => None,
             })
             .ok_or(refuse)?;
-        // A zero-width space or a control character is a separator or nothing to the forge and a
-        // letter of a word to this reading: only printable ASCII and the space are read.
-        if !query.bytes().all(|b| b == b' ' || b.is_ascii_graphic()) {
-            return Err(refuse);
-        }
-        // A quote hides a qualifier from this reading and not from the forge's.
-        if query.contains(['"', '\'', '\\', '`']) {
-            return Err(refuse);
-        }
-        // Without a boolean operator or a group, every other term only narrows the one repo's
-        // results; with one, `repo:a OR is:issue` widens them to the whole forge.
-        if query.contains(['(', ')']) {
-            return Err(refuse);
-        }
-        let mut repos = Vec::new();
-        for token in query.split_whitespace() {
-            if ["or", "and", "not"]
-                .iter()
-                .any(|op| token.eq_ignore_ascii_case(op))
-            {
-                return Err(refuse);
-            }
-            let lower = token
-                .trim_start_matches(['(', '-', '+', '!'])
-                .to_ascii_lowercase();
-            if let Some(path) = lower.strip_prefix("repo:") {
-                if token.starts_with(['-', '!']) || path.contains(['(', ')', ',', '*']) {
-                    return Err(refuse);
-                }
-                repos.push(path.to_string());
-            } else if ["org:", "user:", "owner:", "team:", "enterprise:"]
-                .iter()
-                .any(|q| lower.starts_with(q))
-            {
-                return Err(refuse);
-            }
-        }
-        let [path] = repos.as_slice() else {
-            return Err(refuse);
-        };
-        // The recorded path as it is, case aside: not what `normalise_repo_path` makes of a
-        // prefix or a `.git` suffix, which the forge's search does not read as the repo.
-        match self
-            .repos
-            .iter()
-            .position(|r| r.path.eq_ignore_ascii_case(path))
-        {
+        match search_repo(&query, self.repos) {
             Some(at) => {
                 self.touch(at);
                 Ok(())
@@ -688,6 +760,19 @@ impl<'d> Context<'_, 'd> {
                         return Err(Refusal::ProtectedPullHead);
                     }
                 }
+                // A merge request from the default branch is the wrong way round, as REST's is
+                // (#7585). `projectPath` is already tied to the chat's repos by the scope check,
+                // so the source is a branch of that project, as in REST.
+                if field.name == "mergeRequestCreate" {
+                    let mut sources = Vec::new();
+                    collect_named("sourceBranch", &val, &mut sources);
+                    if sources
+                        .iter()
+                        .any(|src| self.repos.iter().any(|r| rest::head_is_default(src, r)))
+                    {
+                        return Err(Refusal::ProtectedPullHead);
+                    }
+                }
             }
             self.check_scoped(&ids)?;
             if field.name == "updatePullRequestBranch" {
@@ -799,7 +884,7 @@ pub fn mutation_repo(
         Some(Json::Object(map)) => map,
         Some(_) => return None,
     };
-    let parsed: Document<'_, String> = parse_query(query).ok()?;
+    let parsed = parse(query)?;
     let mut ids = Vec::new();
     for definition in &parsed.definitions {
         let Definition::Operation(OperationDefinition::Mutation(mutation)) = definition else {

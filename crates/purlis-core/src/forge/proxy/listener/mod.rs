@@ -204,6 +204,11 @@ pub enum PushVerdict {
 /// [`PushVerdict::Forward`]: a push that changes CI files is never sent on by this door.
 pub trait PushGate: Send + Sync {
     fn check(&self, chat: &ChatId, push: &PushRead) -> PushVerdict;
+
+    /// A chat has opened on the repos this gate reads for: start reading them ahead of a push, so
+    /// the first push does not meet an empty object cache (#7532). Answers at once; the default
+    /// does nothing.
+    fn warm(&self) {}
 }
 
 /// Everything one chat's listener needs, as plain values.
@@ -473,7 +478,11 @@ fn spawn_connection(
     let spawned = std::thread::Builder::new()
         .name("forge-proxy-conn".into())
         .spawn(move || {
-            serve(&wiring);
+            // In a debug or test build a panic in a handler ends this connection and nothing else,
+            // and the slot comes back either way (#7589). A shipped build aborts on any panic
+            // before it unwinds (`panicend::fatal`), so this protects nothing there: the
+            // handler must not panic on a chat's input (#7596).
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| serve(&wiring)));
             slot.fetch_sub(1, Ordering::SeqCst);
         });
     if spawned.is_err() {

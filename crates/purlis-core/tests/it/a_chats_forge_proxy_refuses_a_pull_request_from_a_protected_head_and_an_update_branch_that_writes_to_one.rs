@@ -171,9 +171,13 @@ fn a_graphql_pull_request_from_main_is_refused_when_it_names_its_head_repository
     let out = gql(&s, CREATE, input("main", "R_acme_app"));
     assert!(is_refused(&out, Refusal::ProtectedPullHead), "{out:?}");
     // A head repository named by id is not one the route resolves (as before #7526), the chat's
-    // own included, so it is never forwarded.
+    // own included, so it is never forwarded. A `createPullRequest` is refused as
+    // `GraphqlPullRequestOtherRepo` (#7544), the kind that names the REST route.
     let out = gql(&s, CREATE, input("fix", "R_acme_app"));
-    assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{out:?}");
+    assert!(
+        is_refused(&out, Refusal::GraphqlPullRequestOtherRepo),
+        "{out:?}"
+    );
     let out = gql(&s, CREATE, input("fix", "R_someone_else"));
     assert!(!forwarded(&out), "{out:?}");
 }
@@ -383,4 +387,52 @@ fn the_refusal_says_what_to_do_instead() {
         "{said}"
     );
     assert!(said.contains("this chat's own branches"), "{said}");
+}
+
+#[test]
+fn a_gitlab_graphql_merge_request_from_the_default_branch_is_refused_inline_and_by_variable() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let send = |query: &str, variables: serde_json::Value| {
+        s.send(
+            "POST",
+            "gitlab.com",
+            "/api/graphql",
+            &graphql(query, variables),
+        )
+    };
+    let inline = |source: &str| {
+        send(
+            &format!(
+                "mutation {{ mergeRequestCreate(input: {{projectPath: \"group/proj\", \
+                 sourceBranch: \"{source}\", targetBranch: \"work\", title: \"t\"}}) \
+                 {{ errors }} }}"
+            ),
+            serde_json::json!({}),
+        )
+    };
+    let by_variable = |source: &str| {
+        send(
+            "mutation($input: MergeRequestCreateInput!) { \
+             mergeRequestCreate(input: $input) { errors } }",
+            serde_json::json!({"input": {
+                "projectPath": "group/proj", "sourceBranch": source,
+                "targetBranch": "work", "title": "t"}}),
+        )
+    };
+    for source in ["main", "Main", "refs/heads/main"] {
+        for (how, out) in [
+            ("inline", inline(source)),
+            ("variable", by_variable(source)),
+        ] {
+            assert!(
+                is_refused(&out, Refusal::ProtectedPullHead),
+                "{how} {source}: {out:?}"
+            );
+        }
+    }
+    for source in ["work", "release/1.2"] {
+        assert!(forwarded(&inline(source)), "inline {source}");
+        assert!(forwarded(&by_variable(source)), "variable {source}");
+    }
 }

@@ -115,15 +115,18 @@ fn the_lock_s_config_pair_goes_after_a_profile_s_a_passed_one_and_the_hooks() {
             .find(|(set, _)| set == name)
             .map(|(_, value)| value.to_string_lossy().into_owned())
     };
-    // The profile's pair replaced the passed one by name, as before; hooks then the lock follow.
+    // The profile's pair replaced the passed one by name, as before; the no-gc pairs (#7531),
+    // hooks, then the lock follow, so the lock's is still the last.
     assert_eq!(get("GIT_CONFIG_KEY_0").as_deref(), Some("profile.one"));
-    assert_eq!(get("GIT_CONFIG_KEY_1").as_deref(), Some("core.hooksPath"));
+    assert_eq!(get("GIT_CONFIG_KEY_1").as_deref(), Some("gc.auto"));
+    assert_eq!(get("GIT_CONFIG_KEY_2").as_deref(), Some("maintenance.auto"));
+    assert_eq!(get("GIT_CONFIG_KEY_3").as_deref(), Some("core.hooksPath"));
     assert_eq!(
-        get("GIT_CONFIG_KEY_2").as_deref(),
+        get("GIT_CONFIG_KEY_4").as_deref(),
         Some("credential.helper")
     );
-    assert_eq!(get("GIT_CONFIG_VALUE_2").as_deref(), Some(""));
-    assert_eq!(get("GIT_CONFIG_COUNT").as_deref(), Some("3"));
+    assert_eq!(get("GIT_CONFIG_VALUE_4").as_deref(), Some(""));
+    assert_eq!(get("GIT_CONFIG_COUNT").as_deref(), Some("5"));
     assert_eq!(get(MARKER), None, "the marker is not the chat's");
 }
 

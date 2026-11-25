@@ -13,10 +13,20 @@ fail-fast = false
 # by such a lock so that they do not compete for the machine; this group keeps that.
 [test-groups]
 floods = { max-threads = 1 }
+# The three loopback ports a GitLab sign-in comes back on are the machine's, and the sign-in's
+# cases bind them for real. The `Mutex` in that file orders them only inside one process, and
+# each test has a process of its own: one case's listener was bound under another's ("the
+# listener was still bound after the redirect"), and one waited out its 300 s for a redirect on a
+# port a sibling had left (#7557, #7572).
+registered-ports = { max-threads = 1 }
 
 [[profile.default.overrides]]
 filter = "package(fake-harness) & binary(unread_answers)"
 test-group = "floods"
+
+[[profile.default.overrides]]
+filter = "package(purlis-core) & binary(it) & test(/^a_gitlab_sign_in_through_the_browser::/)"
+test-group = "registered-ports"
 
 [profile.ci]
 # A failed test is run once more before it counts. From 2026-10-22 to 10-27, 26 to 57 runs a day
