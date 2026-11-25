@@ -1241,6 +1241,10 @@ pub struct Resolved {
     /// that runs it is told which flow sets it up and the program is never run bare
     /// ([`guard_forges`]).
     pub guards: Vec<(String, String)>,
+    /// The programs of [`Resolved::guards`] that the persona declares but that run nothing here
+    /// (not allowed yet, or not found): their guard stays where a forge route runs the program
+    /// for real ([`without_guard`]), since the person has not allowed that tool.
+    pub declared_guards: Vec<String>,
     /// Nothing is allowed this chat, and it only says what is absent (#4373). Its shims go in a
     /// folder of their own, named by what they say ([`refusals_folder`]): the persona's folder
     /// holds the shims of another chat's Allow, which this chat is never to find first on its
@@ -1494,6 +1498,7 @@ pub(crate) fn for_chat_on(
             unallowed: Vec::new(),
             refusing: Vec::new(),
             guards: Vec::new(),
+            declared_guards: Vec::new(),
             only_refuses: true,
         });
         into.absent.extend(unallowed.absent.iter().cloned());
@@ -1619,6 +1624,7 @@ pub(crate) fn resolve_beside(
         unallowed: Vec::new(),
         refusing: Vec::new(),
         guards: Vec::new(),
+        declared_guards: Vec::new(),
         only_refuses: false,
     })
 }
@@ -3056,9 +3062,9 @@ pub fn declared_glab_not_running_said(persona: &str) -> String {
 /// this chat has no sign-in route to a GitLab host, so `glab` has nothing to act through. The shim
 /// is only written for such a chat: one with a route that covers a GitLab host runs the real `glab`
 /// ([`without_guard`]). Signing in is Settings › Accounts (Forges is where hosts are added).
-const SIGN_IN_SAID: &str = "glab has no token in this chat: it has no sign-in to a GitLab host, \
-     and a chat acts only through a sign-in, never through a glab login of its own. Sign in to \
-     the host under Settings › Accounts, then restart the chat.";
+const SIGN_IN_SAID: &str = "glab has no token in this chat: this chat has no route to a GitLab \
+     host. A chat acts only through your purlis sign-in, never your own glab login. Sign in \
+     under Settings › Accounts, then restart the chat.";
 
 /// **The forge programs a chat under the credentials class is guarded from running bare**
 /// (#1349): [`guard_forges`] writes a shim for each that no tool of the chat declares.
@@ -3113,8 +3119,14 @@ pub fn guard_forges(
         unallowed: Vec::new(),
         refusing: Vec::new(),
         guards: Vec::new(),
+        declared_guards: Vec::new(),
         only_refuses: true,
     });
+    into.declared_guards = guards
+        .iter()
+        .filter(|(name, _)| declared.iter().any(|tool| tool == name))
+        .map(|(name, _)| name.clone())
+        .collect();
     into.guards = guards;
     // The guard is this chat's alone: its shims go in a folder named by what they say, never in
     // the persona's, which a chat of the same persona without a guard writes and cleans.
@@ -3130,24 +3142,40 @@ pub fn guard_forges(
 
 /// **`resolved` without the guard of `name`** ([`guard_forges`]), for a chat whose forge route
 /// runs that program for real (ADR 0128): the shim would sit first on its `PATH` and keep the
-/// program from ever reaching the route. The shims' folder is named again by what is left in it,
-/// and nothing is returned where nothing is.
+/// program from ever reaching the route. The shims' folder is named again by what is left in it:
+/// a chat that only refuses keeps a folder of its own ([`refusals_folder`]), and one with ready
+/// tools goes back to the persona's. Nothing is returned where nothing is left to arm or to say:
+/// a `left` or `absent` tool still is, since arming them is what warns that they run nothing.
 pub fn without_guard(mut resolved: Resolved, root: &Path, name: &str) -> Option<Resolved> {
+    // A tool the persona declares that is not allowed (or not found) keeps its guard.
+    if resolved.declared_guards.iter().any(|kept| kept == name) {
+        return Some(resolved);
+    }
     let before = resolved.guards.len();
     resolved.guards.retain(|(guarded, _)| guarded != name);
     if resolved.guards.len() == before {
         return Some(resolved);
     }
-    if resolved.ready.is_empty() && resolved.refusing.is_empty() && resolved.guards.is_empty() {
+    if resolved.ready.is_empty()
+        && resolved.refusing.is_empty()
+        && resolved.guards.is_empty()
+        && resolved.left.is_empty()
+        && resolved.absent.is_empty()
+    {
         return None;
     }
-    resolved.folder = refusals_folder(
-        &folder(root, &resolved.persona),
-        &resolved.refusing,
-        &resolved.unallowed,
-        &resolved.guards,
-        &resolved.ready,
-    );
+    let persona_folder = folder(root, &resolved.persona);
+    resolved.folder = if resolved.only_refuses {
+        refusals_folder(
+            &persona_folder,
+            &resolved.refusing,
+            &resolved.unallowed,
+            &resolved.guards,
+            &resolved.ready,
+        )
+    } else {
+        persona_folder
+    };
     Some(resolved)
 }
 

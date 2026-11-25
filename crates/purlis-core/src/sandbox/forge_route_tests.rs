@@ -372,15 +372,154 @@ fn an_unwired_chat_with_a_persona_is_still_guarded_from_a_bare_glab() {
     assert_eq!(guarded(&it.applied), ["glab"]);
 }
 
+/// What holds a confinement a test builds, which has nothing to withdraw.
+#[cfg(feature = "forge-wiring")]
+#[derive(Debug)]
+struct NoHolder;
+
+#[cfg(feature = "forge-wiring")]
+impl HeldElsewhere for NoHolder {
+    fn id(&self) -> &str {
+        "01TEST"
+    }
+    fn withdraw_port(&self, _port: u16) -> Result<(), String> {
+        Ok(())
+    }
+    fn board(&self) -> Option<std::sync::Arc<dyn Board>> {
+        None
+    }
+}
+
+/// The sentinel [`inputs`] hands a chat.
+#[cfg(feature = "forge-wiring")]
+const SENTINEL: &str = "SENTINEL-0123456789abcdef";
+
+/// A Claude Code chat of the persona `dev` whose route covers `forges`, and its start's line:
+/// with a confinement (the proxy its wiring is composed for) where `confined`, none where not (an
+/// unwrapped Claude Code below the proxy-port floor, which has no proxy to route through).
+/// Answers the line and what the line arms ([`Applied::tools_for_line`]).
+#[cfg(feature = "forge-wiring")]
+fn started_line(
+    forges: &[(&str, crate::forgewire::ForgeKind)],
+    confined: bool,
+) -> (Line, Option<tools::Resolved>, Started) {
+    let it = started_as(Harness::ClaudeCode, Os::MacOs, Some("dev"));
+    let route = inputs_over(&it, forges);
+    // The CA the app made for the run, which the wiring copies.
+    std::fs::write(&route.ca_cert, "CA").expect("the run's CA");
+    let mut applied = it.applied.clone().with_forge_route(route);
+    if confined {
+        applied.answered("2.1.296 (Claude Code)");
+    }
+    let tmp = tempfile::tempdir().expect("a chat's temp folder");
+    let confinement = Confinement::held_on_another_machine(
+        Placed {
+            http: 50_961,
+            socks: 50_962,
+            tmp: Some(tmp.path().to_path_buf()),
+            routed: None,
+            ssh: None,
+            left_out: Vec::new(),
+            host_name: None,
+        },
+        Box::new(NoHolder),
+    );
+    let Form::ClaudeCode(settings) = applied.form_in(Some(&it.cwd)) else {
+        panic!("compiled for Claude Code");
+    };
+    let armed = vec![
+        "--settings".to_owned(),
+        serde_json::json!({
+            "enabledPlugins": {},
+            "permissions": { "allow": [], "deny": settings.deny },
+            "sandbox": settings.sandbox,
+        })
+        .to_string(),
+    ];
+    let at = At {
+        cwd: Some(&it.cwd),
+        hook_socket: None,
+        confinement: confined.then_some(&confinement),
+        no_opt_out: false,
+        purlis: None,
+    };
+    let armed_tools = applied
+        .tools_for_line(at.confinement)
+        .map(std::borrow::Cow::into_owned);
+    let line = applied
+        .line(
+            Words {
+                program: "claude".to_owned(),
+                command: Vec::new(),
+                armed,
+                charters: Vec::new(),
+            },
+            &at,
+        )
+        .expect("a line");
+    (line, armed_tools, it)
+}
+
+/// Whether a guard's shim is in a folder the line puts first on a `PATH`.
+#[cfg(feature = "forge-wiring")]
+fn guard_shim_on_path(line: &Line) -> bool {
+    line.env
+        .iter()
+        .filter(|(key, _)| key == "PATH" || key == tools::FIRST_ON_PATH)
+        .flat_map(|(_, dirs)| dirs.split(':'))
+        .any(|dir| {
+            std::fs::read_to_string(Path::new(dir).join("glab"))
+                .is_ok_and(|text| text.contains("never falls back to the person's own login"))
+        })
+}
+
+/// **The guard is dropped exactly where the line carries the sentinel** (ADR 0128): a wired chat
+/// over a GitLab host has no guard shim on its `PATH` and `GITLAB_TOKEN` is the sentinel. With a
+/// `purlis` found (the re-run below names one) the check reads the folder the shims were written
+/// in, and so is not vacuous.
 #[cfg(feature = "forge-wiring")]
 #[test]
-fn a_wired_chat_with_a_gitlab_host_runs_the_real_tool_with_no_guard_in_front_of_it() {
+fn a_wired_chat_with_a_gitlab_host_has_no_guard_shim_and_the_sentinel_on_its_line() {
     use crate::forgewire::ForgeKind::{GitHub, GitLab};
-    for harness in [Harness::Codex, Harness::Opencode, Harness::ClaudeCode] {
-        let it = started_as(harness, Os::MacOs, Some("dev"));
-        let route = inputs_over(&it, &[("gitlab.com", GitLab), ("github.com", GitHub)]);
-        let wired = it.applied.clone().with_forge_route(route);
-        assert_eq!(guarded(&wired), Vec::<String>::new(), "{harness:?}");
+    let (line, armed, _it) = started_line(&[("gitlab.com", GitLab), ("github.com", GitHub)], true);
+    let token = line.env.iter().find(|(key, _)| key == "GITLAB_TOKEN");
+    assert_eq!(token.map(|(_, value)| value.as_str()), Some(SENTINEL));
+    assert!(armed.is_none_or(|tools| tools.guards.is_empty()));
+    assert!(!guard_shim_on_path(&line), "{:?}", line.env);
+}
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn the_guard_checks_of_a_wired_line_are_made_with_a_purlis_found() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let purlis = dir.path().join("purlis");
+    std::fs::write(&purlis, "").expect("a stand-in purlis");
+    crate::testrun::rerun(
+        &[
+            "sandbox::forge_route_tests::a_wired_chat_with_a_gitlab_host_has_no_guard_shim_and_the_sentinel_on_its_line",
+            "sandbox::forge_route_tests::a_chat_with_a_route_and_no_confinement_keeps_the_guard_and_has_no_sentinel",
+        ],
+        &[("PURLIS_BINARY", purlis.as_os_str())],
+    );
+}
+
+/// **F1**: a chat whose inputs name a GitLab host but that has no confinement (so no proxy and no
+/// wiring) keeps the guard: dropping it would leave `glab` with neither the shim nor a route.
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn a_chat_with_a_route_and_no_confinement_keeps_the_guard_and_has_no_sentinel() {
+    use crate::forgewire::ForgeKind::GitLab;
+    let (line, armed, _it) = started_line(&[("gitlab.com", GitLab)], false);
+    assert!(
+        line.env.iter().all(|(key, _)| key != "GITLAB_TOKEN"),
+        "{:?}",
+        line.env
+    );
+    let armed = armed.expect("the guard is armed");
+    let names: Vec<&str> = armed.guards.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(names, ["glab"]);
+    if tools::purlis_binary().is_some() {
+        assert!(guard_shim_on_path(&line), "{:?}", line.env);
     }
 }
 
@@ -388,8 +527,6 @@ fn a_wired_chat_with_a_gitlab_host_runs_the_real_tool_with_no_guard_in_front_of_
 #[test]
 fn a_wired_chat_with_no_gitlab_host_keeps_the_guard() {
     use crate::forgewire::ForgeKind::GitHub;
-    let it = started_as(Harness::Codex, Os::MacOs, Some("dev"));
-    let route = inputs_over(&it, &[("github.com", GitHub)]);
-    let wired = it.applied.clone().with_forge_route(route);
-    assert_eq!(guarded(&wired), ["glab"]);
+    let (_, armed, _it) = started_line(&[("github.com", GitHub)], true);
+    assert_eq!(armed.expect("the guard is armed").guards.len(), 1);
 }

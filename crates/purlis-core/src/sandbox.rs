@@ -5452,8 +5452,8 @@ impl Applied {
             line.env.extend(caches.env.iter().cloned());
         }
         // The persona's tools (#1407): their shims first on the chat's `PATH`.
-        if let Some(resolved) = &self.tools {
-            let gained = tools::armed(resolved, self.harness);
+        if let Some(resolved) = self.tools_for_line(at.confinement) {
+            let gained = tools::armed(&resolved, self.harness);
             line.env
                 .retain(|(key, _)| !gained.iter().any(|(set, _)| set == key));
             line.env.extend(gained);
@@ -5682,23 +5682,41 @@ impl Applied {
                 widened.forge_socket = Some(socket);
             }
         }
-        // Where the route covers a GitLab host the chat's `glab` runs for real, wired to it, so the
-        // guard written at the start (before any route is known, [`guard_forges_in`]) is taken
-        // out: its shim would come first on the `PATH` and `glab` would never reach the route.
-        if cfg!(feature = "forge-wiring")
-            && inputs
-                .repos
-                .iter()
-                .any(|repo| repo.kind() == crate::forgewire::ForgeKind::GitLab)
-        {
-            self.tools = self
-                .tools
-                .take()
-                .and_then(|resolved| tools::without_guard(*resolved, &self.root, "glab"))
-                .map(Box::new);
-        }
         self.forge = Some(Box::new(inputs));
         self
+    }
+
+    /// **The persona's tools this chat's line arms** ([`Self::line`]): `self.tools`, except that
+    /// the guard of `glab` ([`tools::guard_forges`], written at the start, before any route is
+    /// known) is taken out where this chat's `glab` runs for real, wired to its forge route: its
+    /// shim would come first on the `PATH` and `glab` would never reach the route.
+    ///
+    /// **Keyed on what composes the wiring** ([`Self::forge_route`], the sentinel `GITLAB_TOKEN`,
+    /// `HTTPS_PROXY` and `GLAB_CA_CERT`), never on the inputs alone: a chat with a route in its
+    /// inputs but no confinement (an unwrapped Claude Code below its proxy-port floor) is wired to
+    /// nothing, so it keeps the guard. The guard is dropped only where the line carries the
+    /// sentinel. It is per program, so a route that covers one GitLab host unguards `glab` for
+    /// every host; the sentinel is worthless off the chat's own proxy, so `glab` against a host
+    /// no route covers has nothing to authenticate with (ADR 0128).
+    fn tools_for_line(
+        &self,
+        confinement: Option<&Confinement>,
+    ) -> Option<std::borrow::Cow<'_, tools::Resolved>> {
+        use std::borrow::Cow;
+        let resolved = self.tools.as_deref()?;
+        #[cfg(feature = "forge-wiring")]
+        if self.forge_route(confinement).is_some()
+            && self.forge.as_ref().is_some_and(|inputs| {
+                inputs
+                    .repos
+                    .iter()
+                    .any(|repo| repo.kind() == crate::forgewire::ForgeKind::GitLab)
+            })
+        {
+            return tools::without_guard(resolved.clone(), &self.root, "glab").map(Cow::Owned);
+        }
+        let _ = confinement;
+        Some(Cow::Borrowed(resolved))
     }
 
     /// **Where this chat's forge traffic goes** (ADR 0128 D3a), or none where it has no forge
