@@ -424,8 +424,16 @@ fn a_lower_case_pseudo_ref_a_merge_mode_link_and_a_name_git_acts_on_are_refused(
 
     // A name git acts on: refused, as a file or a folder.
     for (name, folder, said_of) in [
-        ("config.worktree", false, "per-worktree git config"),
-        ("Config.Worktree", false, "per-worktree git config"),
+        (
+            "config.worktree",
+            false,
+            "git config kept for this folder alone",
+        ),
+        (
+            "Config.Worktree",
+            false,
+            "git config kept for this folder alone",
+        ),
         ("sequencer", true, "did not start"),
         ("Rebase-Apply", true, "did not start"),
     ] {
@@ -455,7 +463,7 @@ fn a_lower_case_pseudo_ref_a_merge_mode_link_and_a_name_git_acts_on_are_refused(
     std::fs::write(record.join("refs/bisect/bad"), "0\n").unwrap();
     let (code, said) = update(&w, "p1", &start(None), &Reach::default());
     assert_eq!(code, 1, "{said}");
-    assert!(said.contains("per-worktree ref"), "{said}");
+    assert!(said.contains("ref kept for this folder alone"), "{said}");
     std::fs::remove_dir_all(record.join("refs")).unwrap();
     let (code, said) = update(&w, "p1", &start(None), &Reach::default());
     assert_eq!(code, 0, "{said}");
@@ -715,5 +723,5 @@ fn adopt_records_a_branch_piece_and_refuses_a_branch_held_elsewhere() {
     );
     let (code, refused) = adopt("p2");
     assert_eq!(code, 1, "{refused}");
-    assert!(refused.contains("another worktree"), "{refused}");
+    assert!(refused.contains("another branch folder"), "{refused}");
 }

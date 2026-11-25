@@ -1301,6 +1301,8 @@ fn the_scan_runs_under_the_held_projects_policy_not_one_found_from_the_folder() 
     .unwrap();
     crate::enforcement::press(&held.1, &crate::enforcement::digest_of(&held.1))
         .expect("the person's press");
+    // The branch note is kept under the root the commit is made for, which here is the held one.
+    worktree::record::note_branch(&held.1, &t.here.top, "piece").expect("noted");
     let key = ["-----BEGIN RSA PRIV", "ATE KEY-----"].concat();
     std::fs::write(t.here.top.join("id"), format!("{key}\nMIIB\n")).unwrap();
 
@@ -1344,6 +1346,8 @@ fn a_logged_finding_of_the_scan_is_kept_in_the_asking_chats_own_log() {
     .unwrap();
     crate::enforcement::press(&held.1, &crate::enforcement::digest_of(&held.1))
         .expect("the person's press");
+    // The branch note is kept under the root the commit is made for, which here is the held one.
+    worktree::record::note_branch(&held.1, &t.here.top, "piece").expect("noted");
     let key = ["-----BEGIN RSA PRIV", "ATE KEY-----"].concat();
     std::fs::write(t.here.top.join("id"), format!("{key}\nMIIB\n")).unwrap();
 
@@ -1590,6 +1594,10 @@ fn a_pseudo_ref_that_holds_an_id_is_fine() {
 #[test]
 fn a_piece_cut_before_the_note_is_noted_from_its_own_branch_and_a_repointed_head_is_refused() {
     let t = tree();
+    // The check finds the clone three levels above the worktree's git directory, as a real
+    // clone's `.git/worktrees/<piece>` has it. This fixture keeps its store beside the clone, so
+    // that level is `t.root`: make it a repository of its own, where no other folder has `piece`.
+    assert!(crate::testgit::run(&t.root, &["init", "-q"]).ok());
     let notes = crate::pieceupdate::notes_of(&t.root, &t.here.git_dir);
     let noted = notes.join(worktree::record::BRANCH_NOTE);
     std::fs::remove_file(&noted).unwrap();

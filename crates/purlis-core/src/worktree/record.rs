@@ -158,7 +158,7 @@ fn no_refs(dir: &Path, depth: u8) -> Result<(), String> {
         } else {
             return Err(refusal(
                 &path,
-                "a per-worktree ref, which git reads as a branch the chat chose",
+                "a ref kept for this folder alone, which git reads as a branch the chat chose",
             ));
         }
     }
@@ -184,7 +184,7 @@ fn left_over(path: &Path) -> String {
 fn config_worktree(path: &Path) -> String {
     refusal(
         path,
-        "a per-worktree git config (`git sparse-checkout` and `git config --worktree` leave one), \
+        "a git config kept for this folder alone (`git sparse-checkout` and `git config --worktree` leave one), \
          which git reads on every call and can make it run a program, and purlis's own settings \
          do not cover every key in it. Move it aside from your own terminal, or run git in this \
          folder yourself instead of asking purlis",
@@ -373,7 +373,7 @@ pub fn adopt(root: &Path, clone: &Path, folder: &Path) -> Result<String, String>
     super::name::branch_name_ok(&branch).map_err(|e| e.to_string())?;
     if held_elsewhere(clone, folder, &branch) {
         return Err(format!(
-            "{} is checked out in another worktree (or that could not be told), so it is not \
+            "{} is checked out in another branch folder (or that could not be told), so it is not \
              this folder's to adopt",
             shown_name(&branch)
         ));
@@ -455,7 +455,7 @@ pub fn held(root: &Path, git_dir: &Path, folder: &Path, on: &str) -> Result<Opti
     let own = own_branch(root, git_dir, folder)?;
     if head != format!("ref: refs/heads/{}", own.branch) || on != own.branch {
         return Err(format!(
-            "this folder (the piece) was cut for branch {} and its HEAD names {}, so purlis \
+            "this folder was cut for branch {} and its HEAD names {}, so purlis \
              will not run git on it for a chat. Nothing was run. Put the folder back on its own \
              branch from your own terminal",
             shown_name(&own.branch),
@@ -593,14 +593,18 @@ mod tests {
         std::fs::remove_file(git_dir.join("Orig_Head")).unwrap();
 
         std::fs::write(git_dir.join("refs/bisect/bad"), "0\n").unwrap();
-        assert!(refused(&git_dir).unwrap_err().contains("per-worktree ref"));
+        assert!(
+            refused(&git_dir)
+                .unwrap_err()
+                .contains("ref kept for this folder alone")
+        );
         std::fs::remove_file(git_dir.join("refs/bisect/bad")).unwrap();
 
         std::fs::write(git_dir.join("config.worktree"), "[core]\n").unwrap();
         assert!(
             refused(&git_dir)
                 .unwrap_err()
-                .contains("per-worktree git config")
+                .contains("git config kept for this folder alone")
         );
     }
 }
