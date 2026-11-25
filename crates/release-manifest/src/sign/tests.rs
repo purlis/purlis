@@ -80,3 +80,52 @@ fn a_runner_binary_is_signed_only_under_a_version_it_can_be_published_under() {
     assert!(signed_runner(b"x", target, &secret, None, "../1.4.0", 1).is_err());
     assert!(signed_runner(b"x", target, "not base64!", None, "1.4.0", 1).is_err());
 }
+
+#[test]
+fn an_updater_archive_signed_with_the_updaters_key_is_one_the_release_takes_for_that_version() {
+    // The release's own check (`assemble`) is the judge: the signature verifies against the key
+    // the app ships and names the version the manifest announces, for the macOS entry that this
+    // signer makes and for a Linux one made the way the bundler makes it.
+    for password in [None, Some("hunter2")] {
+        let (secret, public) = a_key(password);
+        let archive = b"the .app.tar.gz of a Developer ID signed bundle";
+        let signature =
+            signed_updater_archive(archive, &secret, password, "0.5.2-dev.9", 1_790_077_121)
+                .unwrap();
+        let entries: Vec<crate::Entry> = crate::TARGETS
+            .iter()
+            .map(|target| crate::Entry {
+                target: (*target).to_owned(),
+                url: format!("https://example.test/{target}"),
+                signature: signature.clone(),
+                artifact: archive.to_vec(),
+            })
+            .collect();
+        crate::assemble(
+            crate::Channel::Dev,
+            &public,
+            "0.5.2-dev.9",
+            "2026-11-25T00:00:00Z",
+            "",
+            &entries,
+        )
+        .expect("the release takes what this signer signed");
+        // Never for another version than it was signed for.
+        let refused = crate::assemble(
+            crate::Channel::Dev,
+            &public,
+            "0.5.2-dev.10",
+            "2026-11-25T00:00:00Z",
+            "",
+            &entries,
+        );
+        assert!(refused.is_err(), "a signature of another version");
+    }
+}
+
+#[test]
+fn an_updater_archive_is_signed_only_under_a_version_it_can_be_published_under() {
+    let (secret, _) = a_key(None);
+    assert!(signed_updater_archive(b"x", &secret, None, "../1.4.0", 1).is_err());
+    assert!(signed_updater_archive(b"x", "not base64!", None, "1.4.0", 1).is_err());
+}

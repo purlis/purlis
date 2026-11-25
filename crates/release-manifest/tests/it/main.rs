@@ -31,6 +31,7 @@ mod every_published_build_carries_its_provenance;
 mod every_release_carries_its_sbom;
 mod no_release_build_turns_on_the_test_fence;
 mod the_app_keeps_the_hardened_runtime;
+mod the_developer_id_key_is_imported_on_a_hosted_runner_only;
 mod the_engine_manifest_is_signed_on_main_with_least_privilege;
 mod the_forge_nightly_runs_live_with_least_privilege;
 mod the_images_are_checked_signed_and_public;

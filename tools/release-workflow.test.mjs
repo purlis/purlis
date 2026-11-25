@@ -340,7 +340,7 @@ test("plan asks whether the dev channel already serves this commit or a later on
   assert.equal(value(job("build"), 4, "if"), "needs.keys.outputs.skip != 'true'");
   assert.equal(
     value(job("publish"), 4, "needs"),
-    "[gate, plan, keys, build, runner-binaries, manifest, provenance]",
+    "[gate, plan, keys, build, sign-macos, runner-binaries, manifest, provenance]",
   );
 });
 
@@ -385,6 +385,7 @@ test("every job has a deadline, so a hung one cannot hold the dev builds' group 
     "plan",
     "keys",
     "build",
+    "sign-macos",
     "runner-image",
     "runner-image-signature",
     "runner-binary-aarch64",
