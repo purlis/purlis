@@ -388,3 +388,51 @@ fn the_refusal_says_what_to_do_instead() {
     );
     assert!(said.contains("this chat's own branches"), "{said}");
 }
+
+#[test]
+fn a_gitlab_graphql_merge_request_from_the_default_branch_is_refused_inline_and_by_variable() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let send = |query: &str, variables: serde_json::Value| {
+        s.send(
+            "POST",
+            "gitlab.com",
+            "/api/graphql",
+            &graphql(query, variables),
+        )
+    };
+    let inline = |source: &str| {
+        send(
+            &format!(
+                "mutation {{ mergeRequestCreate(input: {{projectPath: \"group/proj\", \
+                 sourceBranch: \"{source}\", targetBranch: \"work\", title: \"t\"}}) \
+                 {{ errors }} }}"
+            ),
+            serde_json::json!({}),
+        )
+    };
+    let by_variable = |source: &str| {
+        send(
+            "mutation($input: MergeRequestCreateInput!) { \
+             mergeRequestCreate(input: $input) { errors } }",
+            serde_json::json!({"input": {
+                "projectPath": "group/proj", "sourceBranch": source,
+                "targetBranch": "work", "title": "t"}}),
+        )
+    };
+    for source in ["main", "Main", "refs/heads/main"] {
+        for (how, out) in [
+            ("inline", inline(source)),
+            ("variable", by_variable(source)),
+        ] {
+            assert!(
+                is_refused(&out, Refusal::ProtectedPullHead),
+                "{how} {source}: {out:?}"
+            );
+        }
+    }
+    for source in ["work", "release/1.2"] {
+        assert!(forwarded(&inline(source)), "inline {source}");
+        assert!(forwarded(&by_variable(source)), "variable {source}");
+    }
+}

@@ -727,7 +727,9 @@ fn on_one_link_within<T>(
         .build()
         .map_err(|why| format!("the link could not be started: {why}"))?;
     runtime.block_on(async move {
-        let mut links = to.keep();
+        let step = purlis_session_protocol::steps::begin_in("first_link", &to.pool);
+        // The link's task is begun inside the step, so what it runs names it its parent.
+        let mut links = step.inside(|| to.keep());
         // A link made anew: the connector's check of the container, `docker exec` of the
         // runner's `purlis bridge`, and the handshake, all within this.
         let linked = tokio::time::timeout(FIRST_LINK_WITHIN, links.next())
@@ -735,6 +737,7 @@ fn on_one_link_within<T>(
             .map_err(|_| LATE.to_owned())?;
         let client = match linked {
             Some(hostlink::Linked::Up(link)) => {
+                step.done();
                 Ok(purlis_session_protocol::session::Client::new(*link).0)
             }
             Some(hostlink::Linked::Down(down)) => Err(with_a_way_on(&to.pool, down)),
