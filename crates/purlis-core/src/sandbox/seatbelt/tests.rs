@@ -223,6 +223,30 @@ fn a_hook_socket_in_the_per_user_fallback_folder_is_never_the_wrapped_chat_s_to_
     }
 }
 
+/// The plane's key signs the person's own `policy why` ([`crate::hookwire::PersonWhyAsk`]), so a
+/// chat's profile denies reading it (and writing or linking it), under every spelling of the
+/// state folder, wherever it is.
+#[test]
+fn a_chats_profile_denies_reading_the_plane_key_that_signs_the_persons_ask() {
+    use crate::sandbox::seatbelt::{either_case, escaped, string, vaults_everywhere_rules};
+    let rules = vaults_everywhere_rules().expect("rules");
+    for state in crate::names::STATE_DIR.spellings() {
+        let regex = format!(
+            "^/(.*/)?{}$",
+            either_case(&format!(
+                "{}/{}",
+                escaped(state),
+                escaped(crate::secrets::fingerprint::KEY_FILE)
+            ))
+        );
+        let rule = format!(
+            "(deny file-read* file-write* file-link (regex {}))",
+            string(&regex).expect("a string")
+        );
+        assert!(rules.contains(&rule), "{rule} is not among {rules:?}");
+    }
+}
+
 /// `tools/seatbelt-case.sh` measures the rules purlis writes (#2071): each `cased_` rule in it is
 /// one the core generates, word for word, so the measurement is of the rules that ship.
 #[test]

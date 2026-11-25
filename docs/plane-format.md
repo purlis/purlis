@@ -5841,6 +5841,13 @@ line carries): `--env NAME=<key>`, `--file ENVVAR=<key>` (0600 temp file, prefix
   (`charter/secrets/fingerprint.py:94`, `:111`). purlis (#434) replaces the key whole
   (temp beside, created 0600 and read back, fsync, rename) and refuses a key that is a
   symlink; a crash mid-write leaves the old file.
+- **Also signs the person's own `purlis policy why`** (M75-18, purlis only): the CLI seals the
+  ask's other fields under a key derived from `fingerprint.key` for the purpose `person-why`
+  (`fingerprint::seal`) and the app checks the seal (`seal_with_the_key_there`, which never makes
+  the key) before it answers `PersonWhy` (`PersonWhyAsk::credential`). No chat's sandbox reads the
+  key (seatbelt, Linux and Claude Code's `denyRead` all name it under every state-folder spelling),
+  so a process that left its chat's tree by double-fork and `setsid` still cannot sign. No new file,
+  so no new tier.
 - **Fingerprint format on output:** `fp:` + first 12 hex chars of
   `HMAC-SHA256(key, value.encode("utf-8"))` (`charter/secrets/fingerprint.py:134`). The
   masked line is `<size band> · fp:<12 hex>`, or just the band when no key can be made

@@ -206,12 +206,14 @@ fn refusal(action: &str, state: DenyState) -> Decision {
         lifted: Vec::new(),
         asked: Vec::new(),
         lock: None,
+        lock_level: None,
         grant: None,
         unasked: None,
         keep: None,
         timed: None,
         lifted_scopes: None,
         asked_scopes: None,
+        overrode: Vec::new(),
         deny_state: Some(state),
     }
 }
