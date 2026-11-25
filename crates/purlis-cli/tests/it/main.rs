@@ -110,6 +110,7 @@ mod plane_resolution;
 mod plane_root;
 mod plugin_install;
 mod policy_show_default_prints_the_shipped_default;
+mod policy_why_answers_without_running_anything;
 mod pool_setup;
 mod profile_create;
 mod profile_list;

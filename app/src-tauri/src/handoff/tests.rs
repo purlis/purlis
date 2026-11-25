@@ -3310,6 +3310,8 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::PolicyLog(_) => 27,
             Ask::Decide(_) => 28,
             Ask::RemoteRefs(_) => 29,
+            Ask::Why(_) => 30,
+            Ask::PersonWhy(_) => 31,
         }
     }
     let asks = vec![
@@ -3501,10 +3503,33 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             chat,
             url: "https://github.com/acme/app.git".to_owned(),
         }),
+        // Why the host decides an action as it does (M75 slice 18): moves nothing.
+        Ask::Why(purlis_core::hookwire::WhyAsk {
+            chat,
+            action: "merge".to_owned(),
+            kind: "Branch".to_owned(),
+            id: "acme/web#12".to_owned(),
+            cwd: None,
+        }),
+        // The person's own, asked in no chat: moves nothing either.
+        Ask::PersonWhy(purlis_core::hookwire::PersonWhyAsk {
+            action: "merge".to_owned(),
+            kind: "Branch".to_owned(),
+            id: "acme/web#12".to_owned(),
+            cwd: None,
+            chat: None,
+            workspace: None,
+            persona: None,
+            unattended: false,
+            sandbox: None,
+            depth: None,
+            policy: None,
+            credential: None,
+        }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=29).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=31).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 
@@ -16066,4 +16091,77 @@ fn a_hook_asking_for_the_refs_of_a_chat_with_no_route_is_told_no() {
         remote_refs_answer(987_654, "https://github.com/acme/app.git"),
         Answer::No { .. }
     ));
+}
+
+#[test]
+fn the_app_answers_a_chats_why_and_the_persons_from_what_it_records() {
+    use purlis_core::hookwire::{PersonWhyAsk, WhyAsk};
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_on_work(&held, &plane.root);
+    let why_ask = |chat: u32| WhyAsk {
+        chat,
+        action: "merge".to_owned(),
+        kind: "Branch".to_owned(),
+        id: "acme/web#main".to_owned(),
+        cwd: None,
+    };
+    // A chat open here is answered, by the app's record of it.
+    let Answer::Why(chat_why) = crate::decisions::why(&held, &why_ask(asking)) else {
+        panic!("an open chat is answered");
+    };
+    assert!(!chat_why.decision.deciding.is_empty(), "{chat_why:?}");
+    assert_eq!(chat_why.sealed_unread, None);
+    // One this app does not have open is refused, and nothing is guessed.
+    assert!(matches!(
+        crate::decisions::why(&held, &why_ask(asking + 99)),
+        Answer::No { .. }
+    ));
+    let person = |chat: Option<u32>, workspace: Option<&str>, policy: Option<&str>| {
+        crate::decisions::why_for_person(
+            &held,
+            &PersonWhyAsk {
+                action: "merge".to_owned(),
+                kind: "Branch".to_owned(),
+                id: "acme/web#main".to_owned(),
+                cwd: None,
+                chat,
+                workspace: workspace.map(str::to_owned),
+                persona: None,
+                unattended: false,
+                sandbox: None,
+                depth: None,
+                policy: policy.map(str::to_owned),
+                credential: None,
+            },
+        )
+    };
+    // The person, in no chat, is answered from the app's own read of the sealed side.
+    let Answer::Why(by_person) = person(None, Some("web"), None) else {
+        panic!("the person is answered");
+    };
+    assert_eq!(by_person.decision.deciding, chat_why.decision.deciding);
+    assert_eq!(by_person.sealed_unread, None);
+    // `--chat N` is the app's record of chat N: the same answer as that chat's own.
+    let Answer::Why(as_chat) = person(Some(asking), None, None) else {
+        panic!("a chat's facts are looked up");
+    };
+    assert_eq!(as_chat.decision.after_mode, chat_why.decision.after_mode);
+    // A chat that is not open, and a flag beside `--chat`, are refused.
+    assert!(matches!(
+        person(Some(asking + 99), None, None),
+        Answer::No { .. }
+    ));
+    assert!(matches!(
+        person(Some(asking), Some("web"), None),
+        Answer::No { .. }
+    ));
+    // A policy that is no file and no branch is refused with the name.
+    let Answer::No { why } = person(None, None, Some("nope")) else {
+        panic!("no such policy");
+    };
+    assert!(why.contains("nope"), "{why}");
 }

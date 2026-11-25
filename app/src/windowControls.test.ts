@@ -151,6 +151,9 @@ const UNLINKED: Readonly<Record<string, string>> = {
   // The deny state's refusals say what ends it: Accept on the project's policy, which the project
   // policy Notice draws beside its press (`ProjectPolicyNotice.tsx`, M75-15).
   "crates/purlis-core/src/policy/deny_state.rs: Accept": BESIDE,
+  // `policy why`'s dry run says what the policy in force enforces until Accept is pressed: the
+  // same Accept, on the project policy Notice (M75-18).
+  "crates/purlis-core/src/policy/why.rs: Accept": BESIDE,
   "crates/purlis-core/src/start.rs: Accept": BESIDE,
   "crates/purlis-core/src/secrets/vaultcmd.rs: Allow": CHAT,
   "crates/purlis-core/src/settings/hosts.rs: Confirm": BESIDE,
