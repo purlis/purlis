@@ -214,6 +214,27 @@ impl World {
         )
     }
 
+    /// [`Self::recording_with_dispatches`], the repos also protecting `names` exactly, as the app
+    /// wires a project's `[risk] protected_branches` (`forgeroute`'s `repos`).
+    pub fn recording_with_dispatches_protecting(
+        config: std::path::PathBuf,
+        project: std::path::PathBuf,
+        names: &[&str],
+    ) -> Self {
+        let repos = Self::default_repos()
+            .into_iter()
+            .map(|repo| repo.with_protected_branches(names))
+            .collect();
+        Self::build(
+            repos,
+            Arc::new(purlis_core::forge::pin::NoPin),
+            None,
+            Some(config),
+            Some(project),
+            None,
+        )
+    }
+
     /// [`Self::recording_to`], where an update of a branch the chat has no record of raises the
     /// ask to let it push, in the project at `project`, as the app wires it
     /// ([`purlis_core::windowonly::PushAsks`]): the chat is session [`SESSION`] of that project.
@@ -257,21 +278,23 @@ impl World {
                     branch,
                     &|owner| {
                         dispatches.as_ref().is_some_and(|project| {
-                            purlis_core::dispatchrecord::dispatched_by(
-                                &purlis_core::dispatchrecord::list(project),
+                            purlis_core::dispatchrecord::lineage_allows(
+                                project,
                                 "chat-listener",
                                 owner,
+                                branch,
                             )
                         })
                     },
                 )
             }));
             proxy = proxy.with_created(Box::new(move |created| {
-                purlis_core::forge::createdbranches::record(
+                purlis_core::forge::createdbranches::record_via(
                     &config,
                     PROJECT_ID,
                     "chat-listener",
                     created,
+                    Some(purlis_core::forge::createdbranches::Via::Route),
                 )
                 .expect("the record is written");
             }));

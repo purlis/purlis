@@ -34,7 +34,7 @@ use graphql_parser::query::{
 use serde_json::Value as Json;
 
 use super::commands;
-use super::policy::{Class, ObjectRepo, Refusal};
+use super::policy::{Class, ObjectRepo, OwnsHead, PullRef, Refusal};
 use super::repo::{AllowedRepo, Kind, normalise_repo_path};
 use super::rest;
 use super::schema::{self, Ty};
@@ -241,6 +241,7 @@ pub(crate) fn decide<'a>(
     repos: &[&'a AllowedRepo],
     body: &[u8],
     objects: &dyn ObjectRepo,
+    owns: OwnsHead<'_>,
     merging: bool,
 ) -> Result<Decided<'a>, Refusal> {
     if body.len() > MAX_BODY {
@@ -275,6 +276,7 @@ pub(crate) fn decide<'a>(
         kind,
         repos,
         objects,
+        owns,
         merging,
         fragments,
         touched: std::cell::RefCell::new(Vec::new()),
@@ -300,7 +302,22 @@ pub(crate) fn decide<'a>(
                     defaults: defaults(defs),
                 };
                 if is_mutation {
-                    class = ctx.check_mutation(selection_set, &vars)?;
+                    class = ctx
+                        .check_mutation(selection_set, &vars)
+                        .map_err(|refusal| {
+                            // Only these two have a REST route to be told of (`Refusal::advice`).
+                            let names_one = selection_set.items.iter().any(|s| {
+                                matches!(s, Selection::Field(f) if matches!(
+                                    f.name.as_str(),
+                                    "createPullRequest" | "updatePullRequestBranch"
+                                ))
+                            });
+                            if refusal == Refusal::GraphqlOtherRepo && names_one {
+                                Refusal::GraphqlPullRequestOtherRepo
+                            } else {
+                                refusal
+                            }
+                        })?;
                 } else {
                     ctx.check_query(selection_set, &vars)?;
                 }
@@ -316,6 +333,64 @@ pub(crate) fn decide<'a>(
     Ok(Decided { class, touched })
 }
 
+/// The index in `repos` of the one repo a search query names, or `None` when it is not a search
+/// of exactly one of them (GraphQL's `search(query:)` and REST's `GET /search/issues?q=`).
+pub(crate) fn search_repo(query: &str, repos: &[&AllowedRepo]) -> Option<usize> {
+    // A zero-width space or a control character is a separator or nothing to the forge and a
+    // letter of a word to this reading: only printable ASCII and the space are read.
+    if !query.bytes().all(|b| b == b' ' || b.is_ascii_graphic()) {
+        return None;
+    }
+    // A quote hides a qualifier from this reading and not from the forge's.
+    if query.contains(['"', '\'', '\\', '`']) {
+        return None;
+    }
+    // Without a boolean operator or a group, every other term only narrows the one repo's
+    // results; with one, `repo:a OR is:issue` widens them to the whole forge.
+    if query.contains(['(', ')']) {
+        return None;
+    }
+    let mut paths = Vec::new();
+    for token in query.split_whitespace() {
+        if ["or", "and", "not"]
+            .iter()
+            .any(|op| token.eq_ignore_ascii_case(op))
+        {
+            return None;
+        }
+        // `|`, `||`, `&` and `&&` are not the forge's operators as far as is known, but a token
+        // of nothing else is refused rather than guessed at.
+        if token.chars().all(|c| c == '|' || c == '&') {
+            return None;
+        }
+        let lower = token
+            .trim_start_matches(['(', '-', '+', '!'])
+            .to_ascii_lowercase();
+        if let Some(path) = lower.strip_prefix("repo:") {
+            // The qualifier is read only as the forge surely reads it: the token starts with
+            // `repo:` itself. A prefix (`+repo:`, `-repo:`, `!repo:`) may make it plain text to
+            // the forge, which would leave the search unscoped.
+            if !token.to_ascii_lowercase().starts_with("repo:")
+                || path.contains(['(', ')', ',', '*'])
+            {
+                return None;
+            }
+            paths.push(path.to_string());
+        } else if ["org:", "user:", "owner:", "team:", "enterprise:"]
+            .iter()
+            .any(|q| lower.starts_with(q))
+        {
+            return None;
+        }
+    }
+    let [path] = paths.as_slice() else {
+        return None;
+    };
+    // The recorded path as it is, case aside: not what `normalise_repo_path` makes of a
+    // prefix or a `.git` suffix, which the forge's search does not read as the repo.
+    repos.iter().position(|r| r.path.eq_ignore_ascii_case(path))
+}
+
 fn defaults<'a>(defs: &[VariableDefinition<'a, String>]) -> Vec<(String, Value<'a, String>)> {
     defs.iter()
         .filter_map(|d| d.default_value.clone().map(|v| (d.name.clone(), v)))
@@ -326,6 +401,8 @@ struct Context<'a, 'd> {
     kind: Kind,
     repos: &'a [&'a AllowedRepo],
     objects: &'a dyn ObjectRepo,
+    /// Whether the chat may write to a pull request's head (update-branch).
+    owns: OwnsHead<'a>,
     /// `guards.merge` lets a merge mutation ([`merge_mutation`]) through.
     merging: bool,
     fragments: HashMap<&'d str, &'d FragmentDefinition<'d, String>>,
@@ -448,10 +525,18 @@ impl<'d> Context<'_, 'd> {
                 return Err(refuse);
             }
         }
-        let is_issue = field
-            .arguments
-            .iter()
-            .any(|(n, v)| n == "type" && matches!(v, Value::Enum(e) if e == "ISSUE"));
+        // `gh issue list --search` sends the type as a variable (`$type: SearchType!`, given
+        // `"ISSUE"`), which is read by its value like the query's.
+        let is_issue = field.arguments.iter().any(|(n, v)| {
+            n == "type"
+                && match v {
+                    Value::Enum(e) => e == "ISSUE",
+                    Value::Variable(_) => {
+                        matches!(vars.resolve(v), Ok(Val::Str(s)) if s == "ISSUE")
+                    }
+                    _ => false,
+                }
+        });
         if !is_issue {
             return Err(refuse);
         }
@@ -465,53 +550,7 @@ impl<'d> Context<'_, 'd> {
                 _ => None,
             })
             .ok_or(refuse)?;
-        // A zero-width space or a control character is a separator or nothing to the forge and a
-        // letter of a word to this reading: only printable ASCII and the space are read.
-        if !query.bytes().all(|b| b == b' ' || b.is_ascii_graphic()) {
-            return Err(refuse);
-        }
-        // A quote hides a qualifier from this reading and not from the forge's.
-        if query.contains(['"', '\'', '\\', '`']) {
-            return Err(refuse);
-        }
-        // Without a boolean operator or a group, every other term only narrows the one repo's
-        // results; with one, `repo:a OR is:issue` widens them to the whole forge.
-        if query.contains(['(', ')']) {
-            return Err(refuse);
-        }
-        let mut repos = Vec::new();
-        for token in query.split_whitespace() {
-            if ["or", "and", "not"]
-                .iter()
-                .any(|op| token.eq_ignore_ascii_case(op))
-            {
-                return Err(refuse);
-            }
-            let lower = token
-                .trim_start_matches(['(', '-', '+', '!'])
-                .to_ascii_lowercase();
-            if let Some(path) = lower.strip_prefix("repo:") {
-                if token.starts_with(['-', '!']) || path.contains(['(', ')', ',', '*']) {
-                    return Err(refuse);
-                }
-                repos.push(path.to_string());
-            } else if ["org:", "user:", "owner:", "team:", "enterprise:"]
-                .iter()
-                .any(|q| lower.starts_with(q))
-            {
-                return Err(refuse);
-            }
-        }
-        let [path] = repos.as_slice() else {
-            return Err(refuse);
-        };
-        // The recorded path as it is, case aside: not what `normalise_repo_path` makes of a
-        // prefix or a `.git` suffix, which the forge's search does not read as the repo.
-        match self
-            .repos
-            .iter()
-            .position(|r| r.path.eq_ignore_ascii_case(path))
-        {
+        match search_repo(&query, self.repos) {
             Some(at) => {
                 self.touch(at);
                 Ok(())
@@ -675,14 +714,64 @@ impl<'d> Context<'_, 'd> {
                     {
                         return Err(Refusal::GraphqlOtherRepo);
                     }
+                    // A head that is the default branch makes update-branch merge the base into
+                    // it on the forge's side (#7494).
+                    if heads
+                        .iter()
+                        .any(|head| self.repos.iter().any(|r| rest::head_is_default(head, r)))
+                    {
+                        return Err(Refusal::ProtectedPullHead);
+                    }
                 }
             }
             self.check_scoped(&ids)?;
+            if field.name == "updatePullRequestBranch" {
+                self.check_update_branch_head(&field.arguments, vars)?;
+            }
             // What a mutation asks back is read like any query: it may not walk out of the repo.
             self.walk(&Ty::Obj("Payload"), &field.selection_set, 0)?;
             class = Some(Class::GraphqlMutation(field.name.clone()));
         }
         class.ok_or(Refusal::GraphqlUnknownMutation)
+    }
+
+    /// `updatePullRequestBranch` merges (or, with `updateMethod: REBASE`, rebases) the base into
+    /// the pull request's **head**: that head must be a branch of the repo the pull request is
+    /// in that this chat put its own tip on, at the tip the forge reports now ([`OwnsHead`], the
+    /// push rule's record; #7526). A head the forge cannot place is refused. Every
+    /// `pullRequestId` of the mutation is asked.
+    fn check_update_branch_head(
+        &self,
+        arguments: &[(String, Value<'d, String>)],
+        vars: &Vars<'_>,
+    ) -> Result<(), Refusal> {
+        let mut pulls = Vec::new();
+        for (_, value) in arguments {
+            let val = vars
+                .resolve(value)
+                .map_err(|()| Refusal::ProtectedPullHead)?;
+            collect_named("pullRequestId", &val, &mut pulls);
+        }
+        if pulls.is_empty() {
+            return Err(Refusal::ProtectedPullHead);
+        }
+        for id in &pulls {
+            let ours = self.repos.iter().find(|r| {
+                self.objects
+                    .repo_of(r.kind, &r.host, id)
+                    .is_some_and(|path| r.path == path)
+            });
+            let head = ours.and_then(|r| {
+                self.objects
+                    .pull_head(r.kind, &r.host, PullRef::Node(id))
+                    .map(|head| (r, head))
+            });
+            match head {
+                Some((r, head)) if (self.owns)(r, &head) => {}
+                _ => return Err(Refusal::ProtectedPullHead),
+            }
+        }
+        Ok(())
     }
 
     /// Every id the mutation names is tied to an allowed repo, and it names at least one.

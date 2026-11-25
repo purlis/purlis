@@ -413,8 +413,9 @@ pub fn keep_push_blocked(root: &Path, session: u32, control: &Control) -> Result
 ///
 /// **Refused** (and nothing recorded) unless the ask is waiting for `session` in the project at
 /// `root`: the control is a key to an ask this process raised, so another project's ask, one that
-/// was answered, or one a chat made up grants nothing; unless the project has its stable id; and
-/// unless the forge answers a full commit id. The project in the record is `root`'s own. Like
+/// was answered, or one a chat made up grants nothing; unless the project has an id to hold it by
+/// ([`crate::scaffold::planefile::id_to_hold_by`]: its stored one, else one derived from its path);
+/// and unless the forge answers a full commit id. The project in the record is `root`'s own. Like
 /// every provisioning act it takes the person's scope ([`HostScope`]), which no chat's process
 /// tree can claim.
 pub fn let_chat_push(
@@ -438,14 +439,14 @@ pub fn let_chat_push(
     if !is_waiting(root, session, control) {
         return Err("This ask is not waiting any more.".to_owned());
     }
-    let project_id = crate::scaffold::planefile::project_id(root).ok_or_else(|| {
-        "This project has no stored id, so a branch cannot be recorded.".to_owned()
-    })?;
+    // The id the route reads the record by ([`crate::scaffold::planefile::id_to_hold_by`]).
+    let project_id = crate::scaffold::planefile::id_to_hold_by(root)
+        .map_err(|why| format!("This project has no id to record a branch under ({why})."))?;
     let tip = read_tip(host, repo, branch)?;
     if !crate::forge::createdbranches::is_commit_id(&tip) {
         return Err(format!("The forge did not give a commit for {branch}."));
     }
-    crate::forge::createdbranches::record(
+    crate::forge::createdbranches::record_via(
         config_root,
         &project_id,
         chat,
@@ -456,6 +457,7 @@ pub fn let_chat_push(
             branch: branch.clone(),
             tip: tip.clone(),
         }],
+        Some(crate::forge::createdbranches::Via::Allow),
     )
     .map_err(|why| format!("purlis could not record the branch: {why}"))?;
     pressed(root, control);

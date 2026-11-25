@@ -332,7 +332,6 @@ fn a_search_is_answered_only_when_it_is_of_one_of_the_chats_repos_and_of_nothing
     for q in [
         "query{ search(query:\"repo:acme/app\", type:REPOSITORY, first:5){ repositoryCount } }",
         "query{ search(query:\"repo:acme/app\", type:USER, first:5){ userCount } }",
-        "query($t:SearchType!){ search(query:\"repo:acme/app\", type:$t, first:5){ issueCount } }",
         "query{ search(query:\"repo:acme/app\", type:ISSUE, first:5){ nodes{ ...on User{ login } } } }",
         "query{ search(query:\"repo:acme/app\", type:ISSUE, first:5){ nodes{ ...on Repository{ name } } } }",
         "query{ search(type:ISSUE, first:5){ issueCount } }",

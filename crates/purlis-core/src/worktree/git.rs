@@ -2326,7 +2326,12 @@ pub(crate) fn run_until(
         Err(answer) => return Ok(as_text(answer)),
     };
     counted(dir, args, || {
-        let raw = wait_raw_until(spawn_with(dir, args, &extra)?, timeout, Some(called_off))?;
+        let raw = wait_raw_until(
+            spawn_with(dir, args, &extra)?,
+            timeout,
+            Some(called_off),
+            None,
+        )?;
         Ok(Run {
             code: raw.code,
             out: String::from_utf8_lossy(&raw.out).into_owned(),
@@ -2419,7 +2424,7 @@ fn capped(
                 let _ = out_tx.send(heard);
             });
         }
-        let raw = wait_raw_until(child, timeout, Some(&over))?;
+        let raw = wait_raw_until(child, timeout, Some(&over), None)?;
         // The reader's answer decides, never the flag alone: git can exit before the reader
         // has counted its last chunk, and the flag read then let a listing past the cap
         // through, cut short (SK-43, #3115). A git that exited is heard in full, as
@@ -2762,24 +2767,37 @@ pub fn run_network_within(
     args: &[&str],
     timeout: Duration,
 ) -> Result<Run, GitUnavailable> {
-    run_network_shaped(dir, helper, args, Vec::new(), false, timeout, None)
+    run_network_shaped(dir, helper, args, Vec::new(), false, timeout, (None, None))
 }
 
 /// What reads git's stderr as it is written: each chunk, as text. For the one fetch whose
-/// `--progress` lines say how far a first fill has got ([`run_network_watching`]).
+/// `--progress` lines say how far a first fill has got ([`run_network_stalling`]).
 pub type Watch = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
 
-/// [`run_network_within`], with `watch` given git's stderr as it is written, so a long fetch's
-/// `--progress` lines are seen while it runs and not after. Every other rule of [`run_network`]
-/// holds, and the whole of stderr is still in the answer.
-pub fn run_network_watching(
+/// [`run_network_within`] that also ends git when it has written **nothing to either pipe for
+/// `stall`**: a fetch run with `--progress` writes as it receives and as it resolves deltas, so a
+/// long fetch that is moving is never cut at `timeout` (its upper bound), and one that is stuck
+/// is cut after `stall` and not after hours (#7587). Nothing of what git wrote is read for a
+/// decision: only that it wrote. `watch`, where given, is handed each chunk of stderr as git
+/// writes it, so a long fetch's `--progress` lines are seen while it runs and not after; the
+/// whole of stderr is still in the answer.
+pub fn run_network_stalling(
     dir: &Path,
     helper: Option<&str>,
     args: &[&str],
     timeout: Duration,
-    watch: Watch,
+    stall: Duration,
+    watch: Option<Watch>,
 ) -> Result<Run, GitUnavailable> {
-    run_network_shaped(dir, helper, args, Vec::new(), false, timeout, Some(watch))
+    run_network_shaped(
+        dir,
+        helper,
+        args,
+        Vec::new(),
+        false,
+        timeout,
+        (Some(stall), watch),
+    )
 }
 
 /// [`run_network`] in **no repository at all**, for a call that names its remote by address and
@@ -2816,7 +2834,7 @@ pub fn run_network_in_no_repository_trusting_the_system(
         vec![("GIT_DIR".to_owned(), "/dev/null".into())],
         true,
         NETWORK,
-        None,
+        (None, None),
     )
 }
 
@@ -2827,7 +2845,7 @@ fn run_network_with(
     args: &[&str],
     more: Vec<(String, std::ffi::OsString)>,
 ) -> Result<Run, GitUnavailable> {
-    run_network_shaped(dir, helper, args, more, false, NETWORK, None)
+    run_network_shaped(dir, helper, args, more, false, NETWORK, (None, None))
 }
 
 /// [`run_network_with`], trusting only the system where `system_trust` says so ([`is_trust`]).
@@ -2838,7 +2856,7 @@ fn run_network_shaped(
     more: Vec<(String, std::ffi::OsString)>,
     system_trust: bool,
     timeout: Duration,
-    watch: Option<Watch>,
+    (stall, watch): (Option<Duration>, Option<Watch>),
 ) -> Result<Run, GitUnavailable> {
     let mut config: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
     // Under a chat's route there is no helper but the sentinel one it names, and none of the
@@ -2869,13 +2887,13 @@ fn run_network_shaped(
     };
     let started = Instant::now();
     let run = counted(dir, args, || {
-        let child = spawn_with(dir, args, &extra)?;
-        let raw = wait_raw_watched(child, timeout, None, watch)?;
-        Ok::<_, GitUnavailable>(Run {
-            code: raw.code,
-            out: String::from_utf8_lossy(&raw.out).into_owned(),
-            err: String::from_utf8_lossy(&raw.err).into_owned(),
-        })
+        Ok::<_, GitUnavailable>(as_text(wait_raw_watched(
+            spawn_with(dir, args, &extra)?,
+            timeout,
+            None,
+            stall,
+            watch,
+        )?))
     })?;
     // Listed once git has run (#959): a call refused before it started reached nobody. Each
     // place git sent it, read as git reads it (#1853, #1828).
@@ -3185,16 +3203,19 @@ pub(crate) fn wait(child: Child, timeout: Duration) -> std::io::Result<Run> {
 
 /// [`wait`], keeping the bytes.
 fn wait_raw(child: Child, timeout: Duration) -> std::io::Result<RawRun> {
-    wait_raw_until(child, timeout, None)
+    wait_raw_until(child, timeout, None, None)
 }
 
-/// [`wait_raw`], ending the child early too when `called_off` is raised.
+/// [`wait_raw`], ending the child early too when `called_off` is raised, or when `stall` is set
+/// and the child has written nothing to either pipe for that long (a fetch that reports its
+/// progress is moving while it writes; one that goes silent for `stall` is stuck).
 fn wait_raw_until(
     child: Child,
     timeout: Duration,
     called_off: Option<&AtomicBool>,
+    stall: Option<Duration>,
 ) -> std::io::Result<RawRun> {
-    wait_raw_watched(child, timeout, called_off, None)
+    wait_raw_watched(child, timeout, called_off, stall, None)
 }
 
 /// [`wait_raw_until`], handing `watch` each chunk of stderr as the child writes it.
@@ -3202,6 +3223,7 @@ fn wait_raw_watched(
     mut child: Child,
     timeout: Duration,
     called_off: Option<&AtomicBool>,
+    stall: Option<Duration>,
     watch: Option<Watch>,
 ) -> std::io::Result<RawRun> {
     // A caller that reads the output as it comes ([`run_capped`]) took it already.
@@ -3209,44 +3231,46 @@ fn wait_raw_watched(
     let mut stderr = child.stderr.take().expect("stderr is piped");
     let (out_tx, out_rx) = std::sync::mpsc::channel();
     let (err_tx, err_rx) = std::sync::mpsc::channel();
+    // Bytes written so far to either pipe: what the stall check watches.
+    let written = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let counted_out = written.clone();
     std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(mut stdout) = stdout {
-            let _ = stdout.read_to_end(&mut buf);
-        }
+        let buf = stdout
+            .map(|pipe| read_counting(pipe, &counted_out))
+            .unwrap_or_default();
         let _ = out_tx.send(buf);
     });
+    let counted_err = written.clone();
     std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let mut chunk = [0u8; 4096];
-        loop {
-            match stderr.read(&mut chunk) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => {
-                    buf.extend_from_slice(&chunk[..n]);
-                    if let Some(watch) = &watch {
-                        watch(&String::from_utf8_lossy(&chunk[..n]));
-                    }
-                }
-            }
-        }
-        let _ = err_tx.send(buf);
+        let _ = err_tx.send(read_counting_watching(
+            &mut stderr,
+            &counted_err,
+            watch.as_deref(),
+        ));
     });
 
-    let deadline = Instant::now() + timeout;
+    let started = Instant::now();
+    let deadline = started + timeout;
     let mut timed_out = false;
+    let mut stalled = false;
+    let (mut seen, mut moved_at) = (0, started);
     let code = loop {
-        match child.try_wait()? {
-            Some(status) => break status.code(),
-            None if Instant::now() >= deadline
-                || called_off.is_some_and(|off| off.load(Ordering::Relaxed)) =>
-            {
-                timed_out = Instant::now() >= deadline;
-                stop(&mut child);
-                break None;
-            }
-            None => std::thread::sleep(Duration::from_millis(10)),
+        if let Some(status) = child.try_wait()? {
+            break status.code();
         }
+        let now = Instant::now();
+        let total = written.load(Ordering::Relaxed);
+        if total != seen {
+            (seen, moved_at) = (total, now);
+        }
+        let silent = stall.is_some_and(|limit| now.duration_since(moved_at) >= limit);
+        if now >= deadline || silent || called_off.is_some_and(|off| off.load(Ordering::Relaxed)) {
+            timed_out = now >= deadline;
+            stalled = silent;
+            stop(&mut child);
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(10));
     };
 
     // A child that exited is waited for in full. One that was STOPPED may have left its own
@@ -3261,18 +3285,51 @@ fn wait_raw_watched(
     };
     let out = collect(out_rx);
     let mut err = collect(err_rx);
-    if timed_out {
+    if timed_out || stalled {
         // A stopped git says nothing of why, so a caller reading the first line of its stderr
         // would otherwise report a failure with no cause. The cause leads, for the same reason.
-        let mut said = format!(
-            "git took longer than {} s and was stopped\n",
-            timeout.as_secs()
-        )
+        let mut said = if stalled && !timed_out {
+            format!(
+                "git was silent for {} s and was stopped\n",
+                stall.map_or(0, |limit| limit.as_secs())
+            )
+        } else {
+            format!(
+                "git took longer than {} s and was stopped\n",
+                timeout.as_secs()
+            )
+        }
         .into_bytes();
         said.append(&mut err);
         err = said;
     }
     Ok(RawRun { code, out, err })
+}
+
+/// Reads `pipe` to its end, adding each chunk's size to `written` as it arrives.
+fn read_counting(pipe: impl Read, written: &std::sync::atomic::AtomicU64) -> Vec<u8> {
+    read_counting_watching(pipe, written, None)
+}
+
+/// [`read_counting`], handing `watch` each chunk as text.
+fn read_counting_watching(
+    mut pipe: impl Read,
+    written: &std::sync::atomic::AtomicU64,
+    watch: Option<&(dyn Fn(&str) + Send + Sync)>,
+) -> Vec<u8> {
+    let mut all = Vec::new();
+    let mut chunk = [0u8; 8192];
+    while let Ok(n) = pipe.read(&mut chunk) {
+        if n == 0 {
+            break;
+        }
+        all.extend_from_slice(&chunk[..n]);
+        written.fetch_add(n as u64, Ordering::Relaxed);
+        if let Some(watch) = watch {
+            watch(&String::from_utf8_lossy(&chunk[..n]));
+        }
+    }
+    all
 }
 
 #[cfg(test)]

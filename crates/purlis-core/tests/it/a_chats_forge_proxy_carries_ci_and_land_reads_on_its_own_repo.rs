@@ -227,12 +227,23 @@ fn opening_a_pull_request_and_an_issue_through_graphql_is_answered_on_the_chats_
     ] {
         assert!(matches!(query(&s, q), Outcome::Forward(_)), "{q}");
     }
-    for q in [
-        "mutation{ createPullRequest(input:{repositoryId:\"R_acme_other\", baseRefName:\"main\", headRefName:\"work\", title:\"t\"}){ pullRequest{ url } } }",
-        "mutation{ createIssue(input:{repositoryId:\"R_acme_other\", title:\"t\"}){ issue{ url } } }",
-        "mutation{ createPullRequest(input:{repositoryId:\"R_acme_app\", baseRefName:\"main\", headRefName:\"fork:work\", title:\"t\"}){ pullRequest{ url } } }",
+    // A pull request is refused with the kind that carries the REST route's advice; an issue has
+    // no such route, so it keeps the plain one. Either way a create on another repo stays refused.
+    for (q, refusal) in [
+        (
+            "mutation{ createPullRequest(input:{repositoryId:\"R_acme_other\", baseRefName:\"main\", headRefName:\"work\", title:\"t\"}){ pullRequest{ url } } }",
+            Refusal::GraphqlPullRequestOtherRepo,
+        ),
+        (
+            "mutation{ createIssue(input:{repositoryId:\"R_acme_other\", title:\"t\"}){ issue{ url } } }",
+            Refusal::GraphqlOtherRepo,
+        ),
+        (
+            "mutation{ createPullRequest(input:{repositoryId:\"R_acme_app\", baseRefName:\"main\", headRefName:\"fork:work\", title:\"t\"}){ pullRequest{ url } } }",
+            Refusal::GraphqlPullRequestOtherRepo,
+        ),
     ] {
         let out = query(&s, q);
-        assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{q}: {out:?}");
+        assert!(is_refused(&out, refusal), "{q}: {out:?}");
     }
 }

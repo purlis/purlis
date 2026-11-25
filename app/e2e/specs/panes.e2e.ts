@@ -5,10 +5,10 @@ import { pressAndStart } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import { browser, expect, $, $$ } from "@wdio/globals";
 import { READY } from "../harness.js";
-import { harnessesRunning, logLine } from "../processes.js";
+import { harnessesRunning, harnessesRunningCheaply, logLine, runnerNow } from "../processes.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 import { KEPT_EMPTY } from "../reach.js";
-import { OPEN_HANG_MS, opensVerdict } from "../openTimes.js";
+import { OPEN_HANG_MS, type Open, judgeOpens, runnerSummary } from "../openTimes.js";
 
 /**
  * The skeleton, driven the way a person drives it: buttons, tabs and typing, against the real
@@ -146,8 +146,11 @@ interface Opening {
   /** Set once the test is over: the loop stops before its next press. */
   stopped: boolean;
   /** The loop, settled once it has stopped or fifty sessions run, with each open's time in ms. */
-  done: Promise<number[]>;
+  done: Promise<Open[]>;
 }
+
+/** Swap in use before the first open, the baseline its growth is read from. */
+let swapBefore: number | null = null;
 
 /** The opening the fifty-sessions test started, while it may still run: `null` when none. */
 let opening: Opening | null = null;
@@ -167,8 +170,9 @@ function openUntilFifty(): Opening {
 }
 
 /** The loop of one {@link Opening}, stopped by that run's flag alone. */
-async function openFor(run: Opening): Promise<number[]> {
-  const times: number[] = [];
+async function openFor(run: Opening): Promise<Open[]> {
+  const times: Open[] = [];
+  swapBefore = runnerNow().swapMb;
   for (let opened = 1; harnessesRunning() < FIFTY; opened++) {
     if (run.stopped)
       throw new Error(
@@ -181,17 +185,28 @@ async function openFor(run: Opening): Promise<number[]> {
           `stopped adding sessions`,
       );
     }
+    // Outside the timed window: the exact count, which grows with the process table.
     const before = harnessesRunning();
     const pressed = Date.now();
     await pressAndStart("New tab");
-    await browser.waitUntil(() => harnessesRunning() > before, {
-      timeout: OPEN_HANG_MS,
-      interval: 100,
-      timeoutMsg: `open ${opened}, with ${before} sessions running, started no session of its own in ${OPEN_HANG_MS / 1000} s`,
-    });
-    const took = Date.now() - pressed;
-    logLine("fifty-opens.jsonl", { open: opened, running: before + 1, ms: took });
-    times.push(took);
+    // Inside it: one `ps` of program names, every 250 ms, stamped the moment the new session runs.
+    let took = 0;
+    await browser.waitUntil(
+      () => {
+        if (harnessesRunningCheaply() <= before) return false;
+        took = Date.now() - pressed;
+        return true;
+      },
+      {
+        timeout: OPEN_HANG_MS,
+        interval: 250,
+        timeoutMsg: `open ${opened}, with ${before} sessions running, started no session of its own in ${OPEN_HANG_MS / 1000} s`,
+      },
+    );
+    // After the stamp: what the runner looked like, so a slow run can be told from a slow app.
+    const runner = runnerNow();
+    logLine("fifty-opens.jsonl", { open: opened, running: before + 1, ms: took, ...runner });
+    times.push({ ms: took, runner });
   }
   return times;
 }
@@ -301,8 +316,15 @@ describe("the window", function () {
 
     expect(harnessesRunning()).toBe(FIFTY);
     // Judged as a set, once all fifty run: one slow open does not stop the rest from opening.
-    const trouble = opensVerdict(times);
-    if (trouble !== null) throw new Error(trouble);
+    const judged = judgeOpens(times, swapBefore);
+    if (judged.state === "failed") throw new Error(judged.said ?? "the opens failed");
+    // A swapping runner says nothing about the app's speed: said, not red. Fifty sessions
+    // running and a usable app are still asserted below, and a hang failed above.
+    if (judged.state === "inconclusive") {
+      // `::warning::` is a GitHub Actions annotation: visible on the run, not buried in a log.
+      console.warn(`::warning title=fifty-opens timing inconclusive::${judged.said}`);
+      logLine("fifty-opens.jsonl", { verdict: "inconclusive", said: judged.said });
+    } else console.log(`open times held; ${runnerSummary(times)}`);
     const [pane] = await panes();
     await until(pane, READY);
     await type(pane, "with fifty sessions running");

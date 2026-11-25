@@ -9,9 +9,9 @@
 //! builds them. A mutation on another repo's pull request or repository stays refused, and so
 //! does the write of an id nobody can place.
 
-use purlis_core::forge::proxy::{Outcome, Refusal, TokenKind};
+use purlis_core::forge::proxy::{Outcome, Refusal};
 
-use crate::support::forge_proxy::{Objects, Scene, graphql, is_refused};
+use crate::support::forge_proxy::{ObjectsWithHeads, Scene, graphql, is_refused};
 
 /// What `gh pr create --repo OWNER/REPO` sends first, captured from gh 2.69.0 (the repository and
 /// its fork parent, which are the same fragment).
@@ -49,12 +49,15 @@ const UPDATE_BRANCH: &str = "mutation PullRequestUpdateBranch($input: UpdatePull
     updatePullRequestBranch(input: $input) { pullRequest { id } } }";
 
 fn scene() -> Scene {
-    let mut objects = Objects::default();
-    objects.0.insert("PR_kwDO_app".into(), "acme/app".into());
+    // The pull request's head is what update-branch writes to: here a branch of the chat's repo
+    // that the chat made (its tip is `1` * 40, as the pull request's head is).
+    let mut objects =
+        ObjectsWithHeads::default().pull("acme/app", "PR_kwDO_app", 7, "acme/app", "fix");
     objects
+        .objects
         .0
         .insert("PR_kwDO_other".into(), "acme/other".into());
-    Scene::with(TokenKind::Oauth, objects)
+    Scene::tuned_owning(objects, &[("fix", &"1".repeat(40))], |proxy| proxy)
 }
 
 fn send(s: &Scene, query: &str, variables: serde_json::Value) -> Outcome {
@@ -111,7 +114,10 @@ fn gh_pr_create_on_the_chats_repo_is_answered_and_on_another_is_refused() {
     let out = send(&s, CREATE, input("R_acme_app"));
     assert!(matches!(out, Outcome::Forward(_)), "{out:?}");
     let out = send(&s, CREATE, input("R_acme_other"));
-    assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{out:?}");
+    assert!(
+        is_refused(&out, Refusal::GraphqlPullRequestOtherRepo),
+        "{out:?}"
+    );
 }
 
 #[test]
@@ -133,16 +139,24 @@ fn gh_pr_update_branch_on_the_chats_pull_request_is_answered_and_on_another_is_r
         assert!(matches!(out, Outcome::Forward(_)), "{method}: {out:?}");
     }
     let out = send(&s, UPDATE_BRANCH, input("PR_kwDO_other"));
-    assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{out:?}");
+    assert!(
+        is_refused(&out, Refusal::GraphqlPullRequestOtherRepo),
+        "{out:?}"
+    );
     // An id the forge cannot place fails closed.
     let out = send(&s, UPDATE_BRANCH, input("PR_kwDO_nobody"));
-    assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{out:?}");
+    assert!(
+        is_refused(&out, Refusal::GraphqlPullRequestOtherRepo),
+        "{out:?}"
+    );
 }
 
 #[test]
 fn a_refusal_as_another_repo_names_the_rest_routes_that_work() {
     purlis_core::unsteered!();
-    let said = Refusal::GraphqlOtherRepo.advice().expect("advice");
+    let said = Refusal::GraphqlPullRequestOtherRepo
+        .advice()
+        .expect("advice");
     assert!(said.contains("repos/OWNER/REPO/pulls -X POST"), "{said}");
     assert!(said.contains("pulls/N/update-branch"), "{said}");
 }

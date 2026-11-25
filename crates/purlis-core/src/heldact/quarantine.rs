@@ -30,7 +30,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::ci::GitTrees;
-use super::objectcache::{self, Fetch, Lease, ObjectCache, PushCache};
+use super::objectcache::{self, Fetch, Lease, ObjectCache, PushCache, Stage};
 use crate::diffscan::KNOWN_AT_MOST;
 use crate::mergehold::HeadSha;
 use crate::worktree::git;
@@ -147,9 +147,12 @@ impl FromForge {
                 self.helper.as_deref(),
                 into,
                 chunk,
-                "tips",
-                "git could not fetch the advertised tips from the forge",
+                (
+                    "tips",
+                    "git could not fetch the advertised tips from the forge",
+                ),
                 left(started, limits, bound),
+                None,
             ) {
                 Ok(()) => fetched_any = true,
                 Err(why) => {
@@ -161,9 +164,12 @@ impl FromForge {
                             self.helper.as_deref(),
                             into,
                             std::slice::from_ref(tip),
-                            "tips",
-                            "git could not fetch the advertised tip from the forge",
+                            (
+                                "tips",
+                                "git could not fetch the advertised tip from the forge",
+                            ),
                             left(started, limits, bound),
+                            None,
                         )
                         .is_ok()
                         {
@@ -216,9 +222,9 @@ fn fetch_into_refs(
     helper: Option<&str>,
     into: &Path,
     tips: &[HeadSha],
-    ref_dir: &str,
-    otherwise: &str,
+    (ref_dir, otherwise): (&str, &str),
     bound: Duration,
+    stage: Option<Stage>,
 ) -> Result<(), String> {
     fetch_specs(
         url,
@@ -227,7 +233,7 @@ fn fetch_into_refs(
         &ref_specs(tips, ref_dir),
         otherwise,
         bound,
-        None,
+        (stage, None),
     )
 }
 
@@ -237,9 +243,12 @@ fn ref_specs(tips: &[HeadSha], ref_dir: &str) -> Vec<String> {
         .collect()
 }
 
-/// One `git fetch` of `specs`. With `watch`, git is asked for its progress lines, which `watch`
-/// reads as they are written (a fill's: [`ObjectCache::sink`]); they are not an error's words, so
-/// a failure is told by git's `fatal:` or `error:` line.
+/// One `git fetch` of `specs`, in the `stage` of a first fill where there is one. With `watch`,
+/// git's progress lines are read as they are written (a fill's: [`ObjectCache::sink`]). git is
+/// always run with `--progress`: its writing is what the stall check reads (that it wrote, never
+/// what), so a fetch silent for [`objectcache::STALL`] is ended as stuck, and one that is moving is
+/// never cut for being slow. A failure is told by git's `fatal:` or `error:` line ([`first_line`]),
+/// never by a progress line.
 fn fetch_specs(
     url: &str,
     helper: Option<&str>,
@@ -247,48 +256,21 @@ fn fetch_specs(
     specs: &[String],
     otherwise: &str,
     bound: Duration,
-    watch: Option<git::Watch>,
+    (stage, watch): (Option<Stage>, Option<git::Watch>),
 ) -> Result<(), String> {
-    let mut args = vec![
-        "fetch",
-        if watch.is_some() {
-            "--progress"
-        } else {
-            "--quiet"
-        },
-        "--no-tags",
-        "--",
-        url,
-    ];
+    let staged = stage.map(|stage| stage.args(into)).unwrap_or_default();
+    let mut args = vec!["fetch", "--progress", "--no-tags"];
+    args.extend(staged.iter().map(String::as_str));
+    args.push("--");
+    args.push(url);
     args.extend(specs.iter().map(String::as_str));
-    let watched = watch.is_some();
-    let run = match watch {
-        Some(watch) => git::run_network_watching(into, helper, &args, bound, watch),
-        None => git::run_network_within(into, helper, &args, bound),
-    }
-    .map_err(|why| why.to_string())?;
+    let run = git::run_network_stalling(into, helper, &args, bound, objectcache::STALL, watch)
+        .map_err(|why| why.to_string())?;
     if run.ok() {
         Ok(())
     } else {
-        Err(if watched {
-            failure_line(&run.err, otherwise)
-        } else {
-            first_line(&run.err, otherwise)
-        })
+        Err(first_line(&run.err, otherwise))
     }
-}
-
-/// Why a fetch failed: its first `fatal:` or `error:` line, else its first line (the stopped-for-time
-/// sentence leads), else `otherwise`. Progress lines come first in a watched fetch's stderr.
-fn failure_line(said: &str, otherwise: &str) -> String {
-    said.split(['\r', '\n'])
-        .map(str::trim)
-        .find(|line| {
-            line.starts_with("fatal:")
-                || line.starts_with("error:")
-                || line.starts_with("git took longer")
-        })
-        .map_or_else(|| first_line(said, otherwise), str::to_owned)
 }
 
 /// The bytes under a repository's object store (links are not followed).
@@ -308,23 +290,26 @@ impl BaseObjects for FromForge {
                 self.helper.as_deref(),
                 into,
                 std::slice::from_ref(base),
-                "base",
-                OTHERWISE,
+                ("base", OTHERWISE),
                 git::NETWORK,
+                None,
             );
         };
         let (url, helper, tip) = (self.url.clone(), self.helper.clone(), base.clone());
         let sink = cache.cache().sink();
+        // A first fill is staged and resumes; a filled cache is topped up in one fetch.
         let fetch: Fetch = Arc::new(move |dir, bound| {
-            fetch_specs(
-                &url,
-                helper.as_deref(),
-                dir,
-                &ref_specs(std::slice::from_ref(&tip), "base"),
-                OTHERWISE,
-                bound,
-                Some(sink.clone()),
-            )
+            objectcache::fill_in_stages(dir, tip.as_str(), &objectcache::FIRST_FILL, |stage| {
+                fetch_specs(
+                    &url,
+                    helper.as_deref(),
+                    dir,
+                    &ref_specs(std::slice::from_ref(&tip), "base"),
+                    OTHERWISE,
+                    bound,
+                    (Some(stage), Some(sink.clone())),
+                )
+            })
         });
         // A base the cache holds already is read through it while a fill goes on.
         cache.update_having(fetch, &[base.as_str().to_owned()])?;
@@ -394,15 +379,17 @@ impl FromForge {
         let (url, helper) = (self.url.clone(), self.helper.clone());
         let sink = cache.cache().sink();
         let fetch: Fetch = Arc::new(move |dir, bound| {
-            fetch_specs(
-                &url,
-                helper.as_deref(),
-                dir,
-                &["+HEAD:refs/quarantine/default".to_owned()],
-                "git could not read the forge's default branch",
-                bound,
-                Some(sink.clone()),
-            )
+            objectcache::fill_in_stages(dir, "HEAD", &objectcache::FIRST_FILL, |stage| {
+                fetch_specs(
+                    &url,
+                    helper.as_deref(),
+                    dir,
+                    &["+HEAD:refs/quarantine/default".to_owned()],
+                    "git could not read the forge's default branch",
+                    bound,
+                    (Some(stage), Some(sink.clone())),
+                )
+            })
         });
         cache.cache().start_fill(fetch);
     }
@@ -805,11 +792,31 @@ fn missing(commit: &HeadSha, why: Option<String>) -> String {
     why.unwrap_or_else(|| format!("the quarantine has no commit {}", short(commit)))
 }
 
+/// The first line of what git said, or `otherwise`. git's progress rewrites its line with `\r`, so
+/// a line ends at either, and a progress line is no reason: git's own `fatal:` or `error:` leads.
 fn first_line(said: &str, otherwise: &str) -> String {
-    said.trim()
-        .lines()
-        .next()
-        .filter(|line| !line.is_empty())
+    let lines = || {
+        said.split(['\n', '\r'])
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+    };
+    lines()
+        .find(|line| line.starts_with("fatal:") || line.starts_with("error:"))
+        .or_else(|| lines().find(|line| !is_progress(line)))
         .unwrap_or(otherwise)
         .to_owned()
+}
+
+/// A line of git's progress report (`Receiving objects: 45% (…)`).
+fn is_progress(line: &str) -> bool {
+    [
+        "Receiving objects",
+        "Resolving deltas",
+        "remote: Enumerating",
+        "remote: Counting",
+        "remote: Compressing",
+        "remote: Total",
+    ]
+    .iter()
+    .any(|prefix| line.starts_with(prefix))
 }

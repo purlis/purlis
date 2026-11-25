@@ -97,7 +97,10 @@ export type Held = {
 };
 
 /** A pool's machine that doesn't answer, as its Remove found: `host`, and why in Pool setup's words. */
-export type Unreachable = Omit<Extract<PoolRemoval, { state: "unreachable" }>, "state">;
+export type Unreachable = Omit<Extract<PoolRemoval, { state: "unreachable" }>, "state"> & {
+  /** The machine answered, and refused (#7187, Refused): its removal says so as its own state. */
+  answers: boolean;
+};
 
 /** A pool's kind: a runner on this machine's Docker, or one in a team's cluster (#3292). */
 export type PoolKind = "docker" | "cluster";
@@ -666,13 +669,15 @@ export async function askVersion(name: string) {
  *  that is because its machine doesn't answer, so the row offers Forget it here. Both in purlis's
  *  or Docker's words already shown safely. */
 export type RemoveCame =
-  { removed: true; left?: string } | { removed: false; why: string; host?: string };
+  | { removed: true; left?: string }
+  | { removed: false; why: string; host?: string; answers?: boolean };
 
 /** What the core answered a Remove with, as {@link RemoveCame} says it. */
 function removeCameOf(said: Said<PoolRemoval>): RemoveCame {
   if (said.status === "error") return { removed: false, why: said.error };
   const data = said.data;
-  if (data.state === "unreachable") return { removed: false, why: data.why, host: data.host };
+  if (data.state === "unreachable" || data.state === "refused")
+    return { removed: false, why: data.why, host: data.host, answers: data.state === "refused" };
   return data.left === null ? { removed: true } : { removed: true, left: data.left };
 }
 
@@ -700,6 +705,9 @@ export async function removePool(
       removed: false,
       why: `purlis is removing pool ${held.removing}: remove ${name} once it is gone.`,
     };
+  // A machine that answered and refused was offered Remove beside Forget it here (#7187): asked
+  // again, Remove goes on to clean it, as it did before (#7122, #7139).
+  const despiteItsCheck = held.unreachable[name]?.answers === true;
   set((was) => ({
     ...was,
     removing: name,
@@ -707,7 +715,7 @@ export async function removePool(
     unreachable: without(was.unreachable, name),
   }));
   const came = removeCameOf(
-    await caught(commands.removeDockerPool(name, elsewhere, [...discarding])),
+    await caught(commands.removeDockerPool(name, elsewhere, [...discarding], despiteItsCheck)),
   );
   const host = !came.removed ? came.host : undefined;
   if (!came.removed && host !== undefined) {
@@ -715,7 +723,10 @@ export async function removePool(
     set((was) => ({
       ...was,
       removing: undefined,
-      unreachable: { ...was.unreachable, [name]: { why: came.why, host } },
+      unreachable: {
+        ...was.unreachable,
+        [name]: { why: came.why, host, answers: came.answers === true },
+      },
     }));
     return came;
   }

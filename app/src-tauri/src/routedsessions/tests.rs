@@ -1413,9 +1413,14 @@ fn the_routing_says_every_method_of_a_chats_host() {
         let at = source.find(opening).expect("the block");
         let block = &source[at..];
         let end = block.find("\n}\n").expect("its end");
-        block[..end]
-            .lines()
-            .filter_map(|line| line.strip_prefix("    fn "))
+        // A `#[cfg(test)]` method (`notes_have_settled`, #7431) is a test's wait on the host
+        // it is given, never an answer the routing could lose: production does not have it.
+        let lines: Vec<&str> = block[..end].lines().collect();
+        lines
+            .iter()
+            .enumerate()
+            .filter(|(at, _)| *at == 0 || lines[*at - 1].trim() != "#[cfg(test)]")
+            .filter_map(|(_, line)| line.strip_prefix("    fn "))
             .filter_map(|rest| rest.split(['(', '<']).next())
             .map(str::to_owned)
             .collect()

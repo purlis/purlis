@@ -471,6 +471,35 @@ fn consecutive_pushes_of_a_branch_the_chat_made_are_allowed_each_from_the_tip_be
 }
 
 #[test]
+fn a_chat_deletes_no_branch_not_even_one_it_made_at_the_tip_it_last_pushed() {
+    purlis_core::unsteered!();
+    let config = tempfile::tempdir().unwrap();
+    let w = World::recording_to(config.path().to_owned());
+    let (one, two, zero) = ("1".repeat(40), "2".repeat(40), "0".repeat(40));
+    push_through(&w, "mine", &zero, accepted("mine"));
+    assert_eq!(push_moving(&w, "mine", &one, &two, accepted("mine")), 200);
+
+    // From the tip it last pushed, even its own branch is not deleted; a stale or foreign tip is
+    // refused alike, and none of them is sent.
+    let requests = w.fake.requests().len();
+    for old in [&two, &one, &"3".repeat(40)] {
+        assert_eq!(push_moving(&w, "mine", old, &zero, accepted("mine")), 403);
+    }
+
+    // A branch another chat made, or one with no record, is not the chat's to delete either.
+    createdbranches::record(config.path(), PROJECT, OTHER, &[made("theirs")]).unwrap();
+    for branch in ["theirs", "colleague"] {
+        let old = "1".repeat(40);
+        assert_eq!(
+            push_moving(&w, branch, &old, &zero, accepted(branch)),
+            403,
+            "{branch}"
+        );
+    }
+    assert_eq!(w.fake.requests().len(), requests, "never sent");
+}
+
+#[test]
 fn an_update_of_a_branch_someone_else_made_again_is_refused_though_the_advertisement_lists_it() {
     purlis_core::unsteered!();
     let config = tempfile::tempdir().unwrap();
@@ -665,51 +694,131 @@ fn a_refused_advertisement_is_an_err_line_git_prints_and_the_forge_never_sees_it
     assert!(w.fake.requests().is_empty(), "never sent");
 }
 
+/// A task of the chat in [`World`] (`chat-listener`), as the lineage rule reads it, and the
+/// ways a test breaks it.
+struct Task {
+    /// The branch purlis cut for the task, as its dispatch record names it.
+    cut: &'static str,
+    /// The branch the task's confirmed push recorded.
+    pushed: &'static str,
+    ended: bool,
+    via: Option<createdbranches::Via>,
+    /// Another persona was dispatched to.
+    other_persona: bool,
+    /// The task ran in another workspace.
+    other_workspace: bool,
+    /// The chat is the task's grandparent: a chat it asked for asked for the task.
+    grandchild: bool,
+    /// The names the project protects, exactly, as the route is wired with them.
+    protecting: &'static [&'static str],
+}
+
+impl Task {
+    fn good(branch: &'static str) -> Self {
+        Self {
+            cut: branch,
+            pushed: branch,
+            ended: true,
+            via: Some(createdbranches::Via::Route),
+            other_persona: false,
+            other_workspace: false,
+            grandchild: false,
+            protecting: &[],
+        }
+    }
+}
+
 /// The chat in [`World`] (`chat-listener`) asked for a task, which made `work` and ended.
 fn a_world_whose_chat_dispatched_the_task_that_made(
     config: &Path,
     project: &Path,
-    branch: &str,
+    branch: &'static str,
 ) -> World {
-    use purlis_core::dispatchrecord::{self, Asker, ChatRef, Mode, Opening, Place, Worker};
+    a_world_with(config, project, &Task::good(branch))
+}
+
+fn a_world_with(config: &Path, project: &Path, task: &Task) -> World {
+    use purlis_core::dispatchrecord::{
+        self, Asker, ChatRef, Ending, Mode, Opening, Place, Worker, Worktree,
+    };
     // As the app's own project path: a store is read through no link.
     let project = &std::fs::canonicalize(project).unwrap();
     let chat = |id: &str| ChatRef {
         chat: 1,
         id: Some(id.to_owned()),
         name: "a chat".to_owned(),
-        persona: None,
+        persona: Some("builder".to_owned()),
     };
     let opening = |asker: &str, worker: &str| Opening {
         mode: Mode::Task,
         asker: Asker {
             chat: chat(asker),
+            workspace: Some("alpha".to_owned()),
             ..Asker::default()
         },
-        persona: None,
+        persona: Some(
+            if task.other_persona {
+                "tester"
+            } else {
+                "builder"
+            }
+            .to_owned(),
+        ),
         worker: Worker {
             chat: chat(worker),
             ..Worker::default()
         },
         task: None,
-        place: Place::default(),
+        place: Place {
+            workspace: Some(
+                if task.other_workspace {
+                    "beta"
+                } else {
+                    "alpha"
+                }
+                .to_owned(),
+            ),
+            folder: None,
+            worktree: Some(Worktree {
+                repo: "app".to_owned(),
+                piece: "work".to_owned(),
+                branch: Some(task.cut.to_owned()),
+                removed: None,
+            }),
+        },
         brief: "do it".to_owned(),
         report_owed: true,
     };
     let now = "2026-11-23T10:00:00Z".parse().unwrap();
-    dispatchrecord::open(project, opening("chat-listener", "task-chat"), now).unwrap();
-    // The task made the branch through the route, then ended.
-    createdbranches::record(
+    let open = |asker: &str, worker: &str, ended: bool| {
+        let record = dispatchrecord::open(project, opening(asker, worker), now).unwrap();
+        if ended {
+            assert!(dispatchrecord::close(project, &record.id, Ending::default(), now).unwrap());
+        }
+    };
+    if task.grandchild {
+        open("chat-listener", "mid-chat", true);
+        open("mid-chat", "task-chat", task.ended);
+    } else {
+        open("chat-listener", "task-chat", task.ended);
+    }
+    // The task made the branch through the route.
+    createdbranches::record_via(
         config,
         PROJECT,
         "task-chat",
         &[CreatedBranch {
             tip: "1".repeat(40),
-            ..made(branch)
+            ..made(task.pushed)
         }],
+        task.via,
     )
     .unwrap();
-    World::recording_with_dispatches(config.to_owned(), project.to_owned())
+    World::recording_with_dispatches_protecting(
+        config.to_owned(),
+        project.to_owned(),
+        task.protecting,
+    )
 }
 
 #[test]
@@ -831,7 +940,258 @@ fn a_task_does_not_move_the_branch_of_the_chat_that_dispatched_it() {
         HOST,
         REPO_ID,
         "asker/own",
-        &|owner| purlis_core::dispatchrecord::dispatched_by(&records, "task-chat", owner),
+        &|owner| {
+            purlis_core::dispatchrecord::ended_child_branch(
+                &records,
+                "task-chat",
+                owner,
+                "asker/own",
+            )
+        },
     );
     assert_eq!(tip, None);
+}
+
+/// A push by the chat of `branch` from the task's tip `1…`, to `2…`, and what the route said.
+fn the_chat_pushes(w: &World, branch: &str) -> u16 {
+    push_moving(
+        w,
+        branch,
+        &"1".repeat(40),
+        &"2".repeat(40),
+        accepted(branch),
+    )
+}
+
+#[test]
+fn a_parent_is_refused_the_branch_of_a_task_that_fails_any_one_condition_of_lineage() {
+    purlis_core::unsteered!();
+    let cases: [(&str, Task); 7] = [
+        (
+            "a running child",
+            Task {
+                ended: false,
+                ..Task::good("task/work")
+            },
+        ),
+        (
+            "another persona",
+            Task {
+                other_persona: true,
+                ..Task::good("task/work")
+            },
+        ),
+        (
+            "another workspace",
+            Task {
+                other_workspace: true,
+                ..Task::good("task/work")
+            },
+        ),
+        (
+            "a grandchild",
+            Task {
+                grandchild: true,
+                ..Task::good("task/work")
+            },
+        ),
+        (
+            "a branch other than the cut one",
+            Task {
+                cut: "task/cut",
+                pushed: "task/work",
+                ..Task::good("task/work")
+            },
+        ),
+        (
+            "an owner line the person's Allow wrote",
+            Task {
+                via: Some(createdbranches::Via::Allow),
+                ..Task::good("task/work")
+            },
+        ),
+        (
+            "an owner line that says nothing of how it was written",
+            Task {
+                via: None,
+                ..Task::good("task/work")
+            },
+        ),
+    ];
+    for (why, task) in &cases {
+        let (config, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let w = a_world_with(config.path(), project.path(), task);
+        let requests = w.fake.requests().len();
+        assert_eq!(the_chat_pushes(&w, "task/work"), REFUSED, "{why}");
+        assert_eq!(w.fake.requests().len(), requests, "{why}: never sent");
+        // The task's own line is still the last: nothing was recorded for the parent.
+        assert_eq!(
+            createdbranches::owner_of(config.path(), HOST, REPO_ID, "task/work").map(|o| o.1),
+            Some("task-chat".to_owned()),
+            "{why}"
+        );
+    }
+}
+
+/// What a project commits to protect its integration branches: exact names.
+const PROTECTING: &str = "[risk]\nprotected_branches = [\"m75-policy\", \"phase-1-proven\"]\n";
+
+#[test]
+fn a_task_branch_shaped_like_a_slice_is_taken_up_whether_or_not_the_project_protects_its_milestones()
+ {
+    purlis_core::unsteered!();
+    for branch in [
+        "m75-20-grants-and-nevers-7029-me7gkfx1",
+        "phase-1-proven-prs-take-the-new-base-d0d8j23f",
+        "m76-3-foo",
+    ] {
+        for committed in [None, Some(PROTECTING)] {
+            let (config, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+            if let Some(text) = committed {
+                std::fs::write(project.path().join("charter.toml"), text).unwrap();
+            }
+            let w = a_world_whose_chat_dispatched_the_task_that_made(
+                config.path(),
+                project.path(),
+                branch,
+            );
+            assert_eq!(the_chat_pushes(&w, branch), 200, "{branch} {committed:?}");
+        }
+    }
+}
+
+#[test]
+fn a_project_that_denies_lineage_refuses_a_parent_the_branch_and_one_that_says_nothing_allows_it() {
+    purlis_core::unsteered!();
+    for (policy, status) in [
+        (None, 200),
+        (Some("[policy]\nlineage = \"allow\"\n"), 200),
+        (Some("[policy]\nguards.forge = \"off\"\n"), 200),
+        (Some("[policy]\nlineage = \"deny\"\n"), REFUSED),
+        (
+            Some("[policy]\nlineage = \"deny\"\nguards.forge = \"off\"\n"),
+            REFUSED,
+        ),
+    ] {
+        let (config, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        if let Some(text) = policy {
+            std::fs::write(project.path().join("charter.toml"), text).unwrap();
+        }
+        let w = a_world_whose_chat_dispatched_the_task_that_made(
+            config.path(),
+            project.path(),
+            "task/work",
+        );
+        assert_eq!(the_chat_pushes(&w, "task/work"), status, "{policy:?}");
+        if status == REFUSED {
+            assert!(w.fake.requests().is_empty(), "{policy:?}: never sent");
+        }
+    }
+}
+
+#[test]
+fn a_branch_the_person_allowed_is_no_lineage_after_the_child_pushes_it_again_through_the_route() {
+    purlis_core::unsteered!();
+    let (config, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let w = a_world_with(
+        config.path(),
+        project.path(),
+        &Task {
+            via: Some(createdbranches::Via::Allow),
+            ..Task::good("task/work")
+        },
+    );
+    // The child's next push, confirmed by the forge through the route, as `record_created` writes it.
+    createdbranches::record_via(
+        config.path(),
+        PROJECT,
+        "task-chat",
+        &[CreatedBranch {
+            tip: "2".repeat(40),
+            ..made("task/work")
+        }],
+        Some(createdbranches::Via::Route),
+    )
+    .unwrap();
+    // The child has ended (the world's task did), and the parent, from the child's new tip, is
+    // still refused.
+    assert_eq!(
+        push_moving(
+            &w,
+            "task/work",
+            &"2".repeat(40),
+            &"3".repeat(40),
+            accepted("task/work")
+        ),
+        REFUSED
+    );
+    assert!(w.fake.requests().is_empty(), "never sent");
+    assert_eq!(
+        createdbranches::owner_of(config.path(), HOST, REPO_ID, "task/work").map(|o| o.1),
+        Some("task-chat".to_owned())
+    );
+}
+
+#[test]
+fn a_protected_or_integration_branch_is_refused_even_where_lineage_would_allow_it() {
+    purlis_core::unsteered!();
+    for branch in [
+        "main",
+        "release/1.0",
+        "phase-1-proven",
+        "integration/policy",
+        "m75-policy",
+    ] {
+        let (config, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        // The project names its integration branches itself, exactly.
+        std::fs::write(project.path().join("charter.toml"), PROTECTING).unwrap();
+        let w = a_world_with(
+            config.path(),
+            project.path(),
+            &Task {
+                protecting: &["m75-policy", "phase-1-proven"],
+                ..Task::good(branch)
+            },
+        );
+        // The record would let the parent have it...
+        let records =
+            purlis_core::dispatchrecord::list(&std::fs::canonicalize(project.path()).unwrap());
+        assert!(
+            purlis_core::dispatchrecord::ended_child_branch(
+                &records,
+                "chat-listener",
+                "task-chat",
+                branch
+            ),
+            "{branch}"
+        );
+        // ...and the route never reaches an owner for a branch it protects.
+        assert_eq!(the_chat_pushes(&w, branch), REFUSED, "{branch}");
+        assert!(w.fake.requests().is_empty(), "{branch}: never sent");
+    }
+}
+
+#[test]
+fn lineage_never_reaches_a_delete() {
+    purlis_core::unsteered!();
+    let (config, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let w = a_world_whose_chat_dispatched_the_task_that_made(
+        config.path(),
+        project.path(),
+        "task/work",
+    );
+    // The same branch, from the same tip, as a delete (the new id is all zeros).
+    assert_eq!(
+        push_moving(
+            &w,
+            "task/work",
+            &"1".repeat(40),
+            &"0".repeat(40),
+            accepted("task/work")
+        ),
+        REFUSED
+    );
+    assert!(w.fake.requests().is_empty(), "never sent");
+    // An update of it is what lineage lets through, so the refusal was the delete's.
+    assert_eq!(the_chat_pushes(&w, "task/work"), 200);
 }

@@ -48,15 +48,17 @@ fn in_a_used_browser(page: &str) -> Login {
     }
 }
 
-/// How a login ended, in words fixed in this file: what a login answers may carry what its page
-/// showed, so a failing test names only the kind of answer, never its words.
-fn ended_as<T>(outcome: &Result<T, Refusal>) -> &'static str {
+/// How a login ended: what a login answers may carry what its page showed, so a success is named
+/// by the kind of answer only, never its words. The reason of `NotLoggedIn` alone is the exception,
+/// since a login refuses "in words that name no value" ([`Refusal::NotLoggedIn`]): it is printed,
+/// or a red run says only that the login did not go through (#7435, #7439, #7450).
+fn ended_as<T>(outcome: &Result<T, Refusal>) -> String {
     match outcome {
-        Ok(_) => "it answered",
-        Err(Refusal::NotLoggedIn(_)) => "not logged in",
-        Err(Refusal::NoFormOnCleanLoad(_)) => "no form on the clean load",
-        Err(Refusal::Ended) => "the browser ended",
-        Err(_) => "another refusal",
+        Ok(_) => "it answered".to_owned(),
+        Err(Refusal::NotLoggedIn(why)) => format!("not logged in: {why}"),
+        Err(Refusal::NoFormOnCleanLoad(_)) => "no form on the clean load".to_owned(),
+        Err(Refusal::Ended) => "the browser ended".to_owned(),
+        Err(_) => "another refusal".to_owned(),
     }
 }
 

@@ -524,8 +524,31 @@ fn strings(table: Option<&toml::Table>, key: &str) -> Vec<String> {
         .collect()
 }
 
+/// **The protected-branch patterns the project commits** (`[risk] protected_branches` in the
+/// plane's committed settings file: names, or patterns with `*`), for the forge route's
+/// `AllowedRepo` ([`crate::forge::proxy::AllowedRepo::with_protected_branches`]), which also holds
+/// its own built-in ones (the default branch, release and deploy names, `integration/*`).
+///
+/// **Read as `[policy]` is** ([`crate::enforcement::protected_branches_in_force`]): from the file
+/// at the plane root's `HEAD`, never the working tree's, and in the app never fewer than this
+/// person accepted, so a chat that edits the file without committing it, or breaks it, drops no
+/// protection. A name the project drops waits for the person's press. The production caller is
+/// `forgeroute`'s `repos`.
+pub fn committed_protected_branches(root: &Path) -> Vec<String> {
+    crate::enforcement::protected_branches_in_force(root)
+}
+
+/// The `[risk] protected_branches` list of a parsed settings file; what is not a list of strings
+/// adds nothing.
+pub(crate) fn protected_in(top: &toml::Table) -> Vec<String> {
+    strings(
+        top.get(TABLE).and_then(toml::Value::as_table),
+        PROTECTED_BRANCHES,
+    )
+}
+
 /// Whether `pattern` (a name, `*` standing for any run of characters) matches `name` whole.
-fn matches(pattern: &str, name: &str) -> bool {
+pub(crate) fn matches(pattern: &str, name: &str) -> bool {
     let mut parts = pattern.split('*');
     let first = parts.next().unwrap_or_default();
     let Some(mut left) = name.strip_prefix(first) else {
