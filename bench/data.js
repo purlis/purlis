@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795642748299,
+  "lastUpdate": 1795647773650,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55314,6 +55314,48 @@ window.BENCHMARK_DATA = {
             "value": 102.1753635,
             "unit": "ms",
             "extra": "median of 5 runs: 100.962, 101.112, 102.175, 102.303, 102.962 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "11c4a6516f74a6f739d95297bd6a05414b214cb6",
+          "message": "A chat signed in to GitLab runs the real glab through the forge proxy; the guard names Settings › Accounts (#7653)\n\n* A chat wired to a GitLab sign-in runs the real glab, not the guard shim\n\nguard_forges_in writes the glab guard at the start, before the app wires the chat's forge\nroute, so its shim sat first on PATH and glab never reached the proxy. with_forge_route now\ntakes the glab guard out when the route covers a GitLab host; a chat with no route, or none\nto GitLab, keeps it. The guard's sentence names Settings > Accounts, where the sign-in is, and\nthe real reason, not 'never uses the person's own glab login'.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M892MXZAMTGDRGJ1T5ADZK22\nPurlis-Persona: steward\n\n* Guard drop keyed on the wiring, and sign-in copy names Settings › Accounts\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M89W94003ZEX0N5JAP5HV2A7\nPurlis-Persona: steward\n\n* A wired GitLab chat drops the glab guard even where the persona declares glab\n\nADR 0128: the sign-in replaces the tokens a chat was handed, and a persona may\nstill declare glab from the #7230 flow. Keeping its guard in a wired chat\nbrought back the reported bug (glab says it has no token). Resolved.declared_guards\nis gone; an unwired chat keeps the declared-not-ready guard as before.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M89W94003ZEX0N5JAP5HV2A7\nPurlis-Persona: steward\n\n* Test: the old-token-lines Notice names Settings › Accounts, where sign-in lives\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T22:14:46Z",
+          "tree_id": "4d6534e64708a100a10a7be76fc820dc9de90627",
+          "url": "https://github.com/purlis/purlis/commit/11c4a6516f74a6f739d95297bd6a05414b214cb6"
+        },
+        "date": 1795647764020,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.46346600000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.445, 0.453, 0.463, 0.468, 0.476 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3996135,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.242, 16.300, 16.400, 16.414, 16.658 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.357201,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.880, 100.914, 101.357, 101.591, 102.263 ms"
           }
         ]
       }
