@@ -248,9 +248,16 @@ describe("a window-only ask, Blocking or on its chat's finish row (T1-42, R-329)
     ]);
   });
 
-  const NEW_KINDS: ReadonlyArray<{ label: RegExp; cmd: string; ask: Shown; args: object }> = [
+  const NEW_KINDS: ReadonlyArray<{
+    label: RegExp;
+    offers: string[];
+    cmd: string;
+    ask: Shown;
+    args: object;
+  }> = [
     {
       label: /^Use one address/,
+      offers: ["Use one address"],
       cmd: "use_one_address",
       args: {
         plane: PLANE,
@@ -276,6 +283,7 @@ describe("a window-only ask, Blocking or on its chat's finish row (T1-42, R-329)
     },
     {
       label: /^Clone it/,
+      offers: ["Clone it"],
       cmd: "clone_with_sign_in",
       args: { plane: PLANE, workspace: "alpha", name: "api", repo: "github.com/acme/api" },
       ask: {
@@ -294,6 +302,7 @@ describe("a window-only ask, Blocking or on its chat's finish row (T1-42, R-329)
     },
     {
       label: /^Record this repo/,
+      offers: ["Record this repo"],
       cmd: "record_repo",
       args: { plane: PLANE, workspace: "alpha", clone: "api", place: "github.com/acme/api" },
       ask: {
@@ -363,7 +372,11 @@ describe("a window-only ask, Blocking or on its chat's finish row (T1-42, R-329)
       // Its words: a question of its own as a decision, its source line, and its control.
       expect(questionOf(kind.ask), `${source}: question`).not.toBe("Allow this?");
       expect(SOURCE_SAID[source], `${source}: source line`).toBeTruthy();
-      expect(kind.ask.options.map((one) => one.label)).toEqual([expect.stringMatching(kind.label)]);
+      // Exactly its documented options: the one press, and nothing else.
+      expect(
+        kind.ask.options.map((one) => one.label),
+        `${source}: options`,
+      ).toEqual(kind.offers);
 
       // Its place: Blocking in Asks while its chat waits, with its control on the row, and a
       // press made before the row settles is held (Q219).

@@ -81,7 +81,17 @@ pub fn asked(held: &Held, ask: &WindowOnlyAsk) -> Answer {
         writes: &writes,
     };
     let WindowOnlyRefusal::RecordRepo { clone } = &ask.refused;
-    match purlis_core::windowonly::ask_to_record(held.root(), ask.chat, &workspace, clone, reach) {
+    let Some(config_root) = purlis_core::machine::config_root() else {
+        return no("purlis found no home directory to read the trusted clones in.".to_owned());
+    };
+    match purlis_core::windowonly::ask_to_record(
+        &config_root,
+        held.root(),
+        ask.chat,
+        &workspace,
+        clone,
+        reach,
+    ) {
         Ok(said) | Err(said) => no(said),
     }
 }
