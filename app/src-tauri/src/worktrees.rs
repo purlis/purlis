@@ -649,8 +649,11 @@ pub fn on_a_branch_cut<T>(
     // do (#1534), so neither runs beside a Remove or a Merge of the same repo; the chat's start
     // runs without it, so a slow start keeps no verb waiting.
     let cut = {
-        let _turn = turn(plane, &workspace, &repo)?;
-        chatpiece::cut(plane, &workspace, &repo, &naming).map_err(|why| why.in_window())?
+        let _turn = purlis_core::opening::phase("repo_turn", || turn(plane, &workspace, &repo))?;
+        purlis_core::opening::phase("branch_cut", || {
+            chatpiece::cut(plane, &workspace, &repo, &naming)
+        })
+        .map_err(|why| why.in_window())?
     };
     let held = chatpiece::Held::new(plane, cut);
     match start(Some(held.cut().path.clone()), Some(held.cut())) {

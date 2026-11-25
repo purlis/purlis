@@ -215,10 +215,10 @@ pub(super) fn merge_act(kind: Kind, name: &str) -> Option<crate::mergehold::Land
 /// head only when it is turned on, so the forge would merge any head pushed later, unseen.
 pub(super) fn unheld_merge_said(kind: Kind, name: &str) -> Option<&'static str> {
     match (kind, name) {
-        (Kind::GitHub, "enablePullRequestAutoMerge") => Some(
-            "auto-merge would merge any head pushed later, unseen, so purlis does not hold it. \
-             Ask the person to merge it, or ask to enqueue it",
-        ),
+        (Kind::GitHub, "enablePullRequestAutoMerge") => Some(concat!(
+            crate::mergehold::auto_merge_why!(),
+            " Ask the person to merge it, or ask to enqueue it"
+        )),
         _ => None,
     }
 }

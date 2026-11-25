@@ -69,7 +69,7 @@ const WAIT_ENV: [(&str, &str); 2] = [
 /// text and never a file of the checkout (the commit's code has run in the job by then), and
 /// `tools/release-wait.test.mjs` runs it against a fake `gh`. A line added to it, such as a
 /// `|| true`, is a change to this constant too.
-const WAIT_RUN: [&str; 62] = [
+const WAIT_RUN: [&str; 81] = [
     r###"gh_output=$GITHUB_OUTPUT"###,
     r###"summary=$GITHUB_STEP_SUMMARY"###,
     r###"if [ "$DEV" != true ]; then"###,
@@ -109,10 +109,29 @@ const WAIT_RUN: [&str; 62] = [
     r###"done"###,
     r###"[ -n "$id" ] || { echo "::error::no ci run of $GITHUB_SHA on its push to main was listed within five minutes, so nothing is signed or uploaded"; exit 1; }"###,
     r###"echo "Waiting for ci run $id of $GITHUB_SHA.""###,
+    r###"deadline=$((SECONDS + 7200))"###,
+    r###"status=unread"###,
+    r###"conclusion=none"###,
+    r###"while :; do"###,
     r###""$gh" run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true"###,
-    r###"state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"; exit 1; }"###,
+    r###"read_ok=false"###,
+    r###"if state=$(ask "$id"); then"###,
     r###"read -r status conclusion <<< "$state""###,
-    r###"[ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"; exit 1; }"###,
+    r###"read_ok=true"###,
+    r###"if [ "$status" = completed ]; then"###,
+    r###"break"###,
+    r###"fi"###,
+    r###"fi"###,
+    r###"if [ "$SECONDS" -ge "$deadline" ]; then"###,
+    r###"if [ "$read_ok" != true ] || [ "$status" = unread ]; then"###,
+    r###"echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded""###,
+    r###"else"###,
+    r###"echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded""###,
+    r###"fi"###,
+    r###"exit 1"###,
+    r###"fi"###,
+    r###"sleep 30"###,
+    r###"done"###,
     r###"case "$conclusion" in"###,
     r###"success)"###,
     r###"echo "green=true" >> "$gh_output""###,
@@ -954,8 +973,14 @@ fn a_wait_whose_script_is_neutered_is_refused() {
             ),
             // A fault passed on as a red commit.
             (
-                "after the wait, so nothing is signed or uploaded\"; exit 1; }",
-                "after the wait, so nothing is signed or uploaded\"; exit 0; }",
+                "after the wait, so nothing is signed or uploaded\"\n              fi\n              exit 1",
+                "after the wait, so nothing is signed or uploaded\"\n              fi\n              exit 0",
+            ),
+            // A state that is not `completed` taken as the answer, or the loop left unbounded in
+            // the wrong direction.
+            (
+                "if [ \"$status\" = completed ]; then\n                break",
+                "if [ \"$status\" != unread ]; then\n                break",
             ),
             (
                 "so nothing is signed or uploaded\"; exit 1; }\n          echo \"Waiting",
@@ -1080,8 +1105,8 @@ fn a_step_after_the_wait_with_no_if_is_refused() {
 fn a_step_after_the_wait_whose_green_an_or_can_skip_is_refused() {
     for (from, to) in [
         (
-            "        if: steps.ci.outputs.green == 'true' && runner.os == 'macOS' && needs.keys.outputs.publish == 'true'",
-            "        if: steps.ci.outputs.green == 'true' && runner.os == 'macOS' || needs.keys.outputs.publish == 'true'",
+            "        if: steps.ci.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && runner.os == 'Linux'",
+            "        if: steps.ci.outputs.green == 'true' && needs.keys.outputs.publish == 'true' || runner.os == 'Linux'",
         ),
         (
             "        if: steps.ci.outputs.green == 'true' && always()",

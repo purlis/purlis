@@ -2103,6 +2103,14 @@ impl Chats {
         asked: &purlis_core::start::Start,
         runs_on: Option<&purlis_core::machine::StartChoice>,
     ) -> Result<purlis_core::start::Ready, String> {
+        purlis_core::opening::phase("ready", || self.ready_where_composed_now(asked, runs_on))
+    }
+
+    fn ready_where_composed_now(
+        &self,
+        asked: &purlis_core::start::Start,
+        runs_on: Option<&purlis_core::machine::StartChoice>,
+    ) -> Result<purlis_core::start::Ready, String> {
         let workspace = workspace_at_start(Some(&self.project), asked.cwd.as_deref());
         if self
             .sessions
@@ -2156,6 +2164,12 @@ impl Chats {
     #[cfg(not(unix))]
     fn own_runner_of(&self, _id: &str) -> Option<(String, String)> {
         None
+    }
+
+    /// How many chats this window has open: what an opening's slow-log line says it ran beside
+    /// (H12).
+    pub(crate) fn open_count(&self) -> u32 {
+        u32::try_from(lock(&self.open).len()).unwrap_or(u32::MAX)
     }
 
     /// **Whether chat `session` runs on a runner of its own** (#4569): what a move asks.
@@ -2870,26 +2884,28 @@ impl Chats {
         size: Size,
         why: Why,
     ) -> Result<u32, String> {
-        let session = self.open_it(
-            chat,
-            ready.program.clone(),
-            ready.command.clone(),
-            ready.args.clone(),
-            ready.env.clone(),
-            ready.harness,
-            ready.declared.as_ref(),
-            ready.session.as_ref().map(ToString::to_string),
-            ready.how.clone(),
-            &ready.plugins,
-            ready.sandbox.as_ref(),
-            ready.unsandboxed.as_ref(),
-            size,
-            // A chat on a profile is an agent, never the operator's shell.
-            false,
-            why,
-            ready.sign_in.as_ref(),
-            ready.first_message.as_deref(),
-        )?;
+        let session = purlis_core::opening::phase("open_session", || {
+            self.open_it(
+                chat,
+                ready.program.clone(),
+                ready.command.clone(),
+                ready.args.clone(),
+                ready.env.clone(),
+                ready.harness,
+                ready.declared.as_ref(),
+                ready.session.as_ref().map(ToString::to_string),
+                ready.how.clone(),
+                &ready.plugins,
+                ready.sandbox.as_ref(),
+                ready.unsandboxed.as_ref(),
+                size,
+                // A chat on a profile is an agent, never the operator's shell.
+                false,
+                why,
+                ready.sign_in.as_ref(),
+                ready.first_message.as_deref(),
+            )
+        })?;
         self.floorless_at(session, ready.floorless.clone());
         Ok(session)
     }
@@ -10373,8 +10389,9 @@ fn reached_by_the_proxy(
     })
 }
 
+#[track_caller]
 fn lock<T: ?Sized>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    crate::mainwatch::lock(mutex)
 }
 
 /// What a chat's hooks read about it (#1338, #1345), put in its `env`: the folder it was started

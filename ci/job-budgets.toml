@@ -32,11 +32,19 @@ p50 = 42  # waits for the group it guards; 4 runs
 
 [[job]]
 id = "rust-build"
-p50 = 14  # an estimate, not yet measured: the 9.2-minute build p50 of the old parts, plus the archive's upload
+p50 = 9  # an estimate, not yet measured: everything but the app, which ended its compile four minutes in, plus the probes and the archive
+
+[[job]]
+id = "rust-build-app"
+p50 = 17  # an estimate, not yet measured: the app's test build alone, as the 11 to 16 minutes it took inside the one build, plus the probes
 
 [[job]]
 id = "rust"
-p50 = 27  # pools its four parts; no longer builds, so lower it once the first runs are measured
+p50 = 16  # pools its four parts, which no longer wait for the app's build; an estimate, lower it once measured
+
+[[job]]
+id = "rust-app"
+p50 = 9  # pools its two parts; an estimate, not yet measured
 
 [[job]]
 id = "git-lfs"
@@ -61,6 +69,10 @@ p50 = 26
 [[job]]
 id = "remote-parity"
 p50 = 33
+
+[[job]]
+id = "remote-faults-notice"
+p50 = 1  # runs on the nightly schedule only (skipped on every pull request and push run, so none measured): one `gh` call on a bare runner, the floor of one; measure after a week of nightlies
 
 [[job]]
 id = "deny"

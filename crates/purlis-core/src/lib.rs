@@ -190,6 +190,7 @@ pub mod oldspelling;
 pub mod onboarding;
 pub mod opencode;
 pub mod openfiles;
+pub mod opening;
 pub mod ownwork;
 pub mod panel;
 pub mod panelinks;

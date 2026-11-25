@@ -27,7 +27,7 @@ use workflow::{Job, release_jobs};
 /// when the run publishes, so it names the environment outright. And `x && 'release' || ''`,
 /// never `x && '' || 'release'`: an empty string is falsy in a workflow expression, so the
 /// second form is `release` every time.
-const EXPECTED: [(&str, &str); 7] = [
+const EXPECTED: [(&str, &str); 8] = [
     // Reads the secrets as booleans: is the updater key set, is a Developer ID.
     (
         "keys",
@@ -37,6 +37,10 @@ const EXPECTED: [(&str, &str); 7] = [
         "build",
         "${{ needs.keys.outputs.publish == 'true' && 'release' || '' }}",
     ),
+    // Holds the Developer ID key and the notarization key, on a GitHub-hosted runner, and the
+    // updater's key for the macOS archive; runs only when the run publishes (ADR 0042, amended
+    // 2026-11-25), so it names the environment outright.
+    ("sign-macos", "release"),
     // Signs the runner image's line with the updater's key (#2749).
     ("runner-image-signature", "release"),
     // Builds the Linux aarch64 runner binary with the Report intake's address compiled in, as

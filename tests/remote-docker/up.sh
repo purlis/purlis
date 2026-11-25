@@ -77,6 +77,16 @@ docker exec dind sh -c "cd $fault_dir && printf '%s\n' '#!/bin/sh' \
   && docker push --quiet localhost:5000/doctor-full-disk:fault" >/dev/null
 full_disk=$(docker exec dind docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/doctor-full-disk:fault)
 echo "doctor's fault images there: $riscv $full_disk"
+# The fault suite's registry-down image (#7188): the parity image with one more layer, pushed to
+# the registry inside dind and then removed from dind's own store, so its digest is in the
+# registry and nowhere else. With the registry stopped (`tests/remote-faults/faults.sh
+# break-registry`) it cannot be pulled.
+docker exec dind sh -c "cd $fault_dir && printf 'FROM $image\nLABEL registry-down=1\n' > Dockerfile \
+  && docker build --quiet --tag localhost:5000/registry-down:fault . \
+  && docker push --quiet localhost:5000/registry-down:fault" >/dev/null
+registry_down=$(docker exec dind docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/registry-down:fault)
+docker exec dind docker rmi localhost:5000/registry-down:fault >/dev/null
+echo "registry-down image there: $registry_down"
 # ssh signs with an agent, as a person's does.
 eval "$(ssh-agent -s -a "$RUNNER_TEMP/remote-ssh/agent.sock")"
 ssh-add "$RUNNER_TEMP/remote-ssh/id"
@@ -92,4 +102,5 @@ ssh-add "$RUNNER_TEMP/remote-ssh/id"
   echo "REMOTE_DOCKER_TEST_TLS_DIR=$tls_dir"
   echo "REMOTE_DOCKER_TEST_RISCV_IMAGE=$riscv"
   echo "REMOTE_DOCKER_TEST_FULL_DISK_IMAGE=$full_disk"
+  echo "REMOTE_DOCKER_TEST_REGISTRY_DOWN_IMAGE=$registry_down"
 } >> "$GITHUB_ENV"

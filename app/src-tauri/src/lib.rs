@@ -279,6 +279,7 @@ mod vaults;
 mod vaultswaiting;
 mod views;
 mod watchset;
+mod windowevents;
 mod windowprefs;
 mod windows;
 mod worklinks;
@@ -1996,47 +1997,51 @@ async fn start_chat(
     let config = planes.config().map(std::path::Path::to_path_buf);
     let cancel = hostedsessions::a_cancellable_start(held.root());
     tauri::async_runtime::spawn_blocking(move || {
-        let named = label.clone();
-        let show_footer = boxes.show_footer;
-        let runs_on = boxes.runs_on.map(RunsOnPick::choice).transpose()?;
-        let without_sandbox = boxes
-            .without_sandbox
-            .map(|asked| purlis_core::sandbox::OptOut {
-                reason: asked.reason,
-            });
-        // git is asked once about the local file for the whole start (#2179).
-        let (mut started, said) = poolprofiles::offering_limits(|| {
-            hostedsessions::cancelled_by(cancel, || {
-                purlis_core::profiles::git_asked_once(|| {
-                    worktrees::on_a_branch(
-                        held.root(),
-                        config.as_deref(),
-                        cwd.as_deref().map(std::path::Path::new),
-                        named.as_deref(),
-                        boxes.new_branch,
-                        |cwd| {
-                            start_chat_in(
-                                &held,
-                                profile,
-                                persona,
-                                cwd,
-                                name,
-                                label,
-                                Picked {
-                                    show_footer,
-                                    without_sandbox,
-                                    runs_on,
-                                },
-                                columns,
-                                rows,
-                            )
-                        },
-                    )
+        // Timed by phase, and written to the slow log where it took a second or more (H12).
+        let hot = held.chats().open_count();
+        purlis_core::opening::recording(hot, move || {
+            let named = label.clone();
+            let show_footer = boxes.show_footer;
+            let runs_on = boxes.runs_on.map(RunsOnPick::choice).transpose()?;
+            let without_sandbox = boxes
+                .without_sandbox
+                .map(|asked| purlis_core::sandbox::OptOut {
+                    reason: asked.reason,
+                });
+            // git is asked once about the local file for the whole start (#2179).
+            let (mut started, said) = poolprofiles::offering_limits(|| {
+                hostedsessions::cancelled_by(cancel, || {
+                    purlis_core::profiles::git_asked_once(|| {
+                        worktrees::on_a_branch(
+                            held.root(),
+                            config.as_deref(),
+                            cwd.as_deref().map(std::path::Path::new),
+                            named.as_deref(),
+                            boxes.new_branch,
+                            |cwd| {
+                                start_chat_in(
+                                    &held,
+                                    profile,
+                                    persona,
+                                    cwd,
+                                    name,
+                                    label,
+                                    Picked {
+                                        show_footer,
+                                        without_sandbox,
+                                        runs_on,
+                                    },
+                                    columns,
+                                    rows,
+                                )
+                            },
+                        )
+                    })
                 })
-            })
-        })?;
-        started.notices.splice(0..0, said);
-        Ok(started)
+            })?;
+            started.notices.splice(0..0, said);
+            Ok(started)
+        })
     })
     .await
     .map_err(|err| format!("purlis could not start the chat: {err}"))?
@@ -4048,7 +4053,11 @@ pub fn run() {
     // Each command named and timed while it holds the main thread (`mainwatch`, H6b).
     app.invoke_handler(mainwatch::timed(commands.invoke_handler()))
         .menu(lifecycle::menu)
-        .on_menu_event(|app, event| lifecycle::clicked(app, event.id().as_ref()))
+        .on_menu_event(|app, event| {
+            mainwatch::command("menu click", || {
+                lifecycle::clicked(app, event.id().as_ref());
+            });
+        })
         // A drop from the file manager (#5378): its files held for the window's import of them,
         // as the system tells the window, so the window never sends a path from outside the
         // workspace.
@@ -4060,85 +4069,83 @@ pub fn run() {
         .manage(artifact_links::Links::default())
         .manage(pane_links::PaneLinkAsks::default())
         .register_uri_scheme_protocol(purlis_core::artifact::serve::SCHEME, |ctx, request| {
-            artifacts::serve(ctx.app_handle(), ctx.webview_label(), &request)
+            mainwatch::command("artifact page request", || {
+                artifacts::serve(ctx.app_handle(), ctx.webview_label(), &request)
+            })
         })
         .on_window_event(|window, event| {
-            // A drop from the file manager is told to the window, not its webview (#5378).
-            workspacewrites::window_event(window, event);
-            // The close button hides the window. Every session is a child of this process
-            // (ADR 0025), so a close that ended them would end the day's work; the way out
-            // is Quit, which says what it is about to end.
-            //
-            // A split window closes instead, and hands its projects back to the main window
-            // with every chat still running (ADR 0033, amended 2026-09-26).
-            match event {
-                tauri::WindowEvent::CloseRequested { api, .. } => {
-                    windows::close_requested(window, api);
-                }
-                tauri::WindowEvent::Destroyed => {
-                    // Its expanded folders are no longer watched for it (FM-1).
-                    if let Some(watch) = window.try_state::<filewatch::FileWatch>() {
-                        watch.forget(window.label());
+            mainwatch::command(mainwatch::window_event_name(event), || {
+                // A drop from the file manager is told to the window, not its webview (#5378).
+                workspacewrites::window_event(window, event);
+                // The close button hides the window. Every session is a child of this process
+                // (ADR 0025), so a close that ended them would end the day's work; the way out
+                // is Quit, which says what it is about to end.
+                //
+                // A split window closes instead, and hands its projects back to the main window
+                // with every chat still running (ADR 0033, amended 2026-09-26).
+                match event {
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        windows::close_requested(window, api);
                     }
-                    // And its ⌘P listings are let go of (FM-7).
-                    if let Some(finder) = window.try_state::<findfiles::FileFinder>() {
-                        finder.forget(window.label());
+                    tauri::WindowEvent::Destroyed => {
+                        // Its expanded folders are no longer watched for it (FM-1).
+                        if let Some(watch) = window.try_state::<filewatch::FileWatch>() {
+                            watch.forget(window.label());
+                        }
+                        // And its ⌘P listings are let go of (FM-7).
+                        if let Some(finder) = window.try_state::<findfiles::FileFinder>() {
+                            finder.forget(window.label());
+                        }
+                        // Nor the branches whose changes it shows (FM-4).
+                        if let Some(watch) = window.try_state::<branchwatch::BranchWatch>() {
+                            watch.forget(window.label());
+                        }
+                        // Nor the theme folders it draws from (#2324).
+                        themewatch::forget(window.label());
+                        // And its ⌘⇧F searches stop (FM-8).
+                        if let Some(searches) =
+                            window.try_state::<std::sync::Arc<searchfiles::FileSearches>>()
+                        {
+                            searches.forget(window.label());
+                        }
+                        // And a vault set-up it began lets go of its token (#1527).
+                        vaults::window_gone(window, window.label());
+                        // And it has no Inbox open to hold a notification back (#1694).
+                        asknotify::window_gone(window, window.label());
+                        // And its artifacts' webviews go with it (#5952).
+                        artifacts::close_window_children(window.app_handle(), window.label());
+                        windows::destroyed(window);
                     }
-                    // Nor the branches whose changes it shows (FM-4).
-                    if let Some(watch) = window.try_state::<branchwatch::BranchWatch>() {
-                        watch.forget(window.label());
+                    tauri::WindowEvent::Focused(focused) => {
+                        heard_off_the_main_thread(window, Heard::Focused(*focused));
                     }
-                    // Nor the theme folders it draws from (#2324).
-                    themewatch::forget(window.label());
-                    // And its ⌘⇧F searches stop (FM-8).
-                    if let Some(searches) =
-                        window.try_state::<std::sync::Arc<searchfiles::FileSearches>>()
-                    {
-                        searches.forget(window.label());
+                    tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
+                        heard_off_the_main_thread(window, Heard::Placed);
                     }
-                    // And a vault set-up it began lets go of its token (#1527).
-                    vaults::window_gone(window, window.label());
-                    // And it has no Inbox open to hold a notification back (#1694).
-                    asknotify::window_gone(window, window.label());
-                    // And its artifacts' webviews go with it (#5952).
-                    artifacts::close_window_children(window.app_handle(), window.label());
-                    windows::destroyed(window);
+                    _ => {}
                 }
-                // A window focused is the person coming back to it: the plane watches look at
-                // once for what macOS's file events are late with (#756).
-                tauri::WindowEvent::Focused(focused) => {
-                    planewatch::window_focused(window.app_handle(), *focused);
-                    // Shown or restored, or gone behind: a minimised window counts as nothing
-                    // on screen (#4768).
-                    tabwindows::looked_at_again(window);
-                }
-                // Minimised, restored or moved: where a tab window is kept, and whether each
-                // window is on screen looked at again (#4768).
-                tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
-                    tabwindows::looked_at_again(window);
-                    tabwindows::moved(window);
-                }
-                _ => {}
-            }
+            });
         })
         // A page that reloads begins again with nothing: a vault set-up its last load began
         // lets go of its token, since that page will never send the cancel (#1527).
         .on_page_load(|webview, payload| {
-            if payload.event() == tauri::webview::PageLoadEvent::Started {
-                vaults::window_gone(webview, webview.label());
-                // Nor does it keep the artifacts its last load laid over its tabs (#5952).
-                if windows::is_charter_window(webview.label()) {
-                    artifacts::close_window_children(webview.app_handle(), webview.label());
+            mainwatch::command("page load", || {
+                if payload.event() == tauri::webview::PageLoadEvent::Started {
+                    vaults::window_gone(webview, webview.label());
+                    // Nor does it keep the artifacts its last load laid over its tabs (#5952).
+                    if windows::is_charter_window(webview.label()) {
+                        artifacts::close_window_children(webview.app_handle(), webview.label());
+                    }
+                    // An artifact's page that loads again loses the port its last load had (#5961).
+                    if artifacts::is_artifact(webview.label())
+                        && let Some(served) = webview.try_state::<artifacts::Artifacts>()
+                    {
+                        served.reloaded(webview.label());
+                        // And the actions it offered (#5972).
+                        artifacts::offers::withdrawn(webview.app_handle(), webview.label());
+                    }
                 }
-                // An artifact's page that loads again loses the port its last load had (#5961).
-                if artifacts::is_artifact(webview.label())
-                    && let Some(served) = webview.try_state::<artifacts::Artifacts>()
-                {
-                    served.reloaded(webview.label());
-                    // And the actions it offered (#5972).
-                    artifacts::offers::withdrawn(webview.app_handle(), webview.label());
-                }
-            }
+            });
         })
         .setup(|app| {
             reached("setup");
@@ -5176,73 +5183,119 @@ pub fn run() {
         // the sessions are ended here — otherwise their programs are left to the operating
         // system, and one that ignores a hangup outlives the app that started it.
         .run(|app, event| {
-            // The dock icon, or a notification clicked, with every window hidden: the window
-            // holding the project the latest notification was about comes back (#1694).
-            #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen {
-                has_visible_windows,
-                ..
-            } = event
-            {
-                asknotify::reopened(app, has_visible_windows);
-            }
-            // Before any window goes: a tab window closed by the quit is not closed by the
-            // person, so its tabs stay where they were for the next launch (#4768).
-            if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
-                // Every window gone while something keeps the session host running goes to the
-                // background, as the menu's Quit does; an exit with a code (Stop, a restart to
-                // update or onto the session bus) always goes ahead (FD-17).
-                if lifecycle::on_exit_requested(app, *code) {
-                    api.prevent_exit();
-                    return;
-                }
-                tabwindows::quitting(app);
-            }
-            if matches!(event, tauri::RunEvent::Exit) {
-                // First, so a restart finds the lock free (`instance.rs`).
-                instance::let_go_at_exit(app);
-                // An extension's program still answering is killed with its whole process
-                // group, so that nothing an extension was asked to run outlives the window
-                // that asked (`purlis_core::executor`).
-                app.state::<views::Views>().stop_all();
-                // No forge socket or CA outlives the app (ADR 0128 J).
-                #[cfg(feature = "forge-wiring")]
-                forgeroute::stop_all();
-                app.state::<heard::Heard>().stop_all();
-                // Every plane, not "the" plane: each one writes its own record into itself
-                // and ends its own sessions. A failure is not worth refusing to exit over —
-                // the next launch of that plane reads no record and starts empty.
-                // Letting go of every plane also saves each one whose auto-save is on, and gives
-                // its push a few seconds (`Planes::let_go_of_every_plane`, ADR 0051).
-                app.state::<Planes>().let_go_of_all();
-                // Then the session host, once every plane has written its record and ended its
-                // chats, wherever they ran (#1998): it is told the window quits, and ends what is
-                // left as it stops. A window that goes without this crashed, and the host keeps
-                // its chats for the grace period (#2006).
-                #[cfg(unix)]
-                if let Some(host) = app.try_state::<sessionhost::SessionHost>() {
-                    host.end();
-                    // Nothing keeps the host running any more: it ends with the app from now
-                    // on, as before (FD-17). A Stop while something does leaves them, so the
-                    // host starts again at the next login.
-                    if loginitems::reasons().is_empty() {
-                        host.forget_login_items();
-                    }
-                }
-                // Once no chat links over them: every SSH forward to a pool on another machine
-                // ends now, with nothing left to the other machine to end (ADR 0123 §8, as
-                // amended 2026-11-12).
-                purlis_core::sshroute::forward::let_go_of_all();
-                // A secret a vault's Copy put on the clipboard does not outlive the app: its
-                // clear was waiting on a timer that ends here.
-                app.state::<vaults::SystemClipboard>().clear_at_exit();
-                // Last, once everything above has let go: the launch on the session bus the
-                // operator asked for from the window's notice, if they did (`portal.rs`).
-                if let Some(bus) = app.try_state::<portal::SessionBus>() {
-                    portal::restart_if_asked(&bus);
-                }
-            }
+            mainwatch::command("run event", || run_event(app, event));
         });
+}
+
+/// What a window's focus, size and place changing make the app do. Heard on the main thread, done
+/// on the thread of [`windowevents::Lane`]: the work takes the chats' and the planes' locks, and
+/// the main thread never waits on a lock another thread holds (`windowevents`, H14).
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum Heard {
+    /// A window gained or lost the focus: a window focused is the person coming back to it, so the
+    /// plane watches look at once for what macOS's file events are late with (#756), and shown
+    /// or restored, or gone behind, a minimised window counts as nothing on screen (#4768).
+    Focused(bool),
+    /// Resized, minimised, restored or moved: where a tab window is kept, and whether each window
+    /// is on screen looked at again (#4768).
+    Placed,
+}
+
+fn heard_off_the_main_thread(window: &tauri::Window, heard: Heard) {
+    use std::sync::OnceLock;
+    static LANE: OnceLock<windowevents::Lane<(String, Heard), (tauri::Window, Heard)>> =
+        OnceLock::new();
+    let lane = LANE.get_or_init(|| {
+        windowevents::Lane::new(
+            "window events",
+            |(window, heard): (tauri::Window, Heard)| match heard {
+                Heard::Focused(focused) => {
+                    planewatch::window_focused(window.app_handle(), focused);
+                    tabwindows::looked_at_again(&window);
+                }
+                Heard::Placed => {
+                    tabwindows::looked_at_again(&window);
+                    tabwindows::moved(&window);
+                }
+            },
+        )
+    });
+    lane.post(
+        (window.label().to_owned(), heard.clone()),
+        (window.clone(), heard),
+    );
+}
+
+/// What the app does as the event loop reports an event (named in a core stall as `run event`).
+fn run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
+    {
+        // The dock icon, or a notification clicked, with every window hidden: the window
+        // holding the project the latest notification was about comes back (#1694).
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen {
+            has_visible_windows,
+            ..
+        } = event
+        {
+            asknotify::reopened(app, has_visible_windows);
+        }
+        // Before any window goes: a tab window closed by the quit is not closed by the
+        // person, so its tabs stay where they were for the next launch (#4768).
+        if let tauri::RunEvent::ExitRequested { api, code, .. } = &event {
+            // Every window gone while something keeps the session host running goes to the
+            // background, as the menu's Quit does; an exit with a code (Stop, a restart to
+            // update or onto the session bus) always goes ahead (FD-17).
+            if lifecycle::on_exit_requested(app, *code) {
+                api.prevent_exit();
+                return;
+            }
+            tabwindows::quitting(app);
+        }
+        if matches!(event, tauri::RunEvent::Exit) {
+            // First, so a restart finds the lock free (`instance.rs`).
+            instance::let_go_at_exit(app);
+            // An extension's program still answering is killed with its whole process
+            // group, so that nothing an extension was asked to run outlives the window
+            // that asked (`purlis_core::executor`).
+            app.state::<views::Views>().stop_all();
+            // No forge socket or CA outlives the app (ADR 0128 J).
+            #[cfg(feature = "forge-wiring")]
+            forgeroute::stop_all();
+            app.state::<heard::Heard>().stop_all();
+            // Every plane, not "the" plane: each one writes its own record into itself
+            // and ends its own sessions. A failure is not worth refusing to exit over —
+            // the next launch of that plane reads no record and starts empty.
+            // Letting go of every plane also saves each one whose auto-save is on, and gives
+            // its push a few seconds (`Planes::let_go_of_every_plane`, ADR 0051).
+            app.state::<Planes>().let_go_of_all();
+            // Then the session host, once every plane has written its record and ended its
+            // chats, wherever they ran (#1998): it is told the window quits, and ends what is
+            // left as it stops. A window that goes without this crashed, and the host keeps
+            // its chats for the grace period (#2006).
+            #[cfg(unix)]
+            if let Some(host) = app.try_state::<sessionhost::SessionHost>() {
+                host.end();
+                // Nothing keeps the host running any more: it ends with the app from now
+                // on, as before (FD-17). A Stop while something does leaves them, so the
+                // host starts again at the next login.
+                if loginitems::reasons().is_empty() {
+                    host.forget_login_items();
+                }
+            }
+            // Once no chat links over them: every SSH forward to a pool on another machine
+            // ends now, with nothing left to the other machine to end (ADR 0123 §8, as
+            // amended 2026-11-12).
+            purlis_core::sshroute::forward::let_go_of_all();
+            // A secret a vault's Copy put on the clipboard does not outlive the app: its
+            // clear was waiting on a timer that ends here.
+            app.state::<vaults::SystemClipboard>().clear_at_exit();
+            // Last, once everything above has let go: the launch on the session bus the
+            // operator asked for from the window's notice, if they did (`portal.rs`).
+            if let Some(bus) = app.try_state::<portal::SessionBus>() {
+                portal::restart_if_asked(&bus);
+            }
+        }
+    }
 }
 
 #[cfg(test)]

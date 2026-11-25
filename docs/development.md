@@ -189,6 +189,26 @@ purlis secret exec <vault> --env ANTHROPIC_API_KEY=<key> -- \
 On Codex or opencode, add `--harness` and `--proposer "$(command -v claude)"`; Codex also needs
 `--env OPENAI_API_KEY=<key>`.
 
+### Real-infrastructure tests and the remote fault suite
+
+A test that needs a rig (an sshd, a dind, a systemd machine: `tests/remote-docker/up.sh`,
+`tests/remote-podman/up.sh`, `tests/ssh-runner/up.sh` and `up-systemd.sh`) finds it through
+`crates/purlis-core/tests/support/real_infra.rs` (#7188). On a laptop without the rig it prints
+`SKIP real-infra: …` and passes; with `PURLIS_PARITY=1`, which the `parity` and `remote-parity`
+jobs set, a missing fixture fails the test. Never write `let Some(fixture) = fixture() else { return }`
+around an `std::env::var(...).ok()?`: put the lookup behind `fixture_or_skip`.
+
+The fault suite is `crates/purlis-core/tests/it/a_live_remote_chat_survives_the_faults_that_define_trust.rs`:
+fifteen cases, one test each, each putting a fault under a live chat with
+`tests/remote-faults/faults.sh` (`drop`, `blackhole`, `slow`, `restart-sshd`, `rotate-hostkey`,
+`kill-runner`, `break-registry`, and `restore`, which undoes them all; every verb can be said twice)
+and checking the outage rules. It runs in `remote-parity`, which is a required check, and nightly,
+where a red run files the issue "the remote fault suite nightly is not clean". There are no retries.
+A case that waits on an unmerged train is `#[ignore = "needs #7187 train A"]` (or `#7190 train D`);
+list them with `cargo nextest list -p purlis-core --test it --run-ignored only -E 'test(/^a_live_remote_chat/)'`.
+Run the script's argument handling anywhere with `node --test tools/remote-faults.test.mjs`
+(`FAULTS_DRY_RUN=1` prints what it would send to a container).
+
 ### A built-in skill's description: the house style
 
 A harness picks a skill by its description alone, among every other skill the person has, so a
@@ -225,6 +245,40 @@ The window's half (the sidebar answer, the watcher's setup, a minute of idle CPU
 events busy chats send the window) is `npm run e2e:scale` in `app/`, on a release `e2e` build:
 `app/e2e/wdio.scale.conf.ts` says what it needs. A missed budget fails nothing: the nightly run
 keeps one issue labelled `scale-regression` open while any is missed.
+
+## Local macOS signing (no Keychain prompts)
+
+The linker signs every local build ad hoc, so its Keychain identity is its cdhash, and that
+changes on every build. A Keychain item's access list then sees each rebuild as a new app and asks
+for your login password again. `.cargo/config.toml` therefore points every macOS target's runner
+at `tools/macos-dev-sign-run.sh`, which signs the binary with one stable identity and the
+identifier `dev.purlis.local.<binary name>` before it runs (never `dev.purlis.app`, the released
+app's). It covers `cargo run`, `cargo test`, `cargo nextest run` and the app `npm run tauri dev`
+starts, which runs `cargo run`. A binary already signed that way is left alone, so a run costs one
+`codesign -dv`. On CI, or with no identity, it does nothing.
+
+It picks the first of:
+
+1. `PURLIS_DEV_SIGN_IDENTITY`, a certificate's name or SHA-1, if set.
+2. The first valid `Apple Development:` identity in `security find-identity -v -p codesigning`.
+3. A certificate named `purlis dev`.
+4. None: the binary runs unsigned, and one hint a day says so.
+
+To get an identity, either:
+
+- **An Apple Development certificate.** Sign into Xcode → Settings → Accounts → the Purlis, Inc
+  team → Manage Certificates → **+** → Apple Development.
+- **A self-signed one.** Keychain Access → Certificate Assistant → Create a Certificate, named
+  `purlis dev`, identity type Self Signed Root, certificate type Code Signing.
+
+With several Apple Development certificates, the first listed wins, and the order can change when
+one is added or renewed (a new identity asks once more): set `PURLIS_DEV_SIGN_IDENTITY` to pin one.
+
+The first signature may ask once for access to the certificate's key: choose Always Allow.
+
+**One prompt per identity.** The installed app and a local build are different apps to the
+Keychain (the first is signed by the release, the second by your identity), so each asks once, and
+then not again after a rebuild.
 
 ## CI's caches
 
@@ -272,8 +326,10 @@ prints what to type to install each one. A build started by hand uses the stable
 with ([ADR 0092](adr/0092-the-channels-differ-in-optimisation-profile-and-bundle-set-and-in-nothing-else.md)).
 
 The app updates itself from those channels, and `purlis update --channel dev|stable` picks
-one. Published builds are updater-signed (minisign) and Developer ID signed, **not notarized**,
-so a first install from a browser meets Gatekeeper once and updates do not. How that works, and
+one. Published builds are updater-signed (minisign) and, when the Apple secrets are set, Developer
+ID signed on a GitHub-hosted runner (`build` never holds that key; the `sign-macos` job does). A
+stable build is also notarized; a dev build is not, so a first install of one from a browser meets
+Gatekeeper once and updates do not. How that works, and
 the keys and secrets only the operator can set up, are in [`docs/updating.md`](updating.md)
 and [ADR 0042](adr/0042-charter-updates-itself-and-nothing-it-cannot-verify-reaches-it.md).
 
