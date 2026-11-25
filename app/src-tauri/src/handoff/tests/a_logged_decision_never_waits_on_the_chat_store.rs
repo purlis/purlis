@@ -9,7 +9,7 @@
 //! project's tab" hung on it.
 //!
 //! Red without `decisions::write_line_apart` (a write in place waits on the lock for ever),
-//! green with it: the call comes back, and the line is in the log once the writer thread has it.
+//! green with it: the call comes back, and the line is in the log once the writer is joined.
 
 use purlis_core::eventlog::stops::{WOULD_BLOCK, WouldBlock};
 
@@ -33,29 +33,23 @@ fn a_decision_made_under_log_returns_and_its_would_block_line_is_written() {
         host: None,
     };
 
-    let (done, returned) = std::sync::mpsc::channel();
     let inside = held.clone();
-    std::thread::spawn(move || {
-        // As `dispatchdecision` runs it: with the store's lock held.
+    // As `dispatchdecision` runs it: with the store's lock held. The call returns the writer's
+    // handle at once; were the write made in place, it would wait on the lock for ever.
+    let writer = std::thread::spawn(move || {
         inside.chats().deciding_over(|_, _| {
-            crate::decisions::write_line_apart(inside.clone(), &chat_id, &line);
-        });
-        let _ = done.send(());
+            crate::decisions::write_line_apart(inside.clone(), &chat_id, &line)
+        })
     });
-    returned
-        .recv_timeout(std::time::Duration::from_secs(10))
-        .expect("a decision that records a would-block line under the store's lock returns");
+    // Joined, not slept on: the lock is free once the decision returned, so the writer ends.
+    writer
+        .join()
+        .expect("a decision that records a would-block line under the store's lock returns")
+        .join()
+        .expect("the writer thread finished");
 
-    let wrote = || {
-        purlis_core::eventlog::read(&log)
-            .map(|events| events.iter().filter(|e| e.kind == WOULD_BLOCK).count())
-            .unwrap_or(0)
-    };
-    for _ in 0..100 {
-        if wrote() == 1 {
-            return;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
-    assert_eq!(wrote(), 1, "the line is written once the lock is free");
+    let wrote = purlis_core::eventlog::read(&log)
+        .map(|events| events.iter().filter(|e| e.kind == WOULD_BLOCK).count())
+        .unwrap_or(0);
+    assert_eq!(wrote, 1, "the line is written once the writer is joined");
 }

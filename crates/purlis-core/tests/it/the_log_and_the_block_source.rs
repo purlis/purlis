@@ -137,6 +137,7 @@ fn log_turns_a_deny_into_allow_and_writes_one_would_have_blocked_event() {
 /// A chat reads its own rows of the event log and nobody else's; the person reads all of them.
 #[test]
 fn a_chat_reads_only_its_own_event_log_rows() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let mut host = recorder(dir.path());
     let line = |rule: &str| {
@@ -195,6 +196,7 @@ fn a_chat_reads_only_its_own_event_log_rows() {
 /// not is refused before it is written.
 #[test]
 fn a_block_names_its_source_rule_sandbox_or_harness() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let mut host = recorder(dir.path());
     let plane = Path::new(PLANE);
@@ -292,6 +294,7 @@ fn sources_under(dir: &Path, found: &mut Vec<PathBuf>) {
 /// neither. Comments that say what was retired are the docs' and the amendment's.
 #[test]
 fn no_code_reads_purlis_policy() {
+    purlis_core::unsteered!();
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut files = Vec::new();
     for dir in ["crates", "app/src-tauri/src"] {
@@ -399,8 +402,8 @@ fn a_plane_less_replay_scenario_reads_no_organisation_folder_of_the_test_machine
 /// says. A change to that `HEAD` changes what is read, so this turns red with it (spec §14.1).
 #[test]
 fn recorded_behaviour_selects_strict_from_strict_planes_committed_head() {
-    use purlis_core::enforcement::{Settings, Template};
     purlis_core::unsteered!();
+    use purlis_core::enforcement::{Settings, Template};
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures");
     let committed = |text: &str| {
         let dir = tempfile::tempdir().expect("a folder");
@@ -494,6 +497,7 @@ fn recorded_behaviour_selects_strict_from_strict_planes_committed_head() {
 /// command, a path or a URL, whoever built it.
 #[test]
 fn the_writer_holds_a_would_have_blocked_line_to_tokens_and_a_bare_host() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let mut host = recorder(dir.path());
     let long = "r".repeat(300);
@@ -591,6 +595,7 @@ fn the_writer_holds_a_would_have_blocked_line_to_tokens_and_a_bare_host() {
 /// deny vanished from the log with only a warning.
 #[test]
 fn a_deny_whose_rule_id_is_no_token_is_written_changed_never_dropped() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let mut host = recorder(dir.path());
     for id in [

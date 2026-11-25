@@ -180,7 +180,8 @@ pub fn writes_would_have_blocked_lines(handle: tauri::AppHandle) {
         let Some(held) = planes.held_at(root) else {
             return;
         };
-        write_line_apart(held, chat, line);
+        // Best effort: nothing waits for the line.
+        drop(write_line_apart(held, chat, line));
     }));
 }
 
@@ -188,14 +189,15 @@ pub fn writes_would_have_blocked_lines(handle: tauri::AppHandle) {
 /// inside a decision, and a dispatch's is decided while the chat store's `open` lock is held
 /// ([`crate::chats::Chats::deciding_over`]); the line's chat is found by that same lock, so
 /// writing it there would wait on itself for ever, and every hook connection behind it with it
-/// (#7524). The line is best effort and waits for no one.
+/// (#7524). The line is best effort and waits for no one; the handle is the seam a test joins to
+/// know it is written.
 pub(crate) fn write_line_apart(
     held: std::sync::Arc<Held>,
     chat: &str,
     line: &purlis_core::eventlog::stops::WouldBlock,
-) {
+) -> std::thread::JoinHandle<()> {
     let (chat, line) = (chat.to_owned(), line.clone());
-    std::thread::spawn(move || write_line(&held, &chat, &line));
+    std::thread::spawn(move || write_line(&held, &chat, &line))
 }
 
 /// One would-have-blocked line of chat `chat` (an id), under its run where this app has the chat

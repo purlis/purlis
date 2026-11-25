@@ -2088,8 +2088,8 @@ fn the_notice_of_a_chat_another_chat_asked_for_names_every_word_it_took_out_and_
 /// nothing, so no chat's tab nags.
 #[test]
 fn a_chat_s_start_raises_a_notice_when_the_chained_event_log_was_changed() {
-    use purlis_core::eventlog::{Log, chain};
     purlis_core::unsteered!();
+    use purlis_core::eventlog::{Log, chain};
     let plane = Plane::new();
     let bin = plane.harness();
     plane.plain_profile("claude", &bin, "");

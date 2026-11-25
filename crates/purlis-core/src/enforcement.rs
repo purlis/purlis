@@ -1912,15 +1912,18 @@ pub fn write_line(root: &Path, chat: &str, family: Family, rule: &str, host: Opt
     };
     #[cfg(any(test, feature = "test-support"))]
     CAPTURED.with(|held| {
-        held.borrow_mut().push(Logged {
-            at: jiff::Timestamp::now()
-                .strftime("%Y-%m-%dT%H:%M:%SZ")
-                .to_string(),
-            rule: line.rules[0].clone(),
-            family: line.family.clone(),
-            chat: chat.to_owned(),
-            host: line.host.clone(),
-        });
+        held.borrow_mut().push((
+            root.to_path_buf(),
+            Logged {
+                at: jiff::Timestamp::now()
+                    .strftime("%Y-%m-%dT%H:%M:%SZ")
+                    .to_string(),
+                rule: line.rules[0].clone(),
+                family: line.family.clone(),
+                chat: chat.to_owned(),
+                host: line.host.clone(),
+            },
+        ));
     });
     #[cfg(not(test))]
     match WRITER.get() {
@@ -1936,19 +1939,20 @@ pub fn write_line(root: &Path, chat: &str, family: Family, rule: &str, host: Opt
 
 #[cfg(any(test, feature = "test-support"))]
 thread_local! {
-    /// The lines this thread's test had written, standing in for the event log.
-    static CAPTURED: std::cell::RefCell<Vec<Logged>> = const { std::cell::RefCell::new(Vec::new()) };
+    /// The lines this thread's test had written, each with the plane root it was recorded for,
+    /// standing in for the event log (a folder per root, as the log's own store was).
+    static CAPTURED: std::cell::RefCell<Vec<(std::path::PathBuf, Logged)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// Chat `chat`'s would-have-blocked lines, oldest first, as this thread's test had them written:
+/// Chat `chat`'s would-have-blocked lines under `root`, oldest first, as this thread's test had them written:
 /// what a test of a choke point reads in place of the event log.
 #[cfg(any(test, feature = "test-support"))]
-pub fn read_log(_root: &Path, chat: &str) -> Vec<Logged> {
+pub fn read_log(root: &Path, chat: &str) -> Vec<Logged> {
     CAPTURED.with(|held| {
         held.borrow()
             .iter()
-            .filter(|line| line.chat == chat)
-            .cloned()
+            .filter(|(at, line)| at == root && line.chat == chat)
+            .map(|(_, line)| line.clone())
             .collect()
     })
 }
