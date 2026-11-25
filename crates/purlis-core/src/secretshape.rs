@@ -9,8 +9,8 @@
 //! memory or ref file whose text matches is a commit charter refuses to make, since a memory
 //! is pushed to a shared repository and a secret in one is disclosed the moment it lands.
 //!
-//! **The rules are Python's, character for character**, so the two implementations refuse the
-//! same files. Two of them are worth naming:
+//! **The rules are Python's, character for character, except the departures listed below**, so
+//! the two implementations refuse the same files. The ones worth naming:
 //!
 //! - **The credential-assignment rule is a shape, not a dictionary.** `token: <six or more
 //!   non-blank characters>` is a hit whatever the value is — which is why the exemption below
@@ -32,10 +32,17 @@
 //!   from, in a script or a patch that must match its source byte for byte
 //!   ([`code_expression_len`]). A literal anywhere in one that reads as a value — a quoted
 //!   argument, a segment, a fallback — keeps the assignment refused.
+//! - **A value is on the keyword's line, or alone on the next** (#7628). Python's `\s` after the
+//!   `:` or `=` crosses line breaks, so prose ending in `token:` took the first word of the
+//!   line below as its value. Here the blanks stop at `\n`, and the rule crosses one break only
+//!   when the next line, trimmed, is a single word that reads as a value
+//!   ([`looks_like_a_value`]): a Markdown `Password:` over its secret, a YAML key over a plain
+//!   scalar. A shell line below prose is not that.
 //!
 //! # Why the lookahead is gone and the match is still Python's
 //!
-//! Python's rule is `…[:=]\s*(?=['"]?\S{6,})(?P<value>[^\n]*)`. `regex` has no lookahead, and
+//! Python's rule is `…[:=]\s*(?=['"]?\S{6,})(?P<value>[^\n]*)`, whose `\s` crosses any number of
+//! line breaks (a departure, below). `regex` has no lookahead, and
 //! rewriting it as "match, then test the value in code" is **not** equivalent: the rewritten
 //! pattern consumes the whole line at a position Python rejected, so a real assignment later
 //! on the same line would never be reached (`token: x  password: hunter2s`). So the length
@@ -57,9 +64,10 @@
 //!
 //! - **`\s`**: CPython's is Unicode `White_Space` **plus U+001C–U+001F**, the four separator
 //!   controls (and it is exactly `str.isspace()`, so `rstrip` carries the same four).
-//!   `regex`'s is `White_Space` alone. [`crate::memstore::is_python_space`] already existed
+//!   `regex`'s is `White_Space` alone. (One deliberate departure the other way: `BLANK` stops at
+//!   `\n`, which Python's `\s` does not; see the list of departures above.) [`crate::memstore::is_python_space`] already existed
 //!   for this, with a docstring saying the difference is not cosmetic; this module called
-//!   `\s` and `trim_end()` anyway. Closed by `SPACE`/`NOT_SPACE` and by `py_rstrip`.
+//!   `\s` and `trim_end()` anyway. Closed by `BLANK`/`NOT_SPACE` and by `py_rstrip`.
 //! - **`\b`**: `regex`'s word character is UTS#18's, which counts a combining mark, a
 //!   variation selector and ZWJ as word characters; CPython's is `str.isalnum() or '_'`,
 //!   which counts none of them. So `⚠️token: hunter2is` — U+FE0F is `Mn` — had **no word
@@ -73,7 +81,7 @@
 //!   engines fold). So only `i` needs help, and only where the keywords spell one.
 //!
 //! The trailing `\b` is kept and is inert either way: what follows the keyword in this
-//! pattern is `[\s\x1c-\x1f]*[:=]`, and every character either class can match is a non-word
+//! pattern is `BLANK*[:=]`, and every character either class can match is a non-word
 //! character to both engines, so the boundary is present in both or the match fails in both.
 
 use std::sync::OnceLock;
@@ -147,13 +155,16 @@ const CREDENTIAL_PREFIXES: [&str; 36] = [
     "xwfp-",
 ];
 
-/// CPython's `\s`, spelled for `regex`: Unicode `White_Space` and the four separator
-/// controls it adds. Measured equal to `re`'s `\s` and to `str.isspace()` over every
-/// non-surrogate codepoint.
-const SPACE: &str = r"[\s\x1c-\x1f]";
-
 /// CPython's `\S`.
 const NOT_SPACE: &str = r"[^\s\x1c-\x1f]";
+
+/// CPython's `\s`, spelled for `regex` (Unicode `White_Space` and the four separator controls it
+/// adds; measured equal to `re`'s `\s` and to `str.isspace()` over every non-surrogate
+/// codepoint), without `\n`: the blanks a credential assignment may have round its `:` or `=`.
+/// A lone `\r` stays a blank, as it is to Python. The blanks never cross a line break; the one
+/// break the rule crosses is the optional `next` group of [`assignment_pattern`], and
+/// [`assignment_at`] keeps it only for a lone value (#7628).
+const BLANK: &str = r"[[\s\x1c-\x1f]&&[^\n]]";
 
 /// `i` as CPython's `(?i)` reads it: the letter, and the two Turkic spellings `regex`'s
 /// simple case folding leaves out. Under `(?i)` this class is `{i, I, ı, İ}`, which is
@@ -243,7 +254,7 @@ fn assignment_pattern(value: &str) -> String {
         r"(?i)(?P<key>password|passwd|ap".to_owned(),
         format!("{I_CLASS}[_-]?key|ap{I_CLASS}key"),
         r"|secret|token)\b".to_owned(),
-        format!("{SPACE}*[:=]{SPACE}*"),
+        format!("{BLANK}*[:=]{BLANK}*(?P<next>\n{BLANK}*)?"),
         format!("(?P<value>{value})"),
     ]
     .concat()
@@ -894,6 +905,20 @@ fn assignment_at(text: &str) -> Option<(std::ops::Range<usize>, std::ops::Range<
             continue;
         }
         let value = caps.name("value").expect("the rule has a value group");
+        if caps.name("next").is_some() {
+            // The separator ended its line, so the value is the next line's: only a lone word
+            // that reads as a value (`Password:` over a secret, a YAML key over a scalar) is
+            // one. Prose ending in `token:` over a command line is not (#7628).
+            let end = text[value.start()..]
+                .find('\n')
+                .map_or(text.len(), |n| value.start() + n);
+            let line = crate::memstore::py_rstrip(&text[value.start()..end]);
+            let lone = !line.chars().any(crate::memstore::is_python_space);
+            if !(lone && looks_like_a_value(line)) {
+                at = after_one_char(text, whole.start());
+                continue;
+            }
+        }
         let named = variable_name_len(&text[value.start()..])
             .or_else(|| code_expression_len(&text[value.start()..]));
         if let Some(named) = named {
@@ -1154,7 +1179,7 @@ fn opened_assignment_at(read: &str) -> bool {
                 r"(?i)(?:password|passwd|ap".to_owned(),
                 format!("{I_CLASS}[_-]?key|ap{I_CLASS}key"),
                 r"|secret|token)\b".to_owned(),
-                format!("{SPACE}*={SPACE}*\"\"\""),
+                format!("{BLANK}*={BLANK}*\"\"\""),
             ]
             .concat(),
         )
@@ -2991,6 +3016,128 @@ mod tests {
         ] {
             assert_eq!(secret_kind(text), None, "{text}");
         }
+    }
+
+    /// A literal value shaped like a token, built from parts so this file holds none (#7628).
+    fn literal() -> String {
+        ["x9f2", "k1m7", "q4w8"].concat()
+    }
+
+    /// A forge-prefixed token, built from parts.
+    fn forge_token() -> String {
+        ["gh", "p_", "Ab3dE6gH9jK2mN5pQ8sT1vW4yZ7bC0eF3hJ6"].concat()
+    }
+
+    #[test]
+    fn prose_ending_in_a_key_word_and_a_colon_takes_no_value_from_a_command_line_below() {
+        // #7628: the separator's blanks ran across the line break, so the next line's first
+        // word was this line's value.
+        let snippet = "TOKEN=$(awk '/token:/ {print $2}' ~/.config/glab-cli/config.yml)";
+        let prose = "a tool keeps its token in the file and reads it back with token =";
+        for text in [
+            format!("a tool keeps its token:\n{snippet}\n"),
+            format!("a tool keeps its token:\r\n{snippet}\r\n"),
+            "the password:\nexport X=\"$(pass show deploy)\"\n".to_owned(),
+            format!("{prose}\nTOKEN=\"$(tool config get token)\"\n"),
+            // Two or more words below are prose, however long the first.
+            format!("the password:\n{} and more\n", literal()),
+        ] {
+            assert_eq!(secret_kind(&text), None, "{text:?}");
+            assert_eq!(found(&text), None, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn a_lone_value_alone_on_the_next_line_is_still_a_credential() {
+        let value = literal();
+        for text in [
+            format!("Password:\n{value}\n"),
+            format!("Password:\r\n{value}\r\n"),
+            format!("token:\n  {value}\n"),
+            format!("the password =\n{value}\n"),
+            format!("secret: \n{value}"),
+        ] {
+            assert_eq!(
+                secret_kind(&text),
+                Some("credential assignment"),
+                "{text:?}"
+            );
+        }
+        // A second break is a gap, not a value below.
+        assert_eq!(secret_kind(&format!("token:\n\n{value}\n")), None);
+    }
+
+    #[test]
+    fn a_lone_carriage_return_is_a_blank_round_the_separator() {
+        let value = literal();
+        for text in [
+            format!("token:\r{value}"),
+            format!("token\r=\r{value}"),
+            format!("token = {value}\r\n"),
+        ] {
+            assert_eq!(
+                secret_kind(&text),
+                Some("credential assignment"),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_command_substitution_is_not_a_credential_assignment() {
+        for text in [
+            "TOKEN=$(awk '/token:/ {print $2}' ~/.config/glab-cli/config.yml)",
+            "token: $(glab config get token --host gitlab.example.com)",
+            "export GITLAB_TOKEN=\"$(grep -m1 token ~/.config/glab-cli/config.yml | cut -d' ' -f2)\"",
+            "token = \"$(glab config get token)\"",
+        ] {
+            assert_eq!(secret_kind(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_real_assignment_is_still_caught_with_its_value_on_the_line() {
+        let value = literal();
+        for text in [
+            format!("TOKEN={value}"),
+            format!("token: {value}"),
+            format!("token:\t{value}"),
+            format!("token:\u{a0}{value}"),
+            format!("token\u{1c}=\u{1c}{value}"),
+            format!("token = {value}\r\n"),
+            format!("a tool keeps its token:\ntoken: {value}\n"),
+            format!("note\nPASSWORD =   '{value}'\n"),
+        ] {
+            assert_eq!(
+                secret_kind(&text),
+                Some("credential assignment"),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_forge_token_below_a_yaml_key_is_still_caught_by_its_prefix() {
+        let text = format!("name:\n{}\n", forge_token());
+        assert!(secret_kind(&text).is_some(), "{text:?}");
+    }
+
+    #[test]
+    fn a_joined_triple_quote_opener_is_still_caught() {
+        let value = literal();
+        let text = format!("token = \"\"\"\\\n{value}\n\"\"\"\n");
+        assert!(
+            found_as_read(None, &text).is_some(),
+            "{text:?} read as {:?}",
+            found_as_read(None, &text)
+        );
+    }
+
+    #[test]
+    fn save_reads_the_prose_before_a_command_substitution_as_no_assignment() {
+        // `leaks` never asks the assignment rule, so only save's `found_as_read` is under test.
+        let text = "a tool keeps its token:\nTOKEN=$(tool config get token)\n";
+        assert_eq!(found_as_read(None, text), None);
     }
 
     #[test]
