@@ -53,6 +53,31 @@ pub fn signed_runner(
         .map_err(|why| why.replace("{what}", &format!("the runner binary {file}")))
 }
 
+/// The name the bundler gives the macOS updater archive, and so the `file:` of its signature's
+/// trusted comment. `release-manifest` and the app check the version beside it, not the name.
+pub const UPDATER_ARCHIVE: &str = "purlis.app.tar.gz";
+
+/// **The `.sig` of the macOS updater archive** (ADR 0042 as amended 2026-11-25): `bytes`, the
+/// `.app.tar.gz` of the Developer ID signed bundle, signed by the updater's key with
+/// `version:<version>` in the trusted comment, as the bundler wrote it when the bundler
+/// signed after Developer ID did. The `sign-macos` job runs this on its own hosted runner, after
+/// the gate, over the archive it made from the signed bundle.
+pub fn signed_updater_archive(
+    bytes: &[u8],
+    key: &str,
+    password: Option<&str>,
+    version: &str,
+    timestamp: u64,
+) -> Result<String, String> {
+    if !purlis_core::runnerinstall::a_version(version) {
+        return Err(format!(
+            "{version} isn't a version an update is published under"
+        ));
+    }
+    signed_as(bytes, UPDATER_ARCHIVE, key, password, version, timestamp)
+        .map_err(|why| why.replace("{what}", "the updater archive"))
+}
+
 /// `bytes` signed as `file` for `version`; a failure's sentence names what was signed as
 /// `{what}`, for the caller to fill in.
 fn signed_as(

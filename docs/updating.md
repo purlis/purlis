@@ -83,7 +83,8 @@ Windows yet.
 ## 0. The `release` environment: where the secrets live
 
 The signing secrets are **environment** secrets, not repository secrets. The release workflow's
-`plan`, `build` and `publish` jobs run in an environment called `release` whenever they publish,
+`keys`, `build`, `sign-macos` and `publish` jobs (and the others that read a key) run in an
+environment called `release` whenever they publish,
 and the environment's deployment policy decides which refs may reach them:
 
 | Policy entry | Type | Admits |
@@ -111,7 +112,8 @@ environment holds them, delete the repository copies:
 
 ```sh
 for s in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
-         APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY; do
+         APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+         APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_P8; do
   gh secret delete "$s" --repo purlis/purlis 2>/dev/null || true
 done
 ```
@@ -194,9 +196,9 @@ The `.pub` file is one line of base64, and that line is the whole value. A test 
 `app/src-tauri` accepts either the placeholder or a real minisign key and fails on anything in
 between. The release workflow refuses to publish while the placeholder is there.
 
-## 3. The Developer ID certificate: optional, and what skipping it costs
+## 3. The Developer ID certificate and notarization: optional, and what skipping them costs
 
-**Skip this and everything still works.** With none of the three secrets below set, the
+**Skip this and everything still works.** With none of the six secrets below set, the
 workflow ad-hoc signs the macOS bundle instead (`codesign -s -`). That is not the same as
 leaving it unsigned: on Apple Silicon a binary with no signature does not execute at all, so
 signing is never optional — only *whose* signature it carries is. What an ad-hoc signature
@@ -207,24 +209,98 @@ install from a browser, described at the bottom of this page.
 Apple's. Every update is verified against that key before anything is unpacked, whoever signed
 the bundle.
 
-If you do have an Apple Developer account, set all three and the workflow uses them. Set
-*some* of the three and the workflow refuses the publish, because a half-configured
-certificate silently signs with something nobody chose.
+### Where the key is used
 
-1. On developer.apple.com: **Certificates → + → Developer ID Application**. Create it and
-   download it into Keychain Access.
-2. In Keychain Access, export that certificate *with its private key* as `charter-devid.p12`,
-   with a password.
-3. Then:
+The Developer ID private key is imported on a **GitHub-hosted** macOS runner and nowhere else
+(ADR 0042, amended 2026-11-25). The `build` job may run on a self-hosted Mac (the repository
+variable `MACOS_RELEASE_RUNNER`); it seals its bundle ad-hoc and never reads a secret below. The
+`sign-macos` job, which runs on `macos-latest` after the checks have passed, in the `release`
+environment, takes that bundle and signs it, notarizes a stable one, and makes the `.app.zip`,
+the updater's `.app.tar.gz` with its minisign signature, and the `.dmg`.
+
+- A **stable** build (a `v*` tag) is Developer ID signed **and notarized**.
+- A **dev** build is Developer ID signed and **not** notarized: it reaches people through the
+  updater, which sets no quarantine flag.
+
+### The secrets
+
+Six secrets, all **environment secrets of `release`** (step 0), in two groups. The Developer ID
+group is all or none; the notarization group is all or none; and **a stable build needs both or
+neither**. Half of either group, or a Developer ID without the notarization group on a stable tag
+(or the reverse), stops the publish in the `keys` job, before the build, and says which is
+missing. A dev build with the notarization group set does not notarize and says so.
+
+| Secret | What it holds | Used for |
+|---|---|---|
+| `APPLE_CERTIFICATE` | the Developer ID Application certificate and its private key, as a `.p12`, base64 on one line | signing, every build |
+| `APPLE_CERTIFICATE_PASSWORD` | the password the `.p12` was exported with | signing, every build |
+| `APPLE_SIGNING_IDENTITY` | the certificate's identity string, `Developer ID Application: Purlis, Inc (TEAMID)` | signing, every build |
+| `APPLE_API_ISSUER` | the App Store Connect issuer ID (a UUID) | notarizing, stable only |
+| `APPLE_API_KEY` | the API key's **key ID** (ten characters, not the file name) | notarizing, stable only |
+| `APPLE_API_KEY_P8` | the text of the `AuthKey_<KEYID>.p8` file | notarizing, stable only |
+
+### How to produce each one
+
+**`APPLE_CERTIFICATE` and `APPLE_CERTIFICATE_PASSWORD`: the Developer ID Application certificate
+as a base64 `.p12`.** Only the account holder can create a Developer ID certificate.
+
+1. On a Mac, open **Keychain Access → Certificate Assistant → Request a Certificate From a
+   Certificate Authority**. Enter the account's email and a common name, choose **Saved to disk**,
+   and save the `.certSigningRequest`.
+2. On developer.apple.com: **Certificates, Identifiers & Profiles → Certificates → +**, choose
+   **Developer ID Application**, upload the request and download the `.cer`. Double-click it to
+   add it to the login keychain, the same one that holds the request's private key.
+3. In Keychain Access, under **My Certificates**, find **Developer ID Application: Purlis, Inc
+   (TEAMID)** with the key nested under it. Right-click it and **Export**, as `purlis-devid.p12`,
+   with a password you will keep. Exporting the certificate without its key gives a `.p12` that
+   cannot sign.
+4. Then:
 
 ```sh
-security find-identity -v -p codesigning    # copy the "Developer ID Application: … (TEAMID)" line
-
-base64 -i charter-devid.p12 | gh secret set APPLE_CERTIFICATE --repo purlis/purlis --env release
+base64 -i purlis-devid.p12 | tr -d '\n' | gh secret set APPLE_CERTIFICATE --repo purlis/purlis --env release
 gh secret set APPLE_CERTIFICATE_PASSWORD --repo purlis/purlis --env release       # the .p12 password
-gh secret set APPLE_SIGNING_IDENTITY --repo purlis/purlis --env release \
-  --body "Developer ID Application: Your Name (TEAMID)"
+rm purlis-devid.p12                                                                 # and empty the Trash
 ```
+
+**`APPLE_SIGNING_IDENTITY`: the identity string.** It is the certificate's name exactly as
+`codesign` lists it, in the form `Developer ID Application: <Name> (<TEAMID>)`, where `<Name>` is
+the legal name on the account and `<TEAMID>` is the ten-character team ID. With the certificate in
+your keychain:
+
+```sh
+security find-identity -v -p codesigning
+#   1) 0123456789ABCDEF0123456789ABCDEF01234567 "Developer ID Application: Purlis, Inc (ABCDE12345)"
+
+gh secret set APPLE_SIGNING_IDENTITY --repo purlis/purlis --env release \
+  --body "Developer ID Application: Purlis, Inc (ABCDE12345)"
+```
+
+Copy what is between the quotes, whole. The signing job refuses to start if the string matches no
+identity in the `.p12`, and prints the identities the `.p12` does hold.
+
+**`APPLE_API_ISSUER`, `APPLE_API_KEY` and `APPLE_API_KEY_P8`: an App Store Connect API key.**
+Notarization signs in with an API key, never an Apple ID password.
+
+1. On appstoreconnect.apple.com: **Users and Access → Integrations → App Store Connect API →
+   Team Keys** (a *team* key, not an individual one). The account holder may have to request
+   access to the API there first.
+2. **Generate API Key** (or **+**), name it `purlis-notarization`, give it the **Developer**
+   role, which is enough for `notarytool`, and generate it.
+3. The **Issuer ID** is shown above the table of keys: a UUID. The **Key ID** is in the new key's
+   row. **Download** the key: `AuthKey_<KEYID>.p8`. Apple offers the download once, so keep it
+   until the secrets are set.
+4. Then:
+
+```sh
+gh secret set APPLE_API_ISSUER --repo purlis/purlis --env release --body "00000000-0000-0000-0000-000000000000"
+gh secret set APPLE_API_KEY    --repo purlis/purlis --env release --body "ABCDE12345"       # the key ID
+gh secret set APPLE_API_KEY_P8 --repo purlis/purlis --env release < AuthKey_ABCDE12345.p8   # the file's text
+rm AuthKey_ABCDE12345.p8                                                                    # keep one copy somewhere safe
+```
+
+The job writes the `.p8` to a file of its own for `notarytool`, with permissions for its owner
+alone, and deletes it, and the keychain the certificate was imported into, when the job ends,
+however it ended.
 
 **If you adopt a team, keep it.** macOS lets an app replace its own bundle in `/Applications`
 without asking for App Management permission when the new bundle is signed by the same team.
@@ -239,8 +315,7 @@ in ADR 0042 §3, including what it does *not* cover. Moving from ad-hoc to a rea
 the same one-time reinstall any team change is, so adopting a certificate later is not blocked
 by anything here.
 
-**Not set, on purpose:** `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, `APPLE_API_*`. Those
-are notarization, which ADR 0042 declines. The consequence is below.
+**Not set, on purpose:** `APPLE_ID` and `APPLE_PASSWORD`. Nothing here signs in with an Apple ID.
 
 ## 4. The dev channel's release: once
 
@@ -318,10 +393,14 @@ of the next version, with the fragments in `changes/` folded into its copy befor
 
 ## What a first-time installer sees on macOS
 
-Either way the build is **not notarized**, and either way a browser marks what it downloads as
-quarantined, so a first launch is refused once. What differs is only how it is refused.
+**A stable build, with step 3 done, is notarized**, with the ticket stapled to the app and the
+`.dmg`: Gatekeeper accepts a copy a browser downloaded, and the first launch needs nothing extra.
 
-**The one instruction that works in both cases**, before the first launch:
+Everything else is **not notarized**, and a browser marks what it downloads as quarantined, so a
+first launch is refused once. That is a dev build (Developer ID signed or ad-hoc), and any build
+made with step 3 skipped. What differs is only how it is refused.
+
+**The one instruction that works in every case**, before the first launch:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/purlis.app
@@ -329,10 +408,10 @@ xattr -dr com.apple.quarantine /Applications/purlis.app
 
 Quarantine is the flag Gatekeeper assesses. Remove it and there is nothing left to refuse.
 
-**With a Developer ID (step 3 done).** macOS 15 and later answer a quarantined, un-notarized
-app with **"purlis" Not Opened**, which offers only *Done* and *Move to Trash*. Click *Done*,
-open **System Settings → Privacy & Security**, click **Open Anyway** beside purlis, and
-confirm.
+**A dev build with a Developer ID (step 3 done).** macOS 15 and later answer a quarantined,
+un-notarized app with **"purlis" Not Opened**, which offers only *Done* and *Move to Trash*.
+Click *Done*, open **System Settings → Privacy & Security**, click **Open Anyway** beside purlis,
+and confirm.
 
 **Ad-hoc signed (step 3 skipped).** Gatekeeper has no developer to check, so it refuses a
 quarantined copy outright. The **Open Anyway** route may work here too, but **that has not been

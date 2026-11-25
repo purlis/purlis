@@ -272,8 +272,10 @@ prints what to type to install each one. A build started by hand uses the stable
 with ([ADR 0092](adr/0092-the-channels-differ-in-optimisation-profile-and-bundle-set-and-in-nothing-else.md)).
 
 The app updates itself from those channels, and `purlis update --channel dev|stable` picks
-one. Published builds are updater-signed (minisign) and Developer ID signed, **not notarized**,
-so a first install from a browser meets Gatekeeper once and updates do not. How that works, and
+one. Published builds are updater-signed (minisign) and, when the Apple secrets are set, Developer
+ID signed on a GitHub-hosted runner (`build` never holds that key; the `sign-macos` job does). A
+stable build is also notarized; a dev build is not, so a first install of one from a browser meets
+Gatekeeper once and updates do not. How that works, and
 the keys and secrets only the operator can set up, are in [`docs/updating.md`](updating.md)
 and [ADR 0042](adr/0042-charter-updates-itself-and-nothing-it-cannot-verify-reaches-it.md).
 
