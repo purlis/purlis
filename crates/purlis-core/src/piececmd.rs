@@ -124,7 +124,12 @@ pub fn add(
             // The check above is not the mutex — git is. A worker that won between that check
             // and git's own lock leaves a failure that reads like a broken repo unless charter
             // looks again, so it looks: the cause is read off reality, not off git's English.
-            if let Some(held) = holder(plane, ws, repo, piece, branch_name) {
+            // A cut that made the folder and then could not note its branch left the folder
+            // behind: that is not a race, and `holder` would call it one.
+            let cut_but_not_noted = matches!(refusal, Refusal::BranchNotNoted { .. });
+            if let Some(held) =
+                holder(plane, ws, repo, piece, branch_name).filter(|_| !cut_but_not_noted)
+            {
                 return taken(piece, &held, say);
             }
             say(Say::Fail(refusal.to_string().into()));

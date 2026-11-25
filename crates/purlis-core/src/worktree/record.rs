@@ -12,37 +12,150 @@
 
 use std::path::{Path, PathBuf};
 
-/// The files of a record that git reads, or writes in place.
-const FILES: [&str; 4] = ["HEAD", "index", "COMMIT_EDITMSG", "MERGE_MSG"];
+/// What a worktree's record may hold at its top, by name, case-folded (git opens `orig_head` as
+/// `ORIG_HEAD` on a case-insensitive disk, so every name is compared folded): the files git and
+/// the app's own updates leave there. Anything else is refused, and not looked at further, because
+/// git reads more names than any list of bad ones could hold (`MERGE_MODE`, `config.worktree`,
+/// `info/`, `modules/` …). Sources: `path.c` (`common_list`'s per-worktree `HEAD`, `index`,
+/// `logs`, `ORIG_HEAD`, `*_HEAD`, `MERGE_*`, `COMMIT_EDITMSG`, `SQUASH_MSG`, `AUTO_MERGE`),
+/// `builtin/worktree.c` (`commondir`, `gitdir`, `locked`) and `fetch` (`FETCH_HEAD`).
+const FILES: [&str; 17] = [
+    "head",
+    "commondir",
+    "gitdir",
+    "locked",
+    "index",
+    "orig_head",
+    "fetch_head",
+    "commit_editmsg",
+    "merge_msg",
+    "merge_head",
+    "merge_mode",
+    "auto_merge",
+    "rebase_head",
+    "cherry_pick_head",
+    "revert_head",
+    "squash_msg",
+    "merge_rr",
+];
 
-/// The folders of a record whose every entry git reads or writes: the ref log, and the state of a
-/// rebase, an apply and a sequencer.
-const FOLDERS: [&str; 4] = ["logs", "rebase-merge", "rebase-apply", "sequencer"];
+/// The folders of a record that git writes in: the ref log, and the state of a rebase. A
+/// `rebase-apply` and a `sequencer` are not here: the app's update never leaves either (it
+/// rebases with the merge backend), and what is in them (`sequencer/opts`) names programs.
+const FOLDERS: [&str; 2] = ["logs", "rebase-merge"];
+
+/// What `rebase-merge/` may hold, case-folded: the state the app's own `git rebase` leaves
+/// (the merge backend, `sequencer.c`'s `write_basic_state`, `rebase_path_*` and `todo_list` files,
+/// and `rebase.c`). Left out on purpose, each of them a file git acts on: `refs-to-delete` (deletes
+/// any branch it names on `--continue` or `--abort`), `autostash`, `strategy`, `strategy_opts`,
+/// `gpg_sign_opt`, `allow_rerere_autoupdate`, `squash-onto`, `rewritten/` and `dropped/`.
+const REBASE_FILES: [&str; 22] = [
+    "author-script",
+    "done",
+    "drop_redundant_commits",
+    "end",
+    "git-rebase-todo",
+    "git-rebase-todo.backup",
+    "git-rebase-todo.tmp",
+    "head-name",
+    "interactive",
+    "message",
+    "msgnum",
+    "no-reschedule-failed-exec",
+    "onto",
+    "orig-head",
+    "patch",
+    "stopped-sha",
+    "amend",
+    "current-fixups",
+    "message-fixup",
+    "message-squash",
+    "rewritten-list",
+    "rewritten-pending",
+];
 
 /// How deep a folder is looked into: far past any state git keeps.
 const DEEPEST: u8 = 16;
 
 /// Why the app's git does not run in the piece whose git record is `git_dir`, or nothing: the
-/// record, or one of its entries ([`FILES`], any `*_HEAD`, [`FOLDERS`] and everything in them),
-/// is a link, or is not a regular file or a folder. What cannot be looked at is refused.
+/// record holds an entry that is not on the allowlist ([`FILES`], `*.lock`, [`FOLDERS`] and, in
+/// `rebase-merge/`, [`REBASE_FILES`]), by name case-folded and by type, or one is a link, a pipe, a
+/// socket or a device, or a pseudo-ref holds a symbolic one. What cannot be looked at is refused.
 pub fn refused(git_dir: &Path) -> Result<(), String> {
+    // The record of a linked worktree (`<clone>/.git/worktrees/<id>`) holds only what git and the
+    // app leave there. A clone's own `.git` also holds the config, the hooks, the objects and
+    // the refs, so there the names that are not listed are not looked at, and the folders that
+    // are listed are looked into as the record's are.
+    let linked = git_dir
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name == "worktrees");
     plain(git_dir, true)?;
-    for name in FILES {
-        plain(&git_dir.join(name), false)?;
-    }
     let entries = std::fs::read_dir(git_dir).map_err(|e| unreadable(git_dir, &e))?;
     for entry in entries {
         let entry = entry.map_err(|e| unreadable(git_dir, &e))?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if name != "HEAD" && (name.ends_with("_HEAD") || name == "AUTO_MERGE") {
-            plain(&entry.path(), false)?;
-            not_a_symbolic_ref(&entry.path())?;
+        let path = entry.path();
+        let name = folded(&entry);
+        let a_file = FILES.contains(&name.as_str()) || is_lock(&name);
+        let a_folder = FOLDERS.contains(&name.as_str())
+            || (!linked && matches!(name.as_str(), "rebase-apply" | "sequencer"));
+        if !a_file && !a_folder {
+            if linked {
+                plain(&path, false)?;
+                return Err(not_listed(&path));
+            }
+            continue;
+        }
+        plain(&path, false)?;
+        let is_dir = std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_dir());
+        if is_dir && a_folder {
+            if name == "rebase-merge" {
+                rebase_state(&path)?;
+            } else {
+                below(&path, 0)?;
+            }
+        } else if !is_dir && a_file {
+            if name != "head" && (name.ends_with("_head") || name == "auto_merge") {
+                not_a_symbolic_ref(&path)?;
+            }
+        } else {
+            return Err(not_listed(&path));
         }
     }
-    for name in FOLDERS {
-        below(&git_dir.join(name), 0)?;
+    Ok(())
+}
+
+/// An entry's name, lower-cased: the case-insensitive disk opens it as the listed name.
+fn folded(entry: &std::fs::DirEntry) -> String {
+    entry.file_name().to_string_lossy().to_lowercase()
+}
+
+/// A lock git holds while it writes (`index.lock`): made with `O_EXCL`, so never written through.
+fn is_lock(name: &str) -> bool {
+    name.ends_with(".lock")
+}
+
+/// `rebase-merge/`: only the files of [`REBASE_FILES`] (and locks), each a regular file.
+fn rebase_state(dir: &Path) -> Result<(), String> {
+    for entry in std::fs::read_dir(dir).map_err(|e| unreadable(dir, &e))? {
+        let entry = entry.map_err(|e| unreadable(dir, &e))?;
+        let path = entry.path();
+        plain(&path, false)?;
+        let name = folded(&entry);
+        let is_file = std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_file());
+        if !is_file || !(REBASE_FILES.contains(&name.as_str()) || is_lock(&name)) {
+            return Err(not_listed(&path));
+        }
     }
     Ok(())
+}
+
+fn not_listed(path: &Path) -> String {
+    refusal(
+        path,
+        "not something git or purlis's own update leaves in it (it may make git act on a file \
+         or a branch the chat chose)",
+    )
 }
 
 /// Why the pseudo-ref at `path` (`ORIG_HEAD`, `REBASE_HEAD`, `AUTO_MERGE`, any `*_HEAD`) is a
@@ -120,11 +233,12 @@ fn git_dir_of(folder: &Path) -> Result<PathBuf, String> {
 /// ([`BRANCH_NOTE`]), and never the folder's name, which `--branch` makes a different string
 /// (`plane-root-gh` is on `fix/6494-plane-root-gh-token`) and which a chat can choose.
 ///
-/// A piece cut before the app kept the note has none. It is **noted now, from the branch `HEAD`
-/// names**, where that branch is the folder's own name or one the clone recorded a base for
-/// (only a cut writes that, `branch.<name>.charterBase`): a branch a chat repointed `HEAD` to
-/// has neither, so it is refused. That is trust on first use, and cheaper than refusing every
-/// piece cut so far; `noted_now` lets the caller say so.
+/// A piece cut before the app kept the note has none. It is **noted now only where `HEAD` names a
+/// branch called exactly as the folder is**, and no other worktree has that branch checked out
+/// (#7594): `HEAD` is a file a chat can write, so a `HEAD` naming anything else (another piece's
+/// branch, a `--branch` name) proves nothing about what the piece was cut for, and is refused.
+/// That is trust on first use for the one shape a cut without `--branch` makes; `noted_now` lets
+/// the caller say so.
 pub fn own_branch(root: &Path, git_dir: &Path, folder: &Path) -> Result<Own, String> {
     let notes = crate::pieceupdate::notes_of(root, git_dir);
     if let Ok(text) = std::fs::read_to_string(notes.join(BRANCH_NOTE)) {
@@ -151,15 +265,16 @@ pub fn own_branch(root: &Path, git_dir: &Path, folder: &Path) -> Result<Own, Str
         .parent()
         .and_then(Path::parent)
         .and_then(Path::parent);
-    let cut_here = piece == Some(named.as_str())
-        || clone.is_some_and(|clone| super::recorded_base(clone, &named).is_some());
-    if !cut_here || super::name::branch_name_ok(&named).is_err() {
+    if piece != Some(named.as_str())
+        || super::name::branch_name_ok(&named).is_err()
+        || clone.is_none_or(|clone| held_elsewhere(clone, folder, &named))
+    {
         return Err(format!(
-            "this folder's HEAD names {}, which purlis did not cut it for (it has no note of \
-             the branch, and {} is neither this folder's name nor a branch with a recorded \
-             base), so it does not act on it for a chat. Nothing was run. Put the folder back \
-             on its own branch from your own terminal",
-            shown_name(&named),
+            "this folder has no note of the branch purlis cut it for (it was cut before purlis \
+             kept one), and its HEAD names {}, which is not the folder's own name or is checked \
+             out in another folder, so purlis does not act on it for a chat. Nothing was run. \
+             Cut the piece again, or put the folder back on the branch of its own name from \
+             your own terminal",
             shown_name(&named)
         ));
     }
@@ -169,6 +284,33 @@ pub fn own_branch(root: &Path, git_dir: &Path, folder: &Path) -> Result<Own, Str
         branch: named,
         noted_now: true,
     })
+}
+
+/// Whether a worktree of `clone` other than `folder` has `branch` checked out, or whether that
+/// cannot be told (then it is taken as held).
+fn held_elsewhere(clone: &Path, folder: &Path, branch: &str) -> bool {
+    let Ok(said) = super::git::run(
+        clone,
+        &["worktree", "list", "--porcelain"],
+        super::git::READ,
+    ) else {
+        return true;
+    };
+    if !said.ok() {
+        return true;
+    }
+    let canon = |path: &str| std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path));
+    let mine = std::fs::canonicalize(folder).unwrap_or_else(|_| folder.to_path_buf());
+    let wanted = format!("branch refs/heads/{branch}");
+    let mut at: Option<PathBuf> = None;
+    for line in said.out.lines() {
+        if let Some(path) = line.strip_prefix("worktree ") {
+            at = Some(canon(path));
+        } else if line == wanted && at.as_ref().is_some_and(|at| *at != mine) {
+            return true;
+        }
+    }
+    false
 }
 
 fn shown_name(branch: &str) -> String {
@@ -299,14 +441,40 @@ mod tests {
     fn a_link_anywhere_in_it_is_refused_and_a_link_as_the_record_itself_too() {
         let dir = tempfile::tempdir().unwrap();
         let git_dir = dir.path().join("piece");
-        std::fs::create_dir_all(git_dir.join("rebase-merge/deeper")).unwrap();
+        std::fs::create_dir_all(git_dir.join("rebase-merge")).unwrap();
         let aside = dir.path().join("aside");
         std::fs::write(&aside, "x").unwrap();
-        std::os::unix::fs::symlink(&aside, git_dir.join("rebase-merge/deeper/done")).unwrap();
+        std::os::unix::fs::symlink(&aside, git_dir.join("rebase-merge/done")).unwrap();
         assert!(refused(&git_dir).unwrap_err().contains("a link"));
 
         let linked = dir.path().join("linked-record");
         std::os::unix::fs::symlink(&git_dir, &linked).unwrap();
         assert!(refused(&linked).unwrap_err().contains("a link"));
+    }
+
+    #[test]
+    fn a_linked_record_holds_only_listed_names_whatever_their_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let git_dir = dir.path().join("worktrees/piece");
+        std::fs::create_dir_all(git_dir.join("rebase-merge")).unwrap();
+        std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/piece\n").unwrap();
+        std::fs::write(git_dir.join("MERGE_MODE"), "no-ff").unwrap();
+        std::fs::write(git_dir.join("rebase-merge/head-name"), "refs/heads/piece\n").unwrap();
+        assert_eq!(refused(&git_dir), Ok(()));
+
+        std::fs::write(
+            git_dir.join("rebase-merge/Refs-To-Delete"),
+            "refs/heads/x\n",
+        )
+        .unwrap();
+        assert!(refused(&git_dir).unwrap_err().contains("not something git"));
+        std::fs::remove_file(git_dir.join("rebase-merge/Refs-To-Delete")).unwrap();
+
+        std::fs::write(git_dir.join("Orig_Head"), "ref: refs/heads/x\n").unwrap();
+        assert!(refused(&git_dir).unwrap_err().contains("symbolic ref"));
+        std::fs::remove_file(git_dir.join("Orig_Head")).unwrap();
+
+        std::fs::write(git_dir.join("config.worktree"), "[core]\n").unwrap();
+        assert!(refused(&git_dir).unwrap_err().contains("not something git"));
     }
 }

@@ -74,7 +74,7 @@ fn a_plan_changed_after_the_update_stopped_is_not_continued() {
     let (code, said) = update(&w, "p1", &UpdateStep::Continue, &Reach::default());
     assert_eq!(code, 1, "{said}");
     assert!(
-        said.contains("update-refs") && said.contains("does not plan"),
+        said.contains("update-refs") && said.contains("not something git"),
         "{said}"
     );
     assert!(state.is_dir(), "the rebase went on");
@@ -371,4 +371,204 @@ fn the_plan_a_rebase_goes_on_with_is_the_apps_own_and_its_notes_go_when_it_finis
         "{left:?}"
     );
     assert_eq!(out(&piece, &["rev-parse", "refs/heads/p1"]), before);
+}
+
+/// What the record may not hold, whatever it is called: not one of the names git and the app's own
+/// update leave there (#7594, round 3).
+#[test]
+fn a_lower_case_pseudo_ref_a_merge_mode_link_and_a_name_nobody_listed_are_refused() {
+    purlis_core::unsteered!();
+    let w = world();
+    let (code, cut) = add(&w, "p1", None);
+    assert_eq!(code, 0, "{cut}");
+    let piece = w.piece("p1");
+    write(&piece, "shared.txt", "a\nmine\nc\n");
+    git(&piece, &["commit", "-q", "-am", "mine"]);
+    git(&w.clone, &["branch", "victim"]);
+    let victim = out(&w.clone, &["rev-parse", "refs/heads/victim"]);
+    w.they_commit("README.md", "theirs\n");
+    let record = w.clone.join(".git/worktrees/p1");
+    let file = w.plane.join("victim.txt");
+
+    // A lower-case `orig_head`: a case-insensitive disk opens it as `ORIG_HEAD`.
+    for name in ["orig_head", "Rebase_Head", "merge_head", "Auto_Merge"] {
+        let at = record.join(name);
+        let kept = std::fs::read(&at).ok();
+        std::fs::write(&at, "ref: refs/heads/victim\n").unwrap();
+        let (code, said) = update(&w, "p1", &start(None), &Reach::default());
+        assert_eq!(code, 1, "{name}: {said}");
+        assert!(said.contains("symbolic ref"), "{name}: {said}");
+        let (code, said) = push(&w, "p1");
+        assert_eq!(code, 1, "{name}: {said}");
+        assert_eq!(
+            out(&w.clone, &["rev-parse", "refs/heads/victim"]),
+            victim,
+            "{name}"
+        );
+        match kept {
+            Some(kept) => std::fs::write(&at, kept).unwrap(),
+            None => std::fs::remove_file(&at).unwrap(),
+        }
+    }
+
+    // `MERGE_MODE`, linked: git writes it in place.
+    std::fs::write(&file, "the person's own file\n").unwrap();
+    std::os::unix::fs::symlink(&file, record.join("MERGE_MODE")).unwrap();
+    let (code, said) = update(&w, "p1", &start(None), &Reach::default());
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("a link"), "{said}");
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "the person's own file\n"
+    );
+    std::fs::remove_file(record.join("MERGE_MODE")).unwrap();
+
+    // A name git reads that nobody listed: refused by being unlisted, as a file or a folder.
+    for (name, folder) in [
+        ("config.worktree", false),
+        ("Modules", true),
+        ("sequencer", true),
+        ("rebase-apply", true),
+    ] {
+        let at = record.join(name);
+        if folder {
+            std::fs::create_dir(&at).unwrap();
+        } else {
+            std::fs::write(&at, "[core]\n\thooksPath = /tmp\n").unwrap();
+        }
+        let (code, said) = update(&w, "p1", &start(None), &Reach::default());
+        assert_eq!(code, 1, "{name}: {said}");
+        assert!(said.contains("not something git"), "{name}: {said}");
+        if folder {
+            std::fs::remove_dir(&at).unwrap();
+        } else {
+            std::fs::remove_file(&at).unwrap();
+        }
+    }
+    let (code, said) = update(&w, "p1", &start(None), &Reach::default());
+    assert_eq!(code, 0, "{said}");
+}
+
+#[test]
+fn a_refs_to_delete_in_the_rebase_state_is_refused_on_continue_and_on_abort_and_the_branch_stays() {
+    purlis_core::unsteered!();
+    let (w, piece, state) = stopped();
+    resolve(&piece);
+    git(&w.clone, &["branch", "victim"]);
+    let victim = out(&w.clone, &["rev-parse", "refs/heads/victim"]);
+
+    for name in ["refs-to-delete", "Refs-To-Delete", "autostash", "strategy"] {
+        let at = state.join(name);
+        std::fs::write(&at, "refs/heads/victim\n").unwrap();
+        for step in [UpdateStep::Continue, UpdateStep::Abort] {
+            let (code, said) = update(&w, "p1", &step, &Reach::default());
+            assert_eq!(code, 1, "{name}: {said}");
+            assert!(said.contains("not something git"), "{name}: {said}");
+            assert!(state.is_dir(), "{name}: the rebase went on or back");
+            assert_eq!(
+                out(&w.clone, &["rev-parse", "refs/heads/victim"]),
+                victim,
+                "{name}: the branch went"
+            );
+        }
+        std::fs::remove_file(&at).unwrap();
+    }
+    let (code, said) = update(&w, "p1", &UpdateStep::Continue, &Reach::default());
+    assert_eq!(code, 0, "{said}");
+}
+
+/// Forgets the app's note of each piece's branch, as a piece cut before the app kept one has none.
+fn forget_branch_notes(w: &World) {
+    fn walk(dir: &Path) {
+        for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.file_name().is_some_and(|name| name == "purlis-branch") {
+                std::fs::remove_file(&path).unwrap();
+            } else if path.is_dir() && !path.ends_with(".git") {
+                walk(&path);
+            }
+        }
+    }
+    walk(&w.plane);
+}
+
+#[test]
+fn a_piece_cut_before_the_note_is_noted_only_when_head_is_its_own_name() {
+    purlis_core::unsteered!();
+    let w = world();
+    for (piece, branch) in [("p1", None), ("p2", Some("fix/7594-p2-token"))] {
+        let (code, cut) = match branch {
+            Some(branch) => add_on(&w, piece, branch),
+            None => add(&w, piece, None),
+        };
+        assert_eq!(code, 0, "{cut}");
+    }
+    w.they_commit("README.md", "theirs\n");
+    forget_branch_notes(&w);
+    assert!(app_notes(&w).is_empty(), "{:?}", app_notes(&w));
+
+    // The attack: p1's HEAD, written by the chat, names the branch another piece has.
+    let record = w.clone.join(".git/worktrees/p1");
+    let other = out(&w.clone, &["rev-parse", "refs/heads/fix/7594-p2-token"]);
+    std::fs::write(record.join("HEAD"), "ref: refs/heads/fix/7594-p2-token\n").unwrap();
+    for _ in 0..2 {
+        let (code, said) = update(&w, "p1", &start(None), &Reach::default());
+        assert_eq!(code, 1, "{said}");
+        assert!(said.contains("no note"), "{said}");
+    }
+    let (code, said) = push(&w, "p1");
+    assert_eq!(code, 1, "{said}");
+    assert!(app_notes(&w).is_empty(), "noted: {:?}", app_notes(&w));
+    assert_eq!(
+        out(&w.clone, &["rev-parse", "refs/heads/fix/7594-p2-token"]),
+        other
+    );
+
+    // A piece cut on a `--branch` name has nothing that proves it: refused, not guessed.
+    let (code, said) = update(&w, "p2", &start(None), &Reach::default());
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("no note"), "{said}");
+    assert!(app_notes(&w).is_empty(), "noted: {:?}", app_notes(&w));
+
+    // Put back on its own name, it is the one shape that is noted.
+    std::fs::write(record.join("HEAD"), "ref: refs/heads/p1\n").unwrap();
+    let (code, said) = update(&w, "p1", &start(None), &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert!(
+        app_notes(&w).contains(&"purlis-branch".to_owned()),
+        "{:?}",
+        app_notes(&w)
+    );
+}
+
+#[test]
+fn a_cut_whose_branch_note_cannot_be_written_fails() {
+    purlis_core::unsteered!();
+    let w = world();
+    let (code, cut) = add(&w, "p0", None);
+    assert_eq!(code, 0, "{cut}");
+    // Where the notes go is a file, so none can be made under it.
+    fn find(dir: &Path) -> Option<PathBuf> {
+        for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path
+                .file_name()
+                .is_some_and(|name| name == "worktree-updates")
+            {
+                return Some(path);
+            } else if path.is_dir()
+                && !path.ends_with(".git")
+                && let Some(found) = find(&path)
+            {
+                return Some(found);
+            }
+        }
+        None
+    }
+    let notes = find(&w.plane).expect("the first cut noted its branch");
+    std::fs::remove_dir_all(&notes).unwrap();
+    std::fs::write(&notes, "in the way").unwrap();
+    let (code, said) = add(&w, "p1", None);
+    assert_ne!(code, 0, "{said}");
+    assert!(said.contains("note"), "{said}");
 }

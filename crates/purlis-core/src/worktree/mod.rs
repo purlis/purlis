@@ -244,6 +244,15 @@ pub enum Refusal {
          by hand: git -C <clone> config --replace-all branch.{branch}.charterBase <base>"
     )]
     BaseNotRecorded { branch: String, why: String },
+    /// The cut's own note of the branch could not be written (#7594): without it the app's git
+    /// would not act on the piece for a chat, so the cut fails rather than leave a piece nothing
+    /// can update.
+    #[error(
+        "'{branch}' was cut, but purlis could not note the branch it was cut for ({why}), so \
+         it would not update or push the folder for a chat. The worktree is there; remove it \
+         and cut it again"
+    )]
+    BranchNotNoted { branch: String, why: String },
     /// A writing chat's cut whose base could not be recorded, taken back again
     /// ([`crate::chatpiece`]). `kept` is why the take-back failed, when it did, and then the
     /// folder and the branch are still there.
@@ -357,6 +366,10 @@ impl Refusal {
             Self::NoSuchPiece { ws, repo, piece } => {
                 format!("{repo} in workspace '{ws}' has no branch folder called '{piece}'.")
             }
+            Self::BranchNotNoted { branch, why } => format!(
+                "purlis cut branch '{branch}' but could not note the branch the folder was cut \
+                 for ({why}), so it would not update or push it for a chat."
+            ),
             Self::BaseNotRecorded { branch, why } => format!(
                 "purlis cut branch '{branch}' but could not record the branch it came from \
                  ({why}), so a merge would not know where to land it."
@@ -1007,10 +1020,7 @@ pub fn add_vetted(
     // `HEAD` to it, never to the folder's name, which `--branch` makes a different string. A
     // piece without the note is noted from the branch it is on at its first use.
     if let Err(why) = record::note_branch(plane, &path, &branch) {
-        tracing::debug!(
-            "purlis: the branch of {} was not noted ({why})",
-            path.display()
-        );
+        return Err(Refusal::BranchNotNoted { branch, why });
     }
 
     // Recorded on the BRANCH, which `--branch` makes a different string from the piece, and

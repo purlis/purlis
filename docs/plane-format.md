@@ -7190,14 +7190,19 @@ down rather than read off the code.
   no longer read and is taken away); `purlis-branch`, **the branch the piece was cut for**, one
   line, written when the piece is cut (`worktree::record::note_branch`): the app's git holds
   `HEAD` to exactly `ref: refs/heads/<that branch>`, never to the folder's name, which `--branch`
-  makes a different string (a piece cut before it was kept has it noted from the branch it is on,
-  where that branch is the folder's name or one the clone recorded a base for, and says so); and
+  makes a different string (a piece cut before it was kept has it noted from the branch it is on only
+  where that branch is exactly the folder's name and no other worktree has it checked out, and
+  says so; otherwise the app does not act on it for a chat, and the piece is cut again); and
   `purlis-brokered-commit`, while a brokered commit stages: empty, then the id of the tree it
   staged (it was kept in the worktree's git directory, which a chat may write; that one is not
   read, and a link where it was refuses the commit).
 - **What the app does not prevent (#7553, #7594):** where a chat can write the worktree's git
-  record (sandbox level off), the app looks at the record before each git call it makes (links,
-  pseudo-refs that hold `ref:`, `HEAD`, a rebase's state) and again after it, and tells the
+  record (sandbox level off), the app looks at the record before each git call it makes and again after
+  it. A linked worktree's record may hold only an allowlist of names, compared case-folded
+  (`worktree::record::FILES`, `FOLDERS`, and in `rebase-merge/` `REBASE_FILES`), each a regular
+  file or folder, never a link: anything else (`MERGE_MODE` as a link, `config.worktree`,
+  `rebase-merge/refs-to-delete`, `sequencer/`, `rebase-apply/`) refuses the call, and a
+  pseudo-ref that holds `ref:` and a `HEAD` that is not the cut's branch refuse it too, and tells the
   person if it changed. It does **not** prevent a link planted *while* git runs (H3), nor a write
   to a rebase's plan between the last look and git reading it (M3). At level off the notes folder
   above is writable by the chat too (M4), so these notes are the app's, not a chat-proof record.
