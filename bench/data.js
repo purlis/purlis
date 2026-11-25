@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795632916477,
+  "lastUpdate": 1795633564110,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54978,6 +54978,48 @@ window.BENCHMARK_DATA = {
             "value": 101.248223,
             "unit": "ms",
             "extra": "median of 5 runs: 99.722, 100.361, 101.248, 101.488, 102.209 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ca21690f299edf244d08c1048ddf1252a64d0abd",
+          "message": "The new-chat picker keeps its first answer when the state folder or machine.json is rewritten (#7654)\n\n* Picker first answer: a write in the state folder keeps it, and a store write that changes nothing is not made\n\nA chat's every tool call rewrites .purlis/guard-seen.json, which planechange filed as a Project change, so moves_a_new_chat dropped the kept picker answers once a second on a busy machine. The state folder now moves nothing (what a picker answer reads from it is stamped). machine::update skips a write that would leave the file as it is, and Store::vouch restamps the approval only when the record's half moved, so a record write no longer rewrites machine.json each second.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M891G3R37H1PH72NH0K3GECN\nPurlis-Persona: steward\n\n* Picker first answer, review fixes: stamp the local vault registry, keep the mode repair on a skipped write, tighten the tests\n\nThe sandbox compile behind start_details reads .purlis/vaults.json and a broken one refuses a row, so it joins the picker's stamp (a kept refusal now ends when the registry is mended). A machine-store update that changes nothing still tightens the folder to 0700 and the store to 0600. The guard-seen test creates the state folder before the first read, so only the writes can drop the answer. Machine tests cover the missing file, bytes that differ, the modes and a vouch that restamps.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M891G3R37H1PH72NH0K3GECN\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T18:08:45Z",
+          "tree_id": "23f465cf5a26e3e246a84a9ef5c857cba37d1a2d",
+          "url": "https://github.com/purlis/purlis/commit/ca21690f299edf244d08c1048ddf1252a64d0abd"
+        },
+        "date": 1795633554789,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.693835,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.664, 0.682, 0.694, 0.695, 0.696 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.741233,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.634, 16.728, 16.741, 16.752, 16.796 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.374531,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.503, 101.545, 102.375, 102.595, 103.157 ms"
           }
         ]
       }
