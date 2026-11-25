@@ -965,6 +965,8 @@ macro_rules! app_commands {
                 // A link followed in an artifact's page, and what was opened for it (#5956).
                 artifact_links::artifact_link_follow,
                 artifact_links::artifact_links_opened,
+                // The device's RAM class, stood in for the machine's (SC-4f, #7635).
+                diagnostics::ram_class_stand_in,
             ],
         }
     };

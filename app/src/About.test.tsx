@@ -219,7 +219,11 @@ function profile(kind: string, harness: string, installed: string | null, name =
 
 /** The core as the About dialog asks it, for a dev build with two harnesses and some chats. */
 /** The core, answering what Copy diagnostics asks: with no slow-answer log unless `slow` is one. */
-function aCore({ slow }: { slow?: SlowMoment[] } = {}) {
+function aCore({
+  slow,
+  ramClassGb = 16,
+  hotTarget = 15,
+}: { slow?: SlowMoment[]; ramClassGb?: number | null; hotTarget?: number } = {}) {
   mockIPC((cmd) => {
     if (cmd === "slow_log_recent" && slow) return slow;
     if (cmd === "about_charter")
@@ -235,7 +239,14 @@ function aCore({ slow }: { slow?: SlowMoment[] } = {}) {
         profile("claude", "Claude Code", "2.1.4", "work"),
         profile("codex", "Codex", null),
       ];
-    if (cmd === "diagnostics_here") return { os: "Darwin 27.2.0, aarch64", open: 12, hot: 4 };
+    if (cmd === "diagnostics_here")
+      return {
+        os: "Darwin 27.2.0, aarch64",
+        open: 12,
+        hot: 4,
+        ram_class_gb: ramClassGb,
+        hot_target: hotTarget,
+      };
     throw new Error(`not asked here: ${cmd}`);
   });
 }
@@ -274,8 +285,13 @@ describe("Copy diagnostics (#4774)", () => {
       "Version: 1.60.0-dev.3, a dev build of 1.60.0, dev-release profile",
       "System: Darwin 27.2.0, aarch64",
       "Harnesses: Claude Code 2.1.4, Codex (no version found)",
-      "Chats: 12 open, 4 hot",
+      "Chats: 12 open, 4 hot, target 15 (16 GB class)",
     ]);
+  });
+
+  it("says a device under 8 GB has no class and targets one hot chat", async () => {
+    const report = await copiedReport({ ramClassGb: null, hotTarget: 1 });
+    expect(report[4]).toBe("Chats: 12 open, 4 hot, target 1 (under 8 GB)");
   });
 
   it("ends with the slow-answer and stall log's recent entries, one JSON line each (#4725)", async () => {

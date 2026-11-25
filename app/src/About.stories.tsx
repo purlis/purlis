@@ -29,7 +29,7 @@ const meta = {
           profile: "release",
           notes: { version: "1.60.0", date: "2026-11-02", markdown: "### Added\n\n- A thing." },
         };
-      if (cmd === "diagnostics_here") return { os: "Darwin 27.2.0, aarch64", open: 12, hot: 4 };
+      if (cmd === "diagnostics_here") return { os: "Darwin 27.2.0, aarch64", open: 12, hot: 4, ram_class_gb: 16, hot_target: 15 };
       if (cmd === "machine_profiles") return [];
       if (cmd === "slow_log_recent") return [];
       return null;
@@ -76,7 +76,7 @@ export const CopyDiagnostics: Story = {
     await waitFor(() =>
       expect(within(dialog).getByRole("status")).toHaveTextContent("Diagnostics copied."),
     );
-    await expect(pasted).toContain("Chats: 12 open, 4 hot");
+    await expect(pasted).toContain("Chats: 12 open, 4 hot, target 15 (16 GB class)");
     // Pictured with its confirmation said, before Esc takes the dialog away.
     await pictureNow();
 
