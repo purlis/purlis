@@ -3966,7 +3966,7 @@ fn a_project_with_old_forge_token_lines_hands_the_window_one_notice_and_a_clean_
         "{}",
         shown.cause
     );
-    assert!(shown.text.contains("Settings › Forges"), "{}", shown.text);
+    assert!(shown.text.contains("Settings › Accounts"), "{}", shown.text);
     assert_eq!(state_of(dir.path()).forge_replaced, Some(shown));
 
     let clean = tempfile::tempdir().unwrap();
