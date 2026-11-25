@@ -319,8 +319,13 @@ impl ForgeListener {
                     let timeout = Some(wiring.limits.io_timeout);
                     let _ = stream.set_read_timeout(timeout);
                     let _ = stream.set_write_timeout(timeout);
-                    spawn_connection(&wiring, &active, move |w| {
+                    spawn_connection(&wiring, &active, move |w, slot| {
+                        // Locals drop in reverse: the slot first, then the stream, and the
+                        // duplicate last, which keeps the descriptor open until the slot is
+                        // back, on a panic too (#7608).
+                        let _hold = stream.try_clone().ok();
                         let mut stream = stream;
+                        let _slot = slot;
                         serve_one(w, &mut stream, &Route::Plain);
                     });
                 }
@@ -364,8 +369,9 @@ impl ForgeListener {
                     let _ = stream.set_read_timeout(timeout);
                     let _ = stream.set_write_timeout(timeout);
                     let ca = Arc::clone(&ca);
-                    spawn_connection(&wiring, &active, move |w| {
-                        serve_connect_stream(w, &ca, stream);
+                    spawn_connection(&wiring, &active, move |w, slot| {
+                        let _hold = stream.try_clone().ok();
+                        serve_connect(w, &ca, stream, slot);
                     });
                 }
             })?;
@@ -462,33 +468,45 @@ fn write_public(path: &std::path::Path, bytes: &[u8]) -> io::Result<()> {
     file.write_all(bytes)
 }
 
+/// One of a listener's connection places. It gives itself back when dropped, on every way out of
+/// a connection: a normal close, an error and a panic that unwinds.
+struct Slot(Option<Arc<AtomicUsize>>);
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        if let Some(active) = self.0.take() {
+            active.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+}
+
 /// Run `serve` on a thread of its own, unless the listener is already serving as many connections
 /// as it is allowed.
+///
+/// **The slot is given back before the client sees the connection end** (#7608). `serve` is handed
+/// the [`Slot`] and drops it before the stream it serves closes (the caller keeps a duplicate of
+/// the descriptor open until `serve` returns, so a stream moved into a callee does not close the
+/// connection early), so a client that reconnects on seeing EOF finds the place free.
 fn spawn_connection(
     wiring: &Wiring,
     active: &Arc<AtomicUsize>,
-    serve: impl FnOnce(&Wiring) + Send + 'static,
+    serve: impl FnOnce(&Wiring, Slot) + Send + 'static,
 ) {
     if active.fetch_add(1, Ordering::SeqCst) >= wiring.limits.connections {
         active.fetch_sub(1, Ordering::SeqCst);
         return;
     }
     let wiring = wiring.clone();
-    let slot = Arc::clone(active);
-    let spawned = std::thread::Builder::new()
+    // Built here, so a thread that will not start drops it, and the place comes back with it.
+    let slot = Slot(Some(Arc::clone(active)));
+    // In a debug or test build a panic in a handler ends this connection and nothing else
+    // (#7589). A shipped build aborts on any panic before it unwinds (`panicend::fatal`), so this
+    // protects nothing there: the handler must not panic on a chat's input (#7596).
+    let _ = std::thread::Builder::new()
         .name("forge-proxy-conn".into())
         .spawn(move || {
-            // In a debug or test build a panic in a handler ends this connection and nothing else,
-            // and the slot comes back either way (#7589). A shipped build aborts on any panic
-            // before it unwinds (`panicend::fatal`), so this protects nothing there: the
-            // handler must not panic on a chat's input (#7596).
-            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| serve(&wiring)));
-            slot.fetch_sub(1, Ordering::SeqCst);
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| serve(&wiring, slot)));
         });
-    if spawned.is_err() {
-        // Out of threads: the closure never ran, so the slot is given back here.
-        active.fetch_sub(1, Ordering::SeqCst);
-    }
 }
 
 /// The door's `200`, carrying its proof of the connection's nonce.
@@ -516,6 +534,11 @@ fn answer_proving(out: &mut TcpStream, status: u16, body: &str, proof: &str) -> 
 /// One connection on the `CONNECT` door: the `CONNECT` line, the core's verdict on its host, and
 /// then a terminated request or a tunnel.
 pub fn serve_connect_stream(wiring: &Wiring, ca: &ChatCa, stream: TcpStream) {
+    serve_connect(wiring, ca, stream, Slot(None));
+}
+
+/// [`serve_connect_stream`], giving `slot` back before the connection's end reaches the client.
+fn serve_connect(wiring: &Wiring, ca: &ChatCa, stream: TcpStream, slot: Slot) {
     let mut framed = Framed::new(stream).with_deadline(Instant::now() + wiring.limits.total);
     let head = match framed.read_head(wiring.limits.head) {
         Ok(head) => head,
@@ -601,7 +624,7 @@ pub fn serve_connect_stream(wiring: &Wiring, ca: &ChatCa, stream: TcpStream) {
             if established(&mut client, &proof).is_err() {
                 return;
             }
-            tunnel(client, upstream, wiring.limits.io_timeout);
+            tunnel(client, upstream, wiring.limits.io_timeout, slot);
         }
     }
 }
@@ -662,7 +685,7 @@ fn authority(target: &str) -> Option<(String, u16)> {
 }
 
 /// Carry bytes both ways, untouched, until either side ends or goes quiet.
-fn tunnel(client: TcpStream, upstream: TcpStream, idle: Duration) {
+fn tunnel(client: TcpStream, upstream: TcpStream, idle: Duration, slot: Slot) {
     let _ = upstream.set_read_timeout(Some(idle));
     let _ = upstream.set_write_timeout(Some(idle));
     let (Ok(mut client_read), Ok(mut upstream_write)) = (client.try_clone(), upstream.try_clone())
@@ -675,6 +698,8 @@ fn tunnel(client: TcpStream, upstream: TcpStream, idle: Duration) {
     });
     let (mut upstream_read, mut client_write) = (upstream, client);
     let _ = io::copy(&mut upstream_read, &mut client_write);
+    // The client is about to be told the connection is over: the place is free first (#7608).
+    drop(slot);
     let _ = client_write.shutdown(std::net::Shutdown::Write);
     let _ = forward.join();
 }

@@ -4491,9 +4491,14 @@ impl Listener {
                 let serving_turns = std::sync::Arc::clone(&turns);
                 dealt += 1;
                 let this = dealt;
-                let started = serving.run(
+                let started = serving.run_with_slot(
                     slot,
-                    Box::new(move || {
+                    Box::new(move |slot| {
+                        // Locals drop in reverse: the place is given back first, and the
+                        // duplicate closes the connection last, so a hook that reconnects on
+                        // seeing it end finds the place free (#7608).
+                        let _hold = connection.try_clone().ok();
+                        let _slot = slot;
                         serve(connection, pid, this, &tokens, &hearing, &serving_turns);
                     }),
                 );
@@ -5565,16 +5570,30 @@ impl Serving {
 
     /// Serves `job` in `slot`'s place on a thread of the pool, starting one if none is free.
     /// An error is a thread that would not start: `job` is dropped unrun.
+    #[cfg(test)]
     fn run(
         self: &std::sync::Arc<Self>,
         slot: Slot,
         job: Box<dyn FnOnce() + Send>,
     ) -> io::Result<()> {
+        self.run_with_slot(
+            slot,
+            Box::new(move |slot| {
+                let _slot = slot;
+                job();
+            }),
+        )
+    }
+
+    /// [`Self::run`], handing `job` the place, so it can give it back before its connection
+    /// closes (#7608).
+    fn run_with_slot(
+        self: &std::sync::Arc<Self>,
+        slot: Slot,
+        job: Box<dyn FnOnce(Slot) + Send>,
+    ) -> io::Result<()> {
         let mut state = self.lock();
-        state.waiting.push_back(Box::new(move || {
-            let _slot = slot;
-            job();
-        }));
+        state.waiting.push_back(Box::new(move || job(slot)));
         // Every admitted connection has a thread, so none waits behind a held one: the
         // admitted count is bounded by `at_most`, and so is this.
         if state.waiting.len() > state.idle && state.threads < self.at_most {

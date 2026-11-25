@@ -4,6 +4,9 @@
 //! #7589: whatever panics inside a request's handler ends that request alone. The connection
 //! gives its slot back, so panics never add up to a listener that refuses every chat's `gh`.
 //!
+//! #7608: the slot comes back before the client sees the connection end, so a client that
+//! reconnects on EOF at once, with the listener at its limit, is served and not turned away.
+//!
 //! These bind sockets, which a sandbox may not: they run in CI.
 
 use std::io::{Read, Write};
@@ -61,4 +64,45 @@ fn a_panic_in_a_request_handler_ends_that_request_and_gives_its_slot_back() {
     w.fake.answer(Answer::ok(r#"{"login":"octocat"}"#));
     let reply = parse_reply(&ask(&path, &gh_get(&w, "/user")));
     assert_eq!(reply.status, 200, "{}", reply.text());
+}
+
+/// A listener of one place, serving `Boom`.
+fn one_place() -> (World, ForgeListener, std::path::PathBuf, tempfile::TempDir) {
+    let mut w = World::new();
+    w.wiring.observe = Some(Arc::new(Boom));
+    w.wiring.limits.connections = 1;
+    let dir = tempfile::Builder::new()
+        .prefix("fp")
+        .tempdir_in(std::env::temp_dir())
+        .unwrap();
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    let listener = ForgeListener::serve_socket(w.wiring.clone(), dir.path()).unwrap();
+    let purlis_core::forge::proxy::EndpointKind::UnixSocket(path) = listener.kind().clone() else {
+        panic!("a socket");
+    };
+    (w, listener, path, dir)
+}
+
+#[test]
+fn a_connection_that_closes_normally_gives_its_slot_back_before_the_client_sees_eof() {
+    purlis_core::unsteered!();
+    let (w, _listener, path, _dir) = one_place();
+    for _ in 0..20 {
+        w.fake.answer(Answer::ok(r#"{"login":"octocat"}"#));
+        // No retry: the next connection arrives the moment this one's EOF is read.
+        let reply = parse_reply(&ask(&path, &gh_get(&w, "/user")));
+        assert_eq!(reply.status, 200, "{}", reply.text());
+    }
+}
+
+#[test]
+fn a_handler_that_panics_gives_its_slot_back_before_the_client_sees_eof() {
+    purlis_core::unsteered!();
+    let (w, _listener, path, _dir) = one_place();
+    for _ in 0..20 {
+        let _ = ask(&path, &gh_get(&w, "/boom"));
+        w.fake.answer(Answer::ok(r#"{"login":"octocat"}"#));
+        let reply = parse_reply(&ask(&path, &gh_get(&w, "/user")));
+        assert_eq!(reply.status, 200, "{}", reply.text());
+    }
 }
