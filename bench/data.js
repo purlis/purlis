@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795596755133,
+  "lastUpdate": 1795600326571,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54642,6 +54642,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8260015,
             "unit": "ms",
             "extra": "median of 5 runs: 100.688, 101.775, 101.826, 101.868, 102.395 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1fd77a1d125361129ff313b168a55629f1ffff62",
+          "message": "Security: the app's own git refuses a planted link, a changed rebase plan and a repointed HEAD in a branch folder (#7553) (#7594)\n\n* The app's git trusts nothing a chat writes in a worktree's git record (#7553)\n\nRefuse a record holding a link or a non-regular entry before the app commits, updates or pushes; keep the brokered-commit note in the app's notes folder, written through no link; continue a rebase only with the plan kept when it stopped (no update-refs, only picks, byte-equal); refuse a commit where HEAD names another branch than the folder's own; run rebases with sequence.editor=true.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M87W256PKTFKTGSNMSAKM95W\nPurlis-Persona: steward\n\n* The app's git: pseudo-refs, the recorded branch, the whole rebase state before git runs (#7553, round 2)\n\nA pseudo-ref (*_HEAD, AUTO_MERGE) holding `ref:` is refused; HEAD is held to exactly\nref: refs/heads/<the branch the cut noted>, recorded in the app's notes at cut time (a piece cut\nearlier is noted from the branch it is on, where that has a recorded base or is the folder's name,\nand the app says so) in commit, update and push; the plain path no longer checks HEAD.\n--continue and --abort check head-name, orig-head, onto, author-script, amend and the rest right\nbefore git runs; the plan is derived from the range the app noted, not a copy of the todo; the\nnotes go on finish and abort. sequence.editor=:, core.logAllRefUpdates=false on the app's gits, the\nrecord looked at again after git, and the clone's shared branch reflog checked for a link.\n\nNot prevented: a link planted while git runs (H3), the todo window (M3), the notes folder being\nwritable at sandbox level off (M4).\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M881QV20VRZ3Z26BP0H0RX10\nPurlis-Persona: steward\n\n* The app's git allows only the names a worktree record should hold; a legacy piece is noted only when HEAD is its own name; a cut that cannot note its branch fails (#7553, round 3)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M886GPQGY8S2KYQ8TEMBKYCH\nPurlis-Persona: steward\n\n* The app's git refuses what git acts on and ignores the rest of a worktree record; whole ids in a plan; no rebase notes; worktree adopt (#7553, round 4)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M88BVQSFY6BECEHD82E0XYGD\nPurlis-Persona: steward\n\n* Branch-check fixtures keep the note under the held root and a clone-shaped store; record refusals avoid retired terms (#7594)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M88KS3YSYEDSC4M0H4TCNAJS\nPurlis-Persona: steward\n\n* Copy: the cut-but-not-noted refusal says branch folder, not worktree (copy.rust retired-term guard) (#7594)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T09:01:50Z",
+          "tree_id": "80220b7d3267cd6bbf4491992069cb34b2284a5a",
+          "url": "https://github.com/purlis/purlis/commit/1fd77a1d125361129ff313b168a55629f1ffff62"
+        },
+        "date": 1795600320368,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5593715000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.553, 0.558, 0.559, 0.565, 0.566 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.1879385,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.129, 16.174, 16.188, 16.308, 16.359 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.046677,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.309, 101.732, 102.047, 102.554, 103.313 ms"
           }
         ]
       }
