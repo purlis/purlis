@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795641647803,
+  "lastUpdate": 1795641705239,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55230,6 +55230,48 @@ window.BENCHMARK_DATA = {
             "value": 101.3428255,
             "unit": "ms",
             "extra": "median of 5 runs: 100.790, 101.252, 101.343, 101.441, 101.442 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e2fb2e2e8d7b8892b74efc5f81f8a2a5ac54a7ac",
+          "message": "The operator is built on kube 5.2.0, past RUSTSEC-2026-0600 (#7668)\n\ncargo update -p kube -p kube-client -p kube-runtime in operator/: kube,\nkube-client, kube-core, kube-derive and kube-runtime 5.0.0 -> 5.2.0 (with\nparking_lot 0.13, lock_api 0.5, parking_lot_core 0.10, redox_syscall 0.9.5\nand libc 0.2.191 that the update brought). Cargo.toml's \"5.0\" requirement\nalready allowed it. The operator enables kube's rustls-tls, not openssl-tls,\nso the advisory's code path was never in its binary.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8A1VS6HBD4TRKQGZW42475G\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T20:41:30Z",
+          "tree_id": "a636b128320a9870ff16e28243c1fab98eb67694",
+          "url": "https://github.com/purlis/purlis/commit/e2fb2e2e8d7b8892b74efc5f81f8a2a5ac54a7ac"
+        },
+        "date": 1795641696321,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.774706,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.766, 0.772, 0.775, 0.775, 0.808 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.499112500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.416, 16.489, 16.499, 16.519, 16.558 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.25544,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.120, 101.205, 101.255, 101.538, 102.082 ms"
           }
         ]
       }
