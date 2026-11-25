@@ -248,7 +248,11 @@ fn a_hibernated_chat_writes_no_run_ended_and_its_dispatch_is_not_ended_unreporte
     ));
 
     assert_eq!(sub_agents_ended(logs.path()), [], "no sub-agent run ends");
-    assert_eq!(own_runs_ended(logs.path()), [], "its own run does not end either");
+    assert_eq!(
+        own_runs_ended(logs.path()),
+        [],
+        "its own run does not end either"
+    );
     assert!(
         dispatchrecord::read(project.path(), &dispatched)
             .expect("the record")

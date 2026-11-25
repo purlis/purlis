@@ -133,6 +133,7 @@ mod handoff;
 mod harnessdecls;
 mod harnessicon;
 mod heard;
+mod hibernation;
 mod hooks;
 mod host;
 mod inboxupdates;

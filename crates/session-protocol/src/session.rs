@@ -3533,9 +3533,7 @@ impl Command {
             Command::NoteProgram { .. }
             | Command::NoteStrays { .. }
             | Command::Hold { .. }
-            | Command::Hibernate { .. } => {
-                Power::Reattach
-            }
+            | Command::Hibernate { .. } => Power::Reattach,
             Command::Quit => Power::Quit,
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,

@@ -411,6 +411,9 @@ enum Why {
     /// A chat started again in the place of one whose harness could not bring its
     /// conversation back (`lostOnResume`): the same chat, `fresh`.
     Again,
+    /// A hibernated chat woken on its conversation (ADR 0066's `wake` run, #7630): the same
+    /// chat in a new run, the hibernated one ending `completed | superseded`.
+    Wake,
 }
 
 /// **How a start of `chat` is made** (#2071), from the app's own record of it: asked for by
@@ -431,7 +434,7 @@ fn made_of(chat: &Chat, why: Why) -> purlis_core::sandbox::Made {
     }
     match why {
         Why::New => Made::Window,
-        Why::Relaunch | Why::Upgrade | Why::Again => Made::Relaunch,
+        Why::Relaunch | Why::Upgrade | Why::Again | Why::Wake => Made::Relaunch,
     }
 }
 
@@ -4175,6 +4178,28 @@ impl Chats {
         }
     }
 
+    /// Wakes hibernated chat `session` (SC-4a, #7630): the same chat on its conversation, in
+    /// a new run under a new number whose beginning is ADR 0066's `wake`. The caller has read
+    /// that the chat is hibernated; this refuses a chat with no conversation to pick up. The old
+    /// one stays open until the new one has started, as [`Self::restart`]'s does; ending it is
+    /// the caller's next step. Nothing is told it yet: the wake line (ADR 0068) is SC-4j's.
+    pub fn wake(&self, session: u32, size: Size) -> Result<u32, String> {
+        self.claim(session)?;
+        let started = self.again_on_its_conversation(session).and_then(|again| {
+            if again.resume.is_none() {
+                return Err(no_conversation(session));
+            }
+            self.start_recorded_told(&again, size, Why::Wake, None, None)
+        });
+        match started {
+            Ok(started) => self.restarted(session, started, true),
+            Err(why) => {
+                self.unclaim(session);
+                Err(why)
+            }
+        }
+    }
+
     /// **The wake line for chat `session`, started again as `again` on its conversation after its
     /// program ended with its session host** (#5752, spec #5743): what the host's end ended of
     /// it (what it had left running of its own, each piece by name, a turn cut mid-way), as its
@@ -5502,6 +5527,7 @@ impl Chats {
             Why::Relaunch => Began::at_relaunch(&how, harness.is_some()),
             Why::Upgrade => Began::Reopen,
             Why::Again => Began::Fresh,
+            Why::Wake => Began::Wake,
         };
         // What this start means for the sandbox's audit and its count (ADR 0067 §7): off where
         // it starts without the sandbox, back on where its last run did and this one does not,

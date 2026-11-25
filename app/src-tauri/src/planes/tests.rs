@@ -7265,6 +7265,70 @@ fn a_run_with_no_sub_agent_live_writes_no_end_for_one() {
 }
 
 #[test]
+fn a_hibernated_chat_s_program_ends_without_a_run_ended_and_the_chat_stays_hibernated() {
+    // The app seam of SC-4a (#7630): the exit of a program the person hibernated is read as the
+    // hibernation, not as `failed | exited`, and writes no `run.ended`, as the host's own path
+    // (`stop_by`) writes none either.
+    let dir = tempfile::tempdir().expect("a directory");
+    let logs = dir.path().join("events");
+    let events = an_event_log(&logs);
+    let host = Pretend::default();
+    let (planes, _told) = planes_on(&host);
+    let planes = planes.recording_events(Some(events.clone()));
+    let plane = planes.open(&a_plane(&dir.path().join("plane")));
+    let held = planes.held(&plane).expect("it is held");
+    let session = held
+        .chats()
+        .start(&one_chat_on("/nowhere/a-harness").chats[0], STARTING)
+        .expect("the host starts it");
+    let (_, children) = a_chat_with_sub_agents(&events, plane.root(), session, &["agent-1"]);
+    assert_eq!(children.len(), 1);
+    held.hibernated()
+        .intend(session, crate::hibernation::By::Operator);
+
+    host.program_ends(
+        session,
+        purlis_core::session::Exit::Signal("Terminated".to_owned()),
+    );
+
+    assert!(runs_ended(&logs).is_empty(), "no sub-agent run ends");
+    assert!(own_runs_ended(&logs).is_empty(), "its own run does not end");
+    assert_eq!(
+        held.hibernated().of(session),
+        Some(crate::hibernation::By::Operator)
+    );
+}
+
+#[test]
+fn a_chat_closed_while_it_was_hibernating_ends_as_a_close_and_is_not_hibernated() {
+    // A close racing a hibernation leaves the close (SC-4a, #7630).
+    let dir = tempfile::tempdir().expect("a directory");
+    let logs = dir.path().join("events");
+    let events = an_event_log(&logs);
+    let host = Pretend::default();
+    let (planes, _told) = planes_on(&host);
+    let planes = planes.recording_events(Some(events.clone()));
+    let plane = planes.open(&a_plane(&dir.path().join("plane")));
+    let held = planes.held(&plane).expect("it is held");
+    let session = held
+        .chats()
+        .start(&one_chat_on("/nowhere/a-harness").chats[0], STARTING)
+        .expect("the host starts it");
+    a_chat_with_sub_agents(&events, plane.root(), session, &[]);
+    held.hibernated()
+        .intend(session, crate::hibernation::By::Operator);
+    held.chats().close(session).expect("it closes");
+
+    host.program_ends(
+        session,
+        purlis_core::session::Exit::Signal("Terminated".to_owned()),
+    );
+
+    assert_eq!(held.hibernated().of(session), None);
+    assert_eq!(own_runs_ended(&logs).len(), 1, "the close's end is written");
+}
+
+#[test]
 fn a_chat_whose_program_ends_ends_its_sub_agents_runs_in_the_event_log() {
     // The app seam: the exit arrives through `SessionHost::when_one_ends`, as for every
     // chat, and its sub-agents' runs end with it, `completed | exited` at code 0.

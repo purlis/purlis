@@ -2765,6 +2765,16 @@ jobs:
         run: xvfb-run -a npm run e2e:state
         if: runner.os == 'Linux' && matrix.extras
         working-directory: app
+      # Hibernate a chat from its row and Resume it (#7630): its own run, on a harness that
+      # names its conversation, which the state run's Codex stand-in does not.
+      - name: Hibernate a chat and resume it
+        run: npm run e2e:hibernate
+        if: runner.os == 'macOS' && matrix.extras
+        working-directory: app
+      - name: Hibernate a chat and resume it
+        run: xvfb-run -a npm run e2e:hibernate
+        if: runner.os == 'Linux' && matrix.extras
+        working-directory: app
       # What GitHub's macOS image is busy with around each harness's bars (#4351), to read beside
       # their numbers. Spotlight went off before the build. Nothing waits for the runner: waiting
       # brought L10 no gain (the person's ruling of 2026-11-05).

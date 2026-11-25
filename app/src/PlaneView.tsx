@@ -238,6 +238,7 @@ import { usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
 import { useEditorTabs, type EditorTabOpened } from "./editorTab";
 import { Notice, NoticeInCentre, NoticeOf, type NoticesDot } from "./Notice";
+import { hibernateRefused } from "./HibernatedNotice";
 import { useAskedControl } from "./windowControls";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { LivesHere } from "./LivesHere";
@@ -8187,6 +8188,23 @@ export const PlaneView = memo(function PlaneView({
   );
   /** Whether a chat has a Restart chat row: not a shell, which has no conversation. */
   const restartable = useCallback((session: number) => !shells.has(session), [shells]);
+  /** Whether a chat has a Hibernate row: not a shell (#7630). */
+  const hibernatable = restartable;
+  /** Hibernates chat `session` by hand (#7630): the core refuses, in a sentence, where it may
+   *  not, and the sentence is said on the chat's pane. */
+  const hibernateChat = useCallback(
+    (session: number) => {
+      void commands
+        .hibernateChat(plane, session)
+        .then((done) => {
+          if (done.status === "error") hibernateRefused(plane, session, done.error);
+        })
+        .catch((err: unknown) =>
+          hibernateRefused(plane, session, `purlis could not hibernate the chat: ${String(err)}`),
+        );
+    },
+    [plane],
+  );
   /**
    * **Move to runner and Move here** (#2048): where each chat can move, by what the core said of
    * it as it started (its harness, the pool it runs on) and the pools this machine keeps. A
@@ -8969,6 +8987,7 @@ export const PlaneView = memo(function PlaneView({
       unlinkWorkItem,
       startFresh: askStartFresh,
       restartChat,
+      hibernateChat,
       moveChat,
       endChat,
       // A chat's Ask {persona}… and Use skill… open their dialogs: the one way in to each.
@@ -9121,6 +9140,7 @@ export const PlaneView = memo(function PlaneView({
       toggleRegionSeen,
       moveSideView,
       restartChat,
+      hibernateChat,
       moveChat,
       endChat,
       linkWorkItem,
@@ -10069,6 +10089,7 @@ export const PlaneView = memo(function PlaneView({
             linkable: (session) => filedIn(session) !== OUTSIDE,
             planeUpdated: planeUpdates,
             restartable,
+            hibernatable,
             movesTo,
             movesOnceAPoolIsSetUp: movesOnceSetUp,
             movesWith: movesWithChat,
@@ -10147,6 +10168,7 @@ export const PlaneView = memo(function PlaneView({
       filedIn,
       planeUpdates,
       restartable,
+      hibernatable,
       movesTo,
       movesOnceSetUp,
       movesWithChat,

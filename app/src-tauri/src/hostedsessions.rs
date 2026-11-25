@@ -5320,6 +5320,26 @@ impl SessionHost for HostedSessions {
         }
     }
 
+    /// Asked of a host of 1.96 or later only: one before refuses `hibernate`, and the chat is
+    /// not hibernated, with that said.
+    fn hibernate(&self, id: u32) -> Result<(), String> {
+        let (link, program) = self.program(id)?;
+        if link.version() < session::KNOWS_HIBERNATE {
+            return Err(format!(
+                "purlis did not hibernate chat {id}: its session host is older than this window \
+                 and cannot hibernate a chat. Restart purlis to update it."
+            ));
+        }
+        link.call(Command::Hibernate { program })?;
+        // The host let go of it: its views ended with its engine.
+        if let Some(program) = lock(&self.running).remove(&id) {
+            for view in &program.views {
+                link.undraw(*view);
+            }
+        }
+        Ok(())
+    }
+
     fn when_one_ends(&self, tell: Ends) {
         *lock(&self.ended) = Some(tell);
     }

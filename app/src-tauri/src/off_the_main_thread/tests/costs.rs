@@ -469,6 +469,8 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             // A chat lost with its session host, read and put away (#2007): in memory.
             "chat_lost_with_the_host",
             "put_away_lost_chat",
+            // Whether the person hibernated a chat (#7630): in memory.
+            "chat_hibernated",
             // Which chats are reconnecting to their runner (#2496): in memory.
             "chats_reconnecting",
             // Each pool's runner whose link is down and why, and its Try now (#7134): in memory,

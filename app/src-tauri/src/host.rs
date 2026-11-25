@@ -647,6 +647,16 @@ pub trait SessionHost: Send + Sync {
     /// answers. Nothing where the host cannot hold it: the chat is asked about all the same.
     fn hold(&self, _id: u32, _still: bool) {}
 
+    /// **Ends chat `id`'s program as a hibernation** (SC-4a, #7630): the host stops it, drops its
+    /// engine and forgets it, and tells its end as the host's own lowest act, so it writes no
+    /// `run.ended`. Answered once it has ended. Refused, in a sentence, for a host that cannot:
+    /// one before protocol 1.96, or one that runs its chats in this process.
+    fn hibernate(&self, id: u32) -> Result<(), String> {
+        Err(format!(
+            "purlis did not hibernate chat {id}: the host it runs in cannot do that."
+        ))
+    }
+
     /// Calls `tell` as each session's program ends, with the id and how it ended.
     ///
     /// No hook reports a program dying, and none can — the process is gone. This is the
@@ -1860,6 +1870,12 @@ pub(crate) mod pretend {
         fn hold(&self, id: u32, still: bool) {
             let said = if still { "held" } else { "let go" };
             lock(&self.seen.terminal).push(format!("{said} {id}"));
+        }
+        fn hibernate(&self, id: u32) -> Result<(), String> {
+            self.here(id)?;
+            lock(&self.seen.terminal).push(format!("hibernated {id}"));
+            lock(&self.seen.running).retain(|running| *running != id);
+            Ok(())
         }
         fn stopped_by(&mut self, switch: Arc<crate::killswitch::KillSwitch>) {
             *lock(&self.seen.switch) = Some(switch);

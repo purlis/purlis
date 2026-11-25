@@ -37,9 +37,12 @@ impl Compose for Echo {
     }
 }
 
-/// The ends the binary was told: the program's number and the host's own act.
+/// One end the binary was told: the program's number and the host's own act.
+type End = (u32, Option<Stopped>);
+
+/// The ends the binary was told.
 #[derive(Clone, Default)]
-struct Kept(Arc<Mutex<Vec<(u32, Option<Stopped>)>>>);
+struct Kept(Arc<Mutex<Vec<End>>>);
 
 impl Record for Kept {
     fn record(&self, _entry: serde_json::Value) -> Result<(), String> {
@@ -52,7 +55,7 @@ impl Record for Kept {
 }
 
 impl Kept {
-    fn ends(&self, n: usize) -> Vec<(u32, Option<Stopped>)> {
+    fn ends(&self, n: usize) -> Vec<End> {
         let deadline = Instant::now() + PATIENCE;
         loop {
             let ended = self.0.lock().unwrap().clone();
@@ -67,7 +70,12 @@ impl Kept {
 async fn the_window(hosting: &Hosting, project: &Path) -> Arc<Client> {
     let (a, b) = duplex(256 * 1024);
     let (client, served) = tokio::join!(
-        link::connect(a, session::speaks(), Scope::LocalUi, HELD.of(Scope::LocalUi)),
+        link::connect(
+            a,
+            session::speaks(),
+            Scope::LocalUi,
+            HELD.of(Scope::LocalUi)
+        ),
         link::serve_any(b, session::speaks(), &HELD)
     );
     tokio::spawn(session::serve(served.unwrap(), hosting.clone(), None));
@@ -106,7 +114,11 @@ async fn hibernating_a_program_ends_it_and_the_host_no_longer_holds_it() {
         .into_iter()
         .map(|held| held.program)
         .collect();
-    assert_eq!(held, [stays], "its engine is dropped: only the other program is held");
+    assert_eq!(
+        held,
+        [stays],
+        "its engine is dropped: only the other program is held"
+    );
     assert!(
         window.hibernate(&program).await.is_err(),
         "it is no longer there to hibernate"

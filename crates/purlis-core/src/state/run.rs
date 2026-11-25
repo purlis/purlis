@@ -916,8 +916,7 @@ mod tests {
     }
 
     #[test]
-    fn the_operator_hibernates_an_idle_run_at_a_turn_boundary_on_a_harness_that_resumes_natively()
-    {
+    fn the_operator_hibernates_an_idle_run_at_a_turn_boundary_on_a_harness_that_resumes_natively() {
         for reason in [Reason::Ready, Reason::TurnEnded] {
             let mut run = at(RunState::InputRequired(reason));
             assert_eq!(
@@ -958,11 +957,7 @@ mod tests {
         run.apply(Cause::Operator).unwrap();
         assert_eq!(
             run.apply(Cause::Superseded),
-            moved(
-                RunState::Hibernated,
-                RunState::Completed,
-                Cause::Superseded
-            )
+            moved(RunState::Hibernated, RunState::Completed, Cause::Superseded)
         );
     }
 

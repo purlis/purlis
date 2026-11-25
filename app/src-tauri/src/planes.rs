@@ -429,6 +429,9 @@ pub struct Held {
     /// The chats whose program ended with their session host, until the person answers
     /// (#2007).
     lost_with_the_host: Arc<crate::hostlost::Lost>,
+    /// The chats the person hibernated, until they are woken or ended another way (SC-4a,
+    /// #7630). In memory: SC-4e makes it durable.
+    hibernated: Arc<crate::hibernation::Hibernated>,
     /// The dispatches waiting on the person, and the dispatch grants made for one chat
     /// (#1437).
     dispatch_grants: crate::dispatchgrants::Store,
@@ -966,6 +969,11 @@ impl Held {
     /// (#2007).
     pub fn lost_with_the_host(&self) -> &crate::hostlost::Lost {
         &self.lost_with_the_host
+    }
+
+    /// The chats the person hibernated (SC-4a, #7630).
+    pub fn hibernated(&self) -> &crate::hibernation::Hibernated {
+        &self.hibernated
     }
 
     /// The dispatches waiting on the person, and the grants made for one chat (#1437).
@@ -1681,6 +1689,7 @@ impl Held {
         self.runner_dispatches.forget(session);
         self.mcp_failures.forget(session);
         self.lost_with_the_host.forget(session);
+        self.hibernated.forget(session);
         // Its id, read before it goes: its dispatch grant for "this chat" ends where its
         // sandbox grants do, when no session of the chat is left open (#1437, D-1348-1).
         let id = self
@@ -1814,12 +1823,57 @@ impl Held {
         if self.stopping.is_stopping(session) {
             return Ok(Restarted::NotYet(WAITS_WHILE_YOU_STOP_IT));
         }
+        // **Resume on a hibernated chat** (#7630): it has no program to restart, so it is woken,
+        // a new `wake` run on its conversation, in the old one's place.
+        if self.hibernated.of(session).is_some() {
+            return self.wake_chat(session, size).map(Restarted::Started);
+        }
         if when == When::AtAPause && self.board().glance(session).own_work {
             return Ok(Restarted::NotYet(WAITS_ON_ITS_OWN_WORK));
         }
         let started = self.chats.restart(session, size)?;
         self.in_its_place(session, started);
         Ok(Restarted::Started(started))
+    }
+
+    /// Hibernates chat `session` by the person's hand (SC-4a, #7630): refused, in words, where
+    /// [`crate::hibernation::refusal`] says it may not be; otherwise its program is ended at its
+    /// turn boundary and its engine dropped by the session host. The flag is written first, so
+    /// the exit that follows is read as a hibernation and no run ends `failed | exited`.
+    pub fn hibernate_chat(&self, session: u32) -> Result<(), String> {
+        if self.hibernated.of(session).is_some() {
+            return Err(format!(
+                "Not hibernated: chat {session} is already hibernated. Resume it to go on."
+            ));
+        }
+        if self.stopping.is_stopping(session) {
+            return Err("Not hibernated: you are stopping this chat.".to_owned());
+        }
+        let facts = crate::hibernation::facts_of(self, session);
+        if let Some(refused) = crate::hibernation::refusal(&facts) {
+            return Err(refused.says().to_owned());
+        }
+        self.hibernated
+            .intend(session, crate::hibernation::By::Operator);
+        if let Err(why) = self.chats.sessions().hibernate(session) {
+            self.hibernated.forget(session);
+            return Err(why);
+        }
+        Ok(())
+    }
+
+    /// Wakes hibernated chat `session` (SC-4a, #7630): a new `wake` run on its conversation,
+    /// in the old one's place. Refused for a chat that is not hibernated.
+    pub fn wake_chat(&self, session: u32, size: Size) -> Result<u32, String> {
+        if self.hibernated.of(session).is_none() {
+            return Err(format!(
+                "purlis did not resume chat {session}: it is not hibernated."
+            ));
+        }
+        let started = self.chats.wake(session, size)?;
+        self.hibernated.forget(session);
+        self.in_its_place(session, started);
+        Ok(started)
     }
 
     /// **Starts chat `session` again without the sandbox** (#1342): the person's own choice on a
@@ -5195,6 +5249,8 @@ impl Planes {
         let mcp_failures: Arc<crate::mcpfailed::Failures> = Arc::default();
         // The chats whose program ends with their session host (#2007).
         let lost_with_the_host: Arc<crate::hostlost::Lost> = Arc::default();
+        // The chats the person hibernated (#7630).
+        let hibernated: Arc<crate::hibernation::Hibernated> = Arc::default();
         {
             let board = hooks.shared_board();
             chats.when_one_starts(Box::new({
@@ -5297,6 +5353,7 @@ impl Planes {
             let events_root = id.root().to_path_buf();
             // Who hears of a chat whose program ended with its session host (#2007).
             let lost = Arc::clone(&lost_with_the_host);
+            let hibernated = Arc::clone(&hibernated);
             let tell_lost = Arc::clone(&self.lost_with_the_host);
             chats
                 .sessions()
@@ -5336,6 +5393,28 @@ impl Planes {
                             crate::dispatched::moved(&held, session);
                         }
                         return;
+                    }
+                    // **Its program ended as a hibernation the person asked for** (#7630, ADR
+                    // 0076 as amended 2026-11-25): the host's own lowest act, so any other end
+                    // racing it (the kill switch, a quit, the person's stop, a close) wins and
+                    // is handled below. It is not an end of the chat: the board keeps what it
+                    // said, no run ends `failed | exited`, no task is told it failed, and
+                    // nothing is written (the host kept none either).
+                    if hibernated.of(session).is_some() {
+                        let held = me.get().and_then(std::sync::Weak::upgrade);
+                        let by = the_host_s_stop(
+                            every_agent.is_stopped(),
+                            held.as_ref().is_some_and(|held| held.chats.ending()),
+                            held.as_ref()
+                                .is_some_and(|held| held.stopping().is_stopping(session)),
+                            held.as_ref()
+                                .is_some_and(|held| held.chats.recorded_chat(session).is_none()),
+                        );
+                        if by.is_none() {
+                            return;
+                        }
+                        // Another end won: the chat is not hibernated.
+                        hibernated.forget(session);
                     }
                     // **Its program ended with its session host** (#2007): what its run is left
                     // in is read from the board as it was, before its end moves it, and said on
@@ -5664,6 +5743,7 @@ impl Planes {
             moves,
             mcp_failures,
             lost_with_the_host,
+            hibernated,
             dispatch_grants: crate::dispatchgrants::Store::default(),
             held_dispatches: crate::handoff::HeldDispatches::default(),
             at_limits: crate::atlimit::AtLimits::default(),
