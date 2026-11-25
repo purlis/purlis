@@ -421,6 +421,19 @@ pub fn namespace_of(url: &str) -> Option<String> {
     None
 }
 
+/// The most a `<host>/<path>` place shown to the person may be, in bytes.
+pub const PLACE_AT_MOST: usize = 255;
+
+/// **Whether `place` (`<host>/<path>`, read from a clone's origin) may be put before the
+/// person**: no whitespace or control character in it, and at most [`PLACE_AT_MOST`] bytes. An
+/// origin is set by whoever can write the clone, and [`namespace_of`] answers what the URL
+/// holds, spaces and all, so a row that shows a place checks it here first.
+pub fn plain_place(place: &str) -> bool {
+    !place.is_empty()
+        && place.len() <= PLACE_AT_MOST
+        && !place.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
 /// The schemes `urllib.parse.urlparse` splits `;params` off the last path segment for
 /// (`urllib.parse.uses_params`). Reproduced rather than ignored: Python's `.path` is what
 /// `namespace_of` returns, and for `https://h/a/b;x` that is `/a/b`, not `/a/b;x`.

@@ -219,6 +219,16 @@ pub(crate) fn recorded(root: &Path, name: &str) -> Option<Repo> {
     })
 }
 
+/// The inventory's row named `name`, whatever repo it records and whether or not purlis can
+/// read a forge from it.
+pub(crate) fn row_named(root: &Path, name: &str) -> Option<crate::forge::RepoRecord> {
+    let doc = crate::inventory::load(root, "").ok()?;
+    let row = crate::inventory::listed(&doc)
+        .into_iter()
+        .find(|row| row.get("name").and_then(Value::as_str) == Some(name))?;
+    crate::inventory::read(&row)
+}
+
 /// Whether the clone's live origin names the recorded repo: one forge, one host and one path,
 /// in any case, as GitHub and GitLab read them.
 pub(crate) fn same(live: &Repo, recorded: &Repo) -> bool {

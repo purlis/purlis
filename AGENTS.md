@@ -234,7 +234,13 @@ is told, is `tools/mutants-report.py notice`, tested in `tools/mutants-report.te
   `git status` prints for it). It is CI's.
 - A core test cannot loosen a policy family to `off` through `charter.toml`: a loosening takes
   effect only with the person's acceptance, which the app alone verifies. `log` and `enforce` are
-  testable here; `off` waits for CI.
+  testable here. A `purlis-core` lib test can still run a family `off`: make the thread not the
+  app and hand it the app's answer (`enforcement::set_in_the_app_for_this_test(false)`, then
+  `answered_by_the_app(Some(Resolved::of(&Settings::from_text(Some("[policy]\n…")), &Locks::default())))`,
+  and `set_in_the_app_for_this_test(true)` after), as `clone_it_has_no_log_mode` does.
+- `bindings.ts` and `uiRpc.ts` are written by `cargo test -p purlis-app --lib --locked -j 2 --
+  --ignored regenerate_the_typescript` (about 9 minutes cold); `the_typescript_the_ui_imports_…`
+  checks them. A doc comment on a command is copied into both, line for line.
 - A new `hookwire::Ask` variant breaks four exhaustive matches that name every kind: in
   `hookwire/tests.rs`, `purlis-cli/tests/it/handoff_from_inside_the_app.rs`,
   `purlis-core/tests/it/every_waiting_purlis_command_says_where_it_waits.rs` and

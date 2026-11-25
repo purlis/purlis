@@ -16134,3 +16134,48 @@ fn a_hook_asking_for_the_refs_of_a_chat_with_no_route_is_told_no() {
         Answer::No { .. }
     ));
 }
+
+#[test]
+fn a_window_only_ask_through_the_socket_has_a_budget_of_its_own_and_raises_nothing_for_a_root_chat()
+{
+    // A3, through `answer` as the socket calls it: a chat at the project's root has no workspace
+    // of repos to record, so nothing is raised, and its asks are counted against a budget of
+    // their own, never its brokered writes'.
+    let plane = Plane::new();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_on_work(&held, &plane.root);
+    let tickets = Tickets::default();
+    let ask = || {
+        Ask::WindowOnly(purlis_core::hookwire::WindowOnlyAsk {
+            chat: asking,
+            refused: purlis_core::hookwire::WindowOnlyRefusal::RecordRepo {
+                clone: "api".to_owned(),
+            },
+        })
+    };
+
+    for _ in 0..crate::windowonlyasks::WINDOW_ONLY_ASKS_AT_MOST {
+        let Answer::No { why } = answer(&held, &id, &tickets, 1, ask(), &|_| {}) else {
+            panic!("not refused");
+        };
+        assert!(why.contains("no workspace of repos"), "{why}");
+    }
+    let Answer::No { why } = answer(&held, &id, &tickets, 1, ask(), &|_| {}) else {
+        panic!("not refused");
+    };
+    assert!(why.contains("which is its cap"), "{why}");
+    assert!(
+        !why.contains("writes"),
+        "its own words, not a write's: {why}"
+    );
+    assert_eq!(purlis_core::windowonly::every(&plane.root), []);
+    // The chat's brokered writes were never spent.
+    assert!(
+        held.brokered()
+            .allow(asking, std::time::Instant::now())
+            .is_ok()
+    );
+}

@@ -946,7 +946,7 @@ export async function answerTaken(
         // Clone it (T1.1-56, A2): clones the repo into the chat's workspace with the person's
         // own sign-in, as the window's own recorded clone.
         if (option !== "press") break;
-        const cloned = await commands.cloneWithSignIn(plane, path.workspace, path.repo);
+        const cloned = await commands.cloneWithSignIn(plane, path.workspace, path.name, path.repo);
         return cloned.status === "error" ? cloned : { status: "ok" };
       }
       case "record-repo": {

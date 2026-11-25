@@ -1538,3 +1538,12 @@ fn a_multi_address_origin_raises_use_one_address_and_never_answers_no_recorded_c
     assert_eq!(raised[0].control.label(), "Trust this clone");
     crate::windowonly::project_ended(root);
 }
+
+#[test]
+fn the_two_clone_cases_raise_their_ask_or_name_their_way_out() {
+    // #6646, in one place as the ticket names it: A4, a run in an unrecorded clone beside a
+    // recorded one, is refused and raises Trust this clone; A5, an origin that names several
+    // addresses, raises Use one address and never answers `NO_RECORDED_CLONE`.
+    a_run_in_an_unrecorded_clone_beside_a_recorded_one_is_refused_and_raises_trust_this_clone();
+    a_multi_address_origin_raises_use_one_address_and_never_answers_no_recorded_clone();
+}
