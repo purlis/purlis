@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795641705239,
+  "lastUpdate": 1795642748299,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55272,6 +55272,48 @@ window.BENCHMARK_DATA = {
             "value": 101.25544,
             "unit": "ms",
             "extra": "median of 5 runs: 101.120, 101.205, 101.255, 101.538, 102.082 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "48119d1c4905a8996f49f95c5695a945ecf5eca7",
+          "message": "A CI-file push GitHub refuses with 401 ends its ask and marks the second sign-in refused (#7658) (#7664)\n\n* A refused CI-file sign-in ends its ask instead of offering it once more (#7658)\n\nGitHub's 401 to the second (workflow) token is seen by its status on the\npush's own transport. The ask then ends with a sentence that says to allow\nCI files again in Settings › You › Accounts; the dead item is deleted and\nTrouble::SecondSignInRefused is raised, so Settings stops showing CI files\nas allowed. Any other refusal still leaves the ask waiting.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M89WJGY6SHCZB2G0GR2XA25C\nPurlis-Persona: steward\n\n* Round 2 of #7658: a 401-ended line can be dismissed, a refused sign-in forgets only its own trouble, clearer copy\n\n- HeldActAsks: an ended line is shown only when the press itself ended the ask (read off the\n  list right after a refused press), drawn as a Notice with Dismiss. Don't, and an ask gone\n  for any other reason, clear that ask's refusal and first press.\n- The Accounts page reads the accounts again on SIGN_IN_TROUBLE, so CI files stop showing as\n  allowed once a refused second sign-in is deleted.\n- forget_raised_of drops one trouble's once-key, not every key of the account.\n- A failed keychain delete of the refused token is logged with tracing::warn! (never the token);\n  WorkflowOver::drop_refused takes the scope so its wiring is tested.\n- Copy: the forge's words are no longer in nested brackets, and it says to ask the chat to push again.\n- Tests: SecondSignInRefused is raised (and raised again); trouble_said's new variant; the\n  WorkflowOver wiring; the Notice's copy with no Sign in again; Don't after a refusal; a\n  401-ended line dismissed; the Accounts page rereading.\n- Fixes TwoTips::create_release's return type in forgewiring/tests.rs, which kept the app's lib\n  tests from compiling.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8A0Y7VNPAE9931A0871JEDE\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T20:52:50Z",
+          "tree_id": "d3a3bf6151e46fd4c6a064d17b96d04da4999737",
+          "url": "https://github.com/purlis/purlis/commit/48119d1c4905a8996f49f95c5695a945ecf5eca7"
+        },
+        "date": 1795642740509,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.667389,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.664, 0.667, 0.667, 0.676, 0.689 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6646565,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.546, 16.608, 16.665, 16.749, 16.912 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1753635,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.962, 101.112, 102.175, 102.303, 102.962 ms"
           }
         ]
       }
