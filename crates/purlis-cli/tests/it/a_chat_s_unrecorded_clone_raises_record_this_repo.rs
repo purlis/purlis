@@ -20,9 +20,11 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 
+use purlis_core::enforcement::{Resolved, Settings};
 use purlis_core::hookwire::{
     self, Answer, Ask, CHAT_ENV, Listener, SOCKET_ENV, TOKEN_ENV, WindowOnlyRefusal,
 };
+use purlis_core::sandbox::policy::Locks;
 use purlis_core::windowonly::{self, Control};
 
 fn git(dir: &std::path::Path, args: &[&str]) {
@@ -34,9 +36,15 @@ fn git(dir: &std::path::Path, args: &[&str]) {
 /// A project, strict, with workspace `alpha` holding the clone `api` of github.com/acme/api,
 /// and no inventory: nothing records its repo.
 fn a_project() -> tempfile::TempDir {
+    a_project_with_folder("api")
+}
+
+/// As [`a_project`], the clone's folder named `folder`: the record is keyed by the origin's bare
+/// name (`api`), so a folder named otherwise is not one Record this repo records.
+fn a_project_with_folder(folder: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("project");
-    let clone = root.join("workspaces/alpha/repos/api");
+    let clone = root.join(format!("workspaces/alpha/repos/{folder}"));
     std::fs::create_dir_all(&clone).unwrap();
     std::fs::write(
         root.join("charter.toml"),
@@ -98,6 +106,15 @@ fn an_app(
 
 /// What the real app answers a `WindowOnly` ask: `ask_to_record` for chat 3's workspace.
 fn as_the_app(root: &std::path::Path, ask: &Ask) -> Answer {
+    // The chat's own `purlis` asks the app how the project's policy runs before it decides
+    // anything, and the real app answers from the project's `[policy]`: strict, which enforces
+    // `guards.forge`, the refusal Record this repo follows.
+    if matches!(ask, Ask::Policy(_)) {
+        let settings = Settings::from_text(Some("[policy]\ntemplate = \"strict\"\n"));
+        return Answer::Policy {
+            spelled: Resolved::of(&settings, &Locks::default()).spelled(),
+        };
+    }
     let Ask::WindowOnly(asked) = ask else {
         return Answer::No {
             why: "not a window-only ask".to_owned(),
@@ -118,6 +135,15 @@ fn as_the_app(root: &std::path::Path, ask: &Ask) -> Answer {
 /// `purlis mcp` in chat 3, initialized, and `forge_milestones` called once for the clone `api`:
 /// the tool's text.
 fn forge_milestones_over_mcp(tmp: &tempfile::TempDir, env: &[(String, String)]) -> String {
+    forge_milestones_of_over_mcp(tmp, env, "api")
+}
+
+/// As [`forge_milestones_over_mcp`], for the clone folder `repo`.
+fn forge_milestones_of_over_mcp(
+    tmp: &tempfile::TempDir,
+    env: &[(String, String)],
+    repo: &str,
+) -> String {
     let root = root(tmp);
     let mut child = support::purlis()
         .arg("mcp")
@@ -146,7 +172,7 @@ fn forge_milestones_over_mcp(tmp: &tempfile::TempDir, env: &[(String, String)]) 
             "clientInfo": { "name": "test-harness", "version": "1" } } }),
         serde_json::json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
         serde_json::json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {
-            "name": "forge_milestones", "arguments": { "repo": "api" } } }),
+            "name": "forge_milestones", "arguments": { "repo": repo } } }),
     ] {
         writeln!(stdin, "{message}").unwrap();
     }
@@ -170,12 +196,23 @@ fn a_chat_s_unrecorded_clone_raises_record_this_repo_and_the_chat_is_told_the_pe
 
     assert!(said.contains("purlis asked the person in Asks"), "{said}");
     // The app was handed the clone's name and the chat's number, and no workspace.
-    assert!(matches!(
-        app.asked.lock().unwrap().as_slice(),
-        [Ask::WindowOnly(asked)]
-            if asked.chat == 3
-                && asked.refused == WindowOnlyRefusal::RecordRepo { clone: "api".to_owned() }
-    ));
+    let asked: Vec<Ask> = app
+        .asked
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|ask| matches!(ask, Ask::WindowOnly(_)))
+        .cloned()
+        .collect();
+    assert!(
+        matches!(
+            asked.as_slice(),
+            [Ask::WindowOnly(asked)]
+                if asked.chat == 3
+                    && asked.refused == WindowOnlyRefusal::RecordRepo { clone: "api".to_owned() }
+        ),
+        "{asked:?}"
+    );
     // One ask for the chat, with the press that records exactly the address shown.
     let raised = windowonly::every(&root);
     assert_eq!(raised.len(), 1, "{raised:?}");
@@ -244,4 +281,24 @@ fn with_no_app_at_all_the_chat_is_told_nobody_was_asked() {
 
     assert!(said.contains("Nobody was asked"), "{said}");
     assert!(said.contains("purlis discover"), "{said}");
+}
+
+#[test]
+fn a_clone_in_a_folder_named_other_than_its_origin_s_repo_is_refused_with_the_discover_way_out() {
+    // The record is keyed by the origin's bare name (`api`); the folder `service` is not it.
+    let tmp = a_project_with_folder("service");
+    let root = root(&tmp);
+    windowonly::telling(&root, Arc::new(|| {}));
+    let app = an_app(&tmp, as_the_app);
+
+    let said = forge_milestones_of_over_mcp(&tmp, &app.env, "service");
+
+    assert!(
+        said.contains("named other than its origin's repo"),
+        "{said}"
+    );
+    assert!(said.contains("purlis discover"), "{said}");
+    assert!(!said.contains("asked the person in Asks"), "{said}");
+    assert_eq!(windowonly::every(&root), []);
+    windowonly::project_ended(&root);
 }
