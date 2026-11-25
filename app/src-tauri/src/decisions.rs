@@ -104,9 +104,9 @@ fn sealed_of(held: &Held, chat: u32) -> decide::Sealed {
 /// **What the project's policy decides of chat `chat` doing `action` to `resource`**, by this
 /// app's record of the chat: none for a chat this app does not have open.
 ///
-/// **The timed grants this decision found ended are taken out of the store here**, with their
-/// Journal line (M75-21): an expired one serves nothing either way, so the sweep only keeps the
-/// store and the Journal true.
+/// **The timed grants this decision found ended, or lost with their rule, are taken out of the
+/// store here**, each after its Journal line (M75-21): such a grant serves nothing either way, so
+/// the sweep only keeps the store and the Journal true.
 pub fn decision(
     held: &Held,
     chat: u32,
@@ -118,7 +118,7 @@ pub fn decision(
     let floor = purlis_core::enforcement::in_force(held.root());
     let sealed = sealed_of(held, chat);
     crate::timedgrants::sweep(held.root(), held.hooks(), &sealed.standing, sealed.at());
-    decide::for_chat(
+    let decided = decide::for_chat(
         held.root(),
         chat,
         facts.as_ref(),
@@ -126,7 +126,33 @@ pub fn decision(
         &sealed,
         action,
         resource,
-    )
+    );
+    crate::timedgrants::end_quietly(held.root(), held.hooks(), None, &sealed.take_retired());
+    decided
+}
+
+/// **What the policy decides of chat `chat`'s ask before any answer is applied**, read without
+/// spending a Once grant: what the Allowed list asks to tell whether a timed grant still serves.
+pub fn unanswered(
+    held: &Held,
+    chat: u32,
+    action: &str,
+    resource: (&str, &str),
+) -> Option<decide::Decision> {
+    let facts = facts_of(held, chat);
+    let floor = purlis_core::enforcement::in_force(held.root());
+    let sealed = sealed_of(held, chat);
+    let decided = decide::unanswered_for_chat(
+        held.root(),
+        chat,
+        facts.as_ref(),
+        &floor,
+        &sealed,
+        action,
+        resource,
+    );
+    crate::timedgrants::end_quietly(held.root(), held.hooks(), None, &sealed.take_retired());
+    decided
 }
 
 /// **What the person is offered at chat `chat`'s ask** ([`grants::offer`]): the scopes, the timed

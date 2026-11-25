@@ -27,6 +27,8 @@ const TIMED: AllowedAnswer = {
   reason: "Run the release build",
   until: FAR,
   left: 2520,
+  chat_name: "Release build",
+  serving: true,
 };
 const LASTING: AllowedAnswer = {
   id: "bbbbbbbbbbbbbbbb",
@@ -39,6 +41,8 @@ const LASTING: AllowedAnswer = {
   reason: null,
   until: null,
   left: null,
+  chat_name: null,
+  serving: true,
 };
 
 /** Which answers the core was told to remove, for the story to read. */
@@ -73,7 +77,9 @@ export const TimedBesideAGrant: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const list = await canvas.findByRole("list", { name: "Allowed at an ask" });
-    await expect(list).toHaveTextContent(/Allowed for \d+ min · exec curl · Run the release build/);
+    await expect(list).toHaveTextContent(
+      /Allowed for \d+ min · Release build · processes-curl · exec curl · Run the release build/,
+    );
     await expect(list).toHaveTextContent("Allowed · exec ls · This workspace");
     await userEvent.tab();
     await untilFocused(
@@ -103,5 +109,25 @@ export const RemoveTakesATimedGrantBack: Story = {
         "Run the release build",
       ),
     );
+  },
+};
+
+/** A timed grant a cap now rules out is not drawn as allowed: it says it no longer serves. */
+export const ACapTightenedUnderATimedGrant: Story = {
+  beforeEach: () => {
+    mockIPC((cmd) =>
+      cmd === "allowed_answers" ? structuredClone([{ ...TIMED, serving: false }]) : null,
+    );
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const list = await canvas.findByRole("list", { name: "Allowed at an ask" });
+    await expect(list).toHaveTextContent(
+      "No longer serving: a limit or rule changed · Release build · processes-curl · exec curl · Run the release build",
+    );
+    await expect(list).not.toHaveTextContent(/Allowed for/);
+    await expect(
+      canvas.getByRole("button", { name: "Remove the timed grant for exec curl" }),
+    ).toBeVisible();
   },
 };

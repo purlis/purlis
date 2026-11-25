@@ -415,6 +415,7 @@ fn a_never_holds_under_the_open_template() {
         machine: None,
         chat: Some(ULID.to_owned()),
         now: None,
+        retired: Default::default(),
     };
     let ask = |sealed: &Sealed, resource| {
         decide::in_plane(&root, &asker, "merge", ("Branch", resource), sealed)
@@ -449,6 +450,7 @@ fn a_never_holds_under_the_open_template() {
         machine: None,
         chat: Some(ULID.to_owned()),
         now: None,
+        retired: Default::default(),
     };
     let everywhere = ask(&sealed, "acme/web#main");
     assert_eq!(everywhere.after_mode, Outcome::Deny, "{everywhere:?}");
@@ -507,6 +509,7 @@ fn an_unreadable_nevers_store_denies_in_every_mode() {
         machine: None,
         chat: Some(ULID.to_owned()),
         now: None,
+        retired: Default::default(),
     };
     let said = decide::in_plane(&root, &asker, "exec", ("Command", "ls"), &sealed);
     assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
@@ -764,6 +767,7 @@ fn two_once_grants_are_spent_together_or_not_at_all() {
         machine: None,
         chat: Some(ULID.to_owned()),
         now: None,
+        retired: Default::default(),
     };
     let said = decide::in_plane(&root, &asker(), "exec", ("Command", "ls"), &sealed);
     assert_eq!(said.after_mode, Outcome::Ask, "{said:?}");
@@ -966,6 +970,7 @@ fn a_grant_for_the_projects_own_merge_ask_does_not_serve_while_the_floor_holds_t
         machine: None,
         chat: Some(ULID.to_owned()),
         now: None,
+        retired: Default::default(),
     };
     let said = for_the_merge(
         &root,

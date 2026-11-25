@@ -266,3 +266,7 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   project cannot start at all (no local port): CI's `stories` run is the first for a story.
   `cargo test -p purlis-core --test it` fails about 425 tests there for the same reasons; the
   `every_store_the_plane_format_names_has_a_tier` ones pass bar the child that binds a socket.
+- The sealed store's keyring seam is `cfg(test)` in `purlis-core` only, so an app test cannot hold
+  entries in it: `app/src-tauri/src/timedgrants.rs` reads and changes the store through its small
+  `Store` trait, and its tests use an in-memory one. `cargo test -p purlis-app -- --ignored`
+  rewrites `app/src/bindings.ts`; `npm ci --ignore-scripts` in `app/` gives tsc, eslint and vitest.

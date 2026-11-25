@@ -748,16 +748,27 @@ pub struct Sealed {
     /// The time the decision is made at, in seconds since 1970, which a timed grant is read
     /// against (M75-21). Unset reads the clock; a test sets it.
     pub now: Option<u64>,
+    /// The timed grants this decision found lost with their rule and left in the store, for the
+    /// caller to end with their Journal line ([`force::retire_lost_grants`]): the core has no
+    /// Journal, the app has. Filled by the decision, taken by the caller; a clone shares it.
+    pub retired: std::sync::Arc<std::sync::Mutex<Vec<grants::Ended>>>,
 }
 
 impl Sealed {
-    /// The time a decision is made at: the one set, or now.
+    /// The time a decision is made at: the one set, or now ([`grants::clock_now`], which reads a
+    /// clock that fails as the end of time, so a timed grant is then ended, never served).
     pub fn at(&self) -> u64 {
-        self.now.unwrap_or_else(|| {
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |since| since.as_secs())
-        })
+        self.now.unwrap_or_else(grants::clock_now)
+    }
+
+    /// The timed grants the decisions made with this found lost with their rule, taken once.
+    pub fn take_retired(&self) -> Vec<grants::Ended> {
+        std::mem::take(
+            &mut *self
+                .retired
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
     }
 
     /// What the sealed store of the plane at `root` says now.
@@ -767,6 +778,7 @@ impl Sealed {
             machine: answers::context_machine(),
             chat: None,
             now: None,
+            retired: Default::default(),
         }
     }
 
@@ -786,6 +798,7 @@ impl Sealed {
             machine: None,
             chat: None,
             now: None,
+            retired: Default::default(),
         }
     }
 }
@@ -910,7 +923,14 @@ fn judged_then<T>(
     };
     // The policy in force: the project as committed now and what the person accepted, the
     // stricter winning, and what the app saw tighten sealed into the accepted floor (M75-14).
-    let decision = force::in_force(root, &sources, &sealed.standing, &request, floor);
+    let (decision, retired) = force::in_force(root, &sources, &sealed.standing, &request, floor);
+    if !retired.is_empty() {
+        sealed
+            .retired
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .extend(retired);
+    }
     let decision = settle(decision, &request);
     finish(decision, &request)
 }
@@ -1019,6 +1039,35 @@ pub fn timed_for_chat(
                 sealed.at(),
             )
         },
+    ))
+}
+
+/// **What the policy in force decides of chat `chat`'s `action` on `resource` before any answer of
+/// the person's is applied** (M75-21): the decision [`timed_for_chat`] gives a grant for, read
+/// without spending a Once grant or applying a never. For a read that must change nothing, such
+/// as whether a timed grant on the Allowed list still serves. `None` for a chat the host does not
+/// have open.
+pub fn unanswered_for_chat(
+    root: &std::path::Path,
+    chat: u32,
+    facts: Option<&ChatFacts>,
+    floor: &crate::enforcement::Resolved,
+    sealed: &Sealed,
+    action: &str,
+    resource: (&str, &str),
+) -> Option<Decision> {
+    let facts = facts?;
+    let asker = chat_asker(chat, facts);
+    Some(judged_then(
+        root,
+        &asker,
+        action,
+        resource,
+        sealed,
+        Some(floor),
+        |decision, request| settled_for_chat(decision, request, floor),
+        |refusal| refusal,
+        |decision, _| decision,
     ))
 }
 

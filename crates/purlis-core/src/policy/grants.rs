@@ -151,12 +151,13 @@ impl Span {
     }
 
     /// **The lengths a `@timed` cap allows**, shortest first: no cap allows both (the default is
-    /// `1h`), `15m` the first only, and `off` none.
+    /// `1h`, which says the same), `15m` the first only, and `off` none. **A word that is none of
+    /// these allows none**: a cap this build cannot read is never read as no cap.
     pub fn within(cap: Option<&str>) -> Vec<Span> {
         match cap {
-            Some("off") => Vec::new(),
+            None | Some("1h") => vec![Span::Quarter, Span::Hour],
             Some("15m") => vec![Span::Quarter],
-            _ => vec![Span::Quarter, Span::Hour],
+            Some(_) => Vec::new(),
         }
     }
 }
@@ -338,7 +339,8 @@ impl Grant {
 
     /// Whether it serves `rule`'s ask on `request` by the chat `chat`, within `widest`, under the
     /// deciding rules' `@timed` cap `cap`, at `now`. **A timed grant serves only before its end,
-    /// and only while its length is one the cap still allows.**
+    /// and only while its length is one the cap still allows.** It does not serve before it was
+    /// given either, so a clock set back does not make a grant of the future serve.
     fn serves(
         &self,
         rule: &str,
@@ -346,10 +348,9 @@ impl Grant {
         chat: Option<&str>,
         (widest, cap, now): (Scope, Option<&str>, u64),
     ) -> bool {
-        let live = self
-            .timed
-            .as_ref()
-            .is_none_or(|timed| now < timed.until() && Span::within(cap).contains(&timed.span));
+        let live = self.timed.as_ref().is_none_or(|timed| {
+            timed.given <= now && now < timed.until() && Span::within(cap).contains(&timed.span)
+        });
         let keyed = match self.scope {
             Scope::Once | Scope::Timed | Scope::Chat => {
                 chat.is_some() && self.chat.as_deref() == chat
@@ -555,6 +556,8 @@ pub enum Refused {
     NoReason,
     /// The length is not one the rules, the locks and `@keep` offer now.
     NotOffered,
+    /// The clock cannot be read, so no end can be set.
+    NoClock,
 }
 
 impl Refused {
@@ -571,6 +574,11 @@ impl Refused {
                     .to_owned()
             }
             Refused::NoReason => "A timed grant needs a reason, in one line.".to_owned(),
+            Refused::NoClock => {
+                "This machine's clock cannot be read, so a grant that ends at a time cannot be \
+                 given. Fix the clock and try again."
+                    .to_owned()
+            }
             Refused::NotOffered => {
                 "That length is not offered at this ask: the project, the organisation or a lock \
                  allows a shorter one, or none."
@@ -593,6 +601,9 @@ pub fn give_timed(
     reason: &str,
     now: u64,
 ) -> Result<Vec<Grant>, Refused> {
+    if now == u64::MAX {
+        return Err(Refused::NoClock);
+    }
     if decision.after_mode == Outcome::Deny {
         return Err(Refused::Deny);
     }
@@ -633,6 +644,10 @@ pub enum Ending {
     Time,
     /// Its chat closed first.
     ChatClosed,
+    /// Its rule was removed from the policy, so the grant was lost with it (spec §8.7).
+    RuleRemoved,
+    /// The person pressed Remove on the Allowed list.
+    Removed,
 }
 
 /// **A timed grant that has ended**, with the store entry to take out.
@@ -658,6 +673,8 @@ impl Ended {
             "ended": match self.how {
                 Ending::Time => "time",
                 Ending::ChatClosed => "chat closed",
+                Ending::RuleRemoved => "rule removed",
+                Ending::Removed => "removed",
             },
             "chat": self.grant.chat,
             "rule": self.grant.rule,
@@ -665,6 +682,20 @@ impl Ended {
             "resource_kind": self.grant.resource_kind,
             "resource": self.grant.resource,
             "span": self.grant.timed.as_ref().map(|t| t.span.word()),
+        })
+    }
+}
+
+impl Ended {
+    /// **`entry` as a timed grant that ended `how`**, or none for a line that is not a timed grant
+    /// (a grant of another scope ends without a Journal line).
+    pub fn of(entry: &Entry, how: Ending) -> Option<Self> {
+        let grant = Grant::parse(&entry.text)?;
+        grant.timed.as_ref()?;
+        Some(Self {
+            grant,
+            entry: entry.clone(),
+            how,
         })
     }
 }
@@ -705,12 +736,16 @@ pub struct Row {
     pub rule: String,
     /// The action.
     pub action: String,
+    /// The resource's kind.
+    pub resource_kind: String,
     /// The resource's id.
     pub resource: String,
     /// The chat's ULID, for Once, timed and This chat.
     pub chat: Option<String>,
     /// The workspace, for This workspace.
     pub workspace: Option<String>,
+    /// How long a timed grant runs.
+    pub span: Option<Span>,
     /// The reason, for a timed grant.
     pub reason: Option<String>,
     /// When a timed grant ends, in seconds since 1970.
@@ -741,9 +776,11 @@ pub fn rows(entries: &[Entry], now: u64) -> Vec<Row> {
                 scope: grant.scope,
                 rule: grant.rule,
                 action: grant.action,
+                resource_kind: grant.resource_kind,
                 resource: grant.resource,
                 chat: grant.chat,
                 workspace: grant.workspace,
+                span: grant.timed.as_ref().map(|timed| timed.span),
                 reason: grant.timed.map(|timed| timed.reason),
                 left: until.map(|until| until - now),
                 until,
@@ -863,6 +900,14 @@ pub fn apply(
     served.after_mode = Outcome::Allow;
     served.grant = Some(said);
     served
+}
+
+/// The seconds since 1970 as the clock reads now, or **the end of time where it cannot be read**:
+/// a clock that fails reads every timed grant as ended and gives none, never as the start of time.
+pub fn clock_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(u64::MAX, |since| since.as_secs())
 }
 
 /// **The grants whose rule the policy no longer holds** (`known` is every rule id in force on any

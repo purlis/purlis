@@ -239,11 +239,17 @@ export function leftSaid(seconds: number): string {
 }
 
 /** One answer on the Allowed list, as a sentence: what it covers, at which scope, and for a timed
- *  grant how long is left and why it was given (M75-21). */
+ *  grant its chat and rule, how long is left and why it was given (M75-21). A timed grant that no
+ *  longer serves (a cap tightened, a lock was added, its rule stopped asking) says so instead of
+ *  counting down, and is still there to Remove. */
 export function answerSaid(one: AllowedAnswer, left: number | null): string {
   const covers = `${one.action} ${one.resource}`;
   if (one.scope === "timed") {
-    return `Allowed for ${leftSaid(left ?? 0)} · ${covers} · ${one.reason ?? ""}`;
+    const chat = one.chat_name ?? "a chat that is not open";
+    const state = one.serving
+      ? `Allowed for ${leftSaid(left ?? 0)}`
+      : "No longer serving: a limit or rule changed";
+    return `${state} · ${chat} · ${one.rule} · ${covers} · ${one.reason ?? ""}`;
   }
   const where: Record<string, string> = {
     once: "This chat, once",

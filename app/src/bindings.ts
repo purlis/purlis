@@ -6581,6 +6581,13 @@ export type AllowedAnswer = {
 	until: number | null,
 	/**  How many seconds it has left as this list was read. */
 	left: number | null,
+	/**  The chat's name, where it is open now: what a timed row names its chat by. */
+	chat_name: string | null,
+	/**
+	 *  Whether it serves now. A timed grant stops serving when a cap tightens (`@timed`, a lock)
+	 *  or its rule no longer asks: it stays on the list, said so, until it ends or is removed.
+	 */
+	serving: boolean,
 };
 
 /**
