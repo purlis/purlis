@@ -261,7 +261,7 @@ impl Checked {
         };
         if *why == Why::ChainIsGone {
             return Some(format!(
-                "The event log at {} was changed after purlis wrote it: purlis sealed its hash \
+                "The event log at {} was changed after purlis wrote it: the app sealed its hash \
                  chain, and the log holds none, so it was deleted or every chain was stripped. \
                  Check what ran with the sandbox off.",
                 dir.display()
@@ -295,7 +295,7 @@ impl Checked {
         match self {
             Checked::Stale { seq } => Some(format!(
                 "The event log at {} ends at line {seq}, one past the head purlis sealed: \
-                 purlis stopped between writing that line and sealing it, or a line was added to \
+                 the app stopped between writing that line and sealing it, or a line was added to \
                  the end. The next line purlis writes seals it.",
                 dir.display()
             )),

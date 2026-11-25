@@ -47,6 +47,18 @@ fn a_target_of(source: Source) -> Target {
     .expect("a target")
 }
 
+/// What a policy block holds: the rule that decided it (a policy block names one).
+fn a_decision() -> purlis_core::eventlog::stops::Decided {
+    use purlis_core::policy::decide::Outcome;
+    purlis_core::eventlog::stops::Decided {
+        rules: vec!["processes-no-helper".to_owned()],
+        level: None,
+        family: "processes".to_owned(),
+        outcome: Outcome::Deny,
+        after_mode: Outcome::Deny,
+    }
+}
+
 #[test]
 fn no_block_is_ever_the_source_of_an_ask() {
     purlis_core::unsteered!();
@@ -73,7 +85,7 @@ fn no_block_is_ever_the_source_of_an_ask() {
                 .write_stop(
                     chat,
                     Stop::Block(Block {
-                        policy: None,
+                        policy: (source == Source::Policy).then(a_decision),
                         tool: "Bash".to_owned(),
                         source,
                         qualifier,

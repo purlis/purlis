@@ -727,6 +727,21 @@ fn a_managed_host_the_quit_never_reached_is_held_by_its_manager() {
 #[cfg(unix)]
 #[test]
 fn the_session_host_holds_the_seal_key_as_the_app_does() {
+    // The host opens the event log in this machine's store, which a fenced build refuses
+    // outside its fence: run again in a child whose store is a folder of its own.
+    const IN_A_STORE_OF_ITS_OWN: &str = "SESSION_HOST_SEAL_KEY_CHILD";
+    if std::env::var_os(IN_A_STORE_OF_ITS_OWN).is_none() {
+        let store = tempfile::tempdir().unwrap();
+        purlis_core::testrun::rerun_steered(
+            &["sessionhost::tests::the_session_host_holds_the_seal_key_as_the_app_does"],
+            &[
+                (IN_A_STORE_OF_ITS_OWN, std::ffi::OsStr::new("1")),
+                (purlis_core::machine::HOME_VAR, store.path().as_os_str()),
+                (purlis_core::datahome::HOME_VAR, store.path().as_os_str()),
+            ],
+        );
+        return;
+    }
     let home = tempfile::tempdir().unwrap();
     let _hosting = crate::hosting_here(&a_place(home.path()));
     assert!(

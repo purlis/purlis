@@ -3933,17 +3933,21 @@ fn under_watch_a_folder_of_the_project_is_allowed_and_a_held_folder_of_later_cod
     sandbox::local::unlist_grantable(&root, &above).expect("unlisted");
     super::MACHINE.with(|seam| seam.borrow_mut().take());
 
-    // **Under `log`, the line names the folder granted**, not the path the chat was blocked at.
-    // Only the app writes the log; this test's process is the app.
+    // **Under `log`, a line is written and it names no path** (spec §10.3, S2: ids and closed
+    // words alone, never a path). A folder is not a `host[:port]`, so the line has no host: what
+    // was allowed is told by the grant, not by the log. Only the app writes the log; this test's
+    // process is the app.
     purlis_core::secrets::keyhold::this_process_is_the_app();
     let link = root.join("link");
     std::os::unix::fs::symlink(&elsewhere, &link).expect("a link");
     assert!(answered(&link.display().to_string(), Mode::Log));
     let logged =
         purlis_core::enforcement::read_log(&root, &held.chats().id_of(session).expect("its id"));
+    let line = logged.last().expect("the answer under `log` is written");
+    assert_eq!(line.family, "asks");
     assert_eq!(
-        logged.last().and_then(|line| line.host.clone()),
-        Some(elsewhere.display().to_string())
+        line.host, None,
+        "a folder is no host, so the line names none"
     );
 }
 
