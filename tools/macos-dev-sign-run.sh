@@ -50,6 +50,13 @@ name=""     # the certificate's name, which a signature's Authority line carries
 if [ -n "${PURLIS_DEV_SIGN_IDENTITY:-}" ]; then
   identity=$PURLIS_DEV_SIGN_IDENTITY
   name=$identity
+  case $identity in
+    [0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]*)
+      # A SHA-1 is not what a signature's Authority line carries: look its name up.
+      line=$(security find-identity -v -p codesigning 2>/dev/null | grep -i -m1 "$identity")
+      name=$(printf '%s\n' "$line" | sed -nE 's/^[^"]*"(.*)"[^"]*$/\1/p')
+      ;;
+  esac
 else
   list=$(security find-identity -v -p codesigning 2>/dev/null) || list=""
   line=$(printf '%s\n' "$list" | grep -m1 '"Apple Development: ')
@@ -80,22 +87,35 @@ signed_already() {
 }
 
 if ! signed_already; then
-  # nextest runs one binary once a test, in parallel: the first signs, the rest wait for it.
+  # nextest runs one binary once a test, in parallel: the first signs, the rest wait for it. A
+  # lock is stale only when the pid in it is gone; a live owner (waiting on a Keychain dialog, say)
+  # is waited for, and a waiter that runs out of patience runs the binary unsigned, never steals.
   lock=$bin.signlock
   tries=0
   until mkdir "$lock" 2>/dev/null; do
+    owner=$(cat "$lock/pid" 2>/dev/null)
+    if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+      mv "$lock" "$lock.stale.$$" 2>/dev/null && rm -rf "$lock.stale.$$"
+      continue
+    fi
     tries=$((tries + 1))
-    if [ "$tries" -gt 100 ]; then # a run killed in the middle left its lock: take it over
-      rmdir "$lock" 2>/dev/null
+    if [ "$tries" -gt 600 ]; then
+      # No pid ever written: the owner died between mkdir and echo. Anything else: give up waiting.
+      [ -z "$owner" ] || exec "$@"
+      mv "$lock" "$lock.stale.$$" 2>/dev/null && rm -rf "$lock.stale.$$"
       tries=0
     fi
     sleep 0.1
   done
+  trap 'rm -rf "$lock"' EXIT
+  trap 'exit 130' INT TERM HUP
+  echo $$ >"$lock/pid"
   if ! signed_already; then
     codesign --force --sign "$identity" --identifier "$id" "$bin" >/dev/null 2>&1 ||
       hint failed "codesign with \"$name\" failed for $base, so it runs unsigned and the Keychain may ask for your password. Check PURLIS_DEV_SIGN_IDENTITY, or run: codesign --force --sign \"$name\" $bin"
   fi
-  rmdir "$lock" 2>/dev/null
+  trap - EXIT INT TERM HUP
+  rm -rf "$lock"
 fi
 
 exec "$@"

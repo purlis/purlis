@@ -251,6 +251,9 @@ To get an identity, either:
 - **A self-signed one.** Keychain Access → Certificate Assistant → Create a Certificate, named
   `purlis dev`, identity type Self Signed Root, certificate type Code Signing.
 
+With several Apple Development certificates, the first listed wins, and the order can change when
+one is added or renewed (a new identity asks once more): set `PURLIS_DEV_SIGN_IDENTITY` to pin one.
+
 The first signature may ask once for access to the certificate's key: choose Always Allow.
 
 **One prompt per identity.** The installed app and a local build are different apps to the

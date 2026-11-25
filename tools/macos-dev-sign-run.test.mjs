@@ -56,6 +56,7 @@ function run({
   env = {},
   binName = "purlis",
   args = ["a", "b"],
+  beforeRun,
 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "macos-dev-sign-test-"));
   const fakes = join(dir, "fakes");
@@ -80,6 +81,7 @@ esac
 exit ${codesignExit}`,
   );
   const bin = program(dir, binName, `echo "ran $*"; exit 7`);
+  beforeRun?.(bin);
   const once = () =>
     spawnSync(SCRIPT, [bin, ...args], {
       env: { PATH: `${fakes}:/usr/bin:/bin`, HOME: join(dir, "home"), ...env },
@@ -203,5 +205,36 @@ test("a codesign that fails still runs the binary, with its exit status and one 
 test("it passes the program's arguments through untouched", () => {
   const r = run({ listing: NONE, args: ["--flag", "two words", "--exact"] });
   assert.match(r.stdout, /^ran --flag two words --exact$/m);
+  done(r);
+});
+
+test("a SHA-1 in PURLIS_DEV_SIGN_IDENTITY is looked up, so a binary already signed with it is left alone", () => {
+  const info = [
+    "Identifier=dev.purlis.local.purlis",
+    "Authority=Apple Development: Someone (ABCDE12345)",
+    "Authority=Apple Worldwide Developer Relations Certification Authority",
+    "",
+  ].join("\n");
+  const r = run({
+    listing: LISTING,
+    signed: info,
+    env: { PURLIS_DEV_SIGN_IDENTITY: APPLE_1 },
+  });
+  assert.equal(r.status, 7);
+  assert.deepEqual(signs(r), []);
+  done(r);
+});
+
+test("a lock whose owner is gone is taken over and signing goes on", () => {
+  const r = run({
+    listing: LISTING,
+    beforeRun: (bin) => {
+      mkdirSync(`${bin}.signlock`);
+      writeFileSync(`${bin}.signlock/pid`, "999999\n");
+    },
+  });
+  assert.equal(r.status, 7);
+  assert.equal(signs(r).length, 1);
+  assert.ok(!existsSync(`${r.bin}.signlock`));
   done(r);
 });
