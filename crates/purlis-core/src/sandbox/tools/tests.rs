@@ -1921,8 +1921,9 @@ fn a_guarded_glab_says_to_sign_in_and_names_no_token_flow() {
 }
 
 /// **`without_guard` takes out the one guard it is asked for** (ADR 0128): a persona with ready
-/// tools keeps them and goes back to its own folder, a guard of another name, or of a tool the
-/// persona declares but has not had allowed, stays, the persona's own tool is left alone, and
+/// tools keeps them and goes back to its own folder, a guard of another name stays, a tool the
+/// persona declares but has not had allowed loses its guard too (the sign-in replaces the tokens
+/// that tool would have run with), the persona's own tool is left alone, and
 /// nothing is returned only where nothing is left to arm or to say.
 #[test]
 fn without_guard_takes_out_the_one_guard_and_names_the_folder_by_what_is_left() {
@@ -1959,7 +1960,7 @@ fn without_guard_takes_out_the_one_guard_and_names_the_folder_by_what_is_left() 
     assert!(!open.only_refuses);
     // A guard of another name stays, and nothing changes.
     assert_eq!(without_guard(guarded.clone(), &root, "gh"), Some(guarded));
-    // A program the persona declares but that is not ready keeps its guard.
+    // A program the persona declares but that is not ready loses it too: the route runs it.
     let waiting = guard_forges(
         resolved(&[kubectl()]),
         &root,
@@ -1969,7 +1970,8 @@ fn without_guard_takes_out_the_one_guard_and_names_the_folder_by_what_is_left() 
     )
     .expect("tools");
     assert_eq!(waiting.guards.len(), 1);
-    assert_eq!(without_guard(waiting.clone(), &root, "glab"), Some(waiting));
+    let open = without_guard(waiting, &root, "glab").expect("kubectl is left");
+    assert!(open.guards.is_empty(), "{:?}", open.guards);
     // The persona's own ready tool of that name has no guard to take: it is left as it is.
     let mut own = plain.clone();
     own.ready[0].tool.name = "glab".to_owned();

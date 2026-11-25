@@ -403,7 +403,22 @@ fn started_line(
     forges: &[(&str, crate::forgewire::ForgeKind)],
     confined: bool,
 ) -> (Line, Option<tools::Resolved>, Started) {
-    let it = started_as(Harness::ClaudeCode, Os::MacOs, Some("dev"));
+    started_line_declaring(forges, confined, false)
+}
+
+/// [`started_line`], for a persona that declares an old-style `glab` tool (a vault-token route
+/// that runs nothing here) where `declares_glab`: its guard says so instead of the plain one.
+#[cfg(feature = "forge-wiring")]
+fn started_line_declaring(
+    forges: &[(&str, crate::forgewire::ForgeKind)],
+    confined: bool,
+    declares_glab: bool,
+) -> (Line, Option<tools::Resolved>, Started) {
+    let mut it = started_as(Harness::ClaudeCode, Os::MacOs, Some("dev"));
+    if declares_glab {
+        let declared = ["glab".to_owned()];
+        it.applied.tools = tools::guard_forges(None, &it.root, "dev", &[], &declared).map(Box::new);
+    }
     let route = inputs_over(&it, forges);
     // The CA the app made for the run, which the wiring copies.
     std::fs::write(&route.ca_cert, "CA").expect("the run's CA");
@@ -529,4 +544,25 @@ fn a_wired_chat_with_no_gitlab_host_keeps_the_guard() {
     use crate::forgewire::ForgeKind::GitHub;
     let (_, armed, _it) = started_line(&[("github.com", GitHub)], true);
     assert_eq!(armed.expect("the guard is armed").guards.len(), 1);
+}
+
+/// **A wired GitLab chat drops the guard of a tool its persona declares** (ADR 0128): the
+/// sign-in replaces the tokens a chat was handed, and keeping the "allow it" guard would bring
+/// back the chat that says it has no token.
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn a_wired_gitlab_chat_of_a_persona_declaring_it_has_no_guard_shim_and_the_sentinel() {
+    use crate::forgewire::ForgeKind::GitLab;
+    let (line, armed, it) = started_line_declaring(&[("gitlab.com", GitLab)], true, true);
+    assert!(
+        it.applied
+            .tools
+            .as_ref()
+            .is_some_and(|tools| tools.guards.len() == 1),
+        "the persona's tool is guarded before the wiring"
+    );
+    let token = line.env.iter().find(|(key, _)| key == "GITLAB_TOKEN");
+    assert_eq!(token.map(|(_, value)| value.as_str()), Some(SENTINEL));
+    assert!(armed.is_none_or(|tools| tools.guards.is_empty()));
+    assert!(!guard_shim_on_path(&line), "{:?}", line.env);
 }

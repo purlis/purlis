@@ -1241,10 +1241,6 @@ pub struct Resolved {
     /// that runs it is told which flow sets it up and the program is never run bare
     /// ([`guard_forges`]).
     pub guards: Vec<(String, String)>,
-    /// The programs of [`Resolved::guards`] that the persona declares but that run nothing here
-    /// (not allowed yet, or not found): their guard stays where a forge route runs the program
-    /// for real ([`without_guard`]), since the person has not allowed that tool.
-    pub declared_guards: Vec<String>,
     /// Nothing is allowed this chat, and it only says what is absent (#4373). Its shims go in a
     /// folder of their own, named by what they say ([`refusals_folder`]): the persona's folder
     /// holds the shims of another chat's Allow, which this chat is never to find first on its
@@ -1498,7 +1494,6 @@ pub(crate) fn for_chat_on(
             unallowed: Vec::new(),
             refusing: Vec::new(),
             guards: Vec::new(),
-            declared_guards: Vec::new(),
             only_refuses: true,
         });
         into.absent.extend(unallowed.absent.iter().cloned());
@@ -1624,7 +1619,6 @@ pub(crate) fn resolve_beside(
         unallowed: Vec::new(),
         refusing: Vec::new(),
         guards: Vec::new(),
-        declared_guards: Vec::new(),
         only_refuses: false,
     })
 }
@@ -3119,14 +3113,8 @@ pub fn guard_forges(
         unallowed: Vec::new(),
         refusing: Vec::new(),
         guards: Vec::new(),
-        declared_guards: Vec::new(),
         only_refuses: true,
     });
-    into.declared_guards = guards
-        .iter()
-        .filter(|(name, _)| declared.iter().any(|tool| tool == name))
-        .map(|(name, _)| name.clone())
-        .collect();
     into.guards = guards;
     // The guard is this chat's alone: its shims go in a folder named by what they say, never in
     // the persona's, which a chat of the same persona without a guard writes and cleans.
@@ -3147,10 +3135,6 @@ pub fn guard_forges(
 /// tools goes back to the persona's. Nothing is returned where nothing is left to arm or to say:
 /// a `left` or `absent` tool still is, since arming them is what warns that they run nothing.
 pub fn without_guard(mut resolved: Resolved, root: &Path, name: &str) -> Option<Resolved> {
-    // A tool the persona declares that is not allowed (or not found) keeps its guard.
-    if resolved.declared_guards.iter().any(|kept| kept == name) {
-        return Some(resolved);
-    }
     let before = resolved.guards.len();
     resolved.guards.retain(|(guarded, _)| guarded != name);
     if resolved.guards.len() == before {
