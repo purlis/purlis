@@ -1006,3 +1006,67 @@ fn a_server_that_trickles_its_answer_is_given_up_on_within_one_deadline() {
     let took = started.elapsed();
     assert!(took < Duration::from_secs(3), "took {took:?}");
 }
+
+/// An `ssh` for the check of a pinned key: a sign-in under `StrictHostKeyChecking=yes` ends with
+/// `signed_in`, and a first contact (which accepts what it meets) saves `met` under its alias, or
+/// nothing where `met` is `None`.
+#[cfg(unix)]
+fn an_ssh_that_meets(folder: &Path, signed_in: i32, met: Option<&HostKey>) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt as _;
+    let ssh = folder.join("ssh");
+    let saves = match met {
+        Some(key) => format!(
+            "printf '%s %s\\n' purlis-first-contact '{}' >> \"$f\"",
+            key.spelled()
+        ),
+        None => String::new(),
+    };
+    std::fs::write(
+        &ssh,
+        format!(
+            "#!/bin/sh\nf=\nfor a in \"$@\"; do case $a in\n\
+             StrictHostKeyChecking=yes) exit {signed_in} ;;\n\
+             UserKnownHostsFile=*) f=$(printf %s \"$a\" | sed 's/^UserKnownHostsFile=\"//; s/\"$//') ;;\n\
+             esac; done\n{saves}\nexit 0\n"
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&ssh, std::fs::Permissions::from_mode(0o755)).unwrap();
+    ssh
+}
+
+/// **A changed host key is told as one, not left for the link to misread** (#7240): a machine
+/// whose ssh refuses the pinned key ends the stream before the link's first word, which the link
+/// can only read as a peer that is not a purlis host, and retries. What tells it apart is the
+/// check before each dial, from ssh's exit and the key a first contact meets, never ssh's words.
+#[cfg(unix)]
+#[test]
+fn a_machine_whose_key_is_not_the_pinned_one_is_a_changed_key_and_nothing_else_is() {
+    let other = HostKey::parse(
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExxHsYI9UnIswq1HBUE9zECyyjh0ixyp2O+1SfSzZmy",
+    )
+    .unwrap();
+    let route = Route::parse("ssh://me@box").unwrap();
+    for (signed_in, met, changed, said) in [
+        // ssh refuses the pinned key, and the machine shows another: the key changed.
+        (255, Some(other.clone()), true, "another key"),
+        // ssh ends the same way, and the machine shows the pinned key: not a key's matter.
+        (255, Some(key()), false, "the same key"),
+        // ssh ends and nothing was met: the machine does not answer, and waiting mends it.
+        (255, None, false, "no key met"),
+        // The sign-in holds.
+        (0, None, false, "signed in"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let ssh = an_ssh_that_meets(dir.path(), signed_in, met.as_ref());
+        let settings = dir.path().join("s");
+        let found = connect::key_held(&ssh, &route, "build", &key(), &settings);
+        match (changed, found) {
+            (true, Err(connect::Finding::KeyChanged { pinned, now, .. })) => {
+                assert_eq!((pinned, Some(now)), (key(), met), "{said}");
+            }
+            (false, Ok(())) => {}
+            (_, found) => panic!("{said}: {found:?}"),
+        }
+    }
+}

@@ -163,7 +163,11 @@ fn claude() -> purlis_core::harness_declaration::Declaration {
 #[test]
 fn a_chat_moved_to_a_pools_runner_and_back_resumes_on_its_conversation_branch_and_work() {
     purlis_core::unsteered!();
-    let Ok(image) = std::env::var("DOCKER_POOL_TEST_IMAGE") else {
+    let Some(image) = crate::support::real_infra::fixture_or_skip(
+        "a runner image of this build on a local Docker",
+        "DOCKER_POOL_TEST_IMAGE (tests/parity/build-images.sh)",
+        std::env::var("DOCKER_POOL_TEST_IMAGE").ok(),
+    ) else {
         return;
     };
     let settings = tempfile::tempdir().unwrap();

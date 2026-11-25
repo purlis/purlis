@@ -120,6 +120,7 @@ fn held_plane() -> (tempfile::TempDir, crate::planes::Planes, Arc<Held>) {
     std::fs::create_dir_all(root.join("personas/scribe")).expect("a persona");
     std::fs::write(root.join("personas/scribe/persona.md"), "# scribe\n").expect("its md");
     std::fs::create_dir_all(root.join(".claude")).expect("harness settings");
+    std::fs::create_dir_all(root.join(".purlis")).expect("a state folder");
     std::fs::create_dir_all(root.join("workspaces/alpha/todos")).expect("a todo store");
     std::fs::write(root.join("workspaces/alpha/todos/a1.md"), "# Alpha one\n").expect("a todo");
     let planes = crate::planes::Planes::telling(
@@ -252,6 +253,18 @@ fn a_profile_approved_drops_the_kept_answer() {
 }
 
 #[test]
+fn a_local_vault_registry_mended_drops_the_kept_answer() {
+    // In the state folder, which the watch does not tell: the stamp does. A broken registry
+    // refuses a row, so the kept refusal must not outlive the mending.
+    after(
+        |root| {
+            std::fs::write(root.join(".purlis/vaults.json"), "{}").expect("a registry");
+        },
+        "the local vault registry",
+    );
+}
+
+#[test]
 fn a_todo_written_leaves_the_kept_answer() {
     let (_dir, _planes, held) = held_plane();
     let reads = Cell::new(0);
@@ -263,6 +276,41 @@ fn a_todo_written_leaves_the_kept_answer() {
     .expect("a todo");
 
     // Once the watch has told the sidebar's model the todo, it has told everything it will.
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while !held
+        .sidebar_model()
+        .rows()
+        .expect("listed")
+        .any(|row| row.todos.contains(&"Alpha two".to_owned()))
+    {
+        assert!(
+            Instant::now() < deadline,
+            "the todo never reached the sidebar"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    details(&held, &reads);
+    assert_eq!(reads.get(), 1, "served kept");
+}
+
+#[test]
+fn a_guard_sighting_written_every_second_leaves_the_kept_answer() {
+    // Every tool call of every chat writes `.purlis/guard-seen.json`; on a machine with dozens
+    // of chats that is a write a second, and each one dropped the kept answer, so every open of
+    // the picker read it again under load (#7603 field evidence).
+    let (_dir, _planes, held) = held_plane();
+    let reads = Cell::new(0);
+    details(&held, &reads);
+    let state = held.root().join(".purlis");
+    for n in 0..5 {
+        std::fs::write(state.join("guard-seen.json"), format!("{{\"n\":{n}}}")).expect("seen");
+    }
+    std::fs::write(
+        held.root().join("workspaces/alpha/todos/a2.md"),
+        "# Alpha two\n",
+    )
+    .expect("a todo, which the watch tells after the writes before it");
     let deadline = Instant::now() + Duration::from_secs(60);
     while !held
         .sidebar_model()

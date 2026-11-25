@@ -970,6 +970,12 @@ test("a job that only asks whether it is needed is not started on a pull request
   yes("crates/purlis-core/src/sandbox/sshproxy.rs", "confinement");
   yes("crates/purlis-cli/tests/it/a_chats_ssh_route_carries_from_inside_its_sandbox.rs", "confinement");
   yes("crates/host/src/lib.rs", "parity");
+  // The fault suite and what it is built from (#7188).
+  yes("crates/purlis-core/tests/it/a_live_remote_chat_survives_the_faults_that_define_trust.rs", "parity");
+  yes("crates/purlis-core/tests/support/outage.rs", "parity");
+  yes("crates/purlis-core/tests/support/remote_rig.rs", "parity");
+  yes("crates/purlis-core/tests/support/real_infra.rs", "parity");
+  yes("tests/remote-faults/faults.sh", "parity");
   yes("crates/session-protocol/src/lib.rs", "bench");
   yes("Cargo.lock", "bench");
   for (const event of ["merge_group", "push", "schedule"]) {
