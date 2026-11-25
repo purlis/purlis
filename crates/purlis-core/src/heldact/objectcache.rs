@@ -30,10 +30,20 @@
 //!
 //! **Time.** A push is answered inside the listener's connection total, so **the first fill of a
 //! cache never runs on the connection**: the push that finds the cache empty starts the fill on a
-//! thread of the app's own, owned by the cache and bounded by [`FILL`], and is refused at once
-//! with what is happening. A push to a filled cache tops it up within [`PUSH`], for all the
+//! thread of the app's own, owned by the cache and ended only by [`STALL`] (a fetch that has written
+//! nothing for that long) or the generous upper bound [`FILL`], and is refused at once with what
+//! is happening. A push to a filled cache tops it up within [`PUSH`], for all the
 //! fetches of that push together; a top-up that does not finish in time is refused with that
 //! reason and finished on the same thread, so the next push finds it done.
+//!
+//! **A first fill that finishes** (#7587). A killed fetch leaves only a `tmp_pack_*`, which git
+//! cannot resume, so the fill is **staged** ([`fill_in_stages`]): the base is fetched at a depth of
+//! 200 commits, then 5000, then in full, and each stage that completes leaves real objects and a
+//! ref that the next stage (and a fill begun again after a restart) negotiates from, so an
+//! interrupted fill loses the stage it was in and not the whole. The progress is a file in the
+//! cache's `.git`, and a cache holds a shallow history only until the last stage has made it
+//! whole: **it is marked filled, and a push reads it, only then**. (`--filter=blob:none` is no
+//! option: the gate reads the base's CI files and the blobs of the pushed range.)
 //!
 //! **Concurrency.** One lock per cache in the app (the app is one per user); git's own locks
 //! guard the rest. A push that arrives while a fill runs is refused at once, never left to time
@@ -59,10 +69,15 @@ use sha2::{Digest, Sha256};
 
 use crate::worktree::git;
 
-/// How long a fill's fetch may take: the first fill of a large repo's history. It runs on a thread
-/// of the app's own, never on a chat's connection. Apart from [`git::NETWORK`], which holds every
-/// other call.
-pub const FILL: Duration = Duration::from_secs(15 * 60);
+/// **The most a fill's fetch may take**, however much it is moving: the upper bound under
+/// [`STALL`], for the first fill of a large repo's history. It runs on a thread of the app's own,
+/// never on a chat's connection. Apart from [`git::NETWORK`], which holds every other call.
+pub const FILL: Duration = Duration::from_secs(2 * 60 * 60);
+
+/// **How long a fetch into the cache may write nothing** (its progress, which git writes as it
+/// receives and as it resolves deltas) before it is ended as stuck. A fetch that is moving is
+/// never cut for being slow.
+pub const STALL: Duration = Duration::from_secs(3 * 60);
 
 /// **How long all the fetches of one push may take together**, well inside the listener's
 /// connection total (10 minutes), so that every refusal's text reaches the chat and a verdict is
@@ -79,6 +94,10 @@ const BASES_KEPT: usize = 32;
 /// The file that says a fetch into the cache has finished once. It holds the size of the object
 /// store then, in bytes.
 const FILLED: &str = "purlis-filled";
+
+/// The file of the stage a first fill has reached: the target it fetches, a space, and how many of
+/// its stages have finished.
+const STAGE: &str = "purlis-fill-stage";
 
 /// The file of the bases used last, newest first, one id to a line.
 const BASES: &str = "purlis-bases";
@@ -252,7 +271,7 @@ impl ObjectCache {
             .map(|why| format!(" (the last read failed: {why})"))
             .unwrap_or_default();
         format!(
-            "purlis is still reading {} from the forge {when}{last}; try the push again in a few minutes",
+            "purlis is still reading {} from the forge {when}{last}; an interrupted read resumes where it stopped, so try the push again in a few minutes",
             self.label
         )
     }
@@ -386,7 +405,9 @@ impl ObjectCache {
                     }
                     Err(why) => {
                         cache.tried.store(true, Ordering::Release);
-                        let _ = std::fs::remove_file(cache.path.join(".git").join(FILLED));
+                        // Only a first fill that failed leaves the cache not filled: a top-up that
+                        // failed leaves what was filled filled (and a staged first fill's progress
+                        // is kept, to resume from).
                         *cache.failure.lock().unwrap_or_else(PoisonError::into_inner) = Some(why);
                     }
                 }
@@ -404,6 +425,7 @@ impl ObjectCache {
     }
 
     fn mark_filled(&self) -> Result<(), String> {
+        let _ = std::fs::remove_file(self.path.join(".git").join(STAGE));
         std::fs::write(
             self.path.join(".git").join(FILLED),
             size(&self.objects()).to_string(),
@@ -565,6 +587,85 @@ impl ObjectCache {
             }
         }
     }
+}
+
+/// **One stage of a first fill**: how much of the target's history a fetch asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stage {
+    /// The newest `n` commits: a shallow fetch, whose objects stay when a later stage is killed.
+    Depth(u32),
+    /// All the rest: the history made whole (`--unshallow` where the cache is shallow).
+    Rest,
+}
+
+impl Stage {
+    /// The `git fetch` arguments of this stage in the repository at `into`.
+    pub fn args(self, into: &Path) -> Vec<String> {
+        match self {
+            Stage::Depth(n) => vec![format!("--depth={n}")],
+            // `--unshallow` on a complete repository is an error, so only where it is shallow.
+            Stage::Rest if into.join(".git").join("shallow").is_file() => {
+                vec!["--unshallow".to_owned()]
+            }
+            Stage::Rest => Vec::new(),
+        }
+    }
+}
+
+/// The stages of a first fill: the newest 200 commits (a minute on a large repo), the newest 5000,
+/// then everything. A killed stage loses its own fetch alone.
+pub const FIRST_FILL: [Stage; 3] = [Stage::Depth(200), Stage::Depth(5000), Stage::Rest];
+
+/// **Runs a first fill's fetch in stages, from the one it had reached** (#7587), and plainly once
+/// the cache is filled. `target` names what is fetched (the base's id): a fill begun again for
+/// another target forgets the partial one's refs and shallow boundaries, which no push has read,
+/// so that no ref of the cache is left with a history cut short. `fetch` runs one stage; the first
+/// that fails ends the fill with its reason, and the stages before it stay done.
+///
+/// The file that remembers the stage lives in the cache's `.git`, so it goes with the cache when
+/// the cache is made again.
+pub fn fill_in_stages(
+    dir: &Path,
+    target: &str,
+    stages: &[Stage],
+    mut fetch: impl FnMut(Stage) -> Result<(), String>,
+) -> Result<(), String> {
+    let dot = dir.join(".git");
+    if dot.join(FILLED).is_file() {
+        return fetch(Stage::Rest);
+    }
+    let record = dot.join(STAGE);
+    let target = target.to_ascii_lowercase();
+    let remembered = std::fs::read_to_string(&record).unwrap_or_default();
+    let done = match remembered.trim().split_once(' ') {
+        Some((was, count)) if was == target => count.parse::<usize>().unwrap_or(0),
+        Some(_) => {
+            forget_partial(dir);
+            0
+        }
+        None => 0,
+    };
+    for (index, stage) in stages.iter().enumerate().skip(done) {
+        fetch(*stage)?;
+        std::fs::write(&record, format!("{target} {}", index + 1))
+            .map_err(|why| format!("purlis could not write its object cache ({why})"))?;
+    }
+    Ok(())
+}
+
+/// Drops what a first fill for another target left: its refs (none of which a push has read, since
+/// the cache is not filled) and the shallow boundaries that cut their histories short.
+fn forget_partial(dir: &Path) {
+    if let Ok(listed) = git::run(
+        dir,
+        &["for-each-ref", "--format=%(refname)", "refs/quarantine"],
+        git::READ,
+    ) {
+        for name in listed.out.lines() {
+            let _ = git::run(dir, &["update-ref", "-d", name], git::READ);
+        }
+    }
+    let _ = std::fs::remove_file(dir.join(".git").join("shallow"));
 }
 
 /// Removes every `*.lock` file under `dir` (links are not followed).

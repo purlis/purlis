@@ -174,3 +174,90 @@ async fn a_check_that_outlasts_the_connectors_wait_is_refused_in_time_and_says_s
     );
     assert!(!ran.exists(), "nothing ran");
 }
+
+/// **A link made inside a step names it, and so does what its check runs** (#7182): the rows of
+/// the start's table with no parent are the ones to sum, so a link's `link_check` inside the
+/// caller's `first_link`, and the container's check inside the link's, say so.
+#[tokio::test]
+async fn a_links_check_and_what_it_runs_name_the_steps_they_are_inside() {
+    use purlis_host::NotChecked;
+    use purlis_session_protocol::hostlink::{
+        self, Handshake, Identity, LinkKey, Linked, Liveness, Pinned,
+    };
+    use purlis_session_protocol::steps;
+
+    #[derive(Clone, Default)]
+    struct Said(Arc<std::sync::Mutex<Vec<u8>>>);
+    impl std::io::Write for Said {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Said {
+        type Writer = Said;
+        fn make_writer(&'a self) -> Said {
+            self.clone()
+        }
+    }
+    // The binary's one subscriber, set once: a scoped one is not seen by a blocking thread, and
+    // `tracing` caches whether a step is wanted, which other tests running beside this one with
+    // none would starve. Other tests' lines land in it too, so each check below is "some line".
+    static SAID: std::sync::OnceLock<Said> = std::sync::OnceLock::new();
+    let said = SAID
+        .get_or_init(|| {
+            let said = Said::default();
+            let _ = tracing::subscriber::set_global_default(
+                tracing_subscriber::fmt()
+                    .with_writer(said.clone())
+                    .with_ansi(false)
+                    .with_max_level(tracing::Level::INFO)
+                    .finish(),
+            );
+            said
+        })
+        .clone();
+    let connector = CommandConnector::checked(
+        "/bin/cat",
+        Vec::new(),
+        Arc::new(|| {
+            steps::begin("container_check").done();
+            Err(NotChecked::Refused("no".to_owned()))
+        }),
+    );
+    let first = steps::begin("first_link");
+    let mut links = first.inside(|| {
+        hostlink::keep_linked(
+            connector,
+            Handshake::THIS_BUILD,
+            Identity {
+                device: "01JA0DESKT0P00000000000000".into(),
+                key: LinkKey::generate().unwrap(),
+            },
+            Pinned {
+                device: "01JB0RUNNER000000000000000".into(),
+                key: LinkKey::generate().unwrap().public(),
+            },
+            Liveness::default(),
+        )
+    });
+    assert!(matches!(links.next().await, Some(Linked::Down(_))));
+    first.done();
+    let out = String::from_utf8(said.0.lock().unwrap().clone()).unwrap();
+    let some = |name: &str, inside: &str| {
+        out.lines().any(|line| {
+            line.contains(&format!("purlis: step {name} "))
+                && line.contains(&format!("(parent: {inside})"))
+        })
+    };
+    assert!(some("container_check", "link_check"), "{out}");
+    assert!(some("link_check", "first_link"), "{out}");
+    assert!(
+        out.lines().any(|line| line.contains("purlis: step first_link done")
+            && !line.contains("(parent:")),
+        "{out}"
+    );
+}

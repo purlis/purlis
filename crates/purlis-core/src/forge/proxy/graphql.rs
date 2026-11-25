@@ -29,7 +29,7 @@ use std::collections::HashMap;
 
 use graphql_parser::query::{
     Definition, Document, Field, FragmentDefinition, OperationDefinition, Selection, SelectionSet,
-    TypeCondition, Value, VariableDefinition, parse_query,
+    TypeCondition, Value, VariableDefinition,
 };
 use serde_json::Value as Json;
 
@@ -45,6 +45,43 @@ const MAX_DEPTH: usize = 16;
 
 /// The largest document read.
 const MAX_BODY: usize = 1 << 20;
+
+/// Whether `graphql-parser` 0.4.1 could panic reading `query` (#7589, #7596).
+///
+/// Its `unquote_block_string` (`common.rs`) takes `str::lines()` of a block string, sets the
+/// common indent to the least byte length of leading whitespace (`trim_start`, so
+/// `char::is_whitespace`) over every non-blank line after the first, and then cuts every line
+/// after the first, blank ones too, at `&line[common_indent..]`. That cut panics when it lands
+/// inside a character. If every line's leading whitespace is ASCII, `common_indent` is a count of
+/// ASCII bytes that each non-blank line starts with (it is the least of them) and a blank line
+/// too short for it is not cut, so the cut is always on a boundary. A panic therefore needs a
+/// line whose leading whitespace holds a non-ASCII character. The block string's lines are lines
+/// of the query (`lines()` and `split('\n')` cut alike; a lone `\r` is whitespace and a
+/// trailing `\r` is dropped by `lines()`, neither of which changes a line's leading whitespace),
+/// so this reads every line of the whole query: it also refuses a non-ASCII indent outside any
+/// block string, which no chat writes, and the first line of a block string, which the parser
+/// never cuts, in exchange for needing no tokenizer of its own.
+fn could_panic_the_parser(query: &str) -> bool {
+    query.contains("\"\"\"")
+        && query.split('\n').any(|line| {
+            line.chars()
+                .take_while(|c| c.is_whitespace())
+                .any(|c| !c.is_ascii())
+        })
+}
+
+/// The document `query` is, or none when it is not one the parser reads or could panic on. A
+/// shipped build aborts on any panic before it unwinds ([`crate::panicend::fatal`]), so the
+/// panic is never raised: such a query is refused before the parser sees it. The `catch_unwind`
+/// is a second line for debug and test builds only, which unwind.
+fn parse(query: &str) -> Option<Document<'_, String>> {
+    if could_panic_the_parser(query) {
+        return None;
+    }
+    std::panic::catch_unwind(|| graphql_parser::query::parse_query::<String>(query))
+        .ok()?
+        .ok()
+}
 
 /// What a value resolved to.
 #[derive(Debug, Clone)]
@@ -413,7 +450,7 @@ pub(crate) fn decide<'a>(
         Some(Json::Object(map)) => map,
         Some(_) => return Err(Refusal::GraphqlParse),
     };
-    let document: Document<'_, String> = parse_query(query).map_err(|_| Refusal::GraphqlParse)?;
+    let document = parse(query).ok_or(Refusal::GraphqlParse)?;
 
     let mut fragments = HashMap::new();
     for definition in &document.definitions {
@@ -876,6 +913,19 @@ impl<'d> Context<'_, 'd> {
                         return Err(Refusal::ProtectedPullHead);
                     }
                 }
+                // A merge request from the default branch is the wrong way round, as REST's is
+                // (#7585). `projectPath` is already tied to the chat's repos by the scope check,
+                // so the source is a branch of that project, as in REST.
+                if field.name == "mergeRequestCreate" {
+                    let mut sources = Vec::new();
+                    collect_named("sourceBranch", &val, &mut sources);
+                    if sources
+                        .iter()
+                        .any(|src| self.repos.iter().any(|r| rest::head_is_default(src, r)))
+                    {
+                        return Err(Refusal::ProtectedPullHead);
+                    }
+                }
             }
             self.check_scoped(&ids)?;
             if field.name == "updatePullRequestBranch" {
@@ -987,7 +1037,7 @@ pub fn mutation_repo(
         Some(Json::Object(map)) => map,
         Some(_) => return None,
     };
-    let parsed: Document<'_, String> = parse_query(query).ok()?;
+    let parsed = parse(query)?;
     let mut ids = Vec::new();
     for definition in &parsed.definitions {
         let Definition::Operation(OperationDefinition::Mutation(mutation)) = definition else {

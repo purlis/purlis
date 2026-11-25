@@ -198,6 +198,18 @@ impl World {
         )
     }
 
+    /// [`Self::recording_to`] over `repos` in place of [`Self::new`]'s.
+    pub fn recording_repos(repos: Vec<AllowedRepo>, config: std::path::PathBuf) -> Self {
+        Self::build(
+            repos,
+            Arc::new(purlis_core::forge::pin::NoPin),
+            None,
+            Some(config),
+            None,
+            None,
+        )
+    }
+
     /// [`Self::recording_to`], where the chat may also move a branch a chat it dispatched made,
     /// by the dispatch records of the project at `project`, as the app reads them.
     pub fn recording_with_dispatches(
