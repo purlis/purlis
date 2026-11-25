@@ -7755,8 +7755,13 @@ fn a_strict_plane_in_git(base: &Path) -> (PathBuf, PathBuf) {
         "[policy]\ntemplate = \"strict\"\n",
     )
     .expect("the project's settings");
-    std::fs::create_dir_all(root.join("workspaces/web/ledger")).expect("a workspace");
-    std::fs::write(root.join("workspaces/web/ledger/2026.csv"), "1\n").expect("a file");
+    std::fs::create_dir_all(root.join("workspaces/web")).expect("a workspace");
+    std::fs::write(root.join("workspaces/web/README.md"), "web\n").expect("a file");
+    // Outside every workspace: the chats here have no workspace, so the shipped
+    // `sandbox-other-workspace-read` already forbids each workspace's folder to them, and a ban
+    // inside one would tighten nothing.
+    std::fs::create_dir_all(root.join("ledger")).expect("a folder");
+    std::fs::write(root.join("ledger/2026.csv"), "1\n").expect("a file");
     git_in(&home, &root, &["init", "-q", "-b", "main", "."]);
     commit_all(&home, &root, "one");
     (root, home)
@@ -7768,7 +7773,7 @@ fn commit_all(home: &Path, root: &Path, message: &str) {
     git_in(home, root, &["commit", "-q", "-m", message]);
 }
 
-/// The rule that forbids reading the ledger of `web`, written to the plane's `policy.cedar`.
+/// The rule that forbids reading the plane's `ledger` folder, written to the plane's `policy.cedar`.
 #[cfg(unix)]
 fn ban_the_ledger(root: &Path) {
     std::fs::write(
@@ -7776,7 +7781,7 @@ fn ban_the_ledger(root: &Path) {
         format!(
             "// purlis-policy 1\n@id(\"sandbox-no-ledger\") @level(\"project\")\n\
              forbid (principal, action == Action::\"read\", resource) when {{ \
-             resource in Path::\"{}/workspaces/web/ledger\" }};\n",
+             resource in Path::\"{}/ledger\" }};\n",
             root.display()
         ),
     )
@@ -7902,16 +7907,26 @@ fn a_workspace_created_after_a_chat_started_marks_it_and_the_window_is_told_to_a
             .expect("known")
             .contains(&purlis_core::planechange::Answer::Instructions)
     );
-    // A press and a write of the sealed store say the same thing.
+    // A press and a write of the sealed store say the same thing. Counted from here, since the
+    // plane's own watch of its git standing tells a move of `HEAD` in its own time (once, on CI,
+    // for the commits above): each call below must add its own, and both calls tell at once.
+    let asked = || {
+        told.lock()
+            .expect("told")
+            .iter()
+            .filter(|changes| changes.as_deref() == Some(&[purlis_core::planechange::chats()][..]))
+            .count()
+    };
+    let before = asked();
     held.rows_changed();
+    let after_a_press = asked();
+    assert!(after_a_press > before, "a press says it: {:?}", told.lock());
     purlis_core::secrets::answers::written_for_test(&root);
-    let told = told.lock().expect("told");
-    let asked = told
-        .iter()
-        .filter(|changes| changes.as_deref() == Some(&[purlis_core::planechange::chats()][..]))
-        .count();
-    assert_eq!(asked, 2, "{told:?}");
-    drop(told);
+    assert!(
+        asked() > after_a_press,
+        "a write says it: {:?}",
+        told.lock()
+    );
     planes.close(&plane).expect("it closes");
 }
 
