@@ -1482,8 +1482,9 @@ jobs:
     if: ${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && needs.plan.result == 'success' && needs.keys.result == 'success' && needs.build.result == 'success' }}
     environment: release
     runs-on: macos-latest
-    # A notarization is usually minutes and is allowed forty here; the rest is a few minutes.
-    timeout-minutes: 75
+    # A notarization is usually minutes: the app is allowed forty here and the .dmg fifteen, and
+    # the rest is a few minutes, so the job's own deadline never cuts the optional .dmg short.
+    timeout-minutes: 90
     permissions:
       contents: read
     env:
@@ -1612,8 +1613,9 @@ jobs:
           set -euo pipefail
           zip="$RUNNER_TEMP/notarize-app.zip"
           ditto -c -k --keepParent work/purlis.app "$zip"
+          # A rejected submission can exit non-zero: its JSON and Apple's log are still printed.
           out=$(xcrun notarytool submit "$zip" --key "$NOTARY_KEY_FILE" --key-id "$APPLE_API_KEY" \
-            --issuer "$APPLE_API_ISSUER" --wait --timeout 40m --output-format json)
+            --issuer "$APPLE_API_ISSUER" --wait --timeout 40m --output-format json) || true
           echo "$out"
           id=$(jq -r '.id // empty' <<<"$out")
           status=$(jq -r '.status // empty' <<<"$out")
@@ -1678,7 +1680,7 @@ jobs:
           fi
           if [ "$NOTARIZE" = true ]; then
             out=$(xcrun notarytool submit "$DMG_PATH" --key "$NOTARY_KEY_FILE" --key-id "$APPLE_API_KEY" \
-              --issuer "$APPLE_API_ISSUER" --wait --timeout 40m --output-format json)
+              --issuer "$APPLE_API_ISSUER" --wait --timeout 15m --output-format json) || true
             echo "$out"
             [ "$(jq -r '.status // empty' <<<"$out")" = Accepted ] || { echo "Apple did not accept the .dmg"; exit 1; }
             xcrun stapler staple "$DMG_PATH"
@@ -1688,6 +1690,11 @@ jobs:
           if ! DMG_PATH="$dmg" bash "$RUNNER_TEMP/dmg.sh"; then
             rm -f "$dmg"
             echo "::warning::no .dmg: it could not be made, signed or notarized, so this release has none. The app and the updater archive are unaffected."
+            # A stable release is announced with its .dmg, so it does not go out without one.
+            if [ "$CHANNEL" = stable ]; then
+              echo "::error::a stable build has no .dmg, so it is not published"
+              exit 1
+            fi
           fi
           rm -f "$RUNNER_TEMP/dmg.sh"
           ls -l dist
