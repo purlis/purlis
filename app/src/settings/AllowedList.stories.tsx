@@ -13,8 +13,10 @@ import type { AllowedAnswer } from "../bindings";
 import { expectFocusInSight, untilFocused } from "../stories.testkit";
 import { AllowedList } from "./GrantedList";
 
-/** Far enough ahead that the story never sees it end, and the same picture every run. */
-const FAR = 4_102_444_800;
+/** The story's clock, fixed: the countdown is `until - now`, so a fixed pair draws the same picture
+ *  every run. The grant ends 42 minutes after it. */
+const NOW = 1_800_000_000;
+const clock = () => NOW * 1000;
 
 const TIMED: AllowedAnswer = {
   id: "aaaaaaaaaaaaaaaa",
@@ -25,7 +27,7 @@ const TIMED: AllowedAnswer = {
   chat: "01M85WM43DT07ANNAQ6NQEJTXD",
   workspace: null,
   reason: "Run the release build",
-  until: FAR,
+  until: NOW + 2520,
   left: 2520,
   chat_name: "Release build",
   serving: true,
@@ -50,7 +52,7 @@ let removed: unknown[] = [];
 
 const meta = {
   component: AllowedList,
-  args: { plane: "/Users/you/work/shop", ids: { id: "allowed-at-an-ask", labelledBy: undefined } },
+  args: { plane: "/Users/you/work/shop", now: clock, ids: { id: "allowed-at-an-ask", labelledBy: undefined } },
   parameters: { screenshot: "page" },
   beforeEach: () => {
     removed = [];
@@ -78,7 +80,7 @@ export const TimedBesideAGrant: Story = {
     const canvas = within(canvasElement);
     const list = await canvas.findByRole("list", { name: "Allowed at an ask" });
     await expect(list).toHaveTextContent(
-      /Allowed for \d+ min · Release build · processes-curl · exec curl · Run the release build/,
+      "Allowed for 42 min · Release build · processes-curl · exec curl · Run the release build",
     );
     await expect(list).toHaveTextContent("Allowed · exec ls · This workspace");
     await userEvent.tab();

@@ -267,10 +267,20 @@ export function answerSaid(one: AllowedAnswer, left: number | null): string {
  * its time is up, since the host takes it out and writes its Journal line then; one that has
  * ended is never drawn.
  */
-export function AllowedList({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
+export function AllowedList({
+  plane,
+  ids,
+  now: clock = Date.now,
+}: {
+  plane: PlaneId;
+  ids: RowIds;
+  /** The clock, in milliseconds: a story hands it a fixed one so the countdown draws the same
+   *  picture every run. */
+  now?: () => number;
+}) {
   const [rows, setRows] = useState<readonly AllowedAnswer[]>();
   const [said, setSaid] = useState<string>();
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  const [now, setNow] = useState(() => Math.floor(clock() / 1000));
   const asking = useRef(0);
   const read = useCallback(() => {
     const mine = ++asking.current;
@@ -291,9 +301,9 @@ export function AllowedList({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
   // The countdown moves every few seconds, and the list is read again when a timed grant's time
   // is up, so the host takes it out and it leaves the list.
   useEffect(() => {
-    const tick = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 5000);
+    const tick = setInterval(() => setNow(Math.floor(clock() / 1000)), 5000);
     return () => clearInterval(tick);
-  }, []);
+  }, [clock]);
   const outstanding = (rows ?? []).filter((one) => one.until !== null && one.until <= now);
   useEffect(() => {
     if (outstanding.length > 0) read();
