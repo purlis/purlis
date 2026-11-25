@@ -2993,6 +2993,62 @@ mod tests {
         }
     }
 
+    /// A literal value shaped like a token, built from parts so this file holds none (#7628).
+    fn literal() -> String {
+        ["x9f2", "k1m7", "q4w8"].concat()
+    }
+
+    #[test]
+    fn prose_ending_in_a_key_word_and_a_colon_takes_no_value_from_the_next_line() {
+        // #7628: the separator's blanks ran across the line break, so the next line's first
+        // word was this line's value.
+        let snippet = "TOKEN=$(awk '/token:/ {print $2}' ~/.config/glab-cli/config.yml)";
+        for text in [
+            format!("glab keeps its token:\n{snippet}\n"),
+            format!("glab keeps its token:\r\n{snippet}\r\n"),
+            format!("the password =\n{}\n", literal()),
+        ] {
+            assert_eq!(secret_kind(&text), None, "{text:?}");
+            assert_eq!(found(&text), None, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn a_value_that_is_a_command_substitution_is_not_a_credential_assignment() {
+        for text in [
+            "TOKEN=$(awk '/token:/ {print $2}' ~/.config/glab-cli/config.yml)",
+            "token: $(glab config get token --host gitlab.example.com)",
+            "export GITLAB_TOKEN=\"$(grep -m1 token ~/.config/glab-cli/config.yml | cut -d' ' -f2)\"",
+        ] {
+            assert_eq!(secret_kind(text), None, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_real_assignment_is_still_caught_with_its_value_on_the_line() {
+        let value = literal();
+        for text in [
+            format!("TOKEN={value}"),
+            format!("token: {value}"),
+            format!("glab keeps its token:\ntoken: {value}\n"),
+            format!("note\nPASSWORD =   '{value}'\n"),
+        ] {
+            assert_eq!(
+                secret_kind(&text),
+                Some("credential assignment"),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn save_and_scan_agree_on_the_prose_before_a_command_substitution() {
+        // Save asks the whole staged text of `found`; scan asks each added line of `leaks`.
+        let text = "glab keeps its token:\nTOKEN=$(glab config get token)\n";
+        assert_eq!(found_as_read(None, text), None);
+        assert!(text.lines().all(|line| leaks(line).is_empty()));
+    }
+
     #[test]
     fn a_vault_reference_is_a_name_and_a_token_inside_one_is_not() {
         for named in [
