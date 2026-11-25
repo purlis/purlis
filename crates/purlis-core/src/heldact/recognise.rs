@@ -165,12 +165,23 @@ impl Call<'_> {
     /// Whether the request sets one of the keys that ask the forge to merge later to true: in the
     /// query, or in the body at any depth, as a bool or as the text a form sends.
     fn sets_auto_merge(&self) -> bool {
-        const KEYS: [&str; 2] = ["merge_when_pipeline_succeeds", "auto_merge"];
+        const KEYS: [&str; 3] = [
+            "merge_when_pipeline_succeeds",
+            "auto_merge",
+            // The merge trains route's older name for the same ask.
+            "when_pipeline_succeeds",
+        ];
+        // GitLab coerces its booleans loosely (`1`, `t`, `yes`, `on`, ...): only these are off.
+        fn off_text(text: &str) -> bool {
+            matches!(text.to_ascii_lowercase().as_str(), "false" | "0" | "f")
+        }
         fn on(value: &serde_json::Value) -> bool {
             match value {
+                serde_json::Value::Null => false,
                 serde_json::Value::Bool(flag) => *flag,
-                serde_json::Value::String(text) => text.eq_ignore_ascii_case("true"),
-                _ => false,
+                serde_json::Value::String(text) => !off_text(text),
+                serde_json::Value::Number(number) => number.as_f64() != Some(0.0),
+                _ => true,
             }
         }
         fn within(value: &serde_json::Value) -> bool {
@@ -183,9 +194,10 @@ impl Call<'_> {
             }
         }
         within(self.body)
-            || self.query.iter().any(|(key, value)| {
-                KEYS.contains(&key.as_str()) && value.eq_ignore_ascii_case("true")
-            })
+            || self
+                .query
+                .iter()
+                .any(|(key, value)| KEYS.contains(&key.as_str()) && !off_text(value))
     }
 
     fn named(&self, name: &str) -> bool {

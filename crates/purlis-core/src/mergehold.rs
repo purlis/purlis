@@ -386,22 +386,25 @@ fn lands(toks: &[String]) -> bool {
         && words.next().map(String::as_str) == Some("land")
 }
 
-/// The flags of `gh pr merge` and `glab mr merge` that take a value, which is never the
-/// request's number.
-const VALUE_FLAGS: &[&str] = &[
-    "-b",
-    "--body",
-    "-F",
-    "--body-file",
-    "-t",
-    "--subject",
-    "-A",
-    "--author-email",
-    "--match-head-commit",
-    "-m",
-    "--message",
-    "--sha",
-    "--squash-message",
+/// The flags of each CLI's merge that take a value, which is never the request's number, from
+/// `gh pr merge --help` and `glab mr merge --help`. They differ: `-m` is gh's boolean `--merge`
+/// and glab's `--message`, so a word after it is a value on one CLI only.
+const VALUE_FLAGS: &[(&str, &[&str])] = &[
+    (
+        "gh",
+        &[
+            "-A",
+            "--author-email",
+            "-b",
+            "--body",
+            "-F",
+            "--body-file",
+            "--match-head-commit",
+            "-t",
+            "--subject",
+        ],
+    ),
+    ("glab", &["-m", "--message", "--sha", "--squash-message"]),
 ];
 
 /// One segment's merge, as [`merge_of`] reads it.
@@ -434,6 +437,10 @@ fn merge_of(toks: &[String]) -> Option<Merge> {
     let (prog, _, argv) = crate::shellwrap::split_env(toks);
     let base = crate::shellwrap::base_lower(&prog);
     let args = argv.get(1..).unwrap_or(&[]);
+    let value_flags = VALUE_FLAGS
+        .iter()
+        .find(|(cli, _)| *cli == base)
+        .map(|(_, flags)| *flags)?;
     let mut repo = None;
     let mut words = Vec::new();
     let mut later = false;
@@ -449,7 +456,7 @@ fn merge_of(toks: &[String]) -> Option<Merge> {
         }
         if let Some(value) = arg.strip_prefix("--repo=") {
             repo = Some(Some(value));
-        } else if VALUE_FLAGS.contains(&arg) {
+        } else if value_flags.contains(&arg) {
             i += 1;
         } else if !arg.starts_with('-') {
             words.push(arg);
