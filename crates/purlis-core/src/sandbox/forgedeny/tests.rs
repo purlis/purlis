@@ -158,7 +158,10 @@ fn a_harness_host_is_carried_at_an_address_a_forge_shares_with_it() {
     let forge = denial(&[("gitlab.com", "172.65.251.78")]);
     for host in crate::forgewire::HARNESS_HOSTS {
         assert!(!forge.refuses(host, 443), "{host} refused by name");
-        assert!(forge.carries(host, ip("172.65.251.78")), "{host} at gitlab's");
+        assert!(
+            forge.carries(host, ip("172.65.251.78")),
+            "{host} at gitlab's"
+        );
         assert!(forge.carries(host, ip("140.82.112.4")), "{host} in a range");
     }
     // Any other name there is still held back, and so is a harness name's lookalike.
@@ -172,8 +175,16 @@ fn a_tunnel_to_a_harness_host_is_carried_only_where_it_names_that_host_inside() 
     let forge = denial(&[]);
     for host in crate::forgewire::HARNESS_HOSTS {
         assert!(!forge.pins(host, &Hello::Named(host.into())), "{host}");
-        for forged in ["github.com", "gitlab.com", "api.github.com", "other.example"] {
-            assert!(forge.pins(host, &Hello::Named(forged.into())), "{host} as {forged}");
+        for forged in [
+            "github.com",
+            "gitlab.com",
+            "api.github.com",
+            "other.example",
+        ] {
+            assert!(
+                forge.pins(host, &Hello::Named(forged.into())),
+                "{host} as {forged}"
+            );
         }
     }
 }
