@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795635100554,
+  "lastUpdate": 1795638764480,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55146,6 +55146,48 @@ window.BENCHMARK_DATA = {
             "value": 101.485049,
             "unit": "ms",
             "extra": "median of 5 runs: 101.065, 101.343, 101.485, 101.801, 102.151 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f04a3a626f9db7b6aaaff86ccb39a0f1bf6a416a",
+          "message": "A key word and a colon end a line: save no longer reads the next line as a credential's value (#7628) (#7657)\n\n* Tests: save and scan agree on prose ending in a key word and a colon (#7628)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M893NQYB2P435H2HW9PSJ7DA\nPurlis-Persona: steward\n\n* Credential assignment: a value is on the keyword's own line (#7628)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M893NQYB2P435H2HW9PSJ7DA\nPurlis-Persona: steward\n\n* secretshape: a lone value alone on the next line is caught again; a lone CR is a blank\n\nThe assignment rule crosses one line break only when the next line, trimmed, is a\nsingle word that reads as a value (a Markdown Password: label over its secret, a\nYAML key over a plain scalar). Prose ending in token: over a shell line still\ntakes no value from it (#7628). BLANK excludes only \\n, so a lone \\r between the\nkey and the value is a blank as it is to Python.\n\nTests: lone next-line values, lone CR, tab/NBSP/U+001C separators, CRLF, a\nforge-prefixed token below a YAML key, the joined triple-quote opener, and a bare\ntoken = with a quoted command substitution. The save test no longer claims scan\nagrees, since leaks never asks the assignment rule. Docs list the departure.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M89WQ5AST4H0M5Z8NDTC637G\nPurlis-Persona: steward\n\n* Changelog: say a lone next-line value is still refused (#7628)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T19:53:23Z",
+          "tree_id": "ac2f0ead2cb5094c4c4f4f3770e3d622b53cd442",
+          "url": "https://github.com/purlis/purlis/commit/f04a3a626f9db7b6aaaff86ccb39a0f1bf6a416a"
+        },
+        "date": 1795638754826,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.554421,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.544, 0.552, 0.554, 0.561, 0.563 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.25455,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.135, 16.165, 16.255, 16.325, 16.344 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.561364,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.228, 100.495, 100.561, 101.657, 101.860 ms"
           }
         ]
       }
