@@ -10373,8 +10373,9 @@ fn reached_by_the_proxy(
     })
 }
 
+#[track_caller]
 fn lock<T: ?Sized>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    crate::mainwatch::lock(mutex)
 }
 
 /// What a chat's hooks read about it (#1338, #1345), put in its `env`: the folder it was started

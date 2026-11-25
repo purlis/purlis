@@ -5920,8 +5920,9 @@ impl Planes {
         }
     }
 
+    #[track_caller]
     fn map(&self) -> MutexGuard<'_, HashMap<PlaneId, Arc<Held>>> {
-        self.open.lock().unwrap_or_else(PoisonError::into_inner)
+        crate::mainwatch::lock(&self.open)
     }
 }
 
