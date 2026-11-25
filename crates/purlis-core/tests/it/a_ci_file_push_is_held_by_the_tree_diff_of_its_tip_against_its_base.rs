@@ -540,9 +540,15 @@ fn a_401_on_the_second_sign_in_ends_the_ask_without_a_retry_and_marks_it_refused
     );
     let said = refused.to_string();
     assert!(
-        said.contains("Settings › You › Accounts") && said.contains("push again"),
+        said.contains("Settings › You › Accounts") && said.contains("ask the chat to push again"),
         "{said}"
     );
+    // The forge's words are said once, and never inside a second pair of brackets.
+    assert!(
+        said.contains("pushed: Bad credentials (HTTP 401)."),
+        "{said}"
+    );
+    assert!(!said.contains("(Bad credentials"), "{said}");
     assert!(!said.contains("Once more"), "{said}");
     // The second sign-in is marked no longer valid, once.
     assert_eq!(second.refusals(), 1);

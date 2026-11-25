@@ -10,6 +10,7 @@ import { Button, ButtonRow } from "./ui/button/Button";
 import { Card, CardTitle } from "./ui/card/Card";
 import { Fact, Facts } from "./ui/card/Facts";
 import { CodeBlock } from "./ui/code/CodeBlock";
+import { Notice } from "./Notice";
 
 /**
  * **Held forge acts in Asks** (one login F2; ADR 0128 D8): a tag, a release, a push that changes
@@ -107,11 +108,20 @@ function without<T>(record: Record<number, T>, key: number): Record<number, T> {
   return Object.fromEntries(Object.entries(record).filter(([one]) => Number(one) !== key));
 }
 
+/** `record` with only the asks still `listed`: an ask gone for any reason takes its entry along. */
+function listedOnly<T>(record: Record<number, T>, listed: readonly HeldActShown[]) {
+  return Object.fromEntries(
+    Object.entries(record).filter(([one]) => listed.some((act) => act.ask === Number(one))),
+  ) as Record<number, T>;
+}
+
 /** The asks of one project, as Asks draws them, each with its own two presses. */
 export function HeldActAsks({ plane }: { plane: PlaneId }) {
   const [acts, setActs] = useState<readonly HeldActShown[]>([]);
   const [firsts, setFirsts] = useState<Record<number, FirstPress>>({});
   const [refusals, setRefusals] = useState<Record<number, string>>({});
+  /** Refusals that ended their ask with the press (a dead second sign-in), until dismissed. */
+  const [ended, setEnded] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState<number>();
   /** What the last act made, said where its row was: the ask is gone once it is made. */
   const [made, setMade] = useState<string>();
@@ -121,7 +131,12 @@ export function HeldActAsks({ plane }: { plane: PlaneId }) {
       .heldActsWaiting(plane)
       .then((listed) => {
         // A core that lists nothing (an older one, a test's stand-in) holds none.
-        if (listed?.status === "ok" && Array.isArray(listed.data)) setActs(listed.data);
+        if (listed?.status === "ok" && Array.isArray(listed.data)) {
+          const now = listed.data;
+          setActs(now);
+          setRefusals((was) => listedOnly(was, now));
+          setFirsts((was) => listedOnly(was, now));
+        }
       })
       .catch(() => undefined);
   }, [plane]);
@@ -149,8 +164,20 @@ export function HeldActAsks({ plane }: { plane: PlaneId }) {
       .pressHeldAct(plane, act.ask, act.digest, first?.nonce ?? null)
       .then((answer) => {
         if (answer.status === "error") {
-          setRefusals((was) => ({ ...was, [act.ask]: answer.error }));
-          return;
+          const said = answer.error;
+          // Whether this press ended the ask is read off the list right after it: an ask that
+          // waits again keeps its refusal on its row, one that is gone says it where the row was.
+          return commands
+            .heldActsWaiting(plane)
+            .then((listed) => {
+              const gone =
+                listed?.status === "ok" &&
+                Array.isArray(listed.data) &&
+                !listed.data.some((one) => one.ask === act.ask);
+              if (gone) setEnded((was) => ({ ...was, [act.ask]: said }));
+              else setRefusals((was) => ({ ...was, [act.ask]: said }));
+            })
+            .catch(() => setRefusals((was) => ({ ...was, [act.ask]: said })));
         }
         if (answer.data.step === "asks-once-more") {
           const again = answer.data;
@@ -183,22 +210,25 @@ export function HeldActAsks({ plane }: { plane: PlaneId }) {
       .finally(() => {
         setBusy(undefined);
         setFirsts((was) => without(was, act.ask));
+        setRefusals((was) => without(was, act.ask));
         asksMoved(plane);
       });
   };
 
-  /** Refusals of asks that ended with them (a dead second sign-in): said where the row was. */
-  const ended = Object.entries(refusals).filter(
-    ([ask]) => !acts.some((act) => act.ask === Number(ask)),
-  );
-  if (acts.length === 0 && made === undefined && ended.length === 0) return null;
+  const endedSaid = Object.entries(ended);
+  if (acts.length === 0 && made === undefined && endedSaid.length === 0) return null;
   return (
     <>
       {made !== undefined && <p role="status">{made}</p>}
-      {ended.map(([ask, said]) => (
-        <p key={`ended-${ask}`} role="status">
+      {endedSaid.map(([ask, said]) => (
+        <Notice
+          key={`ended-${ask}`}
+          cause={`held-act-ended:${plane}:${ask}`}
+          tone="trouble"
+          onDismiss={() => setEnded((was) => without(was, Number(ask)))}
+        >
           {said}
-        </p>
+        </Notice>
       ))}
       <ul aria-label="Held forge acts" className="held-acts">
         {acts.map((act) => (

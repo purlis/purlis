@@ -106,8 +106,8 @@ pub enum NotDone {
     /// The forge answered 401 to the second sign-in: it is dead and sending the push again can
     /// never work, so the ask ends. Carries the host and the forge's words.
     #[error(
-        "{host} refused the sign-in that allows CI files ({said}), so nothing was pushed. Allow CI \
-         files again in Settings › You › Accounts, then push again"
+        "{host} refused the sign-in that allows CI files, so nothing was pushed: {said}. Allow CI \
+         files again in Settings › You › Accounts, then ask the chat to push again"
     )]
     SecondSignInRefused { host: String, said: String },
     /// The fork the forge made is not in the person's own account. Nothing was recorded.

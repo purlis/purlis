@@ -167,7 +167,7 @@ pub fn refused(
 ) -> Result<(), String> {
     remove(keyring, account)?;
     // Told every time, not once per run: a second token made and refused again is new news.
-    crate::forge::refresh::forget_raised(&account.id);
+    crate::forge::refresh::forget_raised_of(&account.id, &Trouble::SecondSignInRefused);
     crate::forge::refresh::raise_once(account, &Trouble::SecondSignInRefused);
     Ok(())
 }

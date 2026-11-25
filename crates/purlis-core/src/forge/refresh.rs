@@ -181,7 +181,7 @@ fn raise(account: &ForgeAccount, trouble: &Trouble) {
 /// of trouble in this process, so a chat that asks again and again does not tell the window
 /// again. The Notice itself is derived from the account list, so it survives a restart.
 pub(crate) fn raise_once(account: &ForgeAccount, trouble: &Trouble) {
-    let key = format!("{}:{trouble:?}", account.id);
+    let key = once_key(&account.id, trouble);
     let first = {
         let mut told = ONCE.lock().unwrap_or_else(|e| e.into_inner());
         told.get_or_insert_with(Default::default).insert(key)
@@ -192,6 +192,19 @@ pub(crate) fn raise_once(account: &ForgeAccount, trouble: &Trouble) {
 }
 
 static ONCE: Mutex<Option<std::collections::HashSet<String>>> = Mutex::new(None);
+
+/// What [`raise_once`] remembers a trouble of an account by.
+fn once_key(account_id: &str, trouble: &Trouble) -> String {
+    format!("{account_id}:{trouble:?}")
+}
+
+/// That `trouble` was told of `account_id` is forgotten, and nothing else: the next one of that
+/// kind is told again, and every other kind already told stays told.
+pub(crate) fn forget_raised_of(account_id: &str, trouble: &Trouble) {
+    if let Some(told) = ONCE.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+        told.remove(&once_key(account_id, trouble));
+    }
+}
 
 /// What was told of `account_id` is forgotten, so the next trouble of any kind is told again: the
 /// account's scopes were just read afresh, and what it was told before is no longer so. Without
@@ -1758,5 +1771,25 @@ pub(crate) mod tests {
             signing_out.join().unwrap();
             assert!(machine.kept().is_none());
         });
+    }
+
+    #[test]
+    fn forgetting_one_trouble_told_of_an_account_keeps_every_other_kind_told() {
+        let mut account = machine(Kind::GitHub, "github.com", Method::Device).account;
+        // An id of its own, so no other test's troubles share its keys.
+        account.id = "01J9FORGETS-ONE-KIND".to_owned();
+        let told = |trouble: &Trouble| {
+            ONCE.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .as_ref()
+                .is_some_and(|told| told.contains(&once_key(&account.id, trouble)))
+        };
+        raise_once(&account, &Trouble::ScopesUnknown);
+        raise_once(&account, &Trouble::SecondSignInRefused);
+
+        forget_raised_of(&account.id, &Trouble::SecondSignInRefused);
+
+        assert!(!told(&Trouble::SecondSignInRefused));
+        assert!(told(&Trouble::ScopesUnknown), "another kind must stay told");
     }
 }

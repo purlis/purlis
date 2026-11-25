@@ -250,7 +250,7 @@ impl HeldForge for TwoTips {
         _: &str,
         _: bool,
         _: bool,
-    ) -> Result<(), purlis_core::heldact::PushError> {
+    ) -> Result<(), String> {
         unreachable!()
     }
     fn make_fork(&self, _: &Repo, _: &str) -> Result<Forked, String> {
@@ -503,5 +503,51 @@ fn an_empty_pack_naming_a_commit_the_forge_resolves_but_no_branch_holds_is_refus
     assert!(
         why.contains("neither in the push nor in a branch of this repo"),
         "{why}"
+    );
+}
+
+#[test]
+fn a_refused_second_sign_in_is_deleted_from_the_keychain_so_no_ask_offers_it_again() {
+    use purlis_core::forge::accounts::workflow::{Availability, availability};
+    use purlis_core::forge::accounts::{Method, State};
+    let home = tempfile::tempdir().unwrap();
+    let account = ForgeAccount {
+        id: "01J9WORKFLOWOVER".into(),
+        kind: Kind::GitHub,
+        host: "github.com".into(),
+        login: "octocat".into(),
+        method: Method::Device,
+        state: State::SignedIn,
+        scopes: Some(vec!["repo".into(), "read:org".into()]),
+        client_id: None,
+    };
+    let keyring = accounts::keyring_at(home.path());
+    keyring
+        .set(&accounts::service(&account), "workflow", "a-second-token")
+        .unwrap();
+    keyring
+        .set(&accounts::service(&account), "token", "the-everyday-token")
+        .unwrap();
+    assert_eq!(
+        availability(keyring.as_ref(), &account),
+        Availability::Ready
+    );
+    let over = WorkflowOver {
+        config_root: home.path().to_path_buf(),
+        account: account.clone(),
+    };
+
+    over.drop_refused(&HostScope::for_a_test());
+
+    assert_eq!(
+        availability(keyring.as_ref(), &account),
+        Availability::NeedsPress
+    );
+    // The everyday sign-in is untouched.
+    assert!(
+        keyring
+            .get(&accounts::service(&account), "token")
+            .unwrap()
+            .is_some()
     );
 }

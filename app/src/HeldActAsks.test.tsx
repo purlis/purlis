@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { HeldActAsks, HeldActRow, onceMoreSaid } from "./HeldActAsks";
+import { asksMoved } from "./asks";
 import type { HeldActShown } from "./bindings";
 import { CI_PUSH, EVERY_KIND, FORK, RELEASE, TAG } from "./HeldActAsks.fixtures";
 
@@ -154,7 +155,7 @@ describe("the two presses", () => {
   it("an ask the core ended with a refused second sign-in says why where the row was, with no once more", async () => {
     const user = userEvent.setup();
     const refused =
-      "github.com refused the sign-in that allows CI files (Bad credentials), so nothing was pushed. Allow CI files again in Settings › You › Accounts, then push again";
+      "github.com refused the sign-in that allows CI files, so nothing was pushed: Bad credentials (HTTP 401). Allow CI files again in Settings › You › Accounts, then ask the chat to push again";
     let presses = 0;
     mockIPC((cmd) => {
       if (cmd === "held_acts_waiting") return presses > 1 ? [] : [CI_PUSH];
@@ -172,6 +173,68 @@ describe("the two presses", () => {
     expect(await screen.findByText(refused)).toBeTruthy();
     await waitFor(() => expect(screen.queryByText(onceMoreSaid(CI_PUSH))).toBeNull());
     expect(screen.queryByRole("button", { name: /push the branch/i })).toBeNull();
+  });
+
+  it("a 401-ended line can be dismissed", async () => {
+    const user = userEvent.setup();
+    const refused =
+      "github.com refused the sign-in that allows CI files, so nothing was pushed: Bad credentials (HTTP 401). Allow CI files again in Settings › You › Accounts, then ask the chat to push again";
+    let pressed = false;
+    mockIPC((cmd) => {
+      if (cmd === "held_acts_waiting") return pressed ? [] : [CI_PUSH];
+      if (cmd === "press_held_act") {
+        pressed = true;
+        throw refused;
+      }
+      return undefined;
+    });
+    render(<HeldActAsks plane={PLANE} />);
+    await user.click(await screen.findByRole("button", { name: "Push the branch" }));
+    expect(await screen.findByText(refused)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: /Dismiss/ }));
+    await waitFor(() => expect(screen.queryByText(refused)).toBeNull());
+  });
+
+  it("Don't after a refusal leaves no line", async () => {
+    const user = userEvent.setup();
+    const refused = "the forge did not do it: Update is not a fast forward";
+    let put = false;
+    mockIPC((cmd) => {
+      if (cmd === "held_acts_waiting") return put ? [] : [CI_PUSH];
+      if (cmd === "press_held_act") throw refused;
+      if (cmd === "dont_held_act") {
+        put = true;
+        return true;
+      }
+      return undefined;
+    });
+    const { container } = render(<HeldActAsks plane={PLANE} />);
+    await user.click(await screen.findByRole("button", { name: "Push the branch" }));
+    // The ask waits again, with the refusal on its own row.
+    expect(await screen.findByText(refused)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Push the branch" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Don't" }));
+    await waitFor(() => expect(screen.queryByText(refused)).toBeNull());
+    await waitFor(() => expect(container.querySelector("li")).toBeNull());
+    expect(screen.queryByRole("button", { name: /Dismiss/ })).toBeNull();
+  });
+
+  it("an ask that goes for another reason after a refusal takes its refusal along", async () => {
+    const user = userEvent.setup();
+    const refused = "the forge did not do it: Update is not a fast forward";
+    let listed: readonly HeldActShown[] = [CI_PUSH];
+    mockIPC((cmd) => {
+      if (cmd === "held_acts_waiting") return listed;
+      if (cmd === "press_held_act") throw refused;
+      return undefined;
+    });
+    render(<HeldActAsks plane={PLANE} />);
+    await user.click(await screen.findByRole("button", { name: "Push the branch" }));
+    expect(await screen.findByText(refused)).toBeTruthy();
+    // The chat closed: the core lists the ask no more, and the Asks are read again.
+    listed = [];
+    act(() => asksMoved(PLANE));
+    await waitFor(() => expect(screen.queryByText(refused)).toBeNull());
   });
 
   it("Don't sends the ask's number and nothing else", async () => {

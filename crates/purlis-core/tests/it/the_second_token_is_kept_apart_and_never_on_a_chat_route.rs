@@ -1023,7 +1023,27 @@ fn a_second_token_the_forge_refused_is_dropped_and_the_everyday_one_kept() {
         Availability::Ready
     );
 
+    // What the window is told, for this account alone: other tests raise troubles of their own.
+    static TOLD: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+    purlis_core::forge::refresh::tell_of_trouble(&scope(), |account, trouble| {
+        TOLD.lock()
+            .unwrap()
+            .push((account.id.clone(), format!("{trouble:?}")));
+    });
+    let told = || {
+        TOLD.lock()
+            .unwrap()
+            .iter()
+            .filter(|(id, _)| *id == account.id)
+            .map(|(_, trouble)| trouble.clone())
+            .collect::<Vec<_>>()
+    };
+
     workflow::refused(&scope(), keyring.as_ref(), &account).unwrap();
+    assert_eq!(told(), ["SecondSignInRefused"]);
+    // A second refusal (a new second token, refused again) is new news, and is told again.
+    workflow::refused(&scope(), keyring.as_ref(), &account).unwrap();
+    assert_eq!(told(), ["SecondSignInRefused", "SecondSignInRefused"]);
 
     // No ask offers the dead token again: the next CI-file push needs a new second sign-in.
     assert_eq!(
