@@ -1650,6 +1650,14 @@ jobs:
         with:
           ref: ${{ needs.plan.outputs.sha }}
           persist-credentials: false
+          # No story-test screenshot baselines (`**/__screenshots__/`, ~950 MB of the tree's ~1 GB):
+          # nothing here builds, runs or reads a story. A partial clone fetches only the blobs it
+          # checks out, so they are never downloaded. `fetch-depth` stays 1.
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !**/__screenshots__/
       # No cache, as every job that holds a key.
       - uses: ./.github/actions/rust-toolchain
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
