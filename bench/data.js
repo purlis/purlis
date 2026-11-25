@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795633564110,
+  "lastUpdate": 1795633852706,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55020,6 +55020,48 @@ window.BENCHMARK_DATA = {
             "value": 102.374531,
             "unit": "ms",
             "extra": "median of 5 runs: 101.503, 101.545, 102.375, 102.595, 103.157 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "cb26eede7c4ff70fe841c06df96543ff4b3bbc8d",
+          "message": "Fault suite that defines trust: fault script, 15 cases, missing fixtures fail in CI, remote-parity required (#7188) (#7240)\n\n* The fault-injection script: drop, restore, restart-sshd, rotate-hostkey, kill-runner, slow, break-registry, blackhole on the rigs' containers (Refs #7188)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RJ9JB3ZMQ05NZM3HEVZ2BV\nPurlis-Persona: steward\n\n* One e2e UI test: a dropped link's notice shows its reason within 30 s (skipped until train A) (Refs #7188)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RJ9JB3ZMQ05NZM3HEVZ2BV\nPurlis-Persona: steward\n\n* CI: remote-parity is required and no longer continue-on-error, runs the fault suite, a red nightly files an issue (Refs #7188)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RJ9JB3ZMQ05NZM3HEVZ2BV\nPurlis-Persona: steward\n\n* A missing real-infra fixture fails where PURLIS_PARITY is set and skips loudly elsewhere; every real-infra test goes through the one gate (Refs #7188)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RJ9JB3ZMQ05NZM3HEVZ2BV\nPurlis-Persona: steward\n\n* The fault suite: one test per ruled case (10 pool, B1-B5 browser), the outage rules as arithmetic, the shared rig helpers extracted from the systemd runner's test (Refs #7188)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RJ9JB3ZMQ05NZM3HEVZ2BV\nPurlis-Persona: steward\n\n* Review fixes: one clock for the rig and the kept link; the scope regexes name the fault suite's files; restore leaves an sshd and a missing dind alone; kill-runner matches serve --as-a-service; a 5 s drop may heal unnoticed; a slow first link gets the 3-minute limit (Refs #7188)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RJ9JB3ZMQ05NZM3HEVZ2BV\nPurlis-Persona: steward\n\n* Review fixes (C): the fault suite gets its own slow-timeout and a step limit sized to the cases; case 5 is the systemd test with the outage rules; case 10 is told within 30 s; Unreachable and Refused are asserted behind the train A seam; B5 has two runners; restore touches dind only on the plain machines; the app's real-infra tests go through the fixture gate (Refs #7188)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RMBY6PHWXXEKA16QKBV4Y6\nPurlis-Persona: steward\n\n* Review fixes (C), second pass: the reboot's 'back' is measured from the down it told; the module doc names the pool_state_named read (Refs #7188)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RMBY6PHWXXEKA16QKBV4Y6\nPurlis-Persona: steward\n\n* CI fixes (C): the fault suite's tests open with unsteered!(); the outage rules' test module goes last (clippy items-after-test-module) (Refs #7188)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7S716QTPHBZ0FPZQQZ1B3BG\nPurlis-Persona: steward\n\n* CI fixes (C): each fault case pairs and installs from a home, version and unit of its own, and takes them back on Drop\n\nA runner is paired once, from a home of its own, and the rig paired the machine's default home in every case, which the behaviour suite had already paired: six of seven rig cases failed at bridge --pair. Registry-down is the one case that never calls Rig::up. Each case now runs every purlis command under its own PURLIS_CONFIG_HOME and installs its own version, so its systemd unit is its own too; Drop runs serve --remove and removes the home.\n\nRefs #7188\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7SP1ZHP0AGX0YXX3SSNJA3Z\nPurlis-Persona: steward\n\n* CI fixes (C): the case's store links the machine's installed versions so serve --install finds its version and installs the versioned unit; a host that never answers prints the unit's status, journal and serve.log (Refs #7188)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7SZZ1B4ZBRFQDNFDW1YDN2J\nPurlis-Persona: steward\n\n* CI fixes (C): the outage clock starts before the fault verb is sent, and the 15 s slow link is put on a live link inside the budgets (Refs #7188)\n\nrestart-sshd kills the sessions first, so the link said Down while the verb still ran and a mark taken after it sat past that Down. The 15 s case put 15 s a packet on a link before the first link; the product's budgets (handshake 10 s over ssh's sign-in, call 30 s) cannot make a link over that, and case 9 owns beyond-the-budgets. It now links, then slows by 7 s a packet (a 14 s round trip) and asserts the link is never told down and the chat works.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M83MQ0YMR6AFZXFCN8SPWT3T\nPurlis-Persona: steward\n\n* Fault suite: budget remote-faults-notice, lift the train A ignores the link can read (#7187)\n\nremote-faults-notice has no runs on a pull request (nightly only), so its p50 is the floor of one.\nseam::state_named now reads what the kept link told (Down's host_key_changed, gone, refused), so the\n90 s drop (Unreachable), host key changed and slow-link cases run. Runner gone (an ssh runner's end\nis the app's, not Down::gone), Pool forgotten (app-side) and registry-down Refused (A maps\nImageUnreachable to Unreachable) stay ignored with the reason.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M875HF9S8X4C2N5X6GNA9AD6\nPurlis-Persona: steward\n\n* Fault suite: a changed key's quiet window starts at its stop, sshd reloads before sessions end; handshake timeout names its step\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M87CK0677RG2BH6MFWVPW8EY\nPurlis-Persona: steward\n\n* Runner links: the slow-check test reads the handshake timeout's new wording\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M87CK0677RG2BH6MFWVPW8EY\nPurlis-Persona: steward\n\n* Format the handshake assertion in the runner links test\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4VQ5VQ0NTF7EFFJKJB9E649\nPurlis-Persona: steward\n\n* Fault suite: a changed host key is told as one before the dial, not read as a peer that is not a purlis host (#7240)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4VQ5VQ0NTF7EFFJKJB9E649\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T18:16:45Z",
+          "tree_id": "e51c05dbaac9b876fff4fec38aa45c339b5dc696",
+          "url": "https://github.com/purlis/purlis/commit/cb26eede7c4ff70fe841c06df96543ff4b3bbc8d"
+        },
+        "date": 1795633847532,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5475165,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.536, 0.546, 0.548, 0.548, 0.549 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.259403999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.088, 16.254, 16.259, 16.271, 16.530 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.927682,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.637, 100.862, 100.928, 101.419, 102.261 ms"
           }
         ]
       }
