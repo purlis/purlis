@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795593122465,
+  "lastUpdate": 1795593407660,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54558,6 +54558,48 @@ window.BENCHMARK_DATA = {
             "value": 102.04526150000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.456, 101.750, 102.045, 102.126, 102.668 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "27bd9a0f33366966b3eea1efd26963f65088ade6",
+          "message": "ArtifactHistory Versions story: wait for the loaded kept-count line instead of a one-shot text read (#7602)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M88A5YY85M4ZYJ8HJEB25VY5\nPurlis-Persona: steward",
+          "timestamp": "2026-11-25T07:11:15Z",
+          "tree_id": "8fc554acd01f37b93b1ff58acf73bcedd47f34c2",
+          "url": "https://github.com/purlis/purlis/commit/27bd9a0f33366966b3eea1efd26963f65088ade6"
+        },
+        "date": 1795593400618,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6842665,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.670, 0.681, 0.684, 0.692, 0.702 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6164825,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.333, 16.597, 16.616, 16.627, 16.718 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.19639,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.905, 102.172, 103.196, 103.394, 103.536 ms"
           }
         ]
       }
