@@ -343,6 +343,14 @@ not hot. purlis's scale is counted in these per device: a target of 200 open, an
 per **RAM class** (ADR 0082).
 _Avoid_: active chat, live chat (live is a run state's), running chat (in UI text)
 
+**Rested chat**:
+A chat the app may hibernate by itself: a governed, local chat whose run is at a turn boundary
+on a harness that resumes by id and reports its own work, with no **Own work** in flight, no dispatched task of its own running, no parent waiting on
+its report and no report owed, and nobody having looked at it or typed in it for `[chats] hibernate_after` (default
+30 minutes). It is hibernated only while the device is over its hot target (ADR 0082, amended
+2026-11-25). Not a run state: the cause on the run is still `idle` (ADR 0076).
+_Avoid_: idle chat (**Idle** is a Chat state, ADR 0121: finished with work left behind), sleeping chat
+
 **RAM class**:
 A device's physical memory, as the largest of 8, 16, 32 and 64 GB it reaches, which sets how
 many hot chats the device targets; a device under 8 GB targets one. A property of the device, so
@@ -1503,7 +1511,7 @@ _Avoid_: unseen, fresh, unread (that is an update's read state)
 **Chat state**:
 What a chat is doing as the person sees it, the same on its sidebar row, its pane tab, **All
 chats** and Asks: Working, Waiting on you, Waiting on a chat, Stuck?, Done, Failed, Idle (finished
-with work left behind) or Can't tell, each with one icon and colour. Drawn from its current run's
+with work left behind), Hibernated (ADR 0121, amended 2026-11-25) or Can't tell, each with one icon and colour. Drawn from its current run's
 **Run state** (ADR 0076). Stuck? is a question, which "It's fine" clears until the chat changes
 state (ADR 0121): a working chat with no new command or output for a while, the same command
 failing several times in a row, or one turn running long (`stuck-silent-minutes`,
