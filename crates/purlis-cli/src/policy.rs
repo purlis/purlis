@@ -259,16 +259,21 @@ fn asked_as_the_person(
     cwd: &std::path::Path,
 ) -> Heard {
     use purlis_core::hookwire::{Answer, Ask, Asking};
-    // **Signed with the plane's key**, which no chat's sandbox reads: the app answers this ask
-    // only with that credential, whatever process asks. A plane whose key cannot be read or made
-    // sends none, and the app refuses it.
-    if let Ok(root) = purlis_core::plane::resolve(cwd) {
+    // **One root, for the signing and for the knock**: `plane::resolve`, which honours
+    // `$PURLIS_ROOT`, names the plane whose key signs and whose app is asked. The key is read from
+    // that plane's state folder (`$PURLIS_HOME` where it is set), which no chat's sandbox reads.
+    // A plane whose key cannot be read or made sends no credential, and the app refuses it.
+    let root = purlis_core::plane::resolve(cwd).ok();
+    if let Some(root) = &root {
         ask.sign(&purlis_core::secrets::Ctx::new(
-            &root,
+            root,
             purlis_core::secrets::Env::from_process(),
         ));
     }
-    let socket = purlis_core::hookwire::reach::socket_here(cwd);
+    let socket = match &root {
+        Some(root) => purlis_core::hookwire::reach::socket_of(root),
+        None => purlis_core::hookwire::reach::socket_here(cwd),
+    };
     let mut asking = match Asking::on(&socket, None) {
         Ok(asking) => asking,
         Err(e) => {
@@ -282,10 +287,34 @@ fn asked_as_the_person(
         Ok(Answer::No { why }) if why == purlis_core::hookwire::UNKNOWN_LINE => {
             Heard::Silent("the app is older than this question".to_owned())
         }
+        Ok(Answer::No { why }) if why == purlis_core::hookwire::PERSON_ONLY => {
+            let state = root.as_deref().map(purlis_core::plane::state_dir);
+            Heard::Refused(person_only_naming(&why, root.as_deref(), state.as_deref()))
+        }
         Ok(Answer::No { why }) => Heard::Refused(why),
         Ok(_) => Heard::Silent("the app answered something else".to_owned()),
         Err(e) => Heard::Silent(format!("the app did not answer ({e})")),
     }
+}
+
+/// The app's refusal of a question that is not the person's, with **which root this command signed
+/// for**: the app checks the credential against its own plane's key, so a `$PURLIS_ROOT` or a
+/// `$PURLIS_HOME` that is not the app's is the usual cause, and a bare refusal would hide it.
+fn person_only_naming(
+    why: &str,
+    root: Option<&std::path::Path>,
+    state: Option<&std::path::Path>,
+) -> String {
+    let (Some(root), Some(state)) = (root, state) else {
+        return format!("{why} (no plane was found here to sign for)");
+    };
+    format!(
+        "{why}. This command signed for the plane at {} with the key in {}: when the app runs \
+         another plane or keeps its state elsewhere, `$PURLIS_ROOT` or `$PURLIS_HOME` here \
+         differs from the app's, so unset it or point it at the app's",
+        root.display(),
+        state.display()
+    )
 }
 
 /// **The person's answer**: the app's, which reads the sealed side (the accepted copy and floor,
@@ -392,6 +421,27 @@ mod tests {
             json: false,
             policy: None,
         }
+    }
+
+    #[test]
+    fn a_refusal_for_the_person_only_says_which_root_and_state_folder_it_signed_for() {
+        let said = person_only_naming(
+            purlis_core::hookwire::PERSON_ONLY,
+            Some(std::path::Path::new("/pinned/plane")),
+            Some(std::path::Path::new("/elsewhere/state")),
+        );
+        assert!(
+            said.starts_with(purlis_core::hookwire::PERSON_ONLY),
+            "{said}"
+        );
+        assert!(said.contains("/pinned/plane"), "{said}");
+        assert!(said.contains("/elsewhere/state"), "{said}");
+        assert!(
+            said.contains("$PURLIS_ROOT") && said.contains("$PURLIS_HOME"),
+            "{said}"
+        );
+        let none = person_only_naming(purlis_core::hookwire::PERSON_ONLY, None, None);
+        assert!(none.contains("no plane was found"), "{none}");
     }
 
     #[test]

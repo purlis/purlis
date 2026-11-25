@@ -382,6 +382,13 @@ pub fn socket_here(cwd: &Path) -> PathBuf {
     crate::hookchannel::socket_for(plane.as_deref()).socket
 }
 
+/// The socket the app binds for the plane at `root`, a root the caller already resolved. A caller
+/// that also signs for that root (`purlis policy why`, which honours `$PURLIS_ROOT`) knocks here,
+/// so the one root it signs for is the one it knocks at, never the marker walk's from `cwd`.
+pub fn socket_of(root: &Path) -> PathBuf {
+    crate::hookchannel::socket_for(Some(root)).socket
+}
+
 /// The chat this process's environment says it runs in: only ever a reason to be stricter.
 pub fn claimed_chat(env: &dyn Fn(&str) -> Option<String>) -> Option<u32> {
     [CHAT_ENV, crate::active::SESSION_ID_ENV]

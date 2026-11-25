@@ -5822,8 +5822,13 @@ line carries): `--env NAME=<key>`, `--file ENVVAR=<key>` (0600 temp file, prefix
   (`fingerprint::seal`) and the app checks the seal (`seal_with_the_key_there`, which never makes
   the key) before it answers `PersonWhy` (`PersonWhyAsk::credential`). No chat's sandbox reads the
   key (seatbelt, Linux and Claude Code's `denyRead` all name it under every state-folder spelling),
-  so a process that left its chat's tree by double-fork and `setsid` still cannot sign. No new file,
-  so no new tier.
+  so a process that left its chat's tree by double-fork and `setsid` still cannot sign. **The
+  exception is a chat at sandbox level `off`**, which has no sandbox: it runs as the person, can read
+  the key and so can sign, and the credential does not stand between it and the person's own `policy
+  why`. The CLI signs for the root `plane::resolve` names (`$PURLIS_ROOT` first) and knocks at that
+  root's socket, and the folder `$PURLIS_HOME` puts the state in is held whole like the default
+  spellings (#7605). A hook socket in the long-path fallback folder is a file named `hooks.sock`,
+  which no chat's sandbox may create. No new file, so no new tier.
 - **Fingerprint format on output:** `fp:` + first 12 hex chars of
   `HMAC-SHA256(key, value.encode("utf-8"))` (`charter/secrets/fingerprint.py:134`). The
   masked line is `<size band> · fp:<12 hex>`, or just the band when no key can be made

@@ -399,3 +399,20 @@ fn is_this_process_sandboxed_reads_a_home_closed_by_a_flag_as_a_sandbox() {
     assert!(chflags("nouchg"));
     assert!(boxed);
 }
+
+/// #7605: a caller that signs for a root it resolved knocks at that root's socket, never at the
+/// one the marker walk from its folder finds, so `$PURLIS_ROOT` cannot split the two.
+#[test]
+fn the_socket_of_a_root_is_the_one_the_app_binds_for_that_root_wherever_the_caller_stands() {
+    let pinned = tempfile::tempdir().expect("a pinned plane");
+    let elsewhere = tempfile::tempdir().expect("a folder in no plane");
+    assert_eq!(
+        socket_of(pinned.path()),
+        crate::hookchannel::socket_for(Some(pinned.path())).socket
+    );
+    assert_ne!(
+        socket_of(pinned.path()),
+        socket_here(elsewhere.path()),
+        "the walk from a folder in no plane finds another socket"
+    );
+}
