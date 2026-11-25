@@ -2039,13 +2039,32 @@ pub struct RemovalAsk {
 }
 
 /// What a chat may ask the person to remove: one arm for each removal a chat's sandbox holds
-/// and the window can make. A workspace today; a persona's and a branch folder's removal are
-/// refused the same way and would each be an arm here.
+/// and the window can make: a workspace, a persona and a branch folder (T1.1-67, Q304 Q2).
+///
+/// **An arm names the thing and nothing about what it holds.** What a removal would lose is read
+/// by the app when it is asked ([`crate::removalask`]), and read again at the press, so no word of
+/// the chat's reaches the row. `force` and `ignored` say only why a plain removal is not enough
+/// (work a plain removal would lose, files git ignores); what the row lists is the app's own
+/// reading.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case", tag = "what")]
 pub enum Removing {
     /// A workspace of this project, by the name the command was given.
     Workspace { name: String },
+    /// A persona of this project, by the name the command was given.
+    Persona { name: String },
+    /// A branch folder of the asking chat's workspace (the app's record of the chat, never a
+    /// word of the line's): `repo` and `piece`, as `purlis worktree remove` names them.
+    BranchFolder {
+        repo: String,
+        piece: String,
+        /// The removal discards uncommitted changes or commits no other ref reaches.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        force: bool,
+        /// The removal deletes files git ignores, which git's own guard does not count.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        ignored: bool,
+    },
 }
 
 /// **A chat's refusal raised as an ask by the app** ([`Ask::WindowOnly`]): which refusal, by

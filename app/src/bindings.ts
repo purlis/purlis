@@ -3998,6 +3998,23 @@ export const commands = {
 	 */
 	recordRepo: (plane: PlaneId, workspace: string, clone: string, place: string) => typedError<string, string>(__TAURI_INVOKE("record_repo", { plane, workspace, clone, place })),
 	/**
+	 *  **The person's press on a removal ask** (T1.1-67, Q304 Q2): removes the persona or branch
+	 *  folder the row listed, as their own `purlis persona remove` or `purlis worktree remove`
+	 *  would, and only while it still holds exactly what the row listed. Anything that differs (a new
+	 *  change, a new commit, another ignored file) refreshes the row and removes nothing. Answers what
+	 *  the removal said, or why nothing was removed.
+	 * 
+	 *  Window only (`WINDOW_ONLY`): a removal is for good.
+	 */
+	removeListed: (plane: PlaneId, row: RemovalRow) => typedError<string, string>(__TAURI_INVOKE("remove_listed", { plane, row })),
+	/**
+	 *  **The person kept it** (Keep on a removal ask): every chat's ask for it goes, and nothing is
+	 *  removed.
+	 * 
+	 *  Window only (`WINDOW_ONLY`), as the press it answers.
+	 */
+	keepRemoval: (plane: PlaneId, row: RemovalRow) => typedError<null, string>(__TAURI_INVOKE("keep_removal", { plane, row })),
+	/**
 	 *  Make a workspace: `charter workspace create <name>`, with the vision when one was typed.
 	 * 
 	 *  **The name is checked by the core and by nothing in the window.** `wscmd::create` runs
@@ -6747,6 +6764,18 @@ export type AnswerPath =
  */
 { via: "record-repo"; workspace: string; clone: string; place: string } | 
 /**
+ *  `remove_listed` for the press and `keep_removal` for Keep, on one persona (`what` is
+ *  `persona`, `name` its name) or branch folder (`what` is `branch-folder`, `name` its repo,
+ *  `piece` its piece, in `workspace`): `listed` is exactly what the row showed, which the
+ *  press removes only while the thing still holds exactly that.
+ */
+{ via: "removal"; workspace: string; what: string; name: string; piece: string; force: boolean; ignored: boolean; listed: string[]; 
+/**
+ *  Whether `listed` is everything that goes, and the digest of everything that goes,
+ *  whole: sent back so the press and Keep name the row exactly as it was raised.
+ */
+exact: boolean; digest: string } | 
+/**
  *  `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
  *  clone Notice's own command, and each clone it trusts leaves the ask (R-336).
  */
@@ -7268,6 +7297,13 @@ export type AskSource =
  *  origin names, as `purlis discover` does for that one clone, so a chat can read its forge.
  */
 "record-repo" | 
+/**
+ *  **A persona or a branch folder a chat asked the person to remove** (T1.1-67, Q304 Q2): the
+ *  removal ask, widened beside the workspace's. The row names the thing and lists exactly what
+ *  goes, the press removes exactly that while it still holds exactly that, and Keep removes
+ *  nothing. A listing that was not exact offers Keep only.
+ */
+"removal" | 
 /**
  *  **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
  *  never one per clone. Trust all records each, as its Notice's Trust this clone does.
@@ -16400,6 +16436,27 @@ export type RemoteReaders =
  *  answer. Never read as private.
  */
 { kind: "unknown"; why: string };
+
+/**
+ *  **A removal's row, as the window sent it back** (T1.1-67): what the row showed, so that the
+ *  press removes exactly that and nothing else. `what` is `persona` or `branch-folder`.
+ */
+export type RemovalRow = {
+	workspace: string,
+	what: string,
+	name: string,
+	piece: string,
+	force: boolean,
+	ignored: boolean,
+	listed: string[],
+	/**
+	 *  Whether `listed` was everything that goes. A row from a window that does not say reads as
+	 *  not exact, so it offers Keep only.
+	 */
+	exact?: boolean,
+	/**  The digest of everything that goes, whole, as the row was raised with it. */
+	digest?: string,
+};
 
 /**
  *  What opening a repo on the first run came to: opened, or a question about the forge.

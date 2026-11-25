@@ -3871,6 +3871,87 @@ fn trust_this(session: u32, name: &str) -> purlis_core::windowonly::Refusal {
     }
 }
 
+/// Chat `session`'s asked removal of persona `steward`, listed as `listed`, `exact` or not.
+fn removing_steward(session: u32, exact: bool) -> purlis_core::windowonly::Refusal {
+    purlis_core::windowonly::Refusal {
+        root: "/work/plane".into(),
+        session,
+        control: purlis_core::windowonly::Control::Remove {
+            removing: purlis_core::hookwire::Removing::Persona {
+                name: "steward".to_owned(),
+            },
+            workspace: String::new(),
+            listed: vec![
+                "personas/steward/persona.md".to_owned(),
+                "personas/steward/memory: 3 memories".to_owned(),
+            ],
+            exact,
+            digest: if exact {
+                "d1".to_owned()
+            } else {
+                String::new()
+            },
+        },
+        since: 1_700_000_000,
+    }
+}
+
+/// **A removal's row names the thing, lists exactly what goes, and offers its press only on an
+/// exact listing** (T1.1-67, Q304 Q2): Remove persona and Keep; where the listing was not exact,
+/// Keep alone, and the row says purlis could not list everything.
+#[test]
+fn a_removal_row_lists_what_goes_and_offers_its_press_only_on_an_exact_listing() {
+    let shown = window_only(&removing_steward(3, true));
+
+    assert_eq!(shown.source, AskSource::Removal);
+    let offered: Vec<_> = shown
+        .options
+        .iter()
+        .map(|one| (one.id.as_str(), one.label.as_str(), one.allows))
+        .collect();
+    assert_eq!(
+        offered,
+        [("press", "Remove persona", true), ("keep", "Keep", false)]
+    );
+    assert!(
+        shown.says.contains("persona steward")
+            && shown.says.contains("personas/steward/memory: 3 memories"),
+        "{}",
+        shown.says
+    );
+    let AnswerPath::Removal {
+        what,
+        name,
+        listed,
+        exact,
+        digest,
+        ..
+    } = &shown.answer
+    else {
+        panic!("{:?}", shown.answer);
+    };
+    assert_eq!((what.as_str(), name.as_str()), ("persona", "steward"));
+    assert_eq!(listed.len(), 2);
+    // What the press and Keep send back names the row exactly as it was raised.
+    assert_eq!((*exact, digest.as_str()), (true, "d1"));
+    assert!(shown.source.is_window_only());
+
+    // Not exact: Keep only, and the row says why.
+    let unlisted = window_only(&removing_steward(3, false));
+    let ids: Vec<_> = unlisted.options.iter().map(|one| one.id.as_str()).collect();
+    assert_eq!(ids, ["keep"]);
+    assert!(
+        unlisted.says.contains("could not list everything"),
+        "{}",
+        unlisted.says
+    );
+    // Two chats asking for the same removal are two asks, each its chat's own.
+    assert_ne!(
+        window_only(&removing_steward(3, true)).ask,
+        window_only(&removing_steward(4, true)).ask
+    );
+}
+
 /// The folders each Trust these clones lists, ask by ask.
 fn trust_clones_folders(asks: &[Shown]) -> Vec<Vec<String>> {
     asks.iter()

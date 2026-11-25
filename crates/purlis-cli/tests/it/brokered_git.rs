@@ -1133,14 +1133,31 @@ fn a_sandboxed_chats_finished_branch_folder_is_removed_by_the_app_when_nothing_w
     assert!(asked.recv_timeout(Duration::from_secs(5)).is_ok());
     assert!(pieces.join("dirty/README.md").is_file());
 
-    // Forced: the person's, from the window; nothing is asked of the app.
+    // Forced: the person's to decide (T1.1-67). Nothing is run: the removal is handed to the app
+    // as one removal ask, and this app (the git broker alone) does not take it, so the chat is
+    // told nobody was asked.
     let ran = remove(
         &workspace,
         &["worktree", "remove", "widget", "dirty", "--force"],
     );
     assert_eq!(ran.status.code(), Some(1), "{}", err(&ran));
-    assert!(err(&ran).contains("from the window"), "{}", err(&ran));
-    assert!(asked.recv_timeout(Duration::from_millis(200)).is_err());
+    assert!(err(&ran).contains("nobody was asked"), "{}", err(&ran));
+    assert!(!err(&ran).contains("from the window"), "{}", err(&ran));
+    let Ok(Ask::Removal(removal)) = asked.recv_timeout(Duration::from_secs(5)) else {
+        panic!(
+            "the app was not asked to take the forced removal: {}",
+            err(&ran)
+        );
+    };
+    assert_eq!(
+        removal.removing,
+        purlis_core::hookwire::Removing::BranchFolder {
+            repo: "widget".to_owned(),
+            piece: "dirty".to_owned(),
+            force: true,
+            ignored: false,
+        }
+    );
     assert!(pieces.join("dirty/README.md").is_file());
 }
 

@@ -1453,6 +1453,10 @@ pub const RULE_RUNNER_DISPATCH: &str = "runner.dispatch";
 pub const RULE_RUNNER_WRITE: &str = "runner.write";
 /// The rule id of a window-only refusal raised as an ask (`consents`).
 pub const RULE_WINDOW_ONLY_ASK: &str = "window-only.ask";
+/// The rule id of a chat's removal of a persona or a branch folder raised as an ask
+/// (`guards.plane`, T1.1-67): under `log` or `off` the removal runs as the chat asked, with no
+/// ask.
+pub const RULE_REMOVAL_ASK: &str = "plane.removal";
 /// The rule id of the brokered commit's rate (`limits`).
 pub const RULE_COMMIT_RATE: &str = "commit.rate";
 /// The prefix of a dispatch limit's rule id, before the limit's word (`limits`).
@@ -1478,6 +1482,7 @@ pub fn known_rule(family: Family, rule: &str) -> bool {
         RULE_PROFILE_APPROVAL | RULE_DECLARATION_APPROVAL => Some(Family::Trust),
         RULE_RUNNER_DISPATCH | RULE_RUNNER_WRITE => Some(Family::Runners),
         RULE_WINDOW_ONLY_ASK => Some(Family::Consents),
+        RULE_REMOVAL_ASK => Some(Family::GuardsPlane),
         RULE_COMMIT_RATE => Some(Family::Limits),
         _ => rule
             .strip_prefix(RULE_DISPATCH_LIMIT)

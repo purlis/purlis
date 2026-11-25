@@ -28,6 +28,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::forge::route::HostScope;
+use crate::pieces::Who;
 
 #[cfg(test)]
 mod tests;
@@ -82,6 +83,22 @@ pub enum Control {
         /// The address origin names when the row was raised, `<host>/<owner>/<repo>`.
         place: String,
     },
+    /// **Remove** a persona or a branch folder a chat asked to have removed (T1.1-67, Q304 Q2),
+    /// with exactly what the removal would lose, as the app read it when the row was raised
+    /// ([`crate::removalask`]). The press removes it only while it still holds exactly that
+    /// ([`remove_listed`]); a listing that was not exact offers Keep only.
+    Remove {
+        /// A persona or a branch folder; a workspace's removal has its own ask.
+        removing: crate::hookwire::Removing,
+        /// The workspace the folder is in; empty for a persona.
+        workspace: String,
+        /// What goes, in words, one line each.
+        listed: Vec<String>,
+        /// Whether `listed` is everything that goes.
+        exact: bool,
+        /// A digest of everything that goes, whole: [`crate::removalask::Listing::digest`].
+        digest: String,
+    },
 }
 
 impl Control {
@@ -92,18 +109,26 @@ impl Control {
             Self::OneAddress { .. } => USE_ONE_ADDRESS,
             Self::CloneWithSignIn { .. } => CLONE_IT,
             Self::RecordRepo { .. } => RECORD_THIS_REPO,
+            Self::Remove { removing, .. } => removal_label(removing),
         }
+    }
+
+    /// Whether the row offers a press. Every control does but a removal whose listing was not
+    /// exact: nothing is removed on a list that may leave something out (Q304 Q2).
+    pub fn pressable(&self) -> bool {
+        !matches!(self, Self::Remove { exact: false, .. })
     }
 
     /// What identifies the ask a chat's newer one of the same kind replaces: the folder of a
     /// clone's asks (its remote may have changed since), the workspace and repo of a clone-it.
-    fn slot(&self) -> (&'static str, &str) {
+    fn slot(&self) -> (&'static str, String) {
         match self {
             Self::TrustClone { folder, .. } | Self::OneAddress { folder, .. } => {
-                (self.label(), folder)
+                (self.label(), folder.clone())
             }
-            Self::CloneWithSignIn { repo, .. } => (self.label(), repo),
-            Self::RecordRepo { clone, .. } => (self.label(), clone),
+            Self::CloneWithSignIn { repo, .. } => (self.label(), repo.clone()),
+            Self::RecordRepo { clone, .. } => (self.label(), clone.clone()),
+            Self::Remove { removing, .. } => (self.label(), removal_name(removing)),
         }
     }
 
@@ -145,7 +170,74 @@ impl Control {
                  set a clone's origin, so record it only if this is the repo you mean. Pressing \
                  records that one repo, as `purlis discover` does for it, and nothing else."
             ),
+            Self::Remove {
+                removing,
+                listed,
+                exact,
+                ..
+            } => removal_says(removing, listed, *exact),
         }
+    }
+}
+
+/// The label of the control that removes a persona a chat asked to have removed.
+pub const REMOVE_PERSONA: &str = "Remove persona";
+
+/// The label of the control that removes a branch folder with the work it holds.
+pub const REMOVE_AND_DISCARD: &str = "Remove and discard";
+
+/// The label of the control that removes a branch folder with the files git ignores in it.
+pub const REMOVE_WITH_THESE_FILES: &str = "Remove with these files";
+
+/// The label of the other answer to every removal: nothing is removed.
+pub const KEEP: &str = "Keep";
+
+/// The press's label for a removal of `removing`.
+fn removal_label(removing: &crate::hookwire::Removing) -> &'static str {
+    use crate::hookwire::Removing;
+    match removing {
+        Removing::BranchFolder { force: true, .. } => REMOVE_AND_DISCARD,
+        Removing::BranchFolder { .. } => REMOVE_WITH_THESE_FILES,
+        Removing::Persona { .. } | Removing::Workspace { .. } => REMOVE_PERSONA,
+    }
+}
+
+/// What names the thing a removal is of, to tell two asks apart.
+fn removal_name(removing: &crate::hookwire::Removing) -> String {
+    use crate::hookwire::Removing;
+    match removing {
+        Removing::Workspace { name } | Removing::Persona { name } => name.clone(),
+        Removing::BranchFolder { repo, piece, .. } => format!("{repo}/{piece}"),
+    }
+}
+
+/// What a removal's row says, in purlis's words: the thing, exactly what goes, and what a press
+/// and Keep do. The names are the project's own, drawn as data.
+fn removal_says(removing: &crate::hookwire::Removing, listed: &[String], exact: bool) -> String {
+    use crate::hookwire::Removing;
+    let thing = match removing {
+        Removing::Workspace { name } => format!("workspace {name}"),
+        Removing::Persona { name } => format!("persona {name}"),
+        Removing::BranchFolder { repo, piece, .. } => {
+            format!("branch folder {repo} \u{b7} {piece}")
+        }
+    };
+    let goes = if listed.is_empty() {
+        "nothing that purlis could list".to_owned()
+    } else {
+        listed.join("; ")
+    };
+    if exact {
+        format!(
+            "Remove {thing}? Removing it deletes exactly this: {goes}. Pressing removes it only \
+             while it still holds exactly that, and Keep removes nothing."
+        )
+    } else {
+        format!(
+            "Remove {thing}? Removing it deletes this: {goes}. purlis could not list everything \
+             it would delete, so it offers Keep only: nothing is removed on a list that may leave \
+             something out."
+        )
     }
 }
 
@@ -850,6 +942,378 @@ pub fn record_this_repo(
     )?;
     pressed(root, shown);
     Ok(place.clone())
+}
+
+/// **The Remove a persona's or a branch folder's removal needs**, as its row would show it
+/// (T1.1-67): the thing read now, with exactly what it would lose, never from a chat's words.
+/// `workspace` is the chat's workspace, which a branch folder is looked up in. `Err` with a
+/// sentence where there is nothing to ask: no such thing, or a workspace, whose removal has its
+/// own ask.
+pub fn removal_for(
+    root: &Path,
+    workspace: Option<&str>,
+    removing: &crate::hookwire::Removing,
+) -> Result<Control, String> {
+    use crate::hookwire::Removing;
+    match removing {
+        Removing::Workspace { .. } => {
+            Err("a workspace's removal is asked as the workspace's own".to_owned())
+        }
+        Removing::Persona { name } => {
+            let listing = crate::removalask::persona_listing(root, name)?;
+            Ok(Control::Remove {
+                removing: removing.clone(),
+                workspace: String::new(),
+                listed: listing.lines,
+                exact: listing.exact,
+                digest: listing.digest,
+            })
+        }
+        Removing::BranchFolder { repo, piece, .. } => {
+            let Some(workspace) = workspace else {
+                return Err(
+                    "a chat at the project's root has no branch folders to remove".to_owned(),
+                );
+            };
+            let loss = crate::removalask::folder_loss(root, workspace, repo, piece)?;
+            if loss.listing.lines.is_empty() {
+                return Err(format!(
+                    "{} \u{b7} {} holds nothing a plain removal would lose, so nobody needs to be \
+                     asked",
+                    crate::shown::short(repo),
+                    crate::shown::short(piece)
+                ));
+            }
+            // The flags are what the app read, never what the line said.
+            Ok(Control::Remove {
+                removing: Removing::BranchFolder {
+                    repo: repo.clone(),
+                    piece: piece.clone(),
+                    force: loss.force,
+                    ignored: loss.ignored,
+                },
+                workspace: workspace.to_owned(),
+                listed: loss.listing.lines,
+                exact: loss.listing.exact,
+                digest: loss.listing.digest,
+            })
+        }
+    }
+}
+
+/// **Who asked for a removal, as the app records them** (never a word of the line's): the chat's
+/// number, the [`Who`] its piece log credits (whose `chat` is its stable id, ADR 0066, which the
+/// enforcement log names it by, Q308a), the chats the app has (what a branch folder's one live
+/// writer is judged against, #3901; `None` where no app said, which refuses a folder another chat
+/// holds) and whether the caller already holds the folder's claim and its checked folder (the
+/// brokered route's removal, which asks from inside them).
+#[derive(Debug, Clone, Copy)]
+pub struct Asking<'a> {
+    pub session: u32,
+    pub who: &'a Who,
+    pub live: Option<&'a [crate::piececlaim::Live]>,
+    pub claimed: bool,
+}
+
+/// What [`ask_to_remove`] did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Removal {
+    /// The ask was handled: the sentence the chat is told (`Err` where nobody was asked).
+    /// **Nothing was removed.**
+    Asked(Result<String, String>),
+    /// `guards.plane` lifted the ask (`log` or `off`), so the removal ran as the chat's own would
+    /// have, held to everything but the ask: what it said, or why it removed nothing.
+    Ran(Result<String, String>),
+}
+
+impl Removal {
+    /// The words the chat is told, whichever it was.
+    pub fn words(self) -> String {
+        match self {
+            Self::Asked(said) | Self::Ran(said) => said.unwrap_or_else(|why| why),
+        }
+    }
+}
+
+/// **What a chat is told once it asked for a removal**: raised by [`told_of`]'s rule H, or the
+/// sentence that says why nothing was asked. Raises one ask per chat and thing (a newer listing
+/// of the same thing replaces the older), and `[policy] consents` decides whether it is raised
+/// at all, as for every window-only ask.
+///
+/// `guards.plane` (Q308b) lifts **only the ask**: under `log` the check runs and allows (a line
+/// in the asking chat's log names the rule), and under `off` it does not run, and the removal
+/// then runs through every guard its broker route holds it to ([`run_removal`]): never forced,
+/// one live writer per folder, git in the checked folder.
+pub fn ask_to_remove(
+    root: &Path,
+    asking: &Asking<'_>,
+    workspace: Option<&str>,
+    removing: &crate::hookwire::Removing,
+) -> Removal {
+    let mode = crate::enforcement::mode(root, crate::enforcement::Family::GuardsPlane);
+    if crate::enforcement::judged(
+        root,
+        asking.who.chat.as_deref(),
+        crate::enforcement::Family::GuardsPlane,
+        mode,
+        crate::enforcement::RULE_REMOVAL_ASK,
+        None,
+        (),
+    )
+    .is_none()
+    {
+        return Removal::Ran(run_removal(root, workspace, removing, Run::Lifted(asking)));
+    }
+    Removal::Asked(raise_removal(root, asking.session, workspace, removing))
+}
+
+fn raise_removal(
+    root: &Path,
+    session: u32,
+    workspace: Option<&str>,
+    removing: &crate::hookwire::Removing,
+) -> Result<String, String> {
+    let control = removal_for(root, workspace, removing)?;
+    if !asks(root) {
+        return Err(
+            "Nobody was asked: this project's policy raises no asks, so nothing was removed. \
+             The person removes it themselves."
+                .to_owned(),
+        );
+    }
+    let label = control.label();
+    let raised = raise(root, session, control);
+    Ok(told_of(
+        root,
+        session,
+        raised,
+        &format!("{label} is on the ask; nothing is removed until they press it."),
+    ))
+}
+
+/// **What a chat is told of a removal it asked for**, whatever the app answered: the app's words
+/// where it raised the ask; where it could not read the ask, that the app and this purlis are
+/// different builds, with the restart words (never a refusal); where none answered, that nobody
+/// was asked, with the way out in words (rule H). `what` names the thing ("persona 'x'"),
+/// `then` what the person does once purlis is open.
+pub fn removal_refusal(root: &Path, what: &str, then: &str, app: AppSaid) -> String {
+    match app {
+        AppSaid::Told(words) => words,
+        AppSaid::Older => format!(
+            "Nothing was removed, and nobody was asked about {what}: the app and this purlis are \
+             different builds, so the app could not read the ask. Ask the person to restart \
+             purlis (Restart to update, or quit and reopen it), or to update the purlis plugin \
+             of this chat's harness, so both are one build."
+        ),
+        AppSaid::Unheard => {
+            let project = root.file_name().map_or_else(
+                || "this project".to_owned(),
+                |n| n.to_string_lossy().into_owned(),
+            );
+            format!(
+                "Nothing was removed. No purlis window answered, so nobody was asked about \
+                 {what}: open purlis on {project}, then run this again, and {then}"
+            )
+        }
+    }
+}
+
+/// **The person's press on a removal**: removes what the row listed, as the person's own
+/// `purlis persona remove` or `purlis worktree remove` would, and only while it still holds
+/// exactly what the row listed. The thing is read again first. If anything differs (a new
+/// change, a new commit, another ignored file, a memory more, an edit to a file already listed),
+/// the row is replaced by what it lists now and **nothing is removed**; a listing that was never
+/// exact is not pressed at all. `who` is the window's, which a removal ends a folder's claim as.
+/// Answers what the removal said, or why nothing was removed.
+pub fn remove_listed(root: &Path, shown: &Control, who: &Who) -> Result<String, String> {
+    let Control::Remove {
+        removing,
+        workspace,
+        listed,
+        exact,
+        ..
+    } = shown
+    else {
+        return Err(format!("{} is not a removal", shown.label()));
+    };
+    if !exact {
+        return Err(
+            "purlis could not list everything this would delete, so it removes \
+                    nothing: Keep it, or remove it yourself in a terminal"
+                .to_owned(),
+        );
+    }
+    let workspace_now = (!workspace.is_empty()).then_some(workspace.as_str());
+    let now = removal_for(root, workspace_now, removing).inspect_err(|_| {
+        // It is gone, or holds nothing now: the row waits on nothing.
+        pressed(root, shown);
+    })?;
+    if now != *shown {
+        let Control::Remove { listed: fresh, .. } = &now else {
+            unreachable!("removal_for answers a removal");
+        };
+        refresh(root, shown, &now);
+        return Err(format!(
+            "What it holds changed since the window listed it ({} lines then, {} now), so \
+             purlis removed nothing. The row lists what it holds now: look at it again and \
+             choose",
+            listed.len(),
+            fresh.len()
+        ));
+    }
+    let said = run_removal(root, workspace_now, removing, Run::Press(who))?;
+    pressed(root, shown);
+    Ok(said)
+}
+
+/// Whose removal [`run_removal`] runs, which decides what holds it.
+#[derive(Clone, Copy)]
+enum Run<'a> {
+    /// The person's press: the flags the row was raised with, any folder (the person's own
+    /// terminal hands any over), and the removal ends the folder's claim.
+    Press(&'a Who),
+    /// A chat's removal whose ask `guards.plane` lifted: **never forced**, whatever the line
+    /// said, and held as the broker route holds it ([`crate::piececlaim::removing`]).
+    Lifted(&'a Asking<'a>),
+}
+
+/// **Removes a persona or a branch folder as the person's own `purlis persona remove` or `purlis
+/// worktree remove` would**: what the press does once the listing is confirmed, and what a
+/// removal does under `guards.plane` = `log` or `off`. A branch folder is removed under its claim
+/// and with git run in its checked clone and folder, as the broker's own route removes it: a chat
+/// is refused a folder another live chat holds (#3901), and nothing here forces. Answers what the
+/// removal said; `Err` with it where nothing was removed.
+fn run_removal(
+    root: &Path,
+    workspace: Option<&str>,
+    removing: &crate::hookwire::Removing,
+    run: Run<'_>,
+) -> Result<String, String> {
+    use crate::hookwire::Removing;
+    let mut said = Vec::new();
+    let mut sink = |line: crate::repocmd::Say| said.push(line.to_string());
+    let code = match (removing, workspace) {
+        (Removing::Persona { name }, _) => crate::personaverbs::define::remove(
+            root,
+            name,
+            false,
+            &crate::active::ActivePersona {
+                name: None,
+                rung: crate::active::PersonaRung::Nothing,
+            },
+            &mut sink,
+        ),
+        (
+            Removing::BranchFolder {
+                repo, piece, force, ..
+            },
+            Some(workspace),
+        ) => {
+            // The press discards what it listed; a lifted ask never does.
+            let force = matches!(run, Run::Press(_)) && *force;
+            let remove = |sink: &mut dyn FnMut(crate::repocmd::Say)| {
+                crate::piececmd::remove(
+                    root,
+                    workspace,
+                    repo,
+                    piece,
+                    force,
+                    false,
+                    crate::finished::Forge::none(),
+                    sink,
+                )
+            };
+            let (who, judged, claimed) = match run {
+                Run::Press(who) => (who, crate::piececlaim::Judged::ByThePerson, false),
+                Run::Lifted(asking) => (
+                    asking.who,
+                    crate::piececlaim::Judged::ByAChat(asking.live),
+                    asking.claimed,
+                ),
+            };
+            if claimed {
+                // The broker route asked from inside the claim and the checked folder.
+                remove(&mut sink)
+            } else {
+                let at = crate::worktree::Located {
+                    workspace: workspace.to_owned(),
+                    repo: repo.clone(),
+                    piece: piece.clone(),
+                };
+                let held = crate::worktree::git::isolation().unwrap_or_default();
+                let mut not_run = None;
+                let removed = crate::piececlaim::removing(
+                    root,
+                    &at,
+                    who,
+                    judged,
+                    jiff::Timestamp::now(),
+                    || match crate::gitbroker::in_a_checked_folder(
+                        root,
+                        workspace,
+                        repo,
+                        piece,
+                        &held,
+                        || remove(&mut sink),
+                    ) {
+                        Ok(code) => code,
+                        Err(crate::gitbroker::NotRun::Repo(why)) => {
+                            not_run = Some(why);
+                            1
+                        }
+                        Err(crate::gitbroker::NotRun::Folder(why)) => {
+                            not_run = Some(why.to_string());
+                            1
+                        }
+                    },
+                );
+                match (removed, not_run) {
+                    (_, Some(why)) | (Err(why), _) => {
+                        return Err(format!("Nothing was removed. {why}"));
+                    }
+                    (Ok(code), None) => code,
+                }
+            }
+        }
+        _ => {
+            return Err(
+                "Nothing was removed: that is not a persona or a branch folder of a \
+                        workspace."
+                    .to_owned(),
+            );
+        }
+    };
+    let said = said.join("\n");
+    if code == 0 {
+        Ok(said)
+    } else {
+        Err(format!("Nothing was removed. {said}"))
+    }
+}
+
+/// Replaces every chat's refusal that waited on `old` with `new`, and tells the window.
+fn refresh(root: &Path, old: &Control, new: &Control) {
+    let moved = {
+        let mut raised = RAISED.lock().unwrap_or_else(|e| e.into_inner());
+        let mut moved = false;
+        for one in raised
+            .iter_mut()
+            .filter(|one| one.root == root && one.control == *old)
+        {
+            one.control = new.clone();
+            moved = true;
+        }
+        moved
+    };
+    if moved {
+        tell(root);
+    }
+}
+
+/// **The person kept it** (Keep on a removal): every chat's ask for it goes, and nothing is
+/// removed.
+pub fn keep_listed(root: &Path, shown: &Control) {
+    pressed(root, shown);
 }
 
 /// The label of the one ask for the project's clones purlis has no record of (R-336).

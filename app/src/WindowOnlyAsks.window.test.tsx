@@ -74,7 +74,12 @@ function core({
     if (cmd === "asks_waiting")
       return { plane: PLANE, asks, with_asking_chat: [], on_finish_rows: onFinishRows };
     if (cmd === "finished_turns") return turns;
-    if (cmd === "use_one_address" || cmd === "clone_with_sign_in" || cmd === "record_repo")
+    if (
+      cmd === "use_one_address" ||
+      cmd === "clone_with_sign_in" ||
+      cmd === "record_repo" ||
+      cmd === "remove_listed"
+    )
       return "done";
     if (cmd === "vouch_clone") {
       if (refuses !== undefined) throw refuses;
@@ -310,6 +315,47 @@ describe("a window-only ask, Blocking or on its chat's finish row (T1-42, R-329)
         },
       },
     },
+    {
+      // A removal a chat asked for (T1.1-67): the press sends exactly what the row listed.
+      label: /^Remove persona/,
+      cmd: "remove_listed",
+      args: {
+        plane: PLANE,
+        row: {
+          workspace: "",
+          what: "persona",
+          name: "steward",
+          piece: "",
+          force: false,
+          ignored: false,
+          listed: ["personas/steward/persona.md", "personas/steward/memory: 3 memories"],
+          exact: true,
+          digest: "d1",
+        },
+      },
+      ask: {
+        ...TRUST_CLONE,
+        ask: "removal:2:|persona|steward",
+        says: "Remove persona steward? Removing it deletes exactly this: personas/steward/persona.md; personas/steward/memory: 3 memories.",
+        options: [
+          { id: "press", label: "Remove persona", allows: true },
+          { id: "keep", label: "Keep", allows: false },
+        ],
+        source: "removal",
+        answer: {
+          via: "removal",
+          workspace: "",
+          what: "persona",
+          name: "steward",
+          piece: "",
+          force: false,
+          ignored: false,
+          listed: ["personas/steward/persona.md", "personas/steward/memory: 3 memories"],
+          exact: true,
+          digest: "d1",
+        },
+      },
+    },
   ];
 
   it.each(NEW_KINDS)(
@@ -358,12 +404,16 @@ describe("a window-only ask, Blocking or on its chat's finish row (T1-42, R-329)
     for (const kind of NEW_KINDS) {
       const source = kind.ask.source;
       // Its place and its group are decided for it, in the guards that fail on a kind with none.
-      expect(places, `${source}: place`).toContain(`"${source}": {`);
-      expect(groups, `${source}: group`).toMatch(new RegExp(`"${source}": "consent"`));
+      // A key is quoted only when it has a hyphen, so `removal` is bare and `one-address` is not.
+      expect(places, `${source}: place`).toMatch(new RegExp(`(?:"${source}"|\\b${source}): \\{`));
+      expect(groups, `${source}: group`).toMatch(
+        new RegExp(`(?:"${source}"|\\b${source}): "consent"`),
+      );
       // Its words: a question of its own as a decision, its source line, and its control.
       expect(questionOf(kind.ask), `${source}: question`).not.toBe("Allow this?");
       expect(SOURCE_SAID[source], `${source}: source line`).toBeTruthy();
-      expect(kind.ask.options.map((one) => one.label)).toEqual([expect.stringMatching(kind.label)]);
+      // A removal also offers Keep, so its control is the first option, not the only one.
+      expect(kind.ask.options[0]?.label).toMatch(kind.label);
 
       // Its place: Blocking in Asks while its chat waits, with its control on the row, and a
       // press made before the row settles is held (Q219).

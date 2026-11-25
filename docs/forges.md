@@ -63,6 +63,32 @@ hook socket (`Ask::WindowOnly`), which raises the ask and says what became of it
 that ask answers with a line it cannot read, and the chat is told the app and its purlis are
 different builds, with the way to restart or update, never that the repo was refused.
 
+## When a chat asks to remove a persona or a branch folder
+
+A removal is for good, so a chat never makes one that deletes what only you can judge. Its
+command is handed to the app as one **removal ask**, the one a workspace's removal has always
+been, and Asks shows a row that **names the thing and lists exactly what will be lost**:
+
+| The chat ran | The row | What the press removes |
+| --- | --- | --- |
+| `purlis persona remove <name>` | **Remove persona** / **Keep** | The persona, as your own `purlis persona remove` would: its definition, its memory and its curation actions, each listed. |
+| `purlis worktree remove --force`, or a plain removal that would lose work | **Remove and discard** / **Keep** | The branch folder with its uncommitted changes and the commits no other branch reaches, each listed. |
+| A plain removal of a folder holding files git ignores (a `.env`, results) | **Remove with these files** / **Keep** | The branch folder with the ignored files listed. |
+| A removal where git would not list the ignored files, or the changes | **Keep** only | Nothing. The row says purlis could not list everything it would delete. |
+
+**The press reads the thing again before it removes anything.** If it holds anything the row did
+not list (a new change, a new commit, another ignored file, a memory more), the row is replaced
+by what it holds now and nothing is removed. **Keep** removes nothing. A workspace's removal asks
+as it did, and its press is the Delete workspace dialog.
+
+With no window open on the project, nobody can be asked. A chat whose app does not answer is told
+"No purlis window answered, so nobody was asked", with how to have it asked once purlis is open.
+Where the app and the purlis the chat runs are different builds, the app cannot read the ask and
+the chat is told so, with the way to restart or update, never that the removal was refused. These
+removals belong to `guards.plane`: under `log` the check runs and lets the removal run as the chat
+asked, with no ask and a quiet log line (`plane.removal`); under `off`, once you have accepted it,
+the check does not run.
+
 ## What a chat can do
 
 In those repos, as you:

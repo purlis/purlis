@@ -345,13 +345,20 @@ fn isolated_answer(root: &Path, asker: &Asker, ask: &GitAsk, now: jiff::Timestam
                 || {
                     let ran = in_a_checked_folder(root, &ask.workspace, repo, piece, &held, || {
                         // What git ignores there goes with the folder: refused, named (#3879),
-                        // with every other reason it is kept (#4500).
+                        // with every other reason it is kept (#4500). Asked of the person from
+                        // inside the claim and the checked folder, which a lifted ask keeps.
                         crate::piececmd::remove_for_a_chat(
                             root,
                             &ask.workspace,
                             repo,
                             piece,
                             *delete_branch,
+                            &crate::windowonly::Asking {
+                                session: asker.chat,
+                                who: &who(asker),
+                                live: asker.live.as_deref(),
+                                claimed: true,
+                            },
                             crate::finished::Forge::asking(&crate::finished::merged::of_the_plane(
                                 root,
                                 &ask.workspace,

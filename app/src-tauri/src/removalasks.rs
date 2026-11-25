@@ -173,7 +173,33 @@ pub fn asked(held: &Held, ask: &RemovalAsk) -> Answer {
     if let Err(why) = held.brokered().allow(ask.chat, std::time::Instant::now()) {
         return no(why);
     }
-    let Removing::Workspace { name } = &ask.removing;
+    let name = match &ask.removing {
+        Removing::Workspace { name } => name,
+        // A persona's and a branch folder's removal are raised as the one window-only removal
+        // ask, listing exactly what goes (T1.1-67): the chat's workspace is the app's own record.
+        other => {
+            let workspace = held.chats().workspace_of(ask.chat).flatten();
+            // The chat is the app's own record of it, whose claim a lifted ask is held to.
+            let asker = match crate::gitbroker::asker(held, ask.chat) {
+                Ok(asker) => asker,
+                Err(answer) => return answer,
+            };
+            let who = purlis_core::gitbroker::who(&asker);
+            let asking = purlis_core::windowonly::Asking {
+                session: ask.chat,
+                who: &who,
+                live: asker.live.as_deref(),
+                claimed: false,
+            };
+            return no(purlis_core::windowonly::ask_to_remove(
+                held.root(),
+                &asking,
+                workspace.as_deref(),
+                other,
+            )
+            .words());
+        }
+    };
     let (said, news) = asked_in(
         held.root(),
         held.removal_asks(),

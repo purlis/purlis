@@ -308,6 +308,7 @@ export const DECISIONS: ReadonlySet<Shown["source"]> = new Set<Shown["source"]>(
   "one-address",
   "clone-with-sign-in",
   "record-repo",
+  "removal",
   "trust-clones",
 ]);
 
@@ -343,6 +344,7 @@ const QUESTION: Partial<Record<Shown["source"], string>> = {
   "one-address": "Give this clone's origin one address?",
   "clone-with-sign-in": "Clone it with your sign-in?",
   "record-repo": "Record this clone's repo?",
+  removal: "Remove it, with what it holds?",
   "trust-clones": "Trust these clones?",
 };
 
@@ -560,6 +562,7 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   "one-address": "Asks you to give a clone's origin one address",
   "clone-with-sign-in": "Asks to clone a private repo with your sign-in",
   "record-repo": "Asks you to record a clone's repo",
+  removal: "Asks you to remove a persona or a branch folder",
   "trust-clones": "Asks you to trust clones purlis did not clone",
 };
 

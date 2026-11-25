@@ -762,6 +762,11 @@ pub enum AskSource {
     /// **A clone the project records no repo for** (A3): Record this repo records the repo its
     /// origin names, as `purlis discover` does for that one clone, so a chat can read its forge.
     RecordRepo,
+    /// **A persona or a branch folder a chat asked the person to remove** (T1.1-67, Q304 Q2): the
+    /// removal ask, widened beside the workspace's. The row names the thing and lists exactly what
+    /// goes, the press removes exactly that while it still holds exactly that, and Keep removes
+    /// nothing. A listing that was not exact offers Keep only.
+    Removal,
     /// **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
     /// never one per clone. Trust all records each, as its Notice's Trust this clone does.
     TrustClones,
@@ -776,7 +781,11 @@ impl AskSource {
     pub fn is_window_only(self) -> bool {
         matches!(
             self,
-            Self::TrustClone | Self::OneAddress | Self::CloneWithSignIn | Self::RecordRepo
+            Self::TrustClone
+                | Self::OneAddress
+                | Self::CloneWithSignIn
+                | Self::RecordRepo
+                | Self::Removal
         )
     }
 }
@@ -930,6 +939,23 @@ pub enum AnswerPath {
         workspace: String,
         clone: String,
         place: String,
+    },
+    /// `remove_listed` for the press and `keep_removal` for Keep, on one persona (`what` is
+    /// `persona`, `name` its name) or branch folder (`what` is `branch-folder`, `name` its repo,
+    /// `piece` its piece, in `workspace`): `listed` is exactly what the row showed, which the
+    /// press removes only while the thing still holds exactly that.
+    Removal {
+        workspace: String,
+        what: String,
+        name: String,
+        piece: String,
+        force: bool,
+        ignored: bool,
+        listed: Vec<String>,
+        /// Whether `listed` is everything that goes, and the digest of everything that goes,
+        /// whole: sent back so the press and Keep name the row exactly as it was raised.
+        exact: bool,
+        digest: String,
     },
     /// `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
     /// clone Notice's own command, and each clone it trusts leaves the ask (R-336).
@@ -2282,6 +2308,17 @@ fn window_only_key(session: u32, control: &purlis_core::windowonly::Control) -> 
             clone,
             place,
         } => format!("record-repo:{session}:{workspace}|{clone}|{place}"),
+        purlis_core::windowonly::Control::Remove {
+            removing,
+            workspace,
+            listed,
+            digest,
+            ..
+        } => format!(
+            "removal:{session}:{workspace}|{}|{}|{digest}",
+            serde_json::to_string(removing).unwrap_or_default(),
+            listed.join("\n")
+        ),
     }
 }
 
@@ -2324,24 +2361,65 @@ pub fn window_only(refused: &purlis_core::windowonly::Refusal) -> Shown {
             clone: clone.clone(),
             place: place.clone(),
         },
+        purlis_core::windowonly::Control::Remove {
+            removing,
+            workspace,
+            listed,
+            exact,
+            digest,
+        } => {
+            use purlis_core::hookwire::Removing;
+            let (what, name, piece, force, ignored) = match removing {
+                Removing::BranchFolder {
+                    repo,
+                    piece,
+                    force,
+                    ignored,
+                } => ("branch-folder", repo, piece.as_str(), *force, *ignored),
+                Removing::Persona { name } | Removing::Workspace { name } => {
+                    ("persona", name, "", false, false)
+                }
+            };
+            AnswerPath::Removal {
+                workspace: workspace.clone(),
+                what: what.to_owned(),
+                name: name.clone(),
+                piece: piece.to_owned(),
+                force,
+                ignored,
+                listed: listed.clone(),
+                exact: *exact,
+                digest: digest.clone(),
+            }
+        }
     };
     let source = match control {
         purlis_core::windowonly::Control::TrustClone { .. } => AskSource::TrustClone,
         purlis_core::windowonly::Control::OneAddress { .. } => AskSource::OneAddress,
         purlis_core::windowonly::Control::CloneWithSignIn { .. } => AskSource::CloneWithSignIn,
         purlis_core::windowonly::Control::RecordRepo { .. } => AskSource::RecordRepo,
+        purlis_core::windowonly::Control::Remove { .. } => AskSource::Removal,
     };
-    Shown {
-        session: refused.session,
-        ask: window_only_key(refused.session, control),
-        says: said_inertly(&control.says()),
-        options: vec![Offered {
+    // Every control is one press; a removal is also Keep, which removes nothing, and where its
+    // listing was not exact, Keep alone (Q304 Q2).
+    let mut options = Vec::new();
+    if control.pressable() {
+        options.push(Offered {
             id: PRESS.to_owned(),
             label: control.label().to_owned(),
             allows: true,
             preselected: None,
             scope: None,
-        }],
+        });
+    }
+    if source == AskSource::Removal {
+        options.push(refuses(KEEP, KEEP_IT_SAID));
+    }
+    Shown {
+        session: refused.session,
+        ask: window_only_key(refused.session, control),
+        says: said_inertly(&control.says()),
+        options,
         source,
         chain: Vec::new(),
         answer,

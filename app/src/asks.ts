@@ -956,6 +956,28 @@ export async function answerTaken(
         const recorded = await commands.recordRepo(plane, path.workspace, path.clone, path.place);
         return recorded.status === "error" ? recorded : { status: "ok" };
       }
+      case "removal": {
+        // A persona or branch folder a chat asked to have removed (T1.1-67, Q304 Q2): the press
+        // removes exactly what the row listed, while it still holds exactly that; Keep removes
+        // nothing. Both send what the row showed, so the core can read it again first.
+        const row = {
+          workspace: path.workspace,
+          what: path.what,
+          name: path.name,
+          piece: path.piece,
+          force: path.force,
+          ignored: path.ignored,
+          listed: path.listed,
+          exact: path.exact,
+          digest: path.digest,
+        };
+        if (option === "press") {
+          const removed = await commands.removeListed(plane, row);
+          return removed.status === "error" ? removed : { status: "ok" };
+        }
+        if (option === "keep") return commands.keepRemoval(plane, row);
+        break;
+      }
       case "trust-clones": {
         // The clones purlis has no record of, one ask for all of them (R-336): Trust all is the
         // clone Notice's own press on each, at the one address its remote names. Each clone it

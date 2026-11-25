@@ -447,21 +447,29 @@ pub fn remove(
         piece,
         force,
         delete_branch,
-        false,
+        Asking::Nobody,
         forge,
         say,
     )
 }
 
-/// [`remove`] for a chat, never forced: refused besides where the folder holds files git
+/// [`remove`] for chat `chat` (the app's record of it, which holds the folder's claim and its
+/// checked folder already), never forced: refused besides where the folder holds files git
 /// ignores that are not a build's ([`ignored_would_go`]), and then naming in the same refusal
 /// whatever else would keep it (#4500), so a chat meets every reason in one try.
+///
+/// **A refusal over what a removal would delete is raised as the one removal ask** (T1.1-67,
+/// Q304 Q2): the work a plain removal would lose (B3) and the files git ignores (B4, B5), each
+/// listed exactly ([`crate::windowonly::ask_to_remove`]), and the chat is told whether anyone
+/// was asked. Nothing is removed by it: only the person's press removes the folder.
+#[allow(clippy::too_many_arguments)]
 pub fn remove_for_a_chat(
     plane: &Path,
     ws: &str,
     repo: &str,
     piece: &str,
     delete_branch: bool,
+    chat: &crate::windowonly::Asking<'_>,
     forge: crate::finished::Forge<'_>,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
@@ -472,10 +480,79 @@ pub fn remove_for_a_chat(
         piece,
         false,
         delete_branch,
-        true,
+        Asking::Chat(chat),
         forge,
         say,
     )
+}
+
+/// Who a removal is for: the person's own terminal, or a chat that is refused what a plain
+/// removal would delete and whose refusal is raised as an ask.
+#[derive(Clone, Copy)]
+enum Asking<'a> {
+    Nobody,
+    Chat(&'a crate::windowonly::Asking<'a>),
+}
+
+/// Whether `refusal` is git's guard over work a removal would lose.
+fn loses_work(refusal: &Refusal) -> bool {
+    matches!(
+        refusal,
+        Refusal::Uncommitted { .. }
+            | Refusal::DirtUnknown { .. }
+            | Refusal::UniqueUnknown { .. }
+            | Refusal::WouldLoseWork { .. }
+            | Refusal::OwnState { .. }
+            | Refusal::OwnUnknown { .. }
+    )
+}
+
+/// Raises the removal of `repo` · `piece` as an ask for the chat refused it, and says what the
+/// chat is told of it: that the person was asked, or that nobody was. `Some(0)` where
+/// `guards.plane` lifted the ask and the removal then ran, held to every guard but the ask: the
+/// refusal that came before is not the answer any more.
+fn ask_the_person(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    piece: &str,
+    asking: Asking<'_>,
+    say: &mut dyn FnMut(Say),
+) -> Option<u8> {
+    let Asking::Chat(chat) = asking else {
+        return None;
+    };
+    let removing = crate::hookwire::Removing::BranchFolder {
+        repo: repo.to_owned(),
+        piece: piece.to_owned(),
+        force: false,
+        ignored: false,
+    };
+    match crate::windowonly::ask_to_remove(plane, chat, Some(ws), &removing) {
+        crate::windowonly::Removal::Asked(Ok(words) | Err(words)) => {
+            say(Say::Info(words.into()));
+            None
+        }
+        crate::windowonly::Removal::Ran(Ok(words)) => {
+            say(Say::Info(
+                format!(
+                    "guards.plane lifted the ask, so purlis removed it without asking, as a plain \
+                     removal. {words}"
+                )
+                .into(),
+            ));
+            Some(0)
+        }
+        // The removal's own words are the refusal said just before: not said twice.
+        crate::windowonly::Removal::Ran(Err(_)) => {
+            say(Say::Info(
+                "guards.plane lifted the ask, so purlis ran the removal without asking, and its \
+                 own guards still refused it: nothing was removed"
+                    .into(),
+            ));
+            None
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -486,10 +563,11 @@ fn remove_as(
     piece: &str,
     force: bool,
     delete_branch: bool,
-    refuse_ignored: bool,
+    asking: Asking<'_>,
     forge: crate::finished::Forge<'_>,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
+    let refuse_ignored = matches!(asking, Asking::Chat(_));
     say(Say::Info(format!("workspace: {ws}").into()));
     let no_discard_there = || {
         // A clone purlis cannot find is one the brokered route runs no git in either.
@@ -556,7 +634,7 @@ fn remove_as(
             forge_said(say);
         }
         say(Say::Fail(why.into()));
-        return 1;
+        return ask_the_person(plane, ws, repo, piece, asking, say).unwrap_or(1);
     }
     let removed = if carried {
         worktree::remove_keeping_branch(plane, ws, repo, piece)
@@ -664,6 +742,11 @@ fn remove_as(
         Err(refusal) => {
             say(Say::Fail(refusal.to_string().into()));
             forge_said(say);
+            if loses_work(&refusal)
+                && let Some(code) = ask_the_person(plane, ws, repo, piece, asking, say)
+            {
+                return code;
+            }
             if matches!(refusal, Refusal::NoSuchPiece { .. }) {
                 say(Say::Info(
                     format!("See what exists: purlis worktree list {repo} -w {ws}").into(),
@@ -750,9 +833,7 @@ pub fn ignored_would_go(plane: &Path, ws: &str, repo: &str, piece: &str) -> Opti
     let kept = match ignored_kept(plane, ws, repo, piece)? {
         Ok(kept) => kept,
         Err(why) => {
-            return Some(format!(
-                "{why}. Nothing was removed. Ask the person to remove it from the window"
-            ));
+            return Some(format!("{why}. Nothing was removed"));
         }
     };
     if kept.is_empty() {
@@ -768,8 +849,8 @@ pub fn ignored_would_go(plane: &Path, ws: &str, repo: &str, piece: &str) -> Opti
     }
     Some(format!(
         "{repo} · {piece} holds files git ignores, which removing it would delete with it: {}. \
-         Nothing was removed. Move out what you need and delete the rest, or ask the person to \
-         remove it from the window",
+         Nothing was removed. Move out what you need and delete the rest, or have the person \
+         remove it with these files",
         named.join(", ")
     ))
 }

@@ -596,6 +596,205 @@ fn asking_to_record_raises_no_ask_where_policy_consents_do_not_ask() {
     }
 }
 
+/// A plane under `strict`, with `policy` appended, holding the persona `steward` and one memory.
+fn a_plane_with_a_persona(policy: &str) -> tempfile::TempDir {
+    let plane = tempfile::tempdir().unwrap();
+    let root = plane.path();
+    std::fs::write(
+        root.join("charter.toml"),
+        format!("[policy]\ntemplate = \"strict\"\n{policy}"),
+    )
+    .unwrap();
+    let steward = root.join("personas/steward");
+    std::fs::create_dir_all(steward.join("memory")).unwrap();
+    std::fs::write(
+        steward.join("persona.md"),
+        "---\nrole: steward\n---\n# steward\n",
+    )
+    .unwrap();
+    std::fs::write(steward.join("memory/one.md"), "one\n").unwrap();
+    plane
+}
+
+#[test]
+fn under_log_a_removal_runs_as_the_chat_asked_with_no_ask_and_a_quiet_log_line() {
+    // Q308b: the family of every removal here is `guards.plane`. Under `log` the check runs and
+    // allows, so the persona is removed as the chat asked and no ask is raised, with one quiet
+    // line naming the rule. Under `enforce` (the template's) the person is asked and nothing is
+    // removed. (`off` waits on what the person accepted: the app never runs a family looser than
+    // `log` before they have, so it is not what a project's file alone can show.)
+    let removing = crate::hookwire::Removing::Persona {
+        name: "steward".to_owned(),
+    };
+    for (policy, removed, logged_line) in [
+        ("", false, false),
+        ("guards.plane = \"enforce\"\n", false, false),
+        ("guards.plane = \"log\"\n", true, true),
+    ] {
+        let plane = a_plane_with_a_persona(policy);
+        let root = plane.path();
+        // The log is the app's, shared by every plane of a test run: count what this adds.
+        let logged = || -> usize {
+            std::fs::read_dir(crate::enforcement::log_dir(root))
+                .into_iter()
+                .flatten()
+                .filter_map(|entry| std::fs::read_to_string(entry.ok()?.path()).ok())
+                .map(|lines| lines.matches("plane.removal").count())
+                .sum()
+        };
+        let before = logged();
+        let who = Who::here(None, Some("4".to_owned()), None)
+            .for_chat(Some("01M881F55NPV4TTPA2EP7BW3CF".to_owned()));
+        let asking = Asking {
+            session: 4,
+            who: &who,
+            live: Some(&[]),
+            claimed: false,
+        };
+        let said = ask_to_remove(root, &asking, None, &removing).words();
+        assert_eq!(
+            !root.join("personas/steward").exists(),
+            removed,
+            "{policy:?}"
+        );
+        assert_eq!(every(root).is_empty(), removed, "{policy:?}: {said}");
+        assert_eq!(logged() - before, usize::from(logged_line), "{policy:?}");
+        project_ended(root);
+    }
+}
+
+const A: &str = "01M881F55NPV4TTPA2EP7BW3CF";
+const B: &str = "01M881F55NPV4TTPA2EP7BW3CG";
+
+fn a_chat(number: u32, id: &str) -> Who {
+    Who::here(None, Some(number.to_string()), Some("builder".to_owned()))
+        .for_chat(Some(id.to_owned()))
+}
+
+/// A plane under `policy`, whose workspace `alpha` holds the clone `thing`.
+fn a_plane_with_a_clone(policy: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(
+        root.join("charter.toml"),
+        format!("schema = 1\n[policy]\ntemplate = \"strict\"\n{policy}"),
+    )
+    .unwrap();
+    let clone = root.join("workspaces/alpha/thing");
+    std::fs::create_dir_all(&clone).unwrap();
+    git(&clone, &["init", "-q", "-b", "main", "."]);
+    std::fs::write(clone.join("README.md"), "one\n").unwrap();
+    git(&clone, &["add", "README.md"]);
+    git(
+        &clone,
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "one",
+        ],
+    );
+    dir
+}
+
+fn a_piece(root: &Path, piece: &str) -> PathBuf {
+    crate::worktree::add(root, "alpha", "thing", piece, None)
+        .expect("a piece is cut")
+        .path
+}
+
+fn logged_for(root: &Path, chat: &str) -> usize {
+    crate::enforcement::log_file(root, chat)
+        .and_then(|file| std::fs::read_to_string(file).ok())
+        .map_or(0, |lines| lines.matches("plane.removal").count())
+}
+
+#[test]
+fn under_log_a_folder_another_live_chat_holds_is_refused_and_a_forced_line_is_not_forced() {
+    // `guards.plane` lifts only the ask: the removal is held to the folder's one live writer
+    // (#3901), never forced whatever the line said, and the log line names the asking chat.
+    for policy in ["guards.plane = \"log\"\n", "guards.plane = \"off\"\n"] {
+        let plane = a_plane_with_a_clone(policy);
+        let root = plane.path();
+        let live = [(A, 3), (B, 4)]
+            .map(|(id, chat)| crate::piececlaim::Live {
+                id: id.to_owned(),
+                chat: Some(chat),
+                back: true,
+            })
+            .to_vec();
+        let held = a_piece(root, "held");
+        let at = crate::worktree::Located {
+            workspace: "alpha".to_owned(),
+            repo: "thing".to_owned(),
+            piece: "held".to_owned(),
+        };
+        crate::piececlaim::take(
+            root,
+            &at,
+            &a_chat(3, A),
+            Some(&live),
+            crate::piececlaim::Act::Commit,
+            jiff::Timestamp::now(),
+        )
+        .unwrap();
+        let who = a_chat(4, B);
+        let asking = Asking {
+            session: 4,
+            who: &who,
+            live: Some(&live),
+            claimed: false,
+        };
+        let forced = |piece: &str| crate::hookwire::Removing::BranchFolder {
+            repo: "thing".to_owned(),
+            piece: piece.to_owned(),
+            force: true,
+            ignored: false,
+        };
+        let before = logged_for(root, B);
+
+        // The ask is lifted, and the removal still holds to the folder's one live writer.
+        let Removal::Ran(Err(why)) = ask_to_remove(root, &asking, Some("alpha"), &forced("held"))
+        else {
+            panic!("{policy}: the removal did not run, or ran through");
+        };
+        assert!(why.contains("claimed by chat 3"), "{policy}: {why}");
+        assert!(held.is_dir(), "{policy}: another chat's folder was removed");
+        assert_eq!(every(root), [], "{policy}: an ask was raised");
+
+        // `force` is the chat's own word, which a lifted ask never carries out: an unheld
+        // folder with an uncommitted change is refused by git's own guard.
+        let dirty = a_piece(root, "dirty");
+        std::fs::write(dirty.join("README.md"), "changed\n").unwrap();
+        let Removal::Ran(Err(why)) = ask_to_remove(root, &asking, Some("alpha"), &forced("dirty"))
+        else {
+            panic!("{policy}: a dirty folder was removed on the chat's force");
+        };
+        assert!(why.contains("Nothing was removed"), "{policy}: {why}");
+        assert_eq!(
+            std::fs::read_to_string(dirty.join("README.md")).unwrap(),
+            "changed\n",
+            "{policy}: discarded"
+        );
+
+        // A clean folder nobody holds goes, as a plain removal, and its claim with it.
+        let clean = a_piece(root, "clean");
+        let Removal::Ran(Ok(_)) = ask_to_remove(root, &asking, Some("alpha"), &forced("clean"))
+        else {
+            panic!("{policy}: a clean unheld folder was not removed");
+        };
+        assert!(!clean.exists(), "{policy}");
+
+        // One line for each ask, in the asking chat's own log, and none under `unknown`.
+        assert_eq!(logged_for(root, B) - before, 3, "{policy}");
+        assert_eq!(logged_for(root, "unknown"), 0, "{policy}");
+    }
+}
+
 /// The blocks a test's writer was handed, by chat.
 type Blocks = Arc<Mutex<Vec<(u32, crate::eventlog::stops::Stop)>>>;
 
