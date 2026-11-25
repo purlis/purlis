@@ -95,7 +95,9 @@ fn here(os: String, states: impl IntoIterator<Item = State>, class: RamClass) ->
         os,
         open,
         hot,
-        ram_class_gb: class.gigabytes().and_then(|gigabytes| u32::try_from(gigabytes).ok()),
+        ram_class_gb: class
+            .gigabytes()
+            .and_then(|gigabytes| u32::try_from(gigabytes).ok()),
         hot_target: class.hot_target(),
     }
 }
@@ -136,7 +138,12 @@ mod tests {
         let class = RamClass::of_gigabytes(Some(16));
         let answer = here("Darwin".into(), [State::Running, State::Done], class);
         assert_eq!(
-            (answer.open, answer.hot, answer.ram_class_gb, answer.hot_target),
+            (
+                answer.open,
+                answer.hot,
+                answer.ram_class_gb,
+                answer.hot_target
+            ),
             (2, 1, Some(16), 15)
         );
     }
@@ -152,9 +159,15 @@ mod tests {
         let device = Device::default();
         let machine = device.class();
         device.stand_in(Some(64));
-        assert_eq!((device.class().gigabytes(), device.class().hot_target()), (Some(64), 50));
+        assert_eq!(
+            (device.class().gigabytes(), device.class().hot_target()),
+            (Some(64), 50)
+        );
         device.stand_in(Some(8));
-        assert_eq!((device.class().gigabytes(), device.class().hot_target()), (Some(8), 5));
+        assert_eq!(
+            (device.class().gigabytes(), device.class().hot_target()),
+            (Some(8), 5)
+        );
         device.stand_in(None);
         assert_eq!(device.class(), machine);
     }
