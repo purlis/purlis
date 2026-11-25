@@ -203,12 +203,37 @@ jobs:
           done
           [ -n "$id" ] || { echo "::error::no ci run of $GITHUB_SHA on its push to main was listed within five minutes, so nothing is built"; exit 1; }
           echo "Waiting for ci run $id of $GITHUB_SHA."
-          # The watch's own exit says little (it ends nonzero for a red run and for a lost
-          # connection alike), so the run's state is read again after it.
-          gh run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
-          state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is built"; exit 1; }
-          read -r status conclusion <<< "$state"
-          [ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is built"; exit 1; }
+          # The watch's own exit says little: it ends nonzero for a red run and for a lost connection
+          # alike, and it ends early, still nonzero, when GitHub answers a poll with a 502 (dev build
+          # 45579545279). So the run's state is read after every watch, and only `completed` ends the
+          # wait: anything else watches again, until a deadline of two hours from the step's start. (The
+          # job's timeout-minutes is the hard stop: where earlier steps used part of it, a cancel fails
+          # closed first, and nothing is signed or uploaded either way.) An API
+          # error is never an answer, and nothing is signed or uploaded unless the state read is `completed`
+          # with a conclusion `success`.
+          deadline=$((SECONDS + 7200))
+          status=unread
+          conclusion=none
+          while :; do
+            gh run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
+            read_ok=false
+            if state=$(ask "$id"); then
+              read -r status conclusion <<< "$state"
+              read_ok=true
+              if [ "$status" = completed ]; then
+                break
+              fi
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              if [ "$read_ok" != true ] || [ "$status" = unread ]; then
+                echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is built"
+              else
+                echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is built"
+              fi
+              exit 1
+            fi
+            sleep 30
+          done
           # A cancelled or red `ci` is `green=false`, never green.
           if [ "$conclusion" = success ]; then
             echo "green=true" >> "$GITHUB_OUTPUT"
@@ -615,7 +640,18 @@ jobs:
             extra_bundles: appimage
             extra_required: true
             runner_target: linux-x86_64
-    runs-on: ${{ matrix.os }}
+    # The macOS leg of a DEV build (the dev channel's `dev-release` profile: a push to `main`, or a
+    # run by hand that asked for it) runs where the operator's repository variable
+    # `MACOS_RELEASE_RUNNER` says: unset, `macos-latest`; set, a JSON array of labels
+    # (`["self-hosted","macOS","ARM64","purlis-release"]`), so moving it between GitHub's runners
+    # and the operator's own Macs is a variable and no commit (docs/updating.md, "Building macOS on
+    # a self-hosted Mac"). **A stable build, and the nightly profile guard that builds the way a
+    # stable build does, never read it**: a signed stable release comes from a GitHub-hosted runner
+    # (`tools/release-workflow.test.mjs` holds the condition). The Linux leg stays on
+    # `matrix.os`. Nothing a pull request starts may name a self-hosted runner
+    # (`tools/no-self-hosted-on-pull-request.test.mjs`), and the steps below that clean up after a
+    # persistent runner run only where `runner.environment` is `self-hosted`.
+    runs-on: ${{ matrix.os == 'macos-latest' && needs.plan.outputs.channel == 'dev' && needs.plan.outputs.profile == 'dev-release' && fromJSON(vars.MACOS_RELEASE_RUNNER || '"macos-latest"') || matrix.os }}
     # The cold macOS build takes 65 to 68 minutes with the thin-LTO `release` profile (ADR 0092; `dev-release` has LTO off since 2026-11-24), and the
     # first attempt of 0.5.0's ran past 90 and was cancelled (run 42122707604). Since then
     # successful dev builds took 106-107 minutes and run 45030876196 hit 120:00 and was cancelled,
@@ -633,6 +669,30 @@ jobs:
       # for a dev channel build (ADR 0092).
       PROFILE: ${{ needs.plan.outputs.profile }}
     steps:
+      # Said in the run's summary, so nobody reads a dev build as a hosted one.
+      - name: Say that this build ran on a self-hosted runner
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          echo "**Built on a self-hosted runner** ($RUNNER_NAME, $RUNNER_OS $RUNNER_ARCH): a dev build only. Its provenance is attested and verified by the \`provenance\` job on a GitHub-hosted runner, over the files this machine made (docs/updating.md)." >> "$GITHUB_STEP_SUMMARY"
+
+      # **A persistent runner starts from nothing** (ADR 0092: no cache in the job that holds the
+      # signing keys; ADR 0042). A self-hosted Mac keeps its workspace between jobs, so the last job's
+      # `target/`, `node_modules/` and bundles would be this job's cache, and a signed build would
+      # carry whatever they held. `actions/checkout` below cleans tracked and ignored files too, but
+      # the folder is emptied here first so that nothing, tracked or not, survives. A hosted runner
+      # is a fresh machine and skips this.
+      - name: A self-hosted runner's workspace starts empty
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_WORKSPACE" in
+            /?*/?*) ;;
+            *) echo "::error::GITHUB_WORKSPACE is '$GITHUB_WORKSPACE', which is not a folder to empty"; exit 1 ;;
+          esac
+          find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.plan.outputs.sha }}
@@ -673,6 +733,31 @@ jobs:
           sudo chmod 600 /swapfile-build
           sudo mkswap /swapfile-build
           sudo swapon /swapfile-build
+
+      # **Cargo's, rustup's, npm's and the temporary folder of a persistent runner are this job's own.**
+      # `~/.cargo`, `~/.rustup` and `~/.npm` of a self-hosted Mac hold whatever the last job fetched (registry
+      # sources, packages, installed tools, a toolchain), and `$TMPDIR` whatever it left, so a build that read
+      # them would be reading a cache. They go under `$RUNNER_TEMP`, which the runner empties
+      # before each job, and the last step of this job removes them. The runner's own `rustup` and
+      # Xcode command line tools are used if present (`tools/linux-packages.sh` and the swap file
+      # above are Linux's, and the Linux leg is never self-hosted); the toolchain is installed per user
+      # into this job's `RUSTUP_HOME`. Nothing here writes outside the runner's user or its work folder.
+      - name: A self-hosted runner's Cargo, rustup and temporary folder are this job's own
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          home="$RUNNER_TEMP/job-home"
+          mkdir -p "$home/crate_home/bin" "$home/rustup_home" "$home/tmp" "$home/npm" "$home/cache"
+          {
+            echo "CARGO_HOME=$home/crate_home"
+            echo "RUSTUP_HOME=$home/rustup_home"
+            echo "TMPDIR=$home/tmp"
+            echo "npm_config_cache=$home/npm"
+            echo "XDG_CACHE_HOME=$home/cache"
+          } >> "$GITHUB_ENV"
+          echo "$home/crate_home/bin" >> "$GITHUB_PATH"
+          echo "job home: $home"
 
       - uses: ./.github/actions/rust-toolchain
       # **No cache, restored or saved.** This job holds the signing keys, so it builds from its
@@ -925,12 +1010,37 @@ jobs:
           done
           [ -n "$id" ] || { echo "::error::no ci run of $GITHUB_SHA on its push to main was listed within five minutes, so nothing is signed or uploaded"; exit 1; }
           echo "Waiting for ci run $id of $GITHUB_SHA."
-          # The watch's own exit says little (it ends nonzero for a red run and for a lost
-          # connection alike), so the run's state is read again after it.
-          "$gh" run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
-          state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"; exit 1; }
-          read -r status conclusion <<< "$state"
-          [ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"; exit 1; }
+          # The watch's own exit says little: it ends nonzero for a red run and for a lost connection
+          # alike, and it ends early, still nonzero, when GitHub answers a poll with a 502 (dev build
+          # 45579545279). So the run's state is read after every watch, and only `completed` ends the
+          # wait: anything else watches again, until a deadline of two hours from the step's start. (The
+          # job's timeout-minutes is the hard stop: where earlier steps used part of it, a cancel fails
+          # closed first, and nothing is signed or uploaded either way.) An API
+          # error is never an answer, and nothing is signed or uploaded unless the state read is `completed`
+          # with a conclusion `success`.
+          deadline=$((SECONDS + 7200))
+          status=unread
+          conclusion=none
+          while :; do
+            "$gh" run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
+            read_ok=false
+            if state=$(ask "$id"); then
+              read -r status conclusion <<< "$state"
+              read_ok=true
+              if [ "$status" = completed ]; then
+                break
+              fi
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              if [ "$read_ok" != true ] || [ "$status" = unread ]; then
+                echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"
+              else
+                echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"
+              fi
+              exit 1
+            fi
+            sleep 30
+          done
           # A `ci` that ended red or cancelled is not a fault of this build: it did its job, which is
           # to sign and publish nothing for that commit. It ends green, with `green=false`, and
           # every later step of the job skips on that output. Anything else (a state this step
@@ -1419,7 +1529,7 @@ jobs:
             echo "**Not updater-signed**, so no app could update to it. A build started by hand runs outside the release environment and never holds the key; a publishing run with no key is refused before it builds (docs/updating.md, step 0)." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      # Last, so a build that is wrong is still downloadable and still says it is wrong. The
+      # Last of the checks, so a build that is wrong is still downloadable and still says it is wrong. The
       # app resolves the binary its hooks run as `<the directory of my own exe>/purlis`, and
       # `charter` beside it is the alias that runs that `purlis` (RN-3). A missing sidecar
       # leaves every chat at `unknown`; a sidecar that IS the app's own executable makes every
@@ -1451,6 +1561,32 @@ jobs:
               || { echo "FAIL: the $name sidecar IS the app — every hook would launch the GUI"; exit 1; }
             "$dir/$name" --version
           done
+
+      # **Nothing of a build stays on a persistent runner.** `build` signs ad-hoc and imports no
+      # Developer ID key (that is `sign-macos`, hosted only), so it makes no keychain of its own;
+      # this step still empties what a self-hosted Mac would keep: any keychain a build tool
+      # added to the runner user's search list (a failed or cancelled build included, hence
+      # `always()`), and the job's own home folders. Every keychain in that list that is neither
+      # the login keychain nor a system one is deleted and the list is set back to the login
+      # keychain. A run that never got past the wait for `ci` above has made none of this and
+      # finds nothing. This is why the runner's service runs as a user of its own
+      # (docs/updating.md): that user's keychains are the runner's to delete.
+      - name: A self-hosted runner keeps no keychain, certificate or job folder
+        if: steps.ci.outputs.green == 'true' && always() && runner.environment == 'self-hosted' && runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -uo pipefail
+          login="$HOME/Library/Keychains/login.keychain-db"
+          security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"$//' | while IFS= read -r kc; do
+            case "$kc" in
+              "" | "$login" | /Library/Keychains/* | /System/Library/Keychains/*) ;;
+              *) echo "deleting keychain $kc"; security delete-keychain "$kc" || true ;;
+            esac
+          done
+          if [ -e "$login" ]; then security list-keychains -d user -s "$login" || true; fi
+          find "$RUNNER_TEMP" -name '*.keychain*' -exec rm -rf {} + 2>/dev/null || true
+          rm -rf "$RUNNER_TEMP/job-home"
+          security list-keychains -d user
 
   # **The one job that holds the Developer ID key, and it runs on a GitHub-hosted macOS runner and
   # nowhere else** (ADR 0042, amended 2026-11-25). `build` may be given a self-hosted Mac, so it
@@ -2077,12 +2213,37 @@ jobs:
           done
           [ -n "$id" ] || { echo "::error::no ci run of $GITHUB_SHA on its push to main was listed within five minutes, so nothing is signed or uploaded"; exit 1; }
           echo "Waiting for ci run $id of $GITHUB_SHA."
-          # The watch's own exit says little (it ends nonzero for a red run and for a lost
-          # connection alike), so the run's state is read again after it.
-          "$gh" run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
-          state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"; exit 1; }
-          read -r status conclusion <<< "$state"
-          [ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"; exit 1; }
+          # The watch's own exit says little: it ends nonzero for a red run and for a lost connection
+          # alike, and it ends early, still nonzero, when GitHub answers a poll with a 502 (dev build
+          # 45579545279). So the run's state is read after every watch, and only `completed` ends the
+          # wait: anything else watches again, until a deadline of two hours from the step's start. (The
+          # job's timeout-minutes is the hard stop: where earlier steps used part of it, a cancel fails
+          # closed first, and nothing is signed or uploaded either way.) An API
+          # error is never an answer, and nothing is signed or uploaded unless the state read is `completed`
+          # with a conclusion `success`.
+          deadline=$((SECONDS + 7200))
+          status=unread
+          conclusion=none
+          while :; do
+            "$gh" run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
+            read_ok=false
+            if state=$(ask "$id"); then
+              read -r status conclusion <<< "$state"
+              read_ok=true
+              if [ "$status" = completed ]; then
+                break
+              fi
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              if [ "$read_ok" != true ] || [ "$status" = unread ]; then
+                echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"
+              else
+                echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"
+              fi
+              exit 1
+            fi
+            sleep 30
+          done
           # A `ci` that ended red or cancelled is not a fault of this build: it did its job, which is
           # to sign and publish nothing for that commit. It ends green, with `green=false`, and
           # every later step of the job skips on that output. Anything else (a state this step
