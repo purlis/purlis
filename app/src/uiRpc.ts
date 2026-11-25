@@ -3342,7 +3342,12 @@ export type AnswerPath =
  *  `piece` its piece, in `workspace`): `listed` is exactly what the row showed, which the
  *  press removes only while the thing still holds exactly that.
  */
-{ via: "removal"; workspace: string; what: string; name: string; piece: string; force: boolean; ignored: boolean; listed: string[]; exact: boolean; digest: string } | 
+{ via: "removal"; workspace: string; what: string; name: string; piece: string; force: boolean; ignored: boolean; listed: string[]; 
+/**
+ *  Whether `listed` is everything that goes, and the digest of everything that goes,
+ *  whole: sent back so the press and Keep name the row exactly as it was raised.
+ */
+exact: boolean; digest: string } | 
 /**
  *  `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
  *  clone Notice's own command, and each clone it trusts leaves the ask (R-336).
@@ -13021,11 +13026,9 @@ export type RemovalRow = {
 	 *  Whether `listed` was everything that goes. A row from a window that does not say reads as
 	 *  not exact, so it offers Keep only.
 	 */
-	exact: boolean,
-	/**
-	 *  The digest of everything that goes, whole, as the row was raised with it.
-	 */
-	digest: string,
+	exact?: boolean,
+	/**  The digest of everything that goes, whole, as the row was raised with it. */
+	digest?: string,
 };
 
 /**
