@@ -473,7 +473,9 @@ fn spawn_connection(
     let spawned = std::thread::Builder::new()
         .name("forge-proxy-conn".into())
         .spawn(move || {
-            serve(&wiring);
+            // A panic in a handler ends this connection and nothing else: the slot comes back
+            // either way, so panics never add up to a listener that serves no one (#7589).
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| serve(&wiring)));
             slot.fetch_sub(1, Ordering::SeqCst);
         });
     if spawned.is_err() {

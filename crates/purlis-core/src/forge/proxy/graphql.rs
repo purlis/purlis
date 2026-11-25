@@ -29,7 +29,7 @@ use std::collections::HashMap;
 
 use graphql_parser::query::{
     Definition, Document, Field, FragmentDefinition, OperationDefinition, Selection, SelectionSet,
-    TypeCondition, Value, VariableDefinition, parse_query,
+    TypeCondition, Value, VariableDefinition,
 };
 use serde_json::Value as Json;
 
@@ -45,6 +45,16 @@ const MAX_DEPTH: usize = 16;
 
 /// The largest document read.
 const MAX_BODY: usize = 1 << 20;
+
+/// The document `query` is, or none when it is not one the parser reads. `graphql-parser` 0.4.1
+/// cuts a block string's lines by byte and panics on a char boundary when a line is non-ASCII
+/// whitespace (#7589); a panic there is a document the parser cannot read, refused like any other,
+/// and never the end of the request's thread.
+fn parse(query: &str) -> Option<Document<'_, String>> {
+    std::panic::catch_unwind(|| graphql_parser::query::parse_query::<String>(query))
+        .ok()?
+        .ok()
+}
 
 /// What a value resolved to.
 #[derive(Debug, Clone)]
@@ -260,7 +270,7 @@ pub(crate) fn decide<'a>(
         Some(Json::Object(map)) => map,
         Some(_) => return Err(Refusal::GraphqlParse),
     };
-    let document: Document<'_, String> = parse_query(query).map_err(|_| Refusal::GraphqlParse)?;
+    let document = parse(query).ok_or(Refusal::GraphqlParse)?;
 
     let mut fragments = HashMap::new();
     for definition in &document.definitions {
@@ -834,7 +844,7 @@ pub fn mutation_repo(
         Some(Json::Object(map)) => map,
         Some(_) => return None,
     };
-    let parsed: Document<'_, String> = parse_query(query).ok()?;
+    let parsed = parse(query)?;
     let mut ids = Vec::new();
     for definition in &parsed.definitions {
         let Definition::Operation(OperationDefinition::Mutation(mutation)) = definition else {
