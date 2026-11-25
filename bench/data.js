@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795578088967,
+  "lastUpdate": 1795591123609,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54474,6 +54474,48 @@ window.BENCHMARK_DATA = {
             "value": 102.27872450000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.996, 101.640, 102.279, 102.567, 103.326 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "36bd6bfe539db09f92e50b5ef513a9a88303d5ac",
+          "message": "Forge route: the first object-cache fill shows progress, starts early, and blocks only a push it must (#7532) (#7549)\n\n* Object cache: show the first fill's progress, let a push whose base is held go ahead, start the fill when a chat opens (#7532)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M870Z129QRGGNWT3X1XRBK38\nPurlis-Persona: steward\n\n* Cache-fill progress tests: finish the cut line the reader test glued on, and shed the shell's steering (#7549)\n\nThe progress reader test cut a Receiving line at '12.90' and fed the next line onto it, so the reader saw one malformed line and kept 4600/0 where the test wanted 1/0. The test now finishes the cut line first. It also opens with purlis_core::unsteered!(), which the directory's steering test requires.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M875WZWVR2EFAK850J4HTDJ0\nPurlis-Persona: steward\n\n* WIP: object cache progress round 2 (clear stale progress, no panic on overflow, reader accepts only git's own lines, carry cap, tests; green run and fmt/clippy not done)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M87APN82AJY6TSYCEDW3K265\nPurlis-Persona: steward\n\n* Object cache progress round 2: a stale figure is cleared, no panic on an absurd total, the reader takes only git's own lines; tests green (#7549)\n\nThe integration tests that were shown red are now green: the refusal wording\nnames the forge, a failed fill leaves the cache unfilled before the next top-up\ncheck, a second fill runs on a cache that is not filled, and the real-git test\nstarts git through forklock::spawn.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M87MNA32F9QD1NXHRYBD74HD\nPurlis-Persona: steward\n\n* Object cache: the estimate's cap tests follow FILL, now two hours (#7591)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M881KH96FCV2QAQ7C9DQQGN5\nPurlis-Persona: steward\n\n* Object cache: a shallow cache is never read or marked filled, each part of a first fill reports its own figure, warm and push stage one target\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M884ENAYD1JBN8MFW17CGGM8\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T06:34:13Z",
+          "tree_id": "8a145b555d498feba2cb353620110f87cf86729a",
+          "url": "https://github.com/purlis/purlis/commit/36bd6bfe539db09f92e50b5ef513a9a88303d5ac"
+        },
+        "date": 1795591115552,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.70997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.705, 0.707, 0.710, 0.715, 0.735 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.681129,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.504, 16.676, 16.681, 16.814, 16.822 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5045425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.191, 101.278, 101.505, 102.118, 102.803 ms"
           }
         ]
       }
