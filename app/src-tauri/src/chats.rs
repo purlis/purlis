@@ -10365,6 +10365,7 @@ fn register_live(
     let Some(write) = lock(stops).clone() else {
         return true;
     };
+    tracing::debug!(chat, block = ?block, road = "live", "purlis: register_live claims a raise");
     if blocks.claim_raise(chat, &block) {
         let ask = Stop::AskRaised(AskRaised {
             ask: AskGroup::Sandbox,

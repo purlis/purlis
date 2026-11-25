@@ -172,6 +172,11 @@ pub struct Blocks {
     /// the ask leaves ([`Self::answered`], a newer ask pushing it out, the chat's end), so a
     /// later ask for the same block raises again. Bounded as what is held is.
     asked: Mutex<HashMap<u32, Vec<HeldBlock>>>,
+    /// The asks of each open chat that were answered in the turn now running (T1.1-27): a late
+    /// report of an answered ask (its proxy's or hook's line arriving after the answer) is that
+    /// ask's echo, not a new ask, so it claims no second raise ([`Self::claim_raise`]). Forgotten
+    /// as the chat's next turn begins and as it ends.
+    spent: Mutex<HashMap<u32, Vec<HeldBlock>>>,
 }
 
 /// **Who is told a held refusal left its ask as a block** (T1-10, Q154): its chat, and the block
@@ -421,6 +426,29 @@ impl Blocks {
         self.asked.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    fn spent(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<HeldBlock>>> {
+        self.spent.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// An answered ask's claim is kept as a tombstone for the rest of the turn.
+    fn spend_raise(&self, session: u32, block: &HeldBlock) {
+        let claimed = self
+            .asked()
+            .get(&session)
+            .is_some_and(|mine| mine.contains(block));
+        self.release_raise(session, block);
+        if claimed {
+            let mut spent = self.spent();
+            let mine = spent.entry(session).or_default();
+            if !mine.contains(block) {
+                mine.push(block.clone());
+                if mine.len() > MOST_HELD_PER_CHAT * MOST_HOSTS_PER_BLOCK + MOST_WAITING_PER_CHAT {
+                    mine.remove(0);
+                }
+            }
+        }
+    }
+
     /// **Whether this report of an ask is the first, and so the one that writes its
     /// `ask.raised`** (T1.1-27, Q262): the raise follows what the registry holds, one held block
     /// and one raise. Decided under the lock of what is held, then the lock of what is asked
@@ -434,9 +462,21 @@ impl Blocks {
         if !held.get(&session).is_some_and(|mine| mine.contains(block)) {
             return false;
         }
+        let spent = self
+            .spent()
+            .get(&session)
+            .is_some_and(|mine| mine.contains(block));
         let mut asked = self.asked();
         let mine = asked.entry(session).or_default();
-        if mine.contains(block) {
+        let first = !spent && !mine.contains(block);
+        tracing::debug!(
+            chat = session,
+            block = ?block,
+            answered_this_turn = spent,
+            first,
+            "purlis: claim_raise"
+        );
+        if !first {
             return false;
         }
         mine.push(block.clone());
@@ -842,6 +882,8 @@ impl Blocks {
             .collect();
         let any = !gone.is_empty();
         self.left_as_blocks(session, gone);
+        // The turn's answers are forgotten: the next turn's ask for a host is a new ask.
+        self.spent().remove(&session);
         any
     }
 
@@ -912,8 +954,8 @@ impl Blocks {
             }
         }
         // Gone from what is held and from what is asked in one step: no report can claim it
-        // between the two.
-        self.release_raise(session, block);
+        // between the two. The claim stays as a tombstone for the turn.
+        self.spend_raise(session, block);
         drop(held);
         let mut since = self.since();
         if let Some(mine) = since.get_mut(&session) {
@@ -931,6 +973,7 @@ impl Blocks {
         let held = {
             let mut held = self.held();
             self.asked().remove(&session);
+            self.spent().remove(&session);
             held.remove(&session).unwrap_or_default()
         };
         let quiet = self.quiet().remove(&session).unwrap_or_default();
@@ -1029,7 +1072,10 @@ pub(crate) fn turn_began(held: &crate::planes::Held, chat: u32) {
 /// own. Whether `raise` ran.
 pub fn raise_once(blocks: &Blocks, told: &crate::hooks::ChatBlocked, raise: impl FnOnce()) -> bool {
     let first = match held_of(told) {
-        Some(block) => blocks.claim_raise(told.session, &block),
+        Some(block) => {
+            tracing::debug!(chat = told.session, block = ?block, road = "hook", "purlis: hook road claims a raise");
+            blocks.claim_raise(told.session, &block)
+        }
         None => true,
     };
     if first {

@@ -125,9 +125,10 @@ fn a_held_ask_writes_exactly_one_ask_raised() {
     hook_road(&blocks, &stops, &told(&plane, Some(&target)));
     assert_the_raises_follow_the_registry(&blocks, &written, 1);
 
-    // Its answer ends it: the same host asked about later is a new ask, and raises again.
+    // Its answer ends it: the same host asked about in a later turn is a new ask, and raises again.
     let block = crate::taskblocks::held_of(&told(&plane, Some(&target))).expect("a block");
     blocks.answered(CHAT, &block);
+    blocks.turn_began(CHAT);
     assert!(register_live(&blocks, &stops, CHAT, &target));
     assert_eq!(raises(&written), 2, "a new ask raises its own");
 }
@@ -251,7 +252,13 @@ fn a_claim_is_made_only_on_a_held_block_and_goes_with_it() {
     blocks.answered(CHAT, &block);
     assert!(!blocks.claim_raise(CHAT, &block), "answered: no claim");
     blocks.heard(CHAT, block.clone());
-    assert!(blocks.claim_raise(CHAT, &block), "a new ask raises again");
+    assert!(!blocks.claim_raise(CHAT, &block), "its echo, this turn");
+    blocks.turn_began(CHAT);
+    blocks.heard(CHAT, block.clone());
+    assert!(
+        blocks.claim_raise(CHAT, &block),
+        "a new turn's ask raises again"
+    );
 }
 
 /// An ask pushed out by newer ones, and an ended chat's, give their claims up.
@@ -317,4 +324,48 @@ fn a_runner_service_ask_raises_once_by_its_port() {
     blocks.answered(CHAT, &block);
     assert!(register_live(&blocks, &stops, CHAT, "127.0.0.1:5432"));
     assert_eq!(raises(&written), 3);
+}
+
+/// The proxy's refusal of a host:port is keyed the same on both roads, whatever the port is
+/// written as: `live_block` (the live road) and `held_of` (the hook road, from a line shaped as
+/// the real hook's) are one block, so the second report joins the first.
+#[test]
+fn both_roads_key_one_proxy_refusal_alike() {
+    let (_dir, plane) = plane();
+    for target in [
+        format!("{HOST}:443"),
+        format!("{HOST}:80"),
+        format!("{HOST}:8443"),
+        HOST.to_owned(),
+        format!("{}:443", HOST.to_uppercase()),
+    ] {
+        let live = live_block(&target).expect("a live block");
+        let hook = crate::taskblocks::held_of(&told(&plane, Some(&target))).expect("a hook block");
+        assert_eq!(live, hook, "one key for {target}");
+    }
+}
+
+/// A late report of an answered ask (its proxy line or hook line landing after the answer) is
+/// that ask's echo: no second `ask.raised` in the turn. The next turn's ask raises its own.
+#[test]
+fn a_late_report_of_an_answered_ask_raises_nothing() {
+    let target = format!("{HOST}:443");
+    let (_dir, plane) = plane();
+    let blocks = Blocks::default();
+    let (stops, written) = writer();
+    assert!(register_live(&blocks, &stops, CHAT, &target));
+    assert_eq!(raises(&written), 1);
+    let block = live_block(&target).expect("a block");
+    blocks.answered(CHAT, &block);
+
+    // Late, on either road, in the same turn.
+    assert!(register_live(&blocks, &stops, CHAT, &target));
+    hook_road(&blocks, &stops, &told(&plane, Some(&target)));
+    assert_eq!(raises(&written), 1, "an echo of the answered ask");
+
+    // The chat's next turn forgets it.
+    blocks.answered(CHAT, &block);
+    blocks.turn_began(CHAT);
+    assert!(register_live(&blocks, &stops, CHAT, &target));
+    assert_eq!(raises(&written), 2, "a new turn's ask is new");
 }
