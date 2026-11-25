@@ -307,6 +307,16 @@ impl Drop for RunAnswering<'_> {
     }
 }
 
+/// **The window's reads of one plane that a burst of plane changes asks again and again**, each
+/// answered by [`purlis_core::burst::Burst`] (felt speed round 5, H15): the asks that come while
+/// a read runs share the one read that starts after them, so fifty asks cost two reads, not fifty
+/// beside each other, and no answer predates its ask. In memory only (ADR 0069).
+#[derive(Default)]
+pub struct ReadBursts {
+    pub sandbox_state: purlis_core::burst::Burst<crate::sandboxing::SandboxState>,
+    pub asks_waiting: purlis_core::burst::Burst<crate::asking::Asking>,
+}
+
 /// What the app holds for one open plane: its board, its chats, and where it is.
 pub struct Held {
     id: PlaneId,
@@ -317,6 +327,8 @@ pub struct Held {
     /// The window, for a move no hook reports: a chat closed, or a request ignored.
     tell: Teller,
     chats: Chats,
+    /// Reads the window asks again on every burst of moves, each read once per burst (H15).
+    bursts: ReadBursts,
     records: Arc<Records>,
     /// The project's reopen record on its way to disk (#1949): written behind the window where
     /// the registry says so ([`Planes::recording_behind_the_window`]), and every write of it
@@ -729,6 +741,11 @@ impl Held {
 
     pub fn chats(&self) -> &Chats {
         &self.chats
+    }
+
+    /// The reads this plane answers once per burst of asks.
+    pub fn bursts(&self) -> &ReadBursts {
+        &self.bursts
     }
 
     /// The curation prompts waiting for their chats to start.
@@ -5602,6 +5619,7 @@ impl Planes {
             hooks,
             tell: Arc::clone(&tell),
             chats,
+            bursts: ReadBursts::default(),
             records,
             recorded,
             watch: Mutex::new(watch),
