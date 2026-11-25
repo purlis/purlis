@@ -236,6 +236,12 @@ test("the gate keeps waiting after a watch that ended early, and fails only once
   // An early watch exit, an API error and `in_progress` come first; the run ends success later.
   const late = attempt(["in_progress none", "error", "error", "error", "in_progress none", "completed success"]);
   assert.ok(late.ok, late.out);
+  // The two jobs that sign and upload carry the same loop as the gate, only `$gh` for `gh`.
+  const loopOf = (name) => job(name).map((l) => l.trim()).join("\n").replaceAll('"$gh"', "gh").match(/deadline=[\s\S]*?\ndone\n/)?.[0];
+  for (const name of ["build", "runner-binary-aarch64"]) {
+    const other = loopOf(name)?.replace(/so nothing is signed or uploaded/g, "so nothing is built");
+    assert.equal(other, loopOf("gate"), `${name}'s wait differs from the gate's`);
+  }
   assert.equal(late.out, "completed success");
   // A run that ends red is still read as red, for the caller's verdict.
   assert.equal(attempt(["queued none", "completed failure"]).out, "completed failure");

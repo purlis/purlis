@@ -193,7 +193,9 @@ jobs:
           # The watch's own exit says little: it ends nonzero for a red run and for a lost connection
           # alike, and it ends early, still nonzero, when GitHub answers a poll with a 502 (dev build
           # 45579545279). So the run's state is read after every watch, and only `completed` ends the
-          # wait: anything else watches again, until a deadline below the job's timeout-minutes. An API
+          # wait: anything else watches again, until a deadline of two hours from the step's start. (The
+          # job's timeout-minutes is the hard stop: where earlier steps used part of it, a cancel fails
+          # closed first, and nothing is signed or uploaded either way.) An API
           # error is never an answer, and nothing is signed or uploaded unless the state read is `completed`
           # with a conclusion `success`.
           deadline=$((SECONDS + 7200))
@@ -201,14 +203,16 @@ jobs:
           conclusion=none
           while :; do
             gh run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
+            read_ok=false
             if state=$(ask "$id"); then
               read -r status conclusion <<< "$state"
+              read_ok=true
               if [ "$status" = completed ]; then
                 break
               fi
             fi
             if [ "$SECONDS" -ge "$deadline" ]; then
-              if [ "$status" = unread ]; then
+              if [ "$read_ok" != true ] || [ "$status" = unread ]; then
                 echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is built"
               else
                 echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is built"
@@ -882,7 +886,9 @@ jobs:
           # The watch's own exit says little: it ends nonzero for a red run and for a lost connection
           # alike, and it ends early, still nonzero, when GitHub answers a poll with a 502 (dev build
           # 45579545279). So the run's state is read after every watch, and only `completed` ends the
-          # wait: anything else watches again, until a deadline below the job's timeout-minutes. An API
+          # wait: anything else watches again, until a deadline of two hours from the step's start. (The
+          # job's timeout-minutes is the hard stop: where earlier steps used part of it, a cancel fails
+          # closed first, and nothing is signed or uploaded either way.) An API
           # error is never an answer, and nothing is signed or uploaded unless the state read is `completed`
           # with a conclusion `success`.
           deadline=$((SECONDS + 7200))
@@ -890,14 +896,16 @@ jobs:
           conclusion=none
           while :; do
             "$gh" run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
+            read_ok=false
             if state=$(ask "$id"); then
               read -r status conclusion <<< "$state"
+              read_ok=true
               if [ "$status" = completed ]; then
                 break
               fi
             fi
             if [ "$SECONDS" -ge "$deadline" ]; then
-              if [ "$status" = unread ]; then
+              if [ "$read_ok" != true ] || [ "$status" = unread ]; then
                 echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"
               else
                 echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"
@@ -1690,7 +1698,9 @@ jobs:
           # The watch's own exit says little: it ends nonzero for a red run and for a lost connection
           # alike, and it ends early, still nonzero, when GitHub answers a poll with a 502 (dev build
           # 45579545279). So the run's state is read after every watch, and only `completed` ends the
-          # wait: anything else watches again, until a deadline below the job's timeout-minutes. An API
+          # wait: anything else watches again, until a deadline of two hours from the step's start. (The
+          # job's timeout-minutes is the hard stop: where earlier steps used part of it, a cancel fails
+          # closed first, and nothing is signed or uploaded either way.) An API
           # error is never an answer, and nothing is signed or uploaded unless the state read is `completed`
           # with a conclusion `success`.
           deadline=$((SECONDS + 7200))
@@ -1698,14 +1708,16 @@ jobs:
           conclusion=none
           while :; do
             "$gh" run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
+            read_ok=false
             if state=$(ask "$id"); then
               read -r status conclusion <<< "$state"
+              read_ok=true
               if [ "$status" = completed ]; then
                 break
               fi
             fi
             if [ "$SECONDS" -ge "$deadline" ]; then
-              if [ "$status" = unread ]; then
+              if [ "$read_ok" != true ] || [ "$status" = unread ]; then
                 echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"
               else
                 echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"
