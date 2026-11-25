@@ -91,6 +91,9 @@ pub enum Why {
     MergesWithoutRequest,
     /// A change to a release that exists, or a file added to one: never a chat's.
     ReleaseEdit,
+    /// A merge that sets `merge_when_pipeline_succeeds` or `auto_merge` to true, which asks the
+    /// forge to merge later: never held, because the person's press merges at once (#7597).
+    AutoMerge,
     /// The request names something purlis cannot read as one act, in these words.
     Unreadable(&'static str),
 }
@@ -145,6 +148,32 @@ impl Call<'_> {
 
     fn flag(&self, name: &str) -> bool {
         self.param(name).as_deref() == Some("true")
+    }
+
+    /// Whether the request sets one of the keys that ask the forge to merge later to true: in the
+    /// query, or in the body at any depth, as a bool or as the text a form sends.
+    fn sets_auto_merge(&self) -> bool {
+        const KEYS: [&str; 2] = ["merge_when_pipeline_succeeds", "auto_merge"];
+        fn on(value: &serde_json::Value) -> bool {
+            match value {
+                serde_json::Value::Bool(flag) => *flag,
+                serde_json::Value::String(text) => text.eq_ignore_ascii_case("true"),
+                _ => false,
+            }
+        }
+        fn within(value: &serde_json::Value) -> bool {
+            match value {
+                serde_json::Value::Object(map) => map.iter().any(|(key, value)| {
+                    (KEYS.contains(&key.as_str()) && on(value)) || within(value)
+                }),
+                serde_json::Value::Array(items) => items.iter().any(within),
+                _ => false,
+            }
+        }
+        within(self.body)
+            || self.query.iter().any(|(key, value)| {
+                KEYS.contains(&key.as_str()) && value.eq_ignore_ascii_case("true")
+            })
     }
 
     fn named(&self, name: &str) -> bool {
@@ -213,6 +242,7 @@ enum Verb {
 impl Verb {
     fn into(self, repo: Repo, call: &Call<'_>) -> Recognised {
         match self {
+            Verb::Merge(_) if call.sets_auto_merge() => Recognised::Refuse(Why::AutoMerge),
             Verb::Merge(number) => Recognised::Hold(Requested::merge_of(repo, number)),
             Verb::Tag => tag(repo, call),
             Verb::Release => release(repo, call),
