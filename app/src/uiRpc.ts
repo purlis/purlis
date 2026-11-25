@@ -3324,8 +3324,11 @@ export type AnswerPath =
  *  to `push`.
  */
 { via: "one-address"; folder: string; fetch: string; push: string; to: string } | 
-/**  `clone_with_sign_in` for Clone it: `repo` (`<host>/<owner>/<repo>`) into `workspace`. */
-{ via: "clone-it"; workspace: string; repo: string } | 
+/**
+ *  `clone_with_sign_in` for Clone it: the inventory's repo `name` into `workspace`, while its
+ *  address is still `repo` (`<host>/<owner>/<repo>`), the one the row shows.
+ */
+{ via: "clone-it"; workspace: string; name: string; repo: string } | 
 /**
  *  `record_repo` for Record this repo: the repo of the clone `clone` of `workspace`, which
  *  origin names as `place` while the row is shown.

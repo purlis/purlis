@@ -1082,6 +1082,7 @@ fn only_the_chat_without_a_cli_arm_raises_clone_it() {
         raised[0].control,
         crate::windowonly::Control::CloneWithSignIn {
             workspace: "alpha".to_owned(),
+            name: "widget".to_owned(),
             repo: format!("{HOST}/acme/widget"),
         }
     );
@@ -1128,4 +1129,24 @@ fn clone_it_has_no_log_mode() {
         );
         crate::windowonly::project_ended(&world.root);
     }
+
+    // `off` for the family: nothing is raised, and the chat is told to ask the person, never
+    // that they were asked. The test's thread is made a process that is not the app and told
+    // `vaults = "off"` by the app, as a chat's process is told once the person accepted it.
+    let world = World::holding(&["widget"]);
+    crate::windowonly::telling(&world.root, std::sync::Arc::new(|| {}));
+    crate::enforcement::set_in_the_app_for_this_test(false);
+    let settings = crate::enforcement::Settings::from_text(Some(
+        "[policy]\ntemplate = \"strict\"\nvaults = \"off\"\n",
+    ));
+    crate::enforcement::answered_by_the_app(Some(crate::enforcement::Resolved::of(
+        &settings,
+        &crate::sandbox::policy::Locks::default(),
+    )));
+    let said = a_chats_failure(&world, &refused, false);
+    crate::enforcement::set_in_the_app_for_this_test(true);
+    assert!(said.contains("Ask the person to clone it"), "off: {said}");
+    assert!(!said.contains("asked the person in Asks"), "off: {said}");
+    assert_eq!(crate::windowonly::every(&world.root), [], "vaults = off");
+    crate::windowonly::project_ended(&world.root);
 }

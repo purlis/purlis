@@ -1,11 +1,16 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+/// <reference types="node" />
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Inbox } from "./Inbox";
+import { SOURCE_SAID, questionOf } from "./InboxAsks";
 import type { FinishedTurn, Shown } from "./bindings";
 import { useAsks } from "./asks";
 import { fixedChats, nothingKnown, type ChatStates } from "./chatState";
@@ -272,14 +277,19 @@ describe("a window-only ask, Blocking or on its chat's finish row (T1-42, R-329)
     {
       label: /^Clone it/,
       cmd: "clone_with_sign_in",
-      args: { plane: PLANE, workspace: "alpha", repo: "github.com/acme/api" },
+      args: { plane: PLANE, workspace: "alpha", name: "api", repo: "github.com/acme/api" },
       ask: {
         ...TRUST_CLONE,
-        ask: "clone-for-chat:2:alpha|github.com/acme/api",
+        ask: "clone-for-chat:2:alpha|api|github.com/acme/api",
         says: "Clone api for a chat, with your sign-in.",
         options: [{ id: "press", label: "Clone it", allows: true }],
         source: "clone-with-sign-in",
-        answer: { via: "clone-it", workspace: "alpha", repo: "github.com/acme/api" },
+        answer: {
+          via: "clone-it",
+          workspace: "alpha",
+          name: "api",
+          repo: "github.com/acme/api",
+        },
       },
     },
     {
@@ -341,4 +351,41 @@ describe("a window-only ask, Blocking or on its chat's finish row (T1-42, R-329)
       );
     },
   );
+  it("each_new_clone_ask_kind_has_its_place_group_words_and_settle_guard", async () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const groups = readFileSync(join(here, "asksGroups.guard.test.ts"), "utf8");
+    const places = readFileSync(join(here, "askPlaces.guard.test.ts"), "utf8");
+    for (const kind of NEW_KINDS) {
+      const source = kind.ask.source;
+      // Its place and its group are decided for it, in the guards that fail on a kind with none.
+      expect(places, `${source}: place`).toContain(`"${source}": {`);
+      expect(groups, `${source}: group`).toMatch(new RegExp(`"${source}": "consent"`));
+      // Its words: a question of its own as a decision, its source line, and its control.
+      expect(questionOf(kind.ask), `${source}: question`).not.toBe("Allow this?");
+      expect(SOURCE_SAID[source], `${source}: source line`).toBeTruthy();
+      expect(kind.ask.options.map((one) => one.label)).toEqual([expect.stringMatching(kind.label)]);
+
+      // Its place: Blocking in Asks while its chat waits, with its control on the row, and a
+      // press made before the row settles is held (Q219).
+      vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        core({ asks: [kind.ask], onFinishRows: [], turns: [ENDED] });
+        const view = render(<Window />);
+        await waitFor(() => expect(askRow()).not.toBeNull());
+        const press = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) });
+        await press.click(
+          within(askRow() as HTMLElement).getByRole("button", { name: kind.label }),
+        );
+        expect(
+          asked.filter((one) => one.cmd === kind.cmd),
+          `${source}: settle guard`,
+        ).toEqual([]);
+        view.unmount();
+      } finally {
+        vi.useRealTimers();
+        clearMocks();
+        asked = [];
+      }
+    }
+  });
 });

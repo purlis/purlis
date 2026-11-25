@@ -3979,14 +3979,15 @@ export const commands = {
 	 */
 	useOneAddress: (plane: PlaneId, folder: string, fetch: string, push: string, to: string) => typedError<string, string>(__TAURI_INVOKE("use_one_address", { plane, folder, fetch, push, to })),
 	/**
-	 *  **The person's Clone it** (A2): clones `repo` (`<host>/<owner>/<repo>`, as the ask showed it)
-	 *  into `workspace` with their own sign-in, as the window's own clone, which records it. Answers
-	 *  what the clone said, or why it did not land. The ask is cleared for every chat that waited
-	 *  on it once the clone is made.
+	 *  **The person's Clone it** (A2): clones the inventory's repo `name` into `workspace` with their
+	 *  own sign-in, as the window's own clone, which records it, and only while that row's address is
+	 *  still `repo` (`<host>/<owner>/<repo>`), the one the ask showed: a row that now has another
+	 *  address is refused and nothing is cloned. Answers what the clone said, or why it did not land.
+	 *  The ask is cleared for every chat that waited on it once the clone is made.
 	 * 
 	 *  Window only (`WINDOW_ONLY`): it releases the person's sign-in.
 	 */
-	cloneWithSignIn: (plane: PlaneId, workspace: string, repo: string) => typedError<string, string>(__TAURI_INVOKE("clone_with_sign_in", { plane, workspace, repo })),
+	cloneWithSignIn: (plane: PlaneId, workspace: string, name: string, repo: string) => typedError<string, string>(__TAURI_INVOKE("clone_with_sign_in", { plane, workspace, name, repo })),
 	/**
 	 *  **The person's Record this repo** (A3): records the repo of the clone `clone` of `workspace`
 	 *  in the project's inventory, as `purlis discover` does for that one clone, and only while its
@@ -6735,8 +6736,11 @@ export type AnswerPath =
  *  to `push`.
  */
 { via: "one-address"; folder: string; fetch: string; push: string; to: string } | 
-/**  `clone_with_sign_in` for Clone it: `repo` (`<host>/<owner>/<repo>`) into `workspace`. */
-{ via: "clone-it"; workspace: string; repo: string } | 
+/**
+ *  `clone_with_sign_in` for Clone it: the inventory's repo `name` into `workspace`, while its
+ *  address is still `repo` (`<host>/<owner>/<repo>`), the one the row shows.
+ */
+{ via: "clone-it"; workspace: string; name: string; repo: string } | 
 /**
  *  `record_repo` for Record this repo: the repo of the clone `clone` of `workspace`, which
  *  origin names as `place` while the row is shown.

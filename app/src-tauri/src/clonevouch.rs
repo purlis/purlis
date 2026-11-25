@@ -169,10 +169,11 @@ pub async fn use_one_address(
     .map_err(|err| format!("setting the address did not finish: {err}"))?
 }
 
-/// **The person's Clone it** (A2): clones `repo` (`<host>/<owner>/<repo>`, as the ask showed it)
-/// into `workspace` with their own sign-in, as the window's own clone, which records it. Answers
-/// what the clone said, or why it did not land. The ask is cleared for every chat that waited
-/// on it once the clone is made.
+/// **The person's Clone it** (A2): clones the inventory's repo `name` into `workspace` with their
+/// own sign-in, as the window's own clone, which records it, and only while that row's address is
+/// still `repo` (`<host>/<owner>/<repo>`), the one the ask showed: a row that now has another
+/// address is refused and nothing is cloned. Answers what the clone said, or why it did not land.
+/// The ask is cleared for every chat that waited on it once the clone is made.
 ///
 /// Window only (`WINDOW_ONLY`): it releases the person's sign-in.
 #[tauri::command]
@@ -181,6 +182,7 @@ pub async fn clone_with_sign_in(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     workspace: String,
+    name: String,
     repo: String,
 ) -> Result<String, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
@@ -189,10 +191,11 @@ pub async fn clone_with_sign_in(
             .ok_or_else(|| "A clone uses your sign-in from the window alone.".to_owned())?;
         let control = purlis_core::windowonly::Control::CloneWithSignIn {
             workspace: workspace.clone(),
+            name: name.clone(),
             repo: repo.clone(),
         };
-        // The inventory names a repo by the last part of its address.
-        let name = repo.rsplit('/').next().unwrap_or_default().to_owned();
+        // The row the ask named, by the name it carried, must still be the address it showed.
+        purlis_core::windowonly::clone_it_matches(&root, &name, &repo)?;
         crate::workspaces::clone_for_the_person(&root, &workspace, &name)?;
         purlis_core::windowonly::pressed_by_the_window(&root, &control);
         Ok(format!("{repo} was cloned into {workspace}"))
@@ -216,7 +219,11 @@ pub async fn record_repo(
     clone: String,
     place: String,
 ) -> Result<String, String> {
-    let root = planes.held(&plane)?.root().to_path_buf();
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    // The folders the live chats may write: a clone whose git directory is in one is never
+    // recorded, as the ask is never raised for it.
+    let writes = live_writes(&held);
     tauri::async_runtime::spawn_blocking(move || {
         HostScope::claim().ok_or_else(|| "A repo is recorded from the window alone.".to_owned())?;
         purlis_core::windowonly::record_this_repo(
@@ -226,6 +233,7 @@ pub async fn record_repo(
                 clone,
                 place,
             },
+            &writes,
         )
     })
     .await

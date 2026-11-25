@@ -322,6 +322,20 @@ const heldBy = (one: string) =>
   FROM_THE_WINDOW.filter(([path, starts]) => one.startsWith(`${path}: ${starts}`));
 
 describe("no message says from the window without its control (R-328)", () => {
+  it("the_clone_and_remote_entries_are_gone_from_no_ask_yet", () => {
+    // T1.1-56's three: A1 `gitcredential.rs` (REMOTE_SPLIT), A2 `landing.rs` (`spoken`'s
+    // `NoAccess`), A3 `milestones.rs` (`(Ok(_), None)`) now raise their own ask, so none stays
+    // on the list of refusals with no ask yet.
+    const held = FROM_THE_WINDOW.filter(([, , why]) => why === NO_ASK_YET).map(([path]) => path);
+    for (const gone of [
+      "crates/purlis-core/src/forge/gitcredential.rs",
+      "crates/purlis-core/src/repocmd/clone/landing.rs",
+      "crates/purlis-core/src/catalogue/milestones.rs",
+    ]) {
+      expect(held, gone).not.toContain(gone);
+    }
+  });
+
   const bare = [
     ...new Set(
       sources(join(ROOT, "crates")).flatMap((path) =>
