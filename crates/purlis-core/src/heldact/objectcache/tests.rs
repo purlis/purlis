@@ -29,10 +29,11 @@ fn an_absurd_total_does_not_panic_the_estimate_and_promises_no_more_than_the_fil
 
 #[test]
 fn a_figure_that_has_stopped_moving_promises_no_more_than_what_is_left_of_the_fill() {
-    // 1 of 10,000 objects after ten minutes is seventy days at that rate: the fill ends at fifteen
-    // minutes whatever it has read.
-    let left = estimate(&at(1, 10_000), Duration::from_secs(600));
-    assert_eq!(left, Duration::from_secs(300));
+    // 1 of 10,000 objects after ten minutes is seventy days at that rate: the fill ends at FILL
+    // whatever it has read, so ten minutes in, what is left of FILL is all it can promise.
+    let elapsed = Duration::from_secs(600);
+    let left = estimate(&at(1, 10_000), elapsed);
+    assert_eq!(left, FILL - elapsed);
     assert_eq!(
         estimate(&at(1, 10_000), FILL + Duration::from_secs(60)),
         Duration::ZERO,

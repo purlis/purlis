@@ -1134,8 +1134,13 @@ fn an_absurd_total_in_a_refusal_does_not_panic_and_promises_no_more_than_a_fill_
         refused.contains("1 of 18446744073709551615 objects"),
         "{refused}"
     );
+    // The most a fill may take is two hours ([`FILL`]): no more than that is promised, however
+    // absurd the total.
+    assert!(refused.contains("try again in about 2 hours"), "{refused}");
     assert!(
-        !refused.contains("hours") && !refused.contains("40 minutes"),
+        !["days", "years", "3 hours", "4 hours"]
+            .iter()
+            .any(|more| refused.contains(more)),
         "{refused}"
     );
     finish.send(()).unwrap();
