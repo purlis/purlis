@@ -228,7 +228,7 @@ test("the gate keeps waiting after a watch that ended early, and fails only once
       echo "$status $conclusion"
     `;
     try {
-      return { out: execFileSync("bash", ["-c", script], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(), ok: true };
+      return { out: execFileSync("bash", ["-c", script], { encoding: "utf8", timeout: 20_000, stdio: ["ignore", "pipe", "pipe"] }).trim(), ok: true };
     } catch (error) {
       return { out: `${error.stdout}${error.stderr}`, ok: false };
     }
@@ -577,7 +577,7 @@ test("the macOS build collects each dSYM cargo left behind its symlink, whole (#
   writeFileSync(join(dwarf, "purlis-0123"), "dwarf");
   symlinkSync("deps/purlis-0123.dSYM", join(dir, "target/release/purlis.dSYM"));
 
-  execFileSync("bash", ["-c", script], { cwd: dir, env: { ...process.env, PROFILE: "release" } });
+  execFileSync("bash", ["-c", script], { cwd: dir, timeout: 20_000, env: { ...process.env, PROFILE: "release" } });
 
   const kept = join(dir, "symbols/purlis.dSYM");
   assert.ok(lstatSync(kept).isDirectory(), "the dSYM itself, not its link");
