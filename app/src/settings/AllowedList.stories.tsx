@@ -52,7 +52,11 @@ let removed: unknown[] = [];
 
 const meta = {
   component: AllowedList,
-  args: { plane: "/Users/you/work/shop", now: clock, ids: { id: "allowed-at-an-ask", labelledBy: undefined } },
+  args: {
+    plane: "/Users/you/work/shop",
+    now: clock,
+    ids: { id: "allowed-at-an-ask", labelledBy: undefined },
+  },
   parameters: { screenshot: "page" },
   beforeEach: () => {
     removed = [];
