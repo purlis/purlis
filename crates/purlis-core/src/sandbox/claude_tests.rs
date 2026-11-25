@@ -818,6 +818,36 @@ fn a_hook_socket_in_the_per_user_fallback_folder_is_never_the_chat_s_to_write() 
     );
 }
 
+/// The plane's key, which signs the person's own `policy why` ([`crate::hookwire::PersonWhyAsk`]),
+/// is read by no Claude Code chat's command or tool, at either level, under every spelling of the
+/// state folder: `denyRead` and `Read(...)` both name it.
+#[test]
+fn a_claude_code_chat_reads_no_plane_key_that_signs_the_persons_ask() {
+    let root = tempfile::tempdir().expect("a project");
+    let compiled = compiled_at(root.path(), None, &Grants::default());
+    for level in [Level::Full, Level::Floor] {
+        let settings = claude::rules(&Compiled {
+            level,
+            ..compiled.clone()
+        });
+        let deny_read: Vec<&str> = settings.sandbox["filesystem"]["denyRead"]
+            .as_array()
+            .expect("a list")
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .collect();
+        for state in crate::names::STATE_DIR.spellings() {
+            let key = format!("/**/{state}/{}", crate::secrets::fingerprint::KEY_FILE);
+            assert!(deny_read.contains(&key.as_str()), "{key}: {deny_read:?}");
+            assert!(
+                settings.deny.contains(&format!("Read(/{key})")),
+                "Read(/{key}): {:?}",
+                settings.deny
+            );
+        }
+    }
+}
+
 /// On macOS a chat's commands read no terminal at either level, and write none at the floor, where
 /// every folder is otherwise written; Linux's settings say nothing of them.
 #[test]

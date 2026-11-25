@@ -81,12 +81,14 @@ fn asked(ids: &[&str], keep: Option<&str>) -> Decision {
         lifted: Vec::new(),
         asked: Vec::new(),
         lock: None,
+        lock_level: None,
         grant: None,
         unasked: None,
         keep: keep.map(str::to_owned),
         timed: None,
         lifted_scopes: None,
         asked_scopes: None,
+        overrode: Vec::new(),
         deny_state: None,
     }
 }

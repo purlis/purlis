@@ -148,6 +148,47 @@ impl Version {
         Head::Unread
     }
 
+    /// **The commit `HEAD` names**, in full, where there is one: what a dry run says it was
+    /// computed for.
+    pub fn head_sha(root: &Path) -> Option<String> {
+        match head_commit(root) {
+            Tip::Commit(sha) => Some(sha),
+            Tip::None | Tip::Unread => None,
+        }
+    }
+
+    /// **The commit a branch, tag or commit name resolves to** (`policy why --policy <branch>`),
+    /// in full: `Ok(None)` where the name is no commit of this project, and `Err` where git did
+    /// not answer.
+    pub fn resolve_rev(root: &Path, rev: &str) -> Result<Option<String>, String> {
+        // A name that starts with a dash would be read by git as an option.
+        if rev.is_empty() || rev.starts_with('-') {
+            return Ok(None);
+        }
+        let spelled = format!("{rev}^{{commit}}");
+        let run = crate::worktree::git::run_as_written(
+            root,
+            &["rev-parse", "--verify", "--quiet", &spelled],
+            GIT_WAIT,
+        )
+        .map_err(|why| format!("git did not answer for `{rev}`: {why}"))?;
+        Ok(run.ok().then(|| run.out.trim().to_owned()))
+    }
+
+    /// **The project as the commit `sha` holds it**, with the local file as it is now: `None`
+    /// where git could not read it stably.
+    pub fn at_sha(root: &Path, sha: &str) -> Option<Self> {
+        Self::read_head(root, sha)
+    }
+
+    /// This version with `rules` as its `policy.cedar`: the project as it would be with that file.
+    pub fn with_rules(&self, rules: String) -> Self {
+        Self {
+            rules: Some(rules),
+            ..self.clone()
+        }
+    }
+
     fn read_head(root: &Path, sha: &str) -> Option<Self> {
         let names: Vec<&'static str> = crate::names::PLANE_MANIFEST.spellings().collect();
         let mut read = committed_files_at(root, sha, &[&names, &[RULES_FILE], &[VAULTS_FILE]]);
@@ -571,7 +612,7 @@ fn held(decision: Decision, floor: Option<&Resolved>) -> Decision {
 }
 
 /// One side's decision: `version` judged by its own policy and its own world.
-fn side(
+pub(super) fn side(
     sources: &Sources<'_>,
     version: &Version,
     root: &Path,
@@ -759,8 +800,28 @@ pub fn judge(
     floor: Option<&Resolved>,
 ) -> (Decision, Option<Seen>) {
     // HEAD is read once, and the current side is built from that one read.
+    judge_at(
+        root,
+        sources,
+        standing,
+        request,
+        floor,
+        Version::at_head(root),
+    )
+}
+
+/// **[`judge`] with the current side read from `head`**, which the caller chose: what `policy why
+/// --policy <branch>` asks, and nothing else. Nothing is sealed here either: [`in_force`] does it.
+pub fn judge_at(
+    root: &Path,
+    sources: &Sources<'_>,
+    standing: &Standing,
+    request: &Request<'_>,
+    floor: Option<&Resolved>,
+    head: Head,
+) -> (Decision, Option<Seen>) {
     let none = Version::default();
-    let (here, current, first) = match Version::at_head(root) {
+    let (here, current, first) = match head {
         Head::Read(version) => {
             let loaded = loaded_for(sources, &version);
             let first = decided(&loaded, &version, root, request, floor);

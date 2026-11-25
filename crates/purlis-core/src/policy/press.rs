@@ -53,9 +53,16 @@ const NO_CHAT: Chat<'static> = Chat {
     persona: None,
 };
 
+/// A word of a row. An alias, so serde does not read it as a borrow: the rows below read it back
+/// from the wire as one of the static words they hold ([`a_word_of`]).
+pub type Word = &'static str;
+
 /// What a change does to what a chat may do. In the order a change is kept when two bases give
 /// it two labels: the worst wins.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum Kind {
     /// It narrows what a chat may do.
     Tightens,
@@ -63,6 +70,42 @@ pub enum Kind {
     Changes,
     /// It widens what a chat may do.
     Loosens,
+}
+
+/// **A word of a row, read back from the wire** as the static word it was: a row crosses from the
+/// app to `purlis policy why` as JSON, and a word no row says is no row.
+fn a_word_of<'de, D: serde::Deserializer<'de>>(
+    from: D,
+    known: &[&'static str],
+) -> Result<&'static str, D::Error> {
+    use serde::Deserialize as _;
+    let said = String::deserialize(from)?;
+    known
+        .iter()
+        .find(|word| **word == said)
+        .copied()
+        .ok_or_else(|| serde::de::Error::custom(format!("`{said}` is no word of a diff row")))
+}
+
+fn a_word_of_a_rule_change<'de, D: serde::Deserializer<'de>>(
+    from: D,
+) -> Result<&'static str, D::Error> {
+    a_word_of(
+        from,
+        &[
+            "added",
+            "removed",
+            "edited",
+            "now permits",
+            "now forbids",
+            "now asks",
+            "no longer asks",
+        ],
+    )
+}
+
+fn a_mode_word<'de, D: serde::Deserializer<'de>>(from: D) -> Result<&'static str, D::Error> {
+    a_word_of(from, &["off", "log", "enforce"])
 }
 
 impl Kind {
@@ -77,7 +120,7 @@ impl Kind {
 }
 
 /// One rule that differs, by its `@id`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RuleChange {
     /// Its `@id`.
     pub id: String,
@@ -85,24 +128,27 @@ pub struct RuleChange {
     pub kind: Kind,
     /// What happened to it: `added`, `removed`, `edited`, `now permits`, `now forbids`, `now
     /// asks` or `no longer asks`.
-    pub what: &'static str,
+    #[serde(deserialize_with = "a_word_of_a_rule_change")]
+    pub what: Word,
 }
 
 /// One family's, or one rule's (`rules.<@id>`), mode that differs.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ModeChange {
     /// The family's key, or `rules.<@id>`.
     pub key: String,
     /// The mode in force before: `off`, `log` or `enforce`.
-    pub before: &'static str,
+    #[serde(deserialize_with = "a_mode_word")]
+    pub before: Word,
     /// The mode after.
-    pub after: &'static str,
+    #[serde(deserialize_with = "a_mode_word")]
+    pub after: Word,
     /// What the change does.
     pub kind: Kind,
 }
 
 /// One `[policy.limits]` number that differs.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LimitChange {
     /// The key, `<family>.<kebab>`.
     pub key: String,
@@ -116,7 +162,7 @@ pub struct LimitChange {
 
 /// One tightening of the You level's local file that is sealed and no longer in the file, or no
 /// longer as strict there: a loosening that waits for the press and has no commit (Q322).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LocalLoosening {
     /// What it sets: `template`, a family's key, or `rules.<@id>`.
     pub key: String,
@@ -127,7 +173,7 @@ pub struct LocalLoosening {
 }
 
 /// **What differs between the policy in force and the project as it stands.**
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Diff {
     /// Each rule that differs.
     pub rules: Vec<RuleChange>,
@@ -145,7 +191,7 @@ pub struct Diff {
 }
 
 /// One part of the policy no typed row covers, that differs.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct OtherChange {
     /// What differs, as the window says it: `policy.sets.protected-branches`.
     pub part: String,
@@ -522,28 +568,12 @@ fn entries_of(standing: &Standing) -> &[answers::Entry] {
     }
 }
 
-/// **The press `head` raises for the plane at `root`**, or none where nothing waits.
-///
-/// In the deny state a store that was lost raises the re-press, diffed against the shipped
-/// default; a commit past the cap raises its own, diffed against what the store set aside.
-pub fn of_head(
-    root: &Path,
-    sources: &Sources<'_>,
-    standing: &Standing,
-    head: &Head,
-) -> Option<Press> {
-    let Head::Read(version) = head else {
-        return None;
-    };
-    let causes = standing.causes();
-    let lost_store = causes
-        .iter()
-        .any(|cause| cause.a_chat_can_reach() && !matches!(cause, Deny::PastTheFloorCap));
-    let past_the_cap = causes.contains(&Deny::PastTheFloorCap);
-    if standing.is_deny() && !lost_store && !past_the_cap {
-        // Only the keyring is at fault: no press mends it.
-        return None;
-    }
+/// **What a project is diffed against** (spec §9.2): the accepted copy (the shipped default until
+/// there is one) and every version of the accepted floor, or the shipped default alone where the
+/// store was lost; and what does not read, which is a row and never a silent removal. The press
+/// ([`of_head`]) and the dry run ([`dry_run`]) both take their bases from here, so they show the
+/// same diff.
+fn held_against(standing: &Standing, lost_store: bool) -> (Vec<Version>, Vec<&'static str>) {
     let none = Version::default();
     let entries = entries_of(standing);
     let mut held: Vec<Version> = Vec::new();
@@ -572,11 +602,36 @@ pub fn of_head(
             }
         }
     }
-    let mut diff = diff_all(sources, &held, &unread, version);
-    // What the project alone changes, each base under the shipped default this build ships: a
-    // shipped default's own change is the update's, never a commit's (spec §7.8).
+    (held, unread)
+}
+
+/// **The diff of `after` against the policy in force**, as the press would show it were `after`
+/// the project's `HEAD` (`policy why --policy`, spec §10.2): the same bases ([`held_against`]) and
+/// the same rows ([`diff_all`]). Nothing is raised, sealed or accepted.
+pub fn dry_run(sources: &Sources<'_>, standing: &Standing, after: &Version) -> Diff {
+    let lost_store = standing
+        .causes()
+        .iter()
+        .any(|cause| cause.a_chat_can_reach() && !matches!(cause, Deny::PastTheFloorCap));
+    let (held, unread) = held_against(standing, lost_store);
+    let mut diff = diff_all(sources, &held, &unread, after);
     let alone: Vec<Version> = held.iter().map(Version::unpinned).collect();
-    if diff.waits() && diff != diff_all(sources, &alone, &unread, version) {
+    name_the_shipped_default(sources, &mut diff, &alone, &unread, after);
+    diff
+}
+
+/// **The row that says a shipped default's own change is part of what waits** (spec §7.8): where
+/// the project alone, each base under the shipped default this build ships (`alone`), diffs
+/// differently, the update is a cause too, and no commit is. The press ([`of_head`]) and the dry
+/// run ([`dry_run`]) both add it here, so they show the same rows.
+fn name_the_shipped_default(
+    sources: &Sources<'_>,
+    diff: &mut Diff,
+    alone: &[Version],
+    unread: &[&'static str],
+    after: &Version,
+) {
+    if diff.waits() && *diff != diff_all(sources, alone, unread, after) {
         diff.other.push(OtherChange {
             part: format!(
                 "the shipped default, as purlis {} ships it",
@@ -584,6 +639,36 @@ pub fn of_head(
             ),
         });
     }
+}
+
+/// **The press `head` raises for the plane at `root`**, or none where nothing waits.
+///
+/// In the deny state a store that was lost raises the re-press, diffed against the shipped
+/// default; a commit past the cap raises its own, diffed against what the store set aside.
+pub fn of_head(
+    root: &Path,
+    sources: &Sources<'_>,
+    standing: &Standing,
+    head: &Head,
+) -> Option<Press> {
+    let Head::Read(version) = head else {
+        return None;
+    };
+    let causes = standing.causes();
+    let lost_store = causes
+        .iter()
+        .any(|cause| cause.a_chat_can_reach() && !matches!(cause, Deny::PastTheFloorCap));
+    let past_the_cap = causes.contains(&Deny::PastTheFloorCap);
+    if standing.is_deny() && !lost_store && !past_the_cap {
+        // Only the keyring is at fault: no press mends it.
+        return None;
+    }
+    let (held, unread) = held_against(standing, lost_store);
+    let mut diff = diff_all(sources, &held, &unread, version);
+    // What the project alone changes, each base under the shipped default this build ships: a
+    // shipped default's own change is the update's, never a commit's (spec §7.8).
+    let alone: Vec<Version> = held.iter().map(Version::unpinned).collect();
+    name_the_shipped_default(sources, &mut diff, &alone, &unread, version);
     // What the commit itself loosens, the local file left out of both sides: a commit's loosening
     // and a local file's removal are different presses (Q322).
     let committed_after = version.committed();
@@ -702,7 +787,7 @@ fn diff_all(
 
 /// The sources the window judges the project with: its own files and the project's workspaces and
 /// personas, with no Organisation's folder read here.
-fn with_sources<T>(root: &Path, then: impl FnOnce(&Sources<'_>) -> T) -> T {
+pub(super) fn with_sources<T>(root: &Path, then: impl FnOnce(&Sources<'_>) -> T) -> T {
     let plane = crate::workspaces::Plane::open(root);
     let workspaces = plane.workspaces().unwrap_or_default();
     let personas = plane.personas().unwrap_or_default();

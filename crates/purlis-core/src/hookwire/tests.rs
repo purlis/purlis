@@ -2888,6 +2888,8 @@ fn an_app_at(path: &std::path::Path, within: &std::path::Path) -> (Reading, Chat
                 | Ask::Policy(_)
                 | Ask::PolicyLog(_)
                 | Ask::Decide(_)
+                | Ask::Why(_)
+                | Ask::PersonWhy(_)
                 | Ask::RemoteRefs(_) => Answer::No {
                     why: "not here".to_owned(),
                 },
@@ -5761,4 +5763,98 @@ fn a_host_silent_past_the_window_is_a_would_block_and_so_no_answer() {
         ),
         "{kind:?}"
     );
+}
+
+/// A plane at `dir`, its state folder named by `CHARTER_HOME` (as the fingerprint tests do).
+fn a_plane_in(dir: &tempfile::TempDir) -> crate::secrets::Ctx {
+    let state = dir.path().join("state");
+    crate::secrets::Ctx::new(
+        dir.path(),
+        crate::secrets::Env::of(&[("CHARTER_HOME", state.to_str().expect("a path"))]),
+    )
+}
+
+/// A person's `policy why` asked of a plane, as the CLI asks it.
+fn a_person_asks() -> PersonWhyAsk {
+    PersonWhyAsk {
+        action: "merge".to_owned(),
+        kind: "Branch".to_owned(),
+        id: "acme/web#12".to_owned(),
+        cwd: None,
+        chat: Some(3),
+        workspace: None,
+        persona: None,
+        unattended: false,
+        sandbox: None,
+        depth: None,
+        policy: None,
+        credential: None,
+    }
+}
+
+/// The listener's gate for the person's own ask, as `serve` applies it, with the plane's key as
+/// the app installs it: no socket, and the ancestry given.
+fn the_gate_of(plane: &crate::secrets::Ctx) -> ChatTokens {
+    let tokens = ChatTokens::default();
+    let ctx = plane.clone();
+    tokens.prove_the_person_by(move |ask| ask.is_signed_for(&ctx));
+    tokens
+}
+
+#[test]
+fn a_person_ask_without_the_credential_is_refused_even_from_a_process_in_no_chat() {
+    let dir = tempfile::tempdir().expect("a plane");
+    let plane = a_plane_in(&dir);
+    // The person's CLI has signed once, so the key is there for the app to read.
+    let mut person = a_person_asks();
+    assert!(person.sign(&plane));
+    let tokens = the_gate_of(&plane);
+    let ask = |asked| Ask::PersonWhy(asked);
+    // A chat that double-forked and `setsid`'d: in no chat by ancestry, with no credential.
+    assert!(
+        !tokens.person_may_hear(&ask(a_person_asks()), &ChatOf::InNone),
+        "ancestry alone is no proof"
+    );
+    // Nor a made-up credential, nor the person's credential on another line.
+    let mut forged = a_person_asks();
+    forged.credential = Some("0".repeat(64));
+    assert!(!tokens.person_may_hear(&ask(forged), &ChatOf::InNone));
+    let mut elsewhere = person.clone();
+    elsewhere.id = "acme/web#13".to_owned();
+    assert!(!tokens.person_may_hear(&ask(elsewhere), &ChatOf::InNone));
+    let mut as_another_chat = person.clone();
+    as_another_chat.chat = Some(4);
+    assert!(!tokens.person_may_hear(&ask(as_another_chat), &ChatOf::InNone));
+}
+
+#[test]
+fn a_person_ask_with_the_credential_is_answered_only_from_a_process_in_no_chat() {
+    let dir = tempfile::tempdir().expect("a plane");
+    let plane = a_plane_in(&dir);
+    let mut person = a_person_asks();
+    assert!(person.sign(&plane));
+    let tokens = the_gate_of(&plane);
+    let ask = Ask::PersonWhy(person.clone());
+    assert!(tokens.person_may_hear(&ask, &ChatOf::InNone));
+    // The credential does not stand in for ancestry either: a sender that may be in a chat is
+    // refused with it.
+    assert!(!tokens.person_may_hear(&ask, &ChatOf::InDoubt));
+    // The credential is the plane's: another plane's key does not verify it.
+    let other = tempfile::tempdir().expect("another plane");
+    let other = a_plane_in(&other);
+    let mut signed_elsewhere = a_person_asks();
+    assert!(signed_elsewhere.sign(&other));
+    assert!(!tokens.person_may_hear(&Ask::PersonWhy(signed_elsewhere), &ChatOf::InNone));
+    // And nothing is answered until the app installs what checks it.
+    assert!(!ChatTokens::default().person_may_hear(&ask, &ChatOf::InNone));
+}
+
+#[test]
+fn checking_a_credential_never_makes_the_plane_a_key() {
+    let dir = tempfile::tempdir().expect("a plane");
+    let plane = a_plane_in(&dir);
+    let mut ask = a_person_asks();
+    ask.credential = Some("0".repeat(64));
+    assert!(!ask.is_signed_for(&plane));
+    assert!(!crate::secrets::fingerprint::key_path(&plane).exists());
 }

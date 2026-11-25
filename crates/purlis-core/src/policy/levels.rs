@@ -409,6 +409,20 @@ impl Loaded {
         }
     }
 
+    /// **The level that locks `family`, or `action`** ([`Self::lock_on`]'s level, not its owner's
+    /// name): the Organisation's before the project's.
+    pub fn lock_level_on(&self, family: &str, action: &str) -> Option<Level> {
+        let locks =
+            |locks: &Locks| locks.families.contains(family) || locks.actions.contains(action);
+        if locks(&self.organisation_locks) {
+            Some(Level::Organisation)
+        } else if locks(&self.project_locks) {
+            Some(Level::Project)
+        } else {
+            None
+        }
+    }
+
     /// The level `defaults` sets: its `[policy] sandbox`, else its template's.
     fn level_of(defaults: &Defaults) -> Option<SandboxLevel> {
         defaults
@@ -1195,7 +1209,7 @@ fn owner(rule: &Rule, organisation: &str) -> String {
     }
     match rule.level {
         Level::Organisation => organisation.to_owned(),
-        Level::Project => "this project".into(),
+        Level::Project => PROJECT_OWNER.into(),
         Level::Workspace => format!(
             "workspace {}",
             scoped_to(rule, "Workspace").unwrap_or_default()
@@ -1220,7 +1234,23 @@ fn owner_of_place(place: Level, organisation: &str) -> String {
     match place {
         Level::Organisation => organisation.to_owned(),
         Level::You => "you".into(),
-        _ => "this project".into(),
+        _ => PROJECT_OWNER.into(),
+    }
+}
+
+/// **The owner a project-level rule or lock names**: `policy why` shows it, and every level's
+/// owner is spelt by [`owner_for`].
+pub const PROJECT_OWNER: &str = "this project";
+
+/// **Who owns what a `level` holds for a chat of `of`**, as a rule's owner is spelt: the one place
+/// that says it, so a sentence that names the level to change names its owner too.
+pub fn owner_for(level: Level, of: Chat<'_>, organisation: &str) -> String {
+    match level {
+        Level::Organisation => organisation.to_owned(),
+        Level::Project => PROJECT_OWNER.into(),
+        Level::Workspace => format!("workspace {}", of.workspace.unwrap_or_default()),
+        Level::Persona => format!("persona {}", of.persona.unwrap_or_default()),
+        Level::You => "you".into(),
     }
 }
 
