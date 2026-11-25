@@ -67,7 +67,7 @@ kubectl = { vault = "v", as = "KUBECONFIG file", key = "c" }
 
 #[test]
 fn what_each_old_line_says_names_the_step_and_leaves_the_vault_item_alone() {
-    assert!(sentence(Kind::GithubApp).contains("Sign in under Settings › Forges"));
+    assert!(sentence(Kind::GithubApp).contains("Sign in under Settings › Accounts"));
     assert!(sentence(Kind::VaultToken).contains("the vault item stays until you delete it"));
 }
 

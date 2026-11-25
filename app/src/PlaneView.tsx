@@ -12150,7 +12150,7 @@ export const PlaneView = memo(function PlaneView({
         dismissed={dismissed}
         dismiss={dismiss}
         settle={settleNotices}
-        onSignIn={() => openSettingsAt({ group: "project.forges" })}
+        onSignIn={() => openSettingsAt({ group: "you.accounts" })}
       />
       {savedNotice && (
         <Notice

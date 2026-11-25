@@ -510,7 +510,7 @@ pub fn exec(ctx: &Ctx, req: &Request, io: &mut dyn Io) -> i32 {
     if cfg!(feature = "forge-wiring") && cmd::in_a_chat(ctx) && hands_a_forge_token(req) {
         io.say(Say::Err(
             "purlis no longer hands a forge token from a vault to a program: chats use your \
-             sign-in. Sign in under Settings › Forges."
+             sign-in. Sign in under Settings › Accounts."
                 .into(),
         ));
         return 1;

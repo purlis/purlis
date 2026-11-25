@@ -1444,7 +1444,7 @@ fn see_of(kind: Kind, id: StepId, facts: &Facts, choices: &Choices) -> Option<Se
                        desktop present its forge calls go through your sign-in; with none, the \
                        operator gives the runner a token connection."
                     .to_owned(),
-                text: "Sign in under Settings › Forges".to_owned(),
+                text: "Sign in under Settings › Accounts".to_owned(),
             });
         }
         return Some(See {
