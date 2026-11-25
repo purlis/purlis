@@ -301,9 +301,14 @@ fn forge_milestones(args: &serde_json::Map<String, serde_json::Value>) -> Result
     let here = crate::Here::read()?;
     let place = here.place(None);
     let chat = std::env::var(purlis_core::hookwire::CHAT_ENV).unwrap_or_default();
-    chattools::forge_milestones(here.plane.root(), &place, args, &chat, &|repo| {
-        repo.backend()
-    })
+    chattools::forge_milestones(
+        here.plane.root(),
+        &place,
+        args,
+        &chat,
+        &|repo| repo.backend(),
+        &|clone| crate::brokered::record_repo_asked(here.plane.root(), clone),
+    )
 }
 
 /// Whether the project's skills reach this chat ([`purlis_core::skills::reach_chats_here`]): the

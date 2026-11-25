@@ -216,6 +216,7 @@ pub(super) fn as_the_person() -> purlis_core::catalogue::milestones::Reach<'stat
     purlis_core::catalogue::milestones::Reach {
         caller: purlis_core::forge::Caller::window().background(),
         backend_of: &backend_of,
+        unrecorded: None,
     }
 }
 

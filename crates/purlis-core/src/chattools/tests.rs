@@ -1806,6 +1806,7 @@ mod forge_milestones_tool {
             &args(given),
             "chat-7",
             &move |repo| repo.forge.backend_for(forge.clone()),
+            &|clone| format!("asked to record {clone}"),
         )
     }
 
@@ -1855,6 +1856,47 @@ mod forge_milestones_tool {
     }
 
     #[test]
+    fn a_clone_the_project_records_no_repo_for_asks_the_person_where_guards_forge_enforces() {
+        // A3 (Q308): `guards.forge` enforced hands the refusal to the app and tells the chat what
+        // became of it; under `log` and `off` the check does not stop the read, which goes ahead
+        // on the clone's own origin, and the app is not asked.
+        const CHAT: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2D";
+        for (policy, asked_app, read) in [
+            ("", true, false),
+            ("guards.forge = \"enforce\"\n", true, false),
+            ("guards.forge = \"log\"\n", false, true),
+            ("guards.forge = \"off\"\n", false, true),
+        ] {
+            let p = plane();
+            std::fs::remove_file(p.path().join("inventory/repos.json")).unwrap();
+            let manifest = crate::names::manifest(p.path());
+            let mut text = std::fs::read_to_string(&manifest).unwrap_or_default();
+            text.push_str(&format!("\n[policy]\ntemplate = \"strict\"\n{policy}"));
+            std::fs::write(&manifest, text).unwrap();
+            let forge = recording(json!([milestone(Value::Null)]), false);
+            let forge_of = forge.clone();
+            let handed = Mutex::new(Vec::<String>::new());
+            let said = forge_milestones(
+                p.path(),
+                &in_ws("alpha"),
+                &args(json!({ "repo": "api" })),
+                CHAT,
+                &move |repo| repo.forge.backend_for(forge_of.clone()),
+                &|clone| {
+                    handed.lock().unwrap().push(clone.to_owned());
+                    format!("asked to record {clone}")
+                },
+            );
+            assert_eq!(said.is_ok(), read, "{policy:?}: {said:?}");
+            assert_eq!(!handed.lock().unwrap().is_empty(), asked_app, "{policy:?}");
+            if asked_app {
+                assert_eq!(said.unwrap_err(), "asked to record api", "{policy:?}");
+                assert!(forge.asked.lock().unwrap().is_empty(), "{policy:?}");
+            }
+        }
+    }
+
+    #[test]
     fn a_repo_of_another_workspace_is_read_only_where_policy_guards_forge_does_not_enforce() {
         // Q308b: the workspace's bound is `guards.forge`'s.
         const CHAT: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2D";
@@ -1877,6 +1919,7 @@ mod forge_milestones_tool {
                 &args(json!({ "repo": "api" })),
                 CHAT,
                 &move |repo| repo.forge.backend_for(forge_of.clone()),
+                &|clone| format!("asked to record {clone}"),
             );
             assert_eq!(said.is_ok(), read, "{policy:?}: {said:?}");
             if !read {

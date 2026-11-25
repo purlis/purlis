@@ -106,6 +106,7 @@ fn ask(root: &Path, args: Value, transport: &Arc<Answers>) -> Result<Value, Unan
         &Reach {
             caller: Caller::window().background(),
             backend_of: &backend_of,
+            unrecorded: None,
         },
     )
 }
@@ -285,7 +286,7 @@ fn a_clone_the_project_records_no_repo_for_is_refused() {
     assert_eq!(
         refused.message,
         "This project records no repo for api, so purlis does not read its milestones. Record \
-         it with `purlis discover`, or clone it from the window."
+         it with `purlis discover`."
     );
     assert_eq!(asked(&transport), Vec::<String>::new());
 }

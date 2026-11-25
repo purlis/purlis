@@ -209,8 +209,9 @@ pub const NOT_TRUSTED: &str = "purlis did not clone this repository and you have
 /// What a push answers from a clone whose remote pushes to another address than it fetches
 /// from: purlis signs in for one remote, not two (#1851).
 pub const REMOTE_SPLIT: &str = "this repository's remote pushes to another address than the \
-    one it fetches from, so purlis did not push it with your sign-in. Give origin one address \
-    (or keep the one purlis saved to, in the window), then save it from the window";
+    one it fetches from, so purlis did not push it with your sign-in. Asks has Use one address \
+    for it, which sets the push address to the one it shows, or give origin one address \
+    yourself, then save it again";
 
 /// What a fetch answers from a clone whose remote is not the one recorded for it (#1851).
 pub const FETCH_REMOTE_CHANGED: &str = "the remote of this repository changed since purlis last \

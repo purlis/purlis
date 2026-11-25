@@ -374,6 +374,10 @@ pub struct Held {
     needs_you: crate::browserneedsyou::NeedsYou,
     /// How many brokered writes each chat has made lately (#1333).
     brokered: purlis_core::brokered::Rate,
+    /// How many window-only refusals each chat has handed the app to raise lately (A3): a
+    /// budget of its own, so a loop of asks neither spends a chat's brokered writes nor is
+    /// stopped by them ([`crate::windowonlyasks`]).
+    window_only_asks: purlis_core::brokered::Rate,
     /// The vaults each chat was refused for its persona, until the person answers (#1430).
     vault_refusals: crate::vaultroute::Refusals,
     /// The browser logins the person is asked about, and allowed from their notice (#4595).
@@ -775,6 +779,11 @@ impl Held {
     /// The cap on each chat's brokered writes (#1333).
     pub fn brokered(&self) -> &purlis_core::brokered::Rate {
         &self.brokered
+    }
+
+    /// The cap on each chat's window-only asks (A3): not [`Self::brokered`]'s.
+    pub fn window_only_asks(&self) -> &purlis_core::brokered::Rate {
+        &self.window_only_asks
     }
 
     /// The dispatches waiting on the person, as each was asked (#1437).
@@ -4176,6 +4185,16 @@ impl Planes {
                 }
             })
         });
+        // A refusal nobody was asked about is a block in the chat's Chat log (Q6, rule H): the
+        // same writer as every other block. Weak for the handoff's reason.
+        purlis_core::windowonly::blocking(held.root(), {
+            let weak = Arc::downgrade(&held);
+            Arc::new(move |chat, stop| {
+                if let Some(strong) = weak.upgrade() {
+                    let _ = strong.hooks.write_stop(chat, stop);
+                }
+            })
+        });
         // Every sandbox block is written here, one road (Q254): a held connection a chat
         // stopped waiting on (R-290, Q154; a chat's next tool call is when it stops waiting),
         // every other refusal once its ask leaves, and one never asked. Where an ask left, the
@@ -5649,6 +5668,7 @@ impl Planes {
             question_updates: Arc::clone(&self.question_updates),
             needs_you,
             brokered: purlis_core::brokered::Rate::default(),
+            window_only_asks: crate::windowonlyasks::budget(),
             vault_refusals: crate::vaultroute::Refusals::default(),
             login_grants: crate::loginasks::Grants::default(),
             secret_fills: crate::secretfills::Fills::default(),

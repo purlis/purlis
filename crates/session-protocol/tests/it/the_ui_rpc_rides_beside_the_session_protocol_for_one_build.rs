@@ -298,6 +298,10 @@ async fn answering_an_ask_is_never_served_on_the_link_even_to_the_window() {
         "ask_chat_restart",
         "move_chat",
         "move_chat_now",
+        // The window-only refusals' presses (T1.1-56): no chat or link presses them.
+        "use_one_address",
+        "clone_with_sign_in",
+        "record_repo",
     ] {
         assert!(ui::WINDOW_ONLY.contains(&command), "{command}");
     }

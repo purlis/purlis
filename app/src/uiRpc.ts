@@ -1739,6 +1739,9 @@ export const commands = {
 	fixStaleClone: __WINDOW_ONLY_RESULT,
 	clonesToVouch: __WINDOW_ONLY_RESULT,
 	vouchClone: __WINDOW_ONLY_RESULT,
+	useOneAddress: __WINDOW_ONLY_RESULT,
+	cloneWithSignIn: __WINDOW_ONLY_RESULT,
+	recordRepo: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Make a workspace: `charter workspace create <name>`, with the vision when one was typed.
 	 * 
@@ -3316,6 +3319,22 @@ export type AnswerPath =
  */
 { via: "trust-clone"; folder: string; place: string } | 
 /**
+ *  `use_one_address` for Use one address on the clone at `folder`: sets its push address to
+ *  `to`, the address the row shows, while its origin still fetches from `fetch` and pushes
+ *  to `push`.
+ */
+{ via: "one-address"; folder: string; fetch: string; push: string; to: string } | 
+/**
+ *  `clone_with_sign_in` for Clone it: the inventory's repo `name` into `workspace`, while its
+ *  address is still `repo` (`<host>/<owner>/<repo>`), the one the row shows.
+ */
+{ via: "clone-it"; workspace: string; name: string; repo: string } | 
+/**
+ *  `record_repo` for Record this repo: the repo of the clone `clone` of `workspace`, which
+ *  origin names as `place` while the row is shown.
+ */
+{ via: "record-repo"; workspace: string; clone: string; place: string } | 
+/**
  *  `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
  *  clone Notice's own command, and each clone it trusts leaves the ask (R-336).
  */
@@ -3821,6 +3840,22 @@ export type AskSource =
  *  as the clone's own Notice does, and the chat's next mint goes through.
  */
 "trust-clone" | 
+/**
+ *  **A clone whose origin names more than one address** (A1, A5, Q4): Use one address sets
+ *  origin's push address to the one the row shows, and nothing else. Trusting the clone is
+ *  a second press.
+ */
+"one-address" | 
+/**
+ *  **A private repo a chat's clone could not reach** (A2): Clone it clones it into the
+ *  chat's workspace with the person's own sign-in, as the window's own recorded clone.
+ */
+"clone-with-sign-in" | 
+/**
+ *  **A clone the project records no repo for** (A3): Record this repo records the repo its
+ *  origin names, as `purlis discover` does for that one clone, so a chat can read its forge.
+ */
+"record-repo" | 
 /**
  *  **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
  *  never one per clone. Trust all records each, as its Notice's Trust this clone does.

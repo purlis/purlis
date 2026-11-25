@@ -756,6 +756,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     // list is read and the press made in the window alone.
     "clones_to_vouch",
     "vouch_clone",
+    // The window-only refusals' other presses (T1.1-56, R-328): each sets a remote, releases the
+    // person's sign-in or records a repo, so the press is the window's alone, and no chat or link
+    // presses it for them.
+    "use_one_address",
+    "clone_with_sign_in",
+    "record_repo",
     // Update from remote (qw348): the app brings the project's incoming commits in, which
     // moves its working tree under every chat in it. The person's own press, and no link's:
     // a chat that asks for it raises an item the person reads, and presses nothing.

@@ -72,6 +72,9 @@ pub struct Request<'a> {
     pub hosts: Option<&'a [String]>,
     /// The window watching this clone (#4079): `None` for the terminal's own command.
     pub watch: Option<&'a Watch<'a>>,
+    /// The chat the app clones for (#4080), where it clones for one: a clone it cannot make for
+    /// want of a forge CLI raises **Clone it** for that chat (A2, T1.1-56). `None`: no chat's.
+    pub chat: Option<u32>,
 }
 
 /// A window watching a clone: what it is told as the clone runs, the person's Cancel, and what
@@ -625,6 +628,7 @@ fn clone_one(request: &Request, record: &Value) -> Outcome {
         url: &url,
         forge: &forge,
         watch: request.watch,
+        chat: request.chat,
     };
     match landing::land(&route) {
         landing::Landed::Cloned => {}

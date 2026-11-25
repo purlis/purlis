@@ -245,6 +245,7 @@ fn isolated_answer(root: &Path, asker: &Asker, ask: &GitAsk, now: jiff::Timestam
                 author: &crate::wscmd::ensure::author(),
                 hosts: hosts.as_deref(),
                 watch: None,
+                chat: Some(asker.chat),
             },
             &mut say,
         ),
@@ -580,6 +581,15 @@ fn isolated_answer(root: &Path, asker: &Asker, ask: &GitAsk, now: jiff::Timestam
             code
         }
     };
+    // A save or a push that did not go because origin fetches from one address and pushes to
+    // another (A1, T1.1-56): the chat is told the ask raised for it, in place of "from the window".
+    if code != 0
+        && let Some(config_root) = crate::forge::apptoken::record_root()
+        && let Some(words) =
+            split_origin_asked(root, &config_root, asker.chat, &ask.workspace, &ask.work)
+    {
+        lines.push(Say::Warn(words.into()));
+    }
     Answered {
         answer: Answer::Said {
             lines: fitted(lines, SAID_AT_MOST),
@@ -588,6 +598,60 @@ fn isolated_answer(root: &Path, asker: &Asker, ask: &GitAsk, now: jiff::Timestam
         needs,
         pushed: sent.filter(|_| code == 0),
     }
+}
+
+/// **The ask raised for a chat whose push did not go for a split origin** (A1): for each clone
+/// the work touched whose origin fetches from one address and pushes to another (read from the
+/// clone, never from the push's words), **Use one address** is raised ([`crate::windowonly`]),
+/// and the chat is told as rule H says. `None` for work that does not push, a clone with one
+/// address, or where `vaults` is off or `consents` does not ask: that press uses the person's
+/// sign-in (Q308a).
+fn split_origin_asked(
+    root: &Path,
+    config_root: &Path,
+    chat: u32,
+    ws: &str,
+    work: &GitWork,
+) -> Option<String> {
+    if !matches!(
+        work,
+        GitWork::WorktreePush { .. } | GitWork::RootSave { .. }
+    ) {
+        return None;
+    }
+    if crate::enforcement::mode(root, crate::enforcement::Family::Vaults)
+        == crate::enforcement::Mode::Off
+        || !crate::windowonly::asks(root)
+    {
+        return None;
+    }
+    let said: Vec<String> = touched(root, ws, work)
+        .iter()
+        .filter_map(|clone| {
+            let folder = clone
+                .strip_prefix(root)
+                .ok()?
+                .to_string_lossy()
+                .into_owned();
+            let control = crate::windowonly::one_address_for(config_root, root, &folder)?;
+            let raised = crate::windowonly::raise(root, chat, control);
+            let named = if folder.is_empty() {
+                "the project".to_owned()
+            } else {
+                folder
+            };
+            Some(crate::windowonly::told_of(
+                root,
+                chat,
+                raised,
+                &format!(
+                    "press {} on {named}, so its origin pushes to the address it fetches from",
+                    crate::windowonly::USE_ONE_ADDRESS
+                ),
+            ))
+        })
+        .collect();
+    (!said.is_empty()).then(|| said.join(" "))
 }
 
 /// Runs `then` in the clone of `repo` in workspace `ws` **as a brokered git action is run**,

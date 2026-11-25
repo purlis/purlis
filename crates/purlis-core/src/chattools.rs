@@ -1661,6 +1661,7 @@ pub fn forge_milestones(
     args: &Map<String, Value>,
     chat: &str,
     backend_of: &dyn Fn(&crate::forge::pr::Repo) -> Box<dyn crate::forge::ForgeBackend>,
+    record_repo: &dyn Fn(&str) -> String,
 ) -> Result<String, String> {
     let ws = workspace_name(place)?;
     // Held to the query's parameters as a page's ask is (`answer::ask`), before anything else.
@@ -1674,9 +1675,30 @@ pub fn forge_milestones(
              state, open or all, each a string, and nothing else."
         )
     })?;
+    // A clone the project records no repo for (A3): where `guards.forge` is enforced, the app is
+    // asked to put Record this repo before the person and the chat is told what became of it;
+    // under `log` or `off` the check does not stop the read, and the rule is named in a log line.
+    let unrecorded = |clone: &str| {
+        let enforced = crate::enforcement::judged(
+            root,
+            Some(chat),
+            crate::enforcement::Family::GuardsForge,
+            crate::enforcement::mode(root, crate::enforcement::Family::GuardsForge),
+            crate::enforcement::RULE_RECORD_REPO,
+            None,
+            (),
+        )
+        .is_some();
+        if enforced {
+            crate::catalogue::milestones::Unrecorded::Refuse(record_repo(clone))
+        } else {
+            crate::catalogue::milestones::Unrecorded::Go
+        }
+    };
     let reach = crate::catalogue::milestones::Reach {
         caller: crate::forge::Caller::mcp(chat),
         backend_of,
+        unrecorded: Some(&unrecorded),
     };
     let ws = milestones_workspace(root, ws, &args, chat);
     let data =

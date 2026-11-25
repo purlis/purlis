@@ -524,6 +524,32 @@ pub fn removal_asked_of_the_person(name: &str) -> String {
     }
 }
 
+/// **What a chat is told for a clone the project records no repo for** (A3): the app is asked
+/// to raise Record this repo for it ([`Ask::WindowOnly`]), and what it answers is the sentence,
+/// as it is for [`removal_asked_of_the_person`]. An app older than the ask is told apart from a
+/// refusal ([`purlis_core::windowonly::AppSaid::Older`]), and no app at all is said plainly.
+pub fn record_repo_asked(root: &Path, clone: &str) -> String {
+    use purlis_core::windowonly::{AppSaid, record_repo_refusal};
+    let asked = asked(
+        |chat| {
+            Ask::WindowOnly(hookwire::WindowOnlyAsk {
+                chat,
+                refused: hookwire::WindowOnlyRefusal::RecordRepo {
+                    clone: clone.to_owned(),
+                },
+            })
+        },
+        A_WRITE_TAKES_AT_MOST,
+    );
+    let said = match asked {
+        Ok(Ok(Answer::No { why })) if why == hookwire::UNKNOWN_LINE => AppSaid::Older,
+        Ok(Ok(Answer::No { why })) if why == hookwire::NOTHING_ANSWERS => AppSaid::Unheard,
+        Ok(Ok(Answer::No { why })) => AppSaid::Told(why),
+        _ => AppSaid::Unheard,
+    };
+    record_repo_refusal(root, clone, said)
+}
+
 /// The sentence `purlis persona remove <name>` is refused with in a chat the app started under
 /// the sandbox (#1408): as [`no_removal_in_a_sandbox`], for a persona.
 pub fn no_persona_removal_in_a_sandbox(name: &str) -> String {

@@ -220,6 +220,33 @@ is told, is `tools/mutants-report.py notice`, tested in `tools/mutants-report.te
 - In a sandboxed chat, `purlis-app`'s `projectsettings::` tests (FSEvent) and `purlis-core`'s keychain,
   socket and `no_sandbox` tests fail with "Operation not permitted": that is the sandbox, not the
   change. `settings::tests` and `sandbox::personal::tests` run here.
+- A cold `purlis-core` lib test build with `-j 2`, `CARGO_INCREMENTAL=0` and
+  `CARGO_PROFILE_DEV_DEBUG=0` took 12 minutes on macOS (not 70), and a rebuild after an edit to the
+  crate about as long. Run `cargo` with `run_in_background` and wait with
+  `timeout 590 bash -c "until grep -q 'test result\|^error' <log>; do sleep 30; done"`; `nohup`
+  fails here ("can't detach from console").
+- `npm ci --ignore-scripts` in `app/` works in the sandbox (11 s), so `npx vitest run <files>`,
+  `npx tsc --noEmit` and `npx eslint <files>` run here. `app/src/asksGroups.guard.test.ts` reads
+  `AskSource` out of `bindings.ts` up to the first `;`: a `;` in a variant's doc comment hides every
+  later kind from the guard.
+- `cargo test -p purlis-cli --test recorded_behaviour` cannot run in a sandboxed chat: copying its
+  fixture plane fails with "Operation not permitted" on the plane's vault folder (the same denial
+  `git status` prints for it). It is CI's.
+- A core test cannot loosen a policy family to `off` through `charter.toml`: a loosening takes
+  effect only with the person's acceptance, which the app alone verifies. `log` and `enforce` are
+  testable here. A `purlis-core` lib test can still run a family `off`: make the thread not the
+  app and hand it the app's answer (`enforcement::set_in_the_app_for_this_test(false)`, then
+  `answered_by_the_app(Some(Resolved::of(&Settings::from_text(Some("[policy]\n…")), &Locks::default())))`,
+  and `set_in_the_app_for_this_test(true)` after), as `clone_it_has_no_log_mode` does.
+- `bindings.ts` and `uiRpc.ts` are written by `cargo test -p purlis-app --lib --locked -j 2 --
+  --ignored regenerate_the_typescript` (about 9 minutes cold); `the_typescript_the_ui_imports_…`
+  checks them. A doc comment on a command is copied into both, line for line.
+- A new `hookwire::Ask` variant breaks four exhaustive matches that name every kind: in
+  `hookwire/tests.rs`, `purlis-cli/tests/it/handoff_from_inside_the_app.rs`,
+  `purlis-core/tests/it/every_waiting_purlis_command_says_where_it_waits.rs` and
+  `app/src-tauri/src/handoff/tests.rs` (`every_ask`, and its `0..=N` count).
+- A new window-only press (a Tauri command the person's row sends) goes in
+  `crates/session-protocol/src/ui.rs`'s `WINDOW_ONLY`, or a link or chat can press it.
 - The guard reads any `gh api` endpoint with a shell-filled word (`$id` in a loop, or `-q "$Q"`) as
   a possible merge and refuses it: write each endpoint and each `-q` filter out literally, one call
   per id. `mktemp -d` fails in the sandbox; `mkdir -p $TMPDIR/<name>` works. Compare a green and a

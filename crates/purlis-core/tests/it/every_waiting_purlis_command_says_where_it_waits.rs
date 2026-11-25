@@ -74,7 +74,9 @@ fn hook_socket_waits(ask: &Ask) -> HookWait {
         Ask::Task(_) => HookWait::OnAChat,
         // Held for the person, and answered at once with where they have it. A held merge too:
         // the hook refuses the chat at once and never waits on the person's press (R-114).
+        // A refusal raised as an ask for the person to press: the chat is told at once.
         Ask::Removal(_)
+        | Ask::WindowOnly(_)
         | Ask::Merge(_)
         | Ask::Propose(_)
         | Ask::ProposeLimit(_)
