@@ -188,17 +188,25 @@ fn a_brokered_call_raises_one_ask_not_a_named_and_an_unnamed() {
     assert_the_raises_follow_the_registry(&blocks, &written, 1);
 }
 
-/// F2: named down the hooks road after the same refusal was heard unnamed there, the registry
-/// holds both blocks (`Blocks::heard` retires neither), so each is an ask and raises its own.
+/// F2: named down the hooks road after the same refusal was heard unnamed there: one refusal, so
+/// the named block takes the unnamed one's place and its raise, and the ask is one.
 #[test]
-fn a_named_and_an_unnamed_block_the_registry_holds_both_raise_one_each() {
+fn a_refusal_heard_unnamed_then_named_on_the_hook_road_is_one_ask() {
     let target = format!("{HOST}:443");
     let (_dir, plane) = plane();
     let blocks = Blocks::default();
     let (stops, written) = writer();
     hook_road(&blocks, &stops, &told(&plane, None));
     hook_road(&blocks, &stops, &told(&plane, Some(&target)));
-    assert_the_raises_follow_the_registry(&blocks, &written, 2);
+    assert_the_raises_follow_the_registry(&blocks, &written, 1);
+    assert!(blocks.holds(CHAT, &host_block(HOST)), "the named one stays");
+
+    // Answered, the named one's late report brings neither back.
+    blocks.answered(CHAT, &host_block(HOST));
+    hook_road(&blocks, &stops, &told(&plane, None));
+    hook_road(&blocks, &stops, &told(&plane, Some(&target)));
+    assert_eq!(listed(&blocks), 0);
+    assert_eq!(raises(&written), 1);
 }
 
 /// F1: host A named on the hook road is raised; unnamed host B, refused after it, is not A's
@@ -368,4 +376,62 @@ fn a_late_report_of_an_answered_ask_raises_nothing() {
     blocks.turn_began(CHAT);
     assert!(register_live(&blocks, &stops, CHAT, &target));
     assert_eq!(raises(&written), 2, "a new turn's ask is new");
+}
+
+/// The window lists what the registry holds: an answered ask leaves that list, and a late report
+/// of it (either road) puts nothing back and raises nothing, until the chat's next turn, whose
+/// ask for the same block is new and raises again.
+#[test]
+fn an_answered_ask_leaves_the_list_and_its_late_report_does_not_bring_it_back() {
+    let target = format!("{HOST}:443");
+    let (_dir, plane) = plane();
+    let blocks = Blocks::default();
+    let (stops, written) = writer();
+    assert!(register_live(&blocks, &stops, CHAT, &target));
+    assert_the_raises_follow_the_registry(&blocks, &written, 1);
+    let block = live_block(&target).expect("a block");
+    assert!(blocks.answered(CHAT, &block));
+    assert_eq!(listed(&blocks), 0, "answered: off the list");
+
+    // Late, on each road: still off the list, and no second raise.
+    assert!(register_live(&blocks, &stops, CHAT, &target));
+    assert_eq!(listed(&blocks), 0, "late live report");
+    hook_road(&blocks, &stops, &told(&plane, Some(&target)));
+    assert_eq!(listed(&blocks), 0, "late hook report");
+    assert!(
+        !blocks.holds(CHAT, &block),
+        "a late report does not hold it again"
+    );
+    assert_eq!(raises(&written), 1, "no second raise");
+
+    // The next turn: a new ask, listed and raised.
+    blocks.turn_began(CHAT);
+    assert!(register_live(&blocks, &stops, CHAT, &target));
+    assert_eq!(listed(&blocks), 1, "the new turn's ask is listed");
+    assert_eq!(raises(&written), 2, "a new turn's ask raises again");
+}
+
+/// A refusal no answer names (a folder write with no target, `held_of` none) is no ask: its
+/// report raises nothing, however often it comes, while a host ask beside it raises its own.
+#[test]
+fn an_unnamed_block_no_answer_names_raises_no_ask() {
+    let (_dir, plane) = plane();
+    let blocks = Blocks::default();
+    let (stops, written) = writer();
+    let mut write = told(&plane, None);
+    write.operation = "write".to_owned();
+    write.kind = "project-files".to_owned();
+    write.offer = crate::hooks::BlockOffer::Write;
+    write.target = None;
+    write.choose = None;
+    assert!(
+        crate::taskblocks::held_of(&write).is_none(),
+        "no answer names it"
+    );
+    hook_road(&blocks, &stops, &write);
+    hook_road(&blocks, &stops, &write);
+    assert_eq!(raises(&written), 0, "no ask.raised");
+
+    hook_road(&blocks, &stops, &told(&plane, Some(&format!("{HOST}:443"))));
+    assert_eq!(raises(&written), 1, "a host ask still raises");
 }

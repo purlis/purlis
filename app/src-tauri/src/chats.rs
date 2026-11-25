@@ -10356,6 +10356,11 @@ fn register_live(
     let Some(block) = live_block(target) else {
         return false;
     };
+    // The late report of an ask answered in this turn is its echo: held no more, listed no more,
+    // raised no more (T1.1-27).
+    if blocks.answered_this_turn(chat, &block) {
+        return true;
+    }
     blocks.heard_waiting(chat, block.clone());
     blocks.held_live(chat, &block, target);
     // One owner per ask (T1.1-27, Q262): the first report of it, from this road or the hook

@@ -326,6 +326,8 @@ impl Blocks {
     /// [`Self::heard`], at `at`, in seconds since 1970: a block heard again while it is held
     /// keeps the time it was first heard.
     pub fn heard_at(&self, session: u32, block: HeldBlock, at: u64) {
+        // The same refusal heard unnamed before is this one now: one ask, never two.
+        self.take_over_unnamed(session, &block);
         // What was quiet before, which no ask listed, and what waits: what an ask that leaves
         // is, as a block, decided by (T1-10).
         let was_quiet = self.quiet().get(&session).cloned().unwrap_or_default();
@@ -462,10 +464,7 @@ impl Blocks {
         if !held.get(&session).is_some_and(|mine| mine.contains(block)) {
             return false;
         }
-        let spent = self
-            .spent()
-            .get(&session)
-            .is_some_and(|mine| mine.contains(block));
+        let spent = self.answered_this_turn(session, block);
         let mut asked = self.asked();
         let mine = asked.entry(session).or_default();
         let first = !spent && !mine.contains(block);
@@ -564,17 +563,7 @@ impl Blocks {
         // The same refusal, heard unnamed before, is this one now (#1903): one ask, never two.
         // Its raise, if written already, is this one's (T1.1-27): taken over before the unnamed
         // ask is answered, which gives its claim up.
-        if block.names_a_host() {
-            let unnamed = HeldBlock::unnamed_host(&block.operation, &block.kind);
-            if let Some(mine) = self.asked().get_mut(&session)
-                && let Some(at) = mine.iter().position(|one| *one == unnamed)
-            {
-                mine[at] = block.clone();
-            }
-            if self.holds(session, &unnamed) {
-                self.answered(session, &unnamed);
-            }
-        }
+        self.take_over_unnamed(session, &block);
         {
             let mut waiting = self.waiting();
             let mine = waiting.entry(session).or_default();
@@ -589,6 +578,33 @@ impl Blocks {
         if !self.holds(session, &block) {
             self.release_raise(session, &block);
         }
+    }
+
+    /// **The same refusal heard unnamed before is `block` now** (#1903, T1.1-27): where `block`
+    /// names a host and the chat is held on that operation and kind's unnamed host, the unnamed
+    /// one is the same ask, so it is answered, its raise taken over by `block`, and the ask is
+    /// one, whichever road named it.
+    fn take_over_unnamed(&self, session: u32, block: &HeldBlock) {
+        if !block.names_a_host() {
+            return;
+        }
+        let unnamed = HeldBlock::unnamed_host(&block.operation, &block.kind);
+        if let Some(mine) = self.asked().get_mut(&session)
+            && let Some(at) = mine.iter().position(|one| *one == unnamed)
+        {
+            mine[at] = block.clone();
+        }
+        if self.holds(session, &unnamed) {
+            self.answered(session, &unnamed);
+        }
+    }
+
+    /// **Whether `block` of chat `session` was answered in the turn now running** (T1.1-27): a
+    /// report of it now is that ask's echo, so it is neither held again, nor listed, nor raised.
+    pub fn answered_this_turn(&self, session: u32, block: &HeldBlock) -> bool {
+        self.spent()
+            .get(&session)
+            .is_some_and(|mine| mine.contains(block))
     }
 
     /// `block` of chat `session` waits on the person no longer (its connection gave up): it is
@@ -758,6 +774,21 @@ impl Blocks {
     /// and kind, before the call it was held under is over. It is dropped, never held again as
     /// an ask beside its block.
     pub fn echoes(&self, session: u32, block: &HeldBlock) -> bool {
+        // The echo of an ask answered in this turn, or an unnamed report of a host answered in
+        // it: neither is held again, which would list the answered block once more.
+        if self.answered_this_turn(session, block) {
+            return true;
+        }
+        if block.what == GrantWhat::Host
+            && block.target.is_empty()
+            && self.spent().get(&session).is_some_and(|mine| {
+                mine.iter().any(|one| {
+                    one.names_a_host() && one.operation == block.operation && one.kind == block.kind
+                })
+            })
+        {
+            return true;
+        }
         // #1903 in the other order (T1-10): a host unnamed, heard while the same refusal named
         // waits on the person, is that ask's echo, never a second ask beside it. A known limit
         // (T1-10's review): an unnamed line names no host to tell two refusals apart, so one of
@@ -1068,15 +1099,16 @@ pub(crate) fn turn_began(held: &crate::planes::Held, chat: u32) {
 
 /// **Writes the raise of the ask `told` names, if this report of it is the first** (T1.1-27,
 /// Q262): `raise` runs only then. The hook road's closure calls this and the tests call it, so
-/// the one decision has one copy. An ask no answer names has no block to join by, and is its
-/// own. Whether `raise` ran.
+/// the one decision has one copy. A refusal no answer names is no ask and raises nothing. Whether
+/// `raise` ran.
 pub fn raise_once(blocks: &Blocks, told: &crate::hooks::ChatBlocked, raise: impl FnOnce()) -> bool {
     let first = match held_of(told) {
         Some(block) => {
             tracing::debug!(chat = told.session, block = ?block, road = "hook", "purlis: hook road claims a raise");
             blocks.claim_raise(told.session, &block)
         }
-        None => true,
+        // A refusal no answer names is no ask: its Notice shows, and it raises nothing.
+        None => false,
     };
     if first {
         raise();
