@@ -3169,3 +3169,42 @@ fn that_a_planes_pool_chats_are_all_recorded_is_written_and_read_back() {
     assert!(!back.pool_chats_recorded(Path::new("/planes/b")));
     assert!(!back.pool_chats_recorded(Path::new("/planes/elsewhere")));
 }
+
+#[test]
+fn an_update_that_changes_nothing_does_not_rewrite_the_store() {
+    let machine = machine();
+    update(machine.path(), |store| {
+        store.remember(Path::new("/planes/a"), 1)
+    })
+    .unwrap();
+    let file = file(machine.path());
+    let inode = |p: &Path| std::os::unix::fs::MetadataExt::ino(&std::fs::metadata(p).unwrap());
+    let first = inode(&file);
+
+    update(machine.path(), |_| {}).unwrap();
+
+    assert_eq!(
+        inode(&file),
+        first,
+        "the store was replaced by an identical one"
+    );
+}
+
+#[test]
+fn a_vouch_that_finds_the_record_as_it_was_leaves_the_store_as_it_was() {
+    let mut store = Store::default();
+    let plane = Path::new("/planes/known");
+    store.approve(plane, 1, Contribution::default());
+    store.vouch(plane, Contribution::default(), 99);
+    let kept = store
+        .recent(plane)
+        .unwrap()
+        .trust
+        .as_ref()
+        .unwrap()
+        .approved;
+    assert_eq!(
+        kept, 1,
+        "a later vouch of the same record restamped the approval"
+    );
+}

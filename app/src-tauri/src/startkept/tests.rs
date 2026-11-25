@@ -281,6 +281,42 @@ fn a_todo_written_leaves_the_kept_answer() {
     assert_eq!(reads.get(), 1, "served kept");
 }
 
+#[test]
+fn a_guard_sighting_written_every_second_leaves_the_kept_answer() {
+    // Every tool call of every chat writes `.purlis/guard-seen.json`; on a machine with dozens
+    // of chats that is a write a second, and each one dropped the kept answer, so every open of
+    // the picker read it again under load (#7603 field evidence).
+    let (_dir, _planes, held) = held_plane();
+    let reads = Cell::new(0);
+    details(&held, &reads);
+    let state = held.root().join(".purlis");
+    std::fs::create_dir_all(&state).expect("a state folder");
+    for n in 0..5 {
+        std::fs::write(state.join("guard-seen.json"), format!("{{\"n\":{n}}}")).expect("seen");
+    }
+    std::fs::write(
+        held.root().join("workspaces/alpha/todos/a2.md"),
+        "# Alpha two\n",
+    )
+    .expect("a todo, which the watch tells after the writes before it");
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while !held
+        .sidebar_model()
+        .rows()
+        .expect("listed")
+        .any(|row| row.todos.contains(&"Alpha two".to_owned()))
+    {
+        assert!(
+            Instant::now() < deadline,
+            "the todo never reached the sidebar"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    details(&held, &reads);
+    assert_eq!(reads.get(), 1, "served kept");
+}
+
 // ---- the stamp is taken before what it covers is read --------------------------------------
 
 /// The profiles of the project at `root` as `for_launch` reads them, with `mid_read` landing on
