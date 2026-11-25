@@ -1346,6 +1346,29 @@ fn a_remote_that_moved_with_no_conflict_is_replayed_under_a_git_without_merge_ba
 }
 
 #[test]
+fn a_git_that_refuses_an_argument_purlis_passed_is_said_to_be_purlis_own_error() {
+    // #7627: a usage error (exit 129) is a defect in the call, not a rebase that failed.
+    let fixture = Fixture::plane();
+    let refused = bringin::refusal_if_usage(&git::Run {
+        code: Some(129),
+        out: String::new(),
+        err: "error: unknown option `merge-base=x'\nusage: git merge-tree [--write-tree]".into(),
+    })
+    .expect("a usage error is recognised");
+    assert!(refused.starts_with(bringin::REFUSED_BY_GIT), "{refused}");
+    assert!(refused.contains("unknown option"), "{refused}");
+    let _ = fixture;
+    assert!(
+        bringin::refusal_if_usage(&git::Run {
+            code: Some(1),
+            out: String::new(),
+            err: "fatal: no".into(),
+        })
+        .is_none()
+    );
+}
+
+#[test]
 fn a_rebase_still_running_at_its_deadline_is_stopped_and_said_to_be_out_of_time() {
     // charter-app#242: the rebase used to have no deadline at all. The deadline is the
     // helper's argument so the test does not wait out the real one.

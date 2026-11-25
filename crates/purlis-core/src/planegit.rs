@@ -2412,7 +2412,13 @@ fn push_head_within(
                             &branch,
                             &head,
                             &onto_id,
-                            format!("the rebase onto the remote did not go through: {said}"),
+                            // git refusing purlis's own call is purlis's fault, not a rebase
+                            // that failed (#7627).
+                            if said.starts_with(bringin::REFUSED_BY_GIT) {
+                                said
+                            } else {
+                                format!("the rebase onto the remote did not go through: {said}")
+                            },
                             "Nothing was pushed. Settle what git names, then `purlis save`.",
                             say,
                         );
