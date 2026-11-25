@@ -614,6 +614,19 @@ pub struct ChatTokens {
     /// hook alone ([`armed::arm`]): what a report's mode is believed on ([`Self::proves`]).
     #[cfg(unix)]
     armed: std::sync::Mutex<std::collections::HashMap<u32, armed::ArmedKey>>,
+    /// What checks a [`PersonWhyAsk`]'s credential ([`Self::prove_the_person_by`]). None until
+    /// the app sets one, and then no such ask is answered.
+    person: std::sync::Mutex<Option<PersonProof>>,
+}
+
+/// What says whether a [`PersonWhyAsk`] carries the person's credential.
+#[derive(Clone)]
+pub struct PersonProof(std::sync::Arc<dyn Fn(&PersonWhyAsk) -> bool + Send + Sync>);
+
+impl std::fmt::Debug for PersonProof {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PersonProof")
+    }
 }
 
 /// A chat's program: its pid, and when the process with that pid started, so a later process
@@ -697,7 +710,41 @@ impl ChatTokens {
             unrecorded: std::sync::Mutex::default(),
             #[cfg(unix)]
             armed: std::sync::Mutex::default(),
+            person: std::sync::Mutex::default(),
         }
+    }
+
+    /// Sets what checks the credential of a [`PersonWhyAsk`] (the app: the plane's key). Until it
+    /// is set, no such ask is answered.
+    pub fn prove_the_person_by(
+        &self,
+        proof: impl Fn(&PersonWhyAsk) -> bool + Send + Sync + 'static,
+    ) {
+        *self
+            .person
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(PersonProof(std::sync::Arc::new(proof)));
+    }
+
+    /// **Whether the person's own ask is answered**: only a [`PersonWhyAsk`] that carries the
+    /// person's credential ([`Self::prove_the_person_by`]) **and** whose sender runs in no chat
+    /// ([`ChatOf::InNone`]). Both are required, since ancestry alone is not proof (a process that
+    /// double-forks and `setsid`s reads as in none), and the credential is checked whatever the
+    /// ancestry says.
+    pub(crate) fn person_may_hear(&self, ask: &Ask, of: &ChatOf) -> bool {
+        matches!(ask, Ask::PersonWhy(asked) if self.person_proven(asked))
+            && matches!(of, ChatOf::InNone)
+    }
+
+    /// Whether `ask` carries the person's credential, by what [`Self::prove_the_person_by`] set.
+    fn person_proven(&self, ask: &PersonWhyAsk) -> bool {
+        let proof = self
+            .person
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        proof.is_some_and(|proof| (proof.0)(ask))
     }
 
     /// Whether the asker on `connection` has gone: it closed its end while its ask was being
@@ -1716,10 +1763,13 @@ pub enum Ask {
     /// **The person's own `purlis policy why`**, run in their terminal and in no chat (M75 slice
     /// 18, spec §10.1 and §10.2): the app alone reads the sealed side (grants, nevers, the
     /// accepted copy and floor), so it answers the person's question, and the dry run's. **It is
-    /// not chat-bound**: it names no chat's token, and the listener answers it only for a sender
-    /// that runs inside none of the app's chats ([`ChatOf::InNone`]), so a chat can never ask it
-    /// to read the policy as another context. `--chat N` names a chat whose facts the app looks
-    /// up itself. Nothing is sealed, spent or written to answer it.
+    /// not chat-bound** (it names no chat's token), and it is answered only on **two** proofs,
+    /// both required: the sender runs inside none of the app's chats ([`ChatOf::InNone`]), and
+    /// the line carries a [`PersonWhyAsk::credential`], a seal under the plane's key that no
+    /// chat's sandbox reads. Ancestry alone is not proof (a process that double-forks and
+    /// `setsid`s reads as in no chat), so without the credential it is refused with
+    /// [`PERSON_ONLY`] whatever the ancestry says. `--chat N` names a chat whose facts the app
+    /// looks up itself. Nothing is sealed, spent or written to answer it.
     PersonWhy(PersonWhyAsk),
     /// **A hook's ask for the ref tips a remote has** (#7302): `pre-push`'s ask of the remote,
     /// which a chat's sandbox cannot make for itself under the one login. The app asks the remote
@@ -1806,12 +1856,52 @@ pub struct PersonWhyAsk {
     /// Answer as this policy would: a branch or a file, as `--policy` names it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub policy: Option<String>,
+    /// **The person's credential**: [`Self::sign`]'s seal of every other field, under the plane's
+    /// key (`fingerprint.key`, which no chat's sandbox reads). Without a valid one the line is
+    /// refused with [`PERSON_ONLY`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential: Option<String>,
 }
 
-/// What the app answers a [`PersonWhyAsk`] from a sender that may be inside a chat: a chat may
-/// read the policy only for itself ([`Ask::Why`]).
-pub const PERSON_ONLY: &str = "this question is the person's own, asked outside any chat: a chat \
-     asks `purlis policy why` about itself, with no flag that names another context";
+impl PersonWhyAsk {
+    /// The purpose of the seal ([`crate::secrets::fingerprint::seal`]): a key of its own, so no
+    /// other seal is a credential for this ask.
+    const SEAL_PURPOSE: &'static str = "person-why";
+
+    /// The text the credential seals: this ask without its credential, as the line writes it.
+    fn sealed_text(&self) -> Option<String> {
+        let mut bare = self.clone();
+        bare.credential = None;
+        serde_json::to_string(&bare).ok()
+    }
+
+    /// **Signs this ask as the person**, who alone reads the plane's key: the credential is
+    /// set. `false` where the key can be neither read nor made (the ask then carries none, and
+    /// the app refuses it).
+    pub fn sign(&mut self, ctx: &crate::secrets::Ctx) -> bool {
+        self.credential = self
+            .sealed_text()
+            .and_then(|text| crate::secrets::fingerprint::seal(ctx, Self::SEAL_PURPOSE, &[&text]));
+        self.credential.is_some()
+    }
+
+    /// Whether the credential is the seal of this ask under the key `ctx`'s plane keeps. It
+    /// reads the key, and never makes one.
+    pub fn is_signed_for(&self, ctx: &crate::secrets::Ctx) -> bool {
+        use subtle::ConstantTimeEq;
+        let (Some(have), Some(text)) = (self.credential.as_deref(), self.sealed_text()) else {
+            return false;
+        };
+        crate::secrets::fingerprint::seal_with_the_key_there(ctx, Self::SEAL_PURPOSE, &[&text])
+            .is_some_and(|want| bool::from(want.as_bytes().ct_eq(have.as_bytes())))
+    }
+}
+
+/// What the app answers a [`PersonWhyAsk`] that is not both from a sender in no chat and signed
+/// with the plane's key: a chat may read the policy only for itself ([`Ask::Why`]).
+pub const PERSON_ONLY: &str = "this question is the person's own, asked from their terminal \
+     outside any chat and signed with the plane's key: a chat asks `purlis policy why` about \
+     itself, with no flag that names another context";
 
 /// **A hook's ask for a remote's ref tips** ([`Ask::RemoteRefs`]).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -4982,15 +5072,18 @@ fn serve(
             continue;
         }
         // The person's own `policy why` names no chat and carries no token: it is answered only
-        // for a sender that runs inside none of the app's chats, by its ancestry, and refused
-        // for one that may be inside one (a chat that stripped its environment included).
+        // for a sender that runs inside none of the app's chats, by its ancestry, AND whose line
+        // carries the person's credential, and refused otherwise (a chat that stripped its
+        // environment, or left its process tree, included).
         if matches!(line, Line::Ask(Ask::PersonWhy(_))) {
             let Line::Ask(ask) = line else { return };
-            let answer = match tokens.chat_of(&senders_of(peer, &writer)) {
-                ChatOf::InNone => (hearing.answer)(this, ask),
-                ChatOf::Named(..) | ChatOf::InDoubt => Answer::No {
+            let of = tokens.chat_of(&senders_of(peer, &writer));
+            let answer = if tokens.person_may_hear(&ask, &of) {
+                (hearing.answer)(this, ask)
+            } else {
+                Answer::No {
                     why: PERSON_ONLY.to_owned(),
-                },
+                }
             };
             let Ok(mut said) = serde_json::to_vec(&framed::on_a_line(answer)) else {
                 return;

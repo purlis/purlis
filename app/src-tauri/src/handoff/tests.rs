@@ -3524,6 +3524,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             sandbox: None,
             depth: None,
             policy: None,
+            credential: None,
         }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
@@ -16134,6 +16135,7 @@ fn the_app_answers_a_chats_why_and_the_persons_from_what_it_records() {
                 sandbox: None,
                 depth: None,
                 policy: policy.map(str::to_owned),
+                credential: None,
             },
         )
     };

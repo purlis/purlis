@@ -252,9 +252,22 @@ enum Heard {
 }
 
 /// **The person's ask to the app of the plane they stand in**, on its socket, with no chat's
-/// token: the app answers it only for a process in none of its chats.
-fn asked_as_the_person(ask: purlis_core::hookwire::PersonWhyAsk, cwd: &std::path::Path) -> Heard {
+/// token: the app answers it only for a process in none of its chats, and only with the person's
+/// credential ([`purlis_core::hookwire::PersonWhyAsk::sign`]).
+fn asked_as_the_person(
+    mut ask: purlis_core::hookwire::PersonWhyAsk,
+    cwd: &std::path::Path,
+) -> Heard {
     use purlis_core::hookwire::{Answer, Ask, Asking};
+    // **Signed with the plane's key**, which no chat's sandbox reads: the app answers this ask
+    // only with that credential, whatever process asks. A plane whose key cannot be read or made
+    // sends none, and the app refuses it.
+    if let Ok(root) = purlis_core::plane::resolve(cwd) {
+        ask.sign(&purlis_core::secrets::Ctx::new(
+            &root,
+            purlis_core::secrets::Env::from_process(),
+        ));
+    }
     let socket = purlis_core::hookwire::reach::socket_here(cwd);
     let mut asking = match Asking::on(&socket, None) {
         Ok(asking) => asking,
@@ -309,6 +322,7 @@ fn as_the_person(
             sandbox: args.sandbox.clone(),
             depth: args.depth,
             policy: args.policy.clone(),
+            credential: None,
         },
         cwd,
     );

@@ -167,7 +167,7 @@ pub fn dry_run_for_chat(
 
 /// **The project as `policy` would make it**, and the commit it resolved to where it named one: a
 /// branch (or any commit) as that commit holds it, else a `policy.cedar` file, a relative name
-/// being the plane root's, laid over the project as committed. **A name that is both is the
+/// being the plane root's, laid over the project as committed, and **only inside the plane root** ([`crate::contain::within_plane`]). **A name that is both is the
 /// branch**, so a stray file can never stand in for what a branch holds.
 pub fn policy_version(root: &Path, policy: &str) -> Result<(Version, Option<String>), String> {
     if let Some(sha) = Version::resolve_rev(root, policy)? {
@@ -175,7 +175,15 @@ pub fn policy_version(root: &Path, policy: &str) -> Result<(Version, Option<Stri
             .map(|version| (version, Some(sha)))
             .ok_or_else(|| format!("the project's files at `{policy}` could not be read"));
     }
+    // A name is the plane root's, and where it lands (links followed, `..` applied as the
+    // kernel does) must be inside the plane: an absolute path, `../../etc/hosts` and a link
+    // that leaves are all refused, so the app never reads a file the plane does not hold.
     let path = root.join(policy);
+    if !crate::contain::within_plane(root, &path) {
+        return Err(format!(
+            "`{policy}` is outside this project's plane: name a branch, or a file inside it"
+        ));
+    }
     if !path.is_file() {
         return Err(format!(
             "`{policy}` is neither a file nor a branch of this project"

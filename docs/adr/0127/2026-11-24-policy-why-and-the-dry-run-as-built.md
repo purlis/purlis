@@ -17,8 +17,12 @@ reverses a ruling.
   socket. A chat's goes as `Ask::Why`, bound to the chat whose token the line carries, and is
   answered from the app's record of that chat and its floor, as the host's own decision is. A
   person's goes as `Ask::PersonWhy`, which names no chat and carries no token: the listener
-  answers it only for a sender that runs inside none of the app's chats (`ChatOf::InNone`), and
-  refuses one that may be inside one. `--chat N` names a chat whose facts the app looks up in its
+  answers it only on two proofs, both required. The sender runs inside none of the app's chats
+  (`ChatOf::InNone`), and the line carries a credential, a seal of the ask under a key derived
+  from the plane's `fingerprint.key`, which no chat's sandbox reads. Ancestry alone is not proof
+  (a process that double-forks and `setsid`s reads as in no chat), so an ask without the
+  credential is refused with `PERSON_ONLY` whatever the ancestry says. `--policy` names a branch
+  or a file that must lie inside the plane root (links followed), never one outside it. `--chat N` names a chat whose facts the app looks up in its
   own record, and an app that has no such chat open refuses. **Where no app answers**, the CLI
   makes the answer from the committed project alone, with the context the flags describe, and the
   answer says plainly that the sealed side was not read (`Why::sealed_unread`); `--chat N` is then

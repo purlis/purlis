@@ -237,7 +237,7 @@ fn policy_why_with_a_branch_policy_answers_as_the_branch_would() {
 fn a_policy_file_answers_as_the_project_with_that_file_would() {
     let m = machine();
     let root = plane(&m, &[("purlis.toml", STRICT)]);
-    let file = m.dir.path().join("candidate.cedar");
+    let file = root.join("elsewhere-in-the-plane.cedar");
     std::fs::write(&file, forbid_merge("guards-merge-ban", "")).expect("a candidate");
     let why = dry_run(
         &root,
@@ -274,6 +274,39 @@ fn a_policy_file_answers_as_the_project_with_that_file_would() {
         ["guards-merge-rel"],
         "{relative:?}"
     );
+}
+
+#[test]
+fn a_policy_file_outside_the_plane_is_refused_whether_by_dots_by_absolute_path_or_by_link() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    let outside = m.dir.path().join("outside.cedar");
+    std::fs::write(&outside, forbid_merge("guards-merge-out", "")).expect("a file");
+    std::os::unix::fs::symlink(&outside, root.join("link.cedar")).expect("a link");
+    let up = format!(
+        "../../../../../../../../../../../..{}",
+        outside.to_str().expect("a path")
+    );
+    for named in [
+        outside.to_str().expect("a path"),
+        "../../etc/hosts",
+        up.as_str(),
+        "link.cedar",
+    ] {
+        let err = dry_run(
+            &root,
+            &asker(),
+            MERGE,
+            &sealed(Standing::fresh()),
+            None,
+            named,
+        )
+        .expect_err(named);
+        assert!(
+            err.contains("outside this project's plane"),
+            "{named}: {err}"
+        );
+    }
 }
 
 #[test]
@@ -590,6 +623,7 @@ fn a_why_and_its_dry_run_cross_the_wire_whole() {
             sandbox: None,
             depth: None,
             policy: Some("drop".into()),
+            credential: Some("ab12".into()),
         }),
     ];
     for ask in asks {

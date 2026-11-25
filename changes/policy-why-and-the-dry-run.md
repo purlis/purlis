@@ -12,3 +12,5 @@
   chat. The app reads what you accepted, your grants and your nevers, so it answers your question
   when it runs; when it does not, the answer says plainly that the sealed side was not read, and
   `--chat <number>` is refused, since a chat's facts are the app's.
+  Your own question is signed with the plane's key, which no chat can read, so a chat cannot pose
+  as you, and `--policy` reads only a branch or a file inside the plane.

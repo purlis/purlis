@@ -2494,6 +2494,14 @@ impl Hooks {
         let listener = Listener::bind(&at.within, &at.socket)?;
         let socket = listener.path().to_path_buf();
         let tokens = listener.tokens();
+        // The person's own `policy why` is answered only with a credential signed by this plane's
+        // key, which no chat's sandbox reads (read each time, never made here).
+        let root = plane.root().to_path_buf();
+        tokens.prove_the_person_by(move |ask| {
+            let ctx =
+                purlis_core::secrets::Ctx::new(&root, purlis_core::secrets::Env::from_process());
+            ask.is_signed_for(&ctx)
+        });
         let (mut hooks, hearing) = Self::wired(plane, socket, moved, told_by_hand);
         hooks.tokens = Some(tokens);
         hooks.reading = Mutex::new(Some(listener.hear(hearing)));
