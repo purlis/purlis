@@ -90,7 +90,8 @@ export const Versions: Story = {
     await userEvent.keyboard("{Enter}");
     const page = within(canvasElement.ownerDocument.body);
     const dialog = await page.findByRole("dialog", { name: "History of Backlog state" });
-    await expect(dialog).toHaveTextContent("your last 20 Regenerates");
+    // The dialog opens before its versions are answered, so the kept-count line arrives later.
+    await untilSeenInDialog(await within(dialog).findByText(/your last 20 Regenerates/));
     await userEvent.keyboard("{Escape}");
     await expect(page.queryByRole("dialog")).toBeNull();
   },
