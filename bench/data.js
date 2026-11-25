@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795600326571,
+  "lastUpdate": 1795603711295,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54684,6 +54684,48 @@ window.BENCHMARK_DATA = {
             "value": 102.046677,
             "unit": "ms",
             "extra": "median of 5 runs: 100.309, 101.732, 102.047, 102.554, 103.313 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9777934dea1802837f17469bee389a705bcc4c55",
+          "message": "CI: build the app's tests beside the rest, so the Rust tests stop waiting on one long rustc (#7624)\n\n* CI: build the app's tests apart from the rest, so the core parts start ten minutes sooner (#7324)\n\npurlis_app_lib's test build is one rustc of 10-16 minutes that ends last; every\nother package was built four minutes in. Two archives side by side: rust-build\n(--workspace --exclude purlis-app, four parts) and rust-build-app (-p purlis-app,\ntwo parts). rust (fmt, clippy, test) waits on all eight jobs.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M890S5TT6443HEDQQ642Y81R\nPurlis-Persona: steward\n\n* CI: archive purlis-cli with the app's tests, give the app builds their own cache key\n\nFound in review: app tests run the fenced purlis binary, which only a build that\nincludes purlis-cli's dev-dependencies makes; and two jobs saving the 'rust' key\non main race.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M890S5TT6443HEDQQ642Y81R\nPurlis-Persona: steward",
+          "timestamp": "2026-11-25T10:15:45Z",
+          "tree_id": "bb9d068866ea116dd59641a3f843e3ee8721bdff",
+          "url": "https://github.com/purlis/purlis/commit/9777934dea1802837f17469bee389a705bcc4c55"
+        },
+        "date": 1795603703834,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.69716,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.646, 0.677, 0.697, 0.700, 0.730 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.776810500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.586, 16.656, 16.777, 16.827, 16.891 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0529075,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.673, 101.781, 102.053, 102.056, 102.818 ms"
           }
         ]
       }
