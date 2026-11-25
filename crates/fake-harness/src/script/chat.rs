@@ -277,6 +277,11 @@ impl Chat {
         if self.interrupted.load(Ordering::SeqCst) {
             return true;
         }
+        self.new_esc()
+    }
+
+    /// An Esc typed since the last look, whether or not an earlier one already set `interrupted`.
+    fn new_esc(&self) -> bool {
         let mut lines = Vec::new();
         let escaped = self.keyboard().escaped(&mut lines);
         if let Ok(mut q) = self.queued.lock() {
@@ -547,6 +552,18 @@ impl Chat {
             },
             agent,
         );
+        // An Esc while this call's hook was held ended it: the call never ran. That the harness
+        // does so is assumed (the recordings show Esc during the command, not during a held hook).
+        // OpenCode's abort is heard as the call's own (1.19.5: Stop, the aborted call's
+        // PostToolUse, then Stop again). It is this hook's cancellation that counts, not the held
+        // `interrupted` flag: after a refused ask, the later calls of a parallel response still
+        // run their hooks to the end and their results.
+        if fired.iter().any(|f| f.cancelled) {
+            if self.dialect == Dialect::Opencode {
+                self.after(&checked, Outcome::Interrupted, agent);
+            }
+            return None;
+        }
         if let Some(refusal) = self.refusal(&fired, "PreToolUse") {
             let text = self.frame_refusal(&checked, &refusal);
             self.transcript.tool_result(&ToolResult {
@@ -726,6 +743,7 @@ impl Chat {
         let _ = std::io::Write::flush(&mut std::io::stdout());
         let mut answer = self.keyboard().answer(Some(Instant::now() + NOTIFY_AFTER));
         if answer.is_none() {
+            // The ask is on screen: its keys belong to the ask, so this hook does not listen.
             self.fire(
                 "Notification",
                 None,
@@ -875,6 +893,7 @@ impl Chat {
                             payload,
                             env,
                             &self.cwd,
+                            &|| false,
                         )
                     })
                 })
@@ -947,12 +966,7 @@ impl Chat {
             // A command nobody watches fails the call: the scenario's teardown could not see it.
             // The shell leads its own group (`process_group(0)` above), and the group is the one
             // nobody watches: signal it in-process, never through an external `kill`.
-            if let Some(leader) = i32::try_from(child.id())
-                .ok()
-                .and_then(rustix::process::Pid::from_raw)
-            {
-                let _ = rustix::process::kill_process_group(leader, rustix::process::Signal::KILL);
-            }
+            hooks::kill_group(child.id());
             let _ = child.kill();
             let _ = child.wait();
             drop((child.stdout.take(), child.stderr.take()));
@@ -991,10 +1005,7 @@ impl Chat {
                 break Some(status.code().unwrap_or(-1));
             }
             if self.esc_pressed() {
-                let _ = Command::new("kill")
-                    .args(["-9", &format!("-{}", child.id())])
-                    .stderr(Stdio::null())
-                    .status();
+                hooks::kill_group(child.id());
                 let _ = child.kill();
                 let _ = child.wait();
                 break None;
@@ -1602,7 +1613,22 @@ impl Chat {
             Dialect::Codex => Spawn::Shell(shell_program()),
             Dialect::Claude => Spawn::Shell("/bin/sh"),
         };
-        hooks::run_all(&routes, spawn, &payload, &env, &self.cwd)
+        // Esc ends only the hooks that were running when it was pressed. `interrupted` stays set
+        // until the next turn, so a hook fired after the Esc (the aborted call's PostToolUse,
+        // OpenCode's Stop, the SessionEnd) must not be cancelled by the held flag: it is ended
+        // only by an Esc that arrives while it runs.
+        //
+        // A hook listens for Esc only where an Esc can end it. The Notification of an ask
+        // on screen does not: polling drains the keyboard, and the answer typed meanwhile would
+        // be read and dropped, leaving the ask unanswered. Keys typed before a listening hook
+        // starts are read first (an Esc among them already happened), so they do not cancel it.
+        if event == "Notification" {
+            return hooks::run_all(&routes, spawn, &payload, &env, &self.cwd, &|| false);
+        }
+        self.new_esc();
+        hooks::run_all(&routes, spawn, &payload, &env, &self.cwd, &|| {
+            self.new_esc()
+        })
     }
 
     fn transcript_path(&self) -> PathBuf {
@@ -2094,4 +2120,127 @@ fn cut(text: &str, n: usize) -> String {
         end -= 1;
     }
     text[..end].to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chat_with(command: &str) -> Chat {
+        let script = Script {
+            harness: None,
+            version: None,
+            conditions: Default::default(),
+            forced: Default::default(),
+            turns: Vec::new(),
+        };
+        let mut chat = Chat::new(
+            Dialect::Claude,
+            PathBuf::from("fake-harness"),
+            Vec::new(),
+            Launch::default(),
+            std::env::temp_dir(),
+            Transcript::open(None).expect("no transcript"),
+            script,
+        )
+        .expect("a chat");
+        chat.routes = vec![Route {
+            event: "PostToolUse".to_owned(),
+            matcher: None,
+            word: "held".to_owned(),
+            timeout: 600,
+            command: command.to_owned(),
+            tool: None,
+        }];
+        chat
+    }
+
+    #[test]
+    fn a_hook_fired_after_the_esc_runs_to_completion_though_interrupted_is_still_set() {
+        let chat = chat_with("sleep 0.3; echo done");
+        chat.interrupted.store(true, Ordering::SeqCst);
+        let fired = chat.fire("PostToolUse", Some("Bash"), json!({}), None);
+        assert_eq!(fired.len(), 1);
+        assert_eq!(
+            fired[0].exit,
+            Some(0),
+            "the held flag cancelled a later hook"
+        );
+    }
+
+    fn with_route(chat: &mut Chat, event: &str, command: &str) {
+        chat.routes = vec![Route {
+            event: event.to_owned(),
+            matcher: None,
+            word: "held".to_owned(),
+            timeout: 600,
+            command: command.to_owned(),
+            tool: None,
+        }];
+    }
+
+    #[test]
+    fn a_key_typed_during_the_notification_hook_reaches_the_ask() {
+        let mut chat = chat_with("true");
+        with_route(&mut chat, "Notification", "sleep 0.4");
+        let (typed, bytes) = std::sync::mpsc::channel();
+        chat.keyboard = Mutex::new(Keyboard::from_channel(bytes));
+        let fired = std::thread::scope(|scope| {
+            let hook = scope.spawn(|| chat.fire("Notification", None, json!({}), None));
+            std::thread::sleep(Duration::from_millis(150));
+            typed.send(Some(b'\r')).expect("the keyboard");
+            hook.join().expect("the hook thread")
+        });
+        assert_eq!(fired[0].exit, Some(0), "the hook was cut short");
+        let answer = chat
+            .keyboard()
+            .answer(Some(Instant::now() + Duration::from_secs(2)));
+        assert_eq!(answer, Some(Answer::Yes), "the Enter was read and dropped");
+    }
+
+    #[test]
+    fn an_esc_still_unread_when_a_hook_starts_does_not_cancel_it() {
+        let mut chat = chat_with("sleep 0.3; echo done");
+        let (typed, bytes) = std::sync::mpsc::channel();
+        chat.keyboard = Mutex::new(Keyboard::from_channel(bytes));
+        typed.send(Some(0x1b)).expect("the keyboard");
+        let fired = chat.fire("PostToolUse", Some("Bash"), json!({}), None);
+        assert_eq!(fired[0].exit, Some(0), "an old Esc cancelled a later hook");
+        assert!(!fired[0].cancelled);
+        assert!(
+            chat.interrupted.load(Ordering::SeqCst),
+            "the Esc was not counted"
+        );
+    }
+
+    #[test]
+    fn a_call_whose_hook_ran_on_is_checked_though_an_earlier_ask_was_refused() {
+        let mut chat = chat_with("true");
+        with_route(&mut chat, "PreToolUse", "true");
+        chat.interrupted.store(true, Ordering::SeqCst);
+        let call: Call =
+            serde_json::from_value(json!({"tool": "Bash", "run": "true"})).expect("a call");
+        assert!(
+            chat.check(&call, None).is_some(),
+            "a held flag dropped a call whose hook was not cancelled"
+        );
+    }
+
+    #[test]
+    fn a_hook_running_when_the_esc_is_pressed_is_ended() {
+        let mut chat = chat_with("sleep 60");
+        // The Esc arrives while the hook runs, typed into the keyboard by the test.
+        let (typed, bytes) = std::sync::mpsc::channel();
+        chat.keyboard = Mutex::new(Keyboard::from_channel(bytes));
+        let started = Instant::now();
+        let fired = std::thread::scope(|scope| {
+            let hook = scope.spawn(|| chat.fire("PostToolUse", Some("Bash"), json!({}), None));
+            std::thread::sleep(Duration::from_millis(300));
+            typed.send(Some(0x1b)).expect("the keyboard");
+            hook.join().expect("the hook thread")
+        });
+        assert_eq!(fired[0].exit, None, "an interrupted hook has no exit");
+        assert!(started.elapsed() < Duration::from_secs(10));
+        assert!(chat.interrupted.load(Ordering::SeqCst));
+    }
 }

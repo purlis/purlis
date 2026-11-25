@@ -32,7 +32,7 @@ portable-pty.workspace = true
 
 # The loud-failure path signals the shell's whole process group in-process (`script/chat.rs`).
 [target."cfg(unix)".dependencies]
-rustix = { version = "1", features = ["process"] }
+rustix = { version = "1", features = ["process", "stdio"] }
 
 [dev-dependencies]
 tempfile.workspace = true
