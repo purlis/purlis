@@ -40,20 +40,28 @@
 //! cannot resume, so the fill is **staged** ([`fill_in_stages`]): the base is fetched at a depth of
 //! 200 commits, then 5000, then in full, and each stage that completes leaves real objects and a
 //! ref that the next stage (and a fill begun again after a restart) negotiates from, so an
-//! interrupted fill loses the stage it was in and not the whole. The progress is a file in the
-//! cache's `.git`, and a cache holds a shallow history only until the last stage has made it
-//! whole: **it is marked filled, and a push reads it, only then**. (`--filter=blob:none` is no
-//! option: the gate reads the base's CI files and the blobs of the pushed range.)
+//! interrupted fill loses the stage it was in and not the whole. The stages are of **one target,
+//! the forge's default branch** ([`FIRST_FILL_TARGET`]), for the early start and for a push alike,
+//! so a fill begun by either is resumed by the other; a push's base is fetched on top of it. The
+//! progress is a file in the cache's `.git`, and a cache holds a shallow history only until the
+//! last stage has made it whole: **it is marked filled, and a push reads it, only then**, so
+//! [`ObjectCache::holds`] is `false` while `.git/shallow` exists (a ref git wrote after a shallow
+//! fetch says nothing of the history behind it). (`--filter=blob:none` is no option: the gate
+//! reads the base's CI files and the blobs of the pushed range.)
 //!
 //! **Progress.** A fill's `git fetch --progress` is read as it runs ([`Progress`],
 //! [`ObjectCache::sink`]); the refusal a push gets names the objects and bytes received so far and
-//! an estimate of what is left, and the figure is logged at info level every [`LOG_EVERY`].
+//! an estimate of what is left, and the figure is logged at info level every [`LOG_EVERY`]. A
+//! staged fill's figure is its stage's alone (dropped as each begins, [`ObjectCache::stage_began`]),
+//! the refusal says which part of three it is in, and only the last part ([`Stage::Rest`]) gives
+//! an estimate: the earlier parts are too short for a rate to say anything.
 //!
 //! **A fill does not block a push it need not block** ([`ObjectCache::update_having`]): where the
 //! objects a push is read against ([`ObjectCache::holds`]) are in the cache already and
 //! reachable from a ref a finished fetch wrote, the push goes on while the fill continues. A push
-//! whose base is not there is refused, with the progress. **Fail closed:** a push is let on only for
-//! commits git finds reachable from those refs, and every other answer is a refusal.
+//! whose base is not there, or while the cache is still shallow, is refused, with the progress.
+//! **Fail closed:** a push is let on only for commits git finds reachable from those refs, and
+//! every other answer is a refusal.
 //!
 //! **Early start.** [`ObjectCache::start_fill`] starts a fill before any push, when a chat opens
 //! on the repo, within the same bounds ([`FILL`], [`MOST`]).
@@ -107,6 +115,11 @@ const BASES_KEPT: usize = 32;
 /// The file that says a fetch into the cache has finished once. It holds the size of the object
 /// store then, in bytes.
 const FILLED: &str = "purlis-filled";
+
+/// **What a first fill stages**: the forge's default branch, whoever begins the fill (a chat
+/// opening on the repo, or a push), so that a fill one began and a stall cut is resumed by the
+/// other at the stage it reached. A push's base is fetched after it, as any top-up is.
+pub const FIRST_FILL_TARGET: &str = "default-branch";
 
 /// The file of the stage a first fill has reached: the target it fetches, a space, and how many of
 /// its stages have finished.
@@ -283,6 +296,8 @@ pub struct ObjectCache {
     failure: Mutex<Option<String>>,
     /// How far the running fill has got, and when it began.
     progress: Mutex<Option<(Progress, Instant)>>,
+    /// The stage of a first fill that is running: which part of how many, and what it asks for.
+    part: Mutex<Option<(usize, usize, Stage)>>,
     /// The fill's own `git fetch` is running, under the cache's lock: only then is what the sink
     /// hears the fill's progress. A top-up run inline for a push shares the sink, and is not it.
     fetching: AtomicBool,
@@ -383,6 +398,7 @@ impl ObjectCache {
                     rebuilt_for_history: AtomicBool::new(false),
                     failure: Mutex::new(None),
                     progress: Mutex::new(None),
+                    part: Mutex::new(None),
                     fetching: AtomicBool::new(false),
                 })
             })
@@ -418,6 +434,11 @@ impl ObjectCache {
         self.path.join(".git").join(FILLED).is_file()
     }
 
+    /// Whether the cache's history is cut short (a staged first fill's early stages leave it so).
+    fn is_shallow(&self) -> bool {
+        self.path.join(".git").join("shallow").exists()
+    }
+
     /// Whether a fill is running now.
     pub fn is_filling(&self) -> bool {
         self.filling.load(Ordering::Acquire)
@@ -438,9 +459,20 @@ impl ObjectCache {
             .map(|why| format!(" (the last read failed: {why})"))
             .unwrap_or_default();
         let progress = *self.progress.lock().unwrap_or_else(PoisonError::into_inner);
+        // Only a first fill has parts: a top-up that runs the last stage's fetch is not "part 3".
+        let part = (*self.part.lock().unwrap_or_else(PoisonError::into_inner))
+            .filter(|_| !self.is_filled());
+        let of_three = part
+            .map(|(at, of, _)| format!("part {at} of {of}"))
+            .unwrap_or_default();
         let Some((seen, began)) = progress.filter(|(seen, _)| seen.total > 0) else {
+            let at = if of_three.is_empty() {
+                String::new()
+            } else {
+                format!(" ({of_three})")
+            };
             return format!(
-                "purlis is still reading {} from the forge {when}{last}; an interrupted read resumes where it stopped, so try the push again in a few minutes",
+                "purlis is still reading {} from the forge {when}{last}{at}; an interrupted read resumes where it stopped, so try the push again in a few minutes",
                 self.label
             );
         };
@@ -453,12 +485,22 @@ impl ObjectCache {
             None if seen.received == 0 => {
                 format!("{} objects to read; try again in a few minutes", seen.total)
             }
+            // Only the last part is long enough for a rate to promise anything.
+            None if part.is_some_and(|(_, _, stage)| stage != Stage::Rest) => format!(
+                "{} of {} objects ({megabytes:.0} MB); try again in a few minutes",
+                seen.received, seen.total
+            ),
             None => format!(
                 "{} of {} objects ({megabytes:.0} MB); try again in about {}",
                 seen.received,
                 seen.total,
                 about(estimate(&seen, began.elapsed()))
             ),
+        };
+        let wait = if of_three.is_empty() {
+            wait
+        } else {
+            format!("{of_three}, {wait}")
         };
         format!(
             "purlis is reading {} {when}{last}: {wait} (an interrupted read resumes where it stopped)",
@@ -504,6 +546,18 @@ impl ObjectCache {
 
     fn clear_progress(&self) {
         *self.progress.lock().unwrap_or_else(PoisonError::into_inner) = None;
+        *self.part.lock().unwrap_or_else(PoisonError::into_inner) = None;
+    }
+
+    /// **A stage of a first fill is beginning**: the last stage's figure and start are not this
+    /// one's (its estimate and its "resolving deltas" are no word on it), so they are dropped, and
+    /// the refusal says which part of [`FIRST_FILL`] is running.
+    pub fn stage_began(&self, stage: Stage) {
+        *self.progress.lock().unwrap_or_else(PoisonError::into_inner) = None;
+        *self.part.lock().unwrap_or_else(PoisonError::into_inner) = FIRST_FILL
+            .iter()
+            .position(|each| *each == stage)
+            .map(|at| (at + 1, FIRST_FILL.len(), stage));
     }
 
     /// The figure the running fill is at, where git has said one.
@@ -516,10 +570,15 @@ impl ObjectCache {
 
     /// **Whether every commit of `ids` is in the cache and reachable from a ref a finished fetch
     /// wrote** (`refs/quarantine/*`): git writes a ref only after the fetch's connectivity check,
-    /// so a commit under one has its whole history here, whatever a fill still running adds. Not
-    /// an id, nothing to ask, or a git that could not be asked is `false`: it fails closed.
+    /// so a commit under one has its whole history here, whatever a fill still running adds.
+    ///
+    /// **Never while the cache is shallow** (`.git/shallow` exists): a staged first fill's early
+    /// stages leave refs whose history stops at a boundary, so that premise is false until the
+    /// last stage has unshallowed it. The file is the fact itself, where [`Self::is_filled`] is
+    /// only the fill's word that it ended. Not an id, nothing to ask, or a git that could not be
+    /// asked is `false`: it fails closed.
     pub fn holds(&self, ids: &[String]) -> bool {
-        if ids.is_empty() || !self.path.join(".git").is_dir() {
+        if ids.is_empty() || !self.path.join(".git").is_dir() || self.is_shallow() {
             return false;
         }
         ids.iter().all(|id| {
@@ -729,7 +788,15 @@ impl ObjectCache {
         }
     }
 
+    /// Never while the cache is shallow, whichever fetch got it here (a push's tips are fetched
+    /// with no depth, and git leaves a boundary such a fetch did not move).
     fn mark_filled(&self) -> Result<(), String> {
+        if self.is_shallow() {
+            return Err(format!(
+                "purlis has read only the newest part of {}'s history so far and reads on; try the push again in a few minutes",
+                self.label
+            ));
+        }
         let _ = std::fs::remove_file(self.path.join(".git").join(STAGE));
         std::fs::write(
             self.path.join(".git").join(FILLED),
@@ -924,7 +991,8 @@ pub const FIRST_FILL: [Stage; 3] = [Stage::Depth(200), Stage::Depth(5000), Stage
 /// **Runs a first fill's fetch in stages, from the one it had reached** (#7587), and plainly once
 /// the cache is filled. `target` names what is fetched (the base's id): a fill begun again for
 /// another target forgets the partial one's refs and shallow boundaries, which no push has read,
-/// so that no ref of the cache is left with a history cut short. `fetch` runs one stage; the first
+/// so that no ref of the cache is left with a history cut short (the fills of a forge repo all use
+/// [`FIRST_FILL_TARGET`], so that a fill is resumed whoever begins it). `fetch` runs one stage; the first
 /// that fails ends the fill with its reason, and the stages before it stay done.
 ///
 /// The file that remembers the stage lives in the cache's `.git`, so it goes with the cache when
@@ -942,7 +1010,7 @@ pub fn fill_in_stages(
     let record = dot.join(STAGE);
     let target = target.to_ascii_lowercase();
     let remembered = std::fs::read_to_string(&record).unwrap_or_default();
-    let done = match remembered.trim().split_once(' ') {
+    let done = match remembered.trim().rsplit_once(' ') {
         Some((was, count)) if was == target => count.parse::<usize>().unwrap_or(0),
         Some(_) => {
             forget_partial(dir);
@@ -958,8 +1026,9 @@ pub fn fill_in_stages(
     Ok(())
 }
 
-/// Drops what a first fill for another target left: its refs (none of which a push has read, since
-/// the cache is not filled) and the shallow boundaries that cut their histories short.
+/// Drops what a first fill for another target left: its refs (none of which a push has read:
+/// [`ObjectCache::holds`] is `false` while the cache is shallow, and it is marked filled only once
+/// it is not) and the shallow boundaries that cut their histories short.
 fn forget_partial(dir: &Path) {
     if let Ok(listed) = git::run(
         dir,

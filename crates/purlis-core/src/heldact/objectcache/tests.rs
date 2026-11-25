@@ -77,3 +77,48 @@ fn a_line_that_never_ends_is_not_kept_without_bound() {
     // Git's next line is read all the same.
     assert!(reader.feed("\rReceiving objects:   1% (1/10)\r").is_some());
 }
+
+/// A cache with a fetch's figure `chunk` read, in the stage `stage` of a first fill.
+fn reading_in(stage: Stage, chunk: &str) -> String {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = ObjectCache::of_capped(dir.path(), "forge.test", "owner/parts", MOST);
+    cache.stage_began(stage);
+    cache.fetching.store(true, Ordering::Release);
+    (cache.sink())(chunk);
+    cache.reading()
+}
+
+const HALF: &str = "Receiving objects:  50% (50/100), 1.00 MiB | 1.00 MiB/s\r";
+
+#[test]
+fn each_part_of_a_first_fill_says_which_part_it_is_and_only_the_last_gives_an_estimate() {
+    let first = reading_in(Stage::Depth(200), HALF);
+    assert!(first.contains("part 1 of 3"), "{first}");
+    assert!(!first.contains("about"), "{first}");
+    let second = reading_in(Stage::Depth(5000), HALF);
+    assert!(second.contains("part 2 of 3"), "{second}");
+    assert!(!second.contains("about"), "{second}");
+    let last = reading_in(Stage::Rest, HALF);
+    assert!(last.contains("part 3 of 3"), "{last}");
+    assert!(last.contains("try again in about"), "{last}");
+}
+
+#[test]
+fn a_part_that_has_said_nothing_yet_does_not_repeat_the_part_before_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = ObjectCache::of_capped(dir.path(), "forge.test", "owner/next", MOST);
+    cache.stage_began(Stage::Depth(200));
+    cache.fetching.store(true, Ordering::Release);
+    let sink = cache.sink();
+    sink("Receiving objects: 100% (100/100), 2.00 MiB | 1.00 MiB/s, done.\r");
+    sink("Resolving deltas:  10% (10/100)\r");
+    let resolving = cache.reading();
+    assert!(resolving.contains("resolving deltas"), "{resolving}");
+
+    cache.stage_began(Stage::Depth(5000));
+    let next = cache.reading();
+    assert!(next.contains("part 2 of 3"), "{next}");
+    assert!(!next.contains("resolving deltas"), "{next}");
+    assert!(!next.contains("minute or two"), "{next}");
+    assert!(cache.progress().is_none());
+}

@@ -297,19 +297,22 @@ impl BaseObjects for FromForge {
         };
         let (url, helper, tip) = (self.url.clone(), self.helper.clone(), base.clone());
         let sink = cache.cache().sink();
-        // A first fill is staged and resumes; a filled cache is topped up in one fetch.
+        // A first fill is staged and resumes, of the default branch as the early start's is, and
+        // the base is fetched on top of it; a filled cache is topped up with the base alone.
+        let filling = cache.cache().clone();
         let fetch: Fetch = Arc::new(move |dir, bound| {
-            objectcache::fill_in_stages(dir, tip.as_str(), &objectcache::FIRST_FILL, |stage| {
-                fetch_specs(
-                    &url,
-                    helper.as_deref(),
-                    dir,
-                    &ref_specs(std::slice::from_ref(&tip), "base"),
-                    OTHERWISE,
-                    bound,
-                    (Some(stage), Some(sink.clone())),
-                )
-            })
+            if !filling.is_filled() {
+                stage_default_branch(&url, helper.as_deref(), &filling, dir, bound, &sink)?;
+            }
+            fetch_specs(
+                &url,
+                helper.as_deref(),
+                dir,
+                &ref_specs(std::slice::from_ref(&tip), "base"),
+                OTHERWISE,
+                bound,
+                (None, Some(sink.clone())),
+            )
         });
         // A base the cache holds already is read through it while a fill goes on.
         cache.update_having(fetch, &[base.as_str().to_owned()])?;
@@ -378,21 +381,43 @@ impl FromForge {
         }
         let (url, helper) = (self.url.clone(), self.helper.clone());
         let sink = cache.cache().sink();
+        let filling = cache.cache().clone();
         let fetch: Fetch = Arc::new(move |dir, bound| {
-            objectcache::fill_in_stages(dir, "HEAD", &objectcache::FIRST_FILL, |stage| {
-                fetch_specs(
-                    &url,
-                    helper.as_deref(),
-                    dir,
-                    &["+HEAD:refs/quarantine/default".to_owned()],
-                    "git could not read the forge's default branch",
-                    bound,
-                    (Some(stage), Some(sink.clone())),
-                )
-            })
+            stage_default_branch(&url, helper.as_deref(), &filling, dir, bound, &sink)
         });
         cache.cache().start_fill(fetch);
     }
+}
+
+/// **A first fill's stages** ([`objectcache::fill_in_stages`]) of the forge's default branch: the
+/// target of the early start and of a push alike ([`objectcache::FIRST_FILL_TARGET`]), so that a
+/// fill either began is resumed by the other at the stage it reached. Each stage tells the cache
+/// ([`ObjectCache::stage_began`]) so that the figure and the part it reports are the stage's own.
+fn stage_default_branch(
+    url: &str,
+    helper: Option<&str>,
+    cache: &ObjectCache,
+    dir: &Path,
+    bound: Duration,
+    sink: &git::Watch,
+) -> Result<(), String> {
+    objectcache::fill_in_stages(
+        dir,
+        objectcache::FIRST_FILL_TARGET,
+        &objectcache::FIRST_FILL,
+        |stage| {
+            cache.stage_began(stage);
+            fetch_specs(
+                url,
+                helper,
+                dir,
+                &["+HEAD:refs/quarantine/default".to_owned()],
+                "git could not read the forge's default branch",
+                bound,
+                (Some(stage), Some(sink.clone())),
+            )
+        },
+    )
 }
 
 enum Refused {
