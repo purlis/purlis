@@ -104,7 +104,13 @@ fn as_the_app(root: &std::path::Path, ask: &Ask) -> Answer {
         };
     };
     let WindowOnlyRefusal::RecordRepo { clone } = &asked.refused;
-    match windowonly::ask_to_record(root, asked.chat, "alpha", clone) {
+    match windowonly::ask_to_record(
+        root,
+        asked.chat,
+        "alpha",
+        clone,
+        windowonly::Reach::default(),
+    ) {
         Ok(why) | Err(why) => Answer::No { why },
     }
 }
@@ -185,7 +191,7 @@ fn a_chat_s_unrecorded_clone_raises_record_this_repo_and_the_chat_is_told_the_pe
     assert!(!root.join("inventory/repos.json").exists());
 
     // The person's press records it, and clears the ask.
-    windowonly::record_this_repo(&root, &raised[0].control).unwrap();
+    windowonly::record_this_repo(&root, &raised[0].control, &[]).unwrap();
     assert_eq!(windowonly::every(&root), []);
     assert!(root.join("inventory/repos.json").exists());
     windowonly::project_ended(&root);

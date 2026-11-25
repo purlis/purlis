@@ -917,8 +917,13 @@ pub enum AnswerPath {
         push: String,
         to: String,
     },
-    /// `clone_with_sign_in` for Clone it: `repo` (`<host>/<owner>/<repo>`) into `workspace`.
-    CloneIt { workspace: String, repo: String },
+    /// `clone_with_sign_in` for Clone it: the inventory's repo `name` into `workspace`, while its
+    /// address is still `repo` (`<host>/<owner>/<repo>`), the one the row shows.
+    CloneIt {
+        workspace: String,
+        name: String,
+        repo: String,
+    },
     /// `record_repo` for Record this repo: the repo of the clone `clone` of `workspace`, which
     /// origin names as `place` while the row is shown.
     RecordRepo {
@@ -2267,9 +2272,11 @@ fn window_only_key(session: u32, control: &purlis_core::windowonly::Control) -> 
         purlis_core::windowonly::Control::OneAddress { folder, to, .. } => {
             format!("one-address:{session}:{folder}|{to}")
         }
-        purlis_core::windowonly::Control::CloneWithSignIn { workspace, repo } => {
-            format!("clone-for-chat:{session}:{workspace}|{repo}")
-        }
+        purlis_core::windowonly::Control::CloneWithSignIn {
+            workspace,
+            name,
+            repo,
+        } => format!("clone-for-chat:{session}:{workspace}|{name}|{repo}"),
         purlis_core::windowonly::Control::RecordRepo {
             workspace,
             clone,
@@ -2299,12 +2306,15 @@ pub fn window_only(refused: &purlis_core::windowonly::Refusal) -> Shown {
             push: push.clone(),
             to: to.clone(),
         },
-        purlis_core::windowonly::Control::CloneWithSignIn { workspace, repo } => {
-            AnswerPath::CloneIt {
-                workspace: workspace.clone(),
-                repo: repo.clone(),
-            }
-        }
+        purlis_core::windowonly::Control::CloneWithSignIn {
+            workspace,
+            name,
+            repo,
+        } => AnswerPath::CloneIt {
+            workspace: workspace.clone(),
+            name: name.clone(),
+            repo: repo.clone(),
+        },
         purlis_core::windowonly::Control::RecordRepo {
             workspace,
             clone,

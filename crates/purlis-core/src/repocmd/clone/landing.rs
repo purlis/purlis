@@ -315,6 +315,7 @@ impl Route<'_> {
             chat,
             crate::windowonly::Control::CloneWithSignIn {
                 workspace: self.ws.to_owned(),
+                name: self.name.to_owned(),
                 repo: place.clone(),
             },
         );
