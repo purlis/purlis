@@ -36,7 +36,7 @@ pub fn end(root: &Path, hooks: &Hooks, number: Option<u32>, ended: &[grants::End
     let mut taken: Vec<&grants::Ended> = Vec::new();
     let committed = answers::commit(root, |draft| {
         for one in ended {
-            if draft.entries().iter().any(|entry| *entry == one.entry) {
+            if draft.entries().contains(&one.entry) {
                 draft.remove_narrowing(answers::GRANT, &one.entry.text);
                 taken.push(one);
             }
@@ -159,6 +159,7 @@ fn give(
 /// **"Allow for this chat, for…"**: [`give`], on the person's press. The window's alone.
 #[tauri::command]
 #[specta::specta]
+#[allow(clippy::too_many_arguments)]
 #[allow(
     clippy::disallowed_methods,
     reason = "the window's command layer is the one place that makes the person's press"
@@ -289,4 +290,129 @@ pub(crate) async fn remove_allowed_answer(
     planes.held(&plane)?;
     let root = plane.root().to_path_buf();
     crate::off_the_window("removing an allowed answer", move || remove(&root, &id)).await
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use purlis_core::eventlog::{self, ArgsKey, Log, Recorder};
+    use purlis_core::policy::grants::{ENDED_KIND, Ending};
+    use purlis_core::secrets::answers::Entry;
+    use purlis_session_protocol::ui;
+
+    use super::*;
+    use crate::hooks::Events;
+
+    const CHAT: &str = "01M85WM43DT07ANNAQ6NQEJTXD";
+    const GIVEN: u64 = 1_800_000_000;
+    const REASON: &str = "the private reason";
+
+    /// A timed grant of `CHAT`, given at `GIVEN` for fifteen minutes, as the sealed store keeps it.
+    fn timed_entry() -> Entry {
+        let line = serde_json::json!({
+            "v": 1, "kind": "ask-grant", "scope": "timed", "rule": "processes-ask-exec",
+            "action": "exec", "resource_kind": "Command", "resource": "npm", "narrowing": {},
+            "chat": CHAT, "span": "15m", "given": GIVEN, "reason": REASON,
+        });
+        Entry::new(answers::GRANT, &line.to_string())
+    }
+
+    /// A `Hooks` whose event log is in `dir`'s `events` folder.
+    fn hooks_logging_into(dir: &Path) -> (Hooks, std::path::PathBuf) {
+        let at = crate::hooks::Where {
+            within: dir.to_path_buf(),
+            socket: dir.join("app").join("hooks.sock"),
+        };
+        let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
+        // Relayed binds no socket, which the Journal line does not need.
+        let hooks = Hooks::relayed(plane, &at, Arc::new(|_| {}), Arc::new(|_| {}));
+        let logs = dir.join("events");
+        hooks.record_into(Events::here(Recorder::new(
+            Log::open(&logs, "DEVICE").expect("a log"),
+            ArgsKey::open(&logs).expect("a key"),
+        )));
+        (hooks, logs)
+    }
+
+    fn journal(logs: &Path) -> Vec<(String, Option<String>, serde_json::Value)> {
+        eventlog::read(logs)
+            .expect("the log reads")
+            .into_iter()
+            .filter(|event| event.kind == ENDED_KIND)
+            .map(|event| (event.kind, event.chat, event.body))
+            .collect()
+    }
+
+    #[test]
+    fn a_grant_that_ran_out_is_one_quiet_journal_line_without_its_reason() {
+        let dir = tempfile::tempdir().expect("a folder");
+        let (hooks, logs) = hooks_logging_into(dir.path());
+        let entries = [timed_entry()];
+        let ended = grants::ended(&entries, None, GIVEN + 15 * 60);
+        assert_eq!(ended.len(), 1);
+        assert_eq!(ended[0].how, Ending::Time);
+
+        hooks
+            .record_timed_grant_ended(dir.path(), None, &ended[0])
+            .expect("recorded");
+
+        let lines = journal(&logs);
+        assert_eq!(lines.len(), 1, "one line: {lines:?}");
+        assert_eq!(lines[0].2["ended"], "time");
+        assert_eq!(lines[0].2["rule"], "processes-ask-exec");
+        assert!(
+            !lines[0].2.to_string().contains(REASON),
+            "the reason stays in the sealed store"
+        );
+    }
+
+    #[test]
+    fn a_chat_s_close_writes_its_grant_s_line_under_that_chat() {
+        let dir = tempfile::tempdir().expect("a folder");
+        let (hooks, logs) = hooks_logging_into(dir.path());
+        let entries = [timed_entry()];
+        let ended = grants::ended(&entries, Some(CHAT), GIVEN + 60);
+        assert_eq!(ended[0].how, Ending::ChatClosed);
+
+        hooks
+            .record_timed_grant_ended(dir.path(), Some(7), &ended[0])
+            .expect("recorded");
+
+        let lines = journal(&logs);
+        assert_eq!(lines.len(), 1, "one line: {lines:?}");
+        assert!(lines[0].1.as_deref().is_some_and(|chat| chat.contains('7')), "{:?}", lines[0].1);
+        assert_eq!(lines[0].2["ended"], "chat closed");
+    }
+
+    #[test]
+    fn a_sweep_and_a_close_of_a_store_holding_nothing_write_no_line() {
+        // The sealed store needs the app's keyring, which a test has not: it reads as holding
+        // nothing, so neither end has an entry to take out and neither writes a line.
+        let dir = tempfile::tempdir().expect("a folder");
+        let (hooks, logs) = hooks_logging_into(dir.path());
+
+        sweep(dir.path(), &hooks, &answers::standing(dir.path()), GIVEN);
+        chat_closed(dir.path(), &hooks, 7, Some(CHAT));
+
+        assert_eq!(journal(&logs), []);
+    }
+
+    #[test]
+    fn the_four_commands_are_the_window_s_alone_and_a_link_is_refused_each() {
+        let commands = include_str!("ipc_commands.rs");
+        for name in [
+            "ask_offered",
+            "give_timed_grant",
+            "allowed_answers",
+            "remove_allowed_answer",
+        ] {
+            assert!(ui::window_only(name), "{name} is the window's alone");
+            assert!(!ui::served_on_a_link(name), "{name} is refused to a link");
+            assert!(
+                commands.contains(&format!("timedgrants::{name}")),
+                "{name} is registered"
+            );
+        }
+    }
 }

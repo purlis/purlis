@@ -255,3 +255,14 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   A cold lib-test build can pass the 10-minute tool limit: run it in the background and read its
   output file, and print `^error` lines too, or a compile failure looks like a silent pass.
 - A wall-clock test (`every_guard_reads_a_hostile_command_in_linear_time::the_whole_verdict_…`) is run alone and last under nextest (`threads-required = "num-cpus"`, `.config/nextest.toml`, #7514). In a loaded sandbox its release run reads 0.9 to 1.0 s on the two slowest shapes against a 1 s bound, on `main` as on `m75-policy`: judge a regression by comparing both on one machine, and set `TIMING_OUT`-style file logging, because this test binary swallows stdout and stderr even with `--nocapture`.
+- An Audited event's kind must start with `trust.` and use only lowercase letters, `.` and `_`
+  (`eventlog/entry.rs::trust_kind`); a hyphen or another prefix is refused at write time, and
+  `Hooks::audit` only logs it. A test of a Journal line needs `Hooks::relayed` (no socket) with
+  `Events::here(Recorder::new(..))`: `listening_on` cannot bind in a sandboxed chat. BSD `sed -i`
+  needs `''`: use `perl -pi -e` to rename across files.
+- A sandboxed chat can run `npm ci --ignore-scripts`, `tsc --noEmit`, `eslint` and
+  `vitest run --project unit --maxWorkers=2` (about 10 minutes; run it in the background). Its
+  only failures are `e2e/` files that bind a port or run git (`listen EPERM`), and the stories
+  project cannot start at all (no local port): CI's `stories` run is the first for a story.
+  `cargo test -p purlis-core --test it` fails about 425 tests there for the same reasons; the
+  `every_store_the_plane_format_names_has_a_tier` ones pass bar the child that binds a socket.

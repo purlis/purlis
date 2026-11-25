@@ -5074,7 +5074,7 @@ write into this folder cannot make its own text arrive as the person's.
   without being timed, does not read. It **ends at its time or with its chat's close**, whichever
   comes first: the app takes the entry out of the store, under a commit that needs no press (its
   removal only narrows), and writes **one** quiet line to the Journal (the host's event log, an
-  `Audited` entry of kind `policy.timed-grant.ended` with `what`, `ended` (`time` or `chat
+  `Audited` entry of kind `trust.timed_grant.ended` with `what`, `ended` (`time` or `chat
   closed`), `chat`, `rule`, `action`, `resource_kind`, `resource` and `span`, never the reason).
   The entry is taken out where a decision, the Allowed list or the chat's close finds it ended;
   one that outlives its end in the store serves nothing in the meantime. Same store, same tier.

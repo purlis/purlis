@@ -1276,7 +1276,7 @@ fn a_timed_grant_ends_with_a_quiet_journal_line() {
         .cloned()
         .collect();
     assert!(ended(&rest, Some(ULID), NOW + 6).is_empty());
-    assert_eq!(ENDED_KIND, "policy.timed-grant.ended");
+    assert_eq!(ENDED_KIND, "trust.timed_grant.ended");
 }
 
 #[test]

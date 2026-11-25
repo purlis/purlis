@@ -647,7 +647,7 @@ pub struct Ended {
 }
 
 /// The kind of the Journal line a timed grant's end writes.
-pub const ENDED_KIND: &str = "policy.timed-grant.ended";
+pub const ENDED_KIND: &str = "trust.timed_grant.ended";
 
 impl Ended {
     /// **The quiet Journal line**: what ended, how, and what it covered. Never the reason, which
