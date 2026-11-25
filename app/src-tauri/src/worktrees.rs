@@ -327,7 +327,6 @@ fn states_of(plane: &Path, workspace: &str, repo: &str) -> Result<Vec<PieceState
     let folders: Vec<crate::statecache::Folder> = pieces
         .iter()
         .map(|p| crate::statecache::Folder {
-            piece: p.piece.clone(),
             path: p.path.clone(),
         })
         .collect();
@@ -733,12 +732,20 @@ fn merge_piece(plane: &Path, workspace: &str, repo: &str, piece: &str) -> Result
 mod tests {
     use super::*;
 
-    /// The states as the window gets them: asked again, at once, until none is still reading.
+    /// The states as the window gets them: asked again, at once, each folder taken from the
+    /// first answer that has it, until every folder has one.
     fn all_states(plane: &Path, workspace: &str, repo: &str) -> Vec<PieceState> {
+        let mut got: Vec<Option<PieceState>> = Vec::new();
         loop {
             let states = states_of(plane, workspace, repo).unwrap();
-            if states.iter().all(|s| s.reading.is_none()) {
-                return states;
+            got.resize_with(states.len(), || None);
+            for (slot, state) in got.iter_mut().zip(states) {
+                if slot.is_none() && state.reading.is_none() {
+                    *slot = Some(state);
+                }
+            }
+            if got.iter().all(Option::is_some) {
+                return got.into_iter().flatten().collect();
             }
         }
     }

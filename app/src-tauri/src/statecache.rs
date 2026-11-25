@@ -37,7 +37,6 @@ pub type Read = (Option<u32>, Option<String>);
 /// One folder to answer for.
 #[derive(Debug, Clone)]
 pub struct Folder {
-    pub piece: String,
     pub path: PathBuf,
 }
 
@@ -72,8 +71,9 @@ struct Entry {
     /// Whether this folder is covered by a watch that is up.
     watched: bool,
     kept: Option<Read>,
-    /// A read that was not kept (a refusal, or no watch to vouch for it), given to the next ask
-    /// once and then dropped, so the ask after it reads again.
+    /// A read that was not kept (a refusal, or no watch to vouch for it): given to every ask
+    /// while the round of reads it came from is still going, so the window's asks for the rest
+    /// do not read it again, and dropped by the first ask that begins with no read going.
     once: Option<Read>,
     /// Waiting for a worker, or being read.
     reading: bool,
@@ -187,6 +187,14 @@ impl StateCache {
         let started = Instant::now();
         let (shared, finished) = &*inner.shared;
         let mut guard = lock(shared);
+        if guard.workers == 0 && guard.queue.is_empty() {
+            // A new round: what nothing vouched for is read again.
+            for key in &keys {
+                if let Some(entry) = guard.entries.get_mut(key) {
+                    entry.once = None;
+                }
+            }
+        }
         loop {
             let mut queued = false;
             for (n, key) in keys.iter().enumerate() {
@@ -196,7 +204,7 @@ impl StateCache {
                 // What a read finished since the last ask told is news, kept or not.
                 let news = std::mem::take(&mut entry.fresh);
                 if said[n].is_none() {
-                    if let Some(read) = entry.kept.clone().or_else(|| entry.once.take()) {
+                    if let Some(read) = entry.kept.clone().or_else(|| entry.once.clone()) {
                         said[n] = Some(read);
                     } else if !entry.reading {
                         entry.reading = true;

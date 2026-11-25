@@ -1927,6 +1927,11 @@ export const commands = {
 	/**
 	 *  The state of each of this repo's branch folders, asked once `worktree_list` has named them
 	 *  (#5321): what each has uncommitted, or why it could not be read.
+	 * 
+	 *  **An answer may be partial** (H16): a folder still being read has `reading` set and nothing
+	 *  else, and the window asks again at once, which waits for the next folder to finish. The
+	 *  whole of 133 folders took 47 s in one answer; the first now comes in about one status's time,
+	 *  and an ask with nothing changed reads nothing.
 	 */
 	worktreeStates: (plane: PlaneId, workspace: string, repo: string) => typedError<PieceState[], string>(__TAURI_INVOKE("worktree_states", { plane, workspace, repo })),
 	/**
@@ -10857,6 +10862,8 @@ export type PieceState = {
 	uncommitted?: number | null,
 	/**  As [`Piece::unread`]. */
 	unread?: string | null,
+	/**  Still being read: ask again (H16). Neither of the others is said while it is. */
+	reading?: boolean | null,
 };
 
 /**  What the plane's pin says against this charter. */

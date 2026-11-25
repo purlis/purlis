@@ -10,7 +10,9 @@ const A_READ: Duration = Duration::from_millis(300);
 
 /// The sandbox this runs in refuses FSEvents, so the tests watch by polling every 20 ms: the same
 /// events in the same order, which is all the cache relies on.
-fn polled(events: std::sync::mpsc::Sender<notify::Event>) -> Option<Box<dyn notify::Watcher + Send>> {
+fn polled(
+    events: std::sync::mpsc::Sender<notify::Event>,
+) -> Option<Box<dyn notify::Watcher + Send>> {
     let config = notify::Config::default().with_poll_interval(Duration::from_millis(20));
     let handler = crate::watchset::sender(events);
     Some(Box::new(notify::PollWatcher::new(handler, config).ok()?))
@@ -29,10 +31,7 @@ fn fixture(count: usize) -> Fixture {
         .map(|n| {
             let path = base.join(format!("branch-{n:03}"));
             std::fs::create_dir(&path).expect("a folder");
-            Folder {
-                piece: format!("branch-{n:03}"),
-                path,
-            }
+            Folder { path }
         })
         .collect();
     let cache = StateCache::watched_by(polled, move |_| {
@@ -78,7 +77,11 @@ fn the_first_answer_of_130_folders_comes_within_a_second() {
     assert!(answered > 0, "the first ask answered nothing");
     assert!(at < Duration::from_secs(1), "first answer after {at:?}");
     // Each ask brings more, and the last has every folder.
-    assert!(asked.asks.windows(2).all(|w| w[0].1 < w[1].1), "{:?}", asked.asks);
+    assert!(
+        asked.asks.windows(2).all(|w| w[0].1 < w[1].1),
+        "{:?}",
+        asked.asks
+    );
     assert_eq!(asked.asks.last().unwrap().1, 130);
 }
 
@@ -90,7 +93,11 @@ fn asking_again_with_nothing_changed_reads_no_folder_and_takes_under_a_second() 
     let asked = ask(&f);
     assert_eq!(asked.asks.last().unwrap().1, 130);
     assert_eq!(f.cache.read_count(), before, "a folder was read again");
-    assert!(asked.took < Duration::from_secs(1), "the second ask took {:?}", asked.took);
+    assert!(
+        asked.took < Duration::from_secs(1),
+        "the second ask took {:?}",
+        asked.took
+    );
 }
 
 #[test]
@@ -100,7 +107,11 @@ fn a_folder_that_changed_is_read_again_and_the_others_are_not() {
     let before = f.cache.read_count();
     std::fs::write(f.folders[7].path.join("new.txt"), "x").unwrap();
     ask(&f);
-    assert_eq!(f.cache.read_count(), before + 1, "only the changed folder is read again");
+    assert_eq!(
+        f.cache.read_count(),
+        before + 1,
+        "only the changed folder is read again"
+    );
 }
 
 #[test]

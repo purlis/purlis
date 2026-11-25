@@ -255,6 +255,7 @@ mod specimen;
 mod staleclones;
 mod startkept;
 mod starttiming;
+mod statecache;
 mod stopping;
 #[cfg(test)]
 mod storythemes;
@@ -278,7 +279,6 @@ mod vaultroute;
 mod vaults;
 mod vaultswaiting;
 mod views;
-mod statecache;
 mod watchset;
 mod windowevents;
 mod windowprefs;
