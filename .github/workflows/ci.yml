@@ -246,8 +246,8 @@ jobs:
       # overlaps it with another large compile ran out and the runner shut down (exit 143, "the
       # runner has received a shutdown signal"). 12 GB of swap on the runner's temporary disk
       # turns that into a slower build, not a dead runner; a build that fits never touches it.
-      # Only the builds compile the workspace now, so only they have it; the app's holds the compile
-      # it is for, and the core's keeps it as a margin that costs a second.
+      # Kept from before the split as a margin: the 12 GB compile is `rust-build-app`'s now, and
+      # this build does not meet it. Costs a second.
       - name: Swap, 12 GB, on the temporary disk
         run: |
           sudo swapoff -a
@@ -357,8 +357,7 @@ jobs:
       # overlaps it with another large compile ran out and the runner shut down (exit 143, "the
       # runner has received a shutdown signal"). 12 GB of swap on the runner's temporary disk
       # turns that into a slower build, not a dead runner; a build that fits never touches it.
-      # Only the builds compile the workspace now, so only they have it; the app's holds the compile
-      # it is for, and the core's keeps it as a margin that costs a second.
+      # The compile this is for is this job's alone since the split.
       - name: Swap, 12 GB, on the temporary disk
         run: |
           sudo swapoff -a
@@ -385,7 +384,7 @@ jobs:
       # is the key `rust-doctests` and `git-lfs` restore.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          shared-key: rust
+          shared-key: rust-app
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
       - run: mkdir -p app/dist
@@ -417,7 +416,7 @@ jobs:
           sampler=$!
           status=0
           mkdir -p "$RUNNER_TEMP/rust-tests"
-          /usr/bin/time -v -o "$RUNNER_TEMP/time.log" cargo nextest archive -p purlis-app --locked --profile ci --archive-file "$RUNNER_TEMP/rust-tests/purlis-tests-app.tar.zst" || status=$?
+          /usr/bin/time -v -o "$RUNNER_TEMP/time.log" cargo nextest archive -p purlis-app -p purlis-cli --locked --profile ci --archive-file "$RUNNER_TEMP/rust-tests/purlis-tests-app.tar.zst" || status=$?
           kill "$sampler" 2>/dev/null || true
           {
             echo "### Build the tests: memory"
@@ -736,7 +735,7 @@ jobs:
       # from the archive below.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          shared-key: rust
+          shared-key: rust-app
           save-if: false
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
       - run: mkdir -p app/dist
@@ -790,7 +789,7 @@ jobs:
         if: ${{ !cancelled() && steps.archive.outcome == 'success' }}
         run: |
           # shellcheck disable=SC2086 # the archive flags are several words, on purpose.
-          tools/no-orphans.sh --reap -- cargo nextest run $ARCHIVE_RUN --profile ci --no-tests fail --partition hash:${{ matrix.part }}/2 -E "not test(/::in_a_docker_pool\$/) & $(node tools/quarantine.mjs nextest)"
+          tools/no-orphans.sh --reap -- cargo nextest run $ARCHIVE_RUN --profile ci --no-tests fail --partition hash:${{ matrix.part }}/2 -E "package(purlis-app) & not test(/::in_a_docker_pool\$/) & $(node tools/quarantine.mjs nextest)"
       - name: Annotate the slowest tests
         if: ${{ !cancelled() }}
         continue-on-error: true
