@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795564123791,
+  "lastUpdate": 1795569014437,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54306,6 +54306,48 @@ window.BENCHMARK_DATA = {
             "value": 101.47732250000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.073, 101.449, 101.477, 102.267, 102.946 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e7ff7c0aabf764de53fc90246cbcb0bcaf02116e",
+          "message": "GitLab: mergeRequestCreate from the default branch is refused at create time (#7585) (#7588)\n\nThe default-head refusal ran only for createPullRequest. mergeRequestCreate's\nsourceBranch, read from inline input or variables, now gets the same\nProtectedPullHead refusal REST gives. Adds GitLab tests for #7489 (empty pack,\nrefused push reason on gitlab.com and a self-hosted port), #7530 (push recorded\nunder the project id, second push let through) and #7546 (held glab mr merge\nwithin the guard budget).\n\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M87NN491Q39PTNZ69RTC09NZ\nPurlis-Persona: steward\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T00:26:57Z",
+          "tree_id": "7d7354c3554a5d2e7c97f46765220dbf329965cf",
+          "url": "https://github.com/purlis/purlis/commit/e7ff7c0aabf764de53fc90246cbcb0bcaf02116e"
+        },
+        "date": 1795569006255,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7054635,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.694, 0.701, 0.705, 0.712, 0.721 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5139275,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.413, 16.469, 16.514, 16.706, 16.807 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9217405,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.860, 101.824, 101.922, 102.104, 102.699 ms"
           }
         ]
       }
