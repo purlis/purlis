@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795627337981,
+  "lastUpdate": 1795632916477,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54936,6 +54936,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2634195,
             "unit": "ms",
             "extra": "median of 5 runs: 101.383, 101.541, 102.263, 102.668, 103.059 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3f5a503c19824be8e2638217a7c4f0f19df81dca",
+          "message": "Core stalls name their culprit; a window's focus, size and place are handled off the main thread (H14) (#7626)\n\ncore_stall's running now names, outermost first, a window command, window event, menu click, page load, artifact page request or run event, and the source line of a lock the main thread waited on. Focused, Resized and Moved reached the chats' and planes' locks from the main thread on every frame; they now join a coalescing lane of their own (windowevents).\n\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M88XP8Y57A77DAR664KQNXC6\nPurlis-Persona: steward\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T18:07:46Z",
+          "tree_id": "b20e8af57db57f0e1c8635922e7bffbcebd472b0",
+          "url": "https://github.com/purlis/purlis/commit/3f5a503c19824be8e2638217a7c4f0f19df81dca"
+        },
+        "date": 1795632908781,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.539255,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.532, 0.537, 0.539, 0.542, 0.548 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2203,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.060, 16.170, 16.220, 16.241, 16.268 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.248223,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.722, 100.361, 101.248, 101.488, 102.209 ms"
           }
         ]
       }
