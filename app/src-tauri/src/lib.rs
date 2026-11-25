@@ -1997,47 +1997,51 @@ async fn start_chat(
     let config = planes.config().map(std::path::Path::to_path_buf);
     let cancel = hostedsessions::a_cancellable_start(held.root());
     tauri::async_runtime::spawn_blocking(move || {
-        let named = label.clone();
-        let show_footer = boxes.show_footer;
-        let runs_on = boxes.runs_on.map(RunsOnPick::choice).transpose()?;
-        let without_sandbox = boxes
-            .without_sandbox
-            .map(|asked| purlis_core::sandbox::OptOut {
-                reason: asked.reason,
-            });
-        // git is asked once about the local file for the whole start (#2179).
-        let (mut started, said) = poolprofiles::offering_limits(|| {
-            hostedsessions::cancelled_by(cancel, || {
-                purlis_core::profiles::git_asked_once(|| {
-                    worktrees::on_a_branch(
-                        held.root(),
-                        config.as_deref(),
-                        cwd.as_deref().map(std::path::Path::new),
-                        named.as_deref(),
-                        boxes.new_branch,
-                        |cwd| {
-                            start_chat_in(
-                                &held,
-                                profile,
-                                persona,
-                                cwd,
-                                name,
-                                label,
-                                Picked {
-                                    show_footer,
-                                    without_sandbox,
-                                    runs_on,
-                                },
-                                columns,
-                                rows,
-                            )
-                        },
-                    )
+        // Timed by phase, and written to the slow log where it took a second or more (H12).
+        let hot = held.chats().open_count();
+        purlis_core::opening::recording(hot, move || {
+            let named = label.clone();
+            let show_footer = boxes.show_footer;
+            let runs_on = boxes.runs_on.map(RunsOnPick::choice).transpose()?;
+            let without_sandbox = boxes
+                .without_sandbox
+                .map(|asked| purlis_core::sandbox::OptOut {
+                    reason: asked.reason,
+                });
+            // git is asked once about the local file for the whole start (#2179).
+            let (mut started, said) = poolprofiles::offering_limits(|| {
+                hostedsessions::cancelled_by(cancel, || {
+                    purlis_core::profiles::git_asked_once(|| {
+                        worktrees::on_a_branch(
+                            held.root(),
+                            config.as_deref(),
+                            cwd.as_deref().map(std::path::Path::new),
+                            named.as_deref(),
+                            boxes.new_branch,
+                            |cwd| {
+                                start_chat_in(
+                                    &held,
+                                    profile,
+                                    persona,
+                                    cwd,
+                                    name,
+                                    label,
+                                    Picked {
+                                        show_footer,
+                                        without_sandbox,
+                                        runs_on,
+                                    },
+                                    columns,
+                                    rows,
+                                )
+                            },
+                        )
+                    })
                 })
-            })
-        })?;
-        started.notices.splice(0..0, said);
-        Ok(started)
+            })?;
+            started.notices.splice(0..0, said);
+            Ok(started)
+        })
     })
     .await
     .map_err(|err| format!("purlis could not start the chat: {err}"))?
