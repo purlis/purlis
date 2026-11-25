@@ -2767,22 +2767,37 @@ pub fn run_network_within(
     args: &[&str],
     timeout: Duration,
 ) -> Result<Run, GitUnavailable> {
-    run_network_shaped(dir, helper, args, Vec::new(), false, timeout, None)
+    run_network_shaped(dir, helper, args, Vec::new(), false, timeout, (None, None))
 }
+
+/// What reads git's stderr as it is written: each chunk, as text. For the one fetch whose
+/// `--progress` lines say how far a first fill has got ([`run_network_stalling`]).
+pub type Watch = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
 
 /// [`run_network_within`] that also ends git when it has written **nothing to either pipe for
 /// `stall`**: a fetch run with `--progress` writes as it receives and as it resolves deltas, so a
 /// long fetch that is moving is never cut at `timeout` (its upper bound), and one that is stuck
 /// is cut after `stall` and not after hours (#7587). Nothing of what git wrote is read for a
-/// decision: only that it wrote.
+/// decision: only that it wrote. `watch`, where given, is handed each chunk of stderr as git
+/// writes it, so a long fetch's `--progress` lines are seen while it runs and not after; the
+/// whole of stderr is still in the answer.
 pub fn run_network_stalling(
     dir: &Path,
     helper: Option<&str>,
     args: &[&str],
     timeout: Duration,
     stall: Duration,
+    watch: Option<Watch>,
 ) -> Result<Run, GitUnavailable> {
-    run_network_shaped(dir, helper, args, Vec::new(), false, timeout, Some(stall))
+    run_network_shaped(
+        dir,
+        helper,
+        args,
+        Vec::new(),
+        false,
+        timeout,
+        (Some(stall), watch),
+    )
 }
 
 /// [`run_network`] in **no repository at all**, for a call that names its remote by address and
@@ -2819,7 +2834,7 @@ pub fn run_network_in_no_repository_trusting_the_system(
         vec![("GIT_DIR".to_owned(), "/dev/null".into())],
         true,
         NETWORK,
-        None,
+        (None, None),
     )
 }
 
@@ -2830,7 +2845,7 @@ fn run_network_with(
     args: &[&str],
     more: Vec<(String, std::ffi::OsString)>,
 ) -> Result<Run, GitUnavailable> {
-    run_network_shaped(dir, helper, args, more, false, NETWORK, None)
+    run_network_shaped(dir, helper, args, more, false, NETWORK, (None, None))
 }
 
 /// [`run_network_with`], trusting only the system where `system_trust` says so ([`is_trust`]).
@@ -2841,7 +2856,7 @@ fn run_network_shaped(
     more: Vec<(String, std::ffi::OsString)>,
     system_trust: bool,
     timeout: Duration,
-    stall: Option<Duration>,
+    (stall, watch): (Option<Duration>, Option<Watch>),
 ) -> Result<Run, GitUnavailable> {
     let mut config: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
     // Under a chat's route there is no helper but the sentinel one it names, and none of the
@@ -2872,11 +2887,12 @@ fn run_network_shaped(
     };
     let started = Instant::now();
     let run = counted(dir, args, || {
-        Ok::<_, GitUnavailable>(as_text(wait_raw_until(
+        Ok::<_, GitUnavailable>(as_text(wait_raw_watched(
             spawn_with(dir, args, &extra)?,
             timeout,
             None,
             stall,
+            watch,
         )?))
     })?;
     // Listed once git has run (#959): a call refused before it started reached nobody. Each
@@ -3194,10 +3210,21 @@ fn wait_raw(child: Child, timeout: Duration) -> std::io::Result<RawRun> {
 /// and the child has written nothing to either pipe for that long (a fetch that reports its
 /// progress is moving while it writes; one that goes silent for `stall` is stuck).
 fn wait_raw_until(
+    child: Child,
+    timeout: Duration,
+    called_off: Option<&AtomicBool>,
+    stall: Option<Duration>,
+) -> std::io::Result<RawRun> {
+    wait_raw_watched(child, timeout, called_off, stall, None)
+}
+
+/// [`wait_raw_until`], handing `watch` each chunk of stderr as the child writes it.
+fn wait_raw_watched(
     mut child: Child,
     timeout: Duration,
     called_off: Option<&AtomicBool>,
     stall: Option<Duration>,
+    watch: Option<Watch>,
 ) -> std::io::Result<RawRun> {
     // A caller that reads the output as it comes ([`run_capped`]) took it already.
     let stdout = child.stdout.take();
@@ -3215,7 +3242,11 @@ fn wait_raw_until(
     });
     let counted_err = written.clone();
     std::thread::spawn(move || {
-        let _ = err_tx.send(read_counting(&mut stderr, &counted_err));
+        let _ = err_tx.send(read_counting_watching(
+            &mut stderr,
+            &counted_err,
+            watch.as_deref(),
+        ));
     });
 
     let started = Instant::now();
@@ -3276,7 +3307,16 @@ fn wait_raw_until(
 }
 
 /// Reads `pipe` to its end, adding each chunk's size to `written` as it arrives.
-fn read_counting(mut pipe: impl Read, written: &std::sync::atomic::AtomicU64) -> Vec<u8> {
+fn read_counting(pipe: impl Read, written: &std::sync::atomic::AtomicU64) -> Vec<u8> {
+    read_counting_watching(pipe, written, None)
+}
+
+/// [`read_counting`], handing `watch` each chunk as text.
+fn read_counting_watching(
+    mut pipe: impl Read,
+    written: &std::sync::atomic::AtomicU64,
+    watch: Option<&(dyn Fn(&str) + Send + Sync)>,
+) -> Vec<u8> {
     let mut all = Vec::new();
     let mut chunk = [0u8; 8192];
     while let Ok(n) = pipe.read(&mut chunk) {
@@ -3285,6 +3325,9 @@ fn read_counting(mut pipe: impl Read, written: &std::sync::atomic::AtomicU64) ->
         }
         all.extend_from_slice(&chunk[..n]);
         written.fetch_add(n as u64, Ordering::Relaxed);
+        if let Some(watch) = watch {
+            watch(&String::from_utf8_lossy(&chunk[..n]));
+        }
     }
     all
 }
