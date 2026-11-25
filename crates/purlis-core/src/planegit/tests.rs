@@ -1292,6 +1292,59 @@ fn nothing_git_started_is_left(said: &Path) {
 #[cfg(not(unix))]
 fn nothing_git_started_is_left(_said: &Path) {}
 
+/// A git that is Apple's 2.39: `merge-tree` given `--merge-base` is refused with exit 129 and
+/// merge-tree's usage text, as that git does; every other call goes to the real git, named by
+/// its full path before any `PATH` could change it. So the test is red on a git of any version.
+#[cfg(unix)]
+fn a_git_whose_merge_tree_has_no_merge_base_option(dir: &Path) -> PathBuf {
+    stand_in::program(
+        dir,
+        "git-2.39",
+        &format!(
+            r#"#!/bin/sh
+case "$*" in
+  *merge-tree*--merge-base*)
+    echo "usage: git merge-tree [--write-tree] [<options>] <branch1> <branch2>" >&2
+    exit 129 ;;
+esac
+exec '{}' "$@"
+"#,
+            git::real_binary().display()
+        ),
+    )
+}
+
+#[cfg(unix)]
+#[test]
+fn a_remote_that_moved_with_no_conflict_is_replayed_under_a_git_without_merge_base_option() {
+    // #7627: `git merge-tree --merge-base=` is git 2.40's; Apple's git 2.39 refuses it with
+    // merge-tree's usage text, and that was reported as a failed rebase. One local commit, a
+    // remote ahead of the shared base, no conflict: the replay must land on any supported git.
+    // The git is a stand-in that refuses the option, so a CI git of 2.40 or later cannot hide it.
+    let fixture = Fixture::plane();
+    let bare = a_remote_no_rebase_can_finish_onto(&fixture);
+    run(
+        &fixture.root,
+        &["fetch", "-q", &bare.display().to_string(), "main"],
+    );
+
+    let old_git = a_git_whose_merge_tree_has_no_merge_base_option(fixture.root.parent().unwrap());
+    let rebased = git::with_stand_in(&old_git, || {
+        rebase_onto_fetched(
+            &fixture.root,
+            "FETCH_HEAD",
+            false,
+            std::time::Duration::from_secs(60),
+        )
+    });
+
+    assert_eq!(rebased, Rebased::Replayed);
+    assert_eq!(
+        ask(&fixture.root, &["log", "--format=%s", "-2"]).trim(),
+        "mine\ntheirs"
+    );
+}
+
 #[test]
 fn a_rebase_still_running_at_its_deadline_is_stopped_and_said_to_be_out_of_time() {
     // charter-app#242: the rebase used to have no deadline at all. The deadline is the
