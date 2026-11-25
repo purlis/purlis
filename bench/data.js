@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795593407660,
+  "lastUpdate": 1795596755133,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54600,6 +54600,48 @@ window.BENCHMARK_DATA = {
             "value": 103.19639,
             "unit": "ms",
             "extra": "median of 5 runs: 101.905, 102.172, 103.196, 103.394, 103.536 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7f84fccfc8af1c3b3a8f5ff68e654376469eeb24",
+          "message": "Forge route: a chat's merge or enqueue is held with an Ask that names it (#7543) (#7547)\n\n* Forge route: a GraphQL merge or enqueue raises a merge hold Ask; a refused lane-branch push says why no Ask was raised (#7543)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M870QSGNWFGWJKZ1KGRHYZKA\nPurlis-Persona: steward\n\n* Forge route: test and changelog fragment for the held GraphQL merge (#7543)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M870QSGNWFGWJKZ1KGRHYZKA\nPurlis-Persona: steward\n\n* Merge holds: only a merge now is held; auto-merge and the merge queue are refused with a reason, since the person's press merges at once; a clearer reason when the document cannot be read (#7543 review)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* Held merges carry the verb: a chat's enqueue and auto-merge raise an Ask that names the act, and the person's press performs that act and no other, pinned to the head the Ask read (#7543 round 2)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M872598VJ4JZVTP2RK9VDVVJ\nPurlis-Persona: steward\n\n* Held merges: auto-merge is refused again with a reason; the act is part of what a press is bound to; a GitLab accept with a strategy is refused; an enqueue does not name a merge method (#7543 round 3)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M873CYMC0JSTQ4ZH4JCHA0C8\nPurlis-Persona: steward\n\n* Refused-push wording fits git's 200-byte reason and the test matches it; the enqueue test sheds the shell's steering (#7547)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M87Y3EGKV98W6KD1ZG8XQG82\nPurlis-Persona: steward\n\n* GraphQL proxy: the merge and enqueue reading goes through the screened parse() (#7547, #7596)\n\nMain's #7596 routed every parse_query call through parse(), which refuses a block\nstring that panics the parser. #7547's mutation_arguments still called parse_query\ndirectly, so it did not compile after the merge and would have skipped the screen.\nNow no GraphQL parse in graphql.rs bypasses parse().\n\nTests: a unit test that mutation_arguments and strategy_said read nothing from a\nmergePullRequest/enqueuePullRequest document carrying a U+3000 block string\n(seen to fail on the parser's panic without the fix), and the abort-hook child now\nsends both documents and expects GraphqlParse.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M88EAV6PWRTG1ZD2EEHQM67H\nPurlis-Persona: steward\n\n* Tests: the GitLab refusal test asserts the reason the proxy sends; the listener panic test waits out the slot's release (#7547)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M88M2ENF1M1FP6MHKPFWTG8H\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T08:02:43Z",
+          "tree_id": "55fe1506abebdc2bbf303e209cfd59ef3b84d022",
+          "url": "https://github.com/purlis/purlis/commit/7f84fccfc8af1c3b3a8f5ff68e654376469eeb24"
+        },
+        "date": 1795596746942,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.67143,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.669, 0.670, 0.671, 0.687, 0.696 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.727255,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.620, 16.622, 16.727, 16.857, 16.920 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8260015,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.688, 101.775, 101.826, 101.868, 102.395 ms"
           }
         ]
       }
