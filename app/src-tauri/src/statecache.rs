@@ -16,14 +16,17 @@
 //! and any event in the repo's common `.git` outside another worktree's own folder there (a ref,
 //! `packed-refs`, `config`, `info/exclude`), which moves every folder of that repo. **The watch
 //! fails closed**, as `watchset::sender` makes every watcher: an error or a lost track is a
-//! rescan, and a rescan moves every folder; the platform's watch limit leaves every folder
-//! unwatched; a watch added or removed moves every folder, because FSEvents restarts its stream
+//! rescan, and a rescan moves every folder; the platform's watch limit, or any watch refused,
+//! leaves every folder unwatched; a watched folder removed or renamed is watched afresh, since
+//! inotify drops its watch; a watch added or removed moves every folder, because FSEvents restarts its stream
 //! from now on each, and what happened while it did is never told. An answer read while an
 //! event arrived is not kept. Events reach a reader late, so before a kept answer is served the
 //! watch is flushed: a file is written in each folder's own gitdir (outside the work tree,
 //! where an editor's or a dev server's watch never sees it, and git ignores it) and its event
 //! waited for, and the
 //! platform's events come in order, so everything before it has been heard. A flush that times out moves every folder. A restart keeps nothing.
+//!
+//! On Linux nothing is watched (see [`platform`]): every ask reads every folder, as it streams.
 //!
 //! Only a successful read is kept; a refusal is read again every time. A folder that keeps
 //! moving (a build writing `target/`) is read at most once every [`READ_EVERY`], and only while
@@ -73,8 +76,22 @@ const READ_EVERY: Duration = Duration::from_secs(2);
 /// `max_user_watches`).
 const WATCH_LIMIT: &str = "purlis-statecache-watch-limit";
 
+/// How long a folder no ask names is kept, with its watches, before it is forgotten: a repo
+/// the window stopped asking about is not watched for ever.
+const FORGET_AFTER: Duration = if cfg!(test) {
+    Duration::from_secs(1)
+} else {
+    Duration::from_secs(10 * 60)
+};
+
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+thread_local! {
+    /// Makes every reader thread this thread starts fail to start, as at the platform's limit.
+    static NO_THREADS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
 
 #[derive(Default)]
 struct Entry {
@@ -101,6 +118,8 @@ struct Entry {
     fresh: bool,
     /// When its last read began.
     began: Option<Instant>,
+    /// When an ask last named it.
+    asked: Option<Instant>,
 }
 
 impl Entry {
@@ -130,8 +149,13 @@ struct Shared {
     entries: HashMap<PathBuf, Entry>,
     queue: VecDeque<PathBuf>,
     workers: usize,
+    /// The workers reading a folder now; the others are about to take one from the queue.
+    busy: usize,
     /// The folders a watch is up on.
     dirs: HashSet<PathBuf>,
+    /// Watched folders removed or renamed since: the platform may have dropped their watch
+    /// (inotify does), so it is taken down and set up again the next time one is asked about.
+    lost: HashSet<PathBuf>,
     /// Where a flush makes its markers: each watched folder's home.
     homes: HashSet<PathBuf>,
     /// Flush markers made whose event has not yet come.
@@ -159,6 +183,40 @@ impl Shared {
         }
     }
 
+    /// Something at `path` was removed or renamed. A watched folder at or below it has lost its
+    /// watch on inotify, and one made again at the same path is never heard: its entries, and
+    /// those of every folder watched through it, are forgotten, so the next ask watches them
+    /// afresh.
+    fn lose(&mut self, path: &Path) {
+        let lost: Vec<PathBuf> = self
+            .dirs
+            .iter()
+            .filter(|dir| dir.starts_with(path))
+            .cloned()
+            .collect();
+        if lost.is_empty() {
+            return;
+        }
+        for dir in &lost {
+            self.dirs.remove(dir);
+        }
+        self.lost.extend(lost);
+        self.entries.retain(|key, entry| {
+            !key.starts_with(path) && !entry.common.as_ref().is_some_and(|c| c.starts_with(path))
+        });
+        self.rehome();
+    }
+
+    /// Where a flush makes its markers: the home of each folder a watch vouches for.
+    fn rehome(&mut self) {
+        self.homes = self
+            .entries
+            .values()
+            .filter(|e| e.watched)
+            .filter_map(|e| e.home.clone())
+            .collect();
+    }
+
     /// The platform could not watch everything it was asked to: no folder is vouched for.
     fn limit(&mut self) {
         self.limited = true;
@@ -172,7 +230,13 @@ impl Shared {
 /// Makes the watcher whose events go to a sender: the platform's, or a test's.
 pub type Make = fn(Sender<notify::Event>) -> Option<Box<dyn Watcher + Send>>;
 
+/// No watch on Linux: inotify watches each directory of a recursive watch, `target/` and
+/// `node_modules/` included, all set up before the folder is read, and past
+/// `max_user_watches` it fails part way. There every ask reads every folder, as answers stream.
 fn platform(events: Sender<notify::Event>) -> Option<Box<dyn Watcher + Send>> {
+    if cfg!(target_os = "linux") {
+        return None;
+    }
     let watcher = notify::recommended_watcher(handler(events)).ok()?;
     Some(Box::new(watcher))
 }
@@ -237,6 +301,12 @@ impl StateCache {
     #[cfg(test)]
     fn known(&self) -> usize {
         lock(&self.0.shared.0).entries.len()
+    }
+
+    /// How many folders a watch is up on.
+    #[cfg(test)]
+    fn watches(&self) -> usize {
+        lock(&self.0.shared.0).dirs.len()
     }
 
     /// How many flush markers the cache still remembers.
@@ -305,8 +375,9 @@ impl StateCache {
                     first_news = Some(now);
                 }
             }
-            if queued {
-                inner.start_workers(&mut guard);
+            if queued && inner.start_workers(&mut guard) {
+                // What no thread could be started to read is answered now.
+                continue;
             }
             if said.iter().all(Option::is_some) {
                 return said;
@@ -338,11 +409,8 @@ struct Located {
 }
 
 impl Located {
-    /// The folders to watch for this folder: itself, and the repo's common `.git` when that is
-    /// elsewhere (a linked worktree's own gitdir lies inside it).
     /// Where a flush makes this folder's marker: its own gitdir (a main clone's is `.git`), so
-    /// the work tree never sees one. A folder that is no repo has only itself, where no
-    /// `git status` can be misled by it.
+    /// the work tree never sees one.
     fn home(&self, folder: &Path) -> PathBuf {
         self.gitdir
             .clone()
@@ -350,6 +418,8 @@ impl Located {
             .unwrap_or_else(|| folder.to_path_buf())
     }
 
+    /// The folders to watch for this folder: itself, and the repo's common `.git` when that is
+    /// elsewhere (a linked worktree's own gitdir lies inside it).
     fn roots(&self, folder: &Path) -> Vec<PathBuf> {
         let mut roots = vec![folder.to_path_buf()];
         roots.extend(
@@ -363,20 +433,30 @@ impl Located {
 }
 
 impl Inner {
-    /// Starts workers, up to `READ_AT_ONCE`, for what is queued.
-    fn start_workers(self: &Arc<Self>, shared: &mut Shared) {
-        while shared.workers < READ_AT_ONCE && shared.workers < shared.queue.len() {
-            shared.workers += 1;
+    /// Starts workers, up to `READ_AT_ONCE`, for what is queued and no idle worker will take.
+    /// When none can be started and none is running, what is queued is answered unread, for
+    /// the next round to try again; whether it was.
+    fn start_workers(self: &Arc<Self>, shared: &mut Shared) -> bool {
+        while shared.workers < READ_AT_ONCE && shared.workers - shared.busy < shared.queue.len() {
             let inner = Arc::clone(self);
-            if std::thread::Builder::new()
-                .name("purlis-state-read".into())
-                .spawn(move || inner.work())
-                .is_err()
-            {
-                shared.workers -= 1;
-                break;
+            match spawn_reader(move || inner.work()) {
+                Ok(()) => shared.workers += 1,
+                Err(err) if shared.workers == 0 => {
+                    let why = format!("No thread could be started to read this folder: {err}");
+                    for key in std::mem::take(&mut shared.queue) {
+                        if let Some(entry) = shared.entries.get_mut(&key) {
+                            entry.reading = false;
+                            entry.fresh = true;
+                            entry.once = Some((None, Some(why.clone())));
+                        }
+                    }
+                    return true;
+                }
+                // The workers running read what is queued, in turn.
+                Err(_) => break,
             }
         }
+        false
     }
 
     /// Reads what is queued until nothing is.
@@ -393,11 +473,14 @@ impl Inner {
                     continue;
                 };
                 entry.began = Some(Instant::now());
-                (key, entry.path.clone(), entry.heard)
+                let took = (key, entry.path.clone(), entry.heard);
+                guard.busy += 1;
+                took
             };
             self.reads.fetch_add(1, Ordering::Relaxed);
             let said = (self.read)(&path);
             let mut guard = lock(shared);
+            guard.busy -= 1;
             let Some(entry) = guard.entries.get_mut(&key) else {
                 continue;
             };
@@ -425,8 +508,14 @@ impl Inner {
     /// The watches are added with only `watching` held, so the reads and asks going on meanwhile
     /// are not held up by a walk of a large folder.
     fn watch(&self, folders: &[Folder], keys: &[PathBuf]) -> bool {
+        let now = Instant::now();
         let new: Vec<usize> = {
-            let shared = lock(&self.shared.0);
+            let mut shared = lock(&self.shared.0);
+            for key in keys {
+                if let Some(entry) = shared.entries.get_mut(key) {
+                    entry.asked = Some(now);
+                }
+            }
             (0..keys.len())
                 .filter(|&n| !shared.entries.contains_key(&keys[n]))
                 .collect()
@@ -448,8 +537,11 @@ impl Inner {
                 .entries
                 .iter()
                 .filter(|(key, entry)| {
-                    !listed.contains(key)
-                        && entry.common.as_ref().is_some_and(|c| commons.contains(c))
+                    let unlisted = entry.common.as_ref().is_some_and(|c| commons.contains(c));
+                    let unasked = entry
+                        .asked
+                        .is_none_or(|at| now.saturating_duration_since(at) > FORGET_AFTER);
+                    !listed.contains(key) && (unlisted || unasked)
                 })
                 .map(|(key, entry)| (key.clone(), entry.common.clone()))
                 .collect()
@@ -462,8 +554,8 @@ impl Inner {
         if watching.is_none() {
             *watching = self.start();
         }
-        let (mut dirs, staying) = {
-            let shared = lock(&self.shared.0);
+        let (mut dirs, staying, lost, limited) = {
+            let mut shared = lock(&self.shared.0);
             let gone: HashSet<&PathBuf> = gone.iter().map(|(key, _)| key).collect();
             let staying: Vec<Vec<PathBuf>> = shared
                 .entries
@@ -477,29 +569,49 @@ impl Inner {
                     located.roots(key)
                 })
                 .collect();
-            (shared.dirs.clone(), staying)
+            let lost = std::mem::take(&mut shared.lost);
+            (shared.dirs.clone(), staying, lost, shared.limited)
         };
-        let mut changed = false;
+        // A removed folder's watch, which inotify has dropped and FSEvents has not.
+        let mut changed = !lost.is_empty();
+        if let Some(w) = watching.as_mut() {
+            for dir in &lost {
+                let _ = w.unwatch(dir);
+            }
+        }
+        let mut refused = false;
         let mut up: Vec<bool> = Vec::with_capacity(new.len());
         for (&n, located) in new.iter().zip(&located) {
-            let Some(located) = located else {
-                // A `.git` naming a folder that cannot be found: nothing vouches for it.
+            // A `.git` naming a folder that cannot be found, or none: nothing vouches for it.
+            // Past a refused watch, nothing is watched again.
+            let (Some(located), Some(w), false) = (located, watching.as_mut(), limited || refused)
+            else {
                 up.push(false);
                 continue;
             };
             sweep(&located.home(&keys[n]));
-            let all = watching.as_mut().is_some_and(|w| {
-                located.roots(&keys[n]).into_iter().all(|dir| {
-                    if dirs.contains(&dir) {
-                        return true;
+            let mut added: Vec<PathBuf> = Vec::new();
+            for dir in located.roots(&keys[n]) {
+                if dirs.contains(&dir) {
+                    continue;
+                }
+                // Even a watch that failed may have restarted the platform's stream.
+                changed = true;
+                if w.watch(&dir, RecursiveMode::Recursive).is_err() {
+                    // A recursive watch can fail part way (inotify past `max_user_watches`):
+                    // what it set up, and this folder's other watches, are taken down.
+                    let _ = w.unwatch(&dir);
+                    for dir in added.drain(..) {
+                        let _ = w.unwatch(&dir);
+                        dirs.remove(&dir);
                     }
-                    let ok = w.watch(&dir, RecursiveMode::Recursive).is_ok();
-                    // Even a watch that failed may have restarted the platform's stream.
-                    changed = true;
-                    ok && dirs.insert(dir)
-                })
-            });
-            up.push(all);
+                    refused = true;
+                    break;
+                }
+                dirs.insert(dir.clone());
+                added.push(dir);
+            }
+            up.push(!refused);
         }
         // A gone folder's watches, and its repo's when no folder still listed uses it.
         let mut keep: HashSet<PathBuf> = staying.into_iter().flatten().collect();
@@ -518,11 +630,20 @@ impl Inner {
         }
 
         let mut shared = lock(&self.shared.0);
+        // A folder removed while its watch was being set up is watched afresh next time.
+        let shared = &mut *shared;
+        dirs.retain(|dir| !shared.lost.contains(dir));
         shared.dirs = dirs;
         for (key, _) in &gone {
             shared.entries.remove(key);
         }
         for ((&n, located), up) in new.iter().zip(located).zip(up) {
+            let roots = located
+                .as_ref()
+                .map_or_else(Vec::new, |l| l.roots(&keys[n]));
+            if roots.iter().any(|dir| shared.lost.contains(dir)) {
+                continue;
+            }
             let home = located.as_ref().map(|l| l.home(&keys[n]));
             let located = located.unwrap_or_default();
             let watched = up && !shared.limited;
@@ -532,16 +653,14 @@ impl Inner {
                 gitdir: located.gitdir,
                 common: located.common,
                 watched,
+                asked: Some(now),
                 ..Entry::default()
             });
         }
-        let homes = shared
-            .entries
-            .values()
-            .filter(|e| e.watched)
-            .filter_map(|e| e.home.clone())
-            .collect();
-        shared.homes = homes;
+        if refused {
+            shared.limit();
+        }
+        shared.rehome();
         if changed {
             // FSEvents starts its stream again from now for each watch added or removed: what
             // happened while it did is never told.
@@ -631,6 +750,10 @@ fn hear(events: &Receiver<notify::Event>, shared: &(Mutex<Shared>, Condvar)) {
         // was made or removed, which its own event names: the marker a flush made there would
         // otherwise move the folder.
         let own_time = matches!(event.kind, EventKind::Modify(ModifyKind::Metadata(_)));
+        let gone = matches!(
+            event.kind,
+            EventKind::Remove(_) | EventKind::Modify(ModifyKind::Name(_))
+        );
         for path in &event.paths {
             let marker = path
                 .file_name()
@@ -642,10 +765,25 @@ fn hear(events: &Receiver<notify::Event>, shared: &(Mutex<Shared>, Condvar)) {
                 }
             } else if !(own_time && (state.dirs.contains(path) || state.homes.contains(path))) {
                 state.moved(path);
+                if gone {
+                    state.lose(path);
+                }
             }
         }
         shared.1.notify_all();
     }
+}
+
+/// Starts a reader thread.
+fn spawn_reader(work: impl FnOnce() + Send + 'static) -> std::io::Result<()> {
+    #[cfg(test)]
+    if NO_THREADS.with(std::cell::Cell::get) {
+        return Err(std::io::Error::other("refused by the test"));
+    }
+    std::thread::Builder::new()
+        .name("purlis-state-read".into())
+        .spawn(work)
+        .map(drop)
 }
 
 /// Removes the flush markers a run that ended without removing its own left in `dir`.
@@ -664,14 +802,11 @@ fn sweep(dir: &Path) {
     }
 }
 
-/// Where git keeps `folder`'s state. A `.git` file naming a folder that cannot be found, or
-/// that names none, is `None`: the folder is never vouched for. A folder with no `.git` has
-/// nothing more than itself to watch (its read refuses, unless it is not a repo at all).
+/// Where git keeps `folder`'s state. A folder with no `.git`, or a `.git` file naming a folder
+/// that cannot be found or naming none, is `None`: the folder is never vouched for.
 fn locate(folder: &Path) -> Option<Located> {
     let dot = folder.join(".git");
-    let Ok(meta) = std::fs::metadata(&dot) else {
-        return Some(Located::default());
-    };
+    let meta = std::fs::metadata(&dot).ok()?;
     if meta.is_dir() {
         return Some(Located {
             gitdir: None,

@@ -105,7 +105,7 @@ fn fixture(count: usize) -> Fixture {
     let folders = (0..count)
         .map(|n| {
             let path = base.join(format!("branch-{n:03}"));
-            std::fs::create_dir(&path).expect("a folder");
+            std::fs::create_dir_all(path.join(".git")).expect("a folder");
             Folder { path }
         })
         .collect();
@@ -355,6 +355,7 @@ fn a_worktree_whose_gitdir_is_relative_hears_its_own_index() {
 #[test]
 fn a_folder_whose_gitdir_cannot_be_found_is_never_kept() {
     let f = fixture(1);
+    std::fs::remove_dir(f.folders[0].path.join(".git")).unwrap();
     std::fs::write(f.folders[0].path.join(".git"), "gitdir: ../nowhere\n").unwrap();
     let cache = StateCache::watched_by(polled, |_| (Some(0), None));
     answered(&cache, &f.folders);
@@ -521,8 +522,9 @@ fn a_folder_that_keeps_moving_is_read_at_most_once_every_two_seconds_and_never_c
 #[test]
 fn flush_markers_a_crash_left_are_swept_when_their_folder_is_watched() {
     let f = fixture(1);
-    let dir = f.folders[0].path.join(format!("{FLUSH_PREFIX}1-0"));
-    let file = f.folders[0].path.join(format!("{FLUSH_PREFIX}1-1"));
+    let home = f.folders[0].path.join(".git");
+    let dir = home.join(format!("{FLUSH_PREFIX}1-0"));
+    let file = home.join(format!("{FLUSH_PREFIX}1-1"));
     std::fs::create_dir(&dir).unwrap();
     std::fs::write(&file, "").unwrap();
     answered(&f.cache, &f.folders);
@@ -548,4 +550,221 @@ fn a_worktrees_flush_marker_a_crash_left_in_its_gitdir_is_swept() {
     let cache = StateCache::watched_by(polled, status);
     answered(&cache, &[folder(&r.side)]);
     assert!(!stale.exists(), "the marker was left");
+}
+
+/// The folders a [`Dropping`] watcher still hears.
+type Live = Arc<Mutex<HashSet<PathBuf>>>;
+
+/// A watcher that, as inotify does, drops a folder's watch when the folder itself is removed
+/// or renamed: it tells that once, and nothing in the folder again until it is watched again.
+struct Dropping {
+    inner: notify::PollWatcher,
+    live: Live,
+}
+
+impl notify::Watcher for Dropping {
+    fn new<F: EventHandler>(handler: F, config: notify::Config) -> notify::Result<Self> {
+        Ok(Self {
+            inner: notify::PollWatcher::new(handler, config)?,
+            live: Live::default(),
+        })
+    }
+
+    fn watch(&mut self, path: &Path, mode: RecursiveMode) -> notify::Result<()> {
+        self.inner.watch(path, mode)?;
+        lock(&self.live).insert(path.to_path_buf());
+        Ok(())
+    }
+
+    fn unwatch(&mut self, path: &Path) -> notify::Result<()> {
+        lock(&self.live).remove(path);
+        self.inner.unwatch(path)
+    }
+
+    fn kind() -> notify::WatcherKind {
+        notify::WatcherKind::PollWatcher
+    }
+}
+
+fn dropping(events: std::sync::mpsc::Sender<notify::Event>) -> Option<Box<dyn Watcher + Send>> {
+    let live = Live::default();
+    let heard = Arc::clone(&live);
+    let mut handler = as_platform(events);
+    let forward = move |event: notify::Result<notify::Event>| {
+        let paths = match &event {
+            Ok(event) => event.paths.clone(),
+            Err(err) => err.paths.clone(),
+        };
+        let mut live = lock(&heard);
+        if !paths.is_empty() && !paths.iter().any(|p| live.iter().any(|d| p.starts_with(d))) {
+            return;
+        }
+        if let Ok(event) = &event
+            && matches!(
+                event.kind,
+                EventKind::Remove(_) | EventKind::Modify(ModifyKind::Name(_))
+            )
+        {
+            for path in &event.paths {
+                live.remove(path);
+            }
+        }
+        drop(live);
+        handler.handle_event(event);
+    };
+    let inner = notify::PollWatcher::new(forward, poll_config()).ok()?;
+    Some(Box::new(Dropping { inner, live }))
+}
+
+/// How many files a folder holds, its `.git` aside.
+fn files(path: &Path) -> Read {
+    let n = std::fs::read_dir(path)
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name() != ".git")
+        .count();
+    (Some(n as u32), None)
+}
+
+#[test]
+fn a_folder_removed_and_made_again_is_watched_again() {
+    let f = fixture(1);
+    let path = f.folders[0].path.clone();
+    let cache = StateCache::watched_by(dropping, files);
+    assert_eq!(answered(&cache, &f.folders), [(Some(0), None)]);
+    std::fs::remove_dir_all(&path).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    std::fs::create_dir_all(path.join(".git")).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(answered(&cache, &f.folders), [(Some(0), None)]);
+    let before = cache.read_count();
+    assert_eq!(answered(&cache, &f.folders), [(Some(0), None)]);
+    assert_eq!(
+        cache.read_count(),
+        before,
+        "the made-again folder is not watched"
+    );
+    std::fs::write(path.join("new"), "x").unwrap();
+    assert_eq!(answered(&cache, &f.folders), [(Some(1), None)]);
+}
+
+thread_local! {
+    /// Every folder the refusing watcher was asked to stop watching.
+    static UNWATCHED: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
+}
+
+/// A watcher that, as inotify past `max_user_watches`, refuses to watch any `.git`.
+struct Refusing(notify::PollWatcher);
+
+impl notify::Watcher for Refusing {
+    fn new<F: EventHandler>(handler: F, config: notify::Config) -> notify::Result<Self> {
+        Ok(Self(notify::PollWatcher::new(handler, config)?))
+    }
+
+    fn watch(&mut self, path: &Path, mode: RecursiveMode) -> notify::Result<()> {
+        if path.file_name().is_some_and(|n| n == ".git") {
+            return Err(notify::Error::new(notify::ErrorKind::MaxFilesWatch));
+        }
+        self.0.watch(path, mode)
+    }
+
+    fn unwatch(&mut self, path: &Path) -> notify::Result<()> {
+        UNWATCHED.with(|u| u.borrow_mut().push(path.to_path_buf()));
+        self.0.unwatch(path)
+    }
+
+    fn kind() -> notify::WatcherKind {
+        notify::WatcherKind::PollWatcher
+    }
+}
+
+fn refusing(events: std::sync::mpsc::Sender<notify::Event>) -> Option<Box<dyn Watcher + Send>> {
+    Some(Box::new(
+        Refusing::new(as_platform(events), poll_config()).ok()?,
+    ))
+}
+
+#[test]
+fn a_watch_the_platform_refuses_is_taken_down_and_no_folder_is_kept_after() {
+    let r = repo();
+    let f = fixture(1);
+    let cache = StateCache::watched_by(refusing, |_| (Some(0), None));
+    answered(&cache, &[folder(&r.side)]);
+    // The refused watch, for what it set up before it failed, and the folder's own.
+    let unwatched = UNWATCHED.with(|u| u.borrow().clone());
+    assert_eq!(unwatched, [r.main.join(".git"), r.side.clone()]);
+    answered(&cache, &f.folders);
+    answered(&cache, &f.folders);
+    assert_eq!(
+        cache.read_count(),
+        3,
+        "a folder was kept past a refused watch"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn on_linux_no_folder_is_watched() {
+    assert!(platform(std::sync::mpsc::channel().0).is_none());
+}
+
+#[test]
+fn a_folder_asked_while_another_is_read_is_not_held_behind_it() {
+    let f = fixture(2);
+    let slow = f.folders[0].path.clone();
+    let cache = StateCache::watched_by(polled, move |path| {
+        if path == slow {
+            std::thread::sleep(Duration::from_secs(3));
+        }
+        (Some(0), None)
+    });
+    let first = cache.clone();
+    let one = vec![f.folders[0].clone()];
+    let reading = std::thread::spawn(move || first.states(&one));
+    std::thread::sleep(Duration::from_millis(500));
+    let start = Instant::now();
+    let said = cache.states(&f.folders);
+    let took = start.elapsed();
+    assert!(said[1].is_some(), "the second folder was not answered");
+    assert!(took < Duration::from_millis(1500), "it waited {took:?}");
+    reading.join().unwrap();
+}
+
+#[test]
+fn a_read_no_thread_could_start_for_is_answered_unread_and_tried_again() {
+    let f = fixture(1);
+    let cache = StateCache::watched_by(polled, |_| (Some(0), None));
+    NO_THREADS.with(|n| n.set(true));
+    let start = Instant::now();
+    let said = cache.states(&f.folders);
+    NO_THREADS.with(|n| n.set(false));
+    assert!(
+        start.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        start.elapsed()
+    );
+    assert!(matches!(said[0], Some((None, Some(_)))), "{said:?}");
+    assert_eq!(answered(&cache, &f.folders), [(Some(0), None)]);
+}
+
+#[test]
+fn a_folder_with_no_git_is_never_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let plain = [folder(&dir.path().canonicalize().unwrap())];
+    let cache = StateCache::watched_by(polled, |_| (Some(0), None));
+    answered(&cache, &plain);
+    answered(&cache, &plain);
+    assert_eq!(cache.read_count(), 2);
+}
+
+#[test]
+fn a_folder_no_ask_names_for_a_while_is_forgotten_and_unwatched() {
+    let r = repo();
+    let one = fixture(1);
+    let cache = StateCache::watched_by(polled, |_| (Some(0), None));
+    answered(&cache, &[folder(&r.side)]);
+    std::thread::sleep(FORGET_AFTER + Duration::from_millis(100));
+    answered(&cache, &one.folders);
+    assert_eq!(cache.known(), 1, "the folder no ask names is still held");
+    assert_eq!(cache.watches(), 1, "its watches are still up");
 }
