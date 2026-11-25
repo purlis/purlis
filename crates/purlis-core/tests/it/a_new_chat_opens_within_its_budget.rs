@@ -11,6 +11,7 @@
 
 use crate::support;
 
+use std::io::Write as _;
 use std::time::Duration;
 
 use purlis_core::{opening, profiles, start, worktree};
@@ -112,7 +113,9 @@ fn report(others: usize) -> opening::Timed<()> {
         .iter()
         .map(|p| format!("{} {} ms", p.name, p.ms))
         .collect();
-    eprintln!(
+    // `eprintln!` is disallowed (clippy.toml): name the stream. A closed stderr is no failure here.
+    let _ = writeln!(
+        std::io::stderr(),
         "opening beside {others} branch folders: {} ms ({})",
         timed.ms,
         phases.join(", ")
