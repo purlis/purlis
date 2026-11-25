@@ -266,7 +266,12 @@ fn finishes_among<'a>(events: impl Iterator<Item = &'a Event>, chat: &str) -> Ve
 #[derive(Debug, Default)]
 pub struct Recent {
     files: std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, KeptFile>>,
+    /// Files parsed whole, for a test that must know a kept one was not.
+    #[cfg(test)]
     parsed: std::sync::atomic::AtomicUsize,
+    /// Lines parsed in all, for a test that must know a kept file was not parsed again.
+    #[cfg(test)]
+    lines: std::sync::atomic::AtomicUsize,
 }
 
 #[derive(Debug)]
@@ -277,9 +282,14 @@ struct KeptFile {
 }
 
 impl Recent {
-    /// How many times a file has been parsed: for a test that must know a kept one was not.
-    pub fn parsed(&self) -> usize {
+    #[cfg(test)]
+    fn parsed(&self) -> usize {
         self.parsed.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    #[cfg(test)]
+    fn lines(&self) -> usize {
+        self.lines.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// **The finishes of each of `chats`** in the log in `dir`, oldest first, as [`finishes_in`]
@@ -322,8 +332,13 @@ impl Recent {
                 continue;
             }
             let events = std::sync::Arc::new(parse(path)?);
-            self.parsed
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            #[cfg(test)]
+            {
+                self.parsed
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                self.lines
+                    .fetch_add(events.len(), std::sync::atomic::Ordering::SeqCst);
+            }
             kept.insert(
                 path.clone(),
                 KeptFile {

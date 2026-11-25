@@ -3973,3 +3973,78 @@ fn a_project_with_old_forge_token_lines_hands_the_window_one_notice_and_a_clean_
     std::fs::write(purlis_core::names::manifest(clean.path()), "schema = 1\n").unwrap();
     assert_eq!(state_of(clean.path()).forge_replaced, None);
 }
+
+/// H15: the window asks the sandbox's state on every plane change, and a start emits several.
+/// Two asks that come together are two reads at most, and an ask is never answered by a read
+/// that started before it.
+#[test]
+fn sandbox_state_asked_together_shares_one_read_that_starts_after_them() {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    let planes =
+        crate::planes::Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None);
+    let id = planes.open(&root);
+    let held = planes.held(&id).unwrap();
+    let blank = state_of(&root);
+    let reads = AtomicU32::new(0);
+    // A read tells the number it started as, in the count that is nothing else here.
+    let read = |hold: Option<&std::sync::mpsc::Receiver<()>>| {
+        let number = reads.fetch_add(1, Ordering::SeqCst) + 1;
+        if let Some(hold) = hold {
+            hold.recv().unwrap();
+        }
+        SandboxState {
+            never: vec![number.to_string()],
+            ..blank.clone()
+        }
+    };
+    let (inside, started) = std::sync::mpsc::channel::<()>();
+    let (release, hold) = std::sync::mpsc::channel::<()>();
+    let (first, second) = std::thread::scope(|scope| {
+        let first = scope.spawn(|| {
+            state_in_a_burst(&held, || {
+                inside.send(()).unwrap();
+                read(Some(&hold))
+            })
+        });
+        started.recv().unwrap();
+        let later = || scope.spawn(|| state_in_a_burst(&held, || read(None)));
+        let (second, third) = (later(), later());
+        // Waiting by now, an ask waits for the next read, and the two share it; not yet asked, it
+        // is the one that starts it or finds it started: read number 2 either way.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        release.send(()).unwrap();
+        (
+            first.join().unwrap(),
+            [second.join().unwrap(), third.join().unwrap()],
+        )
+    });
+    assert_eq!(first.never, ["1"]);
+    for answer in &second {
+        assert_eq!(answer.never, ["2"], "not the read that was running");
+    }
+    assert_eq!(reads.load(Ordering::SeqCst), 2);
+}
+
+/// H15: the command's own read is [`state_of`], and a burst keeps nothing: an ask after a change
+/// sees it.
+#[test]
+fn sandbox_state_once_reads_the_project_again_for_an_ask_after_a_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(purlis_core::names::manifest(&root), "schema = 1\n").unwrap();
+    let planes =
+        crate::planes::Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None);
+    let id = planes.open(&root);
+    let held = planes.held(&id).unwrap();
+    assert!(!state_once(&held).on);
+    std::fs::write(
+        purlis_core::names::manifest(&root),
+        "schema = 1\n\n[sandbox]\nmode = \"on\"\n",
+    )
+    .unwrap();
+    assert!(state_once(&held).on, "an answer from before the ask");
+}

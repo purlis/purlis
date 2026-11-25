@@ -1184,11 +1184,18 @@ pub async fn asks_waiting(
     plane: PlaneId,
 ) -> Result<Asking, String> {
     let held = planes.held(&plane)?;
-    // Once per burst (H15): the window asks on every burst of moves.
-    crate::off_the_window(READING_ASKS, move || {
-        Ok(held.bursts().asks_waiting.ask(|| counted(&held)))
-    })
-    .await
+    crate::off_the_window(READING_ASKS, move || Ok(counted_once(&held))).await
+}
+
+/// [`counted`] once per burst (H15): the window asks on every burst of moves, and the asks that
+/// come while a read runs share the one read that starts after them.
+pub(crate) fn counted_once(held: &crate::planes::Held) -> Asking {
+    counted_in_a_burst(held, || counted(held))
+}
+
+/// `read`, as the plane's asks-waiting burst runs it.
+fn counted_in_a_burst(held: &crate::planes::Held, read: impl FnOnce() -> Asking) -> Asking {
+    held.bursts().asks_waiting.ask(read)
 }
 
 /// **What the ✋ counts of project `held`** (ADR 0121 decisions 2 and 3): its Blocking asks,

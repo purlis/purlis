@@ -4115,3 +4115,84 @@ fn pool_setups_ready_ask_is_one_in_its_own_project_and_gone_once_answered() {
     admin::forget(config.path()).unwrap();
     assert!(pool_setup_ready(project.path(), config.path()).is_none());
 }
+
+/// H15: the window asks what is waiting on every burst of moves. Two asks that come together are
+/// two reads at most, and an ask is never answered by a read that started before it.
+#[test]
+fn asks_waiting_asked_together_share_one_read_that_starts_after_them() {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).expect("the project");
+    let planes =
+        crate::planes::Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None);
+    let id = planes.open(&root);
+    let held = planes.held(&id).expect("held");
+    let blank = every_ask(&held);
+    let reads = AtomicU32::new(0);
+    // A read tells the number it started as, in the field that is nothing else here.
+    let read = |hold: Option<&std::sync::mpsc::Receiver<()>>| {
+        let number = reads.fetch_add(1, Ordering::SeqCst) + 1;
+        if let Some(hold) = hold {
+            hold.recv().expect("let go");
+        }
+        Asking {
+            snoozed_until: Some(number),
+            ..blank.clone()
+        }
+    };
+    let (inside, started) = std::sync::mpsc::channel::<()>();
+    let (release, hold) = std::sync::mpsc::channel::<()>();
+    let (first, second) = std::thread::scope(|scope| {
+        let first = scope.spawn(|| {
+            counted_in_a_burst(&held, || {
+                inside.send(()).expect("told");
+                read(Some(&hold))
+            })
+        });
+        started.recv().expect("the first read is running");
+        let later = || scope.spawn(|| counted_in_a_burst(&held, || read(None)));
+        let (second, third) = (later(), later());
+        // Waiting by now, an ask waits for the next read, and the two share it; not yet asked, it
+        // is the one that starts it or finds it started: read number 2 either way.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        release.send(()).expect("let go");
+        (
+            first.join().expect("first"),
+            [second.join().expect("second"), third.join().expect("third")],
+        )
+    });
+    assert_eq!(first.snoozed_until, Some(1));
+    for answer in &second {
+        assert_eq!(answer.snoozed_until, Some(2), "not the read that was running");
+    }
+    assert_eq!(reads.load(Ordering::SeqCst), 2);
+}
+
+/// H15: the command's own read is [`counted`], and what a burst answered is not kept for the
+/// next ask: an ask after a change sees it.
+#[test]
+fn asks_waiting_once_reads_the_project_again_for_an_ask_after_a_change() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).expect("the project");
+    std::fs::write(purlis_core::names::manifest(&root), "schema = 1\n").expect("its manifest");
+    let planes =
+        crate::planes::Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None);
+    let id = planes.open(&root);
+    let held = planes.held(&id).expect("held");
+    let persona_asks = || {
+        counted_once(&held)
+            .asks
+            .into_iter()
+            .filter(|ask| ask.source == AskSource::PersonaAllow)
+            .count()
+    };
+    assert_eq!(persona_asks(), 0);
+    std::fs::write(
+        purlis_core::names::manifest(&root),
+        "schema = 1\n\n[sandbox]\nmode = \"on\"\n\n[sandbox.personas.devops]\nhosts = [\"10.0.0.5:6443\"]\n",
+    )
+    .expect("its manifest");
+    assert_eq!(persona_asks(), 1, "an answer from before the ask");
+}

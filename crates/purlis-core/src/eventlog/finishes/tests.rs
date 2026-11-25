@@ -479,28 +479,203 @@ fn a_finish_written_after_an_answer_is_in_the_next_one() {
     assert_eq!((before, after), (2, 3));
 }
 
-#[test]
-fn segments_that_end_before_the_window_are_not_read_but_the_newest_of_them_gives_context() {
-    let dir = tempfile::tempdir().unwrap();
-    sealed_turns(dir.path(), CHAT, 6);
-    let files = sealed_files(dir.path());
-    assert!(files.len() >= 4, "sealed: {}", files.len());
-    let old = files.len() - 1;
-    for path in &files[..old] {
-        aged(path, 10);
+impl Turns<'_> {
+    /// The chat's run starting, which names its harness.
+    fn started(&mut self, harness: &str) -> &mut Self {
+        self.write(
+            None,
+            "run.started",
+            serde_json::json!({ "harness": harness }),
+        )
     }
-    let recent = Recent::default();
-    let now = std::time::SystemTime::now()
+}
+
+/// `chat`'s events, in a log of small segments.
+fn small<'a>(dir: &Path, chat: &'a str) -> Turns<'a> {
+    Turns {
+        log: Log::open_with(dir, DEVICE, SMALL).unwrap(),
+        chat,
+    }
+}
+
+/// Every sealed segment written ten days ago: the live file and what is sealed later are the
+/// window's.
+fn age_sealed(dir: &Path) {
+    for path in sealed_files(dir) {
+        aged(&path, 10);
+    }
+}
+
+fn a_day_ago() -> u64 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_secs();
-    let since = now - 86_400;
-    recent.finishes(dir.path(), &[CHAT], since).unwrap();
-    // The live file, the newest sealed one (it ends inside the window) and one more of context.
-    assert_eq!(
-        recent.parsed(),
-        3,
-        "of {} sealed and the live one",
-        files.len()
+        .as_secs()
+        - 86_400
+}
+
+/// What the whole log says of `chat`, and what [`Recent`] says of it for a window of the last day.
+fn whole_and_recent(dir: &Path, chat: &str) -> (Vec<Finish>, Vec<Finish>) {
+    let said = Recent::default()
+        .finishes(dir, &[chat], a_day_ago())
+        .unwrap();
+    (finishes_in(dir, chat).unwrap(), said[chat].clone())
+}
+
+#[test]
+fn a_turn_that_started_before_the_window_keeps_its_early_blocks() {
+    let dir = tempfile::tempdir().unwrap();
+    small(dir.path(), CHAT)
+        .started("claude")
+        .prompt()
+        .block(PUSH, None);
+    sealed_turns(dir.path(), OTHER, 6);
+    age_sealed(dir.path());
+    small(dir.path(), CHAT).stop();
+    let (whole, recent) = whole_and_recent(dir.path(), CHAT);
+    assert_eq!(whole.len(), 1);
+    assert_eq!(whole[0].blocked, 1, "the premise: the whole log counts it");
+    assert_eq!(recent, whole);
+}
+
+#[test]
+fn a_blocks_harness_is_the_one_its_run_started_with_before_the_window() {
+    let dir = tempfile::tempdir().unwrap();
+    small(dir.path(), CHAT).started("codex");
+    sealed_turns(dir.path(), OTHER, 6);
+    age_sealed(dir.path());
+    small(dir.path(), CHAT).prompt().block(PUSH, None).stop();
+    let (whole, recent) = whole_and_recent(dir.path(), CHAT);
+    assert_eq!(whole[0].unresolved[0].harness, "codex", "the premise");
+    assert_eq!(recent, whole);
+}
+
+#[test]
+fn a_window_that_needs_no_older_file_does_not_read_one() {
+    let dir = tempfile::tempdir().unwrap();
+    sealed_turns(dir.path(), CHAT, 6);
+    sealed_turns(dir.path(), OTHER, 2);
+    age_sealed(dir.path());
+    small(dir.path(), CHAT).started("claude").prompt().stop();
+    let files = sealed_files(dir.path()).len() + 1;
+    let recent = Recent::default();
+    let said = recent.finishes(dir.path(), &[CHAT], a_day_ago()).unwrap();
+    let whole = finishes_in(dir.path(), CHAT).unwrap();
+    assert_eq!(said[CHAT], whole[whole.len() - 1..], "the window's finish");
+    assert!(
+        recent.parsed() < files,
+        "{} of {files} files parsed",
+        recent.parsed()
     );
+}
+
+#[test]
+fn a_file_that_is_gone_from_the_log_is_not_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    sealed_turns(dir.path(), CHAT, 6);
+    let recent = Recent::default();
+    recent.finishes(dir.path(), &[CHAT], 0).unwrap();
+    let files = sealed_files(dir.path());
+    std::fs::remove_file(&files[0]).unwrap();
+    let said = recent.finishes(dir.path(), &[CHAT], 0).unwrap();
+    assert_eq!(said[CHAT], finishes_in(dir.path(), CHAT).unwrap());
+    let kept = recent.files.lock().unwrap();
+    assert!(!kept.contains_key(&files[0]), "the pruned segment is kept");
+    assert_eq!(kept.len(), files.len(), "the segments left and the live file");
+}
+
+fn live(dir: &Path) -> std::path::PathBuf {
+    dir.join(crate::eventlog::FILE)
+}
+
+#[test]
+fn only_what_a_live_file_gained_is_parsed_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut written = Turns::in_dir(dir.path(), CHAT);
+    written.started("claude");
+    for _ in 0..20 {
+        written.prompt().block(PUSH, None).stop();
+    }
+    let recent = Recent::default();
+    recent.finishes(dir.path(), &[CHAT], 0).unwrap();
+    let before = recent.lines();
+    assert_eq!(before, 61);
+    written.prompt().block(PUSH, None).stop();
+    let said = recent.finishes(dir.path(), &[CHAT], 0).unwrap();
+    assert_eq!(said[CHAT], finishes_in(dir.path(), CHAT).unwrap());
+    assert_eq!(said[CHAT].len(), 21);
+    assert_eq!(recent.lines() - before, 3, "the three lines it gained");
+}
+
+#[test]
+fn a_line_half_written_is_read_once_it_is_whole() {
+    let dir = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    Turns::in_dir(elsewhere.path(), CHAT).stop();
+    let line = std::fs::read(live(elsewhere.path())).unwrap();
+    Turns::in_dir(dir.path(), CHAT)
+        .started("claude")
+        .prompt()
+        .block(PUSH, None);
+    let append = |bytes: &[u8]| {
+        use std::io::Write;
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(live(dir.path()))
+            .unwrap()
+            .write_all(bytes)
+            .unwrap();
+    };
+    let recent = Recent::default();
+    append(&line[..line.len() / 2]);
+    assert!(recent.finishes(dir.path(), &[CHAT], 0).unwrap()[CHAT].is_empty());
+    append(&line[line.len() / 2..]);
+    let said = recent.finishes(dir.path(), &[CHAT], 0).unwrap();
+    assert_eq!(said[CHAT], finishes_in(dir.path(), CHAT).unwrap());
+    assert_eq!(said[CHAT].len(), 1);
+}
+
+#[test]
+fn a_live_file_replaced_by_another_of_the_same_length_and_time_is_read_again() {
+    let dir = tempfile::tempdir().unwrap();
+    Turns::in_dir(dir.path(), CHAT).prompt().block(PUSH, None).stop();
+    let recent = Recent::default();
+    assert_eq!(recent.finishes(dir.path(), &[CHAT], 0).unwrap()[CHAT].len(), 1);
+    let path = live(dir.path());
+    let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+    // The same bytes but for the chat: as long, and no longer anyone's turn of CHAT.
+    let text = std::fs::read_to_string(&path).unwrap().replace(CHAT, OTHER);
+    let swap = dir.path().join("swap");
+    std::fs::write(&swap, text).unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&swap)
+        .unwrap()
+        .set_modified(modified)
+        .unwrap();
+    std::fs::rename(&swap, &path).unwrap();
+    let said = recent.finishes(dir.path(), &[CHAT], 0).unwrap();
+    assert_eq!(said[CHAT], finishes_in(dir.path(), CHAT).unwrap());
+    assert!(said[CHAT].is_empty());
+}
+
+#[test]
+fn a_live_file_that_shrank_is_read_whole_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut written = Turns::in_dir(dir.path(), CHAT);
+    written.prompt().block(PUSH, None).stop().prompt().stop();
+    let recent = Recent::default();
+    assert_eq!(recent.finishes(dir.path(), &[CHAT], 0).unwrap()[CHAT].len(), 2);
+    let path = live(dir.path());
+    let text = std::fs::read(&path).unwrap();
+    let cut = text.iter().rposition(|b| *b == b'\n').unwrap();
+    let cut = text[..cut].iter().rposition(|b| *b == b'\n').unwrap() + 1;
+    std::fs::File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_len(cut as u64)
+        .unwrap();
+    let said = recent.finishes(dir.path(), &[CHAT], 0).unwrap();
+    assert_eq!(said[CHAT], finishes_in(dir.path(), CHAT).unwrap());
 }
