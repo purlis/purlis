@@ -249,7 +249,7 @@ pub enum Refusal {
     /// can update.
     #[error(
         "'{branch}' was cut, but purlis could not note the branch it was cut for ({why}), so \
-         it would not update or push the folder for a chat. The worktree is there; remove it \
+         it would not update or push the folder for a chat. The branch folder is there; remove it \
          and cut it again"
     )]
     BranchNotNoted { branch: String, why: String },
