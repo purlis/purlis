@@ -172,10 +172,12 @@ test("the gate answers green only when this commit's own ci, on its push to main
     // One call reads both, three tries; a cancelled ci is `green=false`, never green.
     'if out=$(gh run view "$1" --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq \'.status + " " + (.conclusion // "none")\'); then',
     'id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --branch main --limit 1 --json databaseId --jq \'.[0].databaseId // empty\') || id=""',
+    "while :; do",
     'gh run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true',
-    'state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is built"; exit 1; }',
+    'if state=$(ask "$id"); then',
     'read -r status conclusion <<< "$state"',
-    '[ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is built"; exit 1; }',
+    'if [ "$status" = completed ]; then',
+    'echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is built"',
     'if [ "$conclusion" = success ]; then',
     'echo "green=true" >> "$GITHUB_OUTPUT"',
     "else",
@@ -190,6 +192,58 @@ test("the gate answers green only when this commit's own ci, on its push to main
   assert.ok(gate.includes("GH_TOKEN: ${{ github.token }}"));
   // A run that never appears is an error, never a pass.
   assert.ok(gate.some((line) => line.startsWith('[ -n "$id" ] || { echo "::error::')));
+});
+
+test("the gate keeps waiting after a watch that ended early, and fails only once its deadline passes", () => {
+  // Dev build 45579545279: `gh run watch` ended on a 502 while `ci` was in progress, and the
+  // gate read `in_progress` and failed. Run the gate's own wait loop against a fake `gh`.
+  const run = job("gate").map((line) => line.replace(/^ {10}/, ""));
+  const from = run.findIndex((line) => line.startsWith("deadline="));
+  const to = run.findIndex((line, i) => i > from && line === "done");
+  assert.ok(from !== -1 && to !== -1, "the gate has no wait loop");
+  const loop = run.slice(from, to + 1).join("\n");
+  const ask = run.slice(run.findIndex((line) => line.startsWith("ask()")), run.findIndex((line) => line === "}") + 1).join("\n");
+  const dir = mkdtempSync(join(tmpdir(), "gate-wait-"));
+  const attempt = (views, seconds = 0) => {
+    writeFileSync(join(dir, "views"), views.join("\n") + "\n");
+    writeFileSync(join(dir, "count"), "0");
+    const script = `
+      set -euo pipefail
+      cd "${dir}"
+      sleep() { :; }
+      gh() {
+        case "$2" in
+          watch) return 1 ;; # every watch ends early, as on a 502
+          view)
+            n=$(( $(cat count) + 1 )); echo "$n" > count
+            line=$(sed -n "$(( n > $(wc -l < views) ? $(wc -l < views) : n ))p" views)
+            [ "$line" != error ] || return 1
+            echo "$line" ;;
+        esac
+      }
+      GITHUB_REPOSITORY=o/r GITHUB_SHA=abc id=1 gh=gh
+      ${ask.replaceAll('"$gh"', "gh")}
+      ${seconds ? `SECONDS=${seconds}` : ""}
+      ${loop.replaceAll('"$gh"', "gh").replace("$((SECONDS + 7200))", seconds ? "$((SECONDS - 1))" : "$((SECONDS + 7200))")}
+      echo "$status $conclusion"
+    `;
+    try {
+      return { out: execFileSync("bash", ["-c", script], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim(), ok: true };
+    } catch (error) {
+      return { out: `${error.stdout}${error.stderr}`, ok: false };
+    }
+  };
+  // An early watch exit, an API error and `in_progress` come first; the run ends success later.
+  const late = attempt(["in_progress none", "error", "error", "error", "in_progress none", "completed success"]);
+  assert.ok(late.ok, late.out);
+  assert.equal(late.out, "completed success");
+  // A run that ends red is still read as red, for the caller's verdict.
+  assert.equal(attempt(["queued none", "completed failure"]).out, "completed failure");
+  // Past the deadline an unfinished run, or one that cannot be read, fails the step.
+  const stuck = attempt(["in_progress none"], 1);
+  assert.ok(!stuck.ok && stuck.out.includes("is in_progress after the wait"), stuck.out);
+  const unreadable = attempt(["error"], 1);
+  assert.ok(!unreadable.ok && unreadable.out.includes("could not read ci run"), unreadable.out);
 });
 
 test("plan does not wait for the gate, and what signs, uploads or publishes runs only when the gate answered green", () => {
