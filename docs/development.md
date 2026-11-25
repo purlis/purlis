@@ -226,6 +226,40 @@ events busy chats send the window) is `npm run e2e:scale` in `app/`, on a releas
 `app/e2e/wdio.scale.conf.ts` says what it needs. A missed budget fails nothing: the nightly run
 keeps one issue labelled `scale-regression` open while any is missed.
 
+## Local macOS signing (no Keychain prompts)
+
+The linker signs every local build ad hoc, so its Keychain identity is its cdhash, and that
+changes on every build. A Keychain item's access list then sees each rebuild as a new app and asks
+for your login password again. `.cargo/config.toml` therefore points every macOS target's runner
+at `tools/macos-dev-sign-run.sh`, which signs the binary with one stable identity and the
+identifier `dev.purlis.local.<binary name>` before it runs (never `dev.purlis.app`, the released
+app's). It covers `cargo run`, `cargo test`, `cargo nextest run` and the app `npm run tauri dev`
+starts, which runs `cargo run`. A binary already signed that way is left alone, so a run costs one
+`codesign -dv`. On CI, or with no identity, it does nothing.
+
+It picks the first of:
+
+1. `PURLIS_DEV_SIGN_IDENTITY`, a certificate's name or SHA-1, if set.
+2. The first valid `Apple Development:` identity in `security find-identity -v -p codesigning`.
+3. A certificate named `purlis dev`.
+4. None: the binary runs unsigned, and one hint a day says so.
+
+To get an identity, either:
+
+- **An Apple Development certificate.** Sign into Xcode → Settings → Accounts → the Purlis, Inc
+  team → Manage Certificates → **+** → Apple Development.
+- **A self-signed one.** Keychain Access → Certificate Assistant → Create a Certificate, named
+  `purlis dev`, identity type Self Signed Root, certificate type Code Signing.
+
+With several Apple Development certificates, the first listed wins, and the order can change when
+one is added or renewed (a new identity asks once more): set `PURLIS_DEV_SIGN_IDENTITY` to pin one.
+
+The first signature may ask once for access to the certificate's key: choose Always Allow.
+
+**One prompt per identity.** The installed app and a local build are different apps to the
+Keychain (the first is signed by the release, the second by your identity), so each asks once, and
+then not again after a rebuild.
+
 ## CI's caches
 
 The repository may hold 10 GB of Actions cache. Past that, GitHub evicts the least recently used
