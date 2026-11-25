@@ -73,6 +73,7 @@ mod a_chat_that_asks_in_a_loop_is_stopped_before_it_spends_the_persons_budget;
 mod a_chat_with_no_mint_has_no_forge_credential;
 #[cfg(all(unix, feature = "forge-wiring"))]
 mod a_chats_forge_listener_follows_a_gitlab_com_artifact_redirect_once_and_no_other;
+#[cfg(all(unix, feature = "forge-wiring"))]
 mod a_chats_forge_listener_keeps_serving_after_a_request_handler_panics;
 #[cfg(all(unix, feature = "forge-wiring"))]
 mod a_chats_forge_listener_reads_one_request_and_never_hands_the_chat_a_credential;
@@ -221,6 +222,7 @@ mod a_sandboxed_chat_commits_in_its_branch_folder_through_the_app;
 mod a_sandboxed_chat_listens_nowhere_under_seatbelt;
 mod a_shell_built_forge_command_and_its_ref_routes_are_held;
 mod a_shell_filled_forge_api_argument_is_held;
+mod a_shipped_binary_survives_a_graphql_block_string_the_parser_panics_on;
 mod a_sign_in_keeps_the_right_credential_for_each_host;
 mod a_signed_in_forge_token_never_reaches_a_chat;
 mod a_skill_can_only_narrow_a_chat;

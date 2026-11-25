@@ -473,8 +473,10 @@ fn spawn_connection(
     let spawned = std::thread::Builder::new()
         .name("forge-proxy-conn".into())
         .spawn(move || {
-            // A panic in a handler ends this connection and nothing else: the slot comes back
-            // either way, so panics never add up to a listener that serves no one (#7589).
+            // In a debug or test build a panic in a handler ends this connection and nothing else,
+            // and the slot comes back either way (#7589). A shipped build aborts on any panic
+            // before it unwinds (`panicend::fatal`), so this protects nothing there: the
+            // handler must not panic on a chat's input (#7596).
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| serve(&wiring)));
             slot.fetch_sub(1, Ordering::SeqCst);
         });

@@ -46,11 +46,38 @@ const MAX_DEPTH: usize = 16;
 /// The largest document read.
 const MAX_BODY: usize = 1 << 20;
 
-/// The document `query` is, or none when it is not one the parser reads. `graphql-parser` 0.4.1
-/// cuts a block string's lines by byte and panics on a char boundary when a line is non-ASCII
-/// whitespace (#7589); a panic there is a document the parser cannot read, refused like any other,
-/// and never the end of the request's thread.
+/// Whether `graphql-parser` 0.4.1 could panic reading `query` (#7589, #7596).
+///
+/// Its `unquote_block_string` (`common.rs`) takes `str::lines()` of a block string, sets the
+/// common indent to the least byte length of leading whitespace (`trim_start`, so
+/// `char::is_whitespace`) over every non-blank line after the first, and then cuts every line
+/// after the first, blank ones too, at `&line[common_indent..]`. That cut panics when it lands
+/// inside a character. If every line's leading whitespace is ASCII, `common_indent` is a count of
+/// ASCII bytes that each non-blank line starts with (it is the least of them) and a blank line
+/// too short for it is not cut, so the cut is always on a boundary. A panic therefore needs a
+/// line whose leading whitespace holds a non-ASCII character. The block string's lines are lines
+/// of the query (`lines()` and `split('\n')` cut alike; a lone `\r` is whitespace and a
+/// trailing `\r` is dropped by `lines()`, neither of which changes a line's leading whitespace),
+/// so this reads every line of the whole query: it also refuses a non-ASCII indent outside any
+/// block string, which no chat writes, and the first line of a block string, which the parser
+/// never cuts, in exchange for needing no tokenizer of its own.
+fn could_panic_the_parser(query: &str) -> bool {
+    query.contains("\"\"\"")
+        && query.split('\n').any(|line| {
+            line.chars()
+                .take_while(|c| c.is_whitespace())
+                .any(|c| !c.is_ascii())
+        })
+}
+
+/// The document `query` is, or none when it is not one the parser reads or could panic on. A
+/// shipped build aborts on any panic before it unwinds ([`crate::panicend::fatal`]), so the
+/// panic is never raised: such a query is refused before the parser sees it. The `catch_unwind`
+/// is a second line for debug and test builds only, which unwind.
 fn parse(query: &str) -> Option<Document<'_, String>> {
+    if could_panic_the_parser(query) {
+        return None;
+    }
     std::panic::catch_unwind(|| graphql_parser::query::parse_query::<String>(query))
         .ok()?
         .ok()
