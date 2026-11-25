@@ -1569,6 +1569,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "chat_lost_with_the_host",
     // Whether a chat is hibernated by the person (SC-4a, #7630): what its row and pane say.
     "chat_hibernated",
+    // The chats hibernated by the person (SC-4a, #7630): what the rows read as the window opens.
+    "hibernated_chats",
     "chat_moves",
     "chat_network",
     "chat_order",

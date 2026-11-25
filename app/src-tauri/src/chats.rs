@@ -3371,6 +3371,15 @@ impl Chats {
         }
     }
 
+    /// **Run `session` has ended `completed | superseded`** (ADR 0076 §2), told to whoever
+    /// writes the event log ([`Self::when_a_run_is_replaced`]): a hibernated chat's run, whose
+    /// program is already gone, as it is woken or ended (#7630).
+    pub fn superseded(&self, session: u32) {
+        if let Some(tell) = lock(&self.replaced_told).as_ref() {
+            tell(session);
+        }
+    }
+
     /// Marks run `session` as replaced at once, as a restart for changed project settings does.
     #[cfg(test)]
     pub fn replaced_in_a_test(&self, session: u32) {
@@ -4189,6 +4198,10 @@ impl Chats {
             if again.resume.is_none() {
                 return Err(no_conversation(session));
             }
+            // **The hibernated run ends `completed | superseded` as the wake begins** (ADR 0076
+            // as amended 2026-11-25): said before the `wake` run starts, so the log reads in the
+            // order it happened. Its program is gone, so no end of it is heard to say so.
+            self.superseded(session);
             self.start_recorded_told(&again, size, Why::Wake, None, None)
         });
         match started {

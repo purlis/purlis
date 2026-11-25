@@ -1029,6 +1029,13 @@ impl SessionHost for RoutedSessions {
         }
     }
 
+    fn can_hibernate(&self, id: u32) -> bool {
+        match self.host_of(id) {
+            Some(host) => host.can_hibernate(id),
+            None => self.here.can_hibernate(id),
+        }
+    }
+
     fn hibernate(&self, id: u32) -> Result<(), String> {
         match self.host_of(id) {
             Some(host) => host.hibernate(id),

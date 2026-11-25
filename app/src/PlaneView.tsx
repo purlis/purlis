@@ -8188,8 +8188,13 @@ export const PlaneView = memo(function PlaneView({
   );
   /** Whether a chat has a Restart chat row: not a shell, which has no conversation. */
   const restartable = useCallback((session: number) => !shells.has(session), [shells]);
-  /** Whether a chat has a Hibernate row: not a shell (#7630). */
-  const hibernatable = restartable;
+  /** Whether a chat has a Hibernate row (#7630): where the core says it is offered, as
+   *  `session.rs`'s `KNOWS_HIBERNATE` does: a harness that resumes by id, on a host that can
+   *  hibernate it. Never a shell, a chat in this process, or one on an older host. */
+  const hibernatable = useCallback(
+    (session: number) => reopened.find((one) => one.session === session)?.hibernates === true,
+    [reopened],
+  );
   /** Hibernates chat `session` by hand (#7630): the core refuses, in a sentence, where it may
    *  not, and the sentence is said on the chat's pane. */
   const hibernateChat = useCallback(

@@ -110,9 +110,11 @@ impl purlis_host::Record for EventLog {
         let Some(log) = self.recorder() else { return };
         let (root, number) = (ended.project_path, ended.number);
         what_it_spooled_is_recorded(&log, root, number);
-        // **A hibernation writes no `run.ended`** (#7630): the run is `hibernated`, and the wake
-        // run's start supersedes it. Nor is the dispatch it worked ended: it is not an end.
+        // **A hibernation writes no `run.ended`** (#7630): the run moves to `hibernated` for
+        // `operator`, and ends `completed | superseded` when the chat is woken or ended. Nor is
+        // the dispatch it worked ended: it is not an end.
         if ended.stopped == Some(purlis_host::Stopped::Hibernated) {
+            its_run_hibernates(&log, root, number);
             return;
         }
         let exit = match &ended.exit {
@@ -212,6 +214,16 @@ pub fn its_run_ends(
     let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
     if let Err(why) = log.end_run_with(plane, session, state, cause) {
         tracing::warn!("purlis: a run's end was not written to the event log ({why})");
+    }
+}
+
+/// **Chat `session`'s run is hibernated by the operator** (SC-4a, #7630): its `run.moved` to
+/// `hibernated` for `operator` ([`Recorder::hibernated`]), written by whichever writes the log as
+/// the hibernated program's end is heard, the session host or the window.
+pub fn its_run_hibernates(events: &Mutex<Recorder>, plane: &Path, session: u32) {
+    let mut log = events.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Err(why) = log.hibernated(plane, session) {
+        tracing::warn!("purlis: a run's hibernation was not written to the event log ({why})");
     }
 }
 

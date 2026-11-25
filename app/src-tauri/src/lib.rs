@@ -893,6 +893,11 @@ struct OpenChat {
     /// a runner before 1.51, whose Move here row says such a clone stays there.
     #[specta(optional)]
     clones_come_back: Option<bool>,
+    /// Whether its row offers Hibernate (SC-4a, #7630): its harness resumes a conversation by
+    /// id and its session host can hibernate a chat (session protocol 1.96). `null` otherwise:
+    /// a shell, a harness that cannot, or a host that would refuse it.
+    #[specta(optional)]
+    hibernates: Option<bool>,
     /// The persona it adopted.
     persona: Option<String>,
     /// What its harness cannot tell charter, said on the chat — none where it tells all.
@@ -1016,11 +1021,13 @@ fn drawn_of(held: &planes::Held, open: chats::Open) -> OpenChat {
     let browser_sites = browser_sites_of(held, open.session);
     let pool = held.chats().pool_of(open.session);
     let clones_come_back = held.chats().clones_come_back(open.session).then_some(true);
+    let hibernates = crate::hibernation::offered(held, open.session).then_some(true);
     OpenChat {
         id,
         browser_sites,
         pool,
         clones_come_back,
+        hibernates,
         ..OpenChat::from(open)
     }
 }
@@ -3151,6 +3158,7 @@ impl From<chats::Open> for OpenChat {
             profile: open.profile,
             pool: None,
             clones_come_back: None,
+            hibernates: None,
             workspace: open.workspace,
             persona: open.persona,
             in_front: open.in_front,

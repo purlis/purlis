@@ -17,6 +17,7 @@ import {
   failuresUnseenOf,
   leftWorkOf,
   markOf,
+  isHibernated,
   ownWorkOf,
   stuckOf,
   type ChatStates,
@@ -48,6 +49,7 @@ export function shownOfRow(
     ownWork: ownWorkOf(states, row.session),
     stuck: stuckOf(states, row.session) !== undefined,
     leftWork: leftWorkOf(states, row.session),
+    hibernated: isHibernated(states, row.session),
   });
 }
 

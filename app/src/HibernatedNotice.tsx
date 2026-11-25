@@ -5,9 +5,10 @@ import { useCallback, useContext, useEffect, useState, useSyncExternalStore } fr
 import { commands, type ChatHibernation, type PlaneId } from "./bindings";
 import { listen } from "./here";
 import { Notice, NoticeOf } from "./Notice";
+import { HIBERNATION_CHANGED } from "./chatState";
 
-/** The event the core sends when a chat is hibernated or woken. */
-export const HIBERNATION_CHANGED = "chat-hibernation-changed";
+/** The event the core sends when a chat is hibernated or woken (`chatState.ts` names it). */
+export { HIBERNATION_CHANGED };
 
 /**
  * **A chat the person hibernated, on its pane** (SC-4a, #7630, spec #1391): its program ended at

@@ -259,6 +259,15 @@ fn a_hibernated_chat_writes_no_run_ended_and_its_dispatch_is_not_ended_unreporte
             .running(),
         "a hibernation is not an end the dispatch ledger reads"
     );
+    assert_eq!(
+        own_runs_moved(logs.path()),
+        [(
+            "input-required".to_owned(),
+            "hibernated".to_owned(),
+            "operator".to_owned()
+        )],
+        "its run moves to hibernated for the operator (ADR 0076 as amended 2026-11-25)"
+    );
 }
 
 #[test]
@@ -381,6 +390,19 @@ fn a_terminals_skill_change_on_a_project_without_controls_is_refused_and_nothing
 }
 
 /// The chats' own runs' ends in the log in `dir` (no parent run): each one's state and cause.
+/// Each `run.moved` of a chat's own run in the log at `dir`: from, to and cause.
+fn own_runs_moved(dir: &Path) -> Vec<(String, String, String)> {
+    crate::eventlog::read(dir)
+        .expect("the log reads")
+        .iter()
+        .filter(|event| event.kind == "run.moved" && event.parent_run.is_none())
+        .map(|event| {
+            let word = |key: &str| event.body[key].as_str().unwrap_or_default().to_owned();
+            (word("from"), word("to"), word("cause"))
+        })
+        .collect()
+}
+
 fn own_runs_ended(dir: &Path) -> Vec<(String, String)> {
     crate::eventlog::read(dir)
         .expect("the log reads")

@@ -28,6 +28,23 @@ use crate::planes::{PlaneId, Planes};
 /// The event the window is sent when a chat is hibernated or woken.
 pub const CHANGED: &str = "chat-hibernation-changed";
 
+/// Why a Hibernate pressed while one is already under way does nothing: the first acts.
+pub const ALREADY_HIBERNATING: &str =
+    "Not hibernated again: purlis is already hibernating this chat.";
+
+/// Why a Hibernate on a hibernated chat does nothing.
+pub const ALREADY_HIBERNATED: &str =
+    "Not hibernated: this chat is already hibernated. Resume it to go on.";
+
+/// Why a Resume pressed while the chat is still being hibernated starts nothing: a second
+/// program would start beside the one ending.
+pub const STILL_HIBERNATING: &str =
+    "Not resumed: purlis is still hibernating this chat. Resume it once it is hibernated.";
+
+/// Why a hibernation did not take: the chat's program ended another way as it ended.
+pub const ENDED_ANOTHER_WAY: &str =
+    "Not hibernated: this chat ended another way while purlis hibernated it.";
+
 /// What is read of one chat to decide whether it may be hibernated by hand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Facts {
@@ -139,26 +156,106 @@ pub enum By {
     Operator,
 }
 
-/// **The chats of a project that are hibernated, by session**, in memory (SC-4e makes it
-/// durable). The one answer to *is it hibernated*: the program-end path, the pane and the wake
-/// read it here.
+/// One chat's hibernation, from the person's press until it is woken or ended another way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Held {
+    by: By,
+    /// The host has answered that its program ended as a hibernation. Until then it is in
+    /// flight: neither Resume nor a second Hibernate is taken.
+    settled: bool,
+    /// Its program's end was heard while it was in flight, and read as the hibernation.
+    ended: bool,
+}
+
+/// **The chats of a project that are hibernated, or being hibernated, by session**, in memory
+/// (SC-4e makes it durable). The one answer to *is it hibernated*: the program-end path, the
+/// pane, the row and the wake read it here.
 #[derive(Debug, Default)]
-pub struct Hibernated(Mutex<HashMap<u32, By>>);
+pub struct Hibernated(Mutex<HashMap<u32, Held>>);
 
 impl Hibernated {
-    fn held(&self) -> std::sync::MutexGuard<'_, HashMap<u32, By>> {
+    fn held(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Held>> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// The host is about to end chat `session`'s program as a hibernation, by `by`: written
-    /// first, so the exit that follows is read as one.
-    pub fn intend(&self, session: u32, by: By) {
-        self.held().insert(session, by);
+    /// first, in flight, so the exit that follows is read as one. False, with nothing changed,
+    /// where it is already hibernated or being hibernated: the first press is the one that acts.
+    pub fn intend(&self, session: u32, by: By) -> bool {
+        let mut held = self.held();
+        if held.contains_key(&session) {
+            return false;
+        }
+        held.insert(
+            session,
+            Held {
+                by,
+                settled: false,
+                ended: false,
+            },
+        );
+        true
     }
 
-    /// How chat `session` is hibernated, where it is.
+    /// The host answered that chat `session`'s program ended as a hibernation: it is
+    /// hibernated from now on. False where nothing was in flight for it any more: another end
+    /// won, and the chat is not hibernated.
+    pub fn settle(&self, session: u32) -> bool {
+        self.held().get_mut(&session).is_some_and(|held| {
+            held.settled = true;
+            true
+        })
+    }
+
+    /// The act on chat `session` failed. Where its program's end was already heard as the
+    /// hibernation it is hibernated all the same, and true; otherwise it is not, and false.
+    pub fn failed(&self, session: u32) -> bool {
+        let mut held = self.held();
+        match held.get_mut(&session) {
+            Some(one) if one.ended => {
+                one.settled = true;
+                true
+            }
+            Some(_) => {
+                held.remove(&session);
+                false
+            }
+            None => false,
+        }
+    }
+
+    /// Chat `session`'s program ended. True where that end is a hibernation, in flight or
+    /// already answered: the end the program-end path reads as no end of the chat.
+    pub fn ends_as_one(&self, session: u32) -> bool {
+        self.held().get_mut(&session).is_some_and(|held| {
+            held.ended = true;
+            true
+        })
+    }
+
+    /// How chat `session` is hibernated, once the host has answered.
     pub fn of(&self, session: u32) -> Option<By> {
-        self.held().get(&session).copied()
+        self.held()
+            .get(&session)
+            .filter(|held| held.settled)
+            .map(|held| held.by)
+    }
+
+    /// Whether chat `session` is being hibernated, and the host has not answered yet.
+    pub fn in_flight(&self, session: u32) -> bool {
+        self.held().get(&session).is_some_and(|held| !held.settled)
+    }
+
+    /// The chats that are hibernated, in the order of their numbers.
+    pub fn now(&self) -> Vec<u32> {
+        let mut now: Vec<u32> = self
+            .held()
+            .iter()
+            .filter(|(_, held)| held.settled)
+            .map(|(session, _)| *session)
+            .collect();
+        now.sort_unstable();
+        now
     }
 
     /// It is awake, was ended another way, or is closed.
@@ -168,9 +265,13 @@ impl Hibernated {
 }
 
 /// What is read of chat `session` to decide whether it may be hibernated: the board, its
-/// harness and the app's records of what it dispatched and who dispatched it. Nothing a harness
-/// printed. Paused and observed chats are not yet a thing the app keeps for a local chat, so
-/// those two are read as false until a source for each exists.
+/// harness, its pauses and the app's records of what it dispatched and who dispatched it.
+/// Nothing a harness printed. Observed chats are not yet a thing the app keeps for a local
+/// chat, so that one is read as false until a source for it exists.
+///
+/// **Own work counts while it is out, lapsed or not** (spec #1391): a wait on it that passed its
+/// limit leaves the work running, and its wake would find the program gone
+/// ([`purlis_core::state::Chat::wakes_on_its_own_work`]).
 pub fn facts_of(held: &crate::planes::Held, session: u32) -> Facts {
     let glance = held.board().glance(session);
     let resumes = held
@@ -185,13 +286,33 @@ pub fn facts_of(held: &crate::planes::Held, session: u32) -> Facts {
     Facts {
         state: Some(glance.state),
         asking: glance.asking,
-        paused: false,
+        paused: held.pauses().holds(session),
         resumes_by_id: resumes && held.board().conversation(session).is_some(),
         observed: false,
-        own_work: glance.own_work,
+        own_work: glance.own_work || glance.wakes_on_its_own_work,
         has_tasks: !held.chats().tasks_of(session).is_empty(),
         is_a_task: task,
     }
+}
+
+/// **Whether chat `session`'s row offers Hibernate** (#7630): its harness picks a conversation
+/// up by its id, and its session host can hibernate it (protocol 1.96; never the in-process
+/// host). Whether it may be hibernated now is [`refusal`]'s answer, said when it is pressed.
+pub fn offered(held: &crate::planes::Held, session: u32) -> bool {
+    held.chats()
+        .harness(session)
+        .is_some_and(purlis_core::harness::Harness::resumes_by_id)
+        && held.chats().sessions().can_hibernate(session)
+}
+
+/// The chats of `plane` that are hibernated: what the window reads its rows by as it opens.
+#[tauri::command]
+#[specta::specta]
+pub fn hibernated_chats(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<u32>, String> {
+    Ok(planes.held(&plane)?.hibernated().now())
 }
 
 /// Chat `session` as the window reads its hibernation.
@@ -231,7 +352,14 @@ pub async fn hibernate_chat(
     tauri::async_runtime::spawn_blocking(move || held.hibernate_chat(session))
         .await
         .map_err(|err| format!("purlis could not hibernate the chat: {err}"))??;
-    let _ = app.emit(CHANGED, Changed { plane, session });
+    let _ = app.emit(
+        CHANGED,
+        Changed {
+            plane,
+            session,
+            hibernated: true,
+        },
+    );
     Ok(())
 }
 
@@ -240,6 +368,8 @@ pub async fn hibernate_chat(
 pub struct Changed {
     pub plane: PlaneId,
     pub session: u32,
+    /// Whether it is hibernated now.
+    pub hibernated: bool,
 }
 
 #[cfg(test)]
@@ -367,10 +497,59 @@ mod tests {
     #[test]
     fn a_hibernated_chat_is_kept_until_it_is_forgotten() {
         let hibernated = Hibernated::default();
-        hibernated.intend(3, By::Operator);
+        assert!(hibernated.intend(3, By::Operator));
+        assert!(hibernated.settle(3));
         assert_eq!(hibernated.of(3), Some(By::Operator));
         assert_eq!(hibernated.of(4), None);
+        assert_eq!(hibernated.now(), [3]);
         hibernated.forget(3);
+        assert_eq!(hibernated.of(3), None);
+    }
+
+    #[test]
+    fn a_chat_is_hibernated_only_once_the_host_has_answered() {
+        let hibernated = Hibernated::default();
+        assert!(hibernated.intend(3, By::Operator));
+        assert!(hibernated.in_flight(3));
+        assert_eq!(hibernated.of(3), None, "no Resume while it is in flight");
+        assert_eq!(hibernated.now(), Vec::<u32>::new());
+        assert!(
+            hibernated.ends_as_one(3),
+            "its end is read as the hibernation"
+        );
+        assert!(hibernated.settle(3));
+        assert!(!hibernated.in_flight(3));
+        assert_eq!(hibernated.of(3), Some(By::Operator));
+    }
+
+    #[test]
+    fn a_second_intent_leaves_the_first_in_flight() {
+        let hibernated = Hibernated::default();
+        assert!(hibernated.intend(3, By::Operator));
+        assert!(!hibernated.intend(3, By::Operator), "the first press acts");
+        assert!(hibernated.in_flight(3));
+    }
+
+    #[test]
+    fn a_failed_act_is_forgotten_unless_its_program_already_ended_as_one() {
+        let hibernated = Hibernated::default();
+        assert!(hibernated.intend(3, By::Operator));
+        assert!(!hibernated.failed(3));
+        assert!(!hibernated.in_flight(3));
+        assert_eq!(hibernated.of(3), None);
+
+        assert!(hibernated.intend(4, By::Operator));
+        assert!(hibernated.ends_as_one(4));
+        assert!(hibernated.failed(4), "its program ended as a hibernation");
+        assert_eq!(hibernated.of(4), Some(By::Operator));
+    }
+
+    #[test]
+    fn an_end_that_won_leaves_nothing_to_settle() {
+        let hibernated = Hibernated::default();
+        assert!(hibernated.intend(3, By::Operator));
+        hibernated.forget(3);
+        assert!(!hibernated.settle(3));
         assert_eq!(hibernated.of(3), None);
     }
 }

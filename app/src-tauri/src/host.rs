@@ -647,6 +647,14 @@ pub trait SessionHost: Send + Sync {
     /// answers. Nothing where the host cannot hold it: the chat is asked about all the same.
     fn hold(&self, _id: u32, _still: bool) {}
 
+    /// **Whether this host can end chat `id`'s program as a hibernation** (#7630): what
+    /// decides whether its row offers Hibernate. False for a host that runs its chats in this
+    /// process, and for one before protocol 1.96.
+    fn can_hibernate(&self, id: u32) -> bool {
+        let _ = id;
+        false
+    }
+
     /// **Ends chat `id`'s program as a hibernation** (SC-4a, #7630): the host stops it, drops its
     /// engine and forgets it, and tells its end as the host's own lowest act, so it writes no
     /// `run.ended`. Answered once it has ended. Refused, in a sentence, for a host that cannot:
@@ -1181,6 +1189,11 @@ pub(crate) mod pretend {
         screens: Mutex<Vec<(u32, String)>>,
         /// The chats reattached, in order.
         reattached: Mutex<Vec<u32>>,
+        /// The chats it let go of as hibernated (#7630), until each is closed.
+        hibernated: Mutex<Vec<u32>>,
+        /// Why a hibernation fails, while a test says one does, and whether its program has
+        /// ended by then ([`Pretend::hibernates_none`], [`Pretend::hibernates_unanswered`]).
+        hibernate_fails: Mutex<Option<(String, bool)>>,
         /// The chats left running that nothing reattached, closed.
         closed_left: Mutex<Vec<u32>>,
         /// The browsers left from before this window ([`Pretend::leaves_a_browser`], #2025).
@@ -1474,6 +1487,23 @@ pub(crate) mod pretend {
         /// Everything it was asked to start, whole, in the order it was asked.
         pub fn openings(&self) -> Vec<Opening> {
             lock(&self.seen.openings).clone()
+        }
+
+        /// Fails every hibernation from now with `why`, before any program ends; `None`
+        /// hibernates them again (#7630).
+        pub fn hibernates_none(&self, why: Option<&str>) {
+            *lock(&self.seen.hibernate_fails) = why.map(|why| (why.to_owned(), false));
+        }
+
+        /// Ends the program of every hibernation from now, then fails to answer with `why`: a
+        /// link that went down after the host had acted (#7630).
+        pub fn hibernates_unanswered(&self, why: &str) {
+            *lock(&self.seen.hibernate_fails) = Some((why.to_owned(), true));
+        }
+
+        /// The chats it let go of as hibernated and has not closed (#7630).
+        pub fn hibernated(&self) -> Vec<u32> {
+            lock(&self.seen.hibernated).clone()
         }
 
         /// Refuses every start from now with `why`, as a host with no pseudo-terminal to give
@@ -1842,6 +1872,14 @@ pub(crate) mod pretend {
             Ok(())
         }
         fn close(&self, id: u32) -> Result<(), String> {
+            // A hibernated chat was let go of as it hibernated: it closes here, as a real
+            // host's window closes it (#7630).
+            let mut hibernated = lock(&self.seen.hibernated);
+            if hibernated.contains(&id) {
+                hibernated.retain(|one| *one != id);
+                return Ok(());
+            }
+            drop(hibernated);
             self.here(id)?;
             lock(&self.seen.running).retain(|one| *one != id);
             Ok(())
@@ -1871,11 +1909,27 @@ pub(crate) mod pretend {
             let said = if still { "held" } else { "let go" };
             lock(&self.seen.terminal).push(format!("{said} {id}"));
         }
+        fn can_hibernate(&self, _id: u32) -> bool {
+            true
+        }
+        /// As a real host: its program ends, and its end is heard, before the host answers.
         fn hibernate(&self, id: u32) -> Result<(), String> {
             self.here(id)?;
+            let fails = lock(&self.seen.hibernate_fails).clone();
+            if let Some((why, false)) = fails {
+                return Err(why);
+            }
             lock(&self.seen.terminal).push(format!("hibernated {id}"));
             lock(&self.seen.running).retain(|running| *running != id);
-            Ok(())
+            lock(&self.seen.hibernated).push(id);
+            let tell = lock(&self.seen.ends).clone();
+            if let Some(tell) = tell {
+                tell(id, Exit::Signal("Terminated".to_owned()));
+            }
+            match fails {
+                Some((why, _)) => Err(why),
+                None => Ok(()),
+            }
         }
         fn stopped_by(&mut self, switch: Arc<crate::killswitch::KillSwitch>) {
             *lock(&self.seen.switch) = Some(switch);
