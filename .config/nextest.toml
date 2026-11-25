@@ -72,6 +72,15 @@ retries = 0
 filter = "package(purlis-core) & binary(it) & test(/^an_ssh_runner_host_outlives_the_sign_out_and_a_restart::/)"
 slow-timeout = { period = "60s", terminate-after = 10 }
 
+# The remote start's step table (#7182) is this test's output, not a diagnosis: it prints what each
+# step of a start cost over SSH, the baseline `docs/research/2026-11-remote-start-baseline.md` is
+# read from. nextest keeps a passing test's output to itself and a job's summary cannot be read
+# through the API, so on a pass the table was nowhere a person or a chat could fetch it (run
+# 45681258419). Shown as the test ends, it is in the `remote-parity` job's log.
+[[profile.ci.overrides]]
+filter = "package(purlis-core) & binary(it) & test(/^a_remote_docker_pool_is_reached_over_ssh::a_start_on_a_remote_pool_times_each_of_its_steps$/)"
+success-output = "immediate"
+
 # What `cargo nextest archive --profile ci` keeps besides the test binaries and the programs they
 # are built to run (`CARGO_BIN_EXE_*`) (`rust-build` in `.github/workflows/ci.yml`, spec #7324): the
 # programs a test looks for beside its own binary and otherwise builds for itself, which the job
