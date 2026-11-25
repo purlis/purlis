@@ -16770,7 +16770,13 @@ export type SlowMoment =
  *  The command `command`, received on the core's main thread at `at`, held it for `ms`
  *  (`crate::mainwatch`). The core writes it; the window only reads it back.
  */
-{ kind: "core_command"; command: string; ms: number; at: number | null };
+{ kind: "core_command"; command: string; ms: number; at: number | null } | 
+/**
+ *  A new chat's opening that took `ms`, begun at `at`, while `hot` chats were open, and the
+ *  phases it passed through in the order it ran them (H12). The core writes it; the window
+ *  only reads it back.
+ */
+{ kind: "opening"; ms: number; at: number | null; hot: number; phases: StallTook[] };
 
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
 export type SlowStart = {
