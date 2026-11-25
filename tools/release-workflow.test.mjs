@@ -610,3 +610,81 @@ test("plan skips a dev build that ships nothing, asks before the order is asked,
   assert.ok(ships < plan.indexOf('order=$(node tools/dev-build-order.mjs --version "$version" --sha "$SHA")'));
   assert.ok(ships < plan.indexOf('} >> "$GITHUB_OUTPUT"'));
 });
+
+// The macOS build may run on the operator's own Macs (docs/updating.md, "Building macOS on a
+// self-hosted Mac"), chosen by one repository variable and nothing in the code.
+const MACOS_RUNNER = `\${{ matrix.os == 'macos-latest' && needs.plan.outputs.channel == 'dev' && needs.plan.outputs.profile == 'dev-release' && fromJSON(vars.MACOS_RELEASE_RUNNER || '"macos-latest"') || matrix.os }}`;
+
+test("the macOS build's runner is the repository variable's, and macos-latest when it is unset", () => {
+  assert.equal(value(job("build"), 4, "runs-on"), MACOS_RUNNER);
+});
+
+test("a stable build, and the profile guard that builds like one, can never take the variable's runner", () => {
+  // The guard's own condition is held to what `plan` decides for each way in: a tag is channel
+  // `stable` with profile `release`; the schedule is `dev` with `release`; only a dev channel
+  // build has `dev-release`. Every one but the last stays on `macos-latest`.
+  const plan = job("plan").join("\n");
+  assert.match(plan, /channel=stable; publish=true[\s\S]*?profile=release;/);
+  assert.match(plan, /schedule\)[\s\S]*?channel=dev; publish=false\s+profile=release;/);
+  assert.equal(plan.match(/profile=dev-release/g)?.length >= 1, true);
+  const on = value(job("build"), 4, "runs-on");
+  for (const needle of ["needs.plan.outputs.channel == 'dev'", "needs.plan.outputs.profile == 'dev-release'"]) {
+    assert.ok(on.includes(needle), `build's runs-on lacks ${needle}`);
+  }
+  assert.ok(on.indexOf("dev-release") < on.indexOf("MACOS_RELEASE_RUNNER"), "the condition comes before the variable");
+  // And the provenance checks stay as they were: no verification of a release drops the flag.
+  assert.equal(text.match(/--deny-self-hosted-runners/g)?.length, 2);
+});
+
+test("the variable reaches no runner of release.yml but the build's, and no other job names a self-hosted one", () => {
+  const readers = [...lines.entries()].filter(([, l]) => l.includes("MACOS_RELEASE_RUNNER") && !l.trim().startsWith("#"));
+  assert.equal(readers.length, 1, "MACOS_RELEASE_RUNNER is read in one place");
+  for (const [name, body] of Object.entries(Object.fromEntries([...jobsOf()]))) {
+    if (name === "build") continue;
+    for (const line of body.filter((l) => l.startsWith("    runs-on:"))) {
+      assert.doesNotMatch(line, /self-hosted|vars\.|fromJSON/, `${name} runs-on`);
+    }
+  }
+  assert.doesNotMatch(lines.filter((l) => !l.trim().startsWith("#")).join("\n"), /runs-on:.*self-hosted/);
+});
+
+function* jobsOf() {
+  let current = null;
+  let body = [];
+  for (const line of block("jobs")) {
+    const m = /^ {2}([\w-]+):$/.exec(line);
+    if (m) {
+      if (current) yield [current, body];
+      current = m[1];
+      body = [];
+    } else body.push(line);
+  }
+  if (current) yield [current, body];
+}
+
+test("a persistent runner's build starts clean, keeps nothing of the last one, and drops its keychain even when it fails", () => {
+  const build = job("build");
+  const steps = build.join("\n").split(/\n {6}- /);
+  const named = (text) => steps.find((s) => s.startsWith(`name: ${text}`));
+  const wipe = named("A self-hosted runner's workspace starts empty");
+  const homes = named("A self-hosted runner's Cargo, rustup and temporary folder are this job's own");
+  const keychain = named("A self-hosted runner keeps no keychain, certificate or job folder");
+  assert.ok(wipe && homes && keychain, "a step of the self-hosted clean-up is missing");
+  for (const s of [wipe, homes]) assert.match(s, /if: runner\.environment == 'self-hosted'/);
+  assert.match(keychain, /if: steps\.ci\.outputs\.green == 'true' && always\(\) && runner\.environment == 'self-hosted' && runner\.os == 'macOS'/);
+  assert.match(keychain, /security delete-keychain/);
+  assert.match(homes, /CARGO_HOME=/);
+  assert.match(homes, /RUSTUP_HOME=/);
+  assert.match(homes, /TMPDIR=/);
+  // The workspace is emptied before the checkout, the homes are set before the toolchain installs,
+  // and the keychain goes last.
+  const order = (s) => build.join("\n").indexOf(s);
+  assert.ok(order(wipe) < order("uses: actions/checkout@"));
+  assert.ok(order(homes) < order("uses: ./.github/actions/rust-toolchain"));
+  assert.ok(order("Wait for this commit's ci on main") < order(keychain));
+  // Neither the swap file nor `sudo` may reach a Mac: both are Linux's.
+  assert.match(named("More swap for the build"), /if: runner\.os == 'Linux'/);
+  // (The summary step prints the person's install commands, `sudo` among them, and runs none.)
+  const nonLinux = steps.filter((s) => !/runner\.os == 'Linux'|RUNNER_OS" = "Linux"/.test(s) && !s.startsWith("name: What a person sees when they install it"));
+  assert.ok(nonLinux.every((s) => !/\bsudo\b|\bbrew\b/.test(s.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n"))), "a step without a Linux guard calls sudo or brew");
+});

@@ -257,6 +257,95 @@ thing keeping stable machines off dev builds. The workflow checks this before ev
 publish. After this, a green `main`'s build replaces this release's assets, one build at a time
 ("When a merge reaches the dev channel", above). The tag itself never moves.
 
+## Building macOS on a self-hosted Mac
+
+`release.yml`'s macOS build (the `.app`, and the macOS runner binary it hands to `runner-binaries`)
+can run on a self-hosted Mac, **for a dev build only**: the dev channel's, started by a push to
+`main` or by hand with the `dev-release` profile. A stable build (a `v*` tag) and the nightly
+profile guard, which builds the way a stable build does, always run on `macos-latest`, whatever
+the variable says. **A signed stable release must come from a GitHub-hosted runner**: a stable
+build's key signs what a person installs and updates to, and the runner it came from is then
+GitHub's to vouch for, not a laptop's. Only the build job reads `MACOS_RELEASE_RUNNER`, and only
+when `plan` has chosen channel `dev` and profile `dev-release`; the Linux build and every other
+job stay on GitHub's runners. A test holds that condition. The operator may overrule it, by
+editing that line, which is a reviewed change.
+
+**The variable** is a JSON array of runner labels, in Settings → Secrets and variables → Actions →
+Variables (a variable, not a secret: it holds labels):
+
+```sh
+gh variable set MACOS_RELEASE_RUNNER --repo purlis/purlis \
+  --body '["self-hosted","macOS","ARM64","purlis-release"]'
+```
+
+The workflow reads it as `fromJSON(vars.MACOS_RELEASE_RUNNER || '"macos-latest"')`, so an unset
+variable is exactly the string `"macos-latest"`. **To go back to GitHub's runners, delete the
+variable** (`gh variable delete MACOS_RELEASE_RUNNER --repo purlis/purlis`): no commit, and the
+next run is hosted. Nothing in the code names a self-hosted label.
+
+**One runner per Mac, with a label of its own.** `purlis-release` above is the dedicated label; do
+not reuse `m1` or another shared one, or an unrelated job lands on the Mac. Register exactly one
+runner service on each machine, and give each Mac's runner the same `purlis-release` label so
+either can take the job. The build needs the whole 16 GB of a MacBook: #7499 measured 2.9 GB of
+swap on a 7.5 GB runner. A second runner on the same Mac would run two builds at once and both
+would swap. The job's `timeout-minutes` (150) is for a cold build on a hosted runner; time the
+first one on the Mac before relying on it.
+
+**What a persistent runner is made to forget.** A hosted runner is a fresh machine; a Mac is not,
+so ADR 0092's rule (no cache in the job that holds the signing keys, ADR 0042) is kept by steps
+that run only where `runner.environment` is `self-hosted`:
+
+- the work folder is emptied before the checkout, so no `target/` or `node_modules/` of an earlier
+  job survives;
+- Cargo's, rustup's and the temporary folder are this job's own, under `$RUNNER_TEMP/job-home`, so
+  neither `~/.cargo` nor `~/.rustup` nor `/var/folders` of the runner user is read, and the
+  toolchain is installed per user from `rust-toolchain.toml` as on a hosted runner;
+- the last step deletes every keychain in the runner user's search list that is not the login
+  keychain, which is where the bundler imports a Developer ID certificate, even when the build
+  failed. An ad-hoc build creates none.
+
+The swap file, `sudo` and `apt` steps are Linux's; nothing for macOS touches system swap, Homebrew
+or `/etc`.
+
+**What the operator installs first**, on each Mac, as the runner user:
+
+- the GitHub Actions runner, as a service of that user, with the label `purlis-release`;
+- Xcode command line tools (`xcode-select --install`), and a signed-in GUI session for that user if
+  a stable release is to make its `.dmg`, whose bundler drives Finder through AppleScript (it is
+  allowed to fail; the `.app` does not need it);
+- `gh` and `jq` at `/opt/homebrew/bin` or `/usr/local/bin`: the wait for `ci` takes `gh` from
+  those two places only, and refuses another;
+- `git`. Node and the Rust toolchain are installed by the job (`actions/setup-node`,
+  `rust-toolchain.toml`), and `rustup` is used if it is there.
+
+**The security preconditions.** Set all three before the variable. A runner that is online and in
+no group of its own takes any job whose labels match.
+
+1. **A runner group that only `release.yml` on `main` may use.** Organization Settings → Actions →
+   Runner groups: put the two runners in a group of their own, restrict it to the `purlis/purlis`
+   repository, and under "Workflow access" allow only
+   `purlis/purlis/.github/workflows/release.yml@refs/heads/main`. A stable release starts from a
+   tag and never takes the variable's runner, so the group needs no tag entry. A dev job that no
+   runner of the group may take queues (GitHub gives up after 24 hours) and does not fall back to
+   a hosted one.
+2. **Fork pull requests need approval.** Settings → Actions → General → "Fork pull request
+   workflows": require approval for all outside collaborators. No workflow a pull request starts
+   may name a self-hosted runner, and `tools/no-self-hosted-on-pull-request.test.mjs` fails the
+   build if one does (it also refuses a `runs-on` read from a variable, input or secret in one);
+   this setting is the second line.
+3. **A dedicated macOS user for the runner service.** A standard (non-admin) user that owns
+   nothing else: no personal keychain, no SSH keys, no cloud credentials, no sudo. The job runs
+   code from the commit it builds, as that user, and the keychain clean-up deletes that user's
+   keychains.
+
+**What provenance says of a self-hosted dev build.** It is attested and verified by the
+`provenance` job, which runs on a GitHub-hosted runner, so `--deny-self-hosted-runners` stays on
+both checks unchanged and passes: the flag looks at the runner that made the attestation, not at
+the one that built the files. What the attestation then says about the *build machine* is the
+operator's word, not GitHub's, and a compromised self-hosted Mac signs what it likes. That is why
+a stable release never uses one, why the three conditions above come first, and why a self-hosted
+run says so in its summary ("Built on a self-hosted runner").
+
 ## Cutting a stable release
 
 What a release brought is written as it merges, one changelog fragment per pull request in
