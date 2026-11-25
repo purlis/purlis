@@ -48,6 +48,11 @@ fn started(root: &Path) -> AtStart {
     AtStart::take(root, facts(), false)
 }
 
+/// Why `at` is out of date over the plane at `root` now, read as the app reads it (once).
+fn stale(at: &AtStart, root: &Path) -> Vec<Why> {
+    at.out_of_date(&Shared::read(root))
+}
+
 /// The rule that forbids reading the ledger folder of `web`.
 fn ban_on_the_ledger(root: &Path) -> String {
     format!(
@@ -172,11 +177,11 @@ fn a_running_chat_takes_a_loosening_only_at_its_next_start() {
         Outcome::Deny,
         "the ban stands until the press"
     );
-    assert_eq!(running.out_of_date(&root), Vec::<Why>::new());
+    assert_eq!(stale(&running, &root), Vec::<Why>::new());
     // The press accepts the loosened copy: a chat that starts after it is held to that, and the
     // chat that ran through it is not marked either, since it is on what it started on.
     assert_ne!(reads_with(&root, LEDGER, &pressed(None)), Outcome::Deny);
-    assert_eq!(running.out_of_date(&root), Vec::<Why>::new());
+    assert_eq!(stale(&running, &root), Vec::<Why>::new());
 }
 
 /// The plane's root, as `a_plane` will make it, for a rule written before the plane exists.
@@ -190,13 +195,13 @@ fn a_never_marks_a_running_chat_out_of_date() {
     let m = machine();
     let root = a_plane(&m);
     let running = started(&root);
-    assert_eq!(running.out_of_date(&root), Vec::<Why>::new());
+    assert_eq!(stale(&running, &root), Vec::<Why>::new());
     // A Never for another workspace is not this chat's.
     give(&root, &a_never_of(Scope::Workspace, Some("api")).entry());
-    assert_eq!(running.out_of_date(&root), Vec::<Why>::new());
+    assert_eq!(stale(&running, &root), Vec::<Why>::new());
     // Everywhere's is.
     give(&root, &a_never_of(Scope::Everywhere, None).entry());
-    assert_eq!(running.out_of_date(&root), [Why::Never]);
+    assert_eq!(stale(&running, &root), [Why::Never]);
 }
 
 #[test]
@@ -205,7 +210,7 @@ fn a_never_for_the_chats_own_workspace_marks_it_out_of_date() {
     let root = a_plane(&m);
     let running = started(&root);
     give(&root, &a_never_of(Scope::Workspace, Some("web")).entry());
-    assert_eq!(running.out_of_date(&root), [Why::Never]);
+    assert_eq!(stale(&running, &root), [Why::Never]);
 }
 
 #[test]
@@ -215,9 +220,9 @@ fn a_removed_grant_marks_a_running_chat_out_of_date() {
     let grant = a_grant(Scope::Workspace).entry();
     give(&root, &grant);
     let running = started(&root);
-    assert_eq!(running.out_of_date(&root), Vec::<Why>::new());
+    assert_eq!(stale(&running, &root), Vec::<Why>::new());
     take_back(&root, &grant);
-    assert_eq!(running.out_of_date(&root), [Why::GrantRemoved]);
+    assert_eq!(stale(&running, &root), [Why::GrantRemoved]);
 }
 
 #[test]
@@ -231,7 +236,7 @@ fn a_grant_given_while_a_chat_runs_or_a_once_grant_spent_marks_nothing() {
     give(&root, &a_grant(Scope::Everywhere).entry());
     // A Once grant is spent by its use, which is not a removal of a grant that served.
     take_back(&root, &once);
-    assert_eq!(running.out_of_date(&root), Vec::<Why>::new());
+    assert_eq!(stale(&running, &root), Vec::<Why>::new());
 }
 
 #[test]
@@ -240,7 +245,7 @@ fn a_path_tightening_marks_a_running_chat_out_of_date_and_offers_a_restart() {
     let root = a_plane(&m);
     let running = started(&root);
     commit(&root, &[("policy.cedar", &ban_on_the_ledger(&root))]);
-    assert_eq!(running.out_of_date(&root), [Why::PathTightened]);
+    assert_eq!(stale(&running, &root), [Why::PathTightened]);
     // The offer is the app's: the mark carries a phrase the chat's tab and its Start fresh say.
     assert_eq!(Why::PathTightened.said(), "a path rule tightened");
 }
@@ -259,7 +264,7 @@ fn a_path_rule_that_is_dropped_marks_nothing() {
     );
     let running = started(&root);
     commit(&root, &[("policy.cedar", "-")]);
-    assert_eq!(running.out_of_date(&root), Vec::<Why>::new());
+    assert_eq!(stale(&running, &root), Vec::<Why>::new());
 }
 
 #[test]
@@ -268,7 +273,12 @@ fn a_workspace_created_after_a_chat_starts_marks_it_out_of_date() {
     let root = a_plane(&m);
     let running = started(&root);
     commit(&root, &[("workspaces/api/README.md", "api\n")]);
-    assert_eq!(running.out_of_date(&root), [Why::WorkspaceAdded]);
+    // The shipped `sandbox-other-workspace-read` forbids reading another workspace's folder,
+    // which the new workspace is to a chat of `web`: the compiled sandbox lacks it.
+    assert_eq!(
+        stale(&running, &root),
+        [Why::PathTightened, Why::WorkspaceAdded]
+    );
 }
 
 #[test]
@@ -284,7 +294,7 @@ fn a_workspace_that_goes_marks_nothing() {
     );
     let running = started(&root);
     commit(&root, &[("workspaces/api/README.md", "-")]);
-    assert_eq!(running.out_of_date(&root), Vec::<Why>::new());
+    assert_eq!(stale(&running, &root), Vec::<Why>::new());
 }
 
 #[test]
@@ -293,8 +303,8 @@ fn an_app_restart_marks_the_chat_out_of_date() {
     let root = a_plane(&m);
     // A chat the app found already running (reattached) was started by an app that is gone.
     let found = AtStart::take(&root, facts(), true);
-    assert_eq!(found.out_of_date(&root), [Why::AppRestarted]);
-    assert_eq!(started(&root).out_of_date(&root), Vec::<Why>::new());
+    assert_eq!(stale(&found, &root), [Why::AppRestarted]);
+    assert_eq!(stale(&started(&root), &root), Vec::<Why>::new());
 }
 
 #[test]
@@ -322,5 +332,269 @@ fn a_tightening_is_sealed_at_the_decision_that_sees_it() {
     let again = AtStart::take(&root, facts(), false);
     commit(&root, &[("policy.cedar", "-")]);
     assert_eq!(reads(&root, LEDGER), Outcome::Deny, "a sealed forbid stays");
-    assert_eq!(again.out_of_date(&root), Vec::<Why>::new());
+    assert_eq!(stale(&again, &root), Vec::<Why>::new());
+}
+
+// ---- review round 2: what the rules resolve to, permits, the deny state, one shared reading ----
+
+/// One side's places for one action, as a compile made them.
+fn side(permits: &[Reach], forbids: &[Reach]) -> force::ActionPlaces {
+    force::ActionPlaces {
+        permits: permits.to_vec(),
+        forbids: forbids.to_vec(),
+    }
+}
+
+#[test]
+fn a_permit_narrowed_or_taken_away_marks_a_running_chat_out_of_date() {
+    // A read is allowed only where a permit allows it (spec §11.2, §11.5), so a place a permit let
+    // through that none does now is a path tightening, like a new forbid. No project rule can say
+    // it (the catch-all permit's id is the shipped default's alone, and a project cannot replace
+    // it), so the Organisation's rules are where a side's permits narrow: the sides' places are
+    // handed in as a compile made them.
+    let web = || Reach::Folder("/p/workspaces/web".to_owned());
+    let ledger = || Reach::Folder("/p/workspaces/web/ledger".to_owned());
+    let everything = [Reach::Everything];
+    let then = Places::of([side(&[web()], &[]), side(&everything, &[])].iter());
+    assert_eq!(
+        then.permits,
+        Some(vec![web()]),
+        "intersected across the sides"
+    );
+    // Narrowed: the ledger alone.
+    let narrowed = Places::of([side(&[ledger()], &[]), side(&everything, &[])].iter());
+    assert!(narrowed.tightens(&then));
+    // Taken away: no permit lets anything through.
+    let none = Places::of([side(&[], &[]), side(&everything, &[])].iter());
+    assert_eq!(none.permits, Some(Vec::new()));
+    assert!(none.tightens(&then));
+    // Another side that now permits less narrows the intersection, though this side did not move.
+    let other = Places::of([side(&[web()], &[]), side(&[ledger()], &[])].iter());
+    assert!(other.tightens(&then));
+    // Widened, or the same: nothing.
+    let widened = Places::of([side(&everything, &[]), side(&everything, &[])].iter());
+    assert!(!widened.tightens(&then));
+    assert!(!then.tightens(&then));
+    // The permit of a side that does not read or compile is none, and its forbid is everything.
+    let closed = force::ActionPlaces {
+        permits: Vec::new(),
+        forbids: vec![Reach::Everything],
+    };
+    assert!(Places::of([side(&everything, &[]), closed].iter()).tightens(&then));
+}
+
+#[test]
+fn a_set_whose_members_change_under_the_same_rule_marks_a_running_chat() {
+    // The rule's text never changes: its `PathSet` keeps its name while what it holds grows, so a
+    // comparison of the text sees nothing and the sandbox compiled at the start lacks the file.
+    let m = machine();
+    let rule = format!(
+        "{HEADER}@id(\"sandbox-no-private\") @level(\"project\")\n\
+         forbid (principal, action == Action::\"read\", resource) when {{ \
+         resource in PathSet::\"private\" }};\n"
+    );
+    let with = |members: &str| format!("{STRICT}\n[policy.sets]\nprivate = [{members}]\n");
+    let root = plane(
+        &m,
+        &[
+            ("purlis.toml", &with("\"workspaces/web/ledger\"")),
+            ("policy.cedar", &rule),
+            ("workspaces/web/README.md", "web\n"),
+            ("workspaces/web/ledger/2026.csv", "1\n"),
+        ],
+    );
+    let running = started(&root);
+    commit(
+        &root,
+        &[(
+            "purlis.toml",
+            &with("\"workspaces/web/ledger\", \"workspaces/web/README.md\""),
+        )],
+    );
+    assert_eq!(stale(&running, &root), [Why::PathTightened]);
+    // A member that goes is a loosening: a chat that started after the first commit is not marked.
+    let later = started(&root);
+    commit(
+        &root,
+        &[("purlis.toml", &with("\"workspaces/web/ledger\""))],
+    );
+    assert_eq!(stale(&later, &root), Vec::<Why>::new());
+}
+
+#[test]
+fn a_repo_term_that_comes_to_name_a_folder_marks_a_running_chat() {
+    // `Repo::"api/svc"` names a workspace that does not exist yet, so it holds nothing; once the
+    // workspace is made it holds the repo's branch folders. Same text, new reach.
+    let m = machine();
+    let rule = format!(
+        "{HEADER}@id(\"sandbox-no-svc\") @level(\"project\")\n\
+         forbid (principal, action == Action::\"read\", resource) when {{ \
+         resource in Repo::\"api/svc\" }};\n"
+    );
+    let root = plane(
+        &m,
+        &[
+            ("purlis.toml", STRICT),
+            ("policy.cedar", &rule),
+            ("workspaces/web/README.md", "web\n"),
+        ],
+    );
+    let running = started(&root);
+    commit(&root, &[("workspaces/api/README.md", "api\n")]);
+    assert_eq!(
+        stale(&running, &root),
+        [Why::PathTightened, Why::WorkspaceAdded]
+    );
+}
+
+#[test]
+fn entering_the_deny_state_or_losing_the_everywhere_answers_marks_a_running_chat() {
+    let m = machine();
+    let root = a_plane(&m);
+    let running = started(&root);
+    let mut shared = Shared::read(&root);
+    assert_eq!(running.out_of_date(&shared), Vec::<Why>::new());
+    shared.standing.everywhere_unreadable = true;
+    shared.memo.borrow_mut().clear();
+    assert_eq!(running.out_of_date(&shared), [Why::AnswersUnreadable]);
+    shared.standing.state = answers::State::Deny(Vec::new());
+    shared.memo.borrow_mut().clear();
+    assert_eq!(
+        running.out_of_date(&shared),
+        [Why::DenyState, Why::AnswersUnreadable]
+    );
+    // A chat that started in the deny state is not marked by it again, and leaving it is a
+    // loosening.
+    let started_denied = AtStart {
+        facts: facts(),
+        reading: shared.reading(&facts()),
+        reattached: false,
+    };
+    assert_eq!(started_denied.out_of_date(&shared), Vec::<Why>::new());
+    assert_eq!(
+        started_denied.out_of_date(&Shared::read(&root)),
+        Vec::<Why>::new()
+    );
+}
+
+#[test]
+fn chats_of_the_same_facts_share_one_compile_and_the_shared_parts_are_read_once() {
+    let m = machine();
+    let root = a_plane(&m);
+    let shared = Shared::read(&root);
+    let one = shared.reading(&facts());
+    assert_eq!(shared.reading(&facts()), one);
+    assert_eq!(shared.memo.borrow().len(), 1, "the second was the first's");
+    let other = Facts {
+        chat: Some("01JOTHER".to_owned()),
+        ..facts()
+    };
+    shared.reading(&other);
+    assert_eq!(shared.memo.borrow().len(), 2);
+}
+
+mod places {
+    use super::*;
+    use crate::policy::sandbox_rules::Reach::{Entry, Everything, Folder, Inside, Unowned};
+
+    fn folder(path: &str) -> Reach {
+        Folder(path.to_owned())
+    }
+
+    #[test]
+    fn a_reach_is_covered_only_where_it_clearly_lies_inside() {
+        assert!(covered(&folder("/p/a/b"), &[folder("/p/a")]));
+        assert!(!covered(&folder("/p/a"), &[folder("/p/a/b")]));
+        assert!(covered(&folder("/p/a"), &[Everything]));
+        assert!(covered(&Entry("/p/a/f".into()), &[folder("/p/a")]));
+        assert!(!covered(&Entry("/p/b/f".into()), &[folder("/p/a")]));
+        assert!(covered(&Inside("/p/a/b".into()), &[folder("/p/a")]));
+        assert!(!covered(&folder("/p/a"), &[Unowned(vec!["/p/a".into()])]));
+        // What this cannot place stands as not covered: it marks more, never less.
+        assert!(!covered(
+            &Unowned(vec!["/p/a".into()]),
+            &[folder("/p"), Inside("/q".into())]
+        ));
+    }
+
+    #[test]
+    fn two_places_meet_in_the_deeper_one_or_in_nothing() {
+        assert_eq!(
+            meet(&folder("/p/a"), &folder("/p/a/b")),
+            Some(Some(folder("/p/a/b")))
+        );
+        assert_eq!(meet(&folder("/p/a"), &folder("/p/c")), Some(None));
+        assert_eq!(
+            meet(&Everything, &folder("/p/a")),
+            Some(Some(folder("/p/a")))
+        );
+        assert_eq!(
+            meet(&Entry("/p/a/f".into()), &folder("/p/a")),
+            Some(Some(Entry("/p/a/f".into())))
+        );
+    }
+
+    #[test]
+    fn what_cannot_be_written_as_places_fails_closed() {
+        // A folder above a workspace's folder, met with what no workspace owns: part of it is
+        // owned and part is not, which no place says. The reading then stands as "unknown", and
+        // a start that knew becomes tightened by it.
+        let above = [folder("/p")];
+        let unowned = [Unowned(vec!["/p/web".into()])];
+        assert_eq!(meet_all(&above, &unowned), None);
+        let known = Places {
+            forbids: Vec::new(),
+            permits: Some(vec![folder("/p")]),
+        };
+        let unknown = Places {
+            forbids: Vec::new(),
+            permits: None,
+        };
+        assert!(unknown.tightens(&known));
+        assert!(!known.tightens(&unknown));
+        assert!(!unknown.tightens(&unknown));
+    }
+
+    #[test]
+    fn a_forbid_is_a_tightening_only_where_the_start_did_not_hold_it() {
+        let holding = |places: &[Reach]| Places {
+            forbids: places.to_vec(),
+            permits: Some(vec![Everything]),
+        };
+        let then = holding(&[folder("/p/a")]);
+        assert!(holding(&[folder("/p/a"), folder("/p/b")]).tightens(&then));
+        assert!(
+            !holding(&[folder("/p/a/x")]).tightens(&then),
+            "a smaller forbid"
+        );
+        assert!(holding(&[folder("/p")]).tightens(&then), "a larger one");
+        assert!(!holding(&[]).tightens(&then));
+    }
+}
+
+#[test]
+fn a_write_of_the_sealed_store_tells_who_named_the_plane_and_no_other() {
+    // The window asks again which chats are out of date when this tells it: a Never added, a grant
+    // taken out and a Once grant spent write the store and change no file of the plane.
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let m = machine();
+    let root = a_plane(&m);
+    let told = std::sync::Arc::new(AtomicUsize::new(0));
+    answers::tell_when_written(&root, {
+        let told = std::sync::Arc::clone(&told);
+        Some(std::sync::Arc::new(move || {
+            told.fetch_add(1, Ordering::SeqCst);
+        }))
+    });
+    let grant = a_grant(Scope::Workspace).entry();
+    give(&root, &grant);
+    assert_eq!(told.load(Ordering::SeqCst), 1, "a grant was given");
+    take_back(&root, &grant);
+    assert_eq!(told.load(Ordering::SeqCst), 2, "and taken out");
+    give(&root, &a_never_of(Scope::Everywhere, None).entry());
+    assert_eq!(told.load(Ordering::SeqCst), 3, "a Never was added");
+    // Nobody named is told nothing.
+    answers::tell_when_written(&root, None);
+    give(&root, &a_never_of(Scope::Workspace, Some("web")).entry());
+    assert_eq!(told.load(Ordering::SeqCst), 3);
 }

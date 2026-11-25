@@ -29,7 +29,7 @@ use purlis_core::engine::Size;
 use purlis_core::instructions::Stamp;
 use purlis_core::machine;
 use purlis_core::planemodel::Model;
-use purlis_core::policy::running::AtStart;
+use purlis_core::policy::running::{AtStart, Shared};
 use purlis_core::reopen;
 use purlis_core::reopen::Choice;
 
@@ -500,6 +500,17 @@ fn caught_up<W>(model: &Mutex<Model>, root: &Path, start: impl FnOnce() -> W) ->
 
 /// Each chat's [`Stamp`], by session, taken as it starts.
 type StartedOn = Arc<Mutex<HashMap<u32, Stamp>>>;
+
+/// Whether the plane root's `HEAD` is not the commit `last` holds, which it then holds (M75-23):
+/// what tells the window to ask again which chats are out of date, since a committed policy is
+/// read at `HEAD` and the watch ignores `.git`.
+fn head_moved(last: &Mutex<Option<String>>, root: &Path) -> bool {
+    let now = purlis_core::policy::running::head_of(root);
+    let mut last = last.lock().unwrap_or_else(PoisonError::into_inner);
+    let moved = *last != now;
+    *last = now;
+    moved
+}
 
 /// Each chat's [`AtStart`], by session, taken as it starts or is reattached (M75-23).
 type StartedUnder = Arc<Mutex<HashMap<u32, AtStart>>>;
@@ -1238,24 +1249,31 @@ impl Held {
         let skills: HashMap<u32, purlis_core::skills::SkillsChanged> =
             self.chats.skills_changed().into_iter().collect();
         // What the policy has tightened past, for each chat its sandbox was compiled for (M75-23).
-        // Read before the stamps' lock is taken: it loads the policy.
+        // Read before the stamps' lock is taken: it loads the policy. **The parts every chat
+        // shares (the sealed store, the policy at `HEAD`, the layout) are read once** for the
+        // ask, not once per chat.
         let out_of_date: HashMap<u32, Vec<String>> = {
             let under: Vec<(u32, AtStart)> = lock_under(&self.started_under)
                 .iter()
                 .map(|(session, at)| (*session, at.clone()))
                 .collect();
-            under
-                .into_iter()
-                .filter_map(|(session, at)| {
-                    let why = at.out_of_date(&self.root);
-                    (!why.is_empty()).then(|| {
-                        (
-                            session,
-                            why.into_iter().map(|one| one.said().to_owned()).collect(),
-                        )
+            if under.is_empty() {
+                HashMap::new()
+            } else {
+                let shared = Shared::read(&self.root);
+                under
+                    .into_iter()
+                    .filter_map(|(session, at)| {
+                        let why = at.out_of_date(&shared);
+                        (!why.is_empty()).then(|| {
+                            (
+                                session,
+                                why.into_iter().map(|one| one.said().to_owned()).collect(),
+                            )
+                        })
                     })
-                })
-                .collect()
+                    .collect()
+            }
         };
         let mut updated: Vec<PlaneUpdated> = lock_started(&self.started_on)
             .iter()
@@ -2218,6 +2236,7 @@ impl Held {
     fn let_go(&self, to_update: bool, screens: TaskScreens) {
         // Nobody is told of its standing any more (H6c).
         purlis_core::planegit::tell_when_standing_moves(&self.root, None);
+        purlis_core::secrets::answers::tell_when_written(&self.root, None);
         // Auto-save first: ending the chats below tells the worker each one ended, and a plane
         // being let go of is saved once, at quit, not by a worker racing that save.
         drop(
@@ -5221,10 +5240,14 @@ impl Planes {
         chats.when_one_starts_under(Box::new({
             let started_under = Arc::clone(&started_under);
             let root = root.clone();
-            move |session, facts, reattached| {
-                // Read before the lock is taken: it loads and compiles the policy.
+            move |facts, reattached| {
+                // Read now, before the start applies its sandbox and before any lock is taken:
+                // it loads and compiles the policy. Kept once the start has a session.
                 let at = AtStart::take(&root, facts, reattached);
-                lock_under(&started_under).insert(session, at);
+                let started_under = Arc::clone(&started_under);
+                Box::new(move |session| {
+                    lock_under(&started_under).insert(session, at);
+                })
             }
         }));
         // When each chat began to start, for its MCP servers' starts (qw381).
@@ -5290,11 +5313,28 @@ impl Planes {
         // A reader of the kept standing (the Saving rows, the alerts) was answered from an older
         // one and the newer one differs: the window is told the git answer moved, and reads it
         // again (H6c).
+        // A move of the plane's `HEAD` (a commit, a pull, a checkout) is also what the policy its
+        // chats' sandboxes were compiled under may have moved with, and the watch ignores `.git`:
+        // the window is told the chats' marks may have changed, and asks again (M75-23).
+        let head = Arc::new(Mutex::new(purlis_core::policy::running::head_of(&root)));
         purlis_core::planegit::tell_when_standing_moves(&root, {
             let changes = Arc::clone(&changes);
             let plane = id.clone();
+            let root = root.clone();
             Some(Arc::new(move || {
                 changes(plane.clone(), Some(vec![purlis_core::planechange::saved()]));
+                if head_moved(&head, &root) {
+                    changes(plane.clone(), Some(vec![purlis_core::planechange::chats()]));
+                }
+            }))
+        });
+        // A write of the sealed store (a Never added or lifted, a grant taken out, a press) moves
+        // no file of the plane either, and a chat's sandbox was compiled under what it held.
+        purlis_core::secrets::answers::tell_when_written(&root, {
+            let changes = Arc::clone(&changes);
+            let plane = id.clone();
+            Some(Arc::new(move || {
+                changes(plane.clone(), Some(vec![purlis_core::planechange::chats()]));
             }))
         });
         // Before a chat can end, so its end is one the worker hears. Where the chats run: in

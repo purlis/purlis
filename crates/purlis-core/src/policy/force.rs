@@ -239,6 +239,14 @@ enum Tip {
     Unread,
 }
 
+/// The commit `HEAD` names at the plane root now, or none (no commit, or one that does not read).
+pub(super) fn head_sha(root: &Path) -> Option<String> {
+    match head_commit(root) {
+        Tip::Commit(sha) => Some(sha),
+        Tip::None | Tip::Unread => None,
+    }
+}
+
 fn head_commit(root: &Path) -> Tip {
     let run = crate::worktree::git::run_as_written(
         root,
@@ -904,7 +912,7 @@ pub fn orphaned_replacements(sources: &Sources<'_>, standing: &Standing) -> Vec<
 }
 
 /// One side that holds a limit: a version's own policy, or one that did not read.
-enum LimitSide {
+pub(super) enum LimitSide {
     Read(Box<levels::Loaded>),
     Unread,
 }
@@ -924,7 +932,7 @@ fn limit_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
 /// [`judge`] reads it: the project at the one `HEAD` read ([`Version::at_head`]), never the
 /// working tree's own reading (review round 2, F8). A `HEAD` that was not read stably is an
 /// unread side, so nothing is purged on a guess.
-fn decided_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
+pub(super) fn decided_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
     let first = match Version::at_head(sources.root) {
         Head::Read(version) => LimitSide::Read(Box::new(loaded_for(sources, &version))),
         Head::NoCommit => LimitSide::Read(Box::new(levels::load(sources))),
@@ -935,42 +943,71 @@ fn decided_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
     sides
 }
 
-/// **What the sandbox rules of every side in force forbid for `chat`** (M75-23): each side judged
-/// as [`judge`] reads it ([`decided_sides`]), compiled ([`super::sandbox_rules::compile`]), and
-/// every forbid of `read` and `write` named by its action, `@id`, whether it asks and its terms.
-/// The union is what the stricter-wins judgement forbids, so a forbid that is in the second
-/// reading and not the first is a tightening a running chat's compiled sandbox lacks, and one gone
-/// is a loosening that waits for the press. **Fails closed:** a side that does not read, a rule
-/// the compile refuses and a rule that errs each stand as a line of their own, so one that
-/// appears later counts as a tightening. The lines live in memory only and hold paths, so they are
-/// never recorded.
-pub(super) fn compiled_forbids(
-    sources: &Sources<'_>,
-    standing: &Standing,
-    chat: &super::sandbox_rules::Chat<'_>,
-) -> BTreeSet<String> {
-    let mut lines = BTreeSet::new();
-    for side in decided_sides(sources, standing) {
-        let LimitSide::Read(loaded) = side else {
-            lines.insert("a side that does not read".to_owned());
-            continue;
-        };
-        match super::sandbox_rules::compile(&loaded.policy, chat) {
-            Ok(compiled) => {
-                for (action, rules) in [("read", &compiled.read), ("write", &compiled.write)] {
-                    for forbid in &rules.forbids {
-                        lines.insert(format!(
-                            "{action} {} ask={} {:?}",
-                            forbid.id, forbid.ask, forbid.terms
-                        ));
-                    }
-                    lines.extend(rules.erred.iter().map(|id| format!("{action} errs {id}")));
-                }
-            }
-            Err(refused) => lines.extend(refused.iter().map(|one| format!("refused {one}"))),
+/// **What one side's sandbox rules hold, as places** (M75-23): what its `read` and `write`
+/// permits let through and what its forbids hold, each resolved against the plane's layout and
+/// the side's own named sets ([`super::sandbox_rules::ActionRules::allowed`] and `forbidden`).
+/// Compared by what the terms resolve to, never by their text: a `PathSet`, `Repo::` or `Branch::`
+/// term keeps its text while its reach changes.
+pub(super) struct SidePlaces {
+    pub read: ActionPlaces,
+    pub write: ActionPlaces,
+}
+
+/// One action's places for one side.
+pub(super) struct ActionPlaces {
+    pub permits: Vec<super::sandbox_rules::Reach>,
+    pub forbids: Vec<super::sandbox_rules::Reach>,
+}
+
+impl ActionPlaces {
+    /// What a side that cannot be compiled stands for: it allows nothing and forbids everything,
+    /// so the policy reading later is never a tightening that was missed.
+    fn closed() -> Self {
+        Self {
+            permits: Vec::new(),
+            forbids: vec![super::sandbox_rules::Reach::Everything],
         }
     }
-    lines
+}
+
+/// **The places every side in force holds for `chat`** (M75-23): each side as [`judge`] reads it
+/// ([`decided_sides`]), compiled ([`super::sandbox_rules::compile`]) and resolved over `layout`.
+/// **Fails closed:** a side that does not read, and one the compile refuses, stand for no permit
+/// and every forbid. A rule that errs makes its action forbid everything
+/// ([`super::sandbox_rules::ActionRules::forbidden`]). The places live in memory only and hold
+/// paths, so they are never recorded.
+pub(super) fn compiled_places(
+    sides: &[LimitSide],
+    layout: &super::resolver::Layout,
+    chat: &super::sandbox_rules::Chat<'_>,
+) -> Vec<SidePlaces> {
+    sides
+        .iter()
+        .map(|side| {
+            let compiled = match side {
+                LimitSide::Read(loaded) => super::sandbox_rules::compile(&loaded.policy, chat)
+                    .ok()
+                    .map(|compiled| (compiled, &loaded.sets)),
+                LimitSide::Unread => None,
+            };
+            match compiled {
+                Some((compiled, sets)) => {
+                    let of = |rules: &super::sandbox_rules::ActionRules| ActionPlaces {
+                        permits: rules.allowed(layout, sets),
+                        forbids: rules.forbidden(layout, sets),
+                    };
+                    SidePlaces {
+                        read: of(&compiled.read),
+                        write: of(&compiled.write),
+                    }
+                }
+                None => SidePlaces {
+                    read: ActionPlaces::closed(),
+                    write: ActionPlaces::closed(),
+                },
+            }
+        })
+        .collect()
 }
 
 /// The accepted copy and every floor version, as sides.

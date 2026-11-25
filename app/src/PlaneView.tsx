@@ -83,6 +83,7 @@ import {
   endId,
   freshId,
   ignoreId,
+  restartId,
   stopId,
   taskStopId,
   needsYouRows,
@@ -1513,10 +1514,11 @@ export const PlaneView = memo(function PlaneView({
   /** The chats running on instructions the plane has changed since they started (charter#369),
    *  each marked on its tab, and those whose skills changed since (#2770), for their Skills
    *  chip (#3953). */
-  const { files: planeUpdates, skills: skillsChanged } = usePlaneUpdated(
-    plane,
-    instructionsChanges,
-  );
+  const {
+    files: planeUpdates,
+    sandbox: sandboxOld,
+    skills: skillsChanged,
+  } = usePlaneUpdated(plane, instructionsChanges);
   // The plane root is watched, so an edit to `charter.toml` or `charter.local.toml` — in an
   // editor, from a `git pull` — is one of these, and what this project has on may have moved
   // with it (charter-app#253). Not at the mount: `useExtensionsOn` asks then.
@@ -9857,6 +9859,13 @@ export const PlaneView = memo(function PlaneView({
     const row = own === undefined ? undefined : by(freshId(own));
     return row?.available ? row : undefined;
   };
+  /** The Restart chat row a tab's mark presses where only its chat's shell sandbox is older than
+   *  the policy (M75-23), where Start fresh is greyed: only one that can run. */
+  const restartOf = (id: number) => {
+    const own = chatOf(tabs, id);
+    const row = own === undefined ? undefined : by(restartId(own));
+    return row?.available ? row : undefined;
+  };
 
   /**
    * The focused workspace's worktrees, as the catalogue names them (charter-app#174).
@@ -10069,6 +10078,7 @@ export const PlaneView = memo(function PlaneView({
             // offered no work link (ADR 0088 §4).
             linkable: (session) => filedIn(session) !== OUTSIDE,
             planeUpdated: planeUpdates,
+            sandboxOld,
             restartable,
             movesTo,
             movesOnceAPoolIsSetUp: movesOnceSetUp,
@@ -10147,6 +10157,7 @@ export const PlaneView = memo(function PlaneView({
       workItems,
       filedIn,
       planeUpdates,
+      sandboxOld,
       restartable,
       movesTo,
       movesOnceSetUp,
@@ -12889,8 +12900,10 @@ export const PlaneView = memo(function PlaneView({
                       waitingOn={waitingOn}
                       showFromChip={showFromChip}
                       freshOf={freshOf}
+                      restartOf={restartOf}
                       freshMarkOf={freshMarkOf}
                       planeUpdates={planeUpdates}
+                      sandboxOld={sandboxOld}
                       handedFrom={handedFrom}
                       workItems={workItems}
                       restoring={restoringChats}

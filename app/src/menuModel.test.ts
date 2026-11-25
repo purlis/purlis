@@ -8,6 +8,7 @@ import {
   catalogued,
   ENDS_IT,
   FRESH_UNCHANGED,
+  FRESH_UNCHANGED_SANDBOX,
   memoryOffers,
   menuRows,
   sessionOffers,
@@ -570,6 +571,21 @@ describe("a chat's list (#4753)", () => {
     expect(fresh?.offer.available).toBe(true);
     expect(fresh?.danger).toBe(true);
     expect(fresh?.warns).toBe(WARNS.fresh);
+  });
+
+  it("offers Restart, saying why, where only the shell sandbox is older than the policy", () => {
+    // The core's own phrase (`policy::running::Why::said`): a Never reaches the chat.
+    const old = world({ sandboxOld: { 7: ["a Never was given"] } });
+    const rows = rowsOf(menuOf({ on: "chat", session: 7 }, old.offers));
+    const fresh = rows.find((row) => row.said === SAID.startFresh);
+    // Nothing it read has changed, so Start fresh stays greyed, and its reason points at Restart.
+    expect(fresh?.offer.available).toBe(false);
+    expect(fresh?.offer.reason).toBe(FRESH_UNCHANGED_SANDBOX);
+    const restart = rows.find((row) => row.said === SAID.restart);
+    expect(restart?.offer.available).toBe(true);
+    expect(restart?.offer.note).toContain("Its shell sandbox is older than the policy");
+    expect(restart?.offer.note).toContain("a Never was given");
+    expect(restart?.offer.note).not.toMatch(/project updated/i);
   });
 
   it("colours End…, which ends the chat's program, and puts it last", () => {

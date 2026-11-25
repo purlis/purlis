@@ -122,20 +122,32 @@ The window only says the policy; the app resolves it, as below.
 
 ## What a chat that is already running picks up
 
-A chat runs on the policy as it stood, and a change reaches it in one direction only (M75-23, spec
-§9.5):
+**This describes what purlis does today. It differs from spec §9.5, and which of the two is meant
+is waiting for a ruling** (M75-23, review round 1, H1): the spec says a loosening reaches a running
+chat "only at its next start", and today it reaches it at its next decision, once you have pressed
+Accept.
 
 - **A tightening reaches it at its next decision**, with no restart: every hook and proxy ask reads
   the committed project and your sealed answers afresh, and seals each tightening it sees into the
   accepted floor.
-- **A loosening reaches it only at its next start after your press.** A rule you drop, a Never you
-  remove, a grant given while it runs: the chat runs on what it started on until it is started
-  again, and is not marked.
+- **A loosening reaches it at its next decision after your press**, not only at its next start. A
+  rule you drop, a Never you remove: nothing reaches the chat until you press Accept (the accepted
+  copy only moves at the press), and from then on its decisions follow it. The chat is not marked.
 - **The sandbox its shell commands run in is compiled at its start**, so a tightening cannot reach
-  it. The chat is marked **out of date**, as it is when its instructions change (**Plane updated**),
-  and its pane offers **Start fresh**, when a Never reaches it, a grant that served its reads or
-  writes is removed, a forbid on a path comes into force, a workspace is created after it started,
-  or purlis restarted under it. The mark's tooltip says which.
+  it. The chat is marked as having an **older shell sandbox** (not as the project updated, which
+  is what **Plane updated** says of its instructions), and its pane offers **Restart chat**, which
+  compiles the sandbox again, when
+  - a Never reaches it,
+  - a grant that served its reads or writes is removed,
+  - a forbid comes into force, or a permit that let a place through is gone or narrower (a read is
+    allowed only where a permit allows it): rules are compared by the places they resolve to, so a
+    named set or repo that grows counts, and a rule whose text is unchanged does not hide it,
+  - the sealed answers enter their deny state, or your answers for everywhere cannot be read,
+  - a workspace is created after it started, or
+  - purlis restarted under it.
+
+  The mark's tooltip says which. The window asks again when the plane's `HEAD` moves, when a Never
+  or a grant is written or removed, and when you press Accept.
 
 ## When a guard is wrong about your case
 
