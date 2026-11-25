@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795591123609,
+  "lastUpdate": 1795593122465,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54516,6 +54516,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5045425,
             "unit": "ms",
             "extra": "median of 5 runs: 101.191, 101.278, 101.505, 102.118, 102.803 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8130568e18f3a679c7360bb18ebefd46e1268471",
+          "message": "Pool setup, refined: Kubernetes always a choice, kubeconfig and plugins, Connect and Pool merged, timed checks, kept refusals, one status bar (#7191, #7192) (#7238)\n\n* Pool setup: Where offers three places always; cluster card keeps one kubeconfig file and a context; credential plugin named with a folder field (#7191, #7192)\n\nCore (unbuilt at this commit: cargo held off by machine load): Choices.kubeconfig and plugin_dir,\nchoose_cluster_in, choose_plugin_folder, poolsetup::plugin, Kubectl::with_plugin_folder.\nUI: three option cards, ClusterFields, plugin folder field in Check the cluster.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAR6XHJBM27FAW9CZVV1JP\nPurlis-Persona: steward\n\n* Pool setup: Where's three places, the cluster card's kubeconfig and context, the plugin folder field (#7191, #7192)\n\nTracked half of the previous commit: core choices and wiring, the Tauri commands and bindings, the\ntab, its stories and tests, and the plane-format row. Core Rust not yet compiled (machine load).\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAR6XHJBM27FAW9CZVV1JP\nPurlis-Persona: steward\n\n* Pool setup: check durations, step times, and one status bar for the pool's state (#7191)\n\nThe bar reads a pool's state only through poolState.ts, the one adapter to switch to the core's\nown enum once Remote trains A lands it. Durations: PoolSetupCheck/PoolSetupStep carry took_ms,\ntimed for the link check; the core's other lines are not timed yet.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAR6XHJBM27FAW9CZVV1JP\nPurlis-Persona: steward\n\n* Pool setup: new files of the status bar and durations (#7191)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAR6XHJBM27FAW9CZVV1JP\nPurlis-Persona: steward\n\n* Pool setup: add through the chosen kubeconfig, the plugin folder for the add, the vouch wait as a pool option (#7191, #7192)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAR6XHJBM27FAW9CZVV1JP\nPurlis-Persona: steward\n\n* Pool setup core: compile fixes, rustfmt, the plugin-folder PATH test (#7192)\n\npurlis-core: cargo test --lib poolsetup passes (260), the new kubeconfig, plugin and PATH tests among them.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAR6XHJBM27FAW9CZVV1JP\nPurlis-Persona: steward\n\n* Pool setup app: u32 durations, the identity check's fields, regenerated bindings (#7191, #7192)\n\npurlis-app compiles; the bindings test passes.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAR6XHJBM27FAW9CZVV1JP\nPurlis-Persona: steward\n\n* Pool setup: review fixes: empty and ~/ kubeconfig, plugin found on the person's PATH, plugin_dir documented (#7192)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAR6XHJBM27FAW9CZVV1JP\nPurlis-Persona: steward\n\n* Pool setup: Connect and Pool merge, check timing, a failed add kept Refused, the status bar's real commands (#7191)\n\nCore: connecting::trust_and_create runs every check of the pool's image before the machine is called connected, then makes the pool; poolsetup::timing times each doctor and Connect check and says what one past 30 s waits on; declined keeps a refused pool (Docker and cluster) as PoolState::Refused with its reason, mapping 1:1 to Train A's RemoteState; Check carries took_ms and waiting_on.\nApp: pool_setup_trust_and_create, pool_setup_try_now; Connect gains the pool's name, who can sign in and Trust and create the pool; Try now and Check pool run the forward's retry and doctor.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7REQHCJ7YEGC5N3A2Y1MHZE\nPurlis-Persona: steward\n\n* Pool setup: review fixes: a refusal only for a pool not already kept, an add that made nothing forgets nothing, in-flight timing matched by host, Forget on a refused add (#7191)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7REQHCJ7YEGC5N3A2Y1MHZE\nPurlis-Persona: steward\n\n* Pool setup: review fixes of train B: took part in the steps manifest, stories, step times, trust only on full success, refusal by pool identity, forget dialog, typed plugin folder, plugin search folders, status bar copy (#7191, #7192)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RJHV6CX5PVMD787V6GRG51\nPurlis-Persona: steward\n\n* Pool setup: review of the fixes: a refusal is by the machine it was asked for (route spellings equal, shown only there), Forget acts by state not by name, ~/.. refused (#7191)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RJHV6CX5PVMD787V6GRG51\nPurlis-Persona: steward\n\n* Pool setup, CI fixes for train B: fmt, an unused test import, needless borrow, declined.rs imports Refused from runners, MergedFields in the field-help list, ForgetPool in the dialog list, choose_cluster test takes kubeconfig (#7191)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7S32DG3E0AEEZFH7DZE6RVT\nPurlis-Persona: steward\n\n* Pool e2e: the remote specs walk the merged Connect page, naming the pool there and trusting with Trust this machine only (#7191)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7S70ZHHHKNNV3CNRWKGVBBV\nPurlis-Persona: steward\n\n* Pool setup, CI fixes for train B: the four new commands are the window's alone, and Where's two stories walk the three places (#7191)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7SVNF07RXAKWEVATKFJNPXK\nPurlis-Persona: steward\n\n* Regenerate uiRpc.ts: the four pool_setup_* commands are the window's alone (#7191)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7SYKGK6614GD2HVA9YS4EY7\nPurlis-Persona: steward\n\n* Pool setup, CI fixes for train B: Contexts Under Options waits up to 3 s for the list to go, as Select's own stories do, since WebKit draws the next frame late (#7191)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7W56AWYNK53NS1JYMA391M4\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* ConnectStep's The Add Was Not Taken waits up to 3 s for the press to settle before its picture, since WebKit draws the next frame late (#7238)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M87CKTCK95KTQ4R11VCXPKQ6\nPurlis-Persona: steward\n\n* Format the ConnectStep story\n\nAssisted-by: claude-code\nPurlis-Chat: 01M4VQ5VQ0NTF7EFFJKJB9E649\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-25T07:11:09Z",
+          "tree_id": "a092a8161504e6b261cb3b604c55bccd0c6b29d7",
+          "url": "https://github.com/purlis/purlis/commit/8130568e18f3a679c7360bb18ebefd46e1268471"
+        },
+        "date": 1795593116614,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.711515,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.697, 0.709, 0.712, 0.722, 0.761 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.725543000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.423, 16.618, 16.726, 16.750, 16.937 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.04526150000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.456, 101.750, 102.045, 102.126, 102.668 ms"
           }
         ]
       }
