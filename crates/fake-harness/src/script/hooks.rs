@@ -21,8 +21,10 @@ use super::routes::Route;
 pub struct Fired {
     pub word: String,
     pub event: String,
-    /// `None` when it ran past its timeout and was killed.
+    /// `None` when it ran past its timeout or was ended by an interrupt and was killed.
     pub exit: Option<i32>,
+    /// Ended because `interrupted` turned true while it ran (not by its timeout).
+    pub cancelled: bool,
     pub stdout: String,
     pub stderr: String,
 }
@@ -39,7 +41,8 @@ pub enum Spawn<'a> {
 
 /// Each of `routes` run at once, each with `payload` on its standard input, answered in the
 /// order armed. Where `interrupted` turns true (the person pressed Esc) the hooks still running
-/// are ended with their groups, as the harnesses end them, and the caller goes on.
+/// are ended with their groups and the caller goes on. That the harnesses end a hook held at the
+/// time of an Esc is assumed: the recordings show Esc during the command, not during a held hook.
 pub fn run_all(
     routes: &[&Route],
     spawn: Spawn<'_>,
@@ -77,6 +80,7 @@ fn panicked() -> Fired {
         word: String::new(),
         event: String::new(),
         exit: Some(-1),
+        cancelled: false,
         stdout: String::new(),
         stderr: "the hook's thread panicked".to_owned(),
     }
@@ -129,6 +133,7 @@ fn finish(route: &Route, started: Started, cancel: &AtomicBool) -> Fired {
         word: route.word.clone(),
         event: route.event.clone(),
         exit: Some(-1),
+        cancelled: false,
         stdout: String::new(),
         stderr: String::new(),
     };
@@ -189,6 +194,7 @@ fn finish(route: &Route, started: Started, cancel: &AtomicBool) -> Fired {
                 },
                 child.id()
             ));
+            fired.cancelled = cancel.load(Ordering::SeqCst);
             kill_group(child.id());
             let _ = child.kill();
             let _ = child.wait();
@@ -202,14 +208,25 @@ fn finish(route: &Route, started: Started, cancel: &AtomicBool) -> Fired {
 /// Ends the hook's process group (it leads its own, `process_group(0)` in [`start`]) in this
 /// process: no external `kill` to find on the `PATH`, to start under the wrap, or to parse
 /// `-9 -<pid>` (the shell tool's path signals in-process for the same reason, `chat.rs`).
+///
+/// A pid of 1 or less is refused: `kill(0)` signals the caller's own group and `kill(-1)` every
+/// process the caller may signal.
+#[cfg(unix)]
 pub(super) fn kill_group(pid: u32) {
-    if let Some(leader) = i32::try_from(pid)
-        .ok()
-        .and_then(rustix::process::Pid::from_raw)
-    {
+    let Ok(pid) = i32::try_from(pid) else {
+        return;
+    };
+    if pid <= 1 {
+        return;
+    }
+    if let Some(leader) = rustix::process::Pid::from_raw(pid) {
         let _ = rustix::process::kill_process_group(leader, rustix::process::Signal::KILL);
     }
 }
+
+/// Hooks run in their own group on Unix only; elsewhere the child's own kill ends it.
+#[cfg(not(unix))]
+pub(super) fn kill_group(_pid: u32) {}
 
 impl Fired {
     /// Its standard output as JSON, where it was JSON.
@@ -279,7 +296,7 @@ pub struct Refusal {
     pub by_exit_2: bool,
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
@@ -329,6 +346,14 @@ mod tests {
             rustix::process::test_kill_process(pid).is_err()
         });
         assert!(gone, "what the hook started is still running");
+    }
+
+    #[test]
+    fn a_pid_of_one_or_less_ends_no_group() {
+        // Pid 0 would be this process's own group: the test would end itself.
+        kill_group(0);
+        kill_group(1);
+        kill_group(u32::MAX);
     }
 
     fn alive(pid: i32) -> bool {

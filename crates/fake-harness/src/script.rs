@@ -69,7 +69,10 @@ fn keep_stderr() {
             .append(true)
             .open(path)
     {
+        #[cfg(unix)]
         let _ = rustix::stdio::dup2_stderr(&file);
+        #[cfg(not(unix))]
+        drop(file);
     }
 }
 
