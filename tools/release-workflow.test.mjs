@@ -306,7 +306,7 @@ test("a dev build is the commit its green ci ran on, the run's own commit, and n
   assert.equal(plan.find((line) => line.trim().startsWith("ref:"))?.trim(), `ref: ${sha}`);
   assert.ok(plan.includes(`          SHA: ${sha}`), "plan's SHA is not the ci run's commit");
   assert.ok(plan.includes('            echo "sha=$SHA"; echo "tag=$tag"; echo "skip=$skip"'));
-  for (const name of ["build", "sbom", "manifest", "publish"]) {
+  for (const name of ["build", "build-signer", "sbom", "manifest", "publish"]) {
     const refs = job(name).filter((line) => line.trim().startsWith("ref:"));
     assert.deepEqual(
       refs.map((line) => line.trim()),
