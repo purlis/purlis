@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795609232570,
+  "lastUpdate": 1795615857959,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54768,6 +54768,48 @@ window.BENCHMARK_DATA = {
             "value": 101.67731549999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.958, 101.136, 101.677, 101.687, 101.774 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8a92ca6dff65430d92945328b343d6b91b48889b",
+          "message": "Release: a dev build's macOS leg may run on a self-hosted Mac chosen by MACOS_RELEASE_RUNNER (#7641)\n\n* Release: the dev build's macOS leg runs where MACOS_RELEASE_RUNNER says; a stable build never does\n\nA repository variable, a JSON array of labels, moves release.yml's macOS build between\nmacos-latest and self-hosted Macs for a dev build (channel dev, profile dev-release) only. A stable\nbuild and the nightly profile guard stay on macos-latest. A persistent runner starts clean (empty\nworkspace, per-job cargo, rustup, npm, cache and tmp homes) and drops its keychains after the\nsigning. A guard refuses a self-hosted runner in any workflow a pull request can reach.\ndocs/updating.md and an ADR 0092 amendment record the preconditions.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M89C507981N558Y25SHZTYT2\nPurlis-Persona: steward\n\n* Release: add the PR guard and the ADR 0092 amendment for the self-hosted macOS leg\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M89C507981N558Y25SHZTYT2\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T13:38:17Z",
+          "tree_id": "54ed811fb11c23d2918cbc206fc9b6462c71ec4c",
+          "url": "https://github.com/purlis/purlis/commit/8a92ca6dff65430d92945328b343d6b91b48889b"
+        },
+        "date": 1795615847973,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6675804999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.657, 0.660, 0.668, 0.675, 0.683 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7150835,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.265, 16.523, 16.715, 16.736, 16.784 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7986035,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.542, 101.730, 101.799, 101.912, 102.765 ms"
           }
         ]
       }
