@@ -44,7 +44,16 @@ impl Fixture {
     }
 }
 
+/// The fixture, or a SKIP line on a laptop and a failure where `PURLIS_PARITY` is set (#7188).
 fn fixture() -> Option<Fixture> {
+    crate::support::real_infra::fixture_or_skip(
+        "rootless Podman on another machine",
+        "tests/remote-podman/up.sh",
+        fixture_set_by_up(),
+    )
+}
+
+fn fixture_set_by_up() -> Option<Fixture> {
     let route = std::env::var("REMOTE_PODMAN_TEST_ROUTE").ok()?;
     let image = std::env::var("REMOTE_PODMAN_TEST_IMAGE").ok()?;
     // A short folder: a socket's path is held to 103 bytes.

@@ -189,6 +189,26 @@ purlis secret exec <vault> --env ANTHROPIC_API_KEY=<key> -- \
 On Codex or opencode, add `--harness` and `--proposer "$(command -v claude)"`; Codex also needs
 `--env OPENAI_API_KEY=<key>`.
 
+### Real-infrastructure tests and the remote fault suite
+
+A test that needs a rig (an sshd, a dind, a systemd machine: `tests/remote-docker/up.sh`,
+`tests/remote-podman/up.sh`, `tests/ssh-runner/up.sh` and `up-systemd.sh`) finds it through
+`crates/purlis-core/tests/support/real_infra.rs` (#7188). On a laptop without the rig it prints
+`SKIP real-infra: …` and passes; with `PURLIS_PARITY=1`, which the `parity` and `remote-parity`
+jobs set, a missing fixture fails the test. Never write `let Some(fixture) = fixture() else { return }`
+around an `std::env::var(...).ok()?`: put the lookup behind `fixture_or_skip`.
+
+The fault suite is `crates/purlis-core/tests/it/a_live_remote_chat_survives_the_faults_that_define_trust.rs`:
+fifteen cases, one test each, each putting a fault under a live chat with
+`tests/remote-faults/faults.sh` (`drop`, `blackhole`, `slow`, `restart-sshd`, `rotate-hostkey`,
+`kill-runner`, `break-registry`, and `restore`, which undoes them all; every verb can be said twice)
+and checking the outage rules. It runs in `remote-parity`, which is a required check, and nightly,
+where a red run files the issue "the remote fault suite nightly is not clean". There are no retries.
+A case that waits on an unmerged train is `#[ignore = "needs #7187 train A"]` (or `#7190 train D`);
+list them with `cargo nextest list -p purlis-core --test it --run-ignored only -E 'test(/^a_live_remote_chat/)'`.
+Run the script's argument handling anywhere with `node --test tools/remote-faults.test.mjs`
+(`FAULTS_DRY_RUN=1` prints what it would send to a container).
+
 ### A built-in skill's description: the house style
 
 A harness picks a skill by its description alone, among every other skill the person has, so a

@@ -39,6 +39,11 @@ export const REQUIRED_CHECKS = [
   // Required since #4335 (2026-11-02): it passed 60 of 60 merge-queue runs and 40 of 40 pushes on
   // 2026-11-01 and 11-02, and always ended before the slowest other job, so it costs no wait.
   "parity against a Docker pool (host, protocol, sandbox, browsers)",
+  // Required since #7188 (the ruling of 2026-11-18): remote is trusted only if a live chat survives
+  // what the link does, so a pull request that touches remote code waits on this job's fault
+  // suite, and its red on a push is main's. It was evidence (`continue-on-error` on a push) until
+  // then. The operator adds it to branch protection; `ci-health` says until they do.
+  "parity against Docker on another machine, over SSH and TLS",
   "recorded behaviour",
   "rust (fmt, clippy, test)",
   "rust (licences, advisories)",
