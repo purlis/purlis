@@ -283,18 +283,36 @@ fn push_reply(
     new: &str,
     answer: Answer,
 ) -> support::forge_listener::Reply {
+    push_reply_to(w, ("github.com", 443), "acme/app", branch, old, new, answer)
+}
+
+/// A push of `branch` from `old` to `new` to `repo` on `host` and `port`, through the route.
+fn push_reply_to(
+    w: &World,
+    (host, port): (&str, u16),
+    repo: &str,
+    branch: &str,
+    old: &str,
+    new: &str,
+    answer: Answer,
+) -> support::forge_listener::Reply {
     let line = format!("{old} {new} refs/heads/{branch}\0 report-status side-band-64k agent=git/2");
     let body = format!("{}0000PACK....", pkt(&line));
+    // A client names a port that is not the scheme's in its `Host`, as git does.
+    let named = if port == 443 {
+        host.to_owned()
+    } else {
+        format!("{host}:{port}")
+    };
     let request = format!(
-        "POST /acme/app.git/git-receive-pack HTTP/1.1\r\nHost: github.com\r\nAuthorization: {}\r\nContent-Type: application/x-git-receive-pack-request\r\nContent-Length: {}\r\n\r\n{body}",
+        "POST /{repo}.git/git-receive-pack HTTP/1.1\r\nHost: {named}\r\nAuthorization: {}\r\nContent-Type: application/x-git-receive-pack-request\r\nContent-Length: {}\r\n\r\n{body}",
         basic("x-access-token", w.sentinel.expose()),
         body.len()
     );
     let ca = purlis_core::forge::proxy::listener::ChatCa::new(&w.proxy.terminable_hosts(&w.chat))
         .unwrap();
     w.fake.answer(answer);
-    support::forge_listener::tls(w, &ca, "github.com", 443, "github.com", request.as_bytes())
-        .expect("a handshake")
+    support::forge_listener::tls(w, &ca, host, port, host, request.as_bytes()).expect("a handshake")
 }
 
 #[test]
@@ -950,6 +968,98 @@ fn a_task_does_not_move_the_branch_of_the_chat_that_dispatched_it() {
         },
     );
     assert_eq!(tip, None);
+}
+
+#[test]
+fn a_push_to_a_branch_the_chat_created_on_a_gitlab_project_is_recorded_under_the_project_id_and_a_second_is_let_through()
+ {
+    purlis_core::unsteered!();
+    let config = tempfile::tempdir().unwrap();
+    let w = World::recording_to(config.path().to_owned());
+    let (one, two) = ("1".repeat(40), "2".repeat(40));
+    let push = |old: &str, new: &str| {
+        let reply = push_reply_to(
+            &w,
+            ("gitlab.com", 443),
+            "group/proj",
+            "mine",
+            old,
+            new,
+            accepted("mine"),
+        );
+        assert!(
+            !refused_in_gits_words(&reply, "mine"),
+            "refused: {}",
+            reply.text()
+        );
+        reply.status
+    };
+    assert_eq!(push(&"0".repeat(40), &one), 200);
+
+    // `group/proj` is project 42 on gitlab.com: the line names that id, and the chat owns it there.
+    let text = std::fs::read_to_string(createdbranches::file_in(config.path())).unwrap();
+    let line: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+    assert_eq!(line["host"], "gitlab.com");
+    assert_eq!(line["repo_id"], 42);
+    assert_eq!(line["project_id"], PROJECT);
+    assert_eq!(line["tip"], one);
+    let gitlab_tip = || {
+        createdbranches::tip_of(
+            config.path(),
+            PROJECT,
+            "chat-listener",
+            "gitlab.com",
+            42,
+            "mine",
+        )
+    };
+    assert_eq!(gitlab_tip(), Some(one.clone()));
+    // Not on the GitHub repo that has the same chat and project.
+    assert!(own(config.path(), "chat-listener").is_empty());
+
+    // A second push, from the tip the first made, is let through and moves the tip.
+    assert_eq!(push(&one, &two), 200);
+    assert_eq!(gitlab_tip(), Some(two));
+}
+
+#[test]
+fn a_refused_push_to_a_gitlab_remote_says_why_in_gits_words_on_gitlab_com_and_a_self_hosted_port() {
+    purlis_core::unsteered!();
+    use purlis_core::forge::proxy::{AllowedRepo, ForgeRepoId, Kind};
+    let repos = vec![
+        AllowedRepo::new(Kind::GitLab, "gitlab.com", 443, "group/proj", "main")
+            .unwrap()
+            .with_forge_id(ForgeRepoId::for_a_test(42)),
+        AllowedRepo::new(Kind::GitLab, "git.corp.example", 8443, "team/tool", "main")
+            .unwrap()
+            .with_forge_id(ForgeRepoId::for_a_test(7)),
+    ];
+    for (host, port, repo) in [
+        ("gitlab.com", 443, "group/proj"),
+        ("git.corp.example", 8443, "team/tool"),
+    ] {
+        let config = tempfile::tempdir().unwrap();
+        let w = World::recording_repos(repos.clone(), config.path().to_owned());
+        // A branch no record says the chat made: an update of it is refused, in git's words.
+        let reply = push_reply_to(
+            &w,
+            (host, port),
+            repo,
+            "theirs",
+            &"3".repeat(40),
+            &"4".repeat(40),
+            accepted("theirs"),
+        );
+        let text = reply.text();
+        assert_eq!(reply.status, 200, "{host}:{port}: {text}");
+        assert!(
+            text.contains(
+                "ng refs/heads/theirs purlis: this branch is not one this chat made, so the push is refused; ask the person to push it\n"
+            ),
+            "{host}:{port}: {text}"
+        );
+        assert!(w.fake.requests().is_empty(), "{host}:{port}: never sent");
+    }
 }
 
 /// A push by the chat of `branch` from the task's tip `1…`, to `2…`, and what the route said.
