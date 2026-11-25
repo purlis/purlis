@@ -278,6 +278,7 @@ mod vaultroute;
 mod vaults;
 mod vaultswaiting;
 mod views;
+mod statecache;
 mod watchset;
 mod windowevents;
 mod windowprefs;

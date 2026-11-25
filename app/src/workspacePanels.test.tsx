@@ -151,6 +151,36 @@ describe("the focused workspace's panels", () => {
     );
   });
 
+  it("fills in each folder as it is read, asking again while any is still reading", async () => {
+    // H16: an answer may be partial, a folder still being read says `reading`, and the store asks
+    // again at once. 133 folders took 47 s in one answer.
+    const answers = [
+      [{ piece: "one", uncommitted: 0 }, { piece: "two", reading: true }],
+      [{ piece: "one", uncommitted: 0 }, { piece: "two", uncommitted: 3 }],
+    ];
+    let asks = 0;
+    core((cmd, args) => {
+      if (cmd === "worktree_list")
+        return args.repo === "svc"
+          ? [piece("one", { reading: true }), piece("two", { reading: true })]
+          : [];
+      if (cmd === "worktree_states")
+        return args.repo === "svc" ? (answers[asks++] ?? answers[1]) : [];
+      return ORDINARY(cmd, args);
+    });
+    const { result } = renderHook(() => useWorkspaceState(PLANE, "alpha"));
+
+    await waitFor(() =>
+      expect(
+        result.current.pieces.svc?.map((one) => [one.piece, one.reading, one.uncommitted]),
+      ).toEqual([
+        ["one", undefined, 0],
+        ["two", undefined, 3],
+      ]),
+    );
+    expect(asks).toBe(2);
+  });
+
   it("says why a folder's state is unknown when reading the states is refused", async () => {
     // Never left "reading" for ever, and never drawn as clean (#1476).
     core((cmd, args) => {
