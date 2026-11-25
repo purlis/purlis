@@ -65,6 +65,16 @@ impl Keyboard {
         }
     }
 
+    /// A keyboard fed by a test's channel instead of standard input.
+    #[cfg(test)]
+    pub fn from_channel(bytes: Receiver<Option<u8>>) -> Keyboard {
+        Keyboard {
+            bytes,
+            line: Vec::new(),
+            ended: false,
+        }
+    }
+
     /// The next key, waiting at most until `until` (`None`: for ever).
     pub fn next(&mut self, until: Option<Instant>) -> Option<Key> {
         if self.ended {

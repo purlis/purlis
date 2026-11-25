@@ -47,12 +47,40 @@ pub fn wanted(argv: &[String]) -> bool {
 }
 
 pub fn main(argv: &[String]) -> ExitCode {
+    keep_stderr();
     match run(argv) {
-        Ok(code) => ExitCode::from(code),
+        Ok(code) => {
+            trace(format_args!("script ended, exit {code}"));
+            ExitCode::from(code)
+        }
         Err(message) => {
             eprintln!("fake-harness: {message}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// `$FAKE_HARNESS_STDERR`: a file standard error is appended to instead of the terminal, so a
+/// driver that sees the fake end can print what it said last (the wrap job's hang, #7581).
+fn keep_stderr() {
+    if let Some(path) = std::env::var_os("FAKE_HARNESS_STDERR")
+        && let Ok(file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+    {
+        #[cfg(unix)]
+        let _ = rustix::stdio::dup2_stderr(&file);
+        #[cfg(not(unix))]
+        drop(file);
+    }
+}
+
+/// One line on standard error, only where `$FAKE_HARNESS_TRACE` is set: what the fake was doing
+/// when it stopped.
+pub(crate) fn trace(line: std::fmt::Arguments<'_>) {
+    if std::env::var_os("FAKE_HARNESS_TRACE").is_some() {
+        eprintln!("fake-harness trace: {line}");
     }
 }
 

@@ -220,6 +220,13 @@ is told, is `tools/mutants-report.py notice`, tested in `tools/mutants-report.te
 - In a sandboxed chat, `purlis-app`'s `projectsettings::` tests (FSEvent) and `purlis-core`'s keychain,
   socket and `no_sandbox` tests fail with "Operation not permitted": that is the sandbox, not the
   change. `settings::tests` and `sandbox::personal::tests` run here.
+- The guard reads any `gh api` endpoint with a shell-filled word (`$id` in a loop, or `-q "$Q"`) as
+  a possible merge and refuses it: write each endpoint and each `-q` filter out literally, one call
+  per id. `mktemp -d` fails in the sandbox; `mkdir -p $TMPDIR/<name>` works. Compare a green and a
+  red CI job by saving both logs (`gh api repos/purlis/purlis/actions/jobs/<id>/logs`) and diffing
+  them with their timestamps stripped: for the `fake-harness under the wrap` jobs, a cold
+  `Swatinem/rust-cache` (red) against a restored one (green) is a correlation, not shown to be the
+  cause.
 
 ## Agent skills
 
