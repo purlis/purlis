@@ -97,6 +97,12 @@ pub fn refused(git_dir: &Path) -> Result<(), String> {
         let entry = entry.map_err(|e| unreadable(git_dir, &e))?;
         let path = entry.path();
         let name = folded(&entry);
+        // The one name of git's that is a socket: the fsmonitor daemon's listener. Git never
+        // reads a file through it for a call the app makes, so it is ignored as foreign, and
+        // only this exact name, case-folded (#7604). Every other socket still refuses below.
+        if name == FSMONITOR_SOCKET {
+            continue;
+        }
         let acted_on = is_state_file(&name)
             || matches!(
                 name.as_str(),
@@ -133,6 +139,9 @@ pub fn refused(git_dir: &Path) -> Result<(), String> {
 }
 
 /// An entry's name, lower-cased: the case-insensitive disk opens it as the listed name.
+/// The fsmonitor daemon's socket, which `plain` would refuse as neither a file nor a folder.
+const FSMONITOR_SOCKET: &str = "fsmonitor--daemon.ipc";
+
 fn folded(entry: &std::fs::DirEntry) -> String {
     entry.file_name().to_string_lossy().to_lowercase()
 }
@@ -536,6 +545,25 @@ fn shown(path: &Path) -> String {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+
+    /// #7604: the fsmonitor daemon's socket is an inert foreign entry, by that exact name and
+    /// case-folded; a socket by any other name is still neither a file nor a folder.
+    #[cfg(unix)]
+    #[test]
+    fn the_fsmonitor_socket_is_ignored_and_a_socket_by_any_other_name_is_refused() {
+        let dir = tempfile::Builder::new().prefix("s").tempdir().unwrap();
+        let record = dir.path().join("worktrees/p1");
+        std::fs::create_dir_all(&record).unwrap();
+        let _ipc =
+            std::os::unix::net::UnixListener::bind(record.join("FSMonitor--Daemon.ipc")).unwrap();
+        assert_eq!(refused(&record), Ok(()));
+        let _other = std::os::unix::net::UnixListener::bind(record.join("gc.sock")).unwrap();
+        assert!(
+            refused(&record)
+                .unwrap_err()
+                .contains("neither a file nor a folder")
+        );
+    }
 
     #[test]
     fn a_record_of_plain_files_and_folders_is_fine_and_a_missing_one_is_made_by_git() {

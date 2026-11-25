@@ -461,13 +461,16 @@ impl Here {
 
 /// Whether `git_dir` is the record the clone at `clone` keeps of the linked worktree at
 /// `folder`: a directory right inside the clone's own `.git/worktrees`, whose `gitdir` names
-/// that folder's `.git`. Links are followed on both sides before they are compared.
+/// that folder's `.git`, and whose `commondir` names the clone's own git directory (#7604: git
+/// reads its config, hooks and refs from the common directory, so a repointed one is another
+/// repository's). Links are followed on both sides before they are compared.
 pub(crate) fn own_record_of(clone: &Path, git_dir: &Path, folder: &Path) -> bool {
     let canon = |path: &Path| std::fs::canonicalize(path).ok();
     if !worktree::is_own_git_dir(&clone.join(".git")) {
         return false;
     }
-    let (Some(records), Some(record), Some(folder)) = (
+    let (Some(own), Some(records), Some(record), Some(folder)) = (
+        canon(&clone.join(".git")),
         canon(&clone.join(".git").join("worktrees")),
         canon(git_dir),
         canon(folder),
@@ -475,6 +478,13 @@ pub(crate) fn own_record_of(clone: &Path, git_dir: &Path, folder: &Path) -> bool
         return false;
     };
     if record.parent() != Some(records.as_path()) {
+        return false;
+    }
+    // `commondir` is read against the record, as git reads it.
+    let Ok(common) = std::fs::read_to_string(record.join("commondir")) else {
+        return false;
+    };
+    if canon(&record.join(common.trim())) != Some(own) {
         return false;
     }
     let Ok(pointer) = std::fs::read_to_string(record.join("gitdir")) else {
@@ -2592,5 +2602,47 @@ mod tests {
         assert!(!holds_marker(&inside).unwrap());
         let (_kept, none) = holding(b"");
         assert!(!holds_marker(&none).unwrap());
+    }
+
+    /// #7604: a record is the clone's own only where its `commondir`, read against the record,
+    /// is the clone's own git directory, as git itself writes `../..`.
+    #[test]
+    fn a_record_whose_commondir_names_another_git_directory_is_not_the_clones_own() {
+        let dir = tempfile::tempdir().unwrap();
+        let clone = dir.path().join("clone");
+        let record = clone.join(".git/worktrees/p1");
+        let folder = dir.path().join("p1");
+        let elsewhere = dir.path().join("elsewhere/.git");
+        for made in [&record, &folder, &elsewhere] {
+            std::fs::create_dir_all(made).unwrap();
+        }
+        std::fs::write(
+            record.join("gitdir"),
+            format!("{}\n", folder.join(".git").display()),
+        )
+        .unwrap();
+        std::fs::write(folder.join(".git"), "gitdir: x\n").unwrap();
+
+        std::fs::write(record.join("commondir"), "../..\n").unwrap();
+        assert!(own_record_of(&clone, &record, &folder));
+        // Absolute, to the same place, is the same directory.
+        std::fs::write(
+            record.join("commondir"),
+            format!("{}\n", clone.join(".git").display()),
+        )
+        .unwrap();
+        assert!(own_record_of(&clone, &record, &folder));
+
+        for other in [
+            format!("{}\n", elsewhere.display()),
+            "../../..\n".to_owned(),
+            "../nowhere\n".to_owned(),
+            String::new(),
+        ] {
+            std::fs::write(record.join("commondir"), &other).unwrap();
+            assert!(!own_record_of(&clone, &record, &folder), "{other:?}");
+        }
+        std::fs::remove_file(record.join("commondir")).unwrap();
+        assert!(!own_record_of(&clone, &record, &folder), "no commondir");
     }
 }

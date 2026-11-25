@@ -1,0 +1,3 @@
+### Security
+- The app's own git (`purlis worktree update` and `push`, run for a chat) and `purlis worktree adopt` now refuse a branch folder whose git record's `commondir` does not lead to its clone's own git directory, since git would read another repository's config and hooks through it. The fsmonitor daemon's socket (`fsmonitor--daemon.ipc`) in a record is ignored, as the docs said, and any other socket there is still refused.
+- `purlis worktree adopt` is refused in a chat the app started, which purlis now tells by the app's ancestry as well as the environment, so removing the chat variables no longer gets past it. A chat whose sandbox is off runs as you and can still write the notes by hand; the command's help and the docs now say so.

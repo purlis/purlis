@@ -1657,6 +1657,36 @@ fn an_emptied_environment_under_a_full_app_is_refused_and_never_run_here() {
 }
 
 #[test]
+fn adopt_with_the_environment_emptied_under_an_app_is_refused_and_records_nothing() {
+    purlis_core::unsteered!();
+    let Some(base) = played_by_the_app(
+        "brokered_git::adopt_with_the_environment_emptied_under_an_app_is_refused_and_records_nothing",
+    ) else {
+        return;
+    };
+    let world = World::at(&base);
+    let root = world.plane("adopting", "[\"forge\"]");
+    let (_reading, _token, _socket, _asked) = a_hearing_app(&world.base);
+
+    // `env -i`: no chat number, so only the app's word on this process's ancestry says it is a
+    // chat's (#7604).
+    let ran = support::purlis()
+        .args(["worktree", "adopt", "widget", "p1", "-w", "alpha"])
+        .current_dir(&root)
+        .env_clear()
+        .env("CHARTER_ROOT", &root)
+        .env("HOME", &world.home)
+        .env("PATH", "/usr/bin:/bin")
+        .env("USER", "tester")
+        .env(ONLY_THE_APP, "1")
+        .output()
+        .expect("the binary runs");
+
+    assert_eq!(ran.status.code(), Some(1), "{}", err(&ran));
+    assert!(err(&ran).contains("only you do"), "{}", err(&ran));
+}
+
+#[test]
 fn an_emptied_environment_under_an_app_that_does_not_answer_is_refused_and_never_run_here() {
     purlis_core::unsteered!();
     let Some(base) = played_by_the_app(

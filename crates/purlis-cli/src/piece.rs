@@ -110,7 +110,9 @@ pub enum WorktreeCommand {
     /// that note, on a branch whose name is not the folder's (`--branch`), has none, and the
     /// app's git then does not act on it for a chat. Run it once, from your own terminal, after
     /// checking the folder is on the right branch: refused where another folder has that branch,
-    /// and in a chat.
+    /// and in a chat the app started, which it tells by its ancestry as well as its environment.
+    /// (A chat whose sandbox is off runs as you and can edit the notes by hand; this keeps
+    /// `purlis` itself from doing it for a chat.)
     Adopt {
         repo: String,
         piece: String,
@@ -304,8 +306,10 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, CliError> {
             workspace,
         } => {
             let ws = here.active_workspace(workspace.as_deref())?;
-            // What the folder is on is trusted once: only the person says so.
-            if crate::session::chat_number().is_some() {
+            // What the folder is on is trusted once: only the person says so. A chat is told by
+            // the app's ancestry as well as its environment, so `env -u` does not get past it,
+            // and an app that answers as something else leaves it a chat (fails closed).
+            if crate::brokered::in_a_chat() {
                 say(purlis_core::repocmd::Say::Fail(
                     format!(
                         "`purlis worktree adopt` records what {repo} \u{b7} {piece} is on as the \

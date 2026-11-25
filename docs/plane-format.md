@@ -7206,13 +7206,20 @@ down rather than read off the code.
   `REBASE_FILES`, so a `refs-to-delete`, `update-refs` or `autostash` refuses); `config.worktree`,
   `sequencer/`, `rebase-apply/` and a `refs/` that holds a file refuse outright. Every other
   name is not looked inside (`glab-cli/`, `gc.log`, `purlis-updated`, `modules/`,
-  `fsmonitor--daemon*`, `sharedindex.*`, `BISECT_*`, an empty `refs/`): git and the person's tools
+  `fsmonitor--daemon*`, `sharedindex.*`, `BISECT_*`, an empty `refs/`; the one socket among them,
+  `fsmonitor--daemon.ipc`, is ignored by that exact name, case-folded, and any other entry that
+  is neither a file nor a folder still refuses): git and the person's tools
   leave them in most records, and the app's git never runs a submodule operation
   (`submodule.recurse=false` on every call). A `HEAD` that is not the cut's branch refuses it too.
   A piece cut before the note was kept, on a `--branch` name, is recorded once by the person with
-  `purlis worktree adopt <repo> <piece>`, which refuses where another worktree holds that branch.
+  `purlis worktree adopt <repo> <piece>`, which refuses where another worktree holds that branch
+  and in a chat the app started (told by its ancestry as well as its environment; a chat whose
+  sandbox is off runs as the person and could write the notes by hand, so this is not a chat-proof
+  gate). A linked record's `commondir` must also resolve, read against the record, to the
+  clone's own git directory, or the app does not act on the folder.
   A rebase's plan is continued only when each id in it is a whole commit id the update planned.
-  It does **not** prevent a link planted *while* git runs (H3), nor a write
+  It does **not** prevent a link planted, or a per-worktree ref file written (`refs/` of the
+  record), *while* git runs (H3, the same class), nor a write
   to a rebase's plan between the last look and git reading it (M3). At level off the notes folder
   above is writable by the chat too (M4), so these notes are the app's, not a chat-proof record.
   A fuller fix (committing through `commit-tree` and `update-ref`, so no file of the record is
