@@ -149,3 +149,163 @@ fn a_rest_merge_with_auto_merge_false_or_absent_is_held() {
         );
     }
 }
+
+#[test]
+fn gh_dash_m_is_the_boolean_merge_so_the_auto_flag_after_it_is_refused() {
+    purlis_core::unsteered!();
+    for cmd in [
+        "gh pr merge 12 -m --auto",
+        "gh pr merge -m --auto 12",
+        "gh pr merge 12 --merge --auto",
+        "gh pr merge 12 -s --auto",
+    ] {
+        let said = refused(cmd);
+        assert!(said.contains(REASON), "{cmd}: {said}");
+    }
+}
+
+#[test]
+fn a_value_flag_of_each_cli_takes_the_next_word_so_an_auto_flag_there_is_a_value() {
+    purlis_core::unsteered!();
+    let held = |cmd: &str| {
+        assert_eq!(
+            mergehold::held(cmd),
+            Some(Held::Request(Request {
+                repo: None,
+                number: 12
+            })),
+            "{cmd}"
+        );
+    };
+    // gh pr merge: every flag that takes a value.
+    for flag in [
+        "-A",
+        "--author-email",
+        "-b",
+        "--body",
+        "-F",
+        "--body-file",
+        "--match-head-commit",
+        "-t",
+        "--subject",
+    ] {
+        held(&format!("gh pr merge 12 {flag} --auto"));
+    }
+    // glab mr merge: every flag that takes a value, `-m` being `--message` there.
+    for flag in ["-m", "--message", "--sha", "--squash-message"] {
+        held(&format!("glab mr merge 12 {flag} --auto-merge"));
+    }
+}
+
+#[test]
+fn a_flag_that_takes_no_value_on_one_cli_does_not_hide_an_auto_flag_after_it() {
+    purlis_core::unsteered!();
+    // `--message` and `--sha` are glab's, and `--body` and `-t` are gh's: on the other CLI the
+    // word after them is not their value.
+    for cmd in [
+        "gh pr merge 12 --message --auto",
+        "gh pr merge 12 --sha --auto",
+        "gh pr merge 12 --squash-message --auto",
+        "glab mr merge 12 --body --auto-merge",
+        "glab mr merge 12 -t --auto-merge",
+        "glab mr merge 12 --match-head-commit --auto-merge",
+    ] {
+        let said = refused(cmd);
+        assert!(said.contains(REASON), "{cmd}: {said}");
+    }
+}
+
+#[test]
+fn a_rest_merge_reads_every_truthy_spelling_as_auto_merge() {
+    purlis_core::unsteered!();
+    for on in [
+        json!(1),
+        json!("1"),
+        json!("t"),
+        json!("T"),
+        json!("yes"),
+        json!("y"),
+        json!("on"),
+        json!("TRUE"),
+        json!("True"),
+        json!(2),
+        json!("anything"),
+    ] {
+        for body in [
+            json!({"auto_merge": on}),
+            json!({"merge_when_pipeline_succeeds": on}),
+            json!({"merge_request": {"auto_merge": on}}),
+            json!({"a": [{"merge_when_pipeline_succeeds": on}]}),
+        ] {
+            assert!(
+                matches!(run(GITLAB_MERGE, &[], body.clone()), Recognised::Refuse(_)),
+                "{body}"
+            );
+        }
+    }
+    for text in ["1", "t", "yes", "y", "on", "TRUE"] {
+        assert!(
+            matches!(
+                run(GITLAB_MERGE, &[("auto_merge", text)], json!({})),
+                Recognised::Refuse(_)
+            ),
+            "query {text}"
+        );
+    }
+}
+
+#[test]
+fn a_rest_merge_reads_every_falsy_spelling_as_no_auto_merge() {
+    purlis_core::unsteered!();
+    for off in [
+        json!(false),
+        json!("false"),
+        json!("FALSE"),
+        json!(0),
+        json!("0"),
+        json!("f"),
+        json!("F"),
+        Value::Null,
+    ] {
+        let body = json!({"auto_merge": off, "merge_when_pipeline_succeeds": off});
+        assert!(
+            matches!(run(GITLAB_MERGE, &[], body.clone()), Recognised::Hold(_)),
+            "{body}"
+        );
+    }
+    for text in ["0", "f", "false"] {
+        assert!(
+            matches!(
+                run(GITLAB_MERGE, &[("auto_merge", text)], json!({})),
+                Recognised::Hold(_)
+            ),
+            "query {text}"
+        );
+    }
+}
+
+#[test]
+fn a_merge_train_entry_that_sets_when_pipeline_succeeds_is_refused() {
+    purlis_core::unsteered!();
+    let train = "/api/v4/projects/42/merge_trains/merge_requests/12";
+    for body in [
+        json!({"when_pipeline_succeeds": true}),
+        json!({"when_pipeline_succeeds": "yes"}),
+        json!({"when_pipeline_succeeds": 1}),
+    ] {
+        assert!(
+            matches!(run(train, &[], body.clone()), Recognised::Refuse(_)),
+            "{body}"
+        );
+    }
+    assert!(matches!(
+        run(train, &[("when_pipeline_succeeds", "true")], json!({})),
+        Recognised::Refuse(_)
+    ));
+    for body in [json!({}), json!({"when_pipeline_succeeds": false})] {
+        assert!(
+            matches!(run(train, &[], body.clone()), Recognised::Hold(_)),
+            "{body}"
+        );
+    }
+}
