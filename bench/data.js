@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795634582427,
+  "lastUpdate": 1795635100554,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55104,6 +55104,48 @@ window.BENCHMARK_DATA = {
             "value": 101.690644,
             "unit": "ms",
             "extra": "median of 5 runs: 101.117, 101.640, 101.691, 101.752, 102.455 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "762ba68118aaa713315d06b3c9162299897c5091",
+          "message": "Auto-merge is refused with a reason in the hook and the GitLab REST route, never held as a merge (#7597) (#7610)\n\n* Auto-merge is refused with a reason in the hook and the REST recogniser, never held as a Merge ask (#7597)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M886XERHJ8R3K5YW7Q1NFKG9\nPurlis-Persona: steward\n\n* Auto-merge refusal: per-CLI value flags, GitLab's truthy spellings, merge trains' when_pipeline_succeeds (#7620)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M88XPJHY776J3Y7RHM3H1NM9\nPurlis-Persona: steward\n\n* Auto-merge refusal: set act in the test literals, one sentence for the hook, the REST and the GraphQL route (#7597, #7547)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M8916H7WAESMNXN2MZYJ1CY0\nPurlis-Persona: steward\n\n* Auto-merge refusal test: an auto-merge PUT is a refusal with its reason, not an ask; a DELETE is never read as enabling it (#7610)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M897YQK8M0T57PHV8FM7GX3W\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T18:39:17Z",
+          "tree_id": "8b91acf85a4fbf80fe58acdaff574ccec04524c5",
+          "url": "https://github.com/purlis/purlis/commit/762ba68118aaa713315d06b3c9162299897c5091"
+        },
+        "date": 1795635095315,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3303555,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.312, 0.324, 0.330, 0.340, 0.344 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.627704,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.566, 16.591, 16.628, 16.630, 16.632 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.485049,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.065, 101.343, 101.485, 101.801, 102.151 ms"
           }
         ]
       }
