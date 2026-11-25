@@ -178,6 +178,25 @@ impl WorkflowCredential for WorkflowOver {
             Err(why) => Err(Unavailable(why)),
         }
     }
+
+    fn refused(&self, _: &str) {
+        if let Some(scope) = HostScope::claim() {
+            self.drop_refused(&scope);
+        }
+    }
+}
+
+impl WorkflowOver {
+    /// [`WorkflowCredential::refused`] once the host's scope is in hand: the dead second token is
+    /// deleted, and the window told. Best effort: the ask has ended whatever the keychain says,
+    /// and the next push reads the item again. The keychain's words name the item, never the
+    /// token.
+    fn drop_refused(&self, scope: &HostScope) {
+        let keyring = accounts::keyring_at(&self.config_root);
+        if let Err(why) = accounts::workflow::refused(scope, keyring.as_ref(), &self.account) {
+            tracing::warn!(account = %self.account.id, "a refused second sign-in stays: {why}");
+        }
+    }
 }
 
 impl WorkflowTransports for WorkflowOver {
