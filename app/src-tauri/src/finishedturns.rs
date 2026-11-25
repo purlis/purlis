@@ -89,13 +89,19 @@ fn with_levels(
 
 /// The finishes of chat `session` (logged as `chat`) among `events` that ended at or after
 /// `since`, in seconds since 1970. A finish whose id says no time is left out: nothing places it.
+#[cfg(test)]
 fn finished_of(
     events: &[purlis_core::eventlog::Event],
     session: u32,
     chat: &str,
     since: u64,
 ) -> Vec<FinishedTurn> {
-    finishes::finishes(events, chat)
+    turns_of(finishes::finishes(events, chat), session, since)
+}
+
+/// `finishes` of chat `session` that ended at or after `since`, as the window is told them.
+fn turns_of(finishes: Vec<Finish>, session: u32, since: u64) -> Vec<FinishedTurn> {
+    finishes
         .into_iter()
         .filter_map(
             |Finish {
@@ -119,6 +125,11 @@ fn finished_of(
         )
         .collect()
 }
+
+/// The log's recent files, kept parsed while they do not change (H15): every ask of every chat
+/// shares them, where each used to parse the whole log.
+static RECENT: std::sync::LazyLock<finishes::Recent> =
+    std::sync::LazyLock::new(finishes::Recent::default);
 
 /// **Each asked chat's finishes in the last day** (R-241, R-178): its turns that ended and its
 /// own runs that ended failed, each with its turn's blocks still unresolved at its end, from
@@ -151,11 +162,20 @@ pub(crate) async fn finished_turns(
         if chats.is_empty() {
             return Ok(Vec::new());
         }
-        let events = purlis_core::eventlog::read(&dir).map_err(|why| why.to_string())?;
+        let asked: Vec<&str> = chats.iter().map(|(_, chat)| chat.as_str()).collect();
+        let finished = RECENT
+            .finishes(&dir, &asked, since)
+            .map_err(|why| why.to_string())?;
         let locks = purlis_core::sandbox::policy::Locks::of(plane.root());
         Ok(chats
             .iter()
-            .flat_map(|(session, chat)| finished_of(&events, *session, chat, since))
+            .flat_map(|(session, chat)| {
+                turns_of(
+                    finished.get(chat).cloned().unwrap_or_default(),
+                    *session,
+                    since,
+                )
+            })
             .map(|turn| FinishedTurn {
                 blocks: turn
                     .blocks

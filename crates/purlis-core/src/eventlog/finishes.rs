@@ -31,6 +31,7 @@
 
 use std::io;
 use std::path::Path;
+use std::sync::PoisonError;
 
 use super::stops::{
     self, Answer, AskAnswered, AskGroup, Block, Qualifier, Source, TARGET_CHARS, Target,
@@ -177,13 +178,16 @@ impl Turn {
 /// unresolved blocks ([`Finish::blocked`]); a failed run counts none, since its row is a
 /// failure already.
 pub fn finishes(events: &[Event], chat: &str) -> Vec<Finish> {
+    finishes_among(events.iter(), chat)
+}
+
+/// [`finishes`] of `events` in the order they come, which may be several files' one after the
+/// other.
+fn finishes_among<'a>(events: impl Iterator<Item = &'a Event>, chat: &str) -> Vec<Finish> {
     let mut out = Vec::new();
     let mut turn = Turn::default();
     let mut harness = super::UNKNOWN.to_owned();
-    for event in events
-        .iter()
-        .filter(|event| event.chat.as_deref() == Some(chat))
-    {
+    for event in events.filter(|event| event.chat.as_deref() == Some(chat)) {
         if event.kind == "run.started" {
             // As the Chat log reads it (`chatlog::rows`): the latest start's word.
             harness = event
@@ -242,6 +246,118 @@ pub fn finishes(events: &[Event], chat: &str) -> Vec<Finish> {
         }
     }
     out
+}
+
+/// **The log's recent files, parsed once and kept while they do not change** (felt speed round 5,
+/// H15). The window asks for finishes as each chat's turn ends, and each ask used to read and
+/// parse the whole log (30 days) for it: with about fifty chats that was a storm of parses of
+/// 100 MB, and the commands beside it waited on the cores it took.
+///
+/// An ask reads only the files that can hold an event of its window: the live one, every
+/// sealed one written to since `since`, and the newest one before them, which gives the turn
+/// that straddles the window's start its blocks. A file is parsed again only when its length or
+/// its modified time is not what it was kept at, **stat'ed once the ask holds the lock**, so no
+/// answer is made from a file as it was before its ask. The lock is held while a file is parsed,
+/// so asks that come meanwhile share that parse and wait for it, as asks of a [`crate::burst`]
+/// do.
+///
+/// In memory and in this process only: nothing is written, so there is no store to give a tier
+/// (ADR 0069).
+#[derive(Debug, Default)]
+pub struct Recent {
+    files: std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, KeptFile>>,
+    parsed: std::sync::atomic::AtomicUsize,
+}
+
+#[derive(Debug)]
+struct KeptFile {
+    len: u64,
+    modified: Option<std::time::SystemTime>,
+    events: std::sync::Arc<Vec<Event>>,
+}
+
+impl Recent {
+    /// How many times a file has been parsed: for a test that must know a kept one was not.
+    pub fn parsed(&self) -> usize {
+        self.parsed.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// **The finishes of each of `chats`** in the log in `dir`, oldest first, as [`finishes_in`]
+    /// answers them from the whole log, for a window that starts at `since` seconds since 1970.
+    pub fn finishes(
+        &self,
+        dir: &Path,
+        chats: &[&str],
+        since: u64,
+    ) -> io::Result<std::collections::HashMap<String, Vec<Finish>>> {
+        let mut kept = self.files.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut paths: Vec<std::path::PathBuf> = super::segments(dir)?
+            .into_iter()
+            .map(|(_, path)| path)
+            .collect();
+        paths.push(dir.join(super::FILE));
+        let since = std::time::UNIX_EPOCH + std::time::Duration::from_secs(since);
+        // Newest first, until a file written before the window: it is the last one read.
+        let mut chosen = Vec::new();
+        for path in paths.into_iter().rev() {
+            let Ok(meta) = std::fs::metadata(&path) else {
+                // Not there (the live file before its first event, or a segment pruned since).
+                continue;
+            };
+            let modified = meta.modified().ok();
+            let before_window = modified.is_some_and(|written| written < since);
+            chosen.push((path, meta.len(), modified));
+            if before_window {
+                break;
+            }
+        }
+        chosen.reverse();
+        let mut files = Vec::new();
+        for (path, len, modified) in &chosen {
+            let current = kept
+                .get(path)
+                .filter(|one| one.len == *len && one.modified == *modified);
+            if let Some(one) = current {
+                files.push(one.events.clone());
+                continue;
+            }
+            let events = std::sync::Arc::new(parse(path)?);
+            self.parsed
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            kept.insert(
+                path.clone(),
+                KeptFile {
+                    len: *len,
+                    modified: *modified,
+                    events: events.clone(),
+                },
+            );
+            files.push(events);
+        }
+        kept.retain(|path, _| chosen.iter().any(|(one, ..)| one == path));
+        drop(kept);
+        Ok(chats
+            .iter()
+            .map(|chat| {
+                let all = files.iter().flat_map(|file| file.iter());
+                ((*chat).to_owned(), finishes_among(all, chat))
+            })
+            .collect())
+    }
+}
+
+/// The events in `path`, a line that is not one skipped, as [`super::read`] reads a file; none for
+/// a file that is not there.
+fn parse(path: &Path) -> io::Result<Vec<Event>> {
+    let text = match std::fs::read(path) {
+        Ok(text) => text,
+        Err(why) if why.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(why) => return Err(why),
+    };
+    Ok(text
+        .split(|byte| *byte == b'\n')
+        .filter_map(|line| serde_json::from_slice::<Event>(line).ok())
+        .collect())
 }
 
 /// [`finishes`] of the log in `dir`, read through [`super::read`].

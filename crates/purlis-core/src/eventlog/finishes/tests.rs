@@ -397,3 +397,110 @@ fn one_function_decides_what_an_allow_resolves_for_the_loop_and_the_finish_row()
         }
     }
 }
+
+// Felt speed round 5 (H15): the window asks for finishes as every chat's turn ends, and each ask
+// read and parsed the whole log (30 days, 125 MB on a busy machine).
+
+/// Seals a segment after about two events.
+const SMALL: crate::eventlog::Retention = crate::eventlog::Retention {
+    segment_bytes: 300,
+    keep: crate::eventlog::Retention::DEFAULT.keep,
+    hold: crate::eventlog::Retention::DEFAULT.hold,
+};
+
+/// `turns` turns of `chat`, in a log of small segments.
+fn sealed_turns(dir: &Path, chat: &str, turns: usize) {
+    let mut written = Turns {
+        log: Log::open_with(dir, DEVICE, SMALL).unwrap(),
+        chat,
+    };
+    for _ in 0..turns {
+        written.prompt().block(PUSH, None).stop();
+    }
+}
+
+fn sealed_files(dir: &Path) -> Vec<std::path::PathBuf> {
+    super::super::segments(dir)
+        .unwrap()
+        .into_iter()
+        .map(|(_, path)| path)
+        .collect()
+}
+
+fn aged(path: &Path, days: u64) {
+    let then = std::time::SystemTime::now() - std::time::Duration::from_secs(days * 86_400);
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(then)
+        .unwrap();
+}
+
+#[test]
+fn recent_finishes_are_what_the_whole_log_says_across_sealed_segments() {
+    let dir = tempfile::tempdir().unwrap();
+    sealed_turns(dir.path(), CHAT, 4);
+    sealed_turns(dir.path(), OTHER, 3);
+    assert!(sealed_files(dir.path()).len() >= 3, "the log is sealed");
+    let recent = Recent::default();
+    let said = recent.finishes(dir.path(), &[CHAT, OTHER], 0).unwrap();
+    for chat in [CHAT, OTHER] {
+        assert_eq!(said[chat], finishes_in(dir.path(), chat).unwrap(), "{chat}");
+    }
+    assert_eq!(said[CHAT].len(), 4);
+}
+
+#[test]
+fn a_log_that_has_not_changed_is_not_parsed_again() {
+    let dir = tempfile::tempdir().unwrap();
+    sealed_turns(dir.path(), CHAT, 4);
+    let recent = Recent::default();
+    recent.finishes(dir.path(), &[CHAT], 0).unwrap();
+    let after_first = recent.parsed();
+    assert!(
+        after_first >= 3,
+        "every file was parsed once: {after_first}"
+    );
+    for _ in 0..5 {
+        recent.finishes(dir.path(), &[CHAT], 0).unwrap();
+    }
+    assert_eq!(recent.parsed(), after_first);
+}
+
+#[test]
+fn a_finish_written_after_an_answer_is_in_the_next_one() {
+    let dir = tempfile::tempdir().unwrap();
+    sealed_turns(dir.path(), CHAT, 2);
+    let recent = Recent::default();
+    let before = recent.finishes(dir.path(), &[CHAT], 0).unwrap()[CHAT].len();
+    sealed_turns(dir.path(), CHAT, 1);
+    let after = recent.finishes(dir.path(), &[CHAT], 0).unwrap()[CHAT].len();
+    assert_eq!((before, after), (2, 3));
+}
+
+#[test]
+fn segments_that_end_before_the_window_are_not_read_but_the_newest_of_them_gives_context() {
+    let dir = tempfile::tempdir().unwrap();
+    sealed_turns(dir.path(), CHAT, 6);
+    let files = sealed_files(dir.path());
+    assert!(files.len() >= 4, "sealed: {}", files.len());
+    let old = files.len() - 1;
+    for path in &files[..old] {
+        aged(path, 10);
+    }
+    let recent = Recent::default();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let since = now - 86_400;
+    recent.finishes(dir.path(), &[CHAT], since).unwrap();
+    // The live file, the newest sealed one (it ends inside the window) and one more of context.
+    assert_eq!(
+        recent.parsed(),
+        3,
+        "of {} sealed and the live one",
+        files.len()
+    );
+}

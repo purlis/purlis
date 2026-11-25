@@ -1184,7 +1184,11 @@ pub async fn asks_waiting(
     plane: PlaneId,
 ) -> Result<Asking, String> {
     let held = planes.held(&plane)?;
-    crate::off_the_window(READING_ASKS, move || Ok(counted(&held))).await
+    // Once per burst (H15): the window asks on every burst of moves.
+    crate::off_the_window(READING_ASKS, move || {
+        Ok(held.bursts().asks_waiting.ask(|| counted(&held)))
+    })
+    .await
 }
 
 /// **What the ✋ counts of project `held`** (ADR 0121 decisions 2 and 3): its Blocking asks,
