@@ -110,7 +110,9 @@ struct Entry {
     kept: Option<Read>,
     /// A read that was not kept (a refusal, or no watch to vouch for it): given to every ask
     /// while the round of reads it came from is still going, so the window's asks for the rest
-    /// do not read it again, and dropped by the first ask that begins with no read going.
+    /// do not read it again, and dropped by the first ask that begins with none of its own
+    /// folders being read. The round is the ask's own: another repo's reads going on at the
+    /// same time never keep it.
     once: Option<Read>,
     /// Waiting for a worker, or being read.
     reading: bool,
@@ -153,6 +155,8 @@ struct Shared {
     busy: usize,
     /// The folders a watch is up on.
     dirs: HashSet<PathBuf>,
+    /// The folders a watch is being set up on now, not yet in `dirs`.
+    adding: HashSet<PathBuf>,
     /// Watched folders removed or renamed since: the platform may have dropped their watch
     /// (inotify does), so it is taken down and set up again the next time one is asked about.
     lost: HashSet<PathBuf>,
@@ -186,11 +190,13 @@ impl Shared {
     /// Something at `path` was removed or renamed. A watched folder at or below it has lost its
     /// watch on inotify, and one made again at the same path is never heard: its entries, and
     /// those of every folder watched through it, are forgotten, so the next ask watches them
-    /// afresh.
+    /// afresh. A folder whose watch is being set up counts as watched: `watch` sees it in `lost`
+    /// and makes no entry on that watch.
     fn lose(&mut self, path: &Path) {
         let lost: Vec<PathBuf> = self
             .dirs
             .iter()
+            .chain(&self.adding)
             .filter(|dir| dir.starts_with(path))
             .cloned()
             .collect();
@@ -338,8 +344,11 @@ impl StateCache {
         let started = Instant::now();
         let (shared, finished) = &*inner.shared;
         let mut guard = lock(shared);
-        if guard.workers == 0 && guard.queue.is_empty() {
-            // A new round: what nothing vouched for is read again.
+        let reading = keys
+            .iter()
+            .any(|key| guard.entries.get(key).is_some_and(|e| e.reading));
+        if !reading {
+            // A new round for these folders: what nothing vouched for is read again.
             for key in &keys {
                 if let Some(entry) = guard.entries.get_mut(key) {
                     entry.once = None;
@@ -353,6 +362,9 @@ impl StateCache {
             let mut due: Option<Instant> = None;
             for (n, key) in keys.iter().enumerate() {
                 let Some(entry) = guard.entries.get_mut(key) else {
+                    // Forgotten since the ask began (removed, or watched afresh): the ask
+                    // returns soon, and the window's next one makes its entry again.
+                    first_news.get_or_insert(now);
                     continue;
                 };
                 // What a read finished since the last ask told is news, kept or not.
@@ -482,6 +494,8 @@ impl Inner {
             let mut guard = lock(shared);
             guard.busy -= 1;
             let Some(entry) = guard.entries.get_mut(&key) else {
+                // Forgotten while it was read: an ask waiting for it is told.
+                finished.notify_all();
                 continue;
             };
             entry.reading = false;
@@ -570,6 +584,12 @@ impl Inner {
                 })
                 .collect();
             let lost = std::mem::take(&mut shared.lost);
+            shared.adding = new
+                .iter()
+                .zip(&located)
+                .filter_map(|(&n, l)| Some(l.as_ref()?.roots(&keys[n])))
+                .flatten()
+                .collect();
             (shared.dirs.clone(), staying, lost, shared.limited)
         };
         // A removed folder's watch, which inotify has dropped and FSEvents has not.
@@ -632,6 +652,7 @@ impl Inner {
         let mut shared = lock(&self.shared.0);
         // A folder removed while its watch was being set up is watched afresh next time.
         let shared = &mut *shared;
+        shared.adding.clear();
         dirs.retain(|dir| !shared.lost.contains(dir));
         shared.dirs = dirs;
         for (key, _) in &gone {

@@ -768,3 +768,114 @@ fn a_folder_no_ask_names_for_a_while_is_forgotten_and_unwatched() {
     assert_eq!(cache.known(), 1, "the folder no ask names is still held");
     assert_eq!(cache.watches(), 1, "its watches are still up");
 }
+
+#[test]
+fn an_unwatched_repo_asked_while_another_is_read_is_read_again_after_an_edit() {
+    let slow = fixture(4);
+    let edited = fixture(2);
+    let slow_base = slow.folders[0].path.parent().unwrap().to_path_buf();
+    let cache = StateCache::watched_by(
+        |_| None,
+        move |path| {
+            if path.starts_with(&slow_base) {
+                std::thread::sleep(Duration::from_secs(1));
+            }
+            files(path)
+        },
+    );
+    answered(&cache, &slow.folders);
+    answered(&cache, &edited.folders);
+    std::fs::write(edited.folders[0].path.join("new"), "x").unwrap();
+    // The window asks every repo at once: the slow one's reads are going when this one asks.
+    let first = cache.clone();
+    let folders = slow.folders.clone();
+    let reading = std::thread::spawn(move || answered(&first, &folders));
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(
+        answered(&cache, &edited.folders),
+        [(Some(1), None), (Some(0), None)],
+        "the edited folder was answered from the last refresh"
+    );
+    reading.join().unwrap();
+}
+
+#[test]
+fn a_folder_forgotten_while_it_is_read_does_not_hold_its_ask_for_the_full_wait() {
+    let f = fixture(1);
+    let path = f.folders[0].path.clone();
+    let cache = StateCache::watched_by(polled, |_| {
+        std::thread::sleep(Duration::from_secs(1));
+        (Some(0), None)
+    });
+    let asking = cache.clone();
+    let folders = f.folders.clone();
+    let start = Instant::now();
+    let ask = std::thread::spawn(move || asking.states(&folders));
+    std::thread::sleep(Duration::from_millis(300));
+    std::fs::remove_dir_all(&path).unwrap();
+    let said = ask.join().unwrap();
+    let took = start.elapsed();
+    assert!(took < Duration::from_secs(4), "the ask waited {took:?}");
+    assert!(
+        said[0].is_none(),
+        "a forgotten folder was answered: {said:?}"
+    );
+}
+
+thread_local! {
+    /// Every folder the losing watcher was asked to watch.
+    static LOSING_WATCHED: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
+}
+
+/// A watcher whose first watch hears its own folder removed before the watch is set up.
+struct Losing {
+    inner: notify::PollWatcher,
+    events: std::sync::mpsc::Sender<notify::Event>,
+}
+
+impl notify::Watcher for Losing {
+    fn new<F: EventHandler>(_: F, _: notify::Config) -> notify::Result<Self> {
+        unreachable!("made by `losing`")
+    }
+
+    fn watch(&mut self, path: &Path, mode: RecursiveMode) -> notify::Result<()> {
+        let first = LOSING_WATCHED.with(|w| {
+            let mut w = w.borrow_mut();
+            w.push(path.to_path_buf());
+            w.len() == 1
+        });
+        if first {
+            let removed = notify::Event::new(EventKind::Remove(notify::event::RemoveKind::Folder))
+                .add_path(path.to_path_buf());
+            let _ = self.events.send(removed);
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        self.inner.watch(path, mode)
+    }
+
+    fn unwatch(&mut self, path: &Path) -> notify::Result<()> {
+        self.inner.unwatch(path)
+    }
+
+    fn kind() -> notify::WatcherKind {
+        notify::WatcherKind::PollWatcher
+    }
+}
+
+fn losing(events: std::sync::mpsc::Sender<notify::Event>) -> Option<Box<dyn Watcher + Send>> {
+    let inner = notify::PollWatcher::new(as_platform(events.clone()), poll_config()).ok()?;
+    Some(Box::new(Losing { inner, events }))
+}
+
+#[test]
+fn a_folder_removed_while_its_watch_is_set_up_is_watched_afresh() {
+    let f = fixture(1);
+    let cache = StateCache::watched_by(losing, |_| (Some(0), None));
+    assert_eq!(answered(&cache, &f.folders), [(Some(0), None)]);
+    let watched = LOSING_WATCHED.with(|w| w.borrow().clone());
+    assert_eq!(
+        watched,
+        [f.folders[0].path.clone(), f.folders[0].path.clone()],
+        "the folder lost while being watched was kept on that watch"
+    );
+}
