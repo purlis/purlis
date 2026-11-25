@@ -299,7 +299,7 @@ fn a_loosening_branch_answers_loose_but_the_policy_in_force_waits_for_the_press(
     assert_eq!(row.map(|r| r.kind), Some(Kind::Loosens), "{dry:?}");
     let said = text(&why, ("merge", "acme/web#main"));
     assert!(
-        said.contains("until you press Accept the policy in force still enforces: deny"),
+        said.contains("until you press Accept, the policy in force still enforces: deny"),
         "{said}"
     );
 }

@@ -370,7 +370,12 @@ fn a_decision_crosses_the_wire_whole() {
     let decision = decide::decide(&loaded(STRICT, None), &merge(), &empty_world());
     let wire = serde_json::to_string(&decision).expect("it is written");
     let read: Decision = serde_json::from_str(&wire).expect("it is read");
-    assert_eq!(read, decision);
+    // The permits a forbid overrode are not on the wire (an older hook parses a decision):
+    // `policy why` carries them as `Why::overrode`. Everything else crosses whole.
+    assert!(!decision.overrode.is_empty(), "{decision:?}");
+    let mut on_the_wire = decision;
+    on_the_wire.overrode.clear();
+    assert_eq!(read, on_the_wire);
 }
 
 #[test]

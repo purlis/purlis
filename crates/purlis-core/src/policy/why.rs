@@ -497,7 +497,7 @@ pub fn text(why: &Why, request: (&str, &str)) -> String {
         if dry.enforced_until_pressed != decision.after_mode {
             let _ = writeln!(
                 out,
-                "until you press Accept the policy in force still enforces: {}",
+                "until you press Accept, the policy in force still enforces: {}",
                 dry.enforced_until_pressed.word()
             );
         }
