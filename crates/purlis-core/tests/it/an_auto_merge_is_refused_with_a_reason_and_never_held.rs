@@ -9,7 +9,7 @@
 
 use purlis_core::forge::Kind;
 use purlis_core::heldact::{Call, Recognised, Requested, recognise, said};
-use purlis_core::mergehold::{self, AppSaid, Held, Request};
+use purlis_core::mergehold::{self, AppSaid, Held, LandAs, Request};
 use serde_json::{Value, json};
 
 use crate::support::held_acts::{Rec, repo};
@@ -56,7 +56,8 @@ fn a_flags_value_that_reads_auto_is_no_auto_merge() {
         mergehold::held("gh pr merge --body --auto 12"),
         Some(Held::Request(Request {
             repo: None,
-            number: 12
+            number: 12,
+            act: LandAs::Merge
         }))
     );
 }
@@ -74,7 +75,11 @@ fn a_merge_without_an_auto_flag_is_still_held_as_a_merge_ask() {
     ] {
         assert_eq!(
             mergehold::held(cmd),
-            Some(Held::Request(Request { repo: None, number })),
+            Some(Held::Request(Request {
+                repo: None,
+                number,
+                act: LandAs::Merge
+            })),
             "{cmd}"
         );
     }
@@ -143,7 +148,8 @@ fn a_rest_merge_with_auto_merge_false_or_absent_is_held() {
             run(GITLAB_MERGE, &[], body.clone()),
             Recognised::Hold(Requested::Merge(Request {
                 repo: Some(repo("acme/app")),
-                number: 12
+                number: 12,
+                act: LandAs::Merge
             })),
             "{body}"
         );
@@ -172,7 +178,8 @@ fn a_value_flag_of_each_cli_takes_the_next_word_so_an_auto_flag_there_is_a_value
             mergehold::held(cmd),
             Some(Held::Request(Request {
                 repo: None,
-                number: 12
+                number: 12,
+                act: LandAs::Merge
             })),
             "{cmd}"
         );

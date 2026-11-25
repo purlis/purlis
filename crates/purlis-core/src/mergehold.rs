@@ -625,12 +625,25 @@ pub fn refusal(held: &Held, app: &AppSaid<'_>) -> String {
     }
 }
 
-/// What a chat is told when it asks the forge to merge later, which is refused and never held: it
-/// pins the head only when it is turned on, so the forge would merge any head pushed later,
-/// unseen, and the person's press merges at once (#7597). The GraphQL route's reason.
-pub const AUTO_MERGE_SAID: &str = "Nobody was asked: auto-merge would merge any head pushed \
-     later, unseen, so purlis does not hold it. Ask the person to merge it, or run the merge \
-     without the auto flag and the person is asked to merge it in Asks.";
+/// **Why a chat's auto-merge is refused and never held, in one place** (#7597): it pins the head
+/// only when it is turned on, so the forge would merge any head pushed later, unseen, and the
+/// person's press merges at once. A macro so a `&'static str` that other routes add their own way
+/// out to can be made with `concat!`; the hook, the GraphQL route and the REST route all say this.
+macro_rules! auto_merge_why {
+    () => {
+        "auto-merge would merge any head pushed later, unseen, so purlis does not hold it."
+    };
+}
+pub(crate) use auto_merge_why;
+
+/// What a chat is told when it asks the forge to merge later, which is refused and never held:
+/// [`auto_merge_why!`] and the hook's way out.
+pub const AUTO_MERGE_SAID: &str = concat!(
+    "Nobody was asked: ",
+    auto_merge_why!(),
+    " Ask the person to merge it, or run the merge without the auto flag and the person is asked \
+     to merge it in Asks."
+);
 
 /// **The refusal of `held` for the line `cmd`, naming what purlis took for a merge** (#7176):
 /// [`refusal`], and for a [`Held::Unreadable`] line the cause the release floor read it by, so
