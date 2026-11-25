@@ -1436,6 +1436,9 @@ pub const RULE_MERGE_HOLD: &str = "merge-hold";
 pub const RULE_BRANCH_FOLDER: &str = "branch-folder";
 /// The rule id of `forge_milestones`' bound to the chat's own workspace (`guards.forge`).
 pub const RULE_FORGE_WORKSPACE: &str = "forge.milestones.workspace";
+/// The rule id of `forge_milestones`' refusal of a clone the project records no repo for, which
+/// asks the person to record it (`guards.forge`, A3).
+pub const RULE_RECORD_REPO: &str = "forge.milestones.record";
 /// The rule id of a dispatched chat on a profile that switches the prompts off (`mode`).
 pub const RULE_ASKS_NOBODY: &str = "dispatch.prompts-off";
 /// The rule id of a persona's deny-list its harness cannot carry (`tools`).
@@ -1469,7 +1472,7 @@ pub fn known_rule(family: Family, rule: &str) -> bool {
         RULE_VAULT_READ | RULE_MASK => Some(Family::Secrets),
         RULE_MERGE_HOLD => Some(Family::GuardsMerge),
         RULE_BRANCH_FOLDER => Some(Family::GuardsGit),
-        RULE_FORGE_WORKSPACE => Some(Family::GuardsForge),
+        RULE_FORGE_WORKSPACE | RULE_RECORD_REPO => Some(Family::GuardsForge),
         RULE_ASKS_NOBODY => Some(Family::HarnessMode),
         RULE_DENY_LIST => Some(Family::Tools),
         RULE_PROFILE_APPROVAL | RULE_DECLARATION_APPROVAL => Some(Family::Trust),

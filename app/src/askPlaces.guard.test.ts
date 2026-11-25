@@ -73,7 +73,11 @@ const PLACES = {
     at: "its-own",
     how: "Blocking in Asks while its chat is in its turn, and on its chat's finish row once the turn ends (R-329)",
   },
-  "clone-for-chat": {
+  "clone-with-sign-in": {
+    at: "its-own",
+    how: "Blocking in Asks while its chat is in its turn, and on its chat's finish row once the turn ends (R-329)",
+  },
+  "record-repo": {
     at: "its-own",
     how: "Blocking in Asks while its chat is in its turn, and on its chat's finish row once the turn ends (R-329)",
   },

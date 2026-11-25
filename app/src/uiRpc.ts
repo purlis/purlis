@@ -1741,6 +1741,7 @@ export const commands = {
 	vouchClone: __WINDOW_ONLY_RESULT,
 	useOneAddress: __WINDOW_ONLY_RESULT,
 	cloneWithSignIn: __WINDOW_ONLY_RESULT,
+	recordRepo: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Make a workspace: `charter workspace create <name>`, with the vision when one was typed.
 	 * 
@@ -3326,6 +3327,11 @@ export type AnswerPath =
 /**  `clone_with_sign_in` for Clone it: `repo` (`<host>/<owner>/<repo>`) into `workspace`. */
 { via: "clone-it"; workspace: string; repo: string } | 
 /**
+ *  `record_repo` for Record this repo: the repo of the clone `clone` of `workspace`, which
+ *  origin names as `place` while the row is shown.
+ */
+{ via: "record-repo"; workspace: string; clone: string; place: string } | 
+/**
  *  `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
  *  clone Notice's own command, and each clone it trusts leaves the ask (R-336).
  */
@@ -3832,7 +3838,7 @@ export type AskSource =
  */
 "trust-clone" | 
 /**
- *  **A clone whose origin names more than one address** (A1, A5; Q4): Use one address sets
+ *  **A clone whose origin names more than one address** (A1, A5, Q4): Use one address sets
  *  origin's push address to the one the row shows, and nothing else. Trusting the clone is
  *  a second press.
  */
@@ -3841,7 +3847,12 @@ export type AskSource =
  *  **A private repo a chat's clone could not reach** (A2): Clone it clones it into the
  *  chat's workspace with the person's own sign-in, as the window's own recorded clone.
  */
-"clone-for-chat" | 
+"clone-with-sign-in" | 
+/**
+ *  **A clone the project records no repo for** (A3): Record this repo records the repo its
+ *  origin names, as `purlis discover` does for that one clone, so a chat can read its forge.
+ */
+"record-repo" | 
 /**
  *  **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
  *  never one per clone. Trust all records each, as its Notice's Trust this clone does.

@@ -3309,6 +3309,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Policy(_) => 26,
             Ask::PolicyLog(_) => 27,
             Ask::RemoteRefs(_) => 28,
+            Ask::WindowOnly(_) => 29,
         }
     }
     let asks = vec![
@@ -3491,10 +3492,16 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             chat,
             url: "https://github.com/acme/app.git".to_owned(),
         }),
+        Ask::WindowOnly(purlis_core::hookwire::WindowOnlyAsk {
+            chat,
+            refused: purlis_core::hookwire::WindowOnlyRefusal::RecordRepo {
+                clone: "app".to_owned(),
+            },
+        }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=28).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=29).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 

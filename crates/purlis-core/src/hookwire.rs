@@ -1625,6 +1625,13 @@ pub enum Ask {
     /// answers [`Answer::No`] with the sentence that says the person has been asked, or why
     /// they were not. No ticket, for a record's reason: nothing is made or removed by the ask.
     Removal(RemovalAsk),
+    /// **A refusal whose only way out is a press in the window** (A3, R-328): what a chat's
+    /// `purlis` hands over when it was refused and no process of the app raised the ask itself,
+    /// as the `forge_milestones` tool is for a clone the project records no repo for. The app
+    /// raises the ask ([`crate::windowonly`]) and answers [`Answer::No`] with the sentence the
+    /// chat is told: that the person was asked, or that nobody was. **The app records nothing
+    /// for it.** No ticket, for [`Self::Removal`]'s reason.
+    WindowOnly(WindowOnlyAsk),
     /// Show the person a change to one of purlis's own configuration files, which only they
     /// apply, in the window (#1975, [`crate::proposed`]): what a Claude Code chat's edit of such
     /// a file and `purlis propose` hand over. **The app writes nothing for it**: it holds the
@@ -2039,6 +2046,30 @@ pub struct RemovalAsk {
 pub enum Removing {
     /// A workspace of this project, by the name the command was given.
     Workspace { name: String },
+}
+
+/// **A chat's refusal raised as an ask by the app** ([`Ask::WindowOnly`]): which refusal, by
+/// the one thing the line may name.
+///
+/// **It names no workspace**: that is the app's record of the chat whose token the line carries,
+/// so a chat can only ask about a clone of its own workspace. The clone is looked up in that
+/// workspace when it is asked ([`crate::windowonly::record_repo_for`]), and the row shows what
+/// the app read from it, never a word of the chat's.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct WindowOnlyAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    /// The refusal.
+    pub refused: WindowOnlyRefusal,
+}
+
+/// A refusal a chat's process hands the app to raise ([`WindowOnlyAsk`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case", tag = "what")]
+pub enum WindowOnlyRefusal {
+    /// The project records no repo for this clone of the chat's workspace, by its folder's name
+    /// (A3): the control is Record this repo.
+    RecordRepo { clone: String },
 }
 
 /// A chat asking for its workspace's chats ([`crate::catalogue::chats`], #6235).
@@ -2921,6 +2952,7 @@ impl Ask {
             Self::Dispatch(dispatch) => dispatch.chat,
             Self::Task(asked) => asked.chat,
             Self::Removal(removal) => removal.chat,
+            Self::WindowOnly(asked) => asked.chat,
             Self::Propose(proposed) => proposed.chat,
             Self::ReportDraft(draft) => draft.chat,
             Self::ProposeLimit(proposed) => proposed.chat,

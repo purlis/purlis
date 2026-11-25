@@ -200,3 +200,34 @@ pub async fn clone_with_sign_in(
     .await
     .map_err(|err| format!("the clone did not finish: {err}"))?
 }
+
+/// **The person's Record this repo** (A3): records the repo of the clone `clone` of `workspace`
+/// in the project's inventory, as `purlis discover` does for that one clone, and only while its
+/// origin still names `place`, the address the row showed. Answers the address recorded, or why
+/// nothing was. The ask is cleared for every chat that waited on it.
+///
+/// Window only (`WINDOW_ONLY`): the record is what decides which repo a chat may read.
+#[tauri::command]
+#[specta::specta]
+pub async fn record_repo(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    workspace: String,
+    clone: String,
+    place: String,
+) -> Result<String, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        HostScope::claim().ok_or_else(|| "A repo is recorded from the window alone.".to_owned())?;
+        purlis_core::windowonly::record_this_repo(
+            &root,
+            &purlis_core::windowonly::Control::RecordRepo {
+                workspace,
+                clone,
+                place,
+            },
+        )
+    })
+    .await
+    .map_err(|err| format!("recording the repo did not finish: {err}"))?
+}

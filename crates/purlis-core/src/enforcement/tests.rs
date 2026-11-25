@@ -1229,6 +1229,7 @@ fn the_rules_of_the_nine_families_are_known_to_their_own_family_alone() {
     // The app keeps a line a chat's process hands over only for a rule it knows (#7061).
     for (family, rule) in [
         (Family::GuardsForge, RULE_FORGE_WORKSPACE),
+        (Family::GuardsForge, RULE_RECORD_REPO),
         (Family::HarnessMode, RULE_ASKS_NOBODY),
         (Family::Tools, RULE_DENY_LIST),
         (Family::Trust, RULE_PROFILE_APPROVAL),

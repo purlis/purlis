@@ -67,6 +67,18 @@ pub enum Control {
         /// `<host>/<owner>/<repo>`.
         repo: String,
     },
+    /// **Record this repo** (A3): the window records the repo of the clone `clone` of
+    /// `workspace` in the project's inventory, as `purlis discover` does for that one clone, for
+    /// a chat whose read of the forge was refused because the project records no repo for it.
+    /// The row shows `place` before the press, and the press records exactly it, and only while
+    /// origin still names it.
+    RecordRepo {
+        workspace: String,
+        /// The clone's folder name in the workspace.
+        clone: String,
+        /// The address origin names when the row was raised, `<host>/<owner>/<repo>`.
+        place: String,
+    },
 }
 
 impl Control {
@@ -76,6 +88,7 @@ impl Control {
             Self::TrustClone { .. } => TRUST_THIS_CLONE,
             Self::OneAddress { .. } => USE_ONE_ADDRESS,
             Self::CloneWithSignIn { .. } => CLONE_IT,
+            Self::RecordRepo { .. } => RECORD_THIS_REPO,
         }
     }
 
@@ -87,6 +100,7 @@ impl Control {
                 (self.label(), folder)
             }
             Self::CloneWithSignIn { repo, .. } => (self.label(), repo),
+            Self::RecordRepo { clone, .. } => (self.label(), clone),
         }
     }
 
@@ -103,7 +117,9 @@ impl Control {
                 push,
                 to,
             } => format!(
-                "Give origin one address: the remote of {folder} fetches from {fetch} and pushes                  to {push}, so purlis will not sign in for it. Pressing sets its push address                  to {to}, and nothing else. Trusting the clone is a separate press."
+                "Give origin one address: the remote of {folder} fetches from {fetch} and pushes \
+                 to {push}, so purlis will not sign in for it. Pressing sets its push address \
+                 to {to}, and nothing else. Trusting the clone is a separate press."
             ),
             Self::CloneWithSignIn { workspace, repo } => {
                 let mut parts = repo.splitn(3, '/');
@@ -113,12 +129,22 @@ impl Control {
                     parts.next().unwrap_or_default(),
                 );
                 format!(
-                    "Clone {name} for a chat: it is {owner}'s repository on {host}, and no forge                      command line is signed in here. Pressing clones it into workspaces/{workspace}                      with your sign-in, which purlis never gives a chat."
+                    "Clone {name} for a chat: it is {owner}'s repository on {host}, and no forge \
+                     command line is signed in here. Pressing clones it into workspaces/{workspace} \
+                     with your sign-in, which purlis never gives a chat."
                 )
             }
+            Self::RecordRepo { clone, place, .. } => format!(
+                "Record {clone} in this project's repos: its origin is {place}, which the project \
+                 does not record, so purlis does not read its milestones for a chat. Pressing \
+                 records that one repo, as `purlis discover` does for it, and nothing else."
+            ),
         }
     }
 }
+
+/// The label of the control that records a clone's repo in the project's inventory.
+pub const RECORD_THIS_REPO: &str = "Record this repo";
 
 /// The label of the control that gives a clone's origin one address.
 pub const USE_ONE_ADDRESS: &str = "Use one address";
@@ -509,6 +535,159 @@ pub fn use_one_address(
         }
     }
     Ok(to.clone())
+}
+
+/// **The Record this repo the clone `clone` of workspace `workspace` needs** (A3), as its row
+/// would show it: `Err` with a sentence where there is nothing to record, because the clone is
+/// not one of the workspace's, its origin names no repo on a forge the project declares, or the
+/// project records it already. Read from the clone now, never from a chat's words.
+pub fn record_repo_for(root: &Path, workspace: &str, clone: &str) -> Result<Control, String> {
+    let live = live_repo_of(root, workspace, clone)?;
+    if crate::catalogue::milestones::recorded(root, clone)
+        .is_some_and(|recorded| crate::catalogue::milestones::same(&live, &recorded))
+    {
+        return Err(format!(
+            "The project records the repo of {} already.",
+            crate::shown::short(clone)
+        ));
+    }
+    Ok(Control::RecordRepo {
+        workspace: workspace.to_owned(),
+        clone: clone.to_owned(),
+        place: format!("{}/{}", live.forge.host, live.path),
+    })
+}
+
+/// The repo the origin of the clone `clone` of `workspace` names now, on a forge the project
+/// declares.
+fn live_repo_of(
+    root: &Path,
+    workspace: &str,
+    clone: &str,
+) -> Result<crate::forge::pr::Repo, String> {
+    let clones = crate::repos::clones(root, workspace).map_err(|_| {
+        format!(
+            "purlis could not read the repos of {}.",
+            crate::shown::short(workspace)
+        )
+    })?;
+    let Some(found) = clones.repos.iter().find(|one| one.name == clone) else {
+        return Err(format!(
+            "{} is not a repo of workspace {}.",
+            crate::shown::short(clone),
+            crate::shown::short(workspace)
+        ));
+    };
+    crate::forge::pr::Repo::of_clone(root, &found.path)
+}
+
+/// **The words a chat is told where its read of a clone's forge was refused for want of a
+/// record** (A3), after the ask for it was raised or not: raised, by [`told_of`]'s rule H.
+/// `Err` where no ask could be raised (the clone has nothing to record, or `[policy] consents`
+/// raises none), whose sentence says why and names `purlis discover`.
+pub fn ask_to_record(
+    root: &Path,
+    session: u32,
+    workspace: &str,
+    clone: &str,
+) -> Result<String, String> {
+    let control = record_repo_for(root, workspace, clone)?;
+    if !asks(root) {
+        return Err(format!(
+            "The project records no repo for {}. Record it with `purlis discover`.",
+            crate::shown::short(clone)
+        ));
+    }
+    let raised = raise(root, session, control);
+    Ok(told_of(
+        root,
+        session,
+        raised,
+        "Record this repo is on the ask, or run `purlis discover`.",
+    ))
+}
+
+/// **What the app said to the ask for Record this repo** (A3), as the chat's own `purlis` heard
+/// it over the hook channel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AppSaid {
+    /// The app raised the ask or refused it, in its own words ([`ask_to_record`]).
+    Told(String),
+    /// The app could not read the ask ([`crate::hookwire::UNKNOWN_LINE`]): it is older than this
+    /// purlis, so nobody was asked. Never a refusal of the repo.
+    Older,
+    /// No app answered, or none was there.
+    Unheard,
+}
+
+/// **What a chat is told for a clone the project records no repo for** (A3), whatever the app
+/// answered: its words where it raised the ask; where it could not read the ask, that the app
+/// and this purlis are different builds, with the restart words; where none answered, that
+/// nobody was asked ([`nobody_asked`]). Each names `purlis discover`, which the chat may run
+/// itself.
+pub fn record_repo_refusal(root: &Path, clone: &str, app: AppSaid) -> String {
+    let clone = crate::shown::short(clone);
+    match app {
+        AppSaid::Told(words) => words,
+        AppSaid::Older => format!(
+            "This project records no repo for {clone}, and nobody was asked: the app and this \
+             purlis are different builds, so the app could not read the ask. Ask the person to \
+             restart purlis (Restart to update, or quit and reopen it), or to update the purlis \
+             plugin of this chat's harness, so both are one build. Or record it with \
+             `purlis discover`."
+        ),
+        AppSaid::Unheard => format!(
+            "This project records no repo for {clone}. {}",
+            nobody_asked(root, "run `purlis discover` to record it.")
+        ),
+    }
+}
+
+/// **The person's Record this repo** (A3): records the repo of the clone `shown.clone`, as
+/// `purlis discover` does for that one clone, and clears every chat's ask for it. Answers the
+/// address recorded. Refused, with a sentence, nothing recorded and the ask kept, where origin no
+/// longer names the address the row showed. Nothing about the forge is asked: the record is what
+/// origin names, so what a chat later reads is the repo the person saw.
+pub fn record_this_repo(root: &Path, shown: &Control) -> Result<String, String> {
+    let Control::RecordRepo {
+        workspace,
+        clone,
+        place,
+    } = shown
+    else {
+        return Err(format!("{} is not a Record this repo", shown.label()));
+    };
+    let changed = || {
+        format!(
+            "The origin of {clone} changed since the window showed it, so purlis recorded \
+             nothing. Look at it again and choose"
+        )
+    };
+    let live = live_repo_of(root, workspace, clone).map_err(|_| changed())?;
+    if format!("{}/{}", live.forge.host, live.path) != *place {
+        return Err(changed());
+    }
+    let host = &live.forge.host;
+    let path = &live.path;
+    let record = crate::forge::RepoRecord {
+        id: None,
+        name: clone.clone(),
+        path_with_namespace: path.to_owned(),
+        default_branch: None,
+        description: String::new(),
+        web_url: format!("https://{place}"),
+        ssh_url: format!("git@{host}:{path}.git"),
+        topics: Vec::new(),
+        forge: live.forge.kind,
+    };
+    let cfg = crate::forge::load_config(root)?;
+    crate::inventory::add(
+        root,
+        &crate::forge::group_of(&cfg, 0),
+        &[crate::inventory::record(&record, "unknown")],
+    )?;
+    pressed(root, shown);
+    Ok(place.clone())
 }
 
 /// The label of the one ask for the project's clones purlis has no record of (R-336).

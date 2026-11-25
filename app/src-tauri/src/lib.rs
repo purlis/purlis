@@ -280,6 +280,7 @@ mod vaults;
 mod vaultswaiting;
 mod views;
 mod watchset;
+mod windowonlyasks;
 mod windowprefs;
 mod windows;
 mod worklinks;

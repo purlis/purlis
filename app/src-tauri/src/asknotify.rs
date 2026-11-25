@@ -1172,6 +1172,7 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::TrustClone => "Asks you to trust a clone",
         AskSource::OneAddress => "Asks you to give a clone's origin one address",
         AskSource::CloneWithSignIn => "Asks to clone a private repo with your sign-in",
+        AskSource::RecordRepo => "Asks you to record a clone's repo",
         AskSource::TrustClones => "Asks you to trust clones purlis did not clone",
     }
 }

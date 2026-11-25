@@ -1091,3 +1091,41 @@ fn only_the_chat_without_a_cli_arm_raises_clone_it() {
     }
     crate::windowonly::project_ended(&world.root);
 }
+
+#[test]
+fn clone_it_has_no_log_mode() {
+    // A2 releases the person's sign-in, so it is in `vaults`, which takes `off` or `enforce`
+    // only (Q308a): `log` there is read as enforce, and the ask is raised as under `enforce`,
+    // never a quiet allow. (`off` loosens only with the person's acceptance, which the app alone
+    // verifies; `vaults_are_never_logged` pins the reading of the file.)
+    use crate::enforcement::{Family, Mode, Settings};
+    let logged = Settings::from_text(Some("[policy]\ntemplate = \"watch\"\nvaults = \"log\"\n"));
+    assert_eq!(logged.mode(Family::Vaults), Mode::Enforce);
+    assert_eq!(logged.refused.len(), 1, "{:?}", logged.refused);
+
+    let refused =
+        format!("echo \"fatal: Authentication failed for 'https://{HOST}/'\" >&2; exit 128");
+    for policy in ["log", "enforce"] {
+        let world = World::holding(&["widget"]);
+        let manifest = crate::names::manifest(&world.root);
+        let mut text = std::fs::read_to_string(&manifest).unwrap();
+        text.push_str(&format!(
+            "\n[policy]\ntemplate = \"strict\"\nvaults = \"{policy}\"\n"
+        ));
+        std::fs::write(&manifest, text).unwrap();
+        crate::windowonly::telling(&world.root, std::sync::Arc::new(|| {}));
+
+        let said = a_chats_failure(&world, &refused, false);
+
+        assert_eq!(
+            crate::windowonly::every(&world.root).len(),
+            1,
+            "vaults = {policy}: {said}"
+        );
+        assert!(
+            said.contains("asked the person in Asks"),
+            "{policy}: {said}"
+        );
+        crate::windowonly::project_ended(&world.root);
+    }
+}

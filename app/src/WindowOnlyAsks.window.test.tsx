@@ -69,6 +69,8 @@ function core({
     if (cmd === "asks_waiting")
       return { plane: PLANE, asks, with_asking_chat: [], on_finish_rows: onFinishRows };
     if (cmd === "finished_turns") return turns;
+    if (cmd === "use_one_address" || cmd === "clone_with_sign_in" || cmd === "record_repo")
+      return "done";
     if (cmd === "vouch_clone") {
       if (refuses !== undefined) throw refuses;
       return "github.com/acme/api";
@@ -240,4 +242,103 @@ describe("a window-only ask, Blocking or on its chat's finish row (T1-42, R-329)
       expect.stringContaining("workspaces/alpha/web"),
     ]);
   });
+
+  const NEW_KINDS: ReadonlyArray<{ label: RegExp; cmd: string; ask: Shown; args: object }> = [
+    {
+      label: /^Use one address/,
+      cmd: "use_one_address",
+      args: {
+        plane: PLANE,
+        folder: "workspaces/alpha/api",
+        fetch: "github.com/acme/api",
+        push: "github.com/acme/api-push",
+        to: "github.com/acme/api",
+      },
+      ask: {
+        ...TRUST_CLONE,
+        ask: "one-address:2:workspaces/alpha/api|github.com/acme/api",
+        says: "Give origin one address: pressing sets its push address to github.com/acme/api.",
+        options: [{ id: "press", label: "Use one address", allows: true }],
+        source: "one-address",
+        answer: {
+          via: "one-address",
+          folder: "workspaces/alpha/api",
+          fetch: "github.com/acme/api",
+          push: "github.com/acme/api-push",
+          to: "github.com/acme/api",
+        },
+      },
+    },
+    {
+      label: /^Clone it/,
+      cmd: "clone_with_sign_in",
+      args: { plane: PLANE, workspace: "alpha", repo: "github.com/acme/api" },
+      ask: {
+        ...TRUST_CLONE,
+        ask: "clone-for-chat:2:alpha|github.com/acme/api",
+        says: "Clone api for a chat, with your sign-in.",
+        options: [{ id: "press", label: "Clone it", allows: true }],
+        source: "clone-with-sign-in",
+        answer: { via: "clone-it", workspace: "alpha", repo: "github.com/acme/api" },
+      },
+    },
+    {
+      label: /^Record this repo/,
+      cmd: "record_repo",
+      args: { plane: PLANE, workspace: "alpha", clone: "api", place: "github.com/acme/api" },
+      ask: {
+        ...TRUST_CLONE,
+        ask: "record-repo:2:alpha|api|github.com/acme/api",
+        says: "Record api in this project's repos.",
+        options: [{ id: "press", label: "Record this repo", allows: true }],
+        source: "record-repo",
+        answer: {
+          via: "record-repo",
+          workspace: "alpha",
+          clone: "api",
+          place: "github.com/acme/api",
+        },
+      },
+    },
+  ];
+
+  it.each(NEW_KINDS)(
+    "holds $cmd's press on the finish row to the settle guard (Q219)",
+    async (kind) => {
+      vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        core({ asks: [], onFinishRows: [kind.ask], turns: [ENDED] });
+        render(<Window />);
+        await waitFor(() => expect(finishRow()).toHaveTextContent(kind.ask.says));
+        const press = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) });
+
+        await press.click(
+          within(finishRow() as HTMLElement).getByRole("button", { name: kind.label }),
+        );
+
+        expect(asked.filter((one) => one.cmd === kind.cmd)).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it.each(NEW_KINDS)(
+    "sends $cmd with what its row showed once the press has settled (Q220)",
+    async (kind) => {
+      core({ asks: [], onFinishRows: [kind.ask], turns: [ENDED] });
+      render(<Window />);
+      await waitFor(() => expect(finishRow()).toHaveTextContent(kind.ask.says));
+      const button = within(finishRow() as HTMLElement).getByRole("button", { name: kind.label });
+      await read();
+
+      await userEvent.click(button);
+
+      await waitFor(() =>
+        expect(asked.filter((one) => one.cmd === kind.cmd).map((one) => one.args)).toEqual([
+          kind.args,
+        ]),
+      );
+    },
+  );
 });

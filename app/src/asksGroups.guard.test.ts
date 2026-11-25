@@ -71,7 +71,8 @@ const GROUP_OF = {
   // Use one address and Clone it (T1.1-56, Q304): a clone's origin, and a private repo cloned
   // with the person's sign-in.
   "one-address": "consent",
-  "clone-for-chat": "consent",
+  "clone-with-sign-in": "consent",
+  "record-repo": "consent",
   // Trust these clones (T1-15): the project's unrecorded clones, trusted by one press.
   "trust-clones": "consent",
   confirmation: "consent",

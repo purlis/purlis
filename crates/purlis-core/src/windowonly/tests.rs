@@ -429,3 +429,166 @@ fn use_one_address_shows_the_recorded_address_or_the_fetch_one() {
         None
     );
 }
+
+/// A plane at a temp folder with a `charter.toml`, which `purlis discover` needs, under the
+/// `strict` template, set explicitly (Q308).
+fn a_plane() -> tempfile::TempDir {
+    let plane = tempfile::tempdir().unwrap();
+    std::fs::write(
+        plane.path().join("charter.toml"),
+        "[policy]\ntemplate = \"strict\"\n",
+    )
+    .unwrap();
+    plane
+}
+
+#[test]
+fn record_this_repo_is_raised_for_an_unrecorded_clone_and_its_press_records_that_one_repo() {
+    let plane = a_plane();
+    let root = plane.path();
+    a_clone(root, "api", "https://github.com/acme/api.git");
+    a_clone(root, "web", "https://github.com/acme/web.git");
+
+    let control = record_repo_for(root, "ws", "api").unwrap();
+    assert_eq!(
+        control,
+        Control::RecordRepo {
+            workspace: "ws".to_owned(),
+            clone: "api".to_owned(),
+            place: "github.com/acme/api".to_owned(),
+        }
+    );
+    assert_eq!(control.label(), "Record this repo");
+    let says = control.says();
+    assert!(
+        says.contains("github.com/acme/api") && says.contains("`purlis discover`"),
+        "{says}"
+    );
+    raise(root, 4, control.clone());
+    raise(root, 5, control.clone());
+
+    // The press records that clone's repo, as `purlis discover` does, and no other clone's.
+    assert_eq!(
+        record_this_repo(root, &control).unwrap(),
+        "github.com/acme/api"
+    );
+    assert!(crate::catalogue::milestones::recorded(root, "api").is_some());
+    assert!(crate::catalogue::milestones::recorded(root, "web").is_none());
+    // And clears the ask of every chat that waited on it.
+    assert_eq!(every(root), []);
+}
+
+#[test]
+fn record_this_repo_fails_and_records_nothing_where_origin_changed_since_its_row() {
+    let plane = a_plane();
+    let root = plane.path();
+    let clone = a_clone(root, "api", "https://github.com/acme/api.git");
+    let control = record_repo_for(root, "ws", "api").unwrap();
+    raise(root, 4, control.clone());
+
+    git(
+        &clone,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://github.com/evil/api.git",
+        ],
+    );
+    let why = record_this_repo(root, &control).unwrap_err();
+    assert!(why.contains("changed since"), "{why}");
+    assert!(crate::catalogue::milestones::recorded(root, "api").is_none());
+    assert!(!root.join("inventory/repos.json").exists());
+    assert_eq!(every(root).len(), 1, "the ask is kept");
+}
+
+#[test]
+fn a_clone_the_project_records_or_no_declared_host_names_has_nothing_to_record() {
+    let plane = a_plane();
+    let root = plane.path();
+    a_clone(root, "api", "https://github.com/acme/api.git");
+    a_clone(root, "far", "https://example.org/acme/far.git");
+    a_clone(root, "gone", "https://github.com/acme/gone.git");
+    let control = record_repo_for(root, "ws", "api").unwrap();
+    record_this_repo(root, &control).unwrap();
+
+    assert!(
+        record_repo_for(root, "ws", "api")
+            .unwrap_err()
+            .contains("already")
+    );
+    assert!(record_repo_for(root, "ws", "far").is_err());
+    assert!(
+        record_repo_for(root, "ws", "nope")
+            .unwrap_err()
+            .contains("not a repo")
+    );
+    assert!(record_repo_for(root, "ws", "gone").is_ok());
+}
+
+#[test]
+fn asking_to_record_says_asked_in_asks_only_where_a_window_listens() {
+    let plane = a_plane();
+    let root = plane.path();
+    a_clone(root, "api", "https://github.com/acme/api.git");
+
+    let none = ask_to_record(root, 4, "ws", "api").unwrap();
+    assert!(none.starts_with("Nobody was asked"), "{none}");
+    assert!(none.contains("purlis discover"), "{none}");
+    assert!(!none.contains("asked the person in Asks"), "{none}");
+
+    telling(root, Arc::new(|| {}));
+    let some = ask_to_record(root, 5, "ws", "api").unwrap();
+    assert!(
+        some.starts_with("purlis asked the person in Asks"),
+        "{some}"
+    );
+    assert_eq!(every(root).len(), 2, "one ask per chat");
+    project_ended(root);
+}
+
+#[test]
+fn an_older_apps_answer_to_a_new_control_reads_as_older_with_restart_words() {
+    let root = Path::new("/plane/acme");
+    let older = record_repo_refusal(root, "api", AppSaid::Older);
+    assert!(older.contains("different builds"), "{older}");
+    assert!(older.contains("restart purlis"), "{older}");
+    assert!(older.contains("update the purlis plugin"), "{older}");
+    assert!(older.contains("nobody was asked"), "{older}");
+    // It is never a refusal of the repo: no word of the app's own is in it.
+    assert!(!older.contains("could not read this line"), "{older}");
+
+    let unheard = record_repo_refusal(root, "api", AppSaid::Unheard);
+    assert!(
+        unheard.contains("Nobody was asked: no purlis window is open on acme"),
+        "{unheard}"
+    );
+    assert!(unheard.contains("`purlis discover`"), "{unheard}");
+
+    let told = record_repo_refusal(
+        root,
+        "api",
+        AppSaid::Told("purlis asked the person in Asks.".to_owned()),
+    );
+    assert_eq!(told, "purlis asked the person in Asks.");
+}
+
+#[test]
+fn asking_to_record_raises_no_ask_where_policy_consents_do_not_ask() {
+    // `consents` under `log` or `off` raises none (Q308b): the chat is told to record it itself.
+    for policy in ["log", "off"] {
+        let plane = tempfile::tempdir().unwrap();
+        let root = plane.path();
+        std::fs::write(
+            root.join("charter.toml"),
+            format!("[policy]\ntemplate = \"strict\"\nconsents = \"{policy}\"\n"),
+        )
+        .unwrap();
+        a_clone(root, "api", "https://github.com/acme/api.git");
+
+        let why = ask_to_record(root, 4, "ws", "api").unwrap_err();
+
+        assert!(why.contains("`purlis discover`"), "{policy}: {why}");
+        assert_eq!(every(root), [], "{policy}");
+    }
+}

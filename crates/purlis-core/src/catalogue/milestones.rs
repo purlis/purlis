@@ -38,6 +38,28 @@ pub const FRESH_SECONDS: u64 = 60;
 pub struct Reach<'a> {
     pub caller: Caller,
     pub backend_of: &'a dyn Fn(&Repo) -> Box<dyn ForgeBackend>,
+    /// What to do with a clone the project records no repo for (A3): `None` refuses it with
+    /// [`no_record_said`], as a page's query does. A chat's tool hands over the person's Record
+    /// this repo ([`crate::windowonly::Control::RecordRepo`]).
+    pub unrecorded: Option<&'a dyn Fn(&str) -> Unrecorded>,
+}
+
+/// What a clone the project records no repo for is answered with ([`Reach::unrecorded`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Unrecorded {
+    /// Refused, with these words: what became of the ask for the person's Record this repo.
+    Refuse(String),
+    /// Read from the clone's own origin, as `[policy] guards.forge` runs under `log` or `off`
+    /// (Q308): the check does not stop the read.
+    Go,
+}
+
+/// The refusal of a clone the project records no repo for, where no ask was raised.
+pub fn no_record_said(clone: &str) -> String {
+    format!(
+        "This project records no repo for {clone}, so purlis does not read its milestones. \
+         Record it with `purlis discover`."
+    )
 }
 
 /// Why there are no milestones: the catalogue's kind, and a sentence for the reader.
@@ -142,13 +164,11 @@ pub fn read(
         recorded(root, &clone.name),
     ) {
         (Ok(live), Some(recorded)) if same(&live, &recorded) => recorded,
-        (Ok(_), None) => {
-            return Err(Unanswered::refused(format!(
-                "This project records no repo for {}, so purlis does not read its milestones. \
-                 Record it with `purlis discover`, or clone it from the window.",
-                clone.name
-            )));
-        }
+        (Ok(live), None) => match reach.unrecorded.map(|ask| ask(&clone.name)) {
+            Some(Unrecorded::Go) => live,
+            Some(Unrecorded::Refuse(words)) => return Err(Unanswered::refused(words)),
+            None => return Err(Unanswered::refused(no_record_said(&clone.name))),
+        },
         (Err(_), None) => {
             return Err(Unanswered::refused(format!(
                 "{} has no origin on a GitHub host this project declares, so it has no \
@@ -186,7 +206,7 @@ pub fn read(
 /// The repo the project's inventory records for the clone `name` (`inventory/repos.json`, a
 /// Plane-tier record no chat writes), on a forge this project declares; `None` when it records
 /// none there.
-fn recorded(root: &Path, name: &str) -> Option<Repo> {
+pub(crate) fn recorded(root: &Path, name: &str) -> Option<Repo> {
     let doc = crate::inventory::load(root, "").ok()?;
     let row = crate::inventory::listed(&doc)
         .into_iter()
@@ -201,7 +221,7 @@ fn recorded(root: &Path, name: &str) -> Option<Repo> {
 
 /// Whether the clone's live origin names the recorded repo: one forge, one host and one path,
 /// in any case, as GitHub and GitLab read them.
-fn same(live: &Repo, recorded: &Repo) -> bool {
+pub(crate) fn same(live: &Repo, recorded: &Repo) -> bool {
     live.forge.kind == recorded.forge.kind
         && live.forge.host.eq_ignore_ascii_case(&recorded.forge.host)
         && live.path.eq_ignore_ascii_case(&recorded.path)

@@ -624,6 +624,7 @@ macro_rules! app_commands {
                 clonevouch::vouch_clone,
                 clonevouch::use_one_address,
                 clonevouch::clone_with_sign_in,
+                clonevouch::record_repo,
                 workspaces::workspace_create,
                 live::workspace_live_preview,
                 live::workspace_live,

@@ -55,6 +55,7 @@ fn answered(root: &Path, name: &str, args: Value) -> Answer {
     let forge = crate::catalogue::milestones::Reach {
         caller: crate::forge::Caller::window().background(),
         backend_of: &no_forge,
+        unrecorded: None,
     };
     ask(root, "alpha", query(name), &args, &forge, at(), now())
 }

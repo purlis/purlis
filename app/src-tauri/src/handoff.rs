@@ -347,6 +347,9 @@ pub fn answer(
         // reason. The line names a workspace; the app removes nothing for it, and holds the
         // question for the person on the tab of the chat whose token the line carries.
         Ask::Removal(removal) => crate::removalasks::asked(held, &removal),
+        // A refusal the chat's own `purlis` hands over for the app to raise as an ask (A3): no
+        // ticket, for the removal's reason. The app records nothing; the person's press does.
+        Ask::WindowOnly(refused) => crate::windowonlyasks::asked(held, &refused),
         // A merge the chat's hook held (R-114): no ticket, for the removal's reason. The app
         // merges nothing for it; it answers before it reads the forge, and holds the ask for
         // the person once it has.

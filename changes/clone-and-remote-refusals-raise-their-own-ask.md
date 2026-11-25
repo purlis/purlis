@@ -4,7 +4,10 @@
   a clone's origin names more than one address, or a private repo needs your sign-in to clone,
   Asks shows a row with the press that clears it: **Use one address** (it shows the address it
   will set, and nothing else) and **Clone it** (it says it uses your sign-in). Trusting a clone
-  stays a separate press (T1.1-56, #6903, #6646).
+  stays a separate press. A chat's milestones read for a clone the project records no repo for
+  now asks you to **Record this repo**, which records the repo the clone's origin names (it shows
+  the address, and records exactly it) instead of sending the chat to `purlis discover` alone
+  (T1.1-56, #6903, #6646).
 
 ### Changed
 
