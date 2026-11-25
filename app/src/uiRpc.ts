@@ -5730,6 +5730,10 @@ export type DiagnosticsHere = {
 	 *  failed.
 	 */
 	hot: number,
+	/**  The device's RAM class in GB (8, 16, 32 or 64), or `None` under 8 GB (ADR 0082 §3). */
+	ram_class_gb: number | null,
+	/**  How many hot chats the device targets: a budget, never a cap. */
+	hot_target: number,
 };
 
 /**  What a discard is checked against. */

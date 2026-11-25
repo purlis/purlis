@@ -29,7 +29,8 @@ const meta = {
           profile: "release",
           notes: { version: "1.60.0", date: "2026-11-02", markdown: "### Added\n\n- A thing." },
         };
-      if (cmd === "diagnostics_here") return { os: "Darwin 27.2.0, aarch64", open: 12, hot: 4, ram_class_gb: 16, hot_target: 15 };
+      if (cmd === "diagnostics_here")
+        return { os: "Darwin 27.2.0, aarch64", open: 12, hot: 4, ram_class_gb: 16, hot_target: 15 };
       if (cmd === "machine_profiles") return [];
       if (cmd === "slow_log_recent") return [];
       return null;
