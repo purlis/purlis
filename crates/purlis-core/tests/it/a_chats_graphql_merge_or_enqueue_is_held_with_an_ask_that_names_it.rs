@@ -122,6 +122,7 @@ fn each_verb_raises_one_ask_that_names_its_act() {
 /// merge of it.
 #[test]
 fn an_enqueue_is_not_a_merge() {
+    purlis_core::unsteered!();
     assert_ne!(seven_by(LandAs::Enqueue), seven());
 }
 
