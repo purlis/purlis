@@ -325,11 +325,13 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, CliError> {
             workspace,
         } => {
             let ws = here.active_workspace(workspace.as_deref());
-            // `--force` discards work, which stays the person's from any chat (#3879): refused
-            // before anything is asked or run, naming the window.
+            // `--force` discards work, which stays the person's from any chat (#3879): nothing
+            // is run, and the removal is handed to the app, which asks the person and lists
+            // exactly what would be discarded (T1.1-67). The chat is told who was asked.
             if force && crate::session::chat_number().is_some() {
                 say(purlis_core::repocmd::Say::Fail(
-                    crate::brokered::no_forced_piece_removal_in_a_chat(&repo, &piece).into(),
+                    crate::brokered::forced_piece_removal_asked_of_the_person(&root, &repo, &piece)
+                        .into(),
                 ));
                 return Ok(1);
             }
@@ -392,6 +394,17 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, CliError> {
                 // terminal removes as git does.
                 if a_chat && let Some(why) = piececmd::ignored_would_go(&root, &ws, &repo, &piece) {
                     say(purlis_core::repocmd::Say::Fail(why.into()));
+                    // No app took the removal, so no window was asked (rule H): say so, and
+                    // the way out in words.
+                    say(purlis_core::repocmd::Say::Info(
+                        purlis_core::windowonly::removal_refusal(
+                            &root,
+                            &format!("branch folder '{repo} \u{b7} {piece}'"),
+                            "the ask is in Asks, where the person can remove it with these files",
+                            purlis_core::windowonly::AppSaid::Unheard,
+                        )
+                        .into(),
+                    ));
                     return 1;
                 }
                 piececmd::remove(

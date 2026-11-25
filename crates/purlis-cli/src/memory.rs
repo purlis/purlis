@@ -1282,7 +1282,12 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, CliE
                 .is_none()
                 .then(|| plane.root().join("personas").join(&name));
             if crate::brokered::removal_held(plane.root(), target.as_deref()) {
-                voice::err(crate::brokered::no_persona_removal_in_a_sandbox(&name).to_string());
+                // The app that started this chat is handed the name, and asks the person in its
+                // window, listing exactly what goes (T1.1-67); the sentence says which.
+                voice::err(
+                    crate::brokered::persona_removal_asked_of_the_person(plane.root(), &name)
+                        .to_string(),
+                );
                 return Ok(1);
             }
             let selection =

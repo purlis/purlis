@@ -827,9 +827,9 @@ pub fn rider_refusal(cmd: &str, caller: Caller<'_>) -> Option<(&'static str, Str
 const FORCES_A_REMOVAL: &str = "this call runs `purlis worktree remove --force`, which discards \
      the uncommitted changes and unique commits a plain removal names. That is the person's to \
      decide, and purlis lets a removal run without your harness asking only without --force, \
-     so this call is refused, and nobody was asked. Run it without --force, and the app \
-     removes the folder where nothing would be lost; otherwise ask the person to remove it \
-     from the window.";
+     so this call is refused, and nobody was asked. Run it without --force: the app removes \
+     the folder where nothing would be lost, and where it would lose work, purlis asks the \
+     person (Remove and discard or Keep), listing exactly what would go.";
 
 /// Whether a removal the call runs is forced (#3879): read on the lines a shell would run, as
 /// [`pins_the_clock`] reads a handoff's, here in the hook, outside the chat's sandbox, so the

@@ -352,6 +352,7 @@ fn isolated_answer(root: &Path, asker: &Asker, ask: &GitAsk, now: jiff::Timestam
                             repo,
                             piece,
                             *delete_branch,
+                            asker.chat,
                             crate::finished::Forge::asking(&crate::finished::merged::of_the_plane(
                                 root,
                                 &ask.workspace,

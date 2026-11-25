@@ -604,13 +604,19 @@ fn a_sandboxed_chat_removing_a_workspace_is_refused_before_anything_is_deleted()
     ] {
         let ran = purlis(&tmp, &args, &env);
         assert_eq!(ran.status.code(), Some(1), "{args:?}: {}", said(&ran));
+        // No app answered: nothing was removed and nobody was asked (rule H, T1.1-67).
         assert!(
-            said(&ran).contains("nothing was removed"),
+            said(&ran).contains("Nothing was removed"),
             "{args:?}: {}",
             said(&ran)
         );
         assert!(
-            said(&ran).contains("from the window"),
+            said(&ran).contains("nobody was asked"),
+            "{args:?}: {}",
+            said(&ran)
+        );
+        assert!(
+            !said(&ran).contains("from the window"),
             "{args:?}: {}",
             said(&ran)
         );
@@ -697,9 +703,10 @@ fn a_sandboxed_chat_removing_a_workspace_asks_the_person_in_the_window_and_remov
 }
 
 #[test]
-fn a_removal_no_app_asks_the_person_about_is_refused_naming_the_window_as_before() {
-    // An app older than the ask answers that nothing here takes it: the chat is still refused
-    // before anything is deleted, and told the way round it had before.
+fn a_removal_no_window_answered_says_nobody_was_asked_and_names_the_way_out() {
+    // An app that answers that nothing here takes it (rule H, T1.1-67): the chat is still
+    // refused before anything is deleted, told plainly that nobody was asked, and how to have it
+    // asked once purlis is open. Never "from the window" with no control.
     let tmp = a_project();
     let app = an_app(
         &tmp,
@@ -711,8 +718,44 @@ fn a_removal_no_app_asks_the_person_about_is_refused_naming_the_window_as_before
     let ran = purlis(&tmp, &["ws", "remove", "beta"], &sandboxed_chat_of(&app));
 
     assert_eq!(ran.status.code(), Some(1), "{}", said(&ran));
-    assert!(said(&ran).contains("nothing was removed"), "{}", said(&ran));
-    assert!(said(&ran).contains("from the window"), "{}", said(&ran));
+    assert!(said(&ran).contains("Nothing was removed"), "{}", said(&ran));
+    assert!(
+        said(&ran).contains("No purlis window answered, so nobody was asked"),
+        "{}",
+        said(&ran)
+    );
+    assert!(
+        said(&ran).contains("remove 'beta' in Asks"),
+        "{}",
+        said(&ran)
+    );
+    assert!(!said(&ran).contains("from the window"), "{}", said(&ran));
+    assert!(root(&tmp).join("workspaces/beta").exists());
+}
+
+#[test]
+fn an_older_apps_answer_to_a_removal_reads_as_older_with_restart_words() {
+    // An app from before a `Removing` variant answers its line with UNKNOWN_LINE: the chat is
+    // told the app and this purlis are different builds, never that the removal was refused.
+    let tmp = a_project();
+    let app = an_app(
+        &tmp,
+        Some(Answer::No {
+            why: hookwire::UNKNOWN_LINE.to_owned(),
+        }),
+    );
+
+    let ran = purlis(&tmp, &["ws", "remove", "beta"], &sandboxed_chat_of(&app));
+
+    assert_eq!(ran.status.code(), Some(1), "{}", said(&ran));
+    for words in ["different builds", "restart purlis", "nobody was asked"] {
+        assert!(said(&ran).contains(words), "{words}: {}", said(&ran));
+    }
+    assert!(
+        !said(&ran).contains(hookwire::UNKNOWN_LINE),
+        "{}",
+        said(&ran)
+    );
     assert!(root(&tmp).join("workspaces/beta").exists());
 }
 
@@ -750,9 +793,19 @@ fn a_sandboxed_chat_removing_a_persona_is_refused_before_anything_is_deleted() {
     ] {
         let ran = purlis(&tmp, &args, &env);
         assert_eq!(ran.status.code(), Some(1), "{args:?}: {}", said(&ran));
-        for words in ["nothing was removed", "from the window"] {
+        // No app answered: nothing was removed, and nobody was asked (rule H).
+        for words in [
+            "Nothing was removed",
+            "nobody was asked",
+            "where the person can remove 'steward'",
+        ] {
             assert!(said(&ran).contains(words), "{args:?}: {}", said(&ran));
         }
+        assert!(
+            !said(&ran).contains("from the window"),
+            "{args:?}: {}",
+            said(&ran)
+        );
     }
     assert!(persona.join("persona.md").is_file());
     assert!(persona.join("memory/kept.md").is_file());
@@ -789,8 +842,16 @@ fn a_sandboxed_chat_removing_a_branch_folder_is_refused_before_git_is_asked() {
     ] {
         let ran = purlis(&tmp, &args, &env);
         assert_eq!(ran.status.code(), Some(1), "{args:?}: {}", said(&ran));
-        for words in ["nothing was removed", "from the window"] {
-            assert!(said(&ran).contains(words), "{args:?}: {}", said(&ran));
+        // A forced removal is handed to the app (T1.1-67), and no app answered here: nobody was
+        // asked. A plain one is refused where git would be run, as before.
+        let words = if args.contains(&"--force") {
+            "nobody was asked"
+        } else {
+            "from the window"
+        };
+        for words in ["nothing was removed", words] {
+            let lower = said(&ran).to_lowercase();
+            assert!(lower.contains(words), "{args:?}: {}", said(&ran));
         }
     }
 
@@ -870,7 +931,7 @@ fn a_removal_the_sandbox_itself_holds_is_refused_before_anything_is_deleted() {
         let ran = purlis(&tmp, &args, &[(CHAT_ENV.to_owned(), "3".to_owned())]);
         assert_eq!(ran.status.code(), Some(1), "{args:?}: {}", said(&ran));
         assert!(
-            said(&ran).contains("nothing was removed"),
+            said(&ran).contains("Nothing was removed"),
             "{args:?}: {}",
             said(&ran)
         );

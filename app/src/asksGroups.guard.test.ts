@@ -73,6 +73,8 @@ const GROUP_OF = {
   "one-address": "consent",
   "clone-with-sign-in": "consent",
   "record-repo": "consent",
+  // A persona or branch folder a chat asked to remove (T1.1-67): for good, so a consent.
+  removal: "consent",
   // Trust these clones (T1-15): the project's unrecorded clones, trusted by one press.
   "trust-clones": "consent",
   confirmation: "consent",

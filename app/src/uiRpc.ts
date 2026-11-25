@@ -1742,6 +1742,8 @@ export const commands = {
 	useOneAddress: __WINDOW_ONLY_RESULT,
 	cloneWithSignIn: __WINDOW_ONLY_RESULT,
 	recordRepo: __WINDOW_ONLY_RESULT,
+	removeListed: __WINDOW_ONLY_RESULT,
+	keepRemoval: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Make a workspace: `charter workspace create <name>`, with the vision when one was typed.
 	 * 
@@ -3332,6 +3334,13 @@ export type AnswerPath =
  */
 { via: "record-repo"; workspace: string; clone: string; place: string } | 
 /**
+ *  `remove_listed` for the press and `keep_removal` for Keep, on one persona (`what` is
+ *  `persona`, `name` its name) or branch folder (`what` is `branch-folder`, `name` its repo,
+ *  `piece` its piece, in `workspace`): `listed` is exactly what the row showed, which the
+ *  press removes only while the thing still holds exactly that.
+ */
+{ via: "removal"; workspace: string; what: string; name: string; piece: string; force: boolean; ignored: boolean; listed: string[] } | 
+/**
  *  `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
  *  clone Notice's own command, and each clone it trusts leaves the ask (R-336).
  */
@@ -3853,6 +3862,13 @@ export type AskSource =
  *  origin names, as `purlis discover` does for that one clone, so a chat can read its forge.
  */
 "record-repo" | 
+/**
+ *  **A persona or a branch folder a chat asked the person to remove** (T1.1-67, Q304 Q2): the
+ *  removal ask, widened beside the workspace's. The row names the thing and lists exactly what
+ *  goes, the press removes exactly that while it still holds exactly that, and Keep removes
+ *  nothing. A listing that was not exact offers Keep only.
+ */
+"removal" | 
 /**
  *  **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
  *  never one per clone. Trust all records each, as its Notice's Trust this clone does.
@@ -12985,6 +13001,20 @@ export type RemoteReaders =
  *  answer. Never read as private.
  */
 { kind: "unknown"; why: string };
+
+/**
+ *  **A removal's row, as the window sent it back** (T1.1-67): what the row showed, so that the
+ *  press removes exactly that and nothing else. `what` is `persona` or `branch-folder`.
+ */
+export type RemovalRow = {
+	workspace: string,
+	what: string,
+	name: string,
+	piece: string,
+	force: boolean,
+	ignored: boolean,
+	listed: string[],
+};
 
 /**
  *  What opening a repo on the first run came to: opened, or a question about the forge.

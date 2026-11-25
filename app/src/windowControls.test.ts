@@ -284,7 +284,6 @@ const NO_ASK_YET =
  * and its message names the control; one that names none is held here, so a new one fails.
  */
 const FROM_THE_WINDOW: ReadonlyArray<readonly [path: string, starts: string, why: string]> = [
-  ["crates/purlis-cli/src/brokered.rs", "a chat does not force a branch folder's", NAMED_IN_WORDS],
   [
     "crates/purlis-cli/src/brokered.rs",
     "a sandboxed chat does not remove a branch",
@@ -299,16 +298,11 @@ const FROM_THE_WINDOW: ReadonlyArray<readonly [path: string, starts: string, why
   ["crates/purlis-core/src/renamelocal/keychain.rs", "it waits for you to finish", NOT_A_REFUSAL],
   ["crates/purlis-core/src/savefix.rs", "find why these checks failed", NOT_A_REFUSAL],
   ["crates/purlis-cli/src/brokered.rs", "a sandboxed chat changes only its own", NO_ASK_YET],
-  ["crates/purlis-cli/src/brokered.rs", "a sandboxed chat does not remove a persona", NO_ASK_YET],
-  ["crates/purlis-cli/src/brokered.rs", "a sandboxed chat does not remove a workspace", NO_ASK_YET],
   ["crates/purlis-cli/src/brokered.rs", "this chat {runs_as}", NO_ASK_YET],
   ["crates/purlis-cli/src/handoff.rs", "{HANDOFF_SAYS} no purlis app answered", NO_ASK_YET],
-  ["crates/purlis-core/src/dispatchguard.rs", "this call runs `purlis worktree", NO_ASK_YET],
   ["crates/purlis-core/src/hoststart.rs", "this chat's profile hands its program", NO_ASK_YET],
   ["crates/purlis-core/src/hoststart.rs", "this session host composes", NO_ASK_YET],
   ["crates/purlis-core/src/mergehold.rs", "{OPENS} `purlis change land`", NO_ASK_YET],
-  ["crates/purlis-core/src/piececmd.rs", "{repo} · {piece} holds files git ignores", NO_ASK_YET],
-  ["crates/purlis-core/src/piececmd.rs", "{why}. Nothing was removed", NO_ASK_YET],
   ["crates/purlis-core/src/planegit/bringin.rs", "{target} comes in from the window", NO_ASK_YET],
   ["crates/purlis-core/src/planegit/prsave.rs", "{request} merged, and {target} moves", NO_ASK_YET],
 ];

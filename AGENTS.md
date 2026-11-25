@@ -268,3 +268,15 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
 - `pgrep` and `ps` see no other process in the sandbox, so a wait written as `until ! pgrep …` ends at once. Wait on a background command's output file instead:
   `timeout 585 bash -c "until grep -q 'Finished\|error' <file>; do sleep 20; done"`.
 - `git fetch` and `git merge` cannot write the worktree's git folder in the sandbox: bring the base in with `purlis worktree update --merge --base origin/<base>` (alone in its call), resolve, then `--continue`. The ratchet judges marks against the base's commit time, so after a merge a mark on an existing cell for an issue filed before that commit fails `the_marks_keep_their_ratchet_against_the_base`.
+- A Bash call whose text names a forced worktree removal or a worktree removal beside another
+  command (in a heredoc or a Python string too) is refused by purlis's own guard: write such text
+  with the Write tool into the scratchpad and run the file with `python3 -I`. macOS `sed -i` needs
+  an argument (`-i ''`); an edit script is simpler.
+- A core integration test (`tests/it`) is never "in the app", so `enforcement::mode` is `enforce`
+  there whatever `charter.toml` says; a `log` test lives in the crate's own lib tests (`windowonly/
+  tests.rs`), where `in_the_app()` is true. The app runs no family looser than `log` before the
+  person accepted: `off` waits for CI.
+- A test that cuts a branch folder with `purlis worktree add` as "a terminal" is read as a chat's
+  when this chat's process is above it: cut it with `git worktree add -b <piece> <folder>` instead.
+- The app's handoff tests (`handoff::tests::a_chat_asking_*`) fail in a sandboxed chat with "the
+  program lives where this chat can write": they are CI's.

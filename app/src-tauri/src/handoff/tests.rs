@@ -3623,6 +3623,76 @@ fn a_refused_sandboxed_codex_start_tells_the_window_and_its_asks_hold_one_sandbo
 }
 
 #[test]
+fn a_chat_asking_to_remove_a_persona_raises_the_one_removal_ask_and_removes_nothing() {
+    // T1.1-67: `purlis persona remove` in a sandboxed chat is handed to the app, which raises one
+    // removal ask listing what goes. Nothing is removed by asking, and a name that is no persona
+    // of this project asks the person nothing.
+    use purlis_core::hookwire::{RemovalAsk, Removing};
+
+    let plane = Plane::new();
+    let steward = plane.root.join("personas/steward");
+    std::fs::create_dir_all(steward.join("memory")).unwrap();
+    std::fs::write(
+        steward.join("persona.md"),
+        "---\nrole: steward\n---\n# steward\n",
+    )
+    .unwrap();
+    std::fs::write(steward.join("memory/one.md"), "one\n").unwrap();
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let asking = a_chat_on_work(&held, &plane.root);
+    let tickets = Tickets::default();
+    let ask = |name: &str| {
+        Ask::Removal(RemovalAsk {
+            chat: asking,
+            removing: Removing::Persona {
+                name: name.to_owned(),
+            },
+        })
+    };
+    let removals = || -> Vec<(u32, String)> {
+        crate::asking::every_ask(&held)
+            .asks
+            .into_iter()
+            .filter(|one| one.source == crate::asking::AskSource::Removal)
+            .map(|one| (one.session, one.says))
+            .collect()
+    };
+
+    // Asked twice: one ask, naming the persona and listing what goes, and it is still there.
+    for _ in 0..2 {
+        let Answer::No { why } = answer(&held, &id, &tickets, 1, ask("steward"), &|_| {}) else {
+            panic!("not told");
+        };
+        assert!(why.contains("Remove persona is on the ask"), "{why}");
+    }
+    let asked = removals();
+    assert_eq!(asked.len(), 1, "{asked:?}");
+    assert_eq!(asked[0].0, asking);
+    assert!(
+        asked[0].1.contains("persona steward")
+            && asked[0].1.contains("personas/steward/memory: 1 memories"),
+        "{}",
+        asked[0].1
+    );
+    assert!(
+        steward.join("persona.md").is_file(),
+        "asking removes nothing"
+    );
+
+    // What is no persona of this project asks the person nothing.
+    for name in ["nobody", "../steward", ""] {
+        let Answer::No { why } = answer(&held, &id, &tickets, 1, ask(name), &|_| {}) else {
+            panic!("{name:?} was not refused");
+        };
+        assert!(why.contains("the person was not asked"), "{name:?}: {why}");
+    }
+    assert_eq!(removals().len(), 1);
+}
+
+#[test]
 fn a_chat_asking_to_remove_a_workspace_removes_nothing_and_is_told_what_the_person_decided() {
     // qw356: Safe remove's chat ran `purlis workspace remove` and was refused with nothing
     // for the person to press. The ask is now a question in the registry, on its tab; only

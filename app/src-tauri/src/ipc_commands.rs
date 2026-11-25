@@ -625,6 +625,8 @@ macro_rules! app_commands {
                 clonevouch::use_one_address,
                 clonevouch::clone_with_sign_in,
                 clonevouch::record_repo,
+                windowonlyasks::remove_listed,
+                windowonlyasks::keep_removal,
                 workspaces::workspace_create,
                 live::workspace_live_preview,
                 live::workspace_live,

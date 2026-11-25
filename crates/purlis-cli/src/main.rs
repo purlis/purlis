@@ -3534,7 +3534,7 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
             // name, and asks the person in its window (qw356); the sentence says which.
             let target = wscmd::workspace_dir(&root, name);
             if brokered::removal_held(&root, target.as_deref()) {
-                return Some(refused(&brokered::removal_asked_of_the_person(name)));
+                return Some(refused(&brokered::removal_asked_of_the_person(&root, name)));
             }
             // The list it refused on is the window's (charter-app#182): a terminal has already
             // been given every sentence in it, by the refusal itself.

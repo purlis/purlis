@@ -35,3 +35,83 @@ pub fn asked(held: &Held, ask: &WindowOnlyAsk) -> Answer {
         Ok(said) | Err(said) => no(said),
     }
 }
+
+/// **A removal's row, as the window sent it back** (T1.1-67): what the row showed, so that the
+/// press removes exactly that and nothing else. `what` is `persona` or `branch-folder`.
+#[derive(Debug, Clone, serde::Deserialize, specta::Type)]
+pub struct RemovalRow {
+    pub workspace: String,
+    pub what: String,
+    pub name: String,
+    pub piece: String,
+    pub force: bool,
+    pub ignored: bool,
+    pub listed: Vec<String>,
+}
+
+impl RemovalRow {
+    /// The control the row was raised as. A row is pressed only where its listing was exact.
+    fn control(self) -> Result<purlis_core::windowonly::Control, String> {
+        use purlis_core::hookwire::Removing;
+        let removing = match self.what.as_str() {
+            "persona" => Removing::Persona { name: self.name },
+            "branch-folder" => Removing::BranchFolder {
+                repo: self.name,
+                piece: self.piece,
+                force: self.force,
+                ignored: self.ignored,
+            },
+            other => return Err(format!("'{other}' is not something a chat asks to remove")),
+        };
+        Ok(purlis_core::windowonly::Control::Remove {
+            removing,
+            workspace: self.workspace,
+            listed: self.listed,
+            exact: true,
+        })
+    }
+}
+
+/// **The person's press on a removal ask** (T1.1-67, Q304 Q2): removes the persona or branch
+/// folder the row listed, as their own `purlis persona remove` or `purlis worktree remove`
+/// would, and only while it still holds exactly what the row listed. Anything that differs (a new
+/// change, a new commit, another ignored file) refreshes the row and removes nothing. Answers what
+/// the removal said, or why nothing was removed.
+///
+/// Window only (`WINDOW_ONLY`): a removal is for good.
+#[tauri::command]
+#[specta::specta]
+pub async fn remove_listed(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    row: RemovalRow,
+) -> Result<String, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        purlis_core::forge::route::HostScope::claim()
+            .ok_or_else(|| "A removal is pressed in the window alone.".to_owned())?;
+        purlis_core::windowonly::remove_listed(&root, &row.control()?)
+    })
+    .await
+    .map_err(|err| format!("the removal did not finish: {err}"))?
+}
+
+/// **The person kept it** (Keep on a removal ask): every chat's ask for it goes, and nothing is
+/// removed.
+///
+/// Window only (`WINDOW_ONLY`), as the press it answers.
+#[tauri::command]
+#[specta::specta]
+pub async fn keep_removal(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: crate::planes::PlaneId,
+    row: RemovalRow,
+) -> Result<(), String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || {
+        purlis_core::windowonly::keep_listed(&root, &row.control()?);
+        Ok(())
+    })
+    .await
+    .map_err(|err| format!("keeping it did not finish: {err}"))?
+}

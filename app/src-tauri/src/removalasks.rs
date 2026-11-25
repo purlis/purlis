@@ -173,7 +173,22 @@ pub fn asked(held: &Held, ask: &RemovalAsk) -> Answer {
     if let Err(why) = held.brokered().allow(ask.chat, std::time::Instant::now()) {
         return no(why);
     }
-    let Removing::Workspace { name } = &ask.removing;
+    let name = match &ask.removing {
+        Removing::Workspace { name } => name,
+        // A persona's and a branch folder's removal are raised as the one window-only removal
+        // ask, listing exactly what goes (T1.1-67): the chat's workspace is the app's own record.
+        other => {
+            let workspace = held.chats().workspace_of(ask.chat).flatten();
+            return match purlis_core::windowonly::ask_to_remove(
+                held.root(),
+                ask.chat,
+                workspace.as_deref(),
+                other,
+            ) {
+                Ok(said) | Err(said) => no(said),
+            };
+        }
+    };
     let (said, news) = asked_in(
         held.root(),
         held.removal_asks(),

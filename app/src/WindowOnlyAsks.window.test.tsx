@@ -69,7 +69,12 @@ function core({
     if (cmd === "asks_waiting")
       return { plane: PLANE, asks, with_asking_chat: [], on_finish_rows: onFinishRows };
     if (cmd === "finished_turns") return turns;
-    if (cmd === "use_one_address" || cmd === "clone_with_sign_in" || cmd === "record_repo")
+    if (
+      cmd === "use_one_address" ||
+      cmd === "clone_with_sign_in" ||
+      cmd === "record_repo" ||
+      cmd === "remove_listed"
+    )
       return "done";
     if (cmd === "vouch_clone") {
       if (refuses !== undefined) throw refuses;
@@ -297,6 +302,43 @@ describe("a window-only ask, Blocking or on its chat's finish row (T1-42, R-329)
           workspace: "alpha",
           clone: "api",
           place: "github.com/acme/api",
+        },
+      },
+    },
+    {
+      // A removal a chat asked for (T1.1-67): the press sends exactly what the row listed.
+      label: /^Remove persona/,
+      cmd: "remove_listed",
+      args: {
+        plane: PLANE,
+        row: {
+          workspace: "",
+          what: "persona",
+          name: "steward",
+          piece: "",
+          force: false,
+          ignored: false,
+          listed: ["personas/steward/persona.md", "personas/steward/memory: 3 memories"],
+        },
+      },
+      ask: {
+        ...TRUST_CLONE,
+        ask: "removal:2:|persona|steward",
+        says: "Remove persona steward? Removing it deletes exactly this: personas/steward/persona.md; personas/steward/memory: 3 memories.",
+        options: [
+          { id: "press", label: "Remove persona", allows: true },
+          { id: "keep", label: "Keep", allows: false },
+        ],
+        source: "removal",
+        answer: {
+          via: "removal",
+          workspace: "",
+          what: "persona",
+          name: "steward",
+          piece: "",
+          force: false,
+          ignored: false,
+          listed: ["personas/steward/persona.md", "personas/steward/memory: 3 memories"],
         },
       },
     },

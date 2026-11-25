@@ -592,3 +592,62 @@ fn asking_to_record_raises_no_ask_where_policy_consents_do_not_ask() {
         assert_eq!(every(root), [], "{policy}");
     }
 }
+
+/// A plane under `strict`, with `policy` appended, holding the persona `steward` and one memory.
+fn a_plane_with_a_persona(policy: &str) -> tempfile::TempDir {
+    let plane = tempfile::tempdir().unwrap();
+    let root = plane.path();
+    std::fs::write(
+        root.join("charter.toml"),
+        format!("[policy]\ntemplate = \"strict\"\n{policy}"),
+    )
+    .unwrap();
+    let steward = root.join("personas/steward");
+    std::fs::create_dir_all(steward.join("memory")).unwrap();
+    std::fs::write(
+        steward.join("persona.md"),
+        "---\nrole: steward\n---\n# steward\n",
+    )
+    .unwrap();
+    std::fs::write(steward.join("memory/one.md"), "one\n").unwrap();
+    plane
+}
+
+#[test]
+fn under_log_a_removal_runs_as_the_chat_asked_with_no_ask_and_a_quiet_log_line() {
+    // Q308b: the family of every removal here is `guards.plane`. Under `log` the check runs and
+    // allows, so the persona is removed as the chat asked and no ask is raised, with one quiet
+    // line naming the rule. Under `enforce` (the template's) the person is asked and nothing is
+    // removed. (`off` waits on what the person accepted: the app never runs a family looser than
+    // `log` before they have, so it is not what a project's file alone can show.)
+    let removing = crate::hookwire::Removing::Persona {
+        name: "steward".to_owned(),
+    };
+    for (policy, removed, logged_line) in [
+        ("", false, false),
+        ("guards.plane = \"enforce\"\n", false, false),
+        ("guards.plane = \"log\"\n", true, true),
+    ] {
+        let plane = a_plane_with_a_persona(policy);
+        let root = plane.path();
+        // The log is the app's, shared by every plane of a test run: count what this adds.
+        let logged = || -> usize {
+            std::fs::read_dir(crate::enforcement::log_dir(root))
+                .into_iter()
+                .flatten()
+                .filter_map(|entry| std::fs::read_to_string(entry.ok()?.path()).ok())
+                .map(|lines| lines.matches("plane.removal").count())
+                .sum()
+        };
+        let before = logged();
+        let said = ask_to_remove(root, 4, None, &removing).unwrap();
+        assert_eq!(
+            !root.join("personas/steward").exists(),
+            removed,
+            "{policy:?}"
+        );
+        assert_eq!(every(root).is_empty(), removed, "{policy:?}: {said}");
+        assert_eq!(logged() - before, usize::from(logged_line), "{policy:?}");
+        project_ended(root);
+    }
+}

@@ -485,43 +485,83 @@ pub fn not_its_workspace(what: &str, instead: &str) -> String {
     )
 }
 
-/// The sentence `purlis workspace remove <name>` is refused with in a chat the app started under
-/// the sandbox (#1408, D-qw301-1): removing a workspace deletes what other chats and the person
-/// rely on, which no write purlis makes for a chat reaches. Refused before anything is deleted,
-/// naming the way round.
-pub fn no_removal_in_a_sandbox(name: &str) -> String {
-    format!(
-        "a sandboxed chat does not remove a workspace: removing '{}' deletes its memory, its \
-         todos and its clones, which is the person's to decide, so nothing was removed. Ask the \
-         person to remove it from the window",
-        purlis_core::shown::short(name)
+/// **What a chat's removal is answered with** (T1.1-67, Q304 Q2): the removal is handed to the
+/// app as [`Ask::Removal`], which asks the person in its window and answers with the sentence
+/// that says so ([`purlis_core::removalask`], [`purlis_core::windowonly::ask_to_remove`]).
+/// **Nothing is removed here either way.** Whatever the app answered, the words are
+/// [`purlis_core::windowonly::removal_refusal`]'s: the app's own where it raised the ask; where
+/// it could not read the ask, that the app and this purlis are different builds, with the restart
+/// words, and never a refusal; where no app answered, that nobody was asked, with the way out in
+/// words (rule H). `what` names the thing, `then` what the person does once purlis is open.
+fn removal_asked(root: &Path, removing: hookwire::Removing, what: &str, then: &str) -> String {
+    use purlis_core::windowonly::{AppSaid, removal_refusal};
+    let asked = asked(
+        |chat| Ask::Removal(hookwire::RemovalAsk { chat, removing }),
+        A_WRITE_TAKES_AT_MOST,
+    );
+    let said = match asked {
+        Ok(Ok(Answer::No { why })) if why == hookwire::UNKNOWN_LINE => AppSaid::Older,
+        Ok(Ok(Answer::No { why })) if why == hookwire::NOTHING_ANSWERS => AppSaid::Unheard,
+        Ok(Ok(Answer::No { why })) => AppSaid::Told(why),
+        _ => AppSaid::Unheard,
+    };
+    removal_refusal(root, what, then, said)
+}
+
+/// **What `purlis workspace remove <name>` says where the removal is held** (qw356): the name
+/// is handed to the app that started this chat, which asks the person in its window. Nothing but
+/// the name is handed over: a `--force` has no field to travel in. Where no app answers it says
+/// that nobody was asked: open purlis and remove '<name>' in Asks once you run this again.
+pub fn removal_asked_of_the_person(root: &Path, name: &str) -> String {
+    let shown = purlis_core::shown::short(name);
+    removal_asked(
+        root,
+        hookwire::Removing::Workspace {
+            name: name.to_owned(),
+        },
+        &format!("workspace '{shown}'"),
+        &format!("remove '{shown}' in Asks"),
     )
 }
 
-/// **What `purlis workspace remove <name>` says where the removal is held** (qw356): the
-/// refusal was a dead end, so the name is handed to the app that started this chat, which asks
-/// the person in its window and answers with the sentence that says so
-/// ([`purlis_core::removalask`]). Nothing is removed here either way, and nothing but the name
-/// is handed over: a `--force` has no field to travel in.
-///
-/// Where no app asks the person (no chat, no connection, an app older than the ask, or one
-/// that did not answer), it is [`no_removal_in_a_sandbox`], as before.
-pub fn removal_asked_of_the_person(name: &str) -> String {
-    let asked = asked(
-        |chat| {
-            Ask::Removal(hookwire::RemovalAsk {
-                chat,
-                removing: hookwire::Removing::Workspace {
-                    name: name.to_owned(),
-                },
-            })
+/// **What `purlis persona remove <name>` says in a chat the app started under the sandbox**
+/// (#1408, T1.1-67): removing a persona deletes its definition, its memory and its curation
+/// actions, so the name is handed to the app, which asks the person and lists exactly what goes.
+pub fn persona_removal_asked_of_the_person(root: &Path, name: &str) -> String {
+    let shown = purlis_core::shown::short(name);
+    removal_asked(
+        root,
+        hookwire::Removing::Persona {
+            name: name.to_owned(),
         },
-        A_WRITE_TAKES_AT_MOST,
+        &format!("persona '{shown}'"),
+        &format!("the ask is in Asks, where the person can remove '{shown}'"),
+    )
+}
+
+/// **What a forced branch folder removal says in a chat** (#3879, T1.1-67): forcing discards the
+/// uncommitted changes and unique commits a plain removal names, which is the person's to
+/// decide, so the removal is handed to the app, which asks the person and lists exactly what
+/// would be discarded.
+pub fn forced_piece_removal_asked_of_the_person(root: &Path, repo: &str, piece: &str) -> String {
+    let (shown_repo, shown_piece) = (
+        purlis_core::shown::short(repo),
+        purlis_core::shown::short(piece),
     );
-    match asked {
-        Ok(Ok(Answer::No { why })) if why != hookwire::NOTHING_ANSWERS => why,
-        _ => no_removal_in_a_sandbox(name),
-    }
+    removal_asked(
+        root,
+        hookwire::Removing::BranchFolder {
+            repo: repo.to_owned(),
+            piece: piece.to_owned(),
+            force: true,
+            ignored: false,
+        },
+        &format!("branch folder '{shown_repo} \u{b7} {shown_piece}'"),
+        &format!(
+            "the ask is in Asks, where the person can remove '{shown_repo} \u{b7} {shown_piece}' \
+             and discard what it holds"
+        ),
+    )
 }
 
 /// **What a chat is told for a clone the project records no repo for** (A3): the app is asked
@@ -550,17 +590,6 @@ pub fn record_repo_asked(root: &Path, clone: &str) -> String {
     record_repo_refusal(root, clone, said)
 }
 
-/// The sentence `purlis persona remove <name>` is refused with in a chat the app started under
-/// the sandbox (#1408): as [`no_removal_in_a_sandbox`], for a persona.
-pub fn no_persona_removal_in_a_sandbox(name: &str) -> String {
-    format!(
-        "a sandboxed chat does not remove a persona: removing '{}' deletes its definition, its \
-         memory and its curation actions, which is the person's to decide, so nothing was \
-         removed. Ask the person to remove it from the window",
-        purlis_core::shown::short(name)
-    )
-}
-
 /// The sentence `purlis worktree remove <repo> <piece>` is refused with in a chat the app
 /// started under the sandbox where no app took the removal (#1408, #3879): the folder's files
 /// go before git's record of it, which a sandboxed chat cannot finish.
@@ -574,23 +603,6 @@ pub fn no_piece_removal_in_a_sandbox(repo: &str, piece: &str) -> String {
          its files and git's record of it, which a sandboxed chat cannot finish, so nothing was \
          removed. Ask the person to remove it from the window: Remove folder {piece} in {repo}, \
          in the palette"
-    )
-}
-
-/// The sentence `purlis worktree remove --force` is refused with in any chat the app started
-/// (#3879): forcing discards the uncommitted changes and unique commits a plain removal names,
-/// which is the person's to decide. The plain removal the app runs for the chat is named too.
-pub fn no_forced_piece_removal_in_a_chat(repo: &str, piece: &str) -> String {
-    let (repo, piece) = (
-        purlis_core::shown::short(repo),
-        purlis_core::shown::short(piece),
-    );
-    format!(
-        "a chat does not force a branch folder's removal: --force discards the work in \
-         '{repo} · {piece}' that a plain removal would name, which is the person's to decide, \
-         so nothing was removed. Without --force the app removes it where nothing would be \
-         lost; otherwise ask the person to remove it from the window: Remove folder {piece} in \
-         {repo}, in the palette"
     )
 }
 

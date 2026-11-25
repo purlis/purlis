@@ -762,6 +762,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     "use_one_address",
     "clone_with_sign_in",
     "record_repo",
+    // A removal a chat asked for (T1.1-67): for good, so the press and Keep are the window's alone.
+    "remove_listed",
+    "keep_removal",
     // Update from remote (qw348): the app brings the project's incoming commits in, which
     // moves its working tree under every chat in it. The person's own press, and no link's:
     // a chat that asks for it raises an item the person reads, and presses nothing.
