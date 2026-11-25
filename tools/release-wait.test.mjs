@@ -37,8 +37,14 @@ function waitScripts() {
   return out;
 }
 
-/** Runs the script with a `gh` that answers `listed` to `run list` and `views` (one per call) to `run view`. */
-function run({ dev = "true", listed = "4242", views = ["completed success"], extraEnv = {} } = {}) {
+/**
+ * Runs the script with a `gh` that answers `listed` to `run list` and `views` (one per call) to `run view`.
+ * The wait loop watches again until `completed` or a two-hour deadline, and the fake `sleep` returns at
+ * once, so a case that expects the step to fail on an unfinished or unreadable ci sets `expired`: the
+ * deadline is already past, as after the two hours, and the first read that is not `completed` ends it.
+ * Every run is cut at 20 s, so a loop that never ends fails the test instead of hanging a runner.
+ */
+function run({ dev = "true", listed = "4242", views = ["completed success"], extraEnv = {}, expired = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "release-wait-"));
   const log = join(dir, "calls.log");
   writeFileSync(join(dir, "count"), "0");
@@ -62,9 +68,12 @@ esac
   writeFileSync(join(dir, "sleep"), "#!/bin/bash\nexit 0\n");
   chmodSync(join(dir, "gh"), 0o755);
   chmodSync(join(dir, "sleep"), 0o755);
-  const script = waitScripts()[0]
+  const original = waitScripts()[0];
+  assert.ok(original.includes("deadline=$((SECONDS + 7200))"), "the wait's deadline moved");
+  const script = original
     .replace(RUNNER_PATH, `PATH=${dir}:/usr/bin:/bin`)
-    .replace("/usr/bin/gh |", `${dir}/gh |`);
+    .replace("/usr/bin/gh |", `${dir}/gh |`)
+    .replace("deadline=$((SECONDS + 7200))", expired ? "deadline=$((SECONDS - 1))" : "deadline=$((SECONDS + 7200))");
   assert.ok(script.includes(`${dir}/gh |`), "the gh allow-list line moved");
   const output = join(dir, "output");
   const summary = join(dir, "summary");
@@ -72,6 +81,7 @@ esac
   writeFileSync(summary, "");
   const result = spawnSync("/bin/bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", script], {
     encoding: "utf8",
+    timeout: 20_000,
     env: { ...extraEnv, DEV: dev, GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: summary, GITHUB_REPOSITORY: "purlis/purlis", GITHUB_SHA: "abc123", GH_TOKEN: "x", PATH: "/usr/bin:/bin" },
   });
   let calls = "";
@@ -80,6 +90,7 @@ esac
   } catch {
     // no call was made
   }
+  assert.ok(!result.error, `the step did not end within 20 s: ${result.error}`);
   return {
     code: result.status,
     out: result.stdout + result.stderr,
@@ -134,10 +145,17 @@ test("a conclusion the step cannot read as green or red ends it non-zero and ans
 });
 
 test("a ci with no conclusion yet ends the step", () => {
-  const r = run({ views: ["in_progress none"] });
+  const r = run({ views: ["in_progress none"], expired: true });
   assert.equal(r.code, 1);
   assert.match(r.out, /is in_progress after the wait/);
   assert.equal(r.output, "");
+});
+
+test("a ci still running when a watch ends early is watched again until it completes", () => {
+  const r = run({ views: ["in_progress none", "queued none", "error", "error", "error", "completed success"] });
+  assert.equal(r.code, 0, r.out);
+  assert.equal(r.output, "green=true\n");
+  assert.ok(r.calls.split("\n").filter((l) => l.startsWith("run watch")).length >= 3, r.calls);
 });
 
 test("a ci run that is never listed ends the step", () => {
@@ -154,7 +172,7 @@ test("an API error on the read is tried again, and a green answer after it passe
 });
 
 test("three API errors in a row end the step non-zero, and a red answer after an error is still a red commit", () => {
-  const faulty = run({ views: ["error", "error", "error"] });
+  const faulty = run({ views: ["error", "error", "error"], expired: true });
   assert.equal(faulty.code, 1);
   assert.equal(faulty.output, "");
   const red = run({ views: ["error", "completed failure"] });

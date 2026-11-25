@@ -190,12 +190,37 @@ jobs:
           done
           [ -n "$id" ] || { echo "::error::no ci run of $GITHUB_SHA on its push to main was listed within five minutes, so nothing is built"; exit 1; }
           echo "Waiting for ci run $id of $GITHUB_SHA."
-          # The watch's own exit says little (it ends nonzero for a red run and for a lost
-          # connection alike), so the run's state is read again after it.
-          gh run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
-          state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is built"; exit 1; }
-          read -r status conclusion <<< "$state"
-          [ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is built"; exit 1; }
+          # The watch's own exit says little: it ends nonzero for a red run and for a lost connection
+          # alike, and it ends early, still nonzero, when GitHub answers a poll with a 502 (dev build
+          # 45579545279). So the run's state is read after every watch, and only `completed` ends the
+          # wait: anything else watches again, until a deadline of two hours from the step's start. (The
+          # job's timeout-minutes is the hard stop: where earlier steps used part of it, a cancel fails
+          # closed first, and nothing is signed or uploaded either way.) An API
+          # error is never an answer, and nothing is signed or uploaded unless the state read is `completed`
+          # with a conclusion `success`.
+          deadline=$((SECONDS + 7200))
+          status=unread
+          conclusion=none
+          while :; do
+            gh run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
+            read_ok=false
+            if state=$(ask "$id"); then
+              read -r status conclusion <<< "$state"
+              read_ok=true
+              if [ "$status" = completed ]; then
+                break
+              fi
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              if [ "$read_ok" != true ] || [ "$status" = unread ]; then
+                echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is built"
+              else
+                echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is built"
+              fi
+              exit 1
+            fi
+            sleep 30
+          done
           # A cancelled or red `ci` is `green=false`, never green.
           if [ "$conclusion" = success ]; then
             echo "green=true" >> "$GITHUB_OUTPUT"
@@ -918,12 +943,37 @@ jobs:
           done
           [ -n "$id" ] || { echo "::error::no ci run of $GITHUB_SHA on its push to main was listed within five minutes, so nothing is signed or uploaded"; exit 1; }
           echo "Waiting for ci run $id of $GITHUB_SHA."
-          # The watch's own exit says little (it ends nonzero for a red run and for a lost
-          # connection alike), so the run's state is read again after it.
-          "$gh" run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
-          state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"; exit 1; }
-          read -r status conclusion <<< "$state"
-          [ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"; exit 1; }
+          # The watch's own exit says little: it ends nonzero for a red run and for a lost connection
+          # alike, and it ends early, still nonzero, when GitHub answers a poll with a 502 (dev build
+          # 45579545279). So the run's state is read after every watch, and only `completed` ends the
+          # wait: anything else watches again, until a deadline of two hours from the step's start. (The
+          # job's timeout-minutes is the hard stop: where earlier steps used part of it, a cancel fails
+          # closed first, and nothing is signed or uploaded either way.) An API
+          # error is never an answer, and nothing is signed or uploaded unless the state read is `completed`
+          # with a conclusion `success`.
+          deadline=$((SECONDS + 7200))
+          status=unread
+          conclusion=none
+          while :; do
+            "$gh" run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
+            read_ok=false
+            if state=$(ask "$id"); then
+              read -r status conclusion <<< "$state"
+              read_ok=true
+              if [ "$status" = completed ]; then
+                break
+              fi
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              if [ "$read_ok" != true ] || [ "$status" = unread ]; then
+                echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"
+              else
+                echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"
+              fi
+              exit 1
+            fi
+            sleep 30
+          done
           # A `ci` that ended red or cancelled is not a fault of this build: it did its job, which is
           # to sign and publish nothing for that commit. It ends green, with `green=false`, and
           # every later step of the job skips on that output. Anything else (a state this step
@@ -1734,12 +1784,37 @@ jobs:
           done
           [ -n "$id" ] || { echo "::error::no ci run of $GITHUB_SHA on its push to main was listed within five minutes, so nothing is signed or uploaded"; exit 1; }
           echo "Waiting for ci run $id of $GITHUB_SHA."
-          # The watch's own exit says little (it ends nonzero for a red run and for a lost
-          # connection alike), so the run's state is read again after it.
-          "$gh" run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
-          state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"; exit 1; }
-          read -r status conclusion <<< "$state"
-          [ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"; exit 1; }
+          # The watch's own exit says little: it ends nonzero for a red run and for a lost connection
+          # alike, and it ends early, still nonzero, when GitHub answers a poll with a 502 (dev build
+          # 45579545279). So the run's state is read after every watch, and only `completed` ends the
+          # wait: anything else watches again, until a deadline of two hours from the step's start. (The
+          # job's timeout-minutes is the hard stop: where earlier steps used part of it, a cancel fails
+          # closed first, and nothing is signed or uploaded either way.) An API
+          # error is never an answer, and nothing is signed or uploaded unless the state read is `completed`
+          # with a conclusion `success`.
+          deadline=$((SECONDS + 7200))
+          status=unread
+          conclusion=none
+          while :; do
+            "$gh" run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
+            read_ok=false
+            if state=$(ask "$id"); then
+              read -r status conclusion <<< "$state"
+              read_ok=true
+              if [ "$status" = completed ]; then
+                break
+              fi
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              if [ "$read_ok" != true ] || [ "$status" = unread ]; then
+                echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"
+              else
+                echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"
+              fi
+              exit 1
+            fi
+            sleep 30
+          done
           # A `ci` that ended red or cancelled is not a fault of this build: it did its job, which is
           # to sign and publish nothing for that commit. It ends green, with `green=false`, and
           # every later step of the job skips on that output. Anything else (a state this step
