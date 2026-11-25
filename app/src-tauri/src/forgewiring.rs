@@ -449,11 +449,9 @@ impl HeldContext for ProjectContext {
             cwd: cwd.display().to_string(),
         };
         match crate::mergeholds::asked(&self.held, &ask) {
-            purlis_core::hookwire::Answer::MergeHeld { .. } => {
-                "purlis holds merges. It has asked the person; the merge happens when they approve \
-                 it in Asks."
-                    .to_owned()
-            }
+            purlis_core::hookwire::Answer::MergeHeld { .. } => purlis_core::heldact::said::asked(
+                &purlis_core::heldact::Requested::Merge(request.clone()),
+            ),
             purlis_core::hookwire::Answer::No { why } => {
                 format!("purlis did not hold this merge: {why}")
             }

@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use purlis_core::forge::checks::{Checks, Ci};
 use purlis_core::harness::asks::{Admitted, Answerer};
 use purlis_core::mergehold::{
-    At, Facts, Holds, MergeForge, MergeKey, Merged, NotMerged, Reread, Ruleset, Seen,
+    At, Facts, Holds, LandAs, MergeForge, MergeKey, Merged, NotMerged, Reread, Ruleset, Seen,
 };
 
 const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -135,38 +135,38 @@ fn the_digest_is_of_what_is_shown_and_the_ask_holds_the_window_to_it() {
     purlis_core::unsteered!();
     let shown = facts(Ci::Passed, "Add the parser", 1_000);
     assert_eq!(
-        shown.digest(),
-        facts(Ci::Passed, "Add the parser", 2_000).digest(),
+        shown.digest(LandAs::Merge),
+        facts(Ci::Passed, "Add the parser", 2_000).digest(LandAs::Merge),
         "the time of a read is no part of it"
     );
     assert_ne!(
-        shown.digest(),
-        facts(Ci::Failed, "Add the parser", 1_000).digest()
+        shown.digest(LandAs::Merge),
+        facts(Ci::Failed, "Add the parser", 1_000).digest(LandAs::Merge)
     );
     assert_ne!(
-        shown.digest(),
-        facts(Ci::Passed, "Add the parse", 1_000).digest()
+        shown.digest(LandAs::Merge),
+        facts(Ci::Passed, "Add the parse", 1_000).digest(LandAs::Merge)
     );
     assert_ne!(
-        shown.digest(),
+        shown.digest(LandAs::Merge),
         Facts {
             approved_by: Some("ana".to_owned()),
             squash: false,
             ..shown.clone()
         }
-        .digest()
+        .digest(LandAs::Merge)
     );
 
     let holds = Holds::default();
     holds.raise(4, key(), shown.clone(), 1_000);
-    assert!(holds.shows(4, &key(), &shown.digest()));
+    assert!(holds.shows(4, &key(), &shown.digest(LandAs::Merge)));
     assert!(!holds.shows(
         4,
         &key(),
-        &facts(Ci::Failed, "Add the parser", 1_000).digest()
+        &facts(Ci::Failed, "Add the parser", 1_000).digest(LandAs::Merge)
     ));
     assert!(
-        !holds.shows(5, &key(), &shown.digest()),
+        !holds.shows(5, &key(), &shown.digest(LandAs::Merge)),
         "another chat's ask"
     );
 }
