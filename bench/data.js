@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795574274404,
+  "lastUpdate": 1795577912430,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54390,6 +54390,48 @@ window.BENCHMARK_DATA = {
             "value": 102.53246200000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.613, 102.124, 102.532, 103.236, 103.435 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7ac2aab05d8ccfe35c7124aaa33171c9e8b482a7",
+          "message": "Time every step of a remote start: SSH forward, docker checks, link, handshake, runner and browser start (#7182) (#7235)\n\n* Time every step of a remote start (#7182), carried from the stalled lane's 9c00febc23\n\nRefs #7182, part of #7180.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAE6B2Z1KR0XNBP631VZ0N\nPurlis-Persona: steward\n\n* Steps: a guard dropped without done() reads refused; parent field, debug level for calls (#7182)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAE6B2Z1KR0XNBP631VZ0N\nPurlis-Persona: steward\n\n* Step timings: every call site is refused unless it ends done (#7182)\n\nRefs #7182, part of #7180.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAE6B2Z1KR0XNBP631VZ0N\nPurlis-Persona: steward\n\n* Docker steps: calls at debug, verb past global flags, runner_start under container_check (#7182)\n\nRefs #7182, part of #7180.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAE6B2Z1KR0XNBP631VZ0N\nPurlis-Persona: steward\n\n* Browser engine steps use the shared guard; prepare logs only when it prepares, download under its parent (#7182)\n\nRefs #7182, part of #7180.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAE6B2Z1KR0XNBP631VZ0N\nPurlis-Persona: steward\n\n* Parity test: fails without its fixture under CI, scoped subscriber, parent column (#7182)\n\nRefs #7182, part of #7180.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAE6B2Z1KR0XNBP631VZ0N\nPurlis-Persona: steward\n\n* Baseline doc and changelog: pool alias is deliberate, nested steps are not summed (#7182)\n\nRefs #7182, part of #7180.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAE6B2Z1KR0XNBP631VZ0N\nPurlis-Persona: steward\n\n* cargo fmt on steps.rs (#7182)\n\nRefs #7182, part of #7180.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAE6B2Z1KR0XNBP631VZ0N\nPurlis-Persona: steward\n\n* Review of the step timings: parity fixture gate is PURLIS_PARITY, link_prepare and browser prepare write a line only when they work (#7182)\n\nThe general test job sets CI and has no fixture, so the missing-fixture failure\nis the parity job's (PURLIS_PARITY). No browser_engine_prepare line for an\ninstalled engine; the download is its own step.\n\nRefs #7182, part of #7180.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RAE6B2Z1KR0XNBP631VZ0N\nPurlis-Persona: steward\n\n* Step timings, review 2: parents named by context, cancelled/gave_up/quiet outcomes, whole browser prepare timed, docker verbs by subcommand, parity test narrowed (#7182)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RCCWAK9R3E6EG9GWKDKCQC\nPurlis-Persona: steward",
+          "timestamp": "2026-11-25T02:57:53Z",
+          "tree_id": "4336a01e2cd4408104638f9ebf65b09b13687dac",
+          "url": "https://github.com/purlis/purlis/commit/7ac2aab05d8ccfe35c7124aaa33171c9e8b482a7"
+        },
+        "date": 1795577905577,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5396085,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.522, 0.527, 0.540, 0.548, 0.551 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3250965,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.187, 16.275, 16.325, 16.438, 16.598 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1606115,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.154, 102.138, 102.161, 102.194, 103.125 ms"
           }
         ]
       }
