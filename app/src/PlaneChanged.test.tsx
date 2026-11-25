@@ -48,7 +48,7 @@ let disk: Map<string, string>;
 /** The chats the core put back, and which of them it says are running on instructions the
  *  plane has changed since they started (charter#369). */
 let chatsOpen: unknown[];
-let updated: { session: number; files: string[] }[];
+let updated: { session: number; files: string[]; policy: string[] }[];
 
 /** The workspaces on disk, and the sidebar reads held back to answer late, oldest first: the
  *  core reads the sidebar off the window's thread (SC-2), so an older read can answer after a
@@ -478,7 +478,7 @@ describe("a chat running on instructions the plane has changed since (charter#36
     expect(mark()).toBeNull();
 
     // `CLAUDE.md` edited in another chat, or arriving with a `git pull`.
-    updated = [{ session: 1, files: ["CLAUDE.md"] }];
+    updated = [{ session: 1, files: ["CLAUDE.md"], policy: [] }];
     changed(PLANE);
 
     await waitFor(() => expect(mark()).not.toBeNull());
@@ -487,7 +487,7 @@ describe("a chat running on instructions the plane has changed since (charter#36
 
   it("is not a needs-you item: the queue and its counts stay as they were", async () => {
     chatsOpen = [steward];
-    updated = [{ session: 1, files: ["CLAUDE.md"] }];
+    updated = [{ session: 1, files: ["CLAUDE.md"], policy: [] }];
     core();
     render(<App />);
 

@@ -68,7 +68,7 @@ let waiting: { id: string; name: string; why: string; approval?: Approval | null
 type Approval = { profile: string; kind: string; source: string; approval: string; shown: string };
 /** The profiles the core has recorded an approval for, by name (`approve_profile`). */
 let approved: string[];
-let updated: { session: number; files: string[] }[];
+let updated: { session: number; files: string[]; policy: string[] }[];
 let refuse: Partial<Record<string, string>>;
 /** What the core says each chat is doing (`chat_states`). */
 let states: {
@@ -574,7 +574,7 @@ describe("how a chat came back", () => {
 
 describe("a chat the project's instructions changed under", () => {
   beforeEach(() => {
-    updated = [{ session: 1, files: ["CLAUDE.md"] }];
+    updated = [{ session: 1, files: ["CLAUDE.md"], policy: [] }];
   });
 
   it("is started fresh from its tab's mark, after the question", async () => {

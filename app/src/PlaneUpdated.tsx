@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { dequal } from "dequal/lite";
 import { RefreshCw } from "lucide-react";
 
-import type { Offer } from "./actions";
+import { sandboxOldSaid, type Offer } from "./actions";
 import { commands, type PlaneId, type PlaneUpdated } from "./bindings";
 import { IconButton } from "./ui/button/Button";
 import { Tooltip } from "./ui/tooltip/Tooltip";
@@ -17,10 +17,16 @@ export type PlaneUpdates = Readonly<Record<number, readonly string[]>>;
  *  #3694). */
 export type SkillsChangedHere = Readonly<Record<number, PlaneUpdated>>;
 
-/** What `chats_plane_updated` says, by what the window draws of it. */
-export type PlaneUpdatedHere = { files: PlaneUpdates; skills: SkillsChangedHere };
+/** What `chats_plane_updated` says, by what the window draws of it: the files each chat started on
+ *  that moved, why the shell sandbox of each chat is older than the policy (M75-23), and the
+ *  chats whose skills changed. */
+export type PlaneUpdatedHere = {
+  files: PlaneUpdates;
+  sandbox: PlaneUpdates;
+  skills: SkillsChangedHere;
+};
 
-const NONE_UPDATED: PlaneUpdatedHere = { files: {}, skills: {} };
+const NONE_UPDATED: PlaneUpdatedHere = { files: {}, sandbox: {}, skills: {} };
 
 /**
  * Which of this project's chats are running on instructions the plane has changed since they
@@ -48,6 +54,12 @@ export function usePlaneUpdated(plane: PlaneId, instructionsChanges: number): Pl
       const now: PlaneUpdatedHere = {
         files: Object.fromEntries(
           all.filter((one) => one.files.length > 0).map((one) => [one.session, one.files]),
+        ),
+        // **Not "project updated"** (M75-23): a hook decision already follows every tightening
+        // of the policy, so what is old is the sandbox the chat's shell commands run in,
+        // compiled at its start. Its way out is a restart, which compiles it again.
+        sandbox: Object.fromEntries(
+          all.filter((one) => one.policy.length > 0).map((one) => [one.session, one.policy]),
         ),
         skills: Object.fromEntries(
           all.filter((one) => one.skills).map((one) => [one.session, one]),
@@ -91,23 +103,38 @@ export function planeUpdatedAt(plane: PlaneId, at: number): Promise<readonly Pla
 }
 
 /**
- * The mark on a chat's tab when the plane's instructions changed after it started.
+ * The mark on a chat's tab when the plane's instructions changed after it started, or when the
+ * policy has tightened past the shell sandbox it started with.
  *
  * **Not a needs-you item.** Nothing is waiting on the operator: the chat works, on what it
  * read. So it is a quiet mark beside the pin, not a red count, and it adds nothing to the
- * queue. What it says is what the operator can do about it — start the chat fresh — and which
- * files moved, so they can judge whether that is worth it.
+ * queue. What it says is what the operator can do about it — start the chat fresh, or restart it
+ * for the sandbox — and which files moved, so they can judge whether that is worth it.
  */
-export function PlaneUpdatedMark({ files }: { files?: readonly string[] }) {
-  if (!files || files.length === 0) return null;
+export function PlaneUpdatedMark({
+  files,
+  sandbox,
+}: {
+  files?: readonly string[];
+  sandbox?: readonly string[];
+}) {
+  const moved = files !== undefined && files.length > 0;
+  const old = sandbox !== undefined && sandbox.length > 0;
+  if (!moved && !old) return null;
   return (
     <Tooltip
-      tip={`Project updated since this chat started: ${files.join(", ")}. It runs on what it read at its start until it is started fresh.`}
+      tip={
+        moved
+          ? `Project updated since this chat started: ${files.join(", ")}. It runs on what it read at its start until it is started fresh.${old ? ` ${sandboxOldSaid(sandbox)}` : ""}`
+          : sandboxOldSaid(sandbox ?? [])
+      }
     >
       <span
         className="plane-updated"
         role="img"
-        aria-label="project updated since this chat started"
+        aria-label={
+          moved ? "project updated since this chat started" : "shell sandbox older than the policy"
+        }
       >
         <RefreshCw />
       </span>
@@ -132,34 +159,63 @@ export function FreshMark({
   id,
   offer,
   files,
+  restart,
+  sandbox,
   onPress,
 }: {
   /** What the tab's `aria-describedby` names. */
   id: string;
   offer?: Offer;
   files?: readonly string[];
+  /** The Restart chat row, which a chat whose only change is an older shell sandbox presses
+   *  where Start fresh is greyed (M75-23). */
+  restart?: Offer;
+  /** Why the chat's shell sandbox is older than the policy. */
+  sandbox?: readonly string[];
   onPress: (offer: Offer) => void;
 }) {
-  if (!offer || !files || !freshMarkShown(offer, files)) return null;
-  return (
-    <IconButton
-      id={id}
-      size="sm"
-      className="fresh-mark"
-      excludeFromTabOrder
-      icon={<RefreshCw aria-hidden="true" />}
-      tooltip={`Project updated since this chat started: ${files.join(", ")}. Press to start it fresh on what is there now.`}
-      aria-label={`${offer.title} — project updated since this chat started`}
-      onPress={() => onPress(offer)}
-    />
-  );
+  if (offer && files && freshMarkShown(offer, files)) {
+    return (
+      <IconButton
+        id={id}
+        size="sm"
+        className="fresh-mark"
+        excludeFromTabOrder
+        icon={<RefreshCw aria-hidden="true" />}
+        tooltip={`Project updated since this chat started: ${files.join(", ")}. Press to start it fresh on what is there now.${sandbox && sandbox.length > 0 ? ` ${sandboxOldSaid(sandbox)}` : ""}`}
+        aria-label={`${offer.title} — project updated since this chat started`}
+        onPress={() => onPress(offer)}
+      />
+    );
+  }
+  if (restart && sandbox && freshMarkShown(undefined, undefined, restart, sandbox)) {
+    return (
+      <IconButton
+        id={id}
+        size="sm"
+        className="fresh-mark"
+        excludeFromTabOrder
+        icon={<RefreshCw aria-hidden="true" />}
+        tooltip={`${sandboxOldSaid(sandbox)} Press to restart it, which compiles the sandbox again.`}
+        aria-label={`${restart.title} — shell sandbox older than the policy`}
+        onPress={() => onPress(restart)}
+      />
+    );
+  }
+  return null;
 }
 
-/** Whether a {@link FreshMark} is drawn: there is a Start fresh row, and files that moved. The
- *  tab asks the same, so it is never described by a mark that is not there. */
+/** Whether a {@link FreshMark} is drawn: there is a Start fresh row and files that moved, or a
+ *  Restart row and a shell sandbox older than the policy. The tab asks the same, so it is never
+ *  described by a mark that is not there. */
 export function freshMarkShown(
   offer: Offer | undefined,
   files: readonly string[] | undefined,
+  restart?: Offer,
+  sandbox?: readonly string[],
 ): boolean {
-  return offer !== undefined && files !== undefined && files.length > 0;
+  return (
+    (offer !== undefined && files !== undefined && files.length > 0) ||
+    (restart !== undefined && sandbox !== undefined && sandbox.length > 0)
+  );
 }

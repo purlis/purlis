@@ -477,6 +477,56 @@ pub fn apply(
     served
 }
 
+/// **The answers a chat's sandbox was compiled with** (M75-23, spec §9.5): the nevers that reach
+/// the chat (Everywhere's and its workspace's, and any a build cannot read, which forbid something
+/// unknown) and the grants of `read` and `write` that last (not Once, which its use spends) and
+/// serve it, each as the sealed line it is. A running chat is out of date when a never is in the
+/// second reading that was not in the first, or a grant of the first is gone from the second.
+pub fn held_by(
+    standing: &Standing,
+    workspace: Option<&str>,
+    chat: Option<&str>,
+) -> (BTreeSet<String>, BTreeSet<String>) {
+    let own = if standing.is_deny() {
+        &standing.kept
+    } else {
+        &standing.entries
+    };
+    let nevers = own
+        .iter()
+        .chain(&standing.everywhere)
+        .filter(|entry| entry.kind == answers::NEVER)
+        .filter(|entry| match classify(entry) {
+            Seen::Ours(never) => {
+                never.scope == Scope::Everywhere
+                    || (workspace.is_some() && never.workspace.as_deref() == workspace)
+            }
+            Seen::Dispatch => false,
+            Seen::Unreadable => true,
+        })
+        .map(|entry| entry.text.clone())
+        .collect();
+    let grants = own
+        .iter()
+        .filter(|entry| entry.kind == answers::GRANT)
+        .filter(|entry| {
+            Grant::parse(&entry.text).is_some_and(|grant| {
+                super::sandbox_rules::ACTIONS.contains(&grant.action.as_str())
+                    && match grant.scope {
+                        Scope::Once => false,
+                        Scope::Chat => chat.is_some() && grant.chat.as_deref() == chat,
+                        Scope::Workspace => {
+                            workspace.is_some() && grant.workspace.as_deref() == workspace
+                        }
+                        Scope::Everywhere => true,
+                    }
+            })
+        })
+        .map(|entry| entry.text.clone())
+        .collect();
+    (nevers, grants)
+}
+
 /// **The grants whose rule the policy no longer holds** (`known` is every rule id in force on any
 /// side), which are taken out of the store so a rule written again later does not revive them.
 pub fn lost(entries: &[Entry], known: &BTreeSet<String>) -> Vec<Entry> {

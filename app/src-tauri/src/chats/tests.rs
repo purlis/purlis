@@ -6803,11 +6803,24 @@ fn a_chat_the_host_still_runs_is_reattached_and_nothing_a_start_begins_happens()
         Box::new(move |_, _| *lock(&held) += 1)
     });
 
+    // The policy a reattached chat's sandbox was compiled under is read as for a start, with
+    // `true`: an app that is gone started it, so it is offered a restart (M75-23).
+    type Under = std::sync::Arc<Mutex<Vec<(bool, Option<String>, u32)>>>;
+    let under: Under = Under::default();
+    chats.when_one_starts_under({
+        let under = std::sync::Arc::clone(&under);
+        Box::new(move |facts, reattached| {
+            let under = std::sync::Arc::clone(&under);
+            Box::new(move |session| lock(&under).push((reattached, facts.chat, session)))
+        })
+    });
+
     let open = chats.put_back(
         &left_running_in(plane.path(), a_resumable_chat_in(plane.path())),
         SIZE,
     );
 
+    assert_eq!(*lock(&under), [(true, Some(CHAT_ID.to_owned()), 3)]);
     assert_eq!(open.iter().map(|one| one.session).collect::<Vec<_>>(), [3]);
     assert_eq!(host.reattached(), [3]);
     assert!(host.openings().is_empty(), "nothing was started");
@@ -9359,6 +9372,49 @@ fn a_run_with_no_sandbox_and_no_opt_out_says_so_in_the_record_and_an_opt_out_doe
     let session = chats.start_ready(&chat, &ready, SIZE).expect("starts");
     assert!(!chats.record().chats[0].no_sandbox);
     assert!(chats.record().chats[0].unsandboxed);
+    let _ = chats.close(session);
+}
+
+/// **What the policy says is read before the start decides its sandbox** (M75-23, review round 2,
+/// M3): a change that lands while the start goes on is then in the chat's next reading, not its
+/// baseline, so a chat is only ever over-marked.
+#[test]
+fn what_the_policy_says_is_read_before_the_start_decides_its_sandbox() {
+    let mut chats = Chats::new();
+    let said = saying(&mut chats);
+    let told: std::sync::Arc<Mutex<Vec<(u32, String)>>> = std::sync::Arc::default();
+    chats.when_one_starts_under({
+        let said = std::sync::Arc::clone(&said);
+        let told = std::sync::Arc::clone(&told);
+        Box::new(move |facts, reattached| {
+            lock(&said).push(format!("read {reattached} {}", facts.sandbox));
+            let told = std::sync::Arc::clone(&told);
+            let said = std::sync::Arc::clone(&said);
+            Box::new(move |session| {
+                lock(&said).push(format!("told {session}"));
+                lock(&told).push((session, "told".to_owned()));
+            })
+        })
+    });
+    let ready = purlis_core::start::Ready {
+        harness: Some(Harness::ClaudeCode),
+        ..a_shell_ready()
+    };
+    let session = chats
+        .start_ready(&chat("/bin/sh", "c", None), &ready, SIZE)
+        .expect("starts");
+    let said = lock(&said).clone();
+    let read = said
+        .iter()
+        .position(|line| line.starts_with("read false"))
+        .expect("the policy was read");
+    let decided = said
+        .iter()
+        .position(|line| line.starts_with("nothing") || line.starts_with("counted"))
+        .or_else(|| said.iter().position(|line| line.contains(" run ")))
+        .expect("the start decided its sandbox");
+    assert!(read < decided, "{said:?}");
+    assert_eq!(*lock(&told), [(session, "told".to_owned())]);
     let _ = chats.close(session);
 }
 

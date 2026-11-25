@@ -117,6 +117,7 @@ export function TabMarks({
   tabs,
   id,
   updates,
+  sandbox,
   shells,
   pin,
   wrapping,
@@ -160,6 +161,8 @@ export function TabMarks({
   /** The chats the plane's instructions changed under, by session (charter#369). Left out on the
    *  strip, where the mark is a button beside the tab (`FreshMark`) rather than inside it. */
   updates?: PlaneUpdates;
+  /** Why the shell sandbox of each chat is older than the policy, by session (M75-23). */
+  sandbox?: PlaneUpdates;
   /** The chats that are shell tabs, whose tab wears a terminal's mark (SI-5). */
   shells: ReadonlySet<number>;
   /** The pin mark, on the strip; the menu of hidden tabs draws none. */
@@ -228,7 +231,7 @@ export function TabMarks({
       </span>
       <SplitMore face={face} />
       {/* No sandbox badge: it moved to the chat's pane head and its row (#4760). */}
-      <PlaneUpdatedMark files={updates?.[chat]} />
+      <PlaneUpdatedMark files={updates?.[chat]} sandbox={sandbox?.[chat]} />
       {/* **What the tab is doing, said after what it is**: its own element, so a tab whose text
           changed every time a turn began would not be unreadable, and before the task's name
           where it shows one (#1486). Heard and not seen: its mark is the icon's corner. */}

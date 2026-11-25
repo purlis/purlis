@@ -445,8 +445,9 @@ pub async fn accept_project_policy(
     plane: PlaneId,
     shown: String,
 ) -> Result<PolicyState, String> {
-    let root = planes.held(&plane)?.root().to_path_buf();
-    crate::off_the_window(READING_POLICY, move || {
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
+    let state = crate::off_the_window(READING_POLICY, move || {
         let kept = |why: std::io::Error| {
             format!("purlis could not keep your acceptance on this machine: {why}")
         };
@@ -478,7 +479,11 @@ pub async fn accept_project_policy(
         })?;
         Ok(state_of(&root))
     })
-    .await
+    .await?;
+    // A press moves what the chats' sandboxes were compiled under (M75-23): the window asks
+    // again which are out of date.
+    held.rows_changed();
+    Ok(state)
 }
 
 #[cfg(test)]

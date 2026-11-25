@@ -133,8 +133,10 @@ export function ChatStrip({
   waitingOn,
   showFromChip,
   freshOf,
+  restartOf,
   freshMarkOf,
   planeUpdates,
+  sandboxOld,
   handedFrom,
   workItems,
   restoring = NONE_RESTORING,
@@ -317,7 +319,12 @@ export function ChatStrip({
                         aria-describedby={
                           [
                             sortable.attributes["aria-describedby"],
-                            freshMarkShown(freshOf(id), planeUpdates[chatOf(tabs, id) ?? -1])
+                            freshMarkShown(
+                              freshOf(id),
+                              planeUpdates[chatOf(tabs, id) ?? -1],
+                              restartOf(id),
+                              sandboxOld[chatOf(tabs, id) ?? -1],
+                            )
                               ? freshMarkOf(id)
                               : undefined,
                           ]
@@ -389,6 +396,8 @@ export function ChatStrip({
                         // that tab ends the task's program, and a fresh start does.
                         offer={freshOf(id)}
                         files={planeUpdates[chatOf(tabs, id) ?? -1]}
+                        restart={restartOf(id)}
+                        sandbox={sandboxOld[chatOf(tabs, id) ?? -1]}
                         onPress={press}
                       />
                       <Closer
@@ -457,6 +466,7 @@ export function ChatStrip({
                         personaOf={personaOf}
                         factsOf={factsOf}
                         updates={planeUpdates}
+                        sandbox={sandboxOld}
                         shells={shells}
                         wrapping={wrapping}
                         stopping={stopping}
@@ -609,8 +619,13 @@ type ChatStripProps = {
   waitingOn: (queue: readonly number[], id: number) => number;
   showFromChip: (session: number) => void;
   freshOf: (id: number) => Offer | undefined;
+  /** The Restart chat row of a tab's chat, pressed by its mark where only its shell sandbox is
+   *  older than the policy (M75-23). */
+  restartOf: (id: number) => Offer | undefined;
   freshMarkOf: (tab: number) => string;
   planeUpdates: Readonly<Record<number, readonly string[]>>;
+  /** Why each chat's shell sandbox is older than the policy, by session (M75-23). */
+  sandboxOld: Readonly<Record<number, readonly string[]>>;
   handedFrom: Record<number, string>;
   workItems: Record<number, string>;
   /** The chats the launch has still to start (`restoring.rs`): each one's tab says so. */

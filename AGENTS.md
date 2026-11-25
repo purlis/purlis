@@ -263,3 +263,15 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   A cold lib-test build can pass the 10-minute tool limit: run it in the background and read its
   output file, and print `^error` lines too, or a compile failure looks like a silent pass.
 - A wall-clock test (`every_guard_reads_a_hostile_command_in_linear_time::the_whole_verdict_…`) is run alone and last under nextest (`threads-required = "num-cpus"`, `.config/nextest.toml`, #7514). In a loaded sandbox its release run reads 0.9 to 1.0 s on the two slowest shapes against a 1 s bound, on `main` as on `m75-policy`: judge a regression by comparing both on one machine, and set `TIMING_OUT`-style file logging, because this test binary swallows stdout and stderr even with `--nocapture`.
+- A fresh worktree has no `app/node_modules`: `cd app && npm ci --ignore-scripts` works in a
+  sandboxed chat (registry reachable), then `npx tsc --noEmit`, `npx eslint <files>` and
+  `npx vitest run --project unit <files>` run from `app/`. `FreshMark`-like React tests need an
+  explicit `afterEach(cleanup)`: the project's vitest has no auto-cleanup. BSD `sed -i` in this
+  sandbox chokes on a `|` in a replacement: use the Edit tool.
+- The running-chat marks (`policy/running.rs`, M75-23): `Shared::read(root)` once per
+  `chats_plane_updated`, `AtStart::take` before the sandbox is applied (`chats.rs`), rules
+  compared by the places they resolve to. The shipped catch-all permit `policy-everything-else`
+  cannot be replaced by a project (the `policy-` prefix is reserved), so a permit narrows only
+  through an Organisation rule: its plane-level test is not writable, test `Places::of`. The
+  app's tests cannot seal an answer (no keyring): `answers::written_for_test` says a write
+  without one.

@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 const NAME: &str = "of_the_persons_press";
 
 /// Where it may be named, and why.
-const ALLOWED: [(&str, &str); 11] = [
+const ALLOWED: [(&str, &str); 12] = [
     (
         "crates/purlis-core/src/secrets/answers.rs",
         "the definition",
@@ -56,6 +56,10 @@ const ALLOWED: [(&str, &str); 11] = [
     (
         "crates/purlis-core/src/policy/force_tests.rs",
         "a test plays the person's press",
+    ),
+    (
+        "crates/purlis-core/src/policy/running_tests.rs",
+        "a test plays the person's press: it gives a Never or a grant while a chat runs",
     ),
     (
         "app/src-tauri/src/policypress.rs",
