@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795615857959,
+  "lastUpdate": 1795619161909,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54810,6 +54810,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7986035,
             "unit": "ms",
             "extra": "median of 5 runs: 100.542, 101.730, 101.799, 101.912, 102.765 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "07cb0bc9bcce899ff74fac7cc7dd03ed2266e793",
+          "message": "Release: the ci gate keeps waiting through a transient API error (#7629)\n\n* Release gate: keep waiting for ci through an early gh run watch exit\n\ngh run watch ends early on a 502 from the jobs endpoint; the three waits\n(gate, build, runner-binary-aarch64) read in_progress and failed. Watch\nagain until the run is completed, bounded by a 120 minute deadline.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M894CMQFS9ESTDWDQ295C7CB\nPurlis-Persona: steward\n\n* Release gate wait: say 'could not read' when the last read failed; test that the three loops match\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M894CMQFS9ESTDWDQ295C7CB\nPurlis-Persona: steward\n\n* The release guards hold the new wait loop as their one reference copy\n\nWAIT_RUN is regenerated from the build job's wait step; the neutering test swaps the\nloop's deadline exit and a non-completed exit. Nothing a guard refuses changed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* Tests: the release-wait cases that never see completed reach the deadline, and every spawned step has a timeout\n\nrelease-wait.test.mjs ran the wait step against a fake gh that never reports completed; the\nnew loop then busy-waited for its real two-hour deadline and hung web (part 2 of 4). Those\ncases now rewrite the deadline to the past and keep their verdicts, a new case covers\nwatching again until completed success, and every execFileSync/spawnSync has a 20 s timeout.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T14:32:38Z",
+          "tree_id": "3492dad517b7b24ac5cdfc1b92e092e8c2941b25",
+          "url": "https://github.com/purlis/purlis/commit/07cb0bc9bcce899ff74fac7cc7dd03ed2266e793"
+        },
+        "date": 1795619155077,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.555424,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.552, 0.555, 0.555, 0.568, 0.577 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.1467965,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.127, 16.139, 16.147, 16.178, 16.315 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.9186605,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.413, 100.144, 100.919, 101.939, 101.957 ms"
           }
         ]
       }
