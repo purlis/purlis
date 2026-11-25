@@ -44,6 +44,22 @@ fn graphql_child() {
             "{lines:?}: {out:?}"
         );
     }
+    // #7547: the merge and enqueue documents are read by a parse of their own.
+    for mutation in ["mergePullRequest", "enqueuePullRequest"] {
+        let q = format!(
+            "mutation{{ {mutation}(input:{{pullRequestId:\"PR_kwDO_1\", commitBody:\"\"\"x\r\n a\r\n\u{3000}\r\n b\r\n\"\"\"}}){{ clientMutationId }} }}"
+        );
+        let out = s.send(
+            "POST",
+            "api.github.com",
+            "/graphql",
+            &graphql(&q, serde_json::json!({})),
+        );
+        assert!(
+            is_refused(&out, Refusal::GraphqlParse),
+            "{mutation}: {out:?}"
+        );
+    }
     // Unwinding to here means no abort: the process survived every document.
     std::process::exit(0);
 }

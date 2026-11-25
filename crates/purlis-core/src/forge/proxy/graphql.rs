@@ -282,7 +282,7 @@ fn mutation_arguments(body: &[u8]) -> Option<(String, Val)> {
         Some(Json::Object(map)) => map,
         Some(_) => return None,
     };
-    let parsed: Document<'_, String> = parse_query(query).ok()?;
+    let parsed = parse(query)?;
     let mut operations = parsed.definitions.iter().filter_map(|d| match d {
         Definition::Operation(operation) => Some(operation),
         Definition::Fragment(_) => None,
@@ -1191,5 +1191,27 @@ fn strings(val: &Val) -> Vec<String> {
         Val::List(items) => items.iter().flat_map(strings).collect(),
         Val::Obj(fields) => fields.iter().flat_map(|(_, v)| strings(v)).collect(),
         Val::Other => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A block string whose second line indents with U+3000, which panics `graphql-parser` (#7589).
+    fn panicking(mutation: &str) -> Vec<u8> {
+        let query = format!(
+            "mutation{{ {mutation}(input:{{pullRequestId:\"PR_kwDO_1\", commitBody:\"\"\"x\r\n a\r\n\u{3000}\r\n b\r\n\"\"\"}}){{ clientMutationId }} }}"
+        );
+        serde_json::to_vec(&serde_json::json!({ "query": query })).expect("json")
+    }
+
+    #[test]
+    fn a_merge_or_enqueue_document_with_a_block_string_the_parser_panics_on_is_not_read() {
+        for mutation in ["mergePullRequest", "enqueuePullRequest"] {
+            let body = panicking(mutation);
+            assert!(mutation_arguments(&body).is_none(), "{mutation}");
+            assert!(strategy_said(Kind::GitHub, &body).is_none(), "{mutation}");
+        }
     }
 }
