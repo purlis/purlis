@@ -2983,6 +2983,94 @@ fn a_running_runner_is_only_checked() {
     assert!(!fake.file("log").contains("start "), "{}", fake.file("log"));
 }
 
+/// What the step guard wrote while `then` ran (#7182), at `debug` so a `docker` call is there too.
+fn steps_said_while(then: impl FnOnce()) -> String {
+    #[derive(Clone, Default)]
+    struct Said(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+    impl std::io::Write for Said {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Said {
+        type Writer = Said;
+        fn make_writer(&'a self) -> Said {
+            self.clone()
+        }
+    }
+    let said = Said::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(said.clone())
+        .with_ansi(false)
+        .with_max_level(tracing::Level::DEBUG)
+        .finish();
+    tracing::subscriber::with_default(subscriber, then);
+    String::from_utf8(said.0.lock().unwrap().clone()).unwrap()
+}
+
+fn step_line<'a>(out: &'a str, name: &str) -> &'a str {
+    out.lines()
+        .find(|line| line.contains(&format!("purlis: step {name} ")))
+        .unwrap_or_else(|| panic!("no {name} line in {out}"))
+}
+
+/// **A runner's check names the step it is inside, and its start names the check** (#7182): the
+/// rows with no parent are the ones a table sums; a `docker` call names none.
+#[test]
+fn a_container_check_inside_a_link_check_names_it_and_a_runner_start_names_the_check() {
+    let mut stopped = inspected();
+    stopped[0]["State"]["Running"] = false.into();
+    let fake = FakeDocker::new(&stopped);
+    let out = steps_said_while(|| {
+        let link = purlis_session_protocol::steps::begin("link_check");
+        let _ = link.inside(|| fake.docker().resumed(&made()));
+    });
+    assert!(
+        step_line(&out, "container_check").contains("(parent: link_check)"),
+        "{out}"
+    );
+    assert!(
+        step_line(&out, "runner_start").contains("(parent: container_check)"),
+        "{out}"
+    );
+    assert!(
+        !step_line(&out, "docker_container_inspect").contains("(parent:"),
+        "{out}"
+    );
+    assert!(!step_line(&out, "link_check").contains("(parent:"), "{out}");
+}
+
+/// **Does a missing container fail the container check on a normal first start? No** (#7182):
+/// the check runs for a runner that was made, so its container is there. Where Docker answers
+/// "No such container" the runner was removed outside purlis (#4149), the link is refused, and the
+/// step is a `container_check` refused, as it should be.
+#[test]
+fn a_container_docker_no_longer_has_is_a_container_check_refused() {
+    let fake = FakeDocker::new(&inspected());
+    stand_in::program(
+        fake.dir.path(),
+        "docker",
+        &format!(
+            "#!/bin/sh\ncase \"$1 $2\" in\n  'container inspect') echo 'Error: No such \
+             container' >&2; exit 1 ;;\n  'info '*) case \"$*\" in *.ID*) cat '{engine}' \
+             2>/dev/null || true ;; *) cat '{info}' ;; esac ;;\nesac\n",
+            engine = fake.dir.path().join("engine").display(),
+            info = fake.dir.path().join("info").display(),
+        ),
+    );
+    let out = steps_said_while(|| {
+        assert!(fake.docker().resumed(&made()).is_err());
+    });
+    assert!(
+        step_line(&out, "container_check").contains("container_check refused after"),
+        "{out}"
+    );
+}
+
 /// **A runner whose container Docker no longer has was removed outside purlis** (#4149): the
 /// person's cleanup took it, and Docker answers "No such container" to every check. It is told
 /// apart from one only stopped or suspended, which Docker still lists, and says whether its
@@ -4486,6 +4574,95 @@ fn a_runner_container_has_no_restart_policy_so_the_next_chat_starts_it() {
         !args.iter().any(|arg| arg.starts_with("--restart")),
         "{args:?}"
     );
+}
+
+mod docker_step_tests {
+    use super::super::docker_step;
+
+    fn step(args: &[&str]) -> &'static str {
+        docker_step(
+            &args
+                .iter()
+                .map(|word| (*word).to_owned())
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    #[test]
+    fn a_docker_run_is_named_by_its_verb() {
+        assert_eq!(
+            step(&["container", "inspect", "x"]),
+            "docker_container_inspect"
+        );
+        assert_eq!(step(&["exec", "-i", "x", "purlis"]), "docker_exec");
+        assert_eq!(step(&["frobnicate"]), "docker_other");
+        assert_eq!(step(&[]), "docker_other");
+    }
+
+    #[test]
+    fn global_flags_before_the_verb_are_skipped() {
+        assert_eq!(step(&["-H", "ssh://lab", "exec", "x"]), "docker_exec");
+        assert_eq!(step(&["--host=tcp://lab:2376", "info"]), "docker_info");
+        assert_eq!(step(&["--context", "lab", "volume", "ls"]), "docker_volume");
+        assert_eq!(
+            step(&["-c", "lab", "-D", "--tls", "start", "x"]),
+            "docker_start"
+        );
+        assert_eq!(
+            step(&["--config", "/c", "-l", "debug", "stop", "x"]),
+            "docker_stop"
+        );
+    }
+
+    #[test]
+    fn the_verbs_the_pool_uses_are_each_named() {
+        for (args, named) in [
+            (&["create", "--name", "x", "img"][..], "docker_create"),
+            (&["rm", "-f", "x"][..], "docker_rm"),
+            (&["cp", "x:/a", "/b"][..], "docker_cp"),
+            (&["ps", "-a"][..], "docker_ps"),
+            (&["inspect", "x"][..], "docker_inspect"),
+            (&["network", "ls"][..], "docker_network"),
+            (&["system", "df", "--verbose"][..], "docker_system"),
+            (&["volume", "rm", "--force", "v"][..], "docker_volume"),
+        ] {
+            assert_eq!(step(args), named, "{args:?}");
+        }
+    }
+
+    #[test]
+    fn a_container_and_an_image_are_named_by_their_subcommand() {
+        for (args, named) in [
+            (&["container", "create", "x"][..], "docker_container_create"),
+            (
+                &["container", "rm", "--force", "x"][..],
+                "docker_container_rm",
+            ),
+            (&["container", "ls", "--all"][..], "docker_container_ls"),
+            (&["container", "cp", "a", "b"][..], "docker_container_cp"),
+            (&["container", "pause", "x"][..], "docker_container_other"),
+            (&["container"][..], "docker_container_other"),
+            (&["image", "pull", "img@sha256:0"][..], "docker_image_pull"),
+            (&["image", "inspect", "img"][..], "docker_image_inspect"),
+            (&["image", "load"][..], "docker_image_load"),
+            (&["image", "prune"][..], "docker_image_other"),
+            (&["pull", "img"][..], "docker_image_pull"),
+            (&["load"][..], "docker_image_load"),
+            (
+                &["-H", "ssh://lab", "container", "inspect", "x"][..],
+                "docker_container_inspect",
+            ),
+        ] {
+            assert_eq!(step(args), named, "{args:?}");
+        }
+    }
+
+    #[test]
+    fn an_argument_never_names_a_step() {
+        // A container named like a verb, or like a subcommand, is an argument.
+        assert_eq!(step(&["exec", "inspect", "ls"]), "docker_exec");
+        assert_eq!(step(&["frobnicate", "container"]), "docker_other");
+    }
 }
 
 /// A device id as a desktop keeps it (a ULID, ADR 0066).
