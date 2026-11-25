@@ -120,6 +120,7 @@ fn held_plane() -> (tempfile::TempDir, crate::planes::Planes, Arc<Held>) {
     std::fs::create_dir_all(root.join("personas/scribe")).expect("a persona");
     std::fs::write(root.join("personas/scribe/persona.md"), "# scribe\n").expect("its md");
     std::fs::create_dir_all(root.join(".claude")).expect("harness settings");
+    std::fs::create_dir_all(root.join(".purlis")).expect("a state folder");
     std::fs::create_dir_all(root.join("workspaces/alpha/todos")).expect("a todo store");
     std::fs::write(root.join("workspaces/alpha/todos/a1.md"), "# Alpha one\n").expect("a todo");
     let planes = crate::planes::Planes::telling(
@@ -252,6 +253,18 @@ fn a_profile_approved_drops_the_kept_answer() {
 }
 
 #[test]
+fn a_local_vault_registry_mended_drops_the_kept_answer() {
+    // In the state folder, which the watch does not tell: the stamp does. A broken registry
+    // refuses a row, so the kept refusal must not outlive the mending.
+    after(
+        |root| {
+            std::fs::write(root.join(".purlis/vaults.json"), "{}").expect("a registry");
+        },
+        "the local vault registry",
+    );
+}
+
+#[test]
 fn a_todo_written_leaves_the_kept_answer() {
     let (_dir, _planes, held) = held_plane();
     let reads = Cell::new(0);
@@ -290,7 +303,6 @@ fn a_guard_sighting_written_every_second_leaves_the_kept_answer() {
     let reads = Cell::new(0);
     details(&held, &reads);
     let state = held.root().join(".purlis");
-    std::fs::create_dir_all(&state).expect("a state folder");
     for n in 0..5 {
         std::fs::write(state.join("guard-seen.json"), format!("{{\"n\":{n}}}")).expect("seen");
     }

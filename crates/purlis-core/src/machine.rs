@@ -2621,6 +2621,18 @@ pub fn update(config_root: &Path, change: impl FnOnce(&mut Store)) -> io::Result
     // a second kept the window and its pickers busy for nothing.
     if loaded.store != before || !on_disk_is(config_root, &loaded.store) {
         write(config_root, &loaded.store)?;
+    } else {
+        // What a write does besides the bytes, still done: the folder at 0700 and the store at
+        // 0600, so a store left looser by another tool is tightened by the next update.
+        let dir = private_dir(config_root)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ =
+                std::fs::set_permissions(dir.join(FILE), std::fs::Permissions::from_mode(0o600));
+        }
+        #[cfg(not(unix))]
+        let _ = dir;
     }
     Ok(loaded)
 }

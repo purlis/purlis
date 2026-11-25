@@ -3208,3 +3208,75 @@ fn a_vouch_that_finds_the_record_as_it_was_leaves_the_store_as_it_was() {
         "a later vouch of the same record restamped the approval"
     );
 }
+
+#[test]
+fn an_update_that_changes_nothing_still_writes_a_store_that_is_not_there() {
+    let machine = machine();
+
+    update(machine.path(), |_| {}).unwrap();
+
+    assert!(file(machine.path()).exists(), "no store was made");
+}
+
+#[test]
+fn an_update_that_changes_nothing_writes_a_store_whose_bytes_differ() {
+    let machine = machine();
+    update(machine.path(), |store| {
+        store.remember(Path::new("/planes/a"), 1)
+    })
+    .unwrap();
+    let file = file(machine.path());
+    let pretty = std::fs::read_to_string(&file).unwrap();
+    // The same store, written another way: compact.
+    let compact =
+        serde_json::to_string(&serde_json::from_str::<serde_json::Value>(&pretty).unwrap())
+            .unwrap();
+    std::fs::write(&file, &compact).unwrap();
+
+    update(machine.path(), |_| {}).unwrap();
+
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), pretty);
+}
+
+#[cfg(unix)]
+#[test]
+fn an_update_that_changes_nothing_still_tightens_the_modes() {
+    use std::os::unix::fs::PermissionsExt;
+    let machine = machine();
+    update(machine.path(), |store| {
+        store.remember(Path::new("/planes/a"), 1)
+    })
+    .unwrap();
+    let file = file(machine.path());
+    let dir = file.parent().unwrap().to_path_buf();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    update(machine.path(), |_| {}).unwrap();
+
+    let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&file), 0o600, "the store");
+    assert_eq!(mode(&dir), 0o700, "the folder");
+}
+
+#[test]
+fn a_vouch_whose_record_moved_restamps_the_approval() {
+    let mut store = Store::default();
+    let plane = Path::new("/planes/known");
+    store.approve(plane, 1, Contribution::default());
+    let approved = |store: &Store| {
+        store
+            .recent(plane)
+            .unwrap()
+            .trust
+            .as_ref()
+            .unwrap()
+            .approved
+    };
+
+    store.vouch(plane, a_launch(&["/bin/sh"]), 5);
+    assert_eq!(approved(&store), 5, "starts moved");
+
+    store.vouch(plane, on_profiles(&["mine"]), 9);
+    assert_eq!(approved(&store), 9, "profiles moved");
+}
