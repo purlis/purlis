@@ -698,8 +698,12 @@ fn tunnel(client: TcpStream, upstream: TcpStream, idle: Duration, slot: Slot) {
     });
     let (mut upstream_read, mut client_write) = (upstream, client);
     let _ = io::copy(&mut upstream_read, &mut client_write);
-    // The client is about to be told the connection is over: the place is free first (#7608).
-    drop(slot);
     let _ = client_write.shutdown(std::net::Shutdown::Write);
+    // The place stays taken while the other leg's thread and descriptors live: freeing it before
+    // the join would let a client that keeps its end open hold tunnels past the cap (#7608
+    // review). A tunnel is half-closed above, so its client reads EOF before the place frees:
+    // the race #7608 closes is the plain and terminated doors', where a request ends the
+    // connection.
     let _ = forward.join();
+    drop(slot);
 }
