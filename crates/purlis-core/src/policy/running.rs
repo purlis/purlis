@@ -1,11 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **How a running chat picks up a change** (M75 slice 23, #7032; spec §9.5, ADR 0125 §3).
+//! **How a running chat picks up a change** (M75 slice 23, #7032; spec §9.5, ADR 0127).
 //!
-//! **What this module describes is the behaviour today, pending the person's ruling (H1 of review
-//! round 1).** Spec §9.5 says a loosening reaches a running chat "only at its next start". That is
-//! not what the host does: see the second paragraph.
+//! **Hook and permission decisions always use the current policy** (the person's ruling of
+//! 2026-11-25, H1; ADR 0127 as amended that day). Only the shell sandbox, compiled at start, waits
+//! for a restart.
 //!
 //! **A tightening reaches a chat at its next decision with nothing here:** every decision the host
 //! makes reads the project at `HEAD` and the sealed store afresh ([`super::force::in_force`]), and
@@ -13,7 +13,7 @@
 //! next decision too, once the person has pressed Accept** (the accepted copy only moves at the
 //! press, and the policy in force is the stricter of the committed and the accepted side), and a
 //! chat that starts after the press is held to the same. So no chat is pinned to the copy its
-//! start accepted. What would pin one is in the report of that review, not built.
+//! start accepted, and none is built.
 //!
 //! What a decision cannot reach is the sandbox its shell commands run in, **compiled at the
 //! chat's start** ([`super::sandbox_rules::compile`]). So the app keeps, for each chat, what that

@@ -1,5 +1,8 @@
 ### Security
 
+- **A running chat's decisions always use the current policy.** A tightening applies at its next
+  check and a loosening at its next check after you press Accept; only the shell sandbox, compiled
+  when the chat started, waits for a restart (M75-23, #7032).
 - **A chat whose shell sandbox is older than the policy is marked, and offers Restart chat.** A
   hook decision already follows a tightening at once; what a Never, a removed grant, a path rule
   that tightened (a forbid, or a permit that narrowed), a new workspace, the sealed answers' deny

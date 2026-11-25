@@ -146,7 +146,7 @@ fn a_running_chat_takes_a_tightening_at_its_next_decision() {
 }
 
 #[test]
-fn a_running_chat_takes_a_loosening_only_at_its_next_start() {
+fn a_loosening_reaches_the_running_chats_decisions_at_once_after_the_press() {
     let m = machine();
     let ban = ban_on_the_ledger(&plane_root_of(&m));
     let root = plane(
@@ -178,8 +178,9 @@ fn a_running_chat_takes_a_loosening_only_at_its_next_start() {
         "the ban stands until the press"
     );
     assert_eq!(stale(&running, &root), Vec::<Why>::new());
-    // The press accepts the loosened copy: a chat that starts after it is held to that, and the
-    // chat that ran through it is not marked either, since it is on what it started on.
+    // The press accepts the loosened copy: a loosening reaches the running chat's decisions at
+    // once (they read the sealed store fresh at each ask), and the chat is not marked, since a
+    // loosening leaves its sandbox as strict as it was.
     assert_ne!(reads_with(&root, LEDGER, &pressed(None)), Outcome::Deny);
     assert_eq!(stale(&running, &root), Vec::<Why>::new());
 }
