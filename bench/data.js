@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795569014437,
+  "lastUpdate": 1795574274404,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54348,6 +54348,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9217405,
             "unit": "ms",
             "extra": "median of 5 runs: 100.860, 101.824, 101.922, 102.104, 102.699 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "57b5351641c4590ad6f78527cb9f7db69a821ba0",
+          "message": "Forge proxy: a GraphQL block string that panics the parser is refused, and a handler panic never leaks a connection slot (#7589) (#7596)\n\n* Forge proxy: a GraphQL block string that panics the parser is refused, and a handler panic ends only its connection (#7589)\n\ngraphql-parser 0.4.1 slices block-string lines by byte and panics on a char boundary\nfor non-ASCII whitespace lines. The proxy now parses under catch_unwind and refuses with\nGraphqlParse; the listener catches a panic in any connection handler and always gives\nits slot back.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M881GGKVRJV2NMWQCNV3BBBG\nPurlis-Persona: steward\n\n* Forge proxy: a GraphQL document that could panic the parser is refused before it runs, since a shipped build aborts on any panic (#7596)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M882V0WCPTKM99SZ1KCD8QZP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T01:54:35Z",
+          "tree_id": "4f40e12430625a88a1f4c9a877d0790ea7ce09df",
+          "url": "https://github.com/purlis/purlis/commit/57b5351641c4590ad6f78527cb9f7db69a821ba0"
+        },
+        "date": 1795574264738,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6753845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.650, 0.663, 0.675, 0.677, 0.691 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7078845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.480, 16.525, 16.708, 16.768, 16.838 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.53246200000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.613, 102.124, 102.532, 103.236, 103.435 ms"
           }
         ]
       }
