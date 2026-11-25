@@ -1657,6 +1657,14 @@ pub enum Ask {
     /// act, and nothing else**, so no part of what is shown or made is the chat's. No ticket,
     /// for [`Self::Removal`]'s reason.
     ProposeSkillSet(Box<ProposeSkillSetAsk>),
+    /// **A memory or todo a chat proposes for a store that is not its own** (M74.1 T1.1-68, C1
+    /// and C2): what `purlis persona remember <other>`, `purlis workspace remember -w <other>`
+    /// and `purlis workspace todo -w <other>` hand over in a sandboxed chat, which is refused
+    /// the write itself. Held for the person beside [`Self::Propose`]'s, shown with its text and
+    /// its target, and written only on their Apply. **Only an additive write is proposable**
+    /// ([`crate::memoryproposal::proposable`]); the app refuses any other. No ticket, for
+    /// [`Self::Removal`]'s reason.
+    ProposeMemory(Box<ProposeMemoryAsk>),
     /// **A pin of an artifact folder a chat proposes** (#5963, ADR 0122 §1): what the
     /// `artifact_propose_pin` tool and `purlis artifact pin` hand over in a chat. Held for the
     /// person beside [`Self::Propose`]'s, and pinned only by their press of Pin to workspace in
@@ -2013,6 +2021,17 @@ pub struct ProposeSkillSetAsk {
     /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
     pub chat: u32,
     pub change: crate::skills::verbs::set::SetChange,
+}
+
+/// **A memory or todo a chat proposes for another store** ([`Ask::ProposeMemory`]). Judged by
+/// the app when it is asked and again at Apply; **the line names the store and the write, never
+/// who asks**, which is the app's record of the chat whose token it carries.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ProposeMemoryAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    pub write: crate::brokered::Write,
+    pub target: crate::memoryproposal::Target,
 }
 
 /// **A pin a chat proposes** ([`Ask::ProposePin`], #5963). Judged by the app against the
@@ -2957,6 +2976,7 @@ impl Ask {
             Self::ReportDraft(draft) => draft.chat,
             Self::ProposeLimit(proposed) => proposed.chat,
             Self::ProposeSkillSet(proposed) => proposed.chat,
+            Self::ProposeMemory(proposed) => proposed.chat,
             Self::ProposePin(proposed) => proposed.chat,
             Self::Browse(browse) => browse.chat,
             Self::ThemePreview(asks) => asks.chat,

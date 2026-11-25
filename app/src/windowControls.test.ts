@@ -298,6 +298,10 @@ const FROM_THE_WINDOW: ReadonlyArray<readonly [path: string, starts: string, why
   ["crates/purlis-core/src/planegit.rs", "This save is left unsigned", NOT_A_REFUSAL],
   ["crates/purlis-core/src/renamelocal/keychain.rs", "it waits for you to finish", NOT_A_REFUSAL],
   ["crates/purlis-core/src/savefix.rs", "find why these checks failed", NOT_A_REFUSAL],
+  // T1.1-68 part C: `remember`, a todo added, `forget` and `edit` for another persona or
+  // workspace are proposed (`Ask::ProposeMemory`), so they no longer end in these two sentences.
+  // Move, optimize, archive, unarchive, a todo's close and a vision still do, so both stay until
+  // each of those is ruled on or given its own words (#6957).
   ["crates/purlis-cli/src/brokered.rs", "a sandboxed chat changes only its own", NO_ASK_YET],
   ["crates/purlis-cli/src/brokered.rs", "a sandboxed chat does not remove a persona", NO_ASK_YET],
   ["crates/purlis-cli/src/brokered.rs", "a sandboxed chat does not remove a workspace", NO_ASK_YET],

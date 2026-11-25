@@ -3788,6 +3788,8 @@ pub fn proposed_change(
             opens = crate::askwrites::proposed_too_long(before, after);
             let says = if one.skills.is_some() {
                 format!("Proposes a change to skills, which only you apply: {path}")
+            } else if one.memory.is_some() {
+                format!("Proposes a change to another store, which only you apply. {path}")
             } else {
                 format!("Proposes a change to {path}, which only you apply")
             };

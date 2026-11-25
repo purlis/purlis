@@ -1962,11 +1962,7 @@ pub fn edit(
     {
         return Err(EditRefused::Stale);
     }
-    let lines = crate::mdsection::split_lines(&now);
-    let body = match top_lines(&lines).1 {
-        Some((_, stamp)) => format!("# {title}\n\n{stamp}\n\n{text}\n"),
-        None => format!("# {title}\n\n{text}\n"),
-    };
+    let body = edited_body(&now, &title, text);
     gate(root, &file)?;
     gate(root, &dir.join(INDEX))?;
     let mode = if under_state(root, dir) {
@@ -1982,6 +1978,37 @@ pub fn edit(
         Some(&title),
     );
     Ok(file)
+}
+
+/// A memory's whole text after an edit to `title` and `text` (both already checked): the stamp
+/// line `now`, the file as it was read, had is kept verbatim. The one place that shapes it, for
+/// [`edit`], the held store's edit and [`edited`].
+fn edited_body(now: &str, title: &str, text: &str) -> String {
+    let lines = crate::mdsection::split_lines(now);
+    match top_lines(&lines).1 {
+        Some((_, stamp)) => format!("# {title}\n\n{stamp}\n\n{text}\n"),
+        None => format!("# {title}\n\n{text}\n"),
+    }
+}
+
+/// **What a memory's file would hold after [`edit`]**, without writing it: `now` is the file as
+/// it was read. What a window shows of an edit before the person applies it, and exactly what
+/// the edit then writes, since it is checked and shaped as `edit` is.
+pub fn edited(now: &str, title: &str, text: &str) -> Result<String, String> {
+    let text = py_strip(text);
+    if text.is_empty() {
+        return Err("empty memory".to_owned());
+    }
+    if title.contains(['\n', '\r']) {
+        return Err("a memory's title is one line".to_owned());
+    }
+    let title: String = py_strip(title).chars().take(TITLE_MAX).collect();
+    let title = if title.is_empty() {
+        title_of(text)
+    } else {
+        title
+    };
+    Ok(edited_body(now, &title, text))
 }
 
 /// `name` without a journal's `YYYYMMDD-HHMMSS-` prefix: the name a memory has in any store,

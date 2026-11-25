@@ -432,6 +432,9 @@ pub fn answer(
         // app writes nothing for it, and holds it for the person.
         Ask::ProposeLimit(proposal) => crate::proposals::asked_limit(held, &proposal),
         Ask::ProposeSkillSet(proposal) => crate::proposals::asked_skills(held, &proposal),
+        // A memory or todo for another persona or workspace (T1.1-68): no ticket, for the
+        // removal's reason. The app writes nothing for it, and holds it for the person.
+        Ask::ProposeMemory(proposal) => crate::proposals::asked_memory(held, &proposal),
         // A proposed pin (#5963): no ticket, for the removal's reason. The line names a folder;
         // the app pins nothing for it, and holds it for the person in the chat's workspace.
         Ask::ProposePin(proposal) => crate::pinproposals::asked(held, &proposal),

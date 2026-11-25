@@ -149,6 +149,7 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
         skills: None,
         pin: None,
         behind: None,
+        memory: None,
     };
     let refused = |_: &proposed::Applied<'_>| Err("the event log is not open".to_owned());
     assert_eq!(
@@ -204,6 +205,7 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
     assert_eq!(manifest(&root), "[plane]\nmode = \"pr\"\n");
     // One marked stale is never applied.
     let marked = Proposal {
+        memory: None,
         stale: true,
         limit: None,
         skills: None,
@@ -223,6 +225,7 @@ fn apply_writes_the_change_audited_first_and_only_while_the_file_is_what_it_was(
 #[test]
 fn apply_is_offered_only_beside_a_change_shown_whole() {
     let one = Proposal {
+        memory: None,
         id: 7,
         session: 3,
         path: "purlis.toml".to_owned(),
@@ -289,6 +292,7 @@ fn apply_is_offered_only_beside_a_change_shown_whole() {
 fn apply_never_writes_a_change_not_shown_whole() {
     let (_dir, root) = project();
     let one = Proposal {
+        memory: None,
         id: 1,
         session: 3,
         path: "purlis.toml".to_owned(),
@@ -320,6 +324,7 @@ fn two_applies_against_the_same_file_as_it_was_never_both_write() {
     let (_dir, root) = project();
     let lock = std::sync::Arc::new(Mutex::new(()));
     let proposal = |id: u32, line: &str| Proposal {
+        memory: None,
         id,
         session: id,
         path: "purlis.toml".to_owned(),
@@ -371,6 +376,7 @@ fn a_write_that_fails_is_recorded_as_failed() {
     use std::os::unix::fs::PermissionsExt as _;
     let (_dir, root) = project();
     let one = Proposal {
+        memory: None,
         id: 1,
         session: 3,
         path: "purlis.toml".to_owned(),
@@ -407,6 +413,7 @@ fn a_write_that_fails_is_recorded_as_failed() {
 #[test]
 fn a_change_too_long_for_a_row_is_shown_whole_on_its_tab() {
     let one = Proposal {
+        memory: None,
         id: 7,
         session: 3,
         path: "personas/devops/persona.md".to_owned(),
@@ -452,6 +459,7 @@ fn a_change_too_long_for_a_row_is_shown_whole_on_its_tab() {
 #[test]
 fn a_long_change_on_its_tab_marks_only_the_lines_that_changed() {
     let one = Proposal {
+        memory: None,
         id: 7,
         session: 3,
         path: "personas/devops/persona.md".to_owned(),
@@ -498,6 +506,7 @@ fn a_long_change_on_its_tab_marks_only_the_lines_that_changed() {
 /// new_start, new_lines)`.
 fn tab_hunks(before: &str, after: &str) -> Vec<(u32, u32, u32, u32)> {
     let one = Proposal {
+        memory: None,
         id: 7,
         session: 3,
         path: "personas/devops/persona.md".to_owned(),
@@ -543,6 +552,7 @@ fn a_change_too_long_for_a_row_is_applied_only_from_its_tab() {
     let long = "line\n".repeat(purlis_core::harness::asked::edit::MOST_LINES + 1);
     std::fs::write(root.join("purlis.toml"), &long).expect("a long manifest");
     let one = Proposal {
+        memory: None,
         id: 1,
         session: 3,
         path: "purlis.toml".to_owned(),
@@ -568,6 +578,7 @@ fn a_change_too_long_for_a_row_is_applied_only_from_its_tab() {
 
     std::fs::write(root.join("purlis.toml"), "[plane]\n").expect("a manifest");
     let secret = Proposal {
+        memory: None,
         base: base_of(Some(b"[plane]\n")),
         change: Change::Whole {
             content: format!("token = \"{}\"\n", token()),
@@ -964,6 +975,7 @@ fn a_remembered_line_that_cannot_be_written_is_held_naming_the_chat_and_ask_behi
 #[test]
 fn a_change_purlis_holds_names_purlis_and_the_chat_and_ask_behind_it() {
     let one = Proposal {
+        memory: None,
         id: 3,
         session: BY_PURLIS,
         path: "personas/devops/persona.md".to_owned(),
@@ -996,6 +1008,7 @@ fn a_change_purlis_holds_names_purlis_and_the_chat_and_ask_behind_it() {
     // One with nothing behind it, such as removing an old table, is purlis's alone.
     let alone = crate::asking::proposed_change(
         &Proposal {
+            memory: None,
             behind: None,
             ..one
         },
@@ -1502,4 +1515,349 @@ fn git(root: &Path, args: &[&str]) {
         "git {args:?}: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+/// **A memory or todo a chat proposed for a store that is not its own** (T1.1-68, C1 and C2):
+/// held and shown with its target, nothing written until the person's Apply, and then exactly
+/// what was shown, into exactly that store.
+mod memory {
+    use super::*;
+    use purlis_core::brokered::Write;
+    use purlis_core::memoryproposal::{NOT_PROPOSABLE, Target};
+
+    fn a_plane() -> (tempfile::TempDir, PathBuf) {
+        let (dir, root) = project();
+        std::fs::write(
+            root.join("personas/devops/persona.md"),
+            "---\nname: devops\n---\n# devops\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("workspaces/beta")).unwrap();
+        (dir, root)
+    }
+
+    fn proposes(write: Write, target: Target) -> ProposeMemoryAsk {
+        ProposeMemoryAsk {
+            chat: 3,
+            write,
+            target,
+        }
+    }
+
+    fn remember(text: &str) -> Write {
+        Write::PersonaRemember {
+            text: text.to_owned(),
+            title: None,
+            shared: false,
+        }
+    }
+
+    fn entries(dir: &Path) -> usize {
+        std::fs::read_dir(dir).map_or(0, |d| {
+            d.filter_map(Result::ok)
+                .filter(|e| e.file_name() != purlis_core::memstore::INDEX)
+                .count()
+        })
+    }
+
+    #[test]
+    fn a_memory_is_held_shown_with_its_target_and_written_only_by_apply_audited_first() {
+        let (_dir, root) = a_plane();
+        let held = Proposals::default();
+        let ask = proposes(
+            remember("Run the drill"),
+            Target::Persona("devops".to_owned()),
+        );
+        assert_eq!(memory_asked_in(&root, &held, &ask, 1), Ok(()));
+        assert_eq!(entries(&root.join("personas/devops/memory")), 0, "held");
+
+        let one = held.every().remove(0);
+        assert!(one.memory.is_some() && one.skills.is_none() && one.limit.is_none());
+        let Now::Made { before, after } = now_of(&root, &one) else {
+            panic!("it is shown");
+        };
+        assert_eq!(before, "");
+        assert!(after.starts_with("In persona devops: "), "{after}");
+        assert!(after.contains("Run the drill"), "{after}");
+
+        let outcomes = Mutex::new(Vec::new());
+        let audit = |applied: &proposed::Applied<'_>| {
+            outcomes.lock().unwrap().push(applied.outcome);
+            Ok(())
+        };
+        let said = apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Row).unwrap();
+        assert!(said.contains("personas/devops/memory/"), "{said}");
+        assert_eq!(entries(&root.join("personas/devops/memory")), 1);
+        assert_eq!(entries(&root.join("personas/devops2")), 0);
+        assert_eq!(
+            *outcomes.lock().unwrap(),
+            vec![proposed::Outcome::Intent, proposed::Outcome::Applied]
+        );
+    }
+
+    #[test]
+    fn an_audit_that_fails_writes_nothing() {
+        let (_dir, root) = a_plane();
+        let held = Proposals::default();
+        let ask = proposes(
+            remember("Run the drill"),
+            Target::Persona("devops".to_owned()),
+        );
+        memory_asked_in(&root, &held, &ask, 1).unwrap();
+        let one = held.every().remove(0);
+        let refused = |_: &proposed::Applied<'_>| Err("the event log is not open".to_owned());
+        assert_eq!(
+            apply_in(&root, &one, None, &refused, &Mutex::new(()), From::Row),
+            Err(Refusal::Not("the event log is not open".to_owned()))
+        );
+        assert_eq!(entries(&root.join("personas/devops/memory")), 0);
+    }
+
+    #[test]
+    fn a_chats_proposals_for_one_store_are_held_side_by_side_up_to_the_most() {
+        let (_dir, root) = a_plane();
+        let held = Proposals::default();
+        let beta = Target::Workspace("beta".to_owned());
+        for at in 0..AT_MOST_PER_CHAT {
+            let todo = Write::Todo {
+                text: format!("todo {at}"),
+            };
+            assert_eq!(
+                memory_asked_in(&root, &held, &proposes(todo, beta.clone()), 1),
+                Ok(())
+            );
+        }
+        assert_eq!(
+            held.every().len(),
+            AT_MOST_PER_CHAT,
+            "none took another's place"
+        );
+        let one_more = Write::Todo {
+            text: "one more".to_owned(),
+        };
+        assert!(memory_asked_in(&root, &held, &proposes(one_more, beta), 1).is_err());
+    }
+
+    #[test]
+    fn move_optimize_archive_and_the_rest_are_not_held() {
+        use purlis_core::brokered::Store;
+        let (_dir, root) = a_plane();
+        let held = Proposals::default();
+        for write in [
+            Write::MoveMemory {
+                from: Store::Persona,
+                slug: "x".to_owned(),
+                to: Store::Shared,
+            },
+            Write::PersonaOptimize {
+                of: Store::Persona,
+                with_shared: false,
+                stale_days: 30,
+            },
+            Write::ArchiveMemory {
+                of: Store::Persona,
+                slug: "x".to_owned(),
+            },
+        ] {
+            assert_eq!(
+                memory_asked_in(
+                    &root,
+                    &held,
+                    &proposes(write, Target::Persona("devops".to_owned())),
+                    1
+                ),
+                Err(NOT_PROPOSABLE.to_owned())
+            );
+        }
+        assert!(held.every().is_empty());
+    }
+
+    /// One memory of persona `devops`, written the way the person's Apply writes one: its slug.
+    fn devops_remembers(root: &Path, text: &str) -> String {
+        let held = Proposals::default();
+        let ask = proposes(remember(text), Target::Persona("devops".to_owned()));
+        memory_asked_in(root, &held, &ask, 1).unwrap();
+        let one = held.every().remove(0);
+        let audit = |_: &proposed::Applied<'_>| -> Result<(), String> { Ok(()) };
+        apply_in(root, &one, None, &audit, &Mutex::new(()), From::Row).unwrap();
+        let names: Vec<String> = std::fs::read_dir(root.join("personas/devops/memory"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|name| name != purlis_core::memstore::INDEX)
+            .collect();
+        let name = names.first().expect("a memory");
+        name.strip_suffix(".md").unwrap_or(name).to_owned()
+    }
+
+    fn of_devops() -> Target {
+        Target::Persona("devops".to_owned())
+    }
+
+    /// **A forget is shown as the entry being removed, and the press removes exactly that.**
+    #[test]
+    fn a_forget_is_held_shown_as_the_entry_removed_and_the_press_removes_it_audited_first() {
+        use purlis_core::brokered::Store;
+        let (_dir, root) = a_plane();
+        let slug = devops_remembers(&root, "Run the drill monthly");
+        let held = Proposals::default();
+        let forget = Write::Forget {
+            of: Store::Persona,
+            slug: slug.clone(),
+        };
+        assert_eq!(
+            memory_asked_in(&root, &held, &proposes(forget, of_devops()), 1),
+            Ok(())
+        );
+        let one = held.every().remove(0);
+        assert_eq!(one.path, format!("In persona devops: Forget memory {slug}"));
+        let Now::Made { before, after } = now_of(&root, &one) else {
+            panic!("it is shown");
+        };
+        assert!(before.contains("Run the drill monthly"), "{before}");
+        assert_eq!(after, "", "the entry is gone");
+        let file = root.join(format!("personas/devops/memory/{slug}.md"));
+        assert!(file.exists(), "shown, not done");
+
+        let outcomes = Mutex::new(Vec::new());
+        let audit = |applied: &proposed::Applied<'_>| {
+            outcomes.lock().unwrap().push(applied.outcome);
+            Ok(())
+        };
+        let said = apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Row).unwrap();
+        assert!(said.contains("Forgot"), "{said}");
+        assert!(!file.exists());
+        assert_eq!(
+            *outcomes.lock().unwrap(),
+            vec![proposed::Outcome::Intent, proposed::Outcome::Applied]
+        );
+    }
+
+    /// **An edit is shown as the entry before and after, and the press writes exactly that.**
+    #[test]
+    fn an_edit_is_held_shown_before_and_after_and_the_press_writes_the_text_shown() {
+        use purlis_core::brokered::Store;
+        let (_dir, root) = a_plane();
+        let slug = devops_remembers(&root, "Run the drill monthly");
+        let held = Proposals::default();
+        let edit = Write::EditMemory {
+            of: Store::Persona,
+            slug: slug.clone(),
+            title: Some("Drills".to_owned()),
+            text: Some("Run the drill weekly".to_owned()),
+        };
+        memory_asked_in(&root, &held, &proposes(edit, of_devops()), 1).unwrap();
+        let one = held.every().remove(0);
+        let Now::Made { before, after } = now_of(&root, &one) else {
+            panic!("it is shown");
+        };
+        assert!(
+            before.contains("monthly") && !before.contains("weekly"),
+            "{before}"
+        );
+        assert!(
+            after.contains("weekly") && !after.contains("monthly"),
+            "{after}"
+        );
+
+        let audit = |_: &proposed::Applied<'_>| -> Result<(), String> { Ok(()) };
+        apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Row).unwrap();
+        let file = root.join(format!("personas/devops/memory/{slug}.md"));
+        assert_eq!(std::fs::read_to_string(file).unwrap(), after);
+    }
+
+    /// **A forget or an edit of a memory that changed since it was shown is stale**: the row is
+    /// marked so, Apply writes nothing, and the chat's note is the stale one.
+    #[test]
+    fn a_forget_or_an_edit_of_a_memory_that_changed_since_is_stale_and_apply_writes_nothing() {
+        use purlis_core::brokered::Store;
+        let (_dir, root) = a_plane();
+        let slug = devops_remembers(&root, "Run the drill monthly");
+        let held = Proposals::default();
+        for write in [
+            Write::Forget {
+                of: Store::Persona,
+                slug: slug.clone(),
+            },
+            Write::EditMemory {
+                of: Store::Persona,
+                slug: slug.clone(),
+                title: None,
+                text: Some("Run the drill weekly".to_owned()),
+            },
+        ] {
+            memory_asked_in(&root, &held, &proposes(write, of_devops()), 1).unwrap();
+        }
+        let file = root.join(format!("personas/devops/memory/{slug}.md"));
+        let changed = format!(
+            "{}\nAnd also on Fridays.\n",
+            std::fs::read_to_string(&file).unwrap().trim_end()
+        );
+        std::fs::write(&file, &changed).unwrap();
+
+        let audit = |_: &proposed::Applied<'_>| -> Result<(), String> { Ok(()) };
+        for one in held.every() {
+            assert_eq!(now_of(&root, &one), Now::Stale, "{}", one.path);
+            assert_eq!(
+                apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Row),
+                Err(Refusal::Stale),
+                "{}",
+                one.path
+            );
+        }
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            changed,
+            "untouched"
+        );
+    }
+
+    #[test]
+    fn a_store_gone_since_it_was_proposed_is_unprepared_and_apply_writes_nothing() {
+        let (_dir, root) = a_plane();
+        let held = Proposals::default();
+        let todo = Write::Todo {
+            text: "Rotate the key".to_owned(),
+        };
+        memory_asked_in(
+            &root,
+            &held,
+            &proposes(todo, Target::Workspace("beta".to_owned())),
+            1,
+        )
+        .unwrap();
+        let one = held.every().remove(0);
+        std::fs::remove_dir_all(root.join("workspaces/beta")).unwrap();
+        assert_eq!(now_of(&root, &one), Now::Unprepared);
+        let audit = |_: &proposed::Applied<'_>| -> Result<(), String> { Ok(()) };
+        assert_eq!(
+            apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Row),
+            Err(Refusal::Not(MEMORY_UNPREPARED.to_owned()))
+        );
+        assert!(!root.join("workspaces/beta").exists(), "nothing recreated");
+    }
+
+    #[test]
+    fn policy_off_holds_none() {
+        let (_dir, root) = a_plane();
+        purlis_core::sandbox::policy::set_for_this_test(
+            purlis_core::sandbox::policy::Locks::parse(
+                r#"{"sandbox": {"proposed-changes": "off"}}"#,
+                Path::new("/etc/purlis/policy.json"),
+            ),
+        );
+        let held = Proposals::default();
+        let said = memory_asked_in(
+            &root,
+            &held,
+            &proposes(remember("x"), Target::Persona("devops".to_owned())),
+            1,
+        );
+        purlis_core::sandbox::policy::set_for_this_test(purlis_core::sandbox::policy::Locks::none());
+        assert!(
+            said.expect_err("refused")
+                .starts_with("Policy turns proposed changes off")
+        );
+        assert!(held.every().is_empty());
+    }
 }

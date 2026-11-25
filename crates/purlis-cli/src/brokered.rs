@@ -475,6 +475,78 @@ pub fn propose_skill_set(change: purlis_core::skills::verbs::set::SetChange) -> 
     }
 }
 
+/// Why a memory or todo for another store was not proposed to the person.
+pub enum Unproposed {
+    /// No app took it (no chat, no connection, an app older than the ask): the command's own
+    /// refusal stands, as it always was.
+    NoApp,
+    /// The app read it and holds nothing: its sentence says why.
+    Refused(String),
+}
+
+/// **A memory or todo for another persona or workspace, handed to the app as a proposal**
+/// (T1.1-68, C1 and C2): held for the person, who alone applies it, shown with its text and its
+/// target. Nothing is written here. Only an additive write is sent: the callers are the
+/// `remember` and `todo` refusals, and the app refuses anything else. Its exit code once the
+/// app answers.
+pub fn propose_memory(
+    write: Write,
+    target: purlis_core::memoryproposal::Target,
+) -> Result<u8, Unproposed> {
+    // A text too long for one line of the chat's connection would be cut and dropped.
+    if let Some(why) = too_long_to_hand_over(&write) {
+        return Err(Unproposed::Refused(why));
+    }
+    let answered = asked(
+        |chat| {
+            Ask::ProposeMemory(Box::new(hookwire::ProposeMemoryAsk {
+                chat,
+                write,
+                target,
+            }))
+        },
+        A_WRITE_TAKES_AT_MOST,
+    );
+    match answered {
+        Ok(Ok(Answer::Said { lines, code })) => {
+            for line in lines {
+                crate::speak(line);
+            }
+            Ok(code)
+        }
+        Ok(Ok(Answer::No { why })) if why == hookwire::NOTHING_ANSWERS => Err(Unproposed::NoApp),
+        Ok(Ok(Answer::No { why })) => Err(Unproposed::Refused(why)),
+        // An app that answers this with anything else did not read it as this.
+        Ok(Ok(_)) => Err(Unproposed::NoApp),
+        Ok(Err(e)) if not_taken(&e) => Err(Unproposed::NoApp),
+        Ok(Err(e)) => Err(Unproposed::Refused(format!(
+            "the app did not answer ({e}), so nothing was proposed"
+        ))),
+        Err(_) => Err(Unproposed::NoApp),
+    }
+}
+
+/// **What a sandboxed chat's `remember` or `todo` for another store ends in**: proposed to the
+/// person where an app takes it, and otherwise the command's own `refusal`, words unchanged.
+/// Prints what the app said; its exit code.
+pub fn proposed_or_refused(
+    refusal: String,
+    write: Write,
+    target: purlis_core::memoryproposal::Target,
+) -> u8 {
+    match propose_memory(write, target) {
+        Ok(code) => code,
+        Err(Unproposed::Refused(why)) => {
+            crate::voice::err(why);
+            1
+        }
+        Err(Unproposed::NoApp) => {
+            crate::voice::err(refusal);
+            1
+        }
+    }
+}
+
 /// The sentence a sandboxed chat is refused with when a command would change a workspace other
 /// than its own, or every workspace (#1408): nothing is changed, and `instead`, the way round,
 /// is named.

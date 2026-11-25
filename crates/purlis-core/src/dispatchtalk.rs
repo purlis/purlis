@@ -782,6 +782,9 @@ pub enum ProposalWord {
     SkillsApplied { path: String },
     /// Its skills changed since the change was proposed, so it can't be applied.
     SkillsStale { path: String },
+    /// The person applied a memory or todo the chat proposed for another store (T1.1-68):
+    /// `path` is what it was, in words, with its target. It is never stale: it only adds.
+    MemoryApplied { path: String },
     /// The person pinned an artifact the chat proposed (#5963): `path` is the pin in words.
     PinApplied { path: String },
     /// The folder's pin changed since the pin was proposed, so it can't be pinned as shown.
@@ -800,6 +803,7 @@ impl ProposalWord {
             | Self::LimitStale { path }
             | Self::SkillsApplied { path }
             | Self::SkillsStale { path }
+            | Self::MemoryApplied { path }
             | Self::PinApplied { path }
             | Self::PinStale { path } => path,
         }
@@ -2779,6 +2783,10 @@ pub fn proposal_said(word: &ProposalWord) -> String {
             "⬢ purlis: the change to skills you proposed, `{path}`, can no longer be applied: \
              those skills changed since. Propose it again if it is still wanted. This line is \
              purlis's own."
+        ),
+        ProposalWord::MemoryApplied { path } => format!(
+            "⬢ purlis: the person applied what you proposed, `{path}`, in the purlis window. \
+             It is written. This line is purlis's own."
         ),
         ProposalWord::PinApplied { path } => format!(
             "⬢ purlis: the person pinned the artifact you proposed, `{path}`, in the purlis \

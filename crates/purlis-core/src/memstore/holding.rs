@@ -546,11 +546,7 @@ pub(super) fn edit(
     {
         return Err(EditRefused::Stale);
     }
-    let lines = crate::mdsection::split_lines(&now);
-    let body = match super::top_lines(&lines).1 {
-        Some((_, stamp)) => format!("# {title}\n\n{stamp}\n\n{text}\n"),
-        None => format!("# {title}\n\n{text}\n"),
-    };
+    let body = super::edited_body(&now, title, text);
     spot.gate(&name)?;
     spot.gate(INDEX)?;
     store.replace(&name, body.as_bytes()).map_err(refused)?;

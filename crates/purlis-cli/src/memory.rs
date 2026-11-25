@@ -758,9 +758,24 @@ pub fn workspace_remember_typed(
                 }
             }
             Named::Here => {}
+            // A memory for another workspace is proposed to the person, who alone applies it
+            // (T1.1-68, C2).
             Named::Refused(why) => {
-                voice::err(why.to_string());
-                return Ok(1);
+                let code = match workspace {
+                    Some(other) => crate::brokered::proposed_or_refused(
+                        why,
+                        Write::WorkspaceRemember {
+                            text: text.to_owned(),
+                            title: title.map(str::to_owned),
+                        },
+                        purlis_core::memoryproposal::Target::Workspace(other.to_owned()),
+                    ),
+                    None => {
+                        voice::err(why.to_string());
+                        1
+                    }
+                };
+                return Ok(code);
             }
         }
     }
@@ -780,11 +795,37 @@ fn its_own_by_the_app(here: &crate::Here, workspace: Option<&str>, write: Write)
     match crate::brokered::named_here(here, workspace) {
         Named::Own => crate::brokered::said_by_the_app(write),
         Named::Here => None,
-        Named::Refused(why) => {
-            voice::err(why.to_string());
-            Some(1)
-        }
+        // A memory forgotten or edited in another workspace is proposed to the person, who
+        // alone applies it (the person's ruling of 2026-11-25); archive and the rest stay
+        // refused.
+        Named::Refused(why) => match workspace.filter(|_| proposed_for_another(&write)) {
+            Some(other) => Some(crate::brokered::proposed_or_refused(
+                why,
+                write,
+                purlis_core::memoryproposal::Target::Workspace(other.to_owned()),
+            )),
+            None => {
+                voice::err(why.to_string());
+                Some(1)
+            }
+        },
     }
+}
+
+/// Whether `write`, a verb on a store that is not the chat's own, is one a chat proposes to the
+/// person instead of being refused: a memory forgotten or edited, in a workspace's or a
+/// persona's own store (never shared memory, which a chat names with its own persona).
+fn proposed_for_another(write: &Write) -> bool {
+    matches!(
+        write,
+        Write::Forget {
+            of: Store::Workspace | Store::Persona,
+            ..
+        } | Write::EditMemory {
+            of: Store::Workspace | Store::Persona,
+            ..
+        }
+    )
 }
 
 /// What purlis says once a memory is written to workspace `name`'s journal at `path`: where it
@@ -1339,11 +1380,26 @@ pub fn persona(here: &crate::Here, command: PersonaCommand) -> Result<Code, CliE
             let own = named.is_none() || named == here.active_persona(None).as_deref();
             // A sandboxed chat keeps no scratch in the state folder, and writes no persona's
             // memory but its own (#1408, D-1408-2): refused, naming the way round.
-            if let Some(why) =
-                refused_in_a_sandbox(here, named.filter(|_| !own && !shared), ephemeral)
-            {
-                voice::err(why.to_string());
-                return Ok(1);
+            let other = named.filter(|_| !own && !shared);
+            if let Some(why) = refused_in_a_sandbox(here, other, ephemeral) {
+                // A memory for another persona is proposed to the person, who alone applies it
+                // (T1.1-68, C1); scratch and a pinned clock stay refused.
+                let code = match other.filter(|_| !ephemeral && now.is_none()) {
+                    Some(other) => crate::brokered::proposed_or_refused(
+                        why,
+                        Write::PersonaRemember {
+                            text: text.clone(),
+                            title: title.clone(),
+                            shared: false,
+                        },
+                        purlis_core::memoryproposal::Target::Persona(other.to_owned()),
+                    ),
+                    None => {
+                        voice::err(why.to_string());
+                        1
+                    }
+                };
+                return Ok(code);
             }
             if (shared || own) && !ephemeral && now.is_none() {
                 let write = Write::PersonaRemember {
@@ -1701,6 +1757,15 @@ fn refused_in_a_sandbox(
 fn persona_verb(here: &crate::Here, name: &str, ephemeral: bool, write: Write) -> Option<Code> {
     let own = here.active_persona(None).as_deref() == Some(name);
     if let Some(why) = refused_in_a_sandbox(here, (!own).then_some(name), ephemeral) {
+        // A memory forgotten or edited in another persona's own store is proposed to the person
+        // (the person's ruling of 2026-11-25); archive, unarchive and scratch stay refused.
+        if !own && !ephemeral && proposed_for_another(&write) {
+            return Some(crate::brokered::proposed_or_refused(
+                why,
+                write,
+                purlis_core::memoryproposal::Target::Persona(name.to_owned()),
+            ));
+        }
         voice::err(why.to_string());
         return Some(1);
     }

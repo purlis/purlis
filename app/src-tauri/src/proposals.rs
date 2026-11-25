@@ -34,7 +34,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
 use purlis_core::dispatchtalk::ProposalWord;
-use purlis_core::hookwire::{Answer, ProposeAsk, ProposeLimitAsk, ProposeSkillSetAsk};
+use purlis_core::hookwire::{
+    Answer, ProposeAsk, ProposeLimitAsk, ProposeMemoryAsk, ProposeSkillSetAsk,
+};
 use purlis_core::poollimits::LimitId;
 use purlis_core::proposed::{self, Change, NotMade};
 use purlis_core::skills::verbs::set::SetChange;
@@ -76,6 +78,9 @@ pub struct Proposal {
     /// is then its name in words, and [`Self::change`] is not read. Never applied by Apply: only
     /// the person's press of Pin to workspace pins it ([`crate::pinproposals`]).
     pub pin: Option<crate::pinproposals::PinChange>,
+    /// A memory or todo for another store, in place of a change to a file (T1.1-68):
+    /// [`Self::path`] is then what it is in words, and [`Self::change`] is not read.
+    pub memory: Option<MemoryChange>,
 }
 
 /// The chat and the Secret ask behind a change purlis holds (#5240): the chat that asked for
@@ -116,9 +121,25 @@ pub struct SkillsChange {
     pub state: String,
 }
 
+/// A memory or todo a chat proposed for a store that is not its own (T1.1-68, C1 and C2), or a
+/// memory forgotten or edited there (the person's ruling of 2026-11-25): the write and the store
+/// it is aimed at, judged by [`purlis_core::memoryproposal`] when it was held and again at Apply.
+/// Apply writes exactly this, into exactly that store, and only where the entry is still what
+/// was shown.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryChange {
+    pub write: purlis_core::brokered::Write,
+    pub target: purlis_core::memoryproposal::Target,
+    /// What a forget or an edit was pinned to when it was shown
+    /// ([`purlis_core::memoryproposal::Shown::state`]): the entry at another text at Apply makes
+    /// it stale. `None` for what only adds.
+    pub state: Option<String>,
+}
+
 /// What one proposal holds beyond a change to a file.
 #[derive(Debug, Default)]
 struct Extra {
+    memory: Option<MemoryChange>,
     limit: Option<LimitChange>,
     skills: Option<SkillsChange>,
     behind: Option<Behind>,
@@ -222,6 +243,32 @@ impl Proposals {
         )
     }
 
+    /// Holds chat `session`'s memory or todo for another store, under the rules of
+    /// [`Self::note`]. Several to one store are held side by side: each adds an entry of its
+    /// own, so a newer one takes no older one's place.
+    pub fn note_memory(
+        &self,
+        session: u32,
+        path: &str,
+        memory: MemoryChange,
+        now: u64,
+    ) -> Option<u32> {
+        let nothing = Change::Whole {
+            content: String::new(),
+        };
+        self.hold(
+            session,
+            path,
+            None,
+            nothing,
+            Extra {
+                memory: Some(memory),
+                ..Extra::default()
+            },
+            now,
+        )
+    }
+
     /// Holds chat `session`'s pin of an artifact folder (#5963), under the rules of
     /// [`Self::note`].
     pub fn note_pin(
@@ -258,7 +305,9 @@ impl Proposals {
     ) -> Option<u32> {
         let mut held = self.lock();
         let (next, list) = &mut *held;
-        list.retain(|one| !(one.session == session && one.path == path));
+        if extra.memory.is_none() {
+            list.retain(|one| !(one.session == session && one.path == path));
+        }
         if list.iter().filter(|one| one.session == session).count() >= AT_MOST_PER_CHAT {
             return None;
         }
@@ -276,6 +325,7 @@ impl Proposals {
             skills: extra.skills,
             behind: extra.behind,
             pin: extra.pin,
+            memory: extra.memory,
         });
         Some(id)
     }
@@ -587,6 +637,92 @@ pub fn skills_asked_in(
         })
 }
 
+/// Chat `ask.chat` proposed a memory or todo for a store that is not its own (T1.1-68):
+/// held for the person, or why not. Held to what [`asked`] holds a chat to. **Nothing is
+/// written here, whatever is asked.**
+pub fn asked_memory(held: &Held, ask: &ProposeMemoryAsk) -> Answer {
+    let no = |why: String| Answer::No { why };
+    if !held
+        .chats()
+        .open_now()
+        .iter()
+        .any(|open| open.session == ask.chat)
+    {
+        return no(format!("chat {} is not one this app has open", ask.chat));
+    }
+    if let Err(why) = held.brokered().allow(ask.chat, std::time::Instant::now()) {
+        return no(why);
+    }
+    match memory_asked_in(
+        held.root(),
+        held.proposals(),
+        ask,
+        crate::sandboxing::now_secs(),
+    ) {
+        Ok(()) => {
+            held.chats().asks_may_have_moved();
+            Answer::Said {
+                lines: vec![purlis_core::repocmd::Say::Done(HELD_SAID.into())],
+                code: 0,
+            }
+        }
+        Err(why) => no(why),
+    }
+}
+
+/// [`asked_memory`]'s judgement of `ask` in the project at `root`, held in `proposals` at
+/// `now`: only an additive write, aimed at a store that is there, and held as the person will
+/// read it.
+pub fn memory_asked_in(
+    root: &Path,
+    proposals: &Proposals,
+    ask: &ProposeMemoryAsk,
+    now: u64,
+) -> Result<(), String> {
+    // PC-14: a project where proposals are off holds none of these either.
+    if let Some(why) = purlis_core::sandbox::policy::Locks::of(root).proposed_changes_refused() {
+        return Err(why);
+    }
+    if ask.chat == BY_PURLIS {
+        return Err(format!("chat {BY_PURLIS} is no chat that proposes"));
+    }
+    let one = purlis_core::memoryproposal::shown(root, ask.write.clone(), &ask.target)?;
+    let path = purlis_core::memoryproposal::said(&one.write, &ask.target);
+    proposals
+        .note_memory(
+            ask.chat,
+            &path,
+            MemoryChange {
+                write: one.write,
+                target: ask.target.clone(),
+                state: one.state,
+            },
+            now,
+        )
+        .map(|_| ())
+        .ok_or_else(|| {
+            format!(
+                "this chat has {AT_MOST_PER_CHAT} proposed changes waiting already: wait for the \
+                 person's answers before proposing another"
+            )
+        })
+}
+
+/// [`Now`] of a memory or todo proposed for another store, as it would be made now: the entry
+/// before and after for a forget or an edit, and the sentence that says what is added for the
+/// rest. A forget or an edit of an entry that is not the text it was shown is stale; one whose
+/// store or entry is gone, or that no longer fits, is unprepared. What only adds is never stale.
+pub fn memory_now(root: &Path, memory: &MemoryChange) -> Now {
+    match purlis_core::memoryproposal::shown(root, memory.write.clone(), &memory.target) {
+        Ok(one) if one.state != memory.state || one.write != memory.write => Now::Stale,
+        Ok(one) => Now::Made {
+            before: one.before,
+            after: one.after,
+        },
+        Err(_) => Now::Unprepared,
+    }
+}
+
 /// [`Now`] of a change to several skills, as the plane holds them now: judged again.
 pub fn skills_now(root: &Path, skills: &SkillsChange) -> Now {
     let shown = skills.change.shown(root);
@@ -666,6 +802,9 @@ pub fn now_of(root: &Path, one: &Proposal) -> Now {
     }
     if let Some(pin) = &one.pin {
         return crate::pinproposals::now(root, pin);
+    }
+    if let Some(memory) = &one.memory {
+        return memory_now(root, memory);
     }
     match proposed::prepare(
         root,
@@ -878,6 +1017,8 @@ pub fn applied(held: &Held, id: u32, from: From, to: Option<&Path>) -> Result<St
         LIMIT_STALE_SAID
     } else if one.skills.is_some() {
         SKILLS_STALE_SAID
+    } else if one.memory.is_some() {
+        MEMORY_STALE_SAID
     } else {
         STALE_SAID
     };
@@ -895,7 +1036,7 @@ pub fn applied(held: &Held, id: u32, from: From, to: Option<&Path>) -> Result<St
             crate::oldplugins::purlis_change_applied(root, &one);
             // Another chat's change to skills is judged again by the plane's state, not by its
             // name, which two different sets can share.
-            if one.skills.is_none() {
+            if one.skills.is_none() && one.memory.is_none() {
                 for session in held.proposals().others_stale(&one.path) {
                     tell(held, session, stale_word(&one));
                 }
@@ -906,6 +1047,10 @@ pub fn applied(held: &Held, id: u32, from: From, to: Option<&Path>) -> Result<St
                 }
             } else if one.skills.is_some() {
                 ProposalWord::SkillsApplied {
+                    path: one.path.clone(),
+                }
+            } else if one.memory.is_some() {
+                ProposalWord::MemoryApplied {
                     path: one.path.clone(),
                 }
             } else {
@@ -988,6 +1133,9 @@ pub fn apply_in_to(
     }
     if let Some(skills) = &one.skills {
         return apply_skills(root, one, skills, persona, audit, lock, to);
+    }
+    if let Some(memory) = &one.memory {
+        return apply_memory(root, one, memory, persona, audit, lock);
     }
     // A pin is never made by Apply, whatever asked: only by Pin to workspace (#5963).
     if one.pin.is_some() {
@@ -1123,6 +1271,67 @@ pub(crate) fn apply_limit(
         change.id.limit().takes_effect.said()
     ))
 }
+
+/// Writes a memory or todo a chat proposed for another store (T1.1-68): judged again, audited
+/// first, then written by [`purlis_core::memoryproposal::apply`], exactly as it was shown and
+/// into exactly the store it names. It adds an entry and changes none, so it is never stale.
+pub(crate) fn apply_memory(
+    root: &Path,
+    one: &Proposal,
+    memory: &MemoryChange,
+    persona: Option<&str>,
+    audit: &dyn Fn(&proposed::Applied<'_>) -> Result<(), String>,
+    lock: &Mutex<()>,
+) -> Result<String, Refusal> {
+    use purlis_core::memoryproposal::NotMade;
+    let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
+    let after = match memory_now(root, memory) {
+        Now::Made { after, .. } => after,
+        Now::Stale => return Err(Refusal::Stale),
+        Now::Unprepared => return Err(Refusal::Not(MEMORY_UNPREPARED.to_owned())),
+    };
+    let written = proposed::base_of(Some(after.as_bytes())).unwrap_or_default();
+    let record = |outcome, why: Option<&str>| {
+        audit(&proposed::Applied {
+            persona,
+            path: &one.path,
+            written: &written,
+            outcome,
+            why,
+        })
+    };
+    record(proposed::Outcome::Intent, None).map_err(Refusal::Not)?;
+    let made = purlis_core::memoryproposal::apply(
+        root,
+        one.session,
+        &memory.write,
+        &memory.target,
+        memory.state.as_deref(),
+        jiff::Zoned::now().datetime(),
+    );
+    let (outcome, why) = match &made {
+        Ok(_) => (proposed::Outcome::Applied, None),
+        Err(NotMade::Stale) => (proposed::Outcome::Stale, None),
+        Err(NotMade::Refused(why)) => (proposed::Outcome::Failed, Some(why.as_str())),
+    };
+    if let Err(why) = record(outcome, why) {
+        tracing::warn!("purlis: a proposed memory's outcome was not recorded ({why})");
+    }
+    match made {
+        Ok(said) => Ok(format!("{said} It rides your next save.")),
+        Err(NotMade::Stale) => Err(Refusal::Stale),
+        Err(NotMade::Refused(why)) => Err(Refusal::Not(why)),
+    }
+}
+
+/// What Apply says of a proposed memory or todo whose store or entry is gone: nothing was
+/// written.
+pub const MEMORY_UNPREPARED: &str = "The persona, workspace or memory it was for is gone, or this \
+     no longer fits it, so nothing was written. Dismiss it.";
+
+/// What Apply says of a proposed forget or edit whose memory changed since it was shown.
+pub const MEMORY_STALE_SAID: &str = "That memory changed since this was proposed, so nothing was \
+     written. Dismiss it; the chat is told it changed.";
 
 /// **Makes a change to several skills a chat proposed** (#5357): judged again against the plane
 /// as it was shown, audited, then made as one commit through the verbs the window's own review
@@ -1364,6 +1573,7 @@ fn written_need(
         skills: None,
         behind: None,
         pin: None,
+        memory: None,
     };
     // Shown whole by what asked for it: the person read the line, however long the file is.
     apply_in(root, &change, None, audit, proposals.applying(), From::Tab)?;

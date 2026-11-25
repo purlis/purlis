@@ -4242,7 +4242,18 @@ fn run(command: Command) -> Result<u8, clierror::CliError> {
                 match brokered::named_here(&here, common.workspace.as_deref()) {
                     brokered::Named::Own => true,
                     brokered::Named::Here => false,
+                    // A todo added to another workspace is proposed to the person, who alone
+                    // applies it (T1.1-68, C2); closing one there stays refused.
                     brokered::Named::Refused(why) => {
+                        if let ([text], true, Some(other)) =
+                            (words.as_slice(), adds, common.workspace.as_deref())
+                        {
+                            return Ok(brokered::proposed_or_refused(
+                                why,
+                                purlis_core::brokered::Write::Todo { text: text.clone() },
+                                purlis_core::memoryproposal::Target::Workspace(other.to_owned()),
+                            ));
+                        }
                         voice::err(why.to_string());
                         return Ok(1);
                     }
