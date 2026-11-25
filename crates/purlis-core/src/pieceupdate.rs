@@ -87,7 +87,7 @@ pub struct Reach<'a> {
 
 /// The settings every rebase here runs with, whatever the repository's config says: no editor,
 /// no signer, no upkeep after it, and no other branch moved with it.
-const REBASE: [&str; 18] = [
+const REBASE: [&str; 22] = [
     "-c",
     "rebase.backend=merge",
     "-c",
@@ -106,6 +106,12 @@ const REBASE: [&str; 18] = [
     "gc.auto=0",
     "-c",
     "maintenance.auto=false",
+    // A failed `exec` is never rescheduled, and no note is copied to the commits a rebase
+    // writes (`notes.rewriteRef` could name a ref the chat chose): #7594, round 4.
+    "-c",
+    "rebase.rescheduleFailedExec=false",
+    "-c",
+    "notes.rewrite.rebase=false",
 ];
 
 /// `purlis worktree update`: one step of it in `piece`, its exit status, its lines said.
@@ -456,7 +462,7 @@ impl Here {
 /// Whether `git_dir` is the record the clone at `clone` keeps of the linked worktree at
 /// `folder`: a directory right inside the clone's own `.git/worktrees`, whose `gitdir` names
 /// that folder's `.git`. Links are followed on both sides before they are compared.
-fn own_record_of(clone: &Path, git_dir: &Path, folder: &Path) -> bool {
+pub(crate) fn own_record_of(clone: &Path, git_dir: &Path, folder: &Path) -> bool {
     let canon = |path: &Path| std::fs::canonicalize(path).ok();
     if !worktree::is_own_git_dir(&clone.join(".git")) {
         return false;
@@ -1963,7 +1969,8 @@ fn the_plan(here: &Here, record: &Record, range: &Range, state: &Path) -> Result
     let rest = &plan[done..];
     let ours = ids.len() == rest.len()
         && ids.iter().zip(rest).all(|(id, full)| {
-            id.len() >= 4 && id.bytes().all(|b| b.is_ascii_hexdigit()) && full.starts_with(id)
+            // A whole id: an abbreviated one can name a ref of the same name instead (#7594).
+            matches!(id.len(), 40 | 64) && id.bytes().all(|b| b.is_ascii_hexdigit()) && id == *full
         });
     ours.then_some(()).ok_or_else(|| {
         "a plan that is not the commits the update replays after the one it stopped on".to_owned()
@@ -2443,6 +2450,18 @@ mod tests {
                 Some(word),
                 "{line:?}"
             );
+        }
+    }
+
+    /// A rebase copies no note and reschedules no failed `exec`, whatever the config says (#7594).
+    #[test]
+    fn a_rebase_is_pinned_to_copy_no_notes_and_reschedule_no_exec() {
+        let pairs: Vec<_> = REBASE.windows(2).filter(|w| w[0] == "-c").collect();
+        for setting in [
+            "notes.rewrite.rebase=false",
+            "rebase.rescheduleFailedExec=false",
+        ] {
+            assert!(pairs.iter().any(|w| w[1] == setting), "{setting}");
         }
     }
 

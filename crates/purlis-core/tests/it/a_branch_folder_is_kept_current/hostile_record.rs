@@ -373,10 +373,9 @@ fn the_plan_a_rebase_goes_on_with_is_the_apps_own_and_its_notes_go_when_it_finis
     assert_eq!(out(&piece, &["rev-parse", "refs/heads/p1"]), before);
 }
 
-/// What the record may not hold, whatever it is called: not one of the names git and the app's own
-/// update leave there (#7594, round 3).
+/// What the record may not hold, whatever it is called: a name git acts on (#7594, rounds 3 and 4).
 #[test]
-fn a_lower_case_pseudo_ref_a_merge_mode_link_and_a_name_nobody_listed_are_refused() {
+fn a_lower_case_pseudo_ref_a_merge_mode_link_and_a_name_git_acts_on_are_refused() {
     purlis_core::unsteered!();
     let w = world();
     let (code, cut) = add(&w, "p1", None);
@@ -423,12 +422,12 @@ fn a_lower_case_pseudo_ref_a_merge_mode_link_and_a_name_nobody_listed_are_refuse
     );
     std::fs::remove_file(record.join("MERGE_MODE")).unwrap();
 
-    // A name git reads that nobody listed: refused by being unlisted, as a file or a folder.
-    for (name, folder) in [
-        ("config.worktree", false),
-        ("Modules", true),
-        ("sequencer", true),
-        ("rebase-apply", true),
+    // A name git acts on: refused, as a file or a folder.
+    for (name, folder, said_of) in [
+        ("config.worktree", false, "per-worktree git config"),
+        ("Config.Worktree", false, "per-worktree git config"),
+        ("sequencer", true, "did not start"),
+        ("Rebase-Apply", true, "did not start"),
     ] {
         let at = record.join(name);
         if folder {
@@ -436,15 +435,28 @@ fn a_lower_case_pseudo_ref_a_merge_mode_link_and_a_name_nobody_listed_are_refuse
         } else {
             std::fs::write(&at, "[core]\n\thooksPath = /tmp\n").unwrap();
         }
-        let (code, said) = update(&w, "p1", &start(None), &Reach::default());
-        assert_eq!(code, 1, "{name}: {said}");
-        assert!(said.contains("not something git"), "{name}: {said}");
+        for step in ["update", "push"] {
+            let (code, said) = if step == "update" {
+                update(&w, "p1", &start(None), &Reach::default())
+            } else {
+                push(&w, "p1")
+            };
+            assert_eq!(code, 1, "{name} {step}: {said}");
+            assert!(said.contains(said_of), "{name} {step}: {said}");
+        }
         if folder {
             std::fs::remove_dir(&at).unwrap();
         } else {
             std::fs::remove_file(&at).unwrap();
         }
     }
+    // A non-empty `refs/`: git reads per-worktree refs.
+    std::fs::create_dir_all(record.join("refs/bisect")).unwrap();
+    std::fs::write(record.join("refs/bisect/bad"), "0\n").unwrap();
+    let (code, said) = update(&w, "p1", &start(None), &Reach::default());
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("per-worktree ref"), "{said}");
+    std::fs::remove_dir_all(record.join("refs")).unwrap();
     let (code, said) = update(&w, "p1", &start(None), &Reach::default());
     assert_eq!(code, 0, "{said}");
 }
@@ -571,4 +583,137 @@ fn a_cut_whose_branch_note_cannot_be_written_fails() {
     let (code, said) = add(&w, "p1", None);
     assert_ne!(code, 0, "{said}");
     assert!(said.contains("note"), "{said}");
+}
+
+/// What git and the person's tools leave in a record that git does not act on: the review's survey
+/// of 198 records on one machine found these (#7594, round 4). Each is ignored, and the
+/// attacks of rounds 1 to 3 beside them are still refused.
+#[test]
+fn the_names_git_and_other_tools_leave_in_a_record_are_ignored_and_the_attacks_beside_them_are_not()
+{
+    purlis_core::unsteered!();
+    let w = world();
+    let (code, cut) = add(&w, "p1", None);
+    assert_eq!(code, 0, "{cut}");
+    let piece = w.piece("p1");
+    write(&piece, "shared.txt", "a\nmine\nc\n");
+    git(&piece, &["commit", "-q", "-am", "mine"]);
+    w.they_commit("README.md", "theirs\n");
+    let record = w.clone.join(".git/worktrees/p1");
+
+    for folder in [
+        "glab-cli",
+        "modules",
+        "refs/bisect",
+        "fsmonitor--daemon.d",
+        "Info",
+    ] {
+        std::fs::create_dir_all(record.join(folder)).unwrap();
+    }
+    for file in [
+        "gc.log",
+        "purlis-updated",
+        "sharedindex.d28f321c554dd2a81e9b71f04f6c6aa3cb159355",
+        "fsmonitor--daemon",
+    ] {
+        std::fs::write(record.join(file), "x\n").unwrap();
+    }
+    std::fs::write(record.join("glab-cli/inner"), "not looked at\n").unwrap();
+    let (code, said) = update(&w, "p1", &start(None), &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    let (code, said) = push(&w, "p1");
+    assert_eq!(code, 0, "{said}");
+
+    // Still refused beside them: a link, by any name, and what git acts on.
+    #[cfg(unix)]
+    {
+        let victim = w.plane.join("victim.txt");
+        std::fs::write(&victim, "the person's own file\n").unwrap();
+        std::os::unix::fs::symlink(&victim, record.join("gc.log.1")).unwrap();
+        let (code, said) = update(&w, "p1", &start(None), &Reach::default());
+        assert_eq!(code, 1, "{said}");
+        assert!(said.contains("a link"), "{said}");
+        std::fs::remove_file(record.join("gc.log.1")).unwrap();
+    }
+    std::fs::write(record.join("ORIG_HEAD"), "ref: refs/heads/main\n").unwrap();
+    let (code, said) = update(&w, "p1", &start(None), &Reach::default());
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("symbolic ref"), "{said}");
+}
+
+/// M1: a plan whose ids are abbreviated is not one the update wrote, since git resolves an
+/// abbreviation to a ref of that name first.
+#[test]
+fn a_pick_of_an_abbreviated_id_that_a_ref_of_the_same_name_shadows_is_not_continued() {
+    purlis_core::unsteered!();
+    let (w, piece, state) = stopped();
+    resolve(&piece);
+    let todo = state.join("git-rebase-todo");
+    let planned = String::from_utf8(std::fs::read(&todo).unwrap()).unwrap();
+    let full = planned
+        .lines()
+        .find_map(|line| line.strip_prefix("pick "))
+        .and_then(|rest| rest.split_whitespace().next())
+        .expect("a pick")
+        .to_owned();
+    let short = &full[..8];
+    // A branch called as the abbreviation, on a commit nobody planned.
+    let elsewhere = out(&w.theirs, &["rev-parse", "HEAD"]);
+    git(&w.clone, &["branch", short, &elsewhere]);
+    std::fs::write(&todo, planned.replacen(&full, short, 1)).unwrap();
+    let (code, said) = update(&w, "p1", &UpdateStep::Continue, &Reach::default());
+    assert_eq!(code, 1, "{said}");
+    assert!(said.contains("does not plan"), "{said}");
+    assert!(todo.is_file(), "the rebase went on");
+    std::fs::write(&todo, planned).unwrap();
+    let (code, said) = update(&w, "p1", &UpdateStep::Continue, &Reach::default());
+    assert_eq!(code, 0, "{said}");
+}
+
+/// `purlis worktree adopt`: a piece cut on a `--branch` name before the note was kept is
+/// recorded by the person, and not where another folder has the branch.
+#[test]
+fn adopt_records_a_branch_piece_and_refuses_a_branch_held_elsewhere() {
+    purlis_core::unsteered!();
+    let w = world();
+    let (code, cut) = add_on(&w, "p1", "fix/7594-p1-token");
+    assert_eq!(code, 0, "{cut}");
+    w.they_commit("README.md", "theirs\n");
+    forget_branch_notes(&w);
+
+    // No note, and the folder's name is not its branch: the app's git refuses, naming the fix.
+    let (code, refusal) = update(&w, "p1", &start(None), &Reach::default());
+    assert_eq!(code, 1, "{refusal}");
+    assert!(refusal.contains("purlis worktree adopt"), "{refusal}");
+
+    let adopt = |piece: &str| {
+        let mut lines = Vec::new();
+        let code = brokered(|| {
+            purlis_core::piececmd::adopt(&w.plane, WS, REPO, piece, &mut |l| lines.push(l))
+        });
+        (code, said(&lines))
+    };
+    let (code, adopted) = adopt("p1");
+    assert_eq!(code, 0, "{adopted}");
+    assert!(adopted.contains("fix/7594-p1-token"), "{adopted}");
+    assert!(app_notes(&w).contains(&"purlis-branch".to_owned()));
+    let (code, ran) = update(&w, "p1", &start(None), &Reach::default());
+    assert_eq!(code, 0, "{ran}");
+
+    // p2's folder is put on the branch p1's folder holds: not adopted.
+    let (code, cut) = add_on(&w, "p2", "fix/7594-p2-token");
+    assert_eq!(code, 0, "{cut}");
+    forget_branch_notes(&w);
+    git(
+        &w.piece("p2"),
+        &[
+            "checkout",
+            "-q",
+            "--ignore-other-worktrees",
+            "fix/7594-p1-token",
+        ],
+    );
+    let (code, refused) = adopt("p2");
+    assert_eq!(code, 1, "{refused}");
+    assert!(refused.contains("another worktree"), "{refused}");
 }

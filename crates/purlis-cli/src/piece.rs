@@ -106,6 +106,18 @@ pub enum WorktreeCommand {
         #[arg(long)]
         force_with_lease: bool,
     },
+    /// Record the branch a piece is on as the one it was cut for. A piece cut before purlis kept
+    /// that note, on a branch whose name is not the folder's (`--branch`), has none, and the
+    /// app's git then does not act on it for a chat. Run it once, from your own terminal, after
+    /// checking the folder is on the right branch: refused where another folder has that branch,
+    /// and in a chat.
+    Adopt {
+        repo: String,
+        piece: String,
+        /// The workspace (default: the active one).
+        #[arg(short = 'w', long = "workspace")]
+        workspace: Option<String>,
+    },
     /// Declare the piece you are standing in finished. Run from inside it.
     Done,
     /// Declare the piece you are standing in given up, and why. Run from inside it.
@@ -286,6 +298,25 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, CliError> {
                 )
             })
         }),
+        WorktreeCommand::Adopt {
+            repo,
+            piece,
+            workspace,
+        } => {
+            let ws = here.active_workspace(workspace.as_deref())?;
+            // What the folder is on is trusted once: only the person says so.
+            if crate::session::chat_number().is_some() {
+                say(purlis_core::repocmd::Say::Fail(
+                    format!(
+                        "`purlis worktree adopt` records what {repo} \u{b7} {piece} is on as the \
+                         branch it was cut for, so only you do: run it from your own terminal"
+                    )
+                    .into(),
+                ));
+                return Ok(1);
+            }
+            piececmd::adopt(&root, &ws, &repo, &piece, &mut say)
+        }
         WorktreeCommand::Done => {
             piececmd::declare(&root, &here.cwd, Declaration::Done, &who, now, &mut say)
         }

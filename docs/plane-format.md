@@ -7198,12 +7198,21 @@ down rather than read off the code.
   read, and a link where it was refuses the commit).
 - **What the app does not prevent (#7553, #7594):** where a chat can write the worktree's git
   record (sandbox level off), the app looks at the record before each git call it makes and again after
-  it. A linked worktree's record may hold only an allowlist of names, compared case-folded
-  (`worktree::record::FILES`, `FOLDERS`, and in `rebase-merge/` `REBASE_FILES`), each a regular
-  file or folder, never a link: anything else (`MERGE_MODE` as a link, `config.worktree`,
-  `rebase-merge/refs-to-delete`, `sequencer/`, `rebase-apply/`) refuses the call, and a
-  pseudo-ref that holds `ref:` and a `HEAD` that is not the cut's branch refuse it too, and tells the
-  person if it changed. It does **not** prevent a link planted *while* git runs (H3), nor a write
+  it, and tells the person if it changed. **It refuses what git acts on and ignores the rest**
+  (`worktree::record::refused`): a link at the top of a linked worktree's record, by any name,
+  refuses the call; the names git reads or writes as state, compared case-folded, are held to
+  their kind and content (`HEAD`, `index`, `commondir`, `gitdir`, `MERGE_*`, every `*_HEAD` and
+  `AUTO_MERGE`, which must not hold `ref:`; `logs/`; `rebase-merge/` with the allowlist
+  `REBASE_FILES`, so a `refs-to-delete`, `update-refs` or `autostash` refuses); `config.worktree`,
+  `sequencer/`, `rebase-apply/` and a `refs/` that holds a file refuse outright. Every other
+  name is not looked inside (`glab-cli/`, `gc.log`, `purlis-updated`, `modules/`,
+  `fsmonitor--daemon*`, `sharedindex.*`, `BISECT_*`, an empty `refs/`): git and the person's tools
+  leave them in most records, and the app's git never runs a submodule operation
+  (`submodule.recurse=false` on every call). A `HEAD` that is not the cut's branch refuses it too.
+  A piece cut before the note was kept, on a `--branch` name, is recorded once by the person with
+  `purlis worktree adopt <repo> <piece>`, which refuses where another worktree holds that branch.
+  A rebase's plan is continued only when each id in it is a whole commit id the update planned.
+  It does **not** prevent a link planted *while* git runs (H3), nor a write
   to a rebase's plan between the last look and git reading it (M3). At level off the notes folder
   above is writable by the chat too (M4), so these notes are the app's, not a chat-proof record.
   A fuller fix (committing through `commit-tree` and `update-ref`, so no file of the record is
