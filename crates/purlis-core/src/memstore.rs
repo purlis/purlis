@@ -1832,8 +1832,25 @@ pub enum Base<'a> {
     /// The memory file's whole text as the caller read it. A file that differs on disk now is
     /// refused as [`EditRefused::Stale`].
     Read(&'a str),
+    /// The digest ([`crate::proposed::base_of`]) of the memory file's whole text as the person
+    /// was shown it: a file that differs now is refused as [`EditRefused::Stale`]. A proposal
+    /// carries only this, so the check is made under the store's lock, at the write.
+    Sha(&'a str),
     /// Write whatever the file holds now — the window's Overwrite, after a stale refusal.
     Overwrite,
+}
+
+impl Base<'_> {
+    /// Whether `now`, the file's text under the lock, is not what this base was taken from.
+    fn stale(self, now: &str) -> bool {
+        match self {
+            Self::Read(read) => read != now,
+            Self::Sha(sha) => {
+                crate::proposed::base_of(Some(now.as_bytes())).as_deref() != Some(sha)
+            }
+            Self::Overwrite => false,
+        }
+    }
 }
 
 /// Why an edit wrote nothing.
@@ -1892,6 +1909,42 @@ pub(crate) fn top_lines<'a>(lines: &[&'a str]) -> (TopLine<'a>, TopLine<'a>) {
         .map(|(i, line)| (i, py_strip(line)))
         .filter(|(_, line)| is_stamp_line(line));
     (heading, stamp)
+}
+
+/// [`forget`] of the file named exactly `ident`, only while its text is the one `base` was taken
+/// from: a proposal's press, which must delete what the person was shown and nothing else.
+/// Never the file whose name merely ends `-<ident>.md`; a file gone, or changed, is
+/// [`EditRefused::Stale`] and nothing is removed. Checked and removed under the store's
+/// [`crate::rewrite::Lock`], so nothing that also takes it lands between the two.
+pub fn forget_pinned(
+    root: &std::path::Path,
+    dir: &std::path::Path,
+    ident: &str,
+    base: Base,
+) -> Result<(), EditRefused> {
+    one_segment(ident)?;
+    if !crate::contain::segment_ok(ident.strip_suffix(".md").unwrap_or(ident)) {
+        return Err(invalid(&format!("'{ident}' is not the slug of one memory")).into());
+    }
+    #[cfg(unix)]
+    match holding::reach(root, dir) {
+        holding::Reach::Held(spot) => return holding::forget_pinned(&spot, ident, base),
+        holding::Reach::Refused(e) => return Err(e.into()),
+        holding::Reach::ByPath => {}
+    }
+    let _held = crate::rewrite::Lock::bounded(dir)?;
+    let file = resolve_exact(root, dir, ident).ok_or(EditRefused::Stale)?;
+    if base.stale(&std::fs::read_to_string(&file)?) {
+        return Err(EditRefused::Stale);
+    }
+    gate(root, &file)?;
+    std::fs::remove_file(&file)?;
+    drop_index_line(
+        root,
+        dir,
+        &file.file_name().unwrap_or_default().to_string_lossy(),
+    );
+    Ok(())
 }
 
 /// One memory file's path and whole text, exactly as it is on disk — the text an edit is
@@ -1957,9 +2010,7 @@ pub fn edit(
     let _held = crate::rewrite::Lock::bounded(dir)?;
     let file = resolve_exact(root, dir, ident).ok_or_else(|| no_such(ident))?;
     let now = std::fs::read_to_string(&file)?;
-    if let Base::Read(read) = base
-        && read != now
-    {
+    if base.stale(&now) {
         return Err(EditRefused::Stale);
     }
     let body = edited_body(&now, &title, text);

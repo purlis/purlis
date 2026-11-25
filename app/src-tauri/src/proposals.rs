@@ -671,8 +671,8 @@ pub fn asked_memory(held: &Held, ask: &ProposeMemoryAsk) -> Answer {
 }
 
 /// [`asked_memory`]'s judgement of `ask` in the project at `root`, held in `proposals` at
-/// `now`: only an additive write, aimed at a store that is there, and held as the person will
-/// read it.
+/// `now`: only a remember, a todo, a forget or an edit, aimed at a store that is there, and held
+/// as the person will read it.
 pub fn memory_asked_in(
     root: &Path,
     proposals: &Proposals,
@@ -711,7 +711,7 @@ pub fn memory_asked_in(
 /// [`Now`] of a memory or todo proposed for another store, as it would be made now: the entry
 /// before and after for a forget or an edit, and the sentence that says what is added for the
 /// rest. A forget or an edit of an entry that is not the text it was shown is stale; one whose
-/// store or entry is gone, or that no longer fits, is unprepared. What only adds is never stale.
+/// store or entry is gone, or that no longer fits, is unprepared.
 pub fn memory_now(root: &Path, memory: &MemoryChange) -> Now {
     match purlis_core::memoryproposal::shown(root, memory.write.clone(), &memory.target) {
         Ok(one) if one.state != memory.state || one.write != memory.write => Now::Stale,
@@ -847,6 +847,8 @@ fn stale_word(one: &Proposal) -> ProposalWord {
         ProposalWord::SkillsStale { path }
     } else if one.pin.is_some() {
         ProposalWord::PinStale { path }
+    } else if one.memory.is_some() {
+        ProposalWord::MemoryStale { path }
     } else {
         ProposalWord::Stale { path }
     }
@@ -1135,7 +1137,7 @@ pub fn apply_in_to(
         return apply_skills(root, one, skills, persona, audit, lock, to);
     }
     if let Some(memory) = &one.memory {
-        return apply_memory(root, one, memory, persona, audit, lock);
+        return apply_memory(root, one, memory, persona, audit, lock, from);
     }
     // A pin is never made by Apply, whatever asked: only by Pin to workspace (#5963).
     if one.pin.is_some() {
@@ -1274,7 +1276,13 @@ pub(crate) fn apply_limit(
 
 /// Writes a memory or todo a chat proposed for another store (T1.1-68): judged again, audited
 /// first, then written by [`purlis_core::memoryproposal::apply`], exactly as it was shown and
-/// into exactly the store it names. It adds an entry and changes none, so it is never stale.
+/// into exactly the store it names. A forget or an edit is stale where its entry is not the
+/// text it was shown, which the write itself checks under the store's lock.
+///
+/// Only what the window shows whole is applied (PC-7, S3), judged again here as
+/// [`apply_in_to`] judges a file's change: a change its row could not show whole (a credential
+/// shape, a character that hides, a NUL, or too long for a row) is refused for the Row, and for
+/// the tab only where it is not merely too long.
 pub(crate) fn apply_memory(
     root: &Path,
     one: &Proposal,
@@ -1282,14 +1290,21 @@ pub(crate) fn apply_memory(
     persona: Option<&str>,
     audit: &dyn Fn(&proposed::Applied<'_>) -> Result<(), String>,
     lock: &Mutex<()>,
+    from: From,
 ) -> Result<String, Refusal> {
     use purlis_core::memoryproposal::NotMade;
     let _held = lock.lock().unwrap_or_else(PoisonError::into_inner);
-    let after = match memory_now(root, memory) {
-        Now::Made { after, .. } => after,
+    let (before, after) = match memory_now(root, memory) {
+        Now::Made { before, after } => (before, after),
         Now::Stale => return Err(Refusal::Stale),
         Now::Unprepared => return Err(Refusal::Not(MEMORY_UNPREPARED.to_owned())),
     };
+    let shown = crate::askwrites::proposed(&one.path, &before, &after);
+    let whole = matches!(shown, crate::askwrites::WritesShown::Whole { .. })
+        || (from == From::Tab && crate::askwrites::proposed_too_long(&before, &after));
+    if !whole {
+        return Err(Refusal::Not(NOT_SHOWN_SAID.to_owned()));
+    }
     let written = proposed::base_of(Some(after.as_bytes())).unwrap_or_default();
     let record = |outcome, why: Option<&str>| {
         audit(&proposed::Applied {

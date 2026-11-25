@@ -374,11 +374,25 @@ pub fn answer(
     write: &Write,
     now: jiff::civil::DateTime,
 ) -> Result<Done, String> {
+    answer_pinned(root, asker, write, now, None)
+}
+
+/// [`answer`], where a forget or an edit is pinned to `pin`, the digest of the entry's text as the
+/// person was shown it ([`crate::memstore::Base::Sha`]): it acts on that entry only, by its exact
+/// name, and only while it is still that text, checked under the store's lock at the write. One
+/// that found the entry changed says [`crate::memoryproposal::STALE_CODE`] and wrote nothing.
+pub fn answer_pinned(
+    root: &Path,
+    asker: &Asker,
+    write: &Write,
+    now: jiff::civil::DateTime,
+    pin: Option<&str>,
+) -> Result<Done, String> {
     if let crate::compat::Compat::ReadOnly(why) = crate::compat::read(root) {
         return Err(format!("nothing was written: {why}"));
     }
     write.check()?;
-    if let Some(said) = upkeep(root, asker, write, now)? {
+    if let Some(said) = upkeep(root, asker, write, now, pin)? {
         let (to, store) = said.credited;
         if said.changed {
             credit(root, asker, write, &to, &store, now);
@@ -581,6 +595,7 @@ fn upkeep(
     asker: &Asker,
     write: &Write,
     now: jiff::civil::DateTime,
+    pin: Option<&str>,
 ) -> Result<Option<Upkept>, String> {
     use crate::memscope::Scope;
     use crate::personaverbs::upkeep as persona;
@@ -610,8 +625,8 @@ fn upkeep(
             let (scope, owner) = own_scope(root, asker, *of)?;
             let store = guard_store(root, &scope)?;
             let (code, changed) = match persona_of(*of)? {
-                None => crate::wscmd::memory::forget(&plane, &owner, slug, &mut say)?,
-                Some((name, shared)) => persona::forget(
+                None => crate::wscmd::memory::forget_pinned(&plane, &owner, slug, pin, &mut say)?,
+                Some((name, shared)) => persona::forget_pinned(
                     root,
                     &persona::Forget {
                         name: &name,
@@ -620,6 +635,7 @@ fn upkeep(
                         ephemeral: false,
                         session: &chat,
                     },
+                    pin,
                     &mut say,
                 ),
             };
@@ -634,15 +650,16 @@ fn upkeep(
             let (scope, owner) = own_scope(root, asker, *of)?;
             let store = guard_store(root, &scope)?;
             let (code, changed) = match persona_of(*of)? {
-                None => crate::wscmd::memory::edit(
+                None => crate::wscmd::memory::edit_pinned(
                     &plane,
                     &owner,
                     slug,
                     title.as_deref(),
                     text.as_deref(),
+                    pin,
                     &mut say,
                 )?,
-                Some((name, shared)) => persona::edit_memory(
+                Some((name, shared)) => persona::edit_memory_pinned(
                     root,
                     &persona::Memory {
                         name: &name,
@@ -651,6 +668,7 @@ fn upkeep(
                     },
                     title.as_deref(),
                     text.as_deref(),
+                    pin,
                     &mut say,
                 ),
             };

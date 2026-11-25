@@ -216,10 +216,165 @@ fn a_text_is_held_trimmed_so_apply_writes_what_was_read() {
 }
 
 #[test]
-fn what_the_person_is_shown_names_the_target_and_the_whole_text() {
-    let said = said(&remember("run the drill"), &devops());
-    assert!(said.starts_with("In persona devops: "), "{said}");
-    assert!(said.contains("run the drill"), "{said}");
+fn what_the_person_is_shown_names_the_target_store_the_title_and_the_whole_text() {
+    let (_dir, root) = a_project();
+    let titled = Write::PersonaRemember {
+        text: "run the drill\nevery month".to_owned(),
+        title: Some("Drill".to_owned()),
+        shared: false,
+    };
+    let one = shown(&root, titled, &devops()).unwrap();
+    assert!(
+        one.after.starts_with(
+            "In persona devops's memory: remember.\nTitle: \"Drill\"\nrun the drill\nevery month"
+        ),
+        "{}",
+        one.after
+    );
+    assert!(one.after.contains("index"), "{}", one.after);
+    let added = Write::Todo {
+        text: "rotate the key".to_owned(),
+    };
+    let one = shown(&root, added, &beta()).unwrap();
+    assert!(
+        one.after.starts_with("In workspace beta's todos: "),
+        "{}",
+        one.after
+    );
+    assert!(one.after.contains("promoted"), "{}", one.after);
+}
+
+#[test]
+fn a_proposals_name_is_short_and_never_carries_a_long_text() {
+    let long = format!("run the drill {}", "x".repeat(5000));
+    let name = said(&remember(&long), &devops());
+    assert!(name.starts_with("In persona devops: Remember "), "{name}");
+    assert!(name.len() < 200, "{}", name.len());
+    let titled = Write::PersonaRemember {
+        text: long,
+        title: Some("Drill".to_owned()),
+        shared: false,
+    };
+    assert_eq!(
+        said(&titled, &devops()),
+        "In persona devops: Remember \"Drill\""
+    );
+}
+
+#[test]
+fn a_credential_shaped_text_is_refused_as_that_and_not_as_drawn_otherwise() {
+    let (_dir, root) = a_project();
+    let token = format!("ghp_{}", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8");
+    let why =
+        shown(&root, remember(&format!("the token is {token}")), &devops()).expect_err("refused");
+    assert_eq!(why, crate::runnerwrite::HOLDS_A_CREDENTIAL);
+}
+
+/// F1: the pin is checked at the write, under the store's lock, not by a read before it. The
+/// write is made directly, as `apply` makes it, so nothing stands between the change and it.
+#[test]
+fn an_entry_changed_between_the_check_and_the_write_is_stale_and_nothing_is_written() {
+    let (_dir, root) = a_project();
+    let slug = an_entry(&root, &devops(), "Run the drill monthly");
+    let file = memory_dir(&root, &devops()).join(format!("{slug}.md"));
+    let asker = Asker {
+        chat: 7,
+        place: Place::PlaneRoot,
+        persona: Some("devops".to_owned()),
+    };
+    let forgets = shown(&root, forget(&slug), &devops()).unwrap();
+    let edits = shown(&root, edit(&slug, None, Some("Run it weekly")), &devops()).unwrap();
+    let changed = format!("{}\nAnd also on Fridays.\n", forgets.before.trim_end());
+    std::fs::write(&file, &changed).unwrap();
+
+    for one in [&forgets, &edits] {
+        let done =
+            crate::brokered::answer_pinned(&root, &asker, &one.write, now(), one.state.as_deref())
+                .expect("answered");
+        assert!(
+            matches!(
+                done,
+                Done::Said {
+                    code: STALE_CODE,
+                    ..
+                }
+            ),
+            "{:?}: {done:?}",
+            one.write
+        );
+    }
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        changed,
+        "untouched"
+    );
+}
+
+/// F1: a forget never takes the entry whose name merely ends with the slug where the exact file
+/// has gone.
+#[test]
+fn a_pinned_forget_of_a_file_gone_does_not_take_the_one_whose_name_ends_with_its_slug() {
+    let (_dir, root) = a_project();
+    let slug = an_entry(&root, &devops(), "Run the drill monthly");
+    let dir = memory_dir(&root, &devops());
+    let one = shown(&root, forget(&slug), &devops()).unwrap();
+    let other = dir.join(format!("zzz-{slug}.md"));
+    std::fs::write(&other, "# Other\n\nkept\n").unwrap();
+    std::fs::remove_file(dir.join(format!("{slug}.md"))).unwrap();
+    let asker = Asker {
+        chat: 7,
+        place: Place::PlaneRoot,
+        persona: Some("devops".to_owned()),
+    };
+    let done =
+        crate::brokered::answer_pinned(&root, &asker, &one.write, now(), one.state.as_deref())
+            .expect("answered");
+    assert!(
+        matches!(
+            done,
+            Done::Said {
+                code: STALE_CODE,
+                ..
+            }
+        ),
+        "{done:?}"
+    );
+    assert!(other.exists(), "the tail match is not taken");
+}
+
+/// F1, for a workspace's store.
+#[test]
+fn a_pinned_edit_of_a_workspace_entry_changed_since_is_stale() {
+    let (_dir, root) = a_project();
+    let slug = an_entry(&root, &beta(), "beta uses blue");
+    let file = memory_dir(&root, &beta()).join(format!("{slug}.md"));
+    let write = Write::EditMemory {
+        of: Store::Workspace,
+        slug: slug.clone(),
+        title: None,
+        text: Some("beta uses green".to_owned()),
+    };
+    let one = shown(&root, write, &beta()).unwrap();
+    std::fs::write(&file, "# T\n\nchanged\n").unwrap();
+    let asker = Asker {
+        chat: 7,
+        place: Place::Workspace("beta".to_owned()),
+        persona: None,
+    };
+    let done =
+        crate::brokered::answer_pinned(&root, &asker, &one.write, now(), one.state.as_deref())
+            .expect("answered");
+    assert!(
+        matches!(
+            done,
+            Done::Said {
+                code: STALE_CODE,
+                ..
+            }
+        ),
+        "{done:?}"
+    );
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "# T\n\nchanged\n");
 }
 
 #[test]

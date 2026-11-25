@@ -99,32 +99,57 @@ fn refused(name: &str, slug: &str, e: &std::io::Error, say: Sink) -> (u8, bool) 
 
 /// `workspace forget`: delete one journal entry by slug or filename, and its index line.
 pub fn forget(plane: &Plane, name: &str, slug: &str, say: Sink) -> Result<(u8, bool), String> {
+    forget_pinned(plane, name, slug, None, say)
+}
+
+/// [`forget`], pinned to `pin` when there is one ([`memstore::Base::Sha`]): the entry named
+/// exactly, removed only while its text is the one the pin was taken from, checked under the
+/// store's lock. Otherwise the exit code [`crate::memoryproposal::STALE_CODE`] and nothing removed.
+pub fn forget_pinned(
+    plane: &Plane,
+    name: &str,
+    slug: &str,
+    pin: Option<&str>,
+    say: Sink,
+) -> Result<(u8, bool), String> {
     let ws = plane.workspace(name).map_err(|e| e.to_string())?;
-    Ok(
-        match memstore::forget(plane.root(), &ws.dir().join("memory"), slug) {
-            Ok(()) => {
-                say(Say::Done(
-                    format!("Forgot '{slug}' from workspace '{name}'.").into(),
-                ));
-                (0, true)
+    let dir = ws.dir().join("memory");
+    let gone = match pin {
+        None => memstore::forget(plane.root(), &dir, slug),
+        Some(sha) => {
+            match memstore::forget_pinned(plane.root(), &dir, slug, memstore::Base::Sha(sha)) {
+                Ok(()) => Ok(()),
+                Err(memstore::EditRefused::Io(e)) => Err(e),
+                Err(stale) => {
+                    say(Say::Fail(stale.to_string().into()));
+                    return Ok((crate::memoryproposal::STALE_CODE, false));
+                }
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                say(Say::Fail(
-                    format!(
-                        "no memory '{slug}' in workspace '{name}' (list them: purlis workspace \
+        }
+    };
+    Ok(match gone {
+        Ok(()) => {
+            say(Say::Done(
+                format!("Forgot '{slug}' from workspace '{name}'.").into(),
+            ));
+            (0, true)
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            say(Say::Fail(
+                format!(
+                    "no memory '{slug}' in workspace '{name}' (list them: purlis workspace \
                      recall)."
-                    )
-                    .into(),
-                ));
-                (1, false)
-            }
-            // A slug is one file in the store. `../<elsewhere>` is a path, and the store's own
-            // resolver is never handed one: this is where M1.1's round 3 found a slug deleting
-            // a file outside the plane. A slug the ends of two entries' names share, or the
-            // index, is the core's sentence.
-            Err(e) => refused(name, slug, &e, say),
-        },
-    )
+                )
+                .into(),
+            ));
+            (1, false)
+        }
+        // A slug is one file in the store. `../<elsewhere>` is a path, and the store's own
+        // resolver is never handed one: this is where M1.1's round 3 found a slug deleting
+        // a file outside the plane. A slug the ends of two entries' names share, or the
+        // index, is the core's sentence.
+        Err(e) => refused(name, slug, &e, say),
+    })
 }
 
 /// `workspace edit`: rewrite one journal entry in place (ADR 0065): the filename and the stamp
@@ -135,6 +160,22 @@ pub fn edit(
     slug: &str,
     title: Option<&str>,
     text: Option<&str>,
+    say: Sink,
+) -> Result<(u8, bool), String> {
+    edit_pinned(plane, name, slug, title, text, None, say)
+}
+
+/// [`edit`], pinned to `pin` when there is one ([`memstore::Base::Sha`]): written only while the
+/// entry's text is the one the pin was taken from, checked under the store's lock, not against
+/// the text read a moment before. Otherwise the exit code
+/// [`crate::memoryproposal::STALE_CODE`] and nothing written.
+pub fn edit_pinned(
+    plane: &Plane,
+    name: &str,
+    slug: &str,
+    title: Option<&str>,
+    text: Option<&str>,
+    pin: Option<&str>,
     say: Sink,
 ) -> Result<(u8, bool), String> {
     let ws = plane.workspace(name).map_err(|e| e.to_string())?;
@@ -148,7 +189,12 @@ pub fn edit(
     };
     let (title, text) = opened.revised(title, text);
     Ok(
-        match ws.edit_memory(&exact, &title, &text, memstore::Base::Read(&opened.text)) {
+        match ws.edit_memory(
+            &exact,
+            &title,
+            &text,
+            pin.map_or(memstore::Base::Read(&opened.text), memstore::Base::Sha),
+        ) {
             Ok(path) => {
                 say(Say::Done(
                     format!(
@@ -162,10 +208,20 @@ pub fn edit(
             Err(memstore::EditRefused::Io(e)) => refused(name, slug, &e, say),
             Err(stale) => {
                 say(Say::Fail(stale.to_string().into()));
-                (1, false)
+                (stale_code(pin), false)
             }
         },
     )
+}
+
+/// The exit code of an edit or forget that found its entry changed: the proposal's own when it
+/// was pinned, 1 as ever otherwise.
+fn stale_code(pin: Option<&str>) -> u8 {
+    if pin.is_some() {
+        crate::memoryproposal::STALE_CODE
+    } else {
+        1
+    }
 }
 
 /// `workspace archive`: move one journal entry into `memory/archive/` and drop its index line:

@@ -1577,7 +1577,10 @@ mod memory {
             panic!("it is shown");
         };
         assert_eq!(before, "");
-        assert!(after.starts_with("In persona devops: "), "{after}");
+        assert!(
+            after.starts_with("In persona devops's memory: remember."),
+            "{after}"
+        );
         assert!(after.contains("Run the drill"), "{after}");
 
         let outcomes = Mutex::new(Vec::new());
@@ -1593,6 +1596,50 @@ mod memory {
             *outcomes.lock().unwrap(),
             vec![proposed::Outcome::Intent, proposed::Outcome::Applied]
         );
+    }
+
+    /// F2: Apply judges again that the change is shown whole, as a file's change is: one too
+    /// long for a row is never applied from the row, and applied from its own tab.
+    #[test]
+    fn a_memory_too_long_for_a_row_is_applied_only_from_its_tab() {
+        let (_dir, root) = a_plane();
+        let held = Proposals::default();
+        let long = "line\n".repeat(purlis_core::harness::asked::edit::MOST_LINES + 1);
+        let ask = proposes(remember(&long), Target::Persona("devops".to_owned()));
+        assert_eq!(memory_asked_in(&root, &held, &ask, 1), Ok(()));
+        let one = held.every().remove(0);
+        let audit = |_: &proposed::Applied<'_>| -> Result<(), String> {
+            panic!("nothing is recorded for a change never written")
+        };
+        assert_eq!(
+            apply_in(&root, &one, None, &audit, &Mutex::new(()), From::Row),
+            Err(Refusal::Not(NOT_SHOWN_SAID.to_owned()))
+        );
+        assert_eq!(entries(&root.join("personas/devops/memory")), 0);
+        let quiet = |_: &proposed::Applied<'_>| Ok(());
+        apply_in(&root, &one, None, &quiet, &Mutex::new(()), From::Tab).unwrap();
+        assert_eq!(entries(&root.join("personas/devops/memory")), 1);
+    }
+
+    /// F4: what the audit, the chat's word and the list carry is a short name, never the text.
+    #[test]
+    fn a_proposals_name_carries_the_target_and_a_short_cut_never_the_whole_text() {
+        let (_dir, root) = a_plane();
+        let held = Proposals::default();
+        let long = format!("Run the drill {}", "x".repeat(5000));
+        let ask = proposes(remember(&long), Target::Persona("devops".to_owned()));
+        assert_eq!(memory_asked_in(&root, &held, &ask, 1), Ok(()));
+        let one = held.every().remove(0);
+        assert!(
+            one.path.starts_with("In persona devops: Remember "),
+            "{}",
+            one.path
+        );
+        assert!(one.path.len() < 200, "{}", one.path.len());
+        let Now::Made { after, .. } = now_of(&root, &one) else {
+            panic!("it is shown");
+        };
+        assert!(after.contains(&long), "the whole text is in the row's text");
     }
 
     #[test]

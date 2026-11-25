@@ -450,6 +450,54 @@ fn where_no_app_takes_it_the_refusal_stands_in_its_own_words() {
 }
 
 #[test]
+fn an_app_that_cannot_read_the_ask_leaves_the_refusal_in_its_old_words() {
+    let tmp = a_project();
+    let app = an_app(
+        &tmp,
+        Answer::No {
+            why: hookwire::UNKNOWN_LINE.to_owned(),
+        },
+    );
+
+    let ran = purlis(
+        &tmp,
+        &["persona", "remember", "devops", "Run the drill monthly"],
+        &app.chat_env(),
+    );
+
+    assert_eq!(ran.status.code(), Some(1), "{}", said(&ran));
+    assert!(
+        said(&ran).contains("a sandboxed chat changes only the memory of the persona it runs as"),
+        "{}",
+        said(&ran)
+    );
+    assert!(!said(&ran).contains("could not read"), "{}", said(&ran));
+    nothing_written(&tmp);
+}
+
+#[test]
+fn a_text_too_long_to_hand_over_leaves_the_refusal_in_its_old_words() {
+    let tmp = a_project();
+    let app = an_app(&tmp, held());
+    let long = "x".repeat(20_000);
+
+    let ran = purlis(
+        &tmp,
+        &["persona", "remember", "devops", &long],
+        &app.chat_env(),
+    );
+
+    assert_eq!(ran.status.code(), Some(1), "{}", said(&ran));
+    assert!(
+        said(&ran).contains("a sandboxed chat changes only the memory of the persona it runs as"),
+        "{}",
+        said(&ran)
+    );
+    assert!(app.asked.try_recv().is_err(), "the app was asked");
+    nothing_written(&tmp);
+}
+
+#[test]
 fn where_the_app_holds_nothing_the_chat_hears_why() {
     let tmp = a_project();
     let app = an_app(

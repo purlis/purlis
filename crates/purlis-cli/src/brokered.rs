@@ -486,16 +486,16 @@ pub enum Unproposed {
 
 /// **A memory or todo for another persona or workspace, handed to the app as a proposal**
 /// (T1.1-68, C1 and C2): held for the person, who alone applies it, shown with its text and its
-/// target. Nothing is written here. Only an additive write is sent: the callers are the
-/// `remember` and `todo` refusals, and the app refuses anything else. Its exit code once the
-/// app answers.
+/// target. Nothing is written here. Only a remember, a todo, a forget or an edit is sent, and the
+/// app refuses anything else. Its exit code once the app answers.
 pub fn propose_memory(
     write: Write,
     target: purlis_core::memoryproposal::Target,
 ) -> Result<u8, Unproposed> {
-    // A text too long for one line of the chat's connection would be cut and dropped.
-    if let Some(why) = too_long_to_hand_over(&write) {
-        return Err(Unproposed::Refused(why));
+    // A text too long for one line of the chat's connection would be cut and dropped: the
+    // command's own refusal stands, in its old words.
+    if too_long_to_hand_over(&write).is_some() {
+        return Err(Unproposed::NoApp);
     }
     let answered = asked(
         |chat| {
@@ -514,7 +514,12 @@ pub fn propose_memory(
             }
             Ok(code)
         }
-        Ok(Ok(Answer::No { why })) if why == hookwire::NOTHING_ANSWERS => Err(Unproposed::NoApp),
+        // An app older than this ask answers a line it cannot read: no app took it either.
+        Ok(Ok(Answer::No { why }))
+            if why == hookwire::NOTHING_ANSWERS || why == hookwire::UNKNOWN_LINE =>
+        {
+            Err(Unproposed::NoApp)
+        }
         Ok(Ok(Answer::No { why })) => Err(Unproposed::Refused(why)),
         // An app that answers this with anything else did not read it as this.
         Ok(Ok(_)) => Err(Unproposed::NoApp),

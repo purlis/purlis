@@ -22,8 +22,10 @@
 //! the line carries says who asks: that is the app's record of the chat.
 //!
 //! **What is shown is what is written, or nothing is.** A forget or an edit is pinned to the
-//! entry's text as it was shown ([`Shown::state`]); Apply writes only where the entry is still
-//! that text ([`NotMade::Stale`]), and acts on the entry it was shown, by its exact name.
+//! entry's text as it was shown ([`Shown::state`]); the pin travels down to the write, which
+//! checks it under the store's lock and acts only on the entry it was shown, by its exact name
+//! ([`NotMade::Stale`] where it is not that text any more, or is gone). A remember or a todo
+//! adds an entry and changes none, so it has nothing to be stale against.
 
 use std::path::Path;
 
@@ -61,6 +63,10 @@ impl Target {
 /// What a chat is told of a write that is not proposed: it stays refused, as it always was.
 pub const NOT_PROPOSABLE: &str = "only a memory or todo added, or a memory forgotten or edited, \
      is proposed to the person for a store that is not this chat's own: nothing was written";
+
+/// The exit code a memory verb says when the entry was not the text a proposal pinned it to,
+/// so nothing was written ([`apply`] reads it as [`NotMade::Stale`]).
+pub const STALE_CODE: u8 = 75;
 
 /// What a proposal whose text draws as something other than it is is refused with.
 pub const DRAWN_OTHERWISE: &str = "it carries a character that draws as nothing or as something \
@@ -169,12 +175,16 @@ pub fn shown(root: &Path, write: Write, target: &Target) -> Result<Shown, String
             Shown {
                 state: None,
                 before: String::new(),
-                after: said(&added, target),
+                after: said_whole(&added, target),
                 write: added,
             }
         }
     };
     shown.write.check()?;
+    // What looks like a credential is refused as that, not as a text that draws otherwise.
+    if let Some(why) = crate::runnerwrite::refusal(&shown.write) {
+        return Err(why.to_owned());
+    }
     if !crate::runnerwrite::drawn_as_it_is(&shown.write) {
         return Err(DRAWN_OTHERWISE.to_owned());
     }
@@ -266,14 +276,80 @@ fn opened(root: &Path, target: &Target, slug: &str) -> Result<Opened, String> {
     })
 }
 
-/// **What the person is shown a proposal does**, in one line: where, and what.
+/// The most of a text a proposal's name carries: the whole text is in [`Shown::after`] alone.
+const NAME_CUT_CHARS: usize = 60;
+
+/// `text`'s first line, cut to [`NAME_CUT_CHARS`], as a proposal's name carries it.
+fn cut(text: &str) -> String {
+    let line = text.lines().next().unwrap_or_default().trim();
+    let kept: String = line.chars().take(NAME_CUT_CHARS).collect();
+    if kept.len() < text.trim().len() {
+        format!("{kept}…")
+    } else {
+        kept
+    }
+}
+
+/// **What a proposal is called**, in one short line: where, and what. A text it adds is named by
+/// its title, or a short cut of it, never whole: the whole is [`Shown::after`], and nothing long
+/// goes into the audit, the chat's word or the list of waiting changes.
 pub fn said(write: &Write, target: &Target) -> String {
     let what = match write {
         Write::Forget { slug, .. } => format!("Forget memory {slug}"),
         Write::EditMemory { slug, .. } => format!("Rewrite memory {slug}"),
-        other => crate::runnerwrite::said_whole(other),
+        Write::Todo { text } => format!("Add a todo {:?}", cut(text)),
+        Write::PersonaRemember { text, title, .. } | Write::WorkspaceRemember { text, title } => {
+            format!(
+                "Remember {:?}",
+                title.as_deref().map_or_else(|| cut(text), cut)
+            )
+        }
+        other => crate::runnerwrite::said(other),
     };
     format!("In {}: {what}", target.said())
+}
+
+/// **What an added memory or todo is, whole**, for the row's text: the TARGET store named
+/// outright, the title on a line of its own, quoted so no text can pass as another line, then
+/// the text, and what else the write does there.
+fn said_whole(write: &Write, target: &Target) -> String {
+    let (name, store, verb, title, text, also) = match (write, target) {
+        (Write::PersonaRemember { text, title, .. }, Target::Persona(name)) => (
+            name,
+            "memory",
+            "remember",
+            title.as_deref(),
+            text,
+            "Its line in that memory's index is written too.",
+        ),
+        (Write::WorkspaceRemember { text, title }, Target::Workspace(name)) => (
+            name,
+            "memory",
+            "remember",
+            title.as_deref(),
+            text,
+            "Its line in that memory's index is written too.",
+        ),
+        (Write::Todo { text }, Target::Workspace(name)) => (
+            name,
+            "todos",
+            "add the todo",
+            None,
+            text,
+            "A todo already promoted to an issue, whose close a crash cut short, is closed \
+             first, and the todo's index line is written too.",
+        ),
+        _ => return said(write, target),
+    };
+    let kind = match target {
+        Target::Persona(_) => "persona",
+        Target::Workspace(_) => "workspace",
+    };
+    let title = title.map_or_else(String::new, |title| format!("Title: {title:?}\n"));
+    format!(
+        "In {kind} {}'s {store}: {verb}.\n{title}{text}\n{also}",
+        crate::shown::short(name)
+    )
 }
 
 /// The lines of a memory verb's answer, as one sentence.
@@ -298,6 +374,8 @@ pub fn apply(
     state: Option<&str>,
     now: jiff::civil::DateTime,
 ) -> Result<String, NotMade> {
+    // A first, cheap judgement, so a store gone since is refused and an entry already changed
+    // costs no write; what makes the pin hold is the check at the write, under the store's lock.
     let again = shown(root, held.clone(), target)?;
     if again.state.as_deref() != state || &again.write != held {
         return Err(NotMade::Stale);
@@ -314,9 +392,12 @@ pub fn apply(
             persona: None,
         },
     };
-    match crate::brokered::answer(root, &asker, held, now)? {
+    match crate::brokered::answer_pinned(root, &asker, held, now, state)? {
         Done::Written(written) => Ok(format!("Written to {}.", written.path)),
         Done::Said { lines, code: 0 } => Ok(joined(&lines)),
+        Done::Said {
+            code: STALE_CODE, ..
+        } => Err(NotMade::Stale),
         Done::Said { lines, .. } => Err(NotMade::Refused(joined(&lines))),
     }
 }

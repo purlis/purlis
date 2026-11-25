@@ -1661,8 +1661,9 @@ pub enum Ask {
     /// and C2): what `purlis persona remember <other>`, `purlis workspace remember -w <other>`
     /// and `purlis workspace todo -w <other>` hand over in a sandboxed chat, which is refused
     /// the write itself. Held for the person beside [`Self::Propose`]'s, shown with its text and
-    /// its target, and written only on their Apply. **Only an additive write is proposable**
-    /// ([`crate::memoryproposal::proposable`]); the app refuses any other. No ticket, for
+    /// its target, and written only on their Apply. **Only a remember, a todo added, a forget or an
+    /// edit is proposable** ([`crate::memoryproposal::proposable_kind`]); the app refuses any
+    /// other. No ticket, for
     /// [`Self::Removal`]'s reason.
     ProposeMemory(Box<ProposeMemoryAsk>),
     /// **A pin of an artifact folder a chat proposes** (#5963, ADR 0122 §1): what the
