@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795621023445,
+  "lastUpdate": 1795627337981,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54894,6 +54894,48 @@ window.BENCHMARK_DATA = {
             "value": 102.074476,
             "unit": "ms",
             "extra": "median of 5 runs: 100.577, 101.545, 102.074, 102.759, 102.815 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "655315ecfadf7157f947de0697677ede3c4718f2",
+          "message": "Signing branch onto main merge 7641 and fb94yesj (#7652)\n\n* Release: Developer ID signing on a hosted macOS job only, and notarization for stable builds (ADR 0042 amended 2026-11-25)\n\nbuild seals its macOS bundle ad-hoc on any runner and reads no Developer ID, notarization or\nmacOS updater secret. A new sign-macos job, behind the gate and in the release environment on a\nliteral GitHub-hosted macos- runner, signs the bundle inside out with the hardened runtime and no\nentitlement, notarizes and staples a stable build with an App Store Connect API key, makes the\n.app.zip, the updater archive with its minisign signature and the .dmg, and verifies the final\nartifacts. keys counts the notarization secrets too and refuses a half-set group or a stable build\nwith only one of the two groups.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M89HDAN7B27HJYRFH1AD3X1C\nPurlis-Persona: steward\n\n* Release: add the new guard, signer, ADR amendment, fragment and keys test; notarytool exit, dmg and timeout fixes from review\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M89HDAN7B27HJYRFH1AD3X1C\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T16:48:58Z",
+          "tree_id": "4afa3fc3f677b858587d9a59d1ea18ece68fe3a8",
+          "url": "https://github.com/purlis/purlis/commit/655315ecfadf7157f947de0697677ede3c4718f2"
+        },
+        "date": 1795627329482,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6943755,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.671, 0.685, 0.694, 0.703, 0.718 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6573545,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.536, 16.615, 16.657, 16.871, 16.903 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2634195,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.383, 101.541, 102.263, 102.668, 103.059 ms"
           }
         ]
       }
