@@ -2419,7 +2419,12 @@ fn push_head_within(
                             } else {
                                 format!("the rebase onto the remote did not go through: {said}")
                             },
-                            "Nothing was pushed. Settle what git names, then `purlis save`.",
+                            if said.starts_with(bringin::REFUSED_BY_GIT) {
+                                "Nothing was pushed. There is nothing in your project to settle: \
+                         report this with `purlis report bug`, or update purlis."
+                            } else {
+                                "Nothing was pushed. Settle what git names, then `purlis save`."
+                            },
                             say,
                         );
                     }

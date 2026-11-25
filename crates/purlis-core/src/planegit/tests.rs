@@ -1348,16 +1348,36 @@ fn a_remote_that_moved_with_no_conflict_is_replayed_under_a_git_without_merge_ba
 #[test]
 fn a_git_that_refuses_an_argument_purlis_passed_is_said_to_be_purlis_own_error() {
     // #7627: a usage error (exit 129) is a defect in the call, not a rebase that failed.
-    let fixture = Fixture::plane();
+    // The stderr is git 2.39's own shape: the error line, then the command's whole option help.
+    let mut err = String::from(
+        "error: unknown option `merge-base=x'\n\
+         usage: git merge-tree [--write-tree] [<options>] <branch1> <branch2>\n\
+            or: git merge-tree [--trivial-merge] <base-tree> <branch1> <branch2>\n\n",
+    );
+    for option in [
+        "--write-tree          do a real merge instead of a trivial merge",
+        "--trivial-merge       do a trivial merge only",
+        "--messages            also show informational/conflict messages",
+        "-z                    separate paths with the NUL character",
+        "--name-only           list filenames without modes/oids/stages",
+        "--allow-unrelated-histories",
+        "--stdin               perform multiple merges, one per line of input",
+    ] {
+        err.push_str(&format!("    {option}\n"));
+    }
     let refused = bringin::refusal_if_usage(&git::Run {
         code: Some(129),
         out: String::new(),
-        err: "error: unknown option `merge-base=x'\nusage: git merge-tree [--write-tree]".into(),
+        err,
     })
     .expect("a usage error is recognised");
-    assert!(refused.starts_with(bringin::REFUSED_BY_GIT), "{refused}");
-    assert!(refused.contains("unknown option"), "{refused}");
-    let _ = fixture;
+    assert_eq!(
+        refused,
+        format!(
+            "{} error: unknown option `merge-base=x'",
+            bringin::REFUSED_BY_GIT
+        )
+    );
     assert!(
         bringin::refusal_if_usage(&git::Run {
             code: Some(1),

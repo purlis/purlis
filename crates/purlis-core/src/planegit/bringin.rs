@@ -313,7 +313,9 @@ fn rooted_at(root: &Path, rev: &str, base: &str) -> Result<String, String> {
     let author = Author {
         name: "purlis",
         email: "purlis@localhost.invalid",
-        date: "0 +0000",
+        // `@` marks epoch seconds: git reads a bare number as one only from 100000000 (git 2.39
+        // and 2.56 both refuse `0 +0000` as "invalid date format").
+        date: "@0 +0000",
     };
     commit_tree_as(
         root,
@@ -332,9 +334,19 @@ pub(super) const REFUSED_BY_GIT: &str =
     "this git refused a command purlis ran, which is a fault in purlis, not in your project:";
 
 /// git's usage error (exit 129), as purlis's own error: an option this git does not have is a
-/// defect in the call, never a rebase or a merge that failed.
+/// defect in the call, never a rebase or a merge that failed. git's stderr is the `error:` line
+/// and then the command's whole option help, so the `error:` line is what is shown, else the
+/// first line.
 pub(super) fn refusal_if_usage(run: &git::Run) -> Option<String> {
-    (run.code == Some(129)).then(|| format!("{REFUSED_BY_GIT} {}", tail(run)))
+    (run.code == Some(129)).then(|| {
+        let line = run
+            .err
+            .lines()
+            .find(|line| line.starts_with("error:"))
+            .or_else(|| run.err.lines().next())
+            .unwrap_or_default();
+        format!("{REFUSED_BY_GIT} {line}")
+    })
 }
 
 /// Work out the merge of HEAD and `theirs`, from `base` where it is given and from where the two
