@@ -86,6 +86,10 @@ fn a_merge_without_an_auto_flag_is_still_held_as_a_merge_ask() {
 }
 
 fn run(path: &str, query: &[(&str, &str)], body: Value) -> Recognised {
+    run_as("PUT", path, query, body)
+}
+
+fn run_as(method: &str, path: &str, query: &[(&str, &str)], body: Value) -> Recognised {
     let segments: Vec<String> = path
         .trim_start_matches('/')
         .split('/')
@@ -96,7 +100,7 @@ fn run(path: &str, query: &[(&str, &str)], body: Value) -> Recognised {
         .map(|(k, v)| ((*k).into(), (*v).into()))
         .collect();
     let call = Call {
-        method: "PUT",
+        method,
         segments: &segments,
         query: &query,
         body: &body,
@@ -314,5 +318,21 @@ fn a_merge_train_entry_that_sets_when_pipeline_succeeds_is_refused() {
             matches!(run(train, &[], body.clone()), Recognised::Hold(_)),
             "{body}"
         );
+    }
+}
+
+#[test]
+fn a_delete_that_cancels_auto_merge_is_never_read_as_enabling_it() {
+    purlis_core::unsteered!();
+    for (query, body) in [
+        (vec![("auto_merge", "1")], json!({})),
+        (vec![], json!({"auto_merge": true})),
+        (vec![("merge_when_pipeline_succeeds", "true")], json!({})),
+    ] {
+        let said = match run_as("DELETE", GITLAB_MERGE, &query, body.clone()) {
+            Recognised::Refuse(why) => said::refused_request(&why),
+            _ => continue,
+        };
+        assert!(!said.contains(REASON), "{query:?} {body}: {said}");
     }
 }
