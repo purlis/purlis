@@ -669,9 +669,7 @@ fn a_refused_push_is_answered_in_gits_own_words_and_never_reaches_the_forge() {
     let text = reply.text();
     assert!(text.contains("unpack ok\n"), "{text}");
     assert!(
-        text.contains(
-            "ng refs/heads/theirs purlis: this branch is not one this chat made, and no ask was raised to let it push (it is protected or unlisted, the chat is closed, or the policy does not ask); ask the person to push it\n"
-        ),
+        text.contains(&format!("ng refs/heads/theirs {NOT_YOUR_BRANCH_REASON}\n")),
         "{text}"
     );
     assert!(reply.body.ends_with(b"0000"));
@@ -1022,6 +1020,9 @@ fn a_push_to_a_branch_the_chat_created_on_a_gitlab_project_is_recorded_under_the
     assert_eq!(gitlab_tip(), Some(two));
 }
 
+/// What git is told when a push of a branch the chat did not make is refused (`gitsay.rs`).
+const NOT_YOUR_BRANCH_REASON: &str = "purlis: this branch is not one this chat made, and no ask was raised to let it push (it is protected or unlisted, the chat is closed, or the policy does not ask); ask the person to push it";
+
 #[test]
 fn a_refused_push_to_a_gitlab_remote_says_why_in_gits_words_on_gitlab_com_and_a_self_hosted_port() {
     purlis_core::unsteered!();
@@ -1053,9 +1054,7 @@ fn a_refused_push_to_a_gitlab_remote_says_why_in_gits_words_on_gitlab_com_and_a_
         let text = reply.text();
         assert_eq!(reply.status, 200, "{host}:{port}: {text}");
         assert!(
-            text.contains(
-                "ng refs/heads/theirs purlis: this branch is not one this chat made, so the push is refused; ask the person to push it\n"
-            ),
+            text.contains(&format!("ng refs/heads/theirs {NOT_YOUR_BRANCH_REASON}\n")),
             "{host}:{port}: {text}"
         );
         assert!(w.fake.requests().is_empty(), "{host}:{port}: never sent");

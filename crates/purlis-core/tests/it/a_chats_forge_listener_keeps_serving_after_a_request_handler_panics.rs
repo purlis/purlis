@@ -26,12 +26,14 @@ impl Observe for Boom {
     }
 }
 
+/// One request and whatever came back. A connection the listener turns away (every slot taken)
+/// is closed before it is read, so its write may fail and its reply is empty.
 fn ask(path: &std::path::Path, request: &[u8]) -> Vec<u8> {
     let mut client = UnixStream::connect(path).unwrap();
     client
         .set_read_timeout(Some(Duration::from_secs(10)))
         .unwrap();
-    client.write_all(request).unwrap();
+    let _ = client.write_all(request);
     let mut raw = Vec::new();
     let _ = client.read_to_end(&mut raw);
     raw
@@ -59,6 +61,17 @@ fn a_panic_in_a_request_handler_ends_that_request_and_gives_its_slot_back() {
     }
 
     w.fake.answer(Answer::ok(r#"{"login":"octocat"}"#));
-    let reply = parse_reply(&ask(&path, &gh_get(&w, "/user")));
+    // A panicking connection's socket closes while it unwinds, a moment before its slot is given
+    // back, so the first tries may be turned away. A slot that never came back is turned away
+    // for good, and this fails.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let raw = loop {
+        let raw = ask(&path, &gh_get(&w, "/user"));
+        if !raw.is_empty() || std::time::Instant::now() >= deadline {
+            break raw;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let reply = parse_reply(&raw);
     assert_eq!(reply.status, 200, "{}", reply.text());
 }
