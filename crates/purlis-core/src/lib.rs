@@ -237,6 +237,7 @@ pub mod publishproject;
 pub mod pyjson;
 pub mod pypath;
 pub mod pyrepr;
+pub mod ramclass;
 pub mod recall;
 pub mod reference;
 pub mod removalask;
