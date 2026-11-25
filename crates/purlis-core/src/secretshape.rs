@@ -59,7 +59,7 @@
 //!   controls (and it is exactly `str.isspace()`, so `rstrip` carries the same four).
 //!   `regex`'s is `White_Space` alone. [`crate::memstore::is_python_space`] already existed
 //!   for this, with a docstring saying the difference is not cosmetic; this module called
-//!   `\s` and `trim_end()` anyway. Closed by `SPACE`/`NOT_SPACE` and by `py_rstrip`.
+//!   `\s` and `trim_end()` anyway. Closed by `BLANK`/`NOT_SPACE` and by `py_rstrip`.
 //! - **`\b`**: `regex`'s word character is UTS#18's, which counts a combining mark, a
 //!   variation selector and ZWJ as word characters; CPython's is `str.isalnum() or '_'`,
 //!   which counts none of them. So `⚠️token: hunter2is` — U+FE0F is `Mn` — had **no word
@@ -147,13 +147,15 @@ const CREDENTIAL_PREFIXES: [&str; 36] = [
     "xwfp-",
 ];
 
-/// CPython's `\s`, spelled for `regex`: Unicode `White_Space` and the four separator
-/// controls it adds. Measured equal to `re`'s `\s` and to `str.isspace()` over every
-/// non-surrogate codepoint.
-const SPACE: &str = r"[\s\x1c-\x1f]";
-
 /// CPython's `\S`.
 const NOT_SPACE: &str = r"[^\s\x1c-\x1f]";
+
+/// CPython's `\s`, spelled for `regex` (Unicode `White_Space` and the four separator controls it
+/// adds; measured equal to `re`'s `\s` and to `str.isspace()` over every non-surrogate
+/// codepoint), without a line break: the blanks a credential assignment may have round its `:` or
+/// `=`. A value is on the keyword's own line, so prose ending in `token:` takes nothing from the
+/// line below it (#7628).
+const BLANK: &str = r"[[\s\x1c-\x1f]&&[^\n\r]]";
 
 /// `i` as CPython's `(?i)` reads it: the letter, and the two Turkic spellings `regex`'s
 /// simple case folding leaves out. Under `(?i)` this class is `{i, I, ı, İ}`, which is
@@ -243,7 +245,7 @@ fn assignment_pattern(value: &str) -> String {
         r"(?i)(?P<key>password|passwd|ap".to_owned(),
         format!("{I_CLASS}[_-]?key|ap{I_CLASS}key"),
         r"|secret|token)\b".to_owned(),
-        format!("{SPACE}*[:=]{SPACE}*"),
+        format!("{BLANK}*[:=]{BLANK}*"),
         format!("(?P<value>{value})"),
     ]
     .concat()
@@ -1154,7 +1156,7 @@ fn opened_assignment_at(read: &str) -> bool {
                 r"(?i)(?:password|passwd|ap".to_owned(),
                 format!("{I_CLASS}[_-]?key|ap{I_CLASS}key"),
                 r"|secret|token)\b".to_owned(),
-                format!("{SPACE}*={SPACE}*\"\"\""),
+                format!("{BLANK}*={BLANK}*\"\"\""),
             ]
             .concat(),
         )
