@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795638764480,
+  "lastUpdate": 1795641647803,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55188,6 +55188,48 @@ window.BENCHMARK_DATA = {
             "value": 100.561364,
             "unit": "ms",
             "extra": "median of 5 runs: 100.228, 100.495, 100.561, 101.657, 101.860 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "37bfa5fae9f0f32705b6e901df93b0bc1943a00c",
+          "message": "Time every phase of opening a new chat and write a slow opening to the slow log (H12) (#7670)\n\n* Time every phase of opening a new chat and write a slow opening to the slow log (H12)\n\nA new chat that takes a second or longer to open now writes an opening line to slow.jsonl that\nnames each phase with its ms: repo_turn, branch_cut, ready (guest_layer, hidden_agents_md,\nsign_in, sandbox_compile, program_check, pinned_version, plugins) and open_session. A budget\ntest (a_new_chat_opens_within_its_budget) holds the core's part of an opening to 5 s with no\nother branch folder and with 130.\n\nMeasured: the core's synchronous start does not grow with the plane's branch folders (N=0 about\n1.5-2.2 s, N=130 about 2.1-2.3 s in a debug build), so the minutes are not there.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M88RSB6Z6ADGR38ZP6W4WZMR\nPurlis-Persona: steward\n\n* Write the opening timing to std::io::stderr() by name, not eprintln! (clippy::disallowed-macros)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M8914TASG259W3MHC6KWSZHW\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T20:36:45Z",
+          "tree_id": "7f0d3cf004bd74b15962dcd946fbec1e49d875f1",
+          "url": "https://github.com/purlis/purlis/commit/37bfa5fae9f0f32705b6e901df93b0bc1943a00c"
+        },
+        "date": 1795641640182,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.335805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.313, 0.329, 0.336, 0.339, 0.339 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.639756,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.598, 16.639, 16.640, 16.701, 16.703 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.3428255,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.790, 101.252, 101.343, 101.441, 101.442 ms"
           }
         ]
       }
