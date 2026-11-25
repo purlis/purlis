@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795619161909,
+  "lastUpdate": 1795621023445,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54852,6 +54852,48 @@ window.BENCHMARK_DATA = {
             "value": 100.9186605,
             "unit": "ms",
             "extra": "median of 5 runs: 99.413, 100.144, 100.919, 101.939, 101.957 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "88e7991551d694dd6aaabacf51a6622aa6802068",
+          "message": "Local macOS builds sign with one stable identity, so the Keychain stops asking after every rebuild (#7642)\n\n* Sign local macOS builds with one stable identity so the Keychain stops asking after each rebuild\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M89HDRN1MFRGBTMG496MJZBN\nPurlis-Persona: steward\n\n* Sign local macOS builds: the runner script, its cargo config, its test and the changelog fragment\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M89HDRN1MFRGBTMG496MJZBN\nPurlis-Persona: steward\n\n* Dev-sign runner: look up a SHA-1 override's name, never steal a live lock, release it on a signal\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M89HDRN1MFRGBTMG496MJZBN\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-25T15:03:44Z",
+          "tree_id": "d2099df1f8ebdcd92e4320c9484d3cbbad86d5c5",
+          "url": "https://github.com/purlis/purlis/commit/88e7991551d694dd6aaabacf51a6622aa6802068"
+        },
+        "date": 1795621016217,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.673451,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.661, 0.671, 0.673, 0.682, 0.688 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.740038000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.495, 16.526, 16.740, 16.742, 16.763 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.074476,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.577, 101.545, 102.074, 102.759, 102.815 ms"
           }
         ]
       }
