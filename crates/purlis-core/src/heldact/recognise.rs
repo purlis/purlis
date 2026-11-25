@@ -19,7 +19,7 @@
 
 use super::TagName;
 use crate::forge::Kind;
-use crate::mergehold::{Repo, Request};
+use crate::mergehold::{LandAs, Repo, Request};
 
 /// **What a chat asked for**, in the words the request used.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,17 +56,29 @@ pub enum Requested {
 
 impl Requested {
     /// The merge of request `number` of `repo`: what the GraphQL reading hands over for a
-    /// `mergePullRequest` or an `enablePullRequestAutoMerge` it resolved to a recorded repository.
+    /// `mergePullRequest` it resolved to a recorded repository.
     pub fn merge_of(repo: Repo, number: u64) -> Requested {
+        Requested::land_of(repo, number, LandAs::Merge)
+    }
+
+    /// Request `number` of `repo` to be landed by `act`: what the GraphQL reading hands over for
+    /// a `mergePullRequest` ([`LandAs::Merge`]) or an `enqueuePullRequest` ([`LandAs::Enqueue`])
+    /// it resolved to a recorded repository. The person's press performs that act and no other (#7543).
+    pub fn land_of(repo: Repo, number: u64, act: LandAs) -> Requested {
         Requested::Merge(Request {
             repo: Some(repo),
             number,
+            act,
         })
     }
 
     /// The word for the kind of act, as the ask and the chat's sentence use it.
     pub fn word(&self) -> &'static str {
         match self {
+            Requested::Merge(Request {
+                act: LandAs::Enqueue,
+                ..
+            }) => "merge-queue entry",
             Requested::Merge(_) => "merge",
             Requested::Tag { .. } => "tag",
             Requested::Release { .. } => "release",

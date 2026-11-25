@@ -336,3 +336,127 @@ fn pack_of(from: &Path, tip: &HeadSha, known: &HeadSha) -> Vec<u8> {
     assert!(out.status.success());
     out.stdout
 }
+
+/// A fetch of `spec` with no depth, as a push's tips are fetched.
+fn plain_fetch(forge: &Path, spec: String) -> Fetch {
+    let forge = forge.to_path_buf();
+    Arc::new(move |dir, _| {
+        let out = git(
+            dir,
+            &["fetch", "-q", "--no-tags", &forge.to_string_lossy(), &spec],
+        );
+        out.status
+            .success()
+            .then_some(())
+            .ok_or_else(|| "git failed".to_owned())
+    })
+}
+
+/// A fetch that reads nothing, and says so by running at all.
+fn reads_nothing(ran: &Arc<Mutex<Vec<Stage>>>) -> Fetch {
+    let ran = ran.clone();
+    Arc::new(move |_, _| {
+        ran.lock().unwrap().push(Stage::Rest);
+        Err("nothing read".to_owned())
+    })
+}
+
+#[test]
+fn a_push_is_refused_and_reads_nothing_of_a_cache_a_depth_stage_left_shallow() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let cache = s.cache("owner/shallow");
+    let ran = Arc::new(Mutex::new(Vec::new()));
+    cache
+        .update(soon(), s.fill(&s.base, Some(Stage::Depth(12)), &ran))
+        .unwrap_err();
+    wait_until_idle(&cache);
+    // Stage one's ref is there and the base commit is under it, with its history cut at five.
+    assert_eq!(commits_of(&cache, &s.base), 5);
+    assert_eq!(
+        text(cache.path(), &["rev-parse", "--is-shallow-repository"]),
+        "true"
+    );
+
+    let have = [s.base.as_str().to_owned()];
+    assert!(!cache.holds(&have), "a shallow cache holds nothing");
+    let read = Arc::new(Mutex::new(Vec::new()));
+    let refused = cache
+        .update_having(soon(), reads_nothing(&read), &have)
+        .unwrap_err();
+    wait_until_idle(&cache);
+    assert!(refused.contains("reading"), "{refused}");
+    assert!(!cache.is_filled());
+}
+
+#[test]
+fn a_fetch_with_no_depth_does_not_mark_a_shallow_cache_filled() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let cache = s.cache("owner/tips");
+    let ran = Arc::new(Mutex::new(Vec::new()));
+    cache
+        .update(soon(), s.fill(&s.base, Some(Stage::Depth(12)), &ran))
+        .unwrap_err();
+    wait_until_idle(&cache);
+
+    // An unstaged fill (a push's tips) over the shallow cache: the boundary stays, so it is not
+    // filled, and the next push still finds a cache that is read on.
+    let tips = plain_fetch(
+        &s.forge,
+        format!("+{0}:refs/quarantine/tips/{0}", s.base.as_str()),
+    );
+    let refused = cache.update(soon(), tips).unwrap_err();
+    wait_until_idle(&cache);
+    assert!(refused.contains("reading"), "{refused}");
+    assert_eq!(
+        text(cache.path(), &["rev-parse", "--is-shallow-repository"]),
+        "true"
+    );
+    assert!(
+        !cache.is_filled(),
+        "a cache is never filled while it is shallow"
+    );
+    assert!(!cache.holds(&[s.base.as_str().to_owned()]));
+}
+
+/// A fill of the target every fill of a forge repo shares, whose stages end at `stop` if it is given.
+fn shared_target_fill(ran: &Arc<Mutex<Vec<Stage>>>, stop: Option<Stage>) -> Fetch {
+    let ran = ran.clone();
+    Arc::new(move |dir, _| {
+        fill_in_stages(
+            dir,
+            purlis_core::heldact::FIRST_FILL_TARGET,
+            &STAGES,
+            |which| {
+                if stop == Some(which) {
+                    return Err("stopped".to_owned());
+                }
+                ran.lock().unwrap().push(which);
+                Ok(())
+            },
+        )
+    })
+}
+
+#[test]
+fn a_fill_the_early_start_began_is_resumed_by_a_push_at_the_stage_it_reached() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let cache = s.cache("owner/shared");
+    let ran = Arc::new(Mutex::new(Vec::new()));
+    // The early start's fill is cut in stage two...
+    cache
+        .update(soon(), shared_target_fill(&ran, Some(Stage::Depth(12))))
+        .unwrap_err();
+    wait_until_idle(&cache);
+    assert_eq!(*ran.lock().unwrap(), [Stage::Depth(5)]);
+
+    // ...and a push's fill, of the same target, picks up there and does not begin again.
+    ran.lock().unwrap().clear();
+    cache
+        .update(soon(), shared_target_fill(&ran, None))
+        .unwrap_err();
+    wait_until_idle(&cache);
+    assert_eq!(*ran.lock().unwrap(), [Stage::Depth(12), Stage::Rest]);
+}

@@ -6458,6 +6458,7 @@ dependencies = [
  "png",
  "psl",
  "purlis-same-user",
+ "purlis-session-protocol",
  "purlis-unicode",
  "ring",
  "serde",
@@ -6469,6 +6470,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tracing",
+ "tracing-subscriber",
  "ureq",
  "zeroize",
  "zip",
@@ -6639,6 +6641,8 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "ulid",
 ]
 
@@ -6685,6 +6689,8 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
+ "tracing",
+ "tracing-subscriber",
  "yamux",
  "zeroize",
 ]

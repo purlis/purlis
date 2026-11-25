@@ -707,6 +707,25 @@ impl ForgeProxy {
         let mut allowed = match decision {
             Decision::Allow(allowed) => allowed,
             Decision::Refuse(refusal) => {
+                // A GraphQL merge, auto-merge or merge-queue mutation of a pull request the forge
+                // names is held like a REST merge is (#7543): the person's Merge press performs
+                // it, and nothing of the document is forwarded. Where the pull request cannot be
+                // named, the chat is refused and told why.
+                if sentinel.is_ok()
+                    && refusal == Refusal::Merge
+                    && let Some(sink) = &self.held
+                    && let Some(named) = policy.held_graphql_merge(&head, inbound.body, objects)
+                {
+                    let said = match named {
+                        Ok(requested) => sink.ask(chat, &requested),
+                        Err(why) => format!(
+                            "purlis holds merges. Nobody was asked, so the merge will not happen: {why}."
+                        ),
+                    };
+                    self.audit
+                        .record(chat, inbound.head, None, Verdict::Refused(refusal));
+                    return Outcome::Held(Held { refusal, said });
+                }
                 // Only a chat that proved itself asks, and only for a held route.
                 if sentinel.is_ok()
                     && held::is_a_held_route(refusal)

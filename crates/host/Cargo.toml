@@ -53,6 +53,9 @@ purlis-session-protocol = { path = "../session-protocol", features = ["any-strea
 tempfile.workspace = true
 serde_json.workspace = true
 bytes = "1"
+# What the step guard wrote, read back (`steps`, #7182).
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 # `test-util`: a link renewed ahead of its limit, an hour on, in the runtime's virtual time.
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt", "sync", "test-util", "time"] }
 

@@ -29,7 +29,7 @@ use std::collections::HashMap;
 
 use graphql_parser::query::{
     Definition, Document, Field, FragmentDefinition, OperationDefinition, Selection, SelectionSet,
-    TypeCondition, Value, VariableDefinition, parse_query,
+    TypeCondition, Value, VariableDefinition,
 };
 use serde_json::Value as Json;
 
@@ -45,6 +45,43 @@ const MAX_DEPTH: usize = 16;
 
 /// The largest document read.
 const MAX_BODY: usize = 1 << 20;
+
+/// Whether `graphql-parser` 0.4.1 could panic reading `query` (#7589, #7596).
+///
+/// Its `unquote_block_string` (`common.rs`) takes `str::lines()` of a block string, sets the
+/// common indent to the least byte length of leading whitespace (`trim_start`, so
+/// `char::is_whitespace`) over every non-blank line after the first, and then cuts every line
+/// after the first, blank ones too, at `&line[common_indent..]`. That cut panics when it lands
+/// inside a character. If every line's leading whitespace is ASCII, `common_indent` is a count of
+/// ASCII bytes that each non-blank line starts with (it is the least of them) and a blank line
+/// too short for it is not cut, so the cut is always on a boundary. A panic therefore needs a
+/// line whose leading whitespace holds a non-ASCII character. The block string's lines are lines
+/// of the query (`lines()` and `split('\n')` cut alike; a lone `\r` is whitespace and a
+/// trailing `\r` is dropped by `lines()`, neither of which changes a line's leading whitespace),
+/// so this reads every line of the whole query: it also refuses a non-ASCII indent outside any
+/// block string, which no chat writes, and the first line of a block string, which the parser
+/// never cuts, in exchange for needing no tokenizer of its own.
+fn could_panic_the_parser(query: &str) -> bool {
+    query.contains("\"\"\"")
+        && query.split('\n').any(|line| {
+            line.chars()
+                .take_while(|c| c.is_whitespace())
+                .any(|c| !c.is_ascii())
+        })
+}
+
+/// The document `query` is, or none when it is not one the parser reads or could panic on. A
+/// shipped build aborts on any panic before it unwinds ([`crate::panicend::fatal`]), so the
+/// panic is never raised: such a query is refused before the parser sees it. The `catch_unwind`
+/// is a second line for debug and test builds only, which unwind.
+fn parse(query: &str) -> Option<Document<'_, String>> {
+    if could_panic_the_parser(query) {
+        return None;
+    }
+    std::panic::catch_unwind(|| graphql_parser::query::parse_query::<String>(query))
+        .ok()?
+        .ok()
+}
 
 /// What a value resolved to.
 #[derive(Debug, Clone)]
@@ -158,6 +195,159 @@ fn merge_mutation(kind: Kind, name: &str) -> bool {
     }
 }
 
+/// **The act a merge mutation asks for**, which the person's press performs (#7543): a merge
+/// now or a place in the merge queue. Each is held as the act it names and never as another: the
+/// press of an enqueue enqueues and never merges. Auto-merge is not held
+/// ([`unheld_merge_said`]), and undoing one (`disablePullRequestAutoMerge`,
+/// `dequeuePullRequest`) is never held.
+pub(super) fn merge_act(kind: Kind, name: &str) -> Option<crate::mergehold::LandAs> {
+    use crate::mergehold::LandAs;
+    match (kind, name) {
+        (Kind::GitHub, "mergePullRequest") | (Kind::GitLab, "mergeRequestAccept") => {
+            Some(LandAs::Merge)
+        }
+        (Kind::GitHub, "enqueuePullRequest") => Some(LandAs::Enqueue),
+        _ => None,
+    }
+}
+
+/// What a chat is told when it asks for auto-merge, which is refused and never held: it pins the
+/// head only when it is turned on, so the forge would merge any head pushed later, unseen.
+pub(super) fn unheld_merge_said(kind: Kind, name: &str) -> Option<&'static str> {
+    match (kind, name) {
+        (Kind::GitHub, "enablePullRequestAutoMerge") => Some(
+            "auto-merge would merge any head pushed later, unseen, so purlis does not hold it. \
+             Ask the person to merge it, or ask to enqueue it",
+        ),
+        _ => None,
+    }
+}
+
+/// What a chat is told when a GitLab accept sets a merge strategy: `strategy` and
+/// `autoMergeStrategy` ask GitLab to merge when the pipeline succeeds or through a train, which
+/// the person's press does not do ([`Merged::Now`](crate::mergehold::Merged)).
+const STRATEGY_SAID: &str = "this merge sets a merge strategy (merge when the pipeline succeeds, \
+                             or a merge train), which purlis does not hold: its press merges at \
+                             once. Ask the person to merge it, or merge now without a strategy";
+
+/// Whether a GitLab `mergeRequestAccept` document sets `strategy` or `autoMergeStrategy`, to a
+/// value or a variable: the document asks for more than a merge now, so it is refused with
+/// [`STRATEGY_SAID`] where `body` is one. `None` where it is not one or cannot be read.
+pub(super) fn strategy_said(kind: Kind, body: &[u8]) -> Option<&'static str> {
+    if kind != Kind::GitLab {
+        return None;
+    }
+    let (name, arguments) = mutation_arguments(body)?;
+    (name == "mergeRequestAccept" && has_key(&arguments, &["strategy", "autoMergeStrategy"]))
+        .then_some(STRATEGY_SAID)
+}
+
+/// Whether `val` holds any of `keys` as a field, at any depth.
+fn has_key(val: &Val, keys: &[&str]) -> bool {
+    match val {
+        Val::Obj(fields) => fields
+            .iter()
+            .any(|(k, v)| keys.contains(&k.as_str()) || has_key(v, keys)),
+        Val::List(items) => items.iter().any(|v| has_key(v, keys)),
+        _ => false,
+    }
+}
+
+/// The first string `key` holds in `val`, at any depth.
+fn find_str<'v>(val: &'v Val, key: &str) -> Option<&'v str> {
+    match val {
+        Val::Obj(fields) => fields.iter().find_map(|(k, v)| match v {
+            Val::Str(s) if k == key => Some(s.as_str()),
+            _ => find_str(v, key),
+        }),
+        Val::List(items) => items.iter().find_map(|v| find_str(v, key)),
+        _ => None,
+    }
+}
+
+/// **The one mutation a document is**, as its field's name and its arguments, variables
+/// resolved: `None` where the document is not exactly one mutation with one field, or an
+/// argument cannot be resolved.
+fn mutation_arguments(body: &[u8]) -> Option<(String, Val)> {
+    let json: Json = serde_json::from_slice(body).ok()?;
+    let Json::Object(object) = &json else {
+        return None;
+    };
+    let Some(Json::String(query)) = object.get("query") else {
+        return None;
+    };
+    let empty = serde_json::Map::new();
+    let given = match object.get("variables") {
+        None | Some(Json::Null) => &empty,
+        Some(Json::Object(map)) => map,
+        Some(_) => return None,
+    };
+    let parsed = parse(query)?;
+    let mut operations = parsed.definitions.iter().filter_map(|d| match d {
+        Definition::Operation(operation) => Some(operation),
+        Definition::Fragment(_) => None,
+    });
+    let Some(OperationDefinition::Mutation(mutation)) = operations.next() else {
+        return None;
+    };
+    if operations.next().is_some() {
+        return None;
+    }
+    let [Selection::Field(field)] = mutation.selection_set.items.as_slice() else {
+        return None;
+    };
+    let vars = Vars {
+        given,
+        defaults: defaults(&mutation.variable_definitions),
+    };
+    let mut arguments = Vec::new();
+    for (name, value) in &field.arguments {
+        arguments.push((name.clone(), vars.resolve(value).ok()?));
+    }
+    let arguments = Val::Obj(arguments);
+    Some((field.name.clone(), arguments))
+}
+
+/// **The pull request a merge document is about**: the path of the one recorded repo of `repos`
+/// it is in and its number, for a document that is exactly one holdable merge mutation
+/// ([`merge_act`]), with that act. On GitHub the node id is resolved by `objects`; on GitLab the
+/// project path and `iid` are in the document. `None` where any of it is missing or not a plain
+/// number.
+/// Never decides whether the request is allowed: [`decide`] does that.
+pub(super) fn merge_target(
+    kind: Kind,
+    repos: &[&AllowedRepo],
+    body: &[u8],
+    objects: &dyn ObjectRepo,
+) -> Option<(String, u64, crate::mergehold::LandAs)> {
+    let (name, arguments) = mutation_arguments(body)?;
+    let act = merge_act(kind, &name)?;
+    match kind {
+        Kind::GitHub => {
+            let id = find_str(&arguments, "pullRequestId")?;
+            repos.iter().filter(|r| r.kind == kind).find_map(|r| {
+                objects
+                    .pull_of(r.kind, &r.host, id)
+                    .filter(|(path, number)| *path == r.path && *number > 0)
+                    .map(|(path, number)| (path, number, act))
+            })
+        }
+        Kind::GitLab => {
+            let project = find_str(&arguments, "projectPath")?;
+            let iid = find_str(&arguments, "iid")?;
+            let number = iid
+                .parse::<u64>()
+                .ok()
+                .filter(|n| *n > 0 && iid.bytes().all(|b| b.is_ascii_digit()))?;
+            let path = normalise_repo_path(kind, project).ok()?;
+            repos
+                .iter()
+                .find(|r| r.kind == kind && r.path == path)
+                .map(|r| (r.path.clone(), number, act))
+        }
+    }
+}
+
 /// What a mutation not on the list is, by its name, so the refusal says so.
 fn named_mutation_refusal(name: &str) -> Refusal {
     let n = name.to_ascii_lowercase();
@@ -260,7 +450,7 @@ pub(crate) fn decide<'a>(
         Some(Json::Object(map)) => map,
         Some(_) => return Err(Refusal::GraphqlParse),
     };
-    let document: Document<'_, String> = parse_query(query).map_err(|_| Refusal::GraphqlParse)?;
+    let document = parse(query).ok_or(Refusal::GraphqlParse)?;
 
     let mut fragments = HashMap::new();
     for definition in &document.definitions {
@@ -847,7 +1037,7 @@ pub fn mutation_repo(
         Some(Json::Object(map)) => map,
         Some(_) => return None,
     };
-    let parsed: Document<'_, String> = parse_query(query).ok()?;
+    let parsed = parse(query)?;
     let mut ids = Vec::new();
     for definition in &parsed.definitions {
         let Definition::Operation(OperationDefinition::Mutation(mutation)) = definition else {
@@ -1001,5 +1191,27 @@ fn strings(val: &Val) -> Vec<String> {
         Val::List(items) => items.iter().flat_map(strings).collect(),
         Val::Obj(fields) => fields.iter().flat_map(|(_, v)| strings(v)).collect(),
         Val::Other => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A block string whose second line indents with U+3000, which panics `graphql-parser` (#7589).
+    fn panicking(mutation: &str) -> Vec<u8> {
+        let query = format!(
+            "mutation{{ {mutation}(input:{{pullRequestId:\"PR_kwDO_1\", commitBody:\"\"\"x\r\n a\r\n\u{3000}\r\n b\r\n\"\"\"}}){{ clientMutationId }} }}"
+        );
+        serde_json::to_vec(&serde_json::json!({ "query": query })).expect("json")
+    }
+
+    #[test]
+    fn a_merge_or_enqueue_document_with_a_block_string_the_parser_panics_on_is_not_read() {
+        for mutation in ["mergePullRequest", "enqueuePullRequest"] {
+            let body = panicking(mutation);
+            assert!(mutation_arguments(&body).is_none(), "{mutation}");
+            assert!(strategy_said(Kind::GitHub, &body).is_none(), "{mutation}");
+        }
     }
 }

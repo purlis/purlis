@@ -86,7 +86,8 @@ pub use holds::{
     Asked, HeldActs, NotDone, Performed, Pressed, Waiting, holds_global_limit, holds_limits,
 };
 pub use objectcache::{
-    FILL, FIRST_FILL, Fetch, MOST, ObjectCache, PUSH, PushCache, STALL, Stage, fill_in_stages,
+    FILL, FIRST_FILL, FIRST_FILL_TARGET, Fetch, LOG_EVERY, MOST, ObjectCache, PUSH, Progress,
+    ProgressReader, PushCache, STALL, Stage, fill_in_stages,
 };
 pub use prepare::{pinned, prepare};
 pub use quarantine::{BaseObjects, FetchLimits, FromForge, Quarantine, sweep as sweep_quarantines};

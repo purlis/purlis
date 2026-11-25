@@ -193,6 +193,40 @@ pub struct Request {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<Repo>,
     pub number: u64,
+    /// **What the chat asked to happen to it** (#7543): a hook's merge command is always
+    /// [`LandAs::Merge`], and the line it sends then has no such field, as before.
+    #[serde(default, skip_serializing_if = "LandAs::is_merge")]
+    pub act: LandAs,
+}
+
+/// **The act a held request asks for**, which the person's press performs and nothing else
+/// (#7543): a merge now or a place in the repo's merge queue. Auto-merge is not held (it would
+/// merge any head pushed later, unseen), and dequeuing undoes one and is never held.
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum LandAs {
+    /// Merge it now, by the repo's own method (or into its queue, where the repo lands through
+    /// one, as it always has).
+    #[default]
+    Merge,
+    /// Put it in its base branch's merge queue. Never a merge: a repo with no queue is refused.
+    Enqueue,
+}
+
+impl LandAs {
+    fn is_merge(&self) -> bool {
+        *self == LandAs::Merge
+    }
+
+    /// What a press does, as the ask says it (a verb phrase, without the request).
+    pub fn verb(self) -> &'static str {
+        match self {
+            LandAs::Merge => "Merge",
+            LandAs::Enqueue => "Enqueue",
+        }
+    }
 }
 
 /// **A command the merge hold refuses.**
@@ -449,7 +483,11 @@ fn merge_of(toks: &[String]) -> Option<Merge> {
             .parse::<u64>()
             .ok()
             .filter(|n| *n > 0 && number.bytes().all(|b| b.is_ascii_digit()))
-            .map(|number| Request { repo, number }),
+            .map(|number| Request {
+                repo,
+                number,
+                act: LandAs::Merge,
+            }),
         _ => None,
     };
     Some(Merge { request, later })
@@ -661,9 +699,15 @@ pub fn waiting(request: &Request) -> String {
 /// **What the app tells the chat it holds the merge**, once it has read the request from the
 /// forge and an ask waits for it.
 pub fn handed_said(request: &Request) -> String {
+    let (does, not) = match request.act {
+        LandAs::Merge => ("merge", "do not merge it another way"),
+        LandAs::Enqueue => (
+            "put in the merge queue",
+            "do not merge it or queue it another way",
+        ),
+    };
     format!(
-        "The person is asked in Asks to merge {}{}. Carry on with other work; do not merge it \
-         another way.",
+        "The person is asked in Asks to {does} {}{}. Carry on with other work; {not}.",
         request.number_said(),
         request.repo_said()
     )
@@ -685,7 +729,7 @@ pub fn asked(
     now: u64,
 ) -> Result<(MergeKey, Raised), String> {
     let (key, facts) = resolve(request)?;
-    let raised = holds.raise(session, key.clone(), facts, now);
+    let raised = holds.raise_as(session, key.clone(), facts, request.act, now);
     Ok((key, raised))
 }
 
@@ -907,6 +951,11 @@ pub trait MergeForge {
     fn at(&self, key: &MergeKey) -> Result<At, String>;
     /// Merges, by the repo's method (`squash`), or says why the forge refused, in its words.
     fn merge_at(&self, key: &MergeKey, squash: bool) -> Result<Merged, String>;
+    /// Puts the request in its base branch's merge queue or train, only while its head is
+    /// `key.head`, and **never merges it**: a repo with no queue is an error.
+    fn enqueue_at(&self, _key: &MergeKey, _squash: bool) -> Result<Merged, String> {
+        Err("this forge cannot put a request in a merge queue".to_owned())
+    }
 }
 
 /// **A press, through a forge backend** (Q239): a repo that lands through a merge queue or
@@ -972,6 +1021,30 @@ impl MergeForge for ByForge<'_> {
             )),
         }
     }
+
+    fn enqueue_at(&self, key: &MergeKey, squash: bool) -> Result<Merged, String> {
+        let pr = Self::pr(key);
+        let queued = self
+            .backend
+            .lands_through_queue(&self.caller, &self.path, &pr)
+            .map_err(|why| format!("purlis could not tell how it lands: {why}"))?;
+        if !queued {
+            return Err(format!(
+                "{} has no merge queue for its base branch, so nothing was done. It was not \
+                 merged instead",
+                self.path
+            ));
+        }
+        let how = crate::forge::pr::MergeAs {
+            squash,
+            title: format!("Merge request {} of {}", key.number, key.repo.as_str()),
+            message: "Merged in purlis on the person's press.".to_owned(),
+        };
+        self.backend
+            .enqueue_at(&self.caller, &self.path, &pr, key.head.as_str(), &how)
+            .map(|()| Merged::Queued)
+            .map_err(|why| why.to_string())
+    }
 }
 
 /// The merge method a squash flag names, as an ask says it.
@@ -990,6 +1063,9 @@ pub struct Waits {
     pub session: u32,
     pub key: MergeKey,
     pub facts: Facts,
+    /// **What the person is asked to have done** (#7543), which a press performs at `key.head`
+    /// and nothing else. A moved head keeps it for the ask at the new head.
+    pub act: LandAs,
     pub since: u64,
     /// **Asked once more** (Q269): the window read the request again and asked the person once
     /// more, of these facts. Only [`Reread::AsksOnceMore`] sets it, a raise whose facts show
@@ -1005,9 +1081,10 @@ pub struct Waits {
 impl Facts {
     /// **The digest of what these facts show the person** (the follow-up Q269 named): the
     /// title, the author, the checks' word, the ruleset state and who approves (by login,
-    /// Q277), never when they were read. The window hands it back with a press, which merges only while the ask shows
-    /// the same ([`Holds::shows`]).
-    pub fn digest(&self) -> String {
+    /// Q277) and **the act the press performs** (`act`), never when they were read. The window
+    /// hands it back with a press, which acts only while the ask shows the same
+    /// ([`Holds::shows`]), so a press made against a row with another act is refused as changed.
+    pub fn digest(&self, act: LandAs) -> String {
         use sha2::Digest;
         let shown = [
             self.title.as_str(),
@@ -1023,6 +1100,10 @@ impl Facts {
                 None => "\u{1f}not approved",
             },
             method_word(self.squash),
+            match act {
+                LandAs::Merge => "merge",
+                LandAs::Enqueue => "enqueue",
+            },
         ]
         .join("\u{1e}");
         sha2::Sha256::digest(shown.as_bytes())
@@ -1164,12 +1245,30 @@ impl Holds {
     /// **an older read never replaces a newer** (Q269). Facts that show otherwise take the
     /// ask's asked mark away.
     pub fn raise(&self, session: u32, key: MergeKey, facts: Facts, now: u64) -> Raised {
+        self.raise_as(session, key, facts, LandAs::Merge, now)
+    }
+
+    /// [`Self::raise`] of the act `act` asks for. **A try again for another act at the same head
+    /// is the one ask, now for that act, and is asked of the person once more**: what they were
+    /// shown is never what a press performs.
+    pub fn raise_as(
+        &self,
+        session: u32,
+        key: MergeKey,
+        facts: Facts,
+        act: LandAs,
+        now: u64,
+    ) -> Raised {
         let mut held = self.lock();
         if let Some(at) = held
             .iter()
             .position(|one| one.session == session && one.key.same_request(&key))
         {
             if held[at].key == key {
+                if held[at].act != act {
+                    held[at].act = act;
+                    held[at].asked = false;
+                }
                 held[at].replace(facts);
                 return Raised::Already;
             }
@@ -1182,6 +1281,7 @@ impl Holds {
             session,
             key,
             facts,
+            act,
             since: now,
             asked: false,
             look: Look::NotViewed { since: None },
@@ -1227,6 +1327,7 @@ impl Holds {
             return Err(NotMerged::NotHeld);
         }
         let since = facts.read_at;
+        let act = held[at].act;
         held.remove(at);
         held.retain(|one| !(one.session == session && one.key.same_request(&now)));
         // The ask at the new head is on the forge the old one was raised on.
@@ -1240,6 +1341,7 @@ impl Holds {
             session,
             key: now,
             facts,
+            act,
             since,
             asked: false,
             look: Look::NotViewed { since: None },
@@ -1355,9 +1457,9 @@ impl Holds {
     /// **Whether chat `session`'s ask for `key` shows what `digest` is of** ([`Facts::digest`]):
     /// what a press hands back of its row.
     pub fn shows(&self, session: u32, key: &MergeKey, digest: &str) -> bool {
-        self.lock()
-            .iter()
-            .any(|one| one.session == session && one.key == *key && one.facts.digest() == digest)
+        self.lock().iter().any(|one| {
+            one.session == session && one.key == *key && one.facts.digest(one.act) == digest
+        })
     }
 
     /// **The watch of every waiting ask's request** (R-125): `read` says where the forge has
@@ -1450,6 +1552,7 @@ impl Holds {
             held.remove(at)
         };
         let shown = taken.facts.squash;
+        let act = taken.act;
         let merged = forge
             .at(key)
             .map_err(NotMerged::Forge)
@@ -1476,7 +1579,15 @@ impl Holds {
                     })
                 }
             })
-            .and_then(|at| forge.merge_at(key, at.squash).map_err(NotMerged::Forge));
+            .and_then(|at| {
+                // Each act is performed by its own call, pinned to `key.head`; an enqueue
+                // never falls back to a merge.
+                match act {
+                    LandAs::Merge => forge.merge_at(key, at.squash),
+                    LandAs::Enqueue => forge.enqueue_at(key, at.squash),
+                }
+                .map_err(NotMerged::Forge)
+            });
         match merged {
             Ok(merged) => Ok((by.scope(), merged)),
             Err(why) => {

@@ -903,6 +903,8 @@ impl ForgeRoutes {
             .held
             .push_gate(project, sessions, proxy.clone())
             .unwrap_or_else(|| Arc::new(BlindGate));
+        // Reading the repo's objects starts now, not at the first push (#7532).
+        push.warm();
         let bound = match self.seams.listener.bind(run, &run_dir, proxy.clone(), push) {
             Ok(bound) => bound,
             Err(refused) => {

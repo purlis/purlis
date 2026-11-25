@@ -414,3 +414,34 @@ fn a_pool_made_from_what_connect_kept_is_marked_only_for_the_pin_answered_for() 
     other.pin.engine = crate::sshroute::EnginePin::Docker("WXYZ".to_owned());
     assert!(!marked_on_connect(config.path(), &other.into()).unwrap());
 }
+
+#[test]
+fn a_failed_add_keeps_the_pool_refused_with_its_reason() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = FakeDocker::new(&inspected());
+    let asked = Asked {
+        name: "dev-box".into(),
+        image: image(),
+        ..Asked::default()
+    };
+    let desktop = Pinned {
+        device: "01JA0DESKT0P00000000000000".into(),
+        key: purlis_session_protocol::hostlink::LinkKey::generate()
+            .unwrap()
+            .public(),
+    };
+    fake.set(
+        "image",
+        r#"[{"Config":{"User":"10001:10001","Env":["PATH=/usr/bin","HOME=/home/purlis"]}}]"#,
+    );
+    fake.set("run-fails", "1");
+    let refused = create(config.path(), &fake.docker(), &asked, &desktop)
+        .expect_err("the runtime refused the runner");
+    let kept = crate::poolsetup::read_choices(config.path())
+        .unwrap()
+        .declined
+        .expect("the refused pool is kept");
+    assert_eq!(kept.pool, "dev-box");
+    assert_eq!(kept.reason, crate::shown::short(&refused.to_string()));
+    assert!(kept.reason.contains("refused"), "{}", kept.reason);
+}

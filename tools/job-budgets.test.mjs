@@ -235,3 +235,31 @@ test("the checked-in release budgets cover each build job and the runner binary,
   assert.match(yml, /name: runner binary \(linux-aarch64\)/);
   assert.match(yml, /\$\{\{ format\('\{0\} \(\{1\}\{2\}\)', matrix\.platform, matrix\.made/);
 });
+
+// A job whose RUSTFLAGS name mold (`-fuse-ld=mold`) links with it wherever it compiles, so the
+// step that installs mold has to run whenever the job does. `recorded` installed it only when
+// `rust` was in scope, then ran `cargo test` for the whole-tree guards when it was not (every
+// draft pull request): `collect2: fatal error: cannot find 'ld'` (#7240).
+test("every job that links with mold installs it on every run of the job", () => {
+  const lines = readFileSync(CI, "utf8").split("\n");
+  const jobsAt = lines.findIndex((l) => l === "jobs:");
+  const starts = [];
+  for (let i = jobsAt + 1; i < lines.length; i++) if (/^ {2}[\w-]+:\s*$/.test(lines[i])) starts.push(i);
+  let checked = 0;
+  starts.forEach((start, n) => {
+    const job = lines.slice(start, starts[n + 1] ?? lines.length);
+    if (!job.some((l) => /^\s+RUSTFLAGS:.*-fuse-ld=mold/.test(l))) return;
+    checked++;
+    const id = lines[start].trim();
+    const install = job.findIndex((l) => /^\s+packages:.*\bmold\b/.test(l));
+    assert.notEqual(install, -1, `${id} links with mold and never installs it`);
+    // The step's own lines: back to its `- ` and on to the next one.
+    let from = install;
+    while (from > 0 && !/^ {6}- /.test(job[from])) from--;
+    let to = install;
+    while (to < job.length && (to === install || !/^ {6}- /.test(job[to]))) to++;
+    const step = job.slice(from, to);
+    assert.ok(!step.some((l) => /^\s+if:/.test(l)), `${id} installs mold under an if: it links without it when the step is skipped`);
+  });
+  assert.ok(checked >= 5, `expected the five mold jobs, found ${checked}`);
+});
