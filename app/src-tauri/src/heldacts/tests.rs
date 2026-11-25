@@ -104,7 +104,7 @@ impl HeldForge for Forge {
         _: &HeadSha,
         _: bool,
         _: Option<&Secret>,
-    ) -> Result<(), String> {
+    ) -> Result<(), purlis_core::heldact::PushError> {
         Ok(())
     }
 }

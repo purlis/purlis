@@ -1005,3 +1005,41 @@ fn what_a_chat_is_told_while_a_code_is_live_says_wait_and_not_try_again() {
         workflow::HELD_BACK
     );
 }
+
+#[test]
+fn a_second_token_the_forge_refused_is_dropped_and_the_everyday_one_kept() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    scene
+        .tokens
+        .know(SECOND, "octocat", "repo, read:org, workflow");
+    scene
+        .second_sign_in(SECOND, "repo,read:org,workflow")
+        .unwrap();
+    let keyring = scene.keyring();
+    let account = scene.listed();
+    assert_eq!(
+        workflow::availability(keyring.as_ref(), &account),
+        Availability::Ready
+    );
+
+    workflow::refused(&scope(), keyring.as_ref(), &account).unwrap();
+
+    // No ask offers the dead token again: the next CI-file push needs a new second sign-in.
+    assert_eq!(
+        workflow::availability(keyring.as_ref(), &account),
+        Availability::NeedsPress
+    );
+    assert!(matches!(
+        workflow::for_ci_push(&scope(), keyring.as_ref(), &account).unwrap(),
+        CiPushCredential::NeedsPress
+    ));
+    // The everyday sign-in is not touched.
+    assert_eq!(
+        accounts::token(keyring.as_ref(), &account)
+            .unwrap()
+            .unwrap()
+            .expose_secret(),
+        EVERYDAY
+    );
+}

@@ -151,6 +151,29 @@ describe("the two presses", () => {
     expect(screen.getByRole("button", { name: "Make the tag" })).toBeTruthy();
   });
 
+  it("an ask the core ended with a refused second sign-in says why where the row was, with no once more", async () => {
+    const user = userEvent.setup();
+    const refused =
+      "github.com refused the sign-in that allows CI files (Bad credentials), so nothing was pushed. Allow CI files again in Settings › You › Accounts, then push again";
+    let presses = 0;
+    mockIPC((cmd) => {
+      if (cmd === "held_acts_waiting") return presses > 1 ? [] : [CI_PUSH];
+      if (cmd === "press_held_act") {
+        presses += 1;
+        if (presses === 1) return { step: "asks-once-more", shown: CI_PUSH, nonce: "n" };
+        throw refused;
+      }
+      return undefined;
+    });
+    render(<HeldActAsks plane={PLANE} />);
+    await user.click(await screen.findByRole("button", { name: "Push the branch" }));
+    await screen.findByText(onceMoreSaid(CI_PUSH));
+    await user.click(screen.getByRole("button", { name: "Yes, push the branch" }));
+    expect(await screen.findByText(refused)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(onceMoreSaid(CI_PUSH))).toBeNull());
+    expect(screen.queryByRole("button", { name: /push the branch/i })).toBeNull();
+  });
+
   it("Don't sends the ask's number and nothing else", async () => {
     const user = userEvent.setup();
     const log = core([RELEASE], { dont_held_act: true });

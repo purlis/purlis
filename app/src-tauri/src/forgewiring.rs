@@ -178,6 +178,16 @@ impl WorkflowCredential for WorkflowOver {
             Err(why) => Err(Unavailable(why)),
         }
     }
+
+    fn refused(&self, _: &str) {
+        let Some(scope) = HostScope::claim() else {
+            return;
+        };
+        let keyring = accounts::keyring_at(&self.config_root);
+        // Best effort: the ask has ended whatever the keychain says, and the next push reads the
+        // item again.
+        let _ = accounts::workflow::refused(&scope, keyring.as_ref(), &self.account);
+    }
 }
 
 impl WorkflowTransports for WorkflowOver {

@@ -250,7 +250,7 @@ impl HeldForge for TwoTips {
         _: &str,
         _: bool,
         _: bool,
-    ) -> Result<(), String> {
+    ) -> Result<(), purlis_core::heldact::PushError> {
         unreachable!()
     }
     fn make_fork(&self, _: &Repo, _: &str) -> Result<Forked, String> {
@@ -264,7 +264,7 @@ impl HeldForge for TwoTips {
         _: &HeadSha,
         _: bool,
         _: Option<&purlis_core::secrets::keyring::Secret>,
-    ) -> Result<(), String> {
+    ) -> Result<(), purlis_core::heldact::PushError> {
         unreachable!()
     }
 }

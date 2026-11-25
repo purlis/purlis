@@ -107,6 +107,10 @@ pub enum Trouble {
     /// grant could not): it may hold `workflow`, so purlis serves it to no chat until a check
     /// succeeds. Signing in again makes one.
     ScopesUnknown,
+    /// GitHub answered 401 to the second token, the one that allows CI files: it is dead (GitHub
+    /// revokes the oldest of more than 10 tokens a user holds for one app and scope set). purlis
+    /// dropped it, so no CI-file push is offered until the person allows CI files again.
+    SecondSignInRefused,
 }
 
 type TroubleTold = Box<dyn Fn(&ForgeAccount, &Trouble) + Send + Sync>;

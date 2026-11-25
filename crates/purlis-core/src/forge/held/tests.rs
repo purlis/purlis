@@ -442,8 +442,57 @@ fn github_refuses_a_branch_that_moved_and_says_the_forges_words() {
             false,
             Some(&secret),
         )
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
     assert!(said.contains("not a fast forward"), "{said}");
+}
+
+#[test]
+fn github_says_the_second_sign_in_is_refused_when_the_forge_answers_401_to_it() {
+    // A dead token: GitHub answers 401 to the very first read the push makes.
+    let (forge, seen, _) = build(
+        Kind::GitHub,
+        |_, _, _| Some((401, json!({"message": "Bad credentials"}))),
+        workflow_file(),
+    );
+    let secret = Secret::new("dead".to_owned());
+    let said = forge
+        .push_tip(
+            &repo("acme/app"),
+            &Base::try_from("ci").unwrap(),
+            &sha('9'),
+            &sha('1'),
+            false,
+            Some(&secret),
+        )
+        .unwrap_err();
+    let PushError::SecondSignInRefused(words) = said else {
+        panic!("a 401 on the second token must be said as refused, got {said:?}");
+    };
+    assert!(words.contains("Bad credentials"), "{words}");
+    // Nothing past the first refused read was sent.
+    assert_eq!(seen.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn github_does_not_call_a_refusal_that_is_not_a_401_a_dead_second_sign_in() {
+    let (forge, ..) = build(
+        Kind::GitHub,
+        |_, _, _| Some((403, json!({"message": "Resource not accessible"}))),
+        workflow_file(),
+    );
+    let secret = Secret::new("alive".to_owned());
+    let said = forge
+        .push_tip(
+            &repo("acme/app"),
+            &Base::try_from("ci").unwrap(),
+            &sha('9'),
+            &sha('1'),
+            false,
+            Some(&secret),
+        )
+        .unwrap_err();
+    assert!(matches!(said, PushError::Failed(_)), "{said:?}");
 }
 
 #[test]
@@ -458,7 +507,8 @@ fn github_pushes_nothing_without_the_second_credential() {
             false,
             None,
         )
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
     assert!(said.contains("second sign-in"), "{said}");
     assert!(seen.lock().unwrap().is_empty());
 }
@@ -640,7 +690,8 @@ fn gitlab_pushes_nothing_when_the_branch_is_no_longer_at_the_base() {
             false,
             None,
         )
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
     assert!(said.contains("no longer at"), "{said}");
     assert!(seen.lock().unwrap().iter().all(|(_, m, ..)| m == "GET"));
 }
@@ -657,7 +708,8 @@ fn gitlab_says_so_when_the_branch_moved_between_the_read_and_the_commit() {
             false,
             None,
         )
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
     assert!(said.contains("moved while the push was made"), "{said}");
 }
 
@@ -776,7 +828,8 @@ fn github_refuses_a_branch_rewound_to_an_ancestor_of_the_base() {
             false,
             Some(&secret),
         )
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
     assert!(said.contains("no longer at"), "{said}");
     assert!(seen.lock().unwrap().iter().all(|(_, m, ..)| m == "GET"));
 }

@@ -187,10 +187,19 @@ export function HeldActAsks({ plane }: { plane: PlaneId }) {
       });
   };
 
-  if (acts.length === 0 && made === undefined) return null;
+  /** Refusals of asks that ended with them (a dead second sign-in): said where the row was. */
+  const ended = Object.entries(refusals).filter(
+    ([ask]) => !acts.some((act) => act.ask === Number(ask)),
+  );
+  if (acts.length === 0 && made === undefined && ended.length === 0) return null;
   return (
     <>
       {made !== undefined && <p role="status">{made}</p>}
+      {ended.map(([ask, said]) => (
+        <p key={`ended-${ask}`} role="status">
+          {said}
+        </p>
+      ))}
       <ul aria-label="Held forge acts" className="held-acts">
         {acts.map((act) => (
           <HeldActRow
