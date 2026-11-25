@@ -51,6 +51,7 @@ const FINISHED: PoolSetupShown = {
     joining: false,
     pinned: null,
     key_changed: false,
+    kubeconfig: null,
   },
   steps: [
     step("where", "Where chats run", "done", { line: "Docker on this Mac" }),
@@ -78,6 +79,7 @@ const NEW: PoolSetupShown = {
     joining: false,
     pinned: null,
     key_changed: false,
+    kubeconfig: null,
   },
   steps: [
     step("where", "Where chats run", "current", {

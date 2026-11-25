@@ -10,6 +10,8 @@ import { TryStep } from "./TryStep";
 
 /** A line of Try it, said of what its title names, as the core tags it. */
 const check = (verdict: string, title: string, more: string | null = null): PoolSetupCheck => ({
+  took_ms: null,
+  waiting_on: null,
   about: /identity|\bgh\b/.test(title) ? "identity" : /signed in/.test(title) ? "signins" : "chat",
   verdict,
   title,
@@ -17,6 +19,7 @@ const check = (verdict: string, title: string, more: string | null = null): Pool
 });
 
 const READY: PoolSetupStep = {
+  took_ms: null,
   id: "try",
   name: "Try it",
   state: "current",

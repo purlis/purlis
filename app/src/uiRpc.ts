@@ -2063,6 +2063,9 @@ export const commands = {
 	dockerPools: __WINDOW_ONLY_RESULT,
 	poolSetup: __WINDOW_ONLY_RESULT,
 	poolSetupCheckAgain: __WINDOW_ONLY_RESULT,
+	poolSetupTryNow: __WINDOW_ONLY_RESULT,
+	poolSetupForgetRefused: __WINDOW_ONLY_RESULT,
+	poolSetupTrustAndCreate: __WINDOW_ONLY_RESULT,
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
 	poolSetupChooseRemoteDocker: __WINDOW_ONLY_RESULT,
 	poolSetupMachine: __WINDOW_ONLY_RESULT,
@@ -2078,6 +2081,7 @@ export const commands = {
 	poolSetupTlsFiles: __WINDOW_ONLY_RESULT,
 	poolSetupChooseOwned: __WINDOW_ONLY_RESULT,
 	poolSetupChooseCluster: __WINDOW_ONLY_RESULT,
+	poolSetupPluginFolder: __WINDOW_ONLY_RESULT,
 	poolSetupInstall: __WINDOW_ONLY_RESULT,
 	poolSetupOperatorImage: __WINDOW_ONLY_RESULT,
 	poolSetupClusterPool: __WINDOW_ONLY_RESULT,
@@ -11681,6 +11685,23 @@ export type PoolSetupCheck = {
 	verdict: string,
 	title: string,
 	more: string | null,
+	/**
+	 *  How long the check took, in milliseconds, once it was done (#7191). None where it wasn't
+	 *  timed.
+	 */
+	took_ms: number | null,
+	/**  Where it has taken over thirty seconds: what it is waiting on and why (#7191). */
+	waiting_on: string | null,
+};
+
+/**
+ *  One check of the machine's engine, timed (#7191): by its cause, in milliseconds where it is
+ *  done, with what it waits on and why where it has taken past thirty seconds.
+ */
+export type PoolSetupCheckTook = {
+	cause: string,
+	took_ms: number | null,
+	waiting_on: string | null,
 };
 
 /**  The kubeconfig's contexts, by name alone, for Where's Options on a cluster (#4492). */
@@ -11690,6 +11711,11 @@ export type PoolSetupContexts = {
 	chosen: string | null,
 	/**  The chosen cluster's Pools, by name, where its operator runs (#4494). */
 	pools: string[],
+	/**
+	 *  The one kubeconfig file the contexts are read from (#7192): the one chosen, else the
+	 *  home's `.kube/config` where it exists. Its path, nothing of what is in it.
+	 */
+	kubeconfig: string | null,
 	/**
 	 *  Whether the person joins their team's install (#4495): the key is then confirmed by
 	 *  pasting the one their admin gave them.
@@ -11786,6 +11812,8 @@ export type PoolSetupMachine = {
 	checked?: string[] | null,
 	/**  That doctor couldn't measure Docker's disk there, which holds nothing up (#6272). */
 	disk_unmeasured?: boolean | null,
+	/**  **How long each of those checks took**, by cause, and what a slow one waits on (#7191). */
+	took?: PoolSetupCheckTook[] | null,
 };
 
 /**  A limit a profile is over. */
@@ -11819,6 +11847,16 @@ export type PoolSetupPodmanConnection = {
 	name: string,
 	route: string,
 	identity: string | null,
+};
+
+/**
+ *  **A pool's state, as the status bar reads it** (#7191): `unreachable`, `refused`,
+ *  `host-key-changed`, `runner-gone` or `pool-forgotten`, with the reason of a refusal.
+ */
+export type PoolSetupPoolState = {
+	pool: string,
+	state: string,
+	reason: string | null,
 };
 
 /**
@@ -11868,6 +11906,12 @@ export type PoolSetupShown = {
 	/**  The name a new pool is recommended, which no pool here has (#6256). */
 	recommended: string,
 	contexts: PoolSetupContexts,
+	/**
+	 *  **The pool's state, where there is one to say** (#7191): the status bar's. A failed add
+	 *  keeps the pool, `refused`, with its reason. Remote trains A's `RemoteState` replaces what
+	 *  reads this once it is on `main`.
+	 */
+	pool_state?: PoolSetupPoolState | null,
 };
 
 /**  This machine's profiles against pool `pool`'s limits (#4482). */
@@ -11888,6 +11932,8 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+	/**  How long the step took, in milliseconds, where it was timed (#7191): the rail shows it. */
+	took_ms: number | null,
 	/**  A second way on, beside `next`: on Where, the other kind (ADR 0123 §6). */
 	other: PoolSetupAction | null,
 	/**  The machine, on Connect (#6266). */
@@ -11940,6 +11986,19 @@ export type PoolSetupTried = {
 	link: PoolSetupCheck | null,
 	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
 	workspace: string | null,
+};
+
+/**
+ *  What **Trust and create the pool** did (#7191): what is shown now, and what stopped it where
+ *  the pool wasn't made.
+ */
+export type PoolSetupTrustedAndCreated = {
+	/**  Pool setup as it stands, with a finding of Connect's laid over Connect. */
+	shown: PoolSetupShown,
+	/**  What a team's image breaks, where it makes nothing. */
+	breaks: string[],
+	/**  Why the add was refused, where it was: the pool is kept, Refused, with this reason. */
+	refused: string | null,
 };
 
 /**
