@@ -659,7 +659,7 @@ test("the runner binaries are build's own and one keyless job's, signed by a job
 // compiles, and run by `sign-macos` only once its bytes are the ones that job hashed.
 test("the updater archive's signer is a keyless hosted job's, and sign-macos runs it only once its sha256 matches", () => {
   const built = job("build-signer");
-  assert.equal(value(built, 4, "needs"), "plan", "it starts with the build, not after it");
+  assert.equal(value(built, 4, "needs"), "[plan, keys]", "it starts with the build, not after it");
   assert.equal(value(built, 4, "runs-on"), "macos-latest");
   for (const key of ["environment", "strategy", "container"]) {
     assert.ok(!built.some((line) => line.startsWith(`    ${key}:`)), `build-signer has \`${key}:\``);

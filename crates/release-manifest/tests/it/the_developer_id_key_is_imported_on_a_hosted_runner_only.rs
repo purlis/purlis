@@ -549,9 +549,9 @@ fn the_signer_is_built_on_a_hosted_runner_with_nothing_in_reach(text: &str) -> R
     runs_on_a_hosted_runner(text, SIGNER)?;
     let all = jobs(text);
     let job = find(&all, SIGNER)?;
-    if job.needs() != ["plan"] {
+    if job.needs() != ["plan", "keys"] {
         return Err(format!(
-            "{SIGNER} needs {:?}, and it needs `plan` alone",
+            "{SIGNER} needs {:?}, and it needs `plan` and `keys` alone",
             job.needs()
         ));
     }
@@ -637,6 +637,21 @@ fn the_signing_job_runs_only_the_signer_it_checked(text: &str) -> Result<(), Str
     for other in &all {
         if other.name == SIGN || other.name == SIGNER {
             continue;
+        }
+        // A download by `pattern:`, or of every artifact (no `name:`), could take the signer
+        // without naming it; only one that names its artifact passes.
+        for step in other.steps() {
+            if step_uses(&step).is_some_and(|u| u.starts_with("actions/download-artifact@"))
+                && step_value(&step, "with", "name").is_none()
+            {
+                let pattern = step_value(&step, "with", "pattern").unwrap_or("every artifact");
+                if !pattern.contains("-symbols-") {
+                    return Err(format!(
+                        "job `{}` takes the updater archive's signer, or may, by `{pattern}`",
+                        other.name
+                    ));
+                }
+            }
         }
         if let Some(line) = other
             .body
@@ -1293,16 +1308,16 @@ fn a_signer_built_on_a_self_hosted_or_variable_runner_is_refused() {
 
 #[test]
 fn a_signer_built_after_the_build_or_the_gate_is_refused() {
-    for needs in ["[plan, build]", "[gate, plan]"] {
+    for needs in ["[plan, keys, build]", "[gate, plan, keys]"] {
         let broken = swap(
             &release_text(),
             SIGNER,
-            "    needs: plan\n",
+            "    needs: [plan, keys]\n",
             &format!("    needs: {needs}\n"),
         );
         refuses(
             the_signer_is_built_on_a_hosted_runner_with_nothing_in_reach(&broken),
-            "it needs `plan` alone",
+            "it needs `plan` and `keys` alone",
         );
     }
 }
@@ -1501,4 +1516,25 @@ fn a_job_that_takes_the_signer_beside_sign_macos_is_refused() {
         the_signing_job_runs_only_the_signer_it_checked(&broken),
         "takes the updater archive's signer",
     );
+}
+
+#[test]
+fn a_job_that_downloads_by_a_pattern_that_could_take_the_signer_is_refused() {
+    for with in [
+        "          pattern: purlis-*-${{ needs.plan.outputs.version }}\n",
+        "          path: all\n",
+    ] {
+        let broken = swap(
+            &release_text(),
+            "publish",
+            "    steps:\n",
+            &format!(
+                "    steps:\n      - uses: actions/download-artifact@v8\n        with:\n{with}"
+            ),
+        );
+        refuses(
+            the_signing_job_runs_only_the_signer_it_checked(&broken),
+            "or may, by",
+        );
+    }
 }

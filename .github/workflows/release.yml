@@ -1594,8 +1594,9 @@ jobs:
   # dependency tree runs here, in a job that names no secret, takes no environment and holds
   # `contents: read`, and never in the job that holds the key. It is the same separation as
   # `runner-binaries`' signer, a job apart instead of a step apart, so that it compiles while
-  # `build` does: it needs `plan` alone, not `build` and not the gate, and `sign-macos` only
-  # signs (11 of its 19 minutes were this compile, run 45663417909).
+  # `build` does: it needs `plan` and `keys`, never `build` or the gate, and `sign-macos` only
+  # signs (11 of its 19 minutes were this compile, run 45663417909; ADR 0042, amended
+  # 2026-11-25 twice).
   #
   # **What it hands on, and how it is held to it.** The one binary, under one exact name, and
   # its sha256 as this job's output. `sign-macos` downloads it, compares its bytes with that
@@ -1606,8 +1607,10 @@ jobs:
   # publishing: the artifact is read by `sign-macos` alone, which runs only on the gate's green.
   build-signer:
     name: the updater archive's signer, built with no key in reach
-    needs: plan
-    if: ${{ needs.plan.outputs.publish == 'true' && needs.plan.outputs.skip != 'true' }}
+    # `keys` is seconds on ubuntu and runs nothing of the commit; asking it means no Mac compiles
+    # a signer on a run `sign-macos` will never sign, such as a `main` with no updater key yet.
+    needs: [plan, keys]
+    if: ${{ needs.keys.outputs.publish == 'true' }}
     runs-on: macos-latest
     timeout-minutes: 30
     permissions:
@@ -1635,7 +1638,8 @@ jobs:
           name: purlis-updater-signer-${{ needs.plan.outputs.version }}
           path: target/release/sign-updater-archive
           if-no-files-found: error
-          retention-days: 1
+          # As long as the unsigned bundle beside it, so a re-run of `sign-macos` finds both.
+          retention-days: 90
 
   # **The one job that holds the Developer ID key, and it runs on a GitHub-hosted macOS runner and
   # nowhere else** (ADR 0042, amended 2026-11-25). `build` may be given a self-hosted Mac, so it
