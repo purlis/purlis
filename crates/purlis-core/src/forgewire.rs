@@ -79,6 +79,21 @@ pub const KNOWN_FORGE_HOSTS: [&str; 4] = [
 /// **Port 22 is refused to every forge name, these too.**
 pub const TUNNELLED: [&str; 3] = DOWNLOAD_ONLY;
 
+/// **The hosts Claude Code itself reaches** (its model API and sign-in, and the claude.ai MCP
+/// proxy its connectors for GitLab, Slack, Atlassian and HubSpot go through): never held back
+/// for an address, whatever a forge host resolves to. They are served from a CDN that fronts
+/// forges too, so a forge's address is not the forge's alone, and a chat that reached them before
+/// signing in to a forge must still reach them after. What holds the forge instead is the name
+/// inside the tunnel: it is carried only where it names the host asked for
+/// ([`crate::sandbox::forgedeny::ForgeDenial::pins`]). Exact names, none a forge's.
+pub const HARNESS_HOSTS: [&str; 5] = [
+    "api.anthropic.com",
+    "mcp-proxy.anthropic.com",
+    "claude.ai",
+    "claude.com",
+    "platform.claude.com",
+];
+
 /// A tool whose version purlis has run the route with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tool {
