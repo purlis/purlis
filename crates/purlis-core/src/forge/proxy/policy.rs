@@ -86,6 +86,9 @@ pub enum Refusal {
     GraphqlUnknownMutation,
     /// A GraphQL document that reaches a repo, or an object, that is not the chat's.
     GraphqlOtherRepo,
+    /// [`Self::GraphqlOtherRepo`] for a `createPullRequest` or `updatePullRequestBranch` mutation
+    /// (`gh pr create`, `gh pr update-branch`), the two that have a REST route to be told of.
+    GraphqlPullRequestOtherRepo,
     /// A credential in the query string, which the forge would read as the chat's own login.
     CredentialInQuery,
     /// A multipart body, which a chat may send only as one file to a route that takes an upload.
@@ -118,7 +121,7 @@ impl Refusal {
                 "set labels through the API's labels field, not a /label, /unlabel or /relabel line, and leave other quick actions out of the text",
             ),
             Self::LabelById => Some("name labels in the API's labels field, not by id"),
-            Self::GraphqlOtherRepo => Some(
+            Self::GraphqlPullRequestOtherRepo => Some(
                 "if the repo is this chat's own, the REST route for the same act is answered: `gh api repos/OWNER/REPO/pulls -X POST -f title=... -f head=BRANCH -f base=main` for gh pr create, `gh api -X PUT repos/OWNER/REPO/pulls/N/update-branch` for gh pr update-branch",
             ),
             Self::ProtectedPullHead => Some(
@@ -243,6 +246,13 @@ pub trait ObjectRepo: Send + Sync {
     /// The normalised `owner/repo` path of the repo `node_id` is in, on `host`.
     fn repo_of(&self, kind: Kind, host: &str, node_id: &str) -> Option<String>;
 
+    /// The normalised `owner/repo` path and the number of the pull request `node_id` is, on
+    /// `host`: what a held merge names (#7543). `None` where the id is not a pull request or the
+    /// forge could not say, and the merge is then not asked about.
+    fn pull_of(&self, _kind: Kind, _host: &str, _node_id: &str) -> Option<(String, u64)> {
+        None
+    }
+
     /// The head of the pull request `pull` names, on `host`, or `None` when the forge cannot say.
     /// **`None` refuses**: update-branch writes to the head, so a head that is not known is not
     /// written to (#7494). A resolver that does not implement it refuses every update-branch.
@@ -340,6 +350,9 @@ pub const GITLAB_COM: &str = "gitlab.com";
 
 /// The reads outside any repo that `gh`, `glab` and git need, and nothing else.
 const NON_REPO_READS: &[(&[&str], Kind)] = &[
+    // The API root, which `gh auth status` reads to check the token and its scopes: the same
+    // fixed document for anyone, and the scopes header is the brokered token's own.
+    (&[], Kind::GitHub),
     (&["user"], Kind::GitHub),
     (&["meta"], Kind::GitHub),
     (&["rate_limit"], Kind::GitHub),
@@ -697,6 +710,54 @@ impl ChatPolicy {
         self.decide_as(head, body, objects, true)
     }
 
+    /// **The merge a GraphQL merge mutation asks for, to be held for the person** (#7543): what
+    /// `enforce` refuses as [`Refusal::Merge`] and the person's Merge press can perform.
+    ///
+    /// - `None` where the request is not a merge mutation the merge routes would let through: it
+    ///   passes every check of any write (a recorded repo, no merge command in its text), so a
+    ///   document that is anything else is refused as it was and nobody is asked.
+    /// - `Some(Err(why))` where it is one, but the pull request cannot be named (the forge did
+    ///   not say its number): refused, and the chat is told why.
+    /// - `Some(Ok(requested))` where it is one and the pull request is named.
+    ///
+    /// The merge and merge-queue mutations are each held as the act they name, which the
+    /// person's press performs and no other. Auto-merge, and a GitLab accept that sets a merge
+    /// strategy, are refused with a reason; undoing one is never held.
+    pub(super) fn held_graphql_merge(
+        &self,
+        head: &RequestHead,
+        body: &[u8],
+        objects: &dyn ObjectRepo,
+    ) -> Option<Result<crate::heldact::Requested, &'static str>> {
+        let Decision::Allow(allowed) = self.decide_merging(head, body, objects) else {
+            return None;
+        };
+        let Class::GraphqlMutation(name) = &allowed.class else {
+            return None;
+        };
+        let host = request::host(head).ok()?;
+        let repos: Vec<&AllowedRepo> = self
+            .repos
+            .iter()
+            .filter(|r| r.serves(&host, head.port))
+            .collect();
+        let kind = repos.first()?.kind;
+        if let Some(said) = graphql::unheld_merge_said(kind, name) {
+            return Some(Err(said));
+        }
+        graphql::merge_act(kind, name)?;
+        if let Some(said) = graphql::strategy_said(kind, body) {
+            return Some(Err(said));
+        }
+        let named = graphql::merge_target(kind, &repos, body, objects)
+            .and_then(|(path, number, act)| {
+                let repo = crate::mergehold::Repo::try_from(path).ok()?;
+                Some(crate::heldact::Requested::land_of(repo, number, act))
+            })
+            .ok_or("purlis could not read which pull request of this repo the document merges (it reads one mutation with one field); ask the person to merge it");
+        Some(named)
+    }
+
     fn decide_as(
         &self,
         head: &RequestHead,
@@ -796,6 +857,45 @@ impl ChatPolicy {
                     surface: Surface::Api,
                     touched: Vec::new(),
                 });
+            }
+        }
+
+        // `GET /search/issues?q=`: issues and pull requests of one of the chat's own repos, which
+        // the query must name by exactly one `repo:` (the same reading as GraphQL's `search`).
+        if method == "GET" && kind == Kind::GitHub {
+            let prefix: &[&str] = if on_api_host || host == "github.com" {
+                &[]
+            } else {
+                &["api", "v3"]
+            };
+            if (on_api_host || host != "github.com")
+                && strs.len() == prefix.len() + 2
+                && strs[..prefix.len()] == *prefix
+                && strs[prefix.len()..] == ["search", "issues"]
+            {
+                if !self.has_one_host(Kind::GitHub) {
+                    return Err(Refusal::AmbiguousHost);
+                }
+                // One `q`, and only the keys that page or sort its answer: another key may select
+                // a different search (`advanced_search`).
+                let only_known = target
+                    .query
+                    .iter()
+                    .all(|(k, _)| ["q", "sort", "order", "per_page", "page"].contains(&k.as_str()));
+                let one_q = target.query.iter().filter(|(k, _)| k == "q").count() == 1;
+                let at = target
+                    .query_value("q")
+                    .and_then(|q| graphql::search_repo(q, &candidates));
+                return match at {
+                    Some(at) if only_known && one_q => Ok(allowed(
+                        candidates[at],
+                        Class::ApiRead,
+                        Surface::Api,
+                        segments,
+                        &target,
+                    )),
+                    _ => Err(Refusal::OtherRepo),
+                };
             }
         }
 

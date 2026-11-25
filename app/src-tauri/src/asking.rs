@@ -338,6 +338,7 @@ impl MergeShown {
         base: &str,
         look: purlis_core::mergehold::Look,
         pushed_here: bool,
+        act: purlis_core::mergehold::LandAs,
     ) -> Self {
         use purlis_core::mergehold::Look;
         let (look, approved_by, since_viewed) = match look {
@@ -356,7 +357,7 @@ impl MergeShown {
             approved_by,
             since_viewed,
             pushed_here,
-            digest: facts.digest(),
+            digest: facts.digest(act),
         }
     }
 }
@@ -2173,20 +2174,33 @@ fn merge_key(session: u32, key: &purlis_core::mergehold::MergeKey) -> String {
 /// **High-risk** (Q239): never grouped, passed by keyboard triage, and its Merge asks once more
 /// before it acts ([`purlis_core::askrisk::merge_of`]).
 pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
+    use purlis_core::mergehold::LandAs;
     let key = &waits.key;
     Shown {
         session: waits.session,
         ask: merge_key(waits.session, key),
-        says: said_inertly(&format!(
-            "Merge request {} of {} at {}? There is no undo.",
-            key.number,
-            key.repo.as_str(),
-            &key.head.as_str()[..12]
-        )),
+        says: said_inertly(&match waits.act {
+            LandAs::Merge => format!(
+                "Merge request {} of {} at {}? There is no undo.",
+                key.number,
+                key.repo.as_str(),
+                &key.head.as_str()[..12]
+            ),
+            LandAs::Enqueue => format!(
+                "Enqueue request {} of {} at {} in the merge queue?",
+                key.number,
+                key.repo.as_str(),
+                &key.head.as_str()[..12]
+            ),
+        }),
         options: vec![
             Offered {
                 id: MERGE.to_owned(),
-                label: "Merge".to_owned(),
+                label: match waits.act {
+                    LandAs::Merge => "Merge",
+                    LandAs::Enqueue => "Enqueue",
+                }
+                .to_owned(),
                 allows: true,
                 preselected: None,
                 scope: None,
@@ -2204,6 +2218,7 @@ pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
                 key.base.as_str(),
                 waits.look.clone(),
                 waits.pushed_here,
+                waits.act,
             ),
         },
         // Since when is the registry's to say, as for every ask (`Waiting::since`).
@@ -2213,11 +2228,12 @@ pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
         blocks: None,
         timed_out: None,
         risk: Some(
-            purlis_core::askrisk::merge_of(
+            purlis_core::askrisk::land_of(
                 key.repo.as_str(),
                 key.number,
                 key.head.as_str(),
                 key.base.as_str(),
+                waits.act,
             )
             .into(),
         ),

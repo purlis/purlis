@@ -12,6 +12,7 @@ import {
   pressTheOneOf,
   tabsAdded,
   theStepSays,
+  trustTheMachineOnTheMergedPage,
   watchTheTabs,
 } from "../poolsetup.js";
 import { closeTheViewTabsOpenedSince, runFromThePalette, tabNames } from "../reach.js";
@@ -72,7 +73,7 @@ describe("Pool setup on Docker on another machine, over TLS", () => {
     await (await $("aria/Certificate")).setValue(`${FILES}/cert.pem`);
     await (await $("aria/Key")).setValue(`${FILES}/key.pem`);
     await press("Connect to localhost", MAKING);
-    await press("Trust this machine", MAKING);
+    await trustTheMachineOnTheMergedPage(POOL);
 
     await on("Pool", MAKING);
     const name = await $("aria/Name");

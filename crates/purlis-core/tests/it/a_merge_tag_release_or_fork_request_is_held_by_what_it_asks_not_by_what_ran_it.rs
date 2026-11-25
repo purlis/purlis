@@ -35,6 +35,7 @@ fn merge_of(number: u64) -> Recognised {
     Recognised::Hold(Requested::Merge(Request {
         repo: Some(repo("acme/app")),
         number,
+        act: Default::default(),
     }))
 }
 

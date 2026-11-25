@@ -10,7 +10,8 @@
  * reached yet is shown with its number and can't be pressed: a person jumps back, never ahead.
  *
  * **Drawn by its parts** (ADR 0103): the `root`, the `count` of steps done, each `item` (its
- * `data-variant` is its state), the `press` it is pressed by, its `mark`, its `name` and its `line`.
+ * `data-variant` is its state), the `press` it is pressed by, its `mark`, its `name`, its `line` and
+ * how long it `took`.
  * `steps.css` draws the family default and a theme's parts reach the same attributes.
  */
 import type { ReactNode } from "react";
@@ -46,6 +47,8 @@ export interface Step {
   state: StepState;
   /** A short line under its name: what it settled on, or what it needs. */
   line?: string | null;
+  /** How long it took, said as the family's own part under its line (#7191): `took 4 s`. */
+  took?: string | null;
 }
 
 export interface StepListProps {
@@ -102,6 +105,11 @@ export function StepList({
                 {step.line && (
                   <span data-scope="steps" data-part="line">
                     {step.line}
+                  </span>
+                )}
+                {step.took && (
+                  <span data-scope="steps" data-part="took">
+                    took {step.took}
                   </span>
                 )}
                 <VisuallyHidden>, {SAID[step.state]}</VisuallyHidden>

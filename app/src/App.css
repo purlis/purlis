@@ -9063,6 +9063,22 @@ nav.piece-files-head {
   font-size: var(--font-size-sm);
   line-height: var(--line-height-body);
 }
+.pool-setup-took {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+.pool-setup-waiting-on {
+  display: block;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-body);
+}
+.pool-setup-cluster-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
 .pool-setup-recheck,
 .pool-setup-busy {
   display: flex;

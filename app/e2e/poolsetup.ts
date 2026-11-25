@@ -130,3 +130,21 @@ export async function pickTheMachine(name: string, timeout = 30_000): Promise<vo
       throw new Error(`no machine ${name} to pick: ${await theStepSays()}`);
     });
 }
+
+/**
+ * **Trusts the machine Connect just read, on the merged page** (#7191): where Connect and Pool are
+ * one, the check of the key (or of the CA, over TLS) sits beside "Name the pool" and "Who can sign
+ * in to <host>?". The pool is named there, the machine is trusted with **Trust this machine only**,
+ * and the Pool step goes on from it, where the runner image is given by its digest: a build with no
+ * release image of its own (`runner_image_of_this_version`, as these runs' are) cannot make the
+ * pool in the one press of **Trust and create the pool**, which takes the image the build names.
+ */
+export async function trustTheMachineOnTheMergedPage(pool: string): Promise<void> {
+  const name = await $("aria/Name the pool");
+  await name.waitForDisplayed({ timeout: MAKING }).catch(async () => {
+    throw new Error(`Connect never showed the merged page: ${await theStepSays()}`);
+  });
+  await name.setValue(pool);
+  await $("aria/Trust and create the pool").waitForDisplayed({ timeout: 30_000 });
+  await press("Trust this machine only", MAKING);
+}

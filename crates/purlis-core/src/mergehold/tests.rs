@@ -42,7 +42,8 @@ fn a_merges_request_is_read_past_its_flags() {
         read("gh pr merge --subject 7 12 --repo=o/r"),
         Some(Held::Request(Request {
             repo: Some(Repo::try_from("o/r").unwrap()),
-            number: 12
+            number: 12,
+            act: LandAs::Merge,
         }))
     );
     assert_eq!(read("gh pr merge -R 'o/r; id' 12"), Some(Held::Unreadable));
@@ -57,6 +58,7 @@ fn a_held_merge_is_a_hold_only_where_the_app_confirmed_its_ask() {
     let request = Held::Request(Request {
         repo: None,
         number: 12,
+        act: LandAs::Merge,
     });
     let held = AppSaid::Held("The person is asked in Asks to merge request 12.");
     assert_eq!(reason(&request, &held), REASON);
@@ -352,6 +354,7 @@ fn a_slow_checks_read_is_unknown_and_the_ask_is_still_raised() {
     let request = Request {
         repo: None,
         number: 12,
+        act: LandAs::Merge,
     };
     let (_, raised) = asked(&holds, 4, &request, &resolve, 40).expect("asked");
     assert_eq!(raised, Raised::New);
@@ -449,7 +452,8 @@ fn gh_pr_merge_help_on_a_branch_named_help_is_still_held() {
         held("gh pr merge 12 --body=--help"),
         Some(Held::Request(Request {
             repo: None,
-            number: 12
+            number: 12,
+            act: LandAs::Merge,
         }))
     );
 }
@@ -475,7 +479,8 @@ fn the_unreadable_merge_refusal_names_a_form_that_is_asked() {
             held(&cmd),
             Some(Held::Request(Request {
                 repo: None,
-                number: 12
+                number: 12,
+                act: LandAs::Merge,
             })),
             "{cmd}, named in: {said}"
         );
@@ -492,6 +497,7 @@ fn every_refusal_names_only_the_commands_of_its_ways_out() {
     let request = Held::Request(Request {
         repo: None,
         number: 12,
+        act: LandAs::Merge,
     });
     for held_ in [request, Held::Unreadable, Held::Land] {
         for app in [
@@ -533,6 +539,7 @@ fn a_refusal_ends_the_apps_words_with_a_full_stop_and_names_a_restart() {
     let request = Held::Request(Request {
         repo: None,
         number: 12,
+        act: LandAs::Merge,
     });
     for why in [
         "the app could not read this line: it is from a purlis this app does not know",
@@ -570,6 +577,7 @@ fn a_glab_merge_is_read_to_its_request_under_each_of_its_flags() {
         Some(Held::Request(Request {
             repo: repo.map(|repo| Repo::try_from(repo).unwrap()),
             number,
+            act: LandAs::Merge,
         }))
     };
     for (cmd, repo) in [

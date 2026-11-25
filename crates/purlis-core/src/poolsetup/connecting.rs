@@ -47,6 +47,8 @@ pub struct Connecting {
     /// ([`super::doctoring::lay_over`]).
     pub checked: Vec<&'static str>,
     pub disk_unmeasured: bool,
+    /// **How long each of those checks took** (#7191).
+    pub timed: Vec<super::timing::Timed>,
 }
 
 /// **The CA a press of Connect to read** for a machine over TLS (#6267), the machine's own
@@ -160,6 +162,8 @@ pub struct Machine {
     pub checked: Vec<&'static str>,
     /// That doctor couldn't measure Docker's disk there, which holds nothing up.
     pub disk_unmeasured: bool,
+    /// **How long each check took, and what a slow one waits on** (#7191).
+    pub took: Vec<super::timing::Took>,
 }
 
 /// The machine's name in a sentence: the host of the route, or "the machine".
@@ -190,6 +194,7 @@ pub(super) fn reading(connect: &Connecting) -> (Reading, Machine, Option<&'stati
         owned: connect.owned,
         checked: connect.checked.clone(),
         disk_unmeasured: connect.disk_unmeasured,
+        took: super::timing::lines(&connect.timed, &host),
         pin: connect
             .trusted
             .as_ref()
@@ -340,6 +345,7 @@ fn reading_tls(connect: &Connecting) -> (Reading, Machine, Option<&'static str>)
         owned: connect.owned,
         checked: connect.checked.clone(),
         disk_unmeasured: connect.disk_unmeasured,
+        took: super::timing::lines(&connect.timed, &host),
         pin: connect
             .trusted_tls
             .as_ref()
@@ -1600,6 +1606,20 @@ pub fn trust_chosen(
     chosen: &super::Chosen,
     fingerprint: &str,
 ) -> Result<Result<(), Finding>, crate::runners::Refused> {
+    trust_chosen_for(config, docker, chosen, fingerprint, None)
+}
+
+/// **[`trust_chosen`], asking the engine every check of a pool of `image`** where one is named
+/// (#7191): the platform, that the image is there or downloads, the kernel, and that the disk has
+/// room, so a full disk or a missing image is found before the machine is called connected.
+/// Without an image, only the checks that need none ([`super::doctoring::on_connect`]).
+pub fn trust_chosen_for(
+    config: &std::path::Path,
+    docker: &crate::dockerpool::Docker,
+    chosen: &super::Chosen,
+    fingerprint: &str,
+    image: Option<&crate::dockerpool::Image>,
+) -> Result<Result<(), Finding>, crate::runners::Refused> {
     if crate::tlsroute::is_tcp(&chosen.route) {
         let Some(files) = &chosen.tls else {
             return Ok(Err(Finding::Here(crate::sshroute::PLAIN_TCP.to_owned())));
@@ -1611,8 +1631,13 @@ pub fn trust_chosen(
         };
         let checked = trusted.and_then(|remote| {
             let engine = crate::runners::RemoteEngine::Tls(remote.clone());
-            engine_checked(docker, &[&chosen.route, &remote.route.spelled()], &engine)
-                .map(|()| remote)
+            engine_checked(
+                docker,
+                &[&chosen.route, &remote.route.spelled()],
+                &engine,
+                image,
+            )
+            .map(|()| remote)
         });
         return match checked {
             Ok(remote) => super::trusted_tls_read_from(config, &remote, files).map(Ok),
@@ -1624,13 +1649,109 @@ pub fn trust_chosen(
         .and_then(|route| trust(docker, &route, fingerprint))
         .and_then(|remote| {
             let engine = crate::runners::RemoteEngine::Ssh(remote.clone());
-            engine_checked(docker, &[&chosen.route, &remote.route.spelled()], &engine)
-                .map(|()| remote)
+            engine_checked(
+                docker,
+                &[&chosen.route, &remote.route.spelled()],
+                &engine,
+                image,
+            )
+            .map(|()| remote)
         });
     match checked {
         Ok(remote) => super::trusted(config, &remote).map(Ok),
         Err(finding) => Ok(Err(finding)),
     }
+}
+
+/// **Trust and create the pool** (#7191, Refined 2): for Docker on another machine, Connect and
+/// Pool are one press. The machine `chosen` is trusted at `fingerprint`, which the person saw, and
+/// every check of a pool of `asked`'s image is asked of its engine, before anything is kept: a
+/// full disk or a missing image is a finding, and the machine is not called connected. Then who can
+/// sign in there is kept as answered (`owned`), and the pool is made on that machine, as `purlis
+/// pool add` makes it.
+///
+/// **The machine is trusted only on full success** (ruled by the steward, 2026-11-19): when the
+/// add is refused, makes nothing (a team's image breaking the contract), or the answers can't be
+/// kept, the pin is rolled back to what `chosen` was before this press, and a refusal is kept as
+/// the pool's state ([`super::declined`]), so Connect never says Connected beside it.
+///
+/// `asked`'s machine, key and files are those of `chosen`: only its name, image and limits are the
+/// person's. A finding of Connect's is answered with nothing kept; a refusal of the add is `Err`.
+pub fn trust_and_create(
+    config: &std::path::Path,
+    docker: &crate::dockerpool::Docker,
+    chosen: &super::Chosen,
+    fingerprint: &str,
+    owned: bool,
+    asked: &super::asked::Asked,
+    desktop: &purlis_session_protocol::hostlink::Pinned,
+) -> Result<Result<super::asked::Created, Finding>, crate::runners::Refused> {
+    let pool = asked.pool().map_err(crate::runners::Refused::Other)?;
+    if let Err(finding) = trust_chosen_for(config, docker, chosen, fingerprint, Some(pool.image()))?
+    {
+        return Ok(Err(finding));
+    }
+    let made = create_on_the_trusted(config, docker, chosen, fingerprint, owned, asked, desktop);
+    keep_only_a_made_pool(config, chosen, pool.name(), made).map(Ok)
+}
+
+/// What follows the trust of [`trust_and_create`]: who can sign in, kept, and the add.
+fn create_on_the_trusted(
+    config: &std::path::Path,
+    docker: &crate::dockerpool::Docker,
+    chosen: &super::Chosen,
+    fingerprint: &str,
+    owned: bool,
+    asked: &super::asked::Asked,
+    desktop: &purlis_session_protocol::hostlink::Pinned,
+) -> Result<super::asked::Created, crate::runners::Refused> {
+    let pool = asked.pool().map_err(crate::runners::Refused::Other)?;
+    if owned {
+        let pin = super::read_choices(config)?
+            .connect
+            .and_then(|kept| kept.pin_json());
+        if let Some(pin) = pin {
+            super::choose_owned(config, true, &pin)?;
+        }
+    }
+    let asked = super::asked::Asked {
+        on: Some(chosen.route.clone()),
+        trust: Some(fingerprint.to_owned()),
+        identity: chosen
+            .identity
+            .as_ref()
+            .map(|path| path.display().to_string()),
+        tls: chosen.tls.clone(),
+        docker_context: chosen.docker_context.clone(),
+        ..asked.clone()
+    };
+    let made = super::asked::create(config, docker, &asked, desktop)?;
+    if made == super::asked::Created::Added {
+        // Which pool setup goes on with: the pool stands whatever this says, so a failure here is
+        // never reported as a refusal of the add.
+        let _ = super::choose_pool(config, pool.name());
+    }
+    Ok(made)
+}
+
+/// **Trust only on full success**: where `made` is anything but an add, the machine goes back to
+/// what Connect kept before the press (`before`), and an `Err` is kept as pool `pool`'s refusal,
+/// whichever step of the press it came from.
+fn keep_only_a_made_pool(
+    config: &std::path::Path,
+    before: &super::Chosen,
+    pool: &str,
+    made: Result<super::asked::Created, crate::runners::Refused>,
+) -> Result<super::asked::Created, crate::runners::Refused> {
+    if matches!(made, Ok(super::asked::Created::Added)) {
+        return made;
+    }
+    // Neither can hide the first answer: this is already a failure being reported.
+    let _ = super::restore_machine(config, before);
+    if let Err(why) = &made {
+        super::declined::keep_unless_kept(config, pool, &before.route, why);
+    }
+    made
 }
 
 /// **Connect's checks of the engine, for a machine just trusted** (#6272, ADR 0123 §7): reached
@@ -1642,13 +1763,15 @@ fn engine_checked(
     docker: &crate::dockerpool::Docker,
     routes: &[&str],
     engine: &crate::runners::RemoteEngine,
+    image: Option<&crate::dockerpool::Image>,
 ) -> Result<(), Finding> {
     let host = match engine {
         crate::runners::RemoteEngine::Ssh(remote) => remote.route.host().to_owned(),
         crate::runners::RemoteEngine::Tls(remote) => remote.route.host().to_owned(),
     };
-    let found = crate::sshroute::pool::with_engine(docker, engine, |through| {
-        super::doctoring::on_connect(through, &host)
+    let found = crate::sshroute::pool::with_engine(docker, engine, |through| match image {
+        Some(image) => super::doctoring::engine(through, &host, image),
+        None => super::doctoring::on_connect(through, &host),
     })
     .and_then(|found| found);
     for route in routes {

@@ -15,7 +15,8 @@ use std::time::Duration;
 
 use purlis_core::forge::Kind;
 use purlis_core::heldact::{
-    BaseObjects, FromForge, ObjectCache, PUSH, PushCheck, Quarantine, check_push_since,
+    BaseObjects, FromForge, ObjectCache, PUSH, ProgressReader, PushCheck, Quarantine,
+    check_push_since,
 };
 use purlis_core::mergehold::HeadSha;
 
@@ -777,4 +778,436 @@ fn a_cache_is_one_folder_per_repo_named_by_a_hash() {
         name.len() == 64 && name.bytes().all(|b| b.is_ascii_hexdigit()),
         "{name}"
     );
+}
+
+// ---- A first fill shows how far it has got, and does not block what it need not (#7532) ----
+
+/// A fetch that says `lines` as git's `--progress` would, then waits to be let go.
+fn filling_with(
+    cache: &std::sync::Arc<ObjectCache>,
+    lines: &'static [&'static str],
+    said: mpsc::Sender<()>,
+    release: mpsc::Receiver<()>,
+) -> purlis_core::heldact::Fetch {
+    let sink = cache.sink();
+    let (said, release) = (std::sync::Mutex::new(said), std::sync::Mutex::new(release));
+    std::sync::Arc::new(move |_, _| {
+        for line in lines {
+            sink(line);
+        }
+        said.lock().unwrap().send(()).unwrap();
+        release.lock().unwrap().recv().unwrap();
+        Ok(())
+    })
+}
+
+const HALF_WAY: &[&str] = &[
+    "remote: Enumerating objects: 10000, done.\n",
+    "Receiving objects:   1% (100/10000), 1.00 MiB | 1.00 MiB/s\r",
+    "Receiving objects:  45% (4500/10000), 12.50 MiB | 3.10 MiB/s\r",
+];
+
+/// A cache that holds `held` (a commit of the forge) under a ref a finished fetch wrote, and has
+/// never finished a fill.
+fn seeded_with(s: &Scene, held: &HeadSha) {
+    let path = s.cache().path().to_path_buf();
+    std::fs::create_dir_all(&path).unwrap();
+    git(&path, &["init", "-q", "."]);
+    git(
+        &path,
+        &[
+            "fetch",
+            "-q",
+            "--no-tags",
+            &s.forge.to_string_lossy(),
+            &format!("+{0}:refs/quarantine/base/{0}", held.as_str()),
+        ],
+    );
+}
+
+#[test]
+fn a_fill_in_progress_refuses_a_push_with_the_objects_received_so_far() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let cache = s.cache();
+    let (said, heard) = mpsc::channel();
+    let (finish, release) = mpsc::channel();
+    cache
+        .update(soon(), filling_with(&cache, HALF_WAY, said, release))
+        .unwrap_err();
+    heard.recv().unwrap();
+    let refused = cache.update(soon(), ok_fetch()).unwrap_err();
+    assert!(
+        refused.starts_with("purlis is reading forge.test/owner/repo for the first time: 4500 of 10000 objects (13 MB); try again in about "),
+        "{refused}"
+    );
+    finish.send(()).unwrap();
+    wait_until_idle(&cache);
+}
+
+#[test]
+fn a_push_whose_base_is_in_the_cache_goes_ahead_during_a_fill() {
+    purlis_core::unsteered!();
+    let s = scene();
+    seeded_with(&s, &s.base);
+    let cache = s.cache();
+    let (said, heard) = mpsc::channel();
+    let (finish, release) = mpsc::channel();
+    let have = [s.base.as_str().to_owned()];
+    // The fill starts on its own thread and the push is not refused for it.
+    cache
+        .update_having(soon(), filling_with(&cache, HALF_WAY, said, release), &have)
+        .unwrap();
+    heard.recv().unwrap();
+    assert!(cache.is_filling(), "the fill goes on");
+    // Nor is a second push, while it is still running.
+    cache.update_having(soon(), ok_fetch(), &have).unwrap();
+    // And the quarantine of a push reads its base through the cache.
+    Quarantine::open(s.quarantines.path(), &s.base, &s.from())
+        .expect("the base is read through the cache while it fills");
+    finish.send(()).unwrap();
+    wait_until_idle(&cache);
+}
+
+#[test]
+fn a_push_whose_base_is_not_in_the_cache_is_refused_with_the_progress_during_a_fill() {
+    purlis_core::unsteered!();
+    let s = scene();
+    seeded_with(&s, &s.base);
+    let newer = s.forge_moves_on("newer.txt");
+    let cache = s.cache();
+    let (said, heard) = mpsc::channel();
+    let (finish, release) = mpsc::channel();
+    cache
+        .update_having(
+            soon(),
+            filling_with(&cache, HALF_WAY, said, release),
+            &[s.base.as_str().to_owned()],
+        )
+        .unwrap();
+    heard.recv().unwrap();
+    let refused = cache
+        .update_having(soon(), ok_fetch(), &[newer.as_str().to_owned()])
+        .unwrap_err();
+    assert!(
+        refused.contains("4500 of 10000 objects (13 MB)"),
+        "{refused}"
+    );
+    // Through the push's own path too: nothing is forwarded for want of the base.
+    let opened = Quarantine::open(s.quarantines.path(), &newer, &s.from());
+    assert!(
+        opened
+            .err()
+            .is_some_and(|why| why.contains("4500 of 10000 objects")),
+        "refused with the progress"
+    );
+    finish.send(()).unwrap();
+    wait_until_idle(&cache);
+}
+
+#[test]
+fn an_object_in_the_cache_under_no_finished_fetchs_ref_is_not_a_base_it_holds() {
+    purlis_core::unsteered!();
+    let s = scene();
+    seeded_with(&s, &s.base);
+    let loose = s.forge_moves_on("loose.txt");
+    // Fetched by its id alone: in the store, and in no ref but FETCH_HEAD.
+    git(
+        s.cache().path(),
+        &[
+            "fetch",
+            "-q",
+            "--no-tags",
+            &s.forge.to_string_lossy(),
+            loose.as_str(),
+        ],
+    );
+    let cache = s.cache();
+    assert!(cache.holds(&[s.base.as_str().to_owned()]));
+    assert!(
+        !cache.holds(&[loose.as_str().to_owned()]),
+        "no ref reaches it"
+    );
+    assert!(!cache.holds(&[]), "nothing asked is not held");
+    assert!(!cache.holds(&["--all".to_owned()]), "not an id");
+}
+
+#[test]
+fn the_progress_reader_reads_the_lines_git_fetch_progress_writes() {
+    purlis_core::unsteered!();
+    let mut reader = ProgressReader::default();
+    // Lines end in a carriage return and may be cut anywhere by a read.
+    assert_eq!(reader.feed("remote: Enumerating objects: 10000, done.\nremote: Counting objects: 100% (10000/10000), done.\n"), None);
+    assert_eq!(reader.feed("Receiving objects:  45% (45"), None);
+    let seen = reader
+        .feed("00/10000), 12.50 MiB | 3.10 MiB/s\rReceiving objects:  46% (4600/10000), 12.90")
+        .unwrap();
+    assert_eq!((seen.received, seen.total), (4500, 10000));
+    assert_eq!(seen.bytes, 13_107_200);
+    // The cut line is finished by the next read, as git writes it, and the count starts over.
+    let cut = reader.feed(" MiB | 3.10 MiB/s\r").unwrap();
+    assert_eq!((cut.received, cut.bytes), (4600, 13_526_630));
+    let first = reader.feed("Receiving objects:   0% (1/10000)\r").unwrap();
+    assert_eq!((first.received, first.bytes), (1, 0), "no byte figure yet");
+    let done = reader
+        .feed("Receiving objects: 100% (10000/10000), 40.25 MiB | 3.10 MiB/s, done.\n")
+        .unwrap();
+    assert_eq!((done.received, done.total), (10000, 10000));
+    assert_eq!(done.bytes, 42_205_184);
+    let resolving = reader.feed("Resolving deltas:  50% (50/100)\r").unwrap();
+    assert_eq!(resolving.resolving, Some((50, 100)));
+    assert_eq!(resolving.received, 10000, "what was received is kept");
+    assert_eq!(
+        reader
+            .feed("Unpacking objects: 100% (12/12), 1.50 KiB | 100.00 KiB/s, done.\n")
+            .map(|seen| (seen.received, seen.bytes)),
+        Some((12, 1536))
+    );
+}
+
+#[test]
+fn a_real_git_fetch_fills_the_progress_the_refusal_reads() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let cache = s.cache();
+    let (sink, forge) = (cache.sink(), s.forge.clone());
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let kept = seen.clone();
+    let probe = cache.clone();
+    let fetch: purlis_core::heldact::Fetch = std::sync::Arc::new(move |dir, _| {
+        use std::io::Read;
+        let mut git = std::process::Command::new("git");
+        git.current_dir(dir)
+            .args(["fetch", "--progress", "--no-tags"])
+            .arg(&forge)
+            .arg("+HEAD:refs/quarantine/default")
+            .stderr(Stdio::piped());
+        let mut child = purlis_core::forklock::spawn(&mut git).map_err(|why| why.to_string())?;
+        let mut stderr = child.stderr.take().unwrap();
+        let mut buf = [0u8; 4096];
+        while let Ok(n) = stderr.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            sink(&String::from_utf8_lossy(&buf[..n]));
+        }
+        child.wait().map_err(|why| why.to_string())?;
+        *kept.lock().unwrap() = probe.progress();
+        Ok(())
+    });
+    cache.update(soon(), fetch).unwrap_err();
+    wait_until_idle(&cache);
+    let seen = seen.lock().unwrap().expect("git said how far it had got");
+    assert!(seen.total > 0 && seen.received == seen.total, "{seen:?}");
+    assert_eq!(cache.progress(), None, "and the fill's end clears it");
+}
+
+#[test]
+fn a_chat_opening_on_a_repo_starts_its_fill_before_any_push() {
+    purlis_core::unsteered!();
+    let s = scene();
+    s.from().warm();
+    wait_until_idle(&s.cache());
+    assert!(
+        s.cache().is_filled(),
+        "the default branch was read without a push"
+    );
+    // The first push finds it filled, and its base held.
+    Quarantine::open(s.quarantines.path(), &s.base, &s.from()).unwrap();
+}
+
+// ---- What a refusal says of a fill that failed, stalled or was outrun (#7549 round 2) ----
+
+/// A fetch that says `lines`, then fails with `why`.
+fn failing_after(
+    cache: &std::sync::Arc<ObjectCache>,
+    lines: &'static [&'static str],
+    why: &'static str,
+) -> purlis_core::heldact::Fetch {
+    let sink = cache.sink();
+    std::sync::Arc::new(move |_, _| {
+        for line in lines {
+            sink(line);
+        }
+        Err(why.to_owned())
+    })
+}
+
+#[test]
+fn a_fill_that_fails_partway_leaves_the_refusal_its_reason_and_none_of_its_figures() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let cache = s.cache();
+    cache
+        .update(soon(), failing_after(&cache, HALF_WAY, "the forge hung up"))
+        .unwrap_err();
+    wait_until_idle(&cache);
+    assert_eq!(cache.progress(), None, "a fill that ended leaves no figure");
+    assert!(!cache.is_filled());
+    // The next push starts the fill again and is told why the last one failed, with no figure.
+    let (said, heard) = mpsc::channel();
+    let (finish, release) = mpsc::channel();
+    let refused = cache
+        .update(soon(), filling_with(&cache, &[], said, release))
+        .unwrap_err();
+    heard.recv().unwrap();
+    assert!(
+        refused.starts_with("purlis is still reading forge.test/owner/repo from the forge again (the last read failed: the forge hung up)"),
+        "{refused}"
+    );
+    let again = cache.update(soon(), ok_fetch()).unwrap_err();
+    assert_eq!(again, refused, "still nothing of the failed fill's 4500");
+    assert!(
+        !again.contains("4500") && !again.contains("objects ("),
+        "{again}"
+    );
+    finish.send(()).unwrap();
+    wait_until_idle(&cache);
+}
+
+#[test]
+fn a_new_fill_does_not_show_the_start_or_figure_of_the_one_before_it() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let cache = s.cache();
+    let (said, heard) = mpsc::channel();
+    let (finish, release) = mpsc::channel();
+    cache
+        .update(soon(), filling_with(&cache, HALF_WAY, said, release))
+        .unwrap_err();
+    heard.recv().unwrap();
+    assert_eq!(cache.progress().map(|p| p.received), Some(4500));
+    finish.send(()).unwrap();
+    wait_until_idle(&cache);
+    assert_eq!(cache.progress(), None, "cleared as the fill ends");
+    // A filled cache tops up inline, so make it not filled, as a failed fill leaves it.
+    std::fs::remove_file(cache.path().join(".git").join("purlis-filled")).unwrap();
+    // A second fill that has said nothing yet is refused with no figure, however fast the push.
+    let (said, heard) = mpsc::channel();
+    let (finish, release) = mpsc::channel();
+    let refused = cache
+        .update(soon(), filling_with(&cache, &[], said, release))
+        .unwrap_err();
+    assert!(refused.contains("still reading"), "{refused}");
+    heard.recv().unwrap();
+    assert_eq!(cache.progress(), None);
+    finish.send(()).unwrap();
+    wait_until_idle(&cache);
+}
+
+#[test]
+fn a_top_up_run_for_a_push_does_not_write_a_fills_progress() {
+    purlis_core::unsteered!();
+    let s = scene();
+    s.fill();
+    let cache = s.cache();
+    let sink = cache.sink();
+    let says = std::sync::Arc::new(move |_: &Path, _: Duration| {
+        sink("Receiving objects:  45% (4500/10000), 12.50 MiB | 3.10 MiB/s\r");
+        Ok(())
+    });
+    cache.update(soon(), says).unwrap();
+    assert_eq!(cache.progress(), None, "an inline top-up is no fill");
+}
+
+#[test]
+fn an_absurd_total_in_a_refusal_does_not_panic_and_promises_no_more_than_a_fill_may_take() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let cache = s.cache();
+    let (said, heard) = mpsc::channel();
+    let (finish, release) = mpsc::channel();
+    cache
+        .update(
+            soon(),
+            filling_with(
+                &cache,
+                &["Receiving objects:   0% (1/18446744073709551615), 1.00 MiB | 1.00 MiB/s\r"],
+                said,
+                release,
+            ),
+        )
+        .unwrap_err();
+    heard.recv().unwrap();
+    let refused = cache.update(soon(), ok_fetch()).unwrap_err();
+    assert!(
+        refused.contains("1 of 18446744073709551615 objects"),
+        "{refused}"
+    );
+    // The most a fill may take is two hours ([`FILL`]): no more than that is promised, however
+    // absurd the total.
+    assert!(refused.contains("try again in about 2 hours"), "{refused}");
+    assert!(
+        !["days", "years", "3 hours", "4 hours"]
+            .iter()
+            .any(|more| refused.contains(more)),
+        "{refused}"
+    );
+    finish.send(()).unwrap();
+    wait_until_idle(&cache);
+}
+
+#[test]
+fn a_top_up_that_has_no_time_left_is_refused_unless_the_cache_holds_the_base() {
+    purlis_core::unsteered!();
+    let s = scene();
+    s.fill();
+    let cache = s.cache();
+    let newer = s.forge_moves_on("newer.txt");
+    let held = [s.base.as_str().to_owned()];
+    assert!(cache.holds(&held));
+    // No time at all: finished in the background, and the push told, where its base is not held.
+    let refused = cache
+        .update_having(
+            std::time::Instant::now(),
+            ok_fetch(),
+            &[newer.as_str().to_owned()],
+        )
+        .unwrap_err();
+    assert!(
+        refused.starts_with(
+            "purlis could not finish reading forge.test/owner/repo from the forge within 240 s"
+        ),
+        "{refused}"
+    );
+    wait_until_idle(&cache);
+    // Where the base is held it is no refusal.
+    cache
+        .update_having(std::time::Instant::now(), ok_fetch(), &held)
+        .unwrap();
+    wait_until_idle(&cache);
+}
+
+#[test]
+fn a_top_up_that_fails_after_the_pushs_time_is_refused_unless_the_cache_holds_the_base() {
+    purlis_core::unsteered!();
+    let s = scene();
+    s.fill();
+    let cache = s.cache();
+    let newer = s.forge_moves_on("newer.txt");
+    let held = [s.base.as_str().to_owned()];
+    // Runs past the push's time, then fails.
+    let outrun = || -> purlis_core::heldact::Fetch {
+        std::sync::Arc::new(|_, _| {
+            std::thread::sleep(Duration::from_millis(300));
+            Err("the forge was slow".to_owned())
+        })
+    };
+    let within = || std::time::Instant::now() + Duration::from_millis(100);
+    let refused = cache
+        .update_having(within(), outrun(), &[newer.as_str().to_owned()])
+        .unwrap_err();
+    assert!(refused.contains("could not finish reading"), "{refused}");
+    wait_until_idle(&cache);
+    cache.update_having(within(), outrun(), &held).unwrap();
+    wait_until_idle(&cache);
+    // The outrun fills failed, which leaves the cache not filled: fill it again.
+    cache.update_having(soon(), ok_fetch(), &held).unwrap();
+    wait_until_idle(&cache);
+    assert!(cache.is_filled(), "filled again");
+    // A failure inside the push's time is its own reason, not a timeout.
+    let failing: purlis_core::heldact::Fetch =
+        std::sync::Arc::new(|_, _| Err("no route".to_owned()));
+    let why = cache.update_having(soon(), failing, &held).unwrap_err();
+    assert_eq!(why, "no route");
 }

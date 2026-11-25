@@ -449,11 +449,9 @@ impl HeldContext for ProjectContext {
             cwd: cwd.display().to_string(),
         };
         match crate::mergeholds::asked(&self.held, &ask) {
-            purlis_core::hookwire::Answer::MergeHeld { .. } => {
-                "purlis holds merges. It has asked the person; the merge happens when they approve \
-                 it in Asks."
-                    .to_owned()
-            }
+            purlis_core::hookwire::Answer::MergeHeld { .. } => purlis_core::heldact::said::asked(
+                &purlis_core::heldact::Requested::Merge(request.clone()),
+            ),
             purlis_core::hookwire::Answer::No { why } => {
                 format!("purlis did not hold this merge: {why}")
             }
@@ -490,6 +488,46 @@ impl CiPushGate {
 }
 
 impl PushGate for CiPushGate {
+    /// Starts the first fill of the object cache of each repo this project confirms, on a thread
+    /// of the app's own: signing in and reading the keyring are not the chat's start to wait for.
+    /// A repo that cannot be served now is left to its first push, which says why.
+    fn warm(&self) {
+        if self.cache_parent.is_none() {
+            return;
+        }
+        let (context, cache_parent) = (self.context.clone(), self.cache_parent.clone());
+        let gate = CiPushGate {
+            context,
+            proxy: self.proxy.clone(),
+            quarantines: self.quarantines.clone(),
+            parent: self.parent.clone(),
+            cache_parent,
+        };
+        let _ = std::thread::Builder::new()
+            .name("object-cache-warm".to_owned())
+            .spawn(move || {
+                for (confirmed, _) in gate.context.candidates() {
+                    let Ok(repo) = Repo::try_from(confirmed.path.as_str()) else {
+                        continue;
+                    };
+                    let Ok(served) = gate.context.served(&repo) else {
+                        continue;
+                    };
+                    let url = format!("https://{}/{}.git", served.repo.host, served.repo.path);
+                    let Ok(from) = gate.context.fetch_source(&served, &url) else {
+                        continue;
+                    };
+                    purlis_core::heldact::FromForge {
+                        cache: gate
+                            .cache_of(&served)
+                            .map(|cache| cache.for_a_push(purlis_core::heldact::PUSH)),
+                        ..from
+                    }
+                    .warm();
+                }
+            });
+    }
+
     fn check(&self, chat: &ChatId, push: &PushRead) -> PushVerdict {
         let Some(session) = self.context.session(chat) else {
             return Self::refuse("purlis did not send this push: this chat is not open.");
