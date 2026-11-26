@@ -568,6 +568,16 @@ impl ForgeProxy {
         self.sentinels.revoke(chat);
     }
 
+    /// Whether `host` is the API host of one of `chat`'s GitHub repos on port 443 (see
+    /// [`ChatPolicy::is_github_api_host`]).
+    pub fn is_github_api_host(&self, chat: &ChatId, host: &str) -> bool {
+        self.policies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(chat)
+            .is_some_and(|policy| policy.is_github_api_host(host))
+    }
+
     /// Where `github.localhost` leads for `chat` (`gh`'s `GH_HOST`, on its unix socket): the one
     /// GitHub host its repos are on, and a refusal when it has two or none. `None` for any other
     /// name. The listener rewrites the request to that host before it asks [`Self::handle`], so
@@ -939,6 +949,32 @@ fn apply_canonical(headers: &mut Vec<(String, String)>, allowed: &Allowed) {
         headers.push(("Content-Type".to_string(), media));
     }
     headers.push(("Content-Length".to_string(), body.len().to_string()));
+}
+
+/// Which check found `inbound` malformed, in the words a chat is told after `MalformedRequest`:
+/// the checks [`ForgeProxy::handle`] makes, in its order, and otherwise the policy's reading of
+/// the request line.
+pub(crate) fn malformed_because(inbound: &Inbound<'_>) -> &'static str {
+    if !framing_is_unambiguous(inbound.headers) {
+        "its framing is ambiguous: more than one Content-Length, one that is not a number, a \
+         Transfer-Encoding other than one chunked, or both"
+    } else if inbound
+        .headers
+        .iter()
+        .any(|(n, _)| n.is_empty() || n.contains('_'))
+    {
+        "a header name is empty or has an underscore in it"
+    } else if !header_names_are_plain(inbound.headers) {
+        "it has more than one Content-Type"
+    } else if !host_agrees(inbound) {
+        "its Host header does not name the host and port it was sent to"
+    } else if has_header(inbound.headers, "content-encoding")
+        && request::parse_target(&inbound.head.target).is_ok()
+    {
+        "it has a Content-Encoding, which only a git fetch may send"
+    } else {
+        "its method, host, path, query or body cannot be read one way"
+    }
 }
 
 /// A header name is a token, and a forge's front end may read `Content_Type` as `Content-Type`
