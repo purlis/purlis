@@ -17,12 +17,13 @@
 //! (#2025, `hostedsessions/tests/browsers_back.rs`).
 //!
 //! **B5** (two runners starting browsers at once, each on a machine of its own) is not here: the
-//! rig has one other machine (#7816).
+//! rig has one other machine (#7836).
 //!
 //! The drop is the one [`super::ssh_reconnect`] puts: this pool's SSH forward killed outright, so
 //! only this pool's link goes and the job's other tests run beside it. Run by the remote parity
 //! job; elsewhere each runs nothing.
 
+use super::ssh_reconnect::{the_link_drops, until};
 use super::*;
 use crate::browsers::{BrowserViewRole, WindowBrowsers};
 use crate::reconnecting::Reconnection;
@@ -36,15 +37,6 @@ const START_LIMIT: Duration = Duration::from_secs(180);
 
 /// How long a browser's engine has to be gone from its runner once it is ended.
 const ENDED_WITHIN: Duration = Duration::from_secs(20);
-
-/// Waits up to `within` for `done`, asking every 20 ms so a short state is not missed.
-fn until(within: Duration, what: &str, done: impl Fn() -> bool) {
-    let deadline = Instant::now() + within;
-    while !done() {
-        assert!(Instant::now() < deadline, "{what}");
-        std::thread::sleep(Duration::from_millis(20));
-    }
-}
 
 /// A chat on the pool's runner, open and drawn.
 fn a_chat(target: &Target) -> u32 {
@@ -105,6 +97,10 @@ fn engines_on(runner: &OnTheRunner) -> usize {
 struct Viewed {
     told: Arc<Mutex<Vec<(Instant, Reconnection)>>>,
     frames: Arc<Mutex<Vec<Instant>>>,
+    /// When it was opened.
+    since: Instant,
+    /// Whether it was told it ended for good: an empty frame.
+    ended: Arc<std::sync::atomic::AtomicBool>,
     watching: crate::browsers::BrowserWatching,
 }
 
@@ -117,6 +113,10 @@ impl Viewed {
             .filter(|(at, _)| *at >= since)
             .map(|(_, said)| *said)
             .collect()
+    }
+
+    fn ended(&self) -> bool {
+        self.ended.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     fn drew_since(&self, since: Instant) -> bool {
@@ -132,12 +132,19 @@ impl Viewed {
 fn a_view_of(browsers: &WindowBrowsers, program: &str) -> Viewed {
     let told: Arc<Mutex<Vec<(Instant, Reconnection)>>> = Arc::default();
     let frames: Arc<Mutex<Vec<Instant>>> = Arc::default();
-    let (telling, drawing) = (Arc::clone(&told), Arc::clone(&frames));
+    let ended: Arc<std::sync::atomic::AtomicBool> = Arc::default();
+    let (telling, drawing, ending) = (Arc::clone(&told), Arc::clone(&frames), Arc::clone(&ended));
     let watching = browsers
         .watch(
             program,
             BrowserViewRole::Focused,
-            Box::new(move |_aim, _image| drawing.lock().expect("the frames").push(Instant::now())),
+            Box::new(move |_aim, image| {
+                if image.is_empty() {
+                    ending.store(true, std::sync::atomic::Ordering::SeqCst);
+                } else {
+                    drawing.lock().expect("the frames").push(Instant::now());
+                }
+            }),
             Box::new(|_| {}),
             Box::new(|_| {}),
             Arc::new(move |said| {
@@ -149,22 +156,12 @@ fn a_view_of(browsers: &WindowBrowsers, program: &str) -> Viewed {
         )
         .expect("the browser is viewed");
     Viewed {
+        since: Instant::now(),
         told,
         frames,
+        ended,
         watching,
     }
-}
-
-/// This pool's SSH connection ends, as a lost connection ends it: its ssh killed outright. When.
-fn the_link_drops(target: &Target) -> Instant {
-    let pool = &target.runner.as_ref().expect("a pool's runner").pool;
-    let ssh = purlis_core::sshroute::forward::ssh_of(pool).expect("this process holds the forward");
-    let killed = purlis_core::forklock::status(
-        std::process::Command::new("kill").args(["-KILL", &ssh.to_string()]),
-    )
-    .expect("kill runs");
-    assert!(killed.success(), "{killed:?}");
-    Instant::now()
 }
 
 /// **Case 7: a pool forgotten during a chat ends it as Pool forgotten, and Forget lists what is
@@ -201,12 +198,14 @@ mod a_pool_forgotten_during_a_chat_ends_it_as_pool_forgotten_and_lists_what_is_l
         .expect("Forget works on a pool in any state")
         .expect("what stays on the machine is listed");
 
+        let forgot = began.elapsed();
+        assert!(forgot <= QUIET_LIMIT, "Forget took {forgot:?}");
+        // Told within the quiet limit of the press, Forget's own time counted in it.
         until(
-            QUIET_LIMIT,
+            QUIET_LIMIT - forgot,
             "the chat ends as Pool forgotten within the quiet limit",
             || target.sessions.lost_with_its_pool_forgotten(id),
         );
-        assert!(began.elapsed() <= QUIET_LIMIT, "{:?}", began.elapsed());
         assert!(
             !target.sessions.lost_with_its_runner(id),
             "a forgotten pool's runner is not gone: its chat does not say Runner gone"
@@ -326,6 +325,7 @@ mod b3_a_pool_forgotten_with_a_browser_open_ends_it_as_pool_forgotten {
         let program = a_browser_on_the_runner(&target, &browsers);
         let runner = target.runner.as_ref().expect("a pool's runner");
         assert!(engines_on(runner) > 0, "its engine runs on the runner");
+        let view = a_view_of(&browsers, &program);
 
         let left = crate::dockerpools::forget_on(
             &machine.config,
@@ -336,9 +336,19 @@ mod b3_a_pool_forgotten_with_a_browser_open_ends_it_as_pool_forgotten {
         )
         .expect("Forget works on a pool in any state");
 
+        let one_left = crate::browsers::left_on_the_machine(1).expect("said of one");
         assert!(
-            left.as_deref().is_none_or(|left| !left.contains("browser")),
+            left.as_deref().is_none_or(|left| !left.contains(&one_left)),
             "the browser was stopped on its machine, so none is listed as left: {left:?}"
+        );
+        // Its view is told it ended, and is not left dimmed as though the link might come back.
+        until(QUIET_LIMIT, "the browser's view is told it ended", || {
+            view.ended()
+        });
+        assert_ne!(
+            view.told_since(view.since).last(),
+            Some(&Reconnection::Reconnecting),
+            "a forgotten pool's browser is ended, not reconnecting"
         );
         assert_eq!(browsers.pool_of(&program), None, "forgotten with its pool");
         until(ENDED_WITHIN, "its engine ends on the runner", || {

@@ -790,7 +790,7 @@ struct RemovesThePool {
     docker: purlis_core::dockerpool::Docker,
     name: String,
     /// Its runner's container and home volume, as it was made: what a pool the test forgot
-    /// leaves on its machine (#7816), removed there by name.
+    /// leaves on its machine (#7187), removed there by name.
     container: String,
     volume: String,
 }
@@ -799,22 +799,23 @@ impl RemovesThePool {
     /// **A pool the test forgot here leaves its runner on its machine** (#7187): its container
     /// and home volume are removed there by name, through the engine the pool was reached on.
     /// `false` where the pool is still kept, for [`purlis_core::pools::remove_discarding`].
-    fn left_by_a_forget(&self) -> bool {
+    fn removed_as_forgotten(&self) -> bool {
         let kept = purlis_core::runners::pools(&self.config)
             .is_ok_and(|pools| pools.iter().any(|pool| pool.name() == self.name));
         if kept {
             return false;
         }
+        let (container, volume) = (self.container.as_str(), self.volume.as_str());
         for args in [
-            vec!["rm", "--force", self.container.as_str()],
-            vec!["volume", "rm", "--force", self.volume.as_str()],
+            &["rm", "--force", container][..],
+            &["volume", "rm", "--force", volume][..],
         ] {
             let ran = self
                 .docker
                 .command()
                 .map_err(|why| why.to_string())
                 .and_then(|mut command| {
-                    purlis_core::forklock::output(command.args(&args))
+                    purlis_core::forklock::output(command.args(args))
                         .map_err(|why| why.to_string())
                 });
             let said = match ran {
@@ -839,7 +840,7 @@ impl RemovesThePool {
 
 impl Drop for RemovesThePool {
     fn drop(&mut self) {
-        if self.left_by_a_forget() {
+        if self.removed_as_forgotten() {
             return;
         }
         // A behaviour that failed on the runner is read with what its host said.
