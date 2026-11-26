@@ -20,7 +20,8 @@
 //! leaves every folder unwatched; a watched folder removed or renamed is watched afresh, since
 //! inotify drops its watch; a watch added or removed moves every folder, because FSEvents restarts its stream
 //! from now on each, and what happened while it did is never told. An answer read while an
-//! event arrived is not kept. Events reach a reader late, so before a kept answer is served the
+//! event arrived is not kept. Events reach a reader late, so before a kept answer is served, and
+//! when a refresh begins (a read that began before it may end before its change is heard), the
 //! watch is flushed: a file is written in each folder's own gitdir (outside the work tree,
 //! where an editor's or a dev server's watch never sees it, and git ignores it) and its event
 //! waited for, and the
@@ -196,17 +197,18 @@ impl Shared {
         }
     }
 
-    /// The round an ask belongs to, and when it began: the one it names, or a new one from now
-    /// when it names none, or one no longer known (from before a restart, or too long ago).
-    fn round(&mut self, asked: Option<Round>, now: Instant) -> (Round, Instant) {
+    /// The round an ask belongs to, when it began, and whether it is new: the one it names, or
+    /// a new one from now when it names none, or one no longer known (from before a restart, or
+    /// too long ago).
+    fn round(&mut self, asked: Option<Round>, now: Instant) -> (Round, Instant, bool) {
         if let Some((&round, &began)) = asked.and_then(|r| self.rounds.get_key_value(&r)) {
-            return (round, began);
+            return (round, began, false);
         }
         self.rounds
             .retain(|_, began| now.saturating_duration_since(*began) <= FORGET_AFTER);
         self.last_round = self.last_round.wrapping_add(1);
         self.rounds.insert(self.last_round, now);
-        (self.last_round, now)
+        (self.last_round, now, true)
     }
 
     /// Something at `path` was removed or renamed. A watched folder at or below it has lost its
@@ -363,13 +365,15 @@ impl StateCache {
     /// that round has had.
     pub fn states(&self, folders: &[Folder], round: Option<Round>) -> (Round, Vec<Said>) {
         let inner = &self.0;
-        let (round, since) = lock(&inner.shared.0).round(round, Instant::now());
+        let (round, since, begun) = lock(&inner.shared.0).round(round, Instant::now());
         let keys: Vec<PathBuf> = folders
             .iter()
             .map(|f| f.path.canonicalize().unwrap_or_else(|_| f.path.clone()))
             .collect();
         let added = inner.watch(folders, &keys);
-        inner.flush(added);
+        // A new round hears everything from before it began: a read that began earlier and
+        // ends later is otherwise kept before its folder's change is heard, and served.
+        inner.flush(added || begun);
 
         let mut said: Vec<Said> = vec![None; folders.len()];
         let mut first_news: Option<Instant> = None;
@@ -725,15 +729,15 @@ impl Inner {
         Some(watcher)
     }
 
-    /// Waits until everything that happened before now has been heard, by making a marker in
-    /// each watched folder's gitdir and waiting for its event: the platform's events come in
-    /// order (one FSEvents stream, one inotify queue). Failing that in time, every folder counts
-    /// as moved.
-    fn flush(&self, added: bool) {
+    /// Waits until everything that happened before now has been heard, when a folder is new, a
+    /// round begins or an answer is kept, by making a marker in each watched folder's gitdir and
+    /// waiting for its event: the platform's events come in order (one FSEvents stream, one
+    /// inotify queue). Failing that in time, every folder counts as moved.
+    fn flush(&self, needed: bool) {
         let (shared, heard) = &*self.shared;
         let markers: Vec<PathBuf> = {
             let mut guard = lock(shared);
-            if !added && !guard.entries.values().any(|e| e.kept.is_some()) {
+            if !needed && !guard.entries.values().any(|e| e.kept.is_some()) {
                 return;
             }
             let markers: Vec<PathBuf> = guard

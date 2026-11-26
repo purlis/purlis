@@ -311,8 +311,8 @@ static STATES: std::sync::LazyLock<crate::statecache::StateCache> =
 ///
 /// **`round` is the refresh an ask continues** (#7667): an ask with none is a new refresh, and
 /// reads again what no watch vouches for; one naming the `round` an answer carried is given
-/// what that refresh has read. A window that never names one is answered as before, each ask
-/// a refresh of its own.
+/// what that refresh has read. Each ask without a `round` starts a new round, so a window that
+/// never names one makes every ask a refresh of its own.
 #[tauri::command]
 #[specta::specta]
 pub async fn worktree_states(

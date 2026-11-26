@@ -966,3 +966,68 @@ fn an_unwatched_folder_read_between_two_asks_of_one_refresh_is_not_read_again() 
     assert!(said.iter().all(Option::is_some), "{said:?}");
     assert_eq!(cache.read_count(), 2, "the refresh read its folders again");
 }
+
+/// How late the late watcher delivers every event, as FSEvents does: later than a read takes.
+const LATE: Duration = Duration::from_millis(600);
+
+/// Sends every event on [`LATE`] after it came, in the order they came.
+fn late(events: std::sync::mpsc::Sender<notify::Event>) -> std::sync::mpsc::Sender<notify::Event> {
+    let (send, take) = std::sync::mpsc::channel::<notify::Event>();
+    std::thread::spawn(move || {
+        while let Ok(event) = take.recv() {
+            let at = Instant::now() + LATE;
+            std::thread::sleep(at.saturating_duration_since(Instant::now()));
+            if events.send(event).is_err() {
+                return;
+            }
+        }
+    });
+    send
+}
+
+/// A polling watcher whose events all reach the cache [`LATE`].
+fn late_watcher(
+    events: std::sync::mpsc::Sender<notify::Event>,
+) -> Option<Box<dyn notify::Watcher + Send>> {
+    let watcher = notify::PollWatcher::new(as_platform(late(events)), poll_config()).ok()?;
+    Some(Box::new(watcher))
+}
+
+#[test]
+fn a_read_that_began_before_a_refresh_and_ends_before_its_edit_is_heard_is_not_given_to_it() {
+    let f = fixture(1);
+    let path = f.folders[0].path.clone();
+    let (began, read_began) = std::sync::mpsc::channel::<()>();
+    let (release, gate) = std::sync::mpsc::channel::<()>();
+    let first = Mutex::new(Some((began, gate)));
+    // The first read takes its answer at once and returns it only when released.
+    let cache = StateCache::watched_by(late_watcher, move |path| {
+        let said = files(path);
+        if let Some((began, gate)) = lock(&first).take() {
+            began.send(()).unwrap();
+            let _ = gate.recv();
+        }
+        said
+    });
+    // The window's first refresh: its one folder is still being read, so nothing is kept.
+    let asking = {
+        let cache = cache.clone();
+        let folders = f.folders.clone();
+        std::thread::spawn(move || cache.states(&folders, None))
+    };
+    read_began.recv().unwrap();
+    // The app changes the folder and the window refreshes. The read ends before the change's
+    // event comes.
+    std::fs::write(path.join("new"), "x").unwrap();
+    let releasing = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(100));
+        release.send(()).unwrap();
+    });
+    assert_eq!(
+        answered(&cache, &f.folders),
+        [(Some(1), None)],
+        "the refresh was given a read from before the change"
+    );
+    releasing.join().unwrap();
+    asking.join().unwrap();
+}
