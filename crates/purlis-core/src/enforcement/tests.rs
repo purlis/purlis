@@ -1467,8 +1467,8 @@ fn a_log_line_is_not_a_read_of_the_whole_log() {
 
 #[test]
 fn a_press_with_a_seal_key_another_program_made_says_how_to_recover_and_then_accepts() {
-    // #7073: the app cannot delete an item another program owns, so the press says which item
-    // to delete and how; once it is gone, the next press makes a key and accepts.
+    // #7073, #7714: Accept says to press Make a new key and accept, and keeps the manual step;
+    // once the item is gone, the next press makes a key and accepts.
     let _home = OwnConfigHome::new();
     let root = plane("[policy]\ntemplate = \"open\"\n", None);
     crate::secrets::seal::set_foreign_for_this_test(true);
@@ -1476,6 +1476,7 @@ fn a_press_with_a_seal_key_another_program_made_says_how_to_recover_and_then_acc
     crate::secrets::seal::set_foreign_for_this_test(false);
     let why = refused.expect_err("nothing accepted").to_string();
     assert_eq!(why, crate::secrets::seal::FOREIGN_KEY);
+    assert!(why.contains("Make a new key and accept"), "{why}");
     assert!(
         why.contains("security delete-generic-password -s purlis-seal"),
         "{why}"
@@ -1704,4 +1705,126 @@ fn the_protected_list_and_the_lineage_denial_are_kept_and_read_back() {
     let read = Resolved::of_kept_for_test(&old);
     assert!(read.lineage());
     assert!(read.protected_branches().is_empty());
+}
+
+// ---- an update's foreign seal key: one press makes a new key and accepts (#7714) ----------------
+
+/// A plane whose acceptance of `committed` was pressed and sealed with the key of now.
+fn accepted_plane(committed: &str) -> tempfile::TempDir {
+    let root = plane(committed, None);
+    press(root.path(), &digest_of(root.path())).expect("accepted");
+    root
+}
+
+#[test]
+fn a_press_with_an_updates_foreign_key_makes_a_new_key_and_accepts_what_was_shown() {
+    // #7714: after an update macOS takes for another program, the old build owns the seal's
+    // key. The one press replaces it and seals this plane's acceptance of what was shown.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    let shown = standing(root.path());
+    assert!(shown.key_foreign, "the window is told the key is foreign");
+    assert!(broken(root.path()));
+    press_with_new_key(root.path(), &shown.digest).expect("a new key, and accepted");
+    assert!(!crate::secrets::seal::key_is_foreign());
+    assert!(matches!(
+        crate::sandbox::local::policy_accepted_record(root.path()),
+        crate::sandbox::local::PolicyAccepted::Held(_)
+    ));
+    assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
+    let after = standing(root.path());
+    assert!(!after.key_foreign && !after.unsealed && !after.new_key);
+}
+
+#[test]
+fn the_new_key_press_still_accepts_only_what_was_shown() {
+    // The digest rule stays: a file that changed since it was shown accepts nothing, and no
+    // key is replaced for it.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    let refused = press_with_new_key(root.path(), "not what was shown");
+    assert!(refused.is_err());
+    assert!(crate::secrets::seal::key_is_foreign(), "no key replaced");
+    crate::secrets::seal::set_foreign_for_this_test(false);
+}
+
+#[test]
+fn another_plane_sealed_with_the_old_key_reads_as_accept_again_with_why() {
+    // #7714: the other planes' seals no longer verify under the new key. Each reads as needing
+    // acceptance again because purlis made a new key, never as a record edited by something.
+    let _home = OwnConfigHome::new();
+    let here = accepted_plane("[policy]\ntemplate = \"open\"\n");
+    let other = accepted_plane("[policy]\ntemplate = \"open\"\n");
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    let there = standing(other.path());
+    assert!(
+        broken(other.path()),
+        "enforced as strictly as any broken record"
+    );
+    assert!(
+        there.unsealed && there.new_key,
+        "said as a new key: {there:?}"
+    );
+    // Accepted again, it holds, and the reason is gone.
+    press(other.path(), &digest_of(other.path())).expect("accepted again");
+    let there = standing(other.path());
+    assert!(!there.unsealed && !there.new_key);
+}
+
+#[test]
+fn a_record_edited_after_the_new_key_still_reads_broken_with_the_tamper_words() {
+    // #7714: tamper detection is not weakened. A record of this plane edited after the new key
+    // sealed it reads broken, and is never said to be the new key's.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(root.path(), &digest_of(root.path())).expect("a new key");
+    let file = crate::sandbox::local::path(root.path());
+    let text = std::fs::read_to_string(&file).expect("the record");
+    assert!(text.contains("\"guards.git\":\"off\""), "{text}");
+    std::fs::write(
+        &file,
+        text.replace("\"guards.git\":\"off\"", "\"guards.git\":\"log\""),
+    )
+    .expect("edited");
+    let now = standing(root.path());
+    assert!(broken(root.path()));
+    assert!(now.unsealed && !now.new_key, "the tamper words: {now:?}");
+}
+
+#[test]
+fn a_new_key_press_macos_refuses_says_the_manual_step_and_accepts_nothing() {
+    // #7714: where macOS does not let purlis delete the old build's items, the press says so
+    // plainly and names the manual step.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    crate::secrets::seal::set_renew_refused_for_this_test(true);
+    let why = press_with_new_key(root.path(), &digest_of(root.path()))
+        .expect_err("nothing accepted")
+        .to_string();
+    crate::secrets::seal::set_renew_refused_for_this_test(false);
+    assert!(why.contains(crate::secrets::seal::RENEW_REFUSED), "{why}");
+    assert!(
+        why.contains("security delete-generic-password -s purlis-seal"),
+        "{why}"
+    );
+    assert!(crate::secrets::seal::key_is_foreign());
+    assert!(broken(root.path()));
+    crate::secrets::seal::set_foreign_for_this_test(false);
+}
+
+#[test]
+fn a_new_key_press_where_the_key_is_the_apps_own_replaces_nothing() {
+    // The press makes a new key only where the old one is another program's: anywhere else it
+    // is Accept, and no other plane's seal is broken by it.
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let other = accepted_plane("[policy]\ntemplate = \"open\"\n");
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("accepted");
+    assert!(!broken(here.path()) && !broken(other.path()));
+    assert!(!standing(other.path()).new_key);
 }

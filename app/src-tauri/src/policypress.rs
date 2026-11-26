@@ -353,6 +353,22 @@ mod tests {
     }
 
     #[test]
+    fn the_new_key_press_is_the_windows_alone_as_accept_is() {
+        // #7714: making a new seal key replaces what every plane's seal rests on, so no chat
+        // reaches it through a link, as no chat reaches Accept.
+        for press in [
+            "accept_project_policy",
+            "accept_project_policy_with_new_key",
+        ] {
+            assert!(purlis_session_protocol::ui::window_only(press), "{press}");
+            assert!(
+                !purlis_session_protocol::ui::served_on_a_link(press),
+                "{press}"
+            );
+        }
+    }
+
+    #[test]
     fn a_project_that_names_no_template_is_said_to_run_the_default_watch() {
         let dir = plane("[plane]\nmode = \"commit\"\n");
         let state = state_of(dir.path());

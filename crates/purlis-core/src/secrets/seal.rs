@@ -84,6 +84,19 @@ pub(crate) trait KeyItems {
     fn owned_here(&self, service: &str, account: &str, value: &str) -> Result<bool, String>;
     /// A new item of this program's own ([`super::keyhold::make_own`]).
     fn make_own(&self, service: &str, account: &str, value: &str) -> Result<(), String>;
+    /// Every account an item is kept under for `service` ([`super::keyhold::accounts_of`]).
+    fn accounts(&self, service: &str) -> Result<Vec<String>, String>;
+    /// The item deleted, whoever made it ([`super::keyhold::delete_item`]): `Ok` where there was
+    /// none.
+    fn delete(&self, service: &str, account: &str) -> Result<(), Removal>;
+}
+
+/// Why a key item was not deleted.
+pub(crate) enum Removal {
+    /// macOS refused to delete another program's item: the person said no, or it did not ask.
+    Refused,
+    /// The keyring failed.
+    Failed(String),
 }
 
 /// Why a key item could not be read.
@@ -127,6 +140,17 @@ impl KeyItems for OsKeyItems {
         super::keyhold::make_own(service, account, value)
             .map(|_| ())
             .map_err(|why| why.to_string())
+    }
+
+    fn accounts(&self, service: &str) -> Result<Vec<String>, String> {
+        super::keyhold::accounts_of(service)
+    }
+
+    fn delete(&self, service: &str, account: &str) -> Result<(), Removal> {
+        super::keyhold::delete_item(service, account).map_err(|why| match why {
+            super::keyhold::NotDeleted::Owned => Removal::Refused,
+            super::keyhold::NotDeleted::Failed(why) => Removal::Failed(why),
+        })
     }
 }
 
@@ -205,6 +229,31 @@ pub const FOREIGN_KEY: &str = "another program made the keychain item purlis kee
      in (purlis-seal), so purlis cannot trust it and accepted nothing. Delete every keychain item \
      named purlis-seal, in Keychain Access or with `security delete-generic-password -s \
      purlis-seal` once for each, then press Accept again: purlis makes a new key";
+
+/// What the press to make a new key says where macOS did not let purlis delete the old items
+/// (#7714): the person said no at its prompt, or it would not ask. Nothing was accepted, and
+/// the manual step is named.
+pub const RENEW_REFUSED: &str = "macOS did not let purlis delete the old keychain items named \
+     purlis-seal, so it made no new key and accepted nothing. Delete every keychain item named \
+     purlis-seal yourself, in Keychain Access or with `security delete-generic-password -s \
+     purlis-seal` once for each, then press Accept again: purlis makes a new key";
+
+#[cfg(test)]
+thread_local! {
+    /// A test's stand-in for macOS refusing to delete the old build's items.
+    static TEST_RENEW_REFUSED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// **A test's macOS refuses to delete another program's key items** (or allows it again).
+#[cfg(test)]
+pub(crate) fn set_renew_refused_for_this_test(refused: bool) {
+    TEST_RENEW_REFUSED.with(|held| held.set(refused));
+}
+
+/// **The old items under [`SERVICE`] deleted and a new key made** (#7714). Stub.
+pub(crate) fn renew(_items: &dyn KeyItems) -> Result<Found, &'static str> {
+    Err(RENEW_REFUSED)
+}
 
 /// What the press says where the keyring could not be read or the key made.
 pub const KEY_UNREAD: &str = "purlis could not read or make its seal key in the keyring, so it \
@@ -562,6 +611,18 @@ mod tests {
                 .map(|(value, _)| value.clone())
         }
 
+        fn with_at(self, service: &str, account: &str, value: &str, ours: bool) -> Self {
+            self.0.borrow_mut().insert(
+                (service.to_owned(), account.to_owned()),
+                (value.to_owned(), ours),
+            );
+            self
+        }
+
+        fn services_and_accounts(&self) -> Vec<(String, String)> {
+            self.0.borrow().keys().cloned().collect()
+        }
+
         fn forget(&self, service: &str) {
             self.0
                 .borrow_mut()
@@ -591,6 +652,91 @@ mod tests {
                 Err("another program's item".to_owned())
             }
         }
+
+        fn accounts(&self, service: &str) -> Result<Vec<String>, String> {
+            Ok(self
+                .0
+                .borrow()
+                .keys()
+                .filter(|(at, _)| at == service)
+                .map(|(_, account)| account.clone())
+                .collect())
+        }
+
+        fn delete(&self, service: &str, account: &str) -> Result<(), Removal> {
+            // Another program's item is deleted where the person allowed it at macOS's prompt,
+            // which this stand-in takes as given; [`Refusing`] is a prompt they denied.
+            self.0
+                .borrow_mut()
+                .remove(&(service.to_owned(), account.to_owned()));
+            Ok(())
+        }
+    }
+
+    /// A keyring whose every delete of another program's item macOS refuses.
+    struct Refusing(Items);
+
+    impl KeyItems for Refusing {
+        fn read(&self, service: &str, account: &str) -> Result<Option<String>, Unreadable> {
+            self.0.read(service, account)
+        }
+
+        fn owned_here(&self, service: &str, account: &str, value: &str) -> Result<bool, String> {
+            self.0.owned_here(service, account, value)
+        }
+
+        fn make_own(&self, service: &str, account: &str, value: &str) -> Result<(), String> {
+            self.0.make_own(service, account, value)
+        }
+
+        fn accounts(&self, service: &str) -> Result<Vec<String>, String> {
+            self.0.accounts(service)
+        }
+
+        fn delete(&self, service: &str, account: &str) -> Result<(), Removal> {
+            let theirs = (self.0)
+                .0
+                .borrow()
+                .get(&(service.to_owned(), account.to_owned()))
+                .is_some_and(|(_, ours)| !ours);
+            if theirs {
+                return Err(Removal::Refused);
+            }
+            self.0.delete(service, account)
+        }
+    }
+
+    #[test]
+    fn a_new_key_replaces_every_item_of_the_old_builds_and_is_the_apps_own() {
+        // #7714: the old build's key, its spare and every plane's anchor are deleted, so none is
+        // left that the new key's writes would find in the way, and the key made is held.
+        let old = "ab".repeat(KEY_BYTES);
+        let items = Items::default()
+            .with(SERVICE, &old, false)
+            .with(&spare(), &old, false)
+            .with_at(SERVICE, "policy-accepted:aaaa", "00", false)
+            .with_at(SERVICE, "dispatch-answers:bbbb", "00", false)
+            .with_at(&spare(), "policy-accepted:aaaa", "00", false);
+        let made = held(renew(&items).expect("a new key"));
+        assert_ne!(made, vec![0xab; KEY_BYTES]);
+        assert_eq!(
+            items.services_and_accounts(),
+            [(SERVICE.to_owned(), ACCOUNT.to_owned())],
+            "only the new key is left"
+        );
+        assert_eq!(items.value(SERVICE), Some(crate::extension::hex(&made)));
+        assert_eq!(held(read_or_make(&items)), made, "and it is the app's own");
+    }
+
+    #[test]
+    fn a_new_key_macos_refuses_leaves_the_key_and_names_the_manual_step() {
+        // #7714: a delete macOS refuses (the person said no at its prompt, or it would not ask)
+        // makes no new key: the old one stays foreign, and the press says what to do by hand.
+        let old = "ab".repeat(KEY_BYTES);
+        let items = Refusing(Items::default().with(SERVICE, &old, false));
+        assert_eq!(renew(&items).err(), Some(RENEW_REFUSED));
+        assert!(matches!(read_or_make(&items), Found::Foreign));
+        assert!(RENEW_REFUSED.contains("security delete-generic-password -s purlis-seal"));
     }
 
     fn held(found: Found) -> Vec<u8> {
@@ -663,6 +809,14 @@ mod tests {
         fn make_own(&self, _: &str, _: &str, _: &str) -> Result<(), String> {
             panic!("nothing is made where there is no keyring")
         }
+
+        fn accounts(&self, _: &str) -> Result<Vec<String>, String> {
+            panic!("nothing is listed where there is no keyring")
+        }
+
+        fn delete(&self, _: &str, _: &str) -> Result<(), Removal> {
+            panic!("nothing is deleted where there is no keyring")
+        }
     }
 
     /// A keyring that is there and fails a read: the key's, or, where `key_gone`, its spare's
@@ -685,6 +839,14 @@ mod tests {
 
         fn make_own(&self, _: &str, _: &str, _: &str) -> Result<(), String> {
             panic!("no key is made where what is there did not read")
+        }
+
+        fn accounts(&self, _: &str) -> Result<Vec<String>, String> {
+            panic!("nothing is listed that did not read")
+        }
+
+        fn delete(&self, _: &str, _: &str) -> Result<(), Removal> {
+            panic!("nothing is deleted that did not read")
         }
     }
 

@@ -463,6 +463,67 @@ pub fn owned_here(service: &str, account: &str, value: &str) -> Result<bool, Vau
     }
 }
 
+/// Why an item was not deleted ([`delete_item`]).
+pub enum NotDeleted {
+    /// macOS refused: another program owns the item, and the person did not allow the delete
+    /// (or the Keychain would not ask them).
+    Owned,
+    /// The store failed.
+    Failed(String),
+}
+
+/// **The item deleted**, whoever made it (#7714): `Ok` where there was none. Deleting another
+/// program's item is macOS's to allow, and it may ask the person first; that prompt is their
+/// consent. Only the app's press to make a new seal key calls it.
+pub fn delete_item(service: &str, account: &str) -> Result<(), NotDeleted> {
+    if crate::fence::FENCED {
+        return Err(NotDeleted::Failed(fenced(service).to_string()));
+    }
+    match OsItems.delete(service, account) {
+        Ok(()) => Ok(()),
+        Err(Refused::Owned) => Err(NotDeleted::Owned),
+        Err(Refused::Failed(e)) => Err(NotDeleted::Failed(e.to_string())),
+    }
+}
+
+/// **Every account the keyring holds an item under `service` for** (#7714): the names alone,
+/// never a value, which the Keychain gives any program without asking. None off macOS, where
+/// no item is another program's (a keyring there lets every program of the person's in).
+pub fn accounts_of(service: &str) -> Result<Vec<String>, String> {
+    if crate::fence::FENCED {
+        return Err(fenced(service).to_string());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use security_framework::item::{ItemClass, ItemSearchOptions, Limit};
+        let found = ItemSearchOptions::new()
+            .class(ItemClass::generic_password())
+            .service(service)
+            .load_attributes(true)
+            .limit(Limit::All)
+            .search();
+        match found {
+            Ok(items) => Ok(items
+                .iter()
+                .filter_map(|item| item.simplify_dict()?.remove("acct"))
+                .collect()),
+            Err(e) if e.code() == NOT_FOUND => Ok(Vec::new()),
+            Err(e) => Err(format!(
+                "purlis could not list the items named '{service}' in {}: {e}",
+                super::keyring::STORE_NAME
+            )),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(Vec::new())
+    }
+}
+
+/// `errSecItemNotFound`: a search found nothing.
+#[cfg(target_os = "macos")]
+const NOT_FOUND: i32 = -25300;
+
 /// What a fenced build says instead of reaching the operating system's store.
 fn fenced(service: &str) -> VaultError {
     VaultError::new(format!(

@@ -1355,6 +1355,11 @@ pub fn press(root: &Path, shown: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+/// **The person's press when the seal's key is another program's** (#7714). Stub.
+pub fn press_with_new_key(root: &Path, shown: &str) -> std::io::Result<()> {
+    press(root, shown)
+}
+
 /// **What the window says about the project's `[policy]` on this machine** (Q308a, Q308b).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Standing {
@@ -1382,6 +1387,14 @@ pub struct Standing {
     pub refused: Vec<String>,
     /// Whether an acceptance is kept here whose seal does not hold: it counts as none.
     pub unsealed: bool,
+    /// Whether the seal's key on this machine is another program's (#7714): an earlier build's,
+    /// most likely, before an update macOS takes for another program. Then nothing holds, and
+    /// the window offers [`press_with_new_key`].
+    pub key_foreign: bool,
+    /// Whether this plane's acceptance does not hold because purlis made a new seal key on this
+    /// machine since it was sealed (#7714), never because something edited it: said so, and
+    /// enforced as any acceptance that does not hold is.
+    pub new_key: bool,
     /// The digest of the committed text this was read from, which the press must name.
     pub digest: String,
     /// What the project's `[policy]` says, from the same read: its template and the families
@@ -1421,6 +1434,8 @@ pub fn standing(root: &Path) -> Standing {
         protection_lifted: now.protection_lifted(&accepted),
         refused: settings.refused.clone(),
         unsealed: crate::sandbox::local::policy_unsealed(root),
+        key_foreign: false,
+        new_key: false,
         digest: digest(&now),
         runs: now.stricter(&accepted),
         locked: Family::ALL

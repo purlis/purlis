@@ -26,6 +26,8 @@ const QUIET: PolicyState = {
   refused: [],
   not_in_force: [],
   unsealed: false,
+  key_foreign: false,
+  new_key: false,
   digest: "d1",
   template: "watch",
   template_default: true,
@@ -44,6 +46,7 @@ function core(state: PolicyState, after: PolicyState = QUIET) {
     asked.push({ cmd, args });
     if (cmd === "project_policy_state") return state;
     if (cmd === "accept_project_policy") return after;
+    if (cmd === "accept_project_policy_with_new_key") return after;
     return null;
   });
   return (cmd: string) => asked.filter((one) => one.cmd === cmd).map((one) => one.args);
@@ -135,5 +138,43 @@ describe("the project's policy (Q308a)", () => {
     await waitFor(() =>
       expect(screen.getByText(/merges through the forge route from held to log/)).toBeTruthy(),
     );
+  });
+
+  it("offers one press that makes a new seal key and accepts, where an update left the old one (#7714)", async () => {
+    const asked = core({ ...QUIET, unsealed: true, key_foreign: true, digest: "d3" });
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() =>
+      expect(screen.getByText(/an earlier build of purlis made it/)).toBeTruthy(),
+    );
+    // Plain Accept cannot seal with another program's key, so only the one press is offered.
+    expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Make a new key and accept" }));
+    await waitFor(() =>
+      expect(asked("accept_project_policy_with_new_key")).toEqual([{ plane: PLANE, shown: "d3" }]),
+    );
+    expect(asked("accept_project_policy")).toEqual([]);
+  });
+
+  it("never offers the new key press to a page that is not the window (#7714)", async () => {
+    core({ ...QUIET, unsealed: true, key_foreign: true });
+    render(<ProjectPolicyNotice plane={PLANE} canAccept={false} />);
+    await waitFor(() =>
+      expect(screen.getByText(/Accept it from purlis's own window/)).toBeTruthy(),
+    );
+    expect(screen.queryByRole("button", { name: "Make a new key and accept" })).toBeNull();
+  });
+
+  it("says another project needs accepting again because purlis made a new key, not that it was edited (#7714)", async () => {
+    core({ ...QUIET, unsealed: true, new_key: true });
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          /purlis made a new key on this machine; accept this project's policy again/,
+        ),
+      ).toBeTruthy(),
+    );
+    expect(screen.queryByText(/does not hold/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Accept" })).toBeTruthy();
   });
 });
