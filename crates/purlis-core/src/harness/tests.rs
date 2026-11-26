@@ -2133,3 +2133,13 @@ fn opencode_is_the_kind_and_the_command_of_the_same_harness() {
 }
 
 mod matrix;
+
+#[test]
+fn only_claude_code_reports_its_own_work() {
+    // SC-4c (#7632): a chat is judged rested only on a harness whose own work purlis sees.
+    let reporting: Vec<Harness> = Harness::ALL
+        .into_iter()
+        .filter(|harness| harness.reports_its_own_work())
+        .collect();
+    assert_eq!(reporting, [Harness::ClaudeCode]);
+}

@@ -253,6 +253,7 @@ pub mod report;
 pub mod repos;
 pub mod reposave;
 pub mod restartends;
+pub mod rested;
 pub mod retention;
 pub mod rewrite;
 pub mod rootupdate;

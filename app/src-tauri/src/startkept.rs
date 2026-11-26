@@ -87,6 +87,15 @@ impl<T: Clone> Kept<T> {
         Ok(answer)
     }
 
+    /// Whether an answer is kept whose stamp still holds: the next trusted ask is served it.
+    #[cfg(test)]
+    pub fn is_kept(&self) -> bool {
+        self.lock()
+            .kept
+            .as_ref()
+            .is_some_and(|(stamp, _)| stamp.holds())
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, Slot<T>> {
         self.slot.lock().unwrap_or_else(PoisonError::into_inner)
     }

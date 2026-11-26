@@ -414,6 +414,7 @@ fn every_variable_the_product_sets_is_written_under_the_purlis_prefix() {
         crate::noterminal::RELAUNCHED_ENV,
         crate::sessionrecord::RESUMING_ENV,
         crate::shellguard::USER_ZDOTDIR_ENV,
+        crate::shellguard::SHELL_TAB_ENV,
         crate::glstate::NO_BACKGROUND_CHECKS,
     ] {
         assert!(written.starts_with(ENV_PREFIX.write), "{written}");

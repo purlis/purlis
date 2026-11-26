@@ -7477,10 +7477,11 @@ fn comes_to_rest(held: &Held, session: u32) {
     a_named_report(held, session, Stop, purlis_core::state::Detail::default());
     assert!(
         becomes(|| {
-            crate::hibernation::refusal(&crate::hibernation::facts_of(held, session)).is_none()
+            purlis_core::rested::by_hand(&crate::hibernation::facts_of(held, session, false))
+                .is_ok()
         }),
         "it never came to rest: {:?}",
-        crate::hibernation::facts_of(held, session)
+        crate::hibernation::facts_of(held, session, false)
     );
 }
 
@@ -7650,7 +7651,10 @@ fn a_second_hibernate_while_one_is_in_flight_is_refused_and_leaves_the_first_alo
 
     let refused = held.hibernate_chat(session).unwrap_err();
 
-    assert_eq!(refused, crate::hibernation::ALREADY_HIBERNATING);
+    assert_eq!(
+        refused,
+        crate::hibernation::Refused::Said(crate::hibernation::ALREADY_HIBERNATING.to_owned())
+    );
     assert!(
         held.hibernated().in_flight(session),
         "the first is in flight"
@@ -7689,7 +7693,10 @@ fn a_hibernation_the_host_refuses_leaves_the_chat_as_it_was() {
 
     let refused = held.hibernate_chat(session).unwrap_err();
 
-    assert_eq!(refused, "the host is gone");
+    assert_eq!(
+        refused,
+        crate::hibernation::Refused::Said("the host is gone".to_owned())
+    );
     assert_eq!(held.hibernated().of(session), None);
     assert!(!held.hibernated().in_flight(session));
     host.hibernates_none(None);
@@ -7746,9 +7753,51 @@ fn a_chat_whose_wait_on_its_own_work_lapsed_is_not_hibernated() {
 
     assert_eq!(
         refused,
-        crate::hibernation::Refusal::OwnWork.says(),
+        crate::hibernation::Refused::Not(purlis_core::rested::NotRested::OwnWork),
         "lapsed own work is still out"
     );
+}
+
+#[test]
+fn a_dispatched_task_is_refused_by_hand_with_its_typed_reason() {
+    // SC-4c (#7632): the operator's act reads the core's reasons. A task is refused until a
+    // tell wakes one (SC-4j, #7639), and one whose report is owed says that it is.
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_chat_at_rest(&held, dir.path());
+    held.chats().handed_from_for_tests(
+        session,
+        purlis_core::reopen::HandedFrom {
+            id: None,
+            chat: 99,
+            name: "lead".to_owned(),
+            workspace: purlis_core::active::Place::PlaneRoot,
+            report: purlis_core::reopen::Owed::Due,
+            mode: purlis_core::reopen::Mode::Task,
+            depth: 1,
+            root: None,
+            above: None,
+            by_person: false,
+            long: false,
+            policy: None,
+        },
+    );
+    assert_eq!(
+        crate::hibernation::facts_of(&held, session, false).as_a_task,
+        Some(purlis_core::rested::AsATask {
+            owes_its_report: true
+        }),
+        "its record was never read as a task's, so nothing below is evidence"
+    );
+
+    let refused = held.hibernate_chat(session).unwrap_err();
+
+    assert_eq!(
+        refused,
+        crate::hibernation::Refused::Not(purlis_core::rested::NotRested::ReportOwed)
+    );
+    assert_eq!(held.hibernated().of(session), None);
 }
 
 #[test]
@@ -7767,7 +7816,10 @@ fn a_paused_chat_is_not_hibernated() {
 
     let refused = held.hibernate_chat(session).unwrap_err();
 
-    assert_eq!(refused, crate::hibernation::Refusal::Paused.says());
+    assert_eq!(
+        refused,
+        crate::hibernation::Refused::Not(purlis_core::rested::NotRested::Paused)
+    );
 }
 
 #[test]

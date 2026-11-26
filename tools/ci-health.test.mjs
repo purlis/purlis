@@ -33,6 +33,7 @@ import {
   runStats,
   runWindows,
   sample,
+  sideWeek,
   slowestTests,
 } from "./ci-health.mjs";
 
@@ -555,4 +556,64 @@ test("a release job over its budget is filed under release.yml and its profile, 
   assert.match(create[0].body, /`release` profile/);
   assert.doesNotMatch(planBudgetTickets([slow], []).create[0].body, /profile/);
   assert.match(planBudgetTickets([slow], []).create[0].body, /job of `ci\.yml`/);
+});
+
+// The macOS outcome bars left ci.yml for outcome-bars.yml (ADR 0127, amended 2026-11-26), and
+// ci-health still reads them: their budget on their own runs, and their red on main's green runs.
+test("a workflow beside ci is read for its budgets on its own runs, and for its red on main's green runs", () => {
+  const bars = "outcome bars (macos-latest) (macos-latest, bars, 1, false, false, false, true)";
+  const at = (id, conclusion, minutes = 60) => ({
+    workflowRun: { databaseId: id, url: `https://example.test/runs/${id}`, createdAt: "2026-11-25T10:00:00Z" },
+    checkRuns: {
+      nodes: [
+        {
+          name: bars,
+          conclusion,
+          startedAt: "2026-11-25T10:00:00Z",
+          completedAt: new Date(Date.parse("2026-11-25T10:00:00Z") + minutes * 60_000).toISOString(),
+        },
+      ],
+    },
+  });
+  const ids = [1, 2, 3, 4, 5, 6, 7];
+  const weeks = [
+    {
+      name: "outcome-bars",
+      runs: ids.map((id) => ({ id, head_branch: id === 7 ? "other" : "main", conclusion: "success" })),
+      suites: ids.map((id) => at(id, id <= 2 ? "FAILURE" : "SUCCESS")),
+    },
+  ];
+  const budgets = [{ id: "outcome-bars", workflow: "outcome-bars", p50: 40 }];
+  const jobsOf = { "outcome-bars": [{ id: "outcome-bars", name: "outcome bars (macos-latest)" }] };
+  const side = sideWeek(weeks, budgets, jobsOf);
+  assert.equal(side.suites.length, 7);
+  // Run 7 is not main's, so it is no evidence of main's red.
+  assert.equal(side.green.length, 6);
+  assert.deepEqual(side.greenOf, { "outcome-bars": 6 });
+  assert.deepEqual(evidenceRed(side.green), [{ name: bars, times: 2 }]);
+  assert.deepEqual(
+    side.over.map(({ id, workflow, p50, n }) => ({ id, workflow, p50, n })),
+    [{ id: "outcome-bars", workflow: "outcome-bars", p50: 60, n: 5 }],
+  );
+  // A budget for ci's job of the same id is not judged on these runs.
+  assert.deepEqual(sideWeek(weeks, [{ id: "outcome-bars", p50: 40 }], jobsOf).over, []);
+  assert.match(planBudgetTickets(side.over, []).create[0].body, /The `outcome-bars` job of `outcome-bars\.yml` took a p50 of 60\.0 min/);
+});
+
+test("the report says which other workflows' runs its job table read", () => {
+  assert.match(
+    report({ ...week, sampled: { runs: 2, of: 6, others: [{ name: "outcome-bars", runs: 9 }] } }),
+    /Read from 2 of the week's 6 runs, spread evenly over it, and every run of `outcome-bars\.yml` \(9\)\. Minutes/,
+  );
+  assert.match(report(week), /Read from 2 of the week's 6 runs, spread evenly over it\. Minutes/);
+});
+
+test("red on a green run and the flaky tests count another workflow's runs apart from ci's", () => {
+  const read = report({
+    ...week,
+    sampled: { runs: 2, of: 6, others: [{ name: "outcome-bars", runs: 9 }] },
+    red: { runs: 8, others: [{ name: "outcome-bars", runs: 7 }], jobs: [] },
+  });
+  assert.match(read, /read from 8 of main's green push and nightly runs, and the green ones of `outcome-bars\.yml` \(7\): each/);
+  assert.match(read, /warning in those 2 runs, and every run of `outcome-bars\.yml` \(9\), by test:/);
 });

@@ -304,7 +304,7 @@ What `main` keeps, measured on 2026-11-08 (#5858):
 | rust-cache `app` (Linux, macOS) | 0.90 + 0.67 GB | `app` |
 | rust-cache `lint` | 0.73 GB | `lint` |
 | rust-cache `scenario` (macOS) | 0.49 GB | the macOS scenario legs, `stress` |
-| rust-cache `dev-release` (outcome bars) | 0.76 GB a platform | `outcome-bars`, `outcome-bars-linux` |
+| rust-cache `dev-release` (outcome bars) | 0.76 GB a platform | `outcome-bars.yml`'s `outcome-bars`, `outcome-bars-linux` |
 | rust-cache `bench` | 0.21 GB | `bench` |
 | sccache (macOS) | about 1 GB, new entries every merge | the macOS builds |
 | npm (`npm-ci`) | 0.1 GB a lockfile and OS | the web, app, scenario, stories and docs jobs |

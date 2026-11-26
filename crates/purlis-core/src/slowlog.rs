@@ -50,11 +50,18 @@ pub const KEPT: usize = 1_000;
 pub enum Slow {
     /// An answer to `command` (the window's name for it) that took `ms` milliseconds, asked at
     /// `at` (milliseconds since 1970), while `hot` chats were in their turn.
+    ///
+    /// `phases`: where the core times a command's work itself, each phase it passed through in
+    /// the order it ran them, so a slow answer on another machine names its culprit (h19). The
+    /// core writes such a line of its own beside the window's, whose `ms` also counts the time
+    /// in line; empty in the window's line, and in a line written before they were kept.
     Answer {
         command: String,
         ms: u32,
         at: u64,
         hot: u32,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        phases: Vec<Took>,
     },
     /// A gap of `ms` milliseconds between two of the window's frames, seen at `at`, while `hot`
     /// chats were in their turn, `front` the name of the tab in front (if any), and `opening`

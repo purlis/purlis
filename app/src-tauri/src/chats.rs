@@ -4057,9 +4057,18 @@ impl Chats {
     /// chat asked the person to remove a workspace, or that question was answered): the window
     /// is told its asks, so it reads the registry again.
     pub fn asks_may_have_moved(&self) {
-        if let Some(moved) = lock(&self.asks_moved).clone() {
-            moved();
-        }
+        let _ = self.told_asks_moved();
+    }
+
+    /// [`Self::asks_may_have_moved`], answering whether anyone was told: nobody is until
+    /// [`Self::tell_asks_moved_to`] names who.
+    #[must_use]
+    pub fn told_asks_moved(&self) -> bool {
+        let Some(moved) = lock(&self.asks_moved).clone() else {
+            return false;
+        };
+        moved();
+        true
     }
 
     /// Who hears, from now on, each connection purlis's own proxy carries for a chat it wraps
@@ -5075,14 +5084,20 @@ impl Chats {
         program: &str,
         args: Vec<String>,
     ) -> (Vec<String>, Vec<(String, String)>) {
-        let Some(shims) = self.shipped.shims.as_ref() else {
-            return (args, Vec::new());
-        };
         // A shell tab is a chat on no profile running no harness — `open_session` with no
         // program, and the same chat put back from the record.
         if chat.profile.is_some() || chat.harness().is_some() {
             return (args, Vec::new());
         }
+        // **It is the person's own terminal** (#7694), which its chat marks alone do not say: a
+        // command only the person runs reads this mark, shims or none.
+        let mark = (
+            purlis_core::shellguard::SHELL_TAB_ENV.to_owned(),
+            "1".to_owned(),
+        );
+        let Some(shims) = self.shipped.shims.as_ref() else {
+            return (args, vec![mark]);
+        };
         // The `PATH` every chat gets, worked out by the one function that works it out, with
         // the shims put in front of it.
         let chat_env =
@@ -5095,7 +5110,9 @@ impl Chats {
         );
         let mut all = start.args;
         all.extend(args);
-        (all, start.env)
+        let mut env = start.env;
+        env.push(mark);
+        (all, env)
     }
 
     /// What arms a chat's git with charter's hooks (SQ-16): `core.hooksPath` pointed at the
@@ -5346,9 +5363,22 @@ impl Chats {
         // the chat is open, then by the session's close, its program's end or its project's.
         // Keyed by this run, so a restart's old run ending leaves the new run's route alone.
         // Slice B turns its params into the run's environment; until it merges nothing is
-        // handed over. A chat put back from the session host starts nothing and has none.
+        // handed over. **A chat put back from the session host** is the run it was, and the
+        // route of the app that started it went with that app (#7694): the app's own git gets
+        // one for it through the same gates, and its program is handed nothing. One on a pool's
+        // runner is the runner's to ask for, as at its start.
         #[cfg(feature = "forge-wiring")]
-        let route = if reattaching {
+        let on_a_runner = || {
+            self.sessions
+                .composes_its_harness_chats_in(workspace.as_deref(), chat.runs_on.as_ref())
+                || chat
+                    .identity
+                    .id
+                    .as_deref()
+                    .is_some_and(|id| self.own_runner_of(id).is_some())
+        };
+        #[cfg(feature = "forge-wiring")]
+        let route = if reattaching && on_a_runner() {
             None
         } else {
             identity
@@ -5358,7 +5388,11 @@ impl Chats {
                 .and_then(|(chat_id, run)| {
                     // The merge stance is never looser than the chain that dispatched this chat.
                     let chain = chat.from.as_ref().and_then(|from| from.policy.as_deref());
-                    crate::forgeroute::guard(chat_id, run, &self.project, chain)
+                    if reattaching {
+                        crate::forgeroute::guard_reattached(chat_id, run, &self.project, chain)
+                    } else {
+                        crate::forgeroute::guard(chat_id, run, &self.project, chain)
+                    }
                 })
         };
         // A grade's chat is armed here, with its limits, or not at all (SK-16): a runner
@@ -5490,8 +5524,8 @@ impl Chats {
         };
         // The run's forge route (ADR 0128 D3a, slice K): the sandbox is wired to it, so the chat's
         // `gh`, git and `glab` reach a forge only through the person's own sign-in, brokered by
-        // the app. A chat with no route (nothing recorded, or one put back from the session host)
-        // is not wired, and keeps what it had.
+        // the app. A chat with no route handed over (nothing recorded, or one put back from the
+        // session host, whose program already runs) is not wired, and keeps what it had.
         #[cfg(feature = "forge-wiring")]
         let wired;
         #[cfg(feature = "forge-wiring")]
@@ -7244,6 +7278,15 @@ impl Chats {
         let mut open = lock(&self.open);
         let chat = &mut open.get_mut(&session)?.chat;
         std::mem::replace(&mut chat.runs_on, runs_on)
+    }
+
+    /// Chat `session`'s record says `from` handed it off, as a dispatch's start writes it: for
+    /// a test of what is read of a task, without a dispatch.
+    #[cfg(test)]
+    pub fn handed_from_for_tests(&self, session: u32, from: purlis_core::reopen::HandedFrom) {
+        if let Some(open) = lock(&self.open).get_mut(&session) {
+            open.chat.from = Some(from);
+        }
     }
 
     /// The handoff `session` was opened by, where one opened it.

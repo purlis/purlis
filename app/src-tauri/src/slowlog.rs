@@ -127,6 +127,7 @@ impl From<SlowMoment> for Slow {
                 ms,
                 at: at(when),
                 hot,
+                phases: Vec::new(),
             },
             SlowMoment::Stall {
                 ms,
@@ -194,6 +195,7 @@ impl From<Slow> for SlowMoment {
                 ms,
                 at,
                 hot,
+                ..
             } => SlowMoment::Answer {
                 command,
                 ms,

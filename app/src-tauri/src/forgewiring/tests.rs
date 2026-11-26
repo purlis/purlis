@@ -402,6 +402,11 @@ impl Rebase {
     }
 
     fn read(&self, tip: &HeadSha, pack: &[u8]) -> Result<(), PushVerdict> {
+        self.read_keeping(tip, pack).0
+    }
+
+    /// [`Self::read`], and whether a quarantine of the push is kept after it.
+    fn read_keeping(&self, tip: &HeadSha, pack: &[u8]) -> (Result<(), PushVerdict>, bool) {
         let home = tempfile::tempdir().unwrap();
         let parent = tempfile::tempdir().unwrap();
         let gate = CiPushGate {
@@ -412,7 +417,7 @@ impl Rebase {
             default_tip: self.default_tip.clone(),
             branch_tip: self.old_tip.clone(),
         };
-        gate.read_update(
+        let read = gate.read_update(
             &ChatId::new("chat"),
             7,
             &forge,
@@ -425,7 +430,9 @@ impl Rebase {
                 created: false,
                 pack,
             },
-        )
+        );
+        let kept = gate.quarantines.of(7, "acme/app").is_some();
+        (read, kept)
     }
 }
 
@@ -456,6 +463,19 @@ fn a_rebase_that_changes_a_ci_file_is_read_against_the_default_branchs_tip_not_t
     // binary, it could not be shown at all, and would be refused as binary.
     assert!(why.contains("held acts are not on here"), "{why}");
     assert!(!why.contains("binary"), "{why}");
+}
+
+#[test]
+fn a_held_ci_push_nobody_waits_on_keeps_no_quarantine() {
+    // #7685 review (F6): no sink is on here, so no ask waits on the push, and the repository it
+    // was read in is not kept until the chat closes.
+    let scene = rebase_scene();
+    let (tip, pack) = scene.rebased(b"v3\n");
+
+    let (read, kept) = scene.read_keeping(&tip, &pack);
+
+    assert!(matches!(read, Err(PushVerdict::Refuse(_))), "{read:?}");
+    assert!(!kept, "the quarantine of a push nobody waits on is let go");
 }
 
 // ---- a push that sends no new objects: its tip must be in a branch of this repo ----

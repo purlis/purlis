@@ -92,6 +92,16 @@ pub trait HarnessAdapter: Sync {
         false
     }
 
+    /// **Whether this harness reports its own work** (SC-4c, #7632; ADR 0068, amended
+    /// 2026-11-08): the shells, monitors, sub-agents, workflows, crons and wake-ups a turn
+    /// leaves running reach purlis at the turn's end, so *none in flight* is something purlis
+    /// sees rather than silence. Only then may a chat on it be judged rested
+    /// ([`crate::rested::rested`]). `false` by default, since silence never reads as yes, and
+    /// code, not data: a project's declaration has no adapter, so it cannot claim it.
+    fn reports_its_own_work(&self) -> bool {
+        false
+    }
+
     /// **Whether this harness reports a mode its chat runs in that purlis can check** (R-095,
     /// R-099, Q152): read from what purlis armed, as Claude Code's mode is from its armed hook
     /// ([`Self::attendance_mode`]). `false` by default: Codex reports bypass for every chat,

@@ -27,6 +27,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+// Its baselines are drawn by the `update-baselines` label's run, never by hand (#7659).
 /** **A hibernated chat**: Resume, reached and pressed by the keyboard. */
 export const Hibernated: Story = {
   play: async ({ canvas, args, userEvent }) => {
