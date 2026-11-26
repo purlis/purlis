@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
-import { useState, type ReactNode } from "react";
+import { StrictMode, useState, type ReactNode } from "react";
 import { Button } from "../button/Button";
 import { Menu, MenuItem, MenuTrigger, MenuWords } from "../menu/Menu";
 import { Select } from "../select/Select";
@@ -23,6 +23,8 @@ import {
   type RaisedAnswer,
 } from "./RaisedAlert";
 import { SETTLE_MS } from "../../noticeSettle";
+import { ProjectShownProvider } from "../../projectShown";
+import { KEY_HELD_MS } from "./raised";
 
 /** The settle guard's clock, held: each test says when time passes. */
 let clock = 10_000;
@@ -113,18 +115,25 @@ describe("an alert the app raises", () => {
       code: "Enter",
       repeat: true,
     });
+    // And its release, which presses what a keydown started: none did.
+    fireEvent.keyUp(answer("Keep my current rules"), { key: "Enter", code: "Enter" });
     expect(kept).not.toHaveBeenCalled();
   });
 
-  it("does not open during an IME composition, and opens once it ends", async () => {
+  it("does not open during an IME composition, opens once it ends, and takes the Return that ends it for no answer", async () => {
+    const kept = vi.fn();
     const field = document.createElement("input");
     document.body.append(field);
     try {
       fireEvent.compositionStart(field);
-      render(<Asked />);
+      render(<Asked keep={kept} />);
       expect(screen.queryByRole("alertdialog")).toBeNull();
       fireEvent.compositionEnd(field);
       await opened();
+      // WebKit sends the Return that committed the composition after its compositionend.
+      fireEvent.keyDown(answer("Keep my current rules"), { key: "Enter", code: "Enter" });
+      fireEvent.keyUp(answer("Keep my current rules"), { key: "Enter", code: "Enter" });
+      expect(kept).not.toHaveBeenCalled();
     } finally {
       field.remove();
     }
@@ -158,6 +167,154 @@ describe("an alert the app raises", () => {
     passes(SETTLE_MS);
     rerender(<Asked />);
     expect(screen.getByRole("status")).toHaveTextContent("");
+  });
+
+  it("says each change anew, though the words are the same", async () => {
+    const { rerender } = render(<Asked />);
+    await opened();
+    const status = screen.getByRole("status");
+    rerender(<Asked shows="digest-2" />);
+    const second = status.firstElementChild;
+    expect(second).toHaveTextContent(RAISED_ALERT_CHANGED);
+    rerender(<Asked shows="digest-3" />);
+    expect(status.firstElementChild).toHaveTextContent(RAISED_ALERT_CHANGED);
+    expect(status.firstElementChild).not.toBe(second);
+  });
+
+  it("says each press too soon anew", async () => {
+    render(<Asked />);
+    await opened();
+    const status = screen.getByRole("status");
+    await userEvent.click(answer("Accept"));
+    const first = status.firstElementChild;
+    expect(first).toHaveTextContent(RAISED_ALERT_TOO_SOON);
+    await userEvent.click(answer("Accept"));
+    expect(status.firstElementChild).toHaveTextContent(RAISED_ALERT_TOO_SOON);
+    expect(status.firstElementChild).not.toBe(first);
+  });
+
+  it("puts the keyboard on the alert itself on a change, when its answer that grants nothing cannot be pressed", async () => {
+    const Disabled = ({ shows }: { shows: string }) => (
+      <RaisedAlert
+        raised
+        shows={shows}
+        title="Policy needs your answer"
+        why="Until you answer, your chats keep the policy you accepted before."
+        cancel={{ children: "Keep my current rules", isDisabled: true, onPress: () => {} }}
+        main={{ children: "Accept", variant: "grants", onPress: () => {} }}
+      />
+    );
+    const { rerender } = render(<Disabled shows="digest-1" />);
+    const alert = await screen.findByRole("alertdialog");
+    await waitFor(() => expect(alert).toHaveFocus());
+    answer("Accept").focus();
+    rerender(<Disabled shows="digest-2" />);
+    expect(alert).toHaveFocus();
+  });
+
+  it("lets a key held down repeat in a field inside it, and on nothing else", async () => {
+    render(
+      <Asked>
+        <input aria-label="Note" />
+      </Asked>,
+    );
+    await opened();
+    passes(SETTLE_MS);
+    const note = screen.getByRole("textbox", { name: "Note" });
+    note.focus();
+    expect(fireEvent.keyDown(note, { key: " ", code: "Space", repeat: true })).toBe(true);
+    expect(
+      fireEvent.keyDown(answer("Keep my current rules"), { key: " ", code: "Space", repeat: true }),
+    ).toBe(false);
+  });
+
+  it("opens once a key with no keyup is forgotten, though the timer fires early", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      fireEvent.keyDown(document.body, { key: "a", code: "KeyA" });
+      render(<Asked />);
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      // The timer runs a little before the clock says the key is forgotten.
+      passes(KEY_HELD_MS - 5);
+      act(() => void vi.advanceTimersByTime(KEY_HELD_MS));
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      passes(10);
+      act(() => void vi.advanceTimersByTime(KEY_HELD_MS));
+      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("opens once the field an IME composition began in is taken away", async () => {
+    const field = document.createElement("input");
+    document.body.append(field);
+    fireEvent.compositionStart(field);
+    render(<Asked />);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    field.remove();
+    await opened();
+  });
+
+  it("is the same one alert under React's strict mode", async () => {
+    const kept = vi.fn();
+    render(
+      <StrictMode>
+        <Asked keep={kept} />
+      </StrictMode>,
+    );
+    const alert = await opened();
+    expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
+    expect(alert).not.toHaveTextContent("of 2");
+    passes(SETTLE_MS);
+    await userEvent.click(answer("Keep my current rules"));
+    expect(kept).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("an alert the app raises in a project that is not in front", () => {
+  it("waits, and lets one in front open meanwhile", async () => {
+    render(
+      <>
+        <ProjectShownProvider value={false}>
+          <Asked title="Behind policy" />
+        </ProjectShownProvider>
+        <Asked title="Front policy" />
+      </>,
+    );
+    const front = await opened("Front policy");
+    expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
+    expect(front).not.toHaveTextContent("of 2");
+  });
+
+  it("arms its settle guard when its project comes in front, not before", async () => {
+    const accepted = vi.fn();
+    const Behind = ({ shown }: { shown: boolean }) => (
+      <ProjectShownProvider value={shown}>
+        <Asked accept={accepted} />
+      </ProjectShownProvider>
+    );
+    const { rerender } = render(<Behind shown={false} />);
+    passes(SETTLE_MS * 3);
+    rerender(<Behind shown />);
+    await opened();
+    await userEvent.click(answer("Accept"));
+    expect(accepted).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent(RAISED_ALERT_TOO_SOON);
+  });
+
+  it("leaves a key held in a field elsewhere alone", () => {
+    render(
+      <>
+        <input aria-label="Message" />
+        <ProjectShownProvider value={false}>
+          <Asked />
+        </ProjectShownProvider>
+      </>,
+    );
+    const message = screen.getByRole("textbox", { name: "Message" });
+    message.focus();
+    expect(fireEvent.keyDown(message, { key: " ", code: "Space", repeat: true })).toBe(true);
   });
 });
 
@@ -260,6 +417,36 @@ describe("an alert the app raises, while another layer is up", () => {
   });
 });
 
+describe("an alert the app raises, as a key that opens a dialog is let go", () => {
+  it("waits for the dialog that key opened, and never stands under it", async () => {
+    function Opener({ asked }: { asked: boolean }) {
+      const [renaming, setRenaming] = useState(false);
+      return (
+        <>
+          <Button onPress={() => setRenaming(true)}>Rename</Button>
+          {renaming && (
+            <Dialog onClose={() => setRenaming(false)} title="Rename workspace">
+              <input aria-label="Name" />
+            </Dialog>
+          )}
+          {asked && <Asked />}
+        </>
+      );
+    }
+    const { rerender } = render(<Opener asked={false} />);
+    screen.getByRole("button", { name: "Rename" }).focus();
+    await userEvent.keyboard("[Space>]");
+    rerender(<Opener asked />);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await userEvent.keyboard("[/Space]");
+    await screen.findByRole("dialog", { name: "Rename workspace" });
+    await act(() => new Promise((done) => setTimeout(done, 20)));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await userEvent.keyboard("{Escape}");
+    await opened();
+  });
+});
+
 describe("alerts the app raises, several at once", () => {
   it("shows them one after the other, never stacked, each saying where it stands", async () => {
     function Two() {
@@ -287,10 +474,39 @@ describe("alerts the app raises, several at once", () => {
     expect(second).toHaveTextContent("2 of 2");
   });
 
-  it("says no count when it is the only one", async () => {
-    render(<Asked />);
-    const alert = await opened();
+  it("says no count when it is the only one, and one once a second is raised behind it", async () => {
+    const { rerender } = render(<Asked title="First policy" />);
+    const alert = await opened("First policy");
     expect(alert).not.toHaveTextContent("of 1");
+    rerender(
+      <>
+        <Asked title="First policy" />
+        <Asked title="Second policy" />
+      </>,
+    );
+    await waitFor(() => expect(alert).toHaveTextContent("1 of 2"));
+  });
+
+  it("forgets one withdrawn while it waits", async () => {
+    function Two({ second }: { second: boolean }) {
+      const [first, setFirst] = useState(true);
+      return (
+        <>
+          <Asked raised={first} title="First policy" keep={() => setFirst(false)} />
+          <Asked raised={second} title="Second policy" />
+        </>
+      );
+    }
+    const { rerender } = render(<Two second />);
+    const first = await opened("First policy");
+    expect(first).toHaveTextContent("1 of 2");
+    rerender(<Two second={false} />);
+    await waitFor(() => expect(first).not.toHaveTextContent("of 2"));
+    passes(SETTLE_MS);
+    await userEvent.click(answer("Keep my current rules"));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    await act(() => new Promise((done) => setTimeout(done, 20)));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 });
 
@@ -339,12 +555,14 @@ describe("what a raised alert gives a screen reader and the keyboard", () => {
     const body = alert.querySelector<HTMLElement>('[data-scope="dialog"][data-part="body"]');
     expect(body).toHaveAttribute("tabindex", "0");
     expect(body).toHaveAccessibleName("Policy needs your answer");
+    await userEvent.tab({ shift: true });
+    expect(body).toHaveFocus();
     tall.mockImplementation(() => 0);
     rerender(<Asked shows="digest-2">A short list</Asked>);
     await waitFor(() => expect(body).not.toHaveAttribute("tabindex"));
   });
 
-  it("starts on its answer that grants nothing, which Esc chooses, and hands the keyboard back", async () => {
+  it("opens on the person typing once their key is up, starts on its answer that grants nothing, which Esc chooses, and hands the keyboard back", async () => {
     const message = () => screen.getByRole("textbox", { name: "Message" });
     // The person is typing when it is raised.
     function Typing() {
@@ -358,7 +576,11 @@ describe("what a raised alert gives a screen reader and the keyboard", () => {
     }
     render(<Typing />);
     message().focus();
+    fireEvent.keyDown(message(), { key: "a", code: "KeyA" });
     fireEvent.change(message(), { target: { value: "a" } });
+    // Not under the key still down.
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    fireEvent.keyUp(message(), { key: "a", code: "KeyA" });
     const alert = await opened();
     expect(answersOf(alert)).toEqual(["Keep my current rules", "Accept"]);
     passes(SETTLE_MS);
@@ -367,7 +589,7 @@ describe("what a raised alert gives a screen reader and the keyboard", () => {
     await waitFor(() => expect(message()).toHaveFocus());
   });
 
-  it("never presses a main answer that grants with Return", async () => {
+  it("takes Return in a field for no answer as it settles, and never presses a grant with it after", async () => {
     const accepted = vi.fn();
     render(
       <Asked accept={accepted}>
@@ -375,9 +597,32 @@ describe("what a raised alert gives a screen reader and the keyboard", () => {
       </Asked>,
     );
     await opened();
-    passes(SETTLE_MS);
     screen.getByRole("textbox", { name: "Note" }).focus();
     await userEvent.keyboard("{Enter}");
+    expect(screen.getByRole("status")).toHaveTextContent(RAISED_ALERT_TOO_SOON);
+    passes(SETTLE_MS);
+    await userEvent.keyboard("{Enter}");
     expect(accepted).not.toHaveBeenCalled();
+  });
+
+  it("leaves the keyboard on the window when what opened it is gone", async () => {
+    const closed = vi.fn();
+    function Gone({ opener, raised }: { opener: boolean; raised: boolean }) {
+      return (
+        <>
+          {opener && <input aria-label="Message" />}
+          <Asked raised={raised} afterClose={closed} />
+        </>
+      );
+    }
+    const { rerender } = render(<Gone opener raised={false} />);
+    screen.getByRole("textbox", { name: "Message" }).focus();
+    rerender(<Gone opener raised />);
+    await opened();
+    rerender(<Gone opener={false} raised />);
+    rerender(<Gone opener={false} raised={false} />);
+    await waitFor(() => expect(closed).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(document.activeElement?.isConnected).toBe(true);
   });
 });
