@@ -4980,10 +4980,8 @@ fn serve(
                 // the order of hook calls hangs on it: the turn is let go before it is.
                 turn.finish();
                 // Known by its number while it is answered, so an answer that waits can ask
-                // whether its asker is still there.
-                if let Ok(asker) = writer.try_clone() {
-                    tokens.answering(this, asker);
-                }
+                // whether its asker is still there. Let go even if the answer panics.
+                let answering = Answering::on(tokens, this, &writer);
                 // An asker that reads [`Answer::Alive`] is told while its ask shows life (#4080).
                 let pulse = match &ask {
                     Ask::Git(git) if git.alive => alive::on(&writer),
@@ -4994,7 +4992,7 @@ fn serve(
                     pulse.end();
                 }
                 let answer = framed::on_a_line(answer);
-                tokens.answered(this);
+                drop(answering);
                 let Ok(mut said) = serde_json::to_vec(&answer) else {
                     return;
                 };
@@ -5421,6 +5419,33 @@ impl Turn<'_> {
 impl Drop for Turn<'_> {
     fn drop(&mut self) {
         self.finish();
+    }
+}
+
+/// A connection known by its number while its ask is answered, let go however the answer
+/// ends. An answer that panics unwinds past the line that would have let it go, and the copy
+/// of the connection [`ChatTokens::answering`] keeps would then hold it open for good: the
+/// asker would read no end and wait out its whole deadline, unsure whether it was run.
+#[cfg(unix)]
+struct Answering<'a> {
+    tokens: &'a ChatTokens,
+    this: u64,
+}
+
+#[cfg(unix)]
+impl<'a> Answering<'a> {
+    fn on(tokens: &'a ChatTokens, this: u64, writer: &std::os::unix::net::UnixStream) -> Self {
+        if let Ok(asker) = writer.try_clone() {
+            tokens.answering(this, asker);
+        }
+        Self { tokens, this }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for Answering<'_> {
+    fn drop(&mut self) {
+        self.tokens.answered(self.this);
     }
 }
 

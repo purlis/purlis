@@ -1043,6 +1043,38 @@ fn an_answer_that_takes_longer_than_a_report_may_still_reaches_the_asker() {
     assert!(matches!(answer, Answer::Said { code: 0, .. }), "{answer:?}");
 }
 
+#[cfg(unix)]
+#[test]
+fn an_answer_that_panics_ends_its_askers_connection_at_once() {
+    // The asker reads the end, which it takes as not taken, rather than waiting out its whole
+    // deadline unsure whether it was run: no copy of the connection outlives its serving.
+    let dir = tempfile::tempdir().expect("a directory");
+    let path = dir.path().join("hooks.sock");
+    let listener = Listener::bind(dir.path(), &path).expect("a socket");
+    let token = listener.tokens().issue_to_this_process(3).expect("a token");
+    let _reading = listener.each_answering(
+        Box::new(|_| {}),
+        Box::new(|_, _| panic!("the app drops this connection")),
+    );
+    let answered = Asking::on(&path, Some(token)).expect("connected").ask(
+        &Ask::Git(Box::new(GitAsk {
+            chat: 3,
+            workspace: "alpha".to_owned(),
+            work: GitWork::Clone {
+                repos: vec!["widget".to_owned()],
+            },
+            alive: false,
+        })),
+        std::time::Duration::from_secs(30),
+    );
+    let kind = answered.as_ref().map_err(std::io::Error::kind);
+    assert_eq!(
+        kind.err(),
+        Some(std::io::ErrorKind::UnexpectedEof),
+        "{answered:?}"
+    );
+}
+
 /// A git ask whose asker reads [`Answer::Alive`], answered after `takes`, beating the pulse its
 /// thread holds every 20 ms where `beats`.
 #[cfg(unix)]
