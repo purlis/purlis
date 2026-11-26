@@ -30,6 +30,11 @@ use crate::hostrecord::Started;
 /// did, in this order (ADR 0076 §2, D-1084-1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Stopped {
+    /// **The lowest of them** (#7630, ADR 0076 as amended 2026-11-25): a hibernation ended it
+    /// and dropped its engine, and any other act racing it wins, so a close, a stop, a quit or
+    /// the kill switch is never read as a hibernation. Its end writes no `run.ended`: the run
+    /// is `hibernated`, and the wake run's start supersedes it.
+    Hibernated,
     /// A close forgot it, and ended it.
     Closed,
     /// A stop ended it, and kept it.

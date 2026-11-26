@@ -109,6 +109,15 @@ describe("the Chat log lists the chat end and its result", () => {
     );
   });
 
+  it("says a run the person hibernated as that, and its wake as a start (#7630)", () => {
+    expect(endSaid(ended({ state: "completed", cause: "hibernated", code: null }))).toBe(
+      "Ended · hibernated by you",
+    );
+    expect(startSaid({ ...started(), cause: "wake", protection: null })).toBe(
+      "Woken in its conversation · what protected it was not recorded",
+    );
+  });
+
   it("draws its own timeline, the start first and the end last, with no live region", () => {
     render(
       <ChatLogRows name="steward 3" rows={[started(), ended({ state: "failed", code: 3 })]} />,

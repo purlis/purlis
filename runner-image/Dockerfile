@@ -37,7 +37,7 @@ ADD --checksum=sha256:2b9989364afacf34a9a75328a241b596df4318cfc8c11f437b8d65ca24
 
 FROM forge-programs-${TARGETARCH} AS forge-programs
 
-FROM ubuntu:26.04@sha256:065aa8626841f16057b78b027b464cd59c4fac36c204c72dcbf48d66f5fa8a96
+FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
 
 # git: a chat's clone and branches. ca-certificates: every TLS connection a chat makes.
 # tini: PID 1, which reaps what a chat's programs leave behind when the host is not there to.

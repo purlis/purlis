@@ -21,7 +21,14 @@
  *   waiting on tasks, and the hand on a task rolls up instead.
  */
 import type { FinishedTask } from "./bindings";
-import { failedUnseen, failuresUnseenOf, markOf, ownWorkOf, type ChatStates } from "./chatState";
+import {
+  failedUnseen,
+  failuresUnseenOf,
+  isHibernated,
+  markOf,
+  ownWorkOf,
+  type ChatStates,
+} from "./chatState";
 import type { ListedChat } from "./chatsTree";
 import { shownState, type RowFacts, type Shown } from "./shownState";
 import {
@@ -174,6 +181,7 @@ export function kindsOf(states: ChatStates, chats: readonly Read[]): Stood[] {
       harness: chat.harness,
       tasksAtWork: atWork,
       ownWork: ownWorkOf(states, chat.session),
+      hibernated: isHibernated(states, chat.session),
     });
     stood[at] = { shown, atWork };
     if (chat.asker === null || chat.byYou === true) continue;

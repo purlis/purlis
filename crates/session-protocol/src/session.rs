@@ -623,9 +623,22 @@ use crate::view::{Limits, Views};
 /// that is never retried on its own. A window before 1.95 ignores both fields and reads the link
 /// as any link that is down, so its Reconnecting notice and Try now go on as they did; nothing is
 /// sent to a host of any version for either.
+///
+/// 1.96 has a host end a chat's program as a hibernation ([`Command::Hibernate`], #7630, SC-4a,
+/// ADR 0076 as amended 2026-11-25): the program is stopped, its engine dropped and its hosted
+/// entry forgotten, and its end is kept as the host's own lowest act ([`Command::Hibernate`]), so a
+/// close, a quit, a stop or the kill switch racing it wins. The window's alone. An older host
+/// refuses it `unknown_command`, so the window does not offer Hibernate on a chat it runs.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 95,
+    minor: 96,
+};
+
+/// The version that first hibernates a chat's program ([`Command::Hibernate`], #7630): none is
+/// asked of a host before.
+pub const KNOWS_HIBERNATE: Version = Version {
+    major: 1,
+    minor: 96,
 };
 
 /// The version that first lists a browser's pages and downloads to its views and takes the
@@ -1551,6 +1564,14 @@ pub enum Command {
     /// refused [`NO_SUCH_CHAT`] for a program the host does not hold. The window's alone
     /// ([`crate::grants::Power::Reattach`]).
     Hold { program: String, still: bool },
+    /// **End `program` as a hibernation** (1.96, #7630, ADR 0076 as amended 2026-11-25): the
+    /// host records that the end is its own lowest act, stops the program and everything it
+    /// started, and **drops its engine** and forgets it, so its memory is returned, which
+    /// [`Command::Stop`] (keeps it until closed) does not. Its end is told as a hibernation: it
+    /// writes no `run.ended`. Answered [`Answer::Done`] once it has ended; refused
+    /// [`NO_SUCH_CHAT`] for a program the host does not hold. The window's alone
+    /// ([`crate::grants::Power::Reattach`]).
+    Hibernate { program: String },
     /// **Where the host's own event log ends now** (1.41, #3393): its device and the `seq` of
     /// its last line, 0 for none, answered [`Answer::LogEnd`]: the cursor a client that holds
     /// none of it subscribes from, so it is pushed what is written from now on. Refused
@@ -3459,6 +3480,7 @@ wire_words!(Command {
     NoteProgram => "note_program",
     NoteStrays => "note_strays",
     Hold => "hold",
+    Hibernate => "hibernate",
     LogEnd => "log_end",
     AskGrade => "ask_grade",
     AnswerGrade => "answer_grade",
@@ -3508,9 +3530,10 @@ impl Command {
             Command::LogIn { .. } | Command::FillSecret { .. } => Power::LogIn,
             Command::Inspect { .. } | Command::InspectorInput { .. } => Power::Inspect,
             Command::ProgramsOf { .. } => Power::ProgramsOf,
-            Command::NoteProgram { .. } | Command::NoteStrays { .. } | Command::Hold { .. } => {
-                Power::Reattach
-            }
+            Command::NoteProgram { .. }
+            | Command::NoteStrays { .. }
+            | Command::Hold { .. }
+            | Command::Hibernate { .. } => Power::Reattach,
             Command::Quit => Power::Quit,
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,
@@ -4115,7 +4138,9 @@ impl Lane {
             | Command::NoteProgram { program, .. }
             | Command::NoteStrays { program }
             // A hold keeps its order with the stop that may follow it.
-            | Command::Hold { program, .. } => Some(Lane::Program(program.clone())),
+            | Command::Hold { program, .. }
+            // A hibernation keeps its order with the close or stop that may follow it.
+            | Command::Hibernate { program } => Some(Lane::Program(program.clone())),
             // A confinement's own commands keep their order: an Allow, then what it holds.
             Command::Confine(confine) => Some(Lane::Confinement(confine.confinement.clone())),
             Command::LetGoOfConfinement { confinement }
@@ -4760,6 +4785,14 @@ impl Client {
         self.done(Command::Hold {
             program: program.into(),
             still,
+        })
+        .await
+    }
+
+    /// Ends `program` as a hibernation, dropping its engine (1.96, #7630).
+    pub async fn hibernate(&self, program: &str) -> Result<(), CallError> {
+        self.done(Command::Hibernate {
+            program: program.into(),
         })
         .await
     }

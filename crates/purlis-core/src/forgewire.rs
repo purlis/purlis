@@ -79,6 +79,21 @@ pub const KNOWN_FORGE_HOSTS: [&str; 4] = [
 /// **Port 22 is refused to every forge name, these too.**
 pub const TUNNELLED: [&str; 3] = DOWNLOAD_ONLY;
 
+/// **The hosts Claude Code itself reaches** (its model API and sign-in, and the claude.ai MCP
+/// proxy its connectors for GitLab, Slack, Atlassian and HubSpot go through): never held back
+/// for an address, whatever a forge host resolves to. They are served from a CDN that fronts
+/// forges too, so a forge's address is not the forge's alone, and a chat that reached them before
+/// signing in to a forge must still reach them after. What holds the forge instead is the name
+/// inside the tunnel: it is carried only where it names the host asked for
+/// ([`crate::sandbox::forgedeny::ForgeDenial::pins`]). Exact names, none a forge's.
+pub const HARNESS_HOSTS: [&str; 5] = [
+    "api.anthropic.com",
+    "mcp-proxy.anthropic.com",
+    "claude.ai",
+    "claude.com",
+    "platform.claude.com",
+];
+
 /// A tool whose version purlis has run the route with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tool {
@@ -684,11 +699,25 @@ pub fn compose_at(route: &Route, folder: &Path) -> io::Result<Wiring> {
 /// proxy named for each forge host and each name under it, so neither `NO_PROXY` nor a person's
 /// own `http.proxy` can send git direct to one (a URL's own setting is read over both).
 fn git_pairs_of(route: &Route, helper: &str, ca: &str) -> Vec<(String, String)> {
+    let hosts: Vec<&str> = route.repos.iter().map(|repo| repo.host()).collect();
+    git_pairs_for(hosts, &route.egress_url, helper, ca)
+}
+
+/// [`git_pairs_of`], for the recorded `hosts` and the chat's `egress` port.
+fn git_pairs_for(
+    mut hosts: Vec<&str>,
+    egress: &str,
+    helper: &str,
+    ca: &str,
+) -> Vec<(String, String)> {
     let mut git_pairs = vec![("credential.helper".to_owned(), String::new())];
-    let mut hosts: Vec<&str> = route.repos.iter().map(|repo| repo.host()).collect();
     hosts.sort_unstable();
     hosts.dedup();
-    let named: String = hosts.iter().map(|host| format!(" --host {host}")).collect();
+    // Each host is a host name ([`is_host_name`]), quoted anyway: git runs the line through `sh`.
+    let named: String = hosts
+        .iter()
+        .map(|host| format!(" --host '{host}'"))
+        .collect();
     for host in &hosts {
         git_pairs.push((
             format!("credential.https://{host}.helper"),
@@ -707,10 +736,7 @@ fn git_pairs_of(route: &Route, helper: &str, ca: &str) -> Vec<(String, String)> 
     proxied.dedup();
     for host in proxied {
         for url in [host.to_owned(), format!("*.{host}")] {
-            git_pairs.push((
-                format!("http.https://{url}/.proxy"),
-                route.egress_url.clone(),
-            ));
+            git_pairs.push((format!("http.https://{url}/.proxy"), egress.to_owned()));
         }
     }
     git_pairs
@@ -722,34 +748,153 @@ fn git_pairs_of(route: &Route, helper: &str, ca: &str) -> Vec<(String, String)> 
 /// holds none of the person's credentials. Nothing is written: the settings and the two variables
 /// (the proxy's address, the sentinel the helper reads) are all of it.
 pub fn git_network(route: &Route) -> io::Result<crate::worktree::git::NetworkRoute> {
+    let hosts: Vec<&str> = route.repos.iter().map(|repo| repo.host()).collect();
+    network_route(
+        hosts,
+        &route.egress_url,
+        route.sentinel.expose_secret(),
+        &route.ca_cert,
+        &route.helper_exe,
+    )
+}
+
+/// [`git_network`] of its parts: the recorded `hosts`, the chat's `egress` port, its `sentinel`,
+/// its authority `ca` and the binary git starts as its credential helper.
+fn network_route(
+    hosts: Vec<&str>,
+    egress: &str,
+    sentinel: &str,
+    ca: &Path,
+    helper_exe: &Path,
+) -> io::Result<crate::worktree::git::NetworkRoute> {
     let invalid = |why: &'static str| io::Error::new(io::ErrorKind::InvalidInput, why);
-    if !route.egress_url.starts_with("http://127.0.0.1:") {
+    if !is_loopback_port(egress) {
         return Err(invalid("a chat's forge route is on the loopback interface"));
     }
-    let sentinel = route.sentinel.expose_secret();
     if sentinel.is_empty() || sentinel.contains(|c: char| c.is_control() || c.is_whitespace()) {
         return Err(invalid(
             "the sentinel is empty, or has a space or a control character",
         ));
     }
-    let ca = route
-        .ca_cert
+    let ca = ca
         .to_str()
         .filter(|s| !s.contains(['\n', '\r']))
         .ok_or_else(|| invalid("a path of the forge route is not text"))?;
-    let helper = quoted(&route.helper_exe).ok_or_else(|| {
+    let helper = quoted(helper_exe).ok_or_else(|| {
         invalid("the credential helper's path cannot be quoted for the shell git runs it through")
     })?;
-    let config = git_pairs_of(route, &helper, ca)
+    let config = git_pairs_for(hosts, egress, &helper, ca)
         .into_iter()
         .map(|(key, value)| format!("{key}={value}"))
         .collect();
     let pass = vec![
-        ("HTTPS_PROXY".to_owned(), route.egress_url.clone().into()),
-        ("https_proxy".to_owned(), route.egress_url.clone().into()),
+        ("HTTPS_PROXY".to_owned(), egress.to_owned().into()),
+        ("https_proxy".to_owned(), egress.to_owned().into()),
         (SENTINEL_ENV.to_owned(), sentinel.to_owned().into()),
     ];
     Ok(crate::worktree::git::NetworkRoute::new(config, pass))
+}
+
+/// **The route a command a chat runs itself takes for its git** (#7693): the one [`git_network`]
+/// makes for the app's git for that chat, read out of the environment the chat was given
+/// ([`apply`]), so `purlis change push` in a chat pushes as the chat's own git does, through its
+/// proxy, trusting its authority for its recorded hosts, with its sentinel and no login of the
+/// person's. `None` where `env` carries no sentinel: no route was wired into it.
+///
+/// Only data is read from `env`: the recorded hosts (the hosts the sentinel helper is named
+/// for), the authority and the egress port. **The helper git runs is never the one `env`
+/// names**: it is `helper_exe`, this process's own binary, which answers the sentinel
+/// ([`serve_sentinel_if_asked`]).
+pub fn this_chats_git_route(
+    env: &dyn Fn(&str) -> Option<String>,
+    helper_exe: &Path,
+) -> Option<io::Result<crate::worktree::git::NetworkRoute>> {
+    let sentinel = env(SENTINEL_ENV)?;
+    let invalid = |why: &'static str| io::Error::new(io::ErrorKind::InvalidInput, why);
+    let Some(pairs) = git_pairs_in(env) else {
+        return Some(Err(invalid(
+            "the chat's environment names more git settings than it holds",
+        )));
+    };
+    let hosts: Vec<&str> = pairs
+        .iter()
+        .filter(|(_, value)| value.contains(SENTINEL_HELPER_ARG))
+        .filter_map(|(key, _)| {
+            key.strip_prefix("credential.https://")?
+                .strip_suffix(".helper")
+        })
+        .collect();
+    if !hosts.iter().all(|host| is_host_name(host)) {
+        return Some(Err(invalid(
+            "the chat's environment names a forge host that is not a host name",
+        )));
+    }
+    let Some(first) = hosts.first() else {
+        return Some(Err(invalid(
+            "the chat's environment names no forge host for its sentinel",
+        )));
+    };
+    let named = |key: String| {
+        pairs
+            .iter()
+            .rev()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| v.as_str())
+    };
+    let (Some(ca), Some(egress)) = (
+        named(format!("http.https://{first}/.sslCAInfo")),
+        named(format!("http.https://{first}/.proxy")),
+    ) else {
+        return Some(Err(invalid(
+            "the chat's environment names no authority or proxy for its forge",
+        )));
+    };
+    Some(network_route(
+        hosts,
+        egress,
+        &sentinel,
+        Path::new(ca),
+        helper_exe,
+    ))
+}
+
+/// The `GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>` pairs `env` holds, as many as
+/// `GIT_CONFIG_COUNT` says; `None` where one of them is missing, as git itself refuses that.
+fn git_pairs_in(env: &dyn Fn(&str) -> Option<String>) -> Option<Vec<(String, String)>> {
+    let count = env("GIT_CONFIG_COUNT")
+        .and_then(|n| n.trim().parse::<usize>().ok())
+        .unwrap_or(0);
+    (0..count)
+        .map(|n| {
+            Some((
+                env(&format!("GIT_CONFIG_KEY_{n}"))?,
+                env(&format!("GIT_CONFIG_VALUE_{n}"))?,
+            ))
+        })
+        .collect()
+}
+
+/// Whether `host` is a host name, with an optional `:port`: ASCII letters, digits, `.` and `-`,
+/// then digits after the colon. Nothing else is ever put on the helper line git runs through
+/// `sh`.
+fn is_host_name(host: &str) -> bool {
+    let (name, port) = match host.split_once(':') {
+        Some((name, port)) => (name, Some(port)),
+        None => (host, None),
+    };
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'))
+        && port.is_none_or(|port| !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Whether `url` is exactly `http://127.0.0.1:<port>`, with an optional trailing `/`: the chat's
+/// own loopback port, and nothing that merely starts like it (a user-info part, a path).
+fn is_loopback_port(url: &str) -> bool {
+    url.strip_prefix("http://127.0.0.1:")
+        .map(|rest| rest.strip_suffix('/').unwrap_or(rest))
+        .is_some_and(|port| !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// **`env`, a chat's environment, with `wiring` applied**: its variables set over the chat's own

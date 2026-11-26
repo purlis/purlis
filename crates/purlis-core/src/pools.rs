@@ -468,7 +468,8 @@ pub fn keep_chat_on_pool(
 }
 
 /// **Keeps where chat `number` runs, as a restart found it** (#4683, #5393): on one of the pool's
-/// runners, and the record can't say which, so it counts for each of them.
+/// runners, and the record can't say which, so a draining one is held by it only while it says it
+/// runs a chat ([`work_owed_from`]).
 pub fn keep_chat_found_on_pool(
     config_root: &Path,
     plane: &Path,
@@ -494,8 +495,12 @@ pub fn keep_chat_found_on_pool(
 }
 
 /// **The projects whose work on the draining runner `runner` of `pool` may not have come back**
-/// (#5393), by their folders: each that still owes a fetch from the pool, or keeps a chat that may
-/// be on that runner. A chat kept on the pool's next runner holds nothing back. Why, where the
+/// (#5393), by their folders: each that still owes a fetch from the pool, or keeps a chat recorded
+/// on that runner. A chat kept on the pool's next runner holds nothing back, and nor does one
+/// whose record can't say which runner it is on (one a restart found, or kept before records named
+/// one): whether it runs on this runner is the runner's own to say, and the drain asks it
+/// (`chats_on`). Counted here, such a record held every older runner of the pool for as long as
+/// its chat lived, and each look linked to all of them (2026-11-26). Why, where the
 /// records can't be read, which says nothing of what is owed. Each comes with when it was last
 /// opened, which the Pools group says beside it (#5461).
 pub fn work_owed_from(config_root: &Path, pool: &str, runner: &str) -> Result<Vec<Owing>, String> {
@@ -509,9 +514,37 @@ pub fn work_owed_from(config_root: &Path, pool: &str, runner: &str) -> Result<Ve
         .iter()
         .filter(|recent| {
             recent.branches_to_fetch.contains_key(pool)
-                || recent.chats_on_pools.values().any(|chat| {
-                    chat.pool == pool && chat.runner.as_deref().is_none_or(|on| on == runner)
-                })
+                || recent
+                    .chats_on_pools
+                    .values()
+                    .any(|chat| chat.pool == pool && chat.runner.as_deref() == Some(runner))
+        })
+        .map(|recent| Owing {
+            plane: recent.plane.clone(),
+            opened: recent.opened,
+        })
+        .collect())
+}
+
+/// **The projects that keep a chat on `pool` whose record can't say which runner it is on**, by
+/// their folders: what a draining runner of the pool may hold that [`work_owed_from`] does not
+/// count. A runner that lists what it holds says whether that chat's work is on it; one too old to
+/// list (before 1.69) can't, so its drain counts these against it (2026-11-26). Why, where the
+/// records can't be read.
+pub fn chats_of_no_recorded_runner(config_root: &Path, pool: &str) -> Result<Vec<Owing>, String> {
+    let loaded = crate::machine::read(config_root);
+    if let Some(why) = loaded.unreadable {
+        return Err(why);
+    }
+    Ok(loaded
+        .store
+        .recents
+        .iter()
+        .filter(|recent| {
+            recent
+                .chats_on_pools
+                .values()
+                .any(|chat| chat.pool == pool && chat.runner.is_none())
         })
         .map(|recent| Owing {
             plane: recent.plane.clone(),

@@ -1029,6 +1029,20 @@ impl SessionHost for RoutedSessions {
         }
     }
 
+    fn can_hibernate(&self, id: u32) -> bool {
+        match self.host_of(id) {
+            Some(host) => host.can_hibernate(id),
+            None => self.here.can_hibernate(id),
+        }
+    }
+
+    fn hibernate(&self, id: u32) -> Result<(), String> {
+        match self.host_of(id) {
+            Some(host) => host.hibernate(id),
+            None => self.here.hibernate(id),
+        }
+    }
+
     /// Told on every host; a runner chat's end also fetches its workspace's branches back.
     fn when_one_ends(&self, tell: Ends) {
         let told: Ends = {
