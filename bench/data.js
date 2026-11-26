@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795728070124,
+  "lastUpdate": 1795728737711,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56238,6 +56238,48 @@ window.BENCHMARK_DATA = {
             "value": 102.178497,
             "unit": "ms",
             "extra": "median of 5 runs: 100.975, 102.123, 102.178, 102.268, 103.878 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e153772c3392cb21c99ad0f2afa19756f88401b3",
+          "message": "CI: show the remote start's step table in the remote-parity log on a pass (#7182) (#7684)\n\nnextest keeps a passing test's output to itself and the job summary cannot be\nread through the API, so the table a_start_on_a_remote_pool_times_each_of_its_steps\nprints was nowhere to fetch. success-output = immediate for that one test.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8A4W60KC4VKDSMA0XBRGJ8P\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T20:49:20Z",
+          "tree_id": "3beb8280a4d08fb63b5a1ee18b6cb4b4276a6406",
+          "url": "https://github.com/purlis/purlis/commit/e153772c3392cb21c99ad0f2afa19756f88401b3"
+        },
+        "date": 1795728732597,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.720099,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.680, 0.706, 0.720, 0.734, 0.742 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.510645500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.218, 16.234, 16.511, 16.536, 16.762 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9685315,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.975, 101.861, 101.969, 101.983, 102.927 ms"
           }
         ]
       }
