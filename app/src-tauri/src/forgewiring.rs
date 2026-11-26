@@ -106,6 +106,15 @@ impl Quarantines {
             .map(|(_, quarantine)| quarantine.clone())
     }
 
+    /// The push of chat `session` to `repo` waits on nobody: its quarantine goes.
+    fn release(&self, session: u32, repo: &str) {
+        let key = (session, repo.to_ascii_lowercase());
+        self.kept
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|(of, _)| *of != key);
+    }
+
     /// A chat's session closed: none of its pushes waits.
     pub fn forget(&self, session: u32) {
         self.kept
@@ -736,7 +745,13 @@ impl CiPushGate {
                     branch: branch.clone(),
                     tip: tip.clone(),
                 };
-                Err(match self.proxy.hand_over(chat, &asked) {
+                let said = self.proxy.hand_over(chat, &asked);
+                // An ask nobody waits on (withdrawn, refused, or no sink to raise it) keeps no
+                // quarantine until the chat closes.
+                if !self.context.waits_in(session, repo) {
+                    self.quarantines.release(session, repo.as_str());
+                }
+                Err(match said {
                     Some(said) => PushVerdict::Held(said),
                     None => Self::refuse(
                         "purlis did not send this push: it changes CI files, and held acts are not on here.",
@@ -748,6 +763,13 @@ impl CiPushGate {
 }
 
 impl ProjectContext {
+    /// Whether a held act of chat `session` in `repo` waits on the person in this project.
+    fn waits_in(&self, session: u32, repo: &Repo) -> bool {
+        self.held
+            .upgrade()
+            .is_some_and(|held| held.held_acts().waits_in(session, repo.as_str()))
+    }
+
     /// Where a quarantine fetches its base from: the repo's own address, with the person's
     /// credential for that host and no other, given to git by the app's own credential helper,
     /// which reads it from the keyring and answers git's pipe. The token is in no file.

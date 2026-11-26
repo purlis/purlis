@@ -75,7 +75,8 @@
 //! **Nothing is sent while the person is looking** ([`Looking`], decision 11): the window
 //! holding the ask's project is on screen, focused and has that project in front, and it
 //! shows either the chat itself (`Chats::looks_at`, #1486, #1489) or that project's Asks
-//! ([`InboxOpen`], which the window says). Every question unanswered reads as "not looking",
+//! ([`InboxOpen`], which the window says). A chat with an ask its pane draws nowhere (a held
+//! forge act, #7685) is not looked at for being on screen: only Asks draws that ask. Every question unanswered reads as "not looking",
 //! so a notification is sent rather than held back: one not needed costs a glance, one needed
 //! and not sent costs a chat sitting unanswered.
 //!
@@ -1411,7 +1412,8 @@ pub struct Looking {
 
 impl Looking {
     pub fn is_looking(self) -> bool {
-        self.window_in_front && (self.inbox_open || self.chat_on_screen)
+        self.window_in_front
+            && (self.inbox_open || (self.chat_on_screen && !self.asks_off_its_pane))
     }
 }
 
@@ -1901,7 +1903,7 @@ fn looking(
             .try_state::<Notifier>()
             .is_some_and(|notifier| notifier.inbox.is_open(window.label(), plane)),
         chat_on_screen: held.chats().looks_at(session),
-        asks_off_its_pane: false,
+        asks_off_its_pane: held.held_acts().waits_for(session),
     }
 }
 

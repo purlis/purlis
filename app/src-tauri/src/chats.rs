@@ -4052,10 +4052,11 @@ impl Chats {
     /// [`Self::tell_asks_moved_to`] names who.
     #[must_use]
     pub fn told_asks_moved(&self) -> bool {
-        if let Some(moved) = lock(&self.asks_moved).clone() {
-            moved();
-        }
-        false
+        let Some(moved) = lock(&self.asks_moved).clone() else {
+            return false;
+        };
+        moved();
+        true
     }
 
     /// Who hears, from now on, each connection purlis's own proxy carries for a chat it wraps

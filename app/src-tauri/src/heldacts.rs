@@ -174,6 +174,18 @@ impl HeldActState {
         self.acts.forget(session);
     }
 
+    /// Whether a held act of chat `session` waits: its pane draws none, Asks alone does.
+    pub fn waits_for(&self, session: u32) -> bool {
+        self.acts.every().iter().any(|one| one.session == session)
+    }
+
+    /// Whether a held act of chat `session` in `repo` waits.
+    pub fn waits_in(&self, session: u32, repo: &str) -> bool {
+        self.waiting()
+            .iter()
+            .any(|one| one.session == session && one.repo.eq_ignore_ascii_case(repo))
+    }
+
     /// **Every held act that waits**, oldest first, as drawn.
     pub fn waiting(&self) -> Vec<HeldActShown> {
         self.waiting_since()
@@ -256,7 +268,8 @@ impl AsksWindow for InTheWindow {
 
 /// **Whether chat `session`'s held act is shown to the person in project `held`**, and the
 /// window told to read its asks again where it is. A chat the window has not open, or one it
-/// draws nowhere (a grade's), has no Asks to show it in.
+/// draws nowhere (a grade's), has no Asks to show it in, and nor has a project whose window
+/// hears nothing of its asks moving: the ask would be listed and never read.
 pub(crate) fn shown_in(held: &Held, session: u32) -> Result<(), String> {
     let chats = held.chats();
     if !chats.open_now().iter().any(|open| open.session == session) {
@@ -265,7 +278,13 @@ pub(crate) fn shown_in(held: &Held, session: u32) -> Result<(), String> {
     if chats.kept_from_the_window(session) {
         return Err(format!("chat {session} is not drawn in the window"));
     }
-    chats.asks_may_have_moved();
+    if !chats.told_asks_moved() {
+        tracing::warn!(
+            session,
+            "a held act was raised where no window hears its asks move"
+        );
+        return Err("the window hears nothing of this project's asks".to_owned());
+    }
     Ok(())
 }
 

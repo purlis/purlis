@@ -73,7 +73,10 @@ const PLACES = {
   "let-chat-push": { at: "pane" },
   // A forge act a chat's route held (#7685): counted with the asks, and drawn on its own card in
   // Asks, which reads what the core read and presses it twice (`HeldActAsks`).
-  "held-act": { at: "its-own", how: "its own card in Asks, with its two presses" },
+  "held-act": {
+    at: "asks-only",
+    debt: "its chat's pane draws no Notice of it, so the notifier tells of it even with the chat on screen (#7695)",
+  },
 } as const satisfies Record<AskSource, Place>;
 
 /** Each kind's place, as any place: a kind may move to or from Asks alone. */
@@ -140,6 +143,6 @@ describe("every kind of ask has a drawn place", () => {
       Object.entries(PLACE)
         .filter(([, place]) => place.at === "asks-only")
         .map(([source]) => source),
-    ).toEqual([]);
+    ).toEqual(["held-act"]);
   });
 });
