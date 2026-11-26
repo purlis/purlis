@@ -97,6 +97,43 @@ export function openVerdict(samples: readonly number[]): Verdict & { p95: number
   };
 }
 
+/**
+ * **The openings as they were taken**, not quickest first (#4351): a sample with no frame under it
+ * (WebKit draws none while the window is hidden or the screen is locked, and the Library's rows
+ * past its first screen draw on `requestAnimationFrame`) shows as one 8,536 ms among 200s, and
+ * where it falls says whether the window was hidden for one opening or for the run's end.
+ */
+export function openingsInOrder(samples: readonly number[]): string {
+  if (samples.length === 0) return "in the order taken: none yet";
+  return `in the order taken: ${samples.map((one, n) => `#${n + 1} ${Math.round(one)} ms`).join(", ")}`;
+}
+
+/** What the page said, when a wait for the Library's first row ran out. */
+export type FramesLook = {
+  visibility: string;
+  /** Ms until a `requestAnimationFrame` callback fired, or `null` if none did within `waitedMs`. */
+  frameAfterMs: number | null;
+  waitedMs: number;
+};
+
+/**
+ * **Why a wait for the Library's first row ran out, as far as frames say** (#4351, as
+ * `whatThePickerShows` does for the picker): whether the page is visible, and whether a frame came
+ * at all. No frame means the row was never going to be drawn, whatever the Library did.
+ */
+export function noFrameSaid({ visibility, frameAfterMs, waitedMs }: FramesLook): string {
+  const page = `the page is ${visibility}`;
+  if (frameAfterMs !== null)
+    return (
+      `${page} and a requestAnimationFrame callback fired after ${Math.round(frameAfterMs)} ms: ` +
+      "frames are drawn, so the Library itself drew no row"
+    );
+  const none = `${page} and no requestAnimationFrame callback fired in ${waitedMs} ms`;
+  return visibility === "visible"
+    ? none
+    : `${none}: the window gives no frames while hidden or the screen is locked`;
+}
+
 /** The middle of `samples`, or the mean of the two in the middle of an even count. */
 function medianOf(samples: readonly number[]): number {
   const ordered = inOrder(samples);
