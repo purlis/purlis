@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795676464572,
+  "lastUpdate": 1795676628244,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55524,6 +55524,48 @@ window.BENCHMARK_DATA = {
             "value": 102.262438,
             "unit": "ms",
             "extra": "median of 5 runs: 100.846, 101.348, 102.262, 102.837, 103.124 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "84c13ee0149911c1d493812c11fe0467c1dc1260",
+          "message": "Bump the web group in /app with 5 updates (#7263)\n\nBumps the web group in /app with 5 updates:\n\n| Package | From | To |\n| --- | --- | --- |\n| [react-resizable-panels](https://github.com/bvaughn/react-resizable-panels) | `4.23.0` | `4.24.0` |\n| [@testing-library/user-event](https://github.com/testing-library/user-event) | `14.6.10` | `14.6.12` |\n| [eslint](https://github.com/eslint/eslint) | `10.14.0` | `10.15.0` |\n| [jsdom](https://github.com/jsdom/jsdom) | `31.0.0` | `31.0.1` |\n| [typescript-eslint](https://github.com/typescript-eslint/typescript-eslint/tree/HEAD/packages/typescript-eslint) | `8.72.2` | `8.73.0` |\n\n\nUpdates `react-resizable-panels` from 4.23.0 to 4.24.0\n- [Release notes](https://github.com/bvaughn/react-resizable-panels/releases)\n- [Changelog](https://github.com/bvaughn/react-resizable-panels/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/bvaughn/react-resizable-panels/compare/4.23.0...4.24.0)\n\nUpdates `@testing-library/user-event` from 14.6.10 to 14.6.12\n- [Release notes](https://github.com/testing-library/user-event/releases)\n- [Changelog](https://github.com/testing-library/user-event/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/testing-library/user-event/compare/v14.6.10...v14.6.12)\n\nUpdates `eslint` from 10.14.0 to 10.15.0\n- [Release notes](https://github.com/eslint/eslint/releases)\n- [Commits](https://github.com/eslint/eslint/compare/v10.14.0...v10.15.0)\n\nUpdates `jsdom` from 31.0.0 to 31.0.1\n- [Release notes](https://github.com/jsdom/jsdom/releases)\n- [Commits](https://github.com/jsdom/jsdom/compare/v31.0.0...v31.0.1)\n\nUpdates `typescript-eslint` from 8.72.2 to 8.73.0\n- [Release notes](https://github.com/typescript-eslint/typescript-eslint/releases)\n- [Changelog](https://github.com/typescript-eslint/typescript-eslint/blob/main/packages/typescript-eslint/CHANGELOG.md)\n- [Commits](https://github.com/typescript-eslint/typescript-eslint/commits/v8.73.0/packages/typescript-eslint)\n\n---\nupdated-dependencies:\n- dependency-name: react-resizable-panels\n  dependency-version: 4.24.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: \"@testing-library/user-event\"\n  dependency-version: 14.6.12\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: web\n- dependency-name: eslint\n  dependency-version: 10.15.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: web\n- dependency-name: jsdom\n  dependency-version: 31.0.1\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: web\n- dependency-name: typescript-eslint\n  dependency-version: 8.73.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n  dependency-group: web\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-26T06:24:45Z",
+          "tree_id": "2231f9e0f6cb69ee75141c759947707a70b58046",
+          "url": "https://github.com/purlis/purlis/commit/84c13ee0149911c1d493812c11fe0467c1dc1260"
+        },
+        "date": 1795676622710,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7093075,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.691, 0.695, 0.709, 0.713, 0.721 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.567905500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.386, 16.427, 16.568, 16.634, 16.794 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.57018,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.899, 102.430, 102.570, 103.018, 103.554 ms"
           }
         ]
       }
