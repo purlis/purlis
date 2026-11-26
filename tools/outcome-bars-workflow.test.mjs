@@ -95,18 +95,26 @@ test("outcome-bars.yml's own steps are for a self-hosted runner alone, where a p
   const own = steps.filter(selfHostedOnly).map(nameOf);
   assert.deepEqual(own, [
     "Say that these bars ran on a self-hosted runner",
+    "A self-hosted Mac's window can be painted",
     "A self-hosted runner's workspace starts empty",
     "A self-hosted runner's Cargo, rustup and temporary folder are this job's own",
+    "A self-hosted Mac keeps its display awake for the bars",
     "A self-hosted runner keeps no job folder",
   ]);
-  // Emptied before the checkout; its own homes before the toolchain and rust-cache read them;
-  // cleaned up last, whatever came before.
-  assert.ok(names.indexOf(own[1]) < names.indexOf("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"));
-  assert.equal(names.indexOf(own[2]), names.indexOf("./.github/actions/rust-toolchain") - 1);
-  assert.equal(names.at(-1), own[3]);
+  const [, painted, empties, homes, awake, cleans] = own;
+  // A locked Mac fails before the build (#7738); emptied before the checkout; its own homes
+  // before the toolchain and rust-cache read them; awake before the first harness's bars and
+  // after the homes it writes its pid into; cleaned up last, whatever came before.
+  assert.ok(names.indexOf(painted) < names.indexOf("Build the app, the harness and the CLI for the scenario tests"));
+  assert.ok(names.indexOf(empties) < names.indexOf("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"));
+  assert.equal(names.indexOf(homes), names.indexOf("./.github/actions/rust-toolchain") - 1);
+  assert.ok(names.indexOf(homes) < names.indexOf(awake));
+  assert.ok(names.indexOf(awake) < names.indexOf("The Skill studio's outcome bars on claude's stand-in"));
+  assert.equal(names.at(-1), cleans);
   assert.match(conditionOf(steps.at(-1)), /^always\(\) && runner\.environment == 'self-hosted'$/);
   assert.match(steps.at(-1), /rm -rf "\$RUNNER_TEMP\/job-home"/);
   assert.match(steps.at(-1), /sccache --stop-server/);
+  assert.match(steps.at(-1), /kill "\$\(cat "\$RUNNER_TEMP\/job-home\/caffeinate\.pid"\)"/);
   // The variable picks the runner, and unset it is GitHub's.
   assert.match(read(".github/workflows/outcome-bars.yml"), /\n {4}runs-on: \$\{\{ fromJSON\(vars\.OUTCOME_BARS_RUNNER \|\| '"macos-latest"'\) \}\}\n/);
 });
