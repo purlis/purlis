@@ -207,6 +207,7 @@ fn here() -> Here {
             session: Some(3),
             folder: Some(ws),
             runs: Runs::Here,
+            now_in: None,
         },
         _held: held,
         notes,
@@ -928,4 +929,63 @@ fn a_renumbered_task_s_link_by_either_number_shows_its_task_s_card_titled_as_it_
         by_earlier.task.is_some() && by_last.task.is_some(),
         "the task's card"
     );
+}
+
+/// A pane in a project whose folder's origin is purlis/purlis on GitHub, and a resolver that
+/// reads that remote: an issue's number links there (#6223).
+fn issue_pane() -> (tempfile::TempDir, Pane, Resolver) {
+    let held = tempfile::tempdir().expect("a temporary folder");
+    let project = std::fs::canonicalize(held.path()).expect("resolved");
+    let pane = Pane {
+        project: Some(project.clone()),
+        session: Some(3),
+        folder: Some(project),
+        runs: Runs::Here,
+        now_in: None,
+    };
+    let resolver = Resolver::with(vec![Box::new(IssueRef::with(|_, _| {
+        vec![(
+            "origin".to_owned(),
+            "git@github.com:purlis/purlis.git".to_owned(),
+        )]
+    }))]);
+    (held, pane, resolver)
+}
+
+#[test]
+fn an_issue_s_number_says_it_is_one_and_opens_its_forge_page_in_the_browser() {
+    let (_held, pane, resolver) = issue_pane();
+    let number = Candidate {
+        target: None,
+        kind: Kind::Issue,
+        text: "#6223".into(),
+    };
+    let page = "https://github.com/purlis/purlis/issues/6223";
+
+    assert_eq!(
+        seen(&resolver, &pane, &number),
+        Some(LinkSeen {
+            its_text: None,
+            kind: KindHint::Issue,
+            target: page.into(),
+            shown: page.into(),
+            does: LinkDoes::Opens {
+                into: OpensIn::Browser
+            },
+            chat: None,
+        })
+    );
+    let handed = RefCell::new(Vec::new());
+    let answered = answer(&resolver, &pane, &Asks::default(), &number, None, |url| {
+        handed.borrow_mut().push(url.to_owned());
+        Ok(())
+    });
+    assert_eq!(
+        answered,
+        LinkOpened::Opened {
+            kind: KindHint::Issue,
+            target: page.into()
+        }
+    );
+    assert_eq!(handed.into_inner(), vec![page.to_owned()]);
 }
