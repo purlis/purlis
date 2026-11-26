@@ -10,6 +10,7 @@
 //! they were read from is on this machine, outside the plane's watched folders:
 //!
 //! - this machine's sandbox policy ([`crate::sandbox::policy::MACHINE_FILE`]);
+//! - the project's local vault registry, `vaults.json` in its state folder;
 //! - its profile store, which says each profile's sign-in and pinned install;
 //! - this project's records of approved commands, in its state folder;
 //! - your grants and confirmed sandbox level for this clone, and for every project;
@@ -135,6 +136,10 @@ fn before_reading(root: &Path, here: &Here<'_>) -> Vec<PathBuf> {
     paths.extend(crate::profiletrust::records(root));
     paths.push(crate::sandbox::local::path(root));
     paths.push(crate::sandbox::local::everywhere_path());
+    // This machine's half of the vault registry, in the state folder: the sandbox compile reads
+    // it, and a broken one refuses a row, so mending it must show on the next answer.
+    paths
+        .push(crate::secrets::Ctx::new(root, crate::secrets::Env::from_process()).local_registry());
     // Every folder the program check searches, not only `PATH`: a Finder launch's `PATH` is the
     // system's four, and a harness installed into `~/.local/bin` is found there all the same.
     paths.extend(crate::programs::search_dirs_from(
@@ -237,6 +242,22 @@ mod tests {
         let stamp = Stamp::of_paths([made.clone()]);
         std::fs::remove_file(&made).expect("removed");
         assert!(!stamp.holds(), "removed");
+    }
+
+    #[test]
+    fn a_local_vault_registry_made_or_mended_breaks_the_stamp() {
+        let dir = tempfile::tempdir().expect("a dir");
+        let root = dir.path().join("plane");
+        let registry =
+            crate::secrets::Ctx::new(&root, crate::secrets::Env::from_process()).local_registry();
+        std::fs::create_dir_all(registry.parent().expect("the state folder")).expect("state");
+        std::fs::write(&registry, "{ broken").expect("a broken registry");
+        let stamp = Stamp::of_paths(before_reading(&root, &Here::this()));
+        assert!(stamp.holds());
+
+        std::fs::write(&registry, "{}").expect("mended");
+
+        assert!(!stamp.holds());
     }
 
     #[test]

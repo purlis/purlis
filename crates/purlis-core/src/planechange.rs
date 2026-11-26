@@ -307,10 +307,21 @@ fn a_workspace_manifest(path: &str) -> bool {
 /// on the kept ones while nothing they were read from has moved.
 pub fn moves_a_new_chat(changes: Option<&[Change]>) -> bool {
     changes.is_none_or(|changes| {
-        changes
-            .iter()
-            .any(|change| matches!(change.kind, Kind::Project | Kind::Persona | Kind::Harness))
+        changes.iter().any(|change| {
+            matches!(change.kind, Kind::Project | Kind::Persona | Kind::Harness)
+                && !in_the_state_folder(&change.path)
+        })
     })
+}
+
+/// Whether `path` (plane-relative) is in the state folder purlis keeps in the plane
+/// ([`crate::names::STATE_DIR`]): the guard's sighting, the hook records, the app's own files.
+/// A chat's every tool call writes there, and what a picker answer reads from it is stamped
+/// ([`crate::pickerstamp`]), so such a write moves no kept answer.
+fn in_the_state_folder(path: &str) -> bool {
+    path.split('/')
+        .next()
+        .is_some_and(|first| crate::names::STATE_DIR.recognises(first))
 }
 
 /// **Where a skill's path is**, by the one rule of where a level's skills are
@@ -490,6 +501,18 @@ mod tests {
         }
         assert!(!moves_a_new_chat(Some(&[saved(), chats()])));
         assert!(!moves_a_new_chat(Some(&[])));
+    }
+
+    #[test]
+    fn a_write_in_the_state_folder_leaves_the_new_chat_picker() {
+        for path in [
+            ".purlis/guard-seen.json",
+            ".purlis/app/reopen.json",
+            ".charter/guard-seen.json",
+        ] {
+            assert!(!moves_a_new_chat(Some(&[at(path)])), "{path}");
+        }
+        assert!(moves_a_new_chat(Some(&[at("charter.toml")])));
     }
 
     const ROOT: &str = "/home/dev/plane";

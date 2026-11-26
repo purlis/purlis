@@ -106,6 +106,15 @@ impl Quarantines {
             .map(|(_, quarantine)| quarantine.clone())
     }
 
+    /// The push of chat `session` to `repo` waits on nobody: its quarantine goes.
+    fn release(&self, session: u32, repo: &str) {
+        let key = (session, repo.to_ascii_lowercase());
+        self.kept
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|(of, _)| *of != key);
+    }
+
     /// A chat's session closed: none of its pushes waits.
     pub fn forget(&self, session: u32) {
         self.kept
@@ -176,6 +185,25 @@ impl WorkflowCredential for WorkflowOver {
                 "the CI permission is not made for this account".to_owned(),
             )),
             Err(why) => Err(Unavailable(why)),
+        }
+    }
+
+    fn refused(&self, _: &str) {
+        if let Some(scope) = HostScope::claim() {
+            self.drop_refused(&scope);
+        }
+    }
+}
+
+impl WorkflowOver {
+    /// [`WorkflowCredential::refused`] once the host's scope is in hand: the dead second token is
+    /// deleted, and the window told. Best effort: the ask has ended whatever the keychain says,
+    /// and the next push reads the item again. The keychain's words name the item, never the
+    /// token.
+    fn drop_refused(&self, scope: &HostScope) {
+        let keyring = accounts::keyring_at(&self.config_root);
+        if let Err(why) = accounts::workflow::refused(scope, keyring.as_ref(), &self.account) {
+            tracing::warn!(account = %self.account.id, "a refused second sign-in stays: {why}");
         }
     }
 }
@@ -449,11 +477,9 @@ impl HeldContext for ProjectContext {
             cwd: cwd.display().to_string(),
         };
         match crate::mergeholds::asked(&self.held, &ask) {
-            purlis_core::hookwire::Answer::MergeHeld { .. } => {
-                "purlis holds merges. It has asked the person; the merge happens when they approve \
-                 it in Asks."
-                    .to_owned()
-            }
+            purlis_core::hookwire::Answer::MergeHeld { .. } => purlis_core::heldact::said::asked(
+                &purlis_core::heldact::Requested::Merge(request.clone()),
+            ),
             purlis_core::hookwire::Answer::No { why } => {
                 format!("purlis did not hold this merge: {why}")
             }
@@ -490,6 +516,46 @@ impl CiPushGate {
 }
 
 impl PushGate for CiPushGate {
+    /// Starts the first fill of the object cache of each repo this project confirms, on a thread
+    /// of the app's own: signing in and reading the keyring are not the chat's start to wait for.
+    /// A repo that cannot be served now is left to its first push, which says why.
+    fn warm(&self) {
+        if self.cache_parent.is_none() {
+            return;
+        }
+        let (context, cache_parent) = (self.context.clone(), self.cache_parent.clone());
+        let gate = CiPushGate {
+            context,
+            proxy: self.proxy.clone(),
+            quarantines: self.quarantines.clone(),
+            parent: self.parent.clone(),
+            cache_parent,
+        };
+        let _ = std::thread::Builder::new()
+            .name("object-cache-warm".to_owned())
+            .spawn(move || {
+                for (confirmed, _) in gate.context.candidates() {
+                    let Ok(repo) = Repo::try_from(confirmed.path.as_str()) else {
+                        continue;
+                    };
+                    let Ok(served) = gate.context.served(&repo) else {
+                        continue;
+                    };
+                    let url = format!("https://{}/{}.git", served.repo.host, served.repo.path);
+                    let Ok(from) = gate.context.fetch_source(&served, &url) else {
+                        continue;
+                    };
+                    purlis_core::heldact::FromForge {
+                        cache: gate
+                            .cache_of(&served)
+                            .map(|cache| cache.for_a_push(purlis_core::heldact::PUSH)),
+                        ..from
+                    }
+                    .warm();
+                }
+            });
+    }
+
     fn check(&self, chat: &ChatId, push: &PushRead) -> PushVerdict {
         let Some(session) = self.context.session(chat) else {
             return Self::refuse("purlis did not send this push: this chat is not open.");
@@ -679,7 +745,13 @@ impl CiPushGate {
                     branch: branch.clone(),
                     tip: tip.clone(),
                 };
-                Err(match self.proxy.hand_over(chat, &asked) {
+                let said = self.proxy.hand_over(chat, &asked);
+                // An ask nobody waits on (withdrawn, refused, or no sink to raise it) keeps no
+                // quarantine until the chat closes.
+                if !self.context.waits_in(session, repo) {
+                    self.quarantines.release(session, repo.as_str());
+                }
+                Err(match said {
                     Some(said) => PushVerdict::Held(said),
                     None => Self::refuse(
                         "purlis did not send this push: it changes CI files, and held acts are not on here.",
@@ -691,6 +763,13 @@ impl CiPushGate {
 }
 
 impl ProjectContext {
+    /// Whether a held act of chat `session` in `repo` waits on the person in this project.
+    fn waits_in(&self, session: u32, repo: &Repo) -> bool {
+        self.held
+            .upgrade()
+            .is_some_and(|held| held.held_acts().waits_in(session, repo.as_str()))
+    }
+
     /// Where a quarantine fetches its base from: the repo's own address, with the person's
     /// credential for that host and no other, given to git by the app's own credential helper,
     /// which reads it from the keyring and answers git's pipe. The token is in no file.
@@ -776,8 +855,7 @@ impl AppHeldSinks {
 impl HeldSinks for AppHeldSinks {
     fn sink(&self, project: &Path, sessions: Arc<dyn SessionOfRun>) -> Option<Box<dyn HeldSink>> {
         let (held, _) = self.context_of(project, sessions)?;
-        let handoff: Handoff = held.held_acts().handoff()?;
-        Some(Box::new(handoff))
+        sink_of(&held)
     }
 
     fn forget(&self, session: u32) {
@@ -799,6 +877,15 @@ impl HeldSinks for AppHeldSinks {
             cache_parent: self.cache_parent.clone(),
         }))
     }
+}
+
+/// **The forge route's sink for project `held`'s held acts**, over its registry and the context
+/// last set on it: `None` until one is.
+/// Each ask it raises is told to the project's window, which lists it in Asks (#7685).
+pub(crate) fn sink_of(held: &Arc<Held>) -> Option<Box<dyn HeldSink>> {
+    let window = Arc::new(crate::heldacts::InTheWindow(Arc::downgrade(held)));
+    let handoff: Handoff = held.held_acts().handoff(window)?;
+    Some(Box::new(handoff))
 }
 
 /// **The Notice of a chat's missing or ended sign-in** ([`Notices`], ADR 0128, #7290): told to

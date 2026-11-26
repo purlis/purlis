@@ -203,22 +203,46 @@ export class WorkspacePanels {
       }));
     const refused = (why: string) =>
       fill((one) => ({ ...one, uncommitted: undefined, unread: why }));
-    void commands
-      .worktreeStates(this.#plane, workspace, repo)
-      .then((said) => {
-        if (!mine()) return;
-        if (said.status === "error") return refused(said.error);
-        const states = new Map((said.data ?? []).map((one) => [one.piece, one]));
-        fill((one) => {
-          const state = states.get(one.piece);
-          return state === undefined
-            ? one
-            : { ...one, uncommitted: state.uncommitted, unread: state.unread };
+    // H16: an answer may be partial, a folder still being read says `reading`, and the next ask
+    // waits for the next folder to finish. Asked again until none is, a refusal said on
+    // every folder still reading. The first ask starts a round, and the others name it, so
+    // they are given what this refresh has read and never what an earlier one did (#7667).
+    const ask = (round: number | null): void => {
+      void commands
+        .worktreeStates(this.#plane, workspace, repo, round)
+        .then((said) => {
+          if (!mine()) return;
+          if (said.status === "error") return refused(said.error);
+          const states = new Map((said.data ?? []).map((one) => [one.piece, one]));
+          const next = said.data?.[0]?.round ?? null;
+          let more = false;
+          this.#change(workspace, (was) => ({
+            ...was,
+            pieces: {
+              ...was.pieces,
+              [repo]: (was.pieces[repo] ?? []).map((one) => {
+                const state = states.get(one.piece);
+                if (!one.reading || state === undefined) return one;
+                if (state.reading) {
+                  more = true;
+                  return one;
+                }
+                return {
+                  ...one,
+                  uncommitted: state.uncommitted,
+                  unread: state.unread,
+                  reading: undefined,
+                };
+              }),
+            },
+          }));
+          if (more) ask(next);
+        })
+        .catch((err: unknown) => {
+          if (mine()) refused(String(err));
         });
-      })
-      .catch((err: unknown) => {
-        if (mine()) refused(String(err));
-      });
+    };
+    ask(null);
   }
 
   #merge(workspace: string, what: Partial<Answer>): void {

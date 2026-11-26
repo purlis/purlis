@@ -40,7 +40,8 @@ export type ShownKind =
   | "stuck"
   | "turn-ended-for-asker"
   | "shell"
-  | "unheard";
+  | "unheard"
+  | "hibernated";
 
 /** The mark's shape, one per kind, so a state is told without its colour. */
 export type ShownShape =
@@ -181,6 +182,8 @@ const STATE_OF_KIND: Readonly<Record<ShownKind, ChatState>> = {
   reported: "ended",
   shell: "cant-tell",
   unheard: "cant-tell",
+  // Its own word on Idle's mark until Hibernated is a Chat state of its own (SC-4i, #7638).
+  hibernated: "idle",
 };
 
 /** What a task's own record says of it, apart from what its program is doing. */
@@ -230,6 +233,9 @@ export type Facts = {
    *  changed state. A finished chat with work left is Idle; with none it is Done. None where it
    *  is not known (not a repository, or a surface that does not say), which reads Idle. */
   leftWork?: boolean;
+  /** The person hibernated it (SC-4a, #7630, `chatState.isHibernated`): its program ended at a
+   *  turn's end and its conversation is kept. None where a surface does not say. */
+  hibernated?: boolean;
 };
 
 const WORKING: Said = { kind: "working", word: "working", shape: "ring", token: "state.running" };
@@ -299,6 +305,15 @@ const LAST_MESSAGE: Said = {
   token: "state.unreadable",
 };
 const IDLE: Said = { kind: "idle", word: "idle", shape: "pause", token: "accent.base" };
+/** **The person hibernated it** (SC-4a, #7630): its program ended at a turn's end and Resume
+ *  picks its conversation up. Idle's shape and colour until SC-4i (#7638) makes it a ninth Chat
+ *  state; its own word now. */
+const HIBERNATED: Said = {
+  kind: "hibernated",
+  word: "hibernated",
+  shape: "pause",
+  token: "accent.base",
+};
 const REPORTED: Said = { kind: "reported", word: "reported", shape: "dot", token: "text.muted" };
 /** **Stuck? is a question** (ADR 0121 decision 19): working, with nothing to show for a while. */
 const STUCK: Said = { kind: "stuck", word: "stuck?", shape: "stuck", token: "state.unreadable" };
@@ -453,8 +468,12 @@ function saidOf({
   failuresUnseen = 0,
   stuck = false,
   leftWork,
+  hibernated = false,
 }: Facts): Said {
   if (needsYou) return NEEDS_YOU;
+  // **Hibernated reads over how its turn ended** (#7630): its program has gone, so nothing
+  // else the board last said of it is so now. Only the person's next move is above it.
+  if (hibernated) return HIBERNATED;
   // Stuck? is asked of a turn that runs, before anything else the person could look at.
   if (stuck && board === "running" && task?.report !== "failed") return STUCK;
   if (failuresUnseen > 0) return tasksFailed(failuresUnseen);

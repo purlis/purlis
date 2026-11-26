@@ -404,11 +404,37 @@ pub fn vault_use(what: &str, vault: Option<&str>, to: &str) -> Risk {
 /// merges itself on the person's press. Both sentences name the short head (Q242), so the once
 /// more press says which commit it merges. Every name is the key's, and is data.
 pub fn merge_of(repo: &str, number: u64, head: &str, base: &str) -> Risk {
+    land_of(repo, number, head, base, crate::mergehold::LandAs::Merge)
+}
+
+/// **A held request landed by `act`** (#7543): [`merge_of`]'s sentences for a merge, and for a
+/// place in the merge queue the act the press performs, named as it is.
+pub fn land_of(
+    repo: &str,
+    number: u64,
+    head: &str,
+    base: &str,
+    act: crate::mergehold::LandAs,
+) -> Risk {
+    use crate::mergehold::LandAs;
     let short = head.get(..7).unwrap_or(head);
+    let (why, confirm) = match act {
+        LandAs::Merge => (
+            format!("Merges request {number} of {repo} at {short} into {base}, with no undo"),
+            format!("Merge request {number} of {repo} at {short} into {base}?"),
+        ),
+        LandAs::Enqueue => (
+            format!(
+                "Puts request {number} of {repo} at {short} in the merge queue for {base}, which \
+                 merges it in its turn, by the queue's own method"
+            ),
+            format!("Enqueue request {number} of {repo} at {short} in the merge queue for {base}?"),
+        ),
+    };
     Risk {
         class: Class::Merge,
-        why: format!("Merges request {number} of {repo} at {short} into {base}, with no undo"),
-        confirm: format!("Merge request {number} of {repo} at {short} into {base}?"),
+        why,
+        confirm,
     }
 }
 
@@ -524,8 +550,31 @@ fn strings(table: Option<&toml::Table>, key: &str) -> Vec<String> {
         .collect()
 }
 
+/// **The protected-branch patterns the project commits** (`[risk] protected_branches` in the
+/// plane's committed settings file: names, or patterns with `*`), for the forge route's
+/// `AllowedRepo` ([`crate::forge::proxy::AllowedRepo::with_protected_branches`]), which also holds
+/// its own built-in ones (the default branch, release and deploy names, `integration/*`).
+///
+/// **Read as `[policy]` is** ([`crate::enforcement::protected_branches_in_force`]): from the file
+/// at the plane root's `HEAD`, never the working tree's, and in the app never fewer than this
+/// person accepted, so a chat that edits the file without committing it, or breaks it, drops no
+/// protection. A name the project drops waits for the person's press. The production caller is
+/// `forgeroute`'s `repos`.
+pub fn committed_protected_branches(root: &Path) -> Vec<String> {
+    crate::enforcement::protected_branches_in_force(root)
+}
+
+/// The `[risk] protected_branches` list of a parsed settings file; what is not a list of strings
+/// adds nothing.
+pub(crate) fn protected_in(top: &toml::Table) -> Vec<String> {
+    strings(
+        top.get(TABLE).and_then(toml::Value::as_table),
+        PROTECTED_BRANCHES,
+    )
+}
+
 /// Whether `pattern` (a name, `*` standing for any run of characters) matches `name` whole.
-fn matches(pattern: &str, name: &str) -> bool {
+pub(crate) fn matches(pattern: &str, name: &str) -> bool {
     let mut parts = pattern.split('*');
     let first = parts.next().unwrap_or_default();
     let Some(mut left) = name.strip_prefix(first) else {

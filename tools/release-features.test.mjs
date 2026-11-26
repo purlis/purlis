@@ -179,6 +179,10 @@ test("the shipping workflows' builds, as read, one by one", () => {
       // `build`'s one cargo run, Tauri's: the app, the command line and the extensions, one
       // feature set (R1, #7380).
       { manifest: `${TAURI_PROJECT}/Cargo.toml`, packages: ["purlis-app", "purlis-cli", "persona-statistics"] },
+      // `build-signer`: `cargo build --release -p release-manifest --bin sign-updater-archive`,
+      // the signer `sign-macos` runs over the macOS updater archive with the updater's key (ADR
+      // 0042, amended 2026-11-25).
+      { manifest: "Cargo.toml", packages: ["release-manifest"] },
       // `cargo run --release -p release-manifest --bin sign-runner-image`: signs the runner
       // image's line with the updater's key (#2749).
       { manifest: "Cargo.toml", packages: ["release-manifest"] },

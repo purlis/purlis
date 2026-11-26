@@ -2630,3 +2630,68 @@ fn an_update_of_a_branch_the_open_chat_has_no_record_of_raises_one_ask_in_the_wi
     assert_eq!(purlis_core::windowonly::every(Path::new(project)).len(), 1);
     purlis_core::windowonly::project_ended(Path::new(project));
 }
+
+// ---- a chat put back from the session host after a restart (#7694) ----
+
+#[test]
+fn a_chat_put_back_after_a_restart_has_the_apps_git_routed_for_it_and_is_handed_nothing() {
+    // The app went and came back; the session host kept the chat's program, which is the run it
+    // was. Its route went with the old app, so `purlis worktree push` found none.
+    let scene = Scene::new();
+
+    let guard = scene
+        .routes
+        .guard_reattached("chat-1", "run-1", Path::new("/p/one"), None);
+    assert!(
+        guard.params().is_none(),
+        "a program already running is handed no new sentinel"
+    );
+    guard.commit(7);
+
+    let route = scene
+        .routes
+        .git_route(7)
+        .expect("a route for the session put back")
+        .expect("one git can use");
+    assert!(format!("{route:?}").contains("HTTPS_PROXY"), "{route:?}");
+    // It goes with the session, as a started chat's does.
+    scene.routes.stop_session(7);
+    assert!(!scene.routes.is_live("run-1"));
+}
+
+#[test]
+fn a_chat_put_back_is_given_a_route_only_where_a_started_one_would_be() {
+    // Nothing on a pinned forge is enrolled, put back or not: the same gates as a start.
+    let scene = Scene::pinning(&["github.com", "gitlab.com"]);
+
+    let guard = scene
+        .routes
+        .guard_reattached("chat-1", "run-1", Path::new("/p/one"), None);
+    guard.commit(7);
+
+    assert!(scene.routes.git_route(7).is_none());
+    assert!(!scene.routes.is_live("run-1"));
+}
+
+#[test]
+fn a_chat_put_back_whose_route_is_still_live_keeps_it_as_it_was() {
+    // A route this app already holds for the run is the one the chat's sandbox is wired to:
+    // starting another would retire the sentinel the chat's own git sends.
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    let folder = scene.folder_of("run-1");
+
+    let guard = scene
+        .routes
+        .guard_reattached("chat-1", "run-1", Path::new("/p/one"), None);
+    assert!(guard.params().is_none());
+    guard.commit(7);
+
+    assert_eq!(scene.folder_of("run-1"), folder, "the same route");
+    assert!(scene.routes.git_route(7).is_some());
+    let served = comment(&scene, "run-1", &params.sentinel);
+    assert!(
+        bearer(&served).is_some(),
+        "the old sentinel still works: {served:?}"
+    );
+}

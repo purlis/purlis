@@ -803,7 +803,16 @@ pub fn follow_and_drain(
                 }
                 Ok(0)
             }
-            Ok(DrainLook::Ask) | Err(_) => chats_on(&to),
+            // **What it owes is read before it is asked anything** (2026-11-26): a runner that
+            // stays for it stays whatever runs there, so it is not linked to. How many chats run
+            // there is then not known, so an older look's count is not said for it.
+            Ok(DrainLook::Ask) | Err(_) => {
+                if stays_for_what_it_owes(machine, &kept, &at, &mut said) {
+                    lock_waiting().remove(&at);
+                    continue;
+                }
+                chats_on(&to)
+            }
         };
         match chats {
             Ok(0) => {
@@ -825,29 +834,8 @@ pub fn follow_and_drain(
         // **A runner goes only with its work fetched** (#5393): its last chat's end is told apart
         // from its fetch, which waits its turn, and a project whose window is closed has not
         // fetched at all. One already unpaired takes no link, so nothing more can come from it.
-        if !kept.unpaired {
-            match purlis_core::pools::work_owed_from(&machine.config, kept.pool(), kept.name()) {
-                Ok(owed) if owed.is_empty() => {}
-                Ok(owed) => {
-                    let shown: Vec<String> = owed
-                        .iter()
-                        .map(|owing| owing.plane.display().to_string())
-                        .collect();
-                    said.push(format!(
-                        "draining runner {} stays until its work is fetched into {}",
-                        kept.name(),
-                        shown.join(", ")
-                    ));
-                    continue;
-                }
-                Err(why) => {
-                    said.push(format!(
-                        "draining runner {} stays, since what it owes could not be read: {why}",
-                        kept.name()
-                    ));
-                    continue;
-                }
-            }
+        if !kept.unpaired && stays_for_what_it_owes(machine, &kept, &at, &mut said) {
+            continue;
         }
         // **Nor with work no fetch brings** (ruled 2026-11-07): a fetch brings the branches of the
         // clones that are here, so the runner lists every repository it holds, and each is proved
@@ -901,7 +889,66 @@ pub fn follow_and_drain(
         })
         .collect();
     lock_left().retain(|at, _| at.0 != machine.config || draining.contains(at));
+    lock_said_owed().retain(|at, _| at.0 != machine.config || draining.contains(at));
     said
+}
+
+/// **Whether the draining runner `kept` stays for work still owed a fetch** (#5393), read from
+/// this machine's records alone, so a look never links to a runner it keeps for that. What it
+/// waits on is said once, in `said`, and again only once that changes: each look said it again
+/// (2026-11-26). A project folder that is not on this machine is named so, as no fetch here brings
+/// its work; the Pools group in Devices shows it, and what to do is the person's.
+#[cfg(unix)]
+fn stays_for_what_it_owes(
+    machine: &Machine,
+    kept: &purlis_core::runners::Kept,
+    at: &Waiting,
+    said: &mut Vec<String>,
+) -> bool {
+    match purlis_core::pools::work_owed_from(&machine.config, kept.pool(), kept.name()) {
+        Ok(owed) if owed.is_empty() => {
+            lock_said_owed().remove(at);
+            false
+        }
+        Ok(owed) => {
+            let shown: Vec<String> = owed
+                .iter()
+                .map(|owing| {
+                    let folder = owing.plane.display().to_string();
+                    if owing.plane.is_dir() {
+                        folder
+                    } else {
+                        format!("{folder} (not on this machine, so no fetch here brings it)")
+                    }
+                })
+                .collect();
+            let line = format!(
+                "draining runner {} stays until its work is fetched into {}",
+                kept.name(),
+                shown.join(", ")
+            );
+            if lock_said_owed().insert(at.clone(), line.clone()).as_ref() != Some(&line) {
+                said.push(line);
+            }
+            true
+        }
+        Err(why) => {
+            said.push(format!(
+                "draining runner {} stays, since what it owes could not be read: {why}",
+                kept.name()
+            ));
+            true
+        }
+    }
+}
+
+/// What each draining runner was last said to wait on ([`stays_for_what_it_owes`]).
+#[cfg(unix)]
+fn lock_said_owed() -> std::sync::MutexGuard<'static, std::collections::BTreeMap<Waiting, String>> {
+    static SAID: std::sync::Mutex<std::collections::BTreeMap<Waiting, String>> =
+        std::sync::Mutex::new(std::collections::BTreeMap::new());
+    SAID.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// **What a look says of a stopped draining runner it would remove, where it is kept instead**

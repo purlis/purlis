@@ -903,6 +903,8 @@ impl ForgeRoutes {
             .held
             .push_gate(project, sessions, proxy.clone())
             .unwrap_or_else(|| Arc::new(BlindGate));
+        // Reading the repo's objects starts now, not at the first push (#7532).
+        push.warm();
         let bound = match self.seams.listener.bind(run, &run_dir, proxy.clone(), push) {
             Ok(bound) => bound,
             Err(refused) => {
@@ -988,6 +990,33 @@ impl ForgeRoutes {
             params,
             armed: true,
         }
+    }
+
+    /// **A chat put back from the session host** (#7694): its program runs on, and the route of
+    /// the app that started it went with that app, so the app's own git had none for it
+    /// ([`Self::git_route`]) and `purlis worktree push` was refused. A route this app already holds
+    /// for the run is kept as it is, since the chat's sandbox may be wired to it; otherwise one is
+    /// started by [`Self::start_for`], through every gate a start's goes through (the recorded
+    /// repos, the pin, the person's sign-ins). The running program is handed nothing: it holds no
+    /// sentinel of the new route, and its own git keeps what it had.
+    pub fn guard_reattached(
+        &self,
+        chat: &str,
+        run: &str,
+        project: &Path,
+        chain: Option<&str>,
+    ) -> RouteGuard<'_> {
+        if self.is_live(run) {
+            return RouteGuard {
+                routes: self,
+                run: run.to_owned(),
+                params: None,
+                armed: false,
+            };
+        }
+        let mut guard = self.guard(chat, run, project, chain);
+        guard.params = None;
+        guard
     }
 
     /// A run's route stops: its sentinel, its listener, its folder and its asks.
@@ -1185,7 +1214,8 @@ impl ForgeRoutes {
     /// worktree push` and `update` run for a chat through, so the git the app runs for it reaches
     /// the forge through this run's proxy with its sentinel, as the chat's own git does, and holds
     /// none of the person's credentials. `None` where the session has no live route: a chat with
-    /// no recorded repo, one put back from the session host, one whose route stopped.
+    /// no recorded repo, one on a pool's runner put back from the session host, one whose route
+    /// stopped.
     pub fn git_route(
         &self,
         session: u32,
@@ -1531,7 +1561,9 @@ fn refusal_words(refusal: Refusal) -> &'static str {
             "the pull request's head is the default or a protected branch, or not a branch of the chat's repo that purlis can see"
         }
         Refusal::GraphqlUnknownMutation => "the GraphQL mutation is not on the list",
-        Refusal::GraphqlOtherRepo => "the GraphQL document reaches a repo that is not the chat's",
+        Refusal::GraphqlOtherRepo | Refusal::GraphqlPullRequestOtherRepo => {
+            "the GraphQL document reaches a repo that is not the chat's"
+        }
         Refusal::CredentialInQuery => "a credential was in the query string",
         Refusal::Multipart => "a multipart body is not allowed here",
         Refusal::CredentialInBody => "a credential was in the request body",
@@ -1814,6 +1846,17 @@ pub fn guard(
     chain: Option<&str>,
 ) -> Option<RouteGuard<'static>> {
     Some(routes()?.guard(chat, run, project, chain))
+}
+
+/// A chat put back from the session host (`chats.rs`): the route the app's own git takes for it
+/// ([`ForgeRoutes::guard_reattached`]), with nothing handed to its program.
+pub fn guard_reattached(
+    chat: &str,
+    run: &str,
+    project: &Path,
+    chain: Option<&str>,
+) -> Option<RouteGuard<'static>> {
+    Some(routes()?.guard_reattached(chat, run, project, chain))
 }
 
 /// The route the app's own git takes for chat `session` ([`ForgeRoutes::git_route`]).

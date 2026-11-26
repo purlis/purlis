@@ -7,7 +7,7 @@
  * cell. The core is faked at its command boundary; the words are the core's.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, within } from "storybook/test";
+import { expect, waitFor, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type {
   PoolSetupDockerContext,
@@ -18,6 +18,7 @@ import type {
 } from "../bindings";
 import { expectFocusInSight } from "../stories.testkit";
 import { ConnectStep } from "./ConnectStep";
+import { NOTHING_CHOSEN } from "./PoolStep";
 
 const FINGERPRINT = "SHA256:dmeCC9oOb+c7VYVBSUAdgQchZHZQyXKWgKnGQxfh2rA";
 const OTHER = "SHA256:hX0mBv7pE9yS8Wd6Jf1Lq2Rk3Tn4Uo5Vp6Wq7Xr8Ys";
@@ -50,6 +51,7 @@ const connect = (more: Partial<PoolSetupStep>): PoolSetupStep => ({
   name: "Connect",
   state: "current",
   line: null,
+  took_ms: null,
   findings: [],
   next: null,
   skippable: false,
@@ -111,6 +113,7 @@ const shown = (step: PoolSetupStep, pool: string | null = null): PoolSetupShown 
     joining: false,
     pinned: null,
     key_changed: false,
+    kubeconfig: null,
   },
   steps: [step],
 });
@@ -1359,5 +1362,72 @@ export const SendToYourAdmin: Story = {
     copy?.focus();
     await expect(copy).toHaveFocus();
     await expectFocusInSight();
+  },
+};
+
+/** What the Connect page of a new pool is given: the pool's name and Options, kept by the tab. */
+const ADDING = {
+  making: false,
+  set: () => undefined,
+  typed: "",
+  type: () => undefined,
+  chosen: NOTHING_CHOSEN,
+  choose: () => undefined,
+};
+
+/**
+ * **Connect and Pool are one page for a new pool** (#7191): the key, the pool's name and who can
+ * sign in beside it, and one press, Trust and create the pool.
+ */
+export const NameThePoolBesideTheKey: Story = {
+  beforeEach: faked([]),
+  args: { step: MET, shown: shown(MET), adding: ADDING },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    const name = canvas.getByRole("textbox", { name: "Name the pool" });
+    await expect(name).toBeVisible();
+    await expect(canvas.getByText("Who can sign in to build-box?")).toBeVisible();
+    await expect(canvas.getByRole("radio", { name: /Others might/ })).toBeChecked();
+    name.focus();
+    await userEvent.tab();
+    await expect(canvas.getByRole("radio", { name: /Others might/ })).toHaveFocus();
+    await expectFocusInSight();
+    await expect(canvas.getByRole("button", { name: "Trust and create the pool" })).toBeVisible();
+  },
+};
+
+/** How long a press may take to settle: WebKit draws the next frame late in a busy run (as Select's own stories). */
+const SETTLES = { timeout: 3_000 };
+
+/** The add was not taken: the page says why, and never says the machine is connected. */
+export const TheAddWasNotTaken: Story = {
+  beforeEach: () => {
+    mockIPC((cmd) =>
+      cmd === "pool_setup_trust_and_create"
+        ? {
+            shown: shown(MET),
+            breaks: [],
+            refused: "the disk on build-box is full",
+          }
+        : cmd === "runner_image_of_this_version"
+          ? { state: "ours", image: "ghcr.io/purlis/runner@sha256:aaaa" }
+          : null,
+    );
+  },
+  args: { step: MET, shown: shown(MET), adding: ADDING },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Trust and create the pool" }));
+    await expect(
+      await canvas.findByText("the disk on build-box is full", undefined, SETTLES),
+    ).toBeVisible();
+    // The press is over: the button is back (it is disabled and `aria-busy` while the add runs),
+    // so the picture is not of a frame WebKit drew before it (#7238).
+    await waitFor(
+      () => expect(canvas.getByRole("button", { name: "Trust and create the pool" })).toBeEnabled(),
+      SETTLES,
+    );
+    await expect(canvas.queryByText("Connected")).toBeNull();
+    await expect(canvas.queryByText(/is ready to run your chats/)).toBeNull();
   },
 };

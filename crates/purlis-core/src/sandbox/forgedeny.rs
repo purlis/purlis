@@ -296,6 +296,12 @@ impl ForgeDenial {
             .any(|base| host == base || allows(&[format!("*.{base}")], host))
     }
 
+    /// Whether `host` is one of Claude Code's own hosts ([`crate::forgewire::HARNESS_HOSTS`]),
+    /// which a CDN shared with a forge serves: never held back for an address.
+    fn is_harness_host(host: &str) -> bool {
+        crate::forgewire::HARNESS_HOSTS.contains(&host)
+    }
+
     /// Whether `host` is one of the tunnelled names, on `port` where it is held to one.
     fn tunnels(&self, host: &str, port: Option<u16>) -> bool {
         self.tunnelled
@@ -424,7 +430,7 @@ impl ForgeDenial {
     /// TLS record at all are carried, to anything but an exempt name.
     pub fn pins(&self, host: &str, hello: &Hello) -> bool {
         let host = plain(host);
-        let exempt = self.tunnels(&host, None);
+        let exempt = self.tunnels(&host, None) || Self::is_harness_host(&host);
         match hello {
             Hello::Named(sni) => {
                 let sni = plain(sni);
@@ -472,7 +478,8 @@ impl ForgeDenial {
     /// **Whether a connection for `host` may be made at `at`**: not at an address the forge holds,
     /// unless `host` is a tunnelled name, which GitHub serves from the same ranges.
     pub fn carries(&self, host: &str, at: IpAddr) -> bool {
-        if self.tunnels(&plain(host), None) {
+        let host = plain(host);
+        if self.tunnels(&host, None) || Self::is_harness_host(&host) {
             return true;
         }
         !self.holds(at)

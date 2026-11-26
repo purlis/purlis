@@ -376,3 +376,33 @@ fn a_large_body_with_a_merge_line_that_runs_out_of_budget_is_refused() {
         assert!(err.contains(OUT_OF_TIME), "{mode}: {err}");
     }
 }
+
+/// **A held `glab mr merge` is answered inside the budget** (#7546), as `gh pr merge` is: in a
+/// chat whose app is not there it is refused, never let through, and never slowly.
+#[test]
+fn a_held_glab_mr_merge_is_answered_within_the_budget() {
+    purlis_core::unsteered!();
+    let here = Here::new();
+    let socket = here.dir.path().join("app").join("hooks.sock");
+    let chat = [
+        (purlis_core::hookwire::CHAT_ENV, "1"),
+        (
+            purlis_core::hookwire::SOCKET_ENV,
+            socket.to_str().expect("a path"),
+        ),
+    ];
+    for cmd in [
+        "glab mr merge 7",
+        "glab mr merge 7 --squash --yes",
+        "cd repo && glab mr merge 7",
+    ] {
+        for mode in ["bypassPermissions", "default"] {
+            let (code, out, err, took) = here.answer("pretooluse", &bash(cmd, mode), &chat);
+            assert!(
+                out.contains("deny") || code == Some(2),
+                "{mode} `{cmd}` was not held: {code:?} {out} {err}"
+            );
+            assert!(took < BUDGET + SLACK, "{mode} `{cmd}` took {took:?}");
+        }
+    }
+}

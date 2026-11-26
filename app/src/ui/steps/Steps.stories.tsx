@@ -52,3 +52,20 @@ export const AtTheCurrentStep: Story = {
     ],
   },
 };
+
+/** A step's time, under its line (#7191): `took 4 s`, told by its words and not by colour. */
+export const WithATime: Story = {
+  args: {
+    steps: [
+      {
+        id: "where",
+        name: "Where chats run",
+        state: "done",
+        line: "Docker on another Mac",
+        took: "4 s",
+      },
+      { id: "pool", name: "Pool", state: "current", took: "0.8 s" },
+      { id: "signins", name: "Sign-ins", state: "later" },
+    ],
+  },
+};

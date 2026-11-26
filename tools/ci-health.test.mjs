@@ -33,6 +33,7 @@ import {
   runStats,
   runWindows,
   sample,
+  sideWeek,
   slowestTests,
 } from "./ci-health.mjs";
 
@@ -280,8 +281,9 @@ test("the report's one issue is found by its title and its label, open or not", 
 
 // ---- the daily run: flake tickets, and the headline it is judged by (spec #7324) ----
 
-const flakeSuite = (runId, job, ...tests) => ({
-  workflowRun: { databaseId: runId, url: `https://github.com/purlis/purlis/actions/runs/${runId}` },
+const flakeSuite = (runId, job, ...tests) => flakeSuiteAt(runId, undefined, job, ...tests);
+const flakeSuiteAt = (runId, createdAt, job, ...tests) => ({
+  workflowRun: { databaseId: runId, createdAt, url: `https://github.com/purlis/purlis/actions/runs/${runId}` },
   checkRuns: {
     nodes: [
       {
@@ -295,8 +297,8 @@ const flakeSuite = (runId, job, ...tests) => ({
 
 test("a flake's evidence names the suite that ran it and each run it flaked in, once each", () => {
   const found = flakeEvidence([
-    flakeSuite(11, "web (part 2/4)", "src/a.test.ts > a"),
-    flakeSuite(12, "web (part 2/4)", "src/a.test.ts > a", "src/b.test.ts > b"),
+    flakeSuiteAt(11, "2026-11-20T01:00:00Z", "web (part 2/4)", "src/a.test.ts > a"),
+    flakeSuiteAt(12, "2026-11-21T01:00:00Z", "web (part 2/4)", "src/a.test.ts > a", "src/b.test.ts > b"),
   ]);
   assert.deepEqual(found, [
     {
@@ -304,15 +306,15 @@ test("a flake's evidence names the suite that ran it and each run it flaked in, 
       count: 2,
       jobs: ["web (part 2/4)"],
       runs: [
-        { id: 11, url: "https://github.com/purlis/purlis/actions/runs/11" },
-        { id: 12, url: "https://github.com/purlis/purlis/actions/runs/12" },
+        { id: 11, url: "https://github.com/purlis/purlis/actions/runs/11", createdAt: "2026-11-20T01:00:00Z" },
+        { id: 12, url: "https://github.com/purlis/purlis/actions/runs/12", createdAt: "2026-11-21T01:00:00Z" },
       ],
     },
     {
       test: "src/b.test.ts > b",
       count: 1,
       jobs: ["web (part 2/4)"],
-      runs: [{ id: 12, url: "https://github.com/purlis/purlis/actions/runs/12" }],
+      runs: [{ id: 12, url: "https://github.com/purlis/purlis/actions/runs/12", createdAt: "2026-11-21T01:00:00Z" }],
     },
   ]);
 });
@@ -349,11 +351,62 @@ test("a run a ticket already names is not said again", () => {
 
 test("a ticket is found by its test even when its title was edited, and a closed one is reopened", () => {
   const filed = planFlakeTickets(flakes, []).create[0];
-  const again = flakeEvidence([flakeSuite(13, "rust tests (part 1 of 4)", "purlis-core::it a_test")]);
-  const plan = planFlakeTickets(again, [{ number: 9, state: "closed", title: "renamed by hand", body: filed.body, labels: [{ name: "area:ci" }] }]);
+  const again = flakeAt(13, "2026-11-25T00:00:00Z");
+  const plan = planFlakeTickets(again, [{ number: 9, state: "closed", closed_at: "2026-11-24T00:00:00Z", title: "renamed by hand", body: filed.body, labels: [{ name: "area:ci" }] }]);
   assert.equal(plan.create.length, 0);
   assert.equal(plan.comment[0].number, 9);
   assert.equal(plan.comment[0].reopen, true);
+});
+
+// A flake counts against a ticket only if its run started after the ticket was last closed: a run
+// before the close is history the fix already answered (spec #7324).
+const CLOSED = "2026-11-24T10:00:00Z";
+const closedTicket = (body, extra = {}) => ({ number: 7, state: "closed", closed_at: CLOSED, title: "Flaky test: purlis-core::it a_test", body, labels: [{ name: "area:ci" }], ...extra });
+const flakeAt = (runId, createdAt) => flakeEvidence([flakeSuiteAt(runId, createdAt, "rust tests (part 1 of 4)", "purlis-core::it a_test")]);
+
+test("a closed ticket and only runs from before its close: no reopen, no comment, no new ticket", () => {
+  const filed = planFlakeTickets(flakes, []).create[0];
+  const old = flakeAt(20, "2026-11-20T08:00:00Z");
+  assert.deepEqual(planFlakeTickets(old, [closedTicket(filed.body)]), { create: [], comment: [] });
+  // Even when the ticket's body names no run and its title was edited by hand.
+  assert.deepEqual(planFlakeTickets(old, [closedTicket(filed.body, { title: "renamed" })]), { create: [], comment: [] });
+});
+
+test("a closed ticket and a run that started after its close: reopened, citing only that run", () => {
+  const filed = planFlakeTickets(flakes, []).create[0];
+  const both = flakeEvidence([
+    flakeSuiteAt(20, "2026-11-20T08:00:00Z", "rust tests (part 1 of 4)", "purlis-core::it a_test"),
+    flakeSuiteAt(21, "2026-11-24T16:00:00Z", "rust tests (part 1 of 4)", "purlis-core::it a_test"),
+  ]);
+  const plan = planFlakeTickets(both, [closedTicket(filed.body)]);
+  assert.equal(plan.comment.length, 1);
+  assert.equal(plan.comment[0].reopen, true);
+  assert.match(plan.comment[0].body, /Flaked again in 1 run/);
+  assert.match(plan.comment[0].body, /actions\/runs\/21/);
+  assert.doesNotMatch(plan.comment[0].body, /actions\/runs\/20/);
+});
+
+test("a ticket reopened for a new run does not hear the pre-close runs the next day, nor count them for quarantine", () => {
+  const filed = planFlakeTickets(flakes, []).create[0];
+  const both = flakeEvidence([
+    flakeSuiteAt(20, "2026-11-20T08:00:00Z", "rust tests (part 1 of 4)", "purlis-core::it a_test"),
+    flakeSuiteAt(21, "2026-11-24T16:00:00Z", "rust tests (part 1 of 4)", "purlis-core::it a_test"),
+  ]);
+  const [one] = planFlakeTickets(both, [closedTicket(filed.body)]).comment;
+  const reopened = { ...closedTicket(one.update), state: "open", closed_at: null };
+  assert.deepEqual(planFlakeTickets(both, [reopened]), { create: [], comment: [] });
+});
+
+test("a closed ticket and a run with no start time is history, never a reopen", () => {
+  const filed = planFlakeTickets(flakes, []).create[0];
+  assert.deepEqual(planFlakeTickets(flakeAt(22, undefined), [closedTicket(filed.body)]), { create: [], comment: [] });
+});
+
+test("an open ticket still hears every run it does not name, whenever it started", () => {
+  const filed = planFlakeTickets(flakes, []).create[0];
+  const plan = planFlakeTickets(flakeAt(20, "2026-11-01T00:00:00Z"), [closedTicket(filed.body, { state: "open", closed_at: null })]);
+  assert.equal(plan.comment.length, 1);
+  assert.equal(plan.comment[0].reopen, false);
 });
 
 const prAt = (number, createdAt, mergedAt, ...events) => ({
@@ -394,8 +447,18 @@ test("the daily headline leads with ready to merged and the queue drop rate", ()
 
 const flakedIn = (test, ...runIds) =>
   flakeEvidence(runIds.map((id) => flakeSuite(id, "web (part 1/4)", test))).find((one) => one.test === test);
+const flakedAt = (test, ...times) =>
+  flakeEvidence(times.map((at, i) => flakeSuiteAt(i + 1, at, "web (part 1/4)", test))).find((one) => one.test === test);
 const ticketed = (...tests) => tests.map((test, i) => ({ number: 100 + i, state: "open", title: `Flaky test: ${test}`, body: "", labels: [{ name: "area:ci" }] }));
 const TODAY = "2026-11-22";
+
+test("runs from before a ticket's close do not count toward quarantine; three after it do", () => {
+  const issues = [{ ...ticketed("src/a.test.ts > a")[0], state: "closed", closed_at: "2026-11-24T10:00:00Z" }];
+  const old = flakedAt("src/a.test.ts > a", "2026-11-20T00:00:00Z", "2026-11-21T00:00:00Z", "2026-11-22T00:00:00Z");
+  assert.deepEqual(planQuarantine({ flakes: [old], entries: [], issues, openBranches: [], today: TODAY }), []);
+  const fresh = flakedAt("src/a.test.ts > a", "2026-11-25T00:00:00Z", "2026-11-26T00:00:00Z", "2026-11-27T00:00:00Z");
+  assert.equal(planQuarantine({ flakes: [fresh], entries: [], issues, openBranches: [], today: TODAY }).length, 1);
+});
 
 test("a test that flaked in three runs of the week is proposed for quarantine, one that flaked in two is not", () => {
   const flaky = [flakedIn("src/a.test.ts > a", 1, 2, 3), flakedIn("src/b.test.ts > b", 4, 5)];
@@ -493,4 +556,64 @@ test("a release job over its budget is filed under release.yml and its profile, 
   assert.match(create[0].body, /`release` profile/);
   assert.doesNotMatch(planBudgetTickets([slow], []).create[0].body, /profile/);
   assert.match(planBudgetTickets([slow], []).create[0].body, /job of `ci\.yml`/);
+});
+
+// The macOS outcome bars left ci.yml for outcome-bars.yml (ADR 0127, amended 2026-11-26), and
+// ci-health still reads them: their budget on their own runs, and their red on main's green runs.
+test("a workflow beside ci is read for its budgets on its own runs, and for its red on main's green runs", () => {
+  const bars = "outcome bars (macos-latest) (macos-latest, bars, 1, false, false, false, true)";
+  const at = (id, conclusion, minutes = 60) => ({
+    workflowRun: { databaseId: id, url: `https://example.test/runs/${id}`, createdAt: "2026-11-25T10:00:00Z" },
+    checkRuns: {
+      nodes: [
+        {
+          name: bars,
+          conclusion,
+          startedAt: "2026-11-25T10:00:00Z",
+          completedAt: new Date(Date.parse("2026-11-25T10:00:00Z") + minutes * 60_000).toISOString(),
+        },
+      ],
+    },
+  });
+  const ids = [1, 2, 3, 4, 5, 6, 7];
+  const weeks = [
+    {
+      name: "outcome-bars",
+      runs: ids.map((id) => ({ id, head_branch: id === 7 ? "other" : "main", conclusion: "success" })),
+      suites: ids.map((id) => at(id, id <= 2 ? "FAILURE" : "SUCCESS")),
+    },
+  ];
+  const budgets = [{ id: "outcome-bars", workflow: "outcome-bars", p50: 40 }];
+  const jobsOf = { "outcome-bars": [{ id: "outcome-bars", name: "outcome bars (macos-latest)" }] };
+  const side = sideWeek(weeks, budgets, jobsOf);
+  assert.equal(side.suites.length, 7);
+  // Run 7 is not main's, so it is no evidence of main's red.
+  assert.equal(side.green.length, 6);
+  assert.deepEqual(side.greenOf, { "outcome-bars": 6 });
+  assert.deepEqual(evidenceRed(side.green), [{ name: bars, times: 2 }]);
+  assert.deepEqual(
+    side.over.map(({ id, workflow, p50, n }) => ({ id, workflow, p50, n })),
+    [{ id: "outcome-bars", workflow: "outcome-bars", p50: 60, n: 5 }],
+  );
+  // A budget for ci's job of the same id is not judged on these runs.
+  assert.deepEqual(sideWeek(weeks, [{ id: "outcome-bars", p50: 40 }], jobsOf).over, []);
+  assert.match(planBudgetTickets(side.over, []).create[0].body, /The `outcome-bars` job of `outcome-bars\.yml` took a p50 of 60\.0 min/);
+});
+
+test("the report says which other workflows' runs its job table read", () => {
+  assert.match(
+    report({ ...week, sampled: { runs: 2, of: 6, others: [{ name: "outcome-bars", runs: 9 }] } }),
+    /Read from 2 of the week's 6 runs, spread evenly over it, and every run of `outcome-bars\.yml` \(9\)\. Minutes/,
+  );
+  assert.match(report(week), /Read from 2 of the week's 6 runs, spread evenly over it\. Minutes/);
+});
+
+test("red on a green run and the flaky tests count another workflow's runs apart from ci's", () => {
+  const read = report({
+    ...week,
+    sampled: { runs: 2, of: 6, others: [{ name: "outcome-bars", runs: 9 }] },
+    red: { runs: 8, others: [{ name: "outcome-bars", runs: 7 }], jobs: [] },
+  });
+  assert.match(read, /read from 8 of main's green push and nightly runs, and the green ones of `outcome-bars\.yml` \(7\): each/);
+  assert.match(read, /warning in those 2 runs, and every run of `outcome-bars\.yml` \(9\), by test:/);
 });

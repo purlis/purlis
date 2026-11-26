@@ -338,6 +338,7 @@ impl MergeShown {
         base: &str,
         look: purlis_core::mergehold::Look,
         pushed_here: bool,
+        act: purlis_core::mergehold::LandAs,
     ) -> Self {
         use purlis_core::mergehold::Look;
         let (look, approved_by, since_viewed) = match look {
@@ -356,7 +357,7 @@ impl MergeShown {
             approved_by,
             since_viewed,
             pushed_here,
-            digest: facts.digest(),
+            digest: facts.digest(act),
         }
     }
 }
@@ -764,6 +765,10 @@ pub enum AskSource {
     /// **Pool setup's cluster is ready** (#4496): the admin the person asked has given what
     /// the install couldn't, and Pool setup goes on. Said once, about no chat.
     PoolSetup,
+    /// **A forge act a chat's route held** (ADR 0128 D8, #7685): a tag, a release, a push that
+    /// changes CI files or a fork. The chat did not do it: the person's two presses make it,
+    /// with their own sign-in, on its card in Asks (`HeldActAsks`).
+    HeldAct,
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -909,6 +914,9 @@ pub enum AnswerPath {
     TrustClones {
         clones: Vec<crate::clonevouch::CloneToVouch>,
     },
+    /// `press_held_act` twice and `dont_held_act`, for held act `ask`, from its own card in Asks,
+    /// which draws exactly what the core read and hands back its digest (#7685).
+    HeldAct { ask: u32 },
     /// Nothing the window can send: the person answers in the chat.
     InItsPane,
 }
@@ -1183,7 +1191,18 @@ pub async fn asks_waiting(
     plane: PlaneId,
 ) -> Result<Asking, String> {
     let held = planes.held(&plane)?;
-    crate::off_the_window(READING_ASKS, move || Ok(counted(&held))).await
+    crate::off_the_window(READING_ASKS, move || Ok(counted_once(&held))).await
+}
+
+/// [`counted`] once per burst (H15): the window asks on every burst of moves, and the asks that
+/// come while a read runs share the one read that starts after them.
+pub(crate) fn counted_once(held: &crate::planes::Held) -> Asking {
+    counted_in_a_burst(held, || counted(held))
+}
+
+/// `read`, as the plane's asks-waiting burst runs it.
+fn counted_in_a_burst(held: &crate::planes::Held, read: impl FnOnce() -> Asking) -> Asking {
+    held.bursts().asks_waiting.ask(read)
 }
 
 /// **What the ✋ counts of project `held`** (ADR 0121 decisions 2 and 3): its Blocking asks,
@@ -2173,20 +2192,33 @@ fn merge_key(session: u32, key: &purlis_core::mergehold::MergeKey) -> String {
 /// **High-risk** (Q239): never grouped, passed by keyboard triage, and its Merge asks once more
 /// before it acts ([`purlis_core::askrisk::merge_of`]).
 pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
+    use purlis_core::mergehold::LandAs;
     let key = &waits.key;
     Shown {
         session: waits.session,
         ask: merge_key(waits.session, key),
-        says: said_inertly(&format!(
-            "Merge request {} of {} at {}? There is no undo.",
-            key.number,
-            key.repo.as_str(),
-            &key.head.as_str()[..12]
-        )),
+        says: said_inertly(&match waits.act {
+            LandAs::Merge => format!(
+                "Merge request {} of {} at {}? There is no undo.",
+                key.number,
+                key.repo.as_str(),
+                &key.head.as_str()[..12]
+            ),
+            LandAs::Enqueue => format!(
+                "Enqueue request {} of {} at {} in the merge queue?",
+                key.number,
+                key.repo.as_str(),
+                &key.head.as_str()[..12]
+            ),
+        }),
         options: vec![
             Offered {
                 id: MERGE.to_owned(),
-                label: "Merge".to_owned(),
+                label: match waits.act {
+                    LandAs::Merge => "Merge",
+                    LandAs::Enqueue => "Enqueue",
+                }
+                .to_owned(),
                 allows: true,
                 preselected: None,
                 scope: None,
@@ -2204,6 +2236,7 @@ pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
                 key.base.as_str(),
                 waits.look.clone(),
                 waits.pushed_here,
+                waits.act,
             ),
         },
         // Since when is the registry's to say, as for every ask (`Waiting::since`).
@@ -2213,14 +2246,54 @@ pub fn merge_hold(waits: &purlis_core::mergehold::Waits) -> Shown {
         blocks: None,
         timed_out: None,
         risk: Some(
-            purlis_core::askrisk::merge_of(
+            purlis_core::askrisk::land_of(
                 key.repo.as_str(),
                 key.number,
                 key.head.as_str(),
                 key.base.as_str(),
+                waits.act,
             )
             .into(),
         ),
+        writes: None,
+        lines: None,
+        last_message: None,
+        login: None,
+        fill: None,
+        earlier_messages: None,
+        rule: None,
+        secret: None,
+        run: None,
+    }
+}
+
+/// The key of held act `ask` (#7685): its number is the registry's of held acts, one per ask.
+fn held_act_key(ask: u32) -> String {
+    format!("held-act:{ask}")
+}
+
+/// **The held act adapter** (ADR 0128 D8, #7685): a forge act a chat's route held, as one ask, so
+/// the ✋ counts it and the notifier tells of it. Its card in Asks presses it, twice, and offers
+/// Don't; the row here offers nothing of its own. Every word is purlis's but the repo, which is
+/// one the person recorded. Never offered a rule: a held act is never remembered.
+pub fn held_act(act: &crate::heldacts::HeldActShown) -> Shown {
+    Shown {
+        session: act.session,
+        ask: held_act_key(act.ask),
+        says: said_inertly(&format!(
+            "Approve a {} in {}? It is made with your sign-in.",
+            act.kind, act.repo
+        )),
+        options: Vec::new(),
+        source: AskSource::HeldAct,
+        chain: Vec::new(),
+        answer: AnswerPath::HeldAct { ask: act.ask },
+        since: None,
+        held_until: None,
+        expires: None,
+        blocks: None,
+        timed_out: None,
+        risk: None,
         writes: None,
         lines: None,
         last_message: None,
@@ -4888,6 +4961,16 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
     for one in &merges {
         since.insert(merge_key(one.session, &one.key), one.since);
     }
+    // A forge act a chat's route held waits on the person's press (#7685).
+    let held_acts: Vec<Shown> = held
+        .held_acts()
+        .waiting_since()
+        .into_iter()
+        .map(|(act, at)| Shown {
+            since: Some(u32::try_from(at).unwrap_or(u32::MAX)),
+            ..held_act(&act)
+        })
+        .collect();
     let window_only = purlis_core::windowonly::every(root);
     for one in &window_only {
         since.insert(window_only_key(one.session, &one.control), one.since);
@@ -5137,6 +5220,7 @@ pub fn every_ask(held: &crate::planes::Held) -> Asking {
         asks: derive(&waiting)
             .into_iter()
             .chain(task_questions)
+            .chain(held_acts)
             .filter(|ask| !chats.kept_from_the_window(ask.session))
             // The old `[harness_plugins]` keys: Needs you holds their Ask while the Skill studio
             // is on (#3689), so it is in the Inbox only while the studio is off.

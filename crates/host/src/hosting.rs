@@ -2354,6 +2354,7 @@ impl Hosting {
         self.let_through(&start, peer)?;
         a_note_that_fits(start.note.as_ref())?;
         let _starting = self.starting(&start)?;
+        let step = purlis_session_protocol::steps::begin("harness_spawn");
         let start = ids_of(start, peer.scope());
         let size = Size {
             columns: start.cols.unwrap_or(80),
@@ -2738,6 +2739,7 @@ impl Hosting {
         });
         // How it runs sandboxed, as recorded above: what a window that started it by its names
         // judges it by (1.29, #2692).
+        step.done();
         Ok(Answer::ProgramStarted {
             program,
             number: Some(number),
@@ -3323,6 +3325,47 @@ impl Hosting {
             Arc::clone(&hosted.running)
         };
         let _ = tokio::task::spawn_blocking(move || running.stop()).await;
+        Ok(Answer::Done)
+    }
+
+    /// **Ends `program` as a hibernation** (#7630): its end is marked the host's lowest act
+    /// ([`Stopped::Hibernated`]) first, so any other act racing it wins, and the program is
+    /// stopped off the runtime. **Then its engine is dropped**: it is forgotten as a close
+    /// forgets it, unless a close already did, which leaves that close's end. Answered once it
+    /// has ended.
+    async fn hibernate(&self, program: &str) -> Result<Answer, Refusal> {
+        let running = {
+            let state = self.state();
+            let hosted = state
+                .programs
+                .get(program)
+                .ok_or_else(|| no_such_program(program))?;
+            stopping_by(&hosted.stopping, Stopped::Hibernated);
+            Arc::clone(&hosted.running)
+        };
+        let _ = tokio::task::spawn_blocking(move || running.stop()).await;
+        let (hosted, confinements) = {
+            let mut state = self.state();
+            let Some(hosted) = state.programs.remove(program) else {
+                // A close forgot it while it ended: that end stands.
+                return Ok(Answer::Done);
+            };
+            state.closed.extend(hosted.process);
+            let confinements = take_confinements(&mut state, |owner| {
+                *owner == Owner::Program(program.to_owned())
+            });
+            (hosted, confinements)
+        };
+        // A line for it is not read from now on: one that came after the intent belongs to
+        // the run that ended, and is dropped.
+        if let Some(channel) = self.channel(&hosted.at) {
+            channel.forget(hosted.number);
+        }
+        let _ = tokio::task::spawn_blocking(move || {
+            drop(hosted);
+            drop(confinements);
+        })
+        .await;
         Ok(Answer::Done)
     }
 
@@ -4434,6 +4477,8 @@ impl session::Host for Hosting {
             // Only the window's link reaches this: the grants refuse every other.
             Command::NoteStrays { program } => self.note_strays(&program),
             Command::Hold { program, still } => self.hold_still(&program, still).await,
+            // Only the window's link reaches this: the grants refuse every other.
+            Command::Hibernate { program } => self.hibernate(&program).await,
             // Only the window's link reaches this: the grants refuse every other.
             Command::Quit => Ok(self.quit().await),
             // The person's own (#2014): each may wait on the engine (a take-over on an act's

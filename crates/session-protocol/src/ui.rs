@@ -243,6 +243,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // window draws, and read back. A link has no native window of its own here.
     "draw_native_window",
     "native_window_drawn",
+    // The device's RAM class stood in for the machine's in a scenario test (SC-4f, #7635): the
+    // `e2e` build only, and no chat's to set.
+    "ram_class_stand_in",
     // Whether the open project's forge would let everyone else sign in (one login, slice D):
     // read over the person's own forge sign-in, which no chat has (ADR D5, D10.1), and shown
     // in their Settings. A link is refused it, so a chat never reads the person's forge
@@ -491,6 +494,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Dismiss on a chat's Notice that its program ended with its session host (#2007): the
     // person's answer.
     "put_away_lost_chat",
+    // Hibernate on a chat's row (SC-4a, #7630): the person's own act on a chat, which no chat
+    // does for them. Its Resume is Restart chat's, which wakes a hibernated chat.
+    "hibernate_chat",
     // Put away on the Inbox's Notice of a chat's undelivered messages (#3958): the person's
     // answer that they have read it.
     "put_away_left_messages",
@@ -1084,6 +1090,15 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_stop_waiting",
     // Get help (#4497): it starts a chat as the person.
     "pool_setup_get_help",
+    // Train B's presses (#7191, #7192), each the person's own in their window: Forget the pool an
+    // add refused (removes the kept refusal), Try now (retries every failing forward and reads
+    // the pools again), Trust and create (trusts the key the person saw and makes the pool), and
+    // keeping the folder of a kubeconfig's credential plugin (adds it to the commands purlis
+    // runs for the cluster).
+    "pool_setup_forget_refused",
+    "pool_setup_try_now",
+    "pool_setup_trust_and_create",
+    "pool_setup_plugin_folder",
     "add_docker_pool",
     "remove_docker_pool",
     // Forget it here, offered where Remove found the pool's machine doesn't answer: the person's
@@ -1555,6 +1570,10 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "chat_log",
     // A chat whose program ended with its session host (#2007): what its pane says.
     "chat_lost_with_the_host",
+    // Whether a chat is hibernated by the person (SC-4a, #7630): what its row and pane say.
+    "chat_hibernated",
+    // The chats hibernated by the person (SC-4a, #7630): what the rows read as the window opens.
+    "hibernated_chats",
     "chat_moves",
     "chat_network",
     "chat_order",

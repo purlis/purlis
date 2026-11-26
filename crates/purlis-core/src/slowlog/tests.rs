@@ -9,6 +9,7 @@ fn answer(n: u32) -> Slow {
         ms: 1_000 + n,
         at: 1_793_000_000_000 + u64::from(n),
         hot: 3,
+        phases: Vec::new(),
     }
 }
 
@@ -194,4 +195,34 @@ fn a_core_command_is_written_with_when_it_was_received_and_how_long_it_held_the_
         std::fs::read_to_string(&file).unwrap(),
         "{\"kind\":\"core_command\",\"command\":\"send_input\",\"ms\":140,\"at\":1793000000000}\n"
     );
+}
+
+#[test]
+fn a_slow_opening_is_one_json_line_naming_each_phase_it_passed_through() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join(FILE);
+    let opening = Slow::Opening {
+        ms: 4_300,
+        at: 1_793_000_000_000,
+        hot: 12,
+        phases: vec![
+            Took {
+                name: "branch_cut".into(),
+                ms: 900,
+            },
+            Took {
+                name: "ready".into(),
+                ms: 3_400,
+            },
+        ],
+    };
+
+    record_in(&file, &opening).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "{\"kind\":\"opening\",\"ms\":4300,\"at\":1793000000000,\"hot\":12,\
+         \"phases\":[{\"name\":\"branch_cut\",\"ms\":900},{\"name\":\"ready\",\"ms\":3400}]}\n"
+    );
+    assert_eq!(recent_in(&file), vec![opening]);
 }

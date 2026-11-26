@@ -10,7 +10,8 @@
 //!
 //! It needs the fixture: `REMOTE_DOCKER_TEST_ROUTE` (`ssh://pool@127.0.0.1:2222`), the sshd's
 //! container in `REMOTE_DOCKER_TEST_SSHD` and dind's in `REMOTE_DOCKER_TEST_DIND`, reached with
-//! this machine's `docker`. Without them it runs nothing and passes. The tests change the sshd's
+//! this machine's `docker`. Without them it runs nothing and passes, except the step-timing test in the parity job (`PURLIS_PARITY` set),
+//! where a missing fixture fails. The tests change the sshd's
 //! host key and connections, so the job runs them one at a time.
 
 #![cfg(unix)]
@@ -42,7 +43,16 @@ impl Fixture {
     }
 }
 
+/// The fixture, or a SKIP line on a laptop and a failure where `PURLIS_PARITY` is set (#7188).
 fn fixture() -> Option<Fixture> {
+    crate::support::real_infra::fixture_or_skip(
+        "Docker on another machine, over SSH",
+        "tests/remote-docker/up.sh",
+        fixture_set_by_up(),
+    )
+}
+
+fn fixture_set_by_up() -> Option<Fixture> {
     let route = std::env::var("REMOTE_DOCKER_TEST_ROUTE").ok()?;
     let sshd = std::env::var("REMOTE_DOCKER_TEST_SSHD").ok()?;
     let dind = std::env::var("REMOTE_DOCKER_TEST_DIND").ok()?;
@@ -277,7 +287,11 @@ fn a_killed_connection_is_noticed_and_opened_again() {
 fn an_account_that_may_not_use_docker_there_is_told_so() {
     purlis_core::unsteered!();
     let Some(fixture) = fixture() else { return };
-    let Ok(outsider) = std::env::var("REMOTE_DOCKER_TEST_OUTSIDER_ROUTE") else {
+    let Some(outsider) = crate::support::real_infra::fixture_or_skip(
+        "the outsider account on the sshd",
+        "tests/remote-docker/up.sh",
+        std::env::var("REMOTE_DOCKER_TEST_OUTSIDER_ROUTE").ok(),
+    ) else {
         return;
     };
     let route = Route::parse(&outsider).expect("a route");
@@ -736,4 +750,362 @@ fn a_pool_whose_engine_changed_is_trusted_again_with_the_engine_there_now() {
     assert_eq!(again.remote().expect("there").pin.engine, engine);
     pool::docker_of(&fixture.docker, &again).expect("it works again");
     forward::let_go("reset");
+}
+
+// ---- How long each step of a start on this pool takes (#7182) ----------------------------------
+//
+// The spans of `purlis_session_protocol::steps`, read back: a first start after the app is
+// launched (the forward not held), a second start right after (forward held, engine checked),
+// and one after the runner's container stopped. Each is a link made as a chat's start makes it,
+// through the pool's forward. **This rig links as the app does but is not the app**: the app's
+// `first_link` and `profile_ready` (and the host's `harness_spawn`, `start_program_call` and the
+// browser steps) are not run here and not asserted; they are the app crate's own steps. The fixture's sshd answers 40 ms ± 10 ms late (`up.sh`, netem), and
+// the table is printed and, on CI, written to the job's summary: it is the baseline of
+// `docs/research/2026-11-remote-start-baseline.md`.
+
+/// The fixture, or nothing where this machine has none. **Where `PURLIS_PARITY` is set a missing
+/// fixture fails the test** (below says which jobs set it): a
+/// parity job that ran nothing and passed would say nothing was checked. `ci.yml` sets
+/// `PURLIS_PARITY` in its `parity` and `remote-parity` jobs; only `remote-parity` selects this
+/// module and starts the fixture. The general test job has `CI` set and no fixture, so it is
+/// `PURLIS_PARITY` that says the fixture is promised.
+fn fixture_or_fail_in_ci(needs: &[&str]) -> Option<Fixture> {
+    let missing: Vec<&str> = needs
+        .iter()
+        .copied()
+        .filter(|name| std::env::var_os(name).is_none())
+        .collect();
+    if !missing.is_empty() {
+        assert!(
+            std::env::var_os("PURLIS_PARITY").is_none(),
+            "the remote parity fixture is missing in the parity job: {} not set",
+            missing.join(", ")
+        );
+        return None;
+    }
+    fixture()
+}
+
+/// One step line: its name, the step it is inside (if any), its outcome and milliseconds.
+struct StepLine {
+    name: String,
+    parent: Option<String>,
+    refused: bool,
+    ms: u64,
+}
+
+/// Every step line this process wrote, in the order each step ended.
+#[derive(Clone, Default)]
+struct StepLines(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for StepLines {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for StepLines {
+    type Writer = StepLines;
+    fn make_writer(&'a self) -> StepLines {
+        self.clone()
+    }
+}
+
+impl StepLines {
+    fn steps(&self) -> Vec<StepLine> {
+        let text = String::from_utf8_lossy(&self.0.lock().unwrap()).into_owned();
+        text.lines()
+            .filter_map(|line| {
+                let rest = line.split("purlis: step ").nth(1)?;
+                let (name, rest) = rest.split_once(' ')?;
+                let (outcome, rest) = rest.split_once(" after ")?;
+                let ms = rest.split_whitespace().next()?.parse().ok()?;
+                let parent = rest.split("parent: ").nth(1).map(|p| {
+                    p.trim_end_matches(')')
+                        .split([',', ')'])
+                        .next()
+                        .unwrap_or("")
+                        .to_owned()
+                });
+                Some(StepLine {
+                    name: name.to_owned(),
+                    parent,
+                    refused: outcome == "refused",
+                    ms,
+                })
+            })
+            .collect()
+    }
+}
+
+/// The median of five TCP connects to the sshd: one round trip, as the fixture delays it.
+fn round_trip_ms(route: &str) -> u64 {
+    let at = route.rsplit('@').next().expect("an address");
+    let mut times: Vec<u64> = (0..5)
+        .map(|_| {
+            let began = Instant::now();
+            drop(std::net::TcpStream::connect(at).expect("the sshd answers"));
+            u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX)
+        })
+        .collect();
+    times.sort_unstable();
+    times[2]
+}
+
+/// One link to the runner through `docker`, made as a start makes it (the check before, the
+/// preparing, `docker exec`, the handshake), and dropped.
+async fn linked_once(
+    docker: &Docker,
+    made: &purlis_core::dockerpool::Made,
+    ours: purlis_session_protocol::hostlink::Identity,
+    runner: purlis_session_protocol::hostlink::Pinned,
+) {
+    use purlis_session_protocol::hostlink::{self, Handshake, Linked, Liveness};
+    let connector = purlis_host::CommandConnector::new(docker.program(), made.connect_args(), {
+        let (docker, made) = (docker.clone(), made.clone());
+        std::sync::Arc::new(move || {
+            // What the pool's own link runs before each connection (`runnerlinks`): the engine's
+            // check is `through`'s, this is the container's.
+            docker
+                .resumed(&made)
+                .map(|_| ())
+                .map_err(|why| why.to_string())
+        })
+    })
+    .preparing({
+        let docker = docker.clone();
+        std::sync::Arc::new(move || {
+            let (env, cleared, held) = docker
+                .prepared()
+                .map_err(|why| why.to_string())?
+                .into_parts();
+            Ok(purlis_host::Prepared { env, cleared, held })
+        })
+    });
+    let mut links = hostlink::keep_linked(
+        connector,
+        Handshake::THIS_BUILD,
+        ours,
+        runner,
+        Liveness::default(),
+    );
+    match tokio::time::timeout(Duration::from_secs(90), links.next()).await {
+        Ok(Some(Linked::Up(_link))) => {}
+        other => panic!("no link: {:?}", other.map(|linked| linked.is_some())),
+    }
+}
+
+#[test]
+fn a_start_on_a_remote_pool_times_each_of_its_steps() {
+    purlis_core::unsteered!();
+    let Some(fixture) = fixture_or_fail_in_ci(&[
+        "REMOTE_DOCKER_TEST_ROUTE",
+        "REMOTE_DOCKER_TEST_SSHD",
+        "REMOTE_DOCKER_TEST_DIND",
+        "DOCKER_POOL_TEST_IMAGE",
+    ]) else {
+        return;
+    };
+    let image = std::env::var("DOCKER_POOL_TEST_IMAGE").expect("checked above");
+    use purlis_core::dockerpool::{Image, Runner};
+    use purlis_session_protocol::hostlink::{Identity, LinkKey, Pinned};
+
+    let lines = StepLines::default();
+    // Scoped to this test, never the process's global default (the binary is shared with every
+    // other test): this thread takes it, and so does each thread the runtime starts.
+    let dispatch = tracing::Dispatch::new(
+        tracing_subscriber::fmt()
+            .with_writer(lines.clone())
+            .with_ansi(false)
+            // `debug`: each `docker` call is a line at that level, the rows of the table's calls.
+            .with_max_level(tracing::Level::DEBUG)
+            .finish(),
+    );
+    thread_local! {
+        static HELD: std::cell::RefCell<Option<tracing::dispatcher::DefaultGuard>> =
+            const { std::cell::RefCell::new(None) };
+    }
+    let _scoped = tracing::dispatcher::set_default(&dispatch);
+    let rtt = round_trip_ms(&std::env::var("REMOTE_DOCKER_TEST_ROUTE").unwrap());
+
+    let pool = "timed";
+    let remote = trusted(&fixture, pool);
+    forward::let_go_of_all();
+    let docker = through(&fixture, pool, &remote).expect("the forward opens");
+    let image = Image::pinned(&image).expect("the image is named by digest");
+    let (user, home) = docker
+        .declared(&image)
+        .expect("the image declares its user");
+    let name = format!(
+        "timed-{}",
+        ulid::Ulid::generate().to_string().to_lowercase()
+    );
+    let runner = Runner::new(&name, image, user, &home).unwrap();
+    let made = docker.make(&runner).expect("the runner is made there");
+    struct Removes(Docker, purlis_core::dockerpool::Made);
+    impl Drop for Removes {
+        fn drop(&mut self) {
+            let _ = self.0.remove(&self.1);
+        }
+    }
+    let _removes = Removes(docker.clone(), made.clone());
+    let key = LinkKey::generate().unwrap();
+    let ours = || Identity {
+        device: "01JA0DESKT0P00000000000000".into(),
+        key: LinkKey::from_private(key.private_half().unwrap()).unwrap(),
+    };
+    let desktop = Pinned {
+        device: "01JA0DESKT0P00000000000000".into(),
+        key: key.public(),
+    };
+    let runner_pinned = docker.pair(&made, &desktop).expect("the runner is paired");
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .on_thread_start({
+            let dispatch = dispatch.clone();
+            move || {
+                let guard = tracing::dispatcher::set_default(&dispatch);
+                HELD.with(|held| *held.borrow_mut() = Some(guard));
+            }
+        })
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut table = Vec::new();
+    let mut scenario = |label: &str, then: &mut dyn FnMut()| {
+        let before = lines.steps().len();
+        let began = Instant::now();
+        then();
+        let total = u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX);
+        table.push((label.to_owned(), total, lines.steps().split_off(before)));
+    };
+
+    // The first start after the app is launched: no forward held.
+    forward::let_go_of_all();
+    scenario("cold: first start after launch", &mut || {
+        let docker = through(&fixture, pool, &remote).expect("the forward opens");
+        runtime.block_on(linked_once(&docker, &made, ours(), runner_pinned.clone()));
+    });
+    // A start straight after: the forward held, the engine checked a moment ago. (A chat with a
+    // profile makes a second link of its own, `first_link` in the app: the app's step, not this
+    // rig's, so it is not a scenario here.)
+    scenario("warm: a link straight after", &mut || {
+        let docker = through(&fixture, pool, &remote).expect("the engine answers");
+        runtime.block_on(linked_once(&docker, &made, ours(), runner_pinned.clone()));
+    });
+    exec_in(
+        &fixture.dind,
+        &format!("docker stop {}", made.container.as_str()),
+    );
+    scenario("runner stopped: its container is started", &mut || {
+        let docker = through(&fixture, pool, &remote).expect("the engine answers");
+        runtime.block_on(linked_once(&docker, &made, ours(), runner_pinned.clone()));
+    });
+
+    let mut out = format!(
+        "### Start on a remote Docker pool over SSH (round trip {rtt} ms, TCP connect, median of 5)\n\n"
+    );
+    for (label, total, steps) in &table {
+        out += &format!(
+            "**{label}**: {total} ms in all (a step with a parent, or a call, is inside another: leave it out of a sum)\n\n| step | inside | runs | ms (each) |\n|---|---|---|---|\n"
+        );
+        let mut names: Vec<(&str, Option<&str>)> = Vec::new();
+        for line in steps {
+            let key = (line.name.as_str(), line.parent.as_deref());
+            if !names.contains(&key) {
+                names.push(key);
+            }
+        }
+        for (name, parent) in names {
+            let each: Vec<String> = steps
+                .iter()
+                .filter(|line| line.name == name && line.parent.as_deref() == parent)
+                .map(|line| {
+                    format!(
+                        "{}{}",
+                        line.ms,
+                        if line.refused { " (refused)" } else { "" }
+                    )
+                })
+                .collect();
+            out += &format!(
+                "| {name} | {} | {} | {} |\n",
+                parent.unwrap_or(if name.starts_with("docker_") {
+                    "(a call)"
+                } else {
+                    ""
+                }),
+                each.len(),
+                each.join(", ")
+            );
+        }
+        out += "\n";
+    }
+    let _ = std::io::Write::write_all(&mut std::io::stderr(), out.as_bytes());
+    if let Some(summary) = std::env::var_os("GITHUB_STEP_SUMMARY")
+        && let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(summary)
+    {
+        let _ = std::io::Write::write_all(&mut file, out.as_bytes());
+    }
+
+    // Every step of the link path was timed, in the scenario it belongs to.
+    let said = |at: usize, step: &str| table[at].2.iter().any(|line| line.name == step);
+    for step in ["ssh_forward_open", "engine_pin_check", "docker_info"] {
+        assert!(said(0, step), "the cold start timed no {step}: {out}");
+    }
+    for (at, (label, ..)) in table.iter().enumerate() {
+        for step in [
+            "container_check",
+            "docker_container_inspect",
+            "docker_volume",
+            "docker_exec",
+            "link_check",
+            "link_prepare",
+            "link_exec_spawn",
+            "link_handshake",
+        ] {
+            assert!(said(at, step), "{label} timed no {step}: {out}");
+        }
+    }
+    assert!(
+        said(2, "runner_start"),
+        "a stopped runner's start was not timed: {out}"
+    );
+    assert!(
+        !said(1, "ssh_forward_open"),
+        "a warm start reopened the forward: {out}"
+    );
+    // A step inside another names it, so that the rows with no parent are the ones to sum: the
+    // container's check runs inside the link's check, and a start of the container inside it.
+    for (label, _, steps) in &table {
+        for line in steps.iter().filter(|line| line.name == "container_check") {
+            assert_eq!(
+                line.parent.as_deref(),
+                Some("link_check"),
+                "{label}: container_check is inside link_check: {out}"
+            );
+        }
+        for line in steps.iter().filter(|line| line.name == "runner_start") {
+            assert_eq!(line.parent.as_deref(), Some("container_check"), "{out}");
+        }
+        for name in ["link_check", "link_handshake"] {
+            for line in steps.iter().filter(|line| line.name == name) {
+                assert_eq!(
+                    line.parent, None,
+                    "{label}: {name} is a link's own step here: {out}"
+                );
+            }
+        }
+        assert!(
+            steps
+                .iter()
+                .all(|line| !line.name.starts_with("docker_") || line.parent.is_none()),
+            "a docker call names no parent: {out}"
+        );
+    }
 }

@@ -630,6 +630,45 @@ pub fn probe(
     }
 }
 
+/// **Whether the machine still presents `key`** (#7240), asked before each dial of a link kept
+/// over SSH. Only the fault suite's kept link dials a plain SSH account's bridge today; the app's
+/// Docker forward already tells a changed key through [`pool::docker_of_named_in_state`], so an
+/// app connector for an SSH account's bridge calls this from its check too. A machine whose key changed makes ssh end the stream before the link's first word,
+/// which the link can only read as a peer that is not a purlis host, and would retry. So the
+/// dial is made only after this: ssh signs in under the pinned key (its exit, never its words),
+/// and only where that fails is the machine met again with nothing pinned ([`first_contact`]).
+/// It is [`Finding::KeyChanged`] where it shows another key. Where it shows the same key, or none,
+/// the failure is not a key's: `Ok`, and the dial finds the machine as unreachable as it is.
+pub fn key_held(
+    ssh: &Path,
+    route: &Route,
+    pool: &str,
+    key: &HostKey,
+    settings_in: &Path,
+) -> Result<(), Finding> {
+    let folder =
+        crate::dockerpool::settings::run_folder(settings_in).map_err(|why| Finding::Here(why.0))?;
+    let known_hosts = folder
+        .keep("known_hosts", super::known_hosts(pool, key).as_bytes())
+        .map_err(|why| Finding::Here(format!("purlis could not write the host key: {why}")))?;
+    let signed_in = super::run(
+        ssh,
+        &super::sign_in_args(route, pool, &known_hosts).map_err(Finding::Here)?,
+    )
+    .map_err(Finding::Here)?;
+    if signed_in.code == Some(0) {
+        return Ok(());
+    }
+    match first_contact(ssh, route, settings_in) {
+        Ok(Ok(now)) if now != *key => Err(Finding::KeyChanged {
+            host: route.host().to_owned(),
+            pinned: key.clone(),
+            now,
+        }),
+        _ => Ok(()),
+    }
+}
+
 /// **The engine's pin, read through a forward opened against `key`** (ADR 0123 §3): Docker's id,
 /// or a Podman's socket and graph root, read with this machine's `podman` where Docker's client
 /// finds a Podman there (#6269). The forward is ended once read; the pool holds its own once it
@@ -731,6 +770,7 @@ pub fn engine_holds(
     route: &Route,
     pin: &Pin,
 ) -> Result<(), Finding> {
+    let step = purlis_session_protocol::steps::begin("engine_pin_check");
     let silent = |why: crate::dockerpool::Refused| Finding::EngineSilent {
         host: route.host().to_owned(),
         said: why.0,
@@ -747,8 +787,10 @@ pub fn engine_holds(
         },
     };
     if now == pin.engine {
+        step.done();
         return Ok(());
     }
+    // A pin that changed is a finding the check made: the check itself is refused.
     Err(Finding::EngineChanged {
         host: route.host().to_owned(),
         pinned: pin.engine.shown(),

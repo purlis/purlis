@@ -95,7 +95,7 @@ pub fn get_value(ctx: &Ctx, v: &Vault, key: &str) -> Result<String, VaultError> 
 
 /// What a chat's read of a forge token's item is refused with.
 pub const FORGE_ITEM_REFUSED: &str = "this vault item is a forge token, which purlis no longer \
-     hands to a chat: chats use your sign-in. Sign in under Settings › Forges";
+     hands to a chat: chats use your sign-in. Sign in under Settings › Accounts";
 
 /// **Whether this process runs in a chat** (a sandboxed one, or one whose hooks reach the app), as
 /// its environment says.

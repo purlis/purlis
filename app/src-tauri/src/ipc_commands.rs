@@ -208,6 +208,9 @@ macro_rules! app_commands {
                 mcpfailed::put_away_mcp_failure,
                 alerts::put_away_left_messages,
                 alerts::put_away_arrived_files,
+                hibernation::chat_hibernated,
+                hibernation::hibernated_chats,
+                hibernation::hibernate_chat,
                 hostlost::chat_lost_with_the_host,
                 hostlost::put_away_lost_chat,
                 reconnecting::chats_reconnecting,
@@ -701,6 +704,9 @@ macro_rules! app_commands {
                 dockerpools::docker_pools,
                 poolsetuptab::pool_setup,
                 poolsetuptab::pool_setup_check_again,
+                poolsetuptab::pool_setup_try_now,
+                poolsetuptab::pool_setup_forget_refused,
+                poolsetuptab::pool_setup_trust_and_create,
                 poolsetuptab::pool_setup_choose_docker,
                 poolsetuptab::pool_setup_choose_remote_docker,
                 poolsetuptab::pool_setup_machine,
@@ -716,6 +722,7 @@ macro_rules! app_commands {
                 poolsetuptab::pool_setup_tls_files,
                 poolsetuptab::pool_setup_choose_owned,
                 poolsetuptab::pool_setup_choose_cluster,
+                poolsetuptab::pool_setup_plugin_folder,
                 poolsetuptab::pool_setup_install,
                 poolsetuptab::pool_setup_operator_image,
                 poolsetuptab::pool_setup_cluster_pool,
@@ -961,6 +968,8 @@ macro_rules! app_commands {
                 // A link followed in an artifact's page, and what was opened for it (#5956).
                 artifact_links::artifact_link_follow,
                 artifact_links::artifact_links_opened,
+                // The device's RAM class, stood in for the machine's (SC-4f, #7635).
+                diagnostics::ram_class_stand_in,
             ],
         }
     };

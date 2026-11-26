@@ -32,6 +32,11 @@ const HELPED: Record<string, { grounds: string[]; where: string }> = {
     grounds: ["surface.raised"],
     where: "Pool setup's Connect: the address of a machine not in your SSH settings (#6266)",
   },
+  "poolsetup/MergedFields.tsx": {
+    grounds: ["surface.raised"],
+    where:
+      "Pool setup's merged Connect (#7191): the pool's name, beside the key, on a view tab's page (.pane.view), the ground ConnectStep and PoolStep stand on",
+  },
   "poolsetup/PoolStep.tsx": {
     grounds: ["surface.raised"],
     where:

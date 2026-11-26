@@ -315,7 +315,7 @@ fn replaced_by_sign_in_row(found: &[crate::sandbox::tools::replaced::Found]) -> 
                 crate::counts::plural(to_delete.len(), "it runs", "they run"),
                 named(&to_delete)
             ),
-            "Sign in under Settings › Forges, then delete those lines. A vault item a line named \
+            "Sign in under Settings › Accounts, then delete those lines. A vault item a line named \
              stays until you delete it.",
         )
         .in_settings(SettingsGroup::Forges),

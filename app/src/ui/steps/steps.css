@@ -136,6 +136,12 @@
   font-size: var(--font-size-sm);
 }
 
+[data-scope="steps"][data-part="took"] {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
 [data-scope="steps"][data-variant="attention"] [data-part="line"] {
   color: var(--attention-text);
 }

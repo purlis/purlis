@@ -322,6 +322,10 @@ fn every_command() -> Vec<Command> {
             program: CHAT.into(),
             still: true,
         },
+        // A chat's program ended as a hibernation, its engine dropped (1.96, #7630).
+        Command::Hibernate {
+            program: CHAT.into(),
+        },
         // The desktop taken out of a runner's peers (1.25, #2525).
         Command::Unpair,
         // A desktop's profile kept on its runner (1.43, #2049).
@@ -640,6 +644,7 @@ fn granted(scope: Scope) -> &'static [&'static str] {
             "note_program",
             "note_strays",
             "hold",
+            "hibernate",
             "take_over",
             "browser_input",
             "size_browser",

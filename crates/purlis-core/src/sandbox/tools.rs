@@ -3053,10 +3053,12 @@ pub fn declared_glab_not_running_said(persona: &str) -> String {
 }
 
 /// What a guarded `glab` says once the sign-in replaces the tokens a chat was handed (ADR 0128):
-/// the way on is the person's own sign-in, which a chat acts through, never a token of its own.
-const SIGN_IN_SAID: &str = "glab has no token in this chat, and a chat never uses the person's own \
-     glab login. Chats act through your sign-in: sign in to the host under Settings › Forges, \
-     then restart the chat.";
+/// this chat has no sign-in route to a GitLab host, so `glab` has nothing to act through. The shim
+/// is only written for such a chat: one with a route that covers a GitLab host runs the real `glab`
+/// ([`without_guard`]). Signing in is Settings › Accounts (Forges is where hosts are added).
+const SIGN_IN_SAID: &str = "glab has no token in this chat: this chat has no route to a GitLab \
+     host. A chat acts only through your purlis sign-in, never your own glab login. Sign in \
+     under Settings › Accounts, then restart the chat.";
 
 /// **The forge programs a chat under the credentials class is guarded from running bare**
 /// (#1349): [`guard_forges`] writes a shim for each that no tool of the chat declares.
@@ -3124,6 +3126,41 @@ pub fn guard_forges(
         &into.ready,
     );
     Some(into)
+}
+
+/// **`resolved` without the guard of `name`** ([`guard_forges`]), for a chat whose forge route
+/// runs that program for real (ADR 0128): the shim would sit first on its `PATH` and keep the
+/// program from ever reaching the route. The shims' folder is named again by what is left in it:
+/// a chat that only refuses keeps a folder of its own ([`refusals_folder`]), and one with ready
+/// tools goes back to the persona's. Nothing is returned where nothing is left to arm or to say:
+/// a `left` or `absent` tool still is, since arming them is what warns that they run nothing.
+pub fn without_guard(mut resolved: Resolved, root: &Path, name: &str) -> Option<Resolved> {
+    let before = resolved.guards.len();
+    resolved.guards.retain(|(guarded, _)| guarded != name);
+    if resolved.guards.len() == before {
+        return Some(resolved);
+    }
+    if resolved.ready.is_empty()
+        && resolved.refusing.is_empty()
+        && resolved.guards.is_empty()
+        && resolved.left.is_empty()
+        && resolved.absent.is_empty()
+    {
+        return None;
+    }
+    let persona_folder = folder(root, &resolved.persona);
+    resolved.folder = if resolved.only_refuses {
+        refusals_folder(
+            &persona_folder,
+            &resolved.refusing,
+            &resolved.unallowed,
+            &resolved.guards,
+            &resolved.ready,
+        )
+    } else {
+        persona_folder
+    };
+    Some(resolved)
 }
 
 /// The shim of a guarded forge program ([`guard_forges`]): the sentence, and exit 1. It never

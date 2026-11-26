@@ -56,6 +56,7 @@ const WHERE = (where: Partial<PoolSetupStep>, state: string): PoolSetupShown => 
     joining: false,
     pinned: null,
     key_changed: false,
+    kubeconfig: null,
   },
   steps: [step("where", "Where chats run", state, where), step("pool", "Pool", "later"), ...LATER],
 });
@@ -86,6 +87,7 @@ const POOL_FORM: PoolSetupShown = {
     joining: false,
     pinned: null,
     key_changed: false,
+    kubeconfig: null,
   },
   steps: [
     DONE_WHERE,
@@ -385,6 +387,7 @@ export const MadeByHand: Story = {
       joining: false,
       pinned: null,
       key_changed: false,
+      kubeconfig: null,
     },
     steps: [
       DONE_WHERE,
@@ -422,6 +425,7 @@ export const ThePoolIsMade: Story = {
       joining: false,
       pinned: null,
       key_changed: false,
+      kubeconfig: null,
     },
     steps: [
       DONE_WHERE,
@@ -459,6 +463,7 @@ export const TheRunnerWasRemoved: Story = {
       joining: false,
       pinned: null,
       key_changed: false,
+      kubeconfig: null,
     },
     steps: [
       DONE_WHERE,
@@ -543,6 +548,7 @@ export const ARunnerBeingMade: Story = {
       joining: false,
       pinned: null,
       key_changed: false,
+      kubeconfig: null,
     },
     steps: [
       DONE_WHERE,

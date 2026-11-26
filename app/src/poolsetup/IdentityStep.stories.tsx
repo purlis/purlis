@@ -13,6 +13,7 @@ import { expectFocusInSight, untilFocused } from "../stories.testkit";
 import { IdentityStep } from "./IdentityStep";
 
 const TO_SET_UP: PoolSetupStep = {
+  took_ms: null,
   id: "identity",
   name: "Agent identity",
   state: "current",

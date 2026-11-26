@@ -2099,6 +2099,8 @@ impl HostLink {
         late: impl FnOnce(Result<Answer, session::CallError>, Arc<Client>) + Send + 'static,
     ) -> Result<Answer, session::Refusal> {
         use purlis_core::poollimits::LimitId::AnswerWait;
+        // The window's wait for a program to start, over the link and the relay if any (#7182).
+        let step = purlis_session_protocol::steps::begin("start_program_call");
         let waits = (self.pool.is_some() && !can_be_cancelled()).then(|| {
             let secs = self.limits().in_force(AnswerWait);
             (Instant::now() + Duration::from_secs(secs), secs)
@@ -2133,6 +2135,8 @@ impl HostLink {
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) if was_cancelled() => {
                     // Taken before this gave up: its answer is on its way.
                     if lock(&waited_for).take().is_some() {
+                        // The person's Cancel, not a refusal of the start.
+                        step.cancelled();
                         return Err(session::Refusal {
                             code: CANCELLED.to_owned(),
                             why: START_CANCELLED.to_owned(),
@@ -2146,6 +2150,9 @@ impl HostLink {
                     if lock(&waited_for).take().is_some() {
                         let secs = waits.map_or(0, |(_, secs)| secs);
                         let hit = self.limits().waited(AnswerWait, secs, None);
+                        // The runner may still start the program after this (its answer goes to
+                        // `late`): the window gave up, the start was not refused.
+                        step.gave_up();
                         return Err(session::Refusal {
                             code: WAITED_OUT.to_owned(),
                             why: format!(
@@ -2158,12 +2165,18 @@ impl HostLink {
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             }
         };
-        said.map_err(|why| {
+        let answer = said.map_err(|why| {
             why.refusal().cloned().unwrap_or_else(|| session::Refusal {
                 code: String::new(),
                 why: why.to_string(),
             })
-        })
+        });
+        // A Cancel the host answers with its own refusal is a cancel, not a refused start.
+        if matches!(&answer, Err(refusal) if refusal.code == CANCELLED) {
+            step.cancelled();
+            return answer;
+        }
+        step.ended(answer)
     }
 
     /// Send `command` and do not wait for its answer: what it refuses is logged.
@@ -3478,6 +3491,9 @@ pub struct HostedSessions {
     /// What hears the lines the host hands on from the project's hook channel (#2000).
     relayed: Arc<Mutex<Option<Arc<Relayed>>>>,
     running: Arc<Mutex<HashMap<u32, Program>>>,
+    /// The chats the host let go of as hibernated (#7630): not running, and still the window's
+    /// until they are woken or ended, which closes nothing in the host.
+    hibernated: Arc<Mutex<std::collections::HashSet<u32>>>,
     /// The highest number the window knows went out: the host deals them (#2000), and this is
     /// what the window's record keeps and what it tells the host went out before it held the
     /// project. It only rises.
@@ -3561,6 +3577,7 @@ impl HostedSessions {
             relayed: Arc::default(),
             reconnects: reconnects_of(&running, &reconnecting),
             running,
+            hibernated: Arc::default(),
             opened: Arc::default(),
             ended,
             kill_switch: crate::killswitch::KillSwitch::unthrown(),
@@ -5230,7 +5247,15 @@ impl SessionHost for HostedSessions {
         if let Some(relayed) = self.relayed() {
             relayed.ended(id, None);
         }
-        let program = lock(&self.running).remove(&id).ok_or_else(|| gone(id))?;
+        let Some(program) = lock(&self.running).remove(&id) else {
+            // **A hibernated chat is closed here alone** (#7630): the host let go of it as it
+            // hibernated, so its wake or End has nothing to ask the host to close.
+            if lock(&self.hibernated).remove(&id) {
+                return Ok(());
+            }
+            return Err(gone(id));
+        };
+        lock(&self.hibernated).remove(&id);
         lock(&self.lost).remove(&id);
         // A chat put back under its number starts reconnected (#2496).
         let dimmed = {
@@ -5305,6 +5330,36 @@ impl SessionHost for HostedSessions {
         if link.version() >= session::KNOWS_HOLD {
             link.send(Command::Hold { program, still });
         }
+    }
+
+    /// Only of a link already open, as a tab is drawn: a host before 1.96 refuses `hibernate`.
+    fn can_hibernate(&self, id: u32) -> bool {
+        lock(&self.running).contains_key(&id)
+            && self
+                .own_link(Duration::ZERO)
+                .is_ok_and(|link| link.version() >= session::KNOWS_HIBERNATE)
+    }
+
+    /// Asked of a host of 1.96 or later only: one before refuses `hibernate`, and the chat is
+    /// not hibernated, with that said.
+    fn hibernate(&self, id: u32) -> Result<(), String> {
+        let (link, program) = self.program(id)?;
+        if link.version() < session::KNOWS_HIBERNATE {
+            return Err(format!(
+                "purlis did not hibernate chat {id}: its session host is older than this window \
+                 and cannot hibernate a chat. Restart purlis to update it."
+            ));
+        }
+        link.call(Command::Hibernate { program })?;
+        // The host let go of it: its views ended with its engine. It is kept as hibernated, so
+        // its wake or its End closes it here and asks nothing of the host.
+        if let Some(program) = lock(&self.running).remove(&id) {
+            lock(&self.hibernated).insert(id);
+            for view in &program.views {
+                link.undraw(*view);
+            }
+        }
+        Ok(())
     }
 
     fn when_one_ends(&self, tell: Ends) {

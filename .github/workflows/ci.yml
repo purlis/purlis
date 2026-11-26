@@ -199,18 +199,25 @@ jobs:
             [ "$left" = 0 ] && exit 0
           done
 
-  # The Rust suite is compiled once and run in four parts on four runners (spec #7324). `rust-build`
-  # compiles every test binary with `cargo nextest archive` and hands the archive on; each part
-  # unpacks it and runs a quarter of the tests (`--partition`). Before this each part compiled the
-  # whole workspace for itself: four builds of 9.2 minutes at p50 (p95 10.3, 2026-10-31..11-07),
-  # about 37 runner minutes for one build's worth of work. One runner took 14 to 17 minutes before
-  # the parts (2026-10-10), longer than any other job a pull request waits on, so the suite stays
-  # in four parts. They start when the archive is up, which is when every part's own build used to
-  # end, so the wait is the build plus an archive's upload and download, and the runner minutes
-  # are one build and four runs. Part 2 also runs the schema check, a few seconds (fmt and clippy
-  # are `lint`'s; the doctests are `rust-doctests`'s). An optimised test build was tried and
-  # dropped (#3553: 21 to 32 minutes to build cold, then the runners stopped). `rust-checks` below
-  # carries the required check's name and passes when the build and every part did.
+  # The Rust suite is compiled once and run in parts (spec #7324), from **two archives built side
+  # by side**. `rust-build` runs `cargo nextest archive` for every package but `purlis-app`, and
+  # its four parts (`rust`) unpack it and run a quarter of the tests each (`--partition`).
+  # `rust-build-app` archives `purlis-app` alone, and `rust-app`'s two parts run that. Before this
+  # each part compiled the whole workspace for itself: four builds of 9.2 minutes at p50 (p95
+  # 10.3, 2026-10-31..11-07), about 37 runner minutes for one build's worth of work. One archive
+  # for everything made the parts wait for the longest compile: on 14 runs of `main`
+  # (2026-11-22..25) the tests took 32 to 40 minutes on the clock (p50 37), a build of 15 to 20
+  # minutes and then a part of 13 to 21, because `purlis_app_lib`'s test build is one rustc of 10
+  # to 16 minutes that starts in the first seconds and ends last, while the rest of the workspace
+  # was built four minutes in. The split lets the four core parts start about ten minutes before
+  # the app's archive is up, and the app, a fifth of the suite's test time, is two parts. The
+  # packages are `--exclude purlis-app` and `-p purlis-app`, so a new package lands in the core
+  # archive on its own and no test falls between the two. The clock is the longer of the two
+  # paths; the runner minutes are two builds and six runs. Part 2 also runs the schema check, a
+  # few seconds (fmt and clippy are `lint`'s; the doctests are `rust-doctests`'s). An optimised
+  # test build was tried and dropped (#3553: 21 to 32 minutes to build cold, then the runners
+  # stopped). `rust-checks` below carries the required check's name and passes when both builds
+  # and every part did.
   #
   # **The linker is mold** (spec #7324), for this job, the parts, `rust-doctests` and `git-lfs`,
   # which restore one Rust cache between them (`shared-key: rust`, as does `recorded`) and so build with the same
@@ -239,7 +246,8 @@ jobs:
       # overlaps it with another large compile ran out and the runner shut down (exit 143, "the
       # runner has received a shutdown signal"). 12 GB of swap on the runner's temporary disk
       # turns that into a slower build, not a dead runner; a build that fits never touches it.
-      # Only this job compiles the workspace now, so only this job has it.
+      # Kept from before the split as a margin: the 12 GB compile is `rust-build-app`'s now, and
+      # this build does not meet it. Costs a second.
       - name: Swap, 12 GB, on the temporary disk
         run: |
           sudo swapoff -a
@@ -270,7 +278,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
       - run: mkdir -p app/dist
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # **The programs the tests run beside their own binaries, built here once.** A test finds
@@ -298,7 +306,7 @@ jobs:
           sampler=$!
           status=0
           mkdir -p "$RUNNER_TEMP/rust-tests"
-          /usr/bin/time -v -o "$RUNNER_TEMP/time.log" cargo nextest archive --workspace --locked --profile ci --archive-file "$RUNNER_TEMP/rust-tests/purlis-tests.tar.zst" || status=$?
+          /usr/bin/time -v -o "$RUNNER_TEMP/time.log" cargo nextest archive --workspace --exclude purlis-app --locked --profile ci --archive-file "$RUNNER_TEMP/rust-tests/purlis-tests.tar.zst" || status=$?
           kill "$sampler" 2>/dev/null || true
           {
             echo "### Build the tests: memory"
@@ -327,6 +335,116 @@ jobs:
         with:
           name: rust-tests-archive
           path: ${{ runner.temp }}/rust-tests/purlis-tests.tar.zst
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
+          overwrite: true
+  rust-build-app:
+    name: rust tests (build, app)
+    needs: changes
+    # Skipped whole when nothing Rust reads has changed; `rust-checks` says so.
+    if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      RUSTFLAGS: -D warnings -C link-arg=-fuse-ld=mold
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # **Swap for the build's one large compile** (#7200). Compiling `purlis_app_lib`'s tests is
+      # one rustc of 12.1 to 12.4 GB (measured on all four parts, 2026-11-20, with and without
+      # debug info: dropping the debug info changed nothing), and the machine peaks at 14.1 to
+      # 15.4 of the runner's 16.0 GB with the image's 4 GB of swap beside it. A part that
+      # overlaps it with another large compile ran out and the runner shut down (exit 143, "the
+      # runner has received a shutdown signal"). 12 GB of swap on the runner's temporary disk
+      # turns that into a slower build, not a dead runner; a build that fits never touches it.
+      # The compile this is for is this job's alone since the split.
+      - name: Swap, 12 GB, on the temporary disk
+        run: |
+          sudo swapoff -a
+          sudo fallocate -l 12G /mnt/purlis-swap
+          sudo chmod 600 /mnt/purlis-swap
+          sudo mkswap /mnt/purlis-swap
+          sudo swapon /mnt/purlis-swap
+          free -m
+      - name: Tauri's Linux build dependencies, and the linker
+        timeout-minutes: 11
+        uses: ./.github/actions/linux-packages
+        with:
+          tauri: true
+          packages: mold
+      - name: The linker is the mold this workflow was written for
+        run: |
+          mold --version
+          mold --version | grep -q '^mold 2\.30\.0 ' || { echo "::error::the runner image's mold is not 2.30.0: pin the one it has, here and in the comment above this job"; exit 1; }
+      - uses: ./.github/actions/rust-toolchain
+      # Only `main` saves a Rust cache; a pull request restores `main`'s and saves none.
+      # The repository holds 10 GB of caches, and each pull request's own 0.8-1.2 GB ones
+      # pushed `main`'s out: on 2026-10-08 the caches held 12 GB and a run on `main` started
+      # with none (the rust-cache README's own advice for a busy repository). `shared-key: rust`
+      # is the key `rust-doctests` and `git-lfs` restore.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: rust-app
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # tauri::generate_context! reads the built frontend, so it has to exist before a build.
+      - run: mkdir -p app/dist
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+        with:
+          tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
+      # **The programs the tests run beside their own binaries, built here once.** A test finds
+      # the probes and the fake harness in `target/debug`, and builds one itself when it is not
+      # there (`purlis_core::testrun::built`, `extension_commands.rs`), which in a part would be
+      # a compile of its own, with other features. Built before the archive and named in
+      # `[profile.ci.archive]` (`.config/nextest.toml`), so a part unpacks them. Never `purlis`
+      # itself: the tests reach it as `CARGO_BIN_EXE_purlis`, built with `purlis-core/fenced`,
+      # and a plain build would put one without that in its place.
+      - name: The probes and the fake harness the tests run
+        run: cargo build --locked -p extension-probe -p check-probe -p fake-harness -p purlis-linux-sandbox --bins
+      # `cargo nextest archive` is `cargo nextest run --no-run` for every test binary, kept: the
+      # binaries, the ones the tests run (`CARGO_BIN_EXE_*`) and what the profile includes. A
+      # part unpacks it at the same path (the checkout's `target/`), because a test binary holds
+      # the absolute path its build chose (`env!("CARGO_BIN_EXE_...")`).
+      - name: Build the tests, in one archive
+        id: build
+        timeout-minutes: 30
+        run: |
+          # Peak memory of the build, in the job summary (#7200): the whole machine's, sampled
+          # every 2 s, and the largest single process's (`/usr/bin/time -v`'s maximum resident
+          # set, which is the biggest rustc or link), so a build that dies with exit 143 can be
+          # read against how near the 16 GB it ran.
+          ( while :; do awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} /SwapTotal/{st=$2} /SwapFree/{sf=$2} END{print int((t-a)/1024), int((st-sf)/1024)}' /proc/meminfo >> "$RUNNER_TEMP/mem2.log"; awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{print int((t-a)/1024)}' /proc/meminfo; ps -eo rss=,args= --sort=-rss | head -1 | cut -c1-300 >> "$RUNNER_TEMP/top.log"; sleep 2; done ) > "$RUNNER_TEMP/mem.log" &
+          sampler=$!
+          status=0
+          mkdir -p "$RUNNER_TEMP/rust-tests"
+          /usr/bin/time -v -o "$RUNNER_TEMP/time.log" cargo nextest archive -p purlis-app -p purlis-cli --locked --profile ci --archive-file "$RUNNER_TEMP/rust-tests/purlis-tests-app.tar.zst" || status=$?
+          kill "$sampler" 2>/dev/null || true
+          {
+            echo "### Build the tests: memory"
+            echo "- machine peak used: $(sort -n "$RUNNER_TEMP/mem.log" | tail -1) MiB of $(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)"
+            echo "- swap peak used: $(awk '{print $2}' "$RUNNER_TEMP/mem2.log" | sort -n | tail -1) MiB"
+            echo "- largest process peak: $(awk '/Maximum resident/{print int($6/1024)}' "$RUNNER_TEMP/time.log") MiB"
+            echo "- biggest process seen: $(sort -n "$RUNNER_TEMP/top.log" | tail -1)"
+            echo "- archive: $(du -h "$RUNNER_TEMP/rust-tests/purlis-tests-app.tar.zst" 2>/dev/null | cut -f1)"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      # A report: the linker's own mark in the binary, so a build that quietly used another linker
+      # (and did not get the speed) says so on the run.
+      - name: Which linker linked the tests
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          if readelf -p .comment target/debug/purlis | grep -q mold; then
+            echo "::notice title=Linker::target/debug/purlis was linked by $(mold --version)"
+          else
+            echo "::warning title=Linker::target/debug/purlis carries no mold mark: the build did not use mold"
+          fi
+      # Three days, so a part re-run the next morning still finds it; the parts start when this ends. Already zstd, so no second compression.
+      # `overwrite`: a re-run of this job replaces its own archive, and the parts that follow take it.
+      - name: The archive, for the parts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rust-tests-archive-app
+          path: ${{ runner.temp }}/rust-tests/purlis-tests-app.tar.zst
           retention-days: 3
           compression-level: 0
           if-no-files-found: error
@@ -381,7 +499,7 @@ jobs:
       # cargo-nextest runs every test binary's tests at once, each test in a process of its own,
       # where `cargo test` runs the binaries one after another. Its settings are in
       # `.config/nextest.toml`. A machine without it runs the same tests with `cargo test`.
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # The pinned engine makes its sandbox with user namespaces, which Ubuntu 23.10 and later
@@ -569,6 +687,113 @@ jobs:
           tools/theme-schema-since-release.sh \
             cargo nextest run $ARCHIVE_RUN --run-ignored only \
             -E 'package(purlis-core) & test(/the_schema_only_grows_since_the_last_release$/)'
+  # **The app's tests, in two parts** (spec #7324). `purlis-app`'s test build is one rustc of 10 to
+  # 16 minutes, the long pole of the whole build, and every other crate's tests were built four
+  # minutes in. They are two jobs for that reason: `rust-build` archives every package but the app
+  # and its four parts start as soon as it is up; `rust-build-app` archives the app alone, and
+  # these two parts run it. The app's tests are about a fifth of the suite's time, so two parts
+  # run them in about the time one core part takes. Names stay `rust tests (part ...)` for
+  # `tools/ci-health.mjs`, which reads the flakes of every job of that name.
+  rust-app:
+    name: rust tests (part ${{ matrix.part }} of 2, app)
+    needs: [changes, rust-build-app]
+    if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' && needs.rust-build-app.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      RUSTFLAGS: -D warnings -C link-arg=-fuse-ld=mold
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # purlis's own Linux sandbox (#1040) needs Landlock ABI 6 (Linux 6.12), and its tests run
+      # in this job and never skip. The runner's kernel and its Landlock, as a notice on the run,
+      # so a red sandbox test is read against them without the job's log. A report: it never
+      # fails the job (the tests do, saying the version they need).
+      - name: The runner's kernel and its Landlock
+        continue-on-error: true
+        run: |
+          abi=$(python3 -c 'import ctypes; print(ctypes.CDLL(None).syscall(444, None, 0, 1))')
+          echo "::notice title=Landlock::kernel $(uname -r), Landlock ABI $abi"
+      # bubblewrap and socat: Claude Code's Linux sandbox runs through them, and a project
+      # purlis makes runs its chats sandboxed (ADR 0067 §1), so the start tests need them.
+      # From a cache of their .deb files, and bounded: a slow mirror fails the step in minutes,
+      # and the job summary says how long the install took (#1477, `.github/actions/linux-packages`).
+      - name: Tauri's Linux build dependencies, and the sandbox's programs
+        timeout-minutes: 11
+        uses: ./.github/actions/linux-packages
+        with:
+          tauri: true
+          packages: bubblewrap socat mold
+      - uses: ./.github/actions/rust-toolchain
+      # `rust-build` saves the Rust cache (on `main`) and a part only restores it, so what a test
+      # builds for itself (a program that is not in the archive, `cargo metadata`'s registry)
+      # starts warm, as it did when each part built the workspace. The tests' own binaries come
+      # from the archive below.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: rust-app
+          save-if: false
+      # tauri::generate_context! reads the built frontend, so it has to exist before a build.
+      - run: mkdir -p app/dist
+      # cargo-nextest runs every test binary's tests at once, each test in a process of its own,
+      # where `cargo test` runs the binaries one after another. Its settings are in
+      # `.config/nextest.toml`. A machine without it runs the same tests with `cargo test`.
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
+        with:
+          tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
+      # The pinned engine makes its sandbox with user namespaces, which Ubuntu 23.10 and later
+      # allow only to a program an AppArmor profile names (#2835). The `.deb` installs purlis's
+      # profile, which names the engine in a user's default data folder; this step installs the
+      # same file, as the package's postinst does. The window's end-to-end browser tests give
+      # each session host a home of its own under the temporary folder, so AppArmor is told
+      # that folder holds homes, as a machine with homes outside `/home` tells it.
+      - name: The pinned engine may make its sandbox, as the .deb sets it up
+        run: |
+          echo '@{HOMEDIRS}+=/tmp/' | sudo tee /etc/apparmor.d/tunables/home.d/purlis-ci >/dev/null
+          sudo install -m 0644 crates/purlis-core/src/browsers/purlis-engine.apparmor /etc/apparmor.d/purlis-engine
+          sudo apparmor_parser -r -T -W /etc/apparmor.d/purlis-engine
+      # The names the studio probe's network tests look up, from the hosts file, not outside DNS
+      # (#3261): see the action for which names and why.
+      - name: The studio probe's names
+        uses: ./.github/actions/studio-probe-names
+      # **The archive `rust-build` made, unpacked where it was built** (spec #7324). `--extract-to .`
+      # puts `target/` where the build had it: a test binary holds the absolute path of the
+      # binaries it runs (`env!("CARGO_BIN_EXE_purlis")`), and `purlis_core::testrun` looks for the
+      # probes beside the test. `--workspace-remap .` runs each test from this checkout. Nothing is
+      # compiled from here on, so a step that follows is a run, and its time is the tests'.
+      - name: The tests' archive, from the build
+        id: archive
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: rust-tests-archive-app
+          path: ${{ runner.temp }}/rust-tests
+      # One word list for every `cargo nextest run` of this job: each unpacks the archive over
+      # `target/` again (`--extract-overwrite`), and runs only what its `-E` says.
+      # `target/tmp` is the `CARGO_TARGET_TMPDIR` each test binary was compiled with, and an archive
+      # does not carry it: without it every test that makes a folder there fails (NotFound).
+      - name: The archive's flags, for the runs below
+        # A part compiles nothing, so cargo never downloaded the crates the lock names; the guards
+        # that read the workspace's resolution offline (`cargo metadata --offline`) need them.
+        run: |
+          mkdir -p target/tmp
+          cargo fetch --locked
+          echo "ARCHIVE_RUN=--archive-file $RUNNER_TEMP/rust-tests/purlis-tests-app.tar.zst --extract-to . --extract-overwrite --workspace-remap ." >> "$GITHUB_ENV"
+      # Every test's result, as in `rust`'s `Run the tests`, and `--no-tests fail`: a part that finds
+      # nothing to run (an archive without the app's tests) is red, never green. `hash:` over two
+      # parts places each test by its name.
+      - name: Run the tests
+        if: ${{ !cancelled() && steps.archive.outcome == 'success' }}
+        run: |
+          # shellcheck disable=SC2086 # the archive flags are several words, on purpose.
+          tools/no-orphans.sh --reap -- cargo nextest run $ARCHIVE_RUN --profile ci --no-tests fail --partition hash:${{ matrix.part }}/2 -E "package(purlis-app) & not test(/::in_a_docker_pool\$/) & $(node tools/quarantine.mjs nextest)"
+      - name: Annotate the slowest tests
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: node tools/slowest-tests.mjs target/nextest/ci/junit.xml
   # **The Git LFS stage against a real git-lfs** (#4162): a clone through `repocmd::clone`, with
   # nothing standing in for `git lfs pull`, against an LFS server the tests hold on a loopback
   # port. Named, and `#[ignore]`d everywhere else, so no other job needs git-lfs; `--no-tests fail`
@@ -597,7 +822,7 @@ jobs:
         with:
           shared-key: rust
           save-if: false
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # Where a person's `git lfs install` writes it, for every git of this machine's.
@@ -731,7 +956,7 @@ jobs:
         with:
           shared-key: forgeroute-linux
           save-if: false
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
@@ -754,7 +979,7 @@ jobs:
         with:
           shared-key: forgeroute-macos
           save-if: false
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - run: mkdir -p app/dist
@@ -766,16 +991,16 @@ jobs:
   # Skipped is green only when the change touched nothing Rust reads (`changes`).
   rust-checks:
     name: rust (fmt, clippy, test)
-    needs: [changes, lint, rust-build, rust, rust-doctests, git-lfs, forgeroute]
+    needs: [changes, lint, rust-build, rust-build-app, rust, rust-app, rust-doctests, git-lfs, forgeroute]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
       - name: The lint, the build, every part, the doctests, real git-lfs and the forge route's tests passed
         env:
           SCOPE: ${{ needs.changes.outputs.rust }}
-          RESULTS: ${{ needs.lint.result }} ${{ needs.rust-build.result }} ${{ needs.rust.result }} ${{ needs.rust-doctests.result }} ${{ needs.git-lfs.result }} ${{ needs.forgeroute.result }}
+          RESULTS: ${{ needs.lint.result }} ${{ needs.rust-build.result }} ${{ needs.rust-build-app.result }} ${{ needs.rust.result }} ${{ needs.rust-app.result }} ${{ needs.rust-doctests.result }} ${{ needs.git-lfs.result }} ${{ needs.forgeroute.result }}
         run: |
-          if [ "$SCOPE" = false ]; then want="skipped skipped skipped skipped skipped skipped"; else want="success success success success success success"; fi
+          if [ "$SCOPE" = false ]; then want="skipped skipped skipped skipped skipped skipped skipped skipped"; else want="success success success success success success success success"; fi
           echo "scope: ${SCOPE:-unknown}, results: $RESULTS"
           test "$RESULTS" = "$want"
   # **The parity suite against a Docker pool** (#2045, spec #2041): the behaviour suite
@@ -825,7 +1050,7 @@ jobs:
           fi
           changed=$(git diff --name-only "$BASE" HEAD)
           echo "$changed"
-          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
+          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\.rs$|crates/purlis-core/tests/it/(a_live_remote_chat_survives_the_faults_that_define_trust|a_missing_real_infra_fixture_fails_in_ci|a_chat_moves_to_a_docker_pools_runner_and_back|a_docker_pool_runner_is_linked_through_docker_exec|a_killed_docker_exec_closes_what_it_ran_on_a_runner|code_crosses_to_a_docker_pools_runner_and_back)\.rs$|crates/purlis-core/tests/support/(outage|real_infra|remote_rig)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner|remote-faults)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::nothing of the host, the protocol, the sandbox or the browsers has changed; the parity suite is not run against Docker"
@@ -844,7 +1069,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - if: steps.scope.outputs.run == 'true'
-        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
@@ -935,10 +1160,18 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.parity != 'false') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    # Evidence until it has a record of green runs to be required by (#4471).
-    continue-on-error: ${{ github.event_name == 'push' }}
+    # The fault suite (below) adds about 25 minutes to the hour the parity suite took, and 44 at
+    # the worst of its cases (its step's limit is 60): an hour and 44 minutes fit in 120.
+    timeout-minutes: 120
+    # **A required check, and red on a push means red** (#7188, ruling 3): this was evidence, with
+    # `continue-on-error` on a push, until it had a record to be required by (#4471). The fault
+    # suite is why it is required now: remote is trusted only if a live chat survives what the
+    # link does, so a pull request that touches remote code waits on it, and the nightly runs it
+    # whole and files an issue when red (`remote-faults-notice`). A fault test that cannot pass
+    # yet is `#[ignore]`d with the train it waits for, never left failing: a red job here reds
+    # `main`.
     env:
+      # A missing fixture fails here instead of passing unrun (`support::real_infra`).
       PURLIS_PARITY: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -958,7 +1191,7 @@ jobs:
             exit 0
           fi
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
+          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\.rs$|crates/purlis-core/tests/it/(a_live_remote_chat_survives_the_faults_that_define_trust|a_missing_real_infra_fixture_fails_in_ci|a_chat_moves_to_a_docker_pools_runner_and_back|a_docker_pool_runner_is_linked_through_docker_exec|a_killed_docker_exec_closes_what_it_ran_on_a_runner|code_crosses_to_a_docker_pools_runner_and_back)\.rs$|crates/purlis-core/tests/support/(outage|real_infra|remote_rig)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner|remote-faults)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::nothing of the pools or the SSH route has changed; the parity suite is not run against Docker on another machine"
@@ -977,7 +1210,7 @@ jobs:
         with:
           save-if: false
       - if: steps.scope.outputs.run == 'true'
-        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: The tests, purlis and the fake harness, built
@@ -1075,6 +1308,27 @@ jobs:
         run: >-
           cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
           --test-threads 1 --test it -E 'test(/^an_ssh_runner_host_outlives_the_sign_out_and_a_restart::/)'
+      # **The fault suite** (#7188, the ruling of 2026-11-18): fifteen cases, a live chat on the
+      # systemd machine above and a live browser, each with a fault put on the link, the sshd,
+      # the runner or the registry (`tests/remote-faults/faults.sh`) and the outage rules checked:
+      # nothing silent for over 30 s, the 3-minute limit, the five named states. One at a time,
+      # no retries (a flake is a lifecycle bug), and every case starts from `restore`. It runs
+      # after the steps above, which leave their machines as the fixtures need them. A case that
+      # waits on train A (#7187) or D (#7190) is `#[ignore]`d with the reason; list them with
+      # `cargo nextest list --run-ignored only`.
+      - name: The fault suite, on the pool and the systemd machine
+        if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
+        # The cases one at a time, each at its worst (every wait at its limit: 3 minutes for the host
+        # to answer and link, up to 3 for the link after a fault, the fault's own 90 s or reboot):
+        # 1 drop 5 s 6, 1 drop 90 s 7.5, 2 sshd 6, 6 app restart 8, 8 slow link 7.5, 9 registry 2,
+        # 10 half-open 7 = 44 minutes, and the unit tests of the rules a few seconds. Case 5 runs
+        # in the systemd step above. The ignored cases are not run. A case's own limit is the
+        # nextest override's 10 minutes.
+        timeout-minutes: 60
+        run: >-
+          cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
+          --no-fail-fast --test-threads 1 --test it
+          -E 'test(/^(a_live_remote_chat_survives_the_faults_that_define_trust|a_missing_real_infra_fixture_fails_in_ci)::/)'
       - name: The behaviour suite on its remote Docker pool target
         if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
         run: >-
@@ -1094,6 +1348,60 @@ jobs:
           docker exec ssh-runner sh -c 'tail -n 200 /home/runner/serve.log; ls -laR /home/runner/.config' || true
           docker logs --tail 100 ssh-runner-systemd || true
           docker exec ssh-runner-systemd sh -c 'systemctl --failed --no-pager; loginctl list-users; journalctl -b --no-pager -n 300; ls -laR /home/keeper/.config' || true
+
+  # **A red nightly of the remote parity job and its fault suite files an issue** (#7188, ruling
+  # 3), as `forge-live.yml` and `mutants.yml` do: a scheduled run's red X is on a page nobody
+  # opens, an issue is in the repo. One issue, found by its exact title, rewritten each red night
+  # and closed by the first night that ran the job and passed. A night where the job did not run
+  # leaves the issue as it is. Only a nightly: a pull request's red is its own check.
+  remote-faults-notice:
+    name: say so where someone will see it (remote parity nightly)
+    needs: remote-parity
+    if: ${{ always() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
+      - name: Open, update or close the nightly's issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULT: ${{ needs.remote-parity.result }}
+        run: |
+          set -euo pipefail
+          TITLE='the remote fault suite nightly is not clean'
+          gh issue list --state open --limit 200 --json number,title \
+            --template '{{range .}}{{.number}} {{.title}}{{"\n"}}{{end}}' > "$RUNNER_TEMP/issues.txt"
+          EXISTING="$(awk -v t="$TITLE" \
+            '{n=$1; $1=""; sub(/^ /,""); if ($0 == t) {print n; exit}}' "$RUNNER_TEMP/issues.txt")"
+          if [ "$RESULT" = success ]; then
+            if [ -n "$EXISTING" ]; then
+              gh issue close "$EXISTING" --comment "The remote parity job and its fault suite ran clean again: $RUN_URL"
+            fi
+            exit 0
+          fi
+          if [ "$RESULT" != failure ]; then
+            echo "the job ended $RESULT, not red: the nightly's issue is left as it is"
+            exit 0
+          fi
+          BODY_FILE="$RUNNER_TEMP/body.md"
+          {
+            echo "Last run: $RUN_URL"
+            echo
+            echo "The remote parity job failed (\`remote-parity\`: $RESULT). Its fault suite"
+            echo "(\`a_live_remote_chat_survives_the_faults_that_define_trust\`) puts a fault under a"
+            echo "live remote chat and checks the outage rules (#7188): nothing silent for over 30 s,"
+            echo "the 3-minute limit, the five named states. The run's log names the case."
+            echo
+            echo "A fault test is not retried: a flake is a lifecycle bug. A case may be quarantined"
+            echo "only with a linked issue, and the quarantine expires after 7 days."
+          } > "$BODY_FILE"
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" --body-file "$BODY_FILE"
+          else
+            gh issue create --title "$TITLE" --body-file "$BODY_FILE"
+          fi
 
   # A required check, so it always runs, and skips its steps when nothing Rust reads has changed.
   deny:
@@ -1762,7 +2070,7 @@ jobs:
         run: sudo mdutil -a -i off
       # tauri::generate_context! reads the built frontend, as in the `rust` job.
       - run: mkdir -p app/dist
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # The names the studio probe's network tests look up, from the hosts file, not outside DNS
@@ -2010,8 +2318,9 @@ jobs:
       RUSTFLAGS: -D warnings -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # On every change: the whole-tree guards below link with mold too (`RUSTFLAGS` above), so a
+      # change that leaves Rust out of scope needs the linker as much as the replay does.
       - name: The linker
-        if: needs.changes.outputs.rust != 'false'
         timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
@@ -2188,19 +2497,28 @@ jobs:
       # (2026-10-30, three merge-queue drops). The server is started here; only one that comes
       # up is put in front of rustc, and SCCACHE_IGNORE_SERVER_IO_ERROR has a later failure
       # compile without it.
+      #
+      # `SCCACHE_IDLE_TIMEOUT=0`: the server lives as long as the job, and so does one the wrapper
+      # starts again after a failure (it is in `$GITHUB_ENV` too). With sccache's default of
+      # 600 s it stopped in every one of 8 outcome-bars runs on 2026-11-25/26, about ten minutes
+      # into purlis-core's release compile, during which no new request came ("The server looks
+      # like it shut down unexpectedly, compiling locally instead"). Every crate after that
+      # compiled without it, and its notice counted one request. A hosted runner is discarded with
+      # the job; on a self-hosted one, `outcome-bars.yml`'s last step stops the server.
       - name: Compile through sccache
         if: runner.os == 'macOS'
         env:
           MODE: ${{ github.ref == 'refs/heads/main' && 'READ_WRITE' || 'READ_ONLY' }}
           ARRIVED: ${{ steps.sccache.outcome }}
         run: |
-          export SCCACHE_GHA_ENABLED=true SCCACHE_GHA_RW_MODE="$MODE"
+          export SCCACHE_GHA_ENABLED=true SCCACHE_GHA_RW_MODE="$MODE" SCCACHE_IDLE_TIMEOUT=0
           if sccache --start-server >/dev/null 2>&1 && sccache --show-stats >/dev/null 2>&1; then
             {
               echo "RUSTC_WRAPPER=sccache"
               echo "SCCACHE_GHA_ENABLED=true"
               echo "SCCACHE_GHA_RW_MODE=$MODE"
               echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
+              echo "SCCACHE_IDLE_TIMEOUT=0"
             } >> "$GITHUB_ENV"
           elif [ "$ARRIVED" = success ]; then
             echo "::warning title=sccache::the build cache did not answer, so this job compiles without it"
@@ -2289,9 +2607,12 @@ jobs:
       # the dev profile, and #3560's opt-level made the cold build 21 to 32 min), another linker
       # (6 s to win), a `target/` cache (rust-cache already restores the dependencies, and the
       # workspace's crates change with every pull request that runs this job).
-      # Off before the build, so it indexes none of it (#4351): see the outcome bars below.
+      # Off before the build, so it indexes none of it (#4351): see the outcome bars below. Only on
+      # GitHub's runners, never on a self-hosted Mac (`outcome-bars.yml`'s `OUTCOME_BARS_RUNNER`):
+      # `-a` turns Spotlight off for the whole machine, which is the operator's to decide, and its
+      # runner user has no sudo.
       - name: Spotlight off for the outcome bars
-        if: ${{ runner.os == 'macOS' && matrix.outcome }}
+        if: ${{ runner.os == 'macOS' && matrix.outcome && runner.environment == 'github-hosted' }}
         continue-on-error: true
         timeout-minutes: 2
         run: sudo mdutil -a -i off
@@ -2456,6 +2777,16 @@ jobs:
         run: xvfb-run -a npm run e2e:state
         if: runner.os == 'Linux' && matrix.extras
         working-directory: app
+      # Hibernate a chat from its row and Resume it (#7630): its own run, on a harness that
+      # names its conversation, which the state run's Codex stand-in does not.
+      - name: Hibernate a chat and resume it
+        run: npm run e2e:hibernate
+        if: runner.os == 'macOS' && matrix.extras
+        working-directory: app
+      - name: Hibernate a chat and resume it
+        run: xvfb-run -a npm run e2e:hibernate
+        if: runner.os == 'Linux' && matrix.extras
+        working-directory: app
       # What GitHub's macOS image is busy with around each harness's bars (#4351), to read beside
       # their numbers. Spotlight went off before the build. Nothing waits for the runner: waiting
       # brought L10 no gain (the person's ruling of 2026-11-05).
@@ -2464,8 +2795,9 @@ jobs:
         continue-on-error: true
         timeout-minutes: 1
         run: ps -Ao pcpu,comm -r | sed -n 1,7p
-      # The Skill studio's outcome bars, one run per harness on its stand-in (#4343). `outcome-bars`
-      # alone runs these. Each runs whatever the one before it did, so a red run names every miss.
+      # The Skill studio's outcome bars, one run per harness on its stand-in (#4343). The outcome
+      # bars alone run these (`outcome-bars.yml` on macOS, `outcome-bars-linux`). Each runs
+      # whatever the one before it did, so a red run names every miss.
       - name: The Skill studio's outcome bars on claude's stand-in
         run: npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
@@ -2716,59 +3048,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
 
-  # **The Skill studio's outcome bars** (SK-23, #4343): the scenario legs' steps, with every leg's
-  # own flag off and `outcome` on, so it runs the three runs alone, on a `dev-release` build
-  # (2026-11-03, #4351). Its macOS leg is not required, and no `scenario-checks` waits on it: it
-  # measures on a shared runner, and a miss is a ticket (the operator's ruling of 2026-10-31), not a
-  # block on every merge. It becomes required with the flag's flip (#2786). Its Linux leg is
-  # `outcome-bars-linux`, below, and is required. Each says L10's p95 and judges a median guard
-  # of its own platform: the 300 ms is judged on a real Mac (ADR 0086, amended 2026-11-05 and
-  # 2026-11-06).
-  #
-  # On main's push and on the nightly run, and on neither a pull request nor the merge queue
-  # (#7335, ADR 0127, the steward's ruling of 2026-11-23): Macs are the queue's scarce resource, so
-  # the queue does not run it, and a pull request's run is a subset of the queue's, so a pull
-  # request does not either. It took a pull request that touched what the bars measure, by the
-  # operator's choice of 2026-11-01: it takes a macOS runner, for 11 to 17 minutes on the debug
-  # build it used to make, and for about 31 on the release build warm (#4351). A regression shows
-  # on main, and the Linux leg below still runs on a pull request its gate lets in.
-  outcome-bars:
-    # Named outright, not by `matrix.os`: a pattern would match the Linux leg's required check too.
-    name: outcome bars (macos-latest)
-    needs: changes
-    # A missed bar keeps this job red and the `ci` run green, so it does not stop `tools/land.mjs`,
-    # which refuses to land while main's newest finished `ci` run failed. This line goes once its
-    # bars are met (#4352 among them), and the job is made required before the flag's flip (#2786).
-    continue-on-error: true
-    # A timed-out job still turns the run `cancelled`, which skips the release: this bounds that,
-    # and main's queue behind it, from the 6 hours a job gets by default. 75, not the 40 the debug
-    # build had (twice its slowest, 9 to 18 minutes), for the release build (the operator's ruling
-    # of 2026-11-03, #4351): cold, with no cache, it ran past 40 twice and was cut off before
-    # rust-cache saved anything, so the cache main writes was never warm. Warm, a release run took
-    # 31 minutes. 130 since 2026-11-11: at 75 a cold build (70-73 min) was cut off on every main
-    # run from 05:41 to 10:44, so the cache was never saved, every run ended `cancelled`, and no dev
-    # build shipped. One run that finishes warms the cache again.
-    timeout-minutes: 130
-    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') }}
-    # Where the specs find the build: the profile the build step names for `outcome` (one place
-    # for the path, so no harness's run can take another build's program).
-    env:
-      CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest]
-        shard: [bars]
-        shards: [1]
-        extras: [false]
-        specs: [false]
-        sandbox: [false]
-        outcome: [true]
-    runs-on: ${{ matrix.os }}
-    steps: *scenario-steps
+  # **The Skill studio's outcome bars on macOS** (SK-23, #4343) run in `outcome-bars.yml`, on
+  # main's push and the nightly, since 2026-11-26 (ADR 0127, amended that day). As a job here, one
+  # that decides nothing, it held every main run open for 10 to 40 minutes after the last gating job,
+  # and `release.yml`'s gate waits for the whole run. Its steps there are this file's scenario steps
+  # (`tools/outcome-bars-workflow.test.mjs` holds them to these).
 
-  # **The outcome bars' Linux leg, required** (#5277): what `outcome-bars` does, on Linux, with no
-  # `continue-on-error`. A runner shutdown cut it off until #5379 gave its build a swap file, which
+  # **The outcome bars' Linux leg, required** (#5277): what `outcome-bars.yml` does on macOS, on
+  # Linux, with no `continue-on-error`. A runner shutdown cut it off until #5379 gave its build a swap file, which
   # the app crate's `opt-level = 1` made unneeded (#5277). It passed on all 14 of main's runs that
   # finished it from #5379's merge to 2026-11-06, so it is required, as the person's ruling of
   # 2026-11-05 said it would be once #5277 was fixed. It judges L10's Linux guard (ADR 0086,
@@ -2777,7 +3064,7 @@ jobs:
   outcome-bars-linux:
     name: outcome bars run (ubuntu-24.04)
     needs: changes
-    # `outcome-bars`'s bound, for the same build: cold, it took 27 minutes here.
+    # `outcome-bars.yml`'s bound, for the same build: cold, it took 27 minutes here.
     timeout-minutes: 75
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.outcome-bars != 'false') && !github.event.pull_request.draft }}
     env:

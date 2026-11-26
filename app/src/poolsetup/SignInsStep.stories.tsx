@@ -14,6 +14,7 @@ import { expectFocusInSight } from "../stories.testkit";
 import { SignInsStep } from "./SignInsStep";
 
 const STEP: PoolSetupStep = {
+  took_ms: null,
   id: "signins",
   name: "Sign-ins",
   state: "current",

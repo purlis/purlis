@@ -100,6 +100,7 @@ fn the_app_merges_on_the_persons_press_and_the_chat_never_merges() {
     let request = Request {
         repo: None,
         number: 12,
+        act: Default::default(),
     };
     let (asked, raised) = mergehold::asked(&holds, 4, &request, &|_| Ok((key(12), facts())), 1_000)
         .expect("the request is found");

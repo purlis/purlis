@@ -247,7 +247,7 @@ fn taken_back_unless_recorded(
         // git made the folder and the branch, and only the record of where it came from is
         // missing (GL-1 review S1). Nothing has used it, so it goes back rather than being
         // left for the operator to find; the refusal still says what happened.
-        Err(Refusal::BaseNotRecorded { branch, why }) => {
+        Err(Refusal::BaseNotRecorded { branch, why } | Refusal::BranchNotNoted { branch, why }) => {
             let kept = match worktree::remove(plane, ws, repo, piece, false, true) {
                 Ok(removed) if removed.branch_deleted => None,
                 Ok(_) => Some("git kept the branch".to_string()),

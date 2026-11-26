@@ -9,6 +9,7 @@ import type { IdentitiesShown, IdentityRow, PoolSetupStep } from "../bindings";
 import { IdentityStep } from "./IdentityStep";
 
 const TO_SET_UP: PoolSetupStep = {
+  took_ms: null,
   id: "identity",
   name: "Agent identity",
   state: "current",

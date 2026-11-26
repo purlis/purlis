@@ -281,6 +281,7 @@ pub struct ScreenEnded {
 /// it where one did, and how its engine ended.
 pub(crate) fn ended_said(program: &str, stopped: Option<Stopped>, ended: &ScreenEnded) -> String {
     let by_the_host = match stopped {
+        Some(Stopped::Hibernated) => "hibernated at its link's ask",
         Some(Stopped::Closed) => "closed at its link's ask",
         Some(Stopped::Operator) => "stopped at its link's ask",
         Some(Stopped::Quit) => "stopped as the host ended",

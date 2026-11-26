@@ -294,9 +294,11 @@ pub enum LinkRefused {
     /// The answering host refused this link, and said why.
     #[error("the other host refused this link: {0}")]
     ByThePeer(String),
-    /// The other end did not finish within [`crate::version::HANDSHAKE_TIMEOUT`].
+    /// The other end did not finish within [`crate::version::HANDSHAKE_TIMEOUT`]. The words
+    /// name the step it was stuck on, the link's handshake (hello, key exchange and proof), so
+    /// a person can tell it from a failed connect or sign-in, which come before it.
     #[error(
-        "the other end did not finish linking within {:?}",
+        "the other end did not finish the link's handshake within {:?}",
         crate::version::HANDSHAKE_TIMEOUT
     )]
     TimedOut,
@@ -373,6 +375,7 @@ pub(crate) async fn connect_kept<S: AsyncRead + AsyncWrite + Unpin + Send + 'sta
     answering: &Pinned,
     liveness: Liveness,
 ) -> Result<(Link, channel::Ends), LinkRefused> {
+    let step = crate::steps::begin("link_handshake");
     let (stream, ends) = within_the_handshake(async {
         let (version, offered, io) = version::offer_opening_with(io, &speaks(), MAGIC)
             .await
@@ -391,6 +394,7 @@ pub(crate) async fn connect_kept<S: AsyncRead + AsyncWrite + Unpin + Send + 'sta
     })
     .await?;
     let link = link::connect_proven(stream, session::speaks()).await?;
+    step.done();
     Ok((link, ends))
 }
 

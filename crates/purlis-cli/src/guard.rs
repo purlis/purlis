@@ -294,7 +294,7 @@ fn held_merge(command: &str, cwd: &str, asks_the_app: bool) -> Option<toolgate::
                 answer => answer.ok().and_then(Result::ok),
             }
         }
-        Held::Unreadable | Held::Land => {
+        Held::Unreadable | Held::Land | Held::AutoMerge => {
             if !crate::brokered::in_a_chat() {
                 return None;
             }

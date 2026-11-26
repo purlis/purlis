@@ -47,16 +47,17 @@ fn set_by_up(name: &str) -> String {
     })
 }
 
+/// The fixture, or a SKIP line on a laptop and a failure where `PURLIS_PARITY` is set (#7188).
 fn fixture() -> Option<Fixture> {
-    let Ok(route) = std::env::var("REMOTE_DOCKER_TEST_ROUTE") else {
-        // Said where a person running the suite by hand reads it: this test ran nothing.
-        let _ = std::io::Write::write_all(
-            &mut std::io::stderr(),
-            b"skipped: no Docker on another machine to doctor (tests/remote-docker/up.sh sets \
-              REMOTE_DOCKER_TEST_ROUTE)\n",
-        );
-        return None;
-    };
+    crate::support::real_infra::fixture_or_skip(
+        "Docker on another machine to doctor",
+        "tests/remote-docker/up.sh",
+        fixture_set_by_up(),
+    )
+}
+
+fn fixture_set_by_up() -> Option<Fixture> {
+    let route = std::env::var("REMOTE_DOCKER_TEST_ROUTE").ok()?;
     let sshd = set_by_up("REMOTE_DOCKER_TEST_SSHD");
     let image = set_by_up("DOCKER_POOL_TEST_IMAGE");
     let program =

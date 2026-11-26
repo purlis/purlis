@@ -13,10 +13,20 @@ fail-fast = false
 # by such a lock so that they do not compete for the machine; this group keeps that.
 [test-groups]
 floods = { max-threads = 1 }
+# The three loopback ports a GitLab sign-in comes back on are the machine's, and the sign-in's
+# cases bind them for real. The `Mutex` in that file orders them only inside one process, and
+# each test has a process of its own: one case's listener was bound under another's ("the
+# listener was still bound after the redirect"), and one waited out its 300 s for a redirect on a
+# port a sibling had left (#7557, #7572).
+registered-ports = { max-threads = 1 }
 
 [[profile.default.overrides]]
 filter = "package(fake-harness) & binary(unread_answers)"
 test-group = "floods"
+
+[[profile.default.overrides]]
+filter = "package(purlis-core) & binary(it) & test(/^a_gitlab_sign_in_through_the_browser::/)"
+test-group = "registered-ports"
 
 [profile.ci]
 # A failed test is run once more before it counts. From 2026-10-22 to 10-27, 26 to 57 runs a day
@@ -61,6 +71,24 @@ retries = 0
 [[profile.ci.overrides]]
 filter = "package(purlis-core) & binary(it) & test(/^an_ssh_runner_host_outlives_the_sign_out_and_a_restart::/)"
 slow-timeout = { period = "60s", terminate-after = 10 }
+
+# The fault suite (#7188): a live chat on a machine with a fault put on it, each case waiting out
+# its own limits (up to 90 s for the host to answer, 180 s for a first link, 90 s of drop, a
+# machine's 60 s shutdown and boot), the worst about eight minutes. Without this a case is killed
+# at the default five (60 s x 5), which reds `remote-parity` and every PR that touches remote code.
+# Ten, as the systemd runner's test above: a hung case is called hung at ten.
+[[profile.ci.overrides]]
+filter = "package(purlis-core) & binary(it) & test(/^a_live_remote_chat_survives_the_faults_that_define_trust::/)"
+slow-timeout = { period = "60s", terminate-after = 10 }
+
+# The remote start's step table (#7182) is this test's output, not a diagnosis: it prints what each
+# step of a start cost over SSH, the baseline `docs/research/2026-11-remote-start-baseline.md` is
+# read from. nextest keeps a passing test's output to itself and a job's summary cannot be read
+# through the API, so on a pass the table was nowhere a person or a chat could fetch it (run
+# 45681258419). Shown as the test ends, it is in the `remote-parity` job's log.
+[[profile.ci.overrides]]
+filter = "package(purlis-core) & binary(it) & test(/^a_remote_docker_pool_is_reached_over_ssh::a_start_on_a_remote_pool_times_each_of_its_steps$/)"
+success-output = "immediate"
 
 # What `cargo nextest archive --profile ci` keeps besides the test binaries and the programs they
 # are built to run (`CARGO_BIN_EXE_*`) (`rust-build` in `.github/workflows/ci.yml`, spec #7324): the

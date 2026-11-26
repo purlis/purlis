@@ -11,13 +11,14 @@
 # keyword's first value (#6349). Every behaviour of the parity job meets it at once, so it takes
 # that many unauthenticated connections, each Connect's first contact signing in with nothing,
 # which OpenSSH 9.8's per-source penalties would hold against the one address they all come
-# from. tc gives the job its latency and loss (QA-15, #598).
+# from. tc gives the job its latency and loss (QA-15, #598), and with iptables the fault suite's
+# link faults (`tests/remote-faults/faults.sh`, #7188).
 #
 # `POOL_UID` gives `pool` the uid of the account whose rootless Podman it reaches (#6269), so
 # the socket and the store that account owns are `pool`'s on this machine as on that one.
 FROM alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f
 ARG POOL_UID=1000
-RUN apk add --no-cache openssh-server iproute2 procps \
+RUN apk add --no-cache openssh-server iproute2 iptables procps \
  && adduser -D -u "$POOL_UID" -s /bin/sh pool && adduser -D -s /bin/sh outsider \
  && adduser -D -s /bin/sh nokey \
  && sed -i -e 's/^pool:!/pool:*/' -e 's/^outsider:!/outsider:*/' -e 's/^nokey:!/nokey:*/' /etc/shadow \

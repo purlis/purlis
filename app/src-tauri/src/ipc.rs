@@ -252,7 +252,8 @@ mod tests {
             [
                 "native_window_drawn",
                 "artifact_link_follow",
-                "artifact_links_opened"
+                "artifact_links_opened",
+                "ram_class_stand_in"
             ]
         );
         let (free, values) = listed();
