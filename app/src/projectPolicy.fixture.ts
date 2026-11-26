@@ -16,6 +16,7 @@ export const WATCH: PolicyState = {
   key_foreign: false,
   new_key: false,
   nevers_new_key: false,
+  nevers_to_keep: null,
   digest: "d1",
   template: "watch",
   template_default: true,

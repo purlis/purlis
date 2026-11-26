@@ -29,6 +29,7 @@ const QUIET: PolicyState = {
   key_foreign: false,
   new_key: false,
   nevers_new_key: false,
+  nevers_to_keep: null,
   digest: "d1",
   template: "watch",
   template_default: true,
@@ -47,6 +48,7 @@ function core(state: PolicyState, after: PolicyState = QUIET) {
     asked.push({ cmd, args });
     if (cmd === "project_policy_state") return state;
     if (cmd === "accept_project_policy") return after;
+    if (cmd === "keep_project_nevers") return after;
     return null;
   });
   return (cmd: string) => asked.filter((one) => one.cmd === cmd).map((one) => one.args);
@@ -80,6 +82,39 @@ describe("the project's policy (Q308a)", () => {
       expect(asked("accept_project_policy")).toEqual([{ plane: PLANE, shown: "d1" }]),
     );
     await waitFor(() => expect(screen.queryByText(/guards\.merge from/)).toBeNull());
+  });
+
+  it("after a new seal key, shows the never-dispatch pairs and keeps exactly those", async () => {
+    // #7714, H1 of #7734's round 3: its own press, never Accept's, naming the pairs shown.
+    const asked = core({
+      ...QUIET,
+      nevers_new_key: true,
+      nevers_to_keep: { pairs: [{ asking: "steward", target: "devops" }], digest: "n1" },
+    });
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() =>
+      expect(screen.getByText(/It holds steward to devops\. Keep these nevers seals exactly that pair\./)).toBeTruthy(),
+    );
+    expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Keep these nevers" }));
+    await waitFor(() =>
+      expect(asked("keep_project_nevers")).toEqual([{ plane: PLANE, shown: "n1" }]),
+    );
+    expect(asked("accept_project_policy")).toEqual([]);
+    await waitFor(() => expect(screen.queryByText(/It holds steward to devops/)).toBeNull());
+  });
+
+  it("never offers Keep these nevers to a page that is not the window", async () => {
+    core({
+      ...QUIET,
+      nevers_new_key: true,
+      nevers_to_keep: { pairs: [], digest: "n0" },
+    });
+    render(<ProjectPolicyNotice plane={PLANE} canAccept={false} />);
+    await waitFor(() =>
+      expect(screen.getByText(/Keep them from purlis's own window/)).toBeTruthy(),
+    );
+    expect(screen.queryByRole("button", { name: "Keep these nevers" })).toBeNull();
   });
 
   it("never offers Accept to a page that is not the window", async () => {

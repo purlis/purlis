@@ -1341,12 +1341,6 @@ pub fn press(root: &Path, shown: &str) -> std::io::Result<()> {
         return Err(changed_since_shown());
     }
     crate::sandbox::local::accept_policy(root, now.as_kept())?;
-    // The person's press on a project whose nevers a replaced key anchored seals them as they
-    // stand (F3 of #7734's review): they only tighten. Best effort, as the acceptance is kept
-    // already; they read as unread, with Accept offered, until it holds.
-    if let Err(why) = crate::dispatchnever::keep_after_a_new_key(root) {
-        tracing::warn!("purlis: the nevers were not sealed with the new key ({why})");
-    }
     // One press for the level (the follow-up's item 1): where it accepts the team's off, the
     // team's own ask is answered with it, so nobody is asked twice.
     if now.level() == SandboxLevel::Off
@@ -1418,10 +1412,14 @@ pub struct Standing {
     /// machine since it was sealed (#7714), never because something edited it
     /// ([`crate::sandbox::local::broken_by_a_new_key`]): enforced as broken all the same.
     pub new_key: bool,
-    /// Whether this plane's nevers were anchored by a seal key purlis has replaced since
-    /// (#7714, F3 of #7734's review), and not sealed again: they read as unread until the
-    /// person accepts the project's policy again, which seals them as they stand.
+    /// Whether purlis vouches that this plane's nevers were anchored by a seal key it has
+    /// replaced since (#7714, F3 of #7734's review; H2 of its round 3), and not sealed again:
+    /// they read as unread until the person keeps the pairs the window shows
+    /// ([`crate::dispatchnever::keep_shown_after_a_new_key`]). Accept never seals them.
     pub nevers_new_key: bool,
+    /// The pairs that press keeps, and the digest it names (H1 of #7734's round 3): where
+    /// `nevers_new_key` and the file reads.
+    pub nevers_to_keep: Option<crate::dispatchnever::ToKeep>,
     /// The digest of the committed text this was read from, which the press must name.
     pub digest: String,
     /// What the project's `[policy]` says, from the same read: its template and the families
@@ -1463,7 +1461,8 @@ pub fn standing(root: &Path) -> Standing {
         unsealed: crate::sandbox::local::policy_unsealed(root),
         key_foreign: crate::secrets::seal::key_is_foreign(),
         new_key: crate::sandbox::local::broken_by_a_new_key(root),
-        nevers_new_key: crate::dispatchnever::listed_for_a_new_key(root),
+        nevers_new_key: crate::dispatchnever::vouched_for_a_new_key(root),
+        nevers_to_keep: crate::dispatchnever::to_keep_after_a_new_key(root),
         digest: digest(&now),
         runs: now.stricter(&accepted),
         locked: Family::ALL

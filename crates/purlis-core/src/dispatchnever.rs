@@ -266,25 +266,21 @@ pub fn unread_said(root: &Path) -> String {
         .to_string();
     let anchor = crate::sandbox::local::anchor_key(root);
     let replaced = crate::secrets::seal::replaced();
+    // Only a list that holds under the key of now gets these words (H2 of #7734's round 3): one
+    // another program put there keeps the nevers unread and says nothing of a new key.
     if replaced.vouches(&ANCHOR_KINDS, &anchor) {
         return format!(
             "purlis made a new seal key on this machine, so it cannot vouch for the list of \
              pairs you said never to ({shown} in this project), and no dispatch grant counts \
-             until you review it. Check that file, then accept the project's policy again in \
-             Settings › Project › Policy: purlis keeps every pair it holds."
+             until you review it. Settings › Project › Policy shows the pairs that file holds \
+             now: keep them there, and purlis seals exactly those."
         );
     }
-    let again = if replaced.lists(&ANCHOR_KINDS, &anchor) {
-        " If purlis made a new seal key on this machine, check that file, then accept the \
-         project's policy again in Settings › Project › Policy to keep every pair it holds."
-    } else {
-        ""
-    };
     format!(
         "purlis could not read the list of pairs you said never to ({shown} in this project), \
          or it was changed or removed by something other than purlis's app, so it changed \
          nothing there and no dispatch grant counts until it reads. Restore that file as \
-         purlis last wrote it.{again}"
+         purlis last wrote it."
     )
 }
 
@@ -342,59 +338,90 @@ const WHOLE_KIND: &str = "dispatch-nevers";
 /// review).
 pub const ANCHOR_KINDS: [&str; 2] = ["dispatch-nevers-live", WHOLE_KIND];
 
-/// **Whether the plane at `root` had its nevers anchored by a seal key purlis has replaced
-/// since**, and not sealed again (F3 of #7734's review): they read as [`Nevers::Unread`], a file
-/// wiped since included, until the person accepts the project's policy again
-/// ([`keep_after_a_new_key`]). Only in the app.
+/// **Whether the plane at `root` is on the list of planes a seal key purlis has replaced since
+/// anchored the nevers of**, and they are not sealed again (F3 of #7734's review): they read as
+/// [`Nevers::Unread`], a file wiped since included. A list another program put there counts
+/// too, as it can only keep them unread (H2 of its round 3). Only in the app.
 pub fn listed_for_a_new_key(root: &Path) -> bool {
     crate::secrets::sealed_set::decides()
         && crate::secrets::seal::replaced()
             .lists(&ANCHOR_KINDS, &crate::sandbox::local::anchor_key(root))
 }
 
-/// **The nevers of a plane a replaced key anchored, sealed with the key of now as they stand**
-/// (F3 of #7734's review): the person's Accept on that project ([`crate::enforcement::press`]),
-/// after the window told them to review them. Nevers only tighten, so each the file holds is
-/// kept; a file wiped since keeps none, which the person was told to look at first. Then the
-/// plane leaves the list. A file that does not read is left as it is, still unread.
-pub(crate) fn keep_after_a_new_key(root: &Path) -> io::Result<()> {
-    if !listed_for_a_new_key(root) || whole_on_disk(root).is_none() {
-        return Ok(());
+/// **Whether purlis vouches that the plane's nevers read as unread because it made a new seal
+/// key** (H2 of #7734's round 3): the list holds under the key of now, which only the app's own
+/// write can make. Only then are the new key's words said and the pairs offered to keep
+/// ([`to_keep_after_a_new_key`]); a list that only names the plane keeps the nevers unread.
+pub fn vouched_for_a_new_key(root: &Path) -> bool {
+    crate::secrets::sealed_set::decides()
+        && crate::secrets::seal::replaced()
+            .vouches(&ANCHOR_KINDS, &crate::sandbox::local::anchor_key(root))
+}
+
+/// **What the window shows of a plane's nevers after a new seal key** (H1 of #7734's round 3):
+/// the pairs the person's press would keep, and the digest the press names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToKeep {
+    /// Each pair as asking persona and target persona, in the file's order. Empty where the
+    /// file holds none, or is gone.
+    pub pairs: Vec<(String, String)>,
+    /// The digest of `pairs` ([`digest_of_pairs`]), which the press names.
+    pub digest: String,
+}
+
+/// The digest of `pairs`, as [`ToKeep`] names it: of their JSON, so no persona's name can make
+/// two lists read alike.
+pub fn digest_of_pairs(pairs: &[(String, String)]) -> String {
+    use sha2::Digest;
+    let text = serde_json::to_string(pairs).unwrap_or_default();
+    crate::extension::hex(&sha2::Sha256::digest(
+        format!("dispatch-nevers-kept\n{text}").as_bytes(),
+    ))
+}
+
+/// **The pairs the window offers to keep after a new seal key** (H1 of #7734's round 3): those
+/// the file holds now, a file wiped since holding none, where purlis vouches the plane was
+/// listed ([`vouched_for_a_new_key`]). None anywhere else, or where the file does not read.
+pub fn to_keep_after_a_new_key(root: &Path) -> Option<ToKeep> {
+    if !vouched_for_a_new_key(root) {
+        return None;
     }
-    import(root)?;
+    let (_, entries) = whole_on_disk(root)?;
+    let pairs: Vec<(String, String)> = entries.iter().map(Entry::pair).collect();
+    Some(ToKeep {
+        digest: digest_of_pairs(&pairs),
+        pairs,
+    })
+}
+
+/// What the nevers' press says where the file changed since the window showed its pairs.
+const CHANGED_SINCE_SHOWN: &str = "the list of pairs you said never to changed since it was \
+     shown, so purlis kept nothing; look at it again";
+
+/// **The person's press keeping the pairs the window showed, sealed with the key of now**, after
+/// a new seal key (H1 of #7734's round 3): the window's alone, and its own press, never a side
+/// effect of Accept. Accept accepts exactly what the window showed, so these are sealed only
+/// where the file holds exactly the pairs `shown` digests ([`to_keep_after_a_new_key`]),
+/// checked under purlis's lock on the file; a file wiped since keeps none, as it was shown. Then
+/// the plane leaves the list. Refused where purlis does not vouch the plane was listed
+/// ([`vouched_for_a_new_key`]), so a list another program put there seals nothing.
+pub fn keep_shown_after_a_new_key(root: &Path, shown: &str) -> io::Result<()> {
+    if !vouched_for_a_new_key(root) {
+        return Err(io::Error::other(
+            "purlis has no list of pairs you said never to in this project to keep after a new \
+             seal key, so it kept nothing",
+        ));
+    }
+    seal_as_they_stand(root, Some(shown))?;
     let anchor = crate::sandbox::local::anchor_key(root);
     if crate::secrets::seal::unlist_replaced(&ANCHOR_KINDS, &anchor) {
         Ok(())
     } else {
         Err(io::Error::other(
-            "the project was not taken off the list of the old seal key",
+            "purlis sealed the pairs, but could not take the project off the list of its old \
+             seal key; press again",
         ))
     }
-}
-
-/// What the window shows of a plane's nevers after a new seal key: the pairs the person's
-/// press would keep, and the digest the press names.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ToKeep {
-    /// Each pair as asking persona and target persona, in the file's order.
-    pub pairs: Vec<(String, String)>,
-    /// The digest of `pairs`, which the press names.
-    pub digest: String,
-}
-
-/// The digest of `pairs`, as [`ToKeep`] names it.
-pub fn digest_of_pairs(_pairs: &[(String, String)]) -> String {
-    String::new()
-}
-
-/// The pairs a press would keep after a new seal key.
-pub fn to_keep_after_a_new_key(_root: &Path) -> Option<ToKeep> {
-    None
-}
-
-/// The person's press keeping the pairs that were shown.
-pub fn keep_shown_after_a_new_key(_root: &Path, _shown: &str) -> io::Result<()> {
-    Err(io::Error::other("not yet"))
 }
 
 /// The sealed set the file holds: its counter and live list, and each entry the app sealed.
@@ -554,9 +581,26 @@ pub(crate) fn sealed_here(root: &Path) -> bool {
 /// **The person's nevers from before the set, sealed once as they stand** (Q320): they only
 /// tighten, so they are carried over. Refused where it cannot seal, which leaves them unread.
 fn import(root: &Path) -> io::Result<()> {
+    seal_as_they_stand(root, None)
+}
+
+/// The file's entries sealed as they stand, under purlis's lock on it. Where `shown`, only if
+/// they are exactly the pairs it digests ([`digest_of_pairs`]), a file that is not there being
+/// none, and it does not read is refused.
+fn seal_as_they_stand(root: &Path, shown: Option<&str>) -> io::Result<()> {
     let path = path(root);
     let anchor = crate::sandbox::local::anchor_key(root);
     crate::rewrite::update(root, &path, |now| {
+        if let Some(shown) = shown {
+            let read = match now {
+                None => Some(Vec::new()),
+                Some(text) => parsed(text).map(|(_, entries)| entries),
+            };
+            let pairs = read.map(|entries| entries.iter().map(Entry::pair).collect::<Vec<_>>());
+            if pairs.as_deref().map(digest_of_pairs).as_deref() != Some(shown) {
+                return Err(io::Error::other(CHANGED_SINCE_SHOWN));
+            }
+        }
         let Some((mut whole, mut entries)) = now.and_then(parsed) else {
             return Ok(None);
         };

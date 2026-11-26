@@ -33,6 +33,7 @@ function core(
     asked.push({ cmd, args });
     if (cmd === "project_policy_state") return state;
     if (cmd === "accept_project_policy") return accept();
+    if (cmd === "keep_project_nevers") return { ...state, nevers_new_key: false, nevers_to_keep: null };
     if (cmd === "policy_log") return log;
     return null;
   });
@@ -106,15 +107,35 @@ describe("the project's policy in Settings", () => {
     );
   });
 
-  it("where a new seal key left the never-dispatch list unread, says to review it and offers Accept", async () => {
-    // #7714: Accept on this project keeps every pair the list holds, sealed with the new key.
-    const sent = core({ ...WATCH, nevers_new_key: true });
+  it("where a new seal key left the never-dispatch list unread, shows its pairs and keeps exactly those", async () => {
+    // #7714, H1 of #7734's round 3: Accept never keeps the list. Keep these nevers is its own
+    // press, and it names the pairs shown by their digest.
+    const kept = {
+      pairs: [
+        { asking: "steward", target: "devops" },
+        { asking: "devops", target: "steward" },
+      ],
+      digest: "n1",
+    };
+    const sent = core({ ...WATCH, nevers_new_key: true, nevers_to_keep: kept });
     render(<PolicyStanding plane={PLANE} ids={IDS} canAccept />);
     expect(await screen.findByText(/cannot vouch for your never-dispatch list/)).toBeTruthy();
-    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    const pairs = screen.getByRole("list", { name: "The pairs Keep these nevers seals" });
+    expect(pairs.textContent).toContain("steward never dispatches to devops");
+    expect(pairs.textContent).toContain("devops never dispatches to steward");
+    expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Keep these nevers" }));
     await waitFor(() =>
-      expect(sent("accept_project_policy")).toEqual([{ plane: PLANE, shown: "d1" }]),
+      expect(sent("keep_project_nevers")).toEqual([{ plane: PLANE, shown: "n1" }]),
     );
+    expect(sent("accept_project_policy")).toEqual([]);
+  });
+
+  it("where the list's file does not read, offers nothing to keep", async () => {
+    core({ ...WATCH, nevers_new_key: true, nevers_to_keep: null });
+    render(<PolicyStanding plane={PLANE} ids={IDS} canAccept />);
+    expect(await screen.findByText(/there is nothing to keep yet/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Keep these nevers" })).toBeNull();
   });
 
   it("offers no Accept where the page is not the window", async () => {

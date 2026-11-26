@@ -174,9 +174,23 @@ impl KeyCache {
 #[cfg(not(test))]
 static FOUND: std::sync::Mutex<KeyCache> = std::sync::Mutex::new(KeyCache(None));
 
-/// What the app found of the seal's key ([`KeyCache::found`]).
+/// What the app found of the seal's key ([`KeyCache::found`]). **Never read again while a press
+/// is making a new key** (M3 of #7734's round 3): that press reads it again itself once it is
+/// done ([`found_by_the_press`]), and a probe of the items it is replacing meanwhile could race
+/// its writes.
 #[cfg(not(test))]
 fn found(again: bool) -> Found {
+    let again = again
+        && !matches!(
+            RENEWING.try_lock(),
+            Err(std::sync::TryLockError::WouldBlock)
+        );
+    found_by_the_press(again)
+}
+
+/// [`found`] for the press that holds [`RENEWING`].
+#[cfg(not(test))]
+fn found_by_the_press(again: bool) -> Found {
     FOUND
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -344,11 +358,20 @@ fn made(
     })
 }
 
+/// Whether `wide` names every entry `narrow` does, and vouches for each `narrow` vouches for.
+fn covers(wide: &Entries, narrow: &Entries) -> bool {
+    narrow
+        .iter()
+        .all(|(account, vouched)| wide.get(account).is_some_and(|wide| *wide || !vouched))
+}
+
 /// **`entries` sealed with `key` and kept as the list**, at a slot of [`REPLACED`] nothing holds,
 /// so the list before stays until this one is there; the slot written is answered, and the
-/// caller deletes the other. Where both hold one (a write cut short before it deleted the one
-/// before), the one that does not hold under `key` is deleted first: the other holds under the
-/// key the caller seals with, so it already names every entry the deleted one did.
+/// caller deletes the other. Where both slots hold one (a write cut short before it deleted the
+/// one before, or lists another program put there), **only a slot the other covers is deleted
+/// first** (M4 of #7734's round 3): the other names every entry it did, so a write cut short
+/// right after the delete leaves no plane unlisted. Where neither covers the other, which no
+/// write of the app's leaves, nothing is deleted and nothing written.
 fn write_list(
     items: &dyn KeyItems,
     key: &[u8],
@@ -356,28 +379,35 @@ fn write_list(
 ) -> Result<&'static str, &'static str> {
     let value = list_value(key, entries).ok_or(KEY_UNREAD)?;
     let mut free = None;
-    let mut stale = None;
+    let mut there = Vec::new();
     for slot in REPLACED {
         match items.read(SERVICE, slot) {
             Ok(None) => free = free.or(Some(slot)),
-            Ok(Some(there)) if !list_read(&there, &[key]).1 => stale = Some(slot),
-            Ok(Some(_)) => {}
+            Ok(Some(value)) => there.push((slot, list_read(&value, &[key]).0)),
             Err(why) => {
                 tracing::warn!("purlis: the list of replaced planes could not be read ({why})");
                 return Err(KEY_UNREAD);
             }
         }
     }
-    let slot = match (free, stale) {
+    let slot = match (free, there.as_slice()) {
         (Some(slot), _) => slot,
-        (None, Some(slot)) => {
+        (None, [(one, of_one), (other, of_other)]) => {
+            let slot = if covers(of_other, of_one) {
+                *one
+            } else if covers(of_one, of_other) {
+                *other
+            } else {
+                tracing::warn!(
+                    "purlis: neither list of replaced planes names every plane the other does, \
+                     so neither was replaced"
+                );
+                return Err(KEY_UNREAD);
+            };
             gone(items, SERVICE, slot)?;
             slot
         }
-        (None, None) => {
-            gone(items, SERVICE, REPLACED[1])?;
-            REPLACED[1]
-        }
+        (None, _) => return Err(KEY_UNREAD),
     };
     made(items, SERVICE, slot, &value)?;
     Ok(slot)
@@ -418,7 +448,7 @@ fn pending(items: &dyn KeyItems, spare: &str) -> Option<zeroize::Zeroizing<Vec<u
 /// Deleting another program's item is macOS's to allow, and it may ask the person: that prompt
 /// is their consent. A delete it refuses stops the press there ([`RENEW_REFUSED`]).
 pub(crate) fn renew(items: &dyn KeyItems, kinds: &[&str]) -> Result<Found, &'static str> {
-    let [spare, commands_spare] = super::keyhold::spares_of(SERVICE);
+    let [spare, commands_spare, probe_spare] = super::keyhold::spares_of(SERVICE);
     let key = match pending(items, &spare) {
         Some(key) => key,
         None => {
@@ -450,9 +480,19 @@ pub(crate) fn renew(items: &dyn KeyItems, kinds: &[&str]) -> Result<Found, &'sta
         .into_iter()
         .flatten()
         .collect();
+    // Each anchor is vouched for by its name alone (L5 of #7734's round 3): the old key is
+    // another program's, so no seal of its can say more. That is safe because a vouch only
+    // ever offers the person a press that shows what it seals: a policy's Accept seals the text
+    // the window showed by its digest, and the nevers' press the pairs it showed by theirs
+    // ([`crate::dispatchnever::keep_shown_after_a_new_key`]). Nothing is sealed by a vouch.
     let mut entries = Entries::new();
     let mut every = Vec::new();
-    for service in [SERVICE, spare.as_str(), commands_spare.as_str()] {
+    for service in [
+        SERVICE,
+        spare.as_str(),
+        commands_spare.as_str(),
+        probe_spare.as_str(),
+    ] {
         for account in listing(service)? {
             if of_kinds(&account, kinds) {
                 entries.insert(account.clone(), true);
@@ -558,7 +598,7 @@ pub fn renew_key(kinds: &[&str]) -> Result<bool, &'static str> {
         let _one = RENEWING
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        renew_key_with(&OsKeyItems, kinds, &mut || found(true))
+        renew_key_with(&OsKeyItems, kinds, &mut || found_by_the_press(true))
     }
 }
 
@@ -957,31 +997,39 @@ fn said(found: &Found) -> Result<(), &'static str> {
 /// rule needs Security calls only `unsafe` reaches, which is a ruling of its own.
 ///
 /// **No item, and a spare one** ([`super::keyhold::spares_of`]): a write of the key that was cut
-/// short between its delete and its add left the key at rest there (#7073). The app's own spare
+/// short between its delete and its add left the key at rest there (#7073), or an ownership
+/// probe cut short left it in the probe's own spare (M3 of #7734's round 3). The app's own spare
 /// is made the key again, so every seal made with it still holds; a spare another program made
 /// is [`Found::Foreign`], never a key.
 pub(crate) fn read_or_make(items: &dyn KeyItems) -> Found {
     match items.read(SERVICE, ACCOUNT) {
         Ok(Some(hex)) => checked(items, SERVICE, &hex),
         Ok(None) => {
-            let [spare, _] = super::keyhold::spares_of(SERVICE);
-            match items.read(&spare, ACCOUNT) {
-                Ok(Some(hex)) => match checked(items, &spare, &hex) {
-                    Found::Held(key) => match items.make_own(SERVICE, ACCOUNT, &hex) {
-                        Ok(()) => Found::Held(key),
-                        Err(why) => {
-                            tracing::warn!("purlis: the seal's spare key was not restored ({why})");
-                            Found::Unread
-                        }
-                    },
-                    other => other,
-                },
-                Ok(None) => fresh(items),
-                Err(why) => {
-                    tracing::warn!("purlis: the seal's spare key could not be read ({why})");
-                    Found::Unread
+            let [spare, _, probe_spare] = super::keyhold::spares_of(SERVICE);
+            for spare in [spare, probe_spare] {
+                match items.read(&spare, ACCOUNT) {
+                    Ok(Some(hex)) => {
+                        return match checked(items, &spare, &hex) {
+                            Found::Held(key) => match items.make_own(SERVICE, ACCOUNT, &hex) {
+                                Ok(()) => Found::Held(key),
+                                Err(why) => {
+                                    tracing::warn!(
+                                        "purlis: the seal's spare key was not restored ({why})"
+                                    );
+                                    Found::Unread
+                                }
+                            },
+                            other => other,
+                        };
+                    }
+                    Ok(None) => {}
+                    Err(why) => {
+                        tracing::warn!("purlis: the seal's spare key could not be read ({why})");
+                        return Found::Unread;
+                    }
                 }
             }
+            fresh(items)
         }
         Err(Unreadable::NoKeyring) => Found::NoKeyring,
         Err(why) => {

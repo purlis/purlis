@@ -30,7 +30,10 @@ personas refused), and Accept refuses with the manual step. Pressing Accept neve
   Access**, which can delete any item of theirs (never `security` in a terminal, which macOS may
   refuse as it refuses the app). The press can be made again, and no project reads as never
   accepted at any step (#7734's review, F2 and F6). The key's cache is not held across macOS's
-  prompt; the keychain is read again once it returns (F7).
+  prompt; the keychain is read again once it returns (F7), and not by any other press meanwhile.
+  The check that the app owns the key's item makes it again with a spare of its own
+  (`purlis-seal/spare-of-the-probe`), never the one the new key waits in (M3 of its round 3).
+  Where both list accounts hold one, only a list the other covers is deleted to make room (M4).
 - **The digest is checked before, and again after the prompt returns.** A view already stale
   asks nothing of macOS; a file that changed while the prompt was open accepts nothing (the new
   key is kept). Then this plane's acceptance is sealed from exactly what the person was shown.
@@ -47,14 +50,27 @@ personas refused), and Accept refuses with the manual step. Pressing Accept neve
   a list that holds under neither (another program's, or edited) is kept, marked `?`, and never
   vouched for (F5). A plane leaves the list when it is accepted again, a list whose seal does not
   hold included, and the item goes with its last plane (F6).
-- **The nevers too** (F3). The anchors of a plane's nevers (`dispatch-nevers-live:<anchor>`, and
-  `dispatch-nevers:<anchor>` from before the set) are kept on the same list. Such a plane's
-  nevers read as unread, a file wiped since included, so no never drops silently, and the words
-  say *purlis made a new seal key on this machine, so it cannot vouch for the list of pairs you
-  said never to*, with what to do: review the file, then accept the project's policy again
-  (`PolicyState.nevers_new_key`; Settings › Project › Policy offers Accept for it). The person's
-  Accept on that project seals the nevers the file holds, as they stand, with the new key
-  (`dispatchnever::keep_after_a_new_key`): nevers only tighten.
+- **The nevers too** (F3), **and never as a side effect of Accept** (H1 of #7734's round 3).
+  The anchors of a plane's nevers (`dispatch-nevers-live:<anchor>`, and `dispatch-nevers:<anchor>`
+  from before the set) are kept on the same list. Such a plane's nevers read as unread, a file
+  wiped since included, so no never drops silently. Accept accepts exactly what the window
+  showed, digest-bound, so it seals no never, on the pressing project or another. Where purlis
+  vouches for the entry, the window says *purlis made a new seal key on this machine, so it
+  cannot vouch for your never-dispatch list*, **shows the pairs the file holds now**, and offers
+  a press of their own, the window's alone: **Keep these nevers** (the command
+  `keep_project_nevers`, on `WINDOW_ONLY`; `dispatchnever::keep_shown_after_a_new_key`;
+  `PolicyState.nevers_new_key` and `nevers_to_keep`). It names the pairs shown by their digest,
+  checked under purlis's lock on the file, and seals exactly those with the new key; a file that
+  changed since keeps nothing. Then the plane leaves the list for its nevers.
+- **Only a vouched entry gets the words or the press** (H2 of #7734's round 3). An entry the list
+  names but purlis does not vouch for (a list that holds under no key of the app's, or an entry
+  marked `?`) only keeps the nevers unread: no new key's words, no pairs to keep, and nothing
+  seals the file as it stands. So a list another program put there under a healthy key cannot
+  launder a nevers file edited meanwhile.
+- **An anchor is vouched for by its name alone** (L5 of #7734's round 3, accepted). While the key
+  is foreign, no seal of the old key's can say more of an anchor than that it is there. That is
+  enough because a vouch never seals anything: it only offers a press that shows what it seals,
+  Accept by the policy's digest and Keep these nevers by the pairs'.
 - **Tamper detection is unchanged.** A plane not on the list, or one edited after its
   acceptance under the new key, reads broken as before, with the existing words.
 - **Where the key is the app's own, nothing is replaced**: the press is Accept.
@@ -68,9 +84,8 @@ keeps the manual step.
 
 - A record of a listed plane edited before it is accepted again cannot be told from one sealed
   with the old key, which is gone: it reads as broken because of the new key. Likewise a nevers
-  file of a listed plane edited before the person's Accept is sealed as it stands then. Nevers
-  only tighten, so a pair added is kept, and a pair taken out is the one the window asked the
-  person to check for.
+  file of a listed plane edited before the person keeps it shows its pairs as they stand then:
+  the person sees exactly what is sealed, and a pair taken out is one they can see is missing.
 - A list deleted by another program (which macOS would ask the person to allow) lets a plane
   whose anchor went read as never accepted, and its nevers as none, as an anchor deleted does
   today.

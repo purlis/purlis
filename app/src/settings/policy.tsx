@@ -7,8 +7,10 @@ import { chatNumberSaid } from "../chatNumber";
 import { SETTINGS, usePlaneChanged } from "../planeChanged";
 import { holdPolicy, modeSaid, templateSaid } from "../projectPolicy";
 import {
+  keepNevers,
   mayAcceptPolicy,
   NEVERS_NEW_KEY_SAID,
+  neversToKeepSaid,
   POLICY_ACCEPT_MEANS,
   POLICY_UNSEALED_SAID,
   waitingSaid,
@@ -96,6 +98,28 @@ export function PolicyStanding({
       .catch((err: unknown) => setSaid(`purlis could not keep your acceptance: ${String(err)}`))
       .finally(() => setBusy(false));
   };
+  const keep = () => {
+    const kept = state?.nevers_to_keep;
+    if (kept === null || kept === undefined || busy) return;
+    setBusy(true);
+    setSaid(undefined);
+    void keepNevers(plane, kept)
+      .then((done) => {
+        if (done.status !== "ok") {
+          // Refused, as where the list changed since it was shown: read what stands now.
+          setSaid(done.error);
+          readAgain();
+        } else if (drawable(done.data)) {
+          setState(done.data);
+          holdPolicy(plane, done.data);
+          sandboxCommandReturned();
+        }
+      })
+      .catch((err: unknown) =>
+        setSaid(`purlis could not keep your never-dispatch list: ${String(err)}`),
+      )
+      .finally(() => setBusy(false));
+  };
   return (
     <div
       id={ids.id}
@@ -131,11 +155,35 @@ export function PolicyStanding({
               family is enforced.
             </p>
           )}
-          {(state.waiting.length > 0 || state.unsealed || state.nevers_new_key) && (
+          {state.nevers_new_key && (
+            <>
+              <p>
+                {`${NEVERS_NEW_KEY_SAID} ${neversToKeepSaid(state.nevers_to_keep)}`}
+                {!canAccept && " Keep them from purlis's own window on this machine."}
+              </p>
+              {state.nevers_to_keep !== null && state.nevers_to_keep.pairs.length > 0 && (
+                <ul className="granted-list" aria-label="The pairs Keep these nevers seals">
+                  {state.nevers_to_keep.pairs.map((one) => (
+                    <li key={`${one.asking}\u0000${one.target}`}>
+                      <code>{one.asking}</code> never dispatches to <code>{one.target}</code>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {canAccept && state.nevers_to_keep !== null && (
+                <ButtonRow>
+                  {/* It seals the pairs shown: an answer that refuses, never one that grants. */}
+                  <Button isDisabled={busy} onPress={keep}>
+                    Keep these nevers
+                  </Button>
+                </ButtonRow>
+              )}
+            </>
+          )}
+          {(state.waiting.length > 0 || state.unsealed) && (
             <>
               <p>
                 {state.unsealed && `${POLICY_UNSEALED_SAID} `}
-                {state.nevers_new_key && `${NEVERS_NEW_KEY_SAID} `}
                 {state.waiting.length > 0 &&
                   `The project loosened its policy: ${waitingSaid(state)}. ${POLICY_ACCEPT_MEANS}`}
                 {!canAccept && " Accept it from purlis's own window on this machine."}

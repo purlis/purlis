@@ -414,6 +414,7 @@ export const commands = {
 	projectPolicyState: (plane: PlaneId) => typedError<PolicyState, string>(__TAURI_INVOKE("project_policy_state", { plane })),
 	acceptProjectPolicy: __WINDOW_ONLY_RESULT,
 	acceptProjectPolicyWithNewKey: __WINDOW_ONLY_RESULT,
+	keepProjectNevers: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **What the project's `[policy]` let through and logged** (Q308a: the "would have blocked"
 	 *  count, which opens the log): every chat's lines, newest first. A read, off the window's
@@ -9725,6 +9726,28 @@ export type NeedsYou = {
 	fix_does: string,
 };
 
+/**  One pair said never to: the asking persona, and the persona it never dispatches to. */
+export type NeverPair = {
+	/**  The persona that asks. */
+	asking: string,
+	/**  The persona it never dispatches to. */
+	target: string,
+};
+
+/**
+ *  **The never-dispatch list's pairs the window offers to keep after a new seal key** (#7714,
+ *  H1 of #7734's round 3): what Keep these nevers ([`keep_project_nevers`]) seals, exactly.
+ */
+export type NeversToKeep = {
+	/**  The pairs the list's file holds now, in its order: none where it holds none, or is gone. */
+	pairs: NeverPair[],
+	/**
+	 *  Their digest: what the press names, so a list that changed since it was shown keeps
+	 *  nothing.
+	 */
+	digest: string,
+};
+
 /**  A branch the window cut: the piece it is, and what git calls it (ADR 0072 §4). */
 export type NewBranch = {
 	piece: string,
@@ -11352,11 +11375,13 @@ export type PolicyState = {
 	 */
 	new_key: boolean,
 	/**
-	 *  Whether this project's never-dispatch list was anchored by a seal key purlis has replaced
-	 *  since (#7714): it reads as unread until the person reviews it and presses Accept, which
-	 *  keeps every pair it holds.
+	 *  Whether purlis vouches that this project's never-dispatch list was anchored by a seal key
+	 *  it has replaced since (#7714): it reads as unread until the person keeps the pairs shown
+	 *  ([`keep_project_nevers`]). Accept never seals them.
 	 */
 	nevers_new_key: boolean,
+	/**  The pairs Keep these nevers keeps, where `nevers_new_key` and the list's file reads. */
+	nevers_to_keep: NeversToKeep | null,
 	/**
 	 *  The digest of the committed text this was read from: what Accept names, so a press on a
 	 *  file that changed since it was shown accepts nothing.

@@ -132,6 +132,7 @@ macro_rules! app_commands {
                 policypress::project_policy_state,
                 policypress::accept_project_policy,
                 policypress::accept_project_policy_with_new_key,
+                policypress::keep_project_nevers,
                 policypress::policy_log,
                 sandboxing::persona_grants_held,
                 sandboxing::allow_persona_grants,

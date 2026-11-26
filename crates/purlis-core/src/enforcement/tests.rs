@@ -2110,11 +2110,7 @@ fn a_list_item_planted_under_a_healthy_key_offers_no_new_key_words_and_no_reseal
     let _home = OwnConfigHome::new();
     let root = plane("[policy]\ntemplate = \"open\"\n", None);
     a_never(root.path());
-    std::fs::write(
-        crate::dispatchnever::path(root.path()),
-        r#"{"never": []}"#,
-    )
-    .expect("tampered");
+    std::fs::write(crate::dispatchnever::path(root.path()), r#"{"never": []}"#).expect("tampered");
     crate::secrets::seal::set_replaced_for_this_test(
         &crate::secrets::seal::a_foreign_list_for_this_test(&[format!(
             "dispatch-nevers-live:{}",
@@ -2126,11 +2122,18 @@ fn a_list_item_planted_under_a_healthy_key_offers_no_new_key_words_and_no_reseal
     assert!(!said.contains("new seal key"), "{said}");
     let now = standing(root.path());
     assert!(!now.nevers_new_key, "{now:?}");
-    assert_eq!(crate::dispatchnever::to_keep_after_a_new_key(root.path()), None);
+    assert_eq!(
+        crate::dispatchnever::to_keep_after_a_new_key(root.path()),
+        None
+    );
     press(root.path(), &digest_of(root.path())).expect("accepted");
     let none = crate::dispatchnever::digest_of_pairs(&[]);
     assert!(keep_shown_after_a_new_key(root.path(), &none).is_err());
-    assert_eq!(read(root.path()), Nevers::Unread, "the tampered file is never sealed");
+    assert_eq!(
+        read(root.path()),
+        Nevers::Unread,
+        "the tampered file is never sealed"
+    );
 }
 
 #[test]

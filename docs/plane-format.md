@@ -4872,8 +4872,10 @@ write into this folder cannot make its own text arrive as the person's.
   accepted**, and its nevers as unread, whether or not the seal holds; only an entry without `?`
   in a list whose seal holds says it broke because purlis replaced its key
   (`sandbox::local::broken_by_a_new_key`, `PolicyState.new_key`,
-  `PolicyState.nevers_new_key`). A plane leaves it when it is accepted again, and the item goes
-  with its last plane. While the press runs, the new key is at rest in the spare
+  `PolicyState.nevers_new_key`), and only then are the nevers' pairs offered to keep. A plane
+  leaves it for its policy when it is accepted again, for its nevers when the person keeps the
+  pairs shown, and the item goes with its last plane. Where both accounts hold a list, only one
+  the other names every entry of is deleted to make room, so a write cut short loses none. While the press runs, the new key is at rest in the spare
   (`purlis-seal/spare`, account `answers`), which the next read makes the key where the press
   stopped between the old key's delete and the new one's write.
 - **Status:** **internal** — **purlis only**.
@@ -4898,7 +4900,11 @@ write into this folder cannot make its own text arrive as the person's.
   (#7007). **A write of the key cut short** between its delete and its add leaves the key at
   rest in its spare item (`purlis-seal/spare`, account `answers`): with no key item and the
   app's own spare, the app makes the spare the key again, so every seal still holds; a spare
-  another program made is treated as that program's key.
+  another program made is treated as that program's key. **The check that the app owns the
+  key's item** makes it again in place with a spare of its own (`purlis-seal/spare-of-the-probe`,
+  account `answers`), never `purlis-seal/spare`, where Make a new key and accept keeps the new
+  key while it runs; a check cut short leaves the key at rest there, and the app makes it the key
+  again the same way.
 - **Read by:** the same, in the app alone. No other process seals or verifies, and an answer it
   cannot verify counts as none. On Linux and Windows a keyring lets any of the person's programs
   read an item, so there the seal stops a hand edit and a sandboxed chat only; with no keyring,
