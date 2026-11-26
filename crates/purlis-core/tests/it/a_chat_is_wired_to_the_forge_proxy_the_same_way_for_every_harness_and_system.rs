@@ -208,7 +208,7 @@ fn every_harnesss_git_pairs_reset_the_helper_list_before_purlis_s_helper_and_not
             "{harness:?}: {got:?}"
         );
         let helper =
-            format!("!'{HELPER}' purlis-git-sentinel --host git.example.org --host github.com");
+            format!("!'{HELPER}' purlis-git-sentinel --host 'git.example.org' --host 'github.com'");
         assert_eq!(
             tail,
             [
