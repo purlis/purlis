@@ -135,30 +135,52 @@ export async function pickTheMachine(name: string, timeout = 30_000): Promise<vo
  * **Trusts the machine Connect just read, on the merged page** (#7191): where Connect and Pool are
  * one, the check of the key (or of the CA, over TLS) sits beside "Name the pool" and "Who can sign
  * in to <host>?". The pool is named there, the machine is trusted with **Trust this machine only**,
- * and the Pool step goes on from it, where the runner image is given by its digest: a build with no
- * release image of its own (`runner_image_of_this_version`, as these runs' are) cannot make the
- * pool in the one press of **Trust and create the pool**, which takes the image the build names.
+ * and the Pool step goes on from it, where the runner image is given by its digest.
  */
 export async function trustTheMachineOnTheMergedPage(pool: string): Promise<void> {
-  const name = await $("aria/Name the pool");
-  await name.waitForDisplayed({ timeout: MAKING }).catch(async () => {
-    throw new Error(`Connect never showed the merged page: ${await theStepSays()}`);
-  });
-  await name.setValue(pool);
+  await nameThePoolOnTheMergedPage(pool);
   await $("aria/Trust and create the pool").waitForDisplayed({ timeout: 30_000 });
   await press("Trust this machine only", MAKING);
 }
 
 /**
+ * **Trusts the machine and makes the pool in one press, on the merged page** (#7191, #7780):
+ * **Trust and create the pool** takes the runner image the build names. The scenario build names
+ * the one its run pushed to the fixture (`PURLIS_E2E_REMOTE_POOL_IMAGE`, read by the app's `e2e`
+ * feature alone, `poolfollow::scenario_image`); a build anyone is given names its release's.
+ */
+export async function trustAndCreateThePoolOnTheMergedPage(pool: string): Promise<void> {
+  await nameThePoolOnTheMergedPage(pool);
+  await press("Trust and create the pool", MAKING);
+}
+
+/** Names the pool on the merged page, once Connect shows it. */
+async function nameThePoolOnTheMergedPage(pool: string): Promise<void> {
+  const name = await $("aria/Name the pool");
+  await name.waitForDisplayed({ timeout: MAKING }).catch(async () => {
+    throw new Error(`Connect never showed the merged page: ${await theStepSays()}`);
+  });
+  await name.setValue(pool);
+}
+
+/**
+ * How Connect's merged page is gone through: **Trust this machine only** then the Pool step, where
+ * the image is typed by its digest, or the one press of **Trust and create the pool**.
+ */
+export type Trusting = "then the Pool step" | "and create the pool";
+
+/**
  * **Pool setup's walk to Docker on another machine, to a real chat** (#6266, #7188): from Add a
- * pool… to Try it's last screen against the fixture of `tests/remote-docker/up.sh`. Shared by the
- * walk's own spec and the link-down notice's, which needs the pool made and a chat running before
- * it puts a fault on the link. The window must be open and past the trust question.
+ * pool… to Try it's last screen against the fixture of `tests/remote-docker/up.sh`, past the
+ * merged page either way (`trusting`, the two steps where not said). Shared by the walk's own spec
+ * and the link-down notice's, which needs the pool made and a chat running before it puts a fault
+ * on the link. The window must be open and past the trust question.
  */
 export async function addAndTryARemoteDockerPool(of: {
   pool: string;
   image: string;
   address: string;
+  trusting?: Trusting;
 }): Promise<void> {
   // Where chats run: another machine with Docker.
   await on("Where chats run");
@@ -174,23 +196,28 @@ export async function addAndTryARemoteDockerPool(of: {
   await address.waitForDisplayed();
   await address.setValue(of.address);
   await press("Connect to 127.0.0.1", MAKING);
-  await trustTheMachineOnTheMergedPage(of.pool);
 
-  // Every check passed, the machine is trusted, and setup goes on to the pool.
-  // Pool: its name and the image, made on the other machine.
-  await on("Pool", MAKING);
-  const name = await $("aria/Name");
-  await name.waitForDisplayed();
-  await name.setValue(of.pool);
-  const image = await $("aria/Image, by digest");
-  if (!(await image.isDisplayed().catch(() => false))) {
-    const options = await $("aria/Options");
-    if ((await options.getAttribute("aria-expanded")) !== "true") await options.click();
-    await press("My team's own image");
+  if (of.trusting === "and create the pool") {
+    // One press: every check from first contact to a linked runner, of the image the build names.
+    await trustAndCreateThePoolOnTheMergedPage(of.pool);
+  } else {
+    await trustTheMachineOnTheMergedPage(of.pool);
+    // Every check passed, the machine is trusted, and setup goes on to the pool.
+    // Pool: its name and the image, made on the other machine.
+    await on("Pool", MAKING);
+    const name = await $("aria/Name");
+    await name.waitForDisplayed();
+    await name.setValue(of.pool);
+    const image = await $("aria/Image, by digest");
+    if (!(await image.isDisplayed().catch(() => false))) {
+      const options = await $("aria/Options");
+      if ((await options.getAttribute("aria-expanded")) !== "true") await options.click();
+      await press("My team's own image");
+    }
+    await image.waitForDisplayed();
+    await image.setValue(of.image);
+    await press("Create the pool");
   }
-  await image.waitForDisplayed();
-  await image.setValue(of.image);
-  await press("Create the pool");
 
   await on("Sign-ins", MAKING);
   await pressTheOneOf(["Sign in 1 profile", "Save and continue", "Continue"], MAKING);

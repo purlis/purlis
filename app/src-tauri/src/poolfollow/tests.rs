@@ -1572,3 +1572,30 @@ fn a_kept_runner_whose_work_is_still_to_be_fetched_is_not_let_go() {
     assert_eq!(names(&machine), ["first", "first-fedcba98"]);
     assert!(only_looked(config.path()), "nothing is removed");
 }
+
+/// **A build anyone is given offers only its own release's image** (#7780): the scenario run's
+/// image variable is never read outside the `e2e` build, whatever the environment holds.
+#[test]
+#[cfg(not(feature = "e2e"))]
+fn a_build_anyone_is_given_never_offers_the_scenario_runs_image() {
+    assert_eq!(scenario_image(|_| Some(NEW.to_owned())), None);
+}
+
+/// **The scenario build offers a new pool the image its run names** (#7780), so the one press of
+/// Trust and create the pool can be walked end to end; where the run names none, it offers what
+/// any build would.
+#[test]
+#[cfg(feature = "e2e")]
+fn the_scenario_build_offers_the_image_its_run_names() {
+    let named = |value: &'static str| {
+        move |name: &str| (name == SCENARIO_IMAGE_VARIABLE).then(|| value.to_owned())
+    };
+    assert_eq!(
+        scenario_image(named(NEW)),
+        Some(RunnerImageOffered::Ours {
+            image: NEW.to_owned()
+        })
+    );
+    assert_eq!(scenario_image(named("  ")), None);
+    assert_eq!(scenario_image(|_| None), None);
+}
