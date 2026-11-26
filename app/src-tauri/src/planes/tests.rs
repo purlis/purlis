@@ -8825,3 +8825,45 @@ fn a_secret_handed_before_a_wake_is_masked_when_the_woken_chat_is_hibernated_aga
         Some("resumed: deployed with ‹secret: deploy-key›\r\n")
     );
 }
+
+#[test]
+fn a_secret_handed_before_a_grants_restart_is_masked_when_the_restarted_chat_is_hibernated() {
+    // #7711's review: a restart resumes the conversation under a new number, as a wake does,
+    // and may draw again what its earlier run was handed (an obvious fake), which the earlier
+    // run's close forgot.
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_chat_at_rest(&held, dir.path());
+    let id = the_id_of(&held, session);
+    purlis_core::secrets::handedto::remember(
+        held.root(),
+        session,
+        Some(&id),
+        &purlis_core::secrets::handedto::Entry::new("team", "deploy-key"),
+        "FAKE-VAULT-VALUE-7711",
+    )
+    .expect("named");
+    host.shows(session, "deployed with FAKE-VAULT-VALUE-7711\r\n");
+    held.chats()
+        .owe_restart(session, "A grant was allowed.".to_owned());
+    let Restarted::Started(restarted) = held
+        .restart_chat(session, STARTING, When::Now)
+        .expect("the grant restarts it")
+    else {
+        panic!("the grant did not restart it at once");
+    };
+    assert_ne!(restarted, session, "a new run under a new number");
+    host.shows(
+        restarted,
+        "resumed: deployed with FAKE-VAULT-VALUE-7711\r\n",
+    );
+    comes_to_rest(&held, restarted);
+
+    held.hibernate_chat(restarted).expect("it hibernates");
+
+    assert_eq!(
+        purlis_core::hibernatedscreens::kept(held.root(), &id).as_deref(),
+        Some("resumed: deployed with ‹secret: deploy-key›\r\n")
+    );
+}
