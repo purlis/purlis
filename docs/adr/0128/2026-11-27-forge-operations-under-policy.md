@@ -161,7 +161,9 @@ spec §2.5's fixed things or to ADR 0125's fixed floor (amended 2026-11-27, §2)
 mapping (spec §15) maps each one to "floor: no action".
 
 Every name on today's `ADMIN`, `RULESET` and `APPROVAL` lists (`rest.rs`) belongs to a floor
-entry and is refused for every method, reads included, except the rule reads of #7358.
+entry and is refused for every method, reads included, except the rule reads of #7358 and
+reading a pull request's reviews and its approval state, which stay allowed: only review and
+approval writes are on the floor.
 `dispatches` belongs to `repository_dispatch`'s entry: `workflow_dispatch`
 (`actions/workflows/{file}/dispatches`) leaves it only by its own M81 row.
 
@@ -235,7 +237,8 @@ Milestones, repo labels, assignees and reactions are tracker writes:
 
 - under `open`, `watch`, `hold` and `team`, an Ask by default (§5), and a named permit makes the
   answer standing;
-- under `strict`, an Ask every time;
+- under `strict`, a named permit for that operation stops the asking; without one, an Ask every
+  time;
 - M75 opens milestones (`milestone.create`, `milestone.update`, `milestone.close`) and repo labels
   (`label.create`, `label.update`, `label.delete`), as the first permit-required pair;
 - **assignee changes are an Ask on both forges.** `issue.assign` and `pull.assign` are in the
@@ -245,8 +248,9 @@ Milestones, repo labels, assignees and reactions are tracker writes:
   write, are forwarded today and become an Ask. GitHub's own assignee routes
   (`issues/{n}/assignees`) are M81's;
 - reactions and lock are M81's;
-- the rule offer comes in M81 (#7796), after two identical answers to the same forge Ask. M75's
-  Ask offers none.
+- the offer comes in M81 (#7796), after two identical answers to the same tracker-write Ask.
+  It offers the person's standing answer at the You level on this machine, never a proposed
+  project rule. Only tracker-write Asks offer one; every other Ask offers none, and so does M75's.
 
 ### 9. Reviews and approvals: D3d amended to match the code
 
