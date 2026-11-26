@@ -640,13 +640,18 @@ fn in_the_journey(
     let root = target.root.clone();
     let left_on = |to: &ToARunner| {
         crate::runnerlinks::repos_held_on(to).and_then(|listed| {
-            crate::runnerlinks::left_of(listed, |held, unread| {
-                Ok(purlis_core::pools::left_beyond_a_fetch_in(
-                    &[root.as_path()],
-                    held,
-                    unread,
-                ))
-            })
+            crate::runnerlinks::left_of(
+                listed,
+                |held, unread| {
+                    Ok(purlis_core::pools::left_beyond_a_fetch_in(
+                        &[root.as_path()],
+                        held,
+                        unread,
+                    ))
+                },
+                // The journey's runner is this build's, which lists what it holds.
+                || Ok(Vec::new()),
+            )
         })
     };
     let said = crate::poolfollow::follow_and_drain(machine, Some(next), &chats_on, &left_on);
@@ -930,13 +935,18 @@ mod a_window_started_again {
         let root = target.root.clone();
         let left_on = |to: &ToARunner| {
             crate::runnerlinks::repos_held_on(to).and_then(|listed| {
-                crate::runnerlinks::left_of(listed, |held, unread| {
-                    Ok(purlis_core::pools::left_beyond_a_fetch_in(
-                        &[root.as_path()],
-                        held,
-                        unread,
-                    ))
-                })
+                crate::runnerlinks::left_of(
+                    listed,
+                    |held, unread| {
+                        Ok(purlis_core::pools::left_beyond_a_fetch_in(
+                            &[root.as_path()],
+                            held,
+                            unread,
+                        ))
+                    },
+                    // The journey's runner is this build's, which lists what it holds.
+                    || Ok(Vec::new()),
+                )
             })
         };
         let said = crate::poolfollow::follow_and_drain(&machine, Some(&next), &chats_on, &left_on);
