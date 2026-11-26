@@ -759,3 +759,53 @@ fn a_caller_that_has_not_proved_itself_costs_no_lookup_and_learns_nothing_of_an_
     )));
     assert!(asked.load(Ordering::SeqCst) > 0);
 }
+
+/// The document `gh api graphql` sends to enqueue with its values as variables (#7678).
+fn raw_enqueue(selection: &str) -> Vec<u8> {
+    graphql(
+        &format!(
+            "mutation($id: ID!, $head: GitObjectID!, $jump: Boolean) {{ \
+             enqueuePullRequest(input: {{pullRequestId: $id, expectedHeadOid: $head, jump: $jump}}) \
+             {{ {selection} }} }}"
+        ),
+        serde_json::json!({
+            "id": "PR_kwDO_1",
+            "head": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+            "jump": false,
+        }),
+    )
+}
+
+/// The raw enqueue is forwarded only where `guards.merge` lets a merge through: never under
+/// `enforce`, where it is held.
+#[test]
+fn a_raw_enqueue_is_forwarded_under_log_and_off_and_never_under_enforce() {
+    purlis_core::unsteered!();
+    let body = raw_enqueue("mergeQueueEntry { state position enqueuedAt headCommit { oid } }");
+    let (s, _) = in_mode(Mode::Enforce);
+    let out = post_graphql(&s, &body);
+    assert!(stopped(&out, Refusal::Merge), "enforce: {out:?}");
+    for mode in [Mode::Log, Mode::Off] {
+        let (s, _) = in_mode(mode);
+        let out = post_graphql(&s, &body);
+        assert!(forwarded(&out), "{mode:?}: {out:?}");
+    }
+}
+
+/// What an enqueue asks back stays inside what `MergeQueueEntry` names (#7682): a field it does
+/// not list, or a walk from its pull request out to the repo's issues, is refused in every mode.
+#[test]
+fn an_enqueue_that_asks_back_past_its_entry_is_refused_in_every_mode() {
+    purlis_core::unsteered!();
+    for selection in [
+        "mergeQueueEntry { baseCommit { oid } }",
+        "mergeQueueEntry { pullRequest { repository { issues(first: 1) { nodes { title } } } } }",
+    ] {
+        for mode in [Mode::Enforce, Mode::Log, Mode::Off] {
+            let (s, lines) = in_mode(mode);
+            let out = post_graphql(&s, &raw_enqueue(selection));
+            assert!(!forwarded(&out), "{mode:?}, {selection}: {out:?}");
+            assert!(lines.lock().unwrap().is_empty(), "{mode:?}, {selection}");
+        }
+    }
+}
