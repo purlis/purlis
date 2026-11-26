@@ -394,6 +394,7 @@ const DOCKER_POOL_IMAGE: &str = "DOCKER_POOL_TEST_IMAGE";
 /// so an image that went missing never passes as nothing run.
 const PARITY: &str = "PURLIS_PARITY";
 
+mod fault_suite;
 #[path = "behaviour/tests/fresh_runner.rs"]
 mod fresh_runner;
 #[path = "behaviour/tests/on_a_cluster_pool.rs"]
@@ -741,10 +742,15 @@ fn a_pool_of(
     .expect("a pool")
     .on(remote);
     crate::dockerpools::add_on(machine, &pool).expect("the pool is added and its runner paired");
+    let made = purlis_core::runners::runner_for(&machine.config, &name)
+        .expect("its runner is kept")
+        .made;
     let removes = RemovesThePool {
         config: machine.config.clone(),
         docker: machine.for_pool(&name).expect("the pool's engine").docker,
         name: name.clone(),
+        container: made.container.as_str().to_owned(),
+        volume: made.runner.volume(),
     };
     (name, removes)
 }
@@ -783,10 +789,59 @@ struct RemovesThePool {
     config: PathBuf,
     docker: purlis_core::dockerpool::Docker,
     name: String,
+    /// Its runner's container and home volume, as it was made: what a pool the test forgot
+    /// leaves on its machine (#7816), removed there by name.
+    container: String,
+    volume: String,
+}
+
+impl RemovesThePool {
+    /// **A pool the test forgot here leaves its runner on its machine** (#7187): its container
+    /// and home volume are removed there by name, through the engine the pool was reached on.
+    /// `false` where the pool is still kept, for [`purlis_core::pools::remove_discarding`].
+    fn left_by_a_forget(&self) -> bool {
+        let kept = purlis_core::runners::pools(&self.config)
+            .is_ok_and(|pools| pools.iter().any(|pool| pool.name() == self.name));
+        if kept {
+            return false;
+        }
+        for args in [
+            vec!["rm", "--force", self.container.as_str()],
+            vec!["volume", "rm", "--force", self.volume.as_str()],
+        ] {
+            let ran = self
+                .docker
+                .command()
+                .map_err(|why| why.to_string())
+                .and_then(|mut command| {
+                    purlis_core::forklock::output(command.args(&args))
+                        .map_err(|why| why.to_string())
+                });
+            let said = match ran {
+                Ok(out) if out.status.success() => continue,
+                Ok(out) => String::from_utf8_lossy(&out.stderr).into_owned(),
+                Err(why) => why,
+            };
+            let said = format!(
+                "forgotten pool {}'s runner was not removed from its machine ({}): {said}",
+                self.name,
+                args.join(" ")
+            );
+            if std::thread::panicking() {
+                tracing::warn!("{said}");
+            } else {
+                panic!("{said}");
+            }
+        }
+        true
+    }
 }
 
 impl Drop for RemovesThePool {
     fn drop(&mut self) {
+        if self.left_by_a_forget() {
+            return;
+        }
         // A behaviour that failed on the runner is read with what its host said.
         if std::thread::panicking()
             && let Ok(kept) = purlis_core::runners::runner_for(&self.config, &self.name)
