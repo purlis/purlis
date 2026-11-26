@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **The folder a chat is in now** (#6367, ADR 0126): where a relative path in its pane starts.
+//! **The folder a chat is in now** (#6367, ADR 0129): where a relative path in its pane starts.
 //!
 //! A chat starts in a folder, and its program may move: a `cd` in a shell, a harness's tool
 //! changing its working folder. Two things say where it is now, and neither is trusted for more

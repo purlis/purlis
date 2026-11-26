@@ -8194,7 +8194,7 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   token does; it lets the drain tell a copy of a line the host already took late from another
   line that reads the same, and a copy is passed over only where it is the same chat's, under
   the same id, and says the same thing.
-  A report of a Claude Code chat carries `folder` (#6367, ADR 0126): the payload's `cwd`, where it
+  A report of a Claude Code chat carries `folder` (#6367, ADR 0129): the payload's `cwd`, where it
   is a plain absolute folder, which the app keeps in memory only as where a relative path in the
   chat's pane starts. It is never spooled.
   A `UserPromptSubmit` report carries `prompt_marks` (#2775): a 256-bit Bloom filter of the
