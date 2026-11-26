@@ -81,6 +81,9 @@ npm ci
 npm run typecheck && npm run lint && npm run format:check && npm test
 ```
 
+On macOS, a local build is signed with one stable identity so the Keychain does not ask for
+your password after every rebuild: [Local macOS signing](docs/development.md#local-macos-signing-no-keychain-prompts).
+
 A change to recorded behaviour or the command line also runs
 `cargo test -p purlis-cli --test recorded_behaviour`. The website and docs are checked with
 `cd site && npm ci && npm test && npm run build`.

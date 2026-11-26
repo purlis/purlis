@@ -33,7 +33,16 @@ struct Fixture {
     person: tempfile::TempDir,
 }
 
+/// The fixture, or a SKIP line on a laptop and a failure where `PURLIS_PARITY` is set (#7188).
 fn fixture() -> Option<Fixture> {
+    crate::support::real_infra::fixture_or_skip(
+        "Docker on another machine, through a context",
+        "tests/remote-docker/up.sh",
+        fixture_set_by_up(),
+    )
+}
+
+fn fixture_set_by_up() -> Option<Fixture> {
     let ssh_route = std::env::var("REMOTE_DOCKER_TEST_ROUTE").ok()?;
     let tls_route = std::env::var("REMOTE_DOCKER_TEST_TLS_ROUTE").ok()?;
     let tls_dir = PathBuf::from(std::env::var_os("REMOTE_DOCKER_TEST_TLS_DIR")?);

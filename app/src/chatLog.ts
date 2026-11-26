@@ -78,6 +78,8 @@ const CAUSE_SAID: Readonly<Record<string, string>> = {
   start: "Started",
   reopen: "Started again in its conversation",
   fresh: "Started again without its conversation",
+  // A hibernated chat woken by Resume (SC-4a, #7630).
+  wake: "Woken in its conversation",
 };
 
 function layerSaid(layer: StartProtection["layers"][number]): string {
@@ -137,6 +139,8 @@ const STOPPED_SAID: Readonly<Record<string, string>> = {
 export function endSaid(row: Extract<ChatLogRow, { kind: "ended" }>): string {
   if (row.cause === "superseded")
     return "Ended · started again because the project's settings changed";
+  // The person hibernated it (#7630): the run ended as it was woken or ended.
+  if (row.cause === "hibernated") return "Ended · hibernated by you";
   if (row.state === "completed") return "Ended · done";
   if (row.state === "stopped") return `Ended · ${STOPPED_SAID[row.cause] ?? "stopped"}`;
   if (row.cause === "host-crash") return "Ended · failed, as purlis stopped while it ran";

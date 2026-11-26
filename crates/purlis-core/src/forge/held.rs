@@ -26,6 +26,7 @@
 //! [`NoWorkflowCredential`]: crate::heldact::NoWorkflowCredential
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use base64::Engine as _;
 use secrecy::SecretString;
@@ -35,7 +36,7 @@ use super::credential::CredentialSource;
 use super::http::TokenSource;
 use super::transport::{Call, Field, Method, Reply, Transport};
 use super::{Forge, ForgeError, Kind, LIST_TIMEOUT, quote};
-use crate::heldact::{Forked, HeldForge, TagName, TipChange, TipFiles, valid_rev};
+use crate::heldact::{Forked, HeldForge, PushError, TagName, TipChange, TipFiles, valid_rev};
 use crate::mergehold::{Base, HeadSha, Repo};
 use crate::secrets::keyring::Secret;
 
@@ -535,14 +536,56 @@ impl HeldForge for GitHubHeld {
         base: &HeadSha,
         new_branch: bool,
         workflow: Option<&Secret>,
-    ) -> Result<(), String> {
+    ) -> Result<(), PushError> {
         let Some(secret) = workflow else {
             return Err(
-                "a push to GitHub that changes CI files needs the second sign-in".to_owned(),
+                "a push to GitHub that changes CI files needs the second sign-in"
+                    .to_owned()
+                    .into(),
             );
         };
-        let over = self.0.workflow.with(&self.0.forge, secret)?;
-        self.push(over.as_ref(), repo, branch, tip, base, new_branch)
+        let over = Watching401::over(self.0.workflow.with(&self.0.forge, secret)?);
+        match self.push(&over, repo, branch, tip, base, new_branch) {
+            Ok(()) => Ok(()),
+            // A 401 on the second token is the forge ending it: it says so with the status, not
+            // with words, and the status is what decides (nothing here reads a message).
+            Err(said) if over.refused() => Err(PushError::SecondSignInRefused(said)),
+            Err(said) => Err(said.into()),
+        }
+    }
+}
+
+/// **A transport that notes whether the forge answered 401** to anything it carried: the second
+/// token's refusal, told apart from every other failure by the status alone.
+struct Watching401 {
+    inner: Arc<dyn Transport>,
+    refused: AtomicBool,
+}
+
+impl Watching401 {
+    fn over(inner: Arc<dyn Transport>) -> Watching401 {
+        Watching401 {
+            inner,
+            refused: AtomicBool::new(false),
+        }
+    }
+
+    fn refused(&self) -> bool {
+        self.refused.load(Ordering::Relaxed)
+    }
+}
+
+impl Transport for Watching401 {
+    fn send(&self, forge: &Forge, call: &Call) -> Result<Reply, super::transport::NoAnswer> {
+        let reply = self.inner.send(forge, call)?;
+        if reply.status == Some(401) {
+            self.refused.store(true, Ordering::Relaxed);
+        }
+        Ok(reply)
+    }
+
+    fn check_auth(&self, forge: &Forge) -> Result<(), ForgeError> {
+        self.inner.check_auth(forge)
     }
 }
 
@@ -751,6 +794,20 @@ impl HeldForge for GitLabHeld {
         base: &HeadSha,
         new_branch: bool,
         _: Option<&Secret>,
+    ) -> Result<(), PushError> {
+        self.push_commit(repo, branch, base, tip, new_branch)
+            .map_err(PushError::from)
+    }
+}
+
+impl GitLabHeld {
+    fn push_commit(
+        &self,
+        repo: &Repo,
+        branch: &Base,
+        base: &HeadSha,
+        tip: &HeadSha,
+        new_branch: bool,
     ) -> Result<(), String> {
         ref_name(branch.as_str())?;
         // The lease: the branch is read right before, and must be where the ask said.

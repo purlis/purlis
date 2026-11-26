@@ -1252,6 +1252,18 @@ export const commands = {
 	 *  files are not touched.
 	 */
 	putAwayArrivedFiles: (plane: PlaneId, chat: string) => typedError<null, string>(__TAURI_INVOKE("put_away_arrived_files", { plane, chat })),
+	/**  Chat `session`, where it is hibernated. */
+	chatHibernated: (plane: PlaneId, session: number) => typedError<{
+	by: By,
+} | null, string>(__TAURI_INVOKE("chat_hibernated", { plane, session })),
+	/**  The chats of `plane` that are hibernated: what the window reads its rows by as it opens. */
+	hibernatedChats: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("hibernated_chats", { plane })),
+	/**
+	 *  Hibernate on a chat's row (SC-4a, #7630): the person's act. Refused, in a sentence that
+	 *  says why and what to do, where the chat may not be hibernated; otherwise its program ends and
+	 *  the window is told. The window's alone (`WINDOW_ONLY`).
+	 */
+	hibernateChat: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("hibernate_chat", { plane, session })),
 	/**
 	 *  Chat `session`, where its program ended with its session host and the person has not put
 	 *  it away.
@@ -4251,8 +4263,18 @@ export const commands = {
 	/**
 	 *  The state of each of this repo's branch folders, asked once `worktree_list` has named them
 	 *  (#5321): what each has uncommitted, or why it could not be read.
+	 * 
+	 *  **An answer may be partial** (H16): a folder still being read has `reading` set and nothing
+	 *  else, and the window asks again at once, which waits for the next folder to finish. The
+	 *  whole of 133 folders took 47 s in one answer; the first now comes in about one status's time,
+	 *  and an ask with nothing changed reads nothing.
+	 * 
+	 *  **`round` is the refresh an ask continues** (#7667): an ask with none is a new refresh, and
+	 *  reads again what no watch vouches for; one naming the `round` an answer carried is given
+	 *  what that refresh has read. Each ask without a `round` starts a new round, so a window that
+	 *  never names one makes every ask a refresh of its own.
 	 */
-	worktreeStates: (plane: PlaneId, workspace: string, repo: string) => typedError<PieceState[], string>(__TAURI_INVOKE("worktree_states", { plane, workspace, repo })),
+	worktreeStates: (plane: PlaneId, workspace: string, repo: string, round: number | null) => typedError<PieceState[], string>(__TAURI_INVOKE("worktree_states", { plane, workspace, repo, round })),
 	/**
 	 *  **New branch**, from a repo's row (GL-1): cut a piece off the clone's HEAD and log it
 	 *  `claimed`. It starts nothing. `branch` is the name the operator typed, used exactly or
@@ -6116,8 +6138,8 @@ export const commands = {
 	 */
 	aboutCharter: () => __TAURI_INVOKE<About>("about_charter"),
 	/**
-	 *  Copy diagnostics' answer: the system, and the open and hot chats of every project held.
-	 *  Read from memory only, so it costs nothing on the window's thread.
+	 *  Copy diagnostics' answer: the system, the open and hot chats of every project held, and the
+	 *  device's class. Read from memory only, so it costs nothing on the window's thread.
 	 */
 	diagnosticsHere: () => __TAURI_INVOKE<DiagnosticsHere>("diagnostics_here"),
 	/**
@@ -7924,6 +7946,11 @@ export type BusyChat = {
 	state: string,
 };
 
+/**  How a chat that is hibernated was put to rest. */
+export type By = 
+/**  The person did, from its row. */
+"operator";
+
 /**
  *  A harness the operator started by hand in a shell tab, as the window draws its banner.
  * 
@@ -8297,6 +8324,11 @@ export type ChatGo =
 export type ChatHeld = {
 	plane: PlaneId,
 	session: number,
+};
+
+/**  Chat `session` as the window reads its hibernation. */
+export type ChatHibernation = {
+	by: By,
 };
 
 /**  A chat's Chat log: whether purlis knows the chat, and its rows. */
@@ -9117,6 +9149,19 @@ export type DeletesCutShort = {
 	unsettled: string[],
 };
 
+/**  What Diagnostics says of the device's RAM class (ADR 0082 §3). */
+export type DeviceClass = 
+/**  The machine's memory is still being read. */
+{ kind: "reading" } | 
+/**  The machine's memory could not be read: no class is known, and so no target. */
+{ kind: "not_known" } | 
+/**  The class, and the hot target it gives: a budget, never a cap. */
+{ kind: "known"; 
+/**  The class in GB (8, 16, 32 or 64), or `None` under 8 GB. */
+class_gb: number | null; 
+/**  How many hot chats the device targets. */
+hot_target: number };
+
 /**
  *  **What the Devices view draws first** (#2052): this machine's version, where everything the
  *  window has open runs, and each pool's limits.
@@ -9147,10 +9192,12 @@ export type DiagnosticsHere = {
 	/**  The chats open in every project this app holds, a shell tab not among them. */
 	open: number,
 	/**
-	 *  The open chats whose run has a program (the glossary's **hot chat**): any not done or
-	 *  failed.
+	 *  The open chats whose run has a process (the glossary's **hot chat**): `starting`,
+	 *  `working`, `input-required` or `paused`. A queued or hibernated run is open, not hot.
 	 */
 	hot: number,
+	/**  The device's RAM class and its hot target. */
+	device: DeviceClass,
 };
 
 /**  What a discard is checked against. */
@@ -13488,6 +13535,12 @@ export type OpenChat = {
 	 *  a runner before 1.51, whose Move here row says such a clone stays there.
 	 */
 	clones_come_back?: boolean | null,
+	/**
+	 *  Whether its row offers Hibernate (SC-4a, #7630): its harness resumes a conversation by
+	 *  id and its session host can hibernate a chat (session protocol 1.96). `null` otherwise:
+	 *  a shell, a harness that cannot, or a host that would refuse it.
+	 */
+	hibernates?: boolean | null,
 	/**  The persona it adopted. */
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */
@@ -14263,6 +14316,13 @@ export type PieceState = {
 	uncommitted?: number | null,
 	/**  As [`Piece::unread`]. */
 	unread?: string | null,
+	/**  Still being read: ask again (H16). Neither of the others is said while it is. */
+	reading?: boolean | null,
+	/**
+	 *  The refresh this answer belongs to, the same on every folder of one answer: the window
+	 *  names it when it asks again for the folders still reading (#7667).
+	 */
+	round?: number | null,
 };
 
 /**  What the plane's pin says against this charter. */
@@ -20191,7 +20251,13 @@ export type SlowMoment =
  *  The command `command`, received on the core's main thread at `at`, held it for `ms`
  *  (`crate::mainwatch`). The core writes it; the window only reads it back.
  */
-{ kind: "core_command"; command: string; ms: number; at: number | null };
+{ kind: "core_command"; command: string; ms: number; at: number | null } | 
+/**
+ *  A new chat's opening that took `ms`, begun at `at`, while `hot` chats were open, and the
+ *  phases it passed through in the order it ran them (H12). The core writes it; the window
+ *  only reads it back.
+ */
+{ kind: "opening"; ms: number; at: number | null; hot: number; phases: StallTook[] };
 
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
 export type SlowStart = {

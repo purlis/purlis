@@ -5,7 +5,8 @@ import { useSyncExternalStore } from "react";
 import { commands, type ForgeAccountRow, type PlaneId } from "../bindings";
 import { ForgeBrowserSignIn } from "../ForgeBrowserSignIn";
 import { ForgeCiPermission } from "../ForgeCiPermission";
-import { ACCOUNTS_CHANGED, forgeAccountsChanged } from "../ForgeSignInEnded";
+import { ACCOUNTS_CHANGED, forgeAccountsChanged, SIGN_IN_TROUBLE } from "../ForgeSignInEnded";
+import { listen } from "../here";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { ImportCliLogin } from "../ImportCliLogin";
 import type { LiveSetting, SettingsGroup } from "./groups";
@@ -111,16 +112,25 @@ async function reread() {
 /** Read again when another surface of this window signed an account in or out. */
 const rereadWhenChanged = () => void reread();
 
+/** The core's trouble listener while the page is open: a trouble may have changed an account
+ *  (a refused second sign-in is deleted, so CI files are no longer allowed). */
+let hearing: Promise<(() => void) | undefined> | undefined;
+
 function subscribe(listener: () => void) {
   if (listeners.size === 0) {
     held = START;
     void reread();
     window.addEventListener(ACCOUNTS_CHANGED, rereadWhenChanged);
+    hearing = listen(SIGN_IN_TROUBLE, rereadWhenChanged).catch(() => undefined);
   }
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
-    if (listeners.size === 0) window.removeEventListener(ACCOUNTS_CHANGED, rereadWhenChanged);
+    if (listeners.size === 0) {
+      window.removeEventListener(ACCOUNTS_CHANGED, rereadWhenChanged);
+      void hearing?.then((stop) => stop?.()).catch(() => undefined);
+      hearing = undefined;
+    }
   };
 }
 

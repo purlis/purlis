@@ -16,7 +16,7 @@ export const FORGE_REPLACED = "forge-sign-in-replaces";
  * "Migration"): with the one-login train's feature on, `mint = "github-app"` and a vault forge
  * token still load and run nothing. This says so once for the lines the project has now: Dismiss
  * keeps it dismissed until they change (the core's cause key names them), and Open sign-in goes to
- * Settings › Forges. Nothing in a project file or a vault is changed from here.
+ * Settings › Accounts. Nothing in a project file or a vault is changed from here.
  *
  * Read from the sandbox state when the project opens, when its settings change on disk and when
  * the window comes back; `null` (always, without the feature) draws nothing.
@@ -33,7 +33,7 @@ export function ForgeReplacedNotice({
   dismissed: ReadonlySet<string>;
   dismiss: (cause: string) => void;
   settle: (family: string, present: readonly string[]) => void;
-  /** Opens Settings › Forges. */
+  /** Opens Settings › Accounts. */
   onSignIn: () => void;
 }) {
   const [told, setTold] = useState<ForgeReplaced | null>(null);

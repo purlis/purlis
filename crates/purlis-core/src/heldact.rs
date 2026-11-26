@@ -313,7 +313,31 @@ pub trait HeldForge: Send + Sync {
         base: &HeadSha,
         new_branch: bool,
         workflow: Option<&Secret>,
-    ) -> Result<(), String>;
+    ) -> Result<(), PushError>;
+}
+
+/// Why a push to the forge did not happen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PushError {
+    /// The forge answered 401 to the second credential: that token is dead, so sending the push
+    /// again can never succeed. Carries the forge's words.
+    SecondSignInRefused(String),
+    /// Any other refusal or failure, in the forge's or the app's words.
+    Failed(String),
+}
+
+impl From<String> for PushError {
+    fn from(said: String) -> PushError {
+        PushError::Failed(said)
+    }
+}
+
+impl std::fmt::Display for PushError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PushError::SecondSignInRefused(said) | PushError::Failed(said) => f.write_str(said),
+        }
+    }
 }
 
 /// Why the second credential is not there.
@@ -329,6 +353,9 @@ pub trait WorkflowCredential: Send + Sync {
     fn available(&self, host: &str) -> Result<(), Unavailable>;
     /// The credential, for one push.
     fn secret(&self, host: &str) -> Result<Secret, Unavailable>;
+    /// The forge refused the credential `secret` handed out (401): it is dead. Mark it no longer
+    /// valid, so no ask offers it again until the person signs in again. Nothing by default.
+    fn refused(&self, _host: &str) {}
 }
 
 /// The stub until slice C lands: no second sign-in has been made.

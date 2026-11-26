@@ -411,6 +411,9 @@ enum Why {
     /// A chat started again in the place of one whose harness could not bring its
     /// conversation back (`lostOnResume`): the same chat, `fresh`.
     Again,
+    /// A hibernated chat woken on its conversation (ADR 0066's `wake` run, #7630): the same
+    /// chat in a new run, the hibernated one ending `completed | superseded`.
+    Wake,
 }
 
 /// **How a start of `chat` is made** (#2071), from the app's own record of it: asked for by
@@ -431,7 +434,7 @@ fn made_of(chat: &Chat, why: Why) -> purlis_core::sandbox::Made {
     }
     match why {
         Why::New => Made::Window,
-        Why::Relaunch | Why::Upgrade | Why::Again => Made::Relaunch,
+        Why::Relaunch | Why::Upgrade | Why::Again | Why::Wake => Made::Relaunch,
     }
 }
 
@@ -2103,6 +2106,14 @@ impl Chats {
         asked: &purlis_core::start::Start,
         runs_on: Option<&purlis_core::machine::StartChoice>,
     ) -> Result<purlis_core::start::Ready, String> {
+        purlis_core::opening::phase("ready", || self.ready_where_composed_now(asked, runs_on))
+    }
+
+    fn ready_where_composed_now(
+        &self,
+        asked: &purlis_core::start::Start,
+        runs_on: Option<&purlis_core::machine::StartChoice>,
+    ) -> Result<purlis_core::start::Ready, String> {
         let workspace = workspace_at_start(Some(&self.project), asked.cwd.as_deref());
         if self
             .sessions
@@ -2156,6 +2167,12 @@ impl Chats {
     #[cfg(not(unix))]
     fn own_runner_of(&self, _id: &str) -> Option<(String, String)> {
         None
+    }
+
+    /// How many chats this window has open: what an opening's slow-log line says it ran beside
+    /// (H12).
+    pub(crate) fn open_count(&self) -> u32 {
+        u32::try_from(lock(&self.open).len()).unwrap_or(u32::MAX)
     }
 
     /// **Whether chat `session` runs on a runner of its own** (#4569): what a move asks.
@@ -2870,26 +2887,28 @@ impl Chats {
         size: Size,
         why: Why,
     ) -> Result<u32, String> {
-        let session = self.open_it(
-            chat,
-            ready.program.clone(),
-            ready.command.clone(),
-            ready.args.clone(),
-            ready.env.clone(),
-            ready.harness,
-            ready.declared.as_ref(),
-            ready.session.as_ref().map(ToString::to_string),
-            ready.how.clone(),
-            &ready.plugins,
-            ready.sandbox.as_ref(),
-            ready.unsandboxed.as_ref(),
-            size,
-            // A chat on a profile is an agent, never the operator's shell.
-            false,
-            why,
-            ready.sign_in.as_ref(),
-            ready.first_message.as_deref(),
-        )?;
+        let session = purlis_core::opening::phase("open_session", || {
+            self.open_it(
+                chat,
+                ready.program.clone(),
+                ready.command.clone(),
+                ready.args.clone(),
+                ready.env.clone(),
+                ready.harness,
+                ready.declared.as_ref(),
+                ready.session.as_ref().map(ToString::to_string),
+                ready.how.clone(),
+                &ready.plugins,
+                ready.sandbox.as_ref(),
+                ready.unsandboxed.as_ref(),
+                size,
+                // A chat on a profile is an agent, never the operator's shell.
+                false,
+                why,
+                ready.sign_in.as_ref(),
+                ready.first_message.as_deref(),
+            )
+        })?;
         self.floorless_at(session, ready.floorless.clone());
         Ok(session)
     }
@@ -3365,6 +3384,15 @@ impl Chats {
                 self.unclaim(session);
                 Err(why)
             }
+        }
+    }
+
+    /// **Run `session` has ended `completed | superseded`** (ADR 0076 §2), told to whoever
+    /// writes the event log ([`Self::when_a_run_is_replaced`]): a hibernated chat's run, whose
+    /// program is already gone, as it is woken or ended (#7630).
+    pub fn superseded(&self, session: u32) {
+        if let Some(tell) = lock(&self.replaced_told).as_ref() {
+            tell(session);
         }
     }
 
@@ -4169,6 +4197,32 @@ impl Chats {
                     owed.insert(session, back);
                 }
                 drop(owed);
+                self.unclaim(session);
+                Err(why)
+            }
+        }
+    }
+
+    /// Wakes hibernated chat `session` (SC-4a, #7630): the same chat on its conversation, in
+    /// a new run under a new number whose beginning is ADR 0066's `wake`. The caller has read
+    /// that the chat is hibernated; this refuses a chat with no conversation to pick up. The old
+    /// one stays open until the new one has started, as [`Self::restart`]'s does; ending it is
+    /// the caller's next step. Nothing is told it yet: the wake line (ADR 0068) is SC-4j's.
+    pub fn wake(&self, session: u32, size: Size) -> Result<u32, String> {
+        self.claim(session)?;
+        let started = self.again_on_its_conversation(session).and_then(|again| {
+            if again.resume.is_none() {
+                return Err(no_conversation(session));
+            }
+            // **The hibernated run ends `completed | superseded` as the wake begins** (ADR 0076
+            // as amended 2026-11-25): said before the `wake` run starts, so the log reads in the
+            // order it happened. Its program is gone, so no end of it is heard to say so.
+            self.superseded(session);
+            self.start_recorded_told(&again, size, Why::Wake, None, None)
+        });
+        match started {
+            Ok(started) => self.restarted(session, started, true),
+            Err(why) => {
                 self.unclaim(session);
                 Err(why)
             }
@@ -5502,6 +5556,7 @@ impl Chats {
             Why::Relaunch => Began::at_relaunch(&how, harness.is_some()),
             Why::Upgrade => Began::Reopen,
             Why::Again => Began::Fresh,
+            Why::Wake => Began::Wake,
         };
         // What this start means for the sandbox's audit and its count (ADR 0067 §7): off where
         // it starts without the sandbox, back on where its last run did and this one does not,
@@ -10373,8 +10428,9 @@ fn reached_by_the_proxy(
     })
 }
 
+#[track_caller]
 fn lock<T: ?Sized>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    crate::mainwatch::lock(mutex)
 }
 
 /// What a chat's hooks read about it (#1338, #1345), put in its `env`: the folder it was started

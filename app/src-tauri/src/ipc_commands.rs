@@ -208,6 +208,9 @@ macro_rules! app_commands {
                 mcpfailed::put_away_mcp_failure,
                 alerts::put_away_left_messages,
                 alerts::put_away_arrived_files,
+                hibernation::chat_hibernated,
+                hibernation::hibernated_chats,
+                hibernation::hibernate_chat,
                 hostlost::chat_lost_with_the_host,
                 hostlost::put_away_lost_chat,
                 reconnecting::chats_reconnecting,
@@ -965,6 +968,8 @@ macro_rules! app_commands {
                 // A link followed in an artifact's page, and what was opened for it (#5956).
                 artifact_links::artifact_link_follow,
                 artifact_links::artifact_links_opened,
+                // The device's RAM class, stood in for the machine's (SC-4f, #7635).
+                diagnostics::ram_class_stand_in,
             ],
         }
     };

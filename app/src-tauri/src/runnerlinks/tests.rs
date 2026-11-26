@@ -14,6 +14,11 @@ use purlis_session_protocol::session::{self, Client};
 
 use super::*;
 
+// The one gate every real-infrastructure test passes through (#7188, ruling 4), the file
+// `purlis-core`'s tests use: a missing fixture fails where `PURLIS_PARITY` is set.
+#[path = "../../../../crates/purlis-core/tests/support/real_infra.rs"]
+mod real_infra;
+
 const PATIENCE: Duration = Duration::from_secs(60);
 
 struct Echo;
@@ -129,13 +134,17 @@ fn a_link_to_a_runner_reads_this_desktops_key_and_never_makes_one() {
 /// window's link is relayed by the desktop's host to the pool's runner, through `docker exec`
 /// and the key pinned at its pairing. It needs Docker and a runner image of this build named by
 /// digest in `DOCKER_POOL_TEST_IMAGE` (`docker` on `PATH`, or the command
-/// `DOCKER_POOL_TEST_DOCKER` names); without the image it runs nothing and passes, as
+/// `DOCKER_POOL_TEST_DOCKER` names); without the image it prints a SKIP line and passes (where `PURLIS_PARITY` is set it fails, #7188), as
 /// `purlis-core`'s `a_docker_pool_runner_is_linked_through_docker_exec` does.
 #[test]
 fn a_window_reaches_a_pool_added_on_this_machine_through_its_own_host() {
     // A change of Runs on rechecks the marks other tests read (#4591).
     let _marks = crate::notheld::rechecking();
-    let Ok(image) = std::env::var("DOCKER_POOL_TEST_IMAGE") else {
+    let Some(image) = real_infra::fixture_or_skip(
+        "a runner image of this build, named by digest",
+        "tests/parity/build-images.sh",
+        std::env::var("DOCKER_POOL_TEST_IMAGE").ok(),
+    ) else {
         return;
     };
     let config = tempfile::tempdir().unwrap();
@@ -361,13 +370,17 @@ fn a_start_is_refused_unless_its_runner_is_kept_and_not_draining() {
 /// pool's runner through `docker exec`; the runner holds the project where it keeps it, and the
 /// window sends it the project's own repository, which the runner checks out there, less what is
 /// this machine's alone. It needs Docker and a runner image of this build named by digest in
-/// `DOCKER_POOL_TEST_IMAGE`; without the image it runs nothing and passes. The project keeps its
+/// `DOCKER_POOL_TEST_IMAGE`; without the image it prints a SKIP line and passes (where `PURLIS_PARITY` is set it fails, #7188). The project keeps its
 /// git directory beside its tree, so it runs where a sandbox refuses a folder's own
 /// `.git/config`.
 #[test]
 fn a_project_reaches_a_pools_runner_through_the_window() {
     use crate::host::SessionHost as _;
-    let Ok(image) = std::env::var("DOCKER_POOL_TEST_IMAGE") else {
+    let Some(image) = real_infra::fixture_or_skip(
+        "a runner image of this build, named by digest",
+        "tests/parity/build-images.sh",
+        std::env::var("DOCKER_POOL_TEST_IMAGE").ok(),
+    ) else {
         return;
     };
     let config = tempfile::tempdir().unwrap();
@@ -900,18 +913,23 @@ fn keeping_a_profile_has_the_time_its_limit_could_take() {
     );
 }
 
-/// **A runner too old to list what it holds goes as it did before purlis could ask**
-/// (ruled 2026-11-07): nothing is proved of it, and nothing is said.
+/// **Of a runner too old to list what it holds, nothing is proved** (ruled 2026-11-07): what may
+/// be on it is what this machine's records say (2026-11-26), and one that lists is proved alone.
 #[test]
-fn a_runner_too_old_to_list_what_it_holds_leaves_nothing_to_prove() {
+fn a_runner_too_old_to_list_what_it_holds_is_said_from_the_records_not_proved() {
     assert_eq!(
-        super::left_of(None, |_, _| panic!("nothing listed is proved")),
-        Ok(Vec::new())
+        super::left_of(
+            None,
+            |_, _| panic!("nothing listed is proved"),
+            || Ok(vec!["a chat may have run there".to_owned()])
+        ),
+        Ok(vec!["a chat may have run there".to_owned()])
     );
     assert_eq!(
         super::left_of(
             Some((Vec::new(), vec!["a folder ran out".to_owned()])),
-            |_, unread| { Ok(unread.to_vec()) }
+            |_, unread| { Ok(unread.to_vec()) },
+            || panic!("a runner that listed is not said from the records")
         ),
         Ok(vec!["a folder ran out".to_owned()])
     );
@@ -954,7 +972,10 @@ fn a_link_that_fails_after_a_slow_check_says_why_and_where_to_look_not_that_it_w
     })
     .unwrap_err();
     assert_ne!(said, LATE);
-    assert!(said.contains("did not finish linking within"), "{said}");
+    assert!(
+        said.contains("did not finish the link's handshake within"),
+        "{said}"
+    );
     assert!(said.contains("Pool setup"), "{said}");
 }
 

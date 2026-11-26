@@ -30,24 +30,36 @@ pub(crate) const STALLED: Duration = Duration::from_millis(200);
 /// A command that holds the main thread this long, or longer, is written down.
 pub(crate) const HELD_LONG: Duration = Duration::from_millis(100);
 
-/// The window command the main thread is running, if it is running one.
+/// What the main thread is running, outermost first: a window command, a window event, a menu
+/// click, and, inside it, the lock it waits on. Empty when nothing of purlis's is running there.
 #[derive(Default)]
-pub(crate) struct Running(Mutex<Option<String>>);
+pub(crate) struct Running(Mutex<Vec<String>>);
 
 impl Running {
     const fn new() -> Self {
-        Running(Mutex::new(None))
+        Running(Mutex::new(Vec::new()))
     }
 
-    fn set(&self, command: Option<String>) {
-        *self.0.lock().unwrap_or_else(|held| held.into_inner()) = command;
-    }
-
-    pub(crate) fn now(&self) -> Option<String> {
+    fn enter(&self, what: String) {
         self.0
             .lock()
             .unwrap_or_else(|held| held.into_inner())
-            .clone()
+            .push(what);
+    }
+
+    fn leave(&self) {
+        self.0.lock().unwrap_or_else(|held| held.into_inner()).pop();
+    }
+
+    /// What it is running, as one line: `window event: focused > waiting on a lock at
+    /// app/src-tauri/src/chats.rs:6963`. A source location, never a path of the person's.
+    pub(crate) fn now(&self) -> Option<String> {
+        let held = self.0.lock().unwrap_or_else(|held| held.into_inner());
+        if held.is_empty() {
+            None
+        } else {
+            Some(held.join(" > "))
+        }
     }
 }
 
@@ -118,6 +130,56 @@ pub(crate) fn command<T>(command: &str, run: impl FnOnce() -> T) -> T {
     held(command, &RUNNING, SINK.get(), HELD_LONG, run)
 }
 
+/// **A lock taken on the main thread, named when it has to wait**: the stall it causes says
+/// `waiting on a lock at <file>:<line>`, the line that asked for it, so the holder is the other
+/// place that locks the same mutex. Off the main thread, and when the lock is free, it is a
+/// plain `lock`. A poisoned lock is taken over, as everywhere in the app.
+#[track_caller]
+pub(crate) fn lock<T: ?Sized>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    if MAIN.get() != Some(&std::thread::current().id()) {
+        return mutex.lock().unwrap_or_else(|held| held.into_inner());
+    }
+    lock_in(mutex, std::panic::Location::caller(), &RUNNING, SINK.get())
+}
+
+/// [`lock`], naming the wait in `running` and writing it to `sink` as a core command when it
+/// took [`HELD_LONG`] or more.
+fn lock_in<'a, T: ?Sized>(
+    mutex: &'a Mutex<T>,
+    at: &std::panic::Location<'_>,
+    running: &Running,
+    sink: Option<&mpsc::Sender<Slow>>,
+) -> std::sync::MutexGuard<'a, T> {
+    use std::sync::TryLockError;
+    match mutex.try_lock() {
+        Ok(guard) => guard,
+        Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+        Err(TryLockError::WouldBlock) => held(
+            &format!("waiting on a lock at {}:{}", at.file(), at.line()),
+            running,
+            sink,
+            HELD_LONG,
+            || mutex.lock().unwrap_or_else(|held| held.into_inner()),
+        ),
+    }
+}
+
+/// The name a window event goes by in a core stall.
+pub(crate) fn window_event_name(event: &tauri::WindowEvent) -> &'static str {
+    use tauri::WindowEvent as E;
+    match event {
+        E::Resized(_) => "window event: resized",
+        E::Moved(_) => "window event: moved",
+        E::CloseRequested { .. } => "window event: close requested",
+        E::Destroyed => "window event: destroyed",
+        E::Focused(_) => "window event: focused",
+        E::ScaleFactorChanged { .. } => "window event: scale factor changed",
+        E::DragDrop(_) => "window event: drag drop",
+        E::ThemeChanged(_) => "window event: theme changed",
+        _ => "window event: other",
+    }
+}
+
 /// Runs `run` as `command`, named in `running` while it runs, and sends a core command to
 /// `sink` when it took `long` or more.
 fn held<T>(
@@ -131,13 +193,13 @@ fn held<T>(
     struct Named<'a>(&'a Running);
     impl Drop for Named<'_> {
         fn drop(&mut self) {
-            self.0.set(None);
+            self.0.leave();
         }
     }
 
     let at = now_ms();
     let began = Instant::now();
-    running.set(Some(command.to_owned()));
+    running.enter(command.to_owned());
     let named = Named(running);
     let answer = run();
     drop(named);

@@ -19,7 +19,7 @@
 
 use super::TagName;
 use crate::forge::Kind;
-use crate::mergehold::{Repo, Request};
+use crate::mergehold::{LandAs, Repo, Request};
 
 /// **What a chat asked for**, in the words the request used.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,17 +56,29 @@ pub enum Requested {
 
 impl Requested {
     /// The merge of request `number` of `repo`: what the GraphQL reading hands over for a
-    /// `mergePullRequest` or an `enablePullRequestAutoMerge` it resolved to a recorded repository.
+    /// `mergePullRequest` it resolved to a recorded repository.
     pub fn merge_of(repo: Repo, number: u64) -> Requested {
+        Requested::land_of(repo, number, LandAs::Merge)
+    }
+
+    /// Request `number` of `repo` to be landed by `act`: what the GraphQL reading hands over for
+    /// a `mergePullRequest` ([`LandAs::Merge`]) or an `enqueuePullRequest` ([`LandAs::Enqueue`])
+    /// it resolved to a recorded repository. The person's press performs that act and no other (#7543).
+    pub fn land_of(repo: Repo, number: u64, act: LandAs) -> Requested {
         Requested::Merge(Request {
             repo: Some(repo),
             number,
+            act,
         })
     }
 
     /// The word for the kind of act, as the ask and the chat's sentence use it.
     pub fn word(&self) -> &'static str {
         match self {
+            Requested::Merge(Request {
+                act: LandAs::Enqueue,
+                ..
+            }) => "merge-queue entry",
             Requested::Merge(_) => "merge",
             Requested::Tag { .. } => "tag",
             Requested::Release { .. } => "release",
@@ -91,6 +103,9 @@ pub enum Why {
     MergesWithoutRequest,
     /// A change to a release that exists, or a file added to one: never a chat's.
     ReleaseEdit,
+    /// A merge that sets `merge_when_pipeline_succeeds` or `auto_merge` to true, which asks the
+    /// forge to merge later: never held, because the person's press merges at once (#7597).
+    AutoMerge,
     /// The request names something purlis cannot read as one act, in these words.
     Unreadable(&'static str),
 }
@@ -145,6 +160,44 @@ impl Call<'_> {
 
     fn flag(&self, name: &str) -> bool {
         self.param(name).as_deref() == Some("true")
+    }
+
+    /// Whether the request sets one of the keys that ask the forge to merge later to true: in the
+    /// query, or in the body at any depth, as a bool or as the text a form sends.
+    fn sets_auto_merge(&self) -> bool {
+        const KEYS: [&str; 3] = [
+            "merge_when_pipeline_succeeds",
+            "auto_merge",
+            // The merge trains route's older name for the same ask.
+            "when_pipeline_succeeds",
+        ];
+        // GitLab coerces its booleans loosely (`1`, `t`, `yes`, `on`, ...): only these are off.
+        fn off_text(text: &str) -> bool {
+            matches!(text.to_ascii_lowercase().as_str(), "false" | "0" | "f")
+        }
+        fn on(value: &serde_json::Value) -> bool {
+            match value {
+                serde_json::Value::Null => false,
+                serde_json::Value::Bool(flag) => *flag,
+                serde_json::Value::String(text) => !off_text(text),
+                serde_json::Value::Number(number) => number.as_f64() != Some(0.0),
+                _ => true,
+            }
+        }
+        fn within(value: &serde_json::Value) -> bool {
+            match value {
+                serde_json::Value::Object(map) => map.iter().any(|(key, value)| {
+                    (KEYS.contains(&key.as_str()) && on(value)) || within(value)
+                }),
+                serde_json::Value::Array(items) => items.iter().any(within),
+                _ => false,
+            }
+        }
+        within(self.body)
+            || self
+                .query
+                .iter()
+                .any(|(key, value)| KEYS.contains(&key.as_str()) && !off_text(value))
     }
 
     fn named(&self, name: &str) -> bool {
@@ -213,6 +266,7 @@ enum Verb {
 impl Verb {
     fn into(self, repo: Repo, call: &Call<'_>) -> Recognised {
         match self {
+            Verb::Merge(_) if call.sets_auto_merge() => Recognised::Refuse(Why::AutoMerge),
             Verb::Merge(number) => Recognised::Hold(Requested::merge_of(repo, number)),
             Verb::Tag => tag(repo, call),
             Verb::Release => release(repo, call),

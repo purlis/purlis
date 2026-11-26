@@ -29,7 +29,7 @@ use std::collections::HashMap;
 
 use graphql_parser::query::{
     Definition, Document, Field, FragmentDefinition, OperationDefinition, Selection, SelectionSet,
-    TypeCondition, Value, VariableDefinition,
+    Type, TypeCondition, Value, VariableDefinition,
 };
 use serde_json::Value as Json;
 
@@ -101,7 +101,8 @@ fn from_json(json: &Json) -> Val {
     }
 }
 
-/// The values a document's variables have: the request's, then each definition's default.
+/// The values a document's variables have: the request's, then each definition's default
+/// ([`defaults`]).
 struct Vars<'a> {
     given: &'a serde_json::Map<String, Json>,
     defaults: Vec<(String, Value<'a, String>)>,
@@ -192,6 +193,159 @@ fn merge_mutation(kind: Kind, name: &str) -> bool {
                 | "dequeuePullRequest"
         ),
         Kind::GitLab => name == "mergeRequestAccept",
+    }
+}
+
+/// **The act a merge mutation asks for**, which the person's press performs (#7543): a merge
+/// now or a place in the merge queue. Each is held as the act it names and never as another: the
+/// press of an enqueue enqueues and never merges. Auto-merge is not held
+/// ([`unheld_merge_said`]), and undoing one (`disablePullRequestAutoMerge`,
+/// `dequeuePullRequest`) is never held.
+pub(super) fn merge_act(kind: Kind, name: &str) -> Option<crate::mergehold::LandAs> {
+    use crate::mergehold::LandAs;
+    match (kind, name) {
+        (Kind::GitHub, "mergePullRequest") | (Kind::GitLab, "mergeRequestAccept") => {
+            Some(LandAs::Merge)
+        }
+        (Kind::GitHub, "enqueuePullRequest") => Some(LandAs::Enqueue),
+        _ => None,
+    }
+}
+
+/// What a chat is told when it asks for auto-merge, which is refused and never held: it pins the
+/// head only when it is turned on, so the forge would merge any head pushed later, unseen.
+pub(super) fn unheld_merge_said(kind: Kind, name: &str) -> Option<&'static str> {
+    match (kind, name) {
+        (Kind::GitHub, "enablePullRequestAutoMerge") => Some(concat!(
+            crate::mergehold::auto_merge_why!(),
+            " Ask the person to merge it, or ask to enqueue it"
+        )),
+        _ => None,
+    }
+}
+
+/// What a chat is told when a GitLab accept sets a merge strategy: `strategy` and
+/// `autoMergeStrategy` ask GitLab to merge when the pipeline succeeds or through a train, which
+/// the person's press does not do ([`Merged::Now`](crate::mergehold::Merged)).
+const STRATEGY_SAID: &str = "this merge sets a merge strategy (merge when the pipeline succeeds, \
+                             or a merge train), which purlis does not hold: its press merges at \
+                             once. Ask the person to merge it, or merge now without a strategy";
+
+/// Whether a GitLab `mergeRequestAccept` document sets `strategy` or `autoMergeStrategy`, to a
+/// value or a variable: the document asks for more than a merge now, so it is refused with
+/// [`STRATEGY_SAID`] where `body` is one. `None` where it is not one or cannot be read.
+pub(super) fn strategy_said(kind: Kind, body: &[u8]) -> Option<&'static str> {
+    if kind != Kind::GitLab {
+        return None;
+    }
+    let (name, arguments) = mutation_arguments(body)?;
+    (name == "mergeRequestAccept" && has_key(&arguments, &["strategy", "autoMergeStrategy"]))
+        .then_some(STRATEGY_SAID)
+}
+
+/// Whether `val` holds any of `keys` as a field, at any depth.
+fn has_key(val: &Val, keys: &[&str]) -> bool {
+    match val {
+        Val::Obj(fields) => fields
+            .iter()
+            .any(|(k, v)| keys.contains(&k.as_str()) || has_key(v, keys)),
+        Val::List(items) => items.iter().any(|v| has_key(v, keys)),
+        _ => false,
+    }
+}
+
+/// The first string `key` holds in `val`, at any depth.
+fn find_str<'v>(val: &'v Val, key: &str) -> Option<&'v str> {
+    match val {
+        Val::Obj(fields) => fields.iter().find_map(|(k, v)| match v {
+            Val::Str(s) if k == key => Some(s.as_str()),
+            _ => find_str(v, key),
+        }),
+        Val::List(items) => items.iter().find_map(|v| find_str(v, key)),
+        _ => None,
+    }
+}
+
+/// **The one mutation a document is**, as its field's name and its arguments, variables
+/// resolved: `None` where the document is not exactly one mutation with one field, or an
+/// argument cannot be resolved.
+fn mutation_arguments(body: &[u8]) -> Option<(String, Val)> {
+    let json: Json = serde_json::from_slice(body).ok()?;
+    let Json::Object(object) = &json else {
+        return None;
+    };
+    let Some(Json::String(query)) = object.get("query") else {
+        return None;
+    };
+    let empty = serde_json::Map::new();
+    let given = match object.get("variables") {
+        None | Some(Json::Null) => &empty,
+        Some(Json::Object(map)) => map,
+        Some(_) => return None,
+    };
+    let parsed = parse(query)?;
+    let mut operations = parsed.definitions.iter().filter_map(|d| match d {
+        Definition::Operation(operation) => Some(operation),
+        Definition::Fragment(_) => None,
+    });
+    let Some(OperationDefinition::Mutation(mutation)) = operations.next() else {
+        return None;
+    };
+    if operations.next().is_some() {
+        return None;
+    }
+    let [Selection::Field(field)] = mutation.selection_set.items.as_slice() else {
+        return None;
+    };
+    let vars = Vars {
+        given,
+        defaults: defaults(&mutation.variable_definitions),
+    };
+    let mut arguments = Vec::new();
+    for (name, value) in &field.arguments {
+        arguments.push((name.clone(), vars.resolve(value).ok()?));
+    }
+    let arguments = Val::Obj(arguments);
+    Some((field.name.clone(), arguments))
+}
+
+/// **The pull request a merge document is about**: the path of the one recorded repo of `repos`
+/// it is in and its number, for a document that is exactly one holdable merge mutation
+/// ([`merge_act`]), with that act. On GitHub the node id is resolved by `objects`; on GitLab the
+/// project path and `iid` are in the document. `None` where any of it is missing or not a plain
+/// number.
+/// Never decides whether the request is allowed: [`decide`] does that.
+pub(super) fn merge_target(
+    kind: Kind,
+    repos: &[&AllowedRepo],
+    body: &[u8],
+    objects: &dyn ObjectRepo,
+) -> Option<(String, u64, crate::mergehold::LandAs)> {
+    let (name, arguments) = mutation_arguments(body)?;
+    let act = merge_act(kind, &name)?;
+    match kind {
+        Kind::GitHub => {
+            let id = find_str(&arguments, "pullRequestId")?;
+            repos.iter().filter(|r| r.kind == kind).find_map(|r| {
+                objects
+                    .pull_of(r.kind, &r.host, id)
+                    .filter(|(path, number)| *path == r.path && *number > 0)
+                    .map(|(path, number)| (path, number, act))
+            })
+        }
+        Kind::GitLab => {
+            let project = find_str(&arguments, "projectPath")?;
+            let iid = find_str(&arguments, "iid")?;
+            let number = iid
+                .parse::<u64>()
+                .ok()
+                .filter(|n| *n > 0 && iid.bytes().all(|b| b.is_ascii_digit()))?;
+            let path = normalise_repo_path(kind, project).ok()?;
+            repos
+                .iter()
+                .find(|r| r.kind == kind && r.path == path)
+                .map(|r| (r.path.clone(), number, act))
+        }
     }
 }
 
@@ -371,24 +525,52 @@ pub(crate) fn decide<'a>(
 }
 
 /// The index in `repos` of the one repo a search query names, or `None` when it is not a search
-/// of exactly one of them (GraphQL's `search(query:)` and REST's `GET /search/issues?q=`).
+/// of exactly one of them: [`search_repos`] naming one repo, however many times. REST's
+/// `GET /search/issues?q=` is sent with one repo's credential, so it reads only this.
 pub(crate) fn search_repo(query: &str, repos: &[&AllowedRepo]) -> Option<usize> {
+    match search_repos(query, repos)?.as_slice() {
+        [one] => Some(*one),
+        _ => None,
+    }
+}
+
+/// The indexes in `repos` of the repos a search query is scoped to, once each, or `None` when it
+/// is not a search of the chat's repos alone (GraphQL's `search(query:)`, and REST's
+/// `GET /search/issues?q=` through [`search_repo`]). Every `repo:` must name one of `repos`, at
+/// least one must be there, and no qualifier may name an organisation, a user, an owner, a team
+/// or an enterprise: search says which repos by those qualifiers alone, and several `repo:` are
+/// read by the forge as any of them.
+pub(crate) fn search_repos(query: &str, repos: &[&AllowedRepo]) -> Option<Vec<usize>> {
     // A zero-width space or a control character is a separator or nothing to the forge and a
     // letter of a word to this reading: only printable ASCII and the space are read.
     if !query.bytes().all(|b| b == b' ' || b.is_ascii_graphic()) {
         return None;
     }
-    // A quote hides a qualifier from this reading and not from the forge's.
-    if query.contains(['"', '\'', '\\', '`']) {
+    // A single quote, a backslash or a backtick may hide a qualifier from this reading and not
+    // from the forge's. A double quote is read (`label:"needs review"`, as gh quotes a value with
+    // a space), by [`search_terms`], and never around a `repo:`.
+    if query.contains(['\'', '\\', '`']) {
         return None;
     }
-    // Without a boolean operator or a group, every other term only narrows the one repo's
-    // results; with one, `repo:a OR is:issue` widens them to the whole forge.
+    // Without a boolean operator or a group, every other term only narrows the repos' results;
+    // with one, `repo:a OR is:issue` widens them to the whole forge.
     if query.contains(['(', ')']) {
         return None;
     }
-    let mut paths = Vec::new();
-    for token in query.split_whitespace() {
+    let mut at = Vec::new();
+    for term in search_terms(query)? {
+        let (token, value) = match term {
+            // A quoted phrase is text the forge looks for, not a qualifier. One with a `:` in it
+            // is refused rather than trusted to be read as text.
+            Term::Phrase(text) if text.contains(':') => return None,
+            Term::Phrase(_) => continue,
+            Term::Word(word) => (word, None),
+            // A qualifier with no name (`:"..."`) is not known to be read as one. A quoted value
+            // with a `:` in it is refused as a phrase with one is: `x:"org:a"` may be read as the
+            // text `x:` and a qualifier.
+            Term::Quoted { name, value } if name == ":" || value.contains(':') => return None,
+            Term::Quoted { name, value } => (name, Some(value)),
+        };
         if ["or", "and", "not"]
             .iter()
             .any(|op| token.eq_ignore_ascii_case(op))
@@ -400,37 +582,114 @@ pub(crate) fn search_repo(query: &str, repos: &[&AllowedRepo]) -> Option<usize> 
         if token.chars().all(|c| c == '|' || c == '&') {
             return None;
         }
-        let lower = token
-            .trim_start_matches(['(', '-', '+', '!'])
-            .to_ascii_lowercase();
-        if let Some(path) = lower.strip_prefix("repo:") {
-            // The qualifier is read only as the forge surely reads it: the token starts with
-            // `repo:` itself. A prefix (`+repo:`, `-repo:`, `!repo:`) may make it plain text to
-            // the forge, which would leave the search unscoped.
-            if !token.to_ascii_lowercase().starts_with("repo:")
-                || path.contains(['(', ')', ',', '*'])
+        // The forge reads only a lower-case `repo:` at the token's start as the qualifier: `REPO:`
+        // or `Repo:` is text to it, and a prefix (`+repo:`, `-repo:`, `!repo:`) may be, either of
+        // which leaves the search unscoped. So only that spelling scopes, and any other spelling
+        // of a qualifier that says which repos is refused.
+        if let Some(path) = token.strip_prefix("repo:") {
+            // A quoted repo (`repo:"a/b"`) is refused: were the forge to read it as text, the
+            // search would be of everything the person's token sees. A quote only ever narrows
+            // a search on another qualifier.
+            if value.is_some() || path.is_empty() || path.contains(['(', ')', ',', '*']) {
+                return None;
+            }
+            // The recorded path as it is, case aside: not what `normalise_repo_path` makes of a
+            // prefix or a `.git` suffix, which the forge's search does not read as the repo.
+            let one = repos
+                .iter()
+                .position(|r| r.path.eq_ignore_ascii_case(path))?;
+            if !at.contains(&one) {
+                at.push(one);
+            }
+        } else {
+            let lower = token
+                .trim_start_matches(['(', '-', '+', '!'])
+                .to_ascii_lowercase();
+            if ["repo:", "org:", "user:", "owner:", "team:", "enterprise:"]
+                .iter()
+                .any(|q| lower.starts_with(q))
             {
                 return None;
             }
-            paths.push(path.to_string());
-        } else if ["org:", "user:", "owner:", "team:", "enterprise:"]
-            .iter()
-            .any(|q| lower.starts_with(q))
-        {
-            return None;
         }
     }
-    let [path] = paths.as_slice() else {
-        return None;
-    };
-    // The recorded path as it is, case aside: not what `normalise_repo_path` makes of a
-    // prefix or a `.git` suffix, which the forge's search does not read as the repo.
-    repos.iter().position(|r| r.path.eq_ignore_ascii_case(path))
+    (!at.is_empty()).then_some(at)
 }
 
+/// One term of a search query, as [`search_terms`] splits it.
+enum Term<'q> {
+    /// No quote in it.
+    Word(&'q str),
+    /// `"..."`: text.
+    Phrase(&'q str),
+    /// `name:"value"`: a qualifier whose value is quoted. `name` keeps its `:`.
+    Quoted { name: &'q str, value: &'q str },
+}
+
+/// A query split at spaces outside double quotes. `None` for a quote left open, or a quote
+/// anywhere but around a whole term or a whole qualifier's value: the forge's reading of
+/// `re"po":x` or `repo:"a"b` is not known, so neither is guessed at.
+fn search_terms(query: &str) -> Option<Vec<Term<'_>>> {
+    let mut terms = Vec::new();
+    let mut start = None;
+    let mut quoted = false;
+    for (i, c) in query.char_indices() {
+        match (c, start) {
+            ('"', _) => {
+                quoted = !quoted;
+                start.get_or_insert(i);
+            }
+            (' ', Some(from)) if !quoted => {
+                terms.push(&query[from..i]);
+                start = None;
+            }
+            (' ', _) => {}
+            (_, None) => start = Some(i),
+            _ => {}
+        }
+    }
+    if quoted {
+        return None;
+    }
+    if let Some(from) = start {
+        terms.push(&query[from..]);
+    }
+    terms
+        .into_iter()
+        .map(|term| {
+            let quotes = term.matches('"').count();
+            if quotes == 0 {
+                return Some(Term::Word(term));
+            }
+            if quotes != 2 || !term.ends_with('"') {
+                return None;
+            }
+            if let Some(inner) = term.strip_prefix('"') {
+                return Some(Term::Phrase(&inner[..inner.len() - 1]));
+            }
+            let (name, value) = term.split_once(":\"")?;
+            (!name.contains('"')).then(|| Term::Quoted {
+                name: &term[..=name.len()],
+                value: &value[..value.len() - 1],
+            })
+        })
+        .collect()
+}
+
+/// The value each declared variable takes when the request gives it none: its default, or, for
+/// a nullable one with no default, null (GraphQL, "Coercing Variable Values"). A non-null variable
+/// with no default has none, so a document that uses it unbound is not resolved; nor is one that
+/// uses a variable it never declared.
 fn defaults<'a>(defs: &[VariableDefinition<'a, String>]) -> Vec<(String, Value<'a, String>)> {
     defs.iter()
-        .filter_map(|d| d.default_value.clone().map(|v| (d.name.clone(), v)))
+        .filter_map(|d| {
+            let value = match (&d.default_value, &d.var_type) {
+                (Some(default), _) => default.clone(),
+                (None, Type::NonNullType(_)) => return None,
+                (None, _) => Value::Null,
+            };
+            Some((d.name.clone(), value))
+        })
         .collect()
 }
 
@@ -547,10 +806,11 @@ impl<'d> Context<'_, 'd> {
     }
 
     /// `search(query:, type: ISSUE)`, which `gh pr status` and a filtered `gh pr list` use: only
-    /// issues and pull requests, and only of the chat's repos. The query must name **exactly one**
-    /// `repo:` and it must be one of the chat's, and it may not name an organisation, a user, an
-    /// owner, a team or an enterprise, or negate any of them: search says which repos by those
-    /// qualifiers alone, so a query with none of them but the one is a search of that repo. No
+    /// issues and pull requests, and only of the chat's repos ([`search_repos`]). Every `repo:`
+    /// must be one of the chat's, at least one must be there, and it may not name an organisation,
+    /// a user, an owner, a team or an enterprise, or negate any of them: search says which repos
+    /// by those qualifiers alone, so a query with none of them but those is a search of them. Each
+    /// repo it names is touched, so each is served by the same account. No
     /// boolean operator (`OR`, `AND`, `NOT`, any case) and no parenthesis is read: `gh` sends
     /// neither for `pr status` or a filtered `pr list`, which join their terms by spaces.
     fn check_search(&self, field: &Field<'_, String>, vars: &Vars<'_>) -> Result<(), Refusal> {
@@ -587,13 +847,10 @@ impl<'d> Context<'_, 'd> {
                 _ => None,
             })
             .ok_or(refuse)?;
-        match search_repo(&query, self.repos) {
-            Some(at) => {
-                self.touch(at);
-                Ok(())
-            }
-            None => Err(refuse),
+        for at in search_repos(&query, self.repos).ok_or(refuse)? {
+            self.touch(at);
         }
+        Ok(())
     }
 
     /// `node(id:)` and `nodes(ids:)`: every id must be one of the chat's repos' own, or resolve
@@ -1038,5 +1295,27 @@ fn strings(val: &Val) -> Vec<String> {
         Val::List(items) => items.iter().flat_map(strings).collect(),
         Val::Obj(fields) => fields.iter().flat_map(|(_, v)| strings(v)).collect(),
         Val::Other => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A block string whose second line indents with U+3000, which panics `graphql-parser` (#7589).
+    fn panicking(mutation: &str) -> Vec<u8> {
+        let query = format!(
+            "mutation{{ {mutation}(input:{{pullRequestId:\"PR_kwDO_1\", commitBody:\"\"\"x\r\n a\r\n\u{3000}\r\n b\r\n\"\"\"}}){{ clientMutationId }} }}"
+        );
+        serde_json::to_vec(&serde_json::json!({ "query": query })).expect("json")
+    }
+
+    #[test]
+    fn a_merge_or_enqueue_document_with_a_block_string_the_parser_panics_on_is_not_read() {
+        for mutation in ["mergePullRequest", "enqueuePullRequest"] {
+            let body = panicking(mutation);
+            assert!(mutation_arguments(&body).is_none(), "{mutation}");
+            assert!(strategy_said(Kind::GitHub, &body).is_none(), "{mutation}");
+        }
     }
 }

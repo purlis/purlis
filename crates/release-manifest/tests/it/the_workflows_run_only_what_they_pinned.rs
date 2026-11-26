@@ -308,6 +308,9 @@ fn no_release_job_that_holds_a_key_or_publishes_restores_a_cache() {
         [
             "keys",
             "build",
+            // Holds the Developer ID and notarization keys, on a hosted runner (ADR 0042,
+            // amended 2026-11-25).
+            "sign-macos",
             "runner-image",
             "runner-image-signature",
             // Builds the Linux aarch64 runner binary, which is signed and published (#723).

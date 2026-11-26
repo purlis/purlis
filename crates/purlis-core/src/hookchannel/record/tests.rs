@@ -232,6 +232,45 @@ fn a_dispatch_whose_chat_the_host_stopped_is_not_ended_as_unreported() {
 }
 
 #[test]
+fn a_hibernated_chat_writes_no_run_ended_and_its_dispatch_is_not_ended_unreported() {
+    let (logs, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let log = a_log_in(logs.path());
+    a_chat_with_a_sub_agent(&log, project.path(), 4);
+    let dispatched = a_dispatch_worked_by(project.path(), 4);
+
+    // No window held the project, which would end an unwatched chat's dispatch as unreported.
+    log.ended(&an_end(
+        project.path(),
+        4,
+        Exit::Signal("Terminated".into()),
+        Some(purlis_host::Stopped::Hibernated),
+        false,
+    ));
+
+    assert_eq!(sub_agents_ended(logs.path()), [], "no sub-agent run ends");
+    assert_eq!(
+        own_runs_ended(logs.path()),
+        [],
+        "its own run does not end either"
+    );
+    assert!(
+        dispatchrecord::read(project.path(), &dispatched)
+            .expect("the record")
+            .running(),
+        "a hibernation is not an end the dispatch ledger reads"
+    );
+    assert_eq!(
+        own_runs_moved(logs.path()),
+        [(
+            "input-required".to_owned(),
+            "hibernated".to_owned(),
+            "operator".to_owned()
+        )],
+        "its run moves to hibernated for the operator (ADR 0076 as amended 2026-11-25)"
+    );
+}
+
+#[test]
 fn a_chat_its_last_host_left_running_ends_its_sub_agents_runs_as_a_crash() {
     let (logs, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let log = a_log_in(logs.path());
@@ -351,6 +390,19 @@ fn a_terminals_skill_change_on_a_project_without_controls_is_refused_and_nothing
 }
 
 /// The chats' own runs' ends in the log in `dir` (no parent run): each one's state and cause.
+/// Each `run.moved` of a chat's own run in the log at `dir`: from, to and cause.
+fn own_runs_moved(dir: &Path) -> Vec<(String, String, String)> {
+    crate::eventlog::read(dir)
+        .expect("the log reads")
+        .iter()
+        .filter(|event| event.kind == "run.moved" && event.parent_run.is_none())
+        .map(|event| {
+            let word = |key: &str| event.body[key].as_str().unwrap_or_default().to_owned();
+            (word("from"), word("to"), word("cause"))
+        })
+        .collect()
+}
+
 fn own_runs_ended(dir: &Path) -> Vec<(String, String)> {
     crate::eventlog::read(dir)
         .expect("the log reads")
