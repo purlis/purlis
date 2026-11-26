@@ -270,7 +270,7 @@ impl AsksWindow for InTheWindow {
 /// window told to read its asks again where it is. A chat the window has not open, or one it
 /// draws nowhere (a grade's), has no Asks to show it in, and nor has a project whose window
 /// hears nothing of its asks moving: the ask would be listed and never read.
-pub(crate) fn shown_in(held: &Held, session: u32) -> Result<(), String> {
+fn shown_in(held: &Held, session: u32) -> Result<(), String> {
     let chats = held.chats();
     if !chats.open_now().iter().any(|open| open.session == session) {
         return Err(format!("chat {session} is not open in the window"));

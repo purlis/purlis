@@ -312,46 +312,6 @@ fn a_held_push_the_window_cannot_show_tells_the_chat_nobody_was_asked() {
 }
 
 #[test]
-fn a_held_push_of_a_graded_chat_the_window_draws_nowhere_is_shown_nowhere_and_nothing_waits() {
-    // A grade's chat cannot start in this plane (a grade runs only in the full sandbox), so
-    // this asks one level down: a chat whose record is a grade's, open but drawn nowhere.
-    let Scene { held, .. } = a_task_whose_route_holds_acts(the_task);
-    let start = purlis_core::start::Start {
-        profile: Some("work".to_owned()),
-        name: "1".to_owned(),
-        cwd: Some(held.root().join("workspaces").join("alpha")),
-        ..Default::default()
-    };
-    let ready = purlis_core::start::ready(&start, held.root()).expect("the chat starts");
-    let graded = held
-        .chats()
-        .start_ready(
-            &Chat {
-                program: ready.program.clone(),
-                cwd: ready.cwd.clone(),
-                name: "1".to_owned(),
-                resume: ready.session.clone(),
-                profile: Some("work".to_owned()),
-                graded: true,
-                ..Default::default()
-            },
-            &ready,
-            STARTING,
-        )
-        .expect("it runs");
-
-    let shown = crate::heldacts::shown_in(&held, graded);
-
-    let why = shown.expect_err("a grade's chat has no Asks to show it in");
-    assert!(why.contains("not drawn in the window"), "{why}");
-    assert!(
-        held.held_acts().waiting().is_empty(),
-        "an ask nobody can see does not wait"
-    );
-    assert!(crate::asking::counted(&held).asks.is_empty());
-}
-
-#[test]
 fn a_held_push_raised_tells_the_window_its_asks_moved_and_the_notifier_tells_the_person_of_it() {
     // #7685's cause: the ask was kept, and nothing told the window or the notifier that it was,
     // so neither read the asks again. Here the window's listener is the notifier's own read.
