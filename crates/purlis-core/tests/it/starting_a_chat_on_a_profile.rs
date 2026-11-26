@@ -2081,3 +2081,58 @@ fn the_notice_of_a_chat_another_chat_asked_for_names_every_word_it_took_out_and_
         assert!(notice.contains(must), "{must}: {notice}");
     }
 }
+
+/// A chat's start reads the machine's hash-chained event log and raises a Notice naming the log
+/// and the first line that no longer matches (spec §10.3, M75-13 round 2A, B2). The start is
+/// `start::ready`, the one every picker, reopen and handoff reaches; a log that holds says
+/// nothing, so no chat's tab nags.
+#[test]
+fn a_chat_s_start_raises_a_notice_when_the_chained_event_log_was_changed() {
+    purlis_core::unsteered!();
+    use purlis_core::eventlog::{Log, chain};
+    let plane = Plane::new();
+    let bin = plane.harness();
+    plane.plain_profile("claude", &bin, "");
+
+    let machine = tempfile::tempdir().unwrap();
+    let dir = machine
+        .path()
+        .join("events")
+        .join("01J9ZZDEVICE0000000000000");
+    {
+        let mut log = Log::open(&dir, "01J9ZZDEVICE0000000000000").unwrap();
+        log.chain().unwrap();
+        for n in 0..3 {
+            log.append(
+                Some("c"),
+                None,
+                None,
+                "tool.called",
+                serde_json::json!({ "n": n }),
+            )
+            .unwrap();
+        }
+    }
+    chain::log_dir_for_this_thread(Some(dir.clone()));
+
+    let whole = start::ready(&plane.start("work"), plane.root()).expect("it starts");
+    assert!(
+        !whole.notices.iter().any(|n| n.contains("event log")),
+        "a log that holds says nothing: {:?}",
+        whole.notices
+    );
+
+    let file = dir.join("events.jsonl");
+    let text = fs::read_to_string(&file).unwrap();
+    fs::write(&file, text.replace("\"n\":1", "\"n\":99")).unwrap();
+    let tampered = start::ready(&plane.start("work"), plane.root()).expect("it starts");
+    chain::log_dir_for_this_thread(None);
+
+    let notice = tampered
+        .notices
+        .iter()
+        .find(|n| n.contains("was changed after purlis wrote it"))
+        .unwrap_or_else(|| panic!("no Notice for a changed log: {:?}", tampered.notices));
+    assert!(notice.contains("line 2"), "{notice}");
+    assert!(notice.contains(&dir.display().to_string()), "{notice}");
+}

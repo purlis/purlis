@@ -1852,8 +1852,8 @@ of that name at that level replaces it.
   family enforced where the app does not answer**; no folder or variable a chat names is read
   for it. **A loosening waits for the person's press**, bound to the digest of the committed
   text the window showed, and applies from the press; a tightening applies at once, and a
-  chat's start keeps it as accepted. `$PURLIS_POLICY`, the start's resolution, can only
-  tighten.
+  chat's start keeps it as accepted. (`$PURLIS_POLICY`, which once carried the start's
+  resolution, is retired: nothing reads it.)
   **A value it cannot read never loosens anything**: a template that is not one of the five is
   `strict`, a mode that is not one of the three is `enforce` for its family, and a key that is
   no family is not read; each is said in one sentence.
@@ -1881,8 +1881,8 @@ of that name at that level replaces it.
 | `secrets.credential_files` | `"off"` or `"enforce"` | `"off"` under `open`, `watch` and `hold`; `"enforce"` under `team` and `strict` | whether the floor (Basic) holds the person's own credential files from a chat: `~/.ssh` but its `config`, `known_hosts*` and public keys, and the forge and cloud credential files (ADR 0067 §5 class 6, Q325). The full sandbox holds them whatever this says. `log` is enforced. A dotted key, so `secrets` becomes a table; beside `secrets = …` write it as the quoted key `"secrets.credential_files"`. |
 | `guards.forge`, `guards.shape`, `guards.plane`, `mode`, `tools`, `trust`, `runners`, `consents`, `limits` | as `network` | the template's: enforced by `team` and `strict`, logged by `watch` and `hold`, off under `open`; `trust` is enforced by every template but `open` (Q329) | the families ruling Q308b adds: a forge's verbs and login; the shape of a call (the tool gate's caps, run at the strictest family the gate asks, the consent rules' spelling backstop A7b, and the handoff and dispatch call arms A7, A7d, A7e and A10, are `guards.shape`'s; A7c, behind the person's own rules, holds in every mode); the plane itself (A3 and A3b); the harness's permission mode and attendance; persona tools and MCP; profiles, declarations and extensions (a profile or declaration that starts unapproved, under `open` or a pressed `trust = "off"` or `"log"`, says so on its chat's tab); runners and pools; the window-only presses; and depth, concurrency, rates, timeouts and budgets (under `log` a limit is counted, not applied). Each switches at the choke points [`docs/policy-inventory-families.md`](policy-inventory-families.md) names; a decision of theirs no choke point asks yet stays enforced. |
 
-**What `log` writes:** one line per refusal that would have been made, in the chat's
-[enforcement log](#appenforcementchatjsonl--what-a-chat-would-have-been-refused). Nothing is
+**What `log` writes:** one line per refusal that would have been made, in the machine's
+[event log](#dataeventsdeviceeventsjsonl--would-have-blocked-lines-and-the-logs-hash-chain). Nothing is
 shown to the chat or the person: no Notice, no ask, no denial.
 
 **What stays outside the policy** (Q308b): a chat changing its own policy (the scan's
@@ -8277,28 +8277,70 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   usage limit, for when Resume can run (#5718).
 - **Git:** gitignored. Collected with the spend files.
 
-### `app/enforcement/<chat>.jsonl` — what a chat would have been refused
-- **What:** one line per refusal a family under `log` would have made for the chat (rulings Q308
-  and Q308a, [`[policy]`](#policy--which-of-purliss-refusals-run)): what was allowed instead.
-- **Format:** JSON Lines, appended, mode 0600 in a 0700 folder, never following a link:
-  `{"at": "<UTC, RFC 3339>", "rule": "<the rule's id: a guard's arm, a scan's rule>", "family":
-  "<family key>", "chat": "<the chat's id>", "host": "<the host>"}`, `host` only where the rule
-  is about one. **Never a command, a path, a URL or a value.** `<chat>` is the chat's own id (its
-  ULID, ADR 0066), as the app started its harness with it (`$PURLIS_CHAT_ULID`). A harness the
-  app did not start has none, and writes nothing.
-- **Status:** **internal** — **purlis only**. **Written by the app alone**: a hook, a git hook
-  or `purlis secret exec` hands its line to the app over the hook socket, which writes it under
-  its own record of the chat. The app refuses a handed line for a chat it has no open record of
-  (nothing goes to `unknown.jsonl` from such a caller), a family or rule purlis does not have, or
-  a host that is no `host:port`. A log stops at 10,000 lines (`enforcement::MOST_LINES`); a line
-  past it is dropped. Best effort: a line that cannot be written changes no outcome. **Out of a chat's reach**: the
-  folder is in the app's own (`app/`), which every harness's compiled sandbox denies a chat
-  writing; a chat with no sandbox runs as the person and can write it.
-- **Tier:** Clone state, transient — what a chat was let do past a rule; lost, nothing is
-  allowed or refused differently.
-- **Written by:** `purlis_core::enforcement::record`.
-- **Read by:** `purlis_core::enforcement::read_log`.
-- **Git:** gitignored (under the state directory).
+### `<data>/events/<device>/events.jsonl` — would-have-blocked lines, and the log's hash chain
+- **What:** the event log (above) holds what a family or rule under `log` would have refused,
+  and, with the sandbox level `off`, chains its lines (M75 slice 13, spec §10.3). **ADR 0125's
+  enforcement log, `app/enforcement/<chat>.jsonl`, is retired**: no store of its own, nothing
+  writes that folder, and `$PURLIS_POLICY` (the start's hand-off of how each family runs) is
+  retired with it. A chat's hooks ask the app, which answers from the policy in force and the
+  chain that dispatched the chat.
+- **Would-have-blocked line:** an event of kind `policy.would_block` under the chat and its run,
+  body `{"rules": ["<rule @id>", …], "level": "<level>", "family": "<family key>", "host":
+  "<host:port>"}`, `level` and `host` only where there is one. A guard's arm, a scan's rule, a
+  policy rule's `@id`, a compiled sandbox rule's `@id` or a limit's key (`limits`) is a rule.
+  **Never a command, a path, a URL or a value.** Not a stop: never counted, never an ask, never
+  a Notice. Written by the app alone: a hook, a git hook or `purlis secret exec` hands its line
+  to the app over the hook socket, which refuses a chat it has no open record of, a family or
+  rule purlis does not have, and a host that is no `host:port`.
+- **A block names its source:** `stop.block`'s `source` is `guard` (a guard's arm), `policy` (its
+  body's `policy.rules` are the deciding rules' `@id`s), `sandbox` (`compiled_from` is the `@id`
+  of the compiled rule that held the path, absent where none did) or `harness_check` (no rule).
+  A block that does not is refused before it is written.
+- **Hash chain:** once a chat runs with the sandbox `off`, which can reach the log's files, the
+  host chains the log, and a chained log stays chained. A chat is `off` where a `trust.sandbox.off`
+  event says so, **and where its `run.started` names no sandbox (`"sandbox":"none"`)**, which is
+  what a project's or template's level `off` writes. Each line then ends in a last key,
+  `,"chain":"<64 hex>"`, the SHA-256 of the previous line's chain and this line as it was before
+  the key, each length-prefixed. A reader that knows nothing of it reads the same event.
+- **Two seals, both kept by the app in the keyring** (service `purlis-seal`, keyed by the device
+  id, so **one seal per device covers the machine-wide log**: every project's and chat's lines
+  are in the one chain, and a rewrite of any of them breaks it for all):
+  - kind `eventlog-head`: the last line's `seq` and chain, sealed again **at each append**;
+  - kind `eventlog-start`: the first chained line's `seq` and chain, sealed where the chain
+    begins, and moved only by the writer whose retention deleted the log's oldest segments
+    (`eventlog::chain::reanchor`). A deletion by anyone else leaves the start where it was.
+- **Who seals:** only purlis's app binary can make a seal (the keychain lets that one program
+  read the key). The desktop's session host is that binary started again and marks itself the
+  app before it writes the log, so its appends seal. A `purlis host` with no app beside it (a
+  runner, a standalone host) cannot seal: it says so as a warning when it first fails, and the
+  check reports the chain **unsealed**, never sound. On Linux and Windows any program of the
+  person's can read the keyring, so the seal there stops a hand edit and a sandboxed chat only.
+- **What the check reports** (`eventlog::chain::check`, at each chat's start as a Notice and
+  whenever doctor runs): **broken**, naming the log and the first line that no longer matches,
+  for an edited, dropped, inserted or unchained line, a head or a start that is not the sealed
+  one (lines deleted from the front or the end, or the chain recomputed), and a seal kept for
+  a chain the log no longer holds (the log deleted, or every `chain` key stripped); **stale**
+  (a warning) for a sealed head one line behind the log's, which is what a crash between an
+  append and its seal leaves, and also what one line forged onto the tail reads as until the
+  next append seals it; **unsealed** (a warning) where nothing could be checked against a seal;
+  **sealed** otherwise. Doctor's OK for a sealed chain says on Linux and Windows that the seal is
+  only as strong as the keyring.
+- **A writer verifies as it opens** (`eventlog::chain::opened`): a chained log that does not
+  match its seals keeps its lines chained but is never sealed again, so a forged tail is not
+  adopted as the head and the break stays reported.
+- **Who reads it** (spec §10.5): the person reads all of it. `eventlog::read_rows` is the reader
+  that narrows it to one chat's rows (by the chat's id, which the host maps from its token), but
+  **no command or tool serves a chat its rows yet**, and a sandboxed chat's profile denies it
+  writing `<data>/events/`, not reading it: until both are done (follow-up), the log is the
+  person's to read, and a chat's own rows are not a promise. A team or an organisation reads it
+  through the Audit's export. Nothing here sends the log anywhere.
+- **Tier:** Machine, device-bound — the event log's, never synced; the keyring item is Keyring.
+  Not rebuildable: it is the record.
+- **Written by:** `purlis_core::eventlog::Recorder::stop`, `eventlog::Log::append`.
+- **Read by:** `eventlog::read`, `eventlog::chain::check` (via `at_chat_start`
+  and doctor); the window's
+  would-have-blocked count reads the chats it owns (`policypress::logged_at`).
+- **Git:** never committed.
 
 ### `app/chat-records/closed.json` — every chat that closed, by its number
 - **What:** number → ULID → what a closed chat's card shows (#6304, parent #5820), for a chat

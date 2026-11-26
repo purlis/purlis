@@ -199,3 +199,62 @@ pub fn copy_plane(from: &Path, to: &Path) {
     // Fixtures are tracked under neutral names (#2089).
     purlis_core::testfixture::copy(from, to).expect("the fixture plane copies");
 }
+
+/// **The planes that are another plane's files with their own laid over them**, by name and the
+/// plane they build on: `strict-plane` is `daily`'s files plus `[policy] template = "strict"`
+/// (M75 slice 13, spec §14.1), so `daily` and `minimal` keep no `[policy]` and the scenarios
+/// that start from them stay as recorded.
+const BUILT_ON: [(&str, &str); 1] = [("strict-plane", "daily")];
+
+/// The plane `plane` is built on, or itself.
+pub fn base_of(plane: &str) -> &str {
+    BUILT_ON
+        .iter()
+        .find(|(name, _)| *name == plane)
+        .map_or(plane, |(_, base)| base)
+}
+
+/// Whether the replay commits `plane` before a scenario runs: a plane that is built on another
+/// has a committed `[policy]`, which the project's policy is read from at `HEAD` (spec §5).
+pub fn is_committed(plane: &str) -> bool {
+    BUILT_ON.iter().any(|(name, _)| *name == plane)
+}
+
+/// **Commits the plane at `root`** as it stands, so its project file has a `HEAD` to be read at:
+/// a repository of its own, one commit, no global or system config, a fixed author and date. Only
+/// what the plane's own `.gitignore` leaves visible is committed, which is the project file and
+/// the personas.
+pub fn commit_plane(root: &Path) {
+    let git = |args: &[&str]| {
+        let ran = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args([
+                "-c",
+                "user.name=Fixture User",
+                "-c",
+                "user.email=fixture@example.invalid",
+            ])
+            .args([
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "init.defaultBranch=main",
+            ])
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_AUTHOR_DATE", "2026-03-02T09:00:00+00:00")
+            .env("GIT_COMMITTER_DATE", "2026-03-02T09:00:00+00:00")
+            .output()
+            .expect("git runs");
+        assert!(
+            ran.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&ran.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "the fixture plane"]);
+}

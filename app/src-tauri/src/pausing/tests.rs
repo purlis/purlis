@@ -226,6 +226,7 @@ fn sandbox_block() -> purlis_core::eventlog::stops::Stop {
         qualifier: None,
         target: None,
         args: Some("aa".to_owned()),
+        compiled_from: None,
     })
 }
 

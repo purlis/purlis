@@ -36,6 +36,10 @@ pub const ASK_ANSWERED: &str = "ask.answered";
 /// An ask raised: what waits on the person (R-229). No stop of its own, so never counted: the
 /// Chat log's row of it, beside its answer.
 pub const ASK_RAISED: &str = "ask.raised";
+/// **A would-have-blocked line** (M75 slice 13, spec §10.3): a family or rule in `log` let an
+/// action through that its rule would have refused. No stop of its own, so never counted, and
+/// never an ask: the Chat log's quiet row.
+pub const WOULD_BLOCK: &str = "policy.would_block";
 
 /// **Who refused a block**: one of five (R-169). The policy and project values exist as values
 /// only until the slice that writes them ships.
@@ -153,7 +157,7 @@ checked!(Host, "host", is_host);
 checked!(Folder, "folder", is_folder);
 checked!(Token, "service or guard arm", is_token);
 
-fn is_host(value: &str) -> bool {
+pub(crate) fn is_host(value: &str) -> bool {
     let (name, port) = if let Some(rest) = value.strip_prefix('[') {
         let Some((address, after)) = rest.split_once(']') else {
             return false;
@@ -216,6 +220,29 @@ fn is_token(value: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-'))
 }
 
+/// The word a rule id or a family is written as where it was not a [`Token`] (M75-13 round 2B, S1):
+/// every character outside `A-Z a-z 0-9 . _ : -` becomes `_`, held to [`TOKEN_CHARS`], and
+/// `unnamed` where nothing is left. **The event is written with the id changed, never dropped**:
+/// a rule whose `@id` is too long or spelt oddly still has its deny in the log.
+pub fn token_of(raw: &str) -> String {
+    let token: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(TOKEN_CHARS)
+        .collect();
+    if token.is_empty() {
+        "unnamed".to_owned()
+    } else {
+        token
+    }
+}
+
 impl Target {
     /// A host's target ([`Host`]).
     pub fn host(value: &str) -> Result<Self, InvalidTarget> {
@@ -267,6 +294,111 @@ pub struct Block {
     /// What the project policy decided, where it decided this block (Q313.3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub policy: Option<Decided>,
+    /// **The rule a sandbox block was compiled from** (spec §10.7, Q313.7): the `@id` of the
+    /// compiled forbid that held the path. Only a [`Source::Sandbox`] block names one, and a
+    /// sandbox refusal no rule held (the fixed floor) names none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compiled_from: Option<String>,
+}
+
+/// **A block whose source is not named** ([`Block::names_its_source`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum Unnamed {
+    /// A policy block holds the rules that decided it.
+    #[error("a policy block must name the rules that decided it")]
+    PolicyNamesNoRule,
+    /// What a sandbox block says it was compiled from is a rule's `@id`, never other text.
+    #[error("a sandbox block names the rule it was compiled from by its id, and nothing else")]
+    SandboxNamesNoRule,
+    /// Only a sandbox block is compiled from a rule.
+    #[error("only a sandbox block is compiled from a rule")]
+    CompiledFromOutsideTheSandbox,
+}
+
+impl Block {
+    /// **Whether this block names its source** (spec §10.7, Q313.7): a rule (a policy block holds
+    /// the rules that decided it, a guard's block its arm where the line names one), the sandbox
+    /// (naming the rule it was compiled from, where a compiled rule held the path) or the
+    /// harness's own check (no rule). A block that does not is refused before it is written.
+    pub fn names_its_source(&self) -> Result<(), Unnamed> {
+        let rule = |id: &str| is_token(id) && !id.is_empty();
+        match self.source {
+            Source::Policy => match &self.policy {
+                Some(decided)
+                    if !decided.rules.is_empty() && decided.rules.iter().all(|id| rule(id)) =>
+                {
+                    Ok(())
+                }
+                _ => Err(Unnamed::PolicyNamesNoRule),
+            },
+            Source::Sandbox => match &self.compiled_from {
+                Some(id) if !rule(id) => Err(Unnamed::SandboxNamesNoRule),
+                _ => Ok(()),
+            },
+            Source::Guard | Source::HarnessCheck | Source::ProjectSetting => {
+                match self.compiled_from {
+                    Some(_) => Err(Unnamed::CompiledFromOutsideTheSandbox),
+                    None => Ok(()),
+                }
+            }
+        }
+    }
+}
+
+/// **A would-have-blocked line** (spec §10.3): the rules that would have refused, the first one's
+/// level, the family and the host where the rule is about one. Ids and closed words alone: never
+/// a command, a path or a URL. The chat is the event's own.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct WouldBlock {
+    pub rules: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<String>,
+    pub family: String,
+    /// The host it was about, as `host:port`, where the rule is about one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+}
+
+impl WouldBlock {
+    /// **The line a decision a mode let through is**, or none where it was not one: a deny or an
+    /// ask the family's or the rule's `log` turned into an allow ([`Decision::would_have_blocked`]).
+    /// `host` is the `host:port` the request was about, where it was about one and it reads as one.
+    ///
+    /// [`Decision::would_have_blocked`]: crate::policy::decide::Decision::would_have_blocked
+    pub fn of(decision: &crate::policy::decide::Decision, host: Option<&str>) -> Option<Self> {
+        if !decision.would_have_blocked() {
+            return None;
+        }
+        Some(Self {
+            rules: decision.ids().into_iter().map(token_of).collect(),
+            level: decision.deciding.first().map(|rule| token_of(&rule.level)),
+            family: token_of(&decision.family),
+            host: host
+                .filter(|host| crate::enforcement::is_host_and_port(host))
+                .map(|host| crate::shown::one_line(host, TARGET_CHARS)),
+        })
+    }
+
+    /// **The line as it is written** (S2): rules, level and family are tokens only (an id that is
+    /// none is changed by [`token_of`], never dropped), and `host` is a `host[:port]` and nothing
+    /// else: where it is a path, a URL or anything with a query, the line is written without one.
+    /// A would-have-blocked line never carries a command, a path or a URL.
+    fn checked(&self) -> Self {
+        Self {
+            rules: if self.rules.is_empty() {
+                vec!["unnamed".to_owned()]
+            } else {
+                self.rules.iter().map(|id| token_of(id)).collect()
+            },
+            level: self.level.as_deref().map(token_of),
+            family: token_of(&self.family),
+            host: self
+                .host
+                .as_deref()
+                .filter(|host| is_host(host))
+                .map(|host| crate::shown::one_line(host, TARGET_CHARS)),
+        }
+    }
 }
 
 /// **What the project policy decided, as an event carries it** (M75 slice 04, Q313.3): the
@@ -285,7 +417,8 @@ pub struct Decided {
 impl From<&crate::policy::decide::Decision> for Decided {
     fn from(decision: &crate::policy::decide::Decision) -> Self {
         Decided {
-            rules: decision.ids().into_iter().map(str::to_owned).collect(),
+            // An id that is no token is written changed, never dropped with its event (S1).
+            rules: decision.ids().into_iter().map(token_of).collect(),
             level: decision.deciding.first().map(|rule| rule.level.clone()),
             family: decision.family.clone(),
             outcome: decision.outcome,
@@ -443,6 +576,7 @@ pub enum Stop {
     LoopPause(LoopPause),
     AskAnswered(AskAnswered),
     AskRaised(AskRaised),
+    WouldBlock(WouldBlock),
 }
 
 impl Stop {
@@ -454,6 +588,7 @@ impl Stop {
             Self::LoopPause(_) => LOOP_PAUSE,
             Self::AskAnswered(_) => ASK_ANSWERED,
             Self::AskRaised(_) => ASK_RAISED,
+            Self::WouldBlock(_) => WOULD_BLOCK,
         }
     }
 }
@@ -469,6 +604,12 @@ impl Recorder {
     /// which the chat can write. It is never cleared as a guard's deny is.
     pub fn stop(&mut self, plane: &Path, number: Option<u32>, stop: &Stop) -> io::Result<Event> {
         let tool = |tool: &str| crate::shown::readable(tool, TARGET_CHARS);
+        // Fail closed: a block that does not name its source is not written.
+        if let Stop::Block(block) = stop {
+            block
+                .names_its_source()
+                .map_err(|why| io::Error::new(io::ErrorKind::InvalidInput, why))?;
+        }
         let body = match stop {
             Stop::Block(block) => serde_json::to_value(Block {
                 tool: tool(&block.tool),
@@ -485,6 +626,7 @@ impl Recorder {
             Stop::LoopPause(pause) => serde_json::to_value(pause),
             Stop::AskAnswered(answered) => serde_json::to_value(answered),
             Stop::AskRaised(raised) => serde_json::to_value(raised),
+            Stop::WouldBlock(line) => serde_json::to_value(line.checked()),
         }
         .map_err(io::Error::other)?;
         self.audited(plane, number, stop.kind(), body)
@@ -560,6 +702,7 @@ fn guard_block(call: &crate::hookwire::ToolCall, verified: bool) -> Option<Block
             .and_then(|arm| Target::guard_arm(arm.id()).ok()),
         args: call.args.clone(),
         policy: None,
+        compiled_from: None,
     })
 }
 
@@ -578,6 +721,7 @@ fn harness_check_block(call: &crate::hookwire::ToolCall, verified: bool) -> Opti
         target: None,
         args: call.args.clone(),
         policy: None,
+        compiled_from: None,
     })
 }
 

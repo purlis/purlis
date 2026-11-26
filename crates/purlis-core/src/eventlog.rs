@@ -44,6 +44,7 @@ use crate::state::run::{Cause, RunState};
 
 pub mod blockedlog;
 pub mod browsing;
+pub mod chain;
 pub mod chatlog;
 mod entry;
 pub mod finishes;
@@ -306,6 +307,15 @@ pub struct Log {
     seal_at: u64,
     /// Told the segment being written after each seal ([`Log::on_seal`]).
     on_seal: Option<SealHook>,
+    /// The chain of the last line, where the log is hash-chained ([`Log::chain`]): every line
+    /// written ends in the chain of the one before it, and the app seals the head at each append
+    /// ([`chain`]). `None` for a log that is not chained.
+    chain: Option<String>,
+    /// Whether this writer seals the chain's head and start: false for a chained log that did not
+    /// match its seals as it was opened, which is never sealed over ([`chain::opened`]).
+    sealing: bool,
+    /// Whether a head that could not be sealed was said, once for this writer.
+    unsealed_said: bool,
     /// A test's way to make the next write fail after this many bytes.
     #[cfg(test)]
     fail_after: Option<usize>,
@@ -319,6 +329,23 @@ pub struct Log {
 }
 
 impl Log {
+    /// **Hash-chains the log from now on** (spec §10.3): each line written ends in the chain of
+    /// the one before it, and the app seals the head, its `seq` and chain, in the keyring at each
+    /// append ([`chain`]). The host turns it on once a chat runs with the sandbox `off`, which can
+    /// reach the log's files. A chain carries on from the last chained line; where there is none
+    /// it starts afresh. It stays on: a log whose last line is chained is chained once opened.
+    pub fn chain(&mut self) -> io::Result<()> {
+        if self.chain.is_none() {
+            self.chain = Some(String::new());
+        }
+        Ok(())
+    }
+
+    /// Whether the log is hash-chained ([`Log::chain`]).
+    pub fn is_chained(&self) -> bool {
+        self.chain.is_some()
+    }
+
     /// [`Log::open_with`] the [`Retention::DEFAULT`].
     pub fn open(dir: &Path, device: &str) -> io::Result<Log> {
         Log::open_with(dir, device, Retention::DEFAULT)
@@ -368,6 +395,17 @@ impl Log {
             Some(last) => after(last.seq)?,
             None => 1,
         };
+        // A chained log is read against its seals before this writer carries on from its end: a
+        // forged tail is never adopted as the head (M75-13 round 2A, B5).
+        let found = chain::last_chain(dir)?;
+        let sealing = chain::opened(dir, device);
+        let chain = match found {
+            Some((_, chain)) => Some(chain),
+            // A seal for a chain the log no longer holds: carry on chained, from nothing, never
+            // sealed.
+            None if !sealing => Some(String::new()),
+            None => None,
+        };
         let held_until_ms = match &last {
             None => 0,
             Some(last) => {
@@ -393,6 +431,10 @@ impl Log {
             torn: false,
             seal_at: retention.segment_bytes,
             on_seal: None,
+            // A log whose last line is chained stays chained: once chained, always chained.
+            chain,
+            sealing,
+            unsealed_said: false,
             #[cfg(test)]
             fail_after: None,
             #[cfg(test)]
@@ -440,6 +482,16 @@ impl Log {
             body,
         };
         let mut line = serde_json::to_vec(&event).map_err(io::Error::other)?;
+        let mut starts = false;
+        let chain = match &self.chain {
+            Some(previous) => {
+                starts = previous.is_empty();
+                let (chained, chain) = chain::chained(previous, line);
+                line = chained;
+                Some(chain)
+            }
+            None => None,
+        };
         line.push(b'\n');
         // One `write_all` of one whole line on an append-mode file.
         #[cfg(test)]
@@ -457,6 +509,22 @@ impl Log {
         self.durable
             .appended
             .store(seq, std::sync::atomic::Ordering::SeqCst);
+        if let Some(chain) = chain {
+            // The head the app seals is the line just written, and the start is sealed with the
+            // chain's first line. A process that cannot seal keeps the chain alone, which a
+            // recomputation can beat: only the app's seal cannot, so it is said.
+            if self.sealing {
+                let sealed = (!starts || chain::seal_start(&self.device, seq, &chain))
+                    && chain::seal_head(&self.device, seq, &chain);
+                if !sealed && !self.unsealed_said {
+                    self.unsealed_said = true;
+                    tracing::warn!(
+                        "purlis: the event log's hash chain is not sealed: this process cannot                          reach the seal key (only purlis's app seals), so doctor reports the                          chain as unsealed"
+                    );
+                }
+            }
+            self.chain = Some(chain);
+        }
         if self.good >= self.seal_at {
             // The event is written whatever sealing makes of it.
             self.seal_or_warn();
@@ -553,6 +621,18 @@ impl Log {
 
     /// [`prune`], with what it could not do and what its hard limit took logged.
     fn prune(&self) {
+        let held = |dir: &Path| segments(dir).map_or(0, |held| held.len());
+        let before = held(&self.dir);
+        self.prune_segments();
+        // Retention deleted the log's oldest segments: the chain's start moved with them, and
+        // this writer, which deleted them, anchors it where the log now starts.
+        if self.chain.is_some() && self.sealing && held(&self.dir) < before {
+            chain::reanchor(&self.dir, &self.device);
+        }
+    }
+
+    /// [`prune`]'s own call, with what it could not do logged.
+    fn prune_segments(&self) {
         let now = std::time::SystemTime::now();
         match prune(&self.dir, &self.retention, &self.consumers, now) {
             Ok(unread) => {
@@ -859,6 +939,36 @@ fn first_seq(file: &mut File) -> io::Result<Option<u64>> {
 /// skipped.
 pub fn read(dir: &Path) -> io::Result<Vec<Event>> {
     read_where(dir, |_| true)
+}
+
+/// **Who reads the log** (spec §10.5, Q313.5): the person reads all of it, a chat only its own
+/// rows. A team or an organisation reads it through the Audit's AU-22 export, never from here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reader<'a> {
+    /// The person, on their own machine: every row.
+    Person,
+    /// The chat with this id: the rows under it, and no other chat's and none of no chat's.
+    Chat(&'a str),
+}
+
+/// **The rows of the log in `dir` that `who` may read**, oldest first ([`read`], narrowed). A chat
+/// is named by its id, which the host maps from the number its token carries, never by anything
+/// the chat sends; a row is its own where the event's chat is its id, so a row of no chat (the
+/// person's act, the kill switch) and every other chat's are left out.
+pub fn read_rows(dir: &Path, who: Reader<'_>) -> io::Result<Vec<Event>> {
+    match who {
+        Reader::Person => read(dir),
+        Reader::Chat(id) => {
+            // A line that does not name the chat is not read at all.
+            let named = format!("\"{id}\"");
+            let mut rows = read_where(dir, |line| {
+                line.windows(named.len())
+                    .any(|window| window == named.as_bytes())
+            })?;
+            rows.retain(|event| event.chat.as_deref() == Some(id));
+            Ok(rows)
+        }
+    }
 }
 
 /// [`read`], parsing only the lines `keep` keeps: a reader that wants a few kinds of event
@@ -1754,6 +1864,10 @@ pub struct Recorder {
     begun_until_ms: u64,
 }
 
+/// The kind of the event that records a chat started without the sandbox (ADR 0067 §7): the log
+/// is hash-chained from the line that writes it ([`chain`]).
+const TRUST_SANDBOX_OFF: &str = "trust.sandbox.off";
+
 /// How many runs a writer remembers it began ([`Recorder::never_held`]). Past it, they are let
 /// go of, and only an id minted later than the newest of them is taken.
 const RUNS_HELD: usize = 4096;
@@ -1842,10 +1956,31 @@ impl Recorder {
     pub fn dir_on_this_machine() -> Option<PathBuf> {
         let config = crate::machine::config_root()?;
         let data = crate::datahome::root()?;
-        if crate::datahome::refusal(&data).is_some() {
+        Self::dir_in(&config, &data)
+    }
+
+    /// [`Recorder::dir_on_this_machine`] for a reader that only looks (a chat's start checking
+    /// the chain): the same lookup, with the fence asked rather than held. A fenced (test) build
+    /// finds no log where the config or data home is outside its fence, so a start that pinned
+    /// neither never reaches the machine's own stores, and the fence is not relaxed.
+    pub(crate) fn dir_to_look_at() -> Option<PathBuf> {
+        let config = crate::machine::config_root_unheld()?;
+        let data = crate::datahome::root_in(&crate::envvar::var)?;
+        #[cfg(feature = "fenced")]
+        {
+            let fence = crate::fence::fence();
+            if !crate::fence::inside(&config, &fence) || !crate::fence::inside(&data, &fence) {
+                return None;
+            }
+        }
+        Self::dir_in(&config, &data)
+    }
+
+    fn dir_in(config: &Path, data: &Path) -> Option<PathBuf> {
+        if crate::datahome::refusal(data).is_some() {
             return None;
         }
-        let device = crate::machine::device_id(&config).ok()?;
+        let device = crate::machine::device_id(config).ok()?;
         Some(data.join(EVENTS).join(device))
     }
 
@@ -2687,6 +2822,16 @@ impl Recorder {
         kind: &str,
         mut body: serde_json::Value,
     ) -> io::Result<Event> {
+        // A chat with the sandbox `off` can reach this log's files: from the line that records it,
+        // the log is chained, and it stays so (spec §10.3, [`chain`]).
+        // So is a run that starts under no sandbox backend, whoever chose that level: a project's
+        // or template's `off` writes no trust event, only a `run.started` that says `none`
+        // (M75-13 round 2A, S4).
+        if kind == TRUST_SANDBOX_OFF
+            || (kind == "run.started" && body.get("sandbox").and_then(|v| v.as_str()) == Some(NONE))
+        {
+            self.log.chain()?;
+        }
         if kind == "run.started"
             && let Some(run) = run
         {

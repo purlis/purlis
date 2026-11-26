@@ -288,7 +288,7 @@ fn state_of(root: &std::path::Path) -> PolicyState {
     }
 }
 
-/// One line of the project's enforcement log: a refusal a family set to `log` let through.
+/// One would-have-blocked line of the event log: a refusal a family set to `log` let through.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PolicyLogLine {
     /// When, UTC, RFC 3339.
@@ -307,8 +307,8 @@ pub struct PolicyLogLine {
 /// The most lines the window is handed, newest first: the count says them all.
 const MOST_LINES: usize = 500;
 
-/// What the project's enforcement log holds, newest first, at most [`MOST_LINES`], with how
-/// many lines it holds in all.
+/// What the event log holds of the project's would-have-blocked lines, newest first, at most
+/// [`MOST_LINES`], with how many it holds in all.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PolicyLog {
     /// How many refusals were let through and logged, every chat's.
@@ -320,53 +320,75 @@ pub struct PolicyLog {
     pub dropped: u32,
 }
 
-/// Every chat's enforcement log at `root`, newest first, and how many lines were dropped.
-fn logged_at(root: &std::path::Path) -> (Vec<enforcement::Logged>, usize) {
-    let Ok(files) = std::fs::read_dir(enforcement::log_dir(root)) else {
+/// Every would-have-blocked event of the chats `owns` in the event log at `events`, newest
+/// first, and how many were dropped (spec §10.3): the log is the machine's, so a chat of another
+/// project is not this one's, and a line that is not as the app writes it is left out and counted.
+fn logged_at(
+    events: &std::path::Path,
+    owns: impl Fn(&str) -> bool,
+) -> (Vec<enforcement::Logged>, usize) {
+    let kind = format!("\"{}\"", purlis_core::eventlog::stops::WOULD_BLOCK);
+    let Ok(read) = purlis_core::eventlog::read_where(events, |line| {
+        line.windows(kind.len())
+            .any(|window| window == kind.as_bytes())
+    }) else {
         return (Vec::new(), 0);
     };
     let mut lines = Vec::new();
     let mut dropped = 0;
-    for chat in files.filter_map(Result::ok).filter_map(|file| {
-        let name = file.file_name().into_string().ok()?;
-        name.strip_suffix(".jsonl").map(str::to_owned)
-    }) {
-        let Some(path) = enforcement::log_file(root, &chat) else {
+    for event in read
+        .into_iter()
+        .filter(|event| event.kind == purlis_core::eventlog::stops::WOULD_BLOCK)
+    {
+        let Some(chat) = event.chat.clone().filter(|chat| owns(chat)) else {
             continue;
         };
-        let text = std::fs::read_to_string(path).unwrap_or_default();
-        // A chat's log is appended to, so its own lines are newest last: reversed, they keep
-        // their order through the sort below wherever two share a second.
-        for line in text.lines().rev() {
-            match serde_json::from_str::<enforcement::Logged>(line) {
-                Ok(logged) if as_purlis_writes(&logged, &chat) => lines.push(logged),
-                _ => dropped += 1,
-            }
+        let Ok(line) =
+            serde_json::from_value::<purlis_core::eventlog::stops::WouldBlock>(event.body.clone())
+        else {
+            dropped += 1;
+            continue;
+        };
+        let at = purlis_core::eventlog::written_at_ms(&event.ulid)
+            .and_then(|ms| jiff::Timestamp::from_millisecond(i64::try_from(ms).ok()?).ok())
+            .map(|time| time.strftime("%Y-%m-%dT%H:%M:%SZ").to_string());
+        match (at, as_purlis_writes(&line)) {
+            (Some(at), true) => lines.push(enforcement::Logged {
+                at,
+                rule: line.rules.join(", "),
+                family: line.family,
+                chat,
+                host: line.host,
+            }),
+            _ => dropped += 1,
         }
     }
-    // RFC 3339 at one precision, UTC (checked above): the text sorts as the time does. Stable,
-    // so lines of one second keep the order above.
+    // The log is read oldest first: reversed, the lines of one second keep the order that puts the
+    // one written last first through the stable sort below.
+    lines.reverse();
     lines.sort_by(|one, next| next.at.cmp(&one.at));
     (lines, dropped)
 }
 
-/// **Whether `line`, read from chat `chat`'s log, is one the app could have written**: the same
-/// checks as a line a chat's process hands over (`handoff.rs`'s `policy_line`), so a process
-/// that writes the file itself puts nothing on the page but a known rule, a family, a
-/// `host:port` and a time.
-fn as_purlis_writes(line: &enforcement::Logged, chat: &str) -> bool {
-    let Some(family) = enforcement::Family::of_key(&line.family) else {
-        return false;
-    };
+/// **Whether `line` is one the app could have written**: the same checks as a line a chat's
+/// process hands over (`handoff.rs`'s `policy_line`), so an event written by any other means puts
+/// nothing on the page but rule ids, a family and a `host:port`.
+fn as_purlis_writes(line: &purlis_core::eventlog::stops::WouldBlock) -> bool {
     let short = |text: &str| text.chars().count() <= enforcement::MOST_CHARS;
-    line.chat == chat
-        && short(&line.rule)
-        && enforcement::known_rule(family, &line.rule)
+    let is_an_id = |id: &str| {
+        !id.is_empty()
+            && short(id)
+            && id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-'))
+    };
+    enforcement::Family::of_key(&line.family).is_some()
+        && !line.rules.is_empty()
+        && line.rules.iter().all(|rule| is_an_id(rule))
         && line
             .host
             .as_deref()
             .is_none_or(|host| short(host) && enforcement::is_host_and_port(host))
-        && jiff::civil::DateTime::strptime("%Y-%m-%dT%H:%M:%SZ", &line.at).is_ok()
 }
 
 /// The log as the window is handed it: the count of every line, the newest [`MOST_LINES`], each
@@ -404,8 +426,16 @@ pub async fn policy_log(
     plane: PlaneId,
 ) -> Result<PolicyLog, String> {
     let held = planes.held(&plane)?;
-    let root = held.root().to_path_buf();
-    let logged = crate::off_the_window(READING_POLICY, move || Ok(logged_at(&root))).await?;
+    let reading = held.clone();
+    let logged = crate::off_the_window(READING_POLICY, move || {
+        let Some(events) = purlis_core::eventlog::Recorder::dir_on_this_machine() else {
+            return Ok((Vec::new(), 0));
+        };
+        Ok(logged_at(&events, |chat| {
+            reading.chats().session_of_id(chat).is_some()
+        }))
+    })
+    .await?;
     Ok(log_of(logged, |chat| held.chats().session_of_id(chat)))
 }
 
@@ -534,107 +564,86 @@ mod tests {
     const ONE: &str = "01JABCDEFGHJKMNPQRSTVWXYZ0";
     const TWO: &str = "01JABCDEFGHJKMNPQRSTVWXYZ1";
 
-    /// A log line as the app writes it, of `family`'s `rule`, in chat `chat`.
-    fn line(at: &str, family: &str, rule: &str, chat: &str, host: Option<&str>) -> String {
-        let host = host.map_or(String::new(), |host| format!(",\"host\":\"{host}\""));
-        format!(
-            "{{\"at\":\"{at}\",\"rule\":\"{rule}\",\"family\":\"{family}\",\"chat\":\"{chat}\"{host}}}\n"
-        )
+    /// A would-have-blocked event body as the app writes it, of `family`'s `rule`.
+    fn body(family: &str, rule: &str, host: Option<&str>) -> serde_json::Value {
+        let mut body = serde_json::json!({ "rules": [rule], "family": family });
+        if let Some(host) = host {
+            body["host"] = host.into();
+        }
+        body
     }
 
-    /// A plane whose enforcement log holds `logs`, each a chat's id and its file's text.
-    fn logged(logs: &[(&str, String)]) -> tempfile::TempDir {
-        let dir = plane("");
-        let folder = enforcement::log_dir(dir.path());
-        std::fs::create_dir_all(&folder).expect("the log folder");
-        for (chat, text) in logs {
-            std::fs::write(folder.join(format!("{chat}.jsonl")), text).expect("a chat's log");
+    /// An event log holding `events`, each a chat's id and the body of its event.
+    fn logged(events: &[(&str, serde_json::Value)]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("a folder");
+        let mut log = purlis_core::eventlog::Log::open(dir.path(), "DEVICE").expect("a log");
+        for (chat, body) in events {
+            log.append(
+                Some(chat),
+                None,
+                None,
+                purlis_core::eventlog::stops::WOULD_BLOCK,
+                body.clone(),
+            )
+            .expect("an event");
+            // One millisecond apart at least, so the ULIDs sort as the events were written.
+            std::thread::sleep(std::time::Duration::from_millis(2));
         }
         dir
     }
 
-    fn times(lines: &[enforcement::Logged]) -> Vec<(&str, Option<&str>)> {
-        lines
-            .iter()
-            .map(|line| (line.at.as_str(), line.host.as_deref()))
-            .collect()
+    fn all(_: &str) -> bool {
+        true
+    }
+
+    fn hosts(lines: &[enforcement::Logged]) -> Vec<Option<&str>> {
+        lines.iter().map(|line| line.host.as_deref()).collect()
     }
 
     #[test]
-    fn the_log_is_every_chats_lines_newest_first() {
+    fn the_log_is_every_owned_chats_lines_newest_first() {
         let merge = enforcement::RULE_MERGE_HOLD;
+        let ask = enforcement::RULE_HOST_ASK;
         let dir = logged(&[
+            (ONE, body("asks", ask, Some("a.example:443"))),
+            (TWO, body("asks", ask, Some("b.example:443"))),
+            (ONE, body("guards.merge", merge, None)),
             (
-                ONE,
-                line("2026-11-17T09:00:00Z", "guards.merge", merge, ONE, None)
-                    + &line("2026-11-17T11:00:00Z", "guards.merge", merge, ONE, None),
-            ),
-            (
-                TWO,
-                line("2026-11-17T10:00:00Z", "guards.merge", merge, TWO, None),
+                "01JABCDEFGHJKMNPQRSTVWXYZ9",
+                body("asks", ask, Some("not-ours:443")),
             ),
         ]);
-        std::fs::write(
-            enforcement::log_dir(dir.path()).join("notes.txt"),
-            "not a log",
-        )
-        .expect("another file");
-        let (lines, dropped) = logged_at(dir.path());
+        let ours = |chat: &str| chat == ONE || chat == TWO;
+        let (lines, dropped) = logged_at(dir.path(), ours);
         assert_eq!(
-            times(&lines),
-            [
-                ("2026-11-17T11:00:00Z", None),
-                ("2026-11-17T10:00:00Z", None),
-                ("2026-11-17T09:00:00Z", None),
-            ]
+            hosts(&lines),
+            [None, Some("b.example:443"), Some("a.example:443")],
+            "newest first, and a chat of another project is not this one's"
         );
         assert_eq!(dropped, 0);
     }
 
     #[test]
-    fn of_one_second_the_line_written_last_is_first() {
-        let ask = enforcement::RULE_HOST_ASK;
-        let at = "2026-11-17T09:00:00Z";
-        let dir = logged(&[(
-            ONE,
-            line(at, "asks", ask, ONE, Some("a.example:443"))
-                + &line(at, "asks", ask, ONE, Some("b.example:443"))
-                + &line(at, "asks", ask, ONE, Some("c.example:443")),
-        )]);
-        let (lines, _) = logged_at(dir.path());
-        assert_eq!(
-            times(&lines),
-            [
-                (at, Some("c.example:443")),
-                (at, Some("b.example:443")),
-                (at, Some("a.example:443")),
-            ]
-        );
-    }
-
-    #[test]
-    fn a_line_the_app_would_not_write_is_left_out_and_counted() {
-        // A chat's process cannot write the log, but a line written there by any other means
-        // puts nothing on the page that a handed-over line could not (the review of #7093).
-        let at = "2026-11-17T09:00:00Z";
+    fn an_event_the_app_would_not_write_is_left_out_and_counted() {
+        // A chat at the sandbox off can reach the log's files: an event written there by any
+        // other means puts nothing on the page that a handed-over line could not.
         let ask = enforcement::RULE_HOST_ASK;
         let long = "a".repeat(enforcement::MOST_CHARS + 1);
         let bad = [
-            "not a line\n".to_owned(),
-            line(at, "guards.git", "rm -rf /home/someone", ONE, None),
-            line(at, "guards.save", enforcement::RULE_MERGE_HOLD, ONE, None),
-            line(at, "nothing", ask, ONE, None),
-            line(at, "asks", ask, ONE, Some("https://x/a?b")),
-            line(at, "asks", ask, ONE, Some("example.com")),
-            line(at, "asks", ask, ONE, Some(&format!("{long}:443"))),
-            line(at, "asks", ask, TWO, None),
-            line("yesterday, about noon", "asks", ask, ONE, None),
-            line("2026-11-17T09:00:00+04:00", "asks", ask, ONE, None),
+            body("guards.git", "rm -rf /home/someone", None),
+            body("nothing", ask, None),
+            body("asks", ask, Some("https://x/a?b")),
+            body("asks", ask, Some("example.com")),
+            body("asks", ask, Some(&format!("{long}:443"))),
+            serde_json::json!({ "rules": [], "family": "asks" }),
+            serde_json::json!({ "family": "asks" }),
         ];
-        let kept = line(at, "asks", ask, ONE, Some("example.com:443"));
-        let dir = logged(&[(ONE, bad.concat() + &kept)]);
-        let (lines, dropped) = logged_at(dir.path());
-        assert_eq!(times(&lines), [(at, Some("example.com:443"))]);
+        let mut events: Vec<(&str, serde_json::Value)> =
+            bad.iter().map(|body| (ONE, body.clone())).collect();
+        events.push((ONE, body("asks", ask, Some("example.com:443"))));
+        let dir = logged(&events);
+        let (lines, dropped) = logged_at(dir.path(), all);
+        assert_eq!(hosts(&lines), [Some("example.com:443")]);
         assert_eq!(dropped, bad.len());
     }
 
@@ -674,8 +683,8 @@ mod tests {
     }
 
     #[test]
-    fn a_project_with_no_log_has_logged_nothing() {
-        let dir = plane("");
-        assert_eq!(logged_at(dir.path()), (Vec::new(), 0));
+    fn a_machine_with_no_log_has_logged_nothing() {
+        let dir = tempfile::tempdir().expect("a folder");
+        assert_eq!(logged_at(&dir.path().join("none"), all), (Vec::new(), 0));
     }
 }

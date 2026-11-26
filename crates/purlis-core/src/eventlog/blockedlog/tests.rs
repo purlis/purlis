@@ -40,6 +40,7 @@ fn block(host: &str) -> Block {
         qualifier: None,
         target: Some(Target::host(host).unwrap()),
         args: None,
+        compiled_from: None,
     }
 }
 

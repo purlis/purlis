@@ -3762,7 +3762,18 @@ impl Hooks {
         number: u32,
         stop: purlis_core::eventlog::stops::Stop,
     ) -> std::io::Result<()> {
-        write_stop_into(&self.events, self.plane.root(), number, stop)
+        write_stop_into(&self.events, self.plane.root(), Some(number), stop)
+    }
+
+    /// **Writes `stop` under no chat** (M75-13 round 2B, S3): the row of a stop whose chat this
+    /// app has no number for (a line a process handed over for a chat it does not have open, or
+    /// one that named none), so it is in the log, for the person, and never dropped. A chat
+    /// reads none of it ([`purlis_core::eventlog::Reader::Chat`] reads rows under its own id).
+    pub fn write_stop_of_no_chat(
+        &self,
+        stop: purlis_core::eventlog::stops::Stop,
+    ) -> std::io::Result<()> {
+        write_stop_into(&self.events, self.plane.root(), None, stop)
     }
 
     /// Who is told, from now on, each time a chat's own harness moves it onto another
@@ -4388,7 +4399,7 @@ pub fn code_of(exit: &Exit) -> Option<i32> {
 fn write_stop_into(
     events: &Mutex<Option<Events>>,
     root: &std::path::Path,
-    number: u32,
+    number: Option<u32>,
     stop: purlis_core::eventlog::stops::Stop,
 ) -> std::io::Result<()> {
     let events = events
@@ -4398,7 +4409,7 @@ fn write_stop_into(
     match events {
         Some(events) => events.record(Entry::Stop {
             plane: root.to_path_buf(),
-            number: Some(number),
+            number,
             stop,
         }),
         None => Ok(()),
@@ -4420,7 +4431,7 @@ fn hook_ask_raised(
         policy: None,
         ask: AskGroup::of(&raised.ask),
     });
-    if let Err(why) = write_stop_into(events, root, chat, stop) {
+    if let Err(why) = write_stop_into(events, root, Some(chat), stop) {
         tracing::warn!("purlis: chat {chat}'s ask.raised was not written to its log: {why}");
     }
 }

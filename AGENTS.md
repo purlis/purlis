@@ -243,6 +243,23 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   `floor_tests`; failures that say `Operation not permitted` (creating a `.charter/vaults` folder,
   binding a port, `sandbox_apply`) are the chat's sandbox, not the code: CI is their first run.
   A grant check that walks `place.denied` must honour `Reach::Itself` (`grant::holds_the_folder`).
+- The log (M75-13): a would-have-blocked line is a `policy.would_block` event
+  (`eventlog::stops::WouldBlock`, written by `Recorder::stop`), never a file;
+  `enforcement::record` hands it to the app's writer (`decisions::writes_would_have_blocked_lines`),
+  and in a core lib test `enforcement::read_log` reads the thread's capture instead. The chain
+  (`eventlog::chain`) starts at the first `trust.sandbox.off` or `run.started` naming no sandbox
+  and seals its start and head with `secrets::seal::keep`, so its tests are lib tests (the
+  integration binary is not the app and cannot seal; it can still reach a chain break, and
+  `chain::log_dir_for_this_thread` points a start's check at a test log). The session host is the
+  app's binary and marks itself the app in `hosting_here` so it can seal. `no_code_reads_purlis_policy` fails on any Rust source naming the retired variable.
+- A sandboxed chat cannot run the recorded replay at all: laying out a fixture plane copies
+  `tests/fixtures/planes/daily/.charter/vaults`, which the sandbox denies ("the fixture plane
+  copies: Operation not permitted"). Edit its rows with a text replace on the line (the file is
+  compact, sorted JSON) and leave the run to CI. `cargo fmt --all` prints the same denial for the
+  vault files and still formats the rest.
+- Disk: `cargo test -p purlis-core --lib --test it` plus the CLI's replay builds about 5 GB of
+  `target/`. With under ~10 GB free run `--lib` and `--test it` in separate calls and `rm -rf
+  target` between them. macOS `sed -i` needs `-i ''`; use a Python edit script from the scratchpad.
 - Generated policies (M75-42) are `policy_proof/generator.rs`: `generate(seed)`, `cells()`, `seeds()`
   (`PURLIS_PROOF_SEEDS=a,b,c` replays a night; the lib's sandbox differential reads it too). The
   oracle asks over no entities, so an action whose shipped rule reads `principal.*` (`dispatch-to`,

@@ -12612,6 +12612,9 @@ mod needed_you_at_the_hook;
 /// No block is ever the source of an ask: Asks holds asks only (R-171, R-240, #6417).
 mod blocks_are_never_asks;
 
+/// A dispatch decided under `log` records its line without waiting on the store it holds (#7524).
+mod a_logged_decision_never_waits_on_the_chat_store;
+
 /// **A task another chat dispatches starts where its asking chat runs** (#2003, D-2003-7): the
 /// window's answer to the dispatch (`task_dispatched`) starts it through the seam every chat
 /// starts through, so in a project whose chats run in the session host, the host runs it. Who
@@ -15966,8 +15969,7 @@ fn a_policy_log_line_is_kept_only_for_an_open_chat_a_known_rule_and_a_host_and_p
     use purlis_core::enforcement;
     use purlis_core::hookwire::PolicyLogAsk;
     let plane = Plane::new();
-    let host = Pretend::default();
-    let planes = planes_on(&host);
+    let planes = planes_recording_events(&plane.root.join("events"));
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     let asking = a_chat_on_work(&held, &plane.root);
@@ -16024,27 +16026,42 @@ fn a_policy_log_line_is_kept_only_for_an_open_chat_a_known_rule_and_a_host_and_p
     ] {
         assert!(policy_line(&held, &refused).is_err(), "{why}");
     }
-    assert_eq!(enforcement::read_log(&plane.root, &chat_id).len(), 2);
+    let wrote = would_have_blocked_lines(&plane.root.join("events"));
+    assert_eq!(wrote.len(), 2, "{wrote:?}");
     assert!(
-        enforcement::read_log(&plane.root, enforcement::UNKNOWN_CHAT).is_empty(),
+        wrote
+            .iter()
+            .all(|event| event.chat.as_deref() == Some(chat_id.as_str())),
+        "each is under the asking chat: {wrote:?}"
+    );
+    assert!(
+        wrote
+            .iter()
+            .all(|event| event.chat.as_deref() != Some("unknown")),
         "nothing is written for an unidentified caller"
     );
 }
 
+/// The would-have-blocked events in the event log under `dir`, oldest first.
+fn would_have_blocked_lines(dir: &Path) -> Vec<purlis_core::eventlog::Event> {
+    purlis_core::eventlog::read(dir)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|event| event.kind == purlis_core::eventlog::stops::WOULD_BLOCK)
+        .collect()
+}
+
 /// #7073: the socket's [`Ask::PolicyLog`] reaches the checks: a line for the asking chat is kept
-/// in its own log and answered with its policy, and one the checks refuse is answered No and
+/// in the event log under its chat and answered with its policy, and one the checks refuse is answered No and
 /// kept nowhere.
 #[test]
 fn the_socket_keeps_a_policy_log_line_only_through_its_checks() {
-    use purlis_core::enforcement;
     use purlis_core::hookwire::PolicyLogAsk;
     let plane = Plane::new();
-    let host = Pretend::default();
-    let planes = planes_on(&host);
+    let planes = planes_recording_events(&plane.root.join("events"));
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     let asking = a_chat_on_work(&held, &plane.root);
-    let chat_id = held.chats().id_of(asking).expect("an open chat has an id");
     let asked = |rule: &str| {
         answer(
             &held,
@@ -16066,9 +16083,8 @@ fn the_socket_keeps_a_policy_log_line_only_through_its_checks() {
     assert!(matches!(kept, Answer::Policy { .. }), "{kept:?}");
     let refused = asked("rm -rf /home/someone");
     assert!(matches!(refused, Answer::No { .. }), "{refused:?}");
-    let logged = enforcement::read_log(&plane.root, &chat_id);
+    let logged = would_have_blocked_lines(&plane.root.join("events"));
     assert_eq!(logged.len(), 1, "{logged:?}");
-    assert!(enforcement::read_log(&plane.root, enforcement::UNKNOWN_CHAT).is_empty());
 }
 
 /// What a chat with its prompts off and no sandbox is told where the policy asks and no sealed

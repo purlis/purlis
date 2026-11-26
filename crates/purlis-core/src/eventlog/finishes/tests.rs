@@ -63,6 +63,7 @@ impl<'a> Turns<'a> {
             qualifier,
             target: None,
             args: Some(args.to_owned()),
+            compiled_from: None,
         }))
         .unwrap();
         self.write(None, crate::eventlog::stops::BLOCK, body)
@@ -274,6 +275,7 @@ fn a_finish_names_its_unresolved_blocks_by_source_and_target() {
             qualifier: None,
             target: Some(crate::eventlog::stops::Target::guard_arm("A3b").unwrap()),
             args: Some(args.to_owned()),
+            compiled_from: None,
         }))
         .unwrap()
     };

@@ -6207,12 +6207,6 @@ impl Chats {
             chat.cwd.as_deref(),
             sandbox.is_some(),
             identity.id.as_deref(),
-            // Never looser than the chain that dispatched it (Q308a, Q308b).
-            Some(
-                &purlis_core::enforcement::at_start(&self.project)
-                    .for_chat(chat.from.as_ref().and_then(|from| from.policy.as_deref()))
-                    .spelled(),
-            ),
         );
         env.sort();
         // The app's own `charter` first, then the directories charter searched for the
@@ -10332,6 +10326,7 @@ fn became_a_block(
         qualifier: None,
         target,
         args: withdrawn.args,
+        compiled_from: None,
     });
     if let Err(why) = write(chat, stop, BlockWritten::Withdrawn(withdrawn.call)) {
         tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");
@@ -10483,16 +10478,10 @@ fn what_its_hooks_read(
     cwd: Option<&Path>,
     sandboxed: bool,
     id: Option<&str>,
-    policy: Option<&str>,
 ) {
     purlis_core::hoststart::what_its_hooks_read(
         env,
-        &purlis_core::hoststart::Watched {
-            cwd,
-            sandboxed,
-            id,
-            policy,
-        },
+        &purlis_core::hoststart::Watched { cwd, sandboxed, id },
     );
 }
 

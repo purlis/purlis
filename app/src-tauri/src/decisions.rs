@@ -11,6 +11,7 @@
 //! as committed at the plane root's `HEAD` ([`purlis_core::policy::decide::in_plane`]), never a
 //! file the line names.
 
+use purlis_core::eventlog::stops::Stop;
 use purlis_core::hookwire::{Answer, DecideAsk, PersonWhyAsk, WhyAsk};
 use purlis_core::policy::decide;
 
@@ -18,7 +19,8 @@ use crate::planes::Held;
 
 /// **Answers chat `asked.chat`'s ask for one decision**: refused for a chat this app does not
 /// have open, since nothing of it is known to decide by. A deny is written to the event log here,
-/// as the host decided it.
+/// as the host decided it, and so is a deny or an ask a mode let through (`policy.would_block`,
+/// M75-13 round 2B, B6): the hook's own line is never what the log holds.
 pub fn asked(held: &Held, asked: &DecideAsk) -> Answer {
     let chat = asked.chat;
     // Only what an enforcement point is wired for: a chat names nothing else for the host to
@@ -46,6 +48,8 @@ pub fn asked(held: &Held, asked: &DecideAsk) -> Answer {
     };
     if decision.after_mode == decide::Outcome::Deny {
         blocked(held, chat, &asked.tool, &decision);
+    } else {
+        would_have_blocked(held, chat, asked, &decision);
     }
     Answer::Decided(Box::new(decision))
 }
@@ -308,20 +312,93 @@ pub fn why_for_person(held: &Held, asked: &PersonWhyAsk) -> Answer {
 /// the first deciding rule, with every deciding rule, its level, the family and both outcomes.
 /// Written here, not from the chat's own line, which a chat at the sandbox level `off` can reach.
 fn blocked(held: &Held, chat: u32, tool: &str, decision: &decide::Decision) {
-    use purlis_core::eventlog::stops::{Block, Decided, Source, Stop, TARGET_CHARS, Target};
+    use purlis_core::eventlog::stops::{
+        Block, Decided, Source, Stop, TARGET_CHARS, Target, token_of,
+    };
     let stop = Stop::Block(Block {
         tool: purlis_core::shown::readable(tool, TARGET_CHARS),
-        source: Source::Policy,
+        // A request that fits no schema was refused by no rule: purlis's own check refused it.
+        source: if decision.deciding.is_empty() {
+            Source::Guard
+        } else {
+            Source::Policy
+        },
         qualifier: None,
+        // An id that is no token is aimed at changed, and the block is written all the same: a
+        // rule spelt oddly never makes its deny vanish from the log (S1).
         target: decision
             .deciding
             .first()
-            .and_then(|rule| Target::guard_arm(&rule.id).ok()),
+            .and_then(|rule| Target::guard_arm(&token_of(&rule.id)).ok()),
         args: None,
         policy: Some(Decided::from(decision)),
+        compiled_from: None,
     });
     if let Err(why) = held.hooks().write_stop(chat, stop.clone()) {
         tracing::warn!("purlis: chat {chat}'s policy block was not recorded: {why}");
     }
     crate::pausing::stopped(held, chat, &stop, None);
+}
+
+/// **Writes the line a decision a mode let through is** (spec §10.3, B6): where the outcome was a
+/// deny or an ask and the family's or the rule's `log` made it an allow, one `policy.would_block`
+/// event naming the deciding rules, the first one's level and the family, and the `host:port`
+/// where the request was a connection. Written here, by the host that decided, not from the
+/// chat's own line. None where nothing was lifted.
+fn would_have_blocked(held: &Held, chat: u32, asked: &DecideAsk, decision: &decide::Decision) {
+    // Only a connection names a host: any other resource id is a branch, a repo or a path.
+    let host = matches!(asked.action.as_str(), "connect" | "dial").then_some(asked.id.as_str());
+    let Some(line) = purlis_core::eventlog::stops::WouldBlock::of(decision, host) else {
+        return;
+    };
+    if let Err(why) = held.hooks().write_stop(chat, Stop::WouldBlock(line)) {
+        tracing::warn!("purlis: chat {chat}'s would-have-blocked line was not recorded: {why}");
+    }
+}
+
+/// **Where this app writes a would-have-blocked line** (spec §10.3): into the event log, under the
+/// chat's run, by the plane's one writer. A line the core records for a chat of a plane this app
+/// does not hold open is dropped: best effort, as every line is. **A chat this app has no number
+/// for** (the line named none, so its chat is [`purlis_core::enforcement::UNKNOWN_CHAT`], or it is
+/// not open) is written under no chat, for the person to read (S3), never dropped.
+pub fn writes_would_have_blocked_lines(handle: tauri::AppHandle) {
+    purlis_core::enforcement::log_in_the_app(Box::new(move |root, chat, line| {
+        use tauri::Manager;
+        let Some(planes) = handle.try_state::<crate::planes::Planes>() else {
+            return;
+        };
+        let Some(held) = planes.held_at(root) else {
+            return;
+        };
+        // Best effort: nothing waits for the line.
+        drop(write_line_apart(held, chat, line));
+    }));
+}
+
+/// **[`write_line`], on a thread of its own.** The core records a would-have-blocked line from
+/// inside a decision, and a dispatch's is decided while the chat store's `open` lock is held
+/// ([`crate::chats::Chats::deciding_over`]); the line's chat is found by that same lock, so
+/// writing it there would wait on itself for ever, and every hook connection behind it with it
+/// (#7524). The line is best effort and waits for no one; the handle is the seam a test joins to
+/// know it is written.
+pub(crate) fn write_line_apart(
+    held: std::sync::Arc<Held>,
+    chat: &str,
+    line: &purlis_core::eventlog::stops::WouldBlock,
+) -> std::thread::JoinHandle<()> {
+    let (chat, line) = (chat.to_owned(), line.clone());
+    std::thread::spawn(move || write_line(&held, &chat, &line))
+}
+
+/// One would-have-blocked line of chat `chat` (an id), under its run where this app has the chat
+/// open, else under no chat.
+fn write_line(held: &Held, chat: &str, line: &purlis_core::eventlog::stops::WouldBlock) {
+    let stop = Stop::WouldBlock(line.clone());
+    let written = match held.chats().session_of_id(chat) {
+        Some(number) => held.hooks().write_stop(number, stop),
+        None => held.hooks().write_stop_of_no_chat(stop),
+    };
+    if let Err(why) = written {
+        tracing::warn!("purlis: a would-have-blocked line for {chat} was not recorded: {why}");
+    }
 }

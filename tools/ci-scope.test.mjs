@@ -518,6 +518,8 @@ const WALK_ONLY_CODE = {
     "shipped Rust",
   "crates/purlis-core/tests/shipped_literals/mod.rs": "crates/ and app/src-tauri/ Rust",
   "crates/purlis-core/tests/it/the_local_layer_has_one_reader.rs": "crates/ and app/src-tauri/ Rust",
+  "crates/purlis-core/tests/it/the_log_and_the_block_source.rs":
+    "crates/ and app/src-tauri/src Rust, and the strict-plane fixture",
   "crates/purlis-core/tests/it/the_press_is_made_only_by_the_windows_command_layer.rs":
     "crates/ and app/src-tauri/ Rust",
 };

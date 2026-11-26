@@ -214,6 +214,44 @@ impl ActionRules {
         }
     }
 
+    /// **The would-have-blocked line for `path` under `mode`** (M75-13, spec §10.3): where the
+    /// sandbox's mode is `log` and a compiled forbid (or ask) holds the path, the hook, which sees
+    /// the path, records the rule's `@id` and the `sandbox` family, never the path. None under any
+    /// other mode, for a path no forbid holds, and for a refusal no mode lifts (no permit, an
+    /// error: Q319 C2).
+    pub fn would_have_blocked(
+        &self,
+        path: &Resolved,
+        mode: crate::enforcement::Mode,
+    ) -> Option<crate::eventlog::stops::WouldBlock> {
+        if mode != crate::enforcement::Mode::Log {
+            return None;
+        }
+        let rules = match self.decide(path) {
+            Decision::Deny { forbids } => forbids,
+            Decision::Ask { asks } => asks,
+            _ => return None,
+        };
+        Some(crate::eventlog::stops::WouldBlock {
+            rules,
+            level: None,
+            family: crate::enforcement::Family::Sandbox.key().to_owned(),
+            host: None,
+        })
+    }
+
+    /// **The rule a refusal of `path` was compiled from** (spec §10.7): the `@id` of the first
+    /// compiled forbid, ask or erring rule that holds it, which a sandbox block names. None where
+    /// no compiled rule holds the path (the catch-all, or an allow).
+    pub fn refused_by(&self, path: &Resolved) -> Option<String> {
+        match self.decide(path) {
+            Decision::Deny { forbids } => forbids.into_iter().next(),
+            Decision::Ask { asks } => asks.into_iter().next(),
+            Decision::Erred { rules } => rules.into_iter().next(),
+            Decision::Allow { .. } | Decision::NoPermit | Decision::Unasked { .. } => None,
+        }
+    }
+
     /// The `@id`s of the forbids that ask: each is a deny in the profile and a Block with its
     /// Allow, which the person's answer lifts.
     pub fn blocks(&self) -> Vec<&str> {

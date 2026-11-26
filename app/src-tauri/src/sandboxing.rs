@@ -4029,8 +4029,7 @@ pub(crate) fn answered_at(
             .chats()
             .id_of(told.session)
             .unwrap_or_else(|| enforcement::UNKNOWN_CHAT.to_owned());
-        // The line names what was allowed, the folder granted rather than the path the chat
-        // was blocked at, so the person can read back what the policy let in.
+        // A host:port grant is named; a folder is no host, so its line names none (S2).
         enforcement::record(
             root,
             &chat,

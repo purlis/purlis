@@ -9,8 +9,9 @@
 //!
 //! - **`off`**: the check does not run.
 //! - **`log`**: the check runs and allows. Nothing is shown to the chat or the person (no
-//!   Notice, no ask); one quiet line in the chat's enforcement log names the rule, the family,
-//!   the chat and the host, and nothing else ([`record`]).
+//!   Notice, no ask); one quiet would-have-blocked event in the event log names the rule, the
+//!   family, the chat and the host, and nothing else ([`record`]; ADR 0125's enforcement log,
+//!   `app/enforcement/<chat>.jsonl`, is retired).
 //! - **`enforce`**: the refusal, as purlis has always made it.
 //!
 //! ```toml
@@ -26,8 +27,9 @@
 //!
 //! - The setting is read from the **plane root's committed file** alone. The local file can only
 //!   tighten it ([`Settings::read`]).
-//! - It is **resolved once, at a chat's start** ([`at_start`]), and handed to the chat's hooks in
-//!   [`ENV`], which the app sets after anything a profile set.
+//! - It is **resolved at a chat's start** ([`at_start`]) and answered to the chat's hooks by the
+//!   app over the hook socket ([`answered_by_the_app`]). `$PURLIS_POLICY`, which once carried it,
+//!   is retired: nothing reads it.
 //! - What a start resolves is never looser than what **this person last accepted**
 //!   ([`crate::sandbox::local::policy_accepted`], in their config home, which no sandboxed chat
 //!   writes). A tightening is accepted as the start reads it; a loosening waits for the person's
@@ -52,17 +54,13 @@
 //! [ADR 0125]: ../../../docs/adr/0125-blocks-are-off-by-default-and-opt-in-per-family.md
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// The table of the committed settings file that holds these keys.
 pub const TABLE: &str = "policy";
 
 /// The key naming the template.
 pub const TEMPLATE_KEY: &str = "template";
-
-/// The variable a chat's hooks read what their chat started with from ([`Resolved::spelled`]).
-/// Set by the app at the launch, after anything a profile set, and never inherited.
-pub const ENV: &str = "PURLIS_POLICY";
 
 /// One family of purlis's refusals (Q308, from the #6970 inventory).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -434,7 +432,7 @@ impl SandboxLevel {
     /// Every level, loosest first.
     pub const ALL: [SandboxLevel; 3] = [SandboxLevel::Off, SandboxLevel::Floor, SandboxLevel::Full];
 
-    /// The level's word, as the accepted record, [`ENV`] and the window spell it.
+    /// The level's word, as the accepted record and the window spell it.
     pub fn word(self) -> &'static str {
         match self {
             SandboxLevel::Off => "off",
@@ -1273,7 +1271,8 @@ impl Resolved {
         accepted.denies.without(&self.denies)
     }
 
-    /// As [`ENV`] carries it: `family=mode` pairs, comma-separated, the sandbox's by its level.
+    /// As the accepted record and the app's answer to a hook carry it: `family=mode` pairs,
+    /// comma-separated, the sandbox's by its level.
     /// The denies are not carried: only the app judges a dispatch.
     pub fn spelled(&self) -> String {
         let mut pairs: Vec<String> = self
@@ -1678,16 +1677,12 @@ fn answered() -> Option<Resolved> {
 /// - **Anywhere else** (a hook, a git hook, `purlis secret exec`): what the app answered this
 ///   process ([`answered_by_the_app`]), or **`strict`** where it did not answer. `root` is never
 ///   read there: a process a chat starts can name any folder as its plane, so nothing it names
-///   can loosen anything. [`ENV`], the start's resolution, can only tighten.
+///   can loosen anything.
 pub fn in_force(root: &Path) -> Resolved {
     if in_the_app() {
         return resolved_in_the_app(root);
     }
-    let asked = answered().unwrap_or_else(|| Resolved::all(Mode::Enforce));
-    match crate::envvar::var(ENV).filter(|said| !said.is_empty()) {
-        Some(started) => asked.stricter(&Resolved::parse(&started)),
-        None => asked,
-    }
+    answered().unwrap_or_else(|| Resolved::all(Mode::Enforce))
 }
 
 /// **The sandbox level a chat starting in the project at `root` runs at** before a person's own
@@ -1698,7 +1693,7 @@ pub fn in_force(root: &Path) -> Resolved {
 ///   sets (its `[sandbox] mode`, else its template's level) and what this person accepted.
 /// - **Anywhere else**: never looser than what the project's file says as purlis read it before
 ///   Q308 (`file`, [`crate::sandbox::team::as_the_file_says`]), raised by the app's answer or
-///   the start's [`ENV`], which can only tighten.
+///   the app's answer, which can only tighten.
 pub fn sandbox_level(root: &Path, file: impl FnOnce() -> SandboxLevel) -> SandboxLevel {
     let resolved = in_force(root).level();
     if in_the_app() {
@@ -1752,22 +1747,9 @@ pub fn judged<T>(
     }
 }
 
-/// The folder of the enforcement logs, in the app's own state, which every wrapped chat is
-/// denied writing.
-pub fn log_dir(root: &Path) -> PathBuf {
-    crate::names::state(root).join("app").join("enforcement")
-}
-
-/// Chat `chat`'s enforcement log (its ULID, ADR 0066), or `None` where `chat` cannot name one
-/// file there.
-pub fn log_file(root: &Path, chat: &str) -> Option<PathBuf> {
-    crate::contain::mintable(chat)
-        .is_ok()
-        .then(|| log_dir(root).join(format!("{chat}.jsonl")))
-}
-
-/// One line of a chat's enforcement log: the rule, the family, the chat and the host, and never
-/// a command, a path or a URL (Q308a).
+/// One would-have-blocked line as a test reads it back: the rule, the family, the chat and the
+/// host, and never a command, a path or a URL (Q308a). The app writes it into the event log as a
+/// [`crate::eventlog::stops::WouldBlock`] under the chat (spec §10.3).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Logged {
     /// When, UTC, RFC 3339.
@@ -1788,9 +1770,6 @@ pub const MOST_CHARS: usize = 200;
 
 /// What a log line names as its chat where the process was not told which (Q308 review, S3).
 pub const UNKNOWN_CHAT: &str = "unknown";
-
-/// The most lines one chat's log keeps (the re-review of #6992, S3): past it, a line is dropped.
-pub const MOST_LINES: usize = 10_000;
 
 /// The rule id of a host ask answered under `asks` = off or log.
 pub const RULE_HOST_ASK: &str = "host-ask";
@@ -1892,10 +1871,10 @@ pub fn log_to(sink: Sink) {
     let _ = SINK.set(sink);
 }
 
-/// **One quiet line for chat `chat`'s enforcement log**: `family`'s `rule` would have refused,
-/// about `host` where there is one. Written by the app; any other process hands it to the app
-/// ([`log_to`]), and keeps nothing where it cannot. Best effort: a line that cannot be written
-/// changes no outcome. Never a Notice and never an ask.
+/// **One quiet line for chat `chat`'s would-have-blocked event**: `family`'s `rule` would have
+/// refused, about `host` where there is one. Written by the app; any other process hands it to
+/// the app ([`log_to`]), and keeps nothing where it cannot. Best effort: a line that cannot be
+/// written changes no outcome. Never a Notice and never an ask.
 pub fn record(root: &Path, chat: &str, family: Family, rule: &str, host: Option<&str>) {
     if !in_the_app() {
         if let Some(sink) = SINK.get() {
@@ -1906,152 +1885,76 @@ pub fn record(root: &Path, chat: &str, family: Family, rule: &str, host: Option<
     write_line(root, chat, family, rule, host);
 }
 
-/// The app's write of one log line ([`record`]).
+/// How the app writes a would-have-blocked line into the event log, under the chat it is of
+/// ([`log_in_the_app`]).
+pub type Writer = Box<dyn Fn(&Path, &str, &crate::eventlog::stops::WouldBlock) + Send + Sync>;
+
+static WRITER: std::sync::OnceLock<Writer> = std::sync::OnceLock::new();
+
+/// **Where the app writes its would-have-blocked lines** (spec §10.3): the event log's one writer,
+/// which maps the chat's id to its number and run. Once. There is no store of its own: ADR 0125's
+/// `app/enforcement/<chat>.jsonl` is retired.
+pub fn log_in_the_app(writer: Writer) {
+    let _ = WRITER.set(writer);
+}
+
+/// The app's write of one would-have-blocked line ([`record`]) into the event log.
 pub fn write_line(root: &Path, chat: &str, family: Family, rule: &str, host: Option<&str>) {
-    let Some(path) = log_file(root, chat) else {
-        return;
-    };
-    let line = Logged {
-        at: jiff::Timestamp::now()
-            .strftime("%Y-%m-%dT%H:%M:%SZ")
-            .to_string(),
-        rule: crate::shown::one_line(rule, MOST_CHARS),
+    // The line as the event log would write it (S2): a rule id changed to a token, never dropped,
+    // and a host that is no `host[:port]` left out, so what a test reads is what the log holds.
+    let line = crate::eventlog::stops::WouldBlock {
+        rules: vec![crate::eventlog::stops::token_of(rule)],
+        level: None,
         family: family.key().to_owned(),
-        chat: chat.to_owned(),
-        host: host.map(|host| crate::shown::one_line(host, MOST_CHARS)),
+        host: host
+            .filter(|host| crate::eventlog::stops::is_host(host))
+            .map(|host| crate::shown::one_line(host, MOST_CHARS)),
     };
-    if let Err(why) = append(root, &path, &line) {
-        tracing::warn!(
-            "purlis: an enforcement log line for {} was not written ({why})",
+    #[cfg(any(test, feature = "test-support"))]
+    CAPTURED.with(|held| {
+        held.borrow_mut().push((
+            root.to_path_buf(),
+            Logged {
+                at: jiff::Timestamp::now()
+                    .strftime("%Y-%m-%dT%H:%M:%SZ")
+                    .to_string(),
+                rule: line.rules[0].clone(),
+                family: line.family.clone(),
+                chat: chat.to_owned(),
+                host: line.host.clone(),
+            },
+        ));
+    });
+    #[cfg(not(test))]
+    match WRITER.get() {
+        Some(write) => write(root, chat, &line),
+        None => tracing::warn!(
+            "purlis: a would-have-blocked line for {} was not written: no event log is open",
             family.key()
-        );
+        ),
     }
-}
-
-fn append(root: &Path, path: &Path, line: &Logged) -> std::io::Result<()> {
-    use std::io::Write;
-    let dir = path.parent().unwrap_or(root);
-    crate::contain::no_link_on_the_way(root, dir)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        std::fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(dir)?;
-    }
-    #[cfg(not(unix))]
-    std::fs::create_dir_all(dir)?;
-    crate::contain::no_link_on_the_way(root, path)?;
-    let mut options = std::fs::OpenOptions::new();
-    options.read(true).append(true).create(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = crate::contain::nofollow(&mut options).open(path)?;
-    // One writer at a time, so the count kept is the file's.
-    let mut counts = COUNTS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let now = Counted::of(&file.metadata()?, 0);
-    let lines = match counts.get(path) {
-        Some(kept) if kept.same_file(&now) => kept.lines,
-        _ => lines_in(&mut file)?,
-    };
-    if lines >= MOST_LINES {
-        counts.insert(path.to_path_buf(), Counted { lines, ..now });
-        return Ok(());
-    }
-    let mut text = serde_json::to_string(line).map_err(std::io::Error::other)?;
-    text.push('\n');
-    file.write_all(text.as_bytes())?;
-    counts.insert(
-        path.to_path_buf(),
-        Counted::of(&file.metadata()?, lines + 1),
-    );
-    Ok(())
-}
-
-/// **How many lines each log held after the app's last write to it** (#7073), so a line is not
-/// a read of the whole file: counted again only where the file is not as the app left it
-/// (another file in its place, or a length the app did not write).
-static COUNTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<PathBuf, Counted>>> =
-    std::sync::LazyLock::new(Default::default);
-
-/// One log as the app last left it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Counted {
-    /// Which file it is: its device and inode where the platform has them.
-    file: (u64, u64),
-    /// Its length in bytes.
-    len: u64,
-    /// The lines it holds.
-    lines: usize,
-}
-
-impl Counted {
-    fn of(meta: &std::fs::Metadata, lines: usize) -> Self {
-        #[cfg(unix)]
-        let file = {
-            use std::os::unix::fs::MetadataExt;
-            (meta.dev(), meta.ino())
-        };
-        #[cfg(not(unix))]
-        let file = (0, 0);
-        Self {
-            file,
-            len: meta.len(),
-            lines,
-        }
-    }
-
-    /// Whether `now` is this very file at the length the app left it.
-    fn same_file(&self, now: &Self) -> bool {
-        self.file == now.file && self.len == now.len
-    }
-}
-
-#[cfg(test)]
-thread_local! {
-    /// How many times this thread read a log whole to count its lines.
-    static COUNTED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-/// **How many times this thread read a log whole** to count its lines.
-#[cfg(test)]
-fn counted_whole() -> usize {
-    COUNTED.with(std::cell::Cell::get)
-}
-
-/// How many lines `file` holds, read from its start.
-fn lines_in(file: &mut std::fs::File) -> std::io::Result<usize> {
-    use std::io::{BufRead, Seek};
     #[cfg(test)]
-    COUNTED.with(|counted| counted.set(counted.get() + 1));
-    file.seek(std::io::SeekFrom::Start(0))?;
-    let mut lines = 0;
-    let mut reader = std::io::BufReader::new(&*file);
-    let mut buf = Vec::new();
-    while reader.read_until(b'\n', &mut buf)? > 0 {
-        lines += 1;
-        buf.clear();
-    }
-    Ok(lines)
+    let _ = (root, &WRITER);
 }
 
-/// Chat `chat`'s enforcement log, oldest first: what the window's count and a test read. Lines
-/// that do not read are left out.
+#[cfg(any(test, feature = "test-support"))]
+thread_local! {
+    /// The lines this thread's test had written, each with the plane root it was recorded for,
+    /// standing in for the event log (a folder per root, as the log's own store was).
+    static CAPTURED: std::cell::RefCell<Vec<(std::path::PathBuf, Logged)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Chat `chat`'s would-have-blocked lines under `root`, oldest first, as this thread's test had them written:
+/// what a test of a choke point reads in place of the event log.
+#[cfg(any(test, feature = "test-support"))]
 pub fn read_log(root: &Path, chat: &str) -> Vec<Logged> {
-    let Some(path) = log_file(root, chat) else {
-        return Vec::new();
-    };
-    std::fs::read_to_string(path)
-        .unwrap_or_default()
-        .lines()
-        .filter_map(|line| serde_json::from_str(line).ok())
-        .collect()
+    CAPTURED.with(|held| {
+        held.borrow()
+            .iter()
+            .filter(|(at, line)| at == root && line.chat == chat)
+            .map(|(_, line)| line.clone())
+            .collect()
+    })
 }
 
 /// The chat this process runs for, by the id the app started its harness with

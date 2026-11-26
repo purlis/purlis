@@ -11268,8 +11268,8 @@ export type PluginOffShown = {
 export type PolicyKind = "blocked" | "not-allowed" | "too-young" | "undated" | "unread";
 
 /**
- *  What the project's enforcement log holds, newest first, at most [`MOST_LINES`], with how
- *  many lines it holds in all.
+ *  What the event log holds of the project's would-have-blocked lines, newest first, at most
+ *  [`MOST_LINES`], with how many it holds in all.
  */
 export type PolicyLog = {
 	/**  How many refusals were let through and logged, every chat's. */
@@ -11283,7 +11283,7 @@ export type PolicyLog = {
 	dropped: number,
 };
 
-/**  One line of the project's enforcement log: a refusal a family set to `log` let through. */
+/**  One would-have-blocked line of the event log: a refusal a family set to `log` let through. */
 export type PolicyLogLine = {
 	/**  When, UTC, RFC 3339. */
 	at: string,

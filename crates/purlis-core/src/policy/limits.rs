@@ -14,7 +14,9 @@
 //! says the old number, and the stricter wins. Tightening applies at once.
 //!
 //! Under `limits = log` a limit is counted, never applied ([`verdict`]). The would-have-blocked
-//! line it writes is slice 13's.
+//! line is written where each cap is enforced, through `enforcement::judged`: the commit rate
+//! (`gitbroker::commit::pace_under`) and every dispatch limit (`dispatchdecision`), each naming
+//! the limit and the `limits` family (round 2B, B7: there is no second writer here).
 
 use std::sync::OnceLock;
 

@@ -131,7 +131,6 @@ pub const NOT_INHERITED: &[&str] = &[
     WRAPPED_ENV,
     crate::sandboxblock::CHAT_DIR_ENV,
     CHAT_ID_ENV,
-    crate::enforcement::ENV,
     PROMPT_KEY_ENV,
     crate::sandbox::tools::POOL_IMAGE_VAR,
     HARNESS_INTERNAL_ENV,
