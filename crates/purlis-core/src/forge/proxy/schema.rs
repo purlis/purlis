@@ -247,6 +247,9 @@ const GITHUB: Table = &[
         ("comment", Obj("PullRequestReviewComment")),
         ("labelable", Obj("IssueOrPullRequest")),
         ("repository", Obj("RepoRef")),
+        // What `enqueuePullRequest` and `dequeuePullRequest` answer with (#7678): the entry of a
+        // pull request the mutation was already tied to the chat's repo by.
+        ("mergeQueueEntry", Obj("MergeQueueEntry")),
     ]),
     (REPO_REF, &["id", "name", "nameWithOwner", "url", "isPrivate", "viewerPermission", "databaseId"], &[
         ("owner", Obj("Actor")),
@@ -321,6 +324,7 @@ const GITHUB: Table = &[
     ("MergeQueueEntry", &["id", "position", "state", "enqueuedAt", "estimatedTimeToMerge", "solo", "jump"], &[
         ("enqueuer", Obj("Actor")),
         ("pullRequest", Obj("PullRequest")),
+        ("headCommit", Obj("Commit")),
     ]),
     ("IssueOrPullRequest", &["id", "number", "title", "url", "state", "body"], &[]),
     ("SearchResultItem", &[], &[]),
