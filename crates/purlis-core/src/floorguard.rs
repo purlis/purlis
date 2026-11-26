@@ -224,6 +224,36 @@ impl Drop for ReadingAHedge {
     }
 }
 
+std::thread_local! {
+    /// Whether the next level the floor reads is the printed words of a program that does not
+    /// print its words ([`NotItsWords`], #7709).
+    static NOT_ITS_WORDS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// **The level the floor reads next is the words of a program that does not print them, joined
+/// into a line**, while this lives (#7709, round 2): `jq -r 'sort_by(.iid) | .[]'` prints no
+/// program `.[]`. That level reads the line for a merge spelled out, exactly as any line is read
+/// (past a redirection, through an API path the shell fills in), but not for a program the shell
+/// would build from it. The level takes the flag as it begins, so the levels it reads in turn (a
+/// `sh -c` among those words) are read in full.
+struct NotItsWords {
+    outer: bool,
+}
+
+impl NotItsWords {
+    fn on() -> Self {
+        Self {
+            outer: NOT_ITS_WORDS.replace(true),
+        }
+    }
+}
+
+impl Drop for NotItsWords {
+    fn drop(&mut self) {
+        NOT_ITS_WORDS.set(self.outer);
+    }
+}
+
 /// The rows of [`PUBLISH_FORGE`] that merge a request rather than cut a release.
 const MERGE_ROWS: [(&str, &str, &str); 3] = [
     ("gh", "pr", "merge"),
@@ -542,6 +572,11 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
 
 /// [`floor`] of the line as written.
 fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String> {
+    // Taken by this level alone ([`NotItsWords`]).
+    let not_its_words = NOT_ITS_WORDS.replace(false);
+    // The speculative checks of #7131 are not made on a hedged body line, nor on the words of a
+    // program that does not print them.
+    let speculates = !reading_a_hedge() && !not_its_words;
     if !unattended {
         return None;
     }
@@ -686,7 +721,8 @@ fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // What it prints is its words only for a program that prints them (`echo`, `printf`, a
     // here-string): those words are read as a shell would read the line, the speculative checks
     // too. Any other program's words lost their quoting in the join, so they are read for a
-    // literal merge alone: `jq -r 'sort_by(.iid) | .[]' f.json` prints no program `.[]` (#7709).
+    // merge spelled out, exactly, and not for a program the shell would build from them:
+    // `jq -r 'sort_by(.iid) | .[]' f.json` prints no program `.[]` (#7709, [`NotItsWords`]).
     if cmd.contains("<(") && segments.iter().any(|toks| hands_a_script_to_a_shell(toks)) {
         let (bodies, _) = substitution_bodies(cmd, true);
         if nested_too_deep() {
@@ -694,8 +730,9 @@ fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         }
         for body in bodies {
             for toks in commands_of(&body) {
-                let _hedge = (!prints_its_words(&toks)).then(ReadingAHedge::on);
+                let prints_them = prints_its_words(&toks);
                 for printed in fed_lines(&toks) {
+                    let _not_its_words = (!prints_them).then(NotItsWords::on);
                     if let Some(said) = inner_floor(&printed) {
                         return Some(said);
                     }
@@ -733,7 +770,7 @@ fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             // real reading, whose own bodies were already read above, and the hedge's re-spelling
             // of it (its quotes gone, so `<<'EOF'` is an unquoted `<<EOF` with no body) is no
             // text of the line that must close (#7245, round 5).
-            unclosable |= !reading_a_hedge() && body_the_reader_cannot_close(&body);
+            unclosable |= speculates && body_the_reader_cannot_close(&body);
         }
     }
     // A program the shell builds, from a substitution, a brace expansion or a glob, could be any
@@ -768,7 +805,10 @@ fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     {
         // A definition's body is read as the commands it will run: its first program, if the
         // shell builds it, is as unreadable as one in the line itself (round 7).
-        for toks in [&reading.outward, &reading.own] {
+        for toks in [&reading.outward, &reading.own]
+            .into_iter()
+            .filter(|_| speculates)
+        {
             if let Some(at) = shellwrap::past_function_headers(toks) {
                 let (body, ..) = shellwrap::split_env(&toks[at..]);
                 if program_built_by_the_shell(&body) {
@@ -793,6 +833,9 @@ fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         }
         exact_segments.push(exact);
         let (prog, ..) = shellwrap::split_env(&reading.own);
+        if !speculates {
+            continue;
+        }
         if program_built_by_the_shell(&prog) {
             return Some(format!(
                 "{fix}{} The program `{prog}` is built by the shell, so purlis can't read which \
@@ -1622,7 +1665,8 @@ fn refspec_end(spec: &str) -> &str {
 /// command substitution is judged by what it prints
 /// ([`substitution_that_could_print_a_command`]), a parameter expansion (`${cmd[@]}`) is a
 /// program the shell fills in ([`FILLED_IN_PROGRAM_READ_AS`]), and `[` and `[[` are the test
-/// builtins.
+/// builtins. A parameter expansion that holds a blank (`${x:-gh pr merge 1}`) is built too: the
+/// shell splits what it gives into words and runs them, a whole command (#7709, round 2).
 fn program_built_by_the_shell(prog: &str) -> bool {
     if prog == "[" || prog == "[[" {
         return false;
@@ -1631,6 +1675,7 @@ fn program_built_by_the_shell(prog: &str) -> bool {
     // path component the same way.
     let mut whole = String::new();
     let mut last = String::new();
+    let mut split_into_words = false;
     let mut chars = prog.chars().peekable();
     while let Some(c) = chars.next() {
         let stands_for = match c {
@@ -1644,7 +1689,18 @@ fn program_built_by_the_shell(prog: &str) -> bool {
                 '\u{0}'
             }
             '$' if chars.peek() == Some(&'{') => {
-                skip_to_close(&mut chars, '{', '}');
+                let mut depth = 0;
+                for c in chars.by_ref() {
+                    match c {
+                        '{' => depth += 1,
+                        '}' => depth -= 1,
+                        c if c.is_whitespace() => split_into_words = true,
+                        _ => {}
+                    }
+                    if depth == 0 {
+                        break;
+                    }
+                }
                 '$'
             }
             '`' => {
@@ -1662,7 +1718,8 @@ fn program_built_by_the_shell(prog: &str) -> bool {
         .is_some_and(|open| last[open + 1..].contains(']'));
     // `?` alone matches only a name one character long, which no CLI the floor reads has.
     let lone_one_character_glob = last == "?";
-    (last.contains(['*', '?']) && !lone_one_character_glob)
+    split_into_words
+        || (last.contains(['*', '?']) && !lone_one_character_glob)
         || glob_class
         || merge::brace_expansion(&whole)
 }

@@ -424,9 +424,9 @@ struct Lexer {
     before_esc: (bool, isize),
     /// The raw text of the `$'…'` being read, escapes still in it.
     ansi: Vec<char>,
-    /// How many unquoted `{` of a parameter expansion (`${t%%|*}`) the word is inside. While it
-    /// is more than none, a blank or an operator character is part of the word, as the shell
-    /// reads it (#7709).
+    /// How many parameter expansions (`${t%%|*}`) the word is inside, the outermost and each
+    /// nested `${` in it. While it is more than none, a blank or an operator character is part of
+    /// the word, as the shell reads it (#7709).
     braces: usize,
     /// Where the outermost `${` of the word was opened: the stream's cursor, the characters
     /// pushed back, the token's length and its `bare`, `start` and quoting just past the `{`.
@@ -435,6 +435,11 @@ struct Lexer {
     brace_mark: Option<(usize, Vec<char>, usize, bool, isize, bool)>,
     /// Whether this word's `${` was read again that way, so that no `${` in it is one word.
     braces_off: bool,
+    /// How far into the stream a `${` that was read again had been read: no `${` opened before
+    /// there is read as one word, since it was inside that one and is read again with it. Kept
+    /// across words, so that each character is read at most twice and a line of unclosed `${`
+    /// costs its length, not its square (#7709, round 2).
+    braces_read_to: usize,
 }
 
 impl Lexer {
@@ -457,6 +462,7 @@ impl Lexer {
             braces: 0,
             brace_mark: None,
             braces_off: false,
+            braces_read_to: 0,
         }
     }
 
@@ -491,7 +497,11 @@ impl Lexer {
     /// `#?@*!$-`. A bash 5.3 `${ …; }` or `${| …; }`, which runs a command, is left to the
     /// reading it always had, which splits it at its operators.
     fn opens_a_parameter_expansion(&self) -> bool {
-        if !self.cfg.bash_quoting || self.braces_off || self.dollars.is_multiple_of(2) {
+        if !self.cfg.bash_quoting
+            || self.braces_off
+            || self.dollars.is_multiple_of(2)
+            || self.instream.i < self.braces_read_to
+        {
             return false;
         }
         let next = self
@@ -644,6 +654,7 @@ impl Lexer {
                         && let Some((at, pushed, len, bare, start, was_quoted)) =
                             self.brace_mark.take()
                     {
+                        self.braces_read_to = self.braces_read_to.max(self.instream.i);
                         self.instream.i = at;
                         self.pushback_chars = pushed;
                         self.token.truncate(len);
@@ -662,10 +673,12 @@ impl Lexer {
                         && !QUOTES.contains(c)
                         && c != ESCAPE
                     {
-                        // Inside `${…}` the word runs to the `}` that closes it, past blanks and
-                        // operator characters, and bash counts each `{` in it (`${x:-{a}}`).
+                        // Inside `${…}` the word runs to the first unquoted `}`, past blanks and
+                        // operator characters. bash and dash count only a nested `${` on the way:
+                        // a bare `{` opens nothing, so `${s#{}` ends at its first `}`. zsh counts
+                        // every `{`, so it reads such a line as fewer commands, never more.
                         match c {
-                            '{' => self.braces += 1,
+                            '{' if self.dollars % 2 == 1 => self.braces += 1,
                             '}' => self.braces -= 1,
                             _ => {}
                         }
