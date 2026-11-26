@@ -384,6 +384,11 @@ jobs:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    # Evidence first: the p95 budget is many times its median (5 ms measured), but the rate's is
+    # not (1,000/s against 1,250 offered), and it was measured on a Mac, not on this runner. Its
+    # first five main runs show whether a shared Ubuntu disk holds it (ADR 0086's starting value);
+    # then this line goes and a miss fails the job, as the table's CI absolute says.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/rust-toolchain
