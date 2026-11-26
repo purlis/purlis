@@ -8849,7 +8849,10 @@ fn a_hibernation_the_host_refuses_keeps_no_screen() {
 
     let refused = held.hibernate_chat(session).expect_err("the host refused");
 
-    assert!(refused.contains("could not end it"), "{refused}");
+    assert!(
+        matches!(&refused, crate::hibernation::Refused::Said(said) if said.contains("could not end it")),
+        "{refused:?}"
+    );
     assert_eq!(held.hibernated().of(session), None);
     assert_eq!(purlis_core::hibernatedscreens::kept(held.root(), &id), None);
 }
