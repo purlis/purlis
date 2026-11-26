@@ -1210,3 +1210,169 @@ fn a_push_confirmed_for_another_forge_pushes_nothing() {
     );
     assert_eq!(world.remote_has("widget", BRANCH), None, "{said}");
 }
+
+impl World {
+    /// [`World::push`] in a chat whose environment is `env`, with the route each member's forge
+    /// was asked under (#7693): what this thread's git was routed through when its backend was
+    /// made, after its push.
+    fn push_in(
+        &self,
+        env: &[(String, String)],
+        exchanges: Value,
+    ) -> (
+        u8,
+        String,
+        Arc<Recorded>,
+        Vec<Option<crate::worktree::git::NetworkRoute>>,
+    ) {
+        let text = json!({"source": "GitHub REST API version 2022-11-28, pulls",
+                          "exchanges": exchanges});
+        let recorded = Arc::new(Recorded::parse(&text.to_string()).unwrap());
+        let routes = std::cell::RefCell::new(Vec::new());
+        let mut said = String::new();
+        let mut say = |line: Say| {
+            said.push_str(&line.to_string());
+            said.push('\n');
+        };
+        let backend_of = |repo: &Repo| {
+            routes.borrow_mut().push(crate::worktree::git::routed_now());
+            repo.forge.backend_over(recorded.clone())
+        };
+        let lookup = |name: &str| {
+            env.iter()
+                .rev()
+                .find(|(n, _)| n == name)
+                .map(|(_, v)| v.clone())
+        };
+        let code = push_in_chat(
+            &self.plane,
+            "alpha",
+            SLUG,
+            &lookup,
+            &backend_of,
+            &|https: &str| self.route(https),
+            &mut say,
+        );
+        (code, said, recorded, routes.into_inner())
+    }
+
+    /// The environment the app gives a sandboxed chat whose forge route records `github.com`
+    /// ([`crate::forgewire::compose_at`], [`crate::forgewire::apply`]).
+    fn a_routed_chats_environment(&self) -> Vec<(String, String)> {
+        use crate::forgewire::{ForgeKind, Route, SecretString, apply, compose_at};
+        let ca = self.top.join("ca.pem");
+        std::fs::write(&ca, "-----BEGIN CERTIFICATE-----\n").unwrap();
+        let route = Route {
+            egress_url: "http://127.0.0.1:43001".to_owned(),
+            gh_socket: self.top.join("gh.sock"),
+            ca_cert: ca,
+            sentinel: SecretString::from("SENTINEL-0123456789abcdef"),
+            helper_exe: PathBuf::from("/opt/purlis/purlis"),
+            repos: vec![
+                crate::forgewire::Repo::new("github.com", "acme", "widget", ForgeKind::GitHub)
+                    .unwrap(),
+            ],
+        };
+        let wiring = compose_at(&route, &self.top.join("wire")).unwrap();
+        let mut env = apply(Vec::new(), &wiring);
+        env.push((crate::hookwire::SANDBOXED_ENV.to_owned(), "1".to_owned()));
+        env
+    }
+}
+
+/// #7693: in a chat with a forge route, `change push` goes the chat's way: every member's git
+/// and its forge's backend run under the route the chat's environment holds, the same one the
+/// app's git takes for that chat, and never under a login of the person's.
+#[test]
+fn in_a_chat_with_a_forge_route_each_member_is_pushed_and_its_request_opened_through_that_route() {
+    let world = World::new("schema = 1\n");
+    let widget = world.clone("widget");
+    world.change(&[("widget", &[])]);
+    let env = world.a_routed_chats_environment();
+    let lookup = |name: &str| {
+        env.iter()
+            .rev()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.clone())
+    };
+    let exe = std::env::current_exe().unwrap();
+    let route = crate::forgewire::this_chats_git_route(&lookup, &exe)
+        .expect("the chat's environment holds a route")
+        .expect("a route git can use");
+    let [o1, o2] = opened("widget", 7, NEW_BODY_ALONE);
+    let (code, said, recorded, routes) = world.push_in(
+        &env,
+        json!([
+            none_from_the_branch("widget"),
+            o1,
+            o2,
+            body_is("widget", 7, NEW_BODY_ALONE),
+            body_set("widget", 7, ALONE),
+        ]),
+    );
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(recorded.unspent(), Vec::new(), "{said}");
+    let head = run(&widget, &["rev-parse", BRANCH]).trim().to_string();
+    assert_eq!(world.remote_has("widget", BRANCH), Some(head));
+    assert_eq!(routes, vec![Some(route)], "{said}");
+}
+
+/// #7693: a sandboxed chat with no forge route is refused, saying so and naming the step that
+/// gives it one, and nothing is pushed or asked: never a fall back to a login of the person's.
+#[test]
+fn a_sandboxed_chat_with_no_forge_route_is_refused_naming_the_step_that_gives_it_one() {
+    let world = World::new("schema = 1\n");
+    world.clone("widget");
+    world.change(&[("widget", &[])]);
+    let env = vec![(crate::hookwire::SANDBOXED_ENV.to_owned(), "1".to_owned())];
+    let (code, said, _, routes) = world.push_in(&env, json!([]));
+    assert_eq!(code, REFUSED, "{said}");
+    assert!(said.contains("has no forge route"), "{said}");
+    assert!(said.contains("Settings › You › Accounts"), "{said}");
+    assert!(said.contains("Nothing was pushed"), "{said}");
+    assert_eq!(world.remote_has("widget", BRANCH), None, "{said}");
+    assert!(routes.is_empty(), "a forge was asked: {said}");
+}
+
+/// Outside a chat, as from the person's own terminal, the push is what it was: no route.
+#[test]
+fn outside_a_chat_a_push_takes_no_route() {
+    let world = World::new("schema = 1\n");
+    world.clone("widget");
+    world.change(&[("widget", &[])]);
+    let [o1, o2] = opened("widget", 7, NEW_BODY_ALONE);
+    let (code, said, _, routes) = world.push_in(
+        &[],
+        json!([
+            none_from_the_branch("widget"),
+            o1,
+            o2,
+            body_is("widget", 7, NEW_BODY_ALONE),
+            body_set("widget", 7, ALONE),
+        ]),
+    );
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(routes, vec![None], "{said}");
+}
+
+/// What purlis writes when it opens the request of a lone `widget`.
+const NEW_BODY_ALONE: &str = "bump the api
+
+<!-- BEGIN purlis change — GENERATED by `purlis change push`; do not edit by hand. -->
+**Cross-repo change: `api-2`** — bump the api
+
+| repo | request | needs |
+|---|---|---|
+| widget | — | — |
+<!-- END purlis change -->";
+
+/// The same once it is open as #7.
+const ALONE: &str = "bump the api
+
+<!-- BEGIN purlis change — GENERATED by `purlis change push`; do not edit by hand. -->
+**Cross-repo change: `api-2`** — bump the api
+
+| repo | request | needs |
+|---|---|---|
+| widget | acme/widget#7 | — |
+<!-- END purlis change -->";

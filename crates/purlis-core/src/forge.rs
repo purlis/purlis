@@ -853,6 +853,15 @@ pub(super) fn cli_env_keeping(
     cli_dir: Option<&Path>,
     keep: impl Fn(&str) -> bool,
 ) -> Vec<(String, String)> {
+    cli_env_from(cli_dir, keep, &|name| std::env::var_os(name))
+}
+
+/// [`cli_env_keeping`], reading this process's environment through `var`.
+fn cli_env_from(
+    cli_dir: Option<&Path>,
+    keep: impl Fn(&str) -> bool,
+    var: &dyn Fn(&str) -> Option<std::ffi::OsString>,
+) -> Vec<(String, String)> {
     let mut dirs: Vec<String> = Vec::new();
     if let Some(dir) = cli_dir {
         dirs.push(dir.display().to_string());
@@ -875,11 +884,11 @@ pub(super) fn cli_env_keeping(
         ("GLAB_PAGER".to_string(), "cat".to_string()),
         ("GH_PAGER".to_string(), "cat".to_string()),
     ];
-    if let Some(home) = std::env::var_os("HOME") {
+    if let Some(home) = var("HOME") {
         env.push(("HOME".to_string(), home.to_string_lossy().into_owned()));
     }
     for name in git::CREDENTIAL_ENV.into_iter().filter(|name| keep(name)) {
-        if let Some(value) = std::env::var_os(name) {
+        if let Some(value) = var(name) {
             env.push((name.to_string(), value.to_string_lossy().into_owned()));
         }
     }
@@ -1059,6 +1068,29 @@ pub fn py_str(value: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    /// #7693: in a chat with a forge route, `glab` reaches the forge through the chat's proxy,
+    /// whose certificates are signed by the chat's authority, which glab trusts only where it is
+    /// named in `GLAB_CA_CERT`. A call that passes no credential variable passes no authority
+    /// either.
+    #[test]
+    fn a_forge_cli_is_given_the_authority_a_chats_route_names_for_glab() {
+        let var = |name: &str| {
+            matches!(name, "GLAB_CA_CERT" | "GITLAB_TOKEN" | "HTTPS_PROXY")
+                .then(|| std::ffi::OsString::from(format!("set-{name}")))
+        };
+        let given = cli_env_from(None, |_| true, &var);
+        let named = |name: &str| {
+            given
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, v)| v.as_str())
+        };
+        assert_eq!(named("GLAB_CA_CERT"), Some("set-GLAB_CA_CERT"), "{given:?}");
+        assert_eq!(named("GITLAB_TOKEN"), Some("set-GITLAB_TOKEN"), "{given:?}");
+        let none = cli_env_from(None, |_| false, &var);
+        assert!(none.iter().all(|(n, _)| n != "GLAB_CA_CERT"), "{none:?}");
+    }
 
     /// `Cli::as_the_operator` withholds only credential variables a forge call would pass.
     #[test]

@@ -1642,6 +1642,12 @@ fn routed() -> Option<NetworkRoute> {
     ISOLATED.with(|held| held.borrow().as_ref().and_then(|iso| iso.route.clone()))
 }
 
+/// [`routed`], for a test of a caller that should have set it.
+#[cfg(test)]
+pub(crate) fn routed_now() -> Option<NetworkRoute> {
+    routed()
+}
+
 /// One pinned work tree: its git directory, and **which directory that was** when it was
 /// checked (#1415), so a rename between the check and a call can't swap another clone in.
 #[derive(Debug, Clone, PartialEq, Eq)]

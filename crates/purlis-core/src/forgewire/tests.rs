@@ -1100,3 +1100,107 @@ fn a_repo_is_asked_by_its_own_https_address_and_no_other_spelling() {
     assert!(lab.is_url("https://gitlab.com/group/sub/proj.git"));
     assert!(!lab.is_url("https://gitlab.com/group/proj.git"));
 }
+
+/// The environment a chat is given for `route` ([`compose`] and [`apply`]), over a chat line that
+/// already holds a git pair of its own, and the authority's copy that wiring names.
+fn a_chats_environment(dir: &Path, route: &Route) -> (Vec<(String, String)>, PathBuf) {
+    let wiring = compose(route, dir).expect("the chat's wiring");
+    let line = vec![
+        ("GIT_CONFIG_COUNT".to_owned(), "1".to_owned()),
+        ("GIT_CONFIG_KEY_0".to_owned(), "safe.directory".to_owned()),
+        ("GIT_CONFIG_VALUE_0".to_owned(), "/somewhere".to_owned()),
+    ];
+    let copy = wiring.bin.parent().expect("a folder").join(CA_COPY);
+    (apply(line, &wiring), copy)
+}
+
+/// #7693: a command a chat runs itself (`purlis change push`) reads the chat's route out of the
+/// environment the chat was given, and its git goes the way the app's git for that chat goes:
+/// the same proxy, the chat's authority for each recorded host, its sentinel, no login.
+#[test]
+fn a_chats_own_environment_gives_its_commands_the_route_the_apps_git_takes_for_it() {
+    let held = tempfile::tempdir().unwrap();
+    let dir = held.path();
+    let mut route = route(
+        dir,
+        vec![
+            repo("gitlab.com", "acme", "app", ForgeKind::GitLab),
+            repo("github.com", "acme", "lib", ForgeKind::GitHub),
+        ],
+    );
+    let (env, copy) = a_chats_environment(dir, &route);
+    let helper = Path::new("/opt/purlis/bin/purlis");
+    let read = this_chats_git_route(&|name| get(&env, name).map(str::to_owned), helper)
+        .expect("the chat's environment holds a route")
+        .expect("a route git can use");
+    route.ca_cert = copy;
+    route.helper_exe = helper.to_path_buf();
+    assert_eq!(read, git_network(&route).expect("the app's route"));
+}
+
+#[test]
+fn an_environment_with_no_sentinel_holds_no_route() {
+    let env = [
+        ("GIT_CONFIG_COUNT", "0"),
+        ("HTTPS_PROXY", "http://127.0.0.1:1"),
+    ];
+    let lookup = |name: &str| {
+        env.iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| (*v).to_owned())
+    };
+    assert!(this_chats_git_route(&lookup, Path::new("/opt/purlis/bin/purlis")).is_none());
+}
+
+/// What the environment says of the helper is never what git runs: only the hosts it is named
+/// for are read, and the helper is this process's own binary.
+#[test]
+fn the_helper_a_chats_environment_names_is_never_the_one_its_commands_run() {
+    let held = tempfile::tempdir().unwrap();
+    let dir = held.path();
+    let route = route(
+        dir,
+        vec![repo("gitlab.com", "acme", "app", ForgeKind::GitLab)],
+    );
+    let (mut env, _) = a_chats_environment(dir, &route);
+    for (_, value) in &mut env {
+        if value.contains(SENTINEL_HELPER_ARG) {
+            *value = format!("!/tmp/planted {SENTINEL_HELPER_ARG} --host gitlab.com");
+        }
+    }
+    let read = this_chats_git_route(
+        &|name| get(&env, name).map(str::to_owned),
+        Path::new("/opt/purlis/bin/purlis"),
+    )
+    .expect("a route")
+    .expect("a route git can use");
+    let shown = format!("{read:?}");
+    assert!(!shown.contains("/tmp/planted"), "{shown}");
+    assert!(
+        shown.contains("credential.https://gitlab.com.helper=!'/opt/purlis/bin/purlis'"),
+        "{shown}"
+    );
+}
+
+/// A route whose egress is not the chat's own loopback port is no route for git: refused, never
+/// used.
+#[test]
+fn a_route_in_the_environment_that_is_off_the_loopback_port_is_refused() {
+    let held = tempfile::tempdir().unwrap();
+    let dir = held.path();
+    let route = route(
+        dir,
+        vec![repo("gitlab.com", "acme", "app", ForgeKind::GitLab)],
+    );
+    let (mut env, _) = a_chats_environment(dir, &route);
+    for (_, value) in &mut env {
+        if value == "http://127.0.0.1:43001" {
+            *value = "http://10.0.0.1:43001".to_owned();
+        }
+    }
+    let read = this_chats_git_route(
+        &|name| get(&env, name).map(str::to_owned),
+        Path::new("/opt/purlis/bin/purlis"),
+    );
+    assert!(matches!(read, Some(Err(_))), "{read:?}");
+}

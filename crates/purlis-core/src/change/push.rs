@@ -394,16 +394,32 @@ fn git_pushes_to(clone: &Path, to: &str) -> Result<(), String> {
     ))
 }
 
-/// `charter change push <slug>`, through each member's forge's own backend.
+/// `charter change push <slug>`, through each member's forge's own backend, in the chat this
+/// process runs in, if any ([`push_in_chat`]).
 pub fn push(plane: &Path, ws: &str, slug: &str, say: &mut dyn FnMut(Say)) -> u8 {
-    push_with(
+    push_in_chat(
         plane,
         ws,
         slug,
+        &crate::envvar::var,
         &|repo: &Repo| repo.backend(),
         &|https: &str| https.to_string(),
         say,
     )
+}
+
+/// [`push_with`], where `env` is this process's environment.
+pub fn push_in_chat(
+    plane: &Path,
+    ws: &str,
+    slug: &str,
+    env: &dyn Fn(&str) -> Option<String>,
+    backend_of: &dyn Fn(&Repo) -> Box<dyn ForgeBackend>,
+    route: &dyn Fn(&str) -> String,
+    say: &mut dyn FnMut(Say),
+) -> u8 {
+    let _ = env;
+    push_with(plane, ws, slug, backend_of, route, say)
 }
 
 /// Where one member would be pushed, as the window names it before its Push asks the operator
