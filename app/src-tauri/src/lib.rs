@@ -1894,7 +1894,9 @@ fn start_first_of(
     let on_disk = purlis_core::workspaces::Plane::open(root);
     // Every harness the project has, read once for every row (HP-19).
     let cards = phase("harness cards", || purlis_core::harness_card::read(root));
-    let personas = phase("personas", || on_disk.personas()).map_err(|err| err.to_string())?;
+    let personas = phase("personas", || {
+        on_disk.personas().map_err(|err| err.to_string())
+    })?;
     let offered = phase("offers", || {
         purlis_core::personaprofile::offers_of(
             root,
