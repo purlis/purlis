@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795706338611,
+  "lastUpdate": 1795723506006,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56154,6 +56154,48 @@ window.BENCHMARK_DATA = {
             "value": 101.913742,
             "unit": "ms",
             "extra": "median of 5 runs: 101.487, 101.586, 101.914, 102.760, 102.799 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "952e7b3e14edfaeea43a64163133d63fa3f63068",
+          "message": "Release: build the updater signer in its own keyless job, in parallel with the macOS build (#7666)\n\n* Release: the updater archive's signer compiles in a job of its own, beside the macOS build\n\nsign-macos spent about 11 of its 19 minutes compiling sign-updater-archive,\nand only after build had finished. build-signer now compiles it on a literal\nmacos-latest runner from plan alone, with no secret, no environment and\ncontents: read, and hands on the binary with its sha256 as an output.\nsign-macos downloads it, holds its bytes to that sha256 before anything runs\nit, and compiles nothing: no checkout, no toolchain.\n\nThe guards in crates/release-manifest and tools/release-workflow.test.mjs\nhold the new shape, each new clause seen refusing a broken copy.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8A0RYEXEAZS9KTDFYAPW1S7\nPurlis-Persona: steward\n\n* Release: build-signer waits for keys, keeps its artifact as long as the unsigned bundle, and is recorded in ADR 0042\n\nFrom review: build-signer no longer compiles on a run sign-macos will never\nsign (keys says no publish); its artifact is kept 90 days so a re-run of\nsign-macos finds it; a download by pattern, or of every artifact, in another\njob is refused as one that could take the signer; and the move is recorded\nas an amendment to ADR 0042.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8A0RYEXEAZS9KTDFYAPW1S7\nPurlis-Persona: steward\n\n* ADR 0042: the updater archive's signer is built in a keyless job of its own\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8A0RYEXEAZS9KTDFYAPW1S7\nPurlis-Persona: steward\n\n* build-signer: a test holds its checkout to the run's own commit\n\nCodeQL (actions/cache-poisoning/poisonable-step) flags build-signer's\ntoolchain step after a checkout of needs.plan.outputs.sha. The job\ncaches nothing (held for every release.yml job), and plan's sha is\ngithub.sha, the run's own commit. The job comment said a rule held\nthat; none did. tools/release-workflow.test.mjs now lists build-signer\nbeside build, sbom, manifest and publish.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8A4VBSVNSVN79Z7071YZSKA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T19:30:48Z",
+          "tree_id": "28c84d3cf9f4eb75b3e85d718d14ebc1035e53cb",
+          "url": "https://github.com/purlis/purlis/commit/952e7b3e14edfaeea43a64163133d63fa3f63068"
+        },
+        "date": 1795723498913,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.487955,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.469, 0.487, 0.488, 0.490, 0.491 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4347425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.323, 16.417, 16.435, 16.437, 16.475 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4338665,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.217, 100.980, 101.434, 101.649, 102.370 ms"
           }
         ]
       }
