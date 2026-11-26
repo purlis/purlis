@@ -7,11 +7,13 @@
 [ADR 0104](0104-the-window-is-built-from-component-families-on-react-aria-each-primitive-wrapped-once.md)
 ([2026-11-26](0104/2026-11-26-the-dialog-family-serves-an-app-raised-alert.md)) and
 [ADR 0120](0120-a-purlis-command-exits-70-for-an-internal-failure-and-only-then.md)
-([2026-11-26](0120/2026-11-26-a-start-held-by-a-prerequisite-exits-75.md)), and replaces
+([2026-11-26](0120/2026-11-26-a-start-held-by-a-prerequisite-exits-75.md)) and
+[ADR 0125](0125-blocks-are-off-by-default-and-opt-in-per-family.md)
+([2026-11-26](0125/2026-11-26-a-pressed-accept-reaches-a-running-chat-s-guards.md)), and replaces
 `ProjectPolicyNotice` for two of its states under
 [ADR 0112](0112-one-notice-for-one-need-a-person-may-allow-an-undeclared-program.md)'s one notice for
-one need. [ADR 0125](0125-blocks-are-off-by-default-and-opt-in-per-family.md) is not amended: its
-rules on who may loosen a project's policy, and what Accept accepts, stand.
+one need. ADR 0125 is amended for one case alone, a running chat's guards after Accept (§5); its
+other rules on who may loosen a project's policy, and what Accept accepts, stand.
 
 ## Where purlis was
 
@@ -37,7 +39,8 @@ policy may be **Waiting**: the committed file is looser than what this machine a
 ## Terms
 
 - **Strict mode**: every family enforced at the full sandbox, with no cross-persona dispatch. It is
-  what a project runs under **Broken**, and only there.
+  what a project runs under **Broken**, and only there. It is not the `strict` template, which
+  leaves the sandbox to `[sandbox]` and denies no dispatch.
 - **The policy in force** (`enforcement::in_force`): what a chat runs under. Under Broken it is
   strict mode. Under **Waiting** it is the stricter of the committed file and what this machine
   accepted before, so nothing is tightened beyond what was accepted and nothing waiting is
@@ -70,7 +73,8 @@ expired and a migration are later prerequisites, each with a decision of its own
   - its **reason**: `broken`, `waiting`, or both;
   - the policy **digest** an Accept must name;
   - the **waiting rows**, as `PolicyState` (`enforcement::standing`);
-  - **needs a new key**: whether Accept must first replace a foreign seal key (§4).
+  - **needs a new key**: whether Accept must first replace a foreign seal key (§4);
+  - **after a new key**: whether the record broke because purlis replaced its key (§4).
 - **The event is pushed after the new list is kept**, so a reader that asks then gets the same list.
   Any reader can ask for the current list at any time; a window that opens, or a reader that missed
   an event, asks.
@@ -87,7 +91,9 @@ expired and a migration are later prerequisites, each with a decision of its own
 - **Never alone is no prerequisite**: the shipped `watch` default stays the one-time Notice
   `PolicyWatchAnnounced`, unchanged. But nothing kept plus a committed policy looser than `watch`
   counts as **Waiting**.
-- **Broken and Waiting together make one prerequisite**, with both reasons, and one modal.
+- **Broken and Waiting together make one prerequisite**, and one modal. **Under Broken the reason is
+  `broken` alone**; `waiting` joins it only where the committed policy is looser than the shipped
+  `watch`, the same rule as for Never, with no read of the unsealed record.
 - **When it is raised:** on a project's open, on a policy change mid-session, and after an app
   update. Where the project is not the one in front, a **dot** shows on the project's tab in the
   title bar, and the modal opens when the person switches to it. The dot shows only while the
@@ -103,7 +109,8 @@ expired and a migration are later prerequisites, each with a decision of its own
   - Under Broken: purlis cannot vouch for what was accepted on this machine before, so until the
     person answers, the project's chats work in strict mode.
   - Under Waiting: the committed policy loosens what this machine accepted; until the person accepts
-    it, "your chats keep the policy you accepted before".
+    it, "your chats keep the policy you accepted before". Where nothing was kept, "your chats keep
+    purlis's shipped default (watch) until you accept".
 - **The summary:**
   - Under **Waiting**: what Accept would loosen, as `enforcement::standing` gives it, listed first,
     never collapsed, with its count. An administrator's locks read "stay enforced whatever you
@@ -134,8 +141,10 @@ expired and a migration are later prerequisites, each with a decision of its own
   accepted", and the press can be made again. The digest is checked after the macOS prompt, not
   before it.
 - **After a new key**, every other project that was accepted on this machine stays **Broken**: its
-  record was sealed with the old key. Each raises its own prerequisite, whose why-line says "purlis
-  made a new key on this machine; accept this project's policy again". None reads Never.
+  record was sealed with the old key. Each raises its own prerequisite, whose entry says **after a
+  new key** (§2) and whose why-line says "purlis made a new key on this machine; accept this
+  project's policy again". None reads Never. A record broken for any other reason never gets these
+  words.
 - **After Accept**, a Notice of the `news` tone: "Policy accepted for <project>. Guards follow it
   now; a chat started in strict mode keeps the full sandbox until you restart it." Nothing else
   changes.
@@ -143,11 +152,19 @@ expired and a migration are later prerequisites, each with a decision of its own
 ### 5. What an open prerequisite holds
 
 - **A chat the person starts in that project, from the window or the CLI, waits** until they answer.
-  It is not a **Hold**: nothing is turned into an ask. A CLI start's wait is in §8.
+  So does a pool or runner chat the person starts: it waits as a local one does. It is not a
+  **Hold**: nothing is turned into an ask. A CLI start's wait is in §8.
 - **Running chats keep running, under the policy in force**: strict mode under Broken, the policy
   accepted before under Waiting.
+- **Once the person presses Accept, a running chat's guards follow the accepted policy from its
+  next step.** The hook asks the app, which knows the press, so `PURLIS_POLICY`, the start's
+  resolution, no longer floors a loosening the person pressed (ADR 0125, as amended 2026-11-26).
+  The chat's sandbox level stays as it started. Where the app does not answer, the floor still
+  holds.
 - **These start at once, under the policy in force, and do not wait:** a chat restored at open, a
-  task a running chat dispatches, and a scheduled or loop start.
+  task a running chat dispatches, a chat a running chat opens with `purlis handoff` (it starts
+  under the policy in force, strict mode under Broken, as a dispatched task does), and a scheduled
+  or loop start.
 - **The core owns the hold.** The window only shows it and releases it, through an answer.
 
 ### 6. The answer that grants nothing
@@ -170,23 +187,22 @@ never tells the person to set the family to `log`. The dispatch refusal that bla
 pairs you said never to" for a Broken acceptance names the policy instead; a nevers file that does
 not read for its own reason keeps today's sentence.
 
-### 8. Not an ask, and the window alone answers
+### 8. Not an ask, and only the window accepts
 
 - **A prerequisite is never in Asks** and adds nothing to the ✋ count or the Dock badge. It sends
   no system notification. Its signals are the modal, the dot on the project's tab, its Notice, and
   the CLI's and `purlis doctor`'s words.
-- **Both answers are the window's alone.** No CLI command, hook-socket call or chat tool answers a
-  prerequisite.
+- **Accept is purlis's own window's alone; the answer that grants nothing is given there or on a
+  linked page.** No CLI command, hook-socket call or chat tool gives either.
 - **A linked page** (one not in purlis's own window) shows the modal with the answer that grants
   nothing and, in Accept's place, "Accept it from purlis's own window on this machine".
 - **Answering in one window closes it in every window**, through the same event.
 - **`purlis doctor` and the CLI show the open prerequisites.** Doctor's finding is the
   prerequisite's own Notice line, not a second one.
 - **A CLI start that waits** prints what is open and that it is answered in purlis's window on this
-  machine. With a terminal it waits up to 90 seconds, and ends when the person answers (the chat
-  then starts), on Ctrl-C, or at the end of the wait. With no terminal it does not wait. A start
-  that ends unanswered exits **75** (`EX_TEMPFAIL`) with the reason (ADR 0120, as amended
-  2026-11-26).
+  machine. With a terminal it waits up to 90 seconds, and the chat starts when the person answers.
+  **A start with no terminal, or whose wait runs out, exits 75** (`EX_TEMPFAIL`) with the reason
+  (ADR 0120, as amended 2026-11-26); **Ctrl-C ends it as any interrupted command.**
 - **Acceptance stays per machine.** A pool or runner chat keeps the acceptance of the machine it was
   started from, and its refusals name the prerequisite and that machine's window.
 
@@ -202,6 +218,8 @@ not read for its own reason keeps today's sentence.
   decisions 2 and 16 name it (its amendment of 2026-11-26).
 - The dialog family serves an alert the app raises with no press (ADR 0104's amendment of
   2026-11-26).
+- A running chat's guards follow a pressed Accept from its next step, its sandbox level as it
+  started (ADR 0125's amendment of 2026-11-26), so the Notice after Accept says what is true.
 - ADR 0120 documents a second code beside 70: 75 for a start a prerequisite held (its amendment of
   2026-11-26).
 - `ProjectPolicyNotice` keeps only what is not a prerequisite: the policy purlis could not read
@@ -209,8 +227,9 @@ not read for its own reason keeps today's sentence.
 - The window's focus polling of the policy state goes; the window, the CLI and doctor all read the
   app's one list, so they cannot disagree.
 - A new chat may wait at its start for a reason that is not an ask, so every start path that waits
-  (window, CLI) has to say why, and every one that does not (restore, dispatch, schedule, loop,
-  pool, runner) has to start under the policy in force.
+  (window, CLI) has to say why, and every one that does not (restore, dispatch, handoff by a chat,
+  schedule, loop) has to start under the policy in force; a pool or runner chat the person starts
+  waits as a local one does.
 - A stray key while the modal opens can only choose the answer that grants nothing: focus starts
   there, Accept is never found by Return, and the settle guard holds every press for a moment.
 - Not chosen: a ✋ count or a system notification for a prerequisite (it stops no running chat, and

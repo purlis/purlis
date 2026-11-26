@@ -2011,8 +2011,9 @@ project's list and pushes a "prerequisites changed" event with the whole list, w
 reads and the CLI and `purlis doctor` ask for. The first is the policy prerequisite: this
 machine's acceptance of the project's `[policy]` is Broken or Waiting. While one is open, a chat
 the person starts there waits, and running chats keep the policy in force: **strict mode** (every
-family enforced at the full sandbox, no cross-persona dispatch) under Broken, the policy accepted
-before under Waiting. The window raises it as one modal, an alert of the dialog family, with
+family enforced at the full sandbox, no cross-persona dispatch; not the `strict` template, which
+leaves the sandbox to `[sandbox]` and denies no dispatch) under Broken, the policy accepted before
+under Waiting. The window raises it as one modal, an alert of the dialog family, with
 **Work in strict mode** (under Broken) or **Keep my current rules** (under Waiting) and **Accept**,
 and keeps its **Notice** up after the first answer. It is never in Asks, adds nothing to the ✋ and
 sends no system notification; a project not in front shows a dot on its tab in the title bar
