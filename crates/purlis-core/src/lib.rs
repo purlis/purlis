@@ -144,6 +144,7 @@ pub mod harness_plugin;
 pub(crate) mod held;
 pub mod heldact;
 pub mod heredoc;
+pub mod hibernatedscreens;
 #[cfg(unix)]
 pub mod hookchannel;
 pub mod hookreg;
