@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The daily CI health report (#3598, daily and acting from spec #7324): how the `ci` workflow did
-// over the last seven days, and a ticket for each flaky test it finds.
+// over the last seven days, and a ticket for each flaky test it finds. The jobs of the workflows
+// `JOB_WORKFLOWS` names (`tools/job-budgets.mjs`), which left `ci.yml` but not its watch, are read
+// beside its own: their durations, budgets, red jobs and flaky tests (`sideWeek`).
 //
 // CI got twice as slow and three times as flaky between 2026-10-14 and 10-27, and nobody saw it
 // for two weeks. The `ci-health` workflow runs this every day and writes the week's numbers
@@ -18,7 +20,17 @@ import { fileURLToPath } from "node:url";
 import { requiredDrift } from "./ci-push-jobs.mjs";
 import { requiredNames } from "./land.mjs";
 import { percentile } from "./percentile.mjs";
-import { BUDGETS_FILE, CI_FILE, OVER, ciJobs, overBudget, overReleaseBudget, parseBudgets } from "./job-budgets.mjs";
+import {
+  BUDGETS_FILE,
+  CI_FILE,
+  JOB_WORKFLOWS,
+  OVER,
+  ciJobs,
+  overBudget,
+  overReleaseBudget,
+  parseBudgets,
+  workflowJobs,
+} from "./job-budgets.mjs";
 import { CAP, QUARANTINE_FILE, parseQuarantine } from "./quarantine.mjs";
 
 export { percentile };
@@ -586,7 +598,11 @@ export function report(week) {
     "",
     `### Jobs`,
     "",
-    `Read from ${sampled.runs} of the week's ${sampled.of} runs, spread evenly over it. Minutes, slowest p90 first:`,
+    `Read from ${sampled.runs} of the week's ${sampled.of} runs, spread evenly over it${
+      (sampled.others ?? []).length > 0
+        ? `, and every run of ${sampled.others.map((one) => `\`${one.name}.yml\` (${one.runs})`).join(", ")}`
+        : ""
+    }. Minutes, slowest p90 first:`,
     "",
     "| job | runs | p50 | p90 |",
     "| --- | ---: | ---: | ---: |",
@@ -768,6 +784,46 @@ async function releaseWeek({ repo, token, since, until }) {
   }
 }
 
+/**
+ * What the weeks of `JOB_WORKFLOWS` add to ci's (`side`, one `{ name, runs, suites }` each, as
+ * `workflowWeek` reads them): every suite, for the job durations and the flaky tests; the suites of
+ * main's green runs, for the jobs red on a green run; and the budgets of each workflow's jobs
+ * judged on its own runs (`jobsOf`, `{ [workflow]: jobs }`).
+ */
+export function sideWeek(side, budgets, jobsOf) {
+  const onMain = (run) => run.head_branch === "main" && run.conclusion === "success";
+  const green = new Set(side.flatMap((week) => week.runs.filter(onMain).map((run) => run.id)));
+  return {
+    suites: side.flatMap((week) => week.suites),
+    green: side.flatMap((week) => week.suites.filter((suite) => green.has(suite?.workflowRun?.databaseId))),
+    over: side.flatMap((week) => overBudget(week.suites, budgets, jobsOf[week.name] ?? [], week.name)),
+  };
+}
+
+/**
+ * The completed runs of `.github/workflows/<name>.yml` from `since` to `until` (UTC days), on main's
+ * push and the nightly, and their check suites. A failed read is a warning and leaves that workflow
+ * out: it must not take the ci report down with it.
+ */
+async function workflowWeek({ repo, token, name, since, until }) {
+  try {
+    const list = async (event) =>
+      (
+        await call(
+          `/repos/${repo}/actions/workflows/${name}.yml/runs?created=${since}..${until}&event=${event}&status=completed&per_page=100`,
+          { token },
+        )
+      ).workflow_runs;
+    const runs = [...(await list("schedule")), ...(await list("push"))].filter(
+      (run) => run.conclusion === "success" || run.conclusion === "failure",
+    );
+    return { name, runs, suites: await suitesOf(runs.map((run) => run.check_suite_node_id), token) };
+  } catch (error) {
+    console.log(`::warning title=ci-health::${name}.yml not read: ${error.message}`);
+    return { name, runs: [], suites: [] };
+  }
+}
+
 async function measure({ repo, token, dayCount, sampleSize }) {
   // Whole UTC days, ending yesterday: today's runs are still running.
   const today = Date.parse(isoDay(Date.now()));
@@ -805,6 +861,11 @@ async function measure({ repo, token, dayCount, sampleSize }) {
   const suites = await suitesOf(sampled.map((run) => run.check_suite_node_id), token);
   const budgets = parseBudgets(readFileSync(BUDGETS_FILE, "utf8"));
   const release = await releaseWeek({ repo, token, since: dayList[0], until: dayList.at(-1) });
+  const others = [];
+  for (const name of Object.keys(JOB_WORKFLOWS)) {
+    others.push(await workflowWeek({ repo, token, name, since: dayList[0], until: dayList.at(-1) }));
+  }
+  const side = sideWeek(others, budgets, workflowJobs());
   const mainSuites = await suitesOf(mainGreen.map((run) => run.check_suite_node_id), token);
   // The nightlies are few and the only runs of most evidence jobs, so all of them are read.
   const onMain = (run) => run.head_branch === "main" && run.conclusion === "success";
@@ -842,17 +903,18 @@ async function measure({ repo, token, dayCount, sampleSize }) {
     ready: readyToMerged(prs),
     drops: queueDrops(prs, { from: dayList[0], to: dayList.at(-1) }),
     unread,
-    sampled: { runs: sampled.length, of: runs.length },
-    jobs: jobStats(suites),
+    sampled: { runs: sampled.length, of: runs.length, others: others.map((week) => ({ name: week.name, runs: week.runs.length })) },
+    jobs: jobStats([...suites, ...side.suites]),
     over: [
       ...overBudget(suites, budgets, ciJobs(readFileSync(CI_FILE, "utf8"))),
+      ...side.over,
       ...overReleaseBudget(release.runs, release.suites, budgets),
     ].sort((a, b) => b.over - a.over || a.id.localeCompare(b.id)),
-    flaky: flakyTests(suites),
-    flakes: flakeEvidence(suites),
+    flaky: flakyTests([...suites, ...side.suites]),
+    flakes: flakeEvidence([...suites, ...side.suites]),
     slowest: slowestTests(lists),
     slowestFrom: mainGreen.length,
-    red: { runs: greenRuns.length, jobs: evidenceRed(greenSuites) },
+    red: { runs: greenRuns.length + side.green.length, jobs: evidenceRed([...greenSuites, ...side.green]) },
     // No names means the token could not read them, which says nothing of the list.
     drift: required.length > 0 ? requiredDrift(required) : undefined,
   };

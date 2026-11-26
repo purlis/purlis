@@ -1,0 +1,290 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# **The Skill studio's outcome bars on macOS** (SK-23, #4343), in a workflow of their own since
+# 2026-11-26 (ADR 0127, amended that day). They were `ci.yml`'s `outcome-bars` job, and the last of
+# its jobs to end: on main's push runs of 2026-11-25/26 it took 36 to 72 minutes, while every other
+# job ended within about 29, and `release.yml`'s gate waits for the commit's whole `ci` run before a
+# dev build signs. The job decides nothing (`continue-on-error`, below), so its own run here leaves
+# `ci` ending when its gating jobs do, and the bars still run on the same push.
+#
+# Of those 36 to 72 minutes the build took 30 to 65 and the three harnesses' runs 3.5 to 6 together,
+# so parts that each build would not shorten it: the build is the job.
+#
+# Its Linux leg stays in `ci.yml` (`outcome-bars-linux`, carried by the required check
+# `outcome bars (ubuntu-24.04)`): it runs on pull requests and in the merge queue, and ends inside
+# the other jobs' time.
+#
+# The steps are `ci.yml`'s scenario steps (`&scenario-steps`), copied, since an anchor does not
+# reach another file: the ones the macOS outcome leg runs, word for word.
+# `tools/outcome-bars-workflow.test.mjs` fails when one of them differs from its `ci.yml` copy, or
+# when `ci.yml` gains a step this leg would run that is missing here.
+
+name: outcome bars
+
+on:
+  # On main's push and on the nightly run, and on neither a pull request nor the merge queue
+  # (#7335, ADR 0127, the steward's ruling of 2026-11-23): Macs are the queue's scarce resource.
+  # A regression shows on main.
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 2 * * *"
+
+concurrency:
+  # As `ci.yml`'s: a push to main is grouped by its commit, so a later push never cancels the
+  # pending run of an earlier one, and the nightly keeps a group of its own.
+  group: outcome-bars-${{ github.event_name == 'schedule' && 'nightly' || github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+# `ci.yml`'s: rust-cache keys its cache on every CARGO* and RUST* variable, so these keep the
+# `dev-release-no-line-tables` cache this job wrote from `ci.yml` its own.
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  CARGO_NET_RETRY: "10"
+
+jobs:
+  # Its macOS leg is not required, and no check waits on it: it measures on a shared runner, and a
+  # miss is a ticket (the operator's ruling of 2026-10-31), not a block on every merge. It becomes
+  # required with the flag's flip (#2786). Each leg says L10's p95 and judges a median guard of its
+  # own platform: the 300 ms is judged on a real Mac (ADR 0086, amended 2026-11-05 and 2026-11-06).
+  # The job keeps its id, `outcome-bars`, which rust-cache's key and `ci/job-budgets.toml` name.
+  outcome-bars:
+    name: outcome bars (macos-latest)
+    # A missed bar keeps this job red and the run green. This line goes once its bars are met
+    # (#4352 among them), and the job is made required before the flag's flip (#2786).
+    continue-on-error: true
+    # 130 since 2026-11-11: at 75 a cold build (70-73 min) was cut off on every main run from
+    # 05:41 to 10:44, so the cache was never saved. One run that finishes warms the cache again.
+    timeout-minutes: 130
+    # Where the specs find the build: the profile the build step names for `outcome` (one place
+    # for the path, so no harness's run can take another build's program).
+    env:
+      CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest]
+        shard: [bars]
+        shards: [1]
+        extras: [false]
+        specs: [false]
+        sandbox: [false]
+        outcome: [true]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/rust-toolchain
+      # Pool setup's run restores `scenario-linux`'s cache, the same app build, and saves none
+      # (#5858): a cache of its own was 1.7 GB of the repository's 10.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' && !matrix.pool }}
+          shared-key: ${{ matrix.pool && 'scenario-linux' || '' }}
+          # The outcome bars build `dev-release` (#4351): a cache of their own, since main's
+          # debug one would be an exact hit, and rust-cache writes nothing over an exact hit.
+          # `-no-line-tables` since the build below drops them: rust-cache writes nothing over an
+          # exact hit, so the old key's dependencies, built with them, would be rebuilt every run.
+          key: ${{ matrix.outcome && 'dev-release-no-line-tables' || '' }}
+      # **sccache for the workspace's own crates, on macOS** (2026-10-12, an experiment kept only
+      # if it pays). rust-cache keeps the dependencies but never the workspace's crates, so each
+      # macOS part compiled purlis-core and the app afresh: 3.5 to 4 of its minutes on the
+      # slowest runners. sccache keeps each compiled crate in the Actions cache, written by
+      # `main` and only read by a pull request, as rust-cache's is (#1547). Turned on AFTER
+      # rust-cache: rust-cache keys its cache on every RUST* and CARGO* variable, and a
+      # RUSTC_WRAPPER set before it would key it apart from the one `stress` restores (#1826).
+      # Its own download of sccache from GitHub's releases is never fatal either (#5403): it
+      # asks three times, and a 504 on all three failed two merge groups on 2026-11-05. A job
+      # whose sccache did not arrive compiles without it: the next step finds no `sccache` to
+      # start and takes the same way as a cache that does not answer.
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        id: sccache
+        if: runner.os == 'macOS'
+        continue-on-error: true
+        with:
+          version: v0.18.0
+      # A cache that does not answer is a slower job, never a failed one: the storage behind
+      # the Actions cache refuses reads once the account's egress is over its limit
+      # ("ServerBusy"), and sccache then failed `rustc -vV` and the whole job with it
+      # (2026-10-30, three merge-queue drops). The server is started here; only one that comes
+      # up is put in front of rustc, and SCCACHE_IGNORE_SERVER_IO_ERROR has a later failure
+      # compile without it.
+      #
+      # `SCCACHE_IDLE_TIMEOUT=0`: the server lives as long as the job. With sccache's default of
+      # 600 s it stopped in every one of 8 outcome-bars runs on 2026-11-25/26, about ten minutes
+      # into purlis-core's release compile, during which no new request came ("The server looks
+      # like it shut down unexpectedly, compiling locally instead"). Every crate after that
+      # compiled without it, and its notice counted one request. The runner is discarded with the
+      # job, so nothing is left running.
+      - name: Compile through sccache
+        if: runner.os == 'macOS'
+        env:
+          MODE: ${{ github.ref == 'refs/heads/main' && 'READ_WRITE' || 'READ_ONLY' }}
+          ARRIVED: ${{ steps.sccache.outcome }}
+        run: |
+          export SCCACHE_GHA_ENABLED=true SCCACHE_GHA_RW_MODE="$MODE" SCCACHE_IDLE_TIMEOUT=0
+          if sccache --start-server >/dev/null 2>&1 && sccache --show-stats >/dev/null 2>&1; then
+            {
+              echo "RUSTC_WRAPPER=sccache"
+              echo "SCCACHE_GHA_ENABLED=true"
+              echo "SCCACHE_GHA_RW_MODE=$MODE"
+              echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
+            } >> "$GITHUB_ENV"
+          elif [ "$ARRIVED" = success ]; then
+            echo "::warning title=sccache::the build cache did not answer, so this job compiles without it"
+          else
+            echo "::warning title=sccache::sccache could not be downloaded, so this job compiles without it"
+          fi
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: ./.github/actions/npm-ci
+        if: ${{ !matrix.sandbox }}
+        with:
+          directory: app
+      # The `e2e` feature puts WebdriverIO's embedded WebDriver server inside the app, which is
+      # what drives it on macOS as well as Linux. It is in no build anyone is given.
+      #
+      # The harness the scenario tests run in every pane, and the `purlis` binary its hooks run,
+      # are built by the same cargo run as the app (the packages after `--`). Built apart, their
+      # dependencies resolve other features than the app's, so purlis-core compiled twice
+      # (2026-10-12); together, once. They take the app's `purlis-core/fenced` with it.
+      #
+      # **What this build spends its time on** (#3742, 2026-10-29; six legs' logs and cargo's
+      # timings). Not linking (6 s for the app's program) and not sccache's round trips (under a
+      # second a hit): the app's own crate, 193 s of a 394 s cargo run, compiled afresh on every
+      # leg. Its library also emitted a `staticlib` and a `cdylib`, Tauri's template's for iOS and
+      # Android, and sccache never caches a crate that links (`crate-type` among its
+      # non-cacheable calls), so "80 to 90% hits" counted only the small crates. The library is now
+      # an `rlib` alone (`app/src-tauri/Cargo.toml`). The frontend was the rest: `tsc` before vite
+      # took 20 to 150 s per leg, a type check the required `web` job already makes, so
+      # `build:e2e` is vite alone. Rejected: a lighter debug profile (`line-tables-only` is already
+      # the dev profile, and #3560's opt-level made the cold build 21 to 32 min), another linker
+      # (6 s to win), a `target/` cache (rust-cache already restores the dependencies, and the
+      # workspace's crates change with every pull request that runs this job).
+      # Off before the build, so it indexes none of it (#4351): see the outcome bars below.
+      - name: Spotlight off for the outcome bars
+        if: ${{ runner.os == 'macOS' && matrix.outcome }}
+        continue-on-error: true
+        timeout-minutes: 2
+        run: sudo mdutil -a -i off
+      # No swap file is added for the `dev-release` build: with the app crate at `opt-level = 1`
+      # (ADR 0092 amended 2026-11-07) it peaks at about 6.6 GB on an `ubuntu-24.04` runner, which
+      # has 16. At 3 it took one `rustc` to 14.4 GB and the runner shut down (#5277).
+      - name: Build the app, the harness and the CLI for the scenario tests
+        if: ${{ !matrix.sandbox }}
+        # A warm macOS release build takes 37-54 min, and a cold one 70-73. Unbounded, a stalled
+        # build would hold its Mac for the job's 6 h default, so it fails at 110 (#6189).
+        timeout-minutes: 110
+        # The outcome bars are judged on a release build (the operator's ruling of 2026-11-03,
+        # #4351): `dev-release`, release with LTO off (ADR 0092 amended 2026-11-24, #7418), what the dev
+        # channel ships. Cold start showed no cost from it, within the runs' noise. Every other leg builds debug.
+        #
+        # Without the line tables the dev channel's own build writes for the crash handler
+        # (`debug`, `split-debuginfo` in Cargo.toml's `release`, #5692): they change no code the
+        # bars time, and since #6165 they cost the build 8 minutes on Linux (16-19 to 24-29) and
+        # more on macOS, where dsymutil packs them. No step of these jobs reads a dSYM. Set on this
+        # step alone, so rust-cache's key, read in its own step, is not moved; `dev` ignores them.
+        env:
+          CARGO_PROFILE_DEV_RELEASE_DEBUG: "false"
+          CARGO_PROFILE_DEV_RELEASE_SPLIT_DEBUGINFO: "off"
+        run: >-
+          npx tauri build ${{ !matrix.outcome && '--debug' || '' }} --no-bundle --features e2e
+          --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli
+          --timings ${{ matrix.outcome && '--profile dev-release' || '' }}
+        working-directory: app
+      # Cargo's own account of that build, unit by unit (`--timings`), kept a week: what a slow
+      # build spent its time on, read without rerunning it (#3742).
+      - name: Keep cargo's timings of the build
+        if: ${{ !cancelled() && !matrix.sandbox }}
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cargo-timings-${{ matrix.os }}-${{ matrix.shard }}
+          path: target/cargo-timings/cargo-timing.html
+          retention-days: 7
+      # What sccache found, as a notice: whether the experiment pays, without the log.
+      - name: sccache's hits and misses
+        if: runner.os == 'macOS' && !cancelled() && steps.sccache.outcome == 'success'
+        continue-on-error: true
+        # Its whole report, or what it said instead: the first version filtered it to five lines
+        # and #1829's run showed no notice at all.
+        run: |
+          said=$(sccache --show-stats 2>&1 | head -30 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::notice title=sccache (macOS, ${{ matrix.specs && format('part {0}', matrix.shard) || matrix.sandbox && 'the sandbox runs' || 'the single-app runs' }})::${said:-sccache said nothing}"
+      # What GitHub's macOS image is busy with around each harness's bars (#4351), to read beside
+      # their numbers. Spotlight went off before the build. Nothing waits for the runner: waiting
+      # brought L10 no gain (the person's ruling of 2026-11-05).
+      - name: What is busy before claude's bars
+        if: ${{ runner.os == 'macOS' && matrix.outcome }}
+        continue-on-error: true
+        timeout-minutes: 1
+        run: ps -Ao pcpu,comm -r | sed -n 1,7p
+      # The Skill studio's outcome bars, one run per harness on its stand-in (#4343). The outcome
+      # bars alone run these (`outcome-bars.yml` on macOS, `outcome-bars-linux`). Each runs
+      # whatever the one before it did, so a red run names every miss.
+      - name: The Skill studio's outcome bars on claude's stand-in
+        run: npm run e2e:outcome
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        working-directory: app
+        env:
+          PURLIS_OUTCOME_HARNESS: claude
+      - name: What is busy before codex's bars
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        continue-on-error: true
+        timeout-minutes: 1
+        run: ps -Ao pcpu,comm -r | sed -n 1,7p
+      - name: The Skill studio's outcome bars on codex's stand-in
+        run: npm run e2e:outcome
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        working-directory: app
+        env:
+          PURLIS_OUTCOME_HARNESS: codex
+      - name: What is busy before opencode's bars
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        continue-on-error: true
+        timeout-minutes: 1
+        run: ps -Ao pcpu,comm -r | sed -n 1,7p
+      - name: The Skill studio's outcome bars on opencode's stand-in
+        run: npm run e2e:outcome
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        working-directory: app
+        env:
+          PURLIS_OUTCOME_HARNESS: opencode
+      - name: What is busy after the outcome bars
+        if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
+        continue-on-error: true
+        timeout-minutes: 1
+        run: ps -Ao pcpu,comm -r | sed -n 1,7p
+      # What a clone looks like in the real window, part way (`specs/clones.e2e.ts`): for a person
+      # to look at, on a green run too.
+      - if: "!cancelled()"
+        # Evidence only: a failed upload (a runner's DNS, 2026-11-11) never fails the job.
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: clone-screenshots-${{ matrix.os }}-${{ matrix.shard }}
+          path: app/logs/clone-screenshots
+          if-no-files-found: ignore
+          retention-days: 14
+      # Each failed test as an annotation on its spec's line, with its assertion: the checks API
+      # carries annotations, so a failure reads there without the log or the artifact.
+      - name: The failed scenario tests, as annotations
+        if: failure()
+        run: node ../tools/e2e-annotations.mjs logs/failures.jsonl
+        working-directory: app
+      - if: failure()
+        # Evidence only: a failed upload (a runner's DNS, 2026-11-11) never fails the job.
+        # The session host's own log is in it: the window keeps each line the host says, as
+        # `purlisd: …` in `charter.<date>.log`, among them each answer the host gave a second or
+        # more late and each time its one thread was held (#6437).
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scenario-logs-${{ matrix.os }}-${{ matrix.shard }}
+          path: app/logs

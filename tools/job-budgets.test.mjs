@@ -5,7 +5,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { BUDGETS_FILE, budgetProblems, ciJobs, jobIdOf, overBudget, overReleaseBudget, parseBudgets, releaseProfile } from "./job-budgets.mjs";
+import {
+  BUDGETS_FILE,
+  JOB_WORKFLOWS,
+  budgetProblems,
+  ciJobs,
+  jobIdOf,
+  overBudget,
+  overReleaseBudget,
+  parseBudgets,
+  releaseProfile,
+  workflowJobs,
+} from "./job-budgets.mjs";
 
 const CI = new URL("../.github/workflows/ci.yml", import.meta.url);
 
@@ -79,10 +90,46 @@ test("a budget that is no positive number, or is listed twice, is refused", () =
   assert.match(budgetProblems(jobs, parseBudgets(BUDGETS.replace("web", "rust"))).join("\n"), /"rust" is listed twice/);
 });
 
-test("every job in the ci workflow has a budget", () => {
+test("every job in the ci workflow, and in each workflow budgeted beside it, has a budget", () => {
   const jobs = ciJobs(readFileSync(CI, "utf8"));
   assert.ok(jobs.length > 20, "the jobs were read");
-  assert.deepEqual(budgetProblems(jobs, parseBudgets(readFileSync(BUDGETS_FILE, "utf8"))), []);
+  const others = workflowJobs();
+  assert.deepEqual(Object.keys(others), Object.keys(JOB_WORKFLOWS));
+  assert.ok(others["outcome-bars"].some((job) => job.id === "outcome-bars"), "outcome-bars.yml's job was read");
+  assert.deepEqual(budgetProblems(jobs, parseBudgets(readFileSync(BUDGETS_FILE, "utf8")), others), []);
+});
+
+const BARS_YML = `name: outcome bars
+jobs:
+  outcome-bars:
+    name: outcome bars (macos-latest)
+`;
+
+test("a job of another budgeted workflow needs a budget that names that workflow", () => {
+  const jobs = ciJobs(YML).slice(0, 2);
+  const others = { "outcome-bars": ciJobs(BARS_YML) };
+  const bars = '[[job]]\nid = "outcome-bars"\nworkflow = "outcome-bars"\np50 = 54\n';
+  assert.deepEqual(budgetProblems(jobs, parseBudgets(`${BUDGETS}${bars}`), others), []);
+  assert.match(budgetProblems(jobs, parseBudgets(BUDGETS), others).join("\n"), /job "outcome-bars" of outcome-bars\.yml has no budget/);
+  // Budgeted as a ci job, it is a budget for no ci job, and outcome-bars.yml's job is still unbudgeted.
+  const asCi = budgetProblems(jobs, parseBudgets(`${BUDGETS}[[job]]\nid = "outcome-bars"\np50 = 54\n`), others).join("\n");
+  assert.match(asCi, /budget for "outcome-bars": no such job in ci\.yml/);
+  assert.match(asCi, /is budgeted without workflow = "outcome-bars"/);
+  const gone = parseBudgets(`${BUDGETS}${bars}[[job]]\nid = "gone"\nworkflow = "outcome-bars"\np50 = 5\n`);
+  assert.match(budgetProblems(jobs, gone, others).join("\n"), /budget for "gone": no such job in outcome-bars\.yml/);
+  assert.match(budgetProblems(jobs, parseBudgets(`${BUDGETS}${bars.replace('"outcome-bars"\np50', '"nightly"\np50')}`), others).join("\n"), /workflow "nightly", which is not ci, release or one of outcome-bars/);
+});
+
+test("another workflow's runs are judged against its own budgets alone", () => {
+  const budgets = [...parseBudgets(BUDGETS), ...parseBudgets('[[job]]\nid = "outcome-bars"\nworkflow = "outcome-bars"\np50 = 40\n')];
+  const runs = withRuns("outcome bars (macos-latest) (macos-latest, bars, 1, false, false, false, true)", 60, 6);
+  // Read as ci's, it is no ci job's.
+  assert.deepEqual(overBudget(runs, budgets, ciJobs(YML)), []);
+  const over = overBudget(runs, budgets, ciJobs(BARS_YML), "outcome-bars");
+  assert.equal(over.length, 1);
+  assert.equal(over[0].id, "outcome-bars");
+  assert.equal(over[0].workflow, "outcome-bars");
+  assert.equal(over[0].p50, 60);
 });
 
 const ran = (name, minutes, conclusion = "SUCCESS") => ({
