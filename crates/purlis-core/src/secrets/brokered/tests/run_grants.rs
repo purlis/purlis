@@ -3344,3 +3344,27 @@ fn the_client_with_the_server_embedded_loads_what_it_is_told_so_it_is_offered_no
 fn gh_ost_runs_the_hooks_of_a_folder_it_names_so_it_is_offered_no_run_grant() {
     refused_as_running_others("gh-ost");
 }
+
+/// daemontools (#6559): `supervise <folder>` runs the folder's `./run`, and `svscan <folder>`
+/// starts a `supervise` on each folder in the one it is named, as runit's `runsv` and
+/// `runsvdir` and s6's `s6-supervise` and `s6-svscan` do; `multilog`'s `!processor` has a shell
+/// run the processor; and its chain loaders `setuidgid`, `envuidgid`, `softlimit`, `setlock`,
+/// `pgrphack` and `fghack` run the program after them, as its `envdir` does. Their source
+/// (cr.yp.to) was out of reach, so each is refused on what the tool is for, the side that only
+/// takes away an Allow.
+#[test]
+fn daemontools_supervisors_multilog_and_chain_loaders_are_offered_no_run_grant() {
+    for name in [
+        "svscan",
+        "supervise",
+        "multilog",
+        "setuidgid",
+        "envuidgid",
+        "softlimit",
+        "setlock",
+        "pgrphack",
+        "fghack",
+    ] {
+        refused_as_running_others(name);
+    }
+}

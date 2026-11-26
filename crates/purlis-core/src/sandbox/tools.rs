@@ -2250,6 +2250,20 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "s6-supervise",
     "s6-svscan",
     "runsvdir",
+    // daemontools (#6559), whose source (cr.yp.to) was out of reach, refused on what each is
+    // for: `supervise` runs a folder's `./run` and `svscan` starts one on each folder in the one
+    // it is named, as `runsv` and `runsvdir` do; `multilog`'s `!processor` has a shell run the
+    // processor; and `setuidgid`, `envuidgid`, `softlimit`, `setlock`, `pgrphack` and `fghack`
+    // run the program after them, as `envdir` does.
+    "svscan",
+    "supervise",
+    "multilog",
+    "setuidgid",
+    "envuidgid",
+    "softlimit",
+    "setlock",
+    "pgrphack",
+    "fghack",
     // Homebrew (#6325): `brew ruby -e` runs the Ruby it is handed, `brew sh --cmd` a shell
     // command, and `brew <name>` the `brew-<name>` its search path finds.
     "brew",
