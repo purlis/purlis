@@ -313,7 +313,8 @@ pub fn own_branch(root: &Path, git_dir: &Path, folder: &Path) -> Result<Own, Str
             Some(text.trim().strip_prefix("ref: refs/heads/")?.to_owned())
         })
         .ok_or_else(|| {
-            "this folder's HEAD names no branch, and purlis kept no note of the one it was cut              for, so it does not act on it for a chat"
+            "this folder's HEAD names no branch, and purlis kept no note of the one it was cut \
+             for, so it does not act on it for a chat"
                 .to_owned()
         })?;
     let piece = folder.file_name().and_then(|name| name.to_str());

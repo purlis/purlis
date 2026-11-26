@@ -108,9 +108,9 @@ pub enum WorktreeCommand {
     },
     /// Record the branch a piece is on as the one it was cut for. A piece cut before purlis kept
     /// that note, on a branch whose name is not the folder's (`--branch`), has none, and the
-    /// app's git then does not act on it for a chat. Run it once, from your own terminal, after
-    /// checking the folder is on the right branch: refused where another folder has that branch,
-    /// and in a chat.
+    /// app's git then does not act on it for a chat. Run it once, from your own terminal or the
+    /// window's shell tab, after checking the folder is on the right branch: refused where another
+    /// folder has that branch, and in a chat.
     Adopt {
         repo: String,
         piece: String,

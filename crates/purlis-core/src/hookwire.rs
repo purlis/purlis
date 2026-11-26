@@ -135,6 +135,7 @@ pub const NOT_INHERITED: &[&str] = &[
     PROMPT_KEY_ENV,
     crate::sandbox::tools::POOL_IMAGE_VAR,
     HARNESS_INTERNAL_ENV,
+    crate::shellguard::SHELL_TAB_ENV,
 ];
 
 /// A harness's internal variable. It stays out of a chat's environment: never inherited
