@@ -1137,6 +1137,44 @@ mod tests {
         assert_eq!(held(read_or_make(&items.0)), made);
     }
 
+    /// Whether the project anchored `anchor` is anchored still under any service, or named by a
+    /// list of replaced planes: what keeps it from reading as never accepted.
+    fn anchored_or_listed(items: &Items, kind: &str, anchor: &str) -> bool {
+        let account = format!("{kind}:{anchor}");
+        items.0.borrow().iter().any(|((service, at), (value, _))| {
+            (*at == account)
+                || (service == SERVICE
+                    && at.starts_with("seal-key-replaced")
+                    && value
+                        .lines()
+                        .skip(1)
+                        .any(|line| line == anchor || line.trim_start_matches('?') == account))
+        })
+    }
+
+    #[test]
+    fn a_new_key_refused_part_way_leaves_every_project_anchored_or_listed() {
+        // F2 of #7734's review: one delete macOS refuses mid-way, after another anchor went.
+        // Whatever went before it, every project the old key's anchors spoke for is anchored
+        // still or on the list, so none reads as never accepted.
+        let old = "ab".repeat(KEY_BYTES);
+        let items = Refusing(
+            Items::default()
+                .with(SERVICE, &old, false)
+                .with_at(SERVICE, "policy-accepted:aaaa", "00", true)
+                .with_at(SERVICE, "policy-accepted:zzzz", "00", false),
+        );
+        let anchors = ["aaaa".to_owned(), "zzzz".to_owned()];
+        assert!(renew(&items, &anchors).is_err());
+        for anchor in &anchors {
+            assert!(
+                anchored_or_listed(&items.0, "policy-accepted", anchor),
+                "{anchor}: {:?}",
+                items.0.services_and_accounts()
+            );
+        }
+    }
+
     fn held(found: Found) -> Vec<u8> {
         match found {
             Found::Held(key) => key.to_vec(),

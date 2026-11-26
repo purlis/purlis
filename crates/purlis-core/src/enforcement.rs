@@ -1412,6 +1412,10 @@ pub struct Standing {
     /// machine since it was sealed (#7714), never because something edited it
     /// ([`crate::sandbox::local::broken_by_a_new_key`]): enforced as broken all the same.
     pub new_key: bool,
+    /// Whether this plane's nevers were anchored by a seal key purlis has replaced since
+    /// (#7714, F3 of #7734's review), and not sealed again: they read as unread until the
+    /// person accepts the project's policy again, which seals them as they stand.
+    pub nevers_new_key: bool,
     /// The digest of the committed text this was read from, which the press must name.
     pub digest: String,
     /// What the project's `[policy]` says, from the same read: its template and the families
@@ -1453,6 +1457,7 @@ pub fn standing(root: &Path) -> Standing {
         unsealed: crate::sandbox::local::policy_unsealed(root),
         key_foreign: crate::secrets::seal::key_is_foreign(),
         new_key: crate::sandbox::local::broken_by_a_new_key(root),
+        nevers_new_key: false,
         digest: digest(&now),
         runs: now.stricter(&accepted),
         locked: Family::ALL

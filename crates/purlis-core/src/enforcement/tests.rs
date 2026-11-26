@@ -1964,3 +1964,74 @@ fn a_second_new_key_adds_to_the_planes_the_first_listed() {
     assert!(listed.holds_for(&anchor_key(here.path())), "{listed:?}");
     assert!(standing(first.path()).new_key && standing(here.path()).new_key);
 }
+
+// ---- the nevers after a new key (#7734's review, F3) -------------------------------------------
+
+/// The pair `steward` to `devops` said never to in the plane at `root`, sealed with the key of
+/// now.
+fn a_never(root: &std::path::Path) {
+    crate::dispatchnever::add(root, "steward", "devops").expect("a never kept");
+    assert_eq!(
+        crate::dispatchnever::read(root),
+        crate::dispatchnever::Nevers::Read(vec![("steward".to_owned(), "devops".to_owned())])
+    );
+}
+
+#[test]
+fn after_a_new_key_an_untouched_nevers_file_says_the_new_key_never_restore_that_file() {
+    // F3: the old key's anchor of the nevers went with it. The file is as purlis wrote it, so
+    // "Restore that file" cannot be done: the words say purlis made a new key, and to review it.
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    for other in [
+        accepted_plane("[policy]\ntemplate = \"open\"\n"),
+        plane("[policy]\ntemplate = \"open\"\n", None),
+    ] {
+        a_never(other.path());
+        crate::secrets::seal::set_foreign_for_this_test(true);
+        press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+        assert_eq!(
+            crate::dispatchnever::read(other.path()),
+            crate::dispatchnever::Nevers::Unread
+        );
+        let said = crate::dispatchnever::unread_said(other.path());
+        assert!(said.contains("purlis made a new seal key"), "{said}");
+        assert!(!said.contains("Restore that file"), "{said}");
+        assert!(standing(other.path()).nevers_new_key);
+    }
+}
+
+#[test]
+fn after_a_new_key_a_wiped_nevers_file_is_never_read_as_no_nevers() {
+    // F3: a project whose nevers the old key anchored, and whose file is gone now. Read as no
+    // nevers, the person's refusals would drop silently; it reads as unread until they accept.
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let other = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(other.path());
+    std::fs::remove_file(crate::dispatchnever::path(other.path())).expect("wiped");
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    assert_eq!(
+        crate::dispatchnever::read(other.path()),
+        crate::dispatchnever::Nevers::Unread
+    );
+}
+
+#[test]
+fn accepting_a_project_again_after_a_new_key_seals_its_nevers_as_they_stand() {
+    // F3: the person's Accept on that project seals the nevers the file holds with the new key
+    // (they only tighten), and the project leaves the list.
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let other = accepted_plane("[policy]\ntemplate = \"open\"\n");
+    a_never(other.path());
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    press(other.path(), &digest_of(other.path())).expect("accepted again");
+    assert_eq!(
+        crate::dispatchnever::read(other.path()),
+        crate::dispatchnever::Nevers::Read(vec![("steward".to_owned(), "devops".to_owned())])
+    );
+    assert!(!standing(other.path()).nevers_new_key);
+}
