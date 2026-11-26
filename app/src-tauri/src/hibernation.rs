@@ -58,7 +58,9 @@ pub enum Why {
     CannotResume,
     CannotSeeItsOwnWork,
     OwnWork,
+    LineComing,
     TaskOpen,
+    FinishedTaskOpen,
     ReportOwed,
     IsATask,
     Observed,
@@ -78,7 +80,9 @@ impl From<NotRested> for Why {
             NotRested::CannotResume => Self::CannotResume,
             NotRested::CannotSeeItsOwnWork => Self::CannotSeeItsOwnWork,
             NotRested::OwnWork => Self::OwnWork,
+            NotRested::LineComing => Self::LineComing,
             NotRested::TaskOpen => Self::TaskOpen,
+            NotRested::FinishedTaskOpen => Self::FinishedTaskOpen,
             NotRested::ReportOwed => Self::ReportOwed,
             NotRested::IsATask => Self::IsATask,
             NotRested::Observed => Self::Observed,
@@ -285,14 +289,19 @@ pub fn facts_of(held: &crate::planes::Held, session: u32, looked_at: bool) -> Fa
         .into_iter()
         .map(|(task, from)| (task, from, crate::dispatched::seen_now(held, task)))
         .collect();
-    let tasks = {
+    let seen_itself = crate::dispatched::seen_now(held, session);
+    let (tasks, line_coming) = {
         let ledger = held.tasks().ledger();
-        seen.into_iter()
+        let tasks = seen
+            .into_iter()
             .map(|(task, from, seen)| Task {
                 state: ledger.state(task, &from, seen),
                 hibernated: held.hibernated().of(task).is_some(),
             })
-            .collect()
+            .collect();
+        // A task's report, or its *ended without a report*, is a line typed into this chat:
+        // read over at once by `state`, it starts a turn here that has not begun yet.
+        (tasks, ledger.line_coming(session, seen_itself, false))
     };
     Facts {
         run,
@@ -301,6 +310,7 @@ pub fn facts_of(held: &crate::planes::Held, session: u32, looked_at: bool) -> Fa
         reports_its_own_work: harness
             .is_some_and(purlis_core::harness::Harness::reports_its_own_work),
         own_work,
+        line_coming,
         tasks,
         as_a_task,
         observed: false,
@@ -474,7 +484,9 @@ mod tests {
             CannotResume,
             CannotSeeItsOwnWork,
             OwnWork,
+            LineComing,
             TaskOpen,
+            FinishedTaskOpen,
             ReportOwed,
             IsATask,
             Observed,

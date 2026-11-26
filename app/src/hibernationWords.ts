@@ -20,8 +20,12 @@ export const NOT_HIBERNATED: Record<Why, string> = {
   cannot_see_its_own_work:
     "Not hibernated: purlis cannot see the background work this chat's harness leaves running.",
   own_work: "Not hibernated: this chat has background work running. Wait for it to finish.",
+  line_coming:
+    "Not hibernated: purlis is about to type a line into this chat, such as a task's report. Hibernate it once that turn ends.",
   task_open:
     "Not hibernated: a task this chat dispatched is still running or has not reported. Wait for its report.",
+  finished_task_open:
+    "Not hibernated: a task this chat dispatched has finished, but is still open. Close it first.",
   report_owed:
     "Not hibernated: this chat is a task, and the chat that dispatched it is waiting on its report.",
   is_a_task: "Not hibernated: this chat is a dispatched task.",

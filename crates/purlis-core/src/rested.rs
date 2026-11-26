@@ -32,6 +32,10 @@ pub struct Facts {
     pub reports_its_own_work: bool,
     /// What it has running of its own.
     pub own_work: OwnWorkSeen,
+    /// A line of purlis's own is about to start a turn of it: typed, or landed and to be typed,
+    /// with its turn not yet heard to begin ([`dispatched::Ledger::line_coming`]). A task's
+    /// report, or its *ended without a report*, reaches its parent this way.
+    pub line_coming: bool,
     /// Each task it dispatched that is still open.
     pub tasks: Vec<Task>,
     /// Where it is itself a dispatched task: whether its report is still owed.
@@ -134,8 +138,13 @@ pub enum NotRested {
     CannotSeeItsOwnWork,
     /// It has work running of its own.
     OwnWork,
+    /// A line of purlis's own is about to start a turn of it, such as a task's report.
+    LineComing,
     /// A task it dispatched is still running, or has not reported.
     TaskOpen,
+    /// A task it dispatched has reported, or ended, and its row is still open (the operator's
+    /// Hibernate refuses it until a tell wakes a task, SC-4j, #7639).
+    FinishedTaskOpen,
     /// It is a dispatched task, and its parent waits on its report.
     ReportOwed,
     /// It is a dispatched task (the operator's Hibernate refuses one until a tell wakes it,
@@ -161,6 +170,11 @@ pub fn rested(facts: &Facts) -> Result<(), NotRested> {
     if facts.own_work.is_out() {
         return Err(NotRested::OwnWork);
     }
+    // A task's report, or its end without one, reads it over at once, before the line telling
+    // this chat has started its turn: it is not hibernated under that line.
+    if facts.line_coming {
+        return Err(NotRested::LineComing);
+    }
     if !facts.tasks.iter().all(|task| task.is_over()) {
         return Err(NotRested::TaskOpen);
     }
@@ -182,7 +196,8 @@ pub fn rested(facts: &Facts) -> Result<(), NotRested> {
 /// reasons [`rested`] gives, but for two that only hold back the app (the looked-at clock, and a
 /// harness whose own work purlis cannot see, on which a by-hand one is warned of instead, SC-4i,
 /// #7638), and with two refusals it keeps until the act can wait on them: any open task of its
-/// own (SC-4j, #7639) and being a task at all (SC-4j). Own work is refused, as [`rested`] does,
+/// own (SC-4j, #7639), said as [`NotRested::FinishedTaskOpen`] once its report is not owed, and
+/// being a task at all (SC-4j). Own work is refused, as [`rested`] does,
 /// until the act asks first (SC-4d, #7633).
 pub fn by_hand(facts: &Facts) -> Result<(), NotRested> {
     rested(&Facts {
@@ -190,8 +205,9 @@ pub fn by_hand(facts: &Facts) -> Result<(), NotRested> {
         looked_at: false,
         ..facts.clone()
     })?;
+    // Every task is over here, or `rested` said `TaskOpen`: none still owes its report.
     if !facts.tasks.is_empty() {
-        return Err(NotRested::TaskOpen);
+        return Err(NotRested::FinishedTaskOpen);
     }
     if facts.as_a_task.is_some() {
         return Err(NotRested::IsATask);

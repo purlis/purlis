@@ -22180,7 +22180,7 @@ export type WhatChanged = {
  *  [`NotRested`], one value for one reason, whose words are the window's
  *  (`app/src/hibernationWords.ts`, `docs/ui-copy.md`).
  */
-export type Why = "working" | "asking" | "paused" | "hibernated" | "ended" | "cannot_resume" | "cannot_see_its_own_work" | "own_work" | "task_open" | "report_owed" | "is_a_task" | "observed" | "on_a_runner" | "child_run" | "looked_at";
+export type Why = "working" | "asking" | "paused" | "hibernated" | "ended" | "cannot_resume" | "cannot_see_its_own_work" | "own_work" | "line_coming" | "task_open" | "finished_task_open" | "report_owed" | "is_a_task" | "observed" | "on_a_runner" | "child_run" | "looked_at";
 
 /**
  *  A tint holds `token`, tinted, at least `distance` from `from` in OKLab, `from` as the tint

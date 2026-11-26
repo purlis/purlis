@@ -13,6 +13,7 @@ fn at_rest() -> Facts {
         resumes_by_id: true,
         reports_its_own_work: true,
         own_work: OwnWorkSeen::Nothing,
+        line_coming: false,
         tasks: Vec::new(),
         as_a_task: None,
         observed: false,
@@ -160,6 +161,14 @@ fn each_condition_alone_makes_a_chat_not_rested_with_its_own_reason() {
                 ..at_rest()
             },
             NotRested::OwnWork,
+        ),
+        (
+            "a line of purlis's own coming",
+            Facts {
+                line_coming: true,
+                ..at_rest()
+            },
+            NotRested::LineComing,
         ),
         (
             "a dispatched task running",
@@ -472,7 +481,7 @@ fn the_operators_act_still_refuses_any_open_task_of_its_own_and_being_a_task() {
         ..at_rest()
     };
     assert_eq!(rested(&a_parent), Ok(()));
-    assert_eq!(by_hand(&a_parent), Err(NotRested::TaskOpen));
+    assert_eq!(by_hand(&a_parent), Err(NotRested::FinishedTaskOpen));
     let a_task = Facts {
         as_a_task: Some(AsATask {
             owes_its_report: false,
@@ -481,4 +490,53 @@ fn the_operators_act_still_refuses_any_open_task_of_its_own_and_being_a_task() {
     };
     assert_eq!(rested(&a_task), Ok(()));
     assert_eq!(by_hand(&a_task), Err(NotRested::IsATask));
+}
+
+#[test]
+fn a_parent_is_not_hibernated_under_the_line_its_tasks_end_brings() {
+    // Its task reported, or ended without a report: the ledger reads it over at once, but the
+    // line telling the parent is landed or being typed, and its turn has not begun.
+    for state in [TaskState::Reported(Some(Outcome::Done)), TaskState::Ended] {
+        let facts = Facts {
+            tasks: vec![task(state)],
+            line_coming: true,
+            ..at_rest()
+        };
+        assert_eq!(rested(&facts), Err(NotRested::LineComing), "{state:?}");
+        assert_eq!(by_hand(&facts), Err(NotRested::LineComing), "{state:?}");
+    }
+    let no_tasks = Facts {
+        line_coming: true,
+        ..at_rest()
+    };
+    assert_eq!(by_hand(&no_tasks), Err(NotRested::LineComing));
+}
+
+#[test]
+fn the_operators_act_says_wait_for_its_report_only_while_the_report_is_owed() {
+    // A task still to report: TaskOpen, whose words ask the person to wait for it.
+    let owed = Facts {
+        tasks: vec![task(TaskState::Running)],
+        ..at_rest()
+    };
+    assert_eq!(by_hand(&owed), Err(NotRested::TaskOpen));
+    // One that reported, or ended, with its row still open: nothing to wait for.
+    for over in [
+        task(TaskState::Reported(None)),
+        task(TaskState::Ended),
+        Task {
+            state: TaskState::ReportedStillRunning(Some(Outcome::Done)),
+            hibernated: true,
+        },
+    ] {
+        let facts = Facts {
+            tasks: vec![over],
+            ..at_rest()
+        };
+        assert_eq!(
+            by_hand(&facts),
+            Err(NotRested::FinishedTaskOpen),
+            "{over:?}"
+        );
+    }
 }

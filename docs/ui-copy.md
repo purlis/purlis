@@ -125,23 +125,25 @@ SC-4c), for the person's Hibernate and, later, for the app's own; the window wor
 `app/src/hibernationWords.ts`. Each says what happened, then what to do where there is
 something to do:
 
-| Reason                                    | Words                                                                                                    |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Not at a turn boundary                    | _Not hibernated: this chat is not at the end of a turn. Hibernate it once its turn ends._                |
-| Asking                                    | _Not hibernated: this chat is asking you something. Answer it first._                                    |
-| Paused                                    | _Not hibernated: this chat is paused. Let it go on first._                                               |
-| Hibernated already                        | _Not hibernated: this chat is already hibernated. Resume it to go on._                                   |
-| Ended                                     | _Not hibernated: this chat has ended._                                                                   |
-| Cannot resume by itself                   | _Not hibernated: this chat's harness cannot resume a conversation by itself._                            |
-| purlis cannot see its background work     | _Not hibernated: purlis cannot see the background work this chat's harness leaves running._              |
-| Background work running                   | _Not hibernated: this chat has background work running. Wait for it to finish._                          |
-| A dispatched task running or not reported | _Not hibernated: a task this chat dispatched is still running or has not reported. Wait for its report._ |
-| Its parent waits on its report            | _Not hibernated: this chat is a task, and the chat that dispatched it is waiting on its report._         |
-| A dispatched task                         | _Not hibernated: this chat is a dispatched task._                                                        |
-| Observed                                  | _Not hibernated: this chat is only watched here, not run by purlis._                                     |
-| A runner's chat                           | _Not hibernated: this chat runs on a runner, not on this machine._                                       |
-| A sub-agent's run                         | _Not hibernated: this is a sub-agent of a chat, not a chat of its own._                                  |
-| Looked at recently                        | _Not hibernated: someone looked at this chat or typed in it recently._                                   |
+| Reason                                    | Words                                                                                                                       |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Not at a turn boundary                    | _Not hibernated: this chat is not at the end of a turn. Hibernate it once its turn ends._                                   |
+| Asking                                    | _Not hibernated: this chat is asking you something. Answer it first._                                                       |
+| Paused                                    | _Not hibernated: this chat is paused. Let it go on first._                                                                  |
+| Hibernated already                        | _Not hibernated: this chat is already hibernated. Resume it to go on._                                                      |
+| Ended                                     | _Not hibernated: this chat has ended._                                                                                      |
+| Cannot resume by itself                   | _Not hibernated: this chat's harness cannot resume a conversation by itself._                                               |
+| purlis cannot see its background work     | _Not hibernated: purlis cannot see the background work this chat's harness leaves running._                                 |
+| Background work running                   | _Not hibernated: this chat has background work running. Wait for it to finish._                                             |
+| A line of purlis's own coming             | _Not hibernated: purlis is about to type a line into this chat, such as a task's report. Hibernate it once that turn ends._ |
+| A dispatched task running or not reported | _Not hibernated: a task this chat dispatched is still running or has not reported. Wait for its report._                    |
+| A finished task still open                | _Not hibernated: a task this chat dispatched has finished, but is still open. Close it first._                              |
+| Its parent waits on its report            | _Not hibernated: this chat is a task, and the chat that dispatched it is waiting on its report._                            |
+| A dispatched task                         | _Not hibernated: this chat is a dispatched task._                                                                           |
+| Observed                                  | _Not hibernated: this chat is only watched here, not run by purlis._                                                        |
+| A runner's chat                           | _Not hibernated: this chat runs on a runner, not on this machine._                                                          |
+| A sub-agent's run                         | _Not hibernated: this is a sub-agent of a chat, not a chat of its own._                                                     |
+| Looked at recently                        | _Not hibernated: someone looked at this chat or typed in it recently._                                                      |
 
 ## Words
 
