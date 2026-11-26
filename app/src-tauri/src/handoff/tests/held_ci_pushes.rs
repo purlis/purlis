@@ -121,6 +121,10 @@ impl Trees for Quarantined {
     fn message(&self, _: &HeadSha) -> Result<String, String> {
         Ok("Rename the CI workflow".to_owned())
     }
+    /// The tip is on its base, as a branch the quarantine fetched up to date is (#7690).
+    fn missing(&self, _: &HeadSha, _: &HeadSha) -> Result<usize, String> {
+        Ok(0)
+    }
 }
 
 /// The person's second sign-in, with the workflow permission.
@@ -198,7 +202,7 @@ struct Scene {
 
 /// A steward chat and the task it dispatched; the route knows the task's run as the session
 /// `run` gives (the task's own, unless a test says otherwise).
-fn a_task_whose_route_holds_acts(run: impl FnOnce(&Held, &Plane, u32) -> u32) -> Scene {
+fn a_task_whose_route_holds_acts(run: impl FnOnce(&Held, u32) -> u32) -> Scene {
     let plane = a_plane_with_personas();
     let host = Pretend::default();
     let (planes, id, steward) = a_steward_chat(&host, &plane);
@@ -206,7 +210,7 @@ fn a_task_whose_route_holds_acts(run: impl FnOnce(&Held, &Plane, u32) -> u32) ->
     let task = a_task_of(&held, &id, steward, "push the nextest config");
     let forge = Arc::new(Forge::default());
     held.held_acts().set_context(Arc::new(Context {
-        session: run(&held, &plane, task),
+        session: run(&held, task),
         forge: forge.clone(),
     }));
     let sink = crate::forgewiring::sink_of(&held).expect("held acts are on");
@@ -222,42 +226,8 @@ fn a_task_whose_route_holds_acts(run: impl FnOnce(&Held, &Plane, u32) -> u32) ->
 }
 
 /// The task's own run.
-fn the_task(_: &Held, _: &Plane, task: u32) -> u32 {
+fn the_task(_: &Held, task: u32) -> u32 {
     task
-}
-
-/// A grade's chat in the same project, which the window draws nowhere: started as
-/// `curation::start_graded` starts it, in the folder a grade lays out for its arm
-/// (`skillgrade`'s `lay_out_arm`), since a grade's chat starts nowhere else.
-fn a_graded_chat(held: &Held, plane: &Plane, _: u32) -> u32 {
-    let arm = purlis_core::skills::verbs::drafts::lay_out_arm(&plane.root, None)
-        .expect("a grade's arm is laid out");
-    let start = purlis_core::start::Start {
-        profile: Some("work".to_owned()),
-        name: "1".to_owned(),
-        cwd: Some(arm.piece),
-        // Made as `curation::start_graded` makes it, so where purlis wraps a Claude Code chat it
-        // reads the level [`Plane::new`] switched off there (ADR 0067 as amended 2026-11-10).
-        made: purlis_core::sandbox::Made::Window,
-        ..Default::default()
-    };
-    let ready = purlis_core::skills::grades::ready_to_grade_on(&start, &plane.root, None)
-        .expect("the grade's chat starts");
-    let chat = Chat {
-        program: ready.program.clone(),
-        cwd: ready.cwd.clone(),
-        name: "1".to_owned(),
-        resume: ready.session.clone(),
-        profile: Some("work".to_owned()),
-        graded: true,
-        ..Default::default()
-    };
-    let session = held
-        .chats()
-        .start_ready(&chat, &ready, STARTING)
-        .expect("it runs");
-    assert!(held.chats().kept_from_the_window(session));
-    session
 }
 
 #[test]
@@ -327,7 +297,7 @@ fn a_held_push_the_window_cannot_show_tells_the_chat_nobody_was_asked() {
     // The route knows the run as a session the window has no chat open for.
     let Scene {
         held, forge, sink, ..
-    } = a_task_whose_route_holds_acts(|_, _, _| 999);
+    } = a_task_whose_route_holds_acts(|_, _| 999);
 
     let said = sink.ask(&ChatId::new("task-run"), &the_push());
 
@@ -342,21 +312,43 @@ fn a_held_push_the_window_cannot_show_tells_the_chat_nobody_was_asked() {
 }
 
 #[test]
-fn a_held_push_of_a_graded_chat_the_window_draws_nowhere_tells_it_nobody_was_asked() {
-    let Scene {
-        held, forge, sink, ..
-    } = a_task_whose_route_holds_acts(a_graded_chat);
+fn a_held_push_of_a_graded_chat_the_window_draws_nowhere_is_shown_nowhere_and_nothing_waits() {
+    // A grade's chat cannot start in this plane (a grade runs only in the full sandbox), so
+    // this asks one level down: a chat whose record is a grade's, open but drawn nowhere.
+    let Scene { held, .. } = a_task_whose_route_holds_acts(the_task);
+    let start = purlis_core::start::Start {
+        profile: Some("work".to_owned()),
+        name: "1".to_owned(),
+        cwd: Some(held.root().join("workspaces").join("alpha")),
+        ..Default::default()
+    };
+    let ready = purlis_core::start::ready(&start, held.root()).expect("the chat starts");
+    let graded = held
+        .chats()
+        .start_ready(
+            &Chat {
+                program: ready.program.clone(),
+                cwd: ready.cwd.clone(),
+                name: "1".to_owned(),
+                resume: ready.session.clone(),
+                profile: Some("work".to_owned()),
+                graded: true,
+                ..Default::default()
+            },
+            &ready,
+            STARTING,
+        )
+        .expect("it runs");
 
-    let said = sink.ask(&ChatId::new("task-run"), &the_push());
+    let shown = crate::heldacts::shown_in(&held, graded);
 
-    assert!(!said.contains("It has asked the person"), "{said}");
-    assert!(said.contains("not drawn in the window"), "{said}");
+    let why = shown.expect_err("a grade's chat has no Asks to show it in");
+    assert!(why.contains("not drawn in the window"), "{why}");
     assert!(
         held.held_acts().waiting().is_empty(),
         "an ask nobody can see does not wait"
     );
     assert!(crate::asking::counted(&held).asks.is_empty());
-    assert!(forge.pushed.lock().unwrap().is_empty());
 }
 
 #[test]
