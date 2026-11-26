@@ -134,7 +134,9 @@ action".
 - deleting, renaming or transferring the repo, changing its visibility, and its settings;
 - commits and ref writes through the API: `git/refs`, `git/commits`, `git/trees`, `git/blobs`,
   `git/tags`, `contents` and GitLab's `repository/files` and `repository/commits` writes, and
-  `merge-upstream`. Code moves only by push (D3f, D8.3);
+  `merge-upstream`. Code moves only by push (D3f, D8.3). The one exception is a new tag's
+  creation (`git/refs` naming `refs/tags/…`, `git/tags`, GitLab's `repository/tags`), which is
+  `guards.release`'s and held (§7);
 - auto-merge, a branch merge with no pull request (`POST merges`, `mergeBranch`), and a merge
   command in text;
 - credentials in a request, and the OAuth and device flows;
@@ -151,10 +153,11 @@ asked.
 
 - The route's merges are decided by `guards.merge`'s `merge` action, the same decision the hook
   makes, with `context.owner` (M75-26). They are not `guards.forge` actions.
-- Release and tag creation through the API are decided by `guards.release`. They stay held for
+- Release and tag creation through the API (a release, and a new tag: never a moved one) are
+  decided by `guards.release`. They stay held for
   the person's press (D8.2) whatever `guards.release` says: `guards.release = "off"` never opens
   API tag or release creation (M75-27).
-- No ref-writing API route maps to a forge action (§6).
+- No ref-writing API route maps to a `guards.forge` action (§6).
 
 ### 8. Tracker writes
 
