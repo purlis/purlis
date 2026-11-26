@@ -370,6 +370,43 @@ jobs:
         env:
           CHARTER_STANDING_FILES: "300000"
 
+  event-log-throughput:
+    # T1 (#7742): the event log keeps 1,000 events a second, sustained, from the 50 hook threads
+    # of the top class's hot chats, with each write's p95 inside L5's 50 ms. **CI absolute: a
+    # miss fails this job** (ADR 0086 §1: a timing whose budget is many times its median), so it
+    # has no `continue-on-error`. Linux only, as the budgets table says. Like `fifty tabs`, it
+    # runs on `main`, nightly and by hand, never on a pull request: it sustains its load for ten
+    # seconds on a shared runner. T2 has no step yet: its subject, the audit's writer (AU-3), is
+    # not written (ADR 0075 §7), and the test's own header says so.
+    name: event log throughput (T1, ubuntu-24.04)
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/rust-toolchain
+      # `search at scale`'s release build of purlis-core's tests, restored and not saved.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: false
+      # `shell: bash` for `pipefail`, so the test's own failure is the step's.
+      - name: 1,000 events a second into the event log, each write inside L5
+        shell: bash
+        run: |
+          tools/tests-ran.sh -- cargo test --release -p purlis-core --test it -- the_event_log_keeps_a_thousand_events_a_second:: --ignored --nocapture 2>&1 | tee t1.log
+      - name: The numbers, in the job summary
+        if: always()
+        shell: bash
+        run: |
+          touch t1.log
+          {
+            echo '### Event log throughput (T1, CI absolute)'
+            echo
+            echo '```text'
+            grep -e '^T1 | ' -e '^T1: ' -e '^L5 at ' t1.log || echo 'no measurement: the run stopped before one'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   search-at-scale:
     # FM-12 (#1115): ⌘P, ⌘⇧F and a branch's status on generated repos of 100,000 and 300,000
     # files, held to `docs/spec.md`'s rows G2–G4 (ADR 0086 L1's 50 ms for a ⌘P keystroke). It
