@@ -38,6 +38,22 @@ const BOTH: &str = r#"{ a: repository(owner: "acme", name: "app") { id }
   b: repository(owner: "acme", name: "lib") { id } }"#;
 
 fn send_both(source: Source) -> Outcome {
+    send(source, &graphql(BOTH, serde_json::json!({})))
+}
+
+/// A search of both repos, as `gh pr list --search` sends one.
+fn search_both(source: Source) -> Outcome {
+    let query = "query($q: String!){ search(query: $q, type: ISSUE, first: 30) { issueCount } }";
+    send(
+        source,
+        &graphql(
+            query,
+            serde_json::json!({"q": "repo:acme/app repo:acme/lib is:pr"}),
+        ),
+    )
+}
+
+fn send(source: Source, body: &[u8]) -> Outcome {
     let proxy = ForgeProxy::new(Box::new(source), Box::new(Objects::default()));
     let chat = ChatId::new("chat");
     let sentinel = proxy.enrol(
@@ -50,13 +66,12 @@ fn send_both(source: Source) -> Outcome {
     let head = RequestHead::new("POST", "api.github.com", 443, "/graphql");
     let mut h = headers(Auth::Bearer(sentinel.expose()));
     h.push(("Content-Type".into(), "application/json".into()));
-    let body = graphql(BOTH, serde_json::json!({}));
     proxy.handle(
         &chat,
         &Inbound {
             head: &head,
             headers: &h,
-            body: &body,
+            body,
         },
     )
 }
@@ -79,6 +94,28 @@ fn two_accounts_holding_equal_token_bytes_do_not_serve_one_document() {
     let out = send_both(Source {
         asked: AtomicUsize::new(0),
         token: |_, _| "the-same-bytes".to_owned(),
+        account: |repo| Some(format!("account-of-{repo}")),
+    });
+    assert!(!matches!(out, Outcome::Forward(_)), "{out:?}");
+}
+
+#[test]
+fn a_search_of_two_recorded_repos_is_sent_when_one_account_serves_both() {
+    purlis_core::unsteered!();
+    let out = search_both(Source {
+        asked: AtomicUsize::new(0),
+        token: |_, _| "one-token".to_owned(),
+        account: |_| Some("account-1".to_owned()),
+    });
+    assert!(matches!(out, Outcome::Forward(_)), "{out:?}");
+}
+
+#[test]
+fn a_search_of_two_recorded_repos_on_two_accounts_is_not_sent() {
+    purlis_core::unsteered!();
+    let out = search_both(Source {
+        asked: AtomicUsize::new(0),
+        token: |_, _| "one-token".to_owned(),
         account: |repo| Some(format!("account-of-{repo}")),
     });
     assert!(!matches!(out, Outcome::Forward(_)), "{out:?}");

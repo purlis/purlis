@@ -60,6 +60,10 @@ pub struct Sessions {
     ended: Mutex<Option<Ends>>,
     /// The kill switch (OV-1): while it is thrown no chat opens, whatever asked.
     kill_switch: Arc<crate::killswitch::KillSwitch>,
+    /// How many notes of a program's strays are being listed on their threads, for a test to wait
+    /// on instead of a sleep (#7431).
+    #[cfg(test)]
+    noting: Arc<(Mutex<usize>, std::sync::Condvar)>,
 }
 
 struct Running {
@@ -85,6 +89,8 @@ impl Sessions {
             reporting,
             ended: Mutex::new(None),
             kill_switch: crate::killswitch::KillSwitch::unthrown(),
+            #[cfg(test)]
+            noting: Arc::default(),
         }
     }
 
@@ -382,9 +388,41 @@ impl SessionHost for Sessions {
         let Ok(program) = self.with(id, |running| Ok(running.session.program())) else {
             return;
         };
-        let _ = std::thread::Builder::new()
+        #[cfg(test)]
+        let noting = {
+            *lock(&self.noting.0) += 1;
+            Arc::clone(&self.noting)
+        };
+        let spawned = std::thread::Builder::new()
             .name("charter-noting-strays".into())
-            .spawn(move || program.note_strays());
+            .spawn(move || {
+                program.note_strays();
+                #[cfg(test)]
+                {
+                    *lock(&noting.0) -= 1;
+                    noting.1.notify_all();
+                }
+            });
+        #[cfg(test)]
+        if spawned.is_err() {
+            *lock(&self.noting.0) -= 1;
+        }
+        let _ = spawned;
+    }
+
+    /// Returns once every note of strays asked so far has been listed and joined to its
+    /// program's (#7431): a test's wait that is the thing itself, where a sleep was a guess at
+    /// how long a loaded runner takes.
+    #[cfg(test)]
+    fn notes_have_settled(&self) {
+        let mut noting = lock(&self.noting.0);
+        while *noting > 0 {
+            noting = self
+                .noting
+                .1
+                .wait(noting)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
     }
 
     fn hold(&self, id: u32, still: bool) {
@@ -1034,8 +1072,9 @@ mod tests {
     fn a_chats_git_is_armed_after_the_git_config_pair_its_profile_sets() {
         let sessions = Sessions::new();
         let mut opening = opening(
-            "printf 'git<%s|%s|%s|%s|%s>' \"$GIT_CONFIG_COUNT\" \"$GIT_CONFIG_KEY_0\" \
-             \"$GIT_CONFIG_VALUE_0\" \"$GIT_CONFIG_KEY_1\" \"$GIT_CONFIG_VALUE_1\"; exec sleep 600",
+            "printf 'git<%s|%s|%s|%s|%s|%s|%s>' \"$GIT_CONFIG_COUNT\" \"$GIT_CONFIG_KEY_0\" \
+             \"$GIT_CONFIG_VALUE_0\" \"$GIT_CONFIG_KEY_1\" \"$GIT_CONFIG_KEY_2\" \
+             \"$GIT_CONFIG_KEY_3\" \"$GIT_CONFIG_VALUE_3\"; exec sleep 600",
         );
         opening.env = vec![
             ("GIT_CONFIG_COUNT".to_owned(), "1".to_owned()),
@@ -1064,7 +1103,7 @@ mod tests {
 
         assert_eq!(
             said,
-            "2|user.signingKey|ABC|core.hooksPath|/app/data/git-hooks"
+            "4|user.signingKey|ABC|gc.auto|maintenance.auto|core.hooksPath|/app/data/git-hooks"
         );
     }
 
@@ -1234,6 +1273,8 @@ mod tests {
             .iter()
             .filter(|name| {
                 !THE_SHELLS_OWN.contains(&name.as_str())
+                    // The chat's own no-gc git config (#7531), composed, not inherited.
+                    && !name.starts_with("GIT_CONFIG_")
                     && !purlis_core::chatenv::PASSED.iter().any(|pattern| {
                         match pattern.strip_suffix('*') {
                             Some(prefix) => name.starts_with(prefix),

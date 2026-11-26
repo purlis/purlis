@@ -94,7 +94,7 @@ export function youGroups(plane?: string): SettingsGroup[] {
     thisMachineGroup(),
     browserLimitsGroup(),
     poolsGroup(plane),
-    accountsGroup(),
+    accountsGroup(plane),
     ...(plane === undefined ? [] : [readinessGroup(plane)]),
     profilesGroup(plane),
   ];

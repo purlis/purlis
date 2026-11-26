@@ -170,6 +170,10 @@ impl Drop for Forward {
 /// ssh said, where ssh ends before its socket is made: a machine that presents another key than
 /// the pinned one is refused by ssh itself.
 pub fn open(from: &Opening<'_>) -> Result<Held, String> {
+    purlis_session_protocol::steps::begin_in("ssh_forward_open", from.pool).ended(opened(from))
+}
+
+fn opened(from: &Opening<'_>) -> Result<Held, String> {
     let socket = super::socket_of(from.engine_links, from.pool)?;
     let folder = socket
         .parent()

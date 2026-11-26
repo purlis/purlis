@@ -612,6 +612,13 @@ fn report_in(
         .chain(config_root.and_then(|config_root| local_project(root, config_root)))
         .chain(forge_route(root))
         .chain(forge_refusals(root))
+        // A walk of every workspace's clones, so only the full doctor makes it, not the
+        // preflight at project open.
+        .chain(
+            config_root
+                .filter(|_| full)
+                .and_then(|config_root| unconfirmed_clones(root, config_root)),
+        )
         .chain(
             config_root
                 .map(purlis_core::pools::cluster_deletion_notices)
@@ -671,6 +678,35 @@ fn forge_refusals(root: &std::path::Path) -> Option<DoctorRow> {
 #[cfg(not(feature = "forge-wiring"))]
 fn forge_refusals(_: &std::path::Path) -> Option<DoctorRow> {
     None
+}
+
+/// `forge confirmation`: clones the person trusted that are not confirmed with the forge, which no
+/// chat's route serves until the person confirms them (Settings › You › Accounts). None when
+/// there is nothing to confirm.
+fn unconfirmed_clones(root: &std::path::Path, config_root: &std::path::Path) -> Option<DoctorRow> {
+    let clones = crate::onelogin::unconfirmed_in(root, config_root);
+    if clones.is_empty() {
+        return None;
+    }
+    let names: Vec<&str> = clones.iter().map(|c| c.folder.as_str()).collect();
+    Some(DoctorRow {
+        name: "forge confirmation".to_owned(),
+        status: DoctorStatus::Warn,
+        detail: format!(
+            "{} not confirmed with the forge, so chats cannot use {}: {}",
+            if clones.len() == 1 {
+                "A clone you trusted is"
+            } else {
+                "Clones you trusted are"
+            },
+            if clones.len() == 1 { "it" } else { "them" },
+            purlis_core::personas::one_line(&names.join(", ")),
+        ),
+        hint: "open Settings › You › Accounts and press Confirm on each".to_owned(),
+        checked: true,
+        settings: None,
+        fix: None,
+    })
 }
 
 /// `chat footer`: can the chats this app starts record what a turn cost?
@@ -946,6 +982,9 @@ fn runner_to_be_deleted(pool: &str, said: String) -> DoctorRow {
         fix: None,
     }
 }
+
+#[cfg(test)]
+mod confirmation_tests;
 
 #[cfg(test)]
 mod tests {

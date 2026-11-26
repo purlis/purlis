@@ -169,11 +169,23 @@ impl Recorded for ConfirmedRecorded {
                 purlis_core::forge::Kind::GitHub => Kind::GitHub,
                 purlis_core::forge::Kind::GitLab => Kind::GitLab,
             };
+            // The default branch is read here, once, when the route is built (#7526): a repo whose
+            // default is renamed mid-run keeps the old name until the next route. The ownership gate
+            // on update-branch and rebase does not rest on it, so a stale name only widens what
+            // `protects` names. `with_protected_branches` has no caller: the forge read carries no
+            // branch-protection rules, and the gate refuses every branch the chat has no tip on.
             let Ok(allowed) = AllowedRepo::new(kind, &host, port, &repo.path, &read.default_branch)
             else {
                 continue;
             };
-            let mut allowed = allowed.with_forge_id(repo.forge_id());
+            // The project's protected branches (`[risk] protected_branches`, read from `HEAD` and
+            // never fewer than the person accepted), beside the route's built-in ones: no push of
+            // a chat reaches them, a lineage push included.
+            let committed = purlis_core::askrisk::committed_protected_branches(project);
+            let committed: Vec<&str> = committed.iter().map(String::as_str).collect();
+            let mut allowed = allowed
+                .with_forge_id(repo.forge_id())
+                .with_protected_branches(&committed);
             if let Some(node) = &read.node_id {
                 allowed = allowed.with_node_id(node);
             }
@@ -189,7 +201,7 @@ impl Recorded for ConfirmedRecorded {
 
     /// The tip `chat` last put on `branch`: the app's own record under the machine config root
     /// ([`purlis_core::forge::createdbranches`]), read now, keyed by the project's stable id and
-    /// the forge's id of the repo. A project with no stored id owns none.
+    /// the forge's id of the repo. The id is the one the session host holds the project by, so a plane with no stored `[project] id` owns its chats' branches too.
     fn own_tip(
         &self,
         project: &Path,
@@ -198,19 +210,29 @@ impl Recorded for ConfirmedRecorded {
         repo_id: u64,
         branch: &str,
     ) -> Option<String> {
-        let project_id = purlis_core::scaffold::planefile::project_id(project)?;
-        purlis_core::forge::createdbranches::tip_of(
+        let project_id = purlis_core::scaffold::planefile::id_to_hold_by(project).ok()?;
+        // The branch purlis cut for an ended direct child of the same workspace and persona is its
+        // parent's to follow up too (ADR 0128, amended 2026-11-24), from the app's own dispatch
+        // records and `[policy] lineage` (an allowance, denied by `deny`, a lock or a value that
+        // does not read; read only when the branch is another chat's), never a file a chat writes.
+        purlis_core::forge::createdbranches::tip_for(
             &self.config_root,
             &project_id,
             chat,
             host,
             repo_id,
             branch,
+            &|owner| purlis_core::dispatchrecord::lineage_allows(project, chat, owner, branch),
         )
     }
 
+    fn branch_owner(&self, host: &str, repo_id: u64, branch: &str) -> Option<String> {
+        purlis_core::forge::createdbranches::owner_of(&self.config_root, host, repo_id, branch)
+            .map(|(_, chat, _)| chat)
+    }
+
     fn own_branches(&self, project: &Path, chat: &str, host: &str, repo_id: u64) -> Vec<String> {
-        let Some(project_id) = purlis_core::scaffold::planefile::project_id(project) else {
+        let Ok(project_id) = purlis_core::scaffold::planefile::id_to_hold_by(project) else {
             return Vec::new();
         };
         purlis_core::forge::createdbranches::created_by(
@@ -223,15 +245,16 @@ impl Recorded for ConfirmedRecorded {
     }
 
     fn record_created(&self, project: &Path, chat: &str, created: &[CreatedBranch]) {
-        let Some(project_id) = purlis_core::scaffold::planefile::project_id(project) else {
+        let Ok(project_id) = purlis_core::scaffold::planefile::id_to_hold_by(project) else {
             tracing::warn!("purlis: a branch a chat created was not recorded: no project id");
             return;
         };
-        if let Err(why) = purlis_core::forge::createdbranches::record(
+        if let Err(why) = purlis_core::forge::createdbranches::record_via(
             &self.config_root,
             &project_id,
             chat,
             created,
+            Some(purlis_core::forge::createdbranches::Via::Route),
         ) {
             // Unrecorded, the route refuses every later update to the branch: safe, and said here.
             tracing::warn!("purlis: a branch a chat created was not recorded ({why})");
@@ -284,5 +307,135 @@ impl Gate for ChatGate {
 
     fn credential(&self, request: &CredentialRequest) -> Result<Credential, CredentialError> {
         self.route.credential_for(request)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The route's record of a branch a chat made, for a project that stores no `[project] id`
+    /// (a plane): the same id keys the write and every read.
+    #[test]
+    fn a_project_with_no_stored_id_owns_the_branches_its_chats_make() {
+        let config = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        assert!(purlis_core::scaffold::planefile::project_id(project.path()).is_none());
+        let recorded = ConfirmedRecorded::new(config.path().to_owned());
+        let tip = "1".repeat(40);
+        recorded.record_created(
+            project.path(),
+            "chat-1",
+            &[CreatedBranch {
+                host: "github.com".into(),
+                repo: "acme/app".into(),
+                repo_id: Some(7),
+                branch: "mine".into(),
+                tip: tip.clone(),
+            }],
+        );
+
+        let own =
+            |chat: &str, project: &Path| recorded.own_tip(project, chat, "github.com", 7, "mine");
+        assert_eq!(own("chat-1", project.path()), Some(tip));
+        assert_eq!(
+            recorded.own_branches(project.path(), "chat-1", "github.com", 7),
+            ["mine"]
+        );
+        // Another chat, and another project, own nothing.
+        assert_eq!(own("chat-2", project.path()), None);
+        let other = tempfile::tempdir().unwrap();
+        assert_eq!(own("chat-1", other.path()), None);
+    }
+
+    /// The route's own closure (`own_tip`, what `with_tips` calls at every update): a parent takes
+    /// up the branch purlis cut for its ended direct child (ADR 0128, amended 2026-11-24), and
+    /// nothing wider, through the production wiring and the app's own dispatch records.
+    #[test]
+    fn a_parent_takes_up_its_ended_childs_cut_branch_through_the_routes_own_tip() {
+        use purlis_core::dispatchrecord::{
+            self, Asker, ChatRef, Ending, Mode, Opening, Place, Worker, Worktree,
+        };
+        use purlis_core::forge::createdbranches::{self, Via};
+
+        let config = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let project = std::fs::canonicalize(dir.path()).unwrap();
+        let recorded = ConfirmedRecorded::new(config.path().to_owned());
+        let chat = |id: &str| ChatRef {
+            chat: 1,
+            id: Some(id.to_owned()),
+            name: "a chat".into(),
+            persona: Some("builder".into()),
+        };
+        let now = "2026-11-24T10:00:00Z".parse().unwrap();
+        let task = dispatchrecord::open(
+            &project,
+            Opening {
+                mode: Mode::Task,
+                asker: Asker {
+                    chat: chat("parent"),
+                    workspace: Some("alpha".into()),
+                    ..Asker::default()
+                },
+                persona: Some("builder".into()),
+                worker: Worker {
+                    chat: chat("child"),
+                    ..Worker::default()
+                },
+                task: None,
+                place: Place {
+                    workspace: Some("alpha".into()),
+                    folder: None,
+                    worktree: Some(Worktree {
+                        repo: "app".into(),
+                        piece: "work".into(),
+                        branch: Some("task/work".into()),
+                        removed: None,
+                    }),
+                },
+                brief: "do it".into(),
+                report_owed: true,
+            },
+            now,
+        )
+        .unwrap();
+        let made = |branch: &str| CreatedBranch {
+            host: "github.com".into(),
+            repo: "acme/app".into(),
+            repo_id: Some(7),
+            branch: branch.into(),
+            tip: "1".repeat(40),
+        };
+        // The child's confirmed pushes, as `record_created` writes them (the route's).
+        recorded.record_created(&project, "child", &[made("task/work"), made("task/other")]);
+        let tip =
+            |chat: &str, branch: &str| recorded.own_tip(&project, chat, "github.com", 7, branch);
+
+        // A running child: nothing.
+        assert_eq!(tip("parent", "task/work"), None);
+        assert!(dispatchrecord::close(&project, &task.id, Ending::default(), now).unwrap());
+        // Ended: the parent follows up the branch purlis cut, and no other the child made.
+        assert_eq!(tip("parent", "task/work"), Some("1".repeat(40)));
+        assert_eq!(tip("parent", "task/other"), None);
+        // Not a stranger; the child keeps its own line.
+        assert_eq!(tip("stranger", "task/work"), None);
+        assert_eq!(
+            tip("child", "task/work"),
+            Some("1".repeat(40)),
+            "its own line"
+        );
+
+        // The person's Allow on the branch is never lineage: the parent has no way to chain it.
+        let project_id = purlis_core::scaffold::planefile::id_to_hold_by(&project).unwrap();
+        createdbranches::record_via(
+            config.path(),
+            &project_id,
+            "child",
+            &[made("task/work")],
+            Some(Via::Allow),
+        )
+        .unwrap();
+        assert_eq!(tip("parent", "task/work"), None);
     }
 }

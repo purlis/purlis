@@ -186,6 +186,9 @@ const ALLOWED_IN_CORE: &[&str] = &[
 /// The window's own files, under `app/src-tauri/src`, that call a provisioning entry point: the
 /// presses. Any other file of the app naming one is a source that is not the window's press.
 const ALLOWED_IN_APP: &[&str] = &[
+    // The person's Allow on Let this chat push a branch it has no record of (ADR 0128, amended
+    // 2026-11-23): it records an owner under the person's own scope, as a press must.
+    "chatpush.rs",
     "clonevouch.rs",
     "createproject.rs",
     "forgeaccounts.rs",

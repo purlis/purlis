@@ -81,11 +81,11 @@ pub use commands::has_merge_command;
 pub use endpoint::UnixEndpoint;
 pub use endpoint::{ChatEndpoint, EndpointKind, LoopbackEndpoint, pick_endpoint};
 pub use graphql::mutation_repo;
-pub use held::{Held, HeldSink};
+pub use held::{BranchAsk, Held, HeldSink};
 pub use policy::{
     Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, GITLAB_COM, GithubAlias,
-    NoObjects, ObjectRepo, RecordedBranches, Refusal, TipSource, TouchedRepo, is_ci_storage_host,
-    is_download_host, is_gitlab_ci_storage,
+    NoObjects, NotYours, ObjectRepo, PullHead, PullRef, RecordedBranches, Refusal, TipSource,
+    TouchedRepo, is_ci_storage_host, is_download_host, is_gitlab_ci_storage,
 };
 pub use repo::{AddressError, AllowedRepo, ForgeRepoId, Kind};
 pub use request::RequestHead;
@@ -337,6 +337,8 @@ pub struct ForgeProxy {
     objects: Box<dyn ObjectRepo>,
     audit: AuditLog,
     held: Option<Box<dyn HeldSink>>,
+    /// Where the ask to let a chat push a branch it has no record of is raised.
+    branch_ask: Option<Box<dyn BranchAsk>>,
     /// The administrator's never-allow pin, asked on every request and connection (D3g).
     pin: Arc<dyn pin::Pin>,
     /// How `guards.merge` runs, asked on every merge a chat sends (ADR 0128 D8, 2026-11-22).
@@ -367,6 +369,7 @@ impl ForgeProxy {
             objects,
             audit: AuditLog::default(),
             held: None,
+            branch_ask: None,
             pin: Arc::new(pin::NoPin),
             merges: Arc::new(mergestance::HoldMerges),
             created: None,
@@ -459,6 +462,14 @@ impl ForgeProxy {
     #[must_use]
     pub fn with_held(mut self, sink: Box<dyn HeldSink>) -> Self {
         self.held = Some(sink);
+        self
+    }
+
+    /// Raise an ask, through `sink`, for a push refused only because its branch is not the chat's
+    /// ([`Refusal::NotYourBranch`]). Without one the push is refused as it was, with no ask.
+    #[must_use]
+    pub fn with_branch_ask(mut self, sink: Box<dyn BranchAsk>) -> Self {
+        self.branch_ask = Some(sink);
         self
     }
 
@@ -555,6 +566,16 @@ impl ForgeProxy {
             .unwrap_or_else(PoisonError::into_inner)
             .remove(chat);
         self.sentinels.revoke(chat);
+    }
+
+    /// Whether `host` is the API host of one of `chat`'s GitHub repos on port 443 (see
+    /// [`ChatPolicy::is_github_api_host`]).
+    pub fn is_github_api_host(&self, chat: &ChatId, host: &str) -> bool {
+        self.policies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(chat)
+            .is_some_and(|policy| policy.is_github_api_host(host))
     }
 
     /// Where `github.localhost` leads for `chat` (`gh`'s `GH_HOST`, on its unix socket): the one
@@ -696,6 +717,25 @@ impl ForgeProxy {
         let mut allowed = match decision {
             Decision::Allow(allowed) => allowed,
             Decision::Refuse(refusal) => {
+                // A GraphQL merge, auto-merge or merge-queue mutation of a pull request the forge
+                // names is held like a REST merge is (#7543): the person's Merge press performs
+                // it, and nothing of the document is forwarded. Where the pull request cannot be
+                // named, the chat is refused and told why.
+                if sentinel.is_ok()
+                    && refusal == Refusal::Merge
+                    && let Some(sink) = &self.held
+                    && let Some(named) = policy.held_graphql_merge(&head, inbound.body, objects)
+                {
+                    let said = match named {
+                        Ok(requested) => sink.ask(chat, &requested),
+                        Err(why) => format!(
+                            "purlis holds merges. Nobody was asked, so the merge will not happen: {why}."
+                        ),
+                    };
+                    self.audit
+                        .record(chat, inbound.head, None, Verdict::Refused(refusal));
+                    return Outcome::Held(Held { refusal, said });
+                }
                 // Only a chat that proved itself asks, and only for a held route.
                 if sentinel.is_ok()
                     && held::is_a_held_route(refusal)
@@ -707,6 +747,21 @@ impl ForgeProxy {
                         refusal,
                         said: told,
                     });
+                }
+                // Only a chat that proved itself asks, and only for a branch the policy read
+                // from this push as unowned and unprotected.
+                if sentinel.is_ok()
+                    && refusal == Refusal::NotYourBranch
+                    && let Some(sink) = &self.branch_ask
+                {
+                    let unowned = policy.unowned_updates(&head, inbound.body);
+                    if !unowned.is_empty()
+                        && let Some(said) = sink.ask(chat, &unowned)
+                    {
+                        self.audit
+                            .record(chat, inbound.head, None, Verdict::Refused(refusal));
+                        return Outcome::Held(Held { refusal, said });
+                    }
                 }
                 return self.refuse(chat, inbound, None, refusal);
             }
@@ -894,6 +949,32 @@ fn apply_canonical(headers: &mut Vec<(String, String)>, allowed: &Allowed) {
         headers.push(("Content-Type".to_string(), media));
     }
     headers.push(("Content-Length".to_string(), body.len().to_string()));
+}
+
+/// Which check found `inbound` malformed, in the words a chat is told after `MalformedRequest`:
+/// the checks [`ForgeProxy::handle`] makes, in its order, and otherwise the policy's reading of
+/// the request line.
+pub(crate) fn malformed_because(inbound: &Inbound<'_>) -> &'static str {
+    if !framing_is_unambiguous(inbound.headers) {
+        "its framing is ambiguous: more than one Content-Length, one that is not a number, a \
+         Transfer-Encoding other than one chunked, or both"
+    } else if inbound
+        .headers
+        .iter()
+        .any(|(n, _)| n.is_empty() || n.contains('_'))
+    {
+        "a header name is empty or has an underscore in it"
+    } else if !header_names_are_plain(inbound.headers) {
+        "it has more than one Content-Type"
+    } else if !host_agrees(inbound) {
+        "its Host header does not name the host and port it was sent to"
+    } else if has_header(inbound.headers, "content-encoding")
+        && request::parse_target(&inbound.head.target).is_ok()
+    {
+        "it has a Content-Encoding, which only a git fetch may send"
+    } else {
+        "its method, host, path, query or body cannot be read one way"
+    }
 }
 
 /// A header name is a token, and a forge's front end may read `Content_Type` as `Content-Type`

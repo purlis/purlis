@@ -212,8 +212,10 @@ impl ToARunner {
             // amended 2026-10-17, item 2): anything else refuses the link and runs nothing.
             Arc::new(move || {
                 if let Some((local, pool)) = &forwarding {
-                    purlis_core::sshroute::pool::docker_of_named(&config, local, pool)
-                        .map_err(NotChecked::Refused)?;
+                    // A machine that answers and refuses is not dialled again on a timer
+                    // (#7187): the link says why once, and Check pool says what changed.
+                    purlis_core::sshroute::pool::docker_of_named_in_state(&config, local, pool)
+                        .map_err(|(why, state)| not_checked_as(why, state))?;
                 }
                 let checked = checked_or_woken(&checking, &config, &of, resumes);
                 // A refusal of a container Docker no longer lists is a runner removed outside
@@ -223,9 +225,9 @@ impl ToARunner {
                 checked.map_err(|why| match checking.missing(&made, of.engine.as_deref()) {
                     Ok(Some(Missing::Removed(gone))) => NotChecked::Gone(gone_said(&of, gone)),
                     Ok(Some(Missing::OnAnotherEngine)) => {
-                        NotChecked::Refused(on_another_engine_said(&of))
+                        NotChecked::Unreachable(on_another_engine_said(&of))
                     }
-                    _ => NotChecked::Refused(why.0),
+                    _ => NotChecked::Unreachable(why.0),
                 })
             }),
         )
@@ -301,7 +303,11 @@ impl ToARunner {
 
     /// A link kept to the runner for as long as what it answers is held
     /// ([`hostlink::keep_linked`]).
+    ///
+    /// **Try now forgets what the forward remembers of its failure** (#7187): a click dials
+    /// at once, and the 5 to 120 second wait is for purlis's own tries only.
     pub fn keep(&self) -> hostlink::Links {
+        let pool = self.pool.clone();
         hostlink::keep_linked(
             self.connector.clone(),
             Handshake::THIS_BUILD,
@@ -312,6 +318,7 @@ impl ToARunner {
             self.pinned.clone(),
             Liveness::default(),
         )
+        .with_try_now(move || purlis_core::sshroute::pool::try_now(&pool))
     }
 }
 
@@ -341,6 +348,21 @@ pub fn on_another_engine_said(kept: &Kept) -> String {
     )
 }
 
+/// **A forward's failure, said to the link by the state it puts the pool in** (#7187): a
+/// machine that does not answer is tried again; one that answers and refuses, or whose key or
+/// engine changed, is not.
+pub fn not_checked_as(
+    why: String,
+    state: purlis_core::sshroute::connect::RemoteState,
+) -> NotChecked {
+    use purlis_core::sshroute::connect::RemoteState;
+    match state {
+        RemoteState::HostKeyChanged => NotChecked::HostKeyChanged(why),
+        state if state.retries() => NotChecked::Unreachable(why),
+        _ => NotChecked::Refused(why),
+    }
+}
+
 /// **A cluster runner's check, said to the link** (#3292): a changed runner key or a changed
 /// cluster operator key is a changed key, which the window asks the person about.
 pub fn not_checked(why: purlis_core::clusterpool::Refused) -> NotChecked {
@@ -350,7 +372,7 @@ pub fn not_checked(why: purlis_core::clusterpool::Refused) -> NotChecked {
             NotChecked::KeyChanged(why.to_string())
         }
         Refused::NotVouched(_) | Refused::WaitRanOut(_) | Refused::Other(_) => {
-            NotChecked::Refused(why.to_string())
+            NotChecked::Unreachable(why.to_string())
         }
     }
 }
@@ -381,6 +403,11 @@ pub fn cluster_reached(
 /// as `<pool>/<runner>`. Only one that runs: a link wakes a suspended runner (#2051), which holds
 /// no chat. None whose drain began, which takes no link or has no chat left. Why, for one that
 /// can't be told, which says nothing of the chats it may run (#4590).
+///
+/// **Asked of the pool's own engine** (#6266, 2026-11-26), as the drain asks it: a pool on another
+/// machine is reached through its forward, and this machine's Docker answers *No such container*
+/// for each of its runners, which made every fetch of the pool fail and so no draining runner of
+/// it ever go.
 pub fn draining_to_ask(config: &Path, pool: &str) -> Vec<Result<String, String>> {
     // None of that pool drains: a machine with no Docker has nothing to say of it.
     if purlis_core::runners::draining(config)
@@ -388,13 +415,17 @@ pub fn draining_to_ask(config: &Path, pool: &str) -> Vec<Result<String, String>>
     {
         return Vec::new();
     }
-    match docker() {
+    let docker =
+        docker().and_then(|here| purlis_core::sshroute::pool::docker_of_named(config, &here, pool));
+    match docker {
         Ok(docker) => draining_to_ask_on(&docker, config, pool),
         Err(why) => vec![Err(why)],
     }
 }
 
-/// [`draining_to_ask`], through `docker`.
+/// [`draining_to_ask`], through `docker`: **each runner checked at once** (2026-11-26), so a slow
+/// or gone one adds its own wait, never the sum of all of theirs, to the restart, fetch or record
+/// that asks.
 pub(crate) fn draining_to_ask_on(
     docker: &Docker,
     config: &Path,
@@ -404,16 +435,29 @@ pub(crate) fn draining_to_ask_on(
         Ok(draining) => draining,
         Err(why) => return vec![Err(why.to_string())],
     };
-    draining
+    let asked: Vec<Kept> = draining
         .into_iter()
         .filter(|kept| kept.pool() == pool)
         .filter(|kept| !kept.unpaired && !kept.carried && !kept.carry_failed)
-        .filter_map(|kept| match docker.running(&kept.made) {
-            Ok(true) => Some(Ok(format!("{}/{}", kept.pool(), kept.name()))),
-            Ok(false) => None,
-            Err(why) => Some(Err(why.to_string())),
-        })
-        .collect()
+        .collect();
+    std::thread::scope(|scope| {
+        let checks: Vec<_> = asked
+            .iter()
+            .map(|kept| (kept, scope.spawn(|| docker.running(&kept.made))))
+            .collect();
+        checks
+            .into_iter()
+            .filter_map(|(kept, check)| match check.join() {
+                Ok(Ok(true)) => Some(Ok(format!("{}/{}", kept.pool(), kept.name()))),
+                Ok(Ok(false)) => None,
+                Ok(Err(why)) => Some(Err(why.to_string())),
+                Err(_) => Some(Err(format!(
+                    "whether runner {} runs could not be read",
+                    kept.name()
+                ))),
+            })
+            .collect()
+    })
 }
 
 /// This machine's `docker`, where the window's `PATH` or Docker's installers put it.
@@ -660,7 +704,9 @@ pub fn count_of(
             u32::try_from(listed.iter().filter(|program| !program.ended).count())
                 .unwrap_or(u32::MAX),
         ),
-        Err(PoolLink::Down { why }) => Err(crate::devices::shown_safely(&why)),
+        Err(
+            PoolLink::Down { why } | PoolLink::Refused { why } | PoolLink::HostKeyChanged { why },
+        ) => Err(crate::devices::shown_safely(&why)),
         Err(PoolLink::KeyChanged) => {
             Err("the runner answered with another key than the one pinned for it".to_owned())
         }
@@ -703,7 +749,9 @@ fn on_one_link_within<T>(
         .build()
         .map_err(|why| format!("the link could not be started: {why}"))?;
     runtime.block_on(async move {
-        let mut links = to.keep();
+        let step = purlis_session_protocol::steps::begin_in("first_link", &to.pool);
+        // The link's task is begun inside the step, so what it runs names it its parent.
+        let mut links = step.inside(|| to.keep());
         // A link made anew: the connector's check of the container, `docker exec` of the
         // runner's `purlis bridge`, and the handshake, all within this.
         let linked = tokio::time::timeout(FIRST_LINK_WITHIN, links.next())
@@ -711,6 +759,7 @@ fn on_one_link_within<T>(
             .map_err(|_| LATE.to_owned())?;
         let client = match linked {
             Some(hostlink::Linked::Up(link)) => {
+                step.done();
                 Ok(purlis_session_protocol::session::Client::new(*link).0)
             }
             Some(hostlink::Linked::Down(down)) => Err(with_a_way_on(&to.pool, down)),
@@ -729,7 +778,9 @@ fn with_a_way_on(pool: &str, mut down: hostlink::Down) -> hostlink::Down {
     if down.gone {
         return down;
     }
-    let way_on = if down.key_changed {
+    let way_on = if down.host_key_changed {
+        format!("Check pool {pool} in Pool setup, and trust it again if the change is expected")
+    } else if down.key_changed {
         format!("To pair it again, remove pool {pool} in Pool setup and add it again")
     } else {
         format!("Check pool {pool} in Pool setup")
@@ -781,18 +832,48 @@ pub fn repos_held_on(to: &ToARunner) -> Result<Option<Held>, String> {
 /// each project found among those this machine knows in `config`
 /// ([`purlis_core::pools::left_beyond_a_fetch`]). Why, where it did not list.
 pub fn left_on(to: &ToARunner, config: &std::path::Path) -> Result<Vec<String>, String> {
-    left_of(repos_held_on(to)?, |held, unread| {
-        purlis_core::pools::left_beyond_a_fetch(config, held, unread)
-    })
+    left_of(
+        repos_held_on(to)?,
+        |held, unread| purlis_core::pools::left_beyond_a_fetch(config, held, unread),
+        || left_on_a_runner_that_cannot_list(config, &to.pool),
+    )
 }
 
-/// What `prove` finds of what a runner `listed`: nothing from a runner too old to list what it
-/// holds, which goes as it did before it could.
+/// What `prove` finds of what a runner `listed`, or, from a runner too old to list what it holds,
+/// what `unlisted` says may be on it.
 pub(crate) fn left_of(
     listed: Option<Held>,
     prove: impl FnOnce(&[purlis_core::codelink::held::Held], &[String]) -> Result<Vec<String>, String>,
+    unlisted: impl FnOnce() -> Result<Vec<String>, String>,
 ) -> Result<Vec<String>, String> {
-    listed.map_or(Ok(Vec::new()), |(held, unread)| prove(&held, &unread))
+    match listed {
+        Some((held, unread)) => prove(&held, &unread),
+        None => unlisted(),
+    }
+}
+
+/// **What may be on a draining runner of `pool` too old to list what it holds** (before 1.69),
+/// in sentences: each project that keeps a chat on the pool whose record can't say which runner
+/// it is on ([`purlis_core::pools::chats_of_no_recorded_runner`]). A runner that lists says
+/// whether that chat's work is on it, and its chat count whether one runs there; this one can't,
+/// so the chat may have run and ended on it with its work not yet fetched, and it stays
+/// (2026-11-26). Why, where this machine's records can't be read.
+pub fn left_on_a_runner_that_cannot_list(
+    config: &std::path::Path,
+    pool: &str,
+) -> Result<Vec<String>, String> {
+    Ok(
+        purlis_core::pools::chats_of_no_recorded_runner(config, pool)?
+            .iter()
+            .map(|owing| {
+                format!(
+                    "it is too old to list what it holds, and project {} keeps a chat on pool \
+                     {pool} whose runner is not recorded, so that chat's work may be on it",
+                    owing.plane.display()
+                )
+            })
+            .collect(),
+    )
 }
 
 /// **A profile a runner kept**: whether it is signed in there.
@@ -1340,6 +1421,14 @@ pub fn link_of(down: hostlink::Down) -> crate::dockerpools::PoolLink {
     use crate::dockerpools::PoolLink;
     if down.key_changed {
         PoolLink::KeyChanged
+    } else if down.host_key_changed {
+        PoolLink::HostKeyChanged {
+            why: crate::devices::shown_safely(&down.why),
+        }
+    } else if down.refused {
+        PoolLink::Refused {
+            why: crate::devices::shown_safely(&down.why),
+        }
     } else {
         PoolLink::Down {
             why: crate::devices::shown_safely(&down.why),

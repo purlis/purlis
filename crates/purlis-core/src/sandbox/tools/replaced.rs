@@ -84,12 +84,12 @@ pub fn forge_item_name(key: &str) -> bool {
 /// What a resolved tool whose program is `gh` or `glab` says when it is left out, as the clause
 /// after its name.
 pub const FORGE_PROGRAM_SAID: &str = "runs gh or glab with a value from a vault, which purlis no \
-     longer does: chats use your sign-in. Sign in under Settings › Forges";
+     longer does: chats use your sign-in. Sign in under Settings › Accounts";
 
 /// What Agent identity's and GitLab access's setup answers with once the sign-in replaces them:
 /// neither writes a line or stores a key any more.
 pub const SETUP_REFUSED: &str = "purlis no longer sets up a token for a chat: chats use your \
-     sign-in. Sign in under Settings › Forges";
+     sign-in. Sign in under Settings › Accounts";
 
 /// The prefix of the variables a token connection is read from (ADR 0128 D9.2): never handed to a
 /// chat either.
@@ -154,18 +154,18 @@ pub fn sentence(kind: Kind) -> &'static str {
     match kind {
         Kind::GithubApp => {
             "asks for a GitHub App token that purlis no longer mints, so it runs nothing: chats \
-             use your sign-in. Sign in under Settings › Forges. While the App's key is in a vault, \
+             use your sign-in. Sign in under Settings › Accounts. While the App's key is in a vault, \
              keep this line, since it is what stops purlis handing that key to a chat; remove \
              the key from the vault on your press, then delete the line"
         }
         Kind::ForgeProgram => {
             "runs gh or glab with a value from a vault, which purlis no longer does, so it runs \
-             nothing: chats use your sign-in. Sign in under Settings › Forges, then delete this \
+             nothing: chats use your sign-in. Sign in under Settings › Accounts, then delete this \
              line (the vault item stays until you delete it)"
         }
         Kind::VaultToken => {
             "hands a forge token from a vault to a chat, which purlis no longer does, so it runs \
-             nothing: chats use your sign-in. Sign in under Settings › Forges, then delete this \
+             nothing: chats use your sign-in. Sign in under Settings › Accounts, then delete this \
              line (the vault item stays until you delete it)"
         }
     }
@@ -257,7 +257,7 @@ fn told_of(found: &[Found]) -> Option<Told> {
         cause: format!("forge-sign-in-replaces:{hash:016x}"),
         text: format!(
             "This project has {lines} that hand a chat a forge token, which purlis no longer \
-             does: chats use your sign-in. Sign in under Settings › Forges, then delete the \
+             does: chats use your sign-in. Sign in under Settings › Accounts, then delete the \
              lines. Keep a `mint` line while its GitHub App's key is in a vault: it stops purlis \
              handing that key to a chat. Nothing was deleted for you."
         ),

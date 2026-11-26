@@ -235,6 +235,7 @@ pub fn trouble_said(id: &str, trouble: &purlis_core::forge::refresh::Trouble) ->
             Trouble::RenewalFailing { .. } => "renewal-failing",
             Trouble::EverydayHoldsWorkflow => "everyday-holds-workflow",
             Trouble::ScopesUnknown => "scopes-unknown",
+            Trouble::SecondSignInRefused => "second-sign-in-refused",
         },
     }
 }
@@ -794,6 +795,11 @@ mod tests {
             serde_json::to_value(&failing).unwrap(),
             serde_json::json!({"account": "01J9ACCOUNT", "trouble": "renewal-failing"})
         );
+        let refused = trouble_said("01J9ACCOUNT", &Trouble::SecondSignInRefused);
+        assert_eq!(
+            serde_json::to_value(&refused).unwrap(),
+            serde_json::json!({"account": "01J9ACCOUNT", "trouble": "second-sign-in-refused"})
+        );
     }
 
     use super::*;
@@ -880,10 +886,17 @@ mod tests {
         for _ in 0..2 {
             refresher.token_at(&account, near_its_end).unwrap();
         }
-        let heard = heard.lock().unwrap();
+        // Only this account's: the handler is the process's, and other tests raise troubles too.
+        let heard: Vec<serde_json::Value> = heard
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|one| serde_json::from_str::<serde_json::Value>(one).unwrap())
+            .filter(|one| one["account"] == account.id.as_str())
+            .collect();
         assert_eq!(heard.len(), 1, "{heard:?}");
         assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&heard[0]).unwrap(),
+            heard[0],
             serde_json::json!({"account": account.id, "trouble": "pin-changed"})
         );
     }

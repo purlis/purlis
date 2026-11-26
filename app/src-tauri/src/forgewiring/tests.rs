@@ -138,6 +138,7 @@ fn gate(context: Arc<ProjectContext>) -> CiPushGate {
         )),
         quarantines: Arc::new(Quarantines::default()),
         parent: PathBuf::from("/no/such/quarantine"),
+        cache_parent: None,
     }
 }
 
@@ -263,7 +264,7 @@ impl HeldForge for TwoTips {
         _: &HeadSha,
         _: bool,
         _: Option<&purlis_core::secrets::keyring::Secret>,
-    ) -> Result<(), String> {
+    ) -> Result<(), purlis_core::heldact::PushError> {
         unreachable!()
     }
 }
@@ -286,6 +287,21 @@ impl BaseObjects for LocalForge {
             ],
         );
         out.map(|_| ())
+    }
+
+    fn advertised(&self, _: &std::path::Path) -> Option<Vec<String>> {
+        let out = git_in(
+            &self.0,
+            &["for-each-ref", "--format=%(objectname)", "refs/heads"],
+        )
+        .ok()?;
+        Some(
+            String::from_utf8(out)
+                .ok()?
+                .lines()
+                .map(str::to_owned)
+                .collect(),
+        )
     }
 }
 
@@ -386,6 +402,11 @@ impl Rebase {
     }
 
     fn read(&self, tip: &HeadSha, pack: &[u8]) -> Result<(), PushVerdict> {
+        self.read_keeping(tip, pack).0
+    }
+
+    /// [`Self::read`], and whether a quarantine of the push is kept after it.
+    fn read_keeping(&self, tip: &HeadSha, pack: &[u8]) -> (Result<(), PushVerdict>, bool) {
         let home = tempfile::tempdir().unwrap();
         let parent = tempfile::tempdir().unwrap();
         let gate = CiPushGate {
@@ -396,7 +417,7 @@ impl Rebase {
             default_tip: self.default_tip.clone(),
             branch_tip: self.old_tip.clone(),
         };
-        gate.read_update(
+        let read = gate.read_update(
             &ChatId::new("chat"),
             7,
             &forge,
@@ -409,7 +430,9 @@ impl Rebase {
                 created: false,
                 pack,
             },
-        )
+        );
+        let kept = gate.quarantines.of(7, "acme/app").is_some();
+        (read, kept)
     }
 }
 
@@ -440,4 +463,111 @@ fn a_rebase_that_changes_a_ci_file_is_read_against_the_default_branchs_tip_not_t
     // binary, it could not be shown at all, and would be refused as binary.
     assert!(why.contains("held acts are not on here"), "{why}");
     assert!(!why.contains("binary"), "{why}");
+}
+
+#[test]
+fn a_held_ci_push_nobody_waits_on_keeps_no_quarantine() {
+    // #7685 review (F6): no sink is on here, so no ask waits on the push, and the repository it
+    // was read in is not kept until the chat closes.
+    let scene = rebase_scene();
+    let (tip, pack) = scene.rebased(b"v3\n");
+
+    let (read, kept) = scene.read_keeping(&tip, &pack);
+
+    assert!(matches!(read, Err(PushVerdict::Refuse(_))), "{read:?}");
+    assert!(!kept, "the quarantine of a push nobody waits on is let go");
+}
+
+// ---- a push that sends no new objects: its tip must be in a branch of this repo ----
+
+impl Rebase {
+    /// A commit the forge resolves by id and no branch holds: it was on a branch since deleted.
+    fn dangling(&self) -> HeadSha {
+        git_in(&self.forge, &["checkout", "-q", "-b", "gone", "main"]).unwrap();
+        let tip = commit_with(
+            &self.forge,
+            &[("secret.txt", b"a secret\n")],
+            "force-pushed away",
+        );
+        git_in(&self.forge, &["checkout", "-q", "main"]).unwrap();
+        git_in(&self.forge, &["branch", "-q", "-D", "gone"]).unwrap();
+        tip
+    }
+
+    /// The empty pack git sends when the forge has every object of `tip`.
+    fn empty(&self) -> Vec<u8> {
+        thin_pack(&self.forge, &self.default_tip, &[&self.default_tip])
+    }
+}
+
+#[test]
+fn an_empty_pack_naming_a_commit_a_branch_of_the_repo_holds_is_read_through_the_gate() {
+    let scene = rebase_scene();
+
+    let read = scene.read(&scene.default_tip, &scene.empty());
+
+    assert!(read.is_ok(), "{read:?}");
+}
+
+#[test]
+fn an_empty_pack_naming_a_commit_the_forge_resolves_but_no_branch_holds_is_refused_through_the_gate()
+ {
+    let scene = rebase_scene();
+    let dangling = scene.dangling();
+
+    let why = match scene.read(&dangling, &scene.empty()) {
+        Err(PushVerdict::Refuse(why)) => why,
+        other => panic!("not refused: {other:?}"),
+    };
+
+    assert!(
+        why.contains("neither in the push nor in a branch of this repo"),
+        "{why}"
+    );
+}
+
+#[test]
+fn a_refused_second_sign_in_is_deleted_from_the_keychain_so_no_ask_offers_it_again() {
+    use purlis_core::forge::accounts::workflow::{Availability, availability};
+    use purlis_core::forge::accounts::{Method, State};
+    let home = tempfile::tempdir().unwrap();
+    let account = ForgeAccount {
+        id: "01J9WORKFLOWOVER".into(),
+        kind: Kind::GitHub,
+        host: "github.com".into(),
+        login: "octocat".into(),
+        method: Method::Device,
+        state: State::SignedIn,
+        scopes: Some(vec!["repo".into(), "read:org".into()]),
+        client_id: None,
+    };
+    let keyring = accounts::keyring_at(home.path());
+    keyring
+        .set(&accounts::service(&account), "workflow", "a-second-token")
+        .unwrap();
+    keyring
+        .set(&accounts::service(&account), "token", "the-everyday-token")
+        .unwrap();
+    assert_eq!(
+        availability(keyring.as_ref(), &account),
+        Availability::Ready
+    );
+    let over = WorkflowOver {
+        config_root: home.path().to_path_buf(),
+        account: account.clone(),
+    };
+
+    over.drop_refused(&HostScope::for_a_test());
+
+    assert_eq!(
+        availability(keyring.as_ref(), &account),
+        Availability::NeedsPress
+    );
+    // The everyday sign-in is untouched.
+    assert!(
+        keyring
+            .get(&accounts::service(&account), "token")
+            .unwrap()
+            .is_some()
+    );
 }

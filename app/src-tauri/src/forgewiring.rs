@@ -106,6 +106,15 @@ impl Quarantines {
             .map(|(_, quarantine)| quarantine.clone())
     }
 
+    /// The push of chat `session` to `repo` waits on nobody: its quarantine goes.
+    fn release(&self, session: u32, repo: &str) {
+        let key = (session, repo.to_ascii_lowercase());
+        self.kept
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|(of, _)| *of != key);
+    }
+
     /// A chat's session closed: none of its pushes waits.
     pub fn forget(&self, session: u32) {
         self.kept
@@ -176,6 +185,25 @@ impl WorkflowCredential for WorkflowOver {
                 "the CI permission is not made for this account".to_owned(),
             )),
             Err(why) => Err(Unavailable(why)),
+        }
+    }
+
+    fn refused(&self, _: &str) {
+        if let Some(scope) = HostScope::claim() {
+            self.drop_refused(&scope);
+        }
+    }
+}
+
+impl WorkflowOver {
+    /// [`WorkflowCredential::refused`] once the host's scope is in hand: the dead second token is
+    /// deleted, and the window told. Best effort: the ask has ended whatever the keychain says,
+    /// and the next push reads the item again. The keychain's words name the item, never the
+    /// token.
+    fn drop_refused(&self, scope: &HostScope) {
+        let keyring = accounts::keyring_at(&self.config_root);
+        if let Err(why) = accounts::workflow::refused(scope, keyring.as_ref(), &self.account) {
+            tracing::warn!(account = %self.account.id, "a refused second sign-in stays: {why}");
         }
     }
 }
@@ -334,6 +362,61 @@ impl ProjectContext {
     }
 }
 
+/// Nobody's session: for a read made outside a chat's run.
+struct NoSessions;
+
+impl SessionOfRun for NoSessions {
+    fn session(&self, _: &str) -> Option<u32> {
+        None
+    }
+
+    fn is_open(&self, _: u32) -> bool {
+        false
+    }
+}
+
+/// **The tip of `branch` in the repo `repo_id` at `host` as the forge shows it to the person
+/// now** (ADR 0128, amended 2026-11-23): what Let this chat push records as the branch's tip.
+/// Read with the sign-in of the account the person chose for the repo, never a chat's, and only
+/// for a repo the project confirmed **by the numeric id the ask was raised at**, so a repo made
+/// again under the name is not the one the person was asked about. A branch the forge no longer
+/// has is an error, not a tip.
+pub fn branch_tip_as_the_person(
+    project: &Path,
+    config_root: &Path,
+    host: &str,
+    repo_path: &str,
+    repo_id: u64,
+    branch: &str,
+) -> Result<String, String> {
+    let context = ProjectContext {
+        project: project.to_owned(),
+        config_root: config_root.to_owned(),
+        sessions: Arc::new(NoSessions),
+        quarantines: Arc::new(Quarantines::default()),
+        held: std::sync::Weak::new(),
+    };
+    let repo = Repo::try_from(repo_path).map_err(|_| format!("{repo_path} is not a repo name"))?;
+    let base = Base::try_from(branch).map_err(|_| format!("{branch} is not a branch name"))?;
+    let served = context.served(&repo)?;
+    if !confirmed::address_of(&served.repo.host)
+        .0
+        .eq_ignore_ascii_case(host)
+        || served.repo.repo_id != repo_id
+    {
+        return Err(format!(
+            "{repo_path} is not the repo this ask was raised for, so no branch of it is recorded"
+        ));
+    }
+    let (forge, _) = context.forge_of(&served, None)?;
+    match forge.branch_tip(&repo, &base)? {
+        Some(tip) => Ok(tip.as_str().to_owned()),
+        None => Err(format!(
+            "{branch} is not on {repo_path} any more, so there is nothing to record"
+        )),
+    }
+}
+
 impl HeldContext for ProjectContext {
     fn session(&self, chat: &ChatId) -> Option<u32> {
         self.sessions.session(chat.as_str())
@@ -394,11 +477,9 @@ impl HeldContext for ProjectContext {
             cwd: cwd.display().to_string(),
         };
         match crate::mergeholds::asked(&self.held, &ask) {
-            purlis_core::hookwire::Answer::MergeHeld { .. } => {
-                "purlis holds merges. It has asked the person; the merge happens when they approve \
-                 it in Asks."
-                    .to_owned()
-            }
+            purlis_core::hookwire::Answer::MergeHeld { .. } => purlis_core::heldact::said::asked(
+                &purlis_core::heldact::Requested::Merge(request.clone()),
+            ),
             purlis_core::hookwire::Answer::No { why } => {
                 format!("purlis did not hold this merge: {why}")
             }
@@ -413,15 +494,68 @@ pub struct CiPushGate {
     proxy: Arc<ForgeProxy>,
     quarantines: Arc<Quarantines>,
     parent: PathBuf,
+    /// Where the forge repos' object caches are: the machine's data folder, which no chat reads or
+    /// writes. `None` where the machine has none, and a push then fetches into its quarantine.
+    cache_parent: Option<PathBuf>,
 }
 
 impl CiPushGate {
+    /// The object cache of the repo `served` names.
+    fn cache_of(&self, served: &Served) -> Option<Arc<purlis_core::heldact::ObjectCache>> {
+        let parent = self.cache_parent.as_ref()?;
+        Some(purlis_core::heldact::ObjectCache::of(
+            parent,
+            &served.repo.host,
+            &served.repo.path,
+        ))
+    }
+
     fn refuse(why: impl Into<String>) -> PushVerdict {
         PushVerdict::Refuse(why.into())
     }
 }
 
 impl PushGate for CiPushGate {
+    /// Starts the first fill of the object cache of each repo this project confirms, on a thread
+    /// of the app's own: signing in and reading the keyring are not the chat's start to wait for.
+    /// A repo that cannot be served now is left to its first push, which says why.
+    fn warm(&self) {
+        if self.cache_parent.is_none() {
+            return;
+        }
+        let (context, cache_parent) = (self.context.clone(), self.cache_parent.clone());
+        let gate = CiPushGate {
+            context,
+            proxy: self.proxy.clone(),
+            quarantines: self.quarantines.clone(),
+            parent: self.parent.clone(),
+            cache_parent,
+        };
+        let _ = std::thread::Builder::new()
+            .name("object-cache-warm".to_owned())
+            .spawn(move || {
+                for (confirmed, _) in gate.context.candidates() {
+                    let Ok(repo) = Repo::try_from(confirmed.path.as_str()) else {
+                        continue;
+                    };
+                    let Ok(served) = gate.context.served(&repo) else {
+                        continue;
+                    };
+                    let url = format!("https://{}/{}.git", served.repo.host, served.repo.path);
+                    let Ok(from) = gate.context.fetch_source(&served, &url) else {
+                        continue;
+                    };
+                    purlis_core::heldact::FromForge {
+                        cache: gate
+                            .cache_of(&served)
+                            .map(|cache| cache.for_a_push(purlis_core::heldact::PUSH)),
+                        ..from
+                    }
+                    .warm();
+                }
+            });
+    }
+
     fn check(&self, chat: &ChatId, push: &PushRead) -> PushVerdict {
         let Some(session) = self.context.session(chat) else {
             return Self::refuse("purlis did not send this push: this chat is not open.");
@@ -445,7 +579,10 @@ impl PushGate for CiPushGate {
                 "purlis did not send this push: it is reading other pushes now, so try again in a moment.",
             );
         };
+        // One deadline for every fetch of this push, whatever the number of branches it updates.
+        let started = std::time::Instant::now();
         for update in &push.updates {
+            let budget = purlis_core::heldact::PUSH.saturating_sub(started.elapsed());
             // A delete moves no file; a tag or another ref is not a branch the policy lets by.
             let created = update.old.bytes().all(|b| b == b'0');
             if update.new.bytes().all(|b| b == b'0') {
@@ -465,7 +602,12 @@ impl PushGate for CiPushGate {
             };
             let url = format!("https://{}/{}.git", served.repo.host, served.repo.path);
             let from = match self.context.fetch_source(&served, &url) {
-                Ok(from) => from,
+                // Each push fetches what changed since the last into the repo's own cache, all
+                // its fetches within one deadline (inside the listener's connection total).
+                Ok(from) => purlis_core::heldact::FromForge {
+                    cache: self.cache_of(&served).map(|cache| cache.for_a_push(budget)),
+                    ..from
+                },
                 Err(why) => return Self::refuse(format!("purlis did not send this push: {why}.")),
             };
             let one = Update {
@@ -575,7 +717,10 @@ impl CiPushGate {
             ));
         }
         // A thin pack may be built on any branch the forge advertises (an integration branch a
-        // task branch is cut from): those tips are fetched only if the pack needs them.
+        // task branch is cut from), and a push may send no new objects at all (an empty pack) when
+        // its tip is already in the repo: either way the advertised tips are fetched, and only if
+        // the pack needs them. A tip that is in none of them is refused, whatever the forge
+        // resolves by id (a fork's commit, a dangling one).
         if let Err(why) = quarantine.take_in_known(pack, tip, &base, from) {
             return refuse(format!("git did not take its objects in ({why})."));
         }
@@ -600,7 +745,13 @@ impl CiPushGate {
                     branch: branch.clone(),
                     tip: tip.clone(),
                 };
-                Err(match self.proxy.hand_over(chat, &asked) {
+                let said = self.proxy.hand_over(chat, &asked);
+                // An ask nobody waits on (withdrawn, refused, or no sink to raise it) keeps no
+                // quarantine until the chat closes.
+                if !self.context.waits_in(session, repo) {
+                    self.quarantines.release(session, repo.as_str());
+                }
+                Err(match said {
                     Some(said) => PushVerdict::Held(said),
                     None => Self::refuse(
                         "purlis did not send this push: it changes CI files, and held acts are not on here.",
@@ -612,6 +763,13 @@ impl CiPushGate {
 }
 
 impl ProjectContext {
+    /// Whether a held act of chat `session` in `repo` waits on the person in this project.
+    fn waits_in(&self, session: u32, repo: &Repo) -> bool {
+        self.held
+            .upgrade()
+            .is_some_and(|held| held.held_acts().waits_in(session, repo.as_str()))
+    }
+
     /// Where a quarantine fetches its base from: the repo's own address, with the person's
     /// credential for that host and no other, given to git by the app's own credential helper,
     /// which reads it from the keyring and answers git's pipe. The token is in no file.
@@ -642,6 +800,7 @@ impl ProjectContext {
         Ok(purlis_core::heldact::FromForge {
             url: url.to_owned(),
             helper: Some(helper),
+            cache: None,
         })
     }
 }
@@ -652,17 +811,24 @@ pub struct AppHeldSinks {
     app: tauri::AppHandle,
     quarantines: Arc<Quarantines>,
     parent: PathBuf,
+    cache_parent: Option<PathBuf>,
 }
 
 impl AppHeldSinks {
-    pub fn new(app: tauri::AppHandle, parent: PathBuf) -> Self {
+    pub fn new(app: tauri::AppHandle, parent: PathBuf, cache_parent: Option<PathBuf>) -> Self {
         // A quarantine an earlier app left (it ended without dropping them) is gone before a
         // new one is made: the one-per-user lock means none belongs to a live app.
         purlis_core::heldact::sweep_quarantines(&parent);
+        // The folder exists from the start, so a native Linux read denial (which applies to a path
+        // that is there) has one to apply to before the first push makes a cache in it.
+        if let Some(folder) = &cache_parent {
+            let _ = std::fs::create_dir_all(folder);
+        }
         Self {
             app,
             quarantines: Arc::new(Quarantines::default()),
             parent,
+            cache_parent,
         }
     }
 
@@ -689,8 +855,7 @@ impl AppHeldSinks {
 impl HeldSinks for AppHeldSinks {
     fn sink(&self, project: &Path, sessions: Arc<dyn SessionOfRun>) -> Option<Box<dyn HeldSink>> {
         let (held, _) = self.context_of(project, sessions)?;
-        let handoff: Handoff = held.held_acts().handoff()?;
-        Some(Box::new(handoff))
+        sink_of(&held)
     }
 
     fn forget(&self, session: u32) {
@@ -709,8 +874,18 @@ impl HeldSinks for AppHeldSinks {
             proxy,
             quarantines: self.quarantines.clone(),
             parent: self.parent.clone(),
+            cache_parent: self.cache_parent.clone(),
         }))
     }
+}
+
+/// **The forge route's sink for project `held`'s held acts**, over its registry and the context
+/// last set on it: `None` until one is.
+/// Each ask it raises is told to the project's window, which lists it in Asks (#7685).
+pub(crate) fn sink_of(held: &Arc<Held>) -> Option<Box<dyn HeldSink>> {
+    let window = Arc::new(crate::heldacts::InTheWindow(Arc::downgrade(held)));
+    let handoff: Handoff = held.held_acts().handoff(window)?;
+    Some(Box::new(handoff))
 }
 
 /// **The Notice of a chat's missing or ended sign-in** ([`Notices`], ADR 0128, #7290): told to

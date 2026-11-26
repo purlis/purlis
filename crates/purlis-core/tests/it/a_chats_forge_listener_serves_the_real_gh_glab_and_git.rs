@@ -980,6 +980,11 @@ fn git_clones_fetches_and_pushes_a_branch_it_made_but_not_the_default_branch() {
     ] {
         let (ok, text) = s.git(&work, &args);
         assert!(!ok, "git {args:?} was allowed: {text}");
+        // Git says why, in its own output, and not "RPC failed; HTTP 403".
+        assert!(
+            text.contains("[remote rejected]") && !text.contains("RPC failed"),
+            "git {args:?}: {text}"
+        );
     }
     let posts = s
         .forge
@@ -1075,6 +1080,16 @@ fn the_apps_own_git_for_a_chat_pushes_through_the_listener_and_a_held_push_reach
         .count();
     let held = push("ci-workflow");
     assert!(!held.ok(), "a held push was sent");
+    // Git prints purlis's reason, not "RPC failed; HTTP 403" (#7486).
+    assert!(
+        held.err.contains("[remote rejected]")
+            && held
+                .err
+                .contains("Held: Ask 1, a CI-file push in acme/app.")
+            && !held.err.contains("RPC failed"),
+        "{}",
+        held.err
+    );
     let after = s
         .forge
         .seen
@@ -1084,6 +1099,161 @@ fn the_apps_own_git_for_a_chat_pushes_through_the_listener_and_a_held_push_reach
         .filter(|r| r.method == "POST")
         .count();
     assert_eq!(before, after, "a held push reached the forge");
+}
+
+/// #7693: a command a chat runs itself (`purlis change push`) reads the chat's route out of the
+/// environment the chat was given, and its git pushes through the chat's own proxy, trusting the
+/// chat's own authority, as the chat's git does: it is not refused as "unable to get local issuer
+/// certificate", and the forge is sent the real token, never the sentinel.
+#[test]
+fn a_chats_own_route_read_from_its_environment_pushes_through_the_listener_trusting_its_authority()
+{
+    purlis_core::unsteered!();
+    if !tool("git") {
+        return;
+    }
+    use purlis_core::forgewire::{ForgeKind, Repo, Route, SecretString, apply, compose_at};
+    use purlis_core::worktree::git::{Isolated, isolated, run_network};
+    let s = setup();
+    let work = s.dir.path().join("clone");
+    let (ok, text) = s.git(
+        s.dir.path(),
+        &[
+            "clone",
+            "https://github.com/acme/app.git",
+            work.to_str().unwrap(),
+        ],
+    );
+    assert!(ok, "{text}");
+    std::fs::write(work.join("a.txt"), "a\n").unwrap();
+    git_ok(&work, &["add", "-A"]);
+    git_ok(&work, &["commit", "-q", "-m", "a"]);
+
+    // The chat's environment, as the app wires it for the chat's route; the test's sentinel
+    // helper stands in for purlis's own binary, as `production_route` has it.
+    let helper = sentinel_helper(&s);
+    let route = Route {
+        egress_url: format!("http://127.0.0.1:{}", s.port()),
+        gh_socket: s.dir.path().join("unused.sock"),
+        ca_cert: s.ca_file.clone(),
+        sentinel: SecretString::from(s.world.sentinel.expose().to_owned()),
+        helper_exe: PathBuf::from("/nonexistent/purlis"),
+        repos: vec![Repo::new("github.com", "acme", "app", ForgeKind::GitHub).unwrap()],
+    };
+    let wiring = compose_at(&route, &s.dir.path().join("wire")).expect("the chat's wiring");
+    let env = apply(Vec::new(), &wiring);
+    let lookup = |name: &str| {
+        env.iter()
+            .rev()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.clone())
+    };
+    let read = purlis_core::forgewire::this_chats_git_route(&lookup, &helper)
+        .expect("the chat's environment holds a route")
+        .expect("a route git can use");
+    let pushed = isolated(&Isolated::default().through_route(read), || {
+        run_network(
+            &work,
+            Some("!'/nonexistent/gh' auth git-credential"),
+            &["push", "origin", "HEAD:refs/heads/from-the-chats-command"],
+        )
+    })
+    .expect("git ran");
+    assert!(pushed.ok(), "{}", pushed.err);
+    assert!(
+        s.forge_saw_the_real_token(),
+        "the forge was not sent the real token"
+    );
+}
+
+/// A gate that refuses a push of a branch named `later-…` as it refuses one whose base is not
+/// readable yet, and holds one named `ci-…`: either verdict, for any ref of the push, refuses the
+/// whole push.
+struct RefusesAndHolds;
+
+impl PushGate for RefusesAndHolds {
+    fn check(&self, _: &purlis_core::forge::proxy::ChatId, push: &PushRead) -> PushVerdict {
+        for update in &push.updates {
+            if update.name.starts_with("refs/heads/later-") {
+                return PushVerdict::Refuse(
+                    "purlis did not send this push: its base is not read yet, which is temporary; try again in a minute."
+                        .to_owned(),
+                );
+            }
+            if update.name.starts_with("refs/heads/ci-") {
+                return PushVerdict::Held(
+                    "purlis holds this push: it changes CI files and waits in Asks.".to_owned(),
+                );
+            }
+        }
+        PushVerdict::Forward
+    }
+}
+
+#[test]
+fn a_push_the_gate_refuses_or_holds_says_why_in_gits_own_output_for_each_ref_and_exits_non_zero() {
+    purlis_core::unsteered!();
+    if !tool("git") {
+        return;
+    }
+    use purlis_core::worktree::git::{Isolated, isolated, run_network};
+    let s = setup_with(Some(Arc::new(RefusesAndHolds)));
+    let work = s.dir.path().join("clone");
+    let (ok, text) = s.git(
+        s.dir.path(),
+        &[
+            "clone",
+            "https://github.com/acme/app.git",
+            work.to_str().unwrap(),
+        ],
+    );
+    assert!(ok, "{text}");
+    std::fs::write(work.join("a.txt"), "a\n").unwrap();
+    git_ok(&work, &["add", "-A"]);
+    git_ok(&work, &["commit", "-q", "-m", "a"]);
+    let route = production_route(&s, s.app_port(), &s.ca_file);
+    let isolation = Isolated::default().through_route(route);
+    // Every protocol git speaks to a server here: v0 (what a push uses by default) and v2.
+    for version in ["0", "2"] {
+        let config = format!("protocol.version={version}");
+        let push = |refs: &[&str]| {
+            let mut args = vec!["-c", config.as_str(), "push", "origin"];
+            args.extend(refs);
+            isolated(&isolation, || {
+                run_network(&work, Some("!'/nonexistent/gh' auth git-credential"), &args)
+            })
+            .expect("git ran")
+        };
+        let refused = push(&["HEAD:refs/heads/later-one"]);
+        assert!(!refused.ok(), "v{version}: a refused push was sent");
+        assert!(
+            refused.err.contains("[remote rejected]")
+                && refused
+                    .err
+                    .contains("which is temporary; try again in a minute")
+                && !refused.err.contains("RPC failed")
+                && !refused.err.contains("Everything up-to-date"),
+            "v{version}: {}",
+            refused.err
+        );
+        let held = push(&["HEAD:refs/heads/ci-one"]);
+        assert!(!held.ok(), "v{version}: a held push was sent");
+        assert!(
+            held.err.contains("[remote rejected]")
+                && held.err.contains("waits in Asks")
+                && !held.err.contains("RPC failed"),
+            "v{version}: {}",
+            held.err
+        );
+        // Two refs at once: git names each of them.
+        let both = push(&["HEAD:refs/heads/later-two", "HEAD:refs/heads/later-three"]);
+        assert!(!both.ok(), "v{version}: a refused push was sent");
+        assert!(
+            both.err.contains("later-two") && both.err.contains("later-three"),
+            "v{version}: {}",
+            both.err
+        );
+    }
 }
 
 /// A pin on `github.com`, as policy would set it.
@@ -1259,8 +1429,23 @@ fn production_route(
     proxy_port: u16,
     ca: &Path,
 ) -> purlis_core::worktree::git::NetworkRoute {
-    use purlis_core::forge::gitcredential::SENTINEL_ENV;
     use purlis_core::forgewire::{ForgeKind, Repo, Route, SecretString, git_network};
+    let helper = sentinel_helper(s);
+    let route = Route {
+        egress_url: format!("http://127.0.0.1:{proxy_port}"),
+        gh_socket: s.dir.path().join("unused.sock"),
+        ca_cert: ca.to_path_buf(),
+        sentinel: SecretString::from(s.world.sentinel.expose().to_owned()),
+        helper_exe: helper,
+        repos: vec![Repo::new("github.com", "acme", "app", ForgeKind::GitHub).unwrap()],
+    };
+    git_network(&route).expect("production's route for the app's git")
+}
+
+/// The test's credential helper, in place of purlis's binary: a script that answers the sentinel
+/// from the variable the route passes.
+fn sentinel_helper(s: &Setup) -> PathBuf {
+    use purlis_core::forge::gitcredential::SENTINEL_ENV;
     let helper = s.dir.path().join("sentinel-helper.sh");
     if !helper.exists() {
         std::fs::write(
@@ -1276,15 +1461,7 @@ fn production_route(
             std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
         }
     }
-    let route = Route {
-        egress_url: format!("http://127.0.0.1:{proxy_port}"),
-        gh_socket: s.dir.path().join("unused.sock"),
-        ca_cert: ca.to_path_buf(),
-        sentinel: SecretString::from(s.world.sentinel.expose().to_owned()),
-        helper_exe: helper,
-        repos: vec![Repo::new("github.com", "acme", "app", ForgeKind::GitHub).unwrap()],
-    };
-    git_network(&route).expect("production's route for the app's git")
+    helper
 }
 
 /// The route of the chat's own git stand-in (the test-support relay).

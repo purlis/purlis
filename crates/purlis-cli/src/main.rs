@@ -2726,11 +2726,18 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
         // a decision not made in time is a refusal (#1355, #928). The budget is what keeps the
         // harness's own timeout, which may run the tool, from ever being reached.
         let (text, answered) = if is_a_pretooluse_hook(name) {
-            let budget = guard::Budget::start();
+            let budget = guard::Budget::start(name);
             let Some(text) = payload_within(budget.left()) else {
                 guard::out_of_time()
             };
-            let answered = guard::decided_within(&budget, || decide(&text));
+            // purlis's own `report`, and nothing that only looks like it, is let through with
+            // no ask of the host or the network, so the guard cannot block the report of its
+            // own fault (#7542). Anything else is judged in full.
+            let answered = if guarded && guard::is_purlis_report(&text) {
+                hooks::Answered::of(purlis_core::toolhooks::Answer::Nothing)
+            } else {
+                guard::decided_within(&budget, || decide(&text))
+            };
             (text, answered)
         } else {
             let text = payload();

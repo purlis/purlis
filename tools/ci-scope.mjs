@@ -82,6 +82,11 @@
 // of order, one too long to list). The skip only means no new build: nothing is published,
 // signed or replaced (ADR 0042).
 //
+// **Per platform** (#7324): `ships` also says `macos` and `linux`. A change that only Linux reads
+// (`LINUX_ONLY`) would skip the macOS build, but that is held OFF by `PARTIAL_DEV_BUILDS`: one
+// `dev.json` names one version for both platforms, so a Linux-only publish would pair the new
+// version with the previous macOS archive. While it is off, `macos` is `ships`.
+//
 // **The ready gate** (#7335, ADR 0127): a draft pull request runs the fast guards and the web tests
 // and nothing heavy. `HEAVY` (`rust`, `app`, `scenario`, `stories`) and every gated job are off on
 // a draft, whatever its paths say, a change to `.github/` included: marking the draft ready
@@ -98,6 +103,7 @@
 
 import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
+import { matchesGlob } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { readPublished } from "./dev-build-order.mjs";
@@ -258,7 +264,7 @@ export const GATES = {
   "confinement":
     "^(crates/studio-probe/|\\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door|tunnel|sshproxy|floor_tests|codex|opencode|claude)(\\.rs|/)|crates/purlis-core/src/names\\.rs|crates/purlis-core/src/hookwire/serve(\\.rs|/)|crates/purlis-core/src/secrets/(brokered|keyhold)(\\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\\.rs|crates/purlis-cli/tests/it/a_chats_ssh_route_carries_from_inside_its_sandbox\\.rs|Cargo\\.lock$|rust-toolchain\\.toml$)",
   "parity":
-    "^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner)/|Cargo\\.lock$|rust-toolchain\\.toml$|\\.github/workflows/ci\\.yml$)",
+    "^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\\.rs$|crates/purlis-core/tests/it/(a_live_remote_chat_survives_the_faults_that_define_trust|a_missing_real_infra_fixture_fails_in_ci|a_chat_moves_to_a_docker_pools_runner_and_back|a_docker_pool_runner_is_linked_through_docker_exec|a_killed_docker_exec_closes_what_it_ran_on_a_runner|code_crosses_to_a_docker_pools_runner_and_back)\\.rs$|crates/purlis-core/tests/support/(outage|real_infra|remote_rig)\\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner|remote-faults)/|Cargo\\.lock$|rust-toolchain\\.toml$|\\.github/workflows/ci\\.yml$)",
   // No step of its own greps this one: the job's steps are the scenario legs'. What the Skill
   // studio's outcome bars measure, and the suite and its stand-ins (#4343).
   "outcome-bars":
@@ -457,24 +463,69 @@ export function pathShips(path) {
   return true;
 }
 
+// Paths only a Linux build reads (#7324): the runner image and its workflow, the `.deb`'s
+// maintainer scripts, and the sandbox crate's Linux code. `purlis-core`, the CLI and the app all
+// depend on `purlis-linux-sandbox` unconditionally, so its cross-platform modules (`lib.rs`,
+// `profile`, `carried`, `refusal`, its `Cargo.toml`) are in the macOS build's graph and are not
+// listed: only `src/linux/` and `loopback`, which are `cfg(target_os = "linux")` (`loopback` also
+// `cfg(test)`), compile to nothing there. A pattern only matches a path it is certain of.
+const LINUX_ONLY = [
+  /^runner-image\//,
+  /^\.github\/workflows\/runner-image\.yml$/,
+  /^app\/src-tauri\/packaging\/deb\//,
+  /^crates\/linux-sandbox\/src\/linux\//,
+  /^crates\/linux-sandbox\/src\/loopback(\/|\.rs$)/,
+];
+
 /**
- * Whether a build of `kind` has anything to build, and why. Only a `dev` build (a push to
- * `main`) can be skipped; `paths` is every path changed since the published commit, or `null`
- * when that could not be read.
+ * Whether partial dev builds are ON: a dev build of a change that only Linux reads skips macOS.
+ *
+ * **OFF, and it stays off until a partial publish is safe.** `dev.json` names one version for
+ * every platform and each platform's asset is signed over its own bytes. A Linux-only build
+ * would announce version N+1 beside the previous macOS archive, built as N: the updater
+ * installs it, the app reports N, and offers N+1 again for ever; and the macOS runner binary
+ * the desktop looks for by version (`runnerinstall::asset_url`) would be missing. `build`,
+ * `sbom`, `provenance`, `runner-binaries` and `symbols` also need both legs. The decision is
+ * here and tested, but `plan` reads only `ships=false` and nothing yet reads `macos` or `linux`: turning
+ * it on is this constant plus the workflow work above, and a test that no macOS-built crate reads a
+ * `LINUX_ONLY` path.
  */
-export function shipsOf({ kind, paths }) {
-  if (kind !== "dev") return { ships: true, why: `a ${kind} build always builds` };
+export const PARTIAL_DEV_BUILDS = false;
+
+/** Which platforms read at least one of `paths`: a path that ships and is not Linux-only is both. */
+export function platformsOf(paths) {
+  const shipped = paths.filter(pathShips);
+  return {
+    macos: shipped.some((path) => !LINUX_ONLY.some((re) => re.test(path))),
+    linux: shipped.length > 0,
+  };
+}
+
+/**
+ * Whether a build of `kind` has anything to build, and why, and for which platforms. Only a
+ * `dev` build (a push to `main`) can be skipped; `paths` is every path changed since the
+ * published commit, or `null` when that could not be read. `macos` and `linux` say which
+ * platforms build: always both when anything ships, unless `partial` (`PARTIAL_DEV_BUILDS`).
+ */
+export function shipsOf({ kind, paths, partial = PARTIAL_DEV_BUILDS }) {
+  const both = { macos: true, linux: true };
+  if (kind !== "dev") return { ships: true, ...both, why: `a ${kind} build always builds` };
   if (paths === null || paths.length === 0) {
-    return { ships: true, why: "no change since the published commit could be read" };
+    return { ships: true, ...both, why: "no change since the published commit could be read" };
   }
   const shipped = paths.filter(pathShips);
-  if (shipped.length > 0) {
-    return { ships: true, why: `it ships ${shipped.slice(0, 5).join(", ")}` };
+  if (shipped.length === 0) {
+    return {
+      ships: false,
+      macos: false,
+      linux: false,
+      why: `nothing a build reads changed (${paths.slice(0, 5).join(", ")}${paths.length > 5 ? ", ..." : ""})`,
+    };
   }
-  return {
-    ships: false,
-    why: `nothing a build reads changed (${paths.slice(0, 5).join(", ")}${paths.length > 5 ? ", ..." : ""})`,
-  };
+  const named = `it ships ${shipped.slice(0, 5).join(", ")}`;
+  const { macos, linux } = platformsOf(paths);
+  if (macos || !partial) return { ships: true, ...both, why: named };
+  return { ships: true, macos, linux, why: `${named}, all of it Linux-only: no macOS build` };
 }
 
 const COMPARE_PAGE = 100;
@@ -485,11 +536,11 @@ const COMPARE_PAGES = 3;
  * arguments to what it printed, throwing when it fails): the paths changed between the commit the
  * published `dev.json` names and `sha`. Whatever cannot be read says `ships`.
  */
-export function askShips({ repo, kind, sha, api }) {
-  if (kind !== "dev") return shipsOf({ kind, paths: null });
+export function askShips({ repo, kind, sha, api, partial }) {
+  if (kind !== "dev") return shipsOf({ kind, paths: null, partial });
   try {
     const published = readPublished({ repo, api });
-    if (published === null) return { ships: true, why: "the dev channel serves nothing yet" };
+    if (published === null) return { ships: true, macos: true, linux: true, why: "the dev channel serves nothing yet" };
     const paths = [];
     for (let page = 1; page <= COMPARE_PAGES; page += 1) {
       const compared = JSON.parse(
@@ -498,7 +549,7 @@ export function askShips({ repo, kind, sha, api }) {
       // Only a build ahead of the published one is measured; `dev-build-order.mjs` rules on any
       // other standing (behind, identical, diverged).
       if (compared.status !== "ahead") {
-        return { ships: true, why: `the compare says ${compared.status}, which is not a change to measure` };
+        return { ships: true, macos: true, linux: true, why: `the compare says ${compared.status}, which is not a change to measure` };
       }
       const files = compared.files ?? [];
       for (const file of files) {
@@ -506,13 +557,13 @@ export function askShips({ repo, kind, sha, api }) {
         if (file.previous_filename) paths.push(file.previous_filename);
       }
       if (files.length < COMPARE_PAGE) {
-        const answer = shipsOf({ kind, paths });
+        const answer = shipsOf({ kind, paths, partial });
         return { ...answer, why: `since ${published.sha}: ${answer.why}` };
       }
     }
-    return { ships: true, why: "the change is too long for the forge to list in full" };
+    return { ships: true, macos: true, linux: true, why: "the change is too long for the forge to list in full" };
   } catch (error) {
-    return { ships: true, why: `the change could not be read (${error.message})` };
+    return { ships: true, macos: true, linux: true, why: `the change could not be read (${error.message})` };
   }
 }
 
@@ -524,16 +575,98 @@ function ghApi(args) {
   });
 }
 
-// `ships <kind> <sha>`: writes `ships=true|false` to `$GITHUB_OUTPUT` (or stdout) and says why.
+// `ships <kind> <sha>`: writes `ships=`, `macos=` and `linux=` (`true|false`) to `$GITHUB_OUTPUT` (or stdout) and says why.
 function mainShips([kind, sha]) {
   const out = process.env.GITHUB_OUTPUT;
   const say = (line) => (out ? appendFileSync(out, `${line}\n`) : console.log(line));
   const repo = process.env.GITHUB_REPOSITORY;
   const answer = repo
     ? askShips({ repo, kind, sha, api: ghApi })
-    : { ships: true, why: "GITHUB_REPOSITORY is not set" };
+    : { ships: true, macos: true, linux: true, why: "GITHUB_REPOSITORY is not set" };
   say(`ships=${answer.ships}`);
+  say(`macos=${answer.macos}`);
+  say(`linux=${answer.linux}`);
   console.log(`ships=${answer.ships}: ${answer.why}`);
+}
+
+/**
+ * The path filter of a workflow's `pull_request` trigger, in order, or `null` when it has none
+ * (#7420). Read line by line as the other tools read workflows: the `paths:` list under
+ * `pull_request:` in the `on:` block, a comment and the quotes around a pattern dropped.
+ */
+export function pullRequestPathsOf(text) {
+  const lines = text.split("\n");
+  const on = lines.findIndex((line) => /^on:\s*$/.test(line));
+  if (on < 0) return null;
+  let at = -1;
+  for (let i = on + 1; i < lines.length; i++) {
+    if (/^\S/.test(lines[i]) && !/^#/.test(lines[i])) break;
+    if (/^ {2}pull_request:/.test(lines[i])) {
+      at = i;
+      break;
+    }
+  }
+  if (at < 0) return null;
+  const patterns = [];
+  let inPaths = false;
+  for (const line of lines.slice(at + 1)) {
+    if (/^ {0,2}\S/.test(line) && !/^ {0,2}#/.test(line)) break;
+    if (/^ {4}paths:\s*$/.test(line)) {
+      inPaths = true;
+      continue;
+    }
+    if (/^ {4}\S/.test(line)) inPaths = false;
+    const item = inPaths ? /^ {6}- +(['"]?)(.+?)\1\s*(#.*)?$/.exec(line) : null;
+    if (item) patterns.push(item[2]);
+  }
+  return patterns.length > 0 ? patterns : null;
+}
+
+/**
+ * Whether a change to `paths` starts a workflow whose `pull_request` filter is `patterns`, as
+ * GitHub reads it: a path is in when the last line it matches is not a `!` one. No filter, and a
+ * change with no paths (one that could not be read), start it: a fault runs more.
+ */
+export function workflowNeeded(patterns, paths) {
+  if (patterns === null || paths.length === 0) return true;
+  // GitHub's `*` and `**` match a name that starts with a dot; `matchesGlob`'s do not. A leading
+  // dot of any segment is swapped for a letter no path holds, on both sides, so they do.
+  const plain = (text) => text.replace(/(^|\/)\./g, "$1\u0001");
+  return paths.some((path) => {
+    let hit = false;
+    for (const pattern of patterns) {
+      const negated = pattern.startsWith("!");
+      if (matchesGlob(plain(path), plain(negated ? pattern.slice(1) : pattern))) hit = !negated;
+    }
+    return hit;
+  });
+}
+
+// `workflow <file> <base>`: writes `run=true|false` to `$GITHUB_OUTPUT` (or stdout), for a merge
+// group's run of a workflow that a pull request starts by `paths:` (#7420). A merge group's event
+// has no `paths`, so the queue run reads the workflow's own filter against what the change
+// touches since `base` (`change-base`): the two cannot drift. Any failure to read says `true`.
+function workflowRuns([file, base]) {
+  const out = process.env.GITHUB_OUTPUT;
+  const say = (line) => (out ? appendFileSync(out, `${line}\n`) : console.log(line));
+  let run = true;
+  let why = "";
+  try {
+    const patterns = pullRequestPathsOf(readFileSync(file, "utf8"));
+    const paths = execFileSync("git", ["diff", "--name-only", "--no-renames", base, "HEAD"], {
+      encoding: "utf8",
+      maxBuffer: 1 << 28,
+    })
+      .split("\n")
+      .filter(Boolean);
+    run = workflowNeeded(patterns, paths);
+    const hits = patterns === null ? [] : paths.filter((p) => workflowNeeded(patterns, [p]));
+    why = run ? `: ${hits.slice(0, 5).join(", ") || "no filter"}` : ` (nothing of ${paths.length} changed paths is in its filter)`;
+  } catch (error) {
+    console.log(`::warning::the change could not be read, so the workflow runs: ${error.message}`);
+  }
+  say(`run=${run}`);
+  console.log(`::notice title=Scope::${file} ${run ? "runs" : "is skipped"}${why}`);
 }
 
 function main([event, base, draftArg, labels = ""]) {
@@ -591,5 +724,6 @@ function main([event, base, draftArg, labels = ""]) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [first, ...rest] = process.argv.slice(2);
   if (first === "ships") mainShips(rest);
+  else if (first === "workflow") workflowRuns(rest);
   else main([first, ...rest]);
 }

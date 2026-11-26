@@ -1198,9 +1198,21 @@ fn both_ports_stop_listening_when_the_chat_ends() {
     let proxy = Proxy::start(vec!["example.com".to_owned()]).expect("a proxy");
     let (http, socks) = (proxy.port(), proxy.socks_port());
     drop(proxy);
-    std::thread::sleep(Duration::from_millis(200));
-    assert!(TcpStream::connect(("127.0.0.1", http)).is_err());
-    assert!(TcpStream::connect(("127.0.0.1", socks)).is_err());
+    // Each listener closes on its own thread once it has seen the stop, not before `drop`
+    // returns, and it carries nothing in between (it breaks on its first accept after the stop).
+    // So "stops listening" is a connection refused soon, waited for until it is rather than a
+    // fixed sleep a loaded runner outlasts; a listener that never closes fails at the deadline.
+    for (name, port) in [("http", http), ("socks", socks)] {
+        let until = std::time::Instant::now() + Duration::from_secs(10);
+        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+        while TcpStream::connect_timeout(&addr, Duration::from_secs(1)).is_ok() {
+            assert!(
+                std::time::Instant::now() < until,
+                "the {name} port still listens 10 s after the chat ended"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
 }
 
 /// The connection limit is the chat's, over both its ports together.

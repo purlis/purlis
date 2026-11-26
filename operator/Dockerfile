@@ -8,7 +8,7 @@
 #
 # The base is the runner image's (runner-image/Dockerfile): the C library the binary was linked
 # against, pinned by the digest of its multi-architecture index, moved by Dependabot.
-FROM ubuntu:26.04@sha256:065aa8626841f16057b78b027b464cd59c4fac36c204c72dcbf48d66f5fa8a96
+FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
 
 # The operator talks to the cluster's API server, over TLS with the cluster's own certificate
 # authority, and to GitHub for a Pool opted in to minting (#4206), which needs the public ones.

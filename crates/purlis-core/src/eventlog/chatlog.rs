@@ -33,13 +33,19 @@ use super::stops::{
 use crate::harness::Harness;
 use crate::sandbox::protection::{InForce, SANDBOX};
 
+/// The cause an end row says for a run the person hibernated, which ended `superseded` as it
+/// was woken or ended (SC-4a, #7630): its row's word, not the log's.
+pub const HIBERNATED: &str = "hibernated";
+
 /// **Whether an event of `kind` is part of a chat's story**: its runs starting and ending, its
 /// stops ([`stops`]: blocks, holds, loop pauses and answers to asks), and the grants and
 /// protection changes the log writes under it (`trust.*`). A tool hook's line and the log's own
 /// housekeeping are not: the Chat log is the story, never the trace.
 pub fn is_story(kind: &str) -> bool {
-    matches!(kind, "run.started" | "run.ended" | stops::ASK_RAISED)
-        || is_stop(kind)
+    matches!(
+        kind,
+        "run.started" | "run.moved" | "run.ended" | stops::ASK_RAISED
+    ) || is_stop(kind)
         || kind.starts_with("trust.")
 }
 
@@ -168,6 +174,9 @@ fn call_of(event: &Event) -> Option<String> {
 pub fn rows(events: &[Event], chat: &str) -> Vec<Row> {
     let mut rows = Vec::new();
     let mut harness = super::UNKNOWN.to_owned();
+    // The runs the person hibernated (#7630): each ends `superseded` as it is woken or ended,
+    // which its row says as the hibernation it was, never as a change of the project's settings.
+    let mut hibernated = std::collections::HashSet::new();
     let mut before: Option<&Event> = None;
     // Each block row not yet resolved: where it is, who blocked it, and its call's tool and
     // arguments' digest, where it names one.
@@ -234,10 +243,29 @@ pub fn rows(events: &[Event], chat: &str) -> Vec<Row> {
                         .and_then(|said| serde_json::from_value(said.clone()).ok()),
                 })
             }
+            "run.moved" if own => {
+                if word("to") == "hibernated"
+                    && let Some(run) = event.run.as_ref()
+                {
+                    hibernated.insert(run.clone());
+                }
+                None
+            }
             "run.ended" if own => Some(Row::Ended {
                 at_ms,
                 state: word("state"),
-                cause: word("cause"),
+                cause: match word("cause") {
+                    cause
+                        if cause == "superseded"
+                            && event
+                                .run
+                                .as_ref()
+                                .is_some_and(|run| hibernated.contains(run)) =>
+                    {
+                        HIBERNATED.to_owned()
+                    }
+                    cause => cause,
+                },
                 code: event.body.get("code").and_then(serde_json::Value::as_i64),
             }),
             // The protection changes the shipped paths write (R-228): the sandbox lifted

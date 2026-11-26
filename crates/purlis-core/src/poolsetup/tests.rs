@@ -1172,3 +1172,87 @@ fn a_pool_s_identity_step_gives_no_tool_line_to_add_by_hand_once_the_sign_in_rep
     assert!(see.note.contains("holds no forge token"), "{}", see.note);
     assert!(!see.text.contains("GH_ENTERPRISE_TOKEN"), "{}", see.text);
 }
+
+mod the_plugin_folder_typed {
+    use super::super::*;
+
+    #[test]
+    fn its_own_placeholder_is_expanded_under_the_home() {
+        let home = Path::new("/Users/sam");
+        assert_eq!(
+            plugin_folder_typed(" ~/google-cloud-sdk/bin ", Some(home)).unwrap(),
+            Path::new("/Users/sam/google-cloud-sdk/bin")
+        );
+    }
+
+    #[test]
+    fn an_absolute_folder_is_taken_as_typed() {
+        assert_eq!(
+            plugin_folder_typed("/opt/tools/bin", None).unwrap(),
+            Path::new("/opt/tools/bin")
+        );
+    }
+
+    #[test]
+    fn a_variable_or_a_shortcut_nobody_expands_is_refused() {
+        let home = Path::new("/Users/sam");
+        for typed in [
+            "$HOME",
+            "$HOME/bin",
+            "${HOME}/bin",
+            "$(pwd)/bin",
+            "`pwd`",
+            "~sam/bin",
+            "~",
+        ] {
+            assert!(plugin_folder_typed(typed, Some(home)).is_err(), "{typed}");
+        }
+    }
+
+    #[test]
+    fn the_home_folder_itself_is_no_plugin_folder() {
+        let home = Path::new("/Users/sam");
+        assert!(plugin_folder_typed("/Users/sam", Some(home)).is_err());
+        assert!(plugin_folder_typed("~/", Some(home)).is_err());
+    }
+
+    #[test]
+    fn going_up_through_dot_dot_is_refused() {
+        let home = Path::new("/Users/sam");
+        for typed in ["~/..", "~/bin/../..", "/Users/sam/../sam"] {
+            assert!(plugin_folder_typed(typed, Some(home)).is_err(), "{typed}");
+        }
+    }
+
+    #[test]
+    fn a_tilde_with_no_home_is_refused_not_guessed() {
+        assert!(plugin_folder_typed("~/bin", None).is_err());
+    }
+
+    #[test]
+    fn the_typed_folder_is_kept_expanded_where_it_exists() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(home.path().join("sdk/bin")).unwrap();
+        let config = tempfile::tempdir().unwrap();
+        choose_plugin_folder_typed(config.path(), "~/sdk/bin", Some(home.path())).unwrap();
+        assert_eq!(
+            read_choices(config.path()).unwrap().plugin_dir,
+            Some(home.path().join("sdk/bin"))
+        );
+    }
+
+    #[test]
+    fn a_new_setup_forgets_a_kubeconfig_or_plugin_folder_alone() {
+        let config = tempfile::tempdir().unwrap();
+        write_choices(
+            config.path(),
+            Choices {
+                plugin_dir: Some(PathBuf::from("/opt/tools/bin")),
+                ..Choices::default()
+            },
+        )
+        .unwrap();
+        start_over(config.path()).unwrap();
+        assert_eq!(read_choices(config.path()).unwrap().plugin_dir, None);
+    }
+}

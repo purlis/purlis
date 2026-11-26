@@ -83,6 +83,10 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
     // absent field are all the empty string, and the arms are still asked.
     let command = text(&data["tool_input"]["command"]);
     let cwd = text(&data["cwd"]);
+    SEVERAL_COMMANDS.store(
+        is_several_commands(&command),
+        std::sync::atomic::Ordering::Relaxed,
+    );
     let agent_id = data["agent_id"].as_str().map(str::to_owned);
     let permission_mode = data["permission_mode"].as_str().map(str::to_owned);
     // Which harness this session runs under: A7 reads it to decide whether an `agent_id` on the
@@ -207,8 +211,8 @@ fn log_verdict(root: &Path, chat: Option<&str>, family: Family, verdict: &toolga
 }
 
 /// How long the guard waits for the app to say whether this chat is attended (R-109): the app
-/// answers from what it holds, so this is the time a slow app may take, inside the hook's
-/// [`BUDGET`].
+/// answers from what it holds, so this is the time a slow app may take, inside the Bash hook's
+/// [`BASH_BUDGET`].
 const ATTENDANCE_IS_ANSWERED_WITHIN: Duration = Duration::from_millis(500);
 
 /// **This chat's attendance fact, as the app holds it** (R-109, T1-18,
@@ -239,8 +243,10 @@ pub(crate) fn attendance_of_this_chat(
 
 /// How long the guard waits for the app to take a held merge: the app reads the request from
 /// the forge before it answers, within [`purlis_core::mergehold::THE_FORGE_IS_READ_WITHIN`], so
-/// the chat is told the person is asked only where an ask waits (Q239). Inside the hook's
-/// [`BUDGET`].
+/// the chat is told the person is asked only where an ask waits (Q239). **It bounds each read,
+/// not the ask**: the ask first reads who is asking ([`crate::brokered`]'s connection) and then
+/// the answer, each for this long, so a merge taken spends twice this, inside the Bash hook's
+/// [`BASH_BUDGET`] (`a_merge_taken_fits_the_budget`).
 const A_MERGE_IS_TAKEN_WITHIN: Duration = Duration::from_millis(1_500);
 
 /// **The merge hold** (R-114, R-115, [`purlis_core::mergehold`]): the refusal of `command`,
@@ -268,20 +274,27 @@ fn held_merge(command: &str, cwd: &str, asks_the_app: bool) -> Option<toolgate::
             }
             None
         }
-        Held::Request(request) => match crate::brokered::asked(
-            |chat| {
-                Ask::Merge(MergeAsk {
-                    chat,
-                    request: request.clone(),
-                    cwd: cwd.to_owned(),
-                })
-            },
-            A_MERGE_IS_TAKEN_WITHIN,
-        ) {
-            Err(crate::brokered::NotTaken::NotAChat) => return None,
-            answer => answer.ok().and_then(Result::ok),
-        },
-        Held::Unreadable | Held::Land => {
+        Held::Request(request) => {
+            // From here until the app answers, a hook that runs out of time is a merge waiting
+            // for the person, and says so (#7542).
+            waiting_on_a_merge(Some(mergehold::waiting(request)));
+            let asked = crate::brokered::asked(
+                |chat| {
+                    Ask::Merge(MergeAsk {
+                        chat,
+                        request: request.clone(),
+                        cwd: cwd.to_owned(),
+                    })
+                },
+                A_MERGE_IS_TAKEN_WITHIN,
+            );
+            waiting_on_a_merge(None);
+            match asked {
+                Err(crate::brokered::NotTaken::NotAChat) => return None,
+                answer => answer.ok().and_then(Result::ok),
+            }
+        }
+        Held::Unreadable | Held::Land | Held::AutoMerge => {
             if !crate::brokered::in_a_chat() {
                 return None;
             }
@@ -328,7 +341,7 @@ fn is_the_apps_own_binary() -> bool {
 
 /// How long the guard waits, in all, for the app to judge a line's branch folder claims
 /// (#3931): each is a check and one appended line, and the whole wait stays well inside the
-/// hook's [`BUDGET`], whatever the arms before it took.
+/// Bash hook's [`BASH_BUDGET`], whatever the arms before it took.
 const CLAIMS_ARE_ANSWERED_WITHIN: Duration = Duration::from_millis(900);
 
 /// **The one-writer guard on a chat's plain git** (#3931): the refusal of `command`, run in
@@ -437,8 +450,9 @@ fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate:
 /// touches are ever committed, so the reservation costs nothing a person could notice.
 const GUARD_STACK: usize = 256 * 1024 * 1024;
 
-/// The time every `PreToolUse` hook decides within, from the moment it starts: reading the
-/// payload, then every guard and gate it runs (#1355).
+/// The time every `PreToolUse` hook but the Bash one decides within, from the moment it starts:
+/// reading the payload, then every guard and gate it runs (#1355). The Bash hook has
+/// [`BASH_BUDGET`].
 ///
 /// A harness gives a hook a timeout of its own, and whether the tool call runs when it passes is
 /// the harness's choice: Codex and Claude Code run it (see `docs/hooks.md` → When a hook runs
@@ -453,6 +467,14 @@ const GUARD_STACK: usize = 256 * 1024 * 1024;
 /// It starts in `hook`, not when the process does: the time to start the process is outside it
 /// (`docs/hooks.md` → When a hook runs out of time).
 pub(crate) const BUDGET: Duration = Duration::from_secs(2);
+
+/// The Bash hook's own budget: the only hook that merges, and so the only one that waits on the
+/// session host for a decision. A merge asks the host to take it, which reads who is asking and
+/// then the answer, each within [`A_MERGE_IS_TAKEN_WITHIN`]: 3 s of waiting, with the arms before
+/// it. Five seconds is half of the Bash hook's ten-second timeout
+/// (`only_the_bash_hook_has_the_bash_budget`). The Read, Edit and dispatch hooks keep
+/// [`BUDGET`], inside their five seconds.
+pub(crate) const BASH_BUDGET: Duration = Duration::from_secs(5);
 
 /// What sets the budget in milliseconds instead, in a debug build, for the tests that reach it.
 #[cfg(debug_assertions)]
@@ -472,10 +494,11 @@ pub(crate) struct Budget {
 }
 
 impl Budget {
-    /// The budget, from now.
-    pub(crate) fn start() -> Self {
+    /// The budget of the `PreToolUse` hook `word` names, from now: [`BASH_BUDGET`] for the Bash
+    /// hook, [`BUDGET`] for the rest.
+    pub(crate) fn start(word: &str) -> Self {
         Self {
-            ends: Instant::now() + budget(),
+            ends: Instant::now() + budget(word),
         }
     }
 
@@ -485,7 +508,7 @@ impl Budget {
     }
 }
 
-fn budget() -> Duration {
+fn budget(word: &str) -> Duration {
     #[cfg(debug_assertions)]
     if let Some(ms) = std::env::var(BUDGET_ON_PURPOSE_ENV)
         .ok()
@@ -493,7 +516,88 @@ fn budget() -> Duration {
     {
         return Duration::from_millis(ms);
     }
-    BUDGET
+    if word == crate::GUARDED_TOOL_HOOK {
+        BASH_BUDGET
+    } else {
+        BUDGET
+    }
+}
+
+/// What the hook knows, for the sentence it ends with if it runs out of time: the process-wide
+/// facts the panic hook reads, because the thread that ran out of time is not the one holding them.
+static MERGE_WAIT: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+static SEVERAL_COMMANDS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Records that the hook is waiting for the app to take a merge, with the sentence to refuse
+/// with if its time runs out first; `None` once the app has answered.
+fn waiting_on_a_merge(refusal: Option<String>) {
+    if let Ok(mut wait) = MERGE_WAIT.lock() {
+        *wait = refusal;
+    }
+}
+
+/// Whether `command` is more than one program call: a list, a pipeline, a substitution or a
+/// redirection. Only the advice a timeout gives depends on it, never a verdict.
+fn is_several_commands(command: &str) -> bool {
+    command.contains([';', '&', '|', '\n', '`', '<', '>', '(', ')'])
+}
+
+/// **The sentence of a hook that ran out of time** (#6962, #7542): a merge waiting for the person
+/// is held, not slow, so it says so and never advises a retry or a split. Other lines blame the
+/// time limit, and advise splitting only a line that is several commands.
+fn out_of_time_said() -> String {
+    if let Ok(wait) = MERGE_WAIT.try_lock()
+        && let Some(refusal) = wait.as_ref()
+    {
+        return format!("purlis guard: {refusal}");
+    }
+    let advice = if SEVERAL_COMMANDS.load(std::sync::atomic::Ordering::Relaxed) {
+        "Try it again; if it runs out of time again, run its commands one at a time."
+    } else {
+        "Try it again when the machine is less busy: this is one command, so there is nothing to \
+         split."
+    };
+    format!(
+        "purlis guard: this tool call is refused because purlis could not check it in time: \
+         the check ran out of its time limit, which a busy machine can cause, and nothing ran. \
+         {advice}"
+    )
+}
+
+/// Whether `payload` is a Bash call of purlis's own `report` command and nothing else: **the one
+/// call the guard lets through without asking the host or the network anything**, so a chat can
+/// report the fault of the guard itself (#7542). It is strict, and anything it does not read
+/// whole fails closed to the full guard: `purlis`, then `report`, then words of plain characters
+/// separated by blanks. A quote, `$`, `;`, `&`, `|`, a redirection, a substitution, a glob or a
+/// newline is a line that does more, or that purlis cannot read at a glance.
+pub(crate) fn is_purlis_report(payload: &str) -> bool {
+    let Ok(data) = serde_json::from_str::<serde_json::Value>(payload) else {
+        return false;
+    };
+    let Some(command) = data["tool_input"]["command"].as_str() else {
+        return false;
+    };
+    let plain = |word: &str| {
+        !word.is_empty()
+            && word
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"._/:=@+,-".contains(&b))
+    };
+    // Exactly one space between words, none before or after: a spelling the consent rule
+    // `purlis report *--yes*` (A7b) and a person's own rules read the same way. A report that is
+    // filed (`--yes`, `-y`) or that reads a file (`--from-file`, `--stdin`) is not on the fast
+    // path: it goes through the whole guard, its consent arms included.
+    let words: Vec<&str> = command.split(' ').collect();
+    words.len() >= 2
+        && words[0] == "purlis"
+        && words[1] == "report"
+        && words.iter().all(|word| plain(word))
+        && !words.iter().any(|word| {
+            *word == "-y"
+                || word.starts_with("--yes")
+                || word.starts_with("--from-file")
+                || word.starts_with("--stdin")
+        })
 }
 
 /// The hook ran out of its budget: refused, by the panic hook ([`refuse_on_a_crash`]), which
@@ -564,16 +668,8 @@ pub(crate) fn refuse_on_a_crash(tell_the_host: fn(&str, bool)) {
         let mut err = std::io::stderr().lock();
         let unanswered = info.payload().downcast_ref::<&str>() == Some(&UNANSWERED);
         if unanswered {
-            // The time limit's own words (#6962): a short line on a busy machine runs out of
-            // time too, so this never blames the line's length or nesting, whose caps say so
-            // themselves (`guardcaps::refusal`).
-            let _ = writeln!(
-                err,
-                "purlis guard: this tool call is refused because purlis could not check it in \
-                 time: the check ran out of its time limit, which a busy machine can cause, and \
-                 nothing ran. Try it again; if it runs out of time again, split it into smaller \
-                 commands."
-            );
+            // The time limit's own words (#6962), or a merge's waiting for the person (#7542).
+            let _ = writeln!(err, "{}", out_of_time_said());
         } else {
             let _ = writeln!(
                 err,
@@ -619,20 +715,156 @@ mod budget_tests {
             .filter(|hook| hook.event == "PreToolUse")
         {
             let harness = Duration::from_secs(u64::from(hook.timeout));
+            let budget = budget(hook.name);
             assert!(
-                BUDGET * 2 <= harness,
-                "{}: {BUDGET:?} of {harness:?}",
+                budget * 2 <= harness,
+                "{}: {budget:?} of {harness:?}",
                 hook.name
             );
             // And with the app frozen: the tool call's line, then the two lines nothing
             // records (the touched file, what the chat is doing), each with its own bound.
             #[cfg(unix)]
             assert!(
-                BUDGET + purlis_core::hookwire::A_TOOL_HOOK_TELLS_WITHIN <= harness,
-                "{}: {BUDGET:?} and {:?} of {harness:?}",
+                budget + purlis_core::hookwire::A_TOOL_HOOK_TELLS_WITHIN <= harness,
+                "{}: {budget:?} and {:?} of {harness:?}",
                 hook.name,
                 purlis_core::hookwire::A_TOOL_HOOK_TELLS_WITHIN
             );
         }
+    }
+
+    /// The hooks that never merge keep the two seconds they had, and only the Bash hook (the one
+    /// registered for `Bash`) is given [`BASH_BUDGET`].
+    #[test]
+    fn only_the_bash_hook_has_the_bash_budget() {
+        assert_eq!(BUDGET, Duration::from_secs(2));
+        let bash: Vec<_> = purlis_core::hookreg::HANDLERS
+            .iter()
+            .filter(|hook| hook.event == "PreToolUse" && hook.matcher == Some("Bash"))
+            .map(|hook| hook.name)
+            .collect();
+        assert_eq!(bash, [crate::GUARDED_TOOL_HOOK]);
+        let bash_hook = purlis_core::hookreg::find(crate::GUARDED_TOOL_HOOK).expect("registered");
+        assert!(BASH_BUDGET * 2 <= Duration::from_secs(u64::from(bash_hook.timeout)));
+        assert_eq!(budget(crate::GUARDED_TOOL_HOOK), BASH_BUDGET);
+        assert_eq!(budget("pretooluse-read"), BUDGET);
+        assert_eq!(budget("pretooluse-edit"), BUDGET);
+        assert_eq!(budget("pretooluse-dispatch"), BUDGET);
+    }
+
+    /// A merge taken reads who is asking and then the answer, each bounded on its own, so twice
+    /// [`A_MERGE_IS_TAKEN_WITHIN`] ends inside the Bash hook's [`BASH_BUDGET`] with room left for
+    /// the arms before it, and the wait outlasts the app's read of the forge.
+    #[test]
+    fn a_merge_taken_fits_the_budget() {
+        let slack = Duration::from_millis(250);
+        assert!(
+            2 * A_MERGE_IS_TAKEN_WITHIN + slack <= BASH_BUDGET,
+            "{A_MERGE_IS_TAKEN_WITHIN:?}, twice, of {BASH_BUDGET:?}"
+        );
+        assert!(
+            A_MERGE_IS_TAKEN_WITHIN > purlis_core::mergehold::THE_FORGE_IS_READ_WITHIN,
+            "the app reads the forge for {:?}",
+            purlis_core::mergehold::THE_FORGE_IS_READ_WITHIN
+        );
+    }
+
+    /// The two tests that set the process-wide facts of a timeout take turns.
+    static TAKE_TURNS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn a_payload(command: &str) -> String {
+        serde_json::json!({"tool_name": "Bash", "tool_input": {"command": command}}).to_string()
+    }
+
+    #[test]
+    fn purlis_report_takes_the_fast_path() {
+        for command in [
+            "purlis report bug",
+            "purlis report bug --title no-answer-in-time",
+        ] {
+            assert!(is_purlis_report(&a_payload(command)), "{command}");
+        }
+    }
+
+    #[test]
+    fn a_look_alike_of_purlis_report_does_not_take_the_fast_path() {
+        for command in [
+            "purlis report; gh pr merge 1",
+            "purlis report && gh pr merge 1",
+            "purlis report | sh",
+            "purlis report $(gh pr merge 1)",
+            "purlis report `id`",
+            "purlis report bug > ~/.ssh/x",
+            "purlis report 'bug'",
+            "purlis report\ngh pr merge 1",
+            "purlis reports",
+            "purlis reportx bug",
+            "xpurlis report",
+            "./purlis report",
+            "env purlis report",
+            "gh pr merge 1 # purlis report",
+            "purlis dispatch report",
+            "purlis",
+            "",
+            // Filed or read from a file: the consent arms (A7b, A7c) must read them.
+            "purlis report bug --yes d41d8cd9",
+            "purlis report bug --yes=d41d8cd9",
+            "purlis report bug -y d41d8cd9",
+            "purlis report bug --from-file /etc/hosts",
+            "purlis report bug --stdin",
+            // Spellings a person's `purlis report *` rule may not read the same way.
+            "purlis  report bug",
+            "purlis\treport bug",
+            " purlis report bug",
+            "purlis report bug ",
+        ] {
+            assert!(!is_purlis_report(&a_payload(command)), "{command:?}");
+        }
+        assert!(!is_purlis_report("not json"));
+        assert!(!is_purlis_report("{}"));
+    }
+
+    /// A merge the hook was still waiting on for the person is held, not timed out: its sentence
+    /// says so and advises neither a retry nor a split. The state is process-wide, so one test
+    /// sets and clears it.
+    #[test]
+    fn a_merge_waiting_for_the_person_never_reads_as_a_timeout() {
+        let _turn = TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
+        use purlis_core::mergehold::{Held, held};
+        let Some(Held::Request(request)) = held("gh pr merge 12") else {
+            panic!("a merge of one request");
+        };
+        waiting_on_a_merge(Some(purlis_core::mergehold::waiting(&request)));
+        let said = out_of_time_said();
+        waiting_on_a_merge(None);
+        // It cannot know the app took it, so it says so and points at Asks (Q239: a hold is
+        // said only where the app confirms it).
+        assert!(said.contains("could not confirm"), "{said}");
+        assert!(said.contains("Asks"), "{said}");
+        assert!(said.contains("12"), "{said}");
+        assert!(said.contains("Nothing was merged"), "{said}");
+        for blamed in ["busy machine", "split", "time limit", "Try it again"] {
+            assert!(!said.contains(blamed), "{blamed}: {said}");
+        }
+    }
+
+    /// A real timeout keeps its sentence, and advises splitting only a line of several commands.
+    #[test]
+    fn a_real_timeout_advises_splitting_only_several_commands() {
+        let _turn = TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
+        waiting_on_a_merge(None);
+        SEVERAL_COMMANDS.store(false, std::sync::atomic::Ordering::Relaxed);
+        let one = out_of_time_said();
+        assert!(one.contains("could not check it in time"), "{one}");
+        assert!(one.contains("nothing to split"), "{one}");
+        assert!(!one.contains("smaller"), "{one}");
+        assert!(is_several_commands("a && b"));
+        assert!(is_several_commands("a | b"));
+        assert!(!is_several_commands("glab mr merge 4 --yes"));
+        SEVERAL_COMMANDS.store(true, std::sync::atomic::Ordering::Relaxed);
+        let several = out_of_time_said();
+        SEVERAL_COMMANDS.store(false, std::sync::atomic::Ordering::Relaxed);
+        assert!(several.contains("could not check it in time"), "{several}");
+        assert!(several.contains("one at a time"), "{several}");
     }
 }

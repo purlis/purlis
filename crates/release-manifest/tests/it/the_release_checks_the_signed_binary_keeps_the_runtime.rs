@@ -35,7 +35,8 @@ fn every_macos_build_reads_the_runtime_and_the_entitlements_off_the_signed_app()
     // Every macOS build, not only a publish: the profile guard and a build started by hand are
     // signed the same way (ad-hoc), and they are where a break shows first.
     assert!(
-        step.iter().any(|l| l.trim() == "if: runner.os == 'macOS'"),
+        step.iter()
+            .any(|l| l.trim() == "if: steps.ci.outputs.green == 'true' && runner.os == 'macOS'"),
         "{step:#?}"
     );
     let lines = run_lines(&step);

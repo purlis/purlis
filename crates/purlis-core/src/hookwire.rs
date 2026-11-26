@@ -135,6 +135,7 @@ pub const NOT_INHERITED: &[&str] = &[
     PROMPT_KEY_ENV,
     crate::sandbox::tools::POOL_IMAGE_VAR,
     HARNESS_INTERNAL_ENV,
+    crate::shellguard::SHELL_TAB_ENV,
 ];
 
 /// A harness's internal variable. It stays out of a chat's environment: never inherited
@@ -3896,10 +3897,11 @@ pub fn deliver_armed<L: SpoolLine>(
     let delivered = with_delivery(line, delivery.as_ref())?;
     let bytes = line_armed(token, armed.map(armed::ArmedKey::expose), &delivered)?;
     let to = path.to_path_buf();
-    let answered = within(A_NOTICE_TAKES_AT_MOST, move || {
+    let taken_within = a_line_is_taken_within();
+    let answered = within(taken_within, move || {
         let socket = std::os::unix::net::UnixStream::connect(&to)?;
-        socket.set_write_timeout(Some(A_NOTICE_TAKES_AT_MOST))?;
-        socket.set_read_timeout(Some(A_NOTICE_TAKES_AT_MOST))?;
+        socket.set_write_timeout(Some(taken_within))?;
+        socket.set_read_timeout(Some(taken_within))?;
         (&socket).write_all(&bytes)?;
         let mut said = String::new();
         std::io::BufReader::new(&socket)
@@ -4025,6 +4027,33 @@ fn one_line_with_a_deadline(
 /// a thread of its own, so this is only a bound on an app that has stopped reading.
 #[cfg(unix)]
 const A_NOTICE_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// What sets [`A_NOTICE_TAKES_AT_MOST`] for a line's delivery ([`deliver_armed`]) in
+/// milliseconds instead, in a debug build, for the tests that read what the app was told.
+///
+/// A tool line the app does not take in a quarter of a second is spooled, not sent, which is
+/// right for a hook and wrong for a test that waits on the app's own record of it: on a loaded
+/// runner the connect, the write and the receipt can take longer, and the test's line goes to
+/// a spool nobody there reads (#7436, #7452). The knob lifts the bound for those tests; a
+/// release build never reads it.
+#[cfg(all(unix, debug_assertions))]
+pub const A_LINE_DEADLINE_ON_PURPOSE_ENV: &str = "PURLIS_TEST_HOOK_LINE_DEADLINE_MS";
+
+/// How long a line's delivery waits for the app to take it: [`A_NOTICE_TAKES_AT_MOST`], or in
+/// a debug build what [`A_LINE_DEADLINE_ON_PURPOSE_ENV`] says (a number of milliseconds above
+/// zero; anything else reads as unset). [`A_TOOL_HOOK_TELLS_WITHIN`] is computed from the
+/// constant, so a hook run with the knob set is outside that bound, on purpose.
+#[cfg(unix)]
+fn a_line_is_taken_within() -> std::time::Duration {
+    #[cfg(debug_assertions)]
+    if let Some(ms) = crate::envvar::var(A_LINE_DEADLINE_ON_PURPOSE_ENV)
+        .and_then(|ms| ms.parse::<u64>().ok())
+        .filter(|ms| *ms > 0)
+    {
+        return std::time::Duration::from_millis(ms);
+    }
+    A_NOTICE_TAKES_AT_MOST
+}
 
 /// How long a notice's sender stays, all told, for the app to look at who sent it and let the
 /// connection go (D-1407-10). Spent in full only on an app that has stopped reading.
@@ -4463,9 +4492,14 @@ impl Listener {
                 let serving_turns = std::sync::Arc::clone(&turns);
                 dealt += 1;
                 let this = dealt;
-                let started = serving.run(
+                let started = serving.run_with_slot(
                     slot,
-                    Box::new(move || {
+                    Box::new(move |slot| {
+                        // Locals drop in reverse: the place is given back first, and the
+                        // duplicate closes the connection last, so a hook that reconnects on
+                        // seeing it end finds the place free (#7608).
+                        let _hold = connection.try_clone().ok();
+                        let _slot = slot;
                         serve(connection, pid, this, &tokens, &hearing, &serving_turns);
                     }),
                 );
@@ -5537,16 +5571,30 @@ impl Serving {
 
     /// Serves `job` in `slot`'s place on a thread of the pool, starting one if none is free.
     /// An error is a thread that would not start: `job` is dropped unrun.
+    #[cfg(test)]
     fn run(
         self: &std::sync::Arc<Self>,
         slot: Slot,
         job: Box<dyn FnOnce() + Send>,
     ) -> io::Result<()> {
+        self.run_with_slot(
+            slot,
+            Box::new(move |slot| {
+                let _slot = slot;
+                job();
+            }),
+        )
+    }
+
+    /// [`Self::run`], handing `job` the place, so it can give it back before its connection
+    /// closes (#7608).
+    fn run_with_slot(
+        self: &std::sync::Arc<Self>,
+        slot: Slot,
+        job: Box<dyn FnOnce(Slot) + Send>,
+    ) -> io::Result<()> {
         let mut state = self.lock();
-        state.waiting.push_back(Box::new(move || {
-            let _slot = slot;
-            job();
-        }));
+        state.waiting.push_back(Box::new(move || job(slot)));
         // Every admitted connection has a thread, so none waits behind a held one: the
         // admitted count is bounded by `at_most`, and so is this.
         if state.waiting.len() > state.idle && state.threads < self.at_most {

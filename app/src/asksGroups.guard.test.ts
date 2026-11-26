@@ -69,11 +69,16 @@ const GROUP_OF = {
   "trust-clone": "consent",
   // Trust these clones (T1-15): the project's unrecorded clones, trusted by one press.
   "trust-clones": "consent",
+  // Let this chat push a branch it has no record of (ADR 0128, amended 2026-11-23): Allow
+  // records the chat as the owner, which only the person's yes may.
+  "let-chat-push": "consent",
   confirmation: "consent",
   // Pool setup goes on (#4496): the admin gave what the install couldn't; the person's press goes on.
   "pool-setup": "consent",
   // What purlis refused the chat and raised as an ask (R-114).
   "merge-hold": "hold",
+  // A forge act a chat's route held, waiting on the person's press (ADR 0128 D8, #7685).
+  "held-act": "hold",
   looping: "loop_pause",
   budget: "budget",
   // A prompt in the harness's own terminal that no hook holds: "Waiting in its terminal".

@@ -48,15 +48,17 @@ fn in_a_used_browser(page: &str) -> Login {
     }
 }
 
-/// How a login ended, in words fixed in this file: what a login answers may carry what its page
-/// showed, so a failing test names only the kind of answer, never its words.
-fn ended_as<T>(outcome: &Result<T, Refusal>) -> &'static str {
+/// How a login ended: what a login answers may carry what its page showed, so a success is named
+/// by the kind of answer only, never its words. The reason of `NotLoggedIn` alone is the exception,
+/// since a login refuses "in words that name no value" ([`Refusal::NotLoggedIn`]): it is printed,
+/// or a red run says only that the login did not go through (#7435, #7439, #7450).
+fn ended_as<T>(outcome: &Result<T, Refusal>) -> String {
     match outcome {
-        Ok(_) => "it answered",
-        Err(Refusal::NotLoggedIn(_)) => "not logged in",
-        Err(Refusal::NoFormOnCleanLoad(_)) => "no form on the clean load",
-        Err(Refusal::Ended) => "the browser ended",
-        Err(_) => "another refusal",
+        Ok(_) => "it answered".to_owned(),
+        Err(Refusal::NotLoggedIn(why)) => format!("not logged in: {why}"),
+        Err(Refusal::NoFormOnCleanLoad(_)) => "no form on the clean load".to_owned(),
+        Err(Refusal::Ended) => "the browser ended".to_owned(),
+        Err(_) => "another refusal".to_owned(),
     }
 }
 
@@ -487,10 +489,17 @@ fn a_login_fills_no_password_beside_a_window_its_page_opened_on_its_site() {
         }
         other => panic!("refused otherwise: {}", ended_as(other)),
     }
-    assert!(
-        titles(&browser).iter().any(|title| title == "Opened"),
-        "the window opened, so this is what refused it"
-    );
+    // The window is the page's own, loading on its own process: on a slow runner its title comes
+    // after the refusal does, so it is waited for, and the refusal above is what says it opened.
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while !titles(&browser).iter().any(|title| title == "Opened") {
+        assert!(
+            std::time::Instant::now() < until,
+            "the window opened, so this is what refused it: {:?}",
+            titles(&browser)
+        );
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
 }
 
 /// The person's ruling of 2026-11-05: a window a login's page opened on another site closes once the

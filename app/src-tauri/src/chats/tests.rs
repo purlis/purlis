@@ -8853,13 +8853,36 @@ fn a_chat_on_a_profile_never_gets_the_shims() {
 }
 
 #[test]
-fn a_shell_tab_in_an_app_with_no_shims_is_a_plain_shell() {
+fn a_shell_tab_in_an_app_with_no_shims_is_a_plain_shell_marked_as_the_persons_own() {
     let chats = Chats::new();
 
     let (args, env) = chats.shell_start(&chat("/bin/zsh", "shell", None), "/bin/zsh", vec![]);
 
     assert!(args.is_empty());
-    assert!(env.is_empty(), "{env:?}");
+    assert_eq!(
+        env,
+        [(
+            purlis_core::shellguard::SHELL_TAB_ENV.to_owned(),
+            "1".to_owned()
+        )]
+    );
+}
+
+#[test]
+fn a_shell_tab_is_marked_as_the_persons_own_terminal() {
+    // #7694: a shell tab carries the chat marks a shell guard needs, so `purlis worktree adopt`
+    // run there took it for a chat. Its own mark says it is the person's.
+    let chats = armed_with_shims();
+
+    let (_, env) = chats.shell_start(&chat("/bin/sh", "shell", None), "/bin/sh", vec![]);
+
+    assert!(
+        env.contains(&(
+            purlis_core::shellguard::SHELL_TAB_ENV.to_owned(),
+            "1".to_owned()
+        )),
+        "{env:?}"
+    );
 }
 
 // --- the session host is a seam (FD-3) ------------------------------------------- //
@@ -11268,6 +11291,7 @@ fn a_notification_is_not_lost_to_a_stale_layout_while_the_window_is_in_the_backg
         window_in_front: false,
         inbox_open: false,
         chat_on_screen: chats.looks_at(3),
+        asks_off_its_pane: false,
     };
 
     assert!(
@@ -11504,6 +11528,7 @@ fn a_task_pressed_into_a_pane_is_held_from_that_layout_and_the_chat_it_replaced_
         window_in_front: true,
         inbox_open: false,
         chat_on_screen,
+        asks_off_its_pane: false,
     };
     assert!(
         looking(chats.looks_at(task)).is_looking(),
@@ -12315,14 +12340,16 @@ mod moved_on {
                 .collect()
         }
 
+        /// Waits for `done`, polling, and returns the moment it is true. The deadline is only
+        /// how long a thread behind it may go unscheduled before the wait calls it stuck: two
+        /// seconds was missed on a runner starting thousands of test processes (#7555, #7562),
+        /// where a retry a moment later took under a tenth of one.
         pub fn until(&self, done: impl Fn(&Self) -> bool, what: &str) {
-            for _ in 0..400 {
-                if done(self) {
-                    return;
-                }
+            let deadline = std::time::Instant::now() + Duration::from_secs(30);
+            while !done(self) {
+                assert!(std::time::Instant::now() < deadline, "never: {what}");
                 std::thread::sleep(Duration::from_millis(5));
             }
-            panic!("never: {what}");
         }
 
         /// Gives what is in flight time to go wrong.
@@ -13630,4 +13657,17 @@ fn the_notice_says_one_pool_sentence_for_every_chat_where_pools_are_each_ones_on
         None
     );
     assert_eq!(PoolMoved::said_for_all(&[]), None);
+}
+
+/// #7685 review (F4): a held act is said to be shown to the person only where the window hears
+/// that the asks moved, so whether anyone heard is answered.
+#[test]
+fn asks_said_to_have_moved_answer_whether_anyone_heard() {
+    let project = tempfile::tempdir().expect("a project");
+    let chats = chats_of(project.path());
+    assert!(!chats.told_asks_moved(), "nobody listens yet");
+
+    chats.tell_asks_moved_to(Arc::new(|| {}));
+
+    assert!(chats.told_asks_moved());
 }

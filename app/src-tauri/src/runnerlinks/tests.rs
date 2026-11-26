@@ -14,6 +14,11 @@ use purlis_session_protocol::session::{self, Client};
 
 use super::*;
 
+// The one gate every real-infrastructure test passes through (#7188, ruling 4), the file
+// `purlis-core`'s tests use: a missing fixture fails where `PURLIS_PARITY` is set.
+#[path = "../../../../crates/purlis-core/tests/support/real_infra.rs"]
+mod real_infra;
+
 const PATIENCE: Duration = Duration::from_secs(60);
 
 struct Echo;
@@ -129,13 +134,17 @@ fn a_link_to_a_runner_reads_this_desktops_key_and_never_makes_one() {
 /// window's link is relayed by the desktop's host to the pool's runner, through `docker exec`
 /// and the key pinned at its pairing. It needs Docker and a runner image of this build named by
 /// digest in `DOCKER_POOL_TEST_IMAGE` (`docker` on `PATH`, or the command
-/// `DOCKER_POOL_TEST_DOCKER` names); without the image it runs nothing and passes, as
+/// `DOCKER_POOL_TEST_DOCKER` names); without the image it prints a SKIP line and passes (where `PURLIS_PARITY` is set it fails, #7188), as
 /// `purlis-core`'s `a_docker_pool_runner_is_linked_through_docker_exec` does.
 #[test]
 fn a_window_reaches_a_pool_added_on_this_machine_through_its_own_host() {
     // A change of Runs on rechecks the marks other tests read (#4591).
     let _marks = crate::notheld::rechecking();
-    let Ok(image) = std::env::var("DOCKER_POOL_TEST_IMAGE") else {
+    let Some(image) = real_infra::fixture_or_skip(
+        "a runner image of this build, named by digest",
+        "tests/parity/build-images.sh",
+        std::env::var("DOCKER_POOL_TEST_IMAGE").ok(),
+    ) else {
         return;
     };
     let config = tempfile::tempdir().unwrap();
@@ -361,13 +370,17 @@ fn a_start_is_refused_unless_its_runner_is_kept_and_not_draining() {
 /// pool's runner through `docker exec`; the runner holds the project where it keeps it, and the
 /// window sends it the project's own repository, which the runner checks out there, less what is
 /// this machine's alone. It needs Docker and a runner image of this build named by digest in
-/// `DOCKER_POOL_TEST_IMAGE`; without the image it runs nothing and passes. The project keeps its
+/// `DOCKER_POOL_TEST_IMAGE`; without the image it prints a SKIP line and passes (where `PURLIS_PARITY` is set it fails, #7188). The project keeps its
 /// git directory beside its tree, so it runs where a sandbox refuses a folder's own
 /// `.git/config`.
 #[test]
 fn a_project_reaches_a_pools_runner_through_the_window() {
     use crate::host::SessionHost as _;
-    let Ok(image) = std::env::var("DOCKER_POOL_TEST_IMAGE") else {
+    let Some(image) = real_infra::fixture_or_skip(
+        "a runner image of this build, named by digest",
+        "tests/parity/build-images.sh",
+        std::env::var("DOCKER_POOL_TEST_IMAGE").ok(),
+    ) else {
         return;
     };
     let config = tempfile::tempdir().unwrap();
@@ -686,6 +699,8 @@ fn a_link_that_is_down_says_why_safely_in_the_pools_settings() {
         why: "anything".to_owned(),
         key_changed: true,
         gone: false,
+        refused: false,
+        host_key_changed: false,
     };
     assert_eq!(link_of(changed), PoolLink::KeyChanged);
 }
@@ -898,18 +913,23 @@ fn keeping_a_profile_has_the_time_its_limit_could_take() {
     );
 }
 
-/// **A runner too old to list what it holds goes as it did before purlis could ask**
-/// (ruled 2026-11-07): nothing is proved of it, and nothing is said.
+/// **Of a runner too old to list what it holds, nothing is proved** (ruled 2026-11-07): what may
+/// be on it is what this machine's records say (2026-11-26), and one that lists is proved alone.
 #[test]
-fn a_runner_too_old_to_list_what_it_holds_leaves_nothing_to_prove() {
+fn a_runner_too_old_to_list_what_it_holds_is_said_from_the_records_not_proved() {
     assert_eq!(
-        super::left_of(None, |_, _| panic!("nothing listed is proved")),
-        Ok(Vec::new())
+        super::left_of(
+            None,
+            |_, _| panic!("nothing listed is proved"),
+            || Ok(vec!["a chat may have run there".to_owned()])
+        ),
+        Ok(vec!["a chat may have run there".to_owned()])
     );
     assert_eq!(
         super::left_of(
             Some((Vec::new(), vec!["a folder ran out".to_owned()])),
-            |_, unread| { Ok(unread.to_vec()) }
+            |_, unread| { Ok(unread.to_vec()) },
+            || panic!("a runner that listed is not said from the records")
         ),
         Ok(vec!["a folder ran out".to_owned()])
     );
@@ -952,7 +972,10 @@ fn a_link_that_fails_after_a_slow_check_says_why_and_where_to_look_not_that_it_w
     })
     .unwrap_err();
     assert_ne!(said, LATE);
-    assert!(said.contains("did not finish linking within"), "{said}");
+    assert!(
+        said.contains("did not finish the link's handshake within"),
+        "{said}"
+    );
     assert!(said.contains("Pool setup"), "{said}");
 }
 
@@ -963,4 +986,106 @@ fn the_first_link_waits_out_the_checks_and_the_handshakes_own_deadlines() {
     assert!(FIRST_LINK_WITHIN > CHECK_WITHIN + handshake * 2);
     // A sign-in waits for the link's first word inside its own wait.
     assert!(SIGN_IN_STARTS_WITHIN > FIRST_LINK_WITHIN);
+}
+
+/// **A machine that answers and refuses is not dialled again on a timer** (#7187): the forward's
+/// failure is told as a refusal the link stops on, and a down link that says so is the pool
+/// settings' Refused. One that does not answer is retried as ever.
+#[test]
+fn a_forward_that_refuses_stops_the_link_and_one_that_is_silent_does_not() {
+    use crate::dockerpools::PoolLink;
+    use purlis_core::sshroute::connect::RemoteState;
+    assert_eq!(
+        not_checked_as("sign-in refused".into(), RemoteState::Refused),
+        purlis_host::NotChecked::Refused("sign-in refused".into())
+    );
+    assert_eq!(
+        not_checked_as("no answer".into(), RemoteState::Unreachable),
+        purlis_host::NotChecked::Unreachable("no answer".into())
+    );
+    let mut down = purlis_session_protocol::hostlink::Down::because("sign-in refused");
+    down.refused = true;
+    assert_eq!(
+        link_of(down),
+        PoolLink::Refused {
+            why: "sign-in refused".to_owned()
+        }
+    );
+}
+
+/// **A changed host key is its own state** (#7187): the forward's failure is told as a changed
+/// host key the link stops on, not as a refusal, and what a link that says so tells the person
+/// is to check the pool and trust it again.
+#[test]
+fn a_forward_that_finds_another_host_key_is_told_as_its_own_state() {
+    use purlis_core::sshroute::connect::RemoteState;
+    assert_eq!(
+        not_checked_as("another key".into(), RemoteState::HostKeyChanged),
+        purlis_host::NotChecked::HostKeyChanged("another key".into())
+    );
+    let mut down = purlis_session_protocol::hostlink::Down::because("another key");
+    down.host_key_changed = true;
+    assert!(down.stops_retrying());
+    let said = with_a_way_on("first", down).why;
+    assert!(said.contains("trust it again"), "{said}");
+}
+
+/// **A machine whose `sshd` is up before its `dockerd` recovers without a click** (#7187, steward
+/// decision 2026-11-19): after a reboot the forward opens, but Docker does not answer yet. That
+/// is Unreachable, so the kept link is told down without stopping, tries again on its own pause
+/// and, the second time Docker answers, gets past the check to the connection: nobody pressed
+/// Try now.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_machine_with_sshd_up_and_dockerd_late_is_linked_again_without_a_click() {
+    use purlis_core::sshroute::connect::Finding;
+    use purlis_session_protocol::hostlink::{
+        self, Handshake, Identity, LinkKey, Linked, Liveness, Pinned,
+    };
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let checks = Arc::new(AtomicUsize::new(0));
+    let connector = purlis_host::CommandConnector::checked("/bin/cat", Vec::new(), {
+        let checks = Arc::clone(&checks);
+        Arc::new(move || {
+            // The first try finds `dockerd` still starting; every later one finds it up.
+            if checks.fetch_add(1, Ordering::SeqCst) == 0 {
+                let finding = Finding::EngineSilent {
+                    host: "build-box".to_owned(),
+                    said: "Cannot connect to the Docker daemon".to_owned(),
+                };
+                return Err(not_checked_as(
+                    purlis_core::poolsetup::connect_said(&finding),
+                    finding.remote_state(),
+                ));
+            }
+            Ok(())
+        })
+    });
+    let mut links = hostlink::keep_linked(
+        connector,
+        Handshake::THIS_BUILD,
+        Identity {
+            device: "01JA0DESKT0P00000000000000".into(),
+            key: LinkKey::generate().unwrap(),
+        },
+        Pinned {
+            device: "01JB0RUNNER000000000000000".into(),
+            key: LinkKey::generate().unwrap().public(),
+        },
+        Liveness::default(),
+    );
+    match links.next().await {
+        Some(Linked::Down(down)) => {
+            assert!(!down.stops_retrying(), "{down:?}");
+            assert!(down.why.contains("isn't answering yet"), "{down:?}");
+        }
+        _ => panic!("the link came up with Docker down"),
+    }
+    // The second Down is the second try's: it got past the check, with nobody asking.
+    let second = tokio::time::timeout(Duration::from_secs(10), links.next())
+        .await
+        .expect("a second try was made on its own");
+    assert!(matches!(second, Some(Linked::Down(_))), "cat is no host");
+    assert!(checks.load(Ordering::SeqCst) >= 2);
 }

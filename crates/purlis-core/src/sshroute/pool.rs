@@ -145,11 +145,14 @@ pub fn docker_through(
     if let Some(Ask::Answer(finding)) = kept.as_ref().map(|kept| kept.ask(Instant::now())) {
         return Err(finding);
     }
+    let began = Instant::now();
     let (socket, opened) = match forward::hold_noting(&opening) {
         Ok(held) => {
             if kept.is_some() {
                 forget_failing(pool);
             }
+            // The link is back: a Try now mark is only for a try still in flight.
+            forget_cleared(pool);
             held
         }
         Err(said) => {
@@ -162,7 +165,10 @@ pub fn docker_through(
                 None => Failing::first(diagnosed(ssh, remote, pool, settings_in, said), now),
             };
             let finding = failed.finding.clone();
-            note_failing(pool, &remote.pin, failed);
+            // Try now was pressed while this try ran: its failure is not remembered.
+            if !cleared_since(pool, began) {
+                note_failing(pool, &remote.pin, failed);
+            }
             return Err(finding);
         }
     };
@@ -436,6 +442,46 @@ pub fn look_again() {
         .clear();
 }
 
+/// **Try now** (#7187, item 1): pool `pool`'s failing forward is forgotten, so its next ask
+/// opens the forward at once rather than answering what was found until [`Failing::next_try`].
+/// The wait of [`retry_after`] is for purlis's own automatic retries; a click is never held to
+/// it. Other pools' failing forwards keep their waits.
+pub fn try_now(pool: &str) {
+    forget_failing(pool);
+    CLEARED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(pool.to_owned(), Instant::now());
+}
+
+fn forget_cleared(pool: &str) {
+    CLEARED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(pool);
+}
+
+/// **Pool `pool` is gone from this machine** (removed or forgotten): what this process kept of
+/// it, its failing forward, its checked engine and its Try now mark, goes with it.
+pub fn pool_gone(pool: &str) {
+    forget_failing(pool);
+    forget_checked(pool);
+    forget_cleared(pool);
+}
+
+/// When each pool's Try now was last pressed: a try that began before it does not write its
+/// failure back, or the click would be answered from the memory it just cleared.
+static CLEARED: std::sync::Mutex<std::collections::BTreeMap<String, Instant>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+fn cleared_since(pool: &str, began: Instant) -> bool {
+    CLEARED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(pool)
+        .is_some_and(|at| *at >= began)
+}
+
 /// **Pool `name`'s `docker` and the socket of the engine it reaches**: for a pool on this
 /// machine, `docker` itself and `local`, this machine's engine as it was found; for a pool on
 /// another machine, through its forward (held open, engine checked) and the forward's socket.
@@ -477,11 +523,27 @@ pub fn socket_for(docker: &Docker, pool: &str) -> Result<PathBuf, Finding> {
 /// **[`docker_of`] for the pool named `name`** under `config`, in words: what a link, a check or
 /// a make reads before it runs anything there.
 pub fn docker_of_named(config: &Path, docker: &Docker, name: &str) -> Result<Docker, String> {
-    let pools = crate::runners::pools(config).map_err(|why| why.to_string())?;
+    docker_of_named_in_state(config, docker, name).map_err(|(said, _)| said)
+}
+
+/// [`docker_of_named`], with the state a failure puts the pool in (#7187): what a link says of
+/// a pool it can't reach, and whether it keeps trying.
+pub fn docker_of_named_in_state(
+    config: &Path,
+    docker: &Docker,
+    name: &str,
+) -> Result<Docker, (String, connect::RemoteState)> {
+    // A runners file that cannot be read is Refused with its reason, not Unreachable: no machine
+    // is silent, and waiting does not mend a file that is not as purlis writes it (#7187).
+    let pools = crate::runners::pools(config)
+        .map_err(|why| (why.to_string(), connect::RemoteState::Refused))?;
     match pools.iter().find(|pool| pool.name() == name) {
-        Some(pool) => {
-            docker_of(docker, pool).map_err(|finding| crate::poolsetup::connect_said(&finding))
-        }
+        Some(pool) => docker_of(docker, pool).map_err(|finding| {
+            (
+                crate::poolsetup::connect_said(&finding),
+                finding.remote_state(),
+            )
+        }),
         // A runner whose pool is gone is reached as it always was.
         None => Ok(docker.clone()),
     }
@@ -617,6 +679,27 @@ mod tests {
         }
     }
 
+    /// **A config that cannot be read is Refused with its reason, not Unreachable** (#7187,
+    /// steward decision 2026-11-19): waiting does not mend a runners file that is not as purlis
+    /// writes it, so the link stops, says why and offers Check pool.
+    #[cfg(unix)]
+    #[test]
+    fn a_config_that_cannot_be_read_is_refused_with_its_reason() {
+        use std::os::unix::fs::PermissionsExt;
+        let config = tempfile::tempdir().unwrap();
+        let folder = crate::machine::dir(config.path());
+        std::fs::create_dir_all(&folder).unwrap();
+        // A file others may read is refused as unsafe, whatever it holds.
+        let file = folder.join(crate::machine::RUNNERS_FILE);
+        std::fs::write(&file, "{}").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let local = Docker::at("/usr/local/bin/docker");
+        let (said, state) =
+            docker_of_named_in_state(config.path(), &local, "box").expect_err("unreadable");
+        assert_eq!(state, connect::RemoteState::Refused, "{said}");
+        assert!(said.contains("could not be read safely"), "{said}");
+    }
+
     #[test]
     fn a_failing_forward_waits_twice_as_long_each_time_up_to_a_cap() {
         assert_eq!(retry_after(1), RETRY_FIRST);
@@ -637,6 +720,52 @@ mod tests {
             Ask::Answer(silent())
         );
         assert_eq!(failing.ask(now + RETRY_FIRST), Ask::Try);
+    }
+
+    #[test]
+    fn try_now_forgets_the_pools_remembered_failure_and_leaves_other_pools_waiting() {
+        let pin = crate::sshroute::Pin {
+            host_key: crate::sshroute::HostKey::parse(
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n",
+            )
+            .unwrap(),
+            engine: crate::sshroute::EnginePin::Docker("ABCD:EFGH:IJKL".to_owned()),
+        };
+        let now = Instant::now();
+        note_failing("try-now-a", &pin, Failing::first(silent(), now));
+        note_failing("try-now-b", &pin, Failing::first(silent(), now));
+        let waiting = failing("try-now-a", &pin).unwrap();
+        assert_eq!(waiting.ask(now), Ask::Answer(silent()), "it is waiting");
+        let began = Instant::now();
+        try_now("try-now-a");
+        assert!(
+            cleared_since("try-now-a", began),
+            "a try begun before the click is not kept"
+        );
+        assert!(!cleared_since("try-now-b", began));
+        assert_eq!(failing("try-now-a", &pin), None, "the click dials at once");
+        assert!(
+            failing("try-now-b", &pin).is_some(),
+            "another pool keeps its wait"
+        );
+        forget_failing("try-now-b");
+    }
+
+    #[test]
+    fn a_pools_try_now_mark_goes_when_the_pool_is_gone() {
+        let marked = |pool: &str| {
+            CLEARED
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .contains_key(pool)
+        };
+        try_now("prune-gone");
+        try_now("prune-kept");
+        assert!(marked("prune-gone"));
+        pool_gone("prune-gone");
+        assert!(!marked("prune-gone"), "a pool that is gone needs no mark");
+        assert!(marked("prune-kept"), "another pool keeps its mark");
+        pool_gone("prune-kept");
     }
 
     #[test]

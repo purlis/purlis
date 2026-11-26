@@ -12,7 +12,7 @@
 //! the refusal says why; they are never what lets a request through.
 
 use super::commands::{self, Body};
-use super::policy::{Class, Refusal};
+use super::policy::{Class, ObjectRepo, OwnsHead, PullRef, Refusal};
 use super::repo::{AllowedRepo, Kind};
 use super::request::{Target, is_read};
 
@@ -389,6 +389,21 @@ const GITLAB_READS: &[&[&str]] = &[
     &["pipelines", "#", "test_report_summary"],
 ];
 
+/// The Dependabot alert reads: the list, and one alert by its number.
+const DEPENDABOT_READS: &[&[&str]] = &[&["dependabot", "alerts"], &["dependabot", "alerts", "#"]];
+
+/// What filters or pages an alert list besides [`READ_QUERY_KEYS`].
+const DEPENDABOT_QUERY_KEYS: &[&str] = &[
+    "severity",
+    "ecosystem",
+    "package",
+    "manifest",
+    "epss_percentage",
+    "has",
+    "before",
+    "after",
+];
+
 /// The query keys a read on a listed route may carry. Anything else is refused: a rendering
 /// switch (`render_html`), an impersonation (`sudo`) or a key the forge reads that the proxy
 /// does not know is the forge doing more than the route says.
@@ -475,6 +490,43 @@ pub(super) fn side_is_own(side: &str, repo: &AllowedRepo) -> bool {
     }
 }
 
+/// Whether a pull request's head, as written (`branch`, `owner:branch`, `refs/heads/branch`), is
+/// the repo's default branch: a pull request from it is the wrong way round, and nothing meant by
+/// it needs it (#7494). Every other unowned head is refused where it is written to, by
+/// [`head_is_owned`] (#7526), so a `release/*` head is a pull request like any other.
+pub(super) fn head_is_default(side: &str, repo: &AllowedRepo) -> bool {
+    let branch = side.rsplit_once(':').map_or(side, |(_, branch)| branch);
+    let branch = branch.strip_prefix("refs/heads/").unwrap_or(branch);
+    branch.eq_ignore_ascii_case(&repo.default_branch)
+}
+
+/// Update-branch (GitHub) and a rebase (GitLab) write to the pull request's **head**, so the head
+/// is what the chat must own: a branch of this repo that the push rule's record holds a tip of
+/// this chat's own on, equal to the head the forge reports now (#7526). When the forge cannot say
+/// what the head is, that is a refusal too. `number` is the pull request's number in `repo`.
+fn head_is_owned(
+    kind: Kind,
+    repo: &AllowedRepo,
+    number: &str,
+    objects: &dyn ObjectRepo,
+    owns: OwnsHead<'_>,
+) -> bool {
+    let Ok(number) = number.parse::<u64>() else {
+        return false;
+    };
+    let path = repo.path.to_ascii_lowercase();
+    objects
+        .pull_head(
+            kind,
+            &repo.host,
+            PullRef::Number {
+                repo: &path,
+                number,
+            },
+        )
+        .is_some_and(|head| owns(repo, &head))
+}
+
 /// A compare head or base written `owner:branch` or `owner/repo:branch` reaches that fork's
 /// objects: refused unless it names the recorded repo's owner.
 fn compare_is_own(kind: Kind, rel: &[String], target: &Target, repo: &AllowedRepo) -> bool {
@@ -527,6 +579,18 @@ fn read_allowed(kind: Kind, rel: &[String], target: &Target, repo: &AllowedRepo)
                 Some("refs" | "trees" | "blobs" | "commits" | "matching-refs" | "ref")
             ),
             "rulesets" | "rules" => listed(RULE_READS),
+            // A repo's Dependabot alerts, to match one to the pull request that fixes it (#7681):
+            // read only (an alert's `PATCH` dismisses it, and is not on the write list), and not
+            // Dependabot's secrets, which are administration.
+            "dependabot" => {
+                DEPENDABOT_READS.iter().any(|pattern| matches(rel, pattern))
+                    && target.query.iter().all(|(k, _)| {
+                        READ_QUERY_KEYS
+                            .iter()
+                            .chain(DEPENDABOT_QUERY_KEYS)
+                            .any(|allowed| k.eq_ignore_ascii_case(allowed))
+                    })
+            }
             "actions" => matches!(
                 second.as_deref(),
                 Some("runs" | "jobs" | "artifacts" | "workflows")
@@ -650,6 +714,14 @@ fn check_body(
         {
             return Err(Refusal::OtherRepo);
         }
+        // A pull request from the default branch into the chat's own makes update-branch merge
+        // that branch into the default one on the forge's side (#7494).
+        if body_values(body, "head")
+            .iter()
+            .any(|v| head_is_default(v, repo))
+        {
+            return Err(Refusal::ProtectedPullHead);
+        }
     }
     if kind == Kind::GitLab
         && rel
@@ -670,6 +742,17 @@ fn check_body(
         if named.iter().any(|n| Some(n) != own.as_ref()) {
             return Err(Refusal::OtherRepo);
         }
+        // A merge request from the default branch is the wrong way round (#7494).
+        if method == "POST"
+            && rel.len() == 1
+            && body_values(body, "source_branch").iter().any(|v| {
+                v.strip_prefix("refs/heads/")
+                    .unwrap_or(v)
+                    .eq_ignore_ascii_case(&repo.default_branch)
+            })
+        {
+            return Err(Refusal::ProtectedPullHead);
+        }
     }
     Ok(())
 }
@@ -685,6 +768,10 @@ fn is_empty_object(body: &Body) -> bool {
 }
 
 /// Decide one REST request under a chat's repo.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one request's parts, read together; a struct for them would only be built to be taken apart"
+)]
 pub(crate) fn decide(
     kind: Kind,
     method: &str,
@@ -692,6 +779,8 @@ pub(crate) fn decide(
     target: &Target,
     body: Option<&Body>,
     repo: &AllowedRepo,
+    objects: &dyn ObjectRepo,
+    owns: OwnsHead<'_>,
     merging: bool,
 ) -> Result<Class, Refusal> {
     if let Some(refusal) = named_refusal(kind, method, rel, target, merging) {
@@ -708,6 +797,14 @@ pub(crate) fn decide(
         .or_else(|| merging.then(|| merge_class(kind, method, rel)).flatten())
         .ok_or(Refusal::NotOnList)?;
     check_body(kind, method, rel, target, body, repo, merging)?;
+    let writes_head = method == "PUT"
+        && match kind {
+            Kind::GitHub => matches(rel, &["pulls", "#", "update-branch"]),
+            Kind::GitLab => matches(rel, &["merge_requests", "#", "rebase"]),
+        };
+    if writes_head && !head_is_owned(kind, repo, &rel[1], objects, owns) {
+        return Err(Refusal::ProtectedPullHead);
+    }
     if class == Class::CiWrite && body.is_some_and(|b| !is_empty_object(b)) {
         // A rerun's body is `enable_debug_logging` and nothing else the chat may choose; GitLab's
         // retry and cancel take none.

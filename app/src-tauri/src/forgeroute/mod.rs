@@ -44,8 +44,9 @@
 //! **Stubs, each filled by the slice named.** [`Listener`]: A2. [`RouteParams`] into the chat's
 //! environment: B. [`HeldActs`] and its list of held refusals: F (F2's registry replaces
 //! [`HeldAsks`]). [`Recorded`]: G. [`Notices`]'s sink: the app's ([`crate::forgewiring::AppNotices`]). [`RunnerLink`]:
-//! the pools' pairing: **a stub, owned by the pools follow-up**, so no runner is paired and a
-//! runner's chat keeps its token connections until that lands.
+//! the pools' pairing, read by [`pairings::DesktopPairings`]; **nothing calls [`ForgeRoutes::for_runner`]
+//! yet** (the forwarding channel is ADR 0078's, not built), so a runner's chat keeps its token
+//! connections.
 //!
 //! **Tier** (ADR 0069): the root is Machine, device-bound, transient, named in
 //! `docs/plane-format.md`. The sentinels, policies, asks and audit are memory only.
@@ -71,6 +72,7 @@ use purlis_core::forge::proxy::{
 use purlis_core::secrets::keyring::Secret;
 
 pub mod objects;
+pub mod pairings;
 pub mod prod;
 
 #[cfg(test)]
@@ -190,7 +192,9 @@ pub trait Recorded: Send + Sync {
     /// never kept: the route lets an update through only from this tip, so a branch another chat
     /// moved, or one made again, is refused. Any doubt is none (the person pushes it), and the
     /// project and the chat's id are the key, so a chat with another id, or of another project,
-    /// owns none of them.
+    /// owns none of them. **One exception**: a branch recorded to a chat `chat` dispatched
+    /// (directly, or up the chain, by the app's dispatch records) is `chat`'s to update from the
+    /// recorded tip, and its confirmed push is then recorded under `chat`.
     fn own_tip(
         &self,
         _project: &Path,
@@ -219,6 +223,11 @@ pub trait Recorded: Send + Sync {
     fn record_created(&self, _project: &Path, _chat: &str, _created: &[CreatedBranch]) {}
     /// The forge no longer lists these recorded branches: their record ends.
     fn forget_created(&self, _gone: &[CreatedBranch]) {}
+    /// The chat that owns the branch `branch` of the repo with forge id `repo_id` on `host` now,
+    /// for the Let this chat push ask to name. Any doubt is none.
+    fn branch_owner(&self, _host: &str, _repo_id: u64, _branch: &str) -> Option<String> {
+        None
+    }
 }
 
 /// The stub until G lands: nothing is recorded, so no chat has a route.
@@ -393,18 +402,20 @@ pub struct RunnerPeer {
 pub trait RunnerLink: Send + Sync {
     /// Whether `peer` is a runner this desktop is paired with (its key pinned at pairing).
     fn paired(&self, peer: &RunnerPeer) -> bool;
-    /// The project `run` of a chat on `peer` belongs to, from the pairing's records.
-    fn project_of(&self, peer: &RunnerPeer, run: &str) -> Option<PathBuf>;
+    /// The project `run` of `chat` on `peer` belongs to, from the pairing's records. None where
+    /// the pairing records no project, or records it for another chat than `chat`.
+    fn project_of(&self, peer: &RunnerPeer, chat: &str, run: &str) -> Option<PathBuf>;
 }
 
-/// The stub until the pools carry the pairing: no runner is paired.
+/// No runner is paired: only [`Seams::stubs`]'s default. The app installs
+/// [`pairings::DesktopPairings`].
 pub struct NoRunnerLink;
 
 impl RunnerLink for NoRunnerLink {
     fn paired(&self, _: &RunnerPeer) -> bool {
         false
     }
-    fn project_of(&self, _: &RunnerPeer, _: &str) -> Option<PathBuf> {
+    fn project_of(&self, _: &RunnerPeer, _: &str, _: &str) -> Option<PathBuf> {
         None
     }
 }
@@ -682,9 +693,31 @@ pub struct ForgeRoutes {
     root: PathBuf,
     helper_exe: PathBuf,
     seams: Seams,
+    /// Held for the whole of [`Self::start_for`], so the check of who a run belongs to and the
+    /// insert of its route are one step. **Lock order: `starting`, then `live`, then
+    /// `sessions`.** Nothing under it starts a route (the seams are called, none re-enter), and
+    /// `stop` and the others never take it.
+    starting: Mutex<()>,
     live: Mutex<HashMap<String, Live>>,
     sessions: Arc<Mutex<Sessions>>,
     told: Arc<Mutex<Told>>,
+}
+
+/// How a start ended: it made a route (or had nothing to proxy), or the run was another owner's.
+enum Started {
+    Route(Option<RouteParams>),
+    /// A runner asked for a run live for another peer or a desktop chat: nothing was changed.
+    Taken,
+}
+
+impl Started {
+    /// The route made. A start with no peer never finds its run taken, so `Taken` is `None`.
+    fn into_route(self) -> Option<RouteParams> {
+        match self {
+            Self::Route(params) => params,
+            Self::Taken => None,
+        }
+    }
 }
 
 impl ForgeRoutes {
@@ -698,6 +731,7 @@ impl ForgeRoutes {
             root,
             helper_exe,
             seams,
+            starting: Mutex::new(()),
             live: Mutex::new(HashMap::new()),
             sessions: Arc::new(Mutex::new(Sessions::default())),
             told: Arc::new(Mutex::new(Told::new())),
@@ -721,6 +755,7 @@ impl ForgeRoutes {
     /// nothing else is stopped for it. An error leaves nothing behind.
     pub fn start(&self, chat: &str, run: &str, project: &Path) -> io::Result<Option<RouteParams>> {
         self.start_for(chat, run, project, None, None)
+            .map(Started::into_route)
     }
 
     fn start_for(
@@ -730,7 +765,21 @@ impl ForgeRoutes {
         project: &Path,
         peer: Option<String>,
         chain: Option<&str>,
-    ) -> io::Result<Option<RouteParams>> {
+    ) -> io::Result<Started> {
+        // One start at a time: the check below and the insert at the end are atomic against
+        // another start, so two peers asking for one run cannot both pass the check.
+        let _starting = self.starting.lock().unwrap_or_else(PoisonError::into_inner);
+        // **A runner never takes another route**: a run live for another peer or a desktop chat
+        // is refused before anything of it is stopped.
+        if let Some(device) = peer.as_deref() {
+            let taken = self
+                .live()
+                .get(run)
+                .is_some_and(|live| live.peer.as_deref() != Some(device));
+            if taken {
+                return Ok(Started::Taken);
+            }
+        }
         // The same run starting again replaces its route, or ends it where nothing is recorded
         // now: the old sentinel stops working either way.
         self.stop(run);
@@ -739,7 +788,7 @@ impl ForgeRoutes {
         // administrator pinned, and its authority is made for no name of it.
         let repos = self.unpinned(project, pin.as_ref());
         if repos.is_empty() {
-            return Ok(None);
+            return Ok(Started::Route(None));
         }
         ensure_root(&self.root)?;
         let run_dir = make_run_dir(&self.root)?;
@@ -791,6 +840,24 @@ impl ForgeRoutes {
                 }))
                 .with_gone(Box::new(move |gone| forgets.forget_created(gone)));
         }
+        // An update of a branch this chat has no record of raises one ask, Let this chat push it
+        // (ADR 0128, amended 2026-11-23): in the window, where only the person's press records
+        // an owner. The chat is its session while it is open.
+        {
+            let sessions = RunSessions {
+                sessions: self.sessions.clone(),
+            };
+            let run = run.to_owned();
+            let owners = self.seams.recorded.clone();
+            proxy = proxy.with_branch_ask(Box::new(purlis_core::windowonly::PushAsks {
+                root: project.to_owned(),
+                chat: chat.to_owned(),
+                session: Box::new(move || sessions.session(&run)),
+                owner_of: Box::new(move |host, repo_id, branch| {
+                    owners.branch_owner(host, repo_id, branch)
+                }),
+            }));
+        }
         // Held acts (ADR 0128 D8) are asked by the proxy itself, through the project's own
         // registry of them, so no request reaches the forge by a way that skips the hold.
         if let Some(sink) = self.seams.held.sink(
@@ -836,6 +903,8 @@ impl ForgeRoutes {
             .held
             .push_gate(project, sessions, proxy.clone())
             .unwrap_or_else(|| Arc::new(BlindGate));
+        // Reading the repo's objects starts now, not at the first push (#7532).
+        push.warm();
         let bound = match self.seams.listener.bind(run, &run_dir, proxy.clone(), push) {
             Ok(bound) => bound,
             Err(refused) => {
@@ -897,7 +966,7 @@ impl ForgeRoutes {
                 relay,
             },
         );
-        Ok(Some(params))
+        Ok(Started::Route(Some(params)))
     }
 
     /// A start holding its route until it is committed: stopped if the start returns early.
@@ -909,7 +978,7 @@ impl ForgeRoutes {
         chain: Option<&str>,
     ) -> RouteGuard<'_> {
         let params = match self.start_for(chat, run, project, None, chain) {
-            Ok(params) => params,
+            Ok(started) => started.into_route(),
             Err(refused) => {
                 tracing::warn!("purlis: the forge route of a chat did not start ({refused})");
                 None
@@ -921,6 +990,33 @@ impl ForgeRoutes {
             params,
             armed: true,
         }
+    }
+
+    /// **A chat put back from the session host** (#7694): its program runs on, and the route of
+    /// the app that started it went with that app, so the app's own git had none for it
+    /// ([`Self::git_route`]) and `purlis worktree push` was refused. A route this app already holds
+    /// for the run is kept as it is, since the chat's sandbox may be wired to it; otherwise one is
+    /// started by [`Self::start_for`], through every gate a start's goes through (the recorded
+    /// repos, the pin, the person's sign-ins). The running program is handed nothing: it holds no
+    /// sentinel of the new route, and its own git keeps what it had.
+    pub fn guard_reattached(
+        &self,
+        chat: &str,
+        run: &str,
+        project: &Path,
+        chain: Option<&str>,
+    ) -> RouteGuard<'_> {
+        if self.is_live(run) {
+            return RouteGuard {
+                routes: self,
+                run: run.to_owned(),
+                params: None,
+                armed: false,
+            };
+        }
+        let mut guard = self.guard(chat, run, project, chain);
+        guard.params = None;
+        guard
     }
 
     /// A run's route stops: its sentinel, its listener, its folder and its asks.
@@ -1077,14 +1173,19 @@ impl ForgeRoutes {
     }
 
     /// A runner's chat run, forwarded to this app's proxy (D9). **Only a runner paired with
-    /// this desktop is served**, and the project is the pairing's record of the run, never the
-    /// caller's word: an unpaired caller, or a run the pairing does not know, is refused. Its
-    /// route stops with [`Self::stop`] or [`Self::stop_peer`].
+    /// this desktop is served**, and the project is the link's record of the run, never the
+    /// caller's word. The link ([`RunnerLink`]) refuses an unpaired caller, a chat the pairing
+    /// does not name for that runner, and a project it has none for; it knows no runs, so a
+    /// `run` it has no project for is refused only by being unnamed. **A runner never takes
+    /// another route**: `start_for` refuses, under its lock, a `run` already live for another
+    /// peer or for a desktop chat, so a runner cannot stop or replace it (a run of the same peer
+    /// starting again replaces its own route). Its route stops with [`Self::stop`] or
+    /// [`Self::stop_peer`].
     pub fn for_runner(&self, peer: &RunnerPeer, chat: &str, run: &str) -> RunnerForward {
         if !self.seams.runner_link.paired(peer) {
             return RunnerForward::Refused;
         }
-        let Some(project) = self.seams.runner_link.project_of(peer, run) else {
+        let Some(project) = self.seams.runner_link.project_of(peer, chat, run) else {
             return RunnerForward::Refused;
         };
         // A project whose every repo is on a pinned forge keeps no token connection either: the
@@ -1103,8 +1204,9 @@ impl ForgeRoutes {
             // A runner's chat carries no record of its chain here, so its merges are held.
             Some(&purlis_core::enforcement::Resolved::strict().spelled()),
         ) {
-            Ok(Some(params)) => RunnerForward::Desktop(params),
-            Ok(None) | Err(_) => RunnerForward::TokenConnections,
+            Ok(Started::Route(Some(params))) => RunnerForward::Desktop(params),
+            Ok(Started::Taken) => RunnerForward::Refused,
+            Ok(Started::Route(None)) | Err(_) => RunnerForward::TokenConnections,
         }
     }
 
@@ -1112,7 +1214,8 @@ impl ForgeRoutes {
     /// worktree push` and `update` run for a chat through, so the git the app runs for it reaches
     /// the forge through this run's proxy with its sentinel, as the chat's own git does, and holds
     /// none of the person's credentials. `None` where the session has no live route: a chat with
-    /// no recorded repo, one put back from the session host, one whose route stopped.
+    /// no recorded repo, one on a pool's runner put back from the session host, one whose route
+    /// stopped.
     pub fn git_route(
         &self,
         session: u32,
@@ -1448,11 +1551,19 @@ fn refusal_words(refusal: Refusal) -> &'static str {
         Refusal::ProtectedRef => {
             "the push is to a protected branch or a branch the chat did not create"
         }
+        Refusal::NotYourBranch => {
+            "the push updates a branch this chat has no record of (the person can let it)"
+        }
         Refusal::PushOption => "the push carried push options",
         Refusal::BodyUnreadable => "the body was missing, too big or could not be read",
         Refusal::GraphqlParse => "the GraphQL document could not be read as one request",
+        Refusal::ProtectedPullHead => {
+            "the pull request's head is the default or a protected branch, or not a branch of the chat's repo that purlis can see"
+        }
         Refusal::GraphqlUnknownMutation => "the GraphQL mutation is not on the list",
-        Refusal::GraphqlOtherRepo => "the GraphQL document reaches a repo that is not the chat's",
+        Refusal::GraphqlOtherRepo | Refusal::GraphqlPullRequestOtherRepo => {
+            "the GraphQL document reaches a repo that is not the chat's"
+        }
         Refusal::CredentialInQuery => "a credential was in the query string",
         Refusal::Multipart => "a multipart body is not allowed here",
         Refusal::CredentialInBody => "a credential was in the request body",
@@ -1689,6 +1800,7 @@ pub fn install(held: Arc<dyn HeldSinks>, notices: Arc<dyn Notices>) {
                 purlis_core::forge::credential::chatroute::ChatRoute::new(&scope, &config),
             )));
             seams.listener = Arc::new(prod::CoreListener);
+            seams.runner_link = Arc::new(pairings::DesktopPairings::from_store(&config));
             // Read from policy on each ask: a pin set while a chat is open reaches it at once.
             seams.pin =
                 Arc::new(|project| Arc::new(purlis_core::forge::pin::PolicyPin::of(project)));
@@ -1712,6 +1824,14 @@ pub fn quarantine_dir() -> PathBuf {
         .unwrap_or_else(|| std::env::temp_dir().join("purlis-quarantine"))
 }
 
+/// Where the forge repos' object caches are kept (ADR 0128, amended 2026-11-24): in the app's data
+/// folder on this machine, which survives a reboot and is no chat's (the sandbox holds every chat
+/// out of it, reading and writing, by the same resolver). `None` where the machine has no data
+/// folder: a push then fetches its base into its own quarantine.
+pub fn object_cache_dir() -> Option<PathBuf> {
+    purlis_core::forgewire::object_cache_root(&purlis_core::sandbox::Machine::this())
+}
+
 /// The app's routes, once [`install`] has run.
 pub fn routes() -> Option<&'static ForgeRoutes> {
     ROUTES.get()
@@ -1726,6 +1846,17 @@ pub fn guard(
     chain: Option<&str>,
 ) -> Option<RouteGuard<'static>> {
     Some(routes()?.guard(chat, run, project, chain))
+}
+
+/// A chat put back from the session host (`chats.rs`): the route the app's own git takes for it
+/// ([`ForgeRoutes::guard_reattached`]), with nothing handed to its program.
+pub fn guard_reattached(
+    chat: &str,
+    run: &str,
+    project: &Path,
+    chain: Option<&str>,
+) -> Option<RouteGuard<'static>> {
+    Some(routes()?.guard_reattached(chat, run, project, chain))
 }
 
 /// The route the app's own git takes for chat `session` ([`ForgeRoutes::git_route`]).

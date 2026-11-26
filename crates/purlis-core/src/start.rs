@@ -440,9 +440,11 @@ fn ready_given_on(
     // Nothing here runs a command out of a file a chat can write, which is what the consent
     // gate below exists for: this writes charter's own documents into a tree charter owns,
     // and it is idempotent, so doing it for a start that is then refused costs nothing.
-    let mut notices = layered_or_refusal(&here, root, persona.as_deref())?;
+    let mut notices = crate::opening::phase("guest_layer", || {
+        layered_or_refusal(&here, root, persona.as_deref())
+    })?;
     let mut floorless = None;
-    let hidden = hidden_agents_md_in(&here);
+    let hidden = crate::opening::phase("hidden_agents_md", || hidden_agents_md_in(&here));
     notices.extend(hidden.said(|p| p.display().to_string()));
     let agents_md = hidden
         .found
@@ -458,11 +460,13 @@ fn ready_given_on(
     notices.extend(crate::wiring::unapproved_notice(profile, root, declared));
     // How it signs in, or no chat: a sign-in its harness cannot take, or credentials with no
     // way to it here, starts nothing (#2036).
-    let sign_in = crate::profilesignin::at_start(
-        profile,
-        &crate::profilestore::listed_here(),
-        &crate::chatenv::read(root),
-    )?;
+    let sign_in = crate::opening::phase("sign_in", || {
+        crate::profilesignin::at_start(
+            profile,
+            &crate::profilestore::listed_here(),
+            &crate::chatenv::read(root),
+        )
+    })?;
     // A profile this machine made, whose harness says it is not signed in here, does not
     // start: Sign in is the way out (#2035, ADR 0095 §3). Asked after the gate, so only a
     // program the person approved is run, and only its status words. A profile kept as signing
@@ -503,25 +507,27 @@ fn ready_given_on(
     // with no backend, starts it unsandboxed instead, and the tab says so for the chat's whole
     // life (§7).
     let (mut sandbox, unsandboxed) = match harness {
-        Some(harness) => match crate::sandbox::decide_granted(
-            harness,
-            root,
-            machine,
-            has,
-            &crate::sandbox::Person {
-                opt_out: start.without_sandbox.as_ref(),
-                // The chat's own persona, and the project's for one that names none: never the
-                // default persona its grants fall back to (#2071).
-                level_as: start.persona.as_deref(),
-                made: &start.made,
-            },
-            // A persona's own hosts reach its chats and no other's (#1362).
-            grants_persona(start.held.as_ref(), persona.as_deref(), || {
-                persona_for_a_new_chat(root)
-            })
-            .as_deref(),
-            &start.grants,
-        )
+        Some(harness) => match crate::opening::phase("sandbox_compile", || {
+            crate::sandbox::decide_granted(
+                harness,
+                root,
+                machine,
+                has,
+                &crate::sandbox::Person {
+                    opt_out: start.without_sandbox.as_ref(),
+                    // The chat's own persona, and the project's for one that names none: never the
+                    // default persona its grants fall back to (#2071).
+                    level_as: start.persona.as_deref(),
+                    made: &start.made,
+                },
+                // A persona's own hosts reach its chats and no other's (#1362).
+                grants_persona(start.held.as_ref(), persona.as_deref(), || {
+                    persona_for_a_new_chat(root)
+                })
+                .as_deref(),
+                &start.grants,
+            )
+        })
         // Under a policy that forbids the opt-out, no refusal sends the person to it (#1423).
         .map_err(|refused| refused.said_on(&crate::sandbox::policy::Locks::of(root), on_a_runner))?
         {
@@ -674,17 +680,19 @@ fn ready_given_on(
         if applied.level() == crate::sandbox::Level::Full {
             writable.extend(crate::sandbox::program::temp_roots(&env));
         }
-        let (checked, said) = crate::sandbox::program::checked_answering(
-            harness,
-            &words,
-            applied.root(),
-            crate::sandbox::program::Chat {
-                cwd: &here,
-                writable: &writable,
-                env: &env,
-            },
-            None,
-        )
+        let (checked, said) = crate::opening::phase("program_check", || {
+            crate::sandbox::program::checked_answering(
+                harness,
+                &words,
+                applied.root(),
+                crate::sandbox::program::Chat {
+                    cwd: &here,
+                    writable: &writable,
+                    env: &env,
+                },
+                None,
+            )
+        })
         .map_err(|refused| refused.to_string())?;
         program = checked[0].clone();
         // At the floor, the program it starts is never written by the chat (#2071, Q4).
@@ -709,14 +717,9 @@ fn ready_given_on(
     let words: Vec<String> = std::iter::once(program.clone())
         .chain(argv.iter().cloned())
         .collect();
-    notices.extend(on_pinned_version(
-        profile,
-        &words,
-        &here,
-        &env,
-        heard,
-        start.resume.is_some(),
-    )?);
+    notices.extend(crate::opening::phase("pinned_version", || {
+        on_pinned_version(profile, &words, &here, &env, heard, start.resume.is_some())
+    })?);
     // Only a record's path: the briefing reads it through `sessionrecord::open`, which refuses
     // anything else, and a profile cannot set a `CHARTER_` name to forge one.
     if let Some(record) = start
@@ -740,7 +743,9 @@ fn ready_given_on(
         }
         _ => None,
     };
-    let plugins = crate::harness_plugin::for_start(&profile.kind, root, workspace);
+    let plugins = crate::opening::phase("plugins", || {
+        crate::harness_plugin::for_start(&profile.kind, root, workspace)
+    });
     // The profile's own words stay together and in front; charter's go after them and after
     // whatever arms the harness. [`Ready::command_line`] is where the order is decided.
     Ok(Ready {

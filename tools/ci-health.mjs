@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // The daily CI health report (#3598, daily and acting from spec #7324): how the `ci` workflow did
-// over the last seven days, and a ticket for each flaky test it finds.
+// over the last seven days, and a ticket for each flaky test it finds. The jobs of the workflows
+// `JOB_WORKFLOWS` names (`tools/job-budgets.mjs`), which left `ci.yml` but not its watch, are read
+// beside its own: their durations, budgets, red jobs and flaky tests (`sideWeek`).
 //
 // CI got twice as slow and three times as flaky between 2026-10-14 and 10-27, and nobody saw it
 // for two weeks. The `ci-health` workflow runs this every day and writes the week's numbers
@@ -18,7 +20,17 @@ import { fileURLToPath } from "node:url";
 import { requiredDrift } from "./ci-push-jobs.mjs";
 import { requiredNames } from "./land.mjs";
 import { percentile } from "./percentile.mjs";
-import { BUDGETS_FILE, CI_FILE, OVER, ciJobs, overBudget, overReleaseBudget, parseBudgets } from "./job-budgets.mjs";
+import {
+  BUDGETS_FILE,
+  CI_FILE,
+  JOB_WORKFLOWS,
+  OVER,
+  ciJobs,
+  overBudget,
+  overReleaseBudget,
+  parseBudgets,
+  workflowJobs,
+} from "./job-budgets.mjs";
 import { CAP, QUARANTINE_FILE, parseQuarantine } from "./quarantine.mjs";
 
 export { percentile };
@@ -143,7 +155,7 @@ export function flakyTests(suites) {
 /**
  * Every flaky test of `suites` with where it flaked, for its ticket: `{ test, count, jobs, runs }`,
  * the most often first. `jobs` are the suites (the job names) that ran it, `runs` the workflow runs
- * it flaked in (`{ id, url }`, each once), read from each suite's `workflowRun`.
+ * it flaked in (`{ id, url, createdAt }`, each once), read from each suite's `workflowRun`.
  */
 export function flakeEvidence(suites) {
   const found = new Map();
@@ -157,7 +169,7 @@ export function flakeEvidence(suites) {
         if (!one.jobs.includes(job.name)) one.jobs.push(job.name);
         const run = suite.workflowRun;
         if (run && !one.runs.some((seen) => seen.id === run.databaseId)) {
-          one.runs.push({ id: run.databaseId, url: run.url });
+          one.runs.push({ id: run.databaseId, url: run.url, createdAt: run.createdAt });
         }
         found.set(flaky[1], one);
       }
@@ -169,6 +181,10 @@ export function flakeEvidence(suites) {
 const TICKET_TITLE = "Flaky test: ";
 const TEST_MARKER = /<!-- flake-test: (.*?) -->/;
 const RUNS_MARKER = /<!-- flake-runs: ([\d,]*) -->/;
+// Runs from before a close that a reopen skipped: GitHub clears `closed_at` on a reopen, so the
+// ticket itself has to remember which runs its fix already answered.
+const ANSWERED_MARKER = /<!-- flake-answered: ([\d,]*) -->/;
+const idsOf = (marker, body) => (marker.exec(body ?? "")?.[1] ?? "").split(",").filter(Boolean).map(Number);
 // Every ">" is escaped, so no test id can end the comment it sits in (`-->` or `--!>`).
 const safe = (test) => test.replace(/>/g, "&gt;");
 const marked = (test, ids) => `<!-- flake-test: ${safe(test)} -->\n<!-- flake-runs: ${ids.join(",")} -->`;
@@ -182,6 +198,27 @@ export function ticketFor(test, issues) {
     issues.find((issue) => TEST_MARKER.exec(issue.body ?? "")?.[1] === safe(test)) ??
     issues.find((issue) => issue.title === ticketTitle(test))
   );
+}
+
+/**
+ * The runs of `runs` that count against `ticket`. An open ticket is owed all of them. A closed
+ * ticket was closed by a fix, so a run counts only if it STARTED (was created) after the ticket's last close
+ * (`closed_at`): an earlier run is history the fix already answered, and a run with no start time
+ * is treated as history too, since reopening on a guess is the defect this rule exists for. Time,
+ * not "the run's head contains the fixing commit": a close needs no commit to read back (a
+ * ticket can be closed by hand, or by a PR that only mentions it), and a run in flight at the
+ * close, on a head from before the fix, is the one case that rule would catch and this does not;
+ * it is rare, and the next run on the fix's head tells the truth.
+ */
+export function runsAfterClose(runs, ticket) {
+  if (ticket?.state !== "closed") {
+    const answered = idsOf(ANSWERED_MARKER, ticket?.body);
+    return runs.filter((run) => !answered.includes(run.id));
+  }
+  const closed = Date.parse(ticket.closed_at ?? "");
+  // A closed ticket with no close time cannot be told from history: count nothing.
+  if (Number.isNaN(closed)) return [];
+  return runs.filter((run) => Date.parse(run.createdAt ?? "") > closed);
 }
 
 /**
@@ -216,18 +253,28 @@ export function planFlakeTickets(flakes, issues) {
       });
       continue;
     }
-    const known = (RUNS_MARKER.exec(ticket.body ?? "")?.[1] ?? "").split(",").filter(Boolean).map(Number);
-    const fresh = flake.runs.filter((run) => !known.includes(run.id));
+    const known = idsOf(RUNS_MARKER, ticket.body);
+    const counted = runsAfterClose(flake.runs, ticket);
+    const fresh = counted.filter((run) => !known.includes(run.id));
     if (fresh.length === 0) continue;
     const ids = [...known, ...fresh.map((run) => run.id)];
+    const answered = [...new Set([...idsOf(ANSWERED_MARKER, ticket.body), ...flake.runs.filter((run) => !counted.includes(run)).map((run) => run.id)])];
+    const withAnswered = (text) =>
+      answered.length === 0
+        ? text
+        : ANSWERED_MARKER.test(text)
+          ? text.replace(ANSWERED_MARKER, `<!-- flake-answered: ${answered.join(",")} -->`)
+          : `<!-- flake-answered: ${answered.join(",")} -->\n${text}`;
     const body = ticket.body ?? "";
     comment.push({
       number: ticket.number,
       reopen: ticket.state === "closed",
       body: `Flaked again in ${plural(fresh.length, "run")}, in ${flake.jobs.map((job) => `\`${job}\``).join(", ")}:\n${runList(fresh)}`,
-      update: RUNS_MARKER.test(body)
-        ? body.replace(RUNS_MARKER, `<!-- flake-runs: ${ids.join(",")} -->`)
-        : `${marked(flake.test, ids)}\n${body}`,
+      update: withAnswered(
+        RUNS_MARKER.test(body)
+          ? body.replace(RUNS_MARKER, `<!-- flake-runs: ${ids.join(",")} -->`)
+          : `${marked(flake.test, ids)}\n${body}`,
+      ),
     });
   }
   return { create, comment };
@@ -303,6 +350,9 @@ export function planQuarantine({ flakes, entries, issues, openBranches, today })
     if (flake.runs.length < QUARANTINE_AFTER || listed.has(flake.test)) continue;
     const ticket = ticketFor(flake.test, issues);
     if (!ticket) continue;
+    // Only the runs since the ticket's last close count: a fixed flake's old runs are answered.
+    const counted = runsAfterClose(flake.runs, ticket);
+    if (counted.length < QUARANTINE_AFTER) continue;
     const branch = `ci-health/quarantine-${createHash("sha256").update(flake.test).digest("hex").slice(0, 12)}`;
     if (openBranches.includes(branch)) continue;
     proposals.push({
@@ -312,11 +362,11 @@ export function planQuarantine({ flakes, entries, issues, openBranches, today })
       branch,
       title: `Quarantine ${flake.test}`.slice(0, 200),
       body: [
-        `\`${flake.test}\` passed on a retry in ${flake.runs.length} runs of the last seven days (#${ticket.number}), ` +
+        `\`${flake.test}\` passed on a retry in ${counted.length} runs of the last seven days (#${ticket.number}), ` +
           `which is a flake three times over (ADR 0127). Until its fix lands, only the nightly run runs it.`,
         "",
         "Runs:",
-        runList(flake.runs),
+        runList(counted),
         "",
         `The pull request that fixes it removes this entry from \`ci/quarantine.toml\`. Opened by \`ci-health\`; review and enqueue it.`,
       ].join("\n"),
@@ -499,6 +549,10 @@ export function headline(week) {
   ].join(", ");
 }
 
+/** ", and every run of `x.yml` (n)" for the other workflows a section also read, or "". */
+const alsoRead = (others, what = "every run") =>
+  (others ?? []).length > 0 ? `, and ${what} of ${others.map((one) => `\`${one.name}.yml\` (${one.runs})`).join(", ")}` : "";
+
 /** The whole report, as Markdown for the job summary and the issue's body. */
 export function report(week) {
   const { runs, queue, jobs, flaky, slowest, sampled, red, drift } = week;
@@ -548,7 +602,7 @@ export function report(week) {
     "",
     `### Jobs`,
     "",
-    `Read from ${sampled.runs} of the week's ${sampled.of} runs, spread evenly over it. Minutes, slowest p90 first:`,
+    `Read from ${sampled.runs} of the week's ${sampled.of} runs, spread evenly over it${alsoRead(sampled.others)}. Minutes, slowest p90 first:`,
     "",
     "| job | runs | p50 | p90 |",
     "| --- | ---: | ---: | ---: |",
@@ -579,7 +633,7 @@ export function report(week) {
     "### Red on a green run",
     "",
     `Jobs \`continue-on-error\` kept from turning the run red, read from ${red.runs} of main's green push and ` +
-      `nightly runs: each is evidence someone should read, and stops nothing.`,
+      `nightly runs${alsoRead(red.others, "the green ones")}: each is evidence someone should read, and stops nothing.`,
     "",
     ...(red.jobs.length === 0
       ? ["None."]
@@ -587,7 +641,7 @@ export function report(week) {
     "",
     "### Flaky tests",
     "",
-    `Every \`Flaky (passed on retry N)\` warning in those ${sampled.runs} runs, by test:`,
+    `Every \`Flaky (passed on retry N)\` warning in those ${sampled.runs} runs${alsoRead(sampled.others)}, by test:`,
     "",
     ...(flaky.length === 0
       ? ["None."]
@@ -662,7 +716,7 @@ async function graphql(query, variables, token) {
 
 const SUITES = `query($ids: [ID!]!) {
   nodes(ids: $ids) { ... on CheckSuite {
-    workflowRun { databaseId url }
+    workflowRun { databaseId url createdAt }
     checkRuns(first: 100, filterBy: { checkType: LATEST }) { nodes {
       databaseId name conclusion startedAt completedAt
       annotations(first: 50) { nodes { annotationLevel title } }
@@ -730,6 +784,54 @@ async function releaseWeek({ repo, token, since, until }) {
   }
 }
 
+/**
+ * What the weeks of `JOB_WORKFLOWS` add to ci's (`side`, one `{ name, runs, suites }` each, as
+ * `workflowWeek` reads them): every suite, for the job durations and the flaky tests; the suites of
+ * main's green runs, for the jobs red on a green run; and the budgets of each workflow's jobs
+ * judged on its own runs (`jobsOf`, `{ [workflow]: jobs }`).
+ */
+export function sideWeek(side, budgets, jobsOf) {
+  const onMain = (run) => run.head_branch === "main" && run.conclusion === "success";
+  const green = new Set(side.flatMap((week) => week.runs.filter(onMain).map((run) => run.id)));
+  const greenOf = (week) => week.suites.filter((suite) => green.has(suite?.workflowRun?.databaseId));
+  return {
+    suites: side.flatMap((week) => week.suites),
+    green: side.flatMap(greenOf),
+    greenOf: Object.fromEntries(side.map((week) => [week.name, greenOf(week).length])),
+    over: side.flatMap((week) => overBudget(week.suites, budgets, jobsOf[week.name] ?? [], week.name)),
+  };
+}
+
+/**
+ * The completed runs of `.github/workflows/<name>.yml` from `since` to `until` (UTC days), on main's
+ * push and the nightly, and their check suites. A failed read is a warning and leaves that workflow
+ * out: it must not take the ci report down with it.
+ */
+async function workflowWeek({ repo, token, name, since, until }) {
+  try {
+    // Every page, to the list's cap of a thousand: a week of merges is more than one page of 100.
+    const list = async (event) => {
+      const all = [];
+      for (let page = 1; page <= LIST_CAP / 100; page += 1) {
+        const { workflow_runs: runs } = await call(
+          `/repos/${repo}/actions/workflows/${name}.yml/runs?created=${since}..${until}&event=${event}&status=completed&per_page=100&page=${page}`,
+          { token },
+        );
+        all.push(...runs);
+        if (runs.length < 100) break;
+      }
+      return all.filter((run, i) => all.findIndex((other) => other.id === run.id) === i);
+    };
+    const runs = [...(await list("schedule")), ...(await list("push"))].filter(
+      (run) => run.conclusion === "success" || run.conclusion === "failure",
+    );
+    return { name, runs, suites: await suitesOf(runs.map((run) => run.check_suite_node_id), token) };
+  } catch (error) {
+    console.log(`::warning title=ci-health::${name}.yml not read: ${error.message}`);
+    return { name, runs: [], suites: [] };
+  }
+}
+
 async function measure({ repo, token, dayCount, sampleSize }) {
   // Whole UTC days, ending yesterday: today's runs are still running.
   const today = Date.parse(isoDay(Date.now()));
@@ -767,6 +869,11 @@ async function measure({ repo, token, dayCount, sampleSize }) {
   const suites = await suitesOf(sampled.map((run) => run.check_suite_node_id), token);
   const budgets = parseBudgets(readFileSync(BUDGETS_FILE, "utf8"));
   const release = await releaseWeek({ repo, token, since: dayList[0], until: dayList.at(-1) });
+  const others = [];
+  for (const name of Object.keys(JOB_WORKFLOWS)) {
+    others.push(await workflowWeek({ repo, token, name, since: dayList[0], until: dayList.at(-1) }));
+  }
+  const side = sideWeek(others, budgets, workflowJobs());
   const mainSuites = await suitesOf(mainGreen.map((run) => run.check_suite_node_id), token);
   // The nightlies are few and the only runs of most evidence jobs, so all of them are read.
   const onMain = (run) => run.head_branch === "main" && run.conclusion === "success";
@@ -804,17 +911,22 @@ async function measure({ repo, token, dayCount, sampleSize }) {
     ready: readyToMerged(prs),
     drops: queueDrops(prs, { from: dayList[0], to: dayList.at(-1) }),
     unread,
-    sampled: { runs: sampled.length, of: runs.length },
-    jobs: jobStats(suites),
+    sampled: { runs: sampled.length, of: runs.length, others: others.map((week) => ({ name: week.name, runs: week.runs.length })) },
+    jobs: jobStats([...suites, ...side.suites]),
     over: [
       ...overBudget(suites, budgets, ciJobs(readFileSync(CI_FILE, "utf8"))),
+      ...side.over,
       ...overReleaseBudget(release.runs, release.suites, budgets),
     ].sort((a, b) => b.over - a.over || a.id.localeCompare(b.id)),
-    flaky: flakyTests(suites),
-    flakes: flakeEvidence(suites),
+    flaky: flakyTests([...suites, ...side.suites]),
+    flakes: flakeEvidence([...suites, ...side.suites]),
     slowest: slowestTests(lists),
     slowestFrom: mainGreen.length,
-    red: { runs: greenRuns.length, jobs: evidenceRed(greenSuites) },
+    red: {
+      runs: greenRuns.length,
+      others: others.map((week) => ({ name: week.name, runs: side.greenOf[week.name] ?? 0 })),
+      jobs: evidenceRed([...greenSuites, ...side.green]),
+    },
     // No names means the token could not read them, which says nothing of the list.
     drift: required.length > 0 ? requiredDrift(required) : undefined,
   };

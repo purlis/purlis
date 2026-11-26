@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use purlis_core::forge::Kind;
 use purlis_core::harness::asks::{Admitted, Answerer};
 use purlis_core::heldact::{
-    Forked, HeldForge, Recorded, TagName, Trees, Unavailable, WorkflowCredential, World,
+    Forked, HeldForge, PushError, Recorded, TagName, Trees, Unavailable, WorkflowCredential, World,
 };
 use purlis_core::mergehold::{Base, HeadSha, Repo};
 use purlis_core::secrets::keyring::Secret;
@@ -86,6 +86,8 @@ pub struct State {
     pub fork_lands_in: Option<String>,
     /// Refuses every performed act, in these words.
     pub refuses: Option<String>,
+    /// Answers a push with the forge's 401 to the second sign-in, in these words.
+    pub second_refused: Option<String>,
     /// Refuses only the making of a release, in these words.
     pub fail_release: Option<String>,
     /// Every act performed, as one line each, in order.
@@ -270,10 +272,13 @@ impl HeldForge for Fake {
         base: &HeadSha,
         new_branch: bool,
         workflow: Option<&Secret>,
-    ) -> Result<(), String> {
+    ) -> Result<(), PushError> {
         self.with(|s| {
             if let Some(why) = &s.refuses {
-                return Err(why.clone());
+                return Err(why.clone().into());
+            }
+            if let Some(why) = &s.second_refused {
+                return Err(PushError::SecondSignInRefused(why.clone()));
             }
             s.log.push(format!(
                 "push_tip {} {} {} base={} new_branch={} second_credential={}",
@@ -306,6 +311,8 @@ impl Trees for NoTrees {
 pub struct Second {
     pub there: bool,
     pub reads: AtomicUsize,
+    /// How many times the forge's refusal of the credential was reported.
+    pub refusals: AtomicUsize,
 }
 
 impl Second {
@@ -313,6 +320,7 @@ impl Second {
         Second {
             there: true,
             reads: AtomicUsize::new(0),
+            refusals: AtomicUsize::new(0),
         }
     }
 
@@ -320,11 +328,16 @@ impl Second {
         Second {
             there: false,
             reads: AtomicUsize::new(0),
+            refusals: AtomicUsize::new(0),
         }
     }
 
     pub fn reads(&self) -> usize {
         self.reads.load(Ordering::SeqCst)
+    }
+
+    pub fn refusals(&self) -> usize {
+        self.refusals.load(Ordering::SeqCst)
     }
 }
 
@@ -343,6 +356,10 @@ impl WorkflowCredential for Second {
         self.available(host)?;
         self.reads.fetch_add(1, Ordering::SeqCst);
         Ok(Secret::new("the-workflow-token".to_owned()))
+    }
+
+    fn refused(&self, _: &str) {
+        self.refusals.fetch_add(1, Ordering::SeqCst);
     }
 }
 

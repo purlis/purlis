@@ -52,9 +52,17 @@ fn a_target_with_a_query_or_another_method_than_the_acts_own_is_a_plain_refusal(
         ("PUT", "/repos/acme/app/git/refs", tag_body()),
     ] {
         let out = s.own(method, target, &body);
-        assert!(!is_held(&out), "{method} {target} was held: {out:?}");
+        if target.contains("auto_merge") && method == "PUT" {
+            // An auto-merge is refused with its own reason, which the chat is told as a refusal
+            // (`Outcome::Held` carries the words of a refusal too): no ask stands behind it.
+            let said = said(out);
+            assert!(said.contains("Nobody was asked"), "{said}");
+            assert!(said.contains("auto-merge would merge any head"), "{said}");
+        } else {
+            assert!(!is_held(&out), "{method} {target} was held: {out:?}");
+        }
+        nobody_was_asked(&s);
     }
-    nobody_was_asked(&s);
 }
 
 // J: `a_release_whose_text_holds_a_merge_command_is_not_asked`,

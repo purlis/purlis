@@ -124,7 +124,12 @@ pub fn add(
             // The check above is not the mutex — git is. A worker that won between that check
             // and git's own lock leaves a failure that reads like a broken repo unless charter
             // looks again, so it looks: the cause is read off reality, not off git's English.
-            if let Some(held) = holder(plane, ws, repo, piece, branch_name) {
+            // A cut that made the folder and then could not note its branch left the folder
+            // behind: that is not a race, and `holder` would call it one.
+            let cut_but_not_noted = matches!(refusal, Refusal::BranchNotNoted { .. });
+            if let Some(held) =
+                holder(plane, ws, repo, piece, branch_name).filter(|_| !cut_but_not_noted)
+            {
                 return taken(piece, &held, say);
             }
             say(Say::Fail(refusal.to_string().into()));
@@ -476,6 +481,37 @@ pub fn remove_for_a_chat(
         forge,
         say,
     )
+}
+
+/// `purlis worktree adopt <repo> <piece>` (#7594): records the branch the piece is on as the one
+/// it was cut for, once, for a piece cut before purlis kept that note and whose folder is not
+/// named as its branch. The person's own: the caller refuses it in a chat.
+pub fn adopt(plane: &Path, ws: &str, repo: &str, piece: &str, say: &mut dyn FnMut(Say)) -> u8 {
+    let found = worktree::path_for(plane, ws, repo, piece)
+        .map_err(|e| e.to_string())
+        .and_then(|folder| {
+            worktree::confine::within_workspace(plane, ws, &folder).map_err(|e| e.to_string())
+        })
+        .and_then(|folder| {
+            if folder.symlink_metadata().is_err() {
+                return Err(format!(
+                    "workspace '{ws}' has no branch folder {repo} \u{b7} {piece}: `purlis worktree \
+                     list` shows those it has"
+                ));
+            }
+            let clone = worktree::clone_dir(plane, ws, repo).map_err(|e| e.to_string())?;
+            worktree::record::adopt(plane, &clone, &folder)
+        });
+    match found {
+        Ok(said) => {
+            say(Say::Info(format!("{repo} \u{b7} {piece}: {said}").into()));
+            0
+        }
+        Err(why) => {
+            say(Say::Fail(why.into()));
+            1
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

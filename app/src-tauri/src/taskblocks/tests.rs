@@ -356,6 +356,41 @@ fn a_held_connection_the_chat_stopped_waiting_on_is_withdrawn_once() {
     assert!(blocks.stopped_waiting(4, &waits).is_none(), "once");
 }
 
+/// #7434: the proxy raises an ask on a thread of its own, and a raise starved until the ask is
+/// already leaving is neither an echo yet (its block is not written) nor an ask the chat waits
+/// on. It must not stay listed beside the block the ask leaves as.
+#[test]
+fn a_raise_landing_while_an_ask_leaves_does_not_stay_listed_beside_its_block() {
+    let blocks = std::sync::Arc::new(Blocks::default());
+    let block = held(&seen(4, "api.example.com"));
+    blocks.heard_waiting(4, block.clone());
+    blocks.held_live(4, &block, "api.example.com:443");
+    let late = (std::sync::Arc::clone(&blocks), block.clone());
+    *blocks
+        .in_withdrawal
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner) = Some(Box::new(move || {
+        // What `taskblocks::heard` does with a line of the proxy's raise.
+        if !late.0.echoes(4, &late.1) {
+            late.0.heard(4, late.1.clone());
+        }
+    }));
+
+    assert!(
+        blocks.stopped_waiting(4, &block).is_some(),
+        "an ask until now"
+    );
+
+    assert!(
+        !blocks.holds(4, &block),
+        "its ask is withdrawn, late raise or none"
+    );
+    assert!(
+        blocks.echoes(4, &block),
+        "and its block's echo is still dropped"
+    );
+}
+
 /// R-206 (Q253): a held connection's withdrawn ask names the call it was held under, so the
 /// block loop counts the connections one call held once.
 #[test]

@@ -16,9 +16,10 @@ use std::io::Write as _;
 use std::process::{Child, Stdio};
 use std::time::{Duration, Instant};
 
-/// The hook's real budget (`guard::BUDGET`), and the most past it a refusal may take to arrive:
-/// a process to start and end on a loaded machine. Both well under the smallest `PreToolUse`
-/// timeout purlis registers, five seconds.
+/// The ceiling for a refusal out of time, and the most past it one may take to arrive: a process
+/// to start and end on a loaded machine. These tests force the budget to 300 ms
+/// (`PURLIS_TEST_GUARD_DEADLINE_MS`) for every word; the production ones are `guard::BUDGET`
+/// (2 s: the Read, Edit and dispatch hooks) and `guard::BASH_BUDGET` (5 s: the Bash hook).
 const BUDGET: Duration = Duration::from_secs(2);
 const SLACK: Duration = Duration::from_millis(2500);
 
@@ -373,5 +374,35 @@ fn a_large_body_with_a_merge_line_that_runs_out_of_budget_is_refused() {
         );
         assert_eq!(code, Some(2), "{mode}: {out} {err}");
         assert!(err.contains(OUT_OF_TIME), "{mode}: {err}");
+    }
+}
+
+/// **A held `glab mr merge` is answered inside the budget** (#7546), as `gh pr merge` is: in a
+/// chat whose app is not there it is refused, never let through, and never slowly.
+#[test]
+fn a_held_glab_mr_merge_is_answered_within_the_budget() {
+    purlis_core::unsteered!();
+    let here = Here::new();
+    let socket = here.dir.path().join("app").join("hooks.sock");
+    let chat = [
+        (purlis_core::hookwire::CHAT_ENV, "1"),
+        (
+            purlis_core::hookwire::SOCKET_ENV,
+            socket.to_str().expect("a path"),
+        ),
+    ];
+    for cmd in [
+        "glab mr merge 7",
+        "glab mr merge 7 --squash --yes",
+        "cd repo && glab mr merge 7",
+    ] {
+        for mode in ["bypassPermissions", "default"] {
+            let (code, out, err, took) = here.answer("pretooluse", &bash(cmd, mode), &chat);
+            assert!(
+                out.contains("deny") || code == Some(2),
+                "{mode} `{cmd}` was not held: {code:?} {out} {err}"
+            );
+            assert!(took < BUDGET + SLACK, "{mode} `{cmd}` took {took:?}");
+        }
     }
 }

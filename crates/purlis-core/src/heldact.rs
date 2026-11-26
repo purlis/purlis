@@ -70,6 +70,7 @@ use crate::secrets::keyring::Secret;
 mod ci;
 mod handoff;
 mod holds;
+mod objectcache;
 mod prepare;
 mod quarantine;
 mod recognise;
@@ -80,15 +81,19 @@ mod tip;
 pub use ci::{
     CiDiff, GITLAB_DEFAULT, GitTrees, MOST_DIFF, NoClone, PushCheck, check_push, check_push_since,
 };
-pub use handoff::{Handoff, HeldContext, OwnedWorld};
+pub use handoff::{AsksWindow, Handoff, HeldContext, OwnedWorld};
 pub use holds::{
     Asked, HeldActs, NotDone, Performed, Pressed, Waiting, holds_global_limit, holds_limits,
+};
+pub use objectcache::{
+    FILL, FIRST_FILL, FIRST_FILL_TARGET, Fetch, LOG_EVERY, MOST, ObjectCache, PUSH, Progress,
+    ProgressReader, PushCache, STALL, Stage, fill_in_stages,
 };
 pub use prepare::{pinned, prepare};
 pub use quarantine::{BaseObjects, FetchLimits, FromForge, Quarantine, sweep as sweep_quarantines};
 pub use recognise::{Call, Recognised, Recorded, Requested, Why, recognise, valid_rev};
 pub use tag::{InvalidTag, TagName};
-pub use tip::{MOST_BYTES, MOST_FILES, TipChange, TipFiles};
+pub use tip::{MOST_BYTES, MOST_FILES, TipChange, TipFiles, behind};
 
 /// The source a held act is listed under, and the one a rule made from an answer may never name.
 pub const SOURCE: &str = "held-act";
@@ -236,6 +241,12 @@ pub trait Trees: Send + Sync {
     fn message(&self, _tip: &HeadSha) -> Result<String, String> {
         Err("no clone".to_owned())
     }
+    /// **How many commits `base` reaches that `tip` does not**: none where `tip` contains `base`.
+    /// A held push is one commit parented on its base, so a tip that lacks any of the base's
+    /// commits is never pushed (#7690). A store that cannot say has no push to make.
+    fn missing(&self, _base: &HeadSha, _tip: &HeadSha) -> Result<usize, String> {
+        Err("no clone".to_owned())
+    }
 }
 
 /// The person's own account on a forge, and what a fork of it made.
@@ -308,7 +319,31 @@ pub trait HeldForge: Send + Sync {
         base: &HeadSha,
         new_branch: bool,
         workflow: Option<&Secret>,
-    ) -> Result<(), String>;
+    ) -> Result<(), PushError>;
+}
+
+/// Why a push to the forge did not happen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PushError {
+    /// The forge answered 401 to the second credential: that token is dead, so sending the push
+    /// again can never succeed. Carries the forge's words.
+    SecondSignInRefused(String),
+    /// Any other refusal or failure, in the forge's or the app's words.
+    Failed(String),
+}
+
+impl From<String> for PushError {
+    fn from(said: String) -> PushError {
+        PushError::Failed(said)
+    }
+}
+
+impl std::fmt::Display for PushError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PushError::SecondSignInRefused(said) | PushError::Failed(said) => f.write_str(said),
+        }
+    }
 }
 
 /// Why the second credential is not there.
@@ -324,6 +359,9 @@ pub trait WorkflowCredential: Send + Sync {
     fn available(&self, host: &str) -> Result<(), Unavailable>;
     /// The credential, for one push.
     fn secret(&self, host: &str) -> Result<Secret, Unavailable>;
+    /// The forge refused the credential `secret` handed out (401): it is dead. Mark it no longer
+    /// valid, so no ask offers it again until the person signs in again. Nothing by default.
+    fn refused(&self, _host: &str) {}
 }
 
 /// The stub until slice C lands: no second sign-in has been made.
@@ -369,12 +407,18 @@ pub enum Refused {
     Text(&'static str),
     /// The push's diff could not be computed or shown.
     CiDiff(String),
+    /// The tip does not contain the commit the push would be made on, named here as the person
+    /// knows it (`main`, or the branch on the forge): one commit on it with the tip's files would
+    /// undo what it has that the tip lacks (#7690).
+    Behind(String),
     /// The host or the organization forbids the person forking the repo.
     ForkNotAllowed(Repo),
     /// The forge did not say, in its words.
     Forge(String),
     /// Nobody is here to approve it.
     Unattended { queued: bool },
+    /// The person's window could not show the ask, in these words (#7685).
+    NotShown(String),
 }
 
 impl std::fmt::Display for Refused {

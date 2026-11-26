@@ -175,6 +175,9 @@ export const config: WebdriverIO.Config = {
   exclude: [
     "./specs/**/*.state.e2e.ts",
     "./specs/**/*.finder.e2e.ts",
+    // Hibernate and Resume need a chat on a harness that names its conversation
+    // (`wdio.hibernate.conf.ts`, #7630).
+    "./specs/**/*.hibernate.e2e.ts",
     // The Skill studio's outcome bars are one run per harness (`wdio.outcome.conf.ts`).
     "./specs/**/*.outcome.e2e.ts",
     // The layout-file spec needs its file on disk before the app starts (`wdio.layout.conf.ts`).

@@ -1537,6 +1537,209 @@ fn a_page_that_will_not_hold_still_fills_nothing() {
     assert!(inserted(&engine).is_empty(), "nothing filled");
 }
 
+/// The engine takes a request to freeze at once and freezes the page later. A page is held still
+/// once its documents say so, and nothing is cleared before: a frame that still ran could put back
+/// what is cleared (#5272).
+#[test]
+fn nothing_is_cleared_until_a_page_that_freezes_late_says_it_is_frozen() {
+    let (browser, engine) = browser_with(Limits {
+        login_within: Duration::from_secs(3),
+        ..limits()
+    });
+    as_a_login_form(&engine, true);
+    super::super::lock(&engine.model).freezing.lag = 1;
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let all = super::super::lock(&engine.sent).clone();
+    let cleared = all
+        .iter()
+        .position(|sent| sent.method == "Storage.clearDataForOrigin")
+        .expect("cleared");
+    let said_frozen_before = all[..cleared]
+        .iter()
+        .filter(|sent| {
+            sent.method == "Runtime.evaluate"
+                && sent.session.as_deref() == Some("S-PAGE-1")
+                && sent.params["expression"] == super::super::login::READ_FREEZE_WATCH
+        })
+        .count();
+    assert!(
+        said_frozen_before >= 2,
+        "cleared after {said_frozen_before} reads of the page, the first of which said it still ran"
+    );
+}
+
+#[test]
+fn a_page_that_never_says_it_is_frozen_fails_the_login_before_anything_is_cleared() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    super::super::lock(&engine.model).freezing.never = true;
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(engine.sent("Storage.clearDataForOrigin").is_empty());
+    assert!(engine.sent("Network.deleteCookies").is_empty());
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
+#[test]
+fn a_page_that_runs_again_while_the_sites_are_cleared_fails_the_login() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::HoldsCookies);
+    super::super::lock(&engine.model)
+        .freezing
+        .thaws_when_cleared = true;
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
+/// A blank page, which the engine takes the request to freeze for and never tells it is frozen
+/// (a document nothing was armed in), has nothing to keep: it is closed, and the login goes on
+/// once it is gone. Nothing is cleared while it is there (#5272).
+#[test]
+fn a_blank_page_the_engine_never_says_is_frozen_is_closed_before_anything_is_cleared() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    engine.emit(
+        "Target.targetCreated",
+        json!({"targetInfo":{"targetId":"PAGE-6","type":"page","title":"","url":"about:blank","attached":false}}),
+        None,
+    );
+    {
+        let mut model = super::super::lock(&engine.model);
+        model.freezing.silent.insert("S-PAGE-6".to_owned());
+        model.freezing.closing_ends_pages = true;
+    }
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let all = super::super::lock(&engine.sent).clone();
+    let closed = all
+        .iter()
+        .position(|sent| sent.method == "Target.closeTarget" && sent.params["targetId"] == "PAGE-6")
+        .expect("the blank page was closed");
+    let cleared = all
+        .iter()
+        .position(|sent| sent.method == "Storage.clearDataForOrigin")
+        .expect("cleared");
+    assert!(closed < cleared, "closed at {closed}, cleared at {cleared}");
+}
+
+/// A page of another site that never says it is frozen is not closed to make the login go: it
+/// may be the person's, and it may take the browser to the login's site. The login fails, and
+/// the page is still there (#5272).
+#[test]
+fn a_page_of_another_site_that_never_says_it_is_frozen_is_left_open_and_fails_the_login() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    super::super::lock(&engine.model)
+        .freezing
+        .silent
+        .insert("S-PAGE-1".to_owned());
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(
+        engine.sent("Target.closeTarget").is_empty(),
+        "nothing closed"
+    );
+    assert!(engine.sent("Storage.clearDataForOrigin").is_empty());
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
+/// A page of another site is left as it was (#5272): the engine thaws it later than it says, and
+/// the login answers only once the page runs again, so what the person reads next is a page that
+/// runs.
+#[test]
+fn a_page_of_another_site_runs_again_by_the_time_the_login_answers() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    super::super::lock(&engine.model).freezing.thaw_lag = 2;
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let said = super::super::lock(&engine.model)
+        .freezing
+        .said
+        .get("S-PAGE-1")
+        .copied();
+    assert_eq!(
+        said,
+        Some("running"),
+        "its last word, as the login answered"
+    );
+}
+
+/// A read that does not come back on a busy runner says nothing of the page: it is asked again
+/// until the time is up, and only a page that said it runs, or that never answered, fails the login.
+#[test]
+fn a_read_that_does_not_come_back_after_the_clear_is_asked_again() {
+    let (browser, engine) = browser_with(Limits {
+        login_within: Duration::from_secs(3),
+        ..limits()
+    });
+    as_a_login_form(&engine, true);
+    super::super::lock(&engine.model)
+        .freezing
+        .unanswered_after_clear = 2;
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+}
+
+#[test]
+fn a_read_that_never_comes_back_after_the_clear_fails_the_login() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    super::super::lock(&engine.model)
+        .freezing
+        .unanswered_after_clear = u32::MAX;
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
+/// A page that ran after the sites were cleared is not taken for held by a later read that
+/// times out and a freeze asked again: it ran.
+#[test]
+fn a_page_that_ran_after_the_clear_and_then_goes_unread_still_fails_the_login() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::HoldsCookies);
+    {
+        let mut model = super::super::lock(&engine.model);
+        model.freezing.thaws_when_cleared = true;
+        model.freezing.unanswered_after_clear = 1;
+    }
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
 #[test]
 fn a_page_of_its_site_that_comes_back_after_the_clearing_fills_nothing() {
     let (browser, engine) = browser_with(quick());
@@ -1769,4 +1972,265 @@ fn a_window_a_logins_page_opened_elsewhere_closes_once_the_page_is_done() {
                 .contains("purlis closed 1 other window related to the page purlis logged in on")),
         "the chat is told"
     );
+}
+
+/// What a refusal says of a page that did not confirm it is held still, so a run that fails on a
+/// machine nobody can reach says which page and which step: its kind, its opener, its frames, the
+/// step and the wait, and no address. The refusal around it names the login's own site, which the
+/// chat asked for; what is said of the page is the part from "a page of this browser".
+fn refused_for_a_page(ended: &crate::drive::browser::login::LoginEnded) -> String {
+    match &ended.outcome {
+        Err(Refusal::NotLoggedIn(said)) => {
+            let at = said
+                .find("a page of this browser")
+                .expect("it names the page");
+            let page = said[at..]
+                .strip_suffix("), so nothing was filled")
+                .expect("it is what the login's refusal wraps")
+                .to_owned();
+            for address in ["http", "://", "fixture.test", "other.test", "about:"] {
+                assert!(!page.contains(address), "{page} names {address}");
+            }
+            page
+        }
+        _ => panic!("{}", ended_as(&ended.outcome)),
+    }
+}
+
+/// A page of another site, open and never told it is frozen.
+fn a_site_page_that_stays_silent(engine: &Arc<Engine>) {
+    engine.emit(
+        "Target.targetCreated",
+        json!({"targetInfo":{"targetId":"PAGE-6","type":"page","title":"","url":"http://other.test/","attached":false}}),
+        None,
+    );
+    super::super::lock(&engine.model)
+        .freezing
+        .silent
+        .insert("S-PAGE-6".to_owned());
+}
+
+#[test]
+fn a_site_page_that_never_says_it_is_frozen_is_named_by_kind_and_step_in_the_refusal() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    a_site_page_that_stays_silent(&engine);
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    let said = refused_for_a_page(&ended);
+    assert!(
+        said.starts_with("a page of this browser did not stay held still (site page, no opener, 1 frame: no freeze event, waited "),
+        "{said}"
+    );
+    assert!(said.ends_with(" s)"), "{said}");
+}
+
+#[test]
+fn a_page_whose_state_the_engine_will_not_read_says_which_error_in_the_refusal() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    a_site_page_that_stays_silent(&engine);
+    super::super::lock(&engine.model)
+        .freezing
+        .unreadable
+        .insert("S-PAGE-6".to_owned());
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    let said = refused_for_a_page(&ended);
+    assert!(
+        said.contains("site page, no opener, 1 frame: watch not armed (read refused: CDP error -32000: Cannot find context with specified id)"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_page_whose_state_is_never_answered_says_a_read_timed_out_in_the_refusal() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    a_site_page_that_stays_silent(&engine);
+    super::super::lock(&engine.model)
+        .freezing
+        .unanswered
+        .insert("S-PAGE-6".to_owned());
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    let said = refused_for_a_page(&ended);
+    assert!(
+        said.contains("site page, no opener, 1 frame: a read timed out, waited "),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_popup_that_never_freezes_is_named_a_popup_with_an_opener() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    engine.emit(
+        "Target.targetCreated",
+        json!({"targetInfo":{"targetId":"PAGE-6","type":"page","title":"","url":"http://other.test/","attached":false,"openerId":"PAGE-1"}}),
+        None,
+    );
+    super::super::lock(&engine.model)
+        .freezing
+        .silent
+        .insert("S-PAGE-6".to_owned());
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    let said = refused_for_a_page(&ended);
+    assert!(
+        said.contains("popup, has an opener, 1 frame: no freeze event, waited "),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_request_to_freeze_the_engine_refuses_is_named_with_the_page_and_the_error() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::WontHoldStill);
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    let said = refused_for_a_page(&ended);
+    assert!(
+        said.starts_with("a page of this browser would not hold still (site page, no opener, 2 frames: the engine would not take the request of freezing it (CDP error -32000)"),
+        "{said}"
+    );
+}
+
+#[test]
+fn the_refusal_names_each_page_and_leaves_an_error_text_no_address() {
+    use super::super::login::{Kind, Unconfirmed, not_held_said, said_of};
+    let engine_said = said_of(&crate::cdp::CallError::Engine {
+        code: -32000,
+        message: "Navigation to intranet:8443 blocked".into(),
+    });
+    assert_eq!(engine_said, "CDP error -32000");
+    let pages = [
+        Unconfirmed::new(
+            Kind::Blank,
+            false,
+            0,
+            vec![],
+            Some(Duration::from_millis(3000)),
+        ),
+        Unconfirmed::new(
+            Kind::Extension,
+            true,
+            2,
+            vec!["no freeze event".into(), "no freeze event".into()],
+            Some(Duration::from_millis(10_250)),
+        ),
+    ];
+    assert_eq!(
+        not_held_said(&pages),
+        "a page of this browser did not stay held still (page 1: blank page, no opener, 0 frames: no frame known, waited 3.0 s; page 2: extension page, has an opener, 2 frames: no freeze event in 2 frames, waited 10.2 s)"
+    );
+}
+
+/// A page's cross-site frames live in processes of their own, each with a session that owns it:
+/// a world made for such a frame on the page's session is refused as there being no such frame.
+/// The login arms and reads every frame through the session that owns it.
+fn with_a_frame_in_a_process_of_its_own(
+    set: impl FnOnce(&mut super::Freezing),
+) -> (super::StandIn, Arc<Engine>) {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    {
+        let mut model = super::super::lock(&engine.model);
+        model.freezing.frames_owned = true;
+        set(&mut model.freezing);
+    }
+    let _ = snapshot(&browser, 1);
+    if super::super::lock(&engine.model).freezing.oopif_unannounced {
+        // The driver never heard of the frame's session: it holds the frame as its page's own.
+        let mut state = super::super::lock(&browser.inner.state);
+        state.sessions.remove("S-PAYMENT");
+        state
+            .page_mut("PAGE-1")
+            .and_then(|page| page.frames.get_mut("PAYMENT-FRAME"))
+            .expect("the frame is known")
+            .session = "S-PAGE-1".to_owned();
+    }
+    (browser, engine)
+}
+
+#[test]
+fn a_frame_in_a_process_of_its_own_is_armed_and_read_through_the_session_that_owns_it() {
+    let (browser, engine) = with_a_frame_in_a_process_of_its_own(|_| {});
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let worlds = engine.sent("Page.createIsolatedWorld");
+    assert!(
+        worlds
+            .iter()
+            .any(|sent| sent.params["frameId"] == "PAYMENT-FRAME"
+                && sent.session.as_deref() == Some("S-PAYMENT")),
+        "the frame's world is made on its own session"
+    );
+}
+
+#[test]
+fn a_frame_whose_process_the_driver_was_never_told_of_is_attached_to_and_armed_there() {
+    let (browser, engine) = with_a_frame_in_a_process_of_its_own(|freezing| {
+        freezing.oopif_unannounced = true;
+    });
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert!(
+        engine
+            .sent("Target.attachToTarget")
+            .iter()
+            .any(
+                |sent| sent.params["targetId"] == "PAYMENT-FRAME" && sent.params["flatten"] == true
+            )
+    );
+    assert!(!engine.sent("Storage.clearDataForOrigin").is_empty());
+}
+
+#[test]
+fn a_frame_in_a_process_that_the_pages_freeze_does_not_reach_is_frozen_through_its_own_session() {
+    let (browser, engine) = with_a_frame_in_a_process_of_its_own(|freezing| {
+        freezing.oopif_apart = true;
+    });
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let all = super::super::lock(&engine.sent).clone();
+    let frozen_own = all
+        .iter()
+        .position(|sent| {
+            sent.method == "Page.setWebLifecycleState"
+                && sent.params["state"] == "frozen"
+                && sent.session.as_deref() == Some("S-PAYMENT")
+        })
+        .expect("frozen on the frame's own session");
+    let cleared = all
+        .iter()
+        .position(|sent| sent.method == "Storage.clearDataForOrigin")
+        .expect("cleared");
+    assert!(frozen_own < cleared);
+}
+
+#[test]
+fn a_frame_that_goes_while_it_is_armed_runs_nothing_and_does_not_fail_the_login() {
+    let (browser, engine) = with_a_frame_in_a_process_of_its_own(|freezing| {
+        freezing.oopif_unannounced = true;
+        freezing.oopif_gone = true;
+    });
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert!(!engine.sent("Storage.clearDataForOrigin").is_empty());
+}
+
+#[test]
+fn a_frame_that_still_exists_and_cannot_be_reached_fails_the_login_before_anything_is_cleared() {
+    let (browser, engine) = with_a_frame_in_a_process_of_its_own(|freezing| {
+        freezing.oopif_unannounced = true;
+        freezing.attach_refused = true;
+    });
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    let Err(Refusal::NotLoggedIn(why)) = &ended.outcome else {
+        panic!("{}", ended_as(&ended.outcome));
+    };
+    assert!(why.contains("watch not armed"), "{why}");
+    assert!(engine.sent("Storage.clearDataForOrigin").is_empty());
+    assert!(inserted(&engine).is_empty(), "nothing filled");
 }

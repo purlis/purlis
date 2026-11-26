@@ -2940,14 +2940,15 @@ describe("the palette at fifty chats", () => {
     // Q308a (instruction 45): Policy's two rows and the enforcement log's one. 1490 since
     // #1349: GitLab access. 1491 since one login slice D: Ready for all users, a setting's row.
     // 1493 since one login (ADR 0128) slice G: Your organization's application and Account for each
-    // project, two settings rows of You › Accounts.
+    // project, two settings rows of You › Accounts. 1494 since #7408: Clones to confirm, a
+    // setting's row of You › Accounts.
     // Since #2786: the Skill studio is always on, with no Previews group (-1): Open
     // Skill studio and Show the Skills view (+2), the studio and its Needs you on each of the six
     // workspaces (+12) and the eight personas (+16), and the Skills group at the project and at
     // the focused workspace (+2); and among #2920's rows, the Skills groups' settings at the project
     // (+1) and at the focused workspace (+2) without the Previews switch (-1); and #6031's Skill
     // sources (Controls and its four keys) and Recorded skill acts (+6), the project's always.
-    expect(offers).toHaveLength(1532);
+    expect(offers).toHaveLength(1533);
     // Fifty tabs of one chat each: the palette has their chats' Rename chat rows instead.
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(0);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(

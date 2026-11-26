@@ -13,7 +13,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use purlis_core::forge::proxy::{
     AllowedRepo, ChatId, Credential, CredentialError, CredentialRequest, CredentialSource,
-    ForgeProxy, Inbound, Kind, ObjectRepo, Outcome, RequestHead, Sentinel, TokenKind,
+    ForgeProxy, Inbound, Kind, ObjectRepo, Outcome, PullHead, PullRef, RequestHead, Sentinel,
+    TokenKind,
 };
 use purlis_core::secrets::keyring::Secret;
 
@@ -46,6 +47,59 @@ pub struct Objects(pub HashMap<String, String>);
 impl ObjectRepo for Objects {
     fn repo_of(&self, _: Kind, _: &str, id: &str) -> Option<String> {
         self.0.get(id).cloned()
+    }
+}
+
+/// [`Objects`] that also say what each pull request's head is, by node id (`Node`) and by
+/// `owner/repo#number` (`Number`): the forge's answer to update-branch's lookup. A pull request
+/// not listed is one the forge could not place.
+#[derive(Default)]
+pub struct ObjectsWithHeads {
+    pub objects: Objects,
+    /// Keyed by node id, or `owner/repo#number`; the value is (repo, branch, tip).
+    pub heads: HashMap<String, (String, String, String)>,
+}
+
+impl ObjectsWithHeads {
+    /// A pull request of `repo` with this node id and number, whose head is `head_repo`:`branch`,
+    /// at the tip `1` * 40 (the one a push by the test's chat leaves, [`push_body`]).
+    pub fn pull(self, repo: &str, id: &str, number: u64, head_repo: &str, branch: &str) -> Self {
+        self.pull_at(repo, id, number, head_repo, branch, &"1".repeat(40))
+    }
+
+    /// As [`Self::pull`], with the head at `oid`.
+    pub fn pull_at(
+        mut self,
+        repo: &str,
+        id: &str,
+        number: u64,
+        head_repo: &str,
+        branch: &str,
+        oid: &str,
+    ) -> Self {
+        self.objects.0.insert(id.into(), repo.into());
+        let head = (head_repo.to_string(), branch.to_string(), oid.to_string());
+        self.heads.insert(id.into(), head.clone());
+        self.heads.insert(format!("{repo}#{number}"), head);
+        self
+    }
+}
+
+impl ObjectRepo for ObjectsWithHeads {
+    fn repo_of(&self, kind: Kind, host: &str, id: &str) -> Option<String> {
+        self.objects.repo_of(kind, host, id)
+    }
+
+    fn pull_head(&self, _: Kind, _: &str, pull: PullRef<'_>) -> Option<PullHead> {
+        let key = match pull {
+            PullRef::Node(id) => id.to_string(),
+            PullRef::Number { repo, number } => format!("{repo}#{number}"),
+        };
+        self.heads.get(&key).map(|(repo, branch, oid)| PullHead {
+            repo: repo.clone(),
+            branch: branch.clone(),
+            oid: oid.clone(),
+        })
     }
 }
 
@@ -105,17 +159,28 @@ impl Scene {
         objects: impl ObjectRepo + 'static,
         tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
     ) -> Self {
-        Self::build_tuned(TokenKind::Oauth, objects, false, tune)
+        Self::build_tuned(TokenKind::Oauth, objects, false, &[], tune)
+    }
+
+    /// As [`Scene::tuned`], with chat-a's github.com repo (`Acme/App`) holding a tip of its own,
+    /// `(branch, tip)`, on each of `own`: the branches the chat made through the route.
+    pub fn tuned_owning(
+        objects: impl ObjectRepo + 'static,
+        own: &[(&str, &str)],
+        tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
+    ) -> Self {
+        Self::build_tuned(TokenKind::Oauth, objects, false, own, tune)
     }
 
     fn build(token_kind: TokenKind, objects: Objects, ghes: bool) -> Self {
-        Self::build_tuned(token_kind, objects, ghes, |proxy| proxy)
+        Self::build_tuned(token_kind, objects, ghes, &[], |proxy| proxy)
     }
 
     fn build_tuned(
         token_kind: TokenKind,
         objects: impl ObjectRepo + 'static,
         ghes: bool,
+        own: &[(&str, &str)],
         tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
     ) -> Self {
         let asked = Arc::new(AtomicUsize::new(0));
@@ -133,6 +198,7 @@ impl Scene {
             AllowedRepo::new(Kind::GitHub, "github.com", 443, "Acme/App", "main")
                 .unwrap()
                 .with_node_id("R_acme_app")
+                .with_own_branches(own)
                 .with_protected_branches(&["release"]),
             AllowedRepo::new(Kind::GitLab, "gitlab.com", 443, "group/proj", "main")
                 .unwrap()

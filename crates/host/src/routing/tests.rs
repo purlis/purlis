@@ -108,7 +108,19 @@ fn a_desktop_waiting(
     pinned: impl Fn(&Kept) -> Pinned,
     waits: Arc<dyn Fn() + Send + Sync>,
 ) -> (Hosting, Hosting) {
-    let b = Hosting::running_with(Echo, StandIns::default());
+    a_desktop_over(
+        Hosting::running_with(Echo, StandIns::default()),
+        pinned,
+        waits,
+    )
+}
+
+/// [`a_desktop_waiting`], whose runner is the host `b`.
+fn a_desktop_over(
+    b: Hosting,
+    pinned: impl Fn(&Kept) -> Pinned,
+    waits: Arc<dyn Fn() + Send + Sync>,
+) -> (Hosting, Hosting) {
     let (desktop, runner) = (Arc::new(Kept::new(DESKTOP)), Arc::new(Kept::new(RUNNER)));
     let pinned = pinned(&runner);
     let connector = ToTheRunner {
@@ -574,12 +586,30 @@ async fn a_start_on_a_runner_on_its_way_back_waits_for_it() {
     assert_ne!(started.as_deref(), Some(session::NOT_STARTED), "the start");
 }
 
-/// A runner that is not on its way back is said to be down at once, as it always was.
+/// **A start on a runner whose link is down waits for it, whatever the pool** (#7187): a Docker
+/// pool's runner is not asked to run again, and its start used to be refused the moment its
+/// link was down, one second before the link came back.
 #[tokio::test]
-async fn a_start_on_a_runner_that_is_merely_down_is_refused_at_once() {
-    let host = a_desktop_whose_runner_comes_back(u32::MAX, not_vouched_yet, waiting(None));
+async fn a_start_on_a_runner_whose_link_is_merely_down_waits_for_it() {
+    let host = a_desktop_whose_runner_comes_back(3, not_vouched_yet, waiting(None))
+        .waiting_for_a_down_link(PATIENCE);
+    let (held, started) = refused_a_hold_and_a_start(host).await;
+    assert_ne!(held.as_deref(), Some(session::NOT_STARTED), "the hold");
+    assert_ne!(started.as_deref(), Some(session::NOT_STARTED), "the start");
+}
+
+/// The wait for a link that stays down ends, and a start says why it is down.
+#[tokio::test]
+async fn a_start_on_a_runner_whose_link_stays_down_is_refused_when_the_wait_ends() {
+    let host = a_desktop_whose_runner_comes_back(u32::MAX, not_vouched_yet, waiting(None))
+        .waiting_for_a_down_link(Duration::from_millis(300));
+    let began = std::time::Instant::now();
     let (held, _) = refused_a_hold_and_a_start(host).await;
     assert_eq!(held.as_deref(), Some(session::NOT_STARTED));
+    assert!(
+        began.elapsed() >= Duration::from_millis(300),
+        "it waited before it refused"
+    );
 }
 
 /// The wait has an end, and what ends it says what any start on a down runner says.
@@ -784,6 +814,148 @@ async fn a_runner_removed_outside_purlis_is_refused_in_plain_words_and_not_tried
     assert!(asked <= 7, "the check was asked {asked} times");
 }
 
+/// A runner's connector whose check finds its machine answering and refusing (#7187).
+#[derive(Clone)]
+struct ToARefusingMachine {
+    checks: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl Connector for ToARefusingMachine {
+    type Io = DuplexStream;
+
+    fn connect(&self) -> BoxFuture<'static, std::io::Result<DuplexStream>> {
+        self.checks
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async {
+            Err(std::io::Error::other(hostlink::FarEndRefused(
+                "pool builds's machine refused the sign-in".into(),
+            )))
+        })
+    }
+}
+
+/// **A start on a refused machine does not wait the 30 seconds a link that is merely down does**
+/// (#7187): it is refused at once, saying the machine refused and that purlis stopped trying, and
+/// the check is not asked in a loop.
+#[tokio::test]
+async fn a_start_on_a_machine_that_refuses_is_refused_at_once_and_not_tried_in_a_loop() {
+    let checks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let connector = ToARefusingMachine {
+        checks: Arc::clone(&checks),
+    };
+    let desktop = Arc::new(Kept::new(DESKTOP));
+    let pinned = Kept::new(RUNNER).pinned();
+    let relays: RelaysTo = Arc::new(move |_: &str| {
+        let (connector, desktop, pinned) =
+            (connector.clone(), Arc::clone(&desktop), pinned.clone());
+        Ok((
+            Arc::new(move || {
+                keep_linked(
+                    connector.clone(),
+                    Handshake::THIS_BUILD,
+                    desktop.identity(),
+                    pinned.clone(),
+                    Liveness::default(),
+                )
+            }) as Keep,
+            "builds/builds".to_owned(),
+        ))
+    });
+    let a = Hosting::running_with(Echo, StandIns::default())
+        .relaying_with(relays)
+        .waiting_for_a_down_link(Duration::from_secs(30));
+    let window = routed(Scope::LocalUi, a).await;
+    window.relay_to("builds").await.unwrap();
+
+    let began = std::time::Instant::now();
+    for _ in 0..3 {
+        let refused = tokio::time::timeout(PATIENCE, window.list())
+            .await
+            .expect("refused, not left waiting")
+            .unwrap_err();
+        assert_eq!(code(&refused), Some(session::NOT_STARTED), "{refused}");
+        assert!(refused.to_string().contains("machine refused"), "{refused}");
+    }
+    assert!(
+        began.elapsed() < Duration::from_secs(10),
+        "a refusal does not wait the link's 30 seconds: {:?}",
+        began.elapsed()
+    );
+    let asked = checks.load(std::sync::atomic::Ordering::SeqCst);
+    assert!(asked <= 7, "the check was asked {asked} times");
+}
+
+/// A runner's connector whose check finds its machine answering with another host key (#7187).
+#[derive(Clone)]
+struct ToAMachineWithAnotherKey {
+    checks: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl Connector for ToAMachineWithAnotherKey {
+    type Io = DuplexStream;
+
+    fn connect(&self) -> BoxFuture<'static, std::io::Result<DuplexStream>> {
+        self.checks
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async {
+            Err(std::io::Error::other(hostlink::FarEndHostKeyChanged(
+                "pool builds's machine presented another host key".into(),
+            )))
+        })
+    }
+}
+
+/// **A start on a machine with another host key does not wait the 30 seconds a link that is merely down does**
+/// (#7187): it is refused at once, saying the key changed and that it must be trusted again, and
+/// the check is not asked in a loop.
+#[tokio::test]
+async fn a_start_on_a_machine_with_another_host_key_is_refused_at_once_and_not_tried_in_a_loop() {
+    let checks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let connector = ToAMachineWithAnotherKey {
+        checks: Arc::clone(&checks),
+    };
+    let desktop = Arc::new(Kept::new(DESKTOP));
+    let pinned = Kept::new(RUNNER).pinned();
+    let relays: RelaysTo = Arc::new(move |_: &str| {
+        let (connector, desktop, pinned) =
+            (connector.clone(), Arc::clone(&desktop), pinned.clone());
+        Ok((
+            Arc::new(move || {
+                keep_linked(
+                    connector.clone(),
+                    Handshake::THIS_BUILD,
+                    desktop.identity(),
+                    pinned.clone(),
+                    Liveness::default(),
+                )
+            }) as Keep,
+            "builds/builds".to_owned(),
+        ))
+    });
+    let a = Hosting::running_with(Echo, StandIns::default())
+        .relaying_with(relays)
+        .waiting_for_a_down_link(Duration::from_secs(30));
+    let window = routed(Scope::LocalUi, a).await;
+    window.relay_to("builds").await.unwrap();
+
+    let began = std::time::Instant::now();
+    for _ in 0..3 {
+        let refused = tokio::time::timeout(PATIENCE, window.list())
+            .await
+            .expect("refused, not left waiting")
+            .unwrap_err();
+        assert_eq!(code(&refused), Some(session::NOT_STARTED), "{refused}");
+        assert!(refused.to_string().contains("another key"), "{refused}");
+    }
+    assert!(
+        began.elapsed() < Duration::from_secs(10),
+        "a refusal does not wait the link's 30 seconds: {:?}",
+        began.elapsed()
+    );
+    let asked = checks.load(std::sync::atomic::Ordering::SeqCst);
+    assert!(asked <= 7, "the check was asked {asked} times");
+}
+
 /// **A window's name is held once on each runner** (#4248): its link to a draining runner and its
 /// link to the pool's runner now share the one name it keeps, and a second link to either runner
 /// under that name is refused while the first holds it.
@@ -818,4 +990,209 @@ async fn one_name_is_held_once_on_each_runner() {
     assert!(held(&relayed), "{relayed:?}");
     let (_again, relayed) = named_to("builds/old").await;
     assert!(held(&relayed), "{relayed:?}");
+}
+
+/// A connector whose connection never comes and never fails: a link that stays Linking.
+#[derive(Clone)]
+struct Hangs;
+
+impl Connector for Hangs {
+    type Io = DuplexStream;
+
+    fn connect(&self) -> BoxFuture<'static, std::io::Result<DuplexStream>> {
+        Box::pin(futures::future::pending())
+    }
+}
+
+/// **A start that cannot finish is stopped, and says which step it was stuck on** (#7187): the
+/// limit is three minutes in the host, and a test holds it to a moment.
+#[tokio::test]
+async fn a_start_that_takes_too_long_is_stopped_naming_the_step_it_was_stuck_on() {
+    let (desktop, runner) = (Arc::new(Kept::new(DESKTOP)), Arc::new(Kept::new(RUNNER)));
+    let pinned = runner.pinned();
+    let relays: RelaysTo = Arc::new(move |name: &str| {
+        let (desktop, pinned) = (Arc::clone(&desktop), pinned.clone());
+        Ok((
+            Arc::new(move || {
+                keep_linked(
+                    Hangs,
+                    Handshake::THIS_BUILD,
+                    desktop.identity(),
+                    pinned.clone(),
+                    Liveness::default(),
+                )
+            }) as Keep,
+            format!("{name}/{name}"),
+        ))
+    });
+    let host = Hosting::running_with(Echo, StandIns::default())
+        .relaying_with(relays)
+        .waiting_for_a_down_link(PATIENCE)
+        .starting_within(Duration::from_millis(300));
+    let window = routed(Scope::LocalUi, host).await;
+    tokio::time::timeout(PATIENCE, window.relay_to("builds"))
+        .await
+        .unwrap()
+        .expect("relayed");
+    let start =
+        session::StartProgram::of("01J9PRJCT00000000000000000", session::ProgramKind::Shell);
+    let began = std::time::Instant::now();
+    let refused = tokio::time::timeout(PATIENCE, window.start_program(start))
+        .await
+        .expect("the start is answered, not left hanging")
+        .expect_err("a start that cannot finish is refused");
+    assert!(began.elapsed() >= Duration::from_millis(300));
+    assert_eq!(code(&refused), Some(session::NOT_STARTED));
+    let said = refused.to_string();
+    assert!(said.contains("300 milliseconds"), "{said}");
+    assert!(said.contains("linking to the runner"), "{said}");
+}
+
+/// A runner whose start takes `0` to compose: it began, and answers after the desktop gave up.
+struct SlowEcho(Duration);
+
+impl Compose for SlowEcho {
+    fn compose(&self, starting: &ToCompose<'_>) -> Result<Spec, String> {
+        std::thread::sleep(self.0);
+        Ok(Spec::new("/bin/echo", starting.size))
+    }
+}
+
+/// **A start that gave up does not leave its chat on the runner** (#7187, the steward's decision
+/// 2): the runner began the program, the three minutes ran out before it answered, and the
+/// window was told the start failed. The desktop's host closes what it began there, so no chat
+/// the window never heard of is left running on the runner.
+#[tokio::test]
+async fn a_start_given_up_on_is_closed_on_the_runner_if_it_began_after_all() {
+    const PROJECT: &str = "01J9PRJCT00000000000000000";
+    const PROGRAM: &str = "01J9PROGRAM000000000000000";
+    let b = Hosting::running_with(SlowEcho(Duration::from_millis(900)), StandIns::default());
+    let (a, b) = a_desktop_over(b, Kept::pinned, Arc::new(|| {}));
+    let a = a
+        .waiting_for_a_down_link(PATIENCE)
+        .starting_within(Duration::from_millis(300));
+    let window = routed(Scope::LocalUi, a).await;
+    tokio::time::timeout(PATIENCE, window.relay_to("builds"))
+        .await
+        .unwrap()
+        .expect("relayed");
+    let folder = tempfile::tempdir().expect("a folder for the project");
+    window
+        .hold_project(PROJECT, &folder.path().to_string_lossy())
+        .await
+        .expect("held");
+    let mut start = session::StartProgram::of(PROJECT, session::ProgramKind::Shell);
+    start.program = Some(PROGRAM.into());
+    let refused = window
+        .start_program(start)
+        .await
+        .expect_err("the start was given up on");
+    assert_eq!(code(&refused), Some(session::NOT_STARTED), "{refused}");
+    // It began there all the same: the runner answers late, and the program is closed.
+    let there = straight(b).await;
+    there
+        .hold_project(PROJECT, &folder.path().to_string_lossy())
+        .await
+        .expect("held there too");
+    let began = std::time::Instant::now();
+    let mut seen = false;
+    loop {
+        let held = there
+            .programs_of(PROJECT)
+            .await
+            .expect("the runner answers");
+        seen |= !held.is_empty();
+        if seen && held.is_empty() {
+            break;
+        }
+        assert!(
+            began.elapsed() < PATIENCE,
+            "the runner began it ({seen}) and a program the window never heard of is left: {held:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+/// **A hold gets the start's three minutes too** (#7187): a hold on a link that never comes up
+/// used to wait out its own 30 seconds, uncapped, and the start another 30 after it. It is refused
+/// at the start's limit, naming the step.
+#[tokio::test]
+async fn a_hold_on_a_link_that_never_comes_up_is_stopped_at_the_starts_limit() {
+    let (desktop, runner) = (Arc::new(Kept::new(DESKTOP)), Arc::new(Kept::new(RUNNER)));
+    let pinned = runner.pinned();
+    let relays: RelaysTo = Arc::new(move |name: &str| {
+        let (desktop, pinned) = (Arc::clone(&desktop), pinned.clone());
+        Ok((
+            Arc::new(move || {
+                keep_linked(
+                    Hangs,
+                    Handshake::THIS_BUILD,
+                    desktop.identity(),
+                    pinned.clone(),
+                    Liveness::default(),
+                )
+            }) as Keep,
+            format!("{name}/{name}"),
+        ))
+    });
+    let host = Hosting::running_with(Echo, StandIns::default())
+        .relaying_with(relays)
+        .waiting_for_a_down_link(PATIENCE)
+        .starting_within(Duration::from_millis(300));
+    let window = routed(Scope::LocalUi, host).await;
+    tokio::time::timeout(PATIENCE, window.relay_to("builds"))
+        .await
+        .unwrap()
+        .expect("relayed");
+    let began = std::time::Instant::now();
+    let refused = tokio::time::timeout(
+        PATIENCE,
+        window.hold_project("01J9PRJCT00000000000000000", ""),
+    )
+    .await
+    .expect("the hold is answered, not left waiting its own wait")
+    .expect_err("a hold on a link that cannot come up is refused");
+    assert!(began.elapsed() < PATIENCE, "it ended at the start's limit");
+    assert_eq!(code(&refused), Some(session::NOT_STARTED));
+    assert!(
+        refused.to_string().contains("300 milliseconds"),
+        "{refused}"
+    );
+}
+
+/// **A hold and its start share one budget** (#7187): the start has what the hold left, and a
+/// budget that ran out is not carried to a start made later.
+#[tokio::test]
+async fn a_hold_and_its_start_share_one_budget() {
+    let routed = Routed::new(Hosting::running_with(Echo, StandIns::default()));
+    let within = Duration::from_millis(400);
+    let first = routed.start_budget(within);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        routed.start_budget(within),
+        first,
+        "the start has the hold's"
+    );
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert!(
+        routed.start_budget(within) > first,
+        "a spent one is not carried on"
+    );
+}
+
+/// **A cluster's vouch wait is not cut by the start's limit** (#7187, #4403): the person set how
+/// long to wait for the cluster to vouch for the runner, and the three minutes begin once that
+/// wait ends. Here the limit is 300 ms and the runner is vouched for after about 1.75 s.
+#[tokio::test]
+async fn a_start_waiting_for_the_cluster_to_vouch_is_not_cut_short_by_the_starts_limit() {
+    let host = a_desktop_whose_runner_comes_back(3, not_vouched_yet, waiting(Some(PATIENCE)))
+        .starting_within(Duration::from_millis(300));
+    let began = std::time::Instant::now();
+    let (held, started) = refused_a_hold_and_a_start(host).await;
+    assert!(
+        began.elapsed() > Duration::from_millis(300),
+        "it waited past the limit"
+    );
+    assert_ne!(held.as_deref(), Some(session::NOT_STARTED), "the hold");
+    assert_ne!(started.as_deref(), Some(session::NOT_STARTED), "the start");
 }

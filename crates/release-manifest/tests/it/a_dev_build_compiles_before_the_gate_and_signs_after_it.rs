@@ -30,13 +30,16 @@ const WAIT: &str = "Wait for this commit's ci on main, before anything is signed
 const COMPILES_BEFORE_THE_GATE: [&str; 2] = ["build", "runner-binary-aarch64"];
 
 /// The jobs that are not behind the gate, and why: `gate` is the gate; `plan` and `keys` hold
-/// nothing and publish nothing; the two above wait inside their own steps; `profile-guard` only
-/// reports a nightly build's result and the gate passes a nightly at once.
-const NOT_BEHIND_THE_GATE: [&str; 6] = [
+/// nothing and publish nothing; the two above wait inside their own steps; `build-signer` holds
+/// nothing, publishes nothing and hands its one binary to `sign-macos` alone, which is behind the
+/// gate (`the_developer_id_key_is_imported_on_a_hosted_runner_only` holds it to that);
+/// `profile-guard` only reports a nightly build's result and the gate passes a nightly at once.
+const NOT_BEHIND_THE_GATE: [&str; 7] = [
     "gate",
     "plan",
     "keys",
     "build",
+    "build-signer",
     "runner-binary-aarch64",
     "profile-guard",
 ];
@@ -44,6 +47,13 @@ const NOT_BEHIND_THE_GATE: [&str; 6] = [
 /// The one secret a step that runs before the wait may name, by this exact name: the Report
 /// intake's address, which the compile reads and which the shipped binary carries in the clear.
 const COMPILE_SECRET: &str = "PURLIS_REPORT_INTAKE_DSN";
+
+/// The wait's answer, which every later step of the job asks for. A `ci` that ended red or
+/// cancelled is not a fault of the build: the wait ends green with `green=false` and the job
+/// stops signing, bundling and uploading by skipping what comes after (#7405). Only what it
+/// cannot determine ends the job red.
+const WAIT_ID: &str = "ci";
+const WAIT_GREEN: &str = "steps.ci.outputs.green == 'true'";
 
 /// The wait step's `shell:`, exactly: the runner's own bash, the file `BASH_ENV` names unset, no
 /// profile.
@@ -62,49 +72,88 @@ const WAIT_ENV: [(&str, &str); 2] = [
 /// text and never a file of the checkout (the commit's code has run in the job by then), and
 /// `tools/release-wait.test.mjs` runs it against a fake `gh`. A line added to it, such as a
 /// `|| true`, is a change to this constant too.
-const WAIT_RUN: [&str; 42] = [
-    r##"if [ "$DEV" != true ]; then"##,
-    r##"echo "Not a push to main: nothing to wait for.""##,
-    r##"exit 0"##,
-    r##"fi"##,
-    r##"for v in $(compgen -e); do"##,
-    r##"case "$v" in"##,
-    r##"GH_TOKEN | GITHUB_REPOSITORY | GITHUB_SHA | DEV | HOME | PATH | TMPDIR) ;;"##,
-    r##"*) unset "$v" 2>/dev/null || true ;;"##,
-    r##"esac"##,
-    r##"done"##,
-    r##"PATH=/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"##,
-    r##"gh=$(command -v gh) || { echo "::error::no gh on the runner, so nothing is signed or uploaded"; exit 1; }"##,
-    r##"case "$gh" in"##,
-    r##"/usr/bin/gh | /usr/local/bin/gh | /opt/homebrew/bin/gh) ;;"##,
-    r##"*) echo "::error::gh resolves to $gh, which is not the runner's own, so nothing is signed or uploaded"; exit 1 ;;"##,
-    r##"esac"##,
-    r##"ask() {"##,
-    r##"for try in 1 2 3; do"##,
-    r##"if out=$("$gh" run view "$1" --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status + " " + (.conclusion // "none")'); then"##,
-    r##"echo "$out""##,
-    r##"return 0"##,
-    r##"fi"##,
-    r##"if [ "$try" -lt 3 ]; then"##,
-    r##"sleep $((try * 15))"##,
-    "fi",
-    r##"done"##,
-    r##"return 1"##,
-    r##"}"##,
-    r##"id="""##,
-    r##"for _ in $(seq 1 30); do"##,
-    r##"id=$("$gh" run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --branch main --limit 1 --json databaseId --jq '.[0].databaseId // empty') || id="""##,
-    r##"[ -n "$id" ] && break"##,
-    r##"sleep 10"##,
-    r##"done"##,
-    r##"[ -n "$id" ] || { echo "::error::no ci run of $GITHUB_SHA on its push to main was listed within five minutes, so nothing is signed or uploaded"; exit 1; }"##,
-    r##"echo "Waiting for ci run $id of $GITHUB_SHA.""##,
-    r##""$gh" run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true"##,
-    r##"state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"; exit 1; }"##,
-    r##"read -r status conclusion <<< "$state""##,
-    r##"[ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"; exit 1; }"##,
-    r##"[ "$conclusion" = success ] || { echo "::error::ci run $id of $GITHUB_SHA ended $conclusion, so nothing is signed or uploaded"; exit 1; }"##,
-    r##"echo "ci run $id of $GITHUB_SHA ended success.""##,
+const WAIT_RUN: [&str; 81] = [
+    r###"gh_output=$GITHUB_OUTPUT"###,
+    r###"summary=$GITHUB_STEP_SUMMARY"###,
+    r###"if [ "$DEV" != true ]; then"###,
+    r###"echo "Not a push to main: nothing to wait for.""###,
+    r###"echo "green=true" >> "$gh_output""###,
+    r###"exit 0"###,
+    r###"fi"###,
+    r###"for v in $(compgen -e); do"###,
+    r###"case "$v" in"###,
+    r###"GH_TOKEN | GITHUB_REPOSITORY | GITHUB_SHA | DEV | HOME | PATH | TMPDIR) ;;"###,
+    r###"*) unset "$v" 2>/dev/null || true ;;"###,
+    r###"esac"###,
+    r###"done"###,
+    r###"PATH=/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"###,
+    r###"gh=$(command -v gh) || { echo "::error::no gh on the runner, so nothing is signed or uploaded"; exit 1; }"###,
+    r###"case "$gh" in"###,
+    r###"/usr/bin/gh | /usr/local/bin/gh | /opt/homebrew/bin/gh) ;;"###,
+    r###"*) echo "::error::gh resolves to $gh, which is not the runner's own, so nothing is signed or uploaded"; exit 1 ;;"###,
+    r###"esac"###,
+    r###"ask() {"###,
+    r###"for try in 1 2 3; do"###,
+    r###"if out=$("$gh" run view "$1" --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status + " " + (.conclusion // "none")'); then"###,
+    r###"echo "$out""###,
+    r###"return 0"###,
+    r###"fi"###,
+    r###"if [ "$try" -lt 3 ]; then"###,
+    r###"sleep $((try * 15))"###,
+    r###"fi"###,
+    r###"done"###,
+    r###"return 1"###,
+    r###"}"###,
+    r###"id="""###,
+    r###"for _ in $(seq 1 30); do"###,
+    r###"id=$("$gh" run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --branch main --limit 1 --json databaseId --jq '.[0].databaseId // empty') || id="""###,
+    r###"[ -n "$id" ] && break"###,
+    r###"sleep 10"###,
+    r###"done"###,
+    r###"[ -n "$id" ] || { echo "::error::no ci run of $GITHUB_SHA on its push to main was listed within five minutes, so nothing is signed or uploaded"; exit 1; }"###,
+    r###"echo "Waiting for ci run $id of $GITHUB_SHA.""###,
+    r###"deadline=$((SECONDS + 7200))"###,
+    r###"status=unread"###,
+    r###"conclusion=none"###,
+    r###"while :; do"###,
+    r###""$gh" run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true"###,
+    r###"read_ok=false"###,
+    r###"if state=$(ask "$id"); then"###,
+    r###"read -r status conclusion <<< "$state""###,
+    r###"read_ok=true"###,
+    r###"if [ "$status" = completed ]; then"###,
+    r###"break"###,
+    r###"fi"###,
+    r###"fi"###,
+    r###"if [ "$SECONDS" -ge "$deadline" ]; then"###,
+    r###"if [ "$read_ok" != true ] || [ "$status" = unread ]; then"###,
+    r###"echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded""###,
+    r###"else"###,
+    r###"echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded""###,
+    r###"fi"###,
+    r###"exit 1"###,
+    r###"fi"###,
+    r###"sleep 30"###,
+    r###"done"###,
+    r###"case "$conclusion" in"###,
+    r###"success)"###,
+    r###"echo "green=true" >> "$gh_output""###,
+    r###"echo "ci run $id of $GITHUB_SHA ended success.""###,
+    r###";;"###,
+    r###"failure | cancelled | timed_out)"###,
+    r###"echo "green=false" >> "$gh_output""###,
+    r###"echo "::notice::this commit's main ci ended $conclusion, so this dev build stops here: nothing signed, uploaded or published""###,
+    r###"{"###,
+    r###"echo "## This dev build stopped: the commit's main ci ended $conclusion""###,
+    r###"echo"###,
+    r###"echo "ci run $id of $GITHUB_SHA ended $conclusion, so this dev build stops here: nothing signed, uploaded or published. The red is ci's, to fix there.""###,
+    r###"} >> "$summary""###,
+    r###";;"###,
+    r###"*)"###,
+    r###"echo "::error::ci run $id of $GITHUB_SHA ended $conclusion, which this step cannot read as green or red, so nothing is signed or uploaded""###,
+    r###"exit 1"###,
+    r###";;"###,
+    r###"esac"###,
 ];
 
 fn release_text() -> String {
@@ -231,19 +280,25 @@ fn step_keys(step: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// The wait step is what it must be: no `if:`, no `continue-on-error`, the keys `name`, `env`,
-/// `shell` and `run` and no others, its environment, its shell and its run exact.
+/// The wait step is what it must be: no `if:`, no `continue-on-error`, the keys `name`, `id`,
+/// `env`, `shell` and `run` and no others, the id `ci` that the steps after it ask, its environment, its shell and its run exact.
 fn the_wait_step_is_exact(name: &str, wait: &[String]) -> Result<(), String> {
     let keys = step_keys(wait);
     for key in &keys {
-        if !["env", "shell", "run"].contains(&key.as_str()) {
+        if !["id", "env", "shell", "run"].contains(&key.as_str()) {
             return Err(format!("{name}'s wait has a `{key}` key"));
         }
     }
-    for must in ["env", "shell", "run"] {
+    for must in ["id", "env", "shell", "run"] {
         if !keys.iter().any(|k| k == must) {
             return Err(format!("{name}'s wait has no `{must}` key"));
         }
+    }
+    if !wait
+        .iter()
+        .any(|l| l.trim_end() == format!("        id: {WAIT_ID}"))
+    {
+        return Err(format!("{name}'s wait does not have the id `{WAIT_ID}`"));
     }
     for (key, value) in WAIT_ENV {
         if step_value(wait, "env", key) != Some(value) {
@@ -274,6 +329,56 @@ fn the_wait_step_is_exact(name: &str, wait: &[String]) -> Result<(), String> {
             "{name}'s wait does not run exactly the wait's script: {:#?}",
             run_lines(wait)
         ));
+    }
+    Ok(())
+}
+
+/// A step's own `if:` value, the key at the step's level.
+fn step_condition(step: &[String]) -> Option<&str> {
+    step.iter()
+        .skip(1)
+        .find_map(|l| l.strip_prefix("        if:"))
+        .map(str::trim)
+}
+
+/// Every step after the wait (the signing material, the bundles, the checks, the uploads, the
+/// symbols) runs only when the wait answered `green=true`: that is a term of its `if:` joined by
+/// a top-level `&&`, so a red `ci` (the wait ends green and says `false`) signs and uploads
+/// nothing, whatever else the step's condition says. `always()` beside it does not matter, and a
+/// top-level `||` could let the whole condition pass without it. Nothing else in the job is
+/// called `ci`, so no later step can answer in the wait's place.
+fn steps_after_the_wait_run_only_on_its_green(
+    name: &str,
+    after: &[Vec<String>],
+    all: &[Vec<String>],
+) -> Result<(), String> {
+    let ids = all
+        .iter()
+        .filter(|s| {
+            s.iter()
+                .any(|l| l.trim_end() == format!("        id: {WAIT_ID}"))
+        })
+        .count();
+    if ids != 1 {
+        return Err(format!(
+            "{name} has {ids} steps with the id `{WAIT_ID}`, so the wait's answer may not be its own"
+        ));
+    }
+    for step in after {
+        let what = step.first().map_or("", |l| l.trim()).to_owned();
+        let condition = step_condition(step).ok_or_else(|| {
+            format!("{name}'s step after its wait does not run only on its green, it has no `if`: {what}")
+        })?;
+        let terms = and_terms(condition).ok_or_else(|| {
+            format!(
+                "{name}'s step after its wait has a top-level `||`, so its green may not be needed: {what}: {condition}"
+            )
+        })?;
+        if !terms.iter().any(|t| t == WAIT_GREEN) {
+            return Err(format!(
+                "{name}'s step after its wait does not run only on its green: {what}: {condition}"
+            ));
+        }
     }
     Ok(())
 }
@@ -321,6 +426,7 @@ fn compiling_jobs_wait_before_they_sign_or_upload(text: &str) -> Result<(), Stri
             }
         }
         let steps = job.steps();
+        steps_after_the_wait_run_only_on_its_green(name, &steps[at + 1..], &steps)?;
         for before in &steps[..at] {
             let text = before.join("\n");
             let what = text.lines().next().unwrap_or_default().trim().to_owned();
@@ -850,24 +956,208 @@ fn a_wait_that_continues_on_error_is_refused() {
 fn a_wait_whose_script_is_neutered_is_refused() {
     for job in COMPILES_BEFORE_THE_GATE {
         for (from, to) in [
+            // A red answer that says green, or no answer at all.
             (
-                r##"[ "$conclusion" = success ] || { echo"##,
-                r##"[ "$conclusion" = success ] || true || { echo"##,
+                "failure | cancelled | timed_out)\n              echo \"green=false\"",
+                "failure | cancelled | timed_out)\n              echo \"green=true\"",
             ),
             (
-                "exit 1; }\n          echo \"ci run $id of $GITHUB_SHA ended success.\"",
-                "exit 1; } || true\n          echo \"ci run $id of $GITHUB_SHA ended success.\"",
+                "            success)\n              echo \"green=true\"",
+                "            success)\n              echo \"green=false\"",
+            ),
+            // A state it cannot read, passed on as if it were red.
+            (
+                "which this step cannot read as green or red, so nothing is signed or uploaded\"\n              exit 1",
+                "which this step cannot read as green or red, so nothing is signed or uploaded\"\n              exit 0",
             ),
             (
-                "ended $conclusion, so nothing is signed or uploaded\"; exit 1; }",
-                "ended $conclusion, so nothing is signed or uploaded\"; exit 0; }",
+                "failure | cancelled | timed_out)",
+                "failure | cancelled | timed_out | *)",
+            ),
+            // A fault passed on as a red commit.
+            (
+                "after the wait, so nothing is signed or uploaded\"\n              fi\n              exit 1",
+                "after the wait, so nothing is signed or uploaded\"\n              fi\n              exit 0",
+            ),
+            // A state that is not `completed` taken as the answer, or the loop left unbounded in
+            // the wrong direction.
+            (
+                "if [ \"$status\" = completed ]; then\n                break",
+                "if [ \"$status\" != unread ]; then\n                break",
+            ),
+            (
+                "so nothing is signed or uploaded\"; exit 1; }\n          echo \"Waiting",
+                "so nothing is signed or uploaded\"; exit 0; }\n          echo \"Waiting",
+            ),
+            (
+                "exit 1; }\n          echo \"Waiting for ci run",
+                "exit 1; } || true\n          echo \"Waiting for ci run",
+            ),
+            // The non-dev answer.
+            (
+                "echo \"green=true\" >> \"$gh_output\"\n            exit 0",
+                "exit 0",
             ),
         ] {
             let broken = swap(&release_text(), job, from, to);
-            let err = compiling_jobs_wait_before_they_sign_or_upload(&broken).expect_err(job);
+            let err = compiling_jobs_wait_before_they_sign_or_upload(&broken)
+                .expect_err(&format!("{job}: {from}"));
             assert!(err.contains("does not run exactly"), "{err}");
         }
     }
+}
+
+/// The text with the `if:` term that asks the wait's answer taken out of every step of job
+/// `name` whose name line contains `step`.
+fn without_the_green_in(text: &str, name: &str, step: &str) -> String {
+    edit_job(text, name, |job| {
+        let mut out = String::new();
+        let mut inside = false;
+        for line in job.split_inclusive('\n') {
+            if line.starts_with("      - ") {
+                inside = line.contains(step);
+            }
+            if inside && line.starts_with("        if:") {
+                let cut = line
+                    .replace(&format!("{WAIT_GREEN} && "), "")
+                    .replace(WAIT_GREEN, "true");
+                out.push_str(&cut);
+            } else {
+                out.push_str(line);
+            }
+        }
+        out
+    })
+}
+
+/// The steps of `name` after its wait, by their first line, so each can be broken in turn.
+fn steps_after_the_wait(name: &str) -> Vec<String> {
+    let all = jobs(&release_text());
+    let job = find(&all, name).unwrap();
+    let steps = job.steps();
+    let (at, _) = step_named(job, WAIT).unwrap();
+    steps[at + 1..]
+        .iter()
+        .map(|s| s[0].trim().trim_start_matches("- ").to_owned())
+        .collect()
+}
+
+#[test]
+fn a_step_after_the_wait_that_does_not_ask_its_green_is_refused() {
+    // Each step in turn: the signing material, the bundles, the uploads, the checks, the symbols.
+    for job in COMPILES_BEFORE_THE_GATE {
+        let steps = steps_after_the_wait(job);
+        assert!(!steps.is_empty(), "{job} has steps after its wait");
+        for step in steps {
+            let broken = without_the_green_in(&release_text(), job, &step);
+            let err = compiling_jobs_wait_before_they_sign_or_upload(&broken)
+                .expect_err(&format!("{job}: {step}"));
+            assert!(
+                err.contains("does not run only on its green") && err.contains(&step),
+                "{job}: {step}: {err}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_steps_that_sign_and_upload_are_among_those_that_ask_the_green() {
+    // A rule over "every step after the wait" is worth what that list holds: the ones that sign
+    // or upload are in it, in each job.
+    let build = steps_after_the_wait("build");
+    for must in [
+        "name: Signing material",
+        "name: Bundle the app",
+        "name: Bundle the extra bundle",
+        "name: Upload",
+        "name: Save the debug symbols",
+    ] {
+        assert!(build.iter().any(|s| s == must), "{must} in {build:?}");
+    }
+    assert!(
+        build
+            .iter()
+            .any(|s| s.starts_with("uses: actions/upload-artifact@")),
+        "the unsigned runner binary's upload in {build:?}"
+    );
+    let aarch64 = steps_after_the_wait("runner-binary-aarch64");
+    assert!(
+        aarch64
+            .iter()
+            .any(|s| s.starts_with("uses: actions/upload-artifact@")),
+        "{aarch64:?}"
+    );
+}
+
+#[test]
+fn a_step_after_the_wait_with_no_if_is_refused() {
+    let broken = edit_job(&release_text(), "build", |job| {
+        job.replacen(
+            "      - name: Upload\n        if: steps.ci.outputs.green == 'true'\n",
+            "      - name: Upload\n",
+            1,
+        )
+    });
+    refuses(
+        compiling_jobs_wait_before_they_sign_or_upload(&broken),
+        "it has no `if`",
+    );
+}
+
+#[test]
+fn a_step_after_the_wait_whose_green_an_or_can_skip_is_refused() {
+    for (from, to) in [
+        (
+            "        if: steps.ci.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && runner.os == 'Linux'",
+            "        if: steps.ci.outputs.green == 'true' && needs.keys.outputs.publish == 'true' || runner.os == 'Linux'",
+        ),
+        (
+            "        if: steps.ci.outputs.green == 'true' && always()",
+            "        if: always() || steps.ci.outputs.green == 'true'",
+        ),
+        (
+            "        if: steps.ci.outputs.green == 'true' && runner.os == 'Linux'",
+            "        if: (steps.ci.outputs.green == 'true' || runner.os == 'Linux')",
+        ),
+        (
+            "        if: steps.ci.outputs.green == 'true' && always()",
+            "        if: steps.ci.outputs.green != 'false' && always()",
+        ),
+    ] {
+        let text = release_text();
+        assert!(text.contains(from), "{from}");
+        let broken = text.replacen(from, to, 1);
+        let err = compiling_jobs_wait_before_they_sign_or_upload(&broken).expect_err(to);
+        assert!(
+            err.contains("top-level `||`") || err.contains("does not run only on its green"),
+            "{to}: {err}"
+        );
+    }
+}
+
+#[test]
+fn a_later_step_that_answers_in_the_waits_place_is_refused() {
+    // A second step called `ci` would be what `steps.ci.outputs.green` reads.
+    let broken = swap(
+        &release_text(),
+        "build",
+        "      - name: What this build is called\n        id: names\n",
+        "      - name: What this build is called\n        id: ci\n",
+    );
+    refuses(
+        compiling_jobs_wait_before_they_sign_or_upload(&broken),
+        "steps with the id `ci`",
+    );
+    let broken = swap(
+        &release_text(),
+        "runner-binary-aarch64",
+        "        id: ci\n",
+        "",
+    );
+    refuses(
+        compiling_jobs_wait_before_they_sign_or_upload(&broken),
+        "has no `id` key",
+    );
 }
 
 #[test]

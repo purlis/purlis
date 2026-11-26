@@ -24,10 +24,13 @@ import {
   WINDOW_SOURCE_GUARDS,
   ciToolsOf,
   gatesOf,
+  pullRequestPathsOf,
+  workflowNeeded,
   namedIn,
   scopesOf,
   scopesOfPath,
   shipsOf,
+  PARTIAL_DEV_BUILDS,
   askShips,
   storiesBrowsers,
   webParts,
@@ -967,6 +970,12 @@ test("a job that only asks whether it is needed is not started on a pull request
   yes("crates/purlis-core/src/sandbox/sshproxy.rs", "confinement");
   yes("crates/purlis-cli/tests/it/a_chats_ssh_route_carries_from_inside_its_sandbox.rs", "confinement");
   yes("crates/host/src/lib.rs", "parity");
+  // The fault suite and what it is built from (#7188).
+  yes("crates/purlis-core/tests/it/a_live_remote_chat_survives_the_faults_that_define_trust.rs", "parity");
+  yes("crates/purlis-core/tests/support/outage.rs", "parity");
+  yes("crates/purlis-core/tests/support/remote_rig.rs", "parity");
+  yes("crates/purlis-core/tests/support/real_infra.rs", "parity");
+  yes("tests/remote-faults/faults.sh", "parity");
   yes("crates/session-protocol/src/lib.rs", "bench");
   yes("Cargo.lock", "bench");
   for (const event of ["merge_group", "push", "schedule"]) {
@@ -981,7 +990,7 @@ test("a job that only asks whether it is needed is not started on a pull request
 
 // By the operator's choice of 2026-11-01: what the bars measure and the suite itself. A regression
 // from anywhere else shows on main's push, which always runs it.
-test("the macOS outcome bars run on main and the nightly alone; Linux's run on a pull request its gate lets in and in the merge queue", () => {
+test("the macOS outcome bars run on main and the nightly alone, in a workflow of their own; Linux's run on a pull request its gate lets in and in the merge queue", () => {
   const on = (path) => gatesOf({ event: "pull_request", paths: [path] })["outcome-bars"];
   for (const path of [
     "app/src/SkillStudioTab.tsx",
@@ -1013,17 +1022,19 @@ test("the macOS outcome bars run on main and the nightly alone; Linux's run on a
     assert.equal(on(path), false, path);
 
   const ci = read(".github/workflows/ci.yml");
-  const job = ci.slice(ci.indexOf("\n  outcome-bars:\n"), ci.indexOf("\n  outcome-bars-linux:\n"));
   // The steward's ruling of 2026-11-23 (#7335): Macs are the queue's scarce resource, so the job
   // is not in the merge group, and a pull request's run is a subset of the queue's, so it is not
-  // on a pull request either.
-  assert.ok(
-    job.includes("(github.event_name == 'push' || github.event_name == 'schedule')"),
-    "main's push and the nightly, and neither a pull request nor the merge group",
-  );
-  assert.doesNotMatch(job, /\n    if:[^\n]*(merge_group|pull_request)/);
+  // on a pull request either. Since 2026-11-26 it is a workflow of its own (`outcome-bars.yml`),
+  // which triggers on those two events alone.
+  const bars = read(".github/workflows/outcome-bars.yml");
+  const triggers = bars.slice(bars.indexOf("\non:\n"), bars.indexOf("\nconcurrency:\n"));
+  assert.match(triggers, /\n  push:\n    branches: \[main\]\n/, "main's push");
+  assert.match(triggers, /\n  schedule:\n/, "the nightly");
+  assert.doesNotMatch(triggers, /merge_group|pull_request|workflow_run/, "neither a pull request nor the merge group");
+  const job = bars.slice(bars.indexOf("\n  outcome-bars:\n"));
   assert.match(job, /\n        os: \[macos-latest\]\n/);
   assert.match(job, /\n    continue-on-error: true\n/);
+  assert.doesNotMatch(ci, /\n  outcome-bars:\n/);
   // The Linux leg is required since #5277, so it runs wherever a required check is read: every
   // run but a pull request's, and a pull request its gate lets in.
   const linux = ci.slice(ci.indexOf("\n  outcome-bars-linux:\n"), ci.indexOf("\n  outcome-bars-linux-checks:\n"));
@@ -1130,10 +1141,10 @@ test("a draft pull request runs no macOS job but app builds, and marking it read
   const nightly = (n) =>
     /\n    if: (github\.event_name == 'schedule'|\$\{\{ github\.event_name == 'schedule' \}\})\n/.test(body(n));
   // `scenario` runs on no pull request at all, the next test's claim.
-  // `outcome-bars` runs on main's push and the nightly alone (the steward's ruling of 2026-11-23),
-  // so a pull request never reaches it and it needs no draft clause.
-  const gated = onMac.filter((n) => n !== "app" && n !== "scenario" && n !== "outcome-bars" && !nightly(n));
-  assert.ok(onMac.includes("outcome-bars") && onMac.includes("scenario") && gated.length > 0, gated.join(", "));
+  // The macOS outcome bars run in `outcome-bars.yml`, on main's push and the nightly alone (the
+  // steward's rulings of 2026-11-23 and 2026-11-26), so a pull request never reaches them.
+  const gated = onMac.filter((n) => n !== "app" && n !== "scenario" && !nightly(n));
+  assert.ok(!onMac.includes("outcome-bars") && onMac.includes("scenario") && gated.length > 0, gated.join(", "));
   // The draft clause must bind the whole condition: no `||` outside parentheses before it.
   const topLevelOr = (expr) => {
     let depth = 0;
@@ -1168,7 +1179,7 @@ test("the macOS scenarios run in the merge queue and on main, never on a pull re
     /\n          if \[ "\$SCOPE" = false \] \|\| \[ "\$EVENT" = pull_request \]; then want=skipped; else want=success; fi\n/,
   );
   // Linux runs the same specs on the pull request.
-  assert.doesNotMatch(job("scenario-linux", "outcome-bars"), /event_name != 'pull_request'/);
+  assert.doesNotMatch(job("scenario-linux", "outcome-bars-linux"), /event_name != 'pull_request'/);
 });
 
 // A gate says what the job's own step decides: the step stays, for the merge group and the push,
@@ -1478,4 +1489,185 @@ test("a job that reads the scopes gets the draft state: the change-scope action 
   assert.match(action, /DRAFT: \$\{\{ github\.event\.pull_request\.draft \}\}/);
   assert.match(action, /ci-scope\.mjs "\$EVENT" "\$BASE" "\$DRAFT"/);
   assert.match(action, /stories-browsers:/);
+});
+
+// **A path-filtered workflow's queue run is scoped by the filter it already has** (#7420): a merge
+// group's event carries no `paths`, so `workflow-scope` reads the workflow's own
+// `pull_request.paths` and the paths the group changes, and the workflow's jobs run when they meet.
+const FILTERED = [
+  "name: w",
+  "on:",
+  "  pull_request:",
+  "    paths:",
+  "      # a comment",
+  "      - crates/a/**",
+  "      - 'tools/b*'",
+  '      - "docs/c.md"',
+  "      - '!crates/a/skip/**'",
+  "  merge_group:",
+  "    types: [checks_requested]",
+  "  schedule:",
+  '    - cron: "1 2 * * *"',
+  "jobs:",
+  "  j:",
+  "    runs-on: ubuntu-24.04",
+  "",
+].join("\n");
+
+test("a workflow's path filter is read from its pull_request block, comments and quotes aside", () => {
+  assert.deepEqual(pullRequestPathsOf(FILTERED), ["crates/a/**", "tools/b*", "docs/c.md", "!crates/a/skip/**"]);
+  assert.equal(pullRequestPathsOf("name: w\non:\n  pull_request:\n    branches: [main]\n  merge_group:\njobs:\n"), null);
+  assert.equal(pullRequestPathsOf("name: w\non: [push]\njobs:\n"), null);
+});
+
+test("a change meets a path filter as GitHub's does: a later line decides, and `!` takes a path out", () => {
+  const filter = pullRequestPathsOf(FILTERED);
+  assert.equal(workflowNeeded(filter, ["crates/a/src/x.rs"]), true);
+  assert.equal(workflowNeeded(filter, ["tools/bee.mjs"]), true);
+  assert.equal(workflowNeeded(filter, ["docs/c.md"]), true);
+  assert.equal(workflowNeeded(filter, ["crates/a/skip/y.rs"]), false);
+  assert.equal(workflowNeeded(filter, ["crates/b/src/x.rs", "README.md"]), false);
+  assert.equal(workflowNeeded(filter, ["README.md", "crates/a/skip/y.rs", "crates/a/ok.rs"]), true);
+});
+
+test("a dotfile is in a filter's `**` and `*`, as on GitHub", () => {
+  assert.equal(workflowNeeded(["operator/**"], ["operator/.cargo/config.toml"]), true);
+  assert.equal(workflowNeeded(["runner-image/**"], ["runner-image/.dockerignore"]), true);
+  assert.equal(workflowNeeded([".github/workflows/w.yml"], [".github/workflows/w.yml"]), true);
+  assert.equal(workflowNeeded(["a/**", "!a/.x/**"], ["a/.x/f"]), false);
+});
+
+test("a change that cannot be read, and a workflow with no filter, are needed: a fault runs more", () => {
+  assert.equal(workflowNeeded(pullRequestPathsOf(FILTERED), []), true);
+  assert.equal(workflowNeeded(null, ["README.md"]), true);
+});
+
+test("`workflow <file> <base>` says whether the change since base meets the workflow's filter", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ci-scope-workflow-"));
+  try {
+    const git = (...args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+    git("init", "-q", "-b", "main");
+    git("config", "user.email", "t@example.com");
+    git("config", "user.name", "t");
+    git("config", "commit.gpgsign", "false");
+    execFileSync("sh", ["-c", `mkdir -p ${dir}/crates/a ${dir}/other && echo 1 > ${dir}/other/f && echo 1 > ${dir}/crates/a/f`]);
+    execFileSync("sh", ["-c", `cat > ${dir}/w.yml`], { input: FILTERED });
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    const base = git("rev-parse", "HEAD").trim();
+    const run = () =>
+      execFileSync("node", [join(ROOT, "tools/ci-scope.mjs"), "workflow", join(dir, "w.yml"), base], {
+        cwd: dir,
+        encoding: "utf8",
+        env: { ...process.env, GITHUB_OUTPUT: "" },
+      });
+    execFileSync("sh", ["-c", `echo 2 > ${dir}/other/f`]);
+    git("commit", "-qam", "unrelated");
+    assert.match(run(), /^run=false$/m);
+    execFileSync("sh", ["-c", `echo 2 > ${dir}/crates/a/f`]);
+    git("commit", "-qam", "related");
+    assert.match(run(), /^run=true$/m);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---- `ships` per platform: no macOS dev build when only Linux-only paths changed (#7324) ----
+
+const platforms = (paths, partial = true) => {
+  const { macos, linux } = shipsOf({ kind: "dev", paths, partial });
+  return { macos, linux };
+};
+
+test("a change to Linux-only paths builds Linux and not macOS", () => {
+  for (const path of [
+    "runner-image/Dockerfile",
+    "runner-image/fetch-forge-programs.sh",
+    ".github/workflows/runner-image.yml",
+    "app/src-tauri/packaging/deb/postinst",
+    "crates/linux-sandbox/src/linux/filter.rs",
+    "crates/linux-sandbox/src/linux/notify.rs",
+    "crates/linux-sandbox/src/loopback.rs",
+  ]) {
+    assert.deepEqual(platforms([path]), { macos: false, linux: true }, path);
+    // Docs and tests beside it change nothing.
+    assert.deepEqual(platforms(["docs/spec.md", path]), { macos: false, linux: true }, path);
+  }
+  assert.deepEqual(
+    platforms(["runner-image/Dockerfile", "app/src-tauri/packaging/deb/postrm"]),
+    { macos: false, linux: true },
+  );
+});
+
+test("one path macOS compiles or bundles builds both platforms", () => {
+  for (const path of [
+    // The sandbox crate's cross-platform modules are in every build's graph (purlis-core
+    // depends on it unconditionally), so only its `linux/` and `loopback` files are Linux-only.
+    "crates/linux-sandbox/src/lib.rs",
+    "crates/linux-sandbox/src/profile.rs",
+    "crates/linux-sandbox/Cargo.toml",
+    "crates/purlis-core/src/lib.rs",
+    "app/src/App.tsx",
+    "Cargo.lock",
+    ".github/workflows/release.yml",
+    "CHANGELOG.md",
+    "something/new/nobody-heard-of.bin",
+  ]) {
+    assert.deepEqual(platforms([path]), { macos: true, linux: true }, path);
+    assert.deepEqual(
+      platforms(["runner-image/Dockerfile", path]),
+      { macos: true, linux: true },
+      `${path} beside a Linux-only path`,
+    );
+  }
+});
+
+test("a change that ships nothing builds neither platform", () => {
+  assert.deepEqual(platforms(["docs/spec.md", "changes/a.md"]), { macos: false, linux: false });
+  assert.equal(shipsOf({ kind: "dev", paths: ["docs/spec.md"], partial: true }).ships, false);
+});
+
+test("ships is true when either platform builds", () => {
+  const answer = shipsOf({ kind: "dev", paths: ["runner-image/Dockerfile"], partial: true });
+  assert.equal(answer.ships, true);
+  assert.match(answer.why, /Linux/);
+});
+
+test("a build that cannot be measured, or is not a dev build, builds both platforms", () => {
+  for (const [kind, paths] of [
+    ["dev", null],
+    ["dev", []],
+    ["stable", ["runner-image/Dockerfile"]],
+    ["dispatch", ["runner-image/Dockerfile"]],
+    ["schedule", ["runner-image/Dockerfile"]],
+  ]) {
+    const { macos, linux } = shipsOf({ kind, paths, partial: true });
+    assert.deepEqual({ macos, linux }, { macos: true, linux: true }, `${kind} ${paths}`);
+  }
+});
+
+test("partial dev builds are OFF: macOS builds whenever Linux does, until a partial publish is safe", () => {
+  // One manifest names one version for both platforms, so a dev.json for a Linux-only build
+  // would announce a version whose macOS asset is an older build's (docs/adr/0092/2026-11-24-…,
+  // the PR body of #7324). The decision is made and held back by `PARTIAL_DEV_BUILDS`.
+  assert.equal(PARTIAL_DEV_BUILDS, false);
+  const { macos, linux, ships } = shipsOf({ kind: "dev", paths: ["runner-image/Dockerfile"] });
+  assert.deepEqual({ macos, linux, ships }, { macos: true, linux: true, ships: true });
+  assert.equal(shipsOf({ kind: "dev", paths: ["docs/spec.md"] }).macos, false);
+});
+
+test("askShips carries the platforms through, measured from the published commit", () => {
+  const answer = askShips({
+    repo: "purlis/purlis",
+    kind: "dev",
+    sha: PUSHED,
+    partial: true,
+    api: forge({ files: ["runner-image/Dockerfile", "docs/spec.md"] }),
+  });
+  assert.deepEqual(
+    { ships: answer.ships, macos: answer.macos, linux: answer.linux },
+    { ships: true, macos: false, linux: true },
+  );
+  const unreadable = askShips({ repo: "purlis/purlis", kind: "dev", sha: PUSHED, partial: true, api: () => { throw new Error("down"); } });
+  assert.deepEqual({ macos: unreadable.macos, linux: unreadable.linux }, { macos: true, linux: true });
 });

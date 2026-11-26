@@ -259,7 +259,7 @@ fn a_read_is_answered_only_where_a_list_names_it() {
     let s = Scene::single();
     for (host, target) in [
         ("api.github.com", "/repos/acme/app/secret-scanning/alerts"),
-        ("api.github.com", "/repos/acme/app/dependabot/alerts"),
+        ("api.github.com", "/repos/acme/app/dependabot/secrets"),
         ("api.github.com", "/repos/acme/app/traffic/views"),
         ("api.github.com", "/repos/acme/app/code-scanning/alerts"),
         (

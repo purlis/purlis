@@ -2,17 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useSyncExternalStore } from "react";
-import { commands, type ForgeAccountRow } from "../bindings";
+import { commands, type ForgeAccountRow, type PlaneId } from "../bindings";
 import { ForgeBrowserSignIn } from "../ForgeBrowserSignIn";
 import { ForgeCiPermission } from "../ForgeCiPermission";
-import { ACCOUNTS_CHANGED, forgeAccountsChanged } from "../ForgeSignInEnded";
+import { ACCOUNTS_CHANGED, forgeAccountsChanged, SIGN_IN_TROUBLE } from "../ForgeSignInEnded";
+import { listen } from "../here";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { ImportCliLogin } from "../ImportCliLogin";
 import type { LiveSetting, SettingsGroup } from "./groups";
 import { Button } from "../ui/button/Button";
 import { Badge } from "../ui/badge/Badge";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "../ui/table/Table";
-import { applications, projectAccounts } from "./oneLogin";
+import { applications, projectAccounts, unconfirmedClones } from "./oneLogin";
 import { signedCommits } from "./signing";
 
 /**
@@ -43,12 +44,18 @@ import { signedCommits } from "./signing";
  * list for a forge tool signed in where purlis has no account: never imported unless pressed,
  * and its cost to chats said first.
  */
-export function accountsGroup(): SettingsGroup {
+export function accountsGroup(plane?: PlaneId): SettingsGroup {
   return {
     id: "you.accounts",
     label: "Accounts",
     help: "The GitHub and GitLab accounts signed in on this machine. Their tokens are kept in your system keychain, never in a project, and never reach a chat. The forge work you do in this window uses them: the repo picker, discover, saves and the requests they open, and each workspace's request and checks. A host with no account here uses gh or glab, and chats always do.",
-    settings: [forgeAccounts, applications, projectAccounts, signedCommits],
+    settings: [
+      forgeAccounts,
+      applications,
+      ...(plane === undefined ? [] : [unconfirmedClones(plane)]),
+      projectAccounts,
+      signedCommits,
+    ],
   };
 }
 
@@ -105,16 +112,25 @@ async function reread() {
 /** Read again when another surface of this window signed an account in or out. */
 const rereadWhenChanged = () => void reread();
 
+/** The core's trouble listener while the page is open: a trouble may have changed an account
+ *  (a refused second sign-in is deleted, so CI files are no longer allowed). */
+let hearing: Promise<(() => void) | undefined> | undefined;
+
 function subscribe(listener: () => void) {
   if (listeners.size === 0) {
     held = START;
     void reread();
     window.addEventListener(ACCOUNTS_CHANGED, rereadWhenChanged);
+    hearing = listen(SIGN_IN_TROUBLE, rereadWhenChanged).catch(() => undefined);
   }
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
-    if (listeners.size === 0) window.removeEventListener(ACCOUNTS_CHANGED, rereadWhenChanged);
+    if (listeners.size === 0) {
+      window.removeEventListener(ACCOUNTS_CHANGED, rereadWhenChanged);
+      void hearing?.then((stop) => stop?.()).catch(() => undefined);
+      hearing = undefined;
+    }
   };
 }
 

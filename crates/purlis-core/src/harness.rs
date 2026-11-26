@@ -204,6 +204,12 @@ impl Harness {
         self.adapter().reports_its_checks_blocks()
     }
 
+    /// **Whether this harness reports its own work** (SC-4c, #7632): where it does not, a chat
+    /// on it is never judged rested ([`adapter::HarnessAdapter::reports_its_own_work`]).
+    pub fn reports_its_own_work(self) -> bool {
+        self.adapter().reports_its_own_work()
+    }
+
     /// **Whether this harness reports a mode its chat runs in that purlis can check** (R-099,
     /// Q152; the matrix's "The mode the chat runs in"): where it does not, a chat's Chat log
     /// says Can't tell of its mode

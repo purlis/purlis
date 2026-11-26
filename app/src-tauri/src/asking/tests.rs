@@ -1625,6 +1625,7 @@ fn a_held_merge(session: u32) -> purlis_core::mergehold::Waits {
             squash: false,
             read_at: 40,
         },
+        act: purlis_core::mergehold::LandAs::Merge,
         since: 40,
         asked: false,
         look: purlis_core::mergehold::Look::NotViewed { since: None },
@@ -1683,7 +1684,9 @@ fn a_held_merge_is_one_ask_in_asks_offering_merge_and_dont_merge() {
                 approved_by: None,
                 since_viewed: None,
                 pushed_here: false,
-                digest: a_held_merge(3).facts.digest(),
+                digest: a_held_merge(3)
+                    .facts
+                    .digest(purlis_core::mergehold::LandAs::Merge),
             },
         }
     );
@@ -3814,6 +3817,7 @@ fn trust_this(session: u32, name: &str) -> purlis_core::windowonly::Refusal {
             place: format!("github.com/acme/{name}"),
         },
         since: 1_700_000_000,
+        owner: None,
     }
 }
 
@@ -3901,6 +3905,54 @@ fn the_clones_ask_offers_trust_all_and_choose_and_says_when_each_clone_was_made(
             ),
         ]
     );
+}
+
+/// **Let this chat push a branch is one ask per chat and branch, with Allow and Keep blocked**
+/// (ADR 0128, amended 2026-11-23): it stays a Blocking ask in Asks whatever its chat is doing,
+/// carries the repo and branch to the press and no tip, and is told apart from another branch's.
+#[test]
+fn letting_a_chat_push_a_branch_is_one_ask_with_allow_and_keep_blocked_and_carries_no_tip() {
+    let refused = |branch: &str| purlis_core::windowonly::Refusal {
+        root: std::path::PathBuf::from("/p"),
+        session: 4,
+        control: purlis_core::windowonly::Control::LetChatPush {
+            chat: "01J9ZQ3V5N8X4T2K7M6P0R1S2A".to_owned(),
+            host: "github.com".to_owned(),
+            repo: "acme/app".to_owned(),
+            repo_id: 41,
+            branch: branch.to_owned(),
+        },
+        since: 0,
+        owner: None,
+    };
+    let one = window_only(&refused("theirs"));
+    assert_eq!(one.source, AskSource::LetChatPush);
+    assert_eq!(
+        one.options
+            .iter()
+            .map(|option| (option.id.as_str(), option.label.as_str(), option.allows))
+            .collect::<Vec<_>>(),
+        [
+            ("press", "Allow", true),
+            ("keep-blocked", "Keep blocked", false)
+        ]
+    );
+    assert!(one.says.contains("theirs in acme/app"), "{}", one.says);
+    assert!(
+        matches!(
+            &one.answer,
+            AnswerPath::LetChatPush { repo, repo_id, branch, .. }
+                if repo == "acme/app" && repo_id == "41" && branch == "theirs"
+        ),
+        "{:?}",
+        one.answer
+    );
+    assert_ne!(one.ask, window_only(&refused("other")).ask);
+
+    // A chat whose turn has ended keeps it in Asks: only Trust this clone moves to a finish row.
+    let (blocking, on_finish_rows) = finish_rows_apart(vec![one], &|_| false);
+    assert_eq!(blocking.len(), 1);
+    assert!(on_finish_rows.is_empty());
 }
 
 /// **A window-only ask is Blocking while a chat waits on it, and otherwise on its chat's finish
@@ -4033,4 +4085,96 @@ fn pool_setups_ready_ask_is_one_in_its_own_project_and_gone_once_answered() {
 
     admin::forget(config.path()).unwrap();
     assert!(pool_setup_ready(project.path(), config.path()).is_none());
+}
+
+/// H15: the window asks what is waiting on every burst of moves. Two asks that come together are
+/// two reads at most, and an ask is never answered by a read that started before it.
+#[test]
+fn asks_waiting_asked_together_share_one_read_that_starts_after_them() {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).expect("the project");
+    let planes = crate::planes::Planes::telling(
+        std::sync::Arc::new(|_| {}),
+        crate::Shipped::default(),
+        None,
+    );
+    let id = planes.open(&root);
+    let held = planes.held(&id).expect("held");
+    let blank = every_ask(&held);
+    let reads = AtomicU32::new(0);
+    // A read tells the number it started as, in the field that is nothing else here.
+    let read = |hold: Option<&std::sync::Mutex<std::sync::mpsc::Receiver<()>>>| {
+        let number = reads.fetch_add(1, Ordering::SeqCst) + 1;
+        if let Some(hold) = hold {
+            hold.lock().expect("held").recv().expect("let go");
+        }
+        Asking {
+            snoozed_until: Some(number),
+            ..blank.clone()
+        }
+    };
+    let (inside, started) = std::sync::mpsc::channel::<()>();
+    let (release, hold) = std::sync::mpsc::channel::<()>();
+    let hold = std::sync::Mutex::new(hold);
+    let (first, second) = std::thread::scope(|scope| {
+        let first = scope.spawn(|| {
+            counted_in_a_burst(&held, || {
+                inside.send(()).expect("told");
+                read(Some(&hold))
+            })
+        });
+        started.recv().expect("the first read is running");
+        let later = || scope.spawn(|| counted_in_a_burst(&held, || read(None)));
+        let (second, third) = (later(), later());
+        // Waiting by now, an ask waits for the next read, and the two share it; not yet asked, it
+        // is the one that starts it or finds it started: read number 2 either way.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        release.send(()).expect("let go");
+        (
+            first.join().expect("first"),
+            [second.join().expect("second"), third.join().expect("third")],
+        )
+    });
+    assert_eq!(first.snoozed_until, Some(1));
+    for answer in &second {
+        assert_eq!(
+            answer.snoozed_until,
+            Some(2),
+            "not the read that was running"
+        );
+    }
+    assert_eq!(reads.load(Ordering::SeqCst), 2);
+}
+
+/// H15: the command's own read is [`counted`], and what a burst answered is not kept for the
+/// next ask: an ask after a change sees it.
+#[test]
+fn asks_waiting_once_reads_the_project_again_for_an_ask_after_a_change() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = dir.path().join("project");
+    std::fs::create_dir_all(&root).expect("the project");
+    std::fs::write(purlis_core::names::manifest(&root), "schema = 1\n").expect("its manifest");
+    let planes = crate::planes::Planes::telling(
+        std::sync::Arc::new(|_| {}),
+        crate::Shipped::default(),
+        None,
+    );
+    let id = planes.open(&root);
+    let held = planes.held(&id).expect("held");
+    let persona_asks = || {
+        counted_once(&held)
+            .asks
+            .into_iter()
+            .filter(|ask| ask.source == AskSource::PersonaAllow)
+            .count()
+    };
+    assert_eq!(persona_asks(), 0);
+    std::fs::write(
+        purlis_core::names::manifest(&root),
+        "schema = 1\n\n[sandbox]\nmode = \"on\"\n\n[sandbox.personas.devops]\nhosts = [\"10.0.0.5:6443\"]\n",
+    )
+    .expect("its manifest");
+    assert_eq!(persona_asks(), 1, "an answer from before the ask");
 }

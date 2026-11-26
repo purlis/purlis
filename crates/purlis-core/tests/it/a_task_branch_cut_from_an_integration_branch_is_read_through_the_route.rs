@@ -13,7 +13,7 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use purlis_core::forge::Kind;
-use purlis_core::heldact::{BaseObjects, PushCheck, Quarantine, check_push_since};
+use purlis_core::heldact::{BaseObjects, ObjectCache, PushCheck, Quarantine, check_push_since};
 use purlis_core::mergehold::HeadSha;
 
 use crate::support::git;
@@ -113,6 +113,13 @@ struct Scene {
     default_tip: HeadSha,
     /// `phase-1-proven`'s tip: a commit of its own on `main`, which edits `src/big.txt`.
     integration: HeadSha,
+    /// `workflow-edit`'s tip: a commit of its own on `main`, which edits the workflow.
+    workflow_edit: HeadSha,
+    /// A commit the forge resolves by id but no branch of it holds: one that was on a branch since
+    /// force-pushed away.
+    dangling: HeadSha,
+    /// A commit of a fork: its objects are in the forge's store, reached by no ref of it.
+    fork_only: HeadSha,
 }
 
 fn lines(n: usize) -> String {
@@ -138,6 +145,37 @@ fn scene() -> Scene {
     );
     let integration = commit(&forge, "integration work");
     git(&forge, &["checkout", "-q", "main"]);
+    // A forge serves a commit by its id, whether or not a branch is at it (GitHub does).
+    git(&forge, &["config", "uploadpack.allowAnySHA1InWant", "true"]);
+    git(&forge, &["checkout", "-q", "-b", "workflow-edit"]);
+    write(
+        &forge,
+        WORKFLOW,
+        "name: ci\non: push\njobs: { edited: {} }\n",
+    );
+    let workflow_edit = commit(&forge, "edit the workflow");
+    git(&forge, &["checkout", "-q", "main"]);
+    // A commit on a branch that is then deleted: still in the store, in no ref.
+    git(&forge, &["checkout", "-q", "-b", "gone"]);
+    write(&forge, "src/secret.txt", "a secret\n");
+    let dangling = commit(&forge, "a secret, force-pushed away");
+    git(&forge, &["checkout", "-q", "main"]);
+    git(&forge, &["branch", "-q", "-D", "gone"]);
+    // A fork's commit, fetched by id with no ref made for it.
+    let fork = root.join("fork");
+    git(&root, &["clone", "-q", &forge.to_string_lossy(), "fork"]);
+    write(&fork, "src/fork.txt", "the fork's\n");
+    let fork_only = commit(&fork, "a commit only the fork has");
+    git(
+        &forge,
+        &[
+            "fetch",
+            "-q",
+            "--no-tags",
+            &fork.to_string_lossy(),
+            fork_only.as_str(),
+        ],
+    );
     let chat = root.join("chat");
     git(
         &root,
@@ -154,6 +192,9 @@ fn scene() -> Scene {
         chat,
         default_tip,
         integration,
+        workflow_edit,
+        dangling,
+        fork_only,
     }
 }
 
@@ -463,4 +504,410 @@ fn the_tips_fetched_are_distinct_full_ids_and_at_most_the_cap() {
         1,
         "a tip listed in two cases is one"
     );
+}
+
+/// The pack git sends when the forge has every object: nothing.
+fn empty_pack(s: &Scene) -> Vec<u8> {
+    pack_of(&s.chat, &s.default_tip, &s.default_tip)
+}
+
+/// What the gate does for a push that sends `pack` for `tip` over a branch at `base` (`already`
+/// where the branch is there, as for a push to an existing branch): a quarantine on `base`, the
+/// pack taken in, and the tree read against the default branch.
+fn pushed(
+    s: &Scene,
+    forge: &dyn BaseObjects,
+    base: &HeadSha,
+    already: bool,
+    tip: &HeadSha,
+    pack: &[u8],
+) -> Result<PushCheck, String> {
+    pushed_to(Kind::GitHub, s, forge, base, already, tip, pack)
+}
+
+/// [`pushed`], to a remote of `kind`: the gate reads a push the same way on every forge.
+fn pushed_to(
+    kind: Kind,
+    s: &Scene,
+    forge: &dyn BaseObjects,
+    base: &HeadSha,
+    already: bool,
+    tip: &HeadSha,
+    pack: &[u8],
+) -> Result<PushCheck, String> {
+    let parent = tempfile::tempdir().unwrap();
+    let quarantine = Quarantine::open(parent.path(), base, forge)?;
+    quarantine.also_have(forge, &s.default_tip)?;
+    quarantine.take_in_known(pack, tip, base, forge)?;
+    Ok(check_push_since(
+        kind,
+        None,
+        &quarantine.trees(),
+        &s.default_tip,
+        already.then_some(base),
+        tip,
+    ))
+}
+
+fn an_empty_pack_through_the_route(
+    s: &Scene,
+    forge: &LocalForge,
+    tip: &HeadSha,
+) -> Result<PushCheck, String> {
+    pushed(s, forge, &s.default_tip, false, tip, &empty_pack(s))
+}
+
+const OUTSIDE: &str = "neither in the push nor in a branch of this repo";
+
+#[test]
+fn a_branch_made_at_a_commit_a_branch_of_the_repo_holds_is_read_not_refused() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let checked = an_empty_pack_through_the_route(&s, &forge_of(&s, false), &s.integration)
+        .expect("it is read");
+    assert!(matches!(checked, PushCheck::NoCiFiles), "{checked:?}");
+}
+
+#[test]
+fn a_branch_made_at_a_commit_in_the_middle_of_a_branchs_history_is_read() {
+    purlis_core::unsteered!();
+    let s = scene();
+    // The default branch's tip is an ancestor of every other branch, and not any branch's tip
+    // but its own: a commit reachable from a tip is enough.
+    git(&s.forge, &["checkout", "-q", "phase-1-proven"]);
+    write(&s.forge, "src/more.txt", "more\n");
+    commit(&s.forge, "integration moves on");
+    git(&s.forge, &["checkout", "-q", "main"]);
+    let checked = an_empty_pack_through_the_route(&s, &forge_of(&s, false), &s.integration)
+        .expect("it is read");
+    assert!(matches!(checked, PushCheck::NoCiFiles), "{checked:?}");
+}
+
+#[test]
+fn a_push_of_a_commit_a_branch_holds_that_changes_ci_files_is_held() {
+    purlis_core::unsteered!();
+    let s = scene();
+    match an_empty_pack_through_the_route(&s, &forge_of(&s, false), &s.workflow_edit)
+        .expect("it is read")
+    {
+        PushCheck::Hold(diff) => {
+            assert_eq!(diff.files, vec![WORKFLOW.to_owned()]);
+            assert_eq!(diff.against, s.default_tip);
+        }
+        other => panic!("held, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_commit_only_a_fork_has_is_refused_though_the_forge_resolves_it_by_id() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let why = an_empty_pack_through_the_route(&s, &forge_of(&s, false), &s.fork_only)
+        .expect_err("refused");
+    assert!(why.contains(OUTSIDE), "{why}");
+}
+
+#[test]
+fn a_dangling_commit_is_refused_though_the_forge_resolves_it_by_id() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let why = an_empty_pack_through_the_route(&s, &forge_of(&s, false), &s.dangling)
+        .expect_err("refused");
+    assert!(why.contains(OUTSIDE), "{why}");
+}
+
+#[test]
+fn a_commit_nothing_has_is_refused() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let tip = task_commit(&s, |chat| write(chat, "src/new.txt", "new\n"));
+    let why = an_empty_pack_through_the_route(&s, &forge_of(&s, false), &tip).expect_err("refused");
+    assert!(why.contains(OUTSIDE), "{why}");
+}
+
+#[test]
+fn a_pack_that_sends_other_objects_but_not_the_tip_is_refused_for_a_dangling_tip() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let other = task_commit(&s, |chat| write(chat, "src/new.txt", "new\n"));
+    let pack = pack_of(&s.chat, &other, &s.integration);
+    let why = pushed(
+        &s,
+        &forge_of(&s, false),
+        &s.default_tip,
+        false,
+        &s.dangling,
+        &pack,
+    )
+    .expect_err("refused");
+    assert!(why.contains(OUTSIDE), "{why}");
+}
+
+#[test]
+fn a_tip_is_refused_where_the_forge_does_not_list_its_branches() {
+    purlis_core::unsteered!();
+    let s = scene();
+    for tip in [&s.integration, &s.dangling] {
+        let why =
+            an_empty_pack_through_the_route(&s, &forge_of(&s, true), tip).expect_err("refused");
+        assert!(why.contains("could not be read"), "{why}");
+    }
+}
+
+#[test]
+fn a_fast_forward_of_an_existing_branch_to_a_commit_a_branch_holds_is_read() {
+    purlis_core::unsteered!();
+    let s = scene();
+    // The branch is at the default tip; the push moves it to the integration branch's tip.
+    let checked = pushed(
+        &s,
+        &forge_of(&s, false),
+        &s.default_tip,
+        true,
+        &s.integration,
+        &empty_pack(&s),
+    )
+    .expect("it is read");
+    assert!(matches!(checked, PushCheck::NoCiFiles), "{checked:?}");
+}
+
+#[test]
+fn a_rewind_of_an_existing_branch_to_a_commit_a_branch_holds_is_read() {
+    purlis_core::unsteered!();
+    let s = scene();
+    // The branch is at the integration tip; the push moves it back to the default tip.
+    let checked = pushed(
+        &s,
+        &forge_of(&s, false),
+        &s.integration,
+        true,
+        &s.default_tip,
+        &empty_pack(&s),
+    )
+    .expect("it is read");
+    assert!(matches!(checked, PushCheck::NoCiFiles), "{checked:?}");
+}
+
+#[test]
+fn a_fast_forward_or_a_rewind_to_a_dangling_commit_is_refused() {
+    purlis_core::unsteered!();
+    let s = scene();
+    for base in [&s.default_tip, &s.integration] {
+        let why = pushed(
+            &s,
+            &forge_of(&s, false),
+            base,
+            true,
+            &s.dangling,
+            &empty_pack(&s),
+        )
+        .expect_err("refused");
+        assert!(why.contains(OUTSIDE), "{why}");
+    }
+}
+
+/// A forge that lists a branch it no longer has, as one deleted since it was listed: its fetch
+/// skips what it cannot serve.
+struct Listing {
+    inner: LocalForge,
+}
+
+impl BaseObjects for Listing {
+    fn fetch(&self, into: &Path, base: &HeadSha) -> Result<(), String> {
+        self.inner.fetch(into, base)
+    }
+
+    fn advertised(&self, into: &Path) -> Option<Vec<String>> {
+        let mut list = self.inner.advertised(into)?;
+        list.push(format!("{:040x}", 7));
+        Some(list)
+    }
+
+    fn fetch_all(&self, into: &Path, tips: &[HeadSha]) -> Result<(), String> {
+        let have = self.inner.advertised(into).unwrap();
+        for tip in tips
+            .iter()
+            .filter(|tip| have.iter().any(|id| id == tip.as_str()))
+        {
+            self.inner.fetch(into, tip)?;
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn a_listed_branch_gone_since_is_skipped_and_never_lets_an_outside_commit_by() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let listing = Listing {
+        inner: forge_of(&s, false),
+    };
+    let empty = empty_pack(&s);
+    let read = pushed(&s, &listing, &s.default_tip, false, &s.integration, &empty)
+        .expect("a commit of a branch is read");
+    assert!(matches!(read, PushCheck::NoCiFiles), "{read:?}");
+    let why =
+        pushed(&s, &listing, &s.default_tip, false, &s.dangling, &empty).expect_err("refused");
+    assert!(why.contains(OUTSIDE), "{why}");
+}
+
+/// The tips each cache keeps as bases: only a fetch of a base adds one.
+#[test]
+fn a_pushed_tip_is_never_fetched_by_name() {
+    purlis_core::unsteered!();
+    let s = scene();
+    struct Named(LocalForge, std::sync::Mutex<Vec<HeadSha>>);
+    impl BaseObjects for Named {
+        fn fetch(&self, into: &Path, base: &HeadSha) -> Result<(), String> {
+            self.1.lock().unwrap().push(base.clone());
+            self.0.fetch(into, base)
+        }
+        fn advertised(&self, into: &Path) -> Option<Vec<String>> {
+            self.0.advertised(into)
+        }
+    }
+    let forge = Named(forge_of(&s, false), std::sync::Mutex::new(Vec::new()));
+    for tip in [&s.fork_only, &s.dangling, &s.integration] {
+        let _ = pushed(&s, &forge, &s.default_tip, false, tip, &empty_pack(&s));
+    }
+    let named = forge.1.lock().unwrap();
+    for tip in [&s.fork_only, &s.dangling] {
+        assert!(!named.contains(tip), "{tip:?} was asked of the forge by id");
+    }
+}
+
+/// A forge whose objects a quarantine also reads through a cache that holds `dangling`: an old
+/// base tip, since force-pushed away, that no advertised branch reaches.
+struct CachedForge {
+    inner: LocalForge,
+    cache: std::sync::Arc<ObjectCache>,
+}
+
+impl BaseObjects for CachedForge {
+    fn fetch(&self, into: &Path, base: &HeadSha) -> Result<(), String> {
+        self.inner.fetch(into, base)
+    }
+
+    fn advertised(&self, into: &Path) -> Option<Vec<String>> {
+        self.inner.advertised(into)
+    }
+
+    fn cache(&self) -> Option<std::sync::Arc<ObjectCache>> {
+        Some(self.cache.clone())
+    }
+}
+
+fn forge_with_the_dangling_commit_cached(s: &Scene, parent: &Path) -> CachedForge {
+    let cache = ObjectCache::of(parent, "example.test", "owner/repo");
+    std::fs::create_dir_all(cache.path()).unwrap();
+    git(cache.path(), &["init", "-q", "."]);
+    git(
+        cache.path(),
+        &[
+            "fetch",
+            "-q",
+            "--no-tags",
+            &s.forge.to_string_lossy(),
+            s.dangling.as_str(),
+        ],
+    );
+    CachedForge {
+        inner: forge_of(s, false),
+        cache,
+    }
+}
+
+#[test]
+fn a_tip_only_the_object_cache_holds_is_refused_as_an_empty_pack() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let parent = tempfile::tempdir().unwrap();
+    let forge = forge_with_the_dangling_commit_cached(&s, parent.path());
+    let why = pushed(
+        &s,
+        &forge,
+        &s.default_tip,
+        false,
+        &s.dangling,
+        &empty_pack(&s),
+    )
+    .expect_err("refused");
+    assert!(why.contains(OUTSIDE), "{why}");
+}
+
+#[test]
+fn a_tip_only_the_object_cache_holds_is_refused_beside_a_pack_of_other_objects() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let parent = tempfile::tempdir().unwrap();
+    let forge = forge_with_the_dangling_commit_cached(&s, parent.path());
+    let other = task_commit(&s, |chat| write(chat, "src/new.txt", "new\n"));
+    let pack = pack_of(&s.chat, &other, &s.integration);
+    let why = pushed(&s, &forge, &s.default_tip, false, &s.dangling, &pack).expect_err("refused");
+    assert!(why.contains(OUTSIDE), "{why}");
+}
+
+#[test]
+fn a_tip_a_branch_holds_is_still_read_where_the_object_cache_holds_it_too() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let parent = tempfile::tempdir().unwrap();
+    let forge = forge_with_the_dangling_commit_cached(&s, parent.path());
+    pushed(
+        &s,
+        &forge,
+        &s.default_tip,
+        false,
+        &s.integration,
+        &empty_pack(&s),
+    )
+    .expect("read");
+}
+
+#[test]
+fn an_empty_pack_to_a_gitlab_remote_is_read_as_one_to_github_is() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let empty = empty_pack(&s);
+    // The gate reads by the remote's kind, not its host: gitlab.com and a self-hosted GitLab are one.
+    for kind in [Kind::GitLab, Kind::GitHub] {
+        let checked = pushed_to(
+            kind,
+            &s,
+            &forge_of(&s, false),
+            &s.default_tip,
+            false,
+            &s.integration,
+            &empty,
+        )
+        .expect("a branch the repo holds is read, not refused");
+        assert!(
+            matches!(checked, PushCheck::NoCiFiles),
+            "{kind:?}: {checked:?}"
+        );
+        // A CI file change over that pack is still held, as on GitHub.
+        let held = pushed_to(
+            kind,
+            &s,
+            &forge_of(&s, false),
+            &s.default_tip,
+            false,
+            &s.workflow_edit,
+            &empty,
+        )
+        .expect("it is read");
+        assert!(matches!(held, PushCheck::Hold(_)), "{kind:?}: {held:?}");
+        // A commit nothing has is refused.
+        let err = pushed_to(
+            kind,
+            &s,
+            &forge_of(&s, false),
+            &s.default_tip,
+            false,
+            &s.dangling,
+            &empty,
+        )
+        .expect_err("a dangling commit is refused");
+        assert!(err.contains(OUTSIDE), "{kind:?}: {err}");
+    }
 }

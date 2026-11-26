@@ -5,6 +5,11 @@
 //! base, read from the app's clone by git, so a forge adapter can make them one commit on the
 //! base through the forge's REST API with the person's own sign-in.
 //!
+//! **A tip that does not contain its base sends nothing** (#7690): one commit on the base with the
+//! tree diff of a tip cut from an older point would undo everything the base gained since. The
+//! files sent are the diff from the merge-base of the tip and the base, which is then the base
+//! itself, to the tip: exactly the branch's own changes.
+//!
 //! Only plain text files cross: a change that is not (a binary file, a symlink, a submodule, a
 //! path git does not show as text) is an error and nothing is pushed, because the person was
 //! shown a diff and can only be shown text. At most [`MOST_FILES`] files and [`MOST_BYTES`] bytes.
@@ -30,9 +35,17 @@ pub struct TipChange {
     pub added: bool,
 }
 
+/// **What the person and the chat are told where a tip does not contain `base`**, the commit the
+/// push would be made on, named as they know it.
+pub fn behind(base: &str) -> String {
+    format!("the branch is behind {base}: run `purlis worktree update --merge` and push again")
+}
+
 /// **The files a tip changes against its base**, as a push of them is made through a forge's API.
 pub trait TipFiles: Send + Sync {
-    /// Every file whose content or mode differs between the trees of `base` and `tip`.
+    /// Every file whose content or mode differs between the trees of `base` and `tip`: **an error,
+    /// and nothing read, where `tip` does not contain `base`** ([`behind`]), so the one commit
+    /// made on `base` carries the tip's own changes and never undoes one of `base`'s (#7690).
     fn changes(&self, base: &HeadSha, tip: &HeadSha) -> Result<Vec<TipChange>, String>;
     /// The message of the commit `tip`, which the one commit made on the base carries.
     fn message(&self, tip: &HeadSha) -> Result<String, String>;
@@ -49,6 +62,14 @@ impl TipFiles for super::ci::NoClone {
 
 impl TipFiles for GitTrees {
     fn changes(&self, base: &HeadSha, tip: &HeadSha) -> Result<Vec<TipChange>, String> {
+        // The one commit is made on `base` with these files. Were `base` not in the tip's history,
+        // the diff would hold the undoing of every change `base` gained since the tip's own
+        // merge-base with it, and that commit would revert them (#7690). Where the tip contains
+        // `base`, `base` is that merge-base, and the diff is exactly the tip's own changes; no path
+        // can differ between the merge-base and the parent, because they are one commit.
+        if self.commits_missing(base, tip)? > 0 {
+            return Err(behind(&format!("its base {}", &base.as_str()[..12])));
+        }
         // A listing past what a push may hold is never read whole.
         let out = self.git_capped(
             &[
