@@ -33,6 +33,11 @@ impl Cli {
         }
     }
 
+    /// Whether the variable `name` of this process's environment is passed on to the CLI.
+    pub(crate) fn passes(&self, name: &str) -> bool {
+        !(self.withhold_tokens && TOKEN_ENV.contains(&name))
+    }
+
     /// Run the CLI with `args`, under `timeout`, listing it in the network log as a forge
     /// call to the host `--hostname` names (OB-15).
     pub fn run(&self, kind: Kind, args: &[String], timeout: Duration) -> Result<Reply, NoAnswer> {
@@ -59,11 +64,8 @@ impl Cli {
         timeout: Duration,
         listed: Listed<'_>,
     ) -> Result<Reply, NoAnswer> {
-        let withhold = self.withhold_tokens;
         let started = Instant::now();
-        let answer = call_with(kind, args, timeout, |name| {
-            !(withhold && TOKEN_ENV.contains(&name))
-        });
+        let answer = call_with(kind, args, timeout, |name| self.passes(name));
         // A CLI that could not be found or started made no call; one that ran or timed out did.
         if !matches!(answer, Err(NoAnswer::Missing(_))) {
             netlog::record(netlog::Call {

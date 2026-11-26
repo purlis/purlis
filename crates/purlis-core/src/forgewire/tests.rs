@@ -1204,3 +1204,184 @@ fn a_route_in_the_environment_that_is_off_the_loopback_port_is_refused() {
     );
     assert!(matches!(read, Some(Err(_))), "{read:?}");
 }
+
+/// `env`, its route read with the helper at `/opt/purlis/bin/purlis`.
+fn read_route(env: &[(String, String)]) -> Option<io::Result<crate::worktree::git::NetworkRoute>> {
+    this_chats_git_route(
+        &|name| get(env, name).map(str::to_owned),
+        Path::new("/opt/purlis/bin/purlis"),
+    )
+}
+
+/// The environment of a chat whose route records only `gitlab.com`.
+fn a_gitlab_chats_environment(dir: &Path) -> Vec<(String, String)> {
+    let route = route(
+        dir,
+        vec![repo("gitlab.com", "acme", "app", ForgeKind::GitLab)],
+    );
+    a_chats_environment(dir, &route).0
+}
+
+/// Review of #7704: a host is read out of a `credential.https://<host>.helper` key, and the
+/// helper line git runs through `sh` names it. A host that is anything but a host name is
+/// refused, so no command it carries runs, here or in the person's own terminal.
+#[test]
+fn a_host_in_a_chats_environment_that_is_not_a_host_name_is_refused() {
+    let held = tempfile::tempdir().unwrap();
+    for planted in [
+        "gitlab.com;touch /tmp/x",
+        "gitlab.com touch",
+        "gitlab.com|touch",
+        "gitlab.com$(touch /tmp/x)",
+        "gitlab.com'x",
+        "gitlab.com\"x",
+        "gitlab.com\ntouch",
+        "gitlab.com`touch`",
+        "gitlab.com:80a",
+        "",
+    ] {
+        let mut env = a_gitlab_chats_environment(held.path());
+        for (name, value) in &mut env {
+            if name.starts_with("GIT_CONFIG_KEY_") && value.contains("https://gitlab.com") {
+                *value = value.replace("https://gitlab.com", &format!("https://{planted}"));
+            }
+        }
+        let read = read_route(&env);
+        match read {
+            Some(Err(why)) => assert!(why.to_string().contains("host name"), "{planted:?}: {why}"),
+            other => panic!("{planted:?} was not refused: {other:?}"),
+        }
+    }
+}
+
+/// A host name with a port is still a host name.
+#[test]
+fn a_host_in_a_chats_environment_may_name_a_port() {
+    let held = tempfile::tempdir().unwrap();
+    let mut env = a_gitlab_chats_environment(held.path());
+    for (name, value) in &mut env {
+        if name.starts_with("GIT_CONFIG_KEY_") && value.contains("https://gitlab.com/") {
+            *value = value.replace("https://gitlab.com/", "https://git.example-1.org:8443/");
+        }
+        if name.starts_with("GIT_CONFIG_KEY_") && value == "credential.https://gitlab.com.helper" {
+            *value = "credential.https://git.example-1.org:8443.helper".to_owned();
+        }
+    }
+    let read = read_route(&env)
+        .expect("a route")
+        .expect("a route git can use");
+    assert!(
+        format!("{read:?}").contains("--host 'git.example-1.org:8443'"),
+        "{read:?}"
+    );
+}
+
+/// The helper line git runs through `sh` quotes every host it names.
+#[test]
+fn the_sentinel_helper_line_quotes_each_host() {
+    let held = tempfile::tempdir().unwrap();
+    let read = read_route(&a_gitlab_chats_environment(held.path()))
+        .expect("a route")
+        .expect("a route git can use");
+    let shown = format!("{read:?}");
+    assert!(
+        shown.contains(&format!(
+            "credential.https://gitlab.com.helper=!'/opt/purlis/bin/purlis' {SENTINEL_HELPER_ARG} --host 'gitlab.com'"
+        )),
+        "{shown}"
+    );
+}
+
+/// Review of #7704: the egress is the chat's loopback port and nothing else; a URL that only
+/// starts like one (a user-info part naming another host, a path) is refused.
+#[test]
+fn an_egress_that_only_starts_like_the_loopback_port_is_refused() {
+    let held = tempfile::tempdir().unwrap();
+    for planted in [
+        "http://127.0.0.1:1@evil.example:8080",
+        "http://127.0.0.1:43001/path",
+        "http://127.0.0.1:43001#x",
+        "http://127.0.0.1:",
+        "http://127.0.0.1:4a",
+        "http://127.0.0.1:43001//",
+    ] {
+        let mut env = a_gitlab_chats_environment(held.path());
+        for (_, value) in &mut env {
+            if value == "http://127.0.0.1:43001" {
+                *value = planted.to_owned();
+            }
+        }
+        assert!(
+            matches!(read_route(&env), Some(Err(_))),
+            "{planted} was not refused"
+        );
+    }
+    let mut env = a_gitlab_chats_environment(held.path());
+    for (_, value) in &mut env {
+        if value == "http://127.0.0.1:43001" {
+            *value = "http://127.0.0.1:43001/".to_owned();
+        }
+    }
+    assert!(
+        matches!(read_route(&env), Some(Ok(_))),
+        "a trailing / is the same port"
+    );
+}
+
+/// A sentinel with no git pairs beside it is a broken route, never no route.
+#[test]
+fn a_sentinel_without_git_config_count_is_a_broken_route() {
+    let held = tempfile::tempdir().unwrap();
+    let env: Vec<(String, String)> = a_gitlab_chats_environment(held.path())
+        .into_iter()
+        .filter(|(name, _)| name != "GIT_CONFIG_COUNT")
+        .collect();
+    assert!(
+        matches!(read_route(&env), Some(Err(_))),
+        "{:?}",
+        read_route(&env)
+    );
+}
+
+/// A recorded host with no authority, or no proxy, named for it is a broken route.
+#[test]
+fn a_host_with_no_authority_or_no_proxy_is_a_broken_route() {
+    let held = tempfile::tempdir().unwrap();
+    for missing in [
+        "http.https://gitlab.com/.sslCAInfo",
+        "http.https://gitlab.com/.proxy",
+    ] {
+        let mut env = a_gitlab_chats_environment(held.path());
+        for (name, value) in &mut env {
+            if name.starts_with("GIT_CONFIG_KEY_") && value == missing {
+                *value = "purlis.unrelated".to_owned();
+            }
+        }
+        assert!(matches!(read_route(&env), Some(Err(_))), "{missing}");
+    }
+}
+
+/// An empty sentinel, or one with whitespace, is a broken route.
+#[test]
+fn an_empty_or_spaced_sentinel_is_a_broken_route() {
+    let held = tempfile::tempdir().unwrap();
+    for sentinel in ["", " ", "SENTINEL 1", "SENTINEL\t1", "SENTINEL\n"] {
+        let mut env = a_gitlab_chats_environment(held.path());
+        env.push((SENTINEL_ENV.to_owned(), sentinel.to_owned()));
+        assert!(matches!(read_route(&env), Some(Err(_))), "{sentinel:?}");
+    }
+}
+
+/// A count of more pairs than the environment holds is refused, as git itself refuses it.
+#[test]
+fn a_git_config_count_larger_than_the_pairs_present_is_a_broken_route() {
+    let held = tempfile::tempdir().unwrap();
+    let mut env = a_gitlab_chats_environment(held.path());
+    let count: usize = get(&env, "GIT_CONFIG_COUNT").unwrap().parse().unwrap();
+    env.push(("GIT_CONFIG_COUNT".to_owned(), (count + 3).to_string()));
+    assert!(
+        matches!(read_route(&env), Some(Err(_))),
+        "{:?}",
+        read_route(&env)
+    );
+}

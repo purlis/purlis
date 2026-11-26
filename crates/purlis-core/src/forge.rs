@@ -1086,8 +1086,11 @@ mod tests {
     #[test]
     fn a_forge_cli_is_given_the_authority_a_chats_route_names_for_glab() {
         let var = |name: &str| {
-            matches!(name, "GLAB_CA_CERT" | "GITLAB_TOKEN" | "HTTPS_PROXY")
-                .then(|| std::ffi::OsString::from(format!("set-{name}")))
+            matches!(
+                name,
+                "GLAB_CA_CERT" | "GITLAB_TOKEN" | "HTTPS_PROXY" | gitcredential::SENTINEL_ENV
+            )
+            .then(|| std::ffi::OsString::from(format!("set-{name}")))
         };
         let given = cli_env_from(None, |_| true, &var);
         let named = |name: &str| {
@@ -1100,6 +1103,23 @@ mod tests {
         assert_eq!(named("GITLAB_TOKEN"), Some("set-GITLAB_TOKEN"), "{given:?}");
         let none = cli_env_from(None, |_| false, &var);
         assert!(none.iter().all(|(n, _)| n != "GLAB_CA_CERT"), "{none:?}");
+    }
+
+    /// Review of #7704: the chat's authority goes to glab only where a chat's route is held (its
+    /// sentinel is in the environment), and never to a call made with the person's own stored
+    /// login (`Cli::as_the_operator`), which trusts the system's authorities alone.
+    #[test]
+    fn a_forge_cli_is_given_glab_ca_cert_only_under_a_chats_route_and_never_as_the_operator() {
+        let no_route = |name: &str| {
+            matches!(name, "GLAB_CA_CERT" | "GITLAB_TOKEN")
+                .then(|| std::ffi::OsString::from(format!("set-{name}")))
+        };
+        let given = cli_env_from(None, |_| true, &no_route);
+        assert!(given.iter().all(|(n, _)| n != "GLAB_CA_CERT"), "{given:?}");
+        assert!(given.iter().any(|(n, _)| n == "GITLAB_TOKEN"), "{given:?}");
+        let operator = cli::Cli::as_the_operator();
+        assert!(!operator.passes("GLAB_CA_CERT"));
+        assert!(cli::Cli::default().passes("GLAB_CA_CERT"));
     }
 
     /// `Cli::as_the_operator` withholds only credential variables a forge call would pass.

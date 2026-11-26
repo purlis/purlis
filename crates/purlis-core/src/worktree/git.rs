@@ -1626,6 +1626,12 @@ impl NetworkRoute {
     pub fn new(config: Vec<String>, pass: Vec<(String, std::ffi::OsString)>) -> Self {
         Self { config, pass }
     }
+
+    /// Its `-c` settings and the variables it passes, for a test that runs git with them.
+    #[cfg(test)]
+    pub(crate) fn parts(&self) -> (&[String], &[(String, std::ffi::OsString)]) {
+        (&self.config, &self.pass)
+    }
 }
 
 impl Isolated {

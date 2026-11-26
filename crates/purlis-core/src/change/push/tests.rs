@@ -1376,3 +1376,135 @@ const ALONE: &str = "bump the api
 |---|---|---|
 | widget | acme/widget#7 | — |
 <!-- END purlis change -->";
+
+/// Review of #7704: a chat whose environment holds a sentinel but no route git can use is
+/// refused, saying so, and nothing is pushed or asked: never a push with a login of the
+/// person's in its place.
+#[test]
+fn a_chat_with_a_broken_forge_route_is_refused_and_nothing_is_pushed() {
+    let world = World::new("schema = 1\n");
+    world.clone("widget");
+    world.change(&[("widget", &[])]);
+    let mut planted = world.a_routed_chats_environment();
+    for (name, value) in &mut planted {
+        if name.starts_with("GIT_CONFIG_KEY_") && value.contains("https://github.com") {
+            *value = value.replace("https://github.com", "https://github.com;touch${IFS}x");
+        }
+    }
+    let sentinel_alone = vec![
+        (crate::hookwire::SANDBOXED_ENV.to_owned(), "1".to_owned()),
+        (
+            crate::forge::gitcredential::SENTINEL_ENV.to_owned(),
+            "SENTINEL-0123456789abcdef".to_owned(),
+        ),
+    ];
+    let mut unsandboxed = planted.clone();
+    unsandboxed.retain(|(name, _)| name != crate::hookwire::SANDBOXED_ENV);
+    for env in [sentinel_alone, planted, unsandboxed] {
+        let (code, said, _, routes) = world.push_in(&env, json!([]));
+        assert_eq!(code, REFUSED, "{said}");
+        assert!(
+            said.contains("could not read this chat's forge route"),
+            "{said}"
+        );
+        assert_eq!(world.remote_has("widget", BRANCH), None, "{said}");
+        assert!(routes.is_empty(), "a forge was asked: {said}");
+    }
+}
+
+/// Review of #7704: under a chat's route, git asks only the sentinel helper, never one the
+/// clone's own config names. The control, the same `credential fill` without the route, asks
+/// the planted one, so the plant is live.
+#[cfg(unix)]
+#[test]
+fn a_routed_push_never_asks_a_credential_helper_the_clones_own_config_names() {
+    use std::os::unix::fs::PermissionsExt;
+    let world = World::new("schema = 1\n");
+    let widget = world.clone("widget");
+    world.change(&[("widget", &[])]);
+    let ran = world.top.join("planted-ran");
+    let planted = world.top.join("planted.sh");
+    std::fs::write(
+        &planted,
+        format!("#!/bin/sh\necho ran >> '{}'\n", ran.display()),
+    )
+    .unwrap();
+    let sentinel_helper = world.top.join("sentinel-helper.sh");
+    std::fs::write(
+        &sentinel_helper,
+        "#!/bin/sh\nprintf 'username=x-access-token\\npassword=%s\\n' \"$PURLIS_FORGE_SENTINEL\"\n",
+    )
+    .unwrap();
+    for script in [&planted, &sentinel_helper] {
+        std::fs::set_permissions(script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    run(
+        &widget,
+        &[
+            "config",
+            "credential.helper",
+            &format!("!{}", planted.display()),
+        ],
+    );
+    let env = world.a_routed_chats_environment();
+    let lookup = |name: &str| {
+        env.iter()
+            .rev()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.clone())
+    };
+    let route = crate::forgewire::this_chats_git_route(&lookup, &sentinel_helper)
+        .expect("a route")
+        .expect("a route git can use");
+    let fill = |routed: bool| {
+        let mut cmd = std::process::Command::new("sh");
+        cmd.arg("-c")
+            .arg("printf 'protocol=https\\nhost=github.com\\n\\n' | git \"$@\" credential fill")
+            .arg("sh")
+            .current_dir(&widget)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env_remove("GIT_CONFIG_COUNT")
+            .env_remove("GIT_CONFIG_PARAMETERS")
+            .env_remove("GIT_ASKPASS")
+            .env_remove("SSH_ASKPASS");
+        if routed {
+            let (config, pass) = route.parts();
+            for pair in config {
+                cmd.arg("-c").arg(pair);
+            }
+            cmd.envs(pass.iter().cloned());
+        }
+        let out = crate::forklock::output(&mut cmd).expect("git runs");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    fill(false);
+    assert!(ran.exists(), "the control did not ask the planted helper");
+    std::fs::remove_file(&ran).unwrap();
+    let answered = fill(true);
+    assert!(
+        !ran.exists(),
+        "the clone's own helper was asked under the route"
+    );
+    assert!(
+        answered.contains("password=SENTINEL-0123456789abcdef"),
+        "{answered}"
+    );
+    let [o1, o2] = opened("widget", 7, NEW_BODY_ALONE);
+    let (code, said, _, _) = world.push_in(
+        &env,
+        json!([
+            none_from_the_branch("widget"),
+            o1,
+            o2,
+            body_is("widget", 7, NEW_BODY_ALONE),
+            body_set("widget", 7, ALONE),
+        ]),
+    );
+    assert_eq!(code, 0, "{said}");
+    assert!(
+        !ran.exists(),
+        "the clone's own helper was asked by the push: {said}"
+    );
+}
