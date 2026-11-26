@@ -378,6 +378,8 @@ pub(crate) async fn remove_for_the_person(
             crate::activity::forgotten_in(&held, &named);
             // A chat that asked the person to remove it is told they did (qw356).
             crate::removalasks::removed(&held, &named);
+            // And no hibernated chat's kept screen outlives it (SC-4b, #7631).
+            held.hibernated_screens_swept();
         }
         Ok(removed)
     })

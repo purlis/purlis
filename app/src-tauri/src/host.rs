@@ -262,6 +262,10 @@ pub const NOT_COMPOSED_HERE: &str =
 /// the way (#4745). It is called on the view's own thread, one batch at a time.
 pub type Sink = Box<dyn FnMut(Vec<u8>) + Send>;
 
+/// Told once a view's snapshot has all been handed to its [`Sink`] (SC-4b, #7631): what a screen
+/// taken to be kept waits on, so a look a slow link cut short is never taken as the screen.
+pub type Whole = Box<dyn FnOnce() + Send>;
+
 /// What a fresh runner's end is told once its work came back or did not (#4569): what did not, in
 /// sentences. It answers whether the runner went.
 pub type FreshDone = Box<dyn FnOnce(Vec<String>) -> bool + Send>;
@@ -593,6 +597,18 @@ pub trait SessionHost: Send + Sync {
     fn watch_drawn(&self, id: u32, sink: Sink, history: u32) -> Result<Watching, String> {
         self.watch_within(id, sink, history)
     }
+
+    /// [`Self::watch_within`], `whole` told once every byte of the view's snapshot has been
+    /// handed to `sink`, and before anything after it (SC-4b, #7631): how a screen taken to be
+    /// kept knows it has all of it, however slowly its link carries it. Never told where the
+    /// view ends first. `u32::MAX` for `history` is all of it, as [`Self::watch`] draws.
+    fn watch_whole(
+        &self,
+        id: u32,
+        sink: Sink,
+        history: u32,
+        whole: Whole,
+    ) -> Result<Watching, String>;
 
     /// The pane drawing view `view` of session `id` has drawn `pieces` more of what its sink
     /// was handed, in the order it was handed them (#4733). Nothing where nothing paces a view.
@@ -962,8 +978,9 @@ pub trait SessionHost: Send + Sync {
     /// (#6504), as [`Self::watch`] opens one of a session this window runs: what a launch reads
     /// a finished task's screen through before [`Self::close_what_was_not_reattached`] ends it.
     /// A host that outlives no window has none.
-    fn watch_left(&self, number: u32, sink: Sink) -> Result<Watching, String> {
-        let _ = sink;
+    /// `whole` is told as [`Self::watch_whole`] tells it.
+    fn watch_left(&self, number: u32, sink: Sink, whole: Whole) -> Result<Watching, String> {
+        let _ = (sink, whole);
         Err(format!("chat {number} was not left in the session host"))
     }
 
@@ -1117,7 +1134,9 @@ pub(crate) mod pretend {
     use purlis_core::engine::Size;
     use purlis_core::session::Exit;
 
-    use super::{Ends, NOT_COMPOSED_HERE, Named, Opening, Readiness, SessionHost, Sink, Watching};
+    use super::{
+        Ends, NOT_COMPOSED_HERE, Named, Opening, Readiness, SessionHost, Sink, Watching, Whole,
+    };
 
     /// Deals numbers, remembers what it was asked to run, and ends a session when a test says
     /// its program ended. A clone is the same host, so a test keeps one after handing one over.
@@ -1866,6 +1885,18 @@ pub(crate) mod pretend {
                 older: 0,
             })
         }
+        // It hands its screen within the watch, so it is whole as the watch returns.
+        fn watch_whole(
+            &self,
+            id: u32,
+            sink: Sink,
+            _history: u32,
+            whole: Whole,
+        ) -> Result<Watching, String> {
+            let watching = self.watch(id, sink)?;
+            whole();
+            Ok(watching)
+        }
         fn unwatch(&self, id: u32, view: u32) -> Result<(), String> {
             self.here(id)?;
             self.reached(format!("unwatched {id} {view}"));
@@ -2040,7 +2071,12 @@ pub(crate) mod pretend {
             lock(&self.seen.left).retain(|(one, _)| !numbers.contains(one));
             lock(&self.seen.closed_left).extend_from_slice(numbers);
         }
-        fn watch_left(&self, number: u32, mut sink: Sink) -> Result<Watching, String> {
+        fn watch_left(
+            &self,
+            number: u32,
+            mut sink: Sink,
+            whole: Whole,
+        ) -> Result<Watching, String> {
             if !self.left_running(number) {
                 return Err(format!("chat {number} is not left running"));
             }
@@ -2052,6 +2088,8 @@ pub(crate) mod pretend {
             if let Some(screen) = shown {
                 sink(screen.into_bytes());
             }
+            // Its screen is handed within the watch.
+            whole();
             Ok(Watching {
                 view: 1,
                 size: Size {

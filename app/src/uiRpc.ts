@@ -554,6 +554,7 @@ export const commands = {
 	chatHibernated: (plane: PlaneId, session: number) => typedError<{
 	by: By,
 } | null, string>(__TAURI_INVOKE("chat_hibernated", { plane, session })),
+	hibernatedChatScreen: __WINDOW_ONLY_RESULT,
 	/**  The chats of `plane` that are hibernated: what the window reads its rows by as it opens. */
 	hibernatedChats: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("hibernated_chats", { plane })),
 	hibernateChat: __WINDOW_ONLY_RESULT,
