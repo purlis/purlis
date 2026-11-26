@@ -114,7 +114,7 @@ describe("hibernating a chat and resuming it", () => {
     expect((await $$('[data-strip="Tabs"] [role="tab"]').getElements()).length).toBeGreaterThan(0);
     // **A wake run on the same conversation**: the harness was started a second time, handed
     // the conversation its first start named (opencode's `-s <id>`), not started fresh.
-    expect(await theStart(startsBefore + 1)).not.toContain(SCENARIO_CONVERSATION);
+    expect(await theStart(startsBefore + 1)).not.toContain(`-s ${SCENARIO_CONVERSATION}`);
     expect(await theStart(startsBefore + 2)).toContain(`-s ${SCENARIO_CONVERSATION}`);
   });
 
@@ -125,7 +125,8 @@ describe("hibernating a chat and resuming it", () => {
     const refused = await shown(REFUSED, "no refusal was said for a chat that is working");
     await expect(refused).toHaveText(expect.stringContaining("this chat is working"));
     expect(await $(BAND).isExisting()).toBe(false);
-    await (await refused.$("button=Dismiss")).click();
+    // Its Dismiss is an icon, named by its label, as every pane band's is.
+    await (await refused.$('button[aria-label="Dismiss"]')).click();
   });
 
   it("can be hibernated and resumed again, which begins another run", async () => {

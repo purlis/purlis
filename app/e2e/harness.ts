@@ -537,7 +537,8 @@ export function writeReportingShell(
       // nothing to restart on (`wdio.outcome.conf.ts`).
       ...(namesItsConversation
         ? [
-            `printf '%s\\n' "$*" >> ${singleQuoted(STARTED_WITH)}`,
+            // The profile's wrapper drops its arguments, and says what they were.
+            `printf '%s\\n' "\${SCENARIO_HARNESS_ARGS-$*}" >> ${singleQuoted(STARTED_WITH)}`,
             `${hookCommand("sessionstart", "SessionStart", { source: "startup" })} >/dev/null`,
           ]
         : []),
@@ -1123,6 +1124,10 @@ function theProfilesProgram(program: string): string {
     "  # The binary the bundled plugin's hooks run (`purlis_core::plugin::BINARY_ENV`).",
     `  printf '%s' "\${CHARTER_HOOK_BINARY:-}" > "$SEEN/hookbinary-$CHARTER_CHAT"`,
     "fi",
+    "# What this start was handed, before the loop below drops it, for a stand-in that records",
+    "# it (`STARTED_WITH`): the wrapper execs its program with no arguments.",
+    'SCENARIO_HARNESS_ARGS="$*"',
+    "export SCENARIO_HARNESS_ARGS",
     "while [ $# -gt 0 ]; do",
     '  if [ "$1" = "--session-id" ]; then',
     "    CLAUDE_CODE_SESSION_ID=$2",
