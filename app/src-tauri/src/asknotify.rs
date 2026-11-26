@@ -1404,6 +1404,9 @@ pub struct Looking {
     pub inbox_open: bool,
     /// It has the chat on screen in the tab in front.
     pub chat_on_screen: bool,
+    /// The chat has an ask its pane draws nowhere (a held forge act, #7685): only Asks draws it,
+    /// so the chat on screen is no look at it.
+    pub asks_off_its_pane: bool,
 }
 
 impl Looking {
@@ -1882,6 +1885,7 @@ fn looking(
             window_in_front: false,
             inbox_open: false,
             chat_on_screen: false,
+            asks_off_its_pane: false,
         };
     };
     // A tab window draws its one project, so it has it in front whenever it is drawn.
@@ -1897,6 +1901,7 @@ fn looking(
             .try_state::<Notifier>()
             .is_some_and(|notifier| notifier.inbox.is_open(window.label(), plane)),
         chat_on_screen: held.chats().looks_at(session),
+        asks_off_its_pane: false,
     }
 }
 

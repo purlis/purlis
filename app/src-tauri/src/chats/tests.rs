@@ -11268,6 +11268,7 @@ fn a_notification_is_not_lost_to_a_stale_layout_while_the_window_is_in_the_backg
         window_in_front: false,
         inbox_open: false,
         chat_on_screen: chats.looks_at(3),
+        asks_off_its_pane: false,
     };
 
     assert!(
@@ -11504,6 +11505,7 @@ fn a_task_pressed_into_a_pane_is_held_from_that_layout_and_the_chat_it_replaced_
         window_in_front: true,
         inbox_open: false,
         chat_on_screen,
+        asks_off_its_pane: false,
     };
     assert!(
         looking(chats.looks_at(task)).is_looking(),
@@ -13632,4 +13634,17 @@ fn the_notice_says_one_pool_sentence_for_every_chat_where_pools_are_each_ones_on
         None
     );
     assert_eq!(PoolMoved::said_for_all(&[]), None);
+}
+
+/// #7685 review (F4): a held act is said to be shown to the person only where the window hears
+/// that the asks moved, so whether anyone heard is answered.
+#[test]
+fn asks_said_to_have_moved_answer_whether_anyone_heard() {
+    let project = tempfile::tempdir().expect("a project");
+    let chats = chats_of(project.path());
+    assert!(!chats.told_asks_moved(), "nobody listens yet");
+
+    chats.tell_asks_moved_to(Arc::new(|| {}));
+
+    assert!(chats.told_asks_moved());
 }

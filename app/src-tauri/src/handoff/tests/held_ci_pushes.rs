@@ -184,11 +184,21 @@ fn the_push() -> Requested {
     }
 }
 
-/// A steward chat, the task it dispatched, and the forge route's sink for the task's run, whose
-/// session is `as_session` (the task's own, unless a test says otherwise).
-fn a_task_whose_route_holds_acts(
-    as_session: Option<u32>,
-) -> (Plane, Planes, Arc<Held>, u32, Arc<Forge>, Box<dyn HeldSink>) {
+/// A steward chat, the task it dispatched, and the forge route's sink for project `id`'s chats,
+/// which knows the task's run as session `run`.
+struct Scene {
+    _plane: Plane,
+    _planes: Planes,
+    id: PlaneId,
+    held: Arc<Held>,
+    task: u32,
+    forge: Arc<Forge>,
+    sink: Box<dyn HeldSink>,
+}
+
+/// A steward chat and the task it dispatched; the route knows the task's run as the session
+/// `run` gives (the task's own, unless a test says otherwise).
+fn a_task_whose_route_holds_acts(run: impl FnOnce(&Held, &Plane, u32) -> u32) -> Scene {
     let plane = a_plane_with_personas();
     let host = Pretend::default();
     let (planes, id, steward) = a_steward_chat(&host, &plane);
@@ -196,16 +206,61 @@ fn a_task_whose_route_holds_acts(
     let task = a_task_of(&held, &id, steward, "push the nextest config");
     let forge = Arc::new(Forge::default());
     held.held_acts().set_context(Arc::new(Context {
-        session: as_session.unwrap_or(task),
+        session: run(&held, &plane, task),
         forge: forge.clone(),
     }));
     let sink = crate::forgewiring::sink_of(&held).expect("held acts are on");
-    (plane, planes, held, task, forge, sink)
+    Scene {
+        _plane: plane,
+        _planes: planes,
+        id,
+        held,
+        task,
+        forge,
+        sink,
+    }
+}
+
+/// The task's own run.
+fn the_task(_: &Held, _: &Plane, task: u32) -> u32 {
+    task
+}
+
+/// A grade's chat in the same project, which the window draws nowhere (`curation::start_graded`).
+fn a_graded_chat(held: &Held, plane: &Plane, _: u32) -> u32 {
+    let start = purlis_core::start::Start {
+        profile: Some("work".to_owned()),
+        name: "1".to_owned(),
+        cwd: Some(plane.root.clone()),
+        ..Default::default()
+    };
+    let ready = purlis_core::start::ready(&start, &plane.root).expect("the grade's chat starts");
+    let chat = Chat {
+        program: ready.program.clone(),
+        cwd: ready.cwd.clone(),
+        name: "1".to_owned(),
+        resume: ready.session.clone(),
+        profile: Some("work".to_owned()),
+        graded: true,
+        ..Default::default()
+    };
+    let session = held
+        .chats()
+        .start_ready(&chat, &ready, STARTING)
+        .expect("it runs");
+    assert!(held.chats().kept_from_the_window(session));
+    session
 }
 
 #[test]
 fn a_held_ci_file_push_from_a_dispatched_task_is_in_asks_and_the_persons_press_performs_it() {
-    let (_plane, _planes, held, task, forge, sink) = a_task_whose_route_holds_acts(None);
+    let Scene {
+        held,
+        task,
+        forge,
+        sink,
+        ..
+    } = a_task_whose_route_holds_acts(the_task);
 
     let said = sink.ask(&ChatId::new("task-run"), &the_push());
 
@@ -262,7 +317,9 @@ fn a_held_ci_file_push_from_a_dispatched_task_is_in_asks_and_the_persons_press_p
 #[test]
 fn a_held_push_the_window_cannot_show_tells_the_chat_nobody_was_asked() {
     // The route knows the run as a session the window has no chat open for.
-    let (_plane, _planes, held, _task, forge, sink) = a_task_whose_route_holds_acts(Some(999));
+    let Scene {
+        held, forge, sink, ..
+    } = a_task_whose_route_holds_acts(|_, _, _| 999);
 
     let said = sink.ask(&ChatId::new("task-run"), &the_push());
 
@@ -274,4 +331,66 @@ fn a_held_push_the_window_cannot_show_tells_the_chat_nobody_was_asked() {
         "an ask nobody can see does not wait"
     );
     assert!(forge.pushed.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_held_push_of_a_graded_chat_the_window_draws_nowhere_tells_it_nobody_was_asked() {
+    let Scene {
+        held, forge, sink, ..
+    } = a_task_whose_route_holds_acts(a_graded_chat);
+
+    let said = sink.ask(&ChatId::new("task-run"), &the_push());
+
+    assert!(!said.contains("It has asked the person"), "{said}");
+    assert!(said.contains("not drawn in the window"), "{said}");
+    assert!(
+        held.held_acts().waiting().is_empty(),
+        "an ask nobody can see does not wait"
+    );
+    assert!(crate::asking::counted(&held).asks.is_empty());
+    assert!(forge.pushed.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_held_push_raised_tells_the_window_its_asks_moved_and_the_notifier_tells_the_person_of_it() {
+    // #7685's cause: the ask was kept, and nothing told the window or the notifier that it was,
+    // so neither read the asks again. Here the window's listener is the notifier's own read.
+    use crate::asknotify::{Act, Heard, Rules};
+    let Scene {
+        id,
+        held,
+        task,
+        sink,
+        ..
+    } = a_task_whose_route_holds_acts(the_task);
+    let rules = Arc::new(Mutex::new(Rules::default()));
+    let sent: Arc<Mutex<Vec<Act>>> = Arc::default();
+    held.chats().tell_asks_moved_to({
+        let held = Arc::downgrade(&held);
+        let (rules, sent) = (rules.clone(), sent.clone());
+        Arc::new(move || {
+            let Some(held) = held.upgrade() else { return };
+            let asks = crate::asking::counted(&held).asks;
+            let acts = rules.lock().unwrap().heard(&Heard {
+                plane: &id,
+                asks: &asks,
+                looking: &|_| false,
+                quiet: &|| false,
+                now: std::time::Instant::now(),
+            });
+            sent.lock().unwrap().extend(acts);
+        })
+    });
+
+    let said = sink.ask(&ChatId::new("task-run"), &the_push());
+
+    assert!(said.contains("It has asked the person"), "{said}");
+    let sent = sent.lock().unwrap();
+    assert!(
+        sent.iter().any(|act| matches!(
+            act,
+            Act::Show(notice) if notice.chats.iter().any(|(_, session)| *session == task)
+        )),
+        "the person is told the task waits: {sent:?}"
+    );
 }
