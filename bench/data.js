@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795701081898,
+  "lastUpdate": 1795703002151,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55986,6 +55986,48 @@ window.BENCHMARK_DATA = {
             "value": 101.504531,
             "unit": "ms",
             "extra": "median of 5 runs: 101.134, 101.450, 101.505, 101.965, 102.242 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ef9f5fb83c433300334a93cd981e7e8d6b317edc",
+          "message": "CI: outcome bars (macOS) moves to its own workflow, so main's ci ends at ~29 min (#7702)\n\n* The macOS outcome bars run in a workflow of their own, so main's ci ends with its gating jobs\n\nci.yml's outcome-bars job (macOS, continue-on-error, push and nightly only)\nwas the last job of every main ci run: 36-72 min against about 29 for the\nrest, and release.yml's gate waits for the whole run. It moves to\n.github/workflows/outcome-bars.yml with the same triggers, id, name, matrix\nand continue-on-error. Its Linux leg stays in ci.yml.\n\nThe build is 30-65 of those minutes and the bars 3.5-6, so a split into\nparts would not have helped (ADR 0127, amended 2026-11-26).\n\n- tools/outcome-bars-workflow.test.mjs holds the copied steps to ci.yml's\n  scenario steps, word for word.\n- ci/job-budgets.toml budgets it with workflow = \"outcome-bars\";\n  tools/job-budgets.mjs learns JOB_WORKFLOWS, and ci-health reads that\n  workflow's runs for budgets, job times, flakes and red-on-green.\n- SCCACHE_IDLE_TIMEOUT=0: the server stopped mid-build in 8 of 8 runs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BK89ECDJPBHV5M3P4GFHNB\nPurlis-Persona: steward\n\n* The macOS outcome bars may run on the operator's own Mac, chosen by OUTCOME_BARS_RUNNER\n\nruns-on reads fromJSON(vars.OUTCOME_BARS_RUNNER || '\"macos-latest\"'), as\nrelease.yml's dev build reads MACOS_RELEASE_RUNNER (#7641). On a self-hosted\nrunner the job empties its workspace before the checkout, keeps Cargo,\nrustup, npm and TMPDIR under $RUNNER_TEMP/job-home, says so in its summary,\nand removes the job folder and stops sccache at the end (always()). The\nSpotlight step's sudo runs on GitHub's runners only. On the one Mac, main's\npushes share a concurrency group, so runs do not queue up.\n\nFrom the review: SCCACHE_IDLE_TIMEOUT also goes into GITHUB_ENV. ci-health\npages through the other workflow's runs and reports their counts apart from\nci's. The step-copy test refuses a block-scalar if: and reads !matrix.outcome.\nThe ADR amendment says why a composite action or reusable workflow does not fit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BK89ECDJPBHV5M3P4GFHNB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T13:38:55Z",
+          "tree_id": "38ef541654a2a2b218d7c23e7af48459e8985d4c",
+          "url": "https://github.com/purlis/purlis/commit/ef9f5fb83c433300334a93cd981e7e8d6b317edc"
+        },
+        "date": 1795702994545,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.676474,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.634, 0.676, 0.676, 0.680, 0.684 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6019475,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.535, 16.596, 16.602, 16.760, 16.769 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2655125,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.530, 101.624, 102.266, 102.285, 102.497 ms"
           }
         ]
       }
