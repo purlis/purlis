@@ -106,4 +106,3 @@ export async function theWindowPaintsFrames(): Promise<void> {
   const said = noFramesSaid(painting);
   if (said !== undefined) throw new Error(said);
 }
-
