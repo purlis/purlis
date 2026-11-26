@@ -136,7 +136,7 @@ impl Refusal {
             Self::CannotResume => {
                 "Not hibernated: this chat's harness cannot resume a conversation by itself."
             }
-            Self::Observed => "Not hibernated: purlis only watches this chat, it does not run it.",
+            Self::Observed => "Not hibernated: this chat is only watched here, not run by purlis.",
             Self::OwnWork => {
                 "Not hibernated: this chat has work running of its own. Wait for it to finish."
             }

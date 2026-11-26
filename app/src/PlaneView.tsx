@@ -8190,10 +8190,15 @@ export const PlaneView = memo(function PlaneView({
   const restartable = useCallback((session: number) => !shells.has(session), [shells]);
   /** Whether a chat has a Hibernate row (#7630): where the core says it is offered, as
    *  `session.rs`'s `KNOWS_HIBERNATE` does: a harness that resumes by id, on a host that can
-   *  hibernate it. Never a shell, a chat in this process, or one on an older host. */
+   *  hibernate it. Never a shell, a chat in this process, or one on an older host. A chat the
+   *  picker started is in the sidebar's rows only, so those are read too, as `glances` does. */
   const hibernatable = useCallback(
-    (session: number) => reopened.find((one) => one.session === session)?.hibernates === true,
-    [reopened],
+    (session: number) =>
+      [
+        ...(sidebar ? [...sidebar.workspaces.flatMap((ws) => ws.chats), ...sidebar.unfiled] : []),
+        ...reopened,
+      ].find((one) => one.session === session)?.hibernates === true,
+    [reopened, sidebar],
   );
   /** Hibernates chat `session` by hand (#7630): the core refuses, in a sentence, where it may
    *  not, and the sentence is said on the chat's pane. */

@@ -7377,6 +7377,9 @@ fn hibernating_on(host: &Pretend, dir: &Path) -> (Planes, PathBuf, Arc<Held>) {
         }))
         .recording_events(Some(events));
     let root = a_plane(&dir.join("plane"));
+    // Codex runs wrapped on macOS and Linux (#1040), and a sandboxed one only on a sandbox-only
+    // profile; these tests are about hibernating and resuming its conversation, not its sandbox.
+    crate::sandboxing::no_sandbox_here_for_tests(&root);
     let plane = planes.open(&root);
     let held = planes.held(&plane).expect("it is held");
     (planes, logs, held)
