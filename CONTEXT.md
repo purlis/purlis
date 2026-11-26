@@ -1474,9 +1474,9 @@ _Avoid_: notification, news
 An **Ask** that stops one of the person's chats, or a `purlis` command, until they answer: a
 permission, a question, a dispatch grant, a secret, a run grant, a browser site or login, a
 sandbox block or consent, a command's confirmation in the window, a budget reached, a suspected
-loop. It counts on the ✋ whatever its source, every open project's together. A decision that
-stops no chat is a **Notice**, and a chat that cannot tell purlis it waits is never counted
-(ADR 0121).
+loop (not a **Prerequisite**). It counts on the ✋ whatever its source, every open project's
+together. A decision that stops no chat is a **Notice**, and a chat that cannot tell purlis it
+waits is never counted (ADR 0121).
 _Avoid_: urgent, priority, blocker
 
 **Expiring ask**:
@@ -2006,13 +2006,17 @@ _Avoid_: supervisor, managed tier (in UI text; that is a harness vendor's), org 
 
 **Prerequisite**:
 A condition a project must meet before its chats can work, which only the person can satisfy, in
-the window. The core defines, raises and clears each one and pushes a "prerequisites changed"
-event that the window, the CLI and the notifier read; the window never decides one itself. The
-first is the policy prerequisite: this machine's acceptance of the project's policy is Broken or
-Waiting. While one is open, a new chat the person starts there waits and running chats work in
-strict mode. The window raises it as one modal, an alert of the dialog family, with **Work in
-strict mode** and **Accept**, and keeps its **Notice** up after the first. It is never in Asks and
-adds nothing to the ✋ (ADR 0130).
+the window. The core defines each one and decides when it is open; the app's process holds each
+project's list and pushes a "prerequisites changed" event with the whole list, which the window
+reads and the CLI and `purlis doctor` ask for. The first is the policy prerequisite: this
+machine's acceptance of the project's `[policy]` is Broken or Waiting. While one is open, a chat
+the person starts there waits, and running chats keep the policy in force: **strict mode** (every
+family enforced at the full sandbox, no cross-persona dispatch) under Broken, the policy accepted
+before under Waiting. The window raises it as one modal, an alert of the dialog family, with
+**Work in strict mode** (under Broken) or **Keep my current rules** (under Waiting) and **Accept**,
+and keeps its **Notice** up after the first answer. It is never in Asks, adds nothing to the ✋ and
+sends no system notification; a project not in front shows a dot on its tab in the title bar
+(ADR 0130).
 _Avoid_: gate, blocker, barrier
 
 ### Core and extensions
