@@ -41,7 +41,7 @@ an M75 issue where it is a bypass on `main` today. Its issues are #7753 to #7767
 
 No level changes these, the Organisation included, and no template or mode reaches them. All
 seven are the person's rulings of 2026-11-27; the last three additions (a browser the person
-drives, no force push onto another chat's branch, no message across personas or trees) were ruled
+drives, no force push onto another chat's branch, no lateral message across personas or trees) were ruled
 that day after the critiques. They join spec §2.5's fixed things (the kill switch, "a chat cannot
 change its own policy", the grader bundles), and slice 08's map takes each as a `fixed:` target:
 
@@ -56,7 +56,8 @@ change its own policy", the grader bundles), and slice 08's map takes each as a 
 6. A review or an approval binds to a commit sha, and covers only that sha: any later push is held
    again, and a push by anyone but the branch's owner voids it. There is no force push onto
    another chat's branch.
-7. No chat messages a chat of another persona or another tree.
+7. No chat messages a chat of another persona or another tree laterally. A message between a chat
+   and its own task or asker is not this item's, whatever the persona.
 
 A rule can tighten any of them. A rule that would loosen one is refused at load, as a rule
 naming an escape deny is (spec §3.5).
@@ -64,7 +65,7 @@ naming an escape deny is (spec §3.5).
 ### 3. New abilities between chats are permit-required
 
 An action that lets a chat do something to another chat that it cannot do today (message a
-sibling, observe another lineage, act on another chat's branch, port or browser) is in the
+sibling, observe another lineage, act on another chat's branch or browser) is in the
 **permit-required class**:
 
 - it is allowed only by an explicit `permit` that names it. `policy-everything-else` does not
@@ -81,6 +82,8 @@ sibling, observe another lineage, act on another chat's branch, port or browser)
 
 Each M80 action names whether it is in the class. An action in it can leave the class only by a
 later amendment, never by a release.
+
+Reaching another chat's port is not in the class: `reach` decides it, with `context.owner` (Q338).
 
 ### 4. The `dispatch` family covers `dispatch-to` only, and `chats` is reserved
 
@@ -119,6 +122,9 @@ later amendment, never by a release.
   route recorded creating it (`branch_owner`). A **local branch folder** (`Path`) is owned by the
   chat that holds its claim (`piececlaim`). `push` reads the first; `commit`, `update` and
   `discard` read the second.
+- **A write in a claimed branch folder is its owner's only** (Q338). A write there (a file write,
+  `commit`, `update` or `discard`) by a chat whose `context.owner` is not `"self"` is allowed only
+  by a permit that names it (3). The one-writer mutex (7) still holds.
 - Both are **host-supplied** in the schema's source table (spec §3.2), from the host's own
   dispatch records, forge-route records and claims. A chat never writes them (#7748).
 - **Ownership moves only by hand-over or the person's press.** A finished task's report, or its
@@ -169,10 +175,10 @@ acceptance included, and no rule names them:
 
 - Allowed only between **siblings: tasks dispatched by the same chat** (the same parent only, never
   a cousin), in the same workspace and with the same persona. Their relation is `"sibling"`.
-  Across personas or trees: never, which is floor item 7.
+  Laterally across personas or trees: never, which is floor item 7.
 - It has its own design and Fable review before it is built (#7770).
 - A message is data, shown on the lineage's Activity.
-- Messages are rate-capped per tree, not only per pair.
+- Messages are rate-capped per parent, not only per pair.
 - A wait cycle (A waits on B, which waits on A) raises one Blocking ask at once.
 
 ### 10. The push dead end is fixed on `main` now
