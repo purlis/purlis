@@ -833,8 +833,7 @@ impl AppHeldSinks {
 impl HeldSinks for AppHeldSinks {
     fn sink(&self, project: &Path, sessions: Arc<dyn SessionOfRun>) -> Option<Box<dyn HeldSink>> {
         let (held, _) = self.context_of(project, sessions)?;
-        let handoff: Handoff = held.held_acts().handoff()?;
-        Some(Box::new(handoff))
+        sink_of(&held)
     }
 
     fn forget(&self, session: u32) {
@@ -856,6 +855,13 @@ impl HeldSinks for AppHeldSinks {
             cache_parent: self.cache_parent.clone(),
         }))
     }
+}
+
+/// **The forge route's sink for project `held`'s held acts**, over its registry and the context
+/// last set on it: `None` until one is.
+pub(crate) fn sink_of(held: &Arc<Held>) -> Option<Box<dyn HeldSink>> {
+    let handoff: Handoff = held.held_acts().handoff()?;
+    Some(Box::new(handoff))
 }
 
 /// **The Notice of a chat's missing or ended sign-in** ([`Notices`], ADR 0128, #7290): told to
