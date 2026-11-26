@@ -805,8 +805,60 @@ pub fn this_chats_git_route(
     env: &dyn Fn(&str) -> Option<String>,
     helper_exe: &Path,
 ) -> Option<io::Result<crate::worktree::git::NetworkRoute>> {
-    let _ = (env, helper_exe);
-    None
+    let sentinel = env(SENTINEL_ENV)?;
+    let invalid = |why: &'static str| io::Error::new(io::ErrorKind::InvalidInput, why);
+    let pairs = git_pairs_in(env);
+    let hosts: Vec<&str> = pairs
+        .iter()
+        .filter(|(_, value)| value.contains(SENTINEL_HELPER_ARG))
+        .filter_map(|(key, _)| {
+            key.strip_prefix("credential.https://")?
+                .strip_suffix(".helper")
+        })
+        .collect();
+    let Some(first) = hosts.first() else {
+        return Some(Err(invalid(
+            "the chat's environment names no forge host for its sentinel",
+        )));
+    };
+    let named = |key: String| {
+        pairs
+            .iter()
+            .rev()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| v.as_str())
+    };
+    let (Some(ca), Some(egress)) = (
+        named(format!("http.https://{first}/.sslCAInfo")),
+        named(format!("http.https://{first}/.proxy")),
+    ) else {
+        return Some(Err(invalid(
+            "the chat's environment names no authority or proxy for its forge",
+        )));
+    };
+    Some(network_route(
+        hosts,
+        egress,
+        &sentinel,
+        Path::new(ca),
+        helper_exe,
+    ))
+}
+
+/// The `GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>` pairs `env` holds, as many as
+/// `GIT_CONFIG_COUNT` says, stopping at the first that is missing.
+fn git_pairs_in(env: &dyn Fn(&str) -> Option<String>) -> Vec<(String, String)> {
+    let count = env("GIT_CONFIG_COUNT")
+        .and_then(|n| n.trim().parse::<usize>().ok())
+        .unwrap_or(0);
+    (0..count)
+        .map_while(|n| {
+            Some((
+                env(&format!("GIT_CONFIG_KEY_{n}"))?,
+                env(&format!("GIT_CONFIG_VALUE_{n}"))?,
+            ))
+        })
+        .collect()
 }
 
 /// **`env`, a chat's environment, with `wiring` applied**: its variables set over the chat's own

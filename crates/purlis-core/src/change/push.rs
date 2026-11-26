@@ -27,6 +27,11 @@
 //! the push elsewhere is refused, naming the setting, and the push sets on its own command
 //! line that no tag, push option or submodule goes with the branch.
 //!
+//! **In a chat, the chat's route** (#7693). Run in a chat with a forge route, every member's git
+//! and its forge's CLI go the way the chat's own do, through the chat's proxy and trusting its
+//! authority, with its sentinel and never a login of the person's ([`push_in_chat`]). A
+//! sandboxed chat with no route is refused, naming the step that gives it one.
+//!
 //! **Fire and report.** One member's failure is said and the rest still run: a third member
 //! that is not a repo here is no reason to leave the first two unpushed. The exit is 1 when
 //! any member was not pushed, opened or written, as the Python charter answered, and 2 only
@@ -408,7 +413,22 @@ pub fn push(plane: &Path, ws: &str, slug: &str, say: &mut dyn FnMut(Say)) -> u8 
     )
 }
 
-/// [`push_with`], where `env` is this process's environment.
+/// What a sandboxed chat with no forge route is told, in place of a push with a login of the
+/// person's (#7693).
+const NO_ROUTE: &str = "this chat has no forge route, so purlis does not push or open a request \
+    for it with a login of yours. Sign in under Settings › You › Accounts, trust this clone, and \
+    start the chat again. Nothing was pushed.";
+
+/// [`push_with`], where `env` is this process's environment (#7693).
+///
+/// **In a chat with a forge route** (ADR 0128), every member's git goes the chat's way: through
+/// its proxy, trusting its authority for its recorded hosts, with its sentinel and no credential
+/// helper of the person's ([`crate::forgewire::this_chats_git_route`]), as the chat's own git
+/// does and as the app's git for that chat does. Its forge's CLI is the chat's too: it reads the
+/// sentinel and the authority from the same environment.
+///
+/// **In a sandboxed chat with no route** nothing is pushed, and the refusal names the step that
+/// gives the chat one. Anywhere else, as from the person's own terminal, the push is as before.
 pub fn push_in_chat(
     plane: &Path,
     ws: &str,
@@ -418,8 +438,35 @@ pub fn push_in_chat(
     route: &dyn Fn(&str) -> String,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
-    let _ = env;
-    push_with(plane, ws, slug, backend_of, route, say)
+    // This binary answers the sentinel when git starts it as the chat's helper.
+    let routed = match std::env::current_exe() {
+        Ok(exe) => crate::forgewire::this_chats_git_route(env, &exe),
+        Err(why) => env(crate::forge::gitcredential::SENTINEL_ENV).map(|_| Err(why)),
+    };
+    match routed {
+        Some(Ok(network)) => {
+            let isolation = git::Isolated::default().through_route(network);
+            git::isolated(&isolation, || {
+                push_with(plane, ws, slug, backend_of, route, say)
+            })
+        }
+        Some(Err(why)) => {
+            say(Say::Fail(
+                format!(
+                    "purlis could not read this chat's forge route ({}), so nothing was pushed. \
+                     Start the chat again.",
+                    shown::line(&why.to_string())
+                )
+                .into(),
+            ));
+            REFUSED
+        }
+        None if crate::sandbox::chat_is_sandboxed_in(env) => {
+            say(Say::Fail(NO_ROUTE.into()));
+            REFUSED
+        }
+        None => push_with(plane, ws, slug, backend_of, route, say),
+    }
 }
 
 /// Where one member would be pushed, as the window names it before its Push asks the operator

@@ -887,13 +887,23 @@ fn cli_env_from(
     if let Some(home) = var("HOME") {
         env.push(("HOME".to_string(), home.to_string_lossy().into_owned()));
     }
-    for name in git::CREDENTIAL_ENV.into_iter().filter(|name| keep(name)) {
+    for name in git::CREDENTIAL_ENV
+        .into_iter()
+        .chain(CLI_TRUST_ENV)
+        .filter(|name| keep(name))
+    {
         if let Some(value) = var(name) {
             env.push((name.to_string(), value.to_string_lossy().into_owned()));
         }
     }
     env
 }
+
+/// The authority a forge CLI trusts besides the system's, named for it alone: in a chat with a
+/// forge route, `GLAB_CA_CERT` is the chat's authority, which signs the certificates of the
+/// chat's proxy, and glab trusts it only where this names it (#7693). It is the same trade as
+/// [`git::CREDENTIAL_ENV`]'s `SSL_CERT_FILE`, and passed only where that is.
+const CLI_TRUST_ENV: [&str; 1] = ["GLAB_CA_CERT"];
 
 /// `urllib.parse.quote(value, safe="")`.
 pub fn quote(value: &str) -> String {
