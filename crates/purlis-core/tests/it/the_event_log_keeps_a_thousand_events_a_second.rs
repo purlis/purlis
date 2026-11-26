@@ -231,6 +231,7 @@ fn a_round(dir: &Path) -> Measured {
 #[test]
 #[ignore = "runs for half a minute: stress.yml's `event log throughput` step runs it"]
 fn the_log_keeps_a_thousand_events_a_second_with_each_write_inside_l5() {
+    purlis_core::unsteered!();
     let rounds: Vec<Measured> = (0..ROUNDS)
         .map(|_| {
             let dir = tempfile::tempdir().unwrap();
@@ -258,12 +259,14 @@ fn a_round_of(events: usize, writes: Vec<Duration>) -> Measured {
 
 #[test]
 fn rounds_inside_both_budgets_miss_nothing() {
+    purlis_core::unsteered!();
     let rounds = vec![a_round_of(12_500, vec![ms(2); 100]); 3];
     assert_eq!(judged(&rounds), Vec::<String>::new());
 }
 
 #[test]
 fn a_log_that_falls_behind_misses_t1_by_its_median_rate() {
+    purlis_core::unsteered!();
     let rounds = [
         a_round_of(12_500, vec![ms(2); 100]),
         a_round_of(8_000, vec![ms(2); 100]),
@@ -277,6 +280,7 @@ fn a_log_that_falls_behind_misses_t1_by_its_median_rate() {
 
 #[test]
 fn one_slow_round_of_three_misses_nothing() {
+    purlis_core::unsteered!();
     let rounds = [
         a_round_of(12_500, vec![ms(2); 100]),
         a_round_of(4_000, vec![ms(90); 100]),
@@ -287,6 +291,7 @@ fn one_slow_round_of_three_misses_nothing() {
 
 #[test]
 fn six_slow_writes_in_a_hundred_miss_l5_and_five_do_not() {
+    purlis_core::unsteered!();
     // Six slow writes in a hundred: the 95th is one of them.
     let mut six = vec![ms(2); 94];
     six.extend([ms(80); 6]);
@@ -305,6 +310,7 @@ fn six_slow_writes_in_a_hundred_miss_l5_and_five_do_not() {
 
 #[test]
 fn rounds_that_wrote_nothing_miss_both() {
+    purlis_core::unsteered!();
     let nothing = Measured {
         events: 0,
         elapsed: Duration::ZERO,
