@@ -115,6 +115,15 @@ fn build(
     answer: impl Fn(&str, &str, &Call) -> Option<(u16, Value)> + Send + Sync + 'static,
     files: Vec<TipChange>,
 ) -> (Box<dyn HeldForge>, Seen, Arc<Mutex<Vec<String>>>) {
+    build_reading(kind, answer, Arc::new(Files(files)))
+}
+
+/// [`build`], with the push's files read from `files`.
+fn build_reading(
+    kind: Kind,
+    answer: impl Fn(&str, &str, &Call) -> Option<(u16, Value)> + Send + Sync + 'static,
+    files: Arc<dyn TipFiles>,
+) -> (Box<dyn HeldForge>, Seen, Arc<Mutex<Vec<String>>>) {
     let answer: Arc<Handler> = Arc::new(answer);
     let seen: Seen = Arc::default();
     let used = Arc::new(Mutex::new(Vec::new()));
@@ -136,7 +145,7 @@ fn build(
     let held = held_forge(
         forge,
         Arc::new(person),
-        Arc::new(Files(files)),
+        files,
         Arc::new(Second {
             answer,
             seen: seen.clone(),
@@ -893,4 +902,169 @@ fn github_forks_nothing_when_the_repo_is_not_the_one_the_ask_showed() {
     );
     assert!(forge.make_fork(&repo("acme/app"), "4242").is_err());
     assert!(seen.lock().unwrap().iter().all(|(_, m, ..)| m == "GET"));
+}
+
+// A tip behind its base (#7690) -----------------------------------------------------------
+
+/// A repository whose `main` gained a release (CODEOWNERS deleted, a deploy file added) after
+/// `work` was cut from it to change both CI files, read as the quarantine reads one.
+struct Behind {
+    _dir: tempfile::TempDir,
+    root: std::path::PathBuf,
+}
+
+impl Behind {
+    fn new() -> Behind {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let s = Behind { _dir: dir, root };
+        s.git(&["init", "-q", "-b", "main", "."]);
+        s.write(".github/workflows/ci.yml", "on: push\n");
+        s.write(".gitlab-ci.yml", "stages: [build]\n");
+        s.write("CODEOWNERS", "* @owners\n");
+        s.commit("one");
+        s.git(&["checkout", "-q", "-b", "work"]);
+        s.write(".github/workflows/ci.yml", "on: [push]\n");
+        s.write(".gitlab-ci.yml", "stages: [build, test]\n");
+        s.commit("the chat's change");
+        s.git(&["checkout", "-q", "main"]);
+        std::fs::remove_file(s.root.join("CODEOWNERS")).unwrap();
+        s.write("deploy/other-app.txt", "replicas: 3\n");
+        s.commit("release");
+        s
+    }
+
+    fn git(&self, args: &[&str]) -> String {
+        let mut argv = vec!["-c", "user.name=t", "-c", "user.email=t@example.invalid"];
+        argv.extend_from_slice(args);
+        let run = crate::testgit::run(&self.root, &argv);
+        assert!(run.ok(), "git {args:?}: {}", run.err);
+        run.out.trim().to_owned()
+    }
+
+    fn write(&self, file: &str, text: &str) {
+        let at = self.root.join(file);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::fs::write(at, text).unwrap();
+    }
+
+    fn commit(&self, message: &str) {
+        self.git(&["add", "-A"]);
+        self.git(&["commit", "-q", "-m", message]);
+    }
+
+    fn sha(&self, rev: &str) -> HeadSha {
+        HeadSha::try_from(self.git(&["rev-parse", rev])).unwrap()
+    }
+
+    fn files(&self) -> Arc<dyn TipFiles> {
+        Arc::new(crate::heldact::GitTrees::of_trusted_store(&self.root))
+    }
+}
+
+/// A forge that answers every call of a push to a branch `work` it does not have yet, its commit
+/// parented on `base`.
+fn answers_every_push(
+    base: &HeadSha,
+) -> impl Fn(&str, &str, &Call) -> Option<(u16, Value)> + Send + Sync + 'static {
+    let base = base.as_str().to_owned();
+    move |method, path, _| match (method, path) {
+        ("GET", p) if p.contains("/git/commits/") => Some((200, json!({"tree": {"sha": "t0"}}))),
+        ("POST", p) if p.ends_with("git/blobs") => Some((201, json!({"sha": "b1"}))),
+        ("POST", p) if p.ends_with("git/trees") => Some((201, json!({"sha": "t1"}))),
+        ("POST", p) if p.ends_with("git/commits") => Some((201, json!({"sha": "c1"}))),
+        ("POST", p) if p.ends_with("git/refs") => Some((201, json!({}))),
+        ("POST", p) if p.ends_with("repository/commits") => {
+            Some((201, json!({"id": "new", "parent_ids": [base.as_str()]})))
+        }
+        _ => None,
+    }
+}
+
+/// Every call that was not a read.
+fn writes(seen: &Seen) -> Vec<(String, String, String)> {
+    calls(seen)
+        .into_iter()
+        .filter(|(_, method, _)| method != "GET")
+        .collect()
+}
+
+#[test]
+fn neither_adapter_sends_anything_for_a_tip_that_does_not_contain_the_base() {
+    let s = Behind::new();
+    let (main, tip) = (s.sha("main"), s.sha("work"));
+    for kind in [Kind::GitHub, Kind::GitLab] {
+        let (forge, seen, _) = build_reading(kind, answers_every_push(&main), s.files());
+        let secret = Secret::new("wf".to_owned());
+        let said = forge
+            .push_tip(
+                &repo("acme/app"),
+                &Base::try_from("work").unwrap(),
+                &tip,
+                &main,
+                true,
+                Some(&secret),
+            )
+            .unwrap_err()
+            .to_string();
+        assert!(said.contains("the branch is behind"), "{kind:?}: {said}");
+        assert!(
+            said.contains("purlis worktree update --merge"),
+            "{kind:?}: {said}"
+        );
+        assert_eq!(writes(&seen), [], "{kind:?}");
+    }
+}
+
+#[test]
+fn both_adapters_send_only_the_branchs_own_files_once_it_contains_the_base() {
+    let s = Behind::new();
+    s.git(&["checkout", "-q", "work"]);
+    s.git(&["merge", "-q", "--no-edit", "main"]);
+    let (main, tip) = (s.sha("main"), s.sha("work"));
+    for kind in [Kind::GitHub, Kind::GitLab] {
+        let (forge, seen, _) = build_reading(kind, answers_every_push(&main), s.files());
+        let secret = Secret::new("wf".to_owned());
+        forge
+            .push_tip(
+                &repo("acme/app"),
+                &Base::try_from("work").unwrap(),
+                &tip,
+                &main,
+                true,
+                Some(&secret),
+            )
+            .unwrap();
+        let log = seen.lock().unwrap();
+        let (paths, parent) = match kind {
+            Kind::GitHub => {
+                let tree = log
+                    .iter()
+                    .find(|(_, _, p, _)| p.ends_with("git/trees"))
+                    .unwrap();
+                let commit = log
+                    .iter()
+                    .find(|(_, m, p, _)| m == "POST" && p.ends_with("git/commits"))
+                    .unwrap();
+                (all(&tree.3, "tree[][path]"), all(&commit.3, "parents[]"))
+            }
+            Kind::GitLab => {
+                let commit = log
+                    .iter()
+                    .find(|(_, _, p, _)| p.ends_with("repository/commits"))
+                    .unwrap();
+                (
+                    all(&commit.3, "actions[][file_path]"),
+                    all(&commit.3, "start_sha"),
+                )
+            }
+        };
+        // The chat changed both CI files; main's CODEOWNERS and deploy file are not in the commit.
+        assert_eq!(
+            paths,
+            [".github/workflows/ci.yml", ".gitlab-ci.yml"],
+            "{kind:?}"
+        );
+        assert_eq!(parent, [main.as_str()], "{kind:?}");
+    }
 }
