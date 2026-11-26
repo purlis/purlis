@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795685879736,
+  "lastUpdate": 1795687249756,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55734,6 +55734,48 @@ window.BENCHMARK_DATA = {
             "value": 101.499377,
             "unit": "ms",
             "extra": "median of 5 runs: 101.365, 101.440, 101.499, 101.705, 101.834 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e345e65528cc74f16d5fb626ffbff1d497dd1664",
+          "message": "Forge route: gh run view jobs, gh pr list search and Dependabot alert reads on a chat's own repo (#7679, #7680, #7681) (#7686)\n\n* Red: gh run view jobs on the socket, gh pr list search and Dependabot alert reads on a chat's own repo (#7679, #7680, #7681)\n\nTests first. gh's socket transport sends the run's absolute jobs_url as plain\nHTTP with Host: api.github.com and no port; a refused malformed request should\nsay which check failed; a search naming the chat's repo more than once or\nquoted is a read of it; a repo's Dependabot alerts are read, never written.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8B9SGCFGM80EQKD4ASM20QW\nPurlis-Persona: steward\n\n* Forge route: gh run view jobs, gh pr list search and Dependabot alert reads on a chat's own repo (#7679, #7680, #7681)\n\n- #7679: gh's socket transport sends an https:// address it follows (a run's\n  jobs_url) as plain HTTP with Host: api.github.com and no port. The plain\n  route read that as port 80 while host_agrees reads a portless Host as 443,\n  so every such request was MalformedRequest. The plain route reads 443 now; a\n  port said out loud is that port. A MalformedRequest refusal says which check\n  failed (framing, header name, Content-Type twice, Host, Content-Encoding, or\n  the request line).\n- #7680: a GraphQL search is a read when every repo: is one of the chat's\n  repos (once or more) and at least one is there; each is touched, so each is\n  served by the same account. A double-quoted qualifier value is read\n  (label:\"needs review\"); a quoted repo:, a quoted phrase with a colon, a\n  quote left open or anywhere else, org:/user:/owner:/team:/enterprise:,\n  another repo or none stay refused. REST search still takes one repo.\n- #7681: GET of repos/{own}/dependabot/alerts and alerts/{number}; a PATCH,\n  any other dependabot route and another repo stay refused.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8B9SGCFGM80EQKD4ASM20QW\nPurlis-Persona: steward\n\n* Forge route: test that only a lower-case repo: scopes a search, and the gaps round 1 left (#7686)\n\nRed: REPO:/Repo: are forwarded as scoped searches by GraphQL and REST,\nan empty or colon-holding quoted qualifier scopes nothing, and a portless\nrecorded GitLab host is forwarded through the plain door.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BDPCG193YQ5A48JB51S7XQ\nPurlis-Persona: steward\n\n* Forge route: only a lower-case repo: scopes a search; a portless Host is 443 only for a GitHub API host (#7686)\n\nGitHub reads REPO: or Repo: as text, so the search ran unscoped over everything\nthe credential sees, while the proxy read it as scoped. Only a literal repo:\nscopes now. Any other casing of repo:, org:, user:, owner:, team: or\nenterprise: is refused, as are an empty qualifier name and a quoted value\nholding a colon. A repo's path still matches case-insensitively.\n\nOn the plain door, a Host without a port means 443 only for one of the chat's\nGitHub API hosts. Any other host means 80, as before the PR, so a recorded\nGitLab host no longer gets through the door that only gh uses.\n\nAlso moves the Dependabot constants out from under READ_QUERY_KEYS' doc comment.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BDPCG193YQ5A48JB51S7XQ\nPurlis-Persona: steward\n\n* Changelog: a forge-route search is scoped only by a lower-case repo: (#7686)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BDPCG193YQ5A48JB51S7XQ\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T09:11:43Z",
+          "tree_id": "bca62652d9da8ee39622e222cf86eccc5f591c78",
+          "url": "https://github.com/purlis/purlis/commit/e345e65528cc74f16d5fb626ffbff1d497dd1664"
+        },
+        "date": 1795687241488,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.545555,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.540, 0.542, 0.546, 0.560, 0.562 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.243533,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.105, 16.193, 16.244, 16.253, 16.556 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.0530965,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.395, 101.020, 101.053, 101.134, 102.216 ms"
           }
         ]
       }
