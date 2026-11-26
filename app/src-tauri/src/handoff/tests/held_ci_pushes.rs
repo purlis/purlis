@@ -226,18 +226,23 @@ fn the_task(_: &Held, _: &Plane, task: u32) -> u32 {
     task
 }
 
-/// A grade's chat in the same project, which the window draws nowhere (`curation::start_graded`).
+/// A grade's chat in the same project, which the window draws nowhere: started as
+/// `curation::start_graded` starts it, in the folder a grade lays out for its arm
+/// (`skillgrade`'s `lay_out_arm`), since a grade's chat starts nowhere else.
 fn a_graded_chat(held: &Held, plane: &Plane, _: u32) -> u32 {
+    let arm = purlis_core::skills::verbs::drafts::lay_out_arm(&plane.root, None)
+        .expect("a grade's arm is laid out");
     let start = purlis_core::start::Start {
         profile: Some("work".to_owned()),
         name: "1".to_owned(),
-        cwd: Some(plane.root.clone()),
+        cwd: Some(arm.piece),
         // Made as `curation::start_graded` makes it, so where purlis wraps a Claude Code chat it
         // reads the level [`Plane::new`] switched off there (ADR 0067 as amended 2026-11-10).
         made: purlis_core::sandbox::Made::Window,
         ..Default::default()
     };
-    let ready = purlis_core::start::ready(&start, &plane.root).expect("the grade's chat starts");
+    let ready = purlis_core::skills::grades::ready_to_grade_on(&start, &plane.root, None)
+        .expect("the grade's chat starts");
     let chat = Chat {
         program: ready.program.clone(),
         cwd: ready.cwd.clone(),
