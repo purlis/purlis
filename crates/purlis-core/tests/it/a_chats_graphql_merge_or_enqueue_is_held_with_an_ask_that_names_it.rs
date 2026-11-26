@@ -337,3 +337,74 @@ fn an_enqueue_that_asks_back_the_entrys_head_commit_raises_one_ask() {
     assert!(matches!(out, Outcome::Held(_)), "not held: {out:?}");
     assert_eq!(*asked.0.lock().unwrap(), [seven_by(LandAs::Enqueue)]);
 }
+
+/// The raw enqueue with `jump` declared but left out of `variables` (#7682). A nullable variable
+/// with no value and no default is null (GraphQL, "Coercing Variable Values"), so the document is
+/// the same enqueue, held with the same ask.
+#[test]
+fn a_raw_enqueue_that_leaves_out_a_nullable_variable_raises_one_ask_that_names_it() {
+    purlis_core::unsteered!();
+    let (s, asked) = scene();
+    let out = s.send(
+        "POST",
+        "api.github.com",
+        "/graphql",
+        &graphql(
+            RAW_ENQUEUE,
+            serde_json::json!({
+                "id": "PR_kwDO_1",
+                "head": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+            }),
+        ),
+    );
+    let Outcome::Held(held) = &out else {
+        panic!("not held, so refused or forwarded: {out:?}");
+    };
+    assert_eq!(held.refusal, Refusal::Merge);
+    assert!(held.said.contains("Ask 41"), "{}", held.said);
+    assert_eq!(*asked.0.lock().unwrap(), [seven_by(LandAs::Enqueue)]);
+}
+
+/// A non-null variable with no value is an error the forge would answer, not a null: the
+/// document is refused and nobody is asked.
+#[test]
+fn an_enqueue_that_leaves_out_a_non_null_variable_is_refused_and_asks_nobody() {
+    purlis_core::unsteered!();
+    let (s, asked) = scene();
+    let out = s.send(
+        "POST",
+        "api.github.com",
+        "/graphql",
+        &graphql(
+            "mutation($id: ID!, $head: GitObjectID!, $jump: Boolean!) { \
+             enqueuePullRequest(input: {pullRequestId: $id, expectedHeadOid: $head, jump: $jump}) { \
+             mergeQueueEntry { state } } }",
+            serde_json::json!({
+                "id": "PR_kwDO_1",
+                "head": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+            }),
+        ),
+    );
+    assert!(!matches!(out, Outcome::Forward(_)), "{out:?}");
+    assert!(asked.0.lock().unwrap().is_empty(), "{out:?}");
+}
+
+/// An undeclared variable has no value at all, nullable or not: refused, nobody asked.
+#[test]
+fn an_enqueue_that_uses_an_undeclared_variable_is_refused_and_asks_nobody() {
+    purlis_core::unsteered!();
+    let (s, asked) = scene();
+    let out = s.send(
+        "POST",
+        "api.github.com",
+        "/graphql",
+        &graphql(
+            "mutation($head: GitObjectID!) { \
+             enqueuePullRequest(input: {pullRequestId: $id, expectedHeadOid: $head}) { \
+             mergeQueueEntry { state } } }",
+            serde_json::json!({"head": "6dcb09b5b57875f334f61aebed695e2e4193db5e"}),
+        ),
+    );
+    assert!(!matches!(out, Outcome::Forward(_)), "{out:?}");
+    assert!(asked.0.lock().unwrap().is_empty(), "{out:?}");
+}
