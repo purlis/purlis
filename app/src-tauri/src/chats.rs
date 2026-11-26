@@ -4219,6 +4219,19 @@ impl Chats {
             // order it happened. Its program is gone, so no end of it is heard to say so.
             self.superseded(session);
             self.start_recorded_told(&again, size, Why::Wake, None, None)
+                .inspect(|&started| {
+                    // **What the earlier run was handed stays known to the new one** (SC-4b,
+                    // #7631): its conversation is resumed and may draw it again, and the old
+                    // run's close forgets it.
+                    if let Some(id) = again.identity.id.as_deref() {
+                        purlis_core::secrets::handedto::carry_over(
+                            &self.project,
+                            session,
+                            started,
+                            id,
+                        );
+                    }
+                })
         });
         match started {
             Ok(started) => self.restarted(session, started, true),

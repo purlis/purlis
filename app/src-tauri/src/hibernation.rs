@@ -215,6 +215,9 @@ impl Hibernated {
         if held.contains_key(&session) {
             return false;
         }
+        // A woken run hibernated before it drew has no screen of its earlier run to let go of:
+        // the screen kept now is its own (SC-4b, #7631).
+        self.woken().remove(&session);
         held.insert(
             session,
             Held {
@@ -734,6 +737,15 @@ mod tests {
         assert_eq!(hibernated.drawn(8), None, "another chat's pane");
         assert_eq!(hibernated.drawn(9).as_deref(), Some(CHAT));
         assert_eq!(hibernated.drawn(9), None, "once");
+    }
+
+    #[test]
+    fn a_woken_chat_hibernated_again_before_it_drew_has_no_earlier_screen_to_let_go_of() {
+        let hibernated = Hibernated::default();
+        hibernated.woke(9, CHAT.to_owned());
+        assert!(hibernated.intend(9, By::Operator));
+        assert!(hibernated.settle(9));
+        assert_eq!(hibernated.drawn(9), None, "the screen kept now is its own");
     }
 
     #[test]

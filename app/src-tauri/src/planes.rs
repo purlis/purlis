@@ -1896,22 +1896,29 @@ impl Held {
         }
         // What it shows is kept while its program is still there to show it (SC-4b, #7631);
         // nothing that goes wrong there stops the hibernation.
-        if let Some(id) = self
+        let id = self
             .chats
             .recorded_chat(session)
-            .and_then(|chat| chat.identity.id)
-        {
-            crate::hibernation::keep_screen(self.root(), self.chats.sessions(), session, &id);
+            .and_then(|chat| chat.identity.id);
+        if let Some(id) = &id {
+            crate::hibernation::keep_screen(self.root(), self.chats.sessions(), session, id);
         }
+        // A chat that is not hibernated after all keeps no screen: nothing would remove it.
+        let not_hibernated = |why: String| {
+            if let Some(id) = &id {
+                purlis_core::hibernatedscreens::forget(self.root(), id);
+            }
+            Err(why)
+        };
         if let Err(why) = self.chats.sessions().hibernate(session) {
             if self.hibernated.failed(session) {
                 return Ok(());
             }
-            return Err(why);
+            return not_hibernated(why);
         }
         if !self.hibernated.settle(session) {
             // Another end won while it ended (a close, a quit, a stop, the kill switch).
-            return Err(crate::hibernation::ENDED_ANOTHER_WAY.to_owned());
+            return not_hibernated(crate::hibernation::ENDED_ANOTHER_WAY.to_owned());
         }
         Ok(())
     }

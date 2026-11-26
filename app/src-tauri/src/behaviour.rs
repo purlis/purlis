@@ -4239,6 +4239,26 @@ on_every_target!(
     while_stopped_the_operators_shell_opens;
 );
 
+/// Whether chat `id` of `target` can be hibernated: only a host that can is offered Hibernate
+/// (#7630), and only it pages a view's history; the window's own process does neither. Where it
+/// cannot, the chat is closed and the skip of the kept screen's `case` is said, so a target that
+/// stopped hibernating is seen rather than passing silently.
+fn hibernates_here(target: &Target, id: u32, case: &str) -> bool {
+    if target.sessions.can_hibernate(id) {
+        return true;
+    }
+    // Written to stderr by name, past the test harness's capture, so the skip shows in a run.
+    let _ = std::io::Write::write_fmt(
+        &mut std::io::stderr(),
+        format_args!(
+            "skipped: this target cannot hibernate a chat, so its kept screen ({case}) is not \
+             taken\n"
+        ),
+    );
+    target.sessions.close(id).expect("it closes");
+    false
+}
+
 /// **A hibernated chat's kept screen is its newest lines, within a mebibyte** (SC-4b, #7631;
 /// spec #1391, D3): a shell prints thousands of lines, every cell its own colour, so what its
 /// terminal draws is many times 1 MiB; the screen is taken as the app takes it as it hibernates a
@@ -4257,10 +4277,7 @@ fn a_hibernated_chats_kept_screen_is_its_newest_lines_within_a_mebibyte(target: 
         )
         .expect("it starts");
     Pane::on(target, id).shows("PRINTED.");
-    // Only a host that can hibernate a chat is offered Hibernate (#7630), and only it pages a
-    // view's history: the window's own process does neither.
-    if !target.sessions.can_hibernate(id) {
-        target.sessions.close(id).expect("it closes");
+    if !hibernates_here(target, id, "its newest lines within a mebibyte") {
         return;
     }
     let whole = crate::skillgrade::screen_of(target.sessions.as_ref(), id).expect("its screen");
@@ -4308,8 +4325,7 @@ fn a_hibernated_chats_kept_screen_is_an_open_alternate_screen_alone(target: &Tar
         )
         .expect("it starts");
     Pane::on(target, id).shows("THE EDITOR.");
-    if !target.sessions.can_hibernate(id) {
-        target.sessions.close(id).expect("it closes");
+    if !hibernates_here(target, id, "an open alternate screen alone") {
         return;
     }
 
