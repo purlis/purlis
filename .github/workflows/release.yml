@@ -856,7 +856,7 @@ jobs:
       # install-action's manifest holds for it, in place of compiling it with `cargo install`
       # (which takes no checksum): one exact version, and moving to a new one is a reviewed
       # change to this line.
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-auditable@0.7.6
 
@@ -2183,7 +2183,7 @@ jobs:
       # The release's own pinned binary, checked against the digest install-action's manifest
       # holds for it, in place of compiling it with `cargo install`: one exact version, as
       # `build`'s, and moving to a new one is a reviewed change to this line.
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-auditable@0.7.6
       - name: The purlis binary
