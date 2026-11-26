@@ -27,6 +27,18 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 /** The checked-in budgets, and the workflow they are for. */
 export const BUDGETS_FILE = join(ROOT, "ci", "job-budgets.toml");
 export const CI_FILE = join(ROOT, ".github", "workflows", "ci.yml");
+
+/**
+ * The workflows besides `ci.yml` whose jobs are budgeted by id, as ci's are, each budget with
+ * `workflow = "<name>"`: the macOS outcome bars, which left `ci.yml` on 2026-11-26 (ADR 0127,
+ * amended that day) so that the run a dev build waits for ends when its gating jobs do.
+ */
+export const JOB_WORKFLOWS = { "outcome-bars": join(ROOT, ".github", "workflows", "outcome-bars.yml") };
+
+/** The jobs of each of `JOB_WORKFLOWS`, read from the checkout: `{ [workflow]: jobs }`. */
+export function workflowJobs(read = (path) => readFileSync(path, "utf8")) {
+  return Object.fromEntries(Object.entries(JOB_WORKFLOWS).map(([name, path]) => [name, ciJobs(read(path))]));
+}
 export const RELEASE_PROFILES = ["dev-release", "release"];
 
 /** A job's p50 may run this far above its budget before ci-health files a ticket: 20%. */
@@ -103,8 +115,11 @@ export function parseBudgets(text) {
   return budgets;
 }
 
-/** What is wrong with `budgets` against `jobs`, one sentence each. */
-export function budgetProblems(jobs, budgets) {
+/**
+ * What is wrong with `budgets` against `jobs` (ci's) and `others` (`{ [workflow]: jobs }`, the jobs
+ * of `JOB_WORKFLOWS`), one sentence each.
+ */
+export function budgetProblems(jobs, budgets, others = {}) {
   const problems = [];
   const seen = new Set();
   const known = new Set(jobs.map((job) => job.id));
@@ -112,13 +127,18 @@ export function budgetProblems(jobs, budgets) {
     const name = typeof budget.id === "string" && budget.id !== "" ? `"${budget.id}"` : `budget ${n + 1}`;
     if (typeof budget.id !== "string" || budget.id === "") problems.push(`${name} has no job id`);
     else if (seen.has(budget.id)) problems.push(`${name} is listed twice`);
-    else {
+    else if (budget.workflow in others) {
+      seen.add(budget.id);
+      if (!others[budget.workflow].some((job) => job.id === budget.id)) {
+        problems.push(`budget for "${budget.id}": no such job in ${budget.workflow}.yml`);
+      }
+    } else {
       seen.add(budget.id);
       if (budget.workflow === "release") {
         if (!RELEASE_PROFILES.includes(budget.profile)) problems.push(`${name} has no profile: ${RELEASE_PROFILES.join(" or ")}`);
         if (!budget.check) problems.push(`${name} names no check run`);
         if (!(budget.run > 0)) problems.push(`${name} names no run it was measured from (ADR 0086)`);
-      } else if (budget.workflow !== undefined && budget.workflow !== "ci") problems.push(`${name} is for workflow "${budget.workflow}", which is neither ci nor release`);
+      } else if (budget.workflow !== undefined && budget.workflow !== "ci") problems.push(`${name} is for workflow "${budget.workflow}", which is not ci, release or one of ${Object.keys(others).join(", ") || "no other"}`);
       else if (!known.has(budget.id)) problems.push(`budget for "${budget.id}": no such job in ci.yml`);
     }
     if (!(budget.p50 > 0)) problems.push(`${name} has no p50: write its budget in minutes`);
@@ -134,6 +154,16 @@ export function budgetProblems(jobs, budgets) {
       problems.push(`job "${job.id}" has no budget: add a [[job]] to ci/job-budgets.toml with its p50 in minutes`);
     }
   }
+  for (const [workflow, list] of Object.entries(others)) {
+    for (const job of list) {
+      const budget = budgets.find((b) => b.id === job.id);
+      if (!budget) {
+        problems.push(`job "${job.id}" of ${workflow}.yml has no budget: add a [[job]] with workflow = "${workflow}" to ci/job-budgets.toml`);
+      } else if (budget.workflow !== workflow) {
+        problems.push(`job "${job.id}" of ${workflow}.yml is budgeted without workflow = "${workflow}"`);
+      }
+    }
+  }
   return problems;
 }
 
@@ -141,10 +171,11 @@ export function budgetProblems(jobs, budgets) {
  * The jobs whose p50 over `suites` (GraphQL `CheckSuite` nodes of the week's runs) is more than
  * `OVER` above their budget: `{ id, p50, budget, over, n }` (minutes), the furthest over first.
  * A job's p50 pools its matrix legs and counts only the runs it passed (a failed job ended early),
- * and a job with fewer than `MIN_RUNS` of them is not judged.
+ * and a job with fewer than `MIN_RUNS` of them is not judged. `workflow` is the workflow `suites`
+ * and `jobs` are of: `ci`, or one of `JOB_WORKFLOWS`, whose runs are read apart.
  */
-export function overBudget(suites, budgets, jobs) {
-  budgets = budgets.filter((budget) => (budget.workflow ?? "ci") === "ci");
+export function overBudget(suites, budgets, jobs, workflow = "ci") {
+  budgets = budgets.filter((budget) => (budget.workflow ?? "ci") === workflow);
   const minutes = new Map();
   for (const job of suites.flatMap((suite) => suite?.checkRuns?.nodes ?? [])) {
     if (job.conclusion !== "SUCCESS" || !job.startedAt || !job.completedAt) continue;
@@ -214,7 +245,11 @@ export function overReleaseBudget(runs, suites, budgets) {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   try {
-    const problems = budgetProblems(ciJobs(readFileSync(CI_FILE, "utf8")), parseBudgets(readFileSync(BUDGETS_FILE, "utf8")));
+    const problems = budgetProblems(
+      ciJobs(readFileSync(CI_FILE, "utf8")),
+      parseBudgets(readFileSync(BUDGETS_FILE, "utf8")),
+      workflowJobs(),
+    );
     for (const problem of problems) console.error(`::error file=ci/job-budgets.toml::${problem}`);
     if (problems.length > 0) process.exitCode = 1;
   } catch (error) {

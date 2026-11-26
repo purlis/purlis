@@ -990,7 +990,7 @@ test("a job that only asks whether it is needed is not started on a pull request
 
 // By the operator's choice of 2026-11-01: what the bars measure and the suite itself. A regression
 // from anywhere else shows on main's push, which always runs it.
-test("the macOS outcome bars run on main and the nightly alone; Linux's run on a pull request its gate lets in and in the merge queue", () => {
+test("the macOS outcome bars run on main and the nightly alone, in a workflow of their own; Linux's run on a pull request its gate lets in and in the merge queue", () => {
   const on = (path) => gatesOf({ event: "pull_request", paths: [path] })["outcome-bars"];
   for (const path of [
     "app/src/SkillStudioTab.tsx",
@@ -1022,17 +1022,19 @@ test("the macOS outcome bars run on main and the nightly alone; Linux's run on a
     assert.equal(on(path), false, path);
 
   const ci = read(".github/workflows/ci.yml");
-  const job = ci.slice(ci.indexOf("\n  outcome-bars:\n"), ci.indexOf("\n  outcome-bars-linux:\n"));
   // The steward's ruling of 2026-11-23 (#7335): Macs are the queue's scarce resource, so the job
   // is not in the merge group, and a pull request's run is a subset of the queue's, so it is not
-  // on a pull request either.
-  assert.ok(
-    job.includes("(github.event_name == 'push' || github.event_name == 'schedule')"),
-    "main's push and the nightly, and neither a pull request nor the merge group",
-  );
-  assert.doesNotMatch(job, /\n    if:[^\n]*(merge_group|pull_request)/);
+  // on a pull request either. Since 2026-11-26 it is a workflow of its own (`outcome-bars.yml`),
+  // which triggers on those two events alone.
+  const bars = read(".github/workflows/outcome-bars.yml");
+  const triggers = bars.slice(bars.indexOf("\non:\n"), bars.indexOf("\nconcurrency:\n"));
+  assert.match(triggers, /\n  push:\n    branches: \[main\]\n/, "main's push");
+  assert.match(triggers, /\n  schedule:\n/, "the nightly");
+  assert.doesNotMatch(triggers, /merge_group|pull_request|workflow_run/, "neither a pull request nor the merge group");
+  const job = bars.slice(bars.indexOf("\n  outcome-bars:\n"));
   assert.match(job, /\n        os: \[macos-latest\]\n/);
   assert.match(job, /\n    continue-on-error: true\n/);
+  assert.doesNotMatch(ci, /\n  outcome-bars:\n/);
   // The Linux leg is required since #5277, so it runs wherever a required check is read: every
   // run but a pull request's, and a pull request its gate lets in.
   const linux = ci.slice(ci.indexOf("\n  outcome-bars-linux:\n"), ci.indexOf("\n  outcome-bars-linux-checks:\n"));
@@ -1139,10 +1141,10 @@ test("a draft pull request runs no macOS job but app builds, and marking it read
   const nightly = (n) =>
     /\n    if: (github\.event_name == 'schedule'|\$\{\{ github\.event_name == 'schedule' \}\})\n/.test(body(n));
   // `scenario` runs on no pull request at all, the next test's claim.
-  // `outcome-bars` runs on main's push and the nightly alone (the steward's ruling of 2026-11-23),
-  // so a pull request never reaches it and it needs no draft clause.
-  const gated = onMac.filter((n) => n !== "app" && n !== "scenario" && n !== "outcome-bars" && !nightly(n));
-  assert.ok(onMac.includes("outcome-bars") && onMac.includes("scenario") && gated.length > 0, gated.join(", "));
+  // The macOS outcome bars run in `outcome-bars.yml`, on main's push and the nightly alone (the
+  // steward's rulings of 2026-11-23 and 2026-11-26), so a pull request never reaches them.
+  const gated = onMac.filter((n) => n !== "app" && n !== "scenario" && !nightly(n));
+  assert.ok(!onMac.includes("outcome-bars") && onMac.includes("scenario") && gated.length > 0, gated.join(", "));
   // The draft clause must bind the whole condition: no `||` outside parentheses before it.
   const topLevelOr = (expr) => {
     let depth = 0;
@@ -1177,7 +1179,7 @@ test("the macOS scenarios run in the merge queue and on main, never on a pull re
     /\n          if \[ "\$SCOPE" = false \] \|\| \[ "\$EVENT" = pull_request \]; then want=skipped; else want=success; fi\n/,
   );
   // Linux runs the same specs on the pull request.
-  assert.doesNotMatch(job("scenario-linux", "outcome-bars"), /event_name != 'pull_request'/);
+  assert.doesNotMatch(job("scenario-linux", "outcome-bars-linux"), /event_name != 'pull_request'/);
 });
 
 // A gate says what the job's own step decides: the step stays, for the merge group and the push,

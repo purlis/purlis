@@ -7,8 +7,10 @@
 // runs code of the pull request's author. On a GitHub-hosted runner that is a machine thrown away
 // afterwards; on a self-hosted Mac it is the operator's own machine, persistent, with a keychain.
 // `release.yml` may name one (through `vars.MACOS_RELEASE_RUNNER`, docs/updating.md) because only a
-// push to `main`, a tag, the schedule or a run by hand starts it; a workflow that a pull request
-// starts may not, and that is held here by what its text says, so a later edit cannot add one.
+// push to `main`, a tag, the schedule or a run by hand starts it, and `outcome-bars.yml` (through
+// `vars.OUTCOME_BARS_RUNNER`) because only a push to `main` and the schedule do; a workflow that a
+// pull request starts may not, and that is held here by what its text says, so a later edit cannot
+// add one.
 //
 // Reachable from a pull request: a workflow with any trigger in REACHABLE, `workflow_call` among
 // them, which runs as its caller does. Refused in such a workflow: the text `self-hosted` anywhere
@@ -129,4 +131,16 @@ test("the guard leaves alone a workflow no pull request can start, and a hosted 
 test("release.yml, the one workflow that may name a self-hosted runner, cannot be started by a pull request", () => {
   const found = triggers(readFileSync(new URL("release.yml", dir), "utf8"));
   assert.deepEqual(found.sort(), ["push", "schedule", "workflow_dispatch"]);
+});
+
+test("outcome-bars.yml, which may name a self-hosted runner, cannot be started by a pull request", () => {
+  const text = readFileSync(new URL("outcome-bars.yml", dir), "utf8");
+  assert.deepEqual(triggers(text).sort(), ["push", "schedule"]);
+  // The guard reads it: its runner is a variable, which it would refuse the moment a pull request,
+  // the queue or another workflow's run could start it.
+  assert.deepEqual(refusals(text), []);
+  for (const trigger of ["pull_request", "pull_request_target", "merge_group", "workflow_run"]) {
+    const reachable = text.replace(/\non:\n/, `\non:\n  ${trigger}:\n`);
+    assert.ok(refusals(reachable).length > 0, `with ${trigger}`);
+  }
 });
