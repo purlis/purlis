@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795705857671,
+  "lastUpdate": 1795706338611,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56112,6 +56112,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9479945,
             "unit": "ms",
             "extra": "median of 5 runs: 100.286, 100.684, 101.948, 102.544, 103.407 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "95f58ea5d39286f927ac56907d3ca07d8af81df1",
+          "message": "Forge route: a held CI-file push's Ask reaches the person's Asks (#7685) (#7695)\n\n* Forge route: a red test for a held CI-file push from a dispatched task that never reaches Asks (#7685)\n\nThe held push is recorded and the chat is told the person was asked, but the\nAsks registry the ✋, the window and the notifier read never lists it. A second\ntest: an ask the window cannot show must tell the chat nobody was asked.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BDAN14NK4NXN2FZ4YW8RV7\nPurlis-Persona: steward\n\n* Forge route: a held CI-file push's Ask reaches the person's Asks (#7685)\n\nA held tag, release, CI-file push or fork was recorded in the project's held\nacts and the chat was told the person had been asked, but nothing told the\nwindow, and the asks registry the ✋, Asks and the notifier read never listed\nheld acts (a held merge is listed, #7547). So no count, no notification, and\nthe card in Asks appeared only if something else made the window re-read.\n\n- core: Handoff tells an AsksWindow of each ask it holds. Where the window\n  cannot show it, the ask is withdrawn and the chat is told nobody was asked\n  (Refused::NotShown), never that the person was.\n- app: InTheWindow shows an ask only for a chat the window has open and draws,\n  and tells the window to read its asks again. The registry lists each held\n  act (AskSource::HeldAct), counted and notified, its card in Asks pressing it\n  twice as before; the Inbox draws no second row for it.\n\nThe push is still held until the person's two presses: nothing here performs\nan act, and a withdrawn ask can no longer be pressed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BDAN14NK4NXN2FZ4YW8RV7\nPurlis-Persona: steward\n\n* Changelog: a held CI-file push reaches Asks (#7685)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BDAN14NK4NXN2FZ4YW8RV7\nPurlis-Persona: steward\n\n* Held acts: red tests for notifying on screen, pinning the asks-moved cause, Asks agreeing with its count, a graded chat's push and a quarantine nobody waits on (#7685 review)\n\nF1: a chat on screen is no look at an ask its pane draws nowhere.\nF2: a held push raised tells the window its asks moved, and the notifier tells the person.\nF3: Asks never says nothing waits while a held act is the only ask, and Chat narrows its cards.\nF4: whether anyone heard that the asks moved is answered.\nF5: a graded chat's held push tells it nobody was asked.\nF6: a held CI push nobody waits on keeps no quarantine.\n\nThe Looking field and told_asks_moved are stubs here.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BJT1M9R9QE9HAGGCMJDVVG\nPurlis-Persona: steward\n\n* Held acts: notified with their chat on screen, Asks agrees with its count, and nothing is said shown that the window will not read (#7685 review)\n\nF1: a chat with a held act waiting is no look at it for being on screen, since its pane draws\nno Notice of it; the ask place guard now lists held-act as asks-only debt.\nF2/F4: shown_in fails, with a warning, where no window hears the asks move\n(Chats::told_asks_moved), so the chat is told nobody was asked.\nF3: Asks draws only the held-act cards the scope lists, and says nothing waits only when no\ncard is drawn either.\nF6: a held CI push's quarantine is released when no ask waits on it after the hand-over.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BJT1M9R9QE9HAGGCMJDVVG\nPurlis-Persona: steward\n\n* Start the held-push test's graded chat as curation::start_graded does (Made::Window), so on Linux it reads the level the test plane switched off\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BPXYMVHBWE14XVW4FNKXFN\nPurlis-Persona: steward\n\n* A graded chat's held-push test starts the chat in a grade's arm, as start_graded does (#7695)\n\nThe start refuses a graded chat anywhere but a folder a grade laid out\n(hoststart::armed), so lay out the arm with drafts::lay_out_arm and get\nthe chat ready with grades::ready_to_grade_on.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BTTPBJ2B04B6X6QVW8MXZ4\nPurlis-Persona: steward\n\n* Held CI-push tests: the quarantine stand-in says the tip is on its base; a graded chat's push is checked at shown_in (#7695)\n\nSince #7696 a held CI push asks Trees::missing whether its tip lacks any of the\nbase's commits, and the stand-in's default answer, \"no clone\", refused the push.\nA grade's chat cannot start in this test plane, so the end-to-end graded test is\nreplaced by one that calls heldacts::shown_in with an open chat whose record is a\ngrade's, and its a_graded_chat helper is removed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BY5WVEB3936RC74R9N98D1\nPurlis-Persona: steward\n\n* held_ci_pushes: drop the graded-chat test CI cannot start (follow-up in an issue)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8C2915X42SMQN0ARGSN941K\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T14:38:54Z",
+          "tree_id": "395fc7f255d670795f5ee20e9ca3563f8842534b",
+          "url": "https://github.com/purlis/purlis/commit/95f58ea5d39286f927ac56907d3ca07d8af81df1"
+        },
+        "date": 1795706331718,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.45709,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.453, 0.456, 0.457, 0.458, 0.460 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6901115,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.271, 16.558, 16.690, 16.702, 16.771 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.913742,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.487, 101.586, 101.914, 102.760, 102.799 ms"
           }
         ]
       }
