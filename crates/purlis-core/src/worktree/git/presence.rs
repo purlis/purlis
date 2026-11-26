@@ -155,7 +155,7 @@ fn install_for(os: Os, os_release: &str) -> Install {
 /// Windows, a `git.exe` on `PATH`: that lookup names `git` alone, and the runner's bare-name
 /// fallback is what finds `git.exe` there.
 fn found_on_disk(fixed: &[&str], path: Option<&OsStr>) -> bool {
-    super::git_binary_in(fixed, path, &|_| None).0.is_absolute()
+    super::git_binary_in(fixed, path).0.is_absolute()
         || path
             .into_iter()
             .flat_map(crate::programs::searchable)

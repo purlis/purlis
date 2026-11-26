@@ -335,11 +335,8 @@ fn a_git_that_only_a_relative_path_entry_reaches_is_never_the_one_charter_runs()
 
     let fixed_dir = fixed.path().display().to_string();
     let path = format!(".::{relative}");
-    let (binary, child_path) = git_binary_in(
-        &[fixed_dir.as_str()],
-        Some(std::ffi::OsStr::new(&path)),
-        &|_| None,
-    );
+    let (binary, child_path) =
+        git_binary_in(&[fixed_dir.as_str()], Some(std::ffi::OsStr::new(&path)));
     assert_eq!(
         binary,
         PathBuf::from("git"),
@@ -1689,6 +1686,26 @@ fn a_network_call_hands_the_forge_cli_its_credential_and_no_other_call_does() {
 }
 
 #[test]
+fn a_call_stopped_at_its_deadline_says_it_took_longer_than_the_deadline() {
+    // A stopped git writes nothing, and a caller reading the first line of its stderr reported
+    // "could not fetch" with no cause (the 120 s a push's base fetch is given).
+    let dir = repo();
+    let answer = run(
+        dir.path(),
+        &["-c", "alias.hang=!sleep 30", "hang"],
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    assert_eq!(answer.code, None);
+    assert_eq!(
+        answer.err.lines().next(),
+        Some("git took longer than 1 s and was stopped"),
+        "{:?}",
+        answer.err
+    );
+}
+
+#[test]
 fn a_call_stopped_at_its_deadline_returns_then_and_what_git_started_is_ended_with_it() {
     // `clone` runs `git-remote-https`, which runs the credential helper. Ending git alone
     // left them running, holding the pipes, and a reader that waits for every writer
@@ -2201,85 +2218,63 @@ fn every_git_call_reads_its_messages_in_the_c_locale() {
     assert!(!env.iter().any(|(name, _)| *name == "LANG"), "{env:?}");
 }
 
-/// Two installed gits, `(fixed dirs, the two binaries)`: each a plain file, for a search that
-/// only asks which exist.
-fn two_installed_gits() -> (tempfile::TempDir, [String; 2], [PathBuf; 2]) {
-    let dir = tempfile::tempdir().unwrap();
-    let mut dirs = Vec::new();
-    let mut binaries = Vec::new();
-    for name in ["system", "newer"] {
-        let bin = dir.path().join(name);
-        std::fs::create_dir(&bin).unwrap();
-        std::fs::write(bin.join("git"), "").unwrap();
-        binaries.push(bin.join("git"));
-        dirs.push(bin.display().to_string());
-    }
-    (dir, dirs.try_into().unwrap(), binaries.try_into().unwrap())
+/// A child that writes `lines` lines to stderr, `gap_ms` apart, then exits.
+fn writes_slowly(lines: u32, gap_ms: u32) -> Child {
+    let script = format!(
+        "i=0; while [ $i -lt {lines} ]; do echo progress >&2; sleep 0.{gap_ms:03}; i=$((i+1)); done"
+    );
+    let mut command = std::process::Command::new("sh");
+    command
+        .args(["-c", &script])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    crate::forklock::spawn(&mut command).expect("sh runs")
 }
 
+/// #7587: a fetch that goes silent is cut at the stall, long before its upper bound.
 #[test]
-fn a_git_new_enough_for_a_merge_is_chosen_over_an_older_one_listed_before_it() {
-    let (_dir, dirs, [system, newer]) = two_installed_gits();
-    let fixed: Vec<&str> = dirs.iter().map(String::as_str).collect();
-
-    let (binary, _) = git_binary_in(&fixed, None, &|candidate| {
-        Some(if candidate == system {
-            "git version 2.39.5 (Apple Git-154)".to_owned()
-        } else {
-            "git version 2.56.1".to_owned()
-        })
-    });
-
-    assert_eq!(binary, newer, "Apple's 2.39 led the list and was chosen");
+fn a_call_that_writes_nothing_for_the_stall_is_cut_and_says_so() {
+    let mut command = std::process::Command::new("sh");
+    command
+        .args(["-c", "echo first >&2; sleep 30"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let child = crate::forklock::spawn(&mut command).expect("sh runs");
+    let started = Instant::now();
+    let raw = wait_raw_until(
+        child,
+        Duration::from_secs(60),
+        None,
+        Some(Duration::from_millis(400)),
+    )
+    .expect("waits");
+    assert_eq!(raw.code, None, "the child was ended");
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "{:?}",
+        started.elapsed()
+    );
+    let said = String::from_utf8_lossy(&raw.err);
+    assert!(said.starts_with("git was silent for"), "{said}");
 }
 
+/// #7587: a slow fetch that keeps writing runs past the stall, to its end.
 #[test]
-fn the_first_git_is_kept_when_it_is_new_enough_or_none_is() {
-    let (_dir, dirs, [system, _]) = two_installed_gits();
-    let fixed: Vec<&str> = dirs.iter().map(String::as_str).collect();
-
-    let (both_new, _) = git_binary_in(&fixed, None, &|_| Some("git version 2.50.0".to_owned()));
-    let (both_old, _) = git_binary_in(&fixed, None, &|_| Some("git version 2.39.5".to_owned()));
-    let (unknown, _) = git_binary_in(&fixed, None, &|_| None);
-
-    assert_eq!(both_new, system);
-    assert_eq!(both_old, system);
-    assert_eq!(unknown, system);
-}
-
-/// Only the merge that needs 2.40 asks a git its version: every other call, the guard's that
-/// decide within a budget among them, starts no process to choose its git (#6846).
-#[test]
-fn only_a_merge_tree_given_its_base_looks_for_a_git_that_can_merge() {
-    assert!(needs_a_merge_base(&[
-        "merge-tree",
-        "--write-tree",
-        "--merge-base=abc",
-        "HEAD",
-        "theirs"
-    ]));
-    assert!(!needs_a_merge_base(&[
-        "merge-tree",
-        "--write-tree",
-        "HEAD",
-        "theirs"
-    ]));
-    assert!(!needs_a_merge_base(&["status", "--porcelain"]));
-    assert!(!needs_a_merge_base(&["log", "--merge-base"]));
-}
-
-#[cfg(unix)]
-#[test]
-fn a_git_before_2_40_is_named_with_its_version_and_the_version_a_merge_needs() {
-    let dir = tempfile::tempdir().unwrap();
-    let old = stand_in::program(dir.path(), "git", "#!/bin/sh\necho 'git version 2.39.5'\n");
-
-    let said = with_stand_in(&old, || {
-        needs_git(MERGE_BASE_SINCE, "bringing in the remote's work")
-    })
-    .expect_err("2.39 has no merge-tree --merge-base");
-
-    assert!(said.contains(&old.display().to_string()), "{said}");
-    assert!(said.contains("2.39.5") && said.contains("2.40"), "{said}");
-    assert!(!said.contains("usage"), "{said}");
+fn a_call_that_keeps_writing_runs_past_the_stall_without_being_cut() {
+    // 8 lines 150 ms apart: 1.2 s in all, each gap well inside the 500 ms stall.
+    let raw = wait_raw_until(
+        writes_slowly(8, 150),
+        Duration::from_secs(60),
+        None,
+        Some(Duration::from_millis(500)),
+    )
+    .expect("waits");
+    assert_eq!(raw.code, Some(0), "{}", String::from_utf8_lossy(&raw.err));
+    assert_eq!(
+        String::from_utf8_lossy(&raw.err)
+            .matches("progress")
+            .count(),
+        8
+    );
 }

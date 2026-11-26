@@ -32,7 +32,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::worktree::git::{self, version_of};
+use crate::worktree::git;
 
 pub mod held;
 mod moving;
@@ -733,6 +733,19 @@ fn no_attributes(repo: &Path) -> Result<String, Refused> {
         )));
     }
     Ok(format!("--attr-source={}", empty_tree(repo)?))
+}
+
+/// The major and minor version in git's answer to `git version` (`git version 2.39.3 (Apple
+/// Git-143)`, `git version 2.45.1.windows.1`), or `None` where it names none.
+fn version_of(said: &str) -> Option<(u32, u32)> {
+    let number = said
+        .strip_prefix("git version ")?
+        .split_whitespace()
+        .next()?;
+    let mut parts = number.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    Some((major, minor))
 }
 
 /// **What no snapshot of a project's own repository carries**: purlis's state folder, where its

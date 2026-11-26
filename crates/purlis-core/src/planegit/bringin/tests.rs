@@ -936,23 +936,3 @@ fn a_memory_store_one_side_removed_stays_removed_when_a_request_brings_in() {
     let tree = run(&two.mine, &["ls-tree", "-r", "--name-only", "HEAD"]);
     assert!(!tree.contains("personas/devops"), "{tree}");
 }
-
-#[cfg(unix)]
-#[test]
-fn a_merge_with_a_git_before_2_40_names_that_git_and_the_version_needed_not_its_usage() {
-    let dir = tempfile::tempdir().unwrap();
-    let old = stand_in::program(
-        dir.path(),
-        "git",
-        "#!/bin/sh\ncase \"$1\" in --version) echo 'git version 2.39.5'; exit 0 ;; esac\necho 'usage: git merge-tree' >&2\nexit 129\n",
-    );
-
-    let said = crate::worktree::git::with_stand_in(&old, || {
-        plan_between(dir.path(), "HEAD", "HEAD", Some("HEAD"))
-    })
-    .err()
-    .expect("2.39 has no merge-tree --merge-base");
-
-    assert!(said.contains("2.39.5") && said.contains("2.40"), "{said}");
-    assert!(!said.contains("usage"), "{said}");
-}

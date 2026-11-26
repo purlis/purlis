@@ -304,6 +304,51 @@ impl Plan {
     }
 }
 
+/// A commit of `rev`'s tree whose only parent is `base`: merged with another such commit, the
+/// merge base is `base`, on any git. Named by nothing, so it is never kept.
+fn rooted_at(root: &Path, rev: &str, base: &str) -> Result<String, String> {
+    let tree = super::line_of(root, &["rev-parse", &format!("{rev}^{{tree}}")])
+        .filter(|tree| is_object_name(tree))
+        .ok_or_else(|| format!("{rev} is not a commit here"))?;
+    let author = Author {
+        name: "purlis",
+        email: "purlis@localhost.invalid",
+        // `@` marks epoch seconds: git reads a bare number as one only from 100000000 (git 2.39
+        // and 2.56 both refuse `0 +0000` as "invalid date format").
+        date: "@0 +0000",
+    };
+    commit_tree_as(
+        root,
+        &tree,
+        &[base],
+        "merge base",
+        false,
+        Some(&author),
+        WRITE,
+    )
+    .map_err(Unmade::said)
+}
+
+/// What a save says when git refuses an argument purlis passed (#7627).
+pub(super) const REFUSED_BY_GIT: &str =
+    "this git refused a command purlis ran, which is a fault in purlis, not in your project:";
+
+/// git's usage error (exit 129), as purlis's own error: an option this git does not have is a
+/// defect in the call, never a rebase or a merge that failed. git's stderr is the `error:` line
+/// and then the command's whole option help, so the `error:` line is what is shown, else the
+/// first line.
+pub(super) fn refusal_if_usage(run: &git::Run) -> Option<String> {
+    (run.code == Some(129)).then(|| {
+        let line = run
+            .err
+            .lines()
+            .find(|line| line.starts_with("error:"))
+            .or_else(|| run.err.lines().next())
+            .unwrap_or_default();
+        format!("{REFUSED_BY_GIT} {line}")
+    })
+}
+
 /// Work out the merge of HEAD and `theirs`, from `base` where it is given and from where the two
 /// histories meet otherwise: nothing in the plane changes (objects aside).
 pub(super) fn plan(root: &Path, theirs: &str, base: Option<&str>) -> Result<Plan, String> {
@@ -317,23 +362,26 @@ pub(super) fn plan_between(
     theirs: &str,
     base: Option<&str>,
 ) -> Result<Plan, String> {
-    let given = base.map(|base| format!("--merge-base={base}"));
-    if given.is_some() {
-        git::needs_git(git::MERGE_BASE_SINCE, "bringing in the remote's work")?;
-    }
-    let mut args = vec![
+    // `merge-tree --merge-base=` is git 2.40's and Apple's git is 2.39 (#7627), so a given base is
+    // made the merge base in the form every git with `--write-tree` (2.38) knows: each side's tree
+    // as a commit whose only parent is `base`, which merge-tree finds as the two's merge base.
+    let (ours_at, theirs_at) = match base {
+        Some(base) => (rooted_at(root, ours, base)?, rooted_at(root, theirs, base)?),
+        None => (ours.to_owned(), theirs.to_owned()),
+    };
+    let args = [
         "merge-tree",
         "--write-tree",
         "-z",
         "--name-only",
         "--no-messages",
+        &ours_at,
+        &theirs_at,
     ];
-    args.extend(given.as_deref());
-    args.extend([ours, theirs]);
     let merged = git::run(root, &args, WRITE).map_err(|unavailable| unavailable.to_string())?;
     // 0 is clean and 1 is conflicts: anything else is git refusing, with no tree.
     if !matches!(merged.code, Some(0 | 1)) {
-        return Err(tail(&merged));
+        return Err(refusal_if_usage(&merged).unwrap_or_else(|| tail(&merged)));
     }
     let mut fields = merged.out.split('\0').filter(|field| !field.is_empty());
     let tree = fields

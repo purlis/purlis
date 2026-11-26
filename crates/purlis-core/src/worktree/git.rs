@@ -214,18 +214,7 @@ pub struct GitUnavailable(#[from] std::io::Error);
 /// PATH. So the inherited `PATH` is searched here, in the parent, and what the child gets is
 /// the absolute path that search found plus the directory holding it.
 pub(crate) fn git_binary() -> (PathBuf, String) {
-    git_binary_by(&|_| None)
-}
-
-/// [`git_binary`] for a call that needs git [`MERGE_BASE_SINCE`] or newer: where more than one
-/// git is installed, the first new enough (#6846). Only such a call asks a git its version, so
-/// every other call, the guard's among them, starts no process to choose its git.
-pub(crate) fn git_binary_that_merges() -> (PathBuf, String) {
-    git_binary_by(&cached_version)
-}
-
-fn git_binary_by(version: &dyn Fn(&Path) -> Option<String>) -> (PathBuf, String) {
-    let found = git_binary_in(&GIT_DIRS, std::env::var_os("PATH").as_deref(), version);
+    let found = git_binary_in(&GIT_DIRS, std::env::var_os("PATH").as_deref());
     #[cfg(test)]
     if let Some(stand_in) = STAND_IN.with(|held| held.borrow().clone()) {
         return (stand_in, found.1);
@@ -257,100 +246,18 @@ pub(crate) fn with_stand_in<T>(binary: &Path, then: impl FnOnce() -> T) -> T {
 /// The git [`git_binary`] finds, by its full path, for a test's stand-in to hand calls on to.
 #[cfg(test)]
 pub(crate) fn real_binary() -> PathBuf {
-    git_binary_in(
-        &GIT_DIRS,
-        std::env::var_os("PATH").as_deref(),
-        &cached_version,
-    )
-    .0
-}
-
-/// The oldest git purlis needs for its merges: `merge-tree --write-tree --merge-base` (#6846).
-pub(crate) const MERGE_BASE_SINCE: (u32, u32) = (2, 40);
-
-/// What `binary --version` says, asked once per binary for the life of the process: the
-/// runner resolves git on every call, and a git does not change version between two of them.
-/// The child gets an empty environment, so nothing the process inherited reaches it.
-fn cached_version(binary: &Path) -> Option<String> {
-    static SEEN: std::sync::Mutex<Vec<(PathBuf, Option<String>)>> =
-        std::sync::Mutex::new(Vec::new());
-    if let Some((_, said)) = SEEN
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .iter()
-        .find(|(seen, _)| seen == binary)
-    {
-        return said.clone();
-    }
-    let said = crate::forklock::output(
-        Command::new(binary)
-            .arg("--version")
-            .env_clear()
-            .stderr(Stdio::null()),
-    )
-    .ok()
-    .filter(|out| out.status.success())
-    .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_owned());
-    SEEN.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .push((binary.to_path_buf(), said.clone()));
-    said
-}
-
-/// `Ok` where the git purlis runs is `min` or newer (or says no version), else the one
-/// sentence that names it, its version and the version `what` needs, so a refusal never
-/// shows git's usage text (#6846).
-pub(crate) fn needs_git(min: (u32, u32), what: &str) -> Result<(), String> {
-    let (binary, _) = git_binary_that_merges();
-    let Some(said) = cached_version(&binary) else {
-        return Ok(());
-    };
-    match version_of(&said) {
-        Some(found) if found < min => Err(format!(
-            "{} is git {}, and {what} needs git {}.{} or later. Update that git, then try again",
-            binary.display(),
-            said.trim_start_matches("git version ").trim(),
-            min.0,
-            min.1
-        )),
-        _ => Ok(()),
-    }
-}
-
-/// Whether `args` is a `merge-tree` given its merge base, which git has only since 2.40.
-fn needs_a_merge_base(args: &[&str]) -> bool {
-    verb_at(args).is_some_and(|at| args[at] == "merge-tree")
-        && args.iter().any(|word| word.starts_with("--merge-base"))
+    git_binary_in(&GIT_DIRS, std::env::var_os("PATH").as_deref()).0
 }
 
 /// [`git_binary`] against `fixed` and an inherited `path`, so the search can be tested
 /// without the process's own environment.
-///
-/// **The first installed git that is new enough wins** (#6846): `/usr/bin` leads for the trust
-/// reasoning above, but on a Mac Apple's 2.39 there sits before a Homebrew git that has what a
-/// merge needs. `version` says what a candidate's `--version` answered; with one candidate, or
-/// none new enough, the first installed one is chosen as before.
-fn git_binary_in(
-    fixed: &[&str],
-    path: Option<&std::ffi::OsStr>,
-    version: &dyn Fn(&Path) -> Option<String>,
-) -> (PathBuf, String) {
+fn git_binary_in(fixed: &[&str], path: Option<&std::ffi::OsStr>) -> (PathBuf, String) {
     let mut dirs: Vec<String> = fixed.iter().map(|d| (*d).to_string()).collect();
-    let installed: Vec<PathBuf> = fixed
-        .iter()
-        .map(|dir| Path::new(dir).join("git"))
-        .filter(|candidate| candidate.is_file())
-        .collect();
-    if let Some(first) = installed.first() {
-        let chosen = if installed.len() > 1 {
-            installed
-                .iter()
-                .find(|c| version(c).and_then(|said| version_of(&said)) >= Some(MERGE_BASE_SINCE))
-                .unwrap_or(first)
-        } else {
-            first
-        };
-        return (chosen.clone(), path_value(&dirs));
+    for dir in fixed {
+        let candidate = Path::new(dir).join("git");
+        if candidate.is_file() {
+            return (candidate, path_value(&dirs));
+        }
     }
     // Searched in the PARENT, where `PATH` is still readable, and resolved to an absolute
     // path before the child is built. An attacker who controls the parent's `PATH` still
@@ -1719,6 +1626,12 @@ impl NetworkRoute {
     pub fn new(config: Vec<String>, pass: Vec<(String, std::ffi::OsString)>) -> Self {
         Self { config, pass }
     }
+
+    /// Its `-c` settings and the variables it passes, for a test that runs git with them.
+    #[cfg(test)]
+    pub(crate) fn parts(&self) -> (&[String], &[(String, std::ffi::OsString)]) {
+        (&self.config, &self.pass)
+    }
 }
 
 impl Isolated {
@@ -1733,6 +1646,12 @@ impl Isolated {
 /// The route the network calls of this thread go through, where its isolation names one.
 fn routed() -> Option<NetworkRoute> {
     ISOLATED.with(|held| held.borrow().as_ref().and_then(|iso| iso.route.clone()))
+}
+
+/// [`routed`], for a test of a caller that should have set it.
+#[cfg(test)]
+pub(crate) fn routed_now() -> Option<NetworkRoute> {
+    routed()
 }
 
 /// One pinned work tree: its git directory, and **which directory that was** when it was
@@ -1960,11 +1879,7 @@ fn spawn_with(dir: &Path, args: &[&str], extra: &Extra) -> Result<Child, GitUnav
     // Before any git is chosen: on a Mac without developer tools `/usr/bin/git` is a stub
     // that opens the system's install dialog (#1813).
     presence::require()?;
-    let (binary, dirs) = if needs_a_merge_base(args) {
-        git_binary_that_merges()
-    } else {
-        git_binary()
-    };
+    let (binary, dirs) = git_binary();
     let mut cmd = Command::new(binary);
     for setting in NO_PROGRAMS {
         cmd.arg("-c").arg(setting);
@@ -2423,7 +2338,12 @@ pub(crate) fn run_until(
         Err(answer) => return Ok(as_text(answer)),
     };
     counted(dir, args, || {
-        let raw = wait_raw_until(spawn_with(dir, args, &extra)?, timeout, Some(called_off))?;
+        let raw = wait_raw_until(
+            spawn_with(dir, args, &extra)?,
+            timeout,
+            Some(called_off),
+            None,
+        )?;
         Ok(Run {
             code: raw.code,
             out: String::from_utf8_lossy(&raw.out).into_owned(),
@@ -2516,7 +2436,7 @@ fn capped(
                 let _ = out_tx.send(heard);
             });
         }
-        let raw = wait_raw_until(child, timeout, Some(&over))?;
+        let raw = wait_raw_until(child, timeout, Some(&over), None)?;
         // The reader's answer decides, never the flag alone: git can exit before the reader
         // has counted its last chunk, and the flag read then let a listing past the cap
         // through, cut short (SK-43, #3115). A git that exited is heard in full, as
@@ -2712,11 +2632,23 @@ pub fn run_in_hook(dir: &Path, args: &[&str], timeout: Duration) -> Result<RawRu
         .map(|(name, value)| ((*name).to_owned(), (*value).into()))
         .collect();
     pass.extend(config_location_env(|name| std::env::var_os(name)));
+    let scratch = SCRATCH_OBJECTS.with(|held| held.borrow().clone());
     pass.extend(
         HOOK_REPOSITORY_ENV
             .iter()
+            .filter(|name| {
+                scratch.is_none()
+                    || !matches!(
+                        **name,
+                        "GIT_OBJECT_DIRECTORY" | "GIT_ALTERNATE_OBJECT_DIRECTORIES"
+                    )
+            })
             .filter_map(|name| std::env::var_os(name).map(|value| ((*name).to_owned(), value))),
     );
+    if let Some((writable, borrowed)) = scratch {
+        pass.push(("GIT_OBJECT_DIRECTORY".to_owned(), writable.into()));
+        pass.push(("GIT_ALTERNATE_OBJECT_DIRECTORIES".to_owned(), borrowed));
+    }
     let extra = Extra {
         pass,
         ..Extra::default()
@@ -2728,6 +2660,97 @@ pub fn run_in_hook(dir: &Path, args: &[&str], timeout: Duration) -> Result<RawRu
     counted(dir, args, || {
         Ok(wait_raw(spawn_with(dir, args, &extra)?, timeout)?)
     })
+}
+
+thread_local! {
+    /// The object directory a scan's git calls write to, and the real ones they read through.
+    static SCRATCH_OBJECTS: std::cell::RefCell<Option<(PathBuf, std::ffi::OsString)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `then` with every [`run_in_hook`] this thread makes given **a writable object directory
+/// of its own that borrows the repository's** (`GIT_OBJECT_DIRECTORY` and
+/// `GIT_ALTERNATE_OBJECT_DIRECTORIES`), removed after.
+///
+/// `git log -p --diff-merges=remerge` makes a temporary object directory under the repository's
+/// even where no merge is in range, and fails where that directory is not writable: in a task
+/// chat's sandbox the shared clone's objects are read-only. Reads still see every object; only
+/// what git writes lands in the scratch directory.
+///
+/// A repository whose object directory the caller's own environment already names (a quarantine)
+/// is left as it is, and so is one that cannot be asked: `then` runs as it would have.
+///
+/// The scratch directory is searched first and git does not check a loose object's hash on
+/// read, so a process of the same user that writes into it while the scan runs could stand an
+/// object in for another. The scan is a check on what a chat sends, not a boundary against a
+/// process racing it (a chat can already name its own object directory).
+pub fn with_scratch_objects<T>(repo: &Path, then: impl FnOnce() -> T) -> T {
+    struct Restore(Option<(PathBuf, std::ffi::OsString)>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let before = self.0.take();
+            SCRATCH_OBJECTS.with(|held| *held.borrow_mut() = before);
+        }
+    }
+    if std::env::var_os("GIT_OBJECT_DIRECTORY").is_some() {
+        return then();
+    }
+    let Ok(scratch) = tempfile::Builder::new()
+        .prefix("purlis-scan-objects-")
+        .tempdir()
+    else {
+        return then();
+    };
+    let Some(objects) = run_in_hook(repo, &["rev-parse", "--git-common-dir"], READ)
+        .ok()
+        .filter(|run| run.code == Some(0))
+        .map(|run| String::from_utf8_lossy(&run.out).trim().to_owned())
+        .filter(|common| !common.is_empty())
+        .map(|common| repo.join(common).join("objects"))
+        .and_then(|objects| std::path::absolute(objects).ok())
+    else {
+        return then();
+    };
+    // git reads this list `:`-separated, and a path that holds a `:` or starts with `"` is
+    // written in its quoted form; a list the caller already names is in git's form and is
+    // kept as it is.
+    let mut borrowed = alternate_entry(&objects);
+    if let Some(already) = std::env::var_os("GIT_ALTERNATE_OBJECT_DIRECTORIES") {
+        borrowed.push(":");
+        borrowed.push(already);
+    }
+    let before = SCRATCH_OBJECTS.with(|held| {
+        held.borrow_mut()
+            .replace((scratch.path().to_path_buf(), borrowed))
+    });
+    let _restore = Restore(before);
+    then()
+}
+
+/// **One entry of `GIT_ALTERNATE_OBJECT_DIRECTORIES`**, as git reads it: the path as it is, or,
+/// where it holds a `:` or starts with `"`, in git's C-style quoted form.
+fn alternate_entry(path: &Path) -> std::ffi::OsString {
+    let raw = path.as_os_str();
+    let Some(text) = raw.to_str() else {
+        return raw.to_owned();
+    };
+    if !text.contains(':') && !text.starts_with('"') {
+        return raw.to_owned();
+    }
+    let mut quoted = String::from("\"");
+    for c in text.chars() {
+        match c {
+            '"' | '\\' => {
+                quoted.push('\\');
+                quoted.push(c);
+            }
+            '\n' => quoted.push_str("\\n"),
+            '\t' => quoted.push_str("\\t"),
+            _ => quoted.push(c),
+        }
+    }
+    quoted.push('"');
+    quoted.into()
 }
 
 /// Run `git -C <dir> <args>` across a network, under the one-credential rule.
@@ -2745,6 +2768,48 @@ pub fn run_in_hook(dir: &Path, args: &[&str], timeout: Duration) -> Result<RawRu
 /// can name where that filter goes in its own `.lfsconfig` (#4400).
 pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Run, GitUnavailable> {
     run_network_with(dir, helper, args, Vec::new())
+}
+
+/// [`run_network`] with a deadline of the caller's own instead of [`NETWORK`]: for the one call
+/// that may rightly take longer, a fetch that fills an app-owned object cache for the first time
+/// (ADR 0128, amended 2026-11-23). Every other rule of [`run_network`] holds.
+pub fn run_network_within(
+    dir: &Path,
+    helper: Option<&str>,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<Run, GitUnavailable> {
+    run_network_shaped(dir, helper, args, Vec::new(), false, timeout, (None, None))
+}
+
+/// What reads git's stderr as it is written: each chunk, as text. For the one fetch whose
+/// `--progress` lines say how far a first fill has got ([`run_network_stalling`]).
+pub type Watch = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
+
+/// [`run_network_within`] that also ends git when it has written **nothing to either pipe for
+/// `stall`**: a fetch run with `--progress` writes as it receives and as it resolves deltas, so a
+/// long fetch that is moving is never cut at `timeout` (its upper bound), and one that is stuck
+/// is cut after `stall` and not after hours (#7587). Nothing of what git wrote is read for a
+/// decision: only that it wrote. `watch`, where given, is handed each chunk of stderr as git
+/// writes it, so a long fetch's `--progress` lines are seen while it runs and not after; the
+/// whole of stderr is still in the answer.
+pub fn run_network_stalling(
+    dir: &Path,
+    helper: Option<&str>,
+    args: &[&str],
+    timeout: Duration,
+    stall: Duration,
+    watch: Option<Watch>,
+) -> Result<Run, GitUnavailable> {
+    run_network_shaped(
+        dir,
+        helper,
+        args,
+        Vec::new(),
+        false,
+        timeout,
+        (Some(stall), watch),
+    )
 }
 
 /// [`run_network`] in **no repository at all**, for a call that names its remote by address and
@@ -2780,6 +2845,8 @@ pub fn run_network_in_no_repository_trusting_the_system(
         args,
         vec![("GIT_DIR".to_owned(), "/dev/null".into())],
         true,
+        NETWORK,
+        (None, None),
     )
 }
 
@@ -2790,7 +2857,7 @@ fn run_network_with(
     args: &[&str],
     more: Vec<(String, std::ffi::OsString)>,
 ) -> Result<Run, GitUnavailable> {
-    run_network_shaped(dir, helper, args, more, false)
+    run_network_shaped(dir, helper, args, more, false, NETWORK, (None, None))
 }
 
 /// [`run_network_with`], trusting only the system where `system_trust` says so ([`is_trust`]).
@@ -2800,6 +2867,8 @@ fn run_network_shaped(
     args: &[&str],
     more: Vec<(String, std::ffi::OsString)>,
     system_trust: bool,
+    timeout: Duration,
+    (stall, watch): (Option<Duration>, Option<Watch>),
 ) -> Result<Run, GitUnavailable> {
     let mut config: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
     // Under a chat's route there is no helper but the sentinel one it names, and none of the
@@ -2830,7 +2899,13 @@ fn run_network_shaped(
     };
     let started = Instant::now();
     let run = counted(dir, args, || {
-        Ok::<_, GitUnavailable>(wait(spawn_with(dir, args, &extra)?, NETWORK)?)
+        Ok::<_, GitUnavailable>(as_text(wait_raw_watched(
+            spawn_with(dir, args, &extra)?,
+            timeout,
+            None,
+            stall,
+            watch,
+        )?))
     })?;
     // Listed once git has run (#959): a call refused before it started reached nobody. Each
     // place git sent it, read as git reads it (#1853, #1828).
@@ -3140,45 +3215,74 @@ pub(crate) fn wait(child: Child, timeout: Duration) -> std::io::Result<Run> {
 
 /// [`wait`], keeping the bytes.
 fn wait_raw(child: Child, timeout: Duration) -> std::io::Result<RawRun> {
-    wait_raw_until(child, timeout, None)
+    wait_raw_until(child, timeout, None, None)
 }
 
-/// [`wait_raw`], ending the child early too when `called_off` is raised.
+/// [`wait_raw`], ending the child early too when `called_off` is raised, or when `stall` is set
+/// and the child has written nothing to either pipe for that long (a fetch that reports its
+/// progress is moving while it writes; one that goes silent for `stall` is stuck).
 fn wait_raw_until(
+    child: Child,
+    timeout: Duration,
+    called_off: Option<&AtomicBool>,
+    stall: Option<Duration>,
+) -> std::io::Result<RawRun> {
+    wait_raw_watched(child, timeout, called_off, stall, None)
+}
+
+/// [`wait_raw_until`], handing `watch` each chunk of stderr as the child writes it.
+fn wait_raw_watched(
     mut child: Child,
     timeout: Duration,
     called_off: Option<&AtomicBool>,
+    stall: Option<Duration>,
+    watch: Option<Watch>,
 ) -> std::io::Result<RawRun> {
     // A caller that reads the output as it comes ([`run_capped`]) took it already.
     let stdout = child.stdout.take();
     let mut stderr = child.stderr.take().expect("stderr is piped");
     let (out_tx, out_rx) = std::sync::mpsc::channel();
     let (err_tx, err_rx) = std::sync::mpsc::channel();
+    // Bytes written so far to either pipe: what the stall check watches.
+    let written = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let counted_out = written.clone();
     std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(mut stdout) = stdout {
-            let _ = stdout.read_to_end(&mut buf);
-        }
+        let buf = stdout
+            .map(|pipe| read_counting(pipe, &counted_out))
+            .unwrap_or_default();
         let _ = out_tx.send(buf);
     });
+    let counted_err = written.clone();
     std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = stderr.read_to_end(&mut buf);
-        let _ = err_tx.send(buf);
+        let _ = err_tx.send(read_counting_watching(
+            &mut stderr,
+            &counted_err,
+            watch.as_deref(),
+        ));
     });
 
-    let deadline = Instant::now() + timeout;
+    let started = Instant::now();
+    let deadline = started + timeout;
+    let mut timed_out = false;
+    let mut stalled = false;
+    let (mut seen, mut moved_at) = (0, started);
     let code = loop {
-        match child.try_wait()? {
-            Some(status) => break status.code(),
-            None if Instant::now() >= deadline
-                || called_off.is_some_and(|off| off.load(Ordering::Relaxed)) =>
-            {
-                stop(&mut child);
-                break None;
-            }
-            None => std::thread::sleep(Duration::from_millis(10)),
+        if let Some(status) = child.try_wait()? {
+            break status.code();
         }
+        let now = Instant::now();
+        let total = written.load(Ordering::Relaxed);
+        if total != seen {
+            (seen, moved_at) = (total, now);
+        }
+        let silent = stall.is_some_and(|limit| now.duration_since(moved_at) >= limit);
+        if now >= deadline || silent || called_off.is_some_and(|off| off.load(Ordering::Relaxed)) {
+            timed_out = now >= deadline;
+            stalled = silent;
+            stop(&mut child);
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(10));
     };
 
     // A child that exited is waited for in full. One that was STOPPED may have left its own
@@ -3192,8 +3296,52 @@ fn wait_raw_until(
         None => rx.recv_timeout(Duration::from_secs(2)).unwrap_or_default(),
     };
     let out = collect(out_rx);
-    let err = collect(err_rx);
+    let mut err = collect(err_rx);
+    if timed_out || stalled {
+        // A stopped git says nothing of why, so a caller reading the first line of its stderr
+        // would otherwise report a failure with no cause. The cause leads, for the same reason.
+        let mut said = if stalled && !timed_out {
+            format!(
+                "git was silent for {} s and was stopped\n",
+                stall.map_or(0, |limit| limit.as_secs())
+            )
+        } else {
+            format!(
+                "git took longer than {} s and was stopped\n",
+                timeout.as_secs()
+            )
+        }
+        .into_bytes();
+        said.append(&mut err);
+        err = said;
+    }
     Ok(RawRun { code, out, err })
+}
+
+/// Reads `pipe` to its end, adding each chunk's size to `written` as it arrives.
+fn read_counting(pipe: impl Read, written: &std::sync::atomic::AtomicU64) -> Vec<u8> {
+    read_counting_watching(pipe, written, None)
+}
+
+/// [`read_counting`], handing `watch` each chunk as text.
+fn read_counting_watching(
+    mut pipe: impl Read,
+    written: &std::sync::atomic::AtomicU64,
+    watch: Option<&(dyn Fn(&str) + Send + Sync)>,
+) -> Vec<u8> {
+    let mut all = Vec::new();
+    let mut chunk = [0u8; 8192];
+    while let Ok(n) = pipe.read(&mut chunk) {
+        if n == 0 {
+            break;
+        }
+        all.extend_from_slice(&chunk[..n]);
+        written.fetch_add(n as u64, Ordering::Relaxed);
+        if let Some(watch) = watch {
+            watch(&String::from_utf8_lossy(&chunk[..n]));
+        }
+    }
+    all
 }
 
 #[cfg(test)]
