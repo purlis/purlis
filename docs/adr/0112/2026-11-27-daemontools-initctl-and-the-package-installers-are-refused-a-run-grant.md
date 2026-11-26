@@ -15,8 +15,9 @@ sources and cr.yp.to among them, was refused. No copy of any of these tools is o
 Each tool below is refused whole, on `NOT_FOR_A_RUN_GRANT`, on what the tool is for, as its
 manual describes it, and not on a line of its source. That is the conservative side: a refusal
 only takes away an Allow on a run's notice, and a persona can still declare any of them as a tool
-in a reviewed line. None is found harmless here, since that would need the reading this could
-not do. Reading each in source, to cite its lines or to give an Allow back, is filed as a new
+in a reviewed line. No tool these issues name is found harmless, since that would need the
+reading this could not do; the few left offered beside them (`svc`, `svok`, `svstat`) are left so
+on their manuals too, and are in the same follow-up. Reading each in source, to cite its lines or to give an Allow back, is filed as a new
 issue (see the pull request).
 
 ## daemontools (#6559)
@@ -72,8 +73,34 @@ Its kin, refused with it:
 
 - **Upstart's `init`**, also shipped as **`upstart`**, runs as a session init with `--user`, and
   `--confdir <folder>` has it run the jobs of the folder it is named.
-- **`init` is just as often a link to `systemd`**, and `systemd --user` runs the units it finds in
-  the run's own home. `init` is refused by the name it was found by, and `systemd` by its own.
+- **`init` is just as often a link to `systemd`**, the service manager itself, whose `--user`
+  instance starts the units its search path holds. A granted run's home is its own, so no unit a
+  chat wrote is known to reach it; it is refused all the same, on the conservative side, as the
+  program every refused `systemctl` verb is carried out by. `init` is refused by the name it was
+  found by, and `systemd` by its own.
   The first part of a name counts as one of its forms (`emacs-nox`), so every `systemd-<name>`
   program is refused along with it. That costs only an Allow. Giving back the harmless ones
   (`systemd-escape`, `systemd-path`) is a review of its own.
+
+## The review of this amendment's pull request
+
+The first review of #7828 found kin of these tools that were still offered. Each is refused on
+what it is for, on the same footing as the rest, and is in the same follow-up:
+
+- **Programs that run the command after them**, as `setuidgid` and `capsh` do: `runuser`,
+  `gosu`, `prlimit`, `chrt`, `runcon`, `setarch`, `numactl`, `bwrap`, `proot`, `unbuffer`,
+  `sg`, and `run-one` with its `run-this-one` and `keep-one-running`.
+- **Loggers whose settings file has a shell run a `!processor`**, as `multilog`'s does: runit's
+  `svlogd` and s6's `s6-log`. Neither name reaches a row by its forms.
+- **`anacron`**, which runs the jobs of an anacrontab it is named (`-t`), with a spool folder of
+  its own (`-S`) and no privilege needed.
+- **The Perl installers and runners beside `cpanm`**: `cpanp` (whose `!` evaluates Perl),
+  `carmel` and `plenv` (`exec` runs a command), `prove` (runs a distribution's tests, or what
+  `--exec` names) and `dzil` (`dzil run` runs a command in the built distribution).
+- **The package managers beside `dnf`**: `zypper <name>` runs the `zypper-<name>` its search path
+  finds, as `brew <name>` does; `makepkg` runs a `PKGBUILD`; MacPorts' `port` runs a `Portfile`;
+  and `microdnf` and `tdnf` take settings the way `dnf` does.
+
+Tests now pin the names the amendment says reach a row by their forms (`aptitude-curses`,
+`dnf-3`, `upstart-local-bridge`, `upstart-event-bridge`), and a link named `start` that points
+to `initctl`. Each was seen to fail with its entry taken off the row.

@@ -2239,8 +2239,9 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // Upstart's `initctl` (#6557), whose source was out of reach, refused on what it is for:
     // `set-env` copies a value into the init daemon's job environment, as `import-environment`
     // does, and `start` and `emit` start jobs (its `start`, `stop` and the rest are links to it,
-    // judged by its name). `init --user --confdir <folder>` runs a folder's jobs, and `init` is
-    // as often `systemd`, whose `--user` runs the units of the run's home.
+    // judged by its name). Upstart's `init --user --confdir <folder>` runs a folder's jobs, and
+    // `init` is as often a link to `systemd`, the service manager itself, refused with it on the
+    // conservative side (every `systemd-<name>` goes with it, by its first part).
     "initctl",
     "init",
     "upstart",
@@ -2316,6 +2317,41 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "carton",
     "dnf",
     "yum",
+    // and their kin (round 1 of #7828's review), refused on what each is for: programs that run
+    // the command after them, as `setuidgid` and `capsh` do; the loggers whose settings'
+    // `!processor` a shell runs, as `multilog`'s is; `anacron`, which runs an anacrontab it is
+    // named; the Perl installers and runners beside `cpanm` (`cpanp`'s `!` evaluates Perl,
+    // `plenv exec` and `carmel exec` run a command, `prove` and `dzil` a distribution's code); and
+    // the package managers beside `dnf`: `zypper <name>` runs the `zypper-<name>` its search path
+    // finds, `makepkg` a `PKGBUILD`, MacPorts' `port` a `Portfile`, and `microdnf` and `tdnf` take
+    // settings as `dnf` does.
+    "runuser",
+    "gosu",
+    "prlimit",
+    "chrt",
+    "runcon",
+    "setarch",
+    "numactl",
+    "bwrap",
+    "proot",
+    "unbuffer",
+    "sg",
+    "run-one",
+    "run-this-one",
+    "keep-one-running",
+    "svlogd",
+    "s6-log",
+    "anacron",
+    "cpanp",
+    "carmel",
+    "plenv",
+    "prove",
+    "dzil",
+    "zypper",
+    "makepkg",
+    "port",
+    "microdnf",
+    "tdnf",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

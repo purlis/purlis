@@ -13,6 +13,14 @@
   still declare any of them as a tool (#6564).
 - **A run's notice offers no Allow for Upstart's `initctl`, or for `init`, `upstart` or
   `systemd`**. `initctl set-env` puts a value the run was handed into the environment of every
-  job started after it, and `initctl start` starts a job. `init` and `systemd` run the jobs or
-  units of a folder they are named, or of the run's own home. A persona can still declare any of
-  them as a tool (#6557).
+  job started after it, and `initctl start` starts a job. Upstart's `init` runs the jobs of a
+  folder it is named, and `init` is as often `systemd`, the service manager. Every
+  `systemd-<name>` program, `systemd-creds` and `systemd-analyze` among them, and every
+  `init-<name>` loses its Allow with them. A persona can still declare any of them as a tool
+  (#6557).
+- **A run's notice offers no Allow for the programs beside these that run the command after
+  them** (`runuser`, `gosu`, `prlimit`, `chrt`, `runcon`, `setarch`, `numactl`, `bwrap`, `proot`,
+  `unbuffer`, `sg`, `run-one`, `run-this-one`, `keep-one-running`), **for the loggers `svlogd`
+  and `s6-log`, for `anacron`, or for `cpanp`, `carmel`, `plenv`, `prove`, `dzil`, `zypper`,
+  `makepkg`, `port`, `microdnf` and `tdnf`**, each of which runs a command, a script or a plugin
+  it is handed. A persona can still declare any of them as a tool (#6559, #6564).

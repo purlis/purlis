@@ -3400,7 +3400,7 @@ fn aptitude_run_parts_capsh_the_perl_installers_and_dnf_are_offered_no_run_grant
 /// does, and `initctl start` and `emit` start jobs, of a session's init too with `--session` or
 /// `--user`. Its `start`, `stop`, `restart`, `reload` and `status` are links to it, judged by its
 /// name. Upstart's `init --user --confdir <folder>` runs the jobs of a folder it is named, and
-/// `init` is as often systemd's, whose `systemd --user` runs the units of the run's own home.
+/// `init` is as often a link to `systemd`, the service manager itself, refused with it.
 /// Upstart's source (git.launchpad.net/upstart) was out of reach, so each is refused on what it
 /// is for, the side that only takes away an Allow.
 #[test]
@@ -3408,4 +3408,97 @@ fn upstarts_initctl_and_the_init_daemons_are_offered_no_run_grant() {
     for name in ["initctl", "init", "upstart", "systemd"] {
         refused_as_running_others(name);
     }
+}
+
+/// The kin round 1 of #7828's review found, refused on what each is for: the programs that run
+/// the command after them, as `setuidgid` and `capsh` do (`runuser`, `gosu`, `prlimit`, `chrt`,
+/// `runcon`, `setarch`, `numactl`, `bwrap`, `proot`, `unbuffer`, `sg`, `run-one` and its kin);
+/// the loggers whose settings' `!processor` a shell runs, as `multilog`'s is (`svlogd`,
+/// `s6-log`); `anacron`, which runs an anacrontab it is named; the Perl installers and runners
+/// beside `cpanm` (`cpanp`, `carmel`, `plenv`, `prove`, `dzil`); and the package managers beside
+/// `dnf` (`zypper`, `makepkg`, `port`, `microdnf`, `tdnf`).
+#[test]
+fn the_kin_of_the_chain_loaders_loggers_and_installers_are_offered_no_run_grant() {
+    for name in [
+        "runuser",
+        "gosu",
+        "prlimit",
+        "chrt",
+        "runcon",
+        "setarch",
+        "numactl",
+        "bwrap",
+        "proot",
+        "unbuffer",
+        "sg",
+        "run-one",
+        "run-this-one",
+        "keep-one-running",
+        "svlogd",
+        "s6-log",
+        "anacron",
+        "cpanp",
+        "carmel",
+        "plenv",
+        "prove",
+        "dzil",
+        "zypper",
+        "makepkg",
+        "port",
+        "microdnf",
+        "tdnf",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The other names the refused programs go by reach their rows through `name_forms`:
+/// `aptitude-curses` by its first part, `dnf-3` without its version, and Upstart's
+/// `upstart-local-bridge` and `upstart-event-bridge` by their first part (round 1 of #7828's
+/// review).
+#[test]
+fn the_other_names_of_aptitude_dnf_and_upstart_are_offered_no_run_grant() {
+    for name in [
+        "aptitude-curses",
+        "dnf-3",
+        "upstart-local-bridge",
+        "upstart-event-bridge",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// Upstart's `start` is a link to `initctl` (#6557): the name it is found by is on no row, so it
+/// is refused by the name of the program its links lead to (round 1 of #7828's review).
+#[cfg(unix)]
+#[test]
+fn upstarts_start_a_link_to_initctl_is_offered_no_run_grant() {
+    use std::os::unix::fs::PermissionsExt;
+    let project = project();
+    let asks = Asks::new(project.path());
+    let system = tempfile::tempdir().unwrap();
+    let system = system.path().canonicalize().unwrap();
+    let sbin = system.join("sbin");
+    std::fs::create_dir_all(&sbin).unwrap();
+    let initctl = sbin.join("initctl");
+    std::fs::write(&initctl, "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(&initctl, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::os::unix::fs::symlink(&initctl, sbin.join("start")).unwrap();
+    let mut want = printenv(project.path(), &["."]);
+    want.command = vec!["start".to_owned(), "database".to_owned()];
+    // Judged as a system folder is, outside the temporary folders.
+    crate::sandbox::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = Some(Vec::new()));
+    let frames = run_searching(
+        &the_chat(project.path()),
+        want,
+        &asks,
+        Duration::ZERO,
+        vec![sbin],
+    );
+    crate::sandbox::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = None);
+    assert!(asks.open_runs().is_empty(), "{frames:?}");
+    assert!(
+        refusal(&frames).0.contains("runs other programs"),
+        "{frames:?}"
+    );
 }
