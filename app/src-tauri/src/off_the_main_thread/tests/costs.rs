@@ -425,7 +425,11 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             // the opened list, in memory; a link to a place is read off this thread.
             "artifact_link_follow",
             "artifact_links_opened",
-            // Copy diagnostics' facts (#4774): the chats held in memory, and one uname(2).
+            // The device's RAM class stood in for the machine's (the `e2e` build only): a field
+            // set in memory.
+            "ram_class_stand_in",
+            // Copy diagnostics' facts (#4774): the chats held in memory, one uname(2), and the
+            // device's class as last read, never waiting on a read (SC-4f).
             "diagnostics_here",
             "activity_chat",
             "pending_asks",

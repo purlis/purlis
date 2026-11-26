@@ -4067,6 +4067,8 @@ pub fn run() {
         .manage(artifacts::Artifacts::default())
         // The links its pages followed, waiting on the person (#5956, ADR 0122 §5).
         .manage(artifact_links::Links::default())
+        // The device's RAM class, read when the app starts (ADR 0082 §3, SC-4f #7635).
+        .manage(diagnostics::Device::default())
         .manage(pane_links::PaneLinkAsks::default())
         .register_uri_scheme_protocol(purlis_core::artifact::serve::SCHEME, |ctx, request| {
             mainwatch::command("artifact page request", || {
@@ -4446,6 +4448,9 @@ pub fn run() {
             }
             panics::send_waiting();
             app.manage(Quitting::default());
+            // The device's RAM class, read from the operating system when the app starts (ADR
+            // 0082 §3), on a thread of its own: the read runs a process.
+            app.state::<diagnostics::Device>().begin_reading();
             // What a quit does, read at each one: to the background while something keeps the
             // session host running (FD-17).
             #[cfg(unix)]
