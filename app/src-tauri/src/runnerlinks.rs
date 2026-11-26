@@ -832,18 +832,48 @@ pub fn repos_held_on(to: &ToARunner) -> Result<Option<Held>, String> {
 /// each project found among those this machine knows in `config`
 /// ([`purlis_core::pools::left_beyond_a_fetch`]). Why, where it did not list.
 pub fn left_on(to: &ToARunner, config: &std::path::Path) -> Result<Vec<String>, String> {
-    left_of(repos_held_on(to)?, |held, unread| {
-        purlis_core::pools::left_beyond_a_fetch(config, held, unread)
-    })
+    left_of(
+        repos_held_on(to)?,
+        |held, unread| purlis_core::pools::left_beyond_a_fetch(config, held, unread),
+        || left_on_a_runner_that_cannot_list(config, &to.pool),
+    )
 }
 
-/// What `prove` finds of what a runner `listed`: nothing from a runner too old to list what it
-/// holds, which goes as it did before it could.
+/// What `prove` finds of what a runner `listed`, or, from a runner too old to list what it holds,
+/// what `unlisted` says may be on it.
 pub(crate) fn left_of(
     listed: Option<Held>,
     prove: impl FnOnce(&[purlis_core::codelink::held::Held], &[String]) -> Result<Vec<String>, String>,
+    unlisted: impl FnOnce() -> Result<Vec<String>, String>,
 ) -> Result<Vec<String>, String> {
-    listed.map_or(Ok(Vec::new()), |(held, unread)| prove(&held, &unread))
+    match listed {
+        Some((held, unread)) => prove(&held, &unread),
+        None => unlisted(),
+    }
+}
+
+/// **What may be on a draining runner of `pool` too old to list what it holds** (before 1.69),
+/// in sentences: each project that keeps a chat on the pool whose record can't say which runner
+/// it is on ([`purlis_core::pools::chats_of_no_recorded_runner`]). A runner that lists says
+/// whether that chat's work is on it, and its chat count whether one runs there; this one can't,
+/// so the chat may have run and ended on it with its work not yet fetched, and it stays
+/// (2026-11-26). Why, where this machine's records can't be read.
+pub fn left_on_a_runner_that_cannot_list(
+    config: &std::path::Path,
+    pool: &str,
+) -> Result<Vec<String>, String> {
+    Ok(
+        purlis_core::pools::chats_of_no_recorded_runner(config, pool)?
+            .iter()
+            .map(|owing| {
+                format!(
+                    "it is too old to list what it holds, and project {} keeps a chat on pool \
+                     {pool} whose runner is not recorded, so that chat's work may be on it",
+                    owing.plane.display()
+                )
+            })
+            .collect(),
+    )
 }
 
 /// **A profile a runner kept**: whether it is signed in there.

@@ -436,6 +436,68 @@ fn a_chat_of_unknown_runner_holds_a_draining_runner_only_while_one_runs_there() 
     assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
 }
 
+/// **A runner too old to list what it holds stays for a chat whose record names no runner**
+/// (review of the slow new chats fix, 2026-11-26): such a chat may have run and ended on it, in a
+/// project whose window is closed, so nothing was fetched and no record says it is owed. Only a
+/// runner that lists can say that chat's work is not on it.
+#[test]
+fn a_draining_runner_too_old_to_list_stays_for_a_chat_whose_record_names_no_runner() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    let plane = std::path::Path::new("/planes/a");
+    purlis_core::machine::update(&machine.config, |store| {
+        store.remember(plane, 1);
+        store.keep_chat_on_pool(
+            plane,
+            7,
+            purlis_core::machine::ChatOnPool {
+                pool: "first".to_owned(),
+                workspace: "ide".to_owned(),
+                runner: None,
+            },
+        );
+    })
+    .unwrap();
+    let too_old_to_list = |_: &ToARunner| {
+        crate::runnerlinks::left_on_a_runner_that_cannot_list(&machine.config, "first")
+    };
+
+    let said = follow_and_drain(&machine, None, &|_| Ok(0), &too_old_to_list);
+
+    assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
+    let left = left_by(&machine.config, "first", "first");
+    assert!(
+        left.iter().any(|one| one.contains("/planes/a")),
+        "the Pools group names the project: {left:?}"
+    );
+
+    purlis_core::machine::update(&machine.config, |store| {
+        store.forget_chat_on_pool(plane, 7);
+    })
+    .unwrap();
+    let said = follow_and_drain(&machine, None, &|_| Ok(0), &too_old_to_list);
+    assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
+}
+
+/// **The chats a runner kept for what it owes waits on are not said from an older look**
+/// (review of the slow new chats fix, 2026-11-26): it is not asked how many run there, so the
+/// Pools group does not keep the count a look before found.
+#[test]
+fn a_runner_kept_for_what_it_owes_drops_the_chat_count_an_older_look_found() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    follow_and_drain(&machine, None, &|_| Ok(2), &nothing_held);
+    assert_eq!(waiting_on(&machine.config, "first"), 2);
+
+    work_owed_into(&machine, std::path::Path::new("/planes/a"));
+    let said = follow_and_drain(&machine, None, &|_| Ok(2), &nothing_held);
+
+    assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
+    assert_eq!(waiting_on(&machine.config, "first"), 0, "{said:?}");
+}
+
 /// **The window asks every draining runner of a pool whether it runs at once, not one after
 /// another** (slow new chats, 2026-11-26): a restart's take-back, a fetch and a record's settling
 /// each ask, and a slow or gone runner made the wait for each the sum of all of them.

@@ -804,9 +804,11 @@ pub fn follow_and_drain(
                 Ok(0)
             }
             // **What it owes is read before it is asked anything** (2026-11-26): a runner that
-            // stays for it stays whatever runs there, so it is not linked to.
+            // stays for it stays whatever runs there, so it is not linked to. How many chats run
+            // there is then not known, so an older look's count is not said for it.
             Ok(DrainLook::Ask) | Err(_) => {
                 if stays_for_what_it_owes(machine, &kept, &at, &mut said) {
+                    lock_waiting().remove(&at);
                     continue;
                 }
                 chats_on(&to)

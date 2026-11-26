@@ -526,6 +526,33 @@ pub fn work_owed_from(config_root: &Path, pool: &str, runner: &str) -> Result<Ve
         .collect())
 }
 
+/// **The projects that keep a chat on `pool` whose record can't say which runner it is on**, by
+/// their folders: what a draining runner of the pool may hold that [`work_owed_from`] does not
+/// count. A runner that lists what it holds says whether that chat's work is on it; one too old to
+/// list (before 1.69) can't, so its drain counts these against it (2026-11-26). Why, where the
+/// records can't be read.
+pub fn chats_of_no_recorded_runner(config_root: &Path, pool: &str) -> Result<Vec<Owing>, String> {
+    let loaded = crate::machine::read(config_root);
+    if let Some(why) = loaded.unreadable {
+        return Err(why);
+    }
+    Ok(loaded
+        .store
+        .recents
+        .iter()
+        .filter(|recent| {
+            recent
+                .chats_on_pools
+                .values()
+                .any(|chat| chat.pool == pool && chat.runner.is_none())
+        })
+        .map(|recent| Owing {
+            plane: recent.plane.clone(),
+            opened: recent.opened,
+        })
+        .collect())
+}
+
 /// **A project that may still have work to fetch from a draining runner** ([`work_owed_from`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Owing {
