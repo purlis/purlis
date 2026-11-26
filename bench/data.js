@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795678568476,
+  "lastUpdate": 1795682709397,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55650,6 +55650,48 @@ window.BENCHMARK_DATA = {
             "value": 102.67193900000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.714, 102.065, 102.672, 102.785, 102.979 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ee0cdbf787fe3686595491638a57c01bb8349400",
+          "message": "Forge route: a raw GraphQL enqueue is held with an Ask that names the PR (#7678) (#7682)\n\n* A raw GraphQL enqueue with its values as variables is held with an Ask (#7678): failing tests\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8B8YEH37YYPEC6FYHFR6Y14\nPurlis-Persona: steward\n\n* Forge route: a raw GraphQL enqueue is held with an Ask that names the PR (#7678)\n\nThe proxy reads what a mutation asks back against its Payload table, which had no\nmergeQueueEntry, so an enqueue that selected it failed decide_merging. held_graphql_merge\nthen returned None and the chat got the bare Merge refusal, with no Ask. Payload now has\nmergeQueueEntry (the answer of enqueue and dequeue), and MergeQueueEntry has headCommit,\nwhich purlis's own enqueue document asks for. Nothing is let through that was not: the\nmutation is still refused under enforce, and held for the person's press.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8B8YEH37YYPEC6FYHFR6Y14\nPurlis-Persona: steward\n\n* A raw enqueue that leaves out its nullable $jump is held with an Ask (#7682): failing test, and pins on the enqueue's answer\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8B9YJ9RM2YWGN5DKR0R6DBF\nPurlis-Persona: steward\n\n* Forge route: a GraphQL variable declared nullable and sent no value is null (#7682)\n\nVars::resolve failed on a variable the request gave no value and the document no default,\nso the raw enqueue with $jump: Boolean left out of variables was GraphqlOtherRepo, and\nheld_graphql_merge got no target: a bare Merge refusal with no Ask. Per the spec's\nCoercing Variable Values, such a variable is null, as a literal null already resolves. A\nnon-null variable with no value, and a variable the document never declared, still have\nnone, so their documents stay refused.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8B9YJ9RM2YWGN5DKR0R6DBF\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T07:56:55Z",
+          "tree_id": "988620b268b99368413e9595c732d46e9c21e272",
+          "url": "https://github.com/purlis/purlis/commit/ee0cdbf787fe3686595491638a57c01bb8349400"
+        },
+        "date": 1795682697708,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.31849,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.305, 0.311, 0.318, 0.331, 0.346 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.648629,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.477, 16.544, 16.649, 16.706, 16.786 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5096145,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.556, 101.388, 101.510, 101.669, 102.319 ms"
           }
         ]
       }
