@@ -157,10 +157,14 @@ expired and a migration are later prerequisites, each with a decision of its own
 - **Running chats keep running, under the policy in force**: strict mode under Broken, the policy
   accepted before under Waiting.
 - **Once the person presses Accept, a running chat's guards follow the accepted policy from its
-  next step.** The hook asks the app, which knows the press, so `PURLIS_POLICY`, the start's
-  resolution, no longer floors a loosening the person pressed (ADR 0125, as amended 2026-11-26).
-  The chat's sandbox level stays as it started. Where the app does not answer, the floor still
-  holds.
+  next step**, and so do a task it dispatches and its forge route's `guards.merge`. The hook asks
+  the app, which knows the press, so `PURLIS_POLICY`, the start's resolution, the chain's recorded
+  policy and the route's start no longer floor a loosening the person pressed (ADR 0125, as
+  amended 2026-11-26). The chat's sandbox level stays as it started. Only the press lifts the
+  floor: where the app does not answer, or its answer does not say the person pressed Accept
+  since the chat started, the floor still holds. The press is kept in memory only, so after the
+  app restarts a chat still running has its start's floor back until it restarts, and its Notice
+  says so.
 - **These start at once, under the policy in force, and do not wait:** a chat restored at open, a
   task a running chat dispatches, a chat a running chat opens with `purlis handoff` (it starts
   under the policy in force, strict mode under Broken, as a dispatched task does), and a scheduled
@@ -218,8 +222,9 @@ not read for its own reason keeps today's sentence.
   decisions 2 and 16 name it (its amendment of 2026-11-26).
 - The dialog family serves an alert the app raises with no press (ADR 0104's amendment of
   2026-11-26).
-- A running chat's guards follow a pressed Accept from its next step, its sandbox level as it
-  started (ADR 0125's amendment of 2026-11-26), so the Notice after Accept says what is true.
+- A running chat's guards, its chain and its forge route follow a pressed Accept from its next
+  step, its sandbox level as it started (ADR 0125's amendment of 2026-11-26), so the Notice after
+  Accept says what is true.
 - ADR 0120 documents a second code beside 70: 75 for a start a prerequisite held (its amendment of
   2026-11-26).
 - `ProjectPolicyNotice` keeps only what is not a prerequisite: the policy purlis could not read
