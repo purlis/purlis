@@ -461,52 +461,25 @@ fn a_scorecard_has_each_test_once_with_each_arms_chats_one_click_away() {
 }
 
 /// The review of #3239: a host sends a view's snapshot in pieces, after a reset where the view is
-/// not its first, so the screen kept is every piece until the host says the snapshot is whole.
+/// not its first, so the screen kept is every piece until the view is quiet.
 #[test]
 fn a_screen_sent_in_pieces_is_kept_whole() {
     let (send, pieces) = std::sync::mpsc::channel();
     for piece in ["", "\u{1b}c", "first half, ", "second half"] {
-        send.send(Piece::Shown(piece.to_owned())).unwrap();
+        send.send(piece.to_owned()).unwrap();
     }
-    send.send(Piece::Whole).unwrap();
-    send.send(Piece::Shown("live".to_owned())).unwrap();
     assert_eq!(
         gathered(&pieces, Instant::now()).as_deref(),
         Some("\u{1b}cfirst half, second half")
     );
-    let (send, nothing) = std::sync::mpsc::channel();
-    send.send(Piece::Shown(String::new())).unwrap();
-    send.send(Piece::Whole).unwrap();
+    let (send, nothing) = std::sync::mpsc::channel::<String>();
+    send.send(String::new()).unwrap();
+    drop(send);
     assert_eq!(
         gathered(&nothing, Instant::now()),
         None,
         "nothing was shown"
     );
-}
-
-/// **A look cut short is never taken as the screen** (SC-4b, #7631; CI run 45830544716): over SSH
-/// and TLS a remote view's snapshot came slower than a look waited, and the first 736 KiB of a
-/// multi-MiB screen, under the 1 MiB a hibernated chat keeps, would have been kept as all of it.
-#[test]
-fn a_snapshot_that_does_not_come_whole_is_no_screen() {
-    let (send, ended) = std::sync::mpsc::channel();
-    send.send(Piece::Shown("the oldest lines, and".to_owned()))
-        .unwrap();
-    drop(send);
-    assert_eq!(
-        gathered(&ended, Instant::now()),
-        None,
-        "the view ended before its snapshot was whole"
-    );
-
-    let (send, slow) = std::sync::mpsc::channel();
-    send.send(Piece::Shown("the oldest lines, and".to_owned()))
-        .unwrap();
-    let begun = Instant::now()
-        .checked_sub(A_SCREEN_TAKES_AT_MOST)
-        .expect("a clock past the budget");
-    assert_eq!(gathered(&slow, begun), None, "the look ran out of time");
-    drop(send);
 }
 
 /// SK-57 (#3237): a grade against the skill's previous version shows all three arms, and its

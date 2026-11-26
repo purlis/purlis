@@ -654,39 +654,6 @@ fn a_pane_draws_the_screen_then_what_follows_and_is_told_when_the_program_ends()
     assert_eq!(hosted.sessions.running(), [id], "the tab stays");
 }
 
-/// **A view is told its snapshot is whole once every piece of it is handed over** (SC-4b, #7631):
-/// a screen many chunks long, as a slow link carries it, is taken only once it has all come, so
-/// a hibernated chat's kept screen is never a look cut short.
-#[test]
-fn a_view_is_told_whole_once_every_piece_of_its_snapshot_is_handed_over() {
-    let hosted = hosted();
-    let id = hosted
-        .sessions
-        .open(None, &a_shell("true"), &|_| {})
-        .unwrap();
-    let program = hosted.runs.last();
-    // Many times the most a view's stream carries in one chunk.
-    let screen = "a line of the screen\r\n".repeat(10_000);
-    program.writes(screen.as_bytes());
-    let (sink, seen) = a_pane();
-    let when_whole = Arc::new(Mutex::new(None));
-    let whole = {
-        let (seen, when_whole) = (Arc::clone(&seen), Arc::clone(&when_whole));
-        Box::new(move || *when_whole.lock().unwrap() = Some(seen.lock().unwrap().clone()))
-    };
-
-    hosted
-        .sessions
-        .watch_whole(id, sink, u32::MAX, whole)
-        .expect("a view opens");
-
-    until("it is told whole", || when_whole.lock().unwrap().is_some());
-    assert!(
-        when_whole.lock().unwrap().as_deref() == Some(screen.as_str()),
-        "told whole with every byte of the snapshot handed over, and nothing more"
-    );
-}
-
 /// What a pane that reports its drawing is handed, one piece at a time.
 fn a_pane_of_pieces() -> (Sink, Arc<Mutex<Vec<String>>>) {
     let pieces = Arc::new(Mutex::new(Vec::new()));
@@ -2098,10 +2065,7 @@ fn a_chat_left_in_the_host_is_read_without_a_reattach_and_its_view_closes_after_
 
     let back = host.window();
     let (sink, seen) = a_pane();
-    let view = back
-        .sessions
-        .watch_left(3, sink, Box::new(|| {}))
-        .expect("a view opens");
+    let view = back.sessions.watch_left(3, sink).expect("a view opens");
     until("its screen is drawn", || {
         seen.lock().unwrap().contains("check prod: all green")
     });
@@ -2111,9 +2075,7 @@ fn a_chat_left_in_the_host_is_read_without_a_reattach_and_its_view_closes_after_
     until("the sweep ended it", || program.seen().stopped);
     assert!(back.sessions.running().is_empty(), "never a running chat");
     assert!(
-        back.sessions
-            .watch_left(3, a_pane().0, Box::new(|| {}))
-            .is_err(),
+        back.sessions.watch_left(3, a_pane().0).is_err(),
         "nothing left to read once it is closed"
     );
 }

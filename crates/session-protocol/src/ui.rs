@@ -1326,9 +1326,6 @@ pub const WINDOW_ONLY: &[&str] = &[
     // served to anything else.
     "chat_by_number",
     "chat_screen",
-    // A hibernated chat's kept screen (SC-4b, #7631): what it showed is the person's to read
-    // in its pane, served to nothing else, as a task's kept screen is.
-    "hibernated_chat_screen",
     // The closed chats the Chats list's filter finds (#6484): their titles are the person's, and
     // only the window's list looks among them. Its row opens its chat by its ULID (#6685's
     // review), the window's as `chat_by_number` is.

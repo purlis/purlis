@@ -10,18 +10,14 @@ import { minimiseNoticesExpandedHere } from "../reach.js";
 import { NOT_HIBERNATED } from "../../src/hibernationWords.ts";
 
 /**
- * **Hibernate a chat from its row, see what it showed, then Resume it** (SC-4a, #7630; SC-4b,
- * #7631), through the real binary, the real session host and a stand-in harness that reports
- * through `charter hook` and names its conversation: nothing here reads the pane's text to decide
- * anything but that the harness got to the end of its turn and that its kept screen shows it. The
- * band and the kept screen are asked for by their roles, and the band's button by its name.
+ * **Hibernate a chat from its row, then Resume it** (SC-4a, #7630), through the real binary, the
+ * real session host and a stand-in harness that reports through `charter hook` and names its
+ * conversation: nothing here reads the pane's text to decide anything but that the harness got
+ * to the end of its turn. The band is asked for by its role, and its button by its name.
  */
 
 /** The band over a hibernated chat: a polite status, named for its state. */
 const BAND = '[role="status"][aria-label="Hibernated"]';
-
-/** What a hibernated chat's pane shows in place of its terminal (SC-4b, #7631): a region. */
-const KEPT_SCREEN = '[role="region"][aria-label="What this chat showed as it was hibernated"]';
 
 /** The Notice that says why a chat was not hibernated. */
 const REFUSED = '[role="status"][aria-label="Not hibernated"]';
@@ -110,27 +106,11 @@ describe("hibernating a chat and resuming it", () => {
     await expect(await band.$("button=Resume")).toBeDisplayed();
   });
 
-  it("shows what the chat showed as it was hibernated, read-only, where its terminal was", async () => {
-    // SC-4b (#7631): the screen kept as it was hibernated, through the real host's snapshot.
-    const kept = await $(KEPT_SCREEN);
-    await kept.waitForExist({ timeout: 30_000, timeoutMsg: "no kept screen was drawn" });
-    await browser.waitUntil(async () => (await kept.getText()).includes(READY), {
-      timeout: 30_000,
-      interval: 250,
-      timeoutMsg: "the kept screen does not show what the chat showed",
-    });
-  });
-
   it("starts the same chat again on its conversation when Resume is pressed", async () => {
     const band = await theBand();
     await (await band.$("button=Resume")).click();
 
     await untilTheBandGoes();
-    // Its live terminal is back in place of the kept screen.
-    await browser.waitUntil(async () => !(await $(KEPT_SCREEN).isExisting()), {
-      timeout: 30_000,
-      timeoutMsg: "the kept screen stayed once the chat was resumed",
-    });
     // The chat is still a tab of the strip, now in a new run.
     expect((await $$('[data-strip="Tabs"] [role="tab"]').getElements()).length).toBeGreaterThan(0);
     // **A wake run on the same conversation**: the harness was started a second time, handed

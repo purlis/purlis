@@ -1037,18 +1037,6 @@ fn every_harness_denies_a_chat_the_kept_screens_of_tasks() {
     );
 }
 
-/// #7631: a hibernated chat's kept screen (`hibernatedscreens`) is denied the same way, for
-/// reading and for writing, under every harness: what a chat showed is the person's to read in
-/// its pane, and a chat that wrote one would choose what a hibernated chat's pane shows.
-#[test]
-fn every_harness_denies_a_chat_the_kept_screens_of_hibernated_chats() {
-    every_harness_denies_a_chat_the_store(
-        crate::hibernatedscreens::DIR_NAME,
-        "01K6H1BERNATED00000000000B.screen",
-        crate::hibernatedscreens::dir,
-    );
-}
-
 /// #6304: every closed chat's record (`chatrecords`) is denied the same way: its title and who
 /// started it are the person's, never a chat's to read or write.
 #[test]

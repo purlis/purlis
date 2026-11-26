@@ -34,12 +34,12 @@ function core(held: ChatHibernation | null) {
 }
 
 describe("the band of a hibernated chat", () => {
-  it("says the chat is hibernated, with Resume", async () => {
+  it("says the chat is hibernated and that no copy of its screen was kept, with Resume", async () => {
     core(BY_YOU);
     render(<HibernatedNotice plane={PLANE} session={7} onResume={() => {}} />);
     const said = await screen.findByRole("status", { name: "Hibernated" });
     expect(said).toHaveTextContent(
-      "This chat is hibernated: its program ended and its conversation is kept. Resume starts it again on its conversation.",
+      "This chat is hibernated: its program ended and its conversation is kept. purlis kept no copy of its screen. Resume starts it again on its conversation.",
     );
     expect(screen.getByRole("button", { name: "Resume" })).toBeVisible();
   });

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * **The band over a hibernated chat** (SC-4a, #7630): it says the chat is hibernated, and
- * offers Resume. Drawn in every cell of the theme matrix, at a
+ * **The band over a hibernated chat** (SC-4a, #7630): it says the chat is hibernated and that no
+ * copy of its screen was kept, and offers Resume. Drawn in every cell of the theme matrix, at a
  * pane's width.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";

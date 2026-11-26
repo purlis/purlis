@@ -209,7 +209,6 @@ macro_rules! app_commands {
                 alerts::put_away_left_messages,
                 alerts::put_away_arrived_files,
                 hibernation::chat_hibernated,
-                hibernation::hibernated_chat_screen,
                 hibernation::hibernated_chats,
                 hibernation::hibernate_chat,
                 hostlost::chat_lost_with_the_host,

@@ -3440,7 +3440,11 @@ fn session_drawn(
     view: u32,
     pieces: u32,
 ) -> Result<(), String> {
-    planes.held(&plane)?.session_drawn(session, view, pieces)
+    planes
+        .held(&plane)?
+        .chats()
+        .sessions()
+        .drawn(session, view, pieces)
 }
 
 /// Closes a view, for a pane that has gone off screen, in the chat's lane: it answers at once

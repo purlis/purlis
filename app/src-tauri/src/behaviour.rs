@@ -4229,120 +4229,13 @@ on_every_target!(
     a_hook_refuses_a_listener_that_is_not_its_chats_ancestor,
     a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest,
     a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,
-    an_ask_raised_by_a_chats_proxy_is_answered_from_the_window,
-    a_hibernated_chats_kept_screen_is_its_newest_lines_within_a_mebibyte,
-    a_hibernated_chats_kept_screen_is_an_open_alternate_screen_alone;
+    an_ask_raised_by_a_chats_proxy_is_answered_from_the_window;
     not yet through a link ("an opt-out is asked again on the device a chat moves to, ADR 0078 §4"):
     an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts;
     not yet through a link ("the window's re-arm and its shell while stopped cross a link in #2220"):
     stop_all_ends_every_chat_and_none_starts_until_the_window_re_arms,
     while_stopped_the_operators_shell_opens;
 );
-
-/// Whether chat `id` of `target` can be hibernated: only a host that can is offered Hibernate
-/// (#7630), and only it pages a view's history; the window's own process does neither. Where it
-/// cannot, the chat is closed and the skip of the kept screen's `case` is said, so a target that
-/// stopped hibernating is seen rather than passing silently.
-fn hibernates_here(target: &Target, id: u32, case: &str) -> bool {
-    if target.sessions.can_hibernate(id) {
-        return true;
-    }
-    // Written to stderr by name, past the test harness's capture, so the skip shows in a run.
-    let _ = std::io::Write::write_fmt(
-        &mut std::io::stderr(),
-        format_args!(
-            "skipped: this target cannot hibernate a chat, so its kept screen ({case}) is not \
-             taken\n"
-        ),
-    );
-    target.sessions.close(id).expect("it closes");
-    false
-}
-
-/// **A hibernated chat's kept screen is its newest lines, within a mebibyte** (SC-4b, #7631;
-/// spec #1391, D3): a shell prints thousands of lines, every cell its own colour, so what its
-/// terminal draws is many times 1 MiB; the screen is taken as the app takes it as it hibernates a
-/// chat (`hibernation::keep_screen`), through the view each target serves, with fewer lines of
-/// history until it fits. What is kept is at most 1 MiB, and drawn into a blank terminal it shows
-/// what the chat's own screen showed last, with lines of history above it, each whole.
-fn a_hibernated_chats_kept_screen_is_its_newest_lines_within_a_mebibyte(target: &Target) {
-    let id = target
-        .sessions
-        .open(
-            None,
-            &a_shell(
-                r#"awk 'BEGIN { for (i = 0; i < 4000; i++) { l = ""; for (j = 0; j < 60; j++) l = l sprintf("\033[3%dm%d", (i + j) % 8, j % 10); printf "%s\033[0m line %d\r\n", l, i } printf "PRINTED.\r\n" }'; read line"#,
-            ),
-            &|_| {},
-        )
-        .expect("it starts");
-    Pane::on(target, id).shows("PRINTED.");
-    if !hibernates_here(target, id, "its newest lines within a mebibyte") {
-        return;
-    }
-    let whole = crate::skillgrade::screen_of(target.sessions.as_ref(), id).expect("its screen");
-    assert!(
-        whole.len() > purlis_core::hibernatedscreens::MOST_BYTES,
-        "the case is past the bound: {}",
-        whole.len()
-    );
-
-    let kept = purlis_core::hibernatedscreens::fitted(|history| {
-        crate::skillgrade::screen_within(target.sessions.as_ref(), id, history)
-    })
-    .expect("a screen is kept");
-
-    assert!(
-        kept.len() <= purlis_core::hibernatedscreens::MOST_BYTES,
-        "{}",
-        kept.len()
-    );
-    let mut blank = AlacrittyEngine::new(SIZE, 5_000);
-    blank.advance(kept.as_bytes());
-    let lines = blank.screen().lines;
-    assert!(lines.iter().any(|line| line == "PRINTED."), "{lines:?}");
-    assert!(
-        lines.iter().any(|line| line.ends_with(" line 3999")),
-        "{lines:?}"
-    );
-    assert!(blank.history() > 0, "lines of history are kept above it");
-    target.sessions.close(id).expect("it closes");
-}
-
-/// **While its alternate screen is open, a hibernated chat's kept screen is that screen alone**
-/// (SC-4b, #7631; the engine's limit): a shell prints lines, then opens the alternate screen
-/// and draws on it, as an editor does. What is kept draws the alternate screen into a blank
-/// terminal, and none of the lines behind it.
-fn a_hibernated_chats_kept_screen_is_an_open_alternate_screen_alone(target: &Target) {
-    let id = target
-        .sessions
-        .open(
-            None,
-            &a_shell(
-                r#"awk 'BEGIN { for (i = 0; i < 200; i++) printf "behind %d\r\n", i; printf "\033[?1049h\033[2J\033[HTHE EDITOR." }'; read line"#,
-            ),
-            &|_| {},
-        )
-        .expect("it starts");
-    Pane::on(target, id).shows("THE EDITOR.");
-    if !hibernates_here(target, id, "an open alternate screen alone") {
-        return;
-    }
-
-    let kept = purlis_core::hibernatedscreens::fitted(|history| {
-        crate::skillgrade::screen_within(target.sessions.as_ref(), id, history)
-    })
-    .expect("a screen is kept");
-
-    let mut blank = AlacrittyEngine::new(SIZE, 5_000);
-    blank.advance(kept.as_bytes());
-    assert_eq!(
-        blank.screen().lines.first().map(String::as_str),
-        Some("THE EDITOR.")
-    );
-    assert!(!kept.contains("behind "), "none of what is behind it");
-    target.sessions.close(id).expect("it closes");
-}
 
 /// **A sandboxed runner chat reaches neither its runner's browser engine nor its host** (#3338,
 /// spec #2041): on a Docker pool's runner, the chat, the session host and the browser engine

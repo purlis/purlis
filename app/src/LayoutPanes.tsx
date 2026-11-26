@@ -48,7 +48,6 @@ import { ChatMenuButton, PaneHeadMenued } from "./Menus";
 import { RestoringPane } from "./RestoringPane";
 import { NONE_RESTORING } from "./restoringChats";
 import { SessionPane } from "./SessionPane";
-import { HibernatedOr } from "./HibernatedScreen";
 import { droppedReference, overChat, useReferenceChats } from "./references";
 import { NoticeOf, NoticePaneRow } from "./Notice";
 import { TerminalPromptNotice } from "./TerminalPromptNotice";
@@ -1801,23 +1800,20 @@ export function LayoutPanes({
           {restoring.has(content.session) ? (
             <RestoringPane name={name} />
           ) : (
-            // A hibernated chat shows what it showed as it was hibernated (SC-4b, #7631).
-            <HibernatedOr plane={plane} session={content.session}>
-              <SessionPane
-                plane={plane}
-                session={content.session}
-                // Its asks say which chat they came from (#6355); a shell is no chat, and says none.
-                title={shells.has(content.session) ? undefined : chatName(content.session)}
-                focused={layout.pane === focused}
-                onFocus={() => onFocus(layout.pane)}
-                menu={{
-                  offers: paneMenuOf(offerFor, tab),
-                  tab,
-                  onPress: (offer) => onPaneDoes(layout.pane, offer),
-                }}
-                readOnly={ended || endedTask !== undefined || endedChat !== undefined}
-              />
-            </HibernatedOr>
+            <SessionPane
+              plane={plane}
+              session={content.session}
+              // Its asks say which chat they came from (#6355); a shell is no chat, and says none.
+              title={shells.has(content.session) ? undefined : chatName(content.session)}
+              focused={layout.pane === focused}
+              onFocus={() => onFocus(layout.pane)}
+              menu={{
+                offers: paneMenuOf(offerFor, tab),
+                tab,
+                onPress: (offer) => onPaneDoes(layout.pane, offer),
+              }}
+              readOnly={ended || endedTask !== undefined || endedChat !== undefined}
+            />
           )}
         </PaneFrame>
       </Measured>

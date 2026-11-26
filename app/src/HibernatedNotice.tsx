@@ -15,8 +15,7 @@ export { HIBERNATION_CHANGED };
  * a turn boundary and its engine was dropped, and its conversation is the harness's, kept.
  * A plain band, as {@link EndedBand} is, until Hibernated is a chat state of its own (SC-4i,
  * #7638). It offers **Resume**: the chat's restart on its conversation (`onResume`), one press,
- * which begins a new `wake` run. What it showed is drawn read-only under the band where it was
- * kept (SC-4b, #7631; `HibernatedScreen`), and the pane says so where it was not.
+ * which begins a new `wake` run. No screen is kept yet (SC-4b, #7631), and the band says so.
  */
 export function HibernatedNotice({
   plane,
@@ -44,8 +43,8 @@ export function HibernatedBand({ session, onResume }: { session: number; onResum
       label="Hibernated"
       fixes={[{ label: "Resume", onPress: onResume }]}
     >
-      {chat} is hibernated: its program ended and its conversation is kept. Resume starts it again
-      on its conversation.
+      {chat} is hibernated: its program ended and its conversation is kept. purlis kept no copy of
+      its screen. Resume starts it again on its conversation.
     </Notice>
   );
 }
@@ -54,7 +53,7 @@ export function HibernatedBand({ session, onResume }: { session: number; onResum
  * How chat `session` is hibernated, read when the pane mounts and each time the core says a
  * chat's hibernation moved. What cannot be read shows nothing.
  */
-export function useHibernated(plane: PlaneId, session: number): ChatHibernation | null {
+function useHibernated(plane: PlaneId, session: number): ChatHibernation | null {
   const [hibernated, setHibernated] = useState<ChatHibernation | null>(null);
   const read = useCallback(() => {
     void commands

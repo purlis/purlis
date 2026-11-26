@@ -267,12 +267,9 @@ export function ReadOnlyTerminal({
         {note}
       </p>
       <div className="read-only-terminal-frame">
-        {/* Its role written out, as well as a named section's own: a scenario spec asks for it
-          by `[role="region"]`, which a CSS selector matches only when the attribute is there. */}
         <section
           ref={region}
           className="read-only-terminal-screen"
-          role="region"
           aria-label={label}
           aria-describedby={noteId}
           tabIndex={still ? undefined : 0}
