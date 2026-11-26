@@ -183,6 +183,16 @@ fn shapes(deep: usize) -> Vec<Shape> {
             Box::new(move |b| fill(&format!("{}ls\n", "echo \"$(".repeat(deep)), b)),
         ),
         (
+            // An unclosed `${` is read again from its `{` once, not once per `${` after it
+            // (#7709, round 2).
+            "unclosed parameter expansions, repeated",
+            Box::new(|b| fill("${a ", b)),
+        ),
+        (
+            "unclosed parameter expansions before a substitution",
+            Box::new(|b| format!("{}$(ls)", fill("${a ", b))),
+        ),
+        (
             "substitutions nested around a long body",
             Box::new(move |b| {
                 format!(
