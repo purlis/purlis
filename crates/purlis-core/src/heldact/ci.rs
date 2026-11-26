@@ -449,6 +449,32 @@ impl Trees for GitTrees {
     fn message(&self, tip: &HeadSha) -> Result<String, String> {
         super::TipFiles::message(self, tip)
     }
+
+    fn missing(&self, base: &HeadSha, tip: &HeadSha) -> Result<usize, String> {
+        self.commits_missing(base, tip)
+    }
+}
+
+impl GitTrees {
+    /// How many commits `base` reaches that `tip` does not, as git counts them. A commit either
+    /// side lacks is an error, never a count.
+    pub(super) fn commits_missing(&self, base: &HeadSha, tip: &HeadSha) -> Result<usize, String> {
+        let out = self
+            .git_capped(
+                &["rev-list", "--count", base.as_str(), "--not", tip.as_str()],
+                64,
+            )
+            .map_err(|why| {
+                format!(
+                    "purlis could not tell whether {} contains {}: {why}",
+                    short(tip),
+                    short(base)
+                )
+            })?;
+        out.trim()
+            .parse()
+            .map_err(|_| "git's count of commits was not a number".to_owned())
+    }
 }
 
 #[cfg(test)]

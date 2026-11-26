@@ -1626,6 +1626,12 @@ impl NetworkRoute {
     pub fn new(config: Vec<String>, pass: Vec<(String, std::ffi::OsString)>) -> Self {
         Self { config, pass }
     }
+
+    /// Its `-c` settings and the variables it passes, for a test that runs git with them.
+    #[cfg(test)]
+    pub(crate) fn parts(&self) -> (&[String], &[(String, std::ffi::OsString)]) {
+        (&self.config, &self.pass)
+    }
 }
 
 impl Isolated {
@@ -1640,6 +1646,12 @@ impl Isolated {
 /// The route the network calls of this thread go through, where its isolation names one.
 fn routed() -> Option<NetworkRoute> {
     ISOLATED.with(|held| held.borrow().as_ref().and_then(|iso| iso.route.clone()))
+}
+
+/// [`routed`], for a test of a caller that should have set it.
+#[cfg(test)]
+pub(crate) fn routed_now() -> Option<NetworkRoute> {
+    routed()
 }
 
 /// One pinned work tree: its git directory, and **which directory that was** when it was
