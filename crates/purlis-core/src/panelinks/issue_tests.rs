@@ -303,6 +303,21 @@ fn a_repo_s_remotes_are_read_from_its_own_config() {
 }
 
 #[test]
+fn a_resolver_offering_a_branch_s_files_still_links_an_issue_number() {
+    // The app's resolver asks a branch which files it offers (`Resolver::offering`, #6489); an
+    // issue number in the same pane is still its folder's origin's issue.
+    let here = fixture();
+    let app = here.app();
+    git_folder(&app.join(".git"), "git@github.com:purlis/purlis.git");
+
+    let links = Resolver::offering(|_: &Path, _: crate::files::Branch<'_>, _: &str| Some(true));
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&app)),
+        page("https://github.com/purlis/purlis/issues/9")
+    );
+}
+
+#[test]
 fn a_repository_above_the_project_is_never_read() {
     // The project is in no repository of its own, and one holds it: its origin is not the chat's.
     let here = fixture();

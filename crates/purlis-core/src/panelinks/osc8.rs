@@ -16,7 +16,7 @@
 //!   "#6384", "café", an emoji. `github.com/purlis` over `https://github.com/purlis/purlis`
 //!   opens; `github.com/someone-else` over it asks, showing both.
 //! - **A relative word is read from where the chat started**, never where it says it is now
-//!   (#6367, ADR 0129): after a `cd`, a relative path as a marked link's words, which leads to the
+//!   (#6367, ADR 0130): after a `cd`, a relative path as a marked link's words, which leads to the
 //!   target only from the new folder, asks first. That is the safe side.
 //! - **An issue's words name a target** (`owner/repo#6223`): over any page but that issue's or
 //!   pull request's (over https, a trailing `.git` on the repo read as the repo), the link asks.
@@ -607,7 +607,7 @@ fn same_file(words: &str, file: &Path, pane: &Pane) -> bool {
         PathBuf::from(words)
     } else {
         // From where the chat started, never where it says it is now (#6367): a program that
-        // marks a link could say it moved, and quiet the ask its words raise (ADR 0129).
+        // marks a link could say it moved, and quiet the ask its words raise (ADR 0130).
         let Some(base) = pane.folder.as_deref().or(pane.project.as_deref()) else {
             return false;
         };
