@@ -4005,6 +4005,9 @@ impl Planes {
                         .conversation(report.chat)
                         .map(str::to_owned);
                     held.chats().heard_model(report, now.as_deref());
+                    // And the folder it works in now, where a relative path in its pane starts
+                    // (#6367): the same report, its own harness's alone.
+                    held.chats().heard_folder(report, now.as_deref());
                     // What an Allow queued for this chat's turn to end is sent then (#1430).
                     crate::vaultroute::reported(&held, report.chat);
                     // A persona chat that has just come to wait on the person's input: its

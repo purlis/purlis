@@ -116,7 +116,7 @@ impl Ending {
 }
 
 /// Everything a harness said about an event beyond its name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct Detail {
     pub started: Started,
     pub ending: Ending,
@@ -196,6 +196,13 @@ pub struct Detail {
     /// names it (#5718). Absent on every other event, and from an older hook.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failed: Option<Failed>,
+    /// The folder the chat's harness says it works in now, as its adapter reads the payload's
+    /// `cwd` ([`crate::harness::HarnessAdapter::reported_folder`], #6367): where a relative path
+    /// in its pane starts ([`crate::panelinks::folder`]), and nothing else. Never kept at rest
+    /// ([`crate::hookwire::Report::at_rest`]). Absent from an older hook, on a harness whose word
+    /// is not read, and where the payload names no plain absolute folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<std::path::PathBuf>,
 }
 
 /// **Which kind of error ended a turn** (#5718), read from the harness's own category of it
@@ -2020,7 +2027,7 @@ impl Board {
         // in the same process, and the old run's children were the old run's.
         let mut changed =
             was.is_some() && tracked.conversation != was && tracked.chat.children.superseded();
-        let said = report.event.said(report.detail);
+        let said = report.event.said(report.detail.clone());
         changed |= match &report.agent {
             Some(agent) => tracked.chat.child_said(agent, &said),
             None => tracked.chat.heard_while(&said, waits),
@@ -2771,7 +2778,7 @@ mod tests {
         };
         let older = crate::ownwork::Said::helpers_of_an_older_hook();
         assert_eq!(
-            Event::Stop.said(helpers),
+            Event::Stop.said(helpers.clone()),
             Said::Turn(Turn::WaitsOnItsOwnWork(older))
         );
         let mut chat = Chat::new();

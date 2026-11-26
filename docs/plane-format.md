@@ -8194,6 +8194,9 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   token does; it lets the drain tell a copy of a line the host already took late from another
   line that reads the same, and a copy is passed over only where it is the same chat's, under
   the same id, and says the same thing.
+  A report of a Claude Code chat carries `folder` (#6367, ADR 0129): the payload's `cwd`, where it
+  is a plain absolute folder, which the app keeps in memory only as where a relative path in the
+  chat's pane starts. It is never spooled.
   A `UserPromptSubmit` report carries `prompt_marks` (#2775): a 256-bit Bloom filter of the
   HMAC-SHA256 digests, keyed by the chat's prompt key (`PURLIS_PROMPT_KEY`, #3369), of the stretches
   of each line of the prompt (from any word, up to 6 words; at most 36), and never the prompt's
@@ -8389,7 +8392,7 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
     "<the hook's line, as JSON text>", "mac": "<64 hex>"}` and a newline. `seq` counts from 1 per
     key; `key` names the key the line checks under; `mac` is HMAC-SHA256, under that key, of the
     chat number, `seq` and `key` (each followed by a newline) and then `line`'s bytes. A line
-    holds no token, a tool line holds no `args`, its unkeyed argument digest (#977), and a report holds no `prompt_marks`, the filter of its prompt's line starts that tells a skill Use skill… typed was sent (#2775). The name's `<key>` and `<seq>` are the line's own, `<seq>` in decimal, and
+    holds no token, a tool line holds no `args`, its unkeyed argument digest (#977), and a report holds no `folder` (#6367) and no `prompt_marks`, the filter of its prompt's line starts that tells a skill Use skill… typed was sent (#2775). The name's `<key>` and `<seq>` are the line's own, `<seq>` in decimal, and
     the file holds that one line: the drain reads no other. A file with this name is whole and
     is never written again.
   - `<key>.<seq>.part` is a number a hook has taken and is still writing its line under, or took
