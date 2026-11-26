@@ -913,18 +913,23 @@ fn keeping_a_profile_has_the_time_its_limit_could_take() {
     );
 }
 
-/// **A runner too old to list what it holds goes as it did before purlis could ask**
-/// (ruled 2026-11-07): nothing is proved of it, and nothing is said.
+/// **Of a runner too old to list what it holds, nothing is proved** (ruled 2026-11-07): what may
+/// be on it is what this machine's records say (2026-11-26), and one that lists is proved alone.
 #[test]
-fn a_runner_too_old_to_list_what_it_holds_leaves_nothing_to_prove() {
+fn a_runner_too_old_to_list_what_it_holds_is_said_from_the_records_not_proved() {
     assert_eq!(
-        super::left_of(None, |_, _| panic!("nothing listed is proved")),
-        Ok(Vec::new())
+        super::left_of(
+            None,
+            |_, _| panic!("nothing listed is proved"),
+            || Ok(vec!["a chat may have run there".to_owned()])
+        ),
+        Ok(vec!["a chat may have run there".to_owned()])
     );
     assert_eq!(
         super::left_of(
             Some((Vec::new(), vec!["a folder ran out".to_owned()])),
-            |_, unread| { Ok(unread.to_vec()) }
+            |_, unread| { Ok(unread.to_vec()) },
+            || panic!("a runner that listed is not said from the records")
         ),
         Ok(vec!["a folder ran out".to_owned()])
     );

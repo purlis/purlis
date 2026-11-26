@@ -18,6 +18,7 @@ import { McpFailedNotice } from "./McpFailedNotice";
 import { InputRefusedNotice } from "./InputRefusedNotice";
 import { SkillsMissingNotice } from "./SkillsMissingNotice";
 import { DraftReadyNotice } from "./DraftReadyNotice";
+import { HibernateRefusedNotice, HibernatedNotice } from "./HibernatedNotice";
 import { HostLostNotice } from "./HostLostNotice";
 import { MoveNotice } from "./MoveNotice";
 import { TaskQuietNotice } from "./TaskQuietNotice";
@@ -472,6 +473,9 @@ export function ChatNotices({
       {/* A skill its persona names that it started without (#2768). */}
       <SkillsMissingNotice plane={plane} session={session} />
       <HostLostNotice plane={plane} session={session} onRestart={onRestart} />
+      {/* A chat the person hibernated (#7630), and why one could not be. */}
+      <HibernatedNotice plane={plane} session={session} onResume={onRestart} />
+      <HibernateRefusedNotice plane={plane} session={session} />
       {/* Its move to or from a pool's runner (#2048). */}
       <MoveNotice plane={plane} session={session} />
       <TaskQuietNotice plane={plane} session={session} />

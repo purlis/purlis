@@ -411,6 +411,9 @@ enum Why {
     /// A chat started again in the place of one whose harness could not bring its
     /// conversation back (`lostOnResume`): the same chat, `fresh`.
     Again,
+    /// A hibernated chat woken on its conversation (ADR 0066's `wake` run, #7630): the same
+    /// chat in a new run, the hibernated one ending `completed | superseded`.
+    Wake,
 }
 
 /// **How a start of `chat` is made** (#2071), from the app's own record of it: asked for by
@@ -431,7 +434,7 @@ fn made_of(chat: &Chat, why: Why) -> purlis_core::sandbox::Made {
     }
     match why {
         Why::New => Made::Window,
-        Why::Relaunch | Why::Upgrade | Why::Again => Made::Relaunch,
+        Why::Relaunch | Why::Upgrade | Why::Again | Why::Wake => Made::Relaunch,
     }
 }
 
@@ -3384,6 +3387,15 @@ impl Chats {
         }
     }
 
+    /// **Run `session` has ended `completed | superseded`** (ADR 0076 §2), told to whoever
+    /// writes the event log ([`Self::when_a_run_is_replaced`]): a hibernated chat's run, whose
+    /// program is already gone, as it is woken or ended (#7630).
+    pub fn superseded(&self, session: u32) {
+        if let Some(tell) = lock(&self.replaced_told).as_ref() {
+            tell(session);
+        }
+    }
+
     /// Marks run `session` as replaced at once, as a restart for changed project settings does.
     #[cfg(test)]
     pub fn replaced_in_a_test(&self, session: u32) {
@@ -4194,6 +4206,32 @@ impl Chats {
                     owed.insert(session, back);
                 }
                 drop(owed);
+                self.unclaim(session);
+                Err(why)
+            }
+        }
+    }
+
+    /// Wakes hibernated chat `session` (SC-4a, #7630): the same chat on its conversation, in
+    /// a new run under a new number whose beginning is ADR 0066's `wake`. The caller has read
+    /// that the chat is hibernated; this refuses a chat with no conversation to pick up. The old
+    /// one stays open until the new one has started, as [`Self::restart`]'s does; ending it is
+    /// the caller's next step. Nothing is told it yet: the wake line (ADR 0068) is SC-4j's.
+    pub fn wake(&self, session: u32, size: Size) -> Result<u32, String> {
+        self.claim(session)?;
+        let started = self.again_on_its_conversation(session).and_then(|again| {
+            if again.resume.is_none() {
+                return Err(no_conversation(session));
+            }
+            // **The hibernated run ends `completed | superseded` as the wake begins** (ADR 0076
+            // as amended 2026-11-25): said before the `wake` run starts, so the log reads in the
+            // order it happened. Its program is gone, so no end of it is heard to say so.
+            self.superseded(session);
+            self.start_recorded_told(&again, size, Why::Wake, None, None)
+        });
+        match started {
+            Ok(started) => self.restarted(session, started, true),
+            Err(why) => {
                 self.unclaim(session);
                 Err(why)
             }
@@ -5037,14 +5075,20 @@ impl Chats {
         program: &str,
         args: Vec<String>,
     ) -> (Vec<String>, Vec<(String, String)>) {
-        let Some(shims) = self.shipped.shims.as_ref() else {
-            return (args, Vec::new());
-        };
         // A shell tab is a chat on no profile running no harness — `open_session` with no
         // program, and the same chat put back from the record.
         if chat.profile.is_some() || chat.harness().is_some() {
             return (args, Vec::new());
         }
+        // **It is the person's own terminal** (#7694), which its chat marks alone do not say: a
+        // command only the person runs reads this mark, shims or none.
+        let mark = (
+            purlis_core::shellguard::SHELL_TAB_ENV.to_owned(),
+            "1".to_owned(),
+        );
+        let Some(shims) = self.shipped.shims.as_ref() else {
+            return (args, vec![mark]);
+        };
         // The `PATH` every chat gets, worked out by the one function that works it out, with
         // the shims put in front of it.
         let chat_env =
@@ -5057,7 +5101,9 @@ impl Chats {
         );
         let mut all = start.args;
         all.extend(args);
-        (all, start.env)
+        let mut env = start.env;
+        env.push(mark);
+        (all, env)
     }
 
     /// What arms a chat's git with charter's hooks (SQ-16): `core.hooksPath` pointed at the
@@ -5308,9 +5354,22 @@ impl Chats {
         // the chat is open, then by the session's close, its program's end or its project's.
         // Keyed by this run, so a restart's old run ending leaves the new run's route alone.
         // Slice B turns its params into the run's environment; until it merges nothing is
-        // handed over. A chat put back from the session host starts nothing and has none.
+        // handed over. **A chat put back from the session host** is the run it was, and the
+        // route of the app that started it went with that app (#7694): the app's own git gets
+        // one for it through the same gates, and its program is handed nothing. One on a pool's
+        // runner is the runner's to ask for, as at its start.
         #[cfg(feature = "forge-wiring")]
-        let route = if reattaching {
+        let on_a_runner = || {
+            self.sessions
+                .composes_its_harness_chats_in(workspace.as_deref(), chat.runs_on.as_ref())
+                || chat
+                    .identity
+                    .id
+                    .as_deref()
+                    .is_some_and(|id| self.own_runner_of(id).is_some())
+        };
+        #[cfg(feature = "forge-wiring")]
+        let route = if reattaching && on_a_runner() {
             None
         } else {
             identity
@@ -5320,7 +5379,11 @@ impl Chats {
                 .and_then(|(chat_id, run)| {
                     // The merge stance is never looser than the chain that dispatched this chat.
                     let chain = chat.from.as_ref().and_then(|from| from.policy.as_deref());
-                    crate::forgeroute::guard(chat_id, run, &self.project, chain)
+                    if reattaching {
+                        crate::forgeroute::guard_reattached(chat_id, run, &self.project, chain)
+                    } else {
+                        crate::forgeroute::guard(chat_id, run, &self.project, chain)
+                    }
                 })
         };
         // A grade's chat is armed here, with its limits, or not at all (SK-16): a runner
@@ -5452,8 +5515,8 @@ impl Chats {
         };
         // The run's forge route (ADR 0128 D3a, slice K): the sandbox is wired to it, so the chat's
         // `gh`, git and `glab` reach a forge only through the person's own sign-in, brokered by
-        // the app. A chat with no route (nothing recorded, or one put back from the session host)
-        // is not wired, and keeps what it had.
+        // the app. A chat with no route handed over (nothing recorded, or one put back from the
+        // session host, whose program already runs) is not wired, and keeps what it had.
         #[cfg(feature = "forge-wiring")]
         let wired;
         #[cfg(feature = "forge-wiring")]
@@ -5527,6 +5590,7 @@ impl Chats {
             Why::Relaunch => Began::at_relaunch(&how, harness.is_some()),
             Why::Upgrade => Began::Reopen,
             Why::Again => Began::Fresh,
+            Why::Wake => Began::Wake,
         };
         // What this start means for the sandbox's audit and its count (ADR 0067 §7): off where
         // it starts without the sandbox, back on where its last run did and this one does not,

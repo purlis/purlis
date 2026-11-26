@@ -494,6 +494,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Dismiss on a chat's Notice that its program ended with its session host (#2007): the
     // person's answer.
     "put_away_lost_chat",
+    // Hibernate on a chat's row (SC-4a, #7630): the person's own act on a chat, which no chat
+    // does for them. Its Resume is Restart chat's, which wakes a hibernated chat.
+    "hibernate_chat",
     // Put away on the Inbox's Notice of a chat's undelivered messages (#3958): the person's
     // answer that they have read it.
     "put_away_left_messages",
@@ -1567,6 +1570,10 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "chat_log",
     // A chat whose program ended with its session host (#2007): what its pane says.
     "chat_lost_with_the_host",
+    // Whether a chat is hibernated by the person (SC-4a, #7630): what its row and pane say.
+    "chat_hibernated",
+    // The chats hibernated by the person (SC-4a, #7630): what the rows read as the window opens.
+    "hibernated_chats",
     "chat_moves",
     "chat_network",
     "chat_order",

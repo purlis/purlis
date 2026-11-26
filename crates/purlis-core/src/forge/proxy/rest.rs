@@ -389,6 +389,21 @@ const GITLAB_READS: &[&[&str]] = &[
     &["pipelines", "#", "test_report_summary"],
 ];
 
+/// The Dependabot alert reads: the list, and one alert by its number.
+const DEPENDABOT_READS: &[&[&str]] = &[&["dependabot", "alerts"], &["dependabot", "alerts", "#"]];
+
+/// What filters or pages an alert list besides [`READ_QUERY_KEYS`].
+const DEPENDABOT_QUERY_KEYS: &[&str] = &[
+    "severity",
+    "ecosystem",
+    "package",
+    "manifest",
+    "epss_percentage",
+    "has",
+    "before",
+    "after",
+];
+
 /// The query keys a read on a listed route may carry. Anything else is refused: a rendering
 /// switch (`render_html`), an impersonation (`sudo`) or a key the forge reads that the proxy
 /// does not know is the forge doing more than the route says.
@@ -564,6 +579,18 @@ fn read_allowed(kind: Kind, rel: &[String], target: &Target, repo: &AllowedRepo)
                 Some("refs" | "trees" | "blobs" | "commits" | "matching-refs" | "ref")
             ),
             "rulesets" | "rules" => listed(RULE_READS),
+            // A repo's Dependabot alerts, to match one to the pull request that fixes it (#7681):
+            // read only (an alert's `PATCH` dismisses it, and is not on the write list), and not
+            // Dependabot's secrets, which are administration.
+            "dependabot" => {
+                DEPENDABOT_READS.iter().any(|pattern| matches(rel, pattern))
+                    && target.query.iter().all(|(k, _)| {
+                        READ_QUERY_KEYS
+                            .iter()
+                            .chain(DEPENDABOT_QUERY_KEYS)
+                            .any(|allowed| k.eq_ignore_ascii_case(allowed))
+                    })
+            }
             "actions" => matches!(
                 second.as_deref(),
                 Some("runs" | "jobs" | "artifacts" | "workflows")

@@ -281,7 +281,9 @@ fn a_chat_is_kept_only_on_a_pool_this_machine_keeps_and_goes_with_its_end() {
 }
 
 /// **A draining runner's work is owed while a project may still have some of it to fetch**
-/// (#5393), and a chat kept on the pool's next runner holds nothing back.
+/// (#5393), and a chat kept on the pool's next runner holds nothing back. Nor does a record that
+/// can't say which runner it is on: only the runner can say whether that chat runs there, so the
+/// drain asks it, and a record read here never holds every older runner of the pool for ever.
 #[test]
 fn work_is_owed_from_a_draining_runner_until_its_fetch_and_a_chat_on_the_next_runner_owes_none() {
     let config = tempfile::tempdir().unwrap();
@@ -323,7 +325,10 @@ fn work_is_owed_from_a_draining_runner_until_its_fetch_and_a_chat_on_the_next_ru
         store.keep_chat_on_pool(plane, 3, chat(None));
     })
     .unwrap();
-    assert_eq!(owed(), [plane], "a record that can't say counts for each");
+    assert!(
+        owed().is_empty(),
+        "a record that can't say is the runner's to answer, not owed here"
+    );
 
     crate::machine::update(config.path(), |store| store.leave_chat_on_pool(plane, 3)).unwrap();
     assert_eq!(owed(), [plane], "its chat ended, and its fetch has not run");
@@ -333,6 +338,45 @@ fn work_is_owed_from_a_draining_runner_until_its_fetch_and_a_chat_on_the_next_ru
     })
     .unwrap();
     assert!(owed().is_empty(), "its fetch ran");
+}
+
+/// **A chat whose record names no runner is listed for a runner too old to say what it holds**
+/// (2026-11-26): only those of the pool, and none once the chat has left it.
+#[test]
+fn a_chat_recorded_with_no_runner_is_listed_for_its_pool_alone() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = std::path::Path::new("/planes/a");
+    let chat = |pool: &str, runner: Option<&str>| crate::machine::ChatOnPool {
+        pool: pool.to_owned(),
+        workspace: "ide".to_owned(),
+        runner: runner.map(str::to_owned),
+    };
+    let listed = || -> Vec<std::path::PathBuf> {
+        chats_of_no_recorded_runner(config.path(), "first")
+            .unwrap()
+            .into_iter()
+            .map(|owing| owing.plane)
+            .collect()
+    };
+    crate::machine::update(config.path(), |store| {
+        store.remember(plane, 1);
+        store.keep_chat_on_pool(plane, 1, chat("first", Some("first-old")));
+        store.keep_chat_on_pool(plane, 2, chat("second", None));
+    })
+    .unwrap();
+    assert!(
+        listed().is_empty(),
+        "each record names its runner or another pool"
+    );
+
+    crate::machine::update(config.path(), |store| {
+        store.keep_chat_on_pool(plane, 3, chat("first", None));
+    })
+    .unwrap();
+    assert_eq!(listed(), [plane]);
+
+    crate::machine::update(config.path(), |store| store.forget_chat_on_pool(plane, 3)).unwrap();
+    assert!(listed().is_empty(), "its chat left the pool");
 }
 
 /// A chat started again on another of its pool's runners has left work on the one it was on.

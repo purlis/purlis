@@ -14,6 +14,7 @@ import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-s
 import { heldStore } from "./heldStore";
 import { countsHotChats } from "./slowLog";
 import { listenForChats } from "./chatEvents";
+import { listen } from "./here";
 
 import {
   commands,
@@ -134,6 +135,14 @@ export type ChatStates = {
    * nothing yet.
    */
   readonly noticed?: Readonly<Record<number, Noticed>>;
+  /**
+   * **The chats the person hibernated** (SC-4a, #7630): a per-chat flag the core keeps beside
+   * the board, as `hostlost::Lost` is, and tells on `chat-hibernation-changed`. The five-word
+   * board state gains no value: a hibernated chat's board still says how its turn ended, and
+   * its row reads Hibernated over it. A chat not here, or `false`, is not hibernated: `false`
+   * is kept, so a first answer older than a wake never puts it back.
+   */
+  readonly hibernated?: Readonly<Record<number, boolean>>;
 };
 
 /** What the core noticed of one chat (#6014): `null` is "no", for Stuck?, and "not known", for
@@ -176,6 +185,33 @@ export const nothingKnown: ChatStates = {
   onlyFailures: {},
   noticed: {},
 };
+
+/** The event the core sends when a chat is hibernated or woken (SC-4a, #7630). */
+export const HIBERNATION_CHANGED = "chat-hibernation-changed";
+
+/** What the core says as a chat is hibernated or woken. */
+type HibernationChanged = { plane: PlaneId; session: number; hibernated: boolean };
+
+/** Whether chat `session` is hibernated (#7630): what its row reads Hibernated by. */
+export function isHibernated(states: ChatStates, session: number): boolean {
+  return states.hibernated?.[session] === true;
+}
+
+/** `states` with chat `session` hibernated or not, and the same object where nothing changed. */
+export function hibernatedNow(states: ChatStates, session: number, now: boolean): ChatStates {
+  if (states.hibernated?.[session] === now) return states;
+  return { ...states, hibernated: { ...states.hibernated, [session]: now } };
+}
+
+/** `states` with `sessions` the chats hibernated, under what has been told since: a chat told
+ *  of already keeps what it was told. */
+function hibernatedUnder(states: ChatStates, sessions: readonly number[]): ChatStates {
+  return sessions.reduce(
+    (now, session) =>
+      now.hibernated?.[session] === undefined ? hibernatedNow(now, session, true) : now,
+    states,
+  );
+}
 
 /** The state of one chat, which is `unknown` until something says otherwise. */
 export function stateOf(states: ChatStates, session: number): State {
@@ -788,6 +824,12 @@ export function useChats(plane: PlaneId | undefined): Chats {
           listenForChats("moved", taking(moved)),
           // Stuck? and work left behind (#6014): a telling of its own, never a move.
           listenForChats("noticed", taking(noticed)),
+          // A chat hibernated or woken (#7630): a flag beside the board, read where it is.
+          listen<HibernationChanged>(HIBERNATION_CHANGED, (event) =>
+            taking<HibernationChanged>((states, told) =>
+              hibernatedNow(states, told.session, told.hibernated),
+            )(event.payload),
+          ),
         ]);
         if (gone) for (const unlisten of unlistens) unlisten();
         else stops.push(...unlistens);
@@ -843,6 +885,18 @@ export function useChats(plane: PlaneId | undefined): Chats {
         }));
       } catch {
         // A core older than the command, or a test's catch-all: nothing noticed.
+      }
+      // And the chats hibernated (#7630), under what has been told since.
+      try {
+        const answer = await commands.hibernatedChats(plane);
+        if (gone || answer.status !== "ok" || !Array.isArray(answer.data)) return;
+        const first = answer.data;
+        store.change((was) => ({
+          plane,
+          states: hibernatedUnder(was.plane === plane ? was.states : nothingKnown, first),
+        }));
+      } catch {
+        // A core older than the command, or a test's catch-all: none hibernated.
       }
     })();
 

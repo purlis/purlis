@@ -1153,7 +1153,8 @@ pub struct ChatOnPool {
     pub workspace: String,
     /// The pool's runner as the chat started there, so a draining runner is held only by a chat
     /// that may be on it (#5393). None for a chat found by a restart or kept before this was
-    /// written: it may be on any of the pool's runners.
+    /// written: it may be on any of the pool's runners, and only a runner's own count of the
+    /// chats it runs says whether it is on that one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runner: Option<String>,
 }

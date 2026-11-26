@@ -1252,6 +1252,18 @@ export const commands = {
 	 *  files are not touched.
 	 */
 	putAwayArrivedFiles: (plane: PlaneId, chat: string) => typedError<null, string>(__TAURI_INVOKE("put_away_arrived_files", { plane, chat })),
+	/**  Chat `session`, where it is hibernated. */
+	chatHibernated: (plane: PlaneId, session: number) => typedError<{
+	by: By,
+} | null, string>(__TAURI_INVOKE("chat_hibernated", { plane, session })),
+	/**  The chats of `plane` that are hibernated: what the window reads its rows by as it opens. */
+	hibernatedChats: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("hibernated_chats", { plane })),
+	/**
+	 *  Hibernate on a chat's row (SC-4a, #7630): the person's act. Refused, in a sentence that
+	 *  says why and what to do, where the chat may not be hibernated; otherwise its program ends and
+	 *  the window is told. The window's alone (`WINDOW_ONLY`).
+	 */
+	hibernateChat: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("hibernate_chat", { plane, session })),
 	/**
 	 *  Chat `session`, where its program ended with its session host and the person has not put
 	 *  it away.
@@ -7945,6 +7957,11 @@ export type BusyChat = {
 	state: string,
 };
 
+/**  How a chat that is hibernated was put to rest. */
+export type By = 
+/**  The person did, from its row. */
+"operator";
+
 /**
  *  A harness the operator started by hand in a shell tab, as the window draws its banner.
  * 
@@ -8318,6 +8335,11 @@ export type ChatGo =
 export type ChatHeld = {
 	plane: PlaneId,
 	session: number,
+};
+
+/**  Chat `session` as the window reads its hibernation. */
+export type ChatHibernation = {
+	by: By,
 };
 
 /**  A chat's Chat log: whether purlis knows the chat, and its rows. */
@@ -13524,6 +13546,12 @@ export type OpenChat = {
 	 *  a runner before 1.51, whose Move here row says such a clone stays there.
 	 */
 	clones_come_back?: boolean | null,
+	/**
+	 *  Whether its row offers Hibernate (SC-4a, #7630): its harness resumes a conversation by
+	 *  id and its session host can hibernate a chat (session protocol 1.96). `null` otherwise:
+	 *  a shell, a harness that cannot, or a host that would refuse it.
+	 */
+	hibernates?: boolean | null,
 	/**  The persona it adopted. */
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */

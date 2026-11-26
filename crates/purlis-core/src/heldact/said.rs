@@ -120,6 +120,7 @@ pub fn refused(why: &Refused) -> String {
             "A push that may change CI files is refused, because its changes could not be \
              shown: {why}"
         ),
+        Refused::Behind(base) => format!("Not offered: {}.", super::behind(base)),
         Refused::ForkNotAllowed(repo) => format!(
             "The host does not let the person fork {}. Ask an owner to allow forks.",
             repo.as_str()
