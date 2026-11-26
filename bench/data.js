@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795676981686,
+  "lastUpdate": 1795678568476,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55608,6 +55608,48 @@ window.BENCHMARK_DATA = {
             "value": 101.32252199999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.118, 100.499, 101.323, 102.375, 102.480 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e5880ff1a1bc6cd8ea7628c3b905b55c859d4fc9",
+          "message": "Bump jiff in /operator in the operator group across 1 directory (#7673)\n\nBumps the operator group with 1 update in the /operator directory: [jiff](https://github.com/BurntSushi/jiff).\n\n\nUpdates `jiff` from 0.2.38 to 0.2.46\n- [Changelog](https://github.com/BurntSushi/jiff/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/BurntSushi/jiff/compare/jiff-static-0.2.38...0.2.46)\n\n---\nupdated-dependencies:\n- dependency-name: jiff\n  dependency-version: 0.2.46\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: operator\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-26T06:32:09Z",
+          "tree_id": "923bbe58b00356ff606d6ee19f78c92f0e4b7eb4",
+          "url": "https://github.com/purlis/purlis/commit/e5880ff1a1bc6cd8ea7628c3b905b55c859d4fc9"
+        },
+        "date": 1795678562177,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.71461,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.689, 0.707, 0.715, 0.717, 0.726 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.749902,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.507, 16.527, 16.750, 16.758, 16.761 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.67193900000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.714, 102.065, 102.672, 102.785, 102.979 ms"
           }
         ]
       }
