@@ -29,7 +29,7 @@ use std::collections::HashMap;
 
 use graphql_parser::query::{
     Definition, Document, Field, FragmentDefinition, OperationDefinition, Selection, SelectionSet,
-    TypeCondition, Value, VariableDefinition,
+    Type, TypeCondition, Value, VariableDefinition,
 };
 use serde_json::Value as Json;
 
@@ -101,7 +101,8 @@ fn from_json(json: &Json) -> Val {
     }
 }
 
-/// The values a document's variables have: the request's, then each definition's default.
+/// The values a document's variables have: the request's, then each definition's default
+/// ([`defaults`]).
 struct Vars<'a> {
     given: &'a serde_json::Map<String, Json>,
     defaults: Vec<(String, Value<'a, String>)>,
@@ -581,9 +582,20 @@ pub(crate) fn search_repo(query: &str, repos: &[&AllowedRepo]) -> Option<usize> 
     repos.iter().position(|r| r.path.eq_ignore_ascii_case(path))
 }
 
+/// The value each declared variable takes when the request gives it none: its default, or, for
+/// a nullable one with no default, null (GraphQL, "Coercing Variable Values"). A non-null variable
+/// with no default has none, so a document that uses it unbound is not resolved; nor is one that
+/// uses a variable it never declared.
 fn defaults<'a>(defs: &[VariableDefinition<'a, String>]) -> Vec<(String, Value<'a, String>)> {
     defs.iter()
-        .filter_map(|d| d.default_value.clone().map(|v| (d.name.clone(), v)))
+        .filter_map(|d| {
+            let value = match (&d.default_value, &d.var_type) {
+                (Some(default), _) => default.clone(),
+                (None, Type::NonNullType(_)) => return None,
+                (None, _) => Value::Null,
+            };
+            Some((d.name.clone(), value))
+        })
         .collect()
 }
 
