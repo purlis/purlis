@@ -263,3 +263,77 @@ fn a_request_without_the_chats_sentinel_asks_nobody() {
     assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
     assert!(asked.0.lock().unwrap().is_empty());
 }
+
+/// The document `gh api graphql -f query=... -f id=... -f head=... -F jump=false` sends (#7678):
+/// the pull request's node id, its expected head and `jump` all come in as variables.
+const RAW_ENQUEUE: &str = "mutation($id: ID!, $head: GitObjectID!, $jump: Boolean) { \
+     enqueuePullRequest(input: {pullRequestId: $id, expectedHeadOid: $head, jump: $jump}) { \
+     mergeQueueEntry { state position enqueuedAt } } }";
+
+fn raw_enqueue(s: &Scene, id: &str) -> Outcome {
+    s.send(
+        "POST",
+        "api.github.com",
+        "/graphql",
+        &graphql(
+            RAW_ENQUEUE,
+            serde_json::json!({
+                "id": id,
+                "head": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+                "jump": false,
+            }),
+        ),
+    )
+}
+
+#[test]
+fn a_raw_enqueue_with_its_values_as_variables_raises_one_ask_that_names_it() {
+    purlis_core::unsteered!();
+    let (s, asked) = scene();
+    let out = raw_enqueue(&s, "PR_kwDO_1");
+    let Outcome::Held(held) = &out else {
+        panic!("not held, so refused or forwarded: {out:?}");
+    };
+    assert_eq!(held.refusal, Refusal::Merge);
+    assert!(held.said.contains("Ask 41"), "{}", held.said);
+    assert_eq!(
+        *asked.0.lock().unwrap(),
+        [seven_by(LandAs::Enqueue)],
+        "one ask"
+    );
+}
+
+#[test]
+fn a_raw_enqueue_of_a_pull_request_the_forge_does_not_number_is_told_why() {
+    purlis_core::unsteered!();
+    let (s, asked) = scene();
+    let out = raw_enqueue(&s, "PR_nonumber");
+    let Outcome::Held(held) = &out else {
+        panic!("not answered with a reason: {out:?}");
+    };
+    assert_eq!(held.refusal, Refusal::Merge);
+    assert!(held.said.contains("Nobody was asked"), "{}", held.said);
+    assert!(asked.0.lock().unwrap().is_empty());
+}
+
+/// purlis's own enqueue document (`forge/github/queries/enqueue.graphql`) asks the entry's head
+/// commit back: a chat that sends it is held the same way.
+#[test]
+fn an_enqueue_that_asks_back_the_entrys_head_commit_raises_one_ask() {
+    purlis_core::unsteered!();
+    let (s, asked) = scene();
+    let out = s.send(
+        "POST",
+        "api.github.com",
+        "/graphql",
+        &graphql(
+            include_str!("../../src/forge/github/queries/enqueue.graphql"),
+            serde_json::json!({
+                "id": "PR_kwDO_1",
+                "head": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+            }),
+        ),
+    );
+    assert!(matches!(out, Outcome::Held(_)), "not held: {out:?}");
+    assert_eq!(*asked.0.lock().unwrap(), [seven_by(LandAs::Enqueue)]);
+}
