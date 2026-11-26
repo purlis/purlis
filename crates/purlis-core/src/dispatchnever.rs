@@ -286,7 +286,9 @@ pub fn unaccepted_said(on: crate::enforcement::AcceptedOn<'_>) -> String {
 /// mend that, and [`crate::dispatchgrant::NEVERS_UNREAD`] says what does. A key another program
 /// made is the acceptance's cause, which the press replaces (#7714).
 pub fn unread_by_the_policy(root: &Path) -> bool {
-    false
+    (crate::secrets::seal::can_seal() || crate::secrets::seal::key_is_foreign())
+        && crate::sandbox::local::policy_unsealed(root)
+        && on_disk(root) != Nevers::Unread
 }
 
 /// What the person is told where the record itself does not read: not the shape purlis wrote,

@@ -1087,13 +1087,15 @@ impl Resolved {
     /// is marked.
     fn accepting(committed: &Self, accepted: &Self) -> Self {
         let mut resolved = committed.stricter(accepted);
-        resolved.unaccepted = Family::ALL.into_iter().filter(|_| false).collect();
-        let _unused: BTreeSet<Family> = Family::ALL
+        resolved.unaccepted = Family::ALL
             .into_iter()
             .filter(|family| {
                 resolved.mode(*family) == Mode::Enforce && committed.mode(*family) < Mode::Enforce
             })
             .collect();
+        resolved.unaccepted_denies = crate::dispatchgrant::Denied::parse(
+            &resolved.denies.without(&committed.denies).join("|"),
+        );
         resolved
     }
 
