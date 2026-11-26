@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795647773650,
+  "lastUpdate": 1795654959480,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55356,6 +55356,48 @@ window.BENCHMARK_DATA = {
             "value": 101.357201,
             "unit": "ms",
             "extra": "median of 5 runs: 100.880, 100.914, 101.357, 101.591, 102.263 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d071edc087a1504c0077057a8c5d10ca2cd484f7",
+          "message": "A device's RAM class and hot-chat target, shown in Diagnostics (SC-4f) (#7675)\n\n* wip: SC-4f RamClass in purlis-core (class and hot target from ADR 0082 §3), tests written, not yet run green (#7635)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M896G2T7PD3FEBB2YJMWMXN0\nPurlis-Persona: steward\n\n* wip: SC-4f diagnostics carries the RAM class and hot target, e2e stand-in, window line, scenario, fragment (#7635)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M896G2T7PD3FEBB2YJMWMXN0\nPurlis-Persona: steward\n\n* wip: SC-4f regenerated UI RPC client, rustfmt, scenario and fragment (#7635)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M896G2T7PD3FEBB2YJMWMXN0\nPurlis-Persona: steward\n\n* SC-4f review fixes: installed-memory class, glossary hot, unread and reading answers (#7635)\n\n- A reported total of at least 94% of a class is that class (Linux MemTotal sits below the\n  installed memory): 15.5 GB is 16, 7.6 GB is 8, 14 GB is still 8.\n- Hot is RunState::has_a_process (starting, working, input-required, paused): a queued run is\n  open, not hot.\n- DiagnosticsHere carries a DeviceClass: reading, not_known (no class, no target) or known.\n  The device's read runs on its own thread, an ask never waits on it, and a failed read is\n  tried again on the next ask.\n- The e2e scenario reads the Diagnostics line through About, by the button's name and the\n  dialog's status role.\n- lib.rs cites ADR 0082 §3.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8A1E50AKEAZESBP2SDM6N9M\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T00:19:03Z",
+          "tree_id": "cc1c1f5a293e2fd36664dcdf82facbdafe8349c0",
+          "url": "https://github.com/purlis/purlis/commit/d071edc087a1504c0077057a8c5d10ca2cd484f7"
+        },
+        "date": 1795654951883,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.549184,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.546, 0.547, 0.549, 0.561, 0.573 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.325496,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.207, 16.302, 16.325, 16.389, 16.655 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1335575,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.679, 101.845, 102.134, 102.245, 102.740 ms"
           }
         ]
       }
