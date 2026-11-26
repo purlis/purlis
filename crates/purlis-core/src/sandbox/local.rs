@@ -1319,10 +1319,14 @@ pub fn policy_accepted_record(root: &Path) -> PolicyAccepted {
         // nothing verifies and the keyring's marker alone says whether one was kept (#7153): a
         // record taken away then is broken, never the shipped default, so no accepted deny is
         // dropped.
+        // A plane whose acceptance was sealed with a key purlis has replaced since is never
+        // read as never accepted (#7714): its anchor went with the old key. The list counts
+        // here whether or not it holds, since it can only keep a plane broken.
         (None, None, None)
-            if crate::secrets::seal::can_seal()
-                || no_keyring_at(root)
-                || !crate::secrets::seal::kept_exists(POLICY_KIND, &clone) =>
+            if !crate::secrets::seal::replaced().lists(&clone)
+                && (crate::secrets::seal::can_seal()
+                    || no_keyring_at(root)
+                    || !crate::secrets::seal::kept_exists(POLICY_KIND, &clone)) =>
         {
             PolicyAccepted::Never
         }
@@ -1393,6 +1397,37 @@ pub(crate) fn mark_sealed(anchor: &str) -> io::Result<()> {
     std::fs::write(&marker, b"")
 }
 
+/// **Whether the plane at `root` had its acceptance sealed with a seal key purlis has replaced
+/// since** (#7714), and has not been accepted again: the kept fact that its acceptance broke
+/// because purlis replaced its key, never because something edited its record. Only where the
+/// keyring's list holds under the key of now ([`crate::secrets::seal::Replaced::holds_for`]): a
+/// list that does not hold, or that another program made, gives no plane these words. The
+/// person's next acceptance takes the plane off the list, so a record edited after that reads as
+/// edited again. Enforced as broken all the same.
+///
+/// What this does not catch: a record of such a plane edited before it is accepted again, which
+/// no key here can tell from one sealed with the old key, which is gone.
+pub fn broken_by_a_new_key(root: &Path) -> bool {
+    !crate::secrets::seal::key_is_foreign()
+        && crate::secrets::seal::replaced().holds_for(&anchor_key(root))
+        && policy_accepted_record(root) == PolicyAccepted::Broken
+}
+
+/// **The seal's key replaced where it is another program's** (#7714): the window's press, before
+/// it accepts. Every plane whose acceptance the keyring anchors is kept on the list of planes the
+/// old key sealed, so each reads as broken because of the new key, and none as never accepted;
+/// then every item under the seal's service is replaced and a new key made
+/// ([`crate::secrets::seal::renew_key`]), which macOS may ask the person to allow. `Ok(false)`
+/// where the key is the app's own, and nothing is replaced. A press refused or cut short is safe
+/// to press again: the old key goes last.
+pub fn renew_seal_key() -> io::Result<bool> {
+    if !crate::secrets::seal::key_is_foreign() {
+        return Ok(false);
+    }
+    let anchors = crate::secrets::seal::anchored(POLICY_KIND).map_err(io::Error::other)?;
+    crate::secrets::seal::renew_key(&anchors).map_err(io::Error::other)
+}
+
 /// [`mark_sealed`] where a seal has just been read and verified with the key, so a plane sealed
 /// before markers existed gets its own at its first verified read (#7164). Best effort: a read
 /// that cannot write one (a sandboxed chat's) is not refused, and the next verified read tries
@@ -1443,7 +1478,7 @@ pub fn accept_policy(
 ) -> io::Result<()> {
     // The key read again where it was not the app's own (#7073): one another program made, which
     // the person has deleted since, or a keyring that answers now. Where it is still another
-    // program's, the sentence says how to recover.
+    // program's, the sentence offers the press that replaces it (#7714).
     crate::secrets::seal::ready_to_seal().map_err(io::Error::other)?;
     let clone = anchor_key(root);
     let counter = read(root).policy_counter + 1;
@@ -1465,7 +1500,13 @@ pub fn accept_policy(
         held.policy_accepted = Some(accepted);
         held.policy_seal = Some(seal);
         held.policy_counter = counter;
-    })
+    })?;
+    // Sealed with the key of now: a record that does not hold from here on is said as edited
+    // (#7714). Best effort, as the acceptance is kept already.
+    if !crate::secrets::seal::unlist_replaced(&clone) {
+        tracing::warn!("purlis: the plane was not taken off the list of the old seal key");
+    }
+    Ok(())
 }
 
 /// The upstream commit purlis's own fetch of the project at `root` found, where one was kept.

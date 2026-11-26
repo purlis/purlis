@@ -1467,8 +1467,8 @@ fn a_log_line_is_not_a_read_of_the_whole_log() {
 
 #[test]
 fn a_press_with_a_seal_key_another_program_made_says_how_to_recover_and_then_accepts() {
-    // #7073, #7714: Accept says to press Make a new key and accept, and keeps the manual step;
-    // once the item is gone, the next press makes a key and accepts.
+    // #7073, #7714: Accept says when this happens without claiming who made the item, and how
+    // to recover by hand; once the item is gone, the next press makes a key and accepts.
     let _home = OwnConfigHome::new();
     let root = plane("[policy]\ntemplate = \"open\"\n", None);
     crate::secrets::seal::set_foreign_for_this_test(true);
@@ -1476,7 +1476,14 @@ fn a_press_with_a_seal_key_another_program_made_says_how_to_recover_and_then_acc
     crate::secrets::seal::set_foreign_for_this_test(false);
     let why = refused.expect_err("nothing accepted").to_string();
     assert_eq!(why, crate::secrets::seal::FOREIGN_KEY);
-    assert!(why.contains("Make a new key and accept"), "{why}");
+    assert!(
+        why.contains("This happens after an update that macOS treats as a different app"),
+        "{why}"
+    );
+    assert!(
+        !why.contains("earlier build"),
+        "never claims the origin: {why}"
+    );
     assert!(
         why.contains("security delete-generic-password -s purlis-seal"),
         "{why}"
@@ -1784,12 +1791,9 @@ fn a_record_edited_after_the_new_key_still_reads_broken_with_the_tamper_words() 
     press_with_new_key(root.path(), &digest_of(root.path())).expect("a new key");
     let file = crate::sandbox::local::path(root.path());
     let text = std::fs::read_to_string(&file).expect("the record");
-    assert!(text.contains("\"guards.git\":\"off\""), "{text}");
-    std::fs::write(
-        &file,
-        text.replace("\"guards.git\":\"off\"", "\"guards.git\":\"log\""),
-    )
-    .expect("edited");
+    let edited = text.replacen("\"asks\": \"off\"", "\"asks\": \"log\"", 1);
+    assert_ne!(edited, text, "{text}");
+    std::fs::write(&file, edited).expect("edited");
     let now = standing(root.path());
     assert!(broken(root.path()));
     assert!(now.unsealed && !now.new_key, "the tamper words: {now:?}");
@@ -1807,14 +1811,77 @@ fn a_new_key_press_macos_refuses_says_the_manual_step_and_accepts_nothing() {
         .expect_err("nothing accepted")
         .to_string();
     crate::secrets::seal::set_renew_refused_for_this_test(false);
-    assert!(why.contains(crate::secrets::seal::RENEW_REFUSED), "{why}");
+    assert!(
+        why.contains("macOS did not let purlis replace its key, so nothing was accepted"),
+        "{why}"
+    );
     assert!(
         why.contains("security delete-generic-password -s purlis-seal"),
         "{why}"
     );
     assert!(crate::secrets::seal::key_is_foreign());
     assert!(broken(root.path()));
-    crate::secrets::seal::set_foreign_for_this_test(false);
+    // The press can be made again, and this time macOS allows it.
+    press_with_new_key(root.path(), &digest_of(root.path())).expect("pressed again");
+    assert!(!broken(root.path()));
+}
+
+#[test]
+fn the_new_key_press_checks_what_was_shown_again_after_macos_prompt_returns() {
+    // #7714, ruling 5: the file can change while macOS's prompt is open. The press then accepts
+    // nothing, keeps the new key, and a press on what is shown now accepts.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    let shown = digest_of(root.path());
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    let file = root.path().join("charter.toml");
+    crate::secrets::seal::set_during_prompt_for_this_test(Box::new(move || {
+        std::fs::write(file, "[policy]\ntemplate = \"team\"\n").expect("changed meanwhile");
+    }));
+    let why = press_with_new_key(root.path(), &shown)
+        .expect_err("nothing accepted")
+        .to_string();
+    assert!(why.contains("changed since it was shown"), "{why}");
+    assert!(
+        !crate::secrets::seal::key_is_foreign(),
+        "the new key is kept"
+    );
+    assert!(!matches!(
+        crate::sandbox::local::policy_accepted_record(root.path()),
+        crate::sandbox::local::PolicyAccepted::Held(_)
+    ));
+    press_with_new_key(root.path(), &digest_of(root.path())).expect("accepted as shown now");
+    assert_eq!(
+        crate::sandbox::local::policy_accepted_record(root.path()),
+        crate::sandbox::local::PolicyAccepted::Held(committed(root.path()).as_kept())
+    );
+}
+
+#[test]
+fn after_the_new_key_press_no_other_project_that_had_an_acceptance_reads_never() {
+    // #7714, ruling 1: every other project that had an acceptance stays broken, so no accepted
+    // deny drops to the shipped default; one whose record was already gone too. A project that
+    // never had one is left as it was, and the press accepts its own project alone.
+    use crate::sandbox::local::{PolicyAccepted, policy_accepted_record};
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let kept = accepted_plane("[policy]\ntemplate = \"strict\"\n");
+    let gone = accepted_plane("[policy]\ntemplate = \"strict\"\n");
+    let never = plane("[policy]\ntemplate = \"open\"\n", None);
+    std::fs::remove_file(crate::sandbox::local::path(gone.path())).expect("record gone");
+    assert_eq!(policy_accepted_record(gone.path()), PolicyAccepted::Broken);
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    for other in [&kept, &gone] {
+        assert_eq!(policy_accepted_record(other.path()), PolicyAccepted::Broken);
+        assert!(standing(other.path()).new_key);
+    }
+    assert_eq!(policy_accepted_record(never.path()), PolicyAccepted::Never);
+    assert!(!standing(never.path()).new_key);
+    assert!(matches!(
+        policy_accepted_record(here.path()),
+        PolicyAccepted::Held(_)
+    ));
 }
 
 #[test]
@@ -1827,4 +1894,73 @@ fn a_new_key_press_where_the_key_is_the_apps_own_replaces_nothing() {
     press_with_new_key(here.path(), &digest_of(here.path())).expect("accepted");
     assert!(!broken(here.path()) && !broken(other.path()));
     assert!(!standing(other.path()).new_key);
+}
+
+#[test]
+fn a_list_of_replaced_planes_whose_seal_does_not_hold_gives_no_new_key_words() {
+    // #7714, F3: the list is sealed with the new key. One edited, or put there by another
+    // program, gives no plane the new key's words; it only ever keeps a plane broken.
+    use crate::sandbox::local::{PolicyAccepted, anchor_key, policy_accepted_record};
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let other = accepted_plane("[policy]\ntemplate = \"strict\"\n");
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    assert!(standing(other.path()).new_key, "the list holds");
+    crate::secrets::seal::set_replaced_for_this_test(&format!(
+        "{}\n{}",
+        "00".repeat(32),
+        anchor_key(other.path())
+    ));
+    assert!(
+        !standing(other.path()).new_key,
+        "a list that does not hold says nothing"
+    );
+    assert_eq!(policy_accepted_record(other.path()), PolicyAccepted::Broken);
+}
+
+#[test]
+fn a_project_accepted_again_after_the_new_key_is_taken_off_the_list() {
+    // #7714, F3: the entry goes when the project is accepted again, and the item with its last
+    // entry; a record that breaks after that gets the tamper words.
+    use crate::sandbox::local::anchor_key;
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let other = accepted_plane("[policy]\ntemplate = \"open\"\n");
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    assert!(crate::secrets::seal::replaced().holds_for(&anchor_key(other.path())));
+    press(other.path(), &digest_of(other.path())).expect("accepted again");
+    assert_eq!(
+        crate::secrets::seal::replaced(),
+        crate::secrets::seal::Replaced::default(),
+        "its last entry gone, the item went with it"
+    );
+    let file = crate::sandbox::local::path(other.path());
+    let text = std::fs::read_to_string(&file).expect("the record");
+    let edited = text.replacen("\"asks\": \"off\"", "\"asks\": \"log\"", 1);
+    assert_ne!(edited, text, "{text}");
+    std::fs::write(&file, edited).expect("edited");
+    let now = standing(other.path());
+    assert!(broken(other.path()));
+    assert!(now.unsealed && !now.new_key, "the tamper words: {now:?}");
+}
+
+#[test]
+fn a_second_new_key_adds_to_the_planes_the_first_listed() {
+    // #7714, F3: a plane the first replacement listed and not accepted since has no anchor left
+    // for the second to find; the list it kept carries it.
+    use crate::sandbox::local::anchor_key;
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let first = accepted_plane("[policy]\ntemplate = \"open\"\n");
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a first new key");
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    let again = plane("[policy]\ntemplate = \"team\"\n", None);
+    press_with_new_key(again.path(), &digest_of(again.path())).expect("a second new key");
+    let listed = crate::secrets::seal::replaced();
+    assert!(listed.holds_for(&anchor_key(first.path())), "{listed:?}");
+    assert!(listed.holds_for(&anchor_key(here.path())), "{listed:?}");
+    assert!(standing(first.path()).new_key && standing(here.path()).new_key);
 }

@@ -775,6 +775,15 @@ export const commands = {
 	 */
 	acceptProjectPolicy: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("accept_project_policy", { plane, shown })),
 	/**
+	 *  **Your press where the seal's key is another program's: make a new key and accept the
+	 *  project's `[policy]` as it was shown** (#7714), on the project `plane` names, never the one in
+	 *  front when it lands. The old `purlis-seal` items are replaced, which macOS may ask you to
+	 *  allow; the digest is checked again once its prompt returns; then a new key seals this
+	 *  project's acceptance. Every other project accepted on this machine then needs accepting
+	 *  again. The window's alone. The window draws it in the prerequisite modal (#7719).
+	 */
+	acceptProjectPolicyWithNewKey: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("accept_project_policy_with_new_key", { plane, shown })),
+	/**
 	 *  **What the project's `[policy]` let through and logged** (Q308a: the "would have blocked"
 	 *  count, which opens the log): every chat's lines, newest first. A read, off the window's
 	 *  thread.
@@ -14766,6 +14775,17 @@ export type PolicyState = {
 	not_in_force: string[],
 	/**  Whether this machine keeps an acceptance whose seal does not hold, which counts as none. */
 	unsealed: boolean,
+	/**
+	 *  Whether the seal's key on this machine is another program's, most likely an earlier
+	 *  build's before an update (#7714): nothing holds, and the window offers Make a new key and
+	 *  accept ([`accept_project_policy_with_new_key`]) in place of Accept.
+	 */
+	key_foreign: boolean,
+	/**
+	 *  Whether the acceptance does not hold because purlis made a new seal key on this machine
+	 *  since it was sealed (#7714), never because something edited it: the window says so.
+	 */
+	new_key: boolean,
 	/**
 	 *  The digest of the committed text this was read from: what Accept names, so a press on a
 	 *  file that changed since it was shown accepts nothing.

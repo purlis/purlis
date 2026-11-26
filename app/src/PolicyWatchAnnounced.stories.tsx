@@ -33,6 +33,8 @@ const meta = {
       refused: [],
       not_in_force: [],
       unsealed: false,
+      key_foreign: false,
+      new_key: false,
       digest: "d1",
       template: "watch",
       template_default: true,

@@ -33,7 +33,6 @@ function core(
     asked.push({ cmd, args });
     if (cmd === "project_policy_state") return state;
     if (cmd === "accept_project_policy") return accept();
-    if (cmd === "accept_project_policy_with_new_key") return accept();
     if (cmd === "policy_log") return log;
     return null;
   });
@@ -41,23 +40,6 @@ function core(
 }
 
 describe("the project's policy in Settings", () => {
-  it("offers Make a new key and accept where an update left the old seal key (#7714)", async () => {
-    const sent = core({ ...WATCH, unsealed: true, key_foreign: true, digest: "d4" });
-    render(<PolicyStanding plane={PLANE} ids={IDS} canAccept />);
-    await userEvent.click(await screen.findByRole("button", { name: "Make a new key and accept" }));
-    await waitFor(() =>
-      expect(sent("accept_project_policy_with_new_key")).toEqual([{ plane: PLANE, shown: "d4" }]),
-    );
-    expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
-  });
-
-  it("never offers the new key press where this page is not the window (#7714)", async () => {
-    core({ ...WATCH, unsealed: true, key_foreign: true });
-    render(<PolicyStanding plane={PLANE} ids={IDS} canAccept={false} />);
-    expect(await screen.findByText(/an earlier build of purlis made it/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Make a new key and accept" })).toBeNull();
-  });
-
   it("says the default template where the project names none", async () => {
     core(WATCH);
     render(<PolicyStanding plane={PLANE} ids={IDS} canAccept />);

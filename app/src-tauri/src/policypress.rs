@@ -35,6 +35,13 @@ pub struct PolicyState {
     pub not_in_force: Vec<String>,
     /// Whether this machine keeps an acceptance whose seal does not hold, which counts as none.
     pub unsealed: bool,
+    /// Whether the seal's key on this machine is another program's, most likely an earlier
+    /// build's before an update (#7714): nothing holds, and the window offers Make a new key and
+    /// accept ([`accept_project_policy_with_new_key`]) in place of Accept.
+    pub key_foreign: bool,
+    /// Whether the acceptance does not hold because purlis made a new seal key on this machine
+    /// since it was sealed (#7714), never because something edited it: the window says so.
+    pub new_key: bool,
     /// The digest of the committed text this was read from: what Accept names, so a press on a
     /// file that changed since it was shown accepts nothing.
     pub digest: String,
@@ -146,6 +153,8 @@ fn state_of(root: &std::path::Path) -> PolicyState {
             .map(|family| family.key().to_owned())
             .collect(),
         unsealed: standing.unsealed,
+        key_foreign: standing.key_foreign,
+        new_key: standing.new_key,
         digest: standing.digest,
         template: standing.said.template.word().to_owned(),
         template_default: !standing.said.template_said,
@@ -316,6 +325,30 @@ pub async fn accept_project_policy(
     .await
 }
 
+/// **Your press where the seal's key is another program's: make a new key and accept the
+/// project's `[policy]` as it was shown** (#7714), on the project `plane` names, never the one in
+/// front when it lands. The old `purlis-seal` items are replaced, which macOS may ask you to
+/// allow; the digest is checked again once its prompt returns; then a new key seals this
+/// project's acceptance. Every other project accepted on this machine then needs accepting
+/// again. The window's alone. The window draws it in the prerequisite modal (#7719).
+#[tauri::command]
+#[specta::specta]
+pub async fn accept_project_policy_with_new_key(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    shown: String,
+) -> Result<PolicyState, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window(READING_POLICY, move || new_key_pressed(&root, &shown)).await
+}
+
+/// [`accept_project_policy_with_new_key`] on the project at `root`, off the window's thread.
+fn new_key_pressed(root: &std::path::Path, shown: &str) -> Result<PolicyState, String> {
+    enforcement::press_with_new_key(root, shown)
+        .map_err(|why| format!("purlis could not keep your acceptance on this machine: {why}"))?;
+    Ok(state_of(root))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -366,6 +399,26 @@ mod tests {
                 "{press}"
             );
         }
+    }
+
+    #[test]
+    fn the_new_key_press_reads_the_project_it_names_and_no_other() {
+        // #7714, ruling 6: the press is bound to its own project. What another project shows is
+        // never accepted on this one.
+        let (one, other) = (
+            plane("[policy]\ntemplate = \"open\"\n"),
+            plane("[policy]\ntemplate = \"team\"\n"),
+        );
+        let planes = Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None);
+        let (first, second) = (planes.open(one.path()), planes.open(other.path()));
+        let root = planes.held(&first).expect("held").root().to_path_buf();
+        let shown_there = state_of(planes.held(&second).expect("held").root()).digest;
+        let why = new_key_pressed(&root, &shown_there).expect_err("nothing accepted");
+        assert!(why.contains("changed since it was shown"), "{why}");
+        // What this project shows passes, and is then refused only because a test is not the
+        // app, which alone seals.
+        let why = new_key_pressed(&root, &state_of(&root).digest).expect_err("not the app");
+        assert!(!why.contains("changed since it was shown"), "{why}");
     }
 
     #[test]

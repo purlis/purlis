@@ -1338,10 +1338,7 @@ pub fn level_waiting(root: &Path) -> Option<(SandboxLevel, SandboxLevel)> {
 pub fn press(root: &Path, shown: &str) -> std::io::Result<()> {
     let now = committed(root);
     if digest(&now) != shown {
-        return Err(std::io::Error::other(
-            "the project's policy changed since it was shown, so nothing was accepted; look at \
-             it again",
-        ));
+        return Err(changed_since_shown());
     }
     crate::sandbox::local::accept_policy(root, now.as_kept())?;
     // One press for the level (the follow-up's item 1): where it accepts the team's off, the
@@ -1355,9 +1352,29 @@ pub fn press(root: &Path, shown: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// **The person's press when the seal's key is another program's** (#7714). Stub.
+/// **The person's press where the seal's key is another program's: make a new key and accept**
+/// (#7714), the window's alone, on the plane it names. A view already stale asks nothing of
+/// macOS. Then the old items are replaced and a new key made
+/// ([`crate::sandbox::local::renew_seal_key`]), which macOS may ask the person to allow, and
+/// **the digest is checked again after that prompt returns**: a file that changed while it was
+/// open accepts nothing, with the new key kept. Then this plane's acceptance is sealed from what
+/// the person was shown, as [`press`] seals it. Every other plane whose acceptance was sealed
+/// with the old key reads as broken because of the new key ([`Standing::new_key`]), never as
+/// never accepted. Where the key is the app's own, nothing is replaced and it is [`press`].
 pub fn press_with_new_key(root: &Path, shown: &str) -> std::io::Result<()> {
+    if digest(&committed(root)) != shown {
+        return Err(changed_since_shown());
+    }
+    crate::sandbox::local::renew_seal_key()?;
     press(root, shown)
+}
+
+/// What a press says where the project's file changed since it was shown.
+fn changed_since_shown() -> std::io::Error {
+    std::io::Error::other(
+        "the project's policy changed since it was shown, so nothing was accepted; look at it \
+         again",
+    )
 }
 
 /// **What the window says about the project's `[policy]` on this machine** (Q308a, Q308b).
@@ -1387,13 +1404,13 @@ pub struct Standing {
     pub refused: Vec<String>,
     /// Whether an acceptance is kept here whose seal does not hold: it counts as none.
     pub unsealed: bool,
-    /// Whether the seal's key on this machine is another program's (#7714): an earlier build's,
-    /// most likely, before an update macOS takes for another program. Then nothing holds, and
-    /// the window offers [`press_with_new_key`].
+    /// Whether the seal's key on this machine is another program's (#7714), whoever made it:
+    /// what happens after an update macOS treats as a different app. Then nothing holds, and
+    /// the press is [`press_with_new_key`].
     pub key_foreign: bool,
-    /// Whether this plane's acceptance does not hold because purlis made a new seal key on this
-    /// machine since it was sealed (#7714), never because something edited it: said so, and
-    /// enforced as any acceptance that does not hold is.
+    /// Whether this plane's acceptance broke because purlis replaced its seal key on this
+    /// machine since it was sealed (#7714), never because something edited it
+    /// ([`crate::sandbox::local::broken_by_a_new_key`]): enforced as broken all the same.
     pub new_key: bool,
     /// The digest of the committed text this was read from, which the press must name.
     pub digest: String,
@@ -1434,8 +1451,8 @@ pub fn standing(root: &Path) -> Standing {
         protection_lifted: now.protection_lifted(&accepted),
         refused: settings.refused.clone(),
         unsealed: crate::sandbox::local::policy_unsealed(root),
-        key_foreign: false,
-        new_key: false,
+        key_foreign: crate::secrets::seal::key_is_foreign(),
+        new_key: crate::sandbox::local::broken_by_a_new_key(root),
         digest: digest(&now),
         runs: now.stricter(&accepted),
         locked: Family::ALL
