@@ -8853,13 +8853,36 @@ fn a_chat_on_a_profile_never_gets_the_shims() {
 }
 
 #[test]
-fn a_shell_tab_in_an_app_with_no_shims_is_a_plain_shell() {
+fn a_shell_tab_in_an_app_with_no_shims_is_a_plain_shell_marked_as_the_persons_own() {
     let chats = Chats::new();
 
     let (args, env) = chats.shell_start(&chat("/bin/zsh", "shell", None), "/bin/zsh", vec![]);
 
     assert!(args.is_empty());
-    assert!(env.is_empty(), "{env:?}");
+    assert_eq!(
+        env,
+        [(
+            purlis_core::shellguard::SHELL_TAB_ENV.to_owned(),
+            "1".to_owned()
+        )]
+    );
+}
+
+#[test]
+fn a_shell_tab_is_marked_as_the_persons_own_terminal() {
+    // #7694: a shell tab carries the chat marks a shell guard needs, so `purlis worktree adopt`
+    // run there took it for a chat. Its own mark says it is the person's.
+    let chats = armed_with_shims();
+
+    let (_, env) = chats.shell_start(&chat("/bin/sh", "shell", None), "/bin/sh", vec![]);
+
+    assert!(
+        env.contains(&(
+            purlis_core::shellguard::SHELL_TAB_ENV.to_owned(),
+            "1".to_owned()
+        )),
+        "{env:?}"
+    );
 }
 
 // --- the session host is a seam (FD-3) ------------------------------------------- //

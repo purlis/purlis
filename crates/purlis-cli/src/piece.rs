@@ -304,8 +304,9 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, CliError> {
             workspace,
         } => {
             let ws = here.active_workspace(workspace.as_deref())?;
-            // What the folder is on is trusted once: only the person says so.
-            if crate::session::chat_number().is_some() {
+            // What the folder is on is trusted once: only the person says so, in a terminal of
+            // their own or the window's shell tab (#7694).
+            if crate::session::run_by_a_chat_in(&purlis_core::envvar::var) {
                 say(purlis_core::repocmd::Say::Fail(
                     format!(
                         "`purlis worktree adopt` records what {repo} \u{b7} {piece} is on as the \

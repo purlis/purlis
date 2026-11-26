@@ -324,10 +324,21 @@ fn answered(answer: std::io::Result<hookwire::Answer>) -> Forwarded {
 /// `$CHARTER_SESSION_ID`, which the app sets in every chat it starts to the same number. A value
 /// that is not a number (a session id from outside the app) is no chat.
 pub(crate) fn chat_number() -> Option<u32> {
+    chat_number_in(&purlis_core::envvar::var)
+}
+
+/// [`chat_number`], with the environment asked through `env`.
+fn chat_number_in(env: &dyn Fn(&str) -> Option<String>) -> Option<u32> {
     [CHAT_ENV, purlis_core::active::SESSION_ID_ENV]
         .into_iter()
-        .filter_map(purlis_core::envvar::var)
+        .filter_map(env)
         .find_map(|n| n.trim().parse::<u32>().ok().filter(|n| *n > 0))
+}
+
+/// Whether a command only the person runs is run by a chat here (#7694). Not yet written: every
+/// session the app started is taken for one.
+pub(crate) fn run_by_a_chat_in(env: &dyn Fn(&str) -> Option<String>) -> bool {
+    chat_number_in(env).is_some()
 }
 
 /// Tells the app this chat's record is saved, and answers what becomes of the chat, as

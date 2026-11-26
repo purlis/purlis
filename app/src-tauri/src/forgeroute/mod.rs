@@ -992,6 +992,22 @@ impl ForgeRoutes {
         }
     }
 
+    /// A chat put back from the session host (#7694). Not yet written: it starts nothing.
+    pub fn guard_reattached(
+        &self,
+        _chat: &str,
+        run: &str,
+        _project: &Path,
+        _chain: Option<&str>,
+    ) -> RouteGuard<'_> {
+        RouteGuard {
+            routes: self,
+            run: run.to_owned(),
+            params: None,
+            armed: false,
+        }
+    }
+
     /// A run's route stops: its sentinel, its listener, its folder and its asks.
     pub fn stop(&self, run: &str) {
         let gone = self.live().remove(run);
