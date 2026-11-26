@@ -434,7 +434,7 @@ async fn a_chat(rig: &Rig, client: &Client, tag: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------------------------
-// What is train A's and train D's: read through here, so the rest of a case is real now.
+// What is the app's or the rig's: read through here, so the rest of a case is real now.
 // ---------------------------------------------------------------------------------------------
 
 /// **Reads of what purlis-core cannot reach.** Trains A and D are on `main`; what is left here is
@@ -486,41 +486,37 @@ mod seam {
     /// two. The rig has one (`tests/ssh-runner/up-systemd.sh`'s); a second machine there is the
     /// rig's follow-up.
     pub fn a_second_runner(_rig: &Rig) -> Rig {
-        todo!("needs a second runner machine in the rig (up-systemd.sh) and #7190 train D")
+        todo!("needs a second runner machine in the rig (up-systemd.sh) (#7662)")
     }
 
     /// The pool forgotten on this machine, as Forget does, and what it lists as left there.
     ///
-    /// Train A: `Forget works in every state and lists what may be left`; call it on the pool the
-    /// chat runs on and return the listed leftovers.
+    /// The app's Forget (`HostedSessions::pool_removed`, #7187), which lists what may be left:
+    /// call it on the pool the chat runs on and return the listed leftovers.
     pub fn forget_the_pool(_rig: &Rig) -> Vec<String> {
-        todo!(
-            "needs #7187 train A: Forget on the pool, with the list of what is left on the machine"
-        )
+        todo!("the app's: Forget on the pool, with the list of what is left on the machine (#7662)")
     }
 
     /// A browser opened on the runner, by the chat that owns it, and its state as the view says it.
     ///
-    /// Train D: the runner browser of `purlis_core::browser` on a pool (#7190).
+    /// The app's runner browser on a pool (`app/src-tauri/src/chatbrowsers.rs`, #7190).
     pub fn open_a_browser(_rig: &Rig, _chat: &str) -> String {
-        todo!("needs #7190 train D: a browser on a pool's runner")
+        todo!("the app's: a browser on a pool's runner (#7662)")
     }
 
     /// The browser's state: `Open`, a reason it is down, or `Pool forgotten`.
     pub fn browser_state(_rig: &Rig, _browser: &str) -> String {
-        todo!("needs #7190 train D: the browser's view state")
+        todo!("the app's: the browser's view state (#7662)")
     }
 
     /// The person takes over the browser; whether control was kept, or the reason it was not.
     pub fn take_over(_rig: &Rig, _browser: &str) -> Result<(), String> {
-        todo!(
-            "train D's runner browsers are the app's (app/src-tauri chatbrowsers.rs), which purlis-core cannot open, and the systemd rig's machine has no browser engine (tests/ssh-runner/systemd.Dockerfile); takeover is the app's too (#7662)"
-        )
+        todo!("the app's: takeover of a runner's browser (#7662)")
     }
 
     /// Whether the browser's page is the page it was (its URL and title).
     pub fn page_of(_rig: &Rig, _browser: &str) -> String {
-        todo!("needs #7190 train D: the page a runner browser shows")
+        todo!("the app's: the page a runner browser shows (#7662)")
     }
 }
 
