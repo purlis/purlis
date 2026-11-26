@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795695431247,
+  "lastUpdate": 1795698381829,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55860,6 +55860,48 @@ window.BENCHMARK_DATA = {
             "value": 102.94889599999999,
             "unit": "ms",
             "extra": "median of 5 runs: 102.234, 102.251, 102.949, 103.599, 106.300 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "db9fde91b42862bf8f6cfcfd3d2e16c783a6104b",
+          "message": "purlis change push works on a chat's forge route (#7693) (#7704)\n\n* Red: change push in a chat takes the chat's forge route; glab trusts its authority (#7693)\n\nTests for a route read from a chat's environment (the same one the app's\ngit takes for that chat), change push under it, the no-route refusal in\na sandboxed chat, and GLAB_CA_CERT reaching glab. The reader and the\npush's use of it are stubs here, so these fail.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BMZBV3BDQZD6SB6N20FTNW\nPurlis-Persona: steward\n\n* purlis change push works on a chat's forge route (#7693)\n\nIn a chat, change push ran git itself through run_network, which builds\ngit's environment from nothing. The chat's route reaches its own git as\nGIT_CONFIG_* pairs (a per-host http.sslCAInfo naming the chat's\nauthority, a per-host proxy, the sentinel helper), and none of them was\npassed. So git went through the proxy without trusting the authority\nthat signs its certificates: 'unable to get local issuer certificate'.\nglab lost GLAB_CA_CERT the same way.\n\nNow change push reads the chat's route from its environment (its hosts,\nauthority, egress port and sentinel, never the helper the environment\nnames) and runs every member's git under the same NetworkRoute that\nforgewire::git_network makes for the app's git for that chat: no login\nof the person's. The forge CLI is passed GLAB_CA_CERT. A sandboxed chat\nwith no route is refused with the step that gives it one.\n\nThe route already allows POST .../merge_requests, PUT\n.../merge_requests/<iid>, POST pulls and PATCH pulls/<n>, which is\neverything change push sends, so no route rule changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BMZBV3BDQZD6SB6N20FTNW\nPurlis-Persona: steward\n\n* Red tests: a forge route read from a chat's environment refuses a host that is not a host name, an egress that only starts like the loopback port, and a partial environment; glab's CA only under a route (#7704 review)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BR81ZD0B7XWFVR034KP077\nPurlis-Persona: steward\n\n* Route read from a chat's environment: only host names, quoted on the helper line; exactly the loopback port; refuse a count past its pairs; glab's CA only under a route, never as the operator (#7704 review)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BR81ZD0B7XWFVR034KP077\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T12:26:12Z",
+          "tree_id": "e753566d64d7e39c1c949861effee3976001e5ba",
+          "url": "https://github.com/purlis/purlis/commit/db9fde91b42862bf8f6cfcfd3d2e16c783a6104b"
+        },
+        "date": 1795698374714,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.337834,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.333, 0.334, 0.338, 0.341, 0.349 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6589225,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.366, 16.460, 16.659, 16.721, 16.862 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.68120400000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.658, 101.447, 101.681, 101.815, 102.065 ms"
           }
         ]
       }
