@@ -214,6 +214,10 @@ pub struct Tok {
     pub start: isize,
     /// One past the last source character of the token, or -1.
     pub end: isize,
+    /// Whether an unquoted blank stood inside a `${…}` of the token, which the shell splits the
+    /// expansion's value at: `${x:-gh pr merge 1}` is a whole command, and `${x:-"a b"}` one
+    /// word (#7709, round 3).
+    pub split_in_braces: bool,
 }
 
 impl Tok {
@@ -223,6 +227,7 @@ impl Tok {
             bare,
             start,
             end,
+            split_in_braces: false,
         }
     }
 
@@ -440,6 +445,8 @@ struct Lexer {
     /// across words, so that each character is read at most twice and a line of unclosed `${`
     /// costs its length, not its square (#7709, round 2).
     braces_read_to: usize,
+    /// Whether the word held an unquoted blank inside its `${…}` ([`Tok::split_in_braces`]).
+    split_in_braces: bool,
 }
 
 impl Lexer {
@@ -463,6 +470,7 @@ impl Lexer {
             brace_mark: None,
             braces_off: false,
             braces_read_to: 0,
+            split_in_braces: false,
         }
     }
 
@@ -504,6 +512,13 @@ impl Lexer {
         {
             return false;
         }
+        self.next_begins_a_parameter()
+    }
+
+    /// Whether the character after the one just read begins a parameter expansion's name: a
+    /// letter, a digit or one of `#?@*!$-`. A blank, a newline or a `|` after `${` opens a bash
+    /// 5.3 funsub instead, which runs a command.
+    fn next_begins_a_parameter(&self) -> bool {
         let next = self
             .pushback_chars
             .last()
@@ -533,6 +548,7 @@ impl Lexer {
         self.braces = 0;
         self.brace_mark = None;
         self.braces_off = false;
+        self.split_in_braces = false;
         let mut quoted = false;
         let mut escapedstate = St::Space;
         loop {
@@ -648,9 +664,15 @@ impl Lexer {
                     // `{` on as it always was: split at its operators, so that the commands a
                     // `$(…)`, a `` `…` ``, a `<(…)` or a zsh `=(…)` in it runs stay segments
                     // of their own, and an unclosed one reads as the recorded answers read it.
+                    // A nested bash 5.3 funsub (`${ …; }`, `${| …; }`) runs commands too.
                     if self.state == St::Word
                         && self.braces > 0
-                        && nextchar.is_none_or(|c| matches!(c, '(' | '`'))
+                        && nextchar.is_none_or(|c| {
+                            matches!(c, '(' | '`')
+                                || (c == '{'
+                                    && self.dollars % 2 == 1
+                                    && !self.next_begins_a_parameter())
+                        })
                         && let Some((at, pushed, len, bare, start, was_quoted)) =
                             self.brace_mark.take()
                     {
@@ -661,6 +683,7 @@ impl Lexer {
                         (self.bare, self.start, quoted) = (bare, start, was_quoted);
                         self.braces = 0;
                         self.braces_off = true;
+                        self.split_in_braces = false;
                         self.dollars = 0;
                         continue;
                     }
@@ -680,6 +703,7 @@ impl Lexer {
                         match c {
                             '{' if self.dollars % 2 == 1 => self.braces += 1,
                             '}' => self.braces -= 1,
+                            ' ' | '\t' | '\n' => self.split_in_braces = true,
                             _ => {}
                         }
                         self.dollars = if c == '$' { self.dollars + 1 } else { 0 };
@@ -775,7 +799,10 @@ pub fn lex(cmd: &str) -> Result<Vec<Tok>, LexError> {
         match lexer.read_token()? {
             // `None`, not `""`: `cat ''` produces a real empty token.
             None => return Ok(out),
-            Some(text) => out.push(Tok::new(text, lexer.bare, lexer.start, lexer.end)),
+            Some(text) => out.push(Tok {
+                split_in_braces: lexer.split_in_braces,
+                ..Tok::new(text, lexer.bare, lexer.start, lexer.end)
+            }),
         }
     }
 }
@@ -1176,6 +1203,8 @@ pub fn met_a_string_too_deep() {
 struct Walked {
     joined: JoinedSegment,
     own: Vec<Tok>,
+    /// The texts of its words, outward and own, that [`Tok::split_in_braces`].
+    split_in_braces: Vec<String>,
 }
 
 /// What [`Reading::own`] writes where a substitution stands in the command around it, after
@@ -1208,6 +1237,10 @@ pub struct Reading {
     /// Whether a `|` or `|&` hands this segment its stdin: the segment before it writes what this
     /// one reads, which may become words of a command it runs (`echo pr merge 5 | xe gh`).
     pub own_piped: bool,
+    /// The texts of the segment's words, [`Reading::outward`]'s and [`Reading::own`]'s, in whose
+    /// `${…}` an unquoted blank stood ([`Tok::split_in_braces`]): the shell splits what such a
+    /// word gives into words, and as a program it is a whole command (#7709, round 3).
+    pub split_in_braces: Vec<String>,
 }
 
 /// [`segment_argv`]'s segments, each with its [`Reading::own`] words as well, both readings
@@ -1276,6 +1309,7 @@ fn read_segments(cmd: &str) -> Vec<Reading> {
         .into_iter()
         .map(|w| Reading {
             own_piped: matches!(w.joined.before.as_deref(), Some("|" | "|&")),
+            split_in_braces: w.split_in_braces,
             outward: w.joined.argv,
             own_source: w.own.iter().map(source).collect(),
             own_bare: w.own.iter().map(|t| t.bare).collect(),
@@ -1315,6 +1349,14 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<Walked>, usize) {
         own: Vec<Tok>,
     }
     let texts = |toks: Vec<Tok>| toks.into_iter().map(|t| t.text).collect::<Vec<_>>();
+    let split_in_braces = |seg: &Seg| {
+        seg.outward
+            .iter()
+            .chain(&seg.own)
+            .filter(|t| t.split_in_braces)
+            .map(|t| t.text.clone())
+            .collect::<Vec<_>>()
+    };
 
     let mut out: Vec<Walked> = Vec::new();
     let mut open_segs: Vec<Seg> = vec![Seg::default()]; // outermost first
@@ -1326,12 +1368,14 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<Walked>, usize) {
     // rest of the word the substitution stands in (`A=$(true)x`).
     let mut word_goes_on_at: Option<isize> = None;
     let mut close = |seg: Seg, before: &mut Option<String>, after: &str| {
+        let split_in_braces = split_in_braces(&seg);
         out.push(Walked {
             joined: JoinedSegment {
                 argv: texts(seg.outward),
                 before: before.clone(),
                 after: Some(after.to_string()),
             },
+            split_in_braces,
             own: seg.own,
         });
         *before = Some(after.to_string());
@@ -1446,12 +1490,14 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<Walked>, usize) {
         deepest = deepest.max(open_segs.len() - 1);
     }
     for (seg, before) in open_segs.into_iter().zip(befores) {
+        let split_in_braces = split_in_braces(&seg);
         out.push(Walked {
             joined: JoinedSegment {
                 argv: texts(seg.outward),
                 before,
                 after: None,
             },
+            split_in_braces,
             own: seg.own,
         });
     }

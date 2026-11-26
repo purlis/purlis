@@ -770,7 +770,7 @@ fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             // real reading, whose own bodies were already read above, and the hedge's re-spelling
             // of it (its quotes gone, so `<<'EOF'` is an unquoted `<<EOF` with no body) is no
             // text of the line that must close (#7245, round 5).
-            unclosable |= speculates && body_the_reader_cannot_close(&body);
+            unclosable |= !reading_a_hedge() && body_the_reader_cannot_close(&body);
         }
     }
     // A program the shell builds, from a substitution, a brace expansion or a glob, could be any
@@ -811,7 +811,7 @@ fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         {
             if let Some(at) = shellwrap::past_function_headers(toks) {
                 let (body, ..) = shellwrap::split_env(&toks[at..]);
-                if program_built_by_the_shell(&body) {
+                if program_built_by_the_shell(&body, reading.split_in_braces.contains(&body)) {
                     return Some(format!(
                         "{fix}{} The program `{body}` of a function's body is built by the shell, \
                          so purlis can't read which command this is. {WRITE_IT_OUT}",
@@ -836,7 +836,7 @@ fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         if !speculates {
             continue;
         }
-        if program_built_by_the_shell(&prog) {
+        if program_built_by_the_shell(&prog, reading.split_in_braces.contains(&prog)) {
             return Some(format!(
                 "{fix}{} The program `{prog}` is built by the shell, so purlis can't read which \
                  command this is. {WRITE_IT_OUT}",
@@ -1665,9 +1665,12 @@ fn refspec_end(spec: &str) -> &str {
 /// command substitution is judged by what it prints
 /// ([`substitution_that_could_print_a_command`]), a parameter expansion (`${cmd[@]}`) is a
 /// program the shell fills in ([`FILLED_IN_PROGRAM_READ_AS`]), and `[` and `[[` are the test
-/// builtins. A parameter expansion that holds a blank (`${x:-gh pr merge 1}`) is built too: the
-/// shell splits what it gives into words and runs them, a whole command (#7709, round 2).
-fn program_built_by_the_shell(prog: &str) -> bool {
+/// builtins. A parameter expansion that holds an unquoted blank (`${x:-gh pr merge 1}`) is built
+/// too: the shell splits what it gives into words and runs them, a whole command (#7709, round
+/// 2). Where the blanks stood is the lexer's fact, `split_in_braces`
+/// ([`shellseg::Reading::split_in_braces`]): the word's text has lost the quotes that say which
+/// `}` closes it (round 3).
+fn program_built_by_the_shell(prog: &str, split_in_braces: bool) -> bool {
     if prog == "[" || prog == "[[" {
         return false;
     }
@@ -1675,7 +1678,6 @@ fn program_built_by_the_shell(prog: &str) -> bool {
     // path component the same way.
     let mut whole = String::new();
     let mut last = String::new();
-    let mut split_into_words = false;
     let mut chars = prog.chars().peekable();
     while let Some(c) = chars.next() {
         let stands_for = match c {
@@ -1694,7 +1696,6 @@ fn program_built_by_the_shell(prog: &str) -> bool {
                     match c {
                         '{' => depth += 1,
                         '}' => depth -= 1,
-                        c if c.is_whitespace() => split_into_words = true,
                         _ => {}
                     }
                     if depth == 0 {
@@ -1718,7 +1719,7 @@ fn program_built_by_the_shell(prog: &str) -> bool {
         .is_some_and(|open| last[open + 1..].contains(']'));
     // `?` alone matches only a name one character long, which no CLI the floor reads has.
     let lone_one_character_glob = last == "?";
-    split_into_words
+    split_in_braces
         || (last.contains(['*', '?']) && !lone_one_character_glob)
         || glob_class
         || merge::brace_expansion(&whole)
@@ -2690,11 +2691,14 @@ fn hands_a_script_to_a_shell(toks: &[String]) -> bool {
 }
 
 /// Whether what a segment prints is its own words, read as a line (#7709): `echo`, `printf` and
-/// zsh's `print`, or a program handed a here-string, whose text the line spells out.
+/// zsh's `print`, `yes`, which prints them again and again, or a program handed a here-string,
+/// whose text the line spells out.
 fn prints_its_words(toks: &[String]) -> bool {
     let (prog, _env, argv) = shellwrap::split_env(toks);
-    matches!(base_lower(&prog).as_str(), "echo" | "printf" | "print")
-        || argv.iter().any(|w| w == "<<<")
+    matches!(
+        base_lower(&prog).as_str(),
+        "echo" | "printf" | "print" | "yes"
+    ) || argv.iter().any(|w| w == "<<<")
 }
 
 /// What a segment could print into a shell reading stdin: its words as one line, with and

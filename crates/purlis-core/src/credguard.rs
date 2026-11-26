@@ -378,7 +378,9 @@ pub fn single_credential_hit(cmd: &str, forges: &[Forge]) -> Option<(String, Str
         }
     }
 
-    let segments = shellseg::segment_argv(cmd);
+    // A heredoc body nothing runs is data, so a `${` in it opens nothing that could hide the
+    // commands after it (#7709, round 3).
+    let segments = shellseg::segment_argv(&crate::heredoc::commands_a_shell_runs(cmd));
     let before_each = shellwrap::exported_env_shared(&segments);
     for (i, toks) in segments.iter().enumerate() {
         let (prog, seg_env, argv) = shellwrap::split_env(toks);

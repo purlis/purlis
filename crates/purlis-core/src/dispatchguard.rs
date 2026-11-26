@@ -145,9 +145,14 @@ fn purlis_words(toks: &[String]) -> Option<Vec<String>> {
 }
 
 fn a_segment_runs(cmd: &str, is: fn(&[String]) -> bool) -> bool {
-    shellseg::segment_argv(cmd)
-        .iter()
-        .any(|toks| purlis_words(toks).is_some_and(|words| is(&words)))
+    // Every line, a heredoc body's too, and then the commands a shell runs: there a body is
+    // data, so a `${` in it opens nothing that hides the commands after it (#7709, round 3).
+    let runs = |text: &str| {
+        shellseg::segment_argv(text)
+            .iter()
+            .any(|toks| purlis_words(toks).is_some_and(|words| is(&words)))
+    };
+    runs(cmd) || (cmd.contains("<<") && runs(&crate::heredoc::commands_a_shell_runs(cmd)))
 }
 
 /// Whether a program word is the variable the app names purlis's binary in: `$NAME` or
