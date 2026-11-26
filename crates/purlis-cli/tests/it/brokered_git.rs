@@ -1721,3 +1721,249 @@ fn an_emptied_environment_in_a_pid_namespace_of_its_own_is_refused_and_never_run
     assert_eq!(chats_heard(&asked), Vec::<u32>::new());
     assert!(!root.join("workspaces/alpha/.worktrees/widget/p1").exists());
 }
+
+// ---- `worktree adopt`: the app decides that the person runs it (#7700) ----
+
+/// A plane with workspace `alpha` holding clone `svc`, and its branch folder `p1` on
+/// `fix/p1-other`, a branch not named as the folder: the folder `worktree adopt` is for.
+fn a_folder_to_adopt(world: &World, name: &str) -> PathBuf {
+    let root = world.base.join(name);
+    let clone = root.join("workspaces/alpha/svc");
+    std::fs::create_dir_all(&clone).unwrap();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    world.git(&clone, &["init", "-q", "-b", "main", "."]);
+    std::fs::write(clone.join("README.md"), "one\n").unwrap();
+    world.git(&clone, &["add", "-A"]);
+    world.git(&clone, &["commit", "-q", "-m", "one"]);
+    let folder = root.join("workspaces/alpha/.worktrees/svc/p1");
+    world.git(
+        &clone,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "fix/p1-other",
+            folder.to_str().unwrap(),
+        ],
+    );
+    root
+}
+
+/// The core's broker as the app calls it for chat 3 standing at `root`: the window's shell tab
+/// (no persona, no harness) where `shell_tab`, else a persona's chat running its harness.
+fn the_adopting_broker(
+    root: PathBuf,
+    shell_tab: bool,
+) -> impl Fn(Ask) -> Answer + Send + Sync + 'static {
+    move |ask| match ask {
+        Ask::Git(asked) => gitbroker::answer(
+            &root,
+            &Asker {
+                chat: 3,
+                cwd: Some(root.clone()),
+                persona: (!shell_tab).then(|| "steward".to_owned()),
+                harnessed: !shell_tab,
+                unsandboxed: shell_tab,
+                roots_git_held: false,
+                policy: None,
+                unreadable: Vec::new(),
+                config: None,
+                id: None,
+                live: None,
+            },
+            &asked,
+            &git::Isolated::identity(Some("Tester"), Some("t@e.invalid")),
+            jiff::Timestamp::now(),
+        ),
+        _ => Answer::No {
+            why: hookwire::NOTHING_ANSWERS.to_owned(),
+        },
+    }
+}
+
+/// `purlis worktree adopt svc p1 -w alpha` at `root`, in a session whose environment is `env`,
+/// trusting only a program named as the app's for the app ([`played_by_the_app`]).
+fn worktree_adopt(world: &World, root: &Path, env: &[(&str, &str)]) -> Output {
+    support::purlis()
+        .args(["worktree", "adopt", "svc", "p1", "-w", "alpha"])
+        .current_dir(root)
+        .env_clear()
+        .env("CHARTER_ROOT", root)
+        .env("HOME", &world.home)
+        .env("PATH", "/usr/bin:/bin")
+        .env("USER", "tester")
+        .env(ONLY_THE_APP, "1")
+        .envs(IDENTITY)
+        .envs(env.iter().copied())
+        .output()
+        .expect("the binary runs")
+}
+
+/// Everything `out` said, on either stream.
+fn both(out: &Output) -> String {
+    format!("{}{}", String::from_utf8_lossy(&out.stdout), err(out))
+}
+
+/// Whether the app was asked to adopt a folder, by the ask's kind on the wire.
+fn adopt_asked(asked: &mpsc::Receiver<Ask>) -> bool {
+    asked.try_iter().any(|ask| {
+        serde_json::to_string(&ask)
+            .unwrap()
+            .contains("\"worktree_adopt\"")
+    })
+}
+
+#[test]
+fn a_chat_that_marks_itself_a_shell_tab_and_drops_its_chat_marks_is_refused_adopt_by_the_app() {
+    purlis_core::unsteered!();
+    let Some(base) = played_by_the_app(
+        "brokered_git::a_chat_that_marks_itself_a_shell_tab_and_drops_its_chat_marks_is_refused_adopt_by_the_app",
+    ) else {
+        return;
+    };
+    let world = World::at(&base);
+    let root = a_folder_to_adopt(&world, "spoofed");
+    let (_reading, _token, _socket, asked) =
+        an_app(&world.base, the_adopting_broker(root.clone(), false));
+
+    // The shell tab's mark set, and no socket, chat number or token: the app names the chat
+    // by this process's ancestry, whatever its environment says.
+    let ran = worktree_adopt(
+        &world,
+        &root,
+        &[(purlis_core::shellguard::SHELL_TAB_ENV, "1")],
+    );
+
+    assert_eq!(ran.status.code(), Some(1), "{}", both(&ran));
+    assert!(both(&ran).contains("only you do"), "{}", both(&ran));
+    assert!(!both(&ran).contains("recorded"), "{}", both(&ran));
+    assert!(adopt_asked(&asked), "the app was never asked");
+}
+
+#[test]
+fn a_shell_tab_adopts_its_folder_through_the_app() {
+    purlis_core::unsteered!();
+    let Some(base) =
+        played_by_the_app("brokered_git::a_shell_tab_adopts_its_folder_through_the_app")
+    else {
+        return;
+    };
+    let world = World::at(&base);
+    let root = a_folder_to_adopt(&world, "tab");
+    let (_reading, token, socket, asked) =
+        an_app(&world.base, the_adopting_broker(root.clone(), true));
+
+    let mut env = chat_3(&socket, &token).to_vec();
+    env.push((purlis_core::shellguard::SHELL_TAB_ENV, "1"));
+    let ran = worktree_adopt(&world, &root, &env);
+
+    assert!(ran.status.success(), "{}", both(&ran));
+    assert!(both(&ran).contains("fix/p1-other"), "{}", both(&ran));
+    assert!(adopt_asked(&asked), "adopted here, not by the app");
+}
+
+/// Whether anything under `root` records a branch a folder was cut for: the note `worktree
+/// adopt` writes, wherever the project's state keeps it.
+fn adopted_anything(root: &Path) -> bool {
+    fn walk(dir: &Path) -> bool {
+        std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|entry| {
+                let path = entry.path();
+                if path.file_name().and_then(|n| n.to_str())
+                    == Some(purlis_core::worktree::record::BRANCH_NOTE)
+                {
+                    return true;
+                }
+                entry.file_type().is_ok_and(|kind| kind.is_dir()) && walk(&path)
+            })
+    }
+    walk(root)
+}
+
+/// `purlis worktree adopt` from the shell tab's environment, chat 3's, under an app that
+/// answers each git ask with `answer`.
+fn adopt_under(
+    test: &str,
+    name: &str,
+    answer: impl Fn(Ask) -> Answer + Send + Sync + 'static,
+) -> Option<(Output, PathBuf, mpsc::Receiver<Ask>)> {
+    let base = played_by_the_app(test)?;
+    let world = World::at(&base);
+    let root = a_folder_to_adopt(&world, name);
+    let (_reading, token, socket, asked) = an_app(&world.base, answer);
+    let mut env = chat_3(&socket, &token).to_vec();
+    env.push((purlis_core::shellguard::SHELL_TAB_ENV, "1"));
+    let ran = worktree_adopt(&world, &root, &env);
+    Some((ran, root, asked))
+}
+
+#[test]
+fn an_app_with_nothing_to_answer_adopt_refuses_it_and_nothing_is_adopted_here() {
+    purlis_core::unsteered!();
+    let Some((ran, root, asked)) = adopt_under(
+        "brokered_git::an_app_with_nothing_to_answer_adopt_refuses_it_and_nothing_is_adopted_here",
+        "unwired",
+        |_| Answer::No {
+            why: hookwire::NOTHING_ANSWERS.to_owned(),
+        },
+    ) else {
+        return;
+    };
+
+    assert_eq!(ran.status.code(), Some(1), "{}", both(&ran));
+    assert!(both(&ran).contains("nothing was adopted"), "{}", both(&ran));
+    assert!(adopt_asked(&asked), "the app was never asked");
+    assert!(!adopted_anything(&root), "adopted here: {}", both(&ran));
+}
+
+#[test]
+fn an_app_that_drops_the_adopt_ask_refuses_it_and_nothing_is_adopted_here() {
+    purlis_core::unsteered!();
+    let Some((ran, root, asked)) = adopt_under(
+        "brokered_git::an_app_that_drops_the_adopt_ask_refuses_it_and_nothing_is_adopted_here",
+        "dropped",
+        // A connection whose serving panics is closed with no answer: the asker reads its end.
+        |ask| match ask {
+            Ask::Git(_) => panic!("the app drops this connection"),
+            _ => Answer::No {
+                why: hookwire::NOTHING_ANSWERS.to_owned(),
+            },
+        },
+    ) else {
+        return;
+    };
+
+    assert_eq!(ran.status.code(), Some(1), "{}", both(&ran));
+    assert!(both(&ran).contains("nothing was adopted"), "{}", both(&ran));
+    assert!(adopt_asked(&asked), "the app was never asked");
+    assert!(!adopted_anything(&root), "adopted here: {}", both(&ran));
+}
+
+#[test]
+fn a_terminal_with_no_app_adopts_its_folder_here() {
+    purlis_core::unsteered!();
+    let tmp = tempfile::tempdir().unwrap();
+    let world = World::at(tmp.path());
+    let root = a_folder_to_adopt(&world, "terminal");
+    let mut command = support::purlis();
+    command
+        .args(["worktree", "adopt", "svc", "p1", "-w", "alpha"])
+        .current_dir(&root)
+        .env_clear()
+        .env("CHARTER_ROOT", &root)
+        .env("HOME", &world.home)
+        .env("PATH", "/usr/bin:/bin")
+        .env("USER", "tester")
+        .env(ONLY_THE_APP, "1")
+        .envs(IDENTITY);
+
+    // An orphan with no chat marks: no app above it, and nothing says it is a chat's.
+    let ran = orphaned(&command, &world.base);
+
+    assert_eq!(ran.status.code(), Some(0), "{}", both(&ran));
+    assert!(both(&ran).contains("fix/p1-other"), "{}", both(&ran));
+}

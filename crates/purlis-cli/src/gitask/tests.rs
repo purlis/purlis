@@ -286,3 +286,68 @@ fn a_prune_given_up_on_says_plainly_whether_anything_was_removed() {
         "{some}"
     );
 }
+
+#[test]
+fn work_only_the_person_asks_for_runs_here_only_where_this_process_is_no_chats() {
+    // #7707: once an app has named the asker a chat, nothing short of the app's own answer
+    // runs the work here: not an app with nothing wired to answer, not another kind of answer,
+    // not a connection it ended.
+    assert!(matches!(for_the_person(None), Forwarded::NotTaken));
+    let not_taken = [
+        answered(Ok(hookwire::Answer::No {
+            why: hookwire::NOTHING_ANSWERS.to_owned(),
+        })),
+        answered(Ok(hookwire::Answer::No {
+            why: hookwire::LEFT_TO_THE_CHAT.to_owned(),
+        })),
+        answered(Ok(hookwire::Answer::Attended { attended: true })),
+        answered(Err(Error::from(ErrorKind::UnexpectedEof))),
+        answered(Err(Error::from(ErrorKind::BrokenPipe))),
+        answered(Err(Error::from(ErrorKind::ConnectionReset))),
+    ];
+    for forwarded in not_taken {
+        let Forwarded::Refused(why) = for_the_person(Some(forwarded)) else {
+            panic!("run here for a chat");
+        };
+        assert!(why.contains("nothing was adopted"), "{why}");
+    }
+    // What the app said, and a refusal of its own, are passed on as they are.
+    assert!(matches!(
+        for_the_person(Some(Forwarded::Said {
+            lines: Vec::new(),
+            code: 0
+        })),
+        Forwarded::Said { code: 0, .. }
+    ));
+    assert!(matches!(
+        for_the_person(Some(Forwarded::Refused("no".to_owned()))),
+        Forwarded::Refused(why) if why == "no"
+    ));
+}
+
+#[test]
+fn what_adopt_says_when_the_app_did_not_take_it_reads_as_one_sentence_with_single_spaces() {
+    assert_eq!(
+        ADOPT_NOT_TAKEN,
+        "it did not take `purlis worktree adopt`, which only the person may ask for (it may be \
+         older than this command), so nothing was adopted. Run it from a new shell tab or from \
+         your own terminal outside purlis"
+    );
+    assert!(!ADOPT_NOT_TAKEN.contains("  "), "{ADOPT_NOT_TAKEN}");
+}
+
+#[test]
+fn only_a_process_that_is_no_chats_is_left_to_run_the_work_here() {
+    use hookwire::reach::Unreached;
+    assert!(unreached(&Unreached::NotAChat).is_none());
+    for not in [
+        Unreached::AppGone("gone".to_owned()),
+        Unreached::Refused("full".to_owned()),
+        Unreached::NotTheApp("someone else".to_owned()),
+    ] {
+        let Some(Forwarded::Refused(why)) = unreached(&not) else {
+            panic!("{not:?} was left to run here");
+        };
+        assert!(why.contains(hookwire::reach::NO_APP_ANSWERED), "{why}");
+    }
+}

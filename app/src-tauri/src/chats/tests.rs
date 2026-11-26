@@ -3280,6 +3280,8 @@ fn a_port_withdrawn_while_a_chat_runs_is_withdrawn_from_a_browser_it_opens_after
             runs_as: None,
             runners_word: None,
             reports_verified: false,
+            operator_shell: false,
+            reattached: false,
             clones_at_start: None,
             prompt_key: None,
         },
@@ -3362,6 +3364,8 @@ fn chats_started_with_different_grants_are_compiled_apart_and_listed_apart() {
                 runs_as: None,
                 runners_word: None,
                 reports_verified: false,
+                operator_shell: false,
+                reattached: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -3808,6 +3812,8 @@ fn a_chat_on_a_profile_is_compared_under_the_persona_grants_it_started_with() {
                 runs_as: None,
                 runners_word: None,
                 reports_verified: false,
+                operator_shell: false,
+                reattached: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9234,6 +9240,8 @@ fn each_path_reads_the_run_record_in_the_direction_that_fails_closed_for_it() {
                 runs_as: None,
                 runners_word: None,
                 reports_verified: false,
+                operator_shell: false,
+                reattached: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9729,6 +9737,8 @@ fn only_a_chat_with_no_sandbox_at_all_runs_unconfined() {
                 runs_as: None,
                 runners_word: None,
                 reports_verified: false,
+                operator_shell: false,
+                reattached: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -9790,6 +9800,8 @@ fn a_login_is_asked_for_by_the_persona_its_chat_was_started_as() {
                 runs_as: None,
                 runners_word: None,
                 reports_verified: false,
+                operator_shell: false,
+                reattached: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -10063,6 +10075,8 @@ pub(crate) fn a_chat_asking_live_on(
             runs_as: None,
             runners_word: None,
             reports_verified: false,
+            operator_shell: false,
+            reattached: false,
             clones_at_start: None,
             prompt_key: None,
         },
@@ -10103,6 +10117,8 @@ fn open_a_harness_chat(
             runs_as: None,
             runners_word: None,
             reports_verified: false,
+            operator_shell: false,
+            reattached: false,
             clones_at_start: None,
             prompt_key: None,
         },
@@ -10439,6 +10455,8 @@ fn a_chat_whose_skills_changed_since_it_started_is_listed_for_a_restart() {
                 runs_as: None,
                 runners_word: None,
                 reports_verified: false,
+                operator_shell: false,
+                reattached: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -10528,6 +10546,8 @@ fn a_chat_skill_stamp_is_read_again_only_once_the_instructions_change() {
                 runs_as: None,
                 runners_word: None,
                 reports_verified: false,
+                operator_shell: false,
+                reattached: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -12258,6 +12278,8 @@ mod moved_on {
                 runs_as: None,
                 runners_word: None,
                 reports_verified: false,
+                operator_shell: false,
+                reattached: false,
                 clones_at_start: None,
                 prompt_key: None,
             },
@@ -13655,4 +13677,128 @@ fn the_notice_says_one_pool_sentence_for_every_chat_where_pools_are_each_ones_on
         None
     );
     assert_eq!(PoolMoved::said_for_all(&[]), None);
+}
+
+#[test]
+fn the_shell_tab_is_the_operators_shell_and_never_a_profiled_chat_or_another_program() {
+    // #7707: no profile and no harness purlis knows is not enough: an unprofiled chat running a
+    // program purlis has not measured is not the person typing.
+    let chats = Chats::on_host(Box::new(|_| {}), Box::new(Pretend::default()), no_project());
+    let operator = chats
+        .start_operator_shell(&chat("/bin/sh", "shell", None), SIZE)
+        .expect("starts");
+    let theirs = chats
+        .start(&chat(&crate::sessions::shell(), "shell", None), SIZE)
+        .expect("starts");
+    let unknown = chats
+        .start(&chat("/opt/acme/bin/watcher", "watcher", None), SIZE)
+        .expect("starts");
+    let profiled = chats
+        .start_ready(
+            &Chat {
+                profile: Some("work".to_owned()),
+                ..chat("/bin/sh", "c", None)
+            },
+            &a_shell_ready(),
+            SIZE,
+        )
+        .expect("starts");
+
+    assert!(
+        chats.is_shell_tab(operator),
+        "started as the operator's shell"
+    );
+    assert!(chats.is_shell_tab(theirs), "running the operator's shell");
+    assert!(
+        !chats.is_shell_tab(unknown),
+        "an unprofiled program not known"
+    );
+    assert!(
+        !chats.is_shell_tab(profiled),
+        "a profiled chat with no harness"
+    );
+    assert!(!chats.is_shell_tab(9999), "no such session");
+}
+
+#[test]
+fn an_unprofiled_harness_or_the_operators_shell_with_words_is_not_the_shell_tab() {
+    // #7707: the fallback is the shell button's own start, `sessions::shell()` with no words.
+    let chats = Chats::on_host(Box::new(|_| {}), Box::new(Pretend::default()), no_project());
+    let harness = chats
+        .start_ready(
+            &chat("claude", "claude", None),
+            &purlis_core::start::Ready {
+                harness: Some(Harness::ClaudeCode),
+                ..a_shell_ready()
+            },
+            SIZE,
+        )
+        .expect("starts");
+    let with_words = chats
+        .start(
+            &Chat {
+                args: vec!["-c".to_owned(), "claude".to_owned()],
+                ..chat(&crate::sessions::shell(), "shell", None)
+            },
+            SIZE,
+        )
+        .expect("starts");
+    let same_name_elsewhere = chats
+        .start(
+            &chat(
+                &format!(
+                    "/opt/acme/bin/{}",
+                    std::path::Path::new(&crate::sessions::shell())
+                        .file_name()
+                        .expect("a shell has a name")
+                        .to_string_lossy()
+                ),
+                "shell",
+                None,
+            ),
+            SIZE,
+        )
+        .expect("starts");
+    let profiled = chats
+        .start_ready(
+            &Chat {
+                profile: Some("work".to_owned()),
+                ..chat(&crate::sessions::shell(), "c", None)
+            },
+            &a_shell_ready(),
+            SIZE,
+        )
+        .expect("starts");
+
+    assert!(!chats.is_shell_tab(harness), "an unprofiled harness");
+    assert!(
+        !chats.is_shell_tab(with_words),
+        "the operator's shell, given words"
+    );
+    assert!(
+        !chats.is_shell_tab(same_name_elsewhere),
+        "a program of the shell's name somewhere else"
+    );
+    assert!(
+        !chats.is_shell_tab(profiled),
+        "a profiled chat running the operator's shell"
+    );
+}
+
+#[test]
+fn a_shell_tab_reattached_from_the_session_host_is_not_taken_for_the_shell_tab_by_its_program() {
+    // #7707: a harness started by hand in it before this window is not known here, so the
+    // person opens a new shell tab for what only they may ask.
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    host.leaves_running(3, None);
+    let chats = restartable_chats_of(plane.path(), host.clone());
+
+    chats.put_back(
+        &left_running_in(plane.path(), chat(&crate::sessions::shell(), "shell", None)),
+        SIZE,
+    );
+
+    assert_eq!(host.reattached(), [3]);
+    assert!(!chats.is_shell_tab(3));
 }

@@ -1138,3 +1138,101 @@ fn a_chats_save_in_a_project_that_signs_every_save_is_committed_unsigned_and_say
     let commit = crate::testgit::run(&root, &["cat-file", "commit", "HEAD"]).out;
     assert!(!commit.contains("\ngpgsig "), "{commit}");
 }
+
+/// A project whose clone `workspaces/alpha/widget` has branch folder `p1` on `fix/p1-other`, a
+/// branch not named as the folder: the folder `purlis worktree adopt` is for (#7700).
+fn a_folder_to_adopt() -> (tempfile::TempDir, PathBuf) {
+    let (dir, root) = tree();
+    let clone = root.join("workspaces/alpha/widget");
+    crate::testgit::run(&clone, &["init", "-q", "-b", "main", "."]);
+    std::fs::write(clone.join("a.txt"), "a\n").unwrap();
+    crate::testgit::run(&clone, &["add", "-A"]);
+    crate::testgit::run(&clone, &["commit", "-q", "-m", "one"]);
+    let folder = root.join("workspaces/alpha/.worktrees/widget/p1");
+    crate::testgit::run(
+        &clone,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "fix/p1-other",
+            folder.to_str().unwrap(),
+        ],
+    );
+    (dir, root)
+}
+
+/// What the app answers `asker` asking to adopt `widget · p1` of workspace `alpha`, the ask
+/// spelled as it is on the wire.
+fn adopted_for(root: &Path, asker: &Asker) -> Answer {
+    let work: GitWork = serde_json::from_value(serde_json::json!({
+        "worktree_adopt": {"repo": "widget", "piece": "p1"}
+    }))
+    .expect("the app knows an adopt ask");
+    answer(
+        root,
+        asker,
+        &GitAsk {
+            chat: 4,
+            workspace: "alpha".to_owned(),
+            alive: false,
+            work,
+        },
+        &git::Isolated::default(),
+        jiff::Timestamp::now(),
+    )
+}
+
+/// The window's shell tab, at `cwd`: no persona and no harness, as the app records it.
+fn shell_tab(cwd: &Path) -> Asker {
+    Asker {
+        persona: None,
+        harnessed: false,
+        unsandboxed: true,
+        ..asker(Some(cwd))
+    }
+}
+
+#[test]
+fn a_shell_tab_has_its_folder_adopted_wherever_it_stands() {
+    let (_dir, root) = a_folder_to_adopt();
+    for cwd in [
+        root.clone(),
+        root.join("docs"),
+        root.join("workspaces/beta"),
+    ] {
+        let said = adopted_for(&root, &shell_tab(&cwd));
+        let Answer::Said { lines, code } = &said else {
+            panic!("{}: {said:?}", cwd.display());
+        };
+        assert_eq!(*code, 0, "{}: {said:?}", cwd.display());
+        assert!(
+            lines
+                .iter()
+                .any(|line| format!("{line:?}").contains("fix/p1-other")),
+            "{said:?}"
+        );
+    }
+}
+
+#[test]
+fn a_chat_running_its_harness_is_never_adopted_for_wherever_it_stands() {
+    let (_dir, root) = a_folder_to_adopt();
+    let folder = root.join("workspaces/alpha/.worktrees/widget/p1");
+    for cwd in [root.clone(), folder.clone()] {
+        let said = adopted_for(&root, &asker(Some(&cwd)));
+        let Answer::No { why } = &said else {
+            panic!("{}: {said:?}", cwd.display());
+        };
+        assert!(why.contains("only you do"), "{why}");
+    }
+    let notes = crate::pieceupdate::notes_of(
+        &root,
+        &std::fs::canonicalize(root.join("workspaces/alpha/widget/.git/worktrees/p1")).unwrap(),
+    );
+    assert!(
+        !notes.join(crate::worktree::record::BRANCH_NOTE).exists(),
+        "a branch was recorded for a chat"
+    );
+}

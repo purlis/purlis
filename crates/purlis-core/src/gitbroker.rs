@@ -170,6 +170,13 @@ fn isolated_answer(root: &Path, asker: &Asker, ask: &GitAsk, now: jiff::Timestam
         };
         return Answered::from(claim(root, asker, &folder, *act, now));
     }
+    // What a folder is on is trusted once, and only by the person (#7700): never for a chat
+    // running its harness, whatever its environment said to the command that asked.
+    if let GitWork::WorktreeAdopt { repo, piece } = &ask.work
+        && asker.harnessed
+    {
+        return no(only_the_person_adopts(repo, piece));
+    }
     // A workspace the ask makes is one no chat works in yet: the chat need only stand in the
     // project. Every other ask writes a workspace the chat already writes.
     let placed = match &ask.work {
@@ -195,6 +202,9 @@ fn isolated_answer(root: &Path, asker: &Asker, ask: &GitAsk, now: jiff::Timestam
         // A clone's own checkout: the chat stands in it, or above it in its workspace.
         GitWork::CloneUpdate { repo, .. } => bound(root, asker.cwd.as_deref(), &ask.workspace)
             .and_then(|()| at_or_above_clone(root, asker.cwd.as_deref(), &ask.workspace, repo)),
+        // The person's shell tab, wherever it stands: the ask names the workspace, as `-w`
+        // does in a terminal, whose run nothing places either.
+        GitWork::WorktreeAdopt { .. } => Ok(()),
         _ => bound(root, asker.cwd.as_deref(), &ask.workspace),
     };
     if let Err(why) = placed {
@@ -428,6 +438,9 @@ fn isolated_answer(root: &Path, asker: &Asker, ask: &GitAsk, now: jiff::Timestam
         }
         // Answered before anything above was asked ([`claim`]), and never reaches here.
         GitWork::WorktreeClaim { .. } => unreachable!("a claim is answered before any check"),
+        GitWork::WorktreeAdopt { repo, piece } => {
+            crate::piececmd::adopt(root, &ask.workspace, repo, piece, &mut say)
+        }
         GitWork::RootUpdate {} => {
             // Placed at the root above, so its own folder is the root.
             let chat_dir = asker.cwd.as_deref().unwrap_or(root);
@@ -920,6 +933,15 @@ pub fn in_the_project(root: &Path, cwd: Option<&Path>) -> Result<(), String> {
     }
 }
 
+/// What a chat is told when it asks the app to adopt `repo · piece` (#7700): the person's
+/// alone, from the window's shell tab or a terminal of their own.
+pub fn only_the_person_adopts(repo: &str, piece: &str) -> String {
+    format!(
+        "`purlis worktree adopt` records what {repo} \u{b7} {piece} is on as the branch it was \
+         cut for, so only you do: run it in the window's shell tab or your own terminal"
+    )
+}
+
 /// The hosts a clone made for `asker` may reach: its sandbox's egress where it runs sandboxed
 /// (D-5), or `None`, no limit, where it does not — a shell tab, a chat a person started without
 /// the sandbox, or a project where none is in force. A `charter.toml` that cannot be read
@@ -1026,6 +1048,7 @@ fn touched(root: &Path, ws: &str, work: &GitWork) -> Vec<PathBuf> {
         | GitWork::WorktreeUpdate { repo, .. }
         | GitWork::WorktreePush { repo, .. }
         | GitWork::WorktreeRemove { repo, .. }
+        | GitWork::WorktreeAdopt { repo, .. }
         | GitWork::CloneUpdate { repo, .. } => {
             if crate::contain::workspace_name_ok(ws) {
                 // `piececmd::add` refuses a name `folder` refuses before git runs.

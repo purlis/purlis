@@ -540,6 +540,15 @@ struct Running {
     /// attributes its run began with: what a block its hook line reports is worth toward the
     /// block loop (R-209).
     reports_verified: bool,
+    /// **Whether it was started as the operator's shell** (#7707): from the window's shell
+    /// button ([`Chats::start_operator_shell`]), never from a record or by a chat. A shell tab
+    /// started again from its record has it false, and is taken for one by its program
+    /// instead ([`Chats::is_shell_tab`]); one reattached is not.
+    operator_shell: bool,
+    /// **Whether it was reattached** in the session host from before this window (#2006): what
+    /// ran in it before this window, a harness started there by hand included, is not known
+    /// here, so it is never taken for the window's shell tab by its program (#7707).
+    reattached: bool,
 }
 
 /// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
@@ -2037,6 +2046,23 @@ impl Chats {
     /// (ADR 0067 §7, ruling V78).
     pub fn when_the_sandbox_is_decided(&self, tell: Trusting) {
         *lock(&self.trusting) = Some(tell);
+    }
+
+    /// **Whether `session` is the window's shell tab** (#7700): a chat open on no profile and
+    /// running no harness, by this app's own record of it, wherever it stands, and either
+    /// started as the operator's shell or, started again from its record here, running it as
+    /// the shell button does: `sessions::shell()` itself, with no words (#7707). An unprofiled
+    /// chat running a program purlis does not know as a harness is not one by that alone, and
+    /// one reattached from the session host is not one by its program: a harness started by
+    /// hand in it before this window is not known here.
+    pub fn is_shell_tab(&self, session: u32) -> bool {
+        let shell = crate::sessions::shell();
+        lock(&self.open).get(&session).is_some_and(|one| {
+            one.chat.profile.is_none()
+                && one.harness.is_none()
+                && (one.operator_shell
+                    || (!one.reattached && one.chat.program == shell && one.chat.args.is_empty()))
+        })
     }
 
     /// Whether `session` is a shell tab at `root`: a chat on no profile running no harness,
@@ -6627,6 +6653,8 @@ impl Chats {
                 reports_verified: purlis_core::eventlog::stops::reported_from_outside_its_reach(
                     &attributes,
                 ),
+                operator_shell,
+                reattached: reattaching,
             },
         );
         drop(open);

@@ -485,7 +485,7 @@ pub fn remove_for_a_chat(
 
 /// `purlis worktree adopt <repo> <piece>` (#7594): records the branch the piece is on as the one
 /// it was cut for, once, for a piece cut before purlis kept that note and whose folder is not
-/// named as its branch. The person's own: the caller refuses it in a chat.
+/// named as its branch. The person's own: the app's broker refuses it to a chat (#7700).
 pub fn adopt(plane: &Path, ws: &str, repo: &str, piece: &str, say: &mut dyn FnMut(Say)) -> u8 {
     let found = worktree::path_for(plane, ws, repo, piece)
         .map_err(|e| e.to_string())

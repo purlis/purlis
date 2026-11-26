@@ -112,17 +112,59 @@ pub fn unsure_prune(dry_run: bool, cause: &str, removed: &[String]) -> String {
 /// names it ([`hookwire::reach`]); answers [`Forwarded::NotTaken`] where this is no chat's, and
 /// refuses where it is one's and no app, or something that is not the app, answers.
 fn asked(of: impl FnOnce(u32) -> hookwire::Ask, within: Duration) -> Forwarded {
-    use hookwire::reach::{self, Unreached};
+    asked_of_a_chat(of, within).unwrap_or(Forwarded::NotTaken)
+}
+
+/// [`asked`], answering `None` only where this process is no chat's
+/// ([`hookwire::reach::Unreached::NotAChat`]): every other answer is the app's, or the way
+/// asking an app that named this process a chat failed.
+fn asked_of_a_chat(of: impl FnOnce(u32) -> hookwire::Ask, within: Duration) -> Option<Forwarded> {
+    use hookwire::reach;
     let cwd = std::env::current_dir().unwrap_or_default();
     match reach::reach(&cwd, &purlis_core::envvar::var, within) {
         Ok(reached) => {
             let mut asking = hookwire::Asking::over(reached.stream, reached.token);
-            answered(asking.ask(&of(reached.chat), within))
+            Some(answered(asking.ask(&of(reached.chat), within)))
         }
-        Err(Unreached::NotAChat) => Forwarded::NotTaken,
-        Err(not) => Forwarded::Refused(not.said().unwrap_or_default()),
+        Err(not) => unreached(&not),
     }
 }
+
+/// What [`asked_of_a_chat`] answers where it reached no app: `None` only where this process is
+/// no chat's, and a refusal for every other way of not reaching one.
+fn unreached(not: &hookwire::reach::Unreached) -> Option<Forwarded> {
+    match not {
+        hookwire::reach::Unreached::NotAChat => None,
+        not => Some(Forwarded::Refused(not.said().unwrap_or_default())),
+    }
+}
+
+/// `purlis worktree adopt` handed to the app (#7700), which only the person may ask for: it
+/// runs here ([`Forwarded::NotTaken`]) only where this process is no chat's.
+pub fn adopt_forwarded(workspace: &str, work: GitWork, within: Duration) -> Forwarded {
+    for_the_person(asked_of_a_chat(
+        |chat| hookwire::Ask::Git(Box::new(git_ask(chat, workspace, work))),
+        within,
+    ))
+}
+
+/// What an [`asked_of_a_chat`] answer makes of `purlis worktree adopt` (#7707): run here only
+/// where this process is no chat's. Once an app has named the asker a chat, nothing short of
+/// its own answer runs it: not an app with nothing wired to answer, not an answer of another
+/// kind, not a connection it ended. Each of those is refused.
+fn for_the_person(asked: Option<Forwarded>) -> Forwarded {
+    match asked {
+        None => Forwarded::NotTaken,
+        Some(Forwarded::NotTaken) => Forwarded::Refused(ADOPT_NOT_TAKEN.to_owned()),
+        Some(answered) => answered,
+    }
+}
+
+/// What `purlis worktree adopt` says where the app named this session a chat's and did not
+/// take it.
+const ADOPT_NOT_TAKEN: &str = "it did not take `purlis worktree adopt`, which only the person \
+     may ask for (it may be older than this command), so nothing was adopted. Run it from a new \
+     shell tab or from your own terminal outside purlis";
 
 /// How long the app may take to update a branch folder, or stay silent pushing one: a fetch and
 /// a push each held to git's network limit, and a rebase and a handful of local calls (qw387). A
