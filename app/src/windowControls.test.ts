@@ -303,15 +303,7 @@ const FROM_THE_WINDOW: ReadonlyArray<readonly [path: string, starts: string, why
   ["crates/purlis-cli/src/brokered.rs", "a sandboxed chat does not remove a workspace", NO_ASK_YET],
   ["crates/purlis-cli/src/brokered.rs", "this chat {runs_as}", NO_ASK_YET],
   ["crates/purlis-cli/src/handoff.rs", "{HANDOFF_SAYS} no purlis app answered", NO_ASK_YET],
-  // The forge milestones tool's answer for a project with no repo recorded (main's #6476): read by
-  // the chat that called it, which records it with `purlis discover`; no ask for the clone yet.
-  [
-    "crates/purlis-core/src/catalogue/milestones.rs",
-    "This project records no repo for {}",
-    NO_ASK_YET,
-  ],
   ["crates/purlis-core/src/dispatchguard.rs", "this call runs `purlis worktree", NO_ASK_YET],
-  ["crates/purlis-core/src/forge/gitcredential.rs", "this repository's remote pushes", NO_ASK_YET],
   ["crates/purlis-core/src/hoststart.rs", "this chat's profile hands its program", NO_ASK_YET],
   ["crates/purlis-core/src/hoststart.rs", "this session host composes", NO_ASK_YET],
   ["crates/purlis-core/src/mergehold.rs", "{OPENS} `purlis change land`", NO_ASK_YET],
@@ -319,11 +311,6 @@ const FROM_THE_WINDOW: ReadonlyArray<readonly [path: string, starts: string, why
   ["crates/purlis-core/src/piececmd.rs", "{why}. Nothing was removed", NO_ASK_YET],
   ["crates/purlis-core/src/planegit/bringin.rs", "{target} comes in from the window", NO_ASK_YET],
   ["crates/purlis-core/src/planegit/prsave.rs", "{request} merged, and {target} moves", NO_ASK_YET],
-  [
-    "crates/purlis-core/src/repocmd/clone/landing.rs",
-    "{name}: {host} refused this clone",
-    NO_ASK_YET,
-  ],
 ];
 
 /** The entries of {@link FROM_THE_WINDOW} that hold `one`, a `<path>: <message>`. */
@@ -331,6 +318,20 @@ const heldBy = (one: string) =>
   FROM_THE_WINDOW.filter(([path, starts]) => one.startsWith(`${path}: ${starts}`));
 
 describe("no message says from the window without its control (R-328)", () => {
+  it("the_clone_and_remote_entries_are_gone_from_no_ask_yet", () => {
+    // T1.1-56's three: A1 `gitcredential.rs` (REMOTE_SPLIT), A2 `landing.rs` (`spoken`'s
+    // `NoAccess`), A3 `milestones.rs` (`(Ok(_), None)`) now raise their own ask, so none stays
+    // on the list of refusals with no ask yet.
+    const held = FROM_THE_WINDOW.filter(([, , why]) => why === NO_ASK_YET).map(([path]) => path);
+    for (const gone of [
+      "crates/purlis-core/src/forge/gitcredential.rs",
+      "crates/purlis-core/src/repocmd/clone/landing.rs",
+      "crates/purlis-core/src/catalogue/milestones.rs",
+    ]) {
+      expect(held, gone).not.toContain(gone);
+    }
+  });
+
   const bare = [
     ...new Set(
       sources(join(ROOT, "crates")).flatMap((path) =>

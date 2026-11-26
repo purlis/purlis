@@ -1,11 +1,16 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+/// <reference types="node" />
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Inbox } from "./Inbox";
+import { SOURCE_SAID, questionOf } from "./InboxAsks";
 import type { FinishedTurn, Shown } from "./bindings";
 import { useAsks } from "./asks";
 import { fixedChats, nothingKnown, type ChatStates } from "./chatState";
@@ -69,6 +74,8 @@ function core({
     if (cmd === "asks_waiting")
       return { plane: PLANE, asks, with_asking_chat: [], on_finish_rows: onFinishRows };
     if (cmd === "finished_turns") return turns;
+    if (cmd === "use_one_address" || cmd === "clone_with_sign_in" || cmd === "record_repo")
+      return "done";
     if (cmd === "vouch_clone") {
       if (refuses !== undefined) throw refuses;
       return "github.com/acme/api";
@@ -239,5 +246,146 @@ describe("a window-only ask, Blocking or on its chat's finish row (T1-42, R-329)
       expect.stringContaining("workspaces/alpha/api"),
       expect.stringContaining("workspaces/alpha/web"),
     ]);
+  });
+
+  const NEW_KINDS: ReadonlyArray<{ label: RegExp; cmd: string; ask: Shown; args: object }> = [
+    {
+      label: /^Use one address/,
+      cmd: "use_one_address",
+      args: {
+        plane: PLANE,
+        folder: "workspaces/alpha/api",
+        fetch: "github.com/acme/api",
+        push: "github.com/acme/api-push",
+        to: "github.com/acme/api",
+      },
+      ask: {
+        ...TRUST_CLONE,
+        ask: "one-address:2:workspaces/alpha/api|github.com/acme/api",
+        says: "Give origin one address: pressing sets its push address to github.com/acme/api.",
+        options: [{ id: "press", label: "Use one address", allows: true }],
+        source: "one-address",
+        answer: {
+          via: "one-address",
+          folder: "workspaces/alpha/api",
+          fetch: "github.com/acme/api",
+          push: "github.com/acme/api-push",
+          to: "github.com/acme/api",
+        },
+      },
+    },
+    {
+      label: /^Clone it/,
+      cmd: "clone_with_sign_in",
+      args: { plane: PLANE, workspace: "alpha", name: "api", repo: "github.com/acme/api" },
+      ask: {
+        ...TRUST_CLONE,
+        ask: "clone-for-chat:2:alpha|api|github.com/acme/api",
+        says: "Clone api for a chat, with your sign-in.",
+        options: [{ id: "press", label: "Clone it", allows: true }],
+        source: "clone-with-sign-in",
+        answer: {
+          via: "clone-it",
+          workspace: "alpha",
+          name: "api",
+          repo: "github.com/acme/api",
+        },
+      },
+    },
+    {
+      label: /^Record this repo/,
+      cmd: "record_repo",
+      args: { plane: PLANE, workspace: "alpha", clone: "api", place: "github.com/acme/api" },
+      ask: {
+        ...TRUST_CLONE,
+        ask: "record-repo:2:alpha|api|github.com/acme/api",
+        says: "Record api in this project's repos.",
+        options: [{ id: "press", label: "Record this repo", allows: true }],
+        source: "record-repo",
+        answer: {
+          via: "record-repo",
+          workspace: "alpha",
+          clone: "api",
+          place: "github.com/acme/api",
+        },
+      },
+    },
+  ];
+
+  it.each(NEW_KINDS)(
+    "holds $cmd's press on the finish row to the settle guard (Q219)",
+    async (kind) => {
+      vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        core({ asks: [], onFinishRows: [kind.ask], turns: [ENDED] });
+        render(<Window />);
+        await waitFor(() => expect(finishRow()).toHaveTextContent(kind.ask.says));
+        const press = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) });
+
+        await press.click(
+          within(finishRow() as HTMLElement).getByRole("button", { name: kind.label }),
+        );
+
+        expect(asked.filter((one) => one.cmd === kind.cmd)).toEqual([]);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it.each(NEW_KINDS)(
+    "sends $cmd with what its row showed once the press has settled (Q220)",
+    async (kind) => {
+      core({ asks: [], onFinishRows: [kind.ask], turns: [ENDED] });
+      render(<Window />);
+      await waitFor(() => expect(finishRow()).toHaveTextContent(kind.ask.says));
+      const button = within(finishRow() as HTMLElement).getByRole("button", { name: kind.label });
+      await read();
+
+      await userEvent.click(button);
+
+      await waitFor(() =>
+        expect(asked.filter((one) => one.cmd === kind.cmd).map((one) => one.args)).toEqual([
+          kind.args,
+        ]),
+      );
+    },
+  );
+  it("each_new_clone_ask_kind_has_its_place_group_words_and_settle_guard", async () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const groups = readFileSync(join(here, "asksGroups.guard.test.ts"), "utf8");
+    const places = readFileSync(join(here, "askPlaces.guard.test.ts"), "utf8");
+    for (const kind of NEW_KINDS) {
+      const source = kind.ask.source;
+      // Its place and its group are decided for it, in the guards that fail on a kind with none.
+      expect(places, `${source}: place`).toContain(`"${source}": {`);
+      expect(groups, `${source}: group`).toMatch(new RegExp(`"${source}": "consent"`));
+      // Its words: a question of its own as a decision, its source line, and its control.
+      expect(questionOf(kind.ask), `${source}: question`).not.toBe("Allow this?");
+      expect(SOURCE_SAID[source], `${source}: source line`).toBeTruthy();
+      expect(kind.ask.options.map((one) => one.label)).toEqual([expect.stringMatching(kind.label)]);
+
+      // Its place: Blocking in Asks while its chat waits, with its control on the row, and a
+      // press made before the row settles is held (Q219).
+      vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        core({ asks: [kind.ask], onFinishRows: [], turns: [ENDED] });
+        const view = render(<Window />);
+        await waitFor(() => expect(askRow()).not.toBeNull());
+        const press = userEvent.setup({ advanceTimers: (ms) => vi.advanceTimersByTime(ms) });
+        await press.click(
+          within(askRow() as HTMLElement).getByRole("button", { name: kind.label }),
+        );
+        expect(
+          asked.filter((one) => one.cmd === kind.cmd),
+          `${source}: settle guard`,
+        ).toEqual([]);
+        view.unmount();
+      } finally {
+        vi.useRealTimers();
+        clearMocks();
+        asked = [];
+      }
+    }
   });
 });

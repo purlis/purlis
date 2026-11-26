@@ -3969,6 +3969,35 @@ export const commands = {
 	 */
 	vouchClone: (plane: PlaneId, folder: string, place: string) => typedError<string, string>(__TAURI_INVOKE("vouch_clone", { plane, folder, place })),
 	/**
+	 *  **The person's Use one address** (A1, A5; Q4): sets the push address of the clone at `folder`
+	 *  (relative to the project) to `to`, the address its row showed, and only while its origin still
+	 *  fetches from `fetch` and pushes to `push`, as the row showed. Answers the address set, or why
+	 *  nothing was changed. It trusts nothing: the chat that waited is offered Trust this clone next,
+	 *  a second press.
+	 * 
+	 *  Window only (`WINDOW_ONLY`): the push address decides where the person's sign-in is sent.
+	 */
+	useOneAddress: (plane: PlaneId, folder: string, fetch: string, push: string, to: string) => typedError<string, string>(__TAURI_INVOKE("use_one_address", { plane, folder, fetch, push, to })),
+	/**
+	 *  **The person's Clone it** (A2): clones the inventory's repo `name` into `workspace` with their
+	 *  own sign-in, as the window's own clone, which records it, and only while that row's address is
+	 *  still `repo` (`<host>/<owner>/<repo>`), the one the ask showed: a row that now has another
+	 *  address is refused and nothing is cloned. Answers what the clone said, or why it did not land.
+	 *  The ask is cleared for every chat that waited on it once the clone is made.
+	 * 
+	 *  Window only (`WINDOW_ONLY`): it releases the person's sign-in.
+	 */
+	cloneWithSignIn: (plane: PlaneId, workspace: string, name: string, repo: string) => typedError<string, string>(__TAURI_INVOKE("clone_with_sign_in", { plane, workspace, name, repo })),
+	/**
+	 *  **The person's Record this repo** (A3): records the repo of the clone `clone` of `workspace`
+	 *  in the project's inventory, as `purlis discover` does for that one clone, and only while its
+	 *  origin still names `place`, the address the row showed. Answers the address recorded, or why
+	 *  nothing was. The ask is cleared for every chat that waited on it.
+	 * 
+	 *  Window only (`WINDOW_ONLY`): the record is what decides which repo a chat may read.
+	 */
+	recordRepo: (plane: PlaneId, workspace: string, clone: string, place: string) => typedError<string, string>(__TAURI_INVOKE("record_repo", { plane, workspace, clone, place })),
+	/**
 	 *  Make a workspace: `charter workspace create <name>`, with the vision when one was typed.
 	 * 
 	 *  **The name is checked by the core and by nothing in the window.** `wscmd::create` runs
@@ -6702,6 +6731,22 @@ export type AnswerPath =
  */
 { via: "trust-clone"; folder: string; place: string } | 
 /**
+ *  `use_one_address` for Use one address on the clone at `folder`: sets its push address to
+ *  `to`, the address the row shows, while its origin still fetches from `fetch` and pushes
+ *  to `push`.
+ */
+{ via: "one-address"; folder: string; fetch: string; push: string; to: string } | 
+/**
+ *  `clone_with_sign_in` for Clone it: the inventory's repo `name` into `workspace`, while its
+ *  address is still `repo` (`<host>/<owner>/<repo>`), the one the row shows.
+ */
+{ via: "clone-it"; workspace: string; name: string; repo: string } | 
+/**
+ *  `record_repo` for Record this repo: the repo of the clone `clone` of `workspace`, which
+ *  origin names as `place` while the row is shown.
+ */
+{ via: "record-repo"; workspace: string; clone: string; place: string } | 
+/**
  *  `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
  *  clone Notice's own command, and each clone it trusts leaves the ask (R-336).
  */
@@ -7207,6 +7252,22 @@ export type AskSource =
  *  as the clone's own Notice does, and the chat's next mint goes through.
  */
 "trust-clone" | 
+/**
+ *  **A clone whose origin names more than one address** (A1, A5, Q4): Use one address sets
+ *  origin's push address to the one the row shows, and nothing else. Trusting the clone is
+ *  a second press.
+ */
+"one-address" | 
+/**
+ *  **A private repo a chat's clone could not reach** (A2): Clone it clones it into the
+ *  chat's workspace with the person's own sign-in, as the window's own recorded clone.
+ */
+"clone-with-sign-in" | 
+/**
+ *  **A clone the project records no repo for** (A3): Record this repo records the repo its
+ *  origin names, as `purlis discover` does for that one clone, so a chat can read its forge.
+ */
+"record-repo" | 
 /**
  *  **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
  *  never one per clone. Trust all records each, as its Notice's Trust this clone does.

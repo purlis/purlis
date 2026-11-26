@@ -60,12 +60,18 @@ pub const NO_RECORDED_CLONE: &str = "no clone in this chat's workspace that purl
 
 /// **A mint refused for a clone purlis has no record of raises Trust this clone** (R-330,
 /// R-328): each github.com clone of the chat's workspace with no record, at the one address its
-/// remote names, is one ask for the chat ([`crate::windowonly`]). Only a clone the mint would
-/// count once trusted is asked for: one there as the chat started ([`there_at_start`]) whose
-/// git directory no chat writes ([`held_from_chats`]), as [`remotes_of_workspace`] filters
-/// them (Q249). Answers what the chat is told, naming the ask, or `None` where there is no such
-/// clone, and so nothing to ask.
-fn trust_asked(chat: &For<'_>) -> Option<String> {
+/// remote names, is one ask for the chat ([`crate::windowonly`]); one whose origin names several
+/// addresses raises **Use one address** instead (A5, #6646), and trusting it is a second press.
+/// Only a clone the mint would count once trusted is asked for: one there as the chat started
+/// ([`there_at_start`]) whose git directory no chat writes ([`held_from_chats`]), as
+/// [`remotes_of_workspace`] filters them (Q249). With `only_here`, only the clone the run's
+/// folder is in (A4, #6646): a run elsewhere is never refused for another clone.
+///
+/// What the chat is told follows [`crate::windowonly::raise`]'s answer (rule H, A6): "asked the
+/// person in Asks" only where a window listens; otherwise that nobody was asked, with the way out
+/// in words, and a block is written. Answers what the chat is told, or `None` where there is no
+/// such clone, and so nothing to ask.
+fn trust_asked(chat: &For<'_>, only_here: bool) -> Option<String> {
     let config_root = chat.config_root?;
     let plane = crate::workspaces::Plane::open(chat.root.to_path_buf());
     let workspace = chat.folder.and_then(|folder| plane.workspace_of(folder))?;
@@ -78,54 +84,134 @@ fn trust_asked(chat: &For<'_>) -> Option<String> {
         .iter()
         .map(|repo| crate::sandbox::local::clone_key(&repo.path))
         .collect();
-    let folders: Vec<(String, String)> =
-        super::gitcredential::vouch::unvouched_clones(chat.root, config_root)
-            .into_iter()
-            .filter(|clone| clone.workspace == workspace)
-            .filter(|clone| counted.contains(&crate::sandbox::local::clone_key(&clone.path)))
-            .filter_map(|clone| {
-                let place = clone.place?;
-                place
-                    .starts_with(&format!("{HOST}/"))
-                    .then_some((clone.folder, place))
+    let here = chat
+        .here
+        .map(|here| here.canonicalize().unwrap_or_else(|_| here.to_path_buf()));
+    let inside = |path: &Path| {
+        !only_here
+            || here.as_ref().is_some_and(|here| {
+                here.starts_with(path.canonicalize().unwrap_or_else(|_| path.to_path_buf()))
             })
-            .collect();
-    if folders.is_empty() {
+    };
+    let github = |places: &[String]| {
+        places
+            .iter()
+            .any(|place| place.starts_with(&format!("{HOST}/")))
+    };
+    let wanted: Vec<_> = super::gitcredential::vouch::unvouched_clones(chat.root, config_root)
+        .into_iter()
+        .filter(|clone| clone.workspace == workspace)
+        .filter(|clone| counted.contains(&crate::sandbox::local::clone_key(&clone.path)))
+        .filter(|clone| github(&clone.places) && inside(&clone.path))
+        .collect();
+    if wanted.is_empty() {
         return None;
     }
     // Raised as an ask where `[policy] consents` asks (Q308b); the press stays the window's.
     let asked = crate::windowonly::asks(chat.root);
-    let folders: Vec<String> = folders
-        .into_iter()
-        .map(|(folder, place)| {
-            if asked {
-                crate::windowonly::raise(
-                    chat.root,
-                    chat.chat,
-                    crate::windowonly::Control::TrustClone {
-                        folder: folder.clone(),
-                        place,
-                    },
-                );
+    let mut trust: Vec<String> = Vec::new();
+    let mut one_address: Vec<String> = Vec::new();
+    let mut listened = true;
+    for clone in wanted {
+        match clone.place.clone() {
+            Some(place) => {
+                if asked {
+                    let raised = crate::windowonly::raise(
+                        chat.root,
+                        chat.chat,
+                        crate::windowonly::Control::TrustClone {
+                            folder: clone.folder.clone(),
+                            place,
+                        },
+                    );
+                    listened &= raised.listened;
+                }
+                trust.push(clone.folder);
             }
-            folder
-        })
-        .collect();
-    let where_ = if asked {
-        "purlis asked the person in Asks"
-    } else {
-        "the person trusts it in the window"
+            None => {
+                if asked
+                    && let Some(control) =
+                        crate::windowonly::one_address_for(config_root, chat.root, &clone.folder)
+                {
+                    let raised = crate::windowonly::raise(chat.root, chat.chat, control);
+                    listened &= raised.listened;
+                }
+                one_address.push(clone.folder);
+            }
+        }
+    }
+    let raised = crate::windowonly::Raised {
+        new: false,
+        listened,
     };
-    Some(format!(
-        "no GitHub App token was minted: purlis has no record of {}, so it did not clone {} and \
-         the person has not trusted {}. {where_}: \"{}\", with {}. Run \
-         the command again once they have",
-        folders.join(", "),
-        if folders.len() == 1 { "it" } else { "them" },
-        if folders.len() == 1 { "it" } else { "them" },
-        crate::windowonly::TRUST_SO_CHATS_CAN_USE_GITHUB,
-        crate::windowonly::TRUST_THIS_CLONE,
-    ))
+    let mut parts: Vec<String> = Vec::new();
+    if !trust.is_empty() {
+        let them = if trust.len() == 1 { "it" } else { "them" };
+        let said = if asked {
+            crate::windowonly::told_of(
+                chat.root,
+                chat.chat,
+                raised,
+                &format!(
+                    "press {} on {}",
+                    crate::windowonly::TRUST_THIS_CLONE,
+                    trust.join(", ")
+                ),
+            )
+            .replacen(
+                "purlis asked the person in Asks.",
+                &format!(
+                    "purlis asked the person in Asks: \"{}\", with {}.",
+                    crate::windowonly::TRUST_SO_CHATS_CAN_USE_GITHUB,
+                    crate::windowonly::TRUST_THIS_CLONE
+                ),
+                1,
+            )
+        } else {
+            "the person trusts it in the window".to_owned()
+        };
+        parts.push(format!(
+            "no GitHub App token was minted: purlis has no record of {}, so it did not clone \
+             {them} and the person has not trusted {them}. {said}. Run the command again once \
+             they have",
+            trust.join(", "),
+        ));
+    }
+    if !one_address.is_empty() {
+        let said = if asked {
+            crate::windowonly::told_of(
+                chat.root,
+                chat.chat,
+                raised,
+                &format!(
+                    "press {} on {}, then {} on it",
+                    crate::windowonly::USE_ONE_ADDRESS,
+                    one_address.join(", "),
+                    crate::windowonly::TRUST_THIS_CLONE
+                ),
+            )
+            .replacen(
+                "purlis asked the person in Asks.",
+                &format!(
+                    "purlis asked the person in Asks: \"{}\".",
+                    crate::windowonly::USE_ONE_ADDRESS
+                ),
+                1,
+            )
+        } else {
+            format!(
+                "give origin one address (git remote set-url --push origin <the fetch address>) \
+                 in {}",
+                one_address.join(", ")
+            )
+        };
+        parts.push(format!(
+            "no GitHub App token was minted: the origin of {} names more than one address, so \
+             purlis cannot trust it. {said}. Trusting it is a second press",
+            one_address.join(", "),
+        ));
+    }
+    Some(parts.join(". "))
 }
 
 /// What a run is refused with whose chat ended while its token was minted: the token was
@@ -1080,8 +1166,19 @@ pub fn token_for(
     if remotes.is_empty() {
         return Err(match all.first() {
             Some(other) => not_minted_on(&other.host),
-            None => trust_asked(chat).unwrap_or_else(|| NO_RECORDED_CLONE.to_owned()),
+            None => trust_asked(chat, false).unwrap_or_else(|| NO_RECORDED_CLONE.to_owned()),
         });
+    }
+    // A4 (#6646): another clone is recorded, but the run stands in one that is not. It would
+    // mint a token for the recorded clone's repos that does not cover its own, so it is refused
+    // and asked about, as a workspace with none recorded is. A run elsewhere mints as before.
+    // `vaults` off: the check does not run (Q308a).
+    if clone_of(&remotes, chat.here).is_none()
+        && crate::enforcement::mode(chat.root, crate::enforcement::Family::Vaults)
+            != crate::enforcement::Mode::Off
+        && let Some(why) = trust_asked(chat, true)
+    {
+        return Err(why);
     }
     let clone = clone_of(&remotes, chat.here);
     let asked = Asked {

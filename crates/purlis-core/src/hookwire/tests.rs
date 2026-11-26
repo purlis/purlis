@@ -2876,6 +2876,7 @@ fn an_app_at(path: &std::path::Path, within: &std::path::Path) -> (Reading, Chat
                 | Ask::Dispatch(_)
                 | Ask::Task(_)
                 | Ask::Removal(_)
+                | Ask::WindowOnly(_)
                 | Ask::Propose(_)
                 | Ask::ProposeLimit(_)
                 | Ask::ProposeSkillSet(_)
@@ -5657,4 +5658,26 @@ fn a_remote_refs_ask_and_its_answer_cross_the_wire_unchanged() {
     };
     let line = serde_json::to_string(&answer).unwrap();
     assert_eq!(serde_json::from_str::<Answer>(&line).unwrap(), answer);
+}
+
+#[test]
+fn a_window_only_ask_is_read_as_one_from_the_chat_it_names_and_names_no_workspace() {
+    // A3: a clone's folder name and the chat, and nothing else on the line.
+    let ask = Ask::WindowOnly(WindowOnlyAsk {
+        chat: 3,
+        refused: WindowOnlyRefusal::RecordRepo {
+            clone: "api".to_owned(),
+        },
+    });
+    let token = ChatToken("t".repeat(64));
+    let line = line_with(Some(&token), &ask).expect("a line");
+    let text = std::str::from_utf8(&line).unwrap();
+    let (read, carried) = read_line(text).expect("a line");
+    assert_eq!(read.chat(), 3);
+    assert_eq!(carried.as_deref(), Some(token.0.as_str()));
+    let Line::Ask(read) = read else {
+        panic!("not read as an ask: {read:?}");
+    };
+    assert_eq!(read, ask);
+    assert!(!text.contains("workspace"), "{text}");
 }

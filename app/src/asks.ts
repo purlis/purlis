@@ -929,6 +929,33 @@ export async function answerTaken(
         const trusted = await commands.vouchClone(plane, path.folder, path.place);
         return trusted.status === "error" ? trusted : { status: "ok" };
       }
+      case "one-address": {
+        // Use one address (T1.1-56, Q4): sets origin's push address to the one the row showed,
+        // and nothing else. Trusting the clone is the second press its success raises.
+        if (option !== "press") break;
+        const set = await commands.useOneAddress(
+          plane,
+          path.folder,
+          path.fetch,
+          path.push,
+          path.to,
+        );
+        return set.status === "error" ? set : { status: "ok" };
+      }
+      case "clone-it": {
+        // Clone it (T1.1-56, A2): clones the repo into the chat's workspace with the person's
+        // own sign-in, as the window's own recorded clone.
+        if (option !== "press") break;
+        const cloned = await commands.cloneWithSignIn(plane, path.workspace, path.name, path.repo);
+        return cloned.status === "error" ? cloned : { status: "ok" };
+      }
+      case "record-repo": {
+        // Record this repo (T1.1-56, A3): records the repo origin names, as `purlis discover`
+        // does for that one clone, while origin still names the address the row showed.
+        if (option !== "press") break;
+        const recorded = await commands.recordRepo(plane, path.workspace, path.clone, path.place);
+        return recorded.status === "error" ? recorded : { status: "ok" };
+      }
       case "trust-clones": {
         // The clones purlis has no record of, one ask for all of them (R-336): Trust all is the
         // clone Notice's own press on each, at the one address its remote names. Each clone it

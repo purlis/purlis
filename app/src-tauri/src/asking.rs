@@ -752,12 +752,33 @@ pub enum AskSource {
     /// that couldn't be minted for a clone purlis has no record of. Trust this clone records it,
     /// as the clone's own Notice does, and the chat's next mint goes through.
     TrustClone,
+    /// **A clone whose origin names more than one address** (A1, A5, Q4): Use one address sets
+    /// origin's push address to the one the row shows, and nothing else. Trusting the clone is
+    /// a second press.
+    OneAddress,
+    /// **A private repo a chat's clone could not reach** (A2): Clone it clones it into the
+    /// chat's workspace with the person's own sign-in, as the window's own recorded clone.
+    CloneWithSignIn,
+    /// **A clone the project records no repo for** (A3): Record this repo records the repo its
+    /// origin names, as `purlis discover` does for that one clone, so a chat can read its forge.
+    RecordRepo,
     /// **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
     /// never one per clone. Trust all records each, as its Notice's Trust this clone does.
     TrustClones,
     /// **Pool setup's cluster is ready** (#4496): the admin the person asked has given what
     /// the install couldn't, and Pool setup goes on. Said once, about no chat.
     PoolSetup,
+}
+
+impl AskSource {
+    /// Whether this is a window-only refusal's ask (R-328): one a chat's refusal raised, whose
+    /// press is the window's alone, and which stands beside whatever the chat asks of its own.
+    pub fn is_window_only(self) -> bool {
+        matches!(
+            self,
+            Self::TrustClone | Self::OneAddress | Self::CloneWithSignIn | Self::RecordRepo
+        )
+    }
 }
 
 /// **The existing, checked path an ask is answered by** (#1690): the command the window
@@ -887,6 +908,29 @@ pub enum AnswerPath {
     /// at `place`, the address its remote named when the refusal was raised (R-330): the clone
     /// Notice's own command, which clears the ask.
     TrustClone { folder: String, place: String },
+    /// `use_one_address` for Use one address on the clone at `folder`: sets its push address to
+    /// `to`, the address the row shows, while its origin still fetches from `fetch` and pushes
+    /// to `push`.
+    OneAddress {
+        folder: String,
+        fetch: String,
+        push: String,
+        to: String,
+    },
+    /// `clone_with_sign_in` for Clone it: the inventory's repo `name` into `workspace`, while its
+    /// address is still `repo` (`<host>/<owner>/<repo>`), the one the row shows.
+    CloneIt {
+        workspace: String,
+        name: String,
+        repo: String,
+    },
+    /// `record_repo` for Record this repo: the repo of the clone `clone` of `workspace`, which
+    /// origin names as `place` while the row is shown.
+    RecordRepo {
+        workspace: String,
+        clone: String,
+        place: String,
+    },
     /// `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
     /// clone Notice's own command, and each clone it trusts leaves the ask (R-336).
     TrustClones {
@@ -2225,6 +2269,19 @@ fn window_only_key(session: u32, control: &purlis_core::windowonly::Control) -> 
         purlis_core::windowonly::Control::TrustClone { folder, place } => {
             format!("trust-clone:{session}:{folder}|{place}")
         }
+        purlis_core::windowonly::Control::OneAddress { folder, to, .. } => {
+            format!("one-address:{session}:{folder}|{to}")
+        }
+        purlis_core::windowonly::Control::CloneWithSignIn {
+            workspace,
+            name,
+            repo,
+        } => format!("clone-for-chat:{session}:{workspace}|{name}|{repo}"),
+        purlis_core::windowonly::Control::RecordRepo {
+            workspace,
+            clone,
+            place,
+        } => format!("record-repo:{session}:{workspace}|{clone}|{place}"),
     }
 }
 
@@ -2238,6 +2295,41 @@ pub fn window_only(refused: &purlis_core::windowonly::Refusal) -> Shown {
             folder: folder.clone(),
             place: place.clone(),
         },
+        purlis_core::windowonly::Control::OneAddress {
+            folder,
+            fetch,
+            push,
+            to,
+        } => AnswerPath::OneAddress {
+            folder: folder.clone(),
+            fetch: fetch.clone(),
+            push: push.clone(),
+            to: to.clone(),
+        },
+        purlis_core::windowonly::Control::CloneWithSignIn {
+            workspace,
+            name,
+            repo,
+        } => AnswerPath::CloneIt {
+            workspace: workspace.clone(),
+            name: name.clone(),
+            repo: repo.clone(),
+        },
+        purlis_core::windowonly::Control::RecordRepo {
+            workspace,
+            clone,
+            place,
+        } => AnswerPath::RecordRepo {
+            workspace: workspace.clone(),
+            clone: clone.clone(),
+            place: place.clone(),
+        },
+    };
+    let source = match control {
+        purlis_core::windowonly::Control::TrustClone { .. } => AskSource::TrustClone,
+        purlis_core::windowonly::Control::OneAddress { .. } => AskSource::OneAddress,
+        purlis_core::windowonly::Control::CloneWithSignIn { .. } => AskSource::CloneWithSignIn,
+        purlis_core::windowonly::Control::RecordRepo { .. } => AskSource::RecordRepo,
     };
     Shown {
         session: refused.session,
@@ -2250,7 +2342,7 @@ pub fn window_only(refused: &purlis_core::windowonly::Refusal) -> Shown {
             preselected: None,
             scope: None,
         }],
-        source: AskSource::TrustClone,
+        source,
         chain: Vec::new(),
         answer,
         // Since when is the registry's to say, as for every ask (`Waiting::since`).
@@ -2365,7 +2457,7 @@ pub fn finish_rows_apart(
     waits: &dyn Fn(u32) -> bool,
 ) -> (Vec<Shown>, Vec<Shown>) {
     asks.into_iter()
-        .partition(|ask| ask.source != AskSource::TrustClone || waits(ask.session))
+        .partition(|ask| !ask.source.is_window_only() || waits(ask.session))
 }
 
 /// **The project's Trust these clones, less every clone a chat's own Trust this clone asks for**
@@ -2377,8 +2469,11 @@ fn not_asked_by_a_chat(
     let mut ask = unrecorded?.clone();
     ask.clones.retain(|clone| {
         !window_only.iter().any(|one| {
-            let purlis_core::windowonly::Control::TrustClone { folder, .. } = &one.control;
-            *folder == clone.folder
+            matches!(
+                &one.control,
+                purlis_core::windowonly::Control::TrustClone { folder, .. }
+                    if *folder == clone.folder
+            )
         })
     });
     (!ask.clones.is_empty()).then_some(ask)
@@ -4570,7 +4665,7 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     // chat's finish row.
     let said: std::collections::HashSet<u32> = asks
         .iter()
-        .filter(|ask| ask.source != AskSource::TrustClone)
+        .filter(|ask| !ask.source.is_window_only())
         .filter(|ask| {
             ask.source != AskSource::Permission || (waiting.timed_out)(&ask.ask).is_none()
         })

@@ -711,6 +711,7 @@ fn clone_into(
                 author: &author,
                 hosts: None,
                 watch: Some(&watch),
+                chat: None,
             },
             &mut |line: Say| said.push(line),
         )
@@ -724,6 +725,35 @@ fn clone_into(
             said,
             sign_in: watch.sign_in_to(),
         }),
+    }
+}
+
+/// **The person's own clone of `repo` into `workspace`** (A2's Clone it): as the window clones, with
+/// the person's sign-in, and recorded, with no progress to tell. Answers why it did not land.
+pub(crate) fn clone_for_the_person(root: &Path, workspace: &str, repo: &str) -> Result<(), String> {
+    let author = wscmd::ensure::author();
+    let off = AtomicBool::new(false);
+    let heard = |_: Stage, _: u8| {};
+    let watch = Watch::new(&heard, &off);
+    let mut said = Vec::new();
+    let code = crate::forgeaccounts::window_git(|| {
+        purlis_core::repocmd::clone::clone(
+            &purlis_core::repocmd::clone::Request {
+                root,
+                ws: workspace,
+                repos: &[repo.to_string()],
+                now: jiff::Timestamp::now(),
+                author: &author,
+                hosts: None,
+                watch: Some(&watch),
+                chat: None,
+            },
+            &mut |line: Say| said.push(line),
+        )
+    });
+    match ran(code, said) {
+        Ok(_) => Ok(()),
+        Err(said) => Err(said),
     }
 }
 

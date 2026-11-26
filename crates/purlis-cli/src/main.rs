@@ -3411,6 +3411,7 @@ fn repo_command(command: &Command) -> Option<ExitCode> {
                     author: &author,
                     hosts: None,
                     watch: None,
+                    chat: None,
                 },
                 &mut say,
             )

@@ -75,6 +75,8 @@ pub(super) struct Route<'a> {
     pub url: &'a str,
     pub forge: &'a Forge,
     pub watch: Option<&'a Watch<'a>>,
+    /// The chat this clone is made for, where the app makes it for one ([`super::Request::chat`]).
+    pub chat: Option<u32>,
 }
 
 /// What came of it.
@@ -295,6 +297,48 @@ impl Route<'_> {
         }
     }
 
+    /// **What a chat is told once its clone of a private repo is refused for want of a forge
+    /// CLI** (A2): **Clone it** is raised for it, and the words follow [`crate::windowonly::raise`]'s
+    /// answer (rule H). Under `vaults` off, or where `consents` does not ask, nothing is raised
+    /// and the chat is told to ask the person. `vaults` never takes `log` (Q308a).
+    fn clone_it_asked(&self, chat: u32) -> String {
+        let place = gitcredential::place_of(self.url)
+            .unwrap_or_else(|| format!("{}/{}", self.forge.host, self.name));
+        let raising = crate::enforcement::mode(self.root, crate::enforcement::Family::Vaults)
+            != crate::enforcement::Mode::Off
+            && crate::windowonly::asks(self.root);
+        if !raising {
+            return "Ask the person to clone it with their own sign-in.".to_owned();
+        }
+        let raised = crate::windowonly::raise(
+            self.root,
+            chat,
+            crate::windowonly::Control::CloneWithSignIn {
+                workspace: self.ws.to_owned(),
+                name: self.name.to_owned(),
+                repo: place.clone(),
+            },
+        );
+        if raised.listened {
+            format!(
+                "purlis asked the person in Asks: \"{}\", which clones {place} into this \
+                 workspace with their own sign-in.",
+                crate::windowonly::CLONE_IT
+            )
+        } else {
+            crate::windowonly::told_of(
+                self.root,
+                chat,
+                raised,
+                &format!(
+                    "press {} on {place} in Asks to clone it with their own sign-in, or sign \
+                     the forge's command line in on this machine",
+                    crate::windowonly::CLONE_IT
+                ),
+            )
+        }
+    }
+
     fn failed(&self, reading: Reading, said: &[String]) -> Landed {
         if reading == Reading::NoAccess
             && let Some(sign_in) = self
@@ -314,6 +358,14 @@ impl Route<'_> {
             Voice::Terminal
         };
         let (head, mut said) = spoken(self.name, self.forge, &reading, said, voice);
+        // A chat's clone of a private repo, with no forge CLI here (A2, T1.1-56): the only way
+        // on is the person's own sign-in, which is theirs to lend, so it is asked in Asks.
+        let head = match (voice, &reading, self.chat) {
+            (Voice::Chat { cli: false }, Reading::NoAccess, Some(chat)) => {
+                format!("{head} {}", self.clone_it_asked(chat))
+            }
+            _ => head,
+        };
         // A chat's clone read none of your git config (#1413): where it could not reach its host
         // and yours would have changed its route, say which key (#1550).
         if Self::for_a_chat()
@@ -570,7 +622,7 @@ fn spoken(
         ),
         Reading::NoAccess if no_cli => format!(
             "{name}: {host} refused this clone. A chat's clone never uses your sign-in, so it \
-             reaches public repos only: clone this one from the window."
+             reaches public repos only."
         ),
         Reading::NoAccess => format!(
             "{name}: Sign in to {host} to clone it: `{cli} auth login`, or Settings › You › \

@@ -166,7 +166,10 @@ export function finishAsksOf({
     if (turn === undefined) continue;
     const key = finishKey(turn);
     const row = on.get(key) ?? { more: [], answers: [] };
-    const what = ask.answer.via === "trust-clone" ? ask.answer.folder : ask.says;
+    const what =
+      ask.answer.via === "trust-clone" || ask.answer.via === "one-address"
+        ? ask.answer.folder
+        : ask.says;
     row.more.push(ask.says);
     for (const option of ask.options)
       row.answers.push({
