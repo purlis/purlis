@@ -1320,9 +1320,8 @@ jobs:
         if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
         # The cases one at a time, each at its worst (every wait at its limit: 3 minutes for the host
         # to answer and link, up to 3 for the link after a fault, the fault's own 90 s or reboot):
-        # 1 drop 5 s 6, 1 drop 90 s 7.5, 2 sshd 6, 4 runner killed 9.5, 6 app restart 8, 8 slow
-        # link 7.5, 9 registry 2 twice, 10 half-open 7 = 55.5 minutes, and the unit tests of the
-        # rules a few seconds. Case 5 runs
+        # 1 drop 5 s 6, 1 drop 90 s 7.5, 2 sshd 6, 6 app restart 8, 8 slow link 7.5, 9 registry 2,
+        # 10 half-open 7 = 44 minutes, and the unit tests of the rules a few seconds. Case 5 runs
         # in the systemd step above. The ignored cases are not run. A case's own limit is the
         # nextest override's 10 minutes.
         timeout-minutes: 60

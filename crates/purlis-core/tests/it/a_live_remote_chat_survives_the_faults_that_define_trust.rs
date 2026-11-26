@@ -437,8 +437,9 @@ async fn a_chat(rig: &Rig, client: &Client, tag: &str) -> String {
 // What is train A's and train D's: read through here, so the rest of a case is real now.
 // ---------------------------------------------------------------------------------------------
 
-/// **Reads of what is not on `main`.** Each function says what to put there when its train
-/// merges; until then a case that calls one is `#[ignore]`d with the train's name.
+/// **Reads of what purlis-core cannot reach.** Trains A and D are on `main`; what is left here is
+/// the app's (Forget, runner browsers) or the rig's (a second runner machine), and a case that
+/// calls one of these is `#[ignore]`d saying which (#7662).
 mod seam {
     use super::Rig;
     use crate::support::outage::Told;
@@ -512,7 +513,9 @@ mod seam {
 
     /// The person takes over the browser; whether control was kept, or the reason it was not.
     pub fn take_over(_rig: &Rig, _browser: &str) -> Result<(), String> {
-        todo!("needs #7190 train D: takeover of a runner's browser")
+        todo!(
+            "train D's runner browsers are the app's (app/src-tauri chatbrowsers.rs), which purlis-core cannot open, and the systemd rig's machine has no browser engine (tests/ssh-runner/systemd.Dockerfile); takeover is the app's too (#7662)"
+        )
     }
 
     /// Whether the browser's page is the page it was (its URL and title).
@@ -1130,7 +1133,7 @@ fn b1_a_browsers_link_drops_and_returns_the_view_says_why_and_the_page_comes_bac
 }
 
 #[test]
-#[ignore = "needs #7190 train D: takeover of a runner's browser"]
+#[ignore = "train D's runner browsers are the app's (app/src-tauri chatbrowsers.rs), which purlis-core cannot open, and the systemd rig's machine has no browser engine (tests/ssh-runner/systemd.Dockerfile); takeover is the app's too (#7662)"]
 fn b2_a_takeover_during_a_drop_keeps_control_or_the_view_says_why() {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
@@ -1160,7 +1163,7 @@ fn b2_a_takeover_during_a_drop_keeps_control_or_the_view_says_why() {
 }
 
 #[test]
-#[ignore = "needs #7190 train D and #7187 train A: a browser ends as Pool forgotten"]
+#[ignore = "train D's runner browsers are the app's (app/src-tauri chatbrowsers.rs), which purlis-core cannot open, and the systemd rig's machine has no browser engine (tests/ssh-runner/systemd.Dockerfile); Forget is the app's too (HostedSessions::pool_removed) and the rig has no pool (#7662)"]
 fn b3_a_pool_forgotten_with_a_browser_open_ends_it_as_pool_forgotten() {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
@@ -1178,7 +1181,7 @@ fn b3_a_pool_forgotten_with_a_browser_open_ends_it_as_pool_forgotten() {
 }
 
 #[test]
-#[ignore = "needs #7190 train D: a quit leaves a runner's browser running and purlis reattaches"]
+#[ignore = "train D's runner browsers are the app's (app/src-tauri chatbrowsers.rs), which purlis-core cannot open, and the systemd rig's machine has no browser engine (tests/ssh-runner/systemd.Dockerfile); the quit and the reattach are the app's too (browsersatquit) (#7662)"]
 fn b4_an_app_quit_with_a_runner_browser_open_leaves_it_running_and_purlis_reattaches() {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
@@ -1214,7 +1217,7 @@ fn b4_an_app_quit_with_a_runner_browser_open_leaves_it_running_and_purlis_reatta
 }
 
 #[test]
-#[ignore = "needs #7190 train D: browsers on a pool's runner, and a second runner machine in the rig (follow-up on up-systemd.sh)"]
+#[ignore = "train D's runner browsers are the app's (app/src-tauri chatbrowsers.rs), which purlis-core cannot open, and the systemd rig's machine has no browser engine (tests/ssh-runner/systemd.Dockerfile); and the rig has one runner machine, not the two this needs (up-systemd.sh) (#7662)"]
 fn b5_two_runners_that_start_browsers_at_once_run_them_in_parallel() {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
