@@ -9,6 +9,7 @@ fn answer(n: u32) -> Slow {
         ms: 1_000 + n,
         at: 1_793_000_000_000 + u64::from(n),
         hot: 3,
+        phases: Vec::new(),
     }
 }
 
