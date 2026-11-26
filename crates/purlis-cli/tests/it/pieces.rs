@@ -526,27 +526,35 @@ impl Plane {
 const IN_THE_APP: [(&str, &str); 2] = [("PURLIS_CHAT", "7"), ("PURLIS_SESSION_ID", "7")];
 
 #[test]
-fn adopt_in_the_persons_own_shell_tab_records_the_branch_the_folder_is_on() {
+fn adopt_in_a_terminal_outside_purlis_records_the_branch_the_folder_is_on() {
     let p = Plane::new();
     let path = p.cut("p1");
     p.git(&path, &["checkout", "-q", "-b", "fix/p1-other"]);
-    let mut env = IN_THE_APP.to_vec();
-    env.push((purlis_core::shellguard::SHELL_TAB_ENV, "1"));
 
-    let out = p.charter_with(&["wt", "adopt", "svc", "p1", "-w", "alpha"], &env);
+    let out = p.charter_with(&["wt", "adopt", "svc", "p1", "-w", "alpha"], &[]);
 
     assert!(out.status.success(), "{}", said(&out));
     assert!(said(&out).contains("fix/p1-other"), "{}", said(&out));
 }
 
 #[test]
-fn adopt_in_a_chat_is_refused_and_names_the_persons_terminal() {
+fn adopt_in_a_session_the_app_started_with_no_app_to_ask_is_refused_whatever_its_marks_say() {
     let p = Plane::new();
     let path = p.cut("p1");
     p.git(&path, &["checkout", "-q", "-b", "fix/p1-other"]);
+    let mut tab = IN_THE_APP.to_vec();
+    tab.push((purlis_core::shellguard::SHELL_TAB_ENV, "1"));
 
-    let out = p.charter_with(&["wt", "adopt", "svc", "p1", "-w", "alpha"], &IN_THE_APP);
+    // The app decides (#7700): a session that names a chat and has no app to ask is refused,
+    // with the shell tab's mark or without it.
+    for env in [&IN_THE_APP[..], &tab[..]] {
+        let out = p.charter_with(&["wt", "adopt", "svc", "p1", "-w", "alpha"], env);
 
-    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
-    assert!(said(&out).contains("only you do"), "{}", said(&out));
+        assert_eq!(out.status.code(), Some(1), "{env:?}: {}", said(&out));
+        assert!(
+            said(&out).contains(purlis_core::hookwire::reach::NO_APP_ANSWERED),
+            "{env:?}: {}",
+            said(&out)
+        );
+    }
 }
