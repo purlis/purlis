@@ -3380,7 +3380,16 @@ fn daemontools_supervisors_multilog_and_chain_loaders_are_offered_no_run_grant()
 #[test]
 fn aptitude_run_parts_capsh_the_perl_installers_and_dnf_are_offered_no_run_grant() {
     for name in [
-        "aptitude", "run-parts", "capsh", "cpanm", "cpan", "cpm", "carton", "dnf", "dnf5", "yum",
+        "aptitude",
+        "run-parts",
+        "capsh",
+        "cpanm",
+        "cpan",
+        "cpm",
+        "carton",
+        "dnf",
+        "dnf5",
+        "yum",
     ] {
         refused_as_running_others(name);
     }
