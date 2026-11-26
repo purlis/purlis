@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795667790034,
+  "lastUpdate": 1795676464572,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55482,6 +55482,48 @@ window.BENCHMARK_DATA = {
             "value": 100.67525,
             "unit": "ms",
             "extra": "median of 5 runs: 99.693, 99.851, 100.675, 102.707, 103.282 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "2f5ee027beed8df25a9e3b175a98742900758bf3",
+          "message": "Bump @astrojs/starlight in /site in the site group (#7260)\n\nBumps the site group in /site with 1 update: [@astrojs/starlight](https://github.com/withastro/starlight/tree/HEAD/packages/starlight).\n\n\nUpdates `@astrojs/starlight` from 0.42.11 to 0.43.1\n- [Release notes](https://github.com/withastro/starlight/releases)\n- [Changelog](https://github.com/withastro/starlight/blob/main/packages/starlight/CHANGELOG.md)\n- [Commits](https://github.com/withastro/starlight/commits/@astrojs/starlight@0.43.1/packages/starlight)\n\n---\nupdated-dependencies:\n- dependency-name: \"@astrojs/starlight\"\n  dependency-version: 0.43.1\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: site\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-26T06:24:42Z",
+          "tree_id": "54f4d31d439263b47ec1f241c754e481ea4911d2",
+          "url": "https://github.com/purlis/purlis/commit/2f5ee027beed8df25a9e3b175a98742900758bf3"
+        },
+        "date": 1795676455957,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6767224999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.648, 0.654, 0.677, 0.689, 0.697 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.627748,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.528, 16.608, 16.628, 16.629, 16.753 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.262438,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.846, 101.348, 102.262, 102.837, 103.124 ms"
           }
         ]
       }
