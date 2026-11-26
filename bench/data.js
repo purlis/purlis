@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795730366818,
+  "lastUpdate": 1795732084518,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56364,6 +56364,48 @@ window.BENCHMARK_DATA = {
             "value": 101.888228,
             "unit": "ms",
             "extra": "median of 5 runs: 101.490, 101.535, 101.888, 102.532, 102.876 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "704038be6b88bbe2ba7e7941442f770012e19bda",
+          "message": "ADR 0129: purlis-core stays one crate for the release build (#7498) (#7621)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M88XECXZ6CSAPEPYNSTAAR5Z\nPurlis-Persona: steward\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T21:51:27Z",
+          "tree_id": "420370190e727d95d451d9061fee068a3da0dfe2",
+          "url": "https://github.com/purlis/purlis/commit/704038be6b88bbe2ba7e7941442f770012e19bda"
+        },
+        "date": 1795732077885,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.364616,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.350, 0.359, 0.365, 0.370, 0.376 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.393482,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.300, 16.393, 16.393, 16.577, 16.700 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4748515,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.291, 101.122, 101.475, 101.536, 102.253 ms"
           }
         ]
       }
