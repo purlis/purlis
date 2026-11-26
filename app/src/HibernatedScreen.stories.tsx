@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+// Pictures: drawn by the update-baselines bot (#7711 merged these stories without them).
 /**
  * **A hibernated chat's pane** (SC-4b, #7631): the band with Resume over what the chat showed as
  * it was hibernated, drawn read-only, and the pane where no copy was kept. In Chromium and
