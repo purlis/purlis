@@ -278,6 +278,14 @@ See `docs/agents/skills/landing-a-pr/SKILL.md`; `tools/land.mjs` does the mechan
 ### The daily Report intake routine
 
 See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does the mechanics.
+- A test that starts a chat (`a_chat_as`, `a_shell_chat`) fails in a sandboxed chat: no pty ("failed to
+  openpty") and no event log, so the `handoff/tests` and anything through `Held` is CI's. A
+  listener test in `purlis-cli`'s `tests/it` fails too (`Listener::bind`: "Operation not
+  permitted"); a refusal test that sets no `PURLIS_HOOK_SOCKET` runs here. `proposals::tests`,
+  `memoryproposal::` and `a_chats_memory_for_another_store_is_proposed::the_refusals` run here.
+- A `-- brokered` filter on `purlis-core` also takes `secrets::brokered` (126 sandbox failures):
+  filter on the module you mean. After `cargo fmt`, a mutation script's anchor text may have been
+  reflowed: assert each anchor is found, or a mutation run reports green because nothing changed.
 - `pgrep` and `ps` see no other process in the sandbox, so a wait written as `until ! pgrep …` ends at once. Wait on a background command's output file instead:
   `timeout 585 bash -c "until grep -q 'Finished\|error' <file>; do sleep 20; done"`.
 - `git fetch` and `git merge` cannot write the worktree's git folder in the sandbox: bring the base in with `purlis worktree update --merge --base origin/<base>` (alone in its call), resolve, then `--continue`. The ratchet judges marks against the base's commit time, so after a merge a mark on an existing cell for an issue filed before that commit fails `the_marks_keep_their_ratchet_against_the_base`.

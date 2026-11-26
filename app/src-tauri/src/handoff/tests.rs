@@ -3310,6 +3310,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::PolicyLog(_) => 27,
             Ask::RemoteRefs(_) => 28,
             Ask::WindowOnly(_) => 29,
+            Ask::ProposeMemory(_) => 30,
         }
     }
     let asks = vec![
@@ -3498,10 +3499,20 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
                 clone: "app".to_owned(),
             },
         }),
+        // A memory a chat proposes for another persona (T1.1-68): held, written only on Apply.
+        Ask::ProposeMemory(Box::new(purlis_core::hookwire::ProposeMemoryAsk {
+            chat,
+            write: purlis_core::brokered::Write::PersonaRemember {
+                text: "run the drill".to_owned(),
+                title: None,
+                shared: false,
+            },
+            target: purlis_core::memoryproposal::Target::Persona("steward".to_owned()),
+        })),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=29).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=30).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 
@@ -12995,6 +13006,10 @@ mod heard_from_a_pool;
 
 /// A dispatched chat's vault checks in the window run under its chain's `[policy]` (#7153).
 mod chain_policy_checks;
+
+/// A chat's refused `remember` for another store raises a proposal, and the press writes it
+/// (T1.1-68).
+mod a_chats_memory_for_another_store;
 
 /// **A dispatch that names where the levels already put it starts at once, and follows them**
 /// (#4536): `--this-machine` in a workspace that runs here asks nobody, and the chat keeps no

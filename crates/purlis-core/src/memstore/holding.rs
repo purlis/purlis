@@ -503,6 +503,25 @@ pub(super) fn forget(spot: &Spot, ident: &str) -> io::Result<()> {
     Ok(())
 }
 
+/// [`super::forget_pinned`] for a workspace's store: the file named exactly, and only while its
+/// text is the one `base` was taken from.
+pub(super) fn forget_pinned(spot: &Spot, ident: &str, base: Base) -> Result<(), EditRefused> {
+    let Some(store) = spot.held(Make::Nothing)? else {
+        return Err(EditRefused::Stale);
+    };
+    let _held = store.lock().map_err(busy)?;
+    let name = md_name(ident);
+    if !md_names(&store)?.contains(&name) {
+        return Err(EditRefused::Stale);
+    }
+    if base.stale(&raw(&store, &name)?) {
+        return Err(EditRefused::Stale);
+    }
+    store.remove(&name).map_err(refused)?;
+    rewrite_index(&store, &name, None);
+    Ok(())
+}
+
 /// One memory's raw text, as it is on disk: `None` when it is not there.
 fn raw(store: &Store, name: &str) -> io::Result<String> {
     store
@@ -541,16 +560,10 @@ pub(super) fn edit(
         return Err(no_such(ident).into());
     }
     let now = raw(&store, &name)?;
-    if let Base::Read(read) = base
-        && read != now
-    {
+    if base.stale(&now) {
         return Err(EditRefused::Stale);
     }
-    let lines = crate::mdsection::split_lines(&now);
-    let body = match super::top_lines(&lines).1 {
-        Some((_, stamp)) => format!("# {title}\n\n{stamp}\n\n{text}\n"),
-        None => format!("# {title}\n\n{text}\n"),
-    };
+    let body = super::edited_body(&now, title, text);
     spot.gate(&name)?;
     spot.gate(INDEX)?;
     store.replace(&name, body.as_bytes()).map_err(refused)?;

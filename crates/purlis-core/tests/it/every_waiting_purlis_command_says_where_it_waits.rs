@@ -81,6 +81,7 @@ fn hook_socket_waits(ask: &Ask) -> HookWait {
         | Ask::Propose(_)
         | Ask::ProposeLimit(_)
         | Ask::ProposeSkillSet(_)
+        | Ask::ProposeMemory(_)
         | Ask::ProposePin(_)
         | Ask::ReportDraft(_)
         | Ask::Dispatch(_) => HookWait::NotOnThePerson,

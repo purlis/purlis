@@ -50,6 +50,13 @@ pub struct Forget<'a> {
 /// `charter persona forget <name> <slug>`: delete one memory and its index line. The exit code,
 /// and whether a committed store changed.
 pub fn forget(root: &Path, ask: &Forget, say: Sink) -> (u8, bool) {
+    forget_pinned(root, ask, None, say)
+}
+
+/// [`forget`], pinned to `pin` when there is one ([`memstore::Base::Sha`]): the entry named
+/// exactly, removed only while its text is the one the pin was taken from, checked under the
+/// store's lock. Otherwise the exit code [`crate::memoryproposal::STALE_CODE`], nothing removed.
+pub fn forget_pinned(root: &Path, ask: &Forget, pin: Option<&str>, say: Sink) -> (u8, bool) {
     let name = ask.name;
     if let Some(refused) = crate::personas::name_refusal(root, name) {
         say(Say::Fail(refused.into()));
@@ -65,7 +72,20 @@ pub fn forget(root: &Path, ask: &Forget, say: Sink) -> (u8, bool) {
     } else {
         memory_dir(root, owner)
     };
-    match memstore::forget(root, &dir, ask.slug) {
+    let gone = match pin {
+        None => memstore::forget(root, &dir, ask.slug),
+        Some(sha) => {
+            match memstore::forget_pinned(root, &dir, ask.slug, memstore::Base::Sha(sha)) {
+                Ok(()) => Ok(()),
+                Err(memstore::EditRefused::Io(e)) => Err(e),
+                Err(stale) => {
+                    say(Say::Fail(stale.to_string().into()));
+                    return (crate::memoryproposal::STALE_CODE, false);
+                }
+            }
+        }
+    };
+    match gone {
         Ok(()) => {
             let kind = if ask.ephemeral {
                 "ephemeral"
@@ -198,6 +218,21 @@ pub fn edit_memory(
     text: Option<&str>,
     say: Sink,
 ) -> (u8, bool) {
+    edit_memory_pinned(root, ask, title, text, None, say)
+}
+
+/// [`edit_memory`], pinned to `pin` when there is one ([`memstore::Base::Sha`]): written only
+/// while the entry's text is the one the pin was taken from, checked under the store's lock, not
+/// against the text read a moment before. Otherwise the exit code
+/// [`crate::memoryproposal::STALE_CODE`] and nothing written.
+pub fn edit_memory_pinned(
+    root: &Path,
+    ask: &Memory,
+    title: Option<&str>,
+    text: Option<&str>,
+    pin: Option<&str>,
+    say: Sink,
+) -> (u8, bool) {
     let Some(persona) = ask.persona(root, say) else {
         return (1, false);
     };
@@ -210,7 +245,8 @@ pub fn edit_memory(
         Err(e) => return ask.failed(&e, say),
     };
     let (title, text) = opened.revised(title, text);
-    match persona.edit_memory(&exact, &title, &text, memstore::Base::Read(&opened.text)) {
+    let base = pin.map_or(memstore::Base::Read(&opened.text), memstore::Base::Sha);
+    match persona.edit_memory(&exact, &title, &text, base) {
         Ok(path) => {
             say(Say::Done(
                 format!(
@@ -226,7 +262,14 @@ pub fn edit_memory(
         Err(memstore::EditRefused::Io(e)) => ask.failed(&e, say),
         Err(stale) => {
             say(Say::Fail(stale.to_string().into()));
-            (1, false)
+            (
+                if pin.is_some() {
+                    crate::memoryproposal::STALE_CODE
+                } else {
+                    1
+                },
+                false,
+            )
         }
     }
 }
