@@ -2349,8 +2349,7 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // and their kin (round 1 of #7828's review), refused on what each is for: programs that run
     // the command after them, as `setuidgid` and `capsh` do; the loggers that run a `!processor`
     // they are handed, on the command line or in a log folder's `config`, as `multilog` does;
-    // `anacron`, which runs an anacrontab it is
-    // named; the Perl installers and runners beside `cpanm` (`cpanp`'s `!` evaluates Perl,
+    // `anacron`, which runs an anacrontab it is named; the Perl installers and runners beside `cpanm` (`cpanp`'s `!` evaluates Perl,
     // `plenv exec` and `carmel exec` run a command, `prove` and `dzil` a distribution's code); and
     // the package managers beside `dnf`: `zypper <name>` runs the `zypper-<name>` its search path
     // finds, `makepkg` a `PKGBUILD`, MacPorts' `port` a `Portfile`, and `microdnf` and `tdnf` take
@@ -2409,6 +2408,63 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "kernel-install",
     "ukify",
     "mkosi",
+    // and round 4's: more programs that run the command after them (`taskpolicy`, `choom`,
+    // `uclampset`, moreutils' `chronic`, `ifne`, `lckdo` and `zrun`, `cpulimit`, `nocache`,
+    // `schedtool`, `dbus-run-session`, `xvfb-run`, `faketime`, `torsocks`, `proxychains`,
+    // `trickle`, and s6's `s6-maximumtime` and its networking twins of the `s6-ipc*` programs);
+    // `rotatelogs -p`, which runs a program on each new log; the package builders beside
+    // `debuild` (`pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`, `fedpkg`, `centpkg`, `rhpkg`,
+    // `tito`), `debconf` and `deb-systemd-invoke`, which run the command or unit they are handed,
+    // and MacPorts' `daemondo --start-cmd`; Perl's servers and runners beside `plackup`; and
+    // `s6-svlink` and `s6-rc-update`, which hand a running s6 a folder or a database a chat may
+    // have written.
+    "taskpolicy",
+    "choom",
+    "uclampset",
+    "chronic",
+    "ifne",
+    "lckdo",
+    "zrun",
+    "cpulimit",
+    "nocache",
+    "schedtool",
+    "dbus-run-session",
+    "xvfb-run",
+    "faketime",
+    "torsocks",
+    "proxychains",
+    "proxychains4",
+    "trickle",
+    "s6-maximumtime",
+    "s6-tcpserver",
+    "s6-tcpserver-socketbinder",
+    "s6-tcpserver-access",
+    "s6-tcpclient",
+    "s6-tlsserver",
+    "s6-tlsclient",
+    "s6-tlsd",
+    "s6-tlsc",
+    "rotatelogs",
+    "pdebuild",
+    "cowbuilder",
+    "qemubuilder",
+    "dgit",
+    "debconf",
+    "deb-systemd-invoke",
+    "fedpkg",
+    "centpkg",
+    "rhpkg",
+    "tito",
+    "daemondo",
+    "starman",
+    "starlet",
+    "morbo",
+    "hypnotoad",
+    "mojo",
+    "start_server",
+    "mbtiny",
+    "s6-svlink",
+    "s6-rc-update",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

@@ -3416,9 +3416,10 @@ fn upstarts_initctl_and_the_init_daemons_are_offered_no_run_grant() {
 /// the command after them, as `setuidgid` and `capsh` do (`runuser`, `gosu`, `prlimit`, `chrt`,
 /// `runcon`, `setarch`, `numactl`, `bwrap`, `proot`, `unbuffer`, `sg`, `run-one` and its kin);
 /// the loggers that run a `!processor` they are handed, on the command line or in a log folder's
-/// `config`, as `multilog` does (`svlogd`, `s6-log`); `anacron`, which runs an anacrontab it is named; the Perl installers and runners
-/// beside `cpanm` (`cpanp`, `carmel`, `plenv`, `prove`, `dzil`); and the package managers beside
-/// `dnf` (`zypper`, `makepkg`, `port`, `microdnf`, `tdnf`).
+/// `config`, as `multilog` does (`svlogd`, `s6-log`); `anacron`, which runs an anacrontab it is
+/// named; the Perl installers and runners beside `cpanm` (`cpanp`, `carmel`, `plenv`, `prove`,
+/// `dzil`); and the package managers beside `dnf` (`zypper`, `makepkg`, `port`, `microdnf`,
+/// `tdnf`).
 #[test]
 fn the_kin_of_the_chain_loaders_loggers_and_installers_are_offered_no_run_grant() {
     for name in [
@@ -3559,7 +3560,8 @@ fn s6s_programs_that_run_the_program_after_them_are_offered_no_run_grant() {
 /// parse a spec whose `%(…)` a shell runs, as `rpmspec` does; and systemd's `kernel-install`,
 /// `ukify` and `mkosi` run the plugins, tools or scripts of a folder they are named.
 #[test]
-fn the_kin_the_third_review_found_are_offered_no_run_grant() {
+fn s6s_runners_the_debian_perl_and_rpm_builders_and_systemds_image_tools_are_offered_no_run_grant()
+{
     for name in [
         "s6-ipcserver-access",
         "s6-connlimit",
@@ -3586,6 +3588,72 @@ fn the_kin_the_third_review_found_are_offered_no_run_grant() {
         "kernel-install",
         "ukify",
         "mkosi",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// More of the same families (round 4 of #7828's review), refused on what each is for: programs
+/// that run the command after them (macOS's `taskpolicy`, `choom`, `uclampset`, moreutils'
+/// `chronic`, `ifne`, `lckdo` and `zrun`, `cpulimit`, `nocache`, `schedtool`,
+/// `dbus-run-session`, `xvfb-run`, `faketime`, `torsocks`, `proxychains`, `trickle`, and s6's
+/// `s6-maximumtime` and its networking twins of the `s6-ipc*` programs); `rotatelogs -p`, which
+/// runs a program on each new log; Debian's and Fedora's package builders beside `debuild`
+/// (`pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`, `fedpkg`, `centpkg`, `rhpkg`, `tito`),
+/// `debconf` and `deb-systemd-invoke`, which run the command or the unit they are handed, and
+/// MacPorts' `daemondo --start-cmd`; Perl's servers and runners beside `plackup` (`starman`,
+/// `starlet`, `morbo`, `hypnotoad`, `mojo`, `start_server`, `mbtiny`); and `s6-svlink` and
+/// `s6-rc-update`, which hand a running s6 a service folder or a database a chat may have written.
+#[test]
+fn more_chain_loaders_loggers_builders_perl_servers_and_s6s_linkers_are_offered_no_run_grant() {
+    for name in [
+        "taskpolicy",
+        "choom",
+        "uclampset",
+        "chronic",
+        "ifne",
+        "lckdo",
+        "zrun",
+        "cpulimit",
+        "nocache",
+        "schedtool",
+        "dbus-run-session",
+        "xvfb-run",
+        "faketime",
+        "torsocks",
+        "proxychains",
+        "proxychains4",
+        "trickle",
+        "s6-maximumtime",
+        "s6-tcpserver",
+        "s6-tcpserver-socketbinder",
+        "s6-tcpserver-access",
+        "s6-tcpclient",
+        "s6-tlsserver",
+        "s6-tlsclient",
+        "s6-tlsd",
+        "s6-tlsc",
+        "rotatelogs",
+        "pdebuild",
+        "cowbuilder",
+        "qemubuilder",
+        "dgit",
+        "debconf",
+        "deb-systemd-invoke",
+        "fedpkg",
+        "centpkg",
+        "rhpkg",
+        "tito",
+        "daemondo",
+        "starman",
+        "starlet",
+        "morbo",
+        "hypnotoad",
+        "mojo",
+        "start_server",
+        "mbtiny",
+        "s6-svlink",
+        "s6-rc-update",
     ] {
         refused_as_running_others(name);
     }

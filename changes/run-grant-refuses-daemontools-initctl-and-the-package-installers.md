@@ -27,12 +27,14 @@
   it is handed. A persona can still declare any of them as a tool (#6559, #6564).
 - **A run's notice offers no Allow for `fakeroot`, `fakechroot` or `eatmydata`, for Debian's
   package builders (`debuild`, `dh`, `pbuilder`, `sbuild`, `gbp`), for Perl's `yath`, `cover`,
-  `milla`, `minil` and `plackup`, for `mock`, `portindex`, `spectool` and `rpmlint`, or for
-  systemd's `kernel-install`, `ukify` and `mkosi`**, each of which runs a command, a build
+  `milla`, `minil` and `plackup`, for `mock`, `portindex`, `spectool` and `rpmlint`, for
+  systemd's `kernel-install`, `ukify` and `mkosi`, or for others of their kind** (`taskpolicy`,
+  `xvfb-run`, `torsocks`, `proxychains`, `rotatelogs`, `pdebuild`, `fedpkg`, `debconf`,
+  `starman`, `morbo`, `s6-tcpserver`, `s6-svlink` and more). Each runs a command, a build
   script, a test or a plugin it is handed. A persona can still declare any of them as a tool
   (#6559, #6564).
-- **Programs named after these lose their Allow with them**: every `systemd-<name>`,
-  `<name>-init` and `init-<name>`, `yum-<name>`, `dnf-<name>`, `zypper-<name>` and
-  `cpan-<name>`, and ast-grep's `sg`, which is still offered as `ast-grep`. Some of them are
-  harmless (`systemd-escape`, `cpan-upload`), and giving those back is its own change (#6557,
-  #6559, #6564).
+- **Programs named after these lose their Allow with them**, for example every
+  `systemd-<name>`, `<name>-init` and `init-<name>`, `yum-<name>`, `dnf-<name>`,
+  `zypper-<name>`, `cpan-<name>`, `dh-<name>` and `port-<name>`, and ast-grep's `sg`, which is
+  still offered as `ast-grep`. Some of them are harmless (`systemd-escape`, `cpan-upload`), and
+  giving those back is its own change (#6557, #6559, #6564).
