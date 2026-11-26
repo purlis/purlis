@@ -3415,8 +3415,8 @@ fn upstarts_initctl_and_the_init_daemons_are_offered_no_run_grant() {
 /// The kin round 1 of #7828's review found, refused on what each is for: the programs that run
 /// the command after them, as `setuidgid` and `capsh` do (`runuser`, `gosu`, `prlimit`, `chrt`,
 /// `runcon`, `setarch`, `numactl`, `bwrap`, `proot`, `unbuffer`, `sg`, `run-one` and its kin);
-/// the loggers whose settings' `!processor` a shell runs, as `multilog`'s is (`svlogd`,
-/// `s6-log`); `anacron`, which runs an anacrontab it is named; the Perl installers and runners
+/// the loggers that run a `!processor` they are handed, on the command line or in a log folder's
+/// `config`, as `multilog` does (`svlogd`, `s6-log`); `anacron`, which runs an anacrontab it is named; the Perl installers and runners
 /// beside `cpanm` (`cpanp`, `carmel`, `plenv`, `prove`, `dzil`); and the package managers beside
 /// `dnf` (`zypper`, `makepkg`, `port`, `microdnf`, `tdnf`).
 #[test]
@@ -3525,9 +3525,10 @@ fn systemds_command_runners_and_upstarts_telinit_are_offered_no_run_grant() {
 }
 
 /// s6's programs that run the program after them, which no row reached by a form of their name
-/// (round 2 of #7828's review): `s6-svlisten1`, `s6-svlisten`, `s6-notifyoncheck`,
-/// `s6-ftrig-listen1`, `s6-ftrig-listen`, the `s6-ipcserver` family, `s6-ipcclient`,
-/// `s6-fdholder-retrieve` and `s6-sudod`.
+/// (round 2 of #7828's review): `s6-svlisten`, `s6-notifyoncheck`, `s6-ftrig-listen`, the
+/// `s6-ipcserver` family, `s6-ipcclient`, `s6-fdholder-retrieve` and `s6-sudod`, and
+/// `s6-svlisten1` and `s6-ftrig-listen1`, which reach the rows of the first two without their
+/// version.
 #[test]
 fn s6s_programs_that_run_the_program_after_them_are_offered_no_run_grant() {
     for name in [
@@ -3542,6 +3543,49 @@ fn s6s_programs_that_run_the_program_after_them_are_offered_no_run_grant() {
         "s6-ipcclient",
         "s6-fdholder-retrieve",
         "s6-sudod",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The kin round 3 of #7828's review found, refused on what each is for: s6's
+/// `s6-ipcserver-access`, `s6-connlimit`, `s6-fdholder-getdump` and `s6-permafailon` run the
+/// program after them; OpenRC's `supervise-daemon` runs the program it is named, on a row of its
+/// own rather than by its first part; `fakeroot`, `fakechroot` and `eatmydata` run the command
+/// after them; `debuild`, `dh`, `pbuilder`, `sbuild` and `gbp` run a package's `debian/rules`, as
+/// `dpkg-buildpackage` does; `yath`, `cover`, `milla`, `minil` and `plackup` run a distribution's
+/// tests, hooks or the Perl they are handed, as `prove` and `dzil` do; `mock` runs its
+/// configuration as Python, `portindex` evaluates every `Portfile`, and `spectool` and `rpmlint`
+/// parse a spec whose `%(…)` a shell runs, as `rpmspec` does; and systemd's `kernel-install`,
+/// `ukify` and `mkosi` run the plugins, tools or scripts of a folder they are named.
+#[test]
+fn the_kin_the_third_review_found_are_offered_no_run_grant() {
+    for name in [
+        "s6-ipcserver-access",
+        "s6-connlimit",
+        "s6-fdholder-getdump",
+        "s6-permafailon",
+        "supervise-daemon",
+        "fakeroot",
+        "fakechroot",
+        "eatmydata",
+        "debuild",
+        "dh",
+        "pbuilder",
+        "sbuild",
+        "gbp",
+        "yath",
+        "cover",
+        "milla",
+        "minil",
+        "plackup",
+        "mock",
+        "portindex",
+        "spectool",
+        "rpmlint",
+        "kernel-install",
+        "ukify",
+        "mkosi",
     ] {
         refused_as_running_others(name);
     }

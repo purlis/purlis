@@ -2234,6 +2234,9 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "supervisorctl",
     "openrc",
     "openrc-run",
+    // OpenRC's `supervise-daemon` runs the program it is named; its first part reaches the
+    // `supervise` row too, but it is refused on a row of its own (round 3 of #7828's review).
+    "supervise-daemon",
     "chkconfig",
     "deb-systemd-helper",
     // Upstart's `initctl` (#6557), whose source was out of reach, refused on what it is for:
@@ -2270,11 +2273,10 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "s6-supervise",
     "s6-svscan",
     // s6's programs that run the program after them and reach no row by a form of their name
-    // (round 2 of #7828's review); `s6-svc`, `s6-svok` and `s6-svstat` run nothing.
-    "s6-svlisten1",
+    // (rounds 2 and 3 of #7828's review): `s6-svlisten1` and `s6-ftrig-listen1` reach these
+    // rows without their version. `s6-svc`, `s6-svok` and `s6-svstat` run nothing.
     "s6-svlisten",
     "s6-notifyoncheck",
-    "s6-ftrig-listen1",
     "s6-ftrig-listen",
     "s6-ipcserver",
     "s6-ipcserverd",
@@ -2282,6 +2284,10 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "s6-ipcclient",
     "s6-fdholder-retrieve",
     "s6-sudod",
+    "s6-ipcserver-access",
+    "s6-connlimit",
+    "s6-fdholder-getdump",
+    "s6-permafailon",
     "runsvdir",
     // daemontools (#6559), whose source (cr.yp.to) was out of reach, refused on what each is
     // for: `supervise` runs a folder's `./run` and `svscan` starts one on each folder in the one
@@ -2341,8 +2347,9 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "dnf",
     "yum",
     // and their kin (round 1 of #7828's review), refused on what each is for: programs that run
-    // the command after them, as `setuidgid` and `capsh` do; the loggers whose settings'
-    // `!processor` a shell runs, as `multilog`'s is; `anacron`, which runs an anacrontab it is
+    // the command after them, as `setuidgid` and `capsh` do; the loggers that run a `!processor`
+    // they are handed, on the command line or in a log folder's `config`, as `multilog` does;
+    // `anacron`, which runs an anacrontab it is
     // named; the Perl installers and runners beside `cpanm` (`cpanp`'s `!` evaluates Perl,
     // `plenv exec` and `carmel exec` run a command, `prove` and `dzil` a distribution's code); and
     // the package managers beside `dnf`: `zypper <name>` runs the `zypper-<name>` its search path
@@ -2375,6 +2382,33 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "port",
     "microdnf",
     "tdnf",
+    // and the kin round 3 of that review found: `fakeroot`, `fakechroot` and `eatmydata` run the
+    // command after them; `debuild`, `dh`, `pbuilder`, `sbuild` and `gbp` run a package's
+    // `debian/rules`, as `dpkg-buildpackage` does; `yath`, `cover`, `milla`, `minil` and
+    // `plackup` run a distribution's tests or hooks, or the Perl they are handed; `mock` runs its
+    // configuration as Python, `portindex` evaluates every `Portfile`, and `spectool` and
+    // `rpmlint` parse a spec whose `%(…)` a shell runs; and systemd's `kernel-install`, `ukify`
+    // and `mkosi` run the plugins, tools or scripts of a folder they are named.
+    "fakeroot",
+    "fakechroot",
+    "eatmydata",
+    "debuild",
+    "dh",
+    "pbuilder",
+    "sbuild",
+    "gbp",
+    "yath",
+    "cover",
+    "milla",
+    "minil",
+    "plackup",
+    "mock",
+    "portindex",
+    "spectool",
+    "rpmlint",
+    "kernel-install",
+    "ukify",
+    "mkosi",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

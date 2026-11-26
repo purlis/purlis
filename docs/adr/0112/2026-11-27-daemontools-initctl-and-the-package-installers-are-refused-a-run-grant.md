@@ -16,9 +16,9 @@ Each tool below is refused whole, on `NOT_FOR_A_RUN_GRANT`, on what the tool is 
 manual describes it, and not on a line of its source. That is the conservative side: a refusal
 only takes away an Allow on a run's notice, and a persona can still declare any of them as a tool
 in a reviewed line. No tool these issues name is found harmless, since that would need the
-reading this could not do; the few left offered beside them (`svc`, `svok`, `svstat`) are left so
-on their manuals too, and are in the same follow-up. Reading each in source, to cite its lines or to give an Allow back, is filed as a new
-issue (see the pull request).
+reading this could not do. The six left offered beside them, daemontools' `svc`, `svok` and
+`svstat` and s6's `s6-svc`, `s6-svok` and `s6-svstat`, are left so on their manuals too. Reading
+each tool in source, to cite its lines or to give an Allow back, is filed as #7825.
 
 ## daemontools (#6559)
 
@@ -26,8 +26,8 @@ issue (see the pull request).
 - **`svscan [folder]`** starts a `supervise` on each folder in the one it is named (the current
   one by default), as runit's `runsvdir` and s6's `s6-svscan` do; those were refused on
   2026-11-13.
-- **`multilog`**'s `!processor` action has a shell run the processor on each log file it
-  finishes.
+- **`multilog`**'s `!processor` action, given on its command line, has a shell run the
+  processor on each log file it finishes.
 - Its chain loaders **`setuidgid`**, **`envuidgid`**, **`softlimit`**, **`setlock`**,
   **`pgrphack`** and **`fghack`** each run the program after them, as its `envdir` (refused
   since #5833) and s6's chain loaders (2026-11-13) do.
@@ -84,13 +84,14 @@ Its kin, refused with it:
 ## The review of this amendment's pull request
 
 The first review of #7828 found kin of these tools that were still offered. Each is refused on
-what it is for, on the same footing as the rest, and is in the same follow-up:
+what it is for, on the same footing as the rest, and is in #7825 too:
 
 - **Programs that run the command after them**, as `setuidgid` and `capsh` do: `runuser`,
   `gosu`, `prlimit`, `chrt`, `runcon`, `setarch`, `numactl`, `bwrap`, `proot`, `unbuffer`,
   `sg`, and `run-one` with its `run-this-one` and `keep-one-running`.
-- **Loggers whose settings file has a shell run a `!processor`**, as `multilog`'s does: runit's
-  `svlogd` and s6's `s6-log`. Neither name reaches a row by its forms.
+- **Loggers that run a `!processor` they are handed**, as `multilog` does: runit's `svlogd`
+  reads it from a log folder's `config` file, and s6's `s6-log` from its command line. Neither
+  name reaches a row by its forms.
 - **`anacron`**, which runs the jobs of an anacrontab it is named (`-t`), with a spool folder of
   its own (`-S`) and no privilege needed.
 - **The Perl installers and runners beside `cpanm`**: `cpanp` (whose `!` evaluates Perl),
@@ -113,31 +114,56 @@ The second review of #7828 found more, each refused on the same footing:
   KEY=VALUE` puts the value into the environment of the jobs the runlevel event starts. On
   sysvinit and systemd it is a link to a program that is refused already.
 - **s6's programs that run the program after them** and reach no row by a form of their name:
-  `s6-svlisten1`, `s6-svlisten`, `s6-notifyoncheck`, `s6-ftrig-listen1`, `s6-ftrig-listen`,
-  `s6-ipcserver`, `s6-ipcserverd`, `s6-ipcserver-socketbinder`, `s6-ipcclient`,
-  `s6-fdholder-retrieve` and `s6-sudod`. `s6-svc`, `s6-svok` and `s6-svstat` run nothing and
-  stay offered.
+  `s6-svlisten`, `s6-notifyoncheck`, `s6-ftrig-listen`, `s6-ipcserver`, `s6-ipcserverd`,
+  `s6-ipcserver-socketbinder`, `s6-ipcclient`, `s6-fdholder-retrieve` and `s6-sudod`.
+  `s6-svlisten1` and `s6-ftrig-listen1` reach the first and third without their version.
+  `s6-svc`, `s6-svok` and `s6-svstat` run nothing and stay offered.
 
 It also found that 2026-11-13's test of a link through `init.d` named its target `upstart-job`,
 which the `upstart` row now refuses by its first part. The test passed whether or not the
-`init.d` check ran. Its target is now named for no row.
+`init.d` check ran. Its target is now named for no row, and the test was seen to fail with the
+`init.d` check turned off.
+
+The third review of #7828 found the long tail of the same families, each refused on the same
+footing:
+
+- **s6's `s6-ipcserver-access`, `s6-connlimit`, `s6-fdholder-getdump` and `s6-permafailon`**,
+  which run the program after them.
+- **OpenRC's `supervise-daemon`**, which runs the program it is named. It reached the
+  `supervise` row by its first part, the kind of form #7825 may give back, so it has a row of
+  its own.
+- **`fakeroot`, `fakechroot` and `eatmydata`**, which run the command after them.
+- **Debian's package builders**: `debuild`, `dh`, `pbuilder`, `sbuild` and `gbp` run a package's
+  `debian/rules`, as `dpkg-buildpackage` does. The `dh_<name>` helpers have no form that reaches
+  `dh` (`name_forms` splits on `-`, not `_`) and are left for #7833.
+- **Perl's test and app runners beside `prove` and `dzil`**: `yath`, `cover` (whose `-test` runs
+  `make test`), `milla`, `minil` and `plackup` (whose `-e` runs Perl).
+- **The RPM and MacPorts kin**: `mock` runs its configuration as Python, `portindex` evaluates
+  every `Portfile` as Tcl, and `spectool` and `rpmlint` parse a spec whose `%(…)` a shell runs,
+  as `rpmspec` does.
+- **systemd's `kernel-install`, `ukify` and `mkosi`**, which run the plugins, tools or build
+  scripts of a folder they are named.
 
 ## What the name forms cost
 
 A name is judged by its forms as well: its first part, its last part, and itself without a
 version (`name_forms`). So these entries refuse more than they name. The extra cost is an Allow
-and nothing else, but some of the programs caught are harmless:
+and nothing else. Some of the programs caught rightly stay refused, and some may be harmless:
 
-- every `systemd-<name>` (`systemd-escape`, `systemd-path`, `systemd-analyze`, `systemd-creds`);
-- every `init-<name>` and `<name>-init` (`cloud-init`, `runit-init`, `openrc-init`);
-- every `yum-<name>`, `dnf-<name>` and `zypper-<name>` (`yum-config-manager`);
-- every `cpan-<name>`: `cpan-upload` runs nothing, though a chat may be handed a PAUSE password
-  for it, and `cpan-outdated` only reads;
+- every `systemd-<name>`. Some run code (`systemd-analyze unit-shell` runs a shell in a unit's
+  namespace) and others are thought harmless (`systemd-escape`, `systemd-path`,
+  `systemd-creds`).
+- every `init-<name>` and `<name>-init`. `cloud-init` stays refused rightly, since it runs the
+  `bootcmd` and `runcmd` of the file it is handed.
+- every `yum-<name>`, `dnf-<name>` and `zypper-<name>`. `yum-config-manager` stays refused
+  rightly, since it loads plugins through `-c` and `--setopt` as `yum` does.
+- every `cpan-<name>`. `cpan-upload` runs nothing, though a chat may be handed a PAUSE password
+  for it, and `cpan-outdated` only reads.
 - ast-grep's `sg`, a different program with the same name as shadow's `sg`. It is still offered
   under the name `ast-grep`.
 
-Which of these to give back, and how to do it without giving back the ones that run code, is
-part of the follow-up.
+Which to give back, and how to do it without giving back the ones that run code, is part of
+#7825.
 
 Other families the review found still offered are outside these issues: `tini`, `catatonit`,
 `daemonize`, `pm2`, `supervisord`, ucspi-tcp's `tcpserver`, `tcpclient`, `recordio` and `argv0`,
