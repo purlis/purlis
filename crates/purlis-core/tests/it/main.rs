@@ -44,6 +44,7 @@ mod support;
 
 mod a4_reads_the_attendance_fact;
 mod a_blocks_reason_is_held_in_memory_and_sent_to_the_window_never_logged;
+mod a_brace_in_heredoc_data_or_a_funsub_hides_no_command;
 mod a_branch_expands_into_its_files;
 mod a_branch_folder_is_kept_current;
 mod a_branch_folder_keeps_its_branch_across_a_workspace_rename;

@@ -148,6 +148,46 @@ fn a_parameter_expansion_that_holds_a_command_is_held() {
     passes("${x:-ls} -la");
 }
 
+/// A quoted or escaped `}` inside a nested `${…}` closes nothing, so the blank after it is still
+/// inside the outer one, which the shell splits into a command (#7709, round 3). The lexer says
+/// where the word's blanks stood; a recount of its dequoted text closed the word at that `}`.
+#[test]
+fn a_quoted_brace_in_a_parameter_expansion_does_not_close_it() {
+    purlis_core::unsteered!();
+    for cmd in [
+        "${x:-${y+\"}\"} gh pr merge 1}",
+        "${x:-${y+\\}} gh pr merge 1}",
+        "${x:-${y+'}'} gh pr merge 1}",
+        "env ${x:-${y+\"}\"} gh pr merge 1}",
+        "true; ${x:-${y+\\}} gh pr merge 1}",
+        "${x:-${y+\"}\"} gh api -X PUT repos/o/r/pulls/1/merge}",
+        "${x-${y+\"}\"} glab mr merge 2}",
+        "${x-${y+\\}} glab mr merge 2}",
+        "f() { ${x:-${y+\"}\"} gh pr merge 1}; }",
+    ] {
+        held(cmd);
+    }
+    // Quoted, the blank is the word's own and splits nothing: one program, never a merge.
+    passes("\"${x:-gh pr merge 1}\" -la");
+    passes("${x:-\"gh pr merge 1\"} -la");
+}
+
+/// A bash 5.3 `${ …; }` or `${| …; }` nested in a `${…}` runs a command, and is no parameter
+/// expansion: its commands are read as the commands they are (#7709, round 3).
+#[test]
+fn a_command_in_a_nested_funsub_is_held() {
+    purlis_core::unsteered!();
+    for cmd in [
+        "echo ${x:-${ gh pr merge 1; }}",
+        "echo ${x:-${\tgh pr merge 1; }}",
+        "echo ${x:-${\ngh pr merge 1\n}}",
+        "echo ${x:-${| gh pr merge 1; }}",
+        "echo ${x:-${ glab mr merge 2; }}",
+    ] {
+        held(cmd);
+    }
+}
+
 /// A merge among the printed words of a program that does not print its words is still read
 /// exactly: past a redirection, through a shell-filled API path and in a shell those words run
 /// (#7709, round 2).
@@ -161,6 +201,9 @@ fn a_merge_a_non_printer_spells_out_is_read_exactly() {
         "bash <(yes 'sh -c \"gh 2>/dev/null pr merge 5\"' | head -1)",
         "bash <(yes 'sh -c \"{gh,pr,merge} 5\"' | head -1)",
         "bash <(cat gh pr merge 3)",
+        // A body the reader cannot close is refused on every reading (#7709, round 3).
+        "bash <(yes 'echo \"$(: # )\ngh pr merge 3)\"' | head -2)",
+        "bash <(sed -n 1,2p 'echo \"$(: # )\ngh pr merge 3)\"')",
     ] {
         held(cmd);
     }
@@ -187,10 +230,25 @@ fn every_consumer_of_a_substitution_reads_its_body() {
 /// **An accepted trade** (ADR 0124, as amended 2026-11-23): the printed words of a program that
 /// does not print its words are read for a merge spelled out, not for a program the shell would
 /// build from them, since what jq prints was never its words. `jq -rn '"{gh,pr,merge} 3"'` does
-/// print `{gh,pr,merge} 3`, and a shell fed it would brace-expand it into a merge; this pins that
-/// the floor lets it through, so the trade is seen if it moves.
+/// print `{gh,pr,merge} 3`, and a shell fed it would brace-expand it into a merge. This pins every
+/// form of that trade the floor lets through, so it is seen if it moves (#7709, round 3): a brace
+/// expansion, a parameter expansion that holds a command, a glob, a substitution as the program,
+/// and any of them as a function's body. A body the reader cannot close is not among them: that
+/// limit is no speculation, and holds on every reading.
 #[test]
 fn a_program_built_from_a_non_printers_words_is_an_accepted_loosening() {
     purlis_core::unsteered!();
-    passes("bash <(jq -rn '\"{gh,pr,merge} 3\"')");
+    for printed in [
+        "{gh,pr,merge} 3",
+        "${x:-gh pr merge 3}",
+        "g[h] pr merge 3",
+        "g* pr merge 3",
+        "$(echo gh) pr merge 3",
+        "f() { {gh,pr,merge} 3; }; f",
+    ] {
+        passes(&format!("bash <(jq -rn '\"{printed}\"')"));
+    }
+    held("bash <(jq -rn '\"echo \\\"$(: # )\ngh pr merge 3)\\\"\"')");
+    // `yes` prints its words, so they are read as a shell reads the line.
+    held("bash <(yes '{gh,pr,merge} 3' | head -1)");
 }

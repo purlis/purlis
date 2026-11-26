@@ -193,6 +193,22 @@ fn shapes(deep: usize) -> Vec<Shape> {
             Box::new(|b| format!("{}$(ls)", fill("${a ", b))),
         ),
         (
+            // A funsub in a `${…}` reads the word again from its `{`, as a `(` does (#7709,
+            // round 3).
+            "unclosed parameter expansions around funsubs, repeated",
+            Box::new(|b| fill("${a:-${ ls; } ", b)),
+        ),
+        (
+            "quoted braces in nested parameter expansions, repeated",
+            Box::new(|b| fill("${a:-${b+\"}\"} ", b)),
+        ),
+        (
+            // The commands after a heredoc whose data opens a `${`, which a reader of the raw
+            // line would take for one word (#7709, round 3).
+            "commands after a heredoc whose data opens a parameter expansion",
+            Box::new(|b| format!("cat <<'EOF'\n${{x\nEOF\n{}", fill("ls; ", b - 16))),
+        ),
+        (
             "substitutions nested around a long body",
             Box::new(move |b| {
                 format!(
