@@ -2236,6 +2236,15 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "openrc-run",
     "chkconfig",
     "deb-systemd-helper",
+    // Upstart's `initctl` (#6557), whose source was out of reach, refused on what it is for:
+    // `set-env` copies a value into the init daemon's job environment, as `import-environment`
+    // does, and `start` and `emit` start jobs (its `start`, `stop` and the rest are links to it,
+    // judged by its name). `init --user --confdir <folder>` runs a folder's jobs, and `init` is
+    // as often `systemd`, whose `--user` runs the units of the run's home.
+    "initctl",
+    "init",
+    "upstart",
+    "systemd",
     // and their kin the review of #6556 found: systemd's `systemd-cat`, `systemd-inhibit`,
     // `systemd-socket-activate`, `systemd-notify --exec` and `systemd-dissect --with` run the
     // command after them, and `busctl call` reaches the manager's `StartTransientUnit`, as

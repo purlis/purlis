@@ -3385,3 +3385,18 @@ fn aptitude_run_parts_capsh_the_perl_installers_and_dnf_are_offered_no_run_grant
         refused_as_running_others(name);
     }
 }
+
+/// Upstart's `initctl` (#6557): `initctl set-env` copies a value into the init daemon's job
+/// environment, for every job started after it, as the refused `systemctl import-environment`
+/// does, and `initctl start` and `emit` start jobs, of a session's init too with `--session` or
+/// `--user`. Its `start`, `stop`, `restart`, `reload` and `status` are links to it, judged by its
+/// name. Upstart's `init --user --confdir <folder>` runs the jobs of a folder it is named, and
+/// `init` is as often systemd's, whose `systemd --user` runs the units of the run's own home.
+/// Upstart's source (git.launchpad.net/upstart) was out of reach, so each is refused on what it
+/// is for, the side that only takes away an Allow.
+#[test]
+fn upstarts_initctl_and_the_init_daemons_are_offered_no_run_grant() {
+    for name in ["initctl", "init", "upstart", "systemd"] {
+        refused_as_running_others(name);
+    }
+}

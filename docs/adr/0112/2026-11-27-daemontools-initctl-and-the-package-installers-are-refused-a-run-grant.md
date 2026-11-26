@@ -52,3 +52,28 @@ The leads round 2 of #6556's review left unchecked, with the kin each one has:
 - **`dnf`** loads the Python plugins in the folders its `pluginpath` names, which a `--setopt` or
   the `-c` file it is given sets, and **`yum`** does the same. `dnf5` and `dnf-3` reach the row
   by the name without the version.
+
+## Upstart's initctl, and the init daemons (#6557)
+
+The 2026-11-13 amendment filed `initctl` because git.launchpad.net/upstart was out of reach. It
+still was, and so were the mirrors tried in its place (Debian's sources, GitHub's copies of
+Upstart). As #6557 asked, `initctl` is therefore refused whole on the conservative side:
+
+- **`initctl set-env <VAR>=<value>`** sets a variable in the init daemon's job environment, and
+  every job started after it gets the variable. That is the reason
+  `systemctl import-environment` was refused.
+- **`initctl start <job>`** and **`initctl emit <event>`** start jobs. With `--session` or `--user`
+  they talk to a session's own init instead of the system's.
+- Upstart's **`start`**, **`stop`**, **`restart`**, **`reload`** and **`status`** are links to
+  `initctl`. A program's name is judged again once its links resolve, so they are refused by
+  `initctl`'s name and need no entry of their own.
+
+Its kin, refused with it:
+
+- **Upstart's `init`**, also shipped as **`upstart`**, runs as a session init with `--user`, and
+  `--confdir <folder>` has it run the jobs of the folder it is named.
+- **`init` is just as often a link to `systemd`**, and `systemd --user` runs the units it finds in
+  the run's own home. `init` is refused by the name it was found by, and `systemd` by its own.
+  The first part of a name counts as one of its forms (`emacs-nox`), so every `systemd-<name>`
+  program is refused along with it. That costs only an Allow. Giving back the harmless ones
+  (`systemd-escape`, `systemd-path`) is a review of its own.

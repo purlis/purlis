@@ -11,3 +11,8 @@
   after `--`; the Perl installers run a package's build script, and `carton exec` the command
   it is handed; and `dnf` and `yum` load plugins from a folder a setting names. A persona can
   still declare any of them as a tool (#6564).
+- **A run's notice offers no Allow for Upstart's `initctl`, or for `init`, `upstart` or
+  `systemd`**. `initctl set-env` puts a value the run was handed into the environment of every
+  job started after it, and `initctl start` starts a job. `init` and `systemd` run the jobs or
+  units of a folder they are named, or of the run's own home. A persona can still declare any of
+  them as a tool (#6557).
