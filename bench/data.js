@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795661161088,
+  "lastUpdate": 1795667790034,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55440,6 +55440,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9379655,
             "unit": "ms",
             "extra": "median of 5 runs: 101.323, 101.815, 101.938, 102.265, 102.687 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "66b2ce470215e3f894e82abf3e1dcf244bf87c43",
+          "message": "A chat's MCP servers and claude.ai connectors reach Claude's hosts through a forge route (#7663)\n\n* Test: Claude's own hosts are carried at an address a forge shares with them\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M89W9N3P0Z8TPEHG7JEE15XS\nPurlis-Persona: steward\n\n* Claude's own hosts are carried at an address a forge shares with them, so connectors stop getting a 403\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M89W9N3P0Z8TPEHG7JEE15XS\nPurlis-Persona: steward",
+          "timestamp": "2026-11-26T04:00:05Z",
+          "tree_id": "e7365674c7c312427316505b6fbdf7db7cfdbd69",
+          "url": "https://github.com/purlis/purlis/commit/66b2ce470215e3f894e82abf3e1dcf244bf87c43"
+        },
+        "date": 1795667784614,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5503615,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.547, 0.547, 0.550, 0.591, 0.600 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.274483000000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.198, 16.221, 16.274, 16.305, 16.331 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.67525,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.693, 99.851, 100.675, 102.707, 103.282 ms"
           }
         ]
       }
