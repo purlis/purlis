@@ -486,6 +486,18 @@ impl Blocks {
         true
     }
 
+    /// `block` of chat `session` was not answered in this turn after all: its next report is
+    /// an ask again.
+    fn unspend(&self, session: u32, block: &HeldBlock) {
+        let mut spent = self.spent();
+        if let Some(mine) = spent.get_mut(&session) {
+            mine.retain(|one| one != block);
+            if mine.is_empty() {
+                spent.remove(&session);
+            }
+        }
+    }
+
     /// An ask for `block` of chat `session` left: the next one for it raises again.
     pub(crate) fn release_raise(&self, session: u32, block: &HeldBlock) {
         let mut asked = self.asked();
@@ -646,6 +658,10 @@ impl Blocks {
                 .map(|at| mine.held.remove(at))
         });
         self.answered(session, block);
+        // A connection given up is no answer to echo (Q240): its own echo is dropped by what is
+        // written below until its call is over, and the chat's retry of the host is a new ask,
+        // listed and raised, never a hold nobody sees.
+        self.unspend(session, block);
         let mut calls = self.calls();
         let mine = calls.entry(session).or_default();
         let (tool, args, call) = match under.as_ref().and_then(Under::tool) {
