@@ -10,7 +10,8 @@
 //! - A hover only looks ([`ReadsOnRunner::look`]), for at most [`LOOK_WITHIN`]: a runner that is
 //!   slow to answer leaves the text no link, and never holds the pane up.
 //! - A tab reads the file in pieces of one version ([`ReadsOnRunner::read`]): a file that
-//!   changed between them is read again from its start, once.
+//!   changed between them is read again from its start, once. The runner reads each piece
+//!   alone (#7078), so the pieces joined say whether the file is text.
 //! - A file outside the chat's workspace is read only as the file it was when the person
 //!   answered the ask for it: one put in its place since, or a link put there, is not read.
 
@@ -153,6 +154,12 @@ impl ReadsOnRunner {
                 }
                 FileRead::Binary { size, .. } => return Ok(Some(ReadThere::Binary(size))),
                 FileRead::TooLarge { size, .. } => return Ok(Some(ReadThere::TooLarge(size))),
+                FileRead::Kept { .. } => {
+                    return Err(format!("{}.", purlis_core::panelinks::RUNNER_KEPT));
+                }
+                FileRead::Unsure { .. } => {
+                    return Err(format!("{}.", purlis_core::panelinks::RUNNER_UNSURE));
+                }
                 FileRead::NotThere | FileRead::NotPlain { .. } => {
                     return Err(self.said("no longer has this file"));
                 }
@@ -183,9 +190,12 @@ impl ReadsOnRunner {
                 break;
             }
         }
-        String::from_utf8(text)
-            .map(|text| Some(ReadThere::Text(text)))
-            .map_err(|_| self.said("sent a file that is not text"))
+        // Each piece is judged as text on the runner but for a character cut at its edges
+        // (#7078): whole, the file is text or it is not.
+        let size = text.len() as u64;
+        Ok(Some(
+            String::from_utf8(text).map_or(ReadThere::Binary(size), ReadThere::Text),
+        ))
     }
 
     /// A sentence that says what the runner did.

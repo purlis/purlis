@@ -870,3 +870,40 @@ async fn the_window_reads_a_file_a_runner_chat_printed_and_no_other_client_does(
     }
     assert_eq!(runner.recorded.files_read.lock().unwrap().len(), 1);
 }
+
+/// **A window before 1.94 hears a file its runner keeps from it as not there** (#7064): it knows
+/// no `kept`, and its pane keeps such a path no link. A window of 1.94 hears it kept.
+#[test]
+fn a_window_before_1_94_hears_a_kept_file_as_not_there() {
+    let kept = || session::FileRead::Kept {
+        path: "/home/purlis/.codex/auth.json".into(),
+    };
+    let older = purlis_session_protocol::version::Version {
+        major: 1,
+        minor: 93,
+    };
+
+    assert_eq!(
+        crate::hosting::said_to(kept(), older),
+        session::FileRead::NotThere
+    );
+    assert_eq!(
+        crate::hosting::said_to(kept(), session::KNOWS_KEPT_FILES),
+        kept()
+    );
+    let unsure = || session::FileRead::Unsure {
+        path: "/home/purlis/projects/p/second.md".into(),
+    };
+    assert_eq!(
+        crate::hosting::said_to(unsure(), older),
+        session::FileRead::NotThere
+    );
+    assert_eq!(
+        crate::hosting::said_to(unsure(), session::KNOWS_KEPT_FILES),
+        unsure()
+    );
+    assert_eq!(
+        crate::hosting::said_to(session::FileRead::NotThere, older),
+        session::FileRead::NotThere
+    );
+}
