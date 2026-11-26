@@ -79,8 +79,7 @@ Its kin, refused with it:
   program every refused `systemctl` verb is carried out by. `init` is refused by the name it was
   found by, and `systemd` by its own.
   The first part of a name counts as one of its forms (`emacs-nox`), so every `systemd-<name>`
-  program is refused along with it. That costs only an Allow. Giving back the harmless ones
-  (`systemd-escape`, `systemd-path`) is a review of its own.
+  program is refused along with it.
 
 ## The review of this amendment's pull request
 
@@ -104,3 +103,43 @@ what it is for, on the same footing as the rest, and is in the same follow-up:
 Tests now pin the names the amendment says reach a row by their forms (`aptitude-curses`,
 `dnf-3`, `upstart-local-bridge`, `upstart-event-bridge`), and a link named `start` that points
 to `initctl`. Each was seen to fail with its entry taken off the row.
+
+The second review of #7828 found more, each refused on the same footing:
+
+- **systemd's programs that run a command and are not named `systemd-<name>`**:
+  `machinectl shell`, `homectl with <user> -- <cmd>`, `userdbctl ssh-authorized-keys --chain
+  <cmd>`, `varlinkctl call exec:<path>` and `portablectl attach --now` of an image a chat wrote.
+- **Upstart's `telinit`**, a program of its own and not a link to `initctl`: `telinit -e
+  KEY=VALUE` puts the value into the environment of the jobs the runlevel event starts. On
+  sysvinit and systemd it is a link to a program that is refused already.
+- **s6's programs that run the program after them** and reach no row by a form of their name:
+  `s6-svlisten1`, `s6-svlisten`, `s6-notifyoncheck`, `s6-ftrig-listen1`, `s6-ftrig-listen`,
+  `s6-ipcserver`, `s6-ipcserverd`, `s6-ipcserver-socketbinder`, `s6-ipcclient`,
+  `s6-fdholder-retrieve` and `s6-sudod`. `s6-svc`, `s6-svok` and `s6-svstat` run nothing and
+  stay offered.
+
+It also found that 2026-11-13's test of a link through `init.d` named its target `upstart-job`,
+which the `upstart` row now refuses by its first part. The test passed whether or not the
+`init.d` check ran. Its target is now named for no row.
+
+## What the name forms cost
+
+A name is judged by its forms as well: its first part, its last part, and itself without a
+version (`name_forms`). So these entries refuse more than they name. The extra cost is an Allow
+and nothing else, but some of the programs caught are harmless:
+
+- every `systemd-<name>` (`systemd-escape`, `systemd-path`, `systemd-analyze`, `systemd-creds`);
+- every `init-<name>` and `<name>-init` (`cloud-init`, `runit-init`, `openrc-init`);
+- every `yum-<name>`, `dnf-<name>` and `zypper-<name>` (`yum-config-manager`);
+- every `cpan-<name>`: `cpan-upload` runs nothing, though a chat may be handed a PAUSE password
+  for it, and `cpan-outdated` only reads;
+- ast-grep's `sg`, a different program with the same name as shadow's `sg`. It is still offered
+  under the name `ast-grep`.
+
+Which of these to give back, and how to do it without giving back the ones that run code, is
+part of the follow-up.
+
+Other families the review found still offered are outside these issues: `tini`, `catatonit`,
+`daemonize`, `pm2`, `supervisord`, ucspi-tcp's `tcpserver`, `tcpclient`, `recordio` and `argv0`,
+`execlineb`, `logrotate`, `pacman`, `apk`, macOS's `installer` and sysvinit's `startpar`. They
+are filed as #7833.

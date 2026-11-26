@@ -3045,7 +3045,9 @@ fn a_link_to_an_init_script_is_offered_no_run_grant_whatever_its_name() {
 
 /// A link that reaches an init script's place and points on out of it (#6321), as Ubuntu's
 /// Upstart jobs were laid out (`/etc/init.d/<job> -> /lib/init/upstart-job`): what runs sits
-/// outside `init.d`, under a name no row reads, but the link in `init.d` is the service's script.
+/// outside `init.d`, but the link in `init.d` is the service's script. `upstart-job` itself is now
+/// refused by its first part (#6557), so the file here is named for no row, `job-runner`, and only
+/// the link through `init.d` can refuse it.
 #[cfg(unix)]
 #[test]
 fn a_link_through_an_init_script_that_points_on_out_of_init_d_is_offered_no_run_grant() {
@@ -3062,7 +3064,7 @@ fn a_link_through_an_init_script_that_points_on_out_of_init_d_is_offered_no_run_
     for folder in [&scripts, &lib, &sbin] {
         std::fs::create_dir_all(folder).unwrap();
     }
-    let job = lib.join("upstart-job");
+    let job = lib.join("job-runner");
     std::fs::write(&job, "#!/bin/sh\nexit 0\n").unwrap();
     std::fs::set_permissions(&job, std::fs::Permissions::from_mode(0o755)).unwrap();
     std::os::unix::fs::symlink(&job, scripts.join("database")).unwrap();
@@ -3501,4 +3503,46 @@ fn upstarts_start_a_link_to_initctl_is_offered_no_run_grant() {
         refusal(&frames).0.contains("runs other programs"),
         "{frames:?}"
     );
+}
+
+/// The programs beside the refused `systemd` and `initctl` that run a command they are handed
+/// (round 2 of #7828's review), refused on what each is for: `machinectl shell`, `homectl with
+/// <user> -- <cmd>`, `userdbctl ssh-authorized-keys --chain`, `varlinkctl call exec:<path>` and
+/// `portablectl attach --now` an image the chat wrote; and Upstart's `telinit -e`, which puts a
+/// value into the environment of the jobs its runlevel starts, as `initctl set-env` does.
+#[test]
+fn systemds_command_runners_and_upstarts_telinit_are_offered_no_run_grant() {
+    for name in [
+        "machinectl",
+        "homectl",
+        "userdbctl",
+        "varlinkctl",
+        "portablectl",
+        "telinit",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// s6's programs that run the program after them, which no row reached by a form of their name
+/// (round 2 of #7828's review): `s6-svlisten1`, `s6-svlisten`, `s6-notifyoncheck`,
+/// `s6-ftrig-listen1`, `s6-ftrig-listen`, the `s6-ipcserver` family, `s6-ipcclient`,
+/// `s6-fdholder-retrieve` and `s6-sudod`.
+#[test]
+fn s6s_programs_that_run_the_program_after_them_are_offered_no_run_grant() {
+    for name in [
+        "s6-svlisten1",
+        "s6-svlisten",
+        "s6-notifyoncheck",
+        "s6-ftrig-listen1",
+        "s6-ftrig-listen",
+        "s6-ipcserver",
+        "s6-ipcserverd",
+        "s6-ipcserver-socketbinder",
+        "s6-ipcclient",
+        "s6-fdholder-retrieve",
+        "s6-sudod",
+    ] {
+        refused_as_running_others(name);
+    }
 }

@@ -2246,6 +2246,16 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "init",
     "upstart",
     "systemd",
+    // and their kin (round 2 of #7828's review): Upstart's `telinit -e` puts a value into the
+    // environment of the jobs its runlevel starts; systemd's `machinectl shell`, `homectl with`,
+    // `userdbctl --chain`, `varlinkctl call exec:` and `portablectl attach --now` run a command
+    // or an image they are handed, and are no `systemd-<name>`.
+    "telinit",
+    "machinectl",
+    "homectl",
+    "userdbctl",
+    "varlinkctl",
+    "portablectl",
     // and their kin the review of #6556 found: systemd's `systemd-cat`, `systemd-inhibit`,
     // `systemd-socket-activate`, `systemd-notify --exec` and `systemd-dissect --with` run the
     // command after them, and `busctl call` reaches the manager's `StartTransientUnit`, as
@@ -2259,6 +2269,19 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "busctl",
     "s6-supervise",
     "s6-svscan",
+    // s6's programs that run the program after them and reach no row by a form of their name
+    // (round 2 of #7828's review); `s6-svc`, `s6-svok` and `s6-svstat` run nothing.
+    "s6-svlisten1",
+    "s6-svlisten",
+    "s6-notifyoncheck",
+    "s6-ftrig-listen1",
+    "s6-ftrig-listen",
+    "s6-ipcserver",
+    "s6-ipcserverd",
+    "s6-ipcserver-socketbinder",
+    "s6-ipcclient",
+    "s6-fdholder-retrieve",
+    "s6-sudod",
     "runsvdir",
     // daemontools (#6559), whose source (cr.yp.to) was out of reach, refused on what each is
     // for: `supervise` runs a folder's `./run` and `svscan` starts one on each folder in the one
