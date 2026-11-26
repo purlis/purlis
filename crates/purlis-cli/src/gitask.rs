@@ -140,10 +140,21 @@ pub fn adopt_forwarded(workspace: &str, work: GitWork, within: Duration) -> Forw
     ))
 }
 
-/// What `asked`, an [`asked_of_a_chat`] answer, makes of work only the person may ask for.
+/// What an [`asked_of_a_chat`] answer makes of `purlis worktree adopt` (#7707): run here only
+/// where this process is no chat's. Once an app has named the asker a chat, nothing short of
+/// its own answer runs it: not an app with nothing wired to answer, not an answer of another
+/// kind, not a connection it ended. Each of those is refused.
 fn for_the_person(asked: Option<Forwarded>) -> Forwarded {
-    asked.unwrap_or(Forwarded::NotTaken)
+    match asked {
+        None => Forwarded::NotTaken,
+        Some(Forwarded::NotTaken) => Forwarded::Refused(ADOPT_NOT_TAKEN.to_owned()),
+        Some(answered) => answered,
+    }
 }
+
+/// What `purlis worktree adopt` says where the app named this session a chat's and did not
+/// take it.
+const ADOPT_NOT_TAKEN: &str = "it did not take `purlis worktree adopt`, which only the person      may ask for (it may be older than this command), so nothing was adopted. Run it from a new      shell tab or from your own terminal outside purlis";
 
 /// How long the app may take to update a branch folder, or stay silent pushing one: a fetch and
 /// a push each held to git's network limit, and a rebase and a handful of local calls (qw387). A

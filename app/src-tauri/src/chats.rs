@@ -2047,9 +2047,14 @@ impl Chats {
     /// started as the operator's shell or running it (#7707). An unprofiled chat running a
     /// program purlis does not know as a harness is not one by that alone.
     pub fn is_shell_tab(&self, session: u32) -> bool {
-        lock(&self.open)
-            .get(&session)
-            .is_some_and(|one| one.chat.profile.is_none() && one.harness.is_none())
+        let shell = crate::sessions::shell();
+        let shell = std::path::Path::new(&shell).file_name();
+        lock(&self.open).get(&session).is_some_and(|one| {
+            one.chat.profile.is_none()
+                && one.harness.is_none()
+                && (one.operator_shell
+                    || std::path::Path::new(&one.chat.program).file_name() == shell)
+        })
     }
 
     /// Whether `session` is a shell tab at `root`: a chat on no profile running no harness,

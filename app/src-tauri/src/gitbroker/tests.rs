@@ -275,12 +275,13 @@ fn a_held_shell_tab_with_a_folder_to_adopt() -> (tempfile::TempDir, std::sync::A
     std::fs::create_dir_all(&clone).expect("the clone");
     std::fs::write(purlis_core::names::manifest(&root), "schema = 1\n").expect("its file");
     let git = |args: &[&str]| {
-        let ran = std::process::Command::new("git")
-            .args(["-c", "user.name=Tester", "-c", "user.email=t@e.invalid"])
-            .args(args)
-            .current_dir(&clone)
-            .output()
-            .expect("git runs");
+        let ran = purlis_core::forklock::output(
+            std::process::Command::new("git")
+                .args(["-c", "user.name=Tester", "-c", "user.email=t@e.invalid"])
+                .args(args)
+                .current_dir(&clone),
+        )
+        .expect("git runs");
         assert!(ran.status.success(), "{ran:?}");
     };
     git(&["init", "-q", "-b", "main", "."]);
