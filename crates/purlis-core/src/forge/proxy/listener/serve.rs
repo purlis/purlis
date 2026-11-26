@@ -29,7 +29,7 @@ use url::Url;
 
 use super::super::{
     BodyNeed, Class, Forwarded, GITLAB_COM, Inbound, Kind, Outcome, Refusal, RequestHead,
-    is_ci_storage_host, is_download_host, is_gitlab_ci_storage,
+    is_ci_storage_host, is_download_host, is_gitlab_ci_storage, malformed_because,
 };
 use super::gitsay;
 use super::http::{
@@ -101,7 +101,12 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
     let (rh, alias) = match route {
         Route::Tls { host, port } => (RequestHead::new(&method, host, *port, &target), None),
         Route::Plain => {
+            // Only the chat's `gh` speaks on this door, and its socket transport sends an
+            // `https://` address it follows (a run's `jobs_url`) as plain HTTP with that address's
+            // `Host`, port left out: the port it means is 443, as the core reads a `Host` without
+            // one (#7679). A port said out loud is that port.
             let (host, port) = plain_host(&headers);
+            let port = port.unwrap_or(443);
             match w.proxy.github_alias(&w.chat, &host) {
                 Some(Ok(alias)) => {
                     let value = if alias.port == 443 {
@@ -118,7 +123,7 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
                     )
                 }
                 Some(Err(refusal)) => {
-                    let asked = RequestHead::new(&method, &host, port.unwrap_or(80), &target);
+                    let asked = RequestHead::new(&method, &host, port, &target);
                     w.proxy.note_refused(&w.chat, &asked, refusal);
                     let said = (refusal == Refusal::Pinned)
                         .then(|| w.proxy.alias_pin_said(&w.chat, &host));
@@ -127,10 +132,7 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
                     }
                     return refused_saying(&mut framed.stream, refusal, said);
                 }
-                None => (
-                    RequestHead::new(&method, &host, port.unwrap_or(80), &target),
-                    None,
-                ),
+                None => (RequestHead::new(&method, &host, port, &target), None),
             }
         }
     };
@@ -169,14 +171,12 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
         observer.request(&rh, &body);
     }
 
-    let outcome = w.proxy.handle(
-        &w.chat,
-        &Inbound {
-            head: &rh,
-            headers: &headers,
-            body: &body,
-        },
-    );
+    let inbound = Inbound {
+        head: &rh,
+        headers: &headers,
+        body: &body,
+    };
+    let outcome = w.proxy.handle(&w.chat, &inbound);
     match outcome {
         Outcome::Refused(refusal) => {
             let said = (refusal == Refusal::Pinned).then(|| w.proxy.pin_said(&rh.host, rh.port));
@@ -190,6 +190,15 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
             )? {
                 return Ok(());
             }
+            // A malformed request is told which check it failed (#7679).
+            let said = said.or_else(|| {
+                (refusal == Refusal::MalformedRequest).then(|| {
+                    format!(
+                        "purlis refused this request: MalformedRequest: {}",
+                        malformed_because(&inbound)
+                    )
+                })
+            });
             refused_saying(&mut framed.stream, refusal, said)
         }
         // A held act (slice F2): the ask is raised, and the chat is told its number and that
@@ -339,7 +348,7 @@ fn refused<W: Write>(out: &mut W, refusal: Refusal) -> io::Result<()> {
 /// [`refused`], with the pin's own sentence where the refusal is the pin's (who set it, and that
 /// signing in does not change it): `said` is [`ForgeProxy::pin_said`]'s.
 fn refused_saying<W: Write>(out: &mut W, refusal: Refusal, said: Option<String>) -> io::Result<()> {
-    if let (Refusal::Pinned, Some(said)) = (refusal, &said) {
+    if let (Refusal::Pinned | Refusal::MalformedRequest, Some(said)) = (refusal, &said) {
         return write_answer(out, 403, &message(said));
     }
     // A request with no credential at all is **challenged**, not refused outright: `git` sends its

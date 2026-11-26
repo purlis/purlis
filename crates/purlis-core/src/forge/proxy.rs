@@ -941,6 +941,32 @@ fn apply_canonical(headers: &mut Vec<(String, String)>, allowed: &Allowed) {
     headers.push(("Content-Length".to_string(), body.len().to_string()));
 }
 
+/// Which check found `inbound` malformed, in the words a chat is told after `MalformedRequest`:
+/// the checks [`ForgeProxy::handle`] makes, in its order, and otherwise the policy's reading of
+/// the request line.
+pub(crate) fn malformed_because(inbound: &Inbound<'_>) -> &'static str {
+    if !framing_is_unambiguous(inbound.headers) {
+        "its framing is ambiguous: more than one Content-Length, one that is not a number, a \
+         Transfer-Encoding other than one chunked, or both"
+    } else if inbound
+        .headers
+        .iter()
+        .any(|(n, _)| n.is_empty() || n.contains('_'))
+    {
+        "a header name is empty or has an underscore in it"
+    } else if !header_names_are_plain(inbound.headers) {
+        "it has more than one Content-Type"
+    } else if !host_agrees(inbound) {
+        "its Host header does not name the host and port it was sent to"
+    } else if has_header(inbound.headers, "content-encoding")
+        && request::parse_target(&inbound.head.target).is_ok()
+    {
+        "it has a Content-Encoding, which only a git fetch may send"
+    } else {
+        "its method, host, path, query or body cannot be read one way"
+    }
+}
+
 /// A header name is a token, and a forge's front end may read `Content_Type` as `Content-Type`
 /// while this reads it as another header: a name with an underscore is refused, as is a second
 /// `Content-Type` of any spelling (two readers pick two types).

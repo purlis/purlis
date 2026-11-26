@@ -47,7 +47,10 @@ fn gh_run_view_json_jobs_on_the_chats_socket_is_answered() {
     purlis_core::unsteered!();
     let w = World::new();
     for (target, upstream) in [
-        (JOBS, "https://api.github.com/repos/acme/app/actions/runs/45770612164/jobs?per_page=100"),
+        (
+            JOBS,
+            "https://api.github.com/repos/acme/app/actions/runs/45770612164/jobs?per_page=100",
+        ),
         ("/repos/acme/app", "https://api.github.com/repos/acme/app"),
     ] {
         w.fake.answer(Answer::ok(r#"{"jobs":[]}"#));
@@ -77,7 +80,12 @@ fn a_portless_host_on_the_socket_names_only_the_https_port_and_only_the_chats_ho
     // Another repo on the right host is still another repo.
     let reply = plain(
         &w,
-        &gh_run_view_jobs(&w, "/repos/acme/other/actions/runs/9/jobs", "api.github.com", ""),
+        &gh_run_view_jobs(
+            &w,
+            "/repos/acme/other/actions/runs/9/jobs",
+            "api.github.com",
+            "",
+        ),
     );
     assert_eq!(reply.status, 403, "{}", reply.text());
     assert!(reply.text().contains("OtherRepo"), "{}", reply.text());
@@ -95,9 +103,17 @@ fn a_request_that_is_still_malformed_is_refused_and_told_which_check_failed() {
             "Content-Length",
         ),
         ("X_Forwarded: x\r\n", "api.github.com", "underscore"),
-        ("content-type: text/plain\r\n", "api.github.com", "Content-Type"),
+        (
+            "content-type: text/plain\r\n",
+            "api.github.com",
+            "Content-Type",
+        ),
         ("Host: evil.example\r\n", "api.github.com", "Host"),
-        ("Content-Encoding: gzip\r\n", "api.github.com", "Content-Encoding"),
+        (
+            "Content-Encoding: gzip\r\n",
+            "api.github.com",
+            "Content-Encoding",
+        ),
     ] {
         let reply = plain(&w, &gh_run_view_jobs(&w, JOBS, host, extra));
         assert_eq!(reply.status, 403, "{check}: {}", reply.text());
@@ -146,9 +162,9 @@ fn gh_pr_list_author_on_the_chats_repo_is_answered_as_a_read() {
         "author:app/dependabot repo:acme/app state:open type:pr",
         // `-R` and a `--search` that names the repo again: the same repo twice.
         "author:app/dependabot repo:acme/app repo:Acme/App state:open type:pr",
-        // A value gh quotes because it holds a space, and the repo quoted.
+        // A value gh quotes because it holds a space.
         "label:\"needs review\" repo:acme/app type:pr",
-        "repo:\"acme/app\" type:pr",
+        "repo:acme/app label:\"a b\" -label:\"c d\" \"some words\"",
     ] {
         let out = pr_search(&s, q);
         let Outcome::Forward(f) = out else {
@@ -169,6 +185,9 @@ fn a_pr_list_search_of_another_repo_none_an_org_or_a_user_is_refused() {
         "repo:acme/app org:acme type:pr",
         "repo:acme/app user:acme type:pr",
         "repo:acme/app owner:acme type:pr",
+        // A quoted repo, which the forge might read as text, leaving the search unscoped.
+        "repo:\"acme/app\" type:pr",
+        "label:\"a b\" repo:\"acme/app\"",
         // A quoted phrase is text to the forge: it scopes nothing.
         "\"repo:acme/app\" type:pr",
         "\"repo:acme/app org:acme\" type:pr",
@@ -195,7 +214,10 @@ fn the_chats_repos_dependabot_alerts_are_read() {
     ] {
         for method in ["GET", "HEAD"] {
             let out = s.send(method, "api.github.com", target, b"");
-            assert!(matches!(out, Outcome::Forward(_)), "{method} {target}: {out:?}");
+            assert!(
+                matches!(out, Outcome::Forward(_)),
+                "{method} {target}: {out:?}"
+            );
         }
     }
 }
