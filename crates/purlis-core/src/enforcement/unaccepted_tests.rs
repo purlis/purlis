@@ -146,16 +146,22 @@ fn under_a_broken_acceptance_a_dispatch_to_another_persona_names_the_unaccepted_
     let root = broken_plane("[policy]\ntemplate = \"open\"\n");
     let grants = crate::dispatchgrant::InForce::read(root.path(), Vec::new());
     let covers = crate::dispatchgrant::covers(Some("steward"), "devops", &grants, &Locks::none());
-    assert_eq!(covers, Covers::Denied(Deny::Unaccepted));
-    let said = crate::dispatchgrant::denied_said("devops", Deny::Unaccepted);
+    assert_eq!(covers, Covers::NeversUnaccepted);
+    let said = crate::dispatchgrant::unread_unaccepted_said("devops");
     assert!(said.contains(&the_cause()), "{said}");
     assert!(!said.contains("could not read"), "{said}");
+    let unattended =
+        crate::dispatchunattended::answer_of(covers, Some("steward"), "devops", false, true);
+    let crate::dispatchunattended::Answer::Refused(refusal) = unattended else {
+        panic!("refused: {unattended:?}");
+    };
+    assert_eq!(refusal.say(), said);
     // The press mends it.
     press(root.path(), &digest_of(root.path())).expect("pressed again");
     let grants = crate::dispatchgrant::InForce::read(root.path(), Vec::new());
     assert_ne!(
         crate::dispatchgrant::covers(Some("steward"), "devops", &grants, &Locks::none()),
-        Covers::Denied(Deny::Unaccepted)
+        Covers::NeversUnaccepted
     );
 }
 
@@ -180,7 +186,7 @@ fn under_a_broken_acceptance_no_refusal_blames_the_list_of_pairs_said_never_to()
         "{said}"
     );
     assert!(said.contains(&the_cause()), "{said}");
-    assert_eq!(covers, Covers::Denied(Deny::Unaccepted));
+    assert_eq!(covers, Covers::NeversUnaccepted);
     let refused = added.expect_err("nothing written").to_string();
     assert!(
         !refused.contains("the list of pairs you said never to"),
@@ -358,8 +364,10 @@ fn a_hook_takes_the_cause_from_the_apps_answer_and_an_older_answer_keeps_todays_
 }
 
 #[test]
-fn a_floor_joined_to_the_answer_keeps_the_answers_cause() {
-    // The start's `PURLIS_POLICY` and a chain's policy carry no cause, and only tighten.
+fn a_floor_joined_to_the_answer_keeps_the_cause_only_where_the_floor_does_not_enforce() {
+    // The start's `PURLIS_POLICY` and a chain's policy carry no cause, and only tighten. Where
+    // one enforces a family on its own merits, the press would not lift that family's refusal
+    // for this chat, so it names no unaccepted policy (the re-review of #7803).
     let answer = Resolved::accepting(
         &Resolved::of(
             &Settings::from_text(Some("[policy]\ntemplate = \"open\"\n")),
@@ -367,12 +375,33 @@ fn a_floor_joined_to_the_answer_keeps_the_answers_cause() {
         ),
         &broken_accepted(),
     );
-    let floored = answer.stricter(&Resolved::all(Mode::Enforce));
-    assert!(floored.unaccepted(Family::GuardsCredential));
+    assert!(answer.unaccepted(Family::GuardsCredential));
+    let logged = answer.stricter(&Resolved::all(Mode::Log));
+    assert!(logged.unaccepted(Family::GuardsCredential));
     assert!(
         answer
             .clone()
+            .for_chat(Some(&Resolved::all(Mode::Off).spelled()))
+            .unaccepted(Family::GuardsCredential)
+    );
+    let enforced = answer.stricter(&Resolved::all(Mode::Enforce));
+    assert_eq!(enforced.mode(Family::GuardsCredential), Mode::Enforce);
+    assert!(!enforced.unaccepted(Family::GuardsCredential));
+    assert!(
+        !answer
+            .clone()
             .for_chat(Some(&answer.spelled()))
+            .unaccepted(Family::GuardsCredential)
+    );
+    // Joined the other way round, the same.
+    assert!(
+        !Resolved::all(Mode::Enforce)
+            .stricter(&answer)
+            .unaccepted(Family::GuardsCredential)
+    );
+    assert!(
+        Resolved::all(Mode::Log)
+            .stricter(&answer)
             .unaccepted(Family::GuardsCredential)
     );
 }
@@ -398,4 +427,88 @@ fn a_refusal_that_names_the_shape_to_retry_names_an_unaccepted_policy_too() {
     assert!(!verdict.said().contains(OVERRIDE_NOTE));
     verdict.unaccepted = Some(the_cause());
     assert!(verdict.said().ends_with(&the_cause()));
+}
+
+/// Whether `covers`, a dispatch to `devops` from a chat running as `steward`, starts under
+/// `mode`: as an attended chat's decision reads it, and as an unattended chat's, with and
+/// without a sandbox.
+fn starts_under(covers: &Covers, mode: Mode) -> [bool; 3] {
+    use crate::dispatchunattended::{self as unattended, Answer};
+    let attended =
+        crate::dispatchgrant::as_the_policy_runs(covers.clone(), mode) == Covers::Covered;
+    let [sandboxed, unsandboxed] = [true, false].map(|sandboxed| {
+        let answer =
+            unattended::answer_of(covers.clone(), Some("steward"), "devops", false, sandboxed);
+        unattended::as_the_policy_runs(answer, mode) == Answer::Covered
+    });
+    [attended, sandboxed, unsandboxed]
+}
+
+#[test]
+fn under_a_broken_acceptance_unread_nevers_refuse_a_dispatch_in_every_mode_of_the_family() {
+    // The re-review of #7803: what the person refused is unknown, so no `dispatch = "log"` or
+    // `"off"` lets a pair across personas start, attended or not, whatever the words name.
+    let _home = OwnConfigHome::new();
+    let root = broken_plane("[policy]\ntemplate = \"open\"\n");
+    let grants = crate::dispatchgrant::InForce::read(root.path(), Vec::new());
+    assert!(grants.never_unread && grants.never_unaccepted);
+    let covers = crate::dispatchgrant::covers(Some("steward"), "devops", &grants, &Locks::none());
+    assert_eq!(covers, Covers::NeversUnaccepted);
+    for mode in [Mode::Log, Mode::Off, Mode::Enforce] {
+        assert_eq!(
+            starts_under(&covers, mode),
+            [false; 3],
+            "{mode:?}: {covers:?}"
+        );
+    }
+}
+
+#[test]
+fn grants_read_under_a_broken_acceptance_refuse_under_the_mode_a_press_just_held() {
+    // The race of the re-review of #7803: the grants and the mode are two reads of the
+    // acceptance. An Accept pressed between them must not start a pair whose nevers went unread.
+    let _home = OwnConfigHome::new();
+    let root = broken_plane("[policy]\ntemplate = \"open\"\ndispatch = \"log\"\n");
+    let grants = crate::dispatchgrant::InForce::read(root.path(), Vec::new());
+    assert!(grants.never_unread, "read under Broken");
+    press(root.path(), &digest_of(root.path())).expect("pressed between the reads");
+    assert!(!broken(root.path()));
+    let mode = in_force(root.path()).mode(Family::Dispatch);
+    assert_ne!(mode, Mode::Enforce, "the mode is read under Held");
+    let covers = crate::dispatchgrant::covers(Some("steward"), "devops", &grants, &Locks::none());
+    assert_eq!(
+        starts_under(&covers, mode),
+        [false; 3],
+        "{mode:?}: {covers:?}"
+    );
+}
+
+#[test]
+fn under_a_broken_acceptance_a_sealed_never_taken_out_of_a_well_formed_file_blames_the_file() {
+    // The re-review of #7803: the file's shape is not enough. A sealed never removed is the
+    // file's own change, which the press does not mend, so the list is named, not the policy.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n");
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    crate::dispatchnever::add(root.path(), "steward", "web").expect("a never");
+    let path = crate::dispatchnever::path(root.path());
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).expect("kept")).expect("JSON");
+    doc["never"] = serde_json::json!([]);
+    std::fs::write(&path, doc.to_string()).expect("the never taken out");
+    let file = crate::sandbox::local::path(root.path());
+    let mut kept: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).expect("kept")).expect("JSON");
+    let object = kept.as_object_mut().expect("an object");
+    object.remove("policy_accepted");
+    object.remove("policy_seal");
+    std::fs::write(&file, kept.to_string()).expect("written");
+    assert!(broken(root.path()));
+    assert!(!crate::dispatchnever::unread_by_the_policy(root.path()));
+    assert_eq!(
+        crate::dispatchnever::unread_said(root.path()),
+        crate::dispatchnever::file_unread_said(root.path())
+    );
+    let grants = crate::dispatchgrant::InForce::read(root.path(), Vec::new());
+    assert!(grants.never_unread && !grants.never_unaccepted);
 }

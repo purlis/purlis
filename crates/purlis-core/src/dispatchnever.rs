@@ -284,11 +284,14 @@ pub fn unaccepted_said(on: crate::enforcement::AcceptedOn<'_>) -> String {
 /// not there. A file that is not that shape does not read for its own reason, and **neither does
 /// one where no seal key reads at all** (a keyring that did not start, #7153): the press cannot
 /// mend that, and [`crate::dispatchgrant::NEVERS_UNREAD`] says what does. A key another program
-/// made is the acceptance's cause, which the press replaces (#7714).
+/// made is the acceptance's cause, which the press replaces (#7714). **Nor does one whose own
+/// seals show it changed** ([`seals_show_a_change`]): a sealed never taken out of a well-formed
+/// file is the file's, which the press does not put back.
 pub fn unread_by_the_policy(root: &Path) -> bool {
     (crate::secrets::seal::can_seal() || crate::secrets::seal::key_is_foreign())
         && crate::sandbox::local::policy_unsealed(root)
         && on_disk(root) != Nevers::Unread
+        && !seals_show_a_change(root)
 }
 
 /// What the person is told where the record itself does not read: not the shape purlis wrote,
@@ -446,7 +449,6 @@ enum Sealed {
 /// across personas until the person mends it. A never something else added has no seal and
 /// still refuses. Only the app verifies it.
 fn sealed_standing(root: &Path) -> Sealed {
-    use crate::secrets::sealed_set::{Set, Standing};
     if !crate::secrets::sealed_set::decides() {
         return Sealed::Holds;
     }
@@ -456,6 +458,21 @@ fn sealed_standing(root: &Path) -> Sealed {
     if crate::enforcement::broken(root) {
         return Sealed::Unread;
     }
+    seals_on_disk(root)
+}
+
+/// **Whether the file's own seals show it changed since the app wrote it**, whatever the
+/// acceptance: read only with the app's own key. Under a key another program made, a seal that
+/// does not verify is the key's doing, which the press replaces (#7714), so it shows nothing.
+fn seals_show_a_change(root: &Path) -> bool {
+    crate::secrets::sealed_set::decides()
+        && !crate::secrets::seal::key_is_foreign()
+        && seals_on_disk(root) == Sealed::Unread
+}
+
+/// [`sealed_standing`] of the file itself, whatever the acceptance: what its own seals say.
+fn seals_on_disk(root: &Path) -> Sealed {
+    use crate::secrets::sealed_set::{Set, Standing};
     let Some((whole, entries)) = whole_on_disk(root) else {
         return Sealed::Unread;
     };

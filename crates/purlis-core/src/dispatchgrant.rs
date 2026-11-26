@@ -210,8 +210,8 @@ pub struct InForce {
     pub never_unread: bool,
     /// Whether it does not read only because this machine's acceptance of the project's policy
     /// is Broken ([`crate::dispatchnever::unread_by_the_policy`], ADR 0130 §7): then a dispatch
-    /// across personas is refused as the unaccepted policy's ([`Deny::Unaccepted`]), never
-    /// blamed on the list.
+    /// across personas is refused as the unaccepted policy's ([`Covers::NeversUnaccepted`]),
+    /// never blamed on the list, and in every mode.
     pub never_unaccepted: bool,
     /// The grants that hold in one workspace only (#1505), yours and the project's accepted
     /// here, each only while its workspace stands ([`crate::dispatchwithin::in_force`]).
@@ -488,6 +488,12 @@ pub enum Covers {
     /// ([`InForce::never_unread`]): no grant covers the pair, since it may be one the person
     /// refused. The person is asked, and told why; a chat nobody is at is refused.
     Unread,
+    /// **This machine's record of nevers does not read only because its acceptance of the
+    /// project's policy is Broken** ([`InForce::never_unaccepted`], ADR 0130 §7): what the person
+    /// refused is unknown, so nothing starts and nobody is asked, **in every mode of the
+    /// `dispatch` family** ([`as_the_policy_runs`] leaves it standing). Said as the unaccepted
+    /// policy's ([`unread_unaccepted_said`]), which the press in the window mends.
+    NeversUnaccepted,
     /// **The project's policy denies the pair** (`[dispatch.denies]`, ticket T1.1-73): nothing
     /// starts, nobody is asked, and no grant covers it, the project's and yours included. Why:
     /// a deny it names, or a policy that does not read.
@@ -512,7 +518,9 @@ pub enum Deny {
 /// **`covers` as the project's `[policy]` runs the `dispatch` family** (Q308, instruction 50;
 /// ticket T1.1-73): under `off` or `log` a policy ask nothing answered, and a policy deny, are
 /// covered, with no grant and no ask; every other answer stands, so a lock and the person's
-/// nevers hold in every mode.
+/// nevers hold in every mode, and so does a record of nevers that does not read, whatever its
+/// cause ([`Covers::Unread`], [`Covers::NeversUnaccepted`]): the mode is read apart from the
+/// grants, and a press between the two reads must not start a pair the person refused.
 pub fn as_the_policy_runs(covers: Covers, mode: crate::enforcement::Mode) -> Covers {
     match covers {
         Covers::NeedsGrant | Covers::Denied(_) if mode != crate::enforcement::Mode::Enforce => {
@@ -611,11 +619,11 @@ pub fn covers(asking: Option<&str>, target: &str, grants: &InForce, policy: &Loc
     }
     // What the person refused is unknown, so nothing answers for a pair of two personas: not
     // the policy, not a standing grant, and not one made for this chat.
-    // Unread only because the policy isn't accepted (ADR 0130 §7): strict mode, which lets no
-    // chat dispatch to another persona, is the cause, and the press mends both.
+    // Unread only because the policy isn't accepted (ADR 0130 §7): that is what the chat is
+    // told, and the press mends both. Never a deny the mode lifts: the nevers are unknown.
     if grants.never_unread && asking != Some(target) {
         return if grants.never_unaccepted {
-            Covers::Denied(Deny::Unaccepted)
+            Covers::NeversUnaccepted
         } else {
             Covers::Unread
         };
@@ -902,6 +910,13 @@ impl Denied {
             .map(str::to_owned)
             .collect()
     }
+}
+
+/// **What a chat is told when its dispatch to `target` is refused because the record of nevers
+/// does not read only while the project's policy isn't accepted** ([`Covers::NeversUnaccepted`]):
+/// the words of [`Deny::Unaccepted`], since the press mends both.
+pub fn unread_unaccepted_said(target: &str) -> String {
+    denied_said(target, Deny::Unaccepted)
 }
 
 /// What a chat is told when the project's policy denies its dispatch to `target`, by `deny`.

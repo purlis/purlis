@@ -1071,11 +1071,18 @@ impl Resolved {
         // An allowance holds only where both allow it; a protection where either has it.
         stricter.lineage = self.lineage && other.lineage;
         stricter.protected = self.protected.union(&other.protected).cloned().collect();
-        // **A cause is said by the resolution that has one** (ADR 0130 §7): a floor joined to it
-        // (the start's [`ENV`], the chain's policy) carries none, and only tightens. Where the
-        // floor enforces a family the unaccepted policy also holds, the press is still the way
-        // out of the refusal the person sees first.
-        stricter.unaccepted = self.unaccepted.union(&other.unaccepted).copied().collect();
+        // **A cause is said only where acceptance is the reason for this chat** (ADR 0130 §7): a
+        // family one side enforces with no cause (the start's [`ENV`], the chain's policy, which
+        // carry none) is enforced on its own merits, and the press would not lift its refusal.
+        let own_merits = |side: &Self, family: Family| {
+            side.mode(family) == Mode::Enforce && !side.unaccepted(family)
+        };
+        stricter.unaccepted = self
+            .unaccepted
+            .union(&other.unaccepted)
+            .copied()
+            .filter(|family| !own_merits(self, *family) && !own_merits(other, *family))
+            .collect();
         stricter.unaccepted_denies = self.unaccepted_denies.with(&other.unaccepted_denies);
         stricter
     }

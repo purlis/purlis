@@ -754,7 +754,7 @@ fn a_record_removed_under_its_anchor_refuses_every_dispatch_across_personas() {
     // nevers, which the broken acceptance alone leaves unread.
     assert_eq!(
         a_dispatch_across_personas(root.path()),
-        crate::dispatchgrant::Covers::Denied(crate::dispatchgrant::Deny::Unaccepted)
+        crate::dispatchgrant::Covers::NeversUnaccepted
     );
     // The press, on the committed file as it stands, mends it.
     press(root.path(), &digest_of(root.path())).expect("pressed again");
@@ -817,7 +817,7 @@ fn a_git_folder_copied_aside_and_back_is_no_fresh_install() {
     assert_eq!(in_force(root.path()), broken_accepted());
     assert_eq!(
         a_dispatch_across_personas(root.path()),
-        crate::dispatchgrant::Covers::Denied(crate::dispatchgrant::Deny::Unaccepted)
+        crate::dispatchgrant::Covers::NeversUnaccepted
     );
 }
 

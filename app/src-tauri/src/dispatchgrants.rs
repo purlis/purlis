@@ -678,6 +678,12 @@ impl Store {
                 Requested::Refused(dispatchgrant::denied_said(target, deny)),
                 None,
             ),
+            // The nevers do not read only while the project's policy isn't accepted (ADR 0130
+            // §7): refused as the unaccepted policy's, and nobody is asked until the press.
+            Covers::NeversUnaccepted => (
+                Requested::Refused(dispatchgrant::unread_unaccepted_said(target)),
+                None,
+            ),
             // The person said no on this chat's tab already: their answer, and no second
             // question.
             Covers::NeedsGrant | Covers::Unread if self.is_kept_blocked(&asking, target) => {
