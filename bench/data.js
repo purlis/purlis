@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795682709397,
+  "lastUpdate": 1795685879736,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55692,6 +55692,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5096145,
             "unit": "ms",
             "extra": "median of 5 runs: 100.556, 101.388, 101.510, 101.669, 102.319 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "76464e0a18ea6503ead6552a9aa2c5a39bbaa172",
+          "message": "Hibernate a chat from its row and resume it (SC-4a) (#7659)\n\n* SC-4a: Cause::Operator, protocol 1.96 hibernate command, Stopped::Hibernated and the host's hibernate (#7630, #1391)\n\nCore: the hibernated | operator run row. Protocol: a hibernate command (1.96) that stops a program, drops its engine and forgets it. Host: Stopped::Hibernated is the lowest act, so any other end racing it wins, and its end writes no run.ended.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M896H26GQ12EFXG2QZB72SSJ\nPurlis-Persona: steward\n\n* SC-4a: hibernate one chat from its row and resume it (#7630, #1391)\n\nThe app decides and acts: a pure refusal (a chat that is working, asking, paused, on a harness that cannot resume by id, observed, with own work, with a dispatched task, or itself a task is refused in words), an in-memory per-chat hibernated flag read where the board is read, Held::hibernate_chat over the new host command, and Why::Wake with Chats::wake, which Resume (the restart driver) uses on a hibernated chat. The program's exit is read as the hibernation, so no run ends failed | exited. The window gets a Hibernate row, a Hibernated band with Resume, the refusal notice, a story, and an e2e scenario of Hibernate then Resume, with a run of its own.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M896H26GQ12EFXG2QZB72SSJ\nPurlis-Persona: steward\n\n* SC-4a: review of #7659: the run moves to hibernated and ends superseded, the act holds the chat's lane, Hibernated is offered where it can be and the row reads it (#7630, #1391)\n\n- The run moves to hibernated | operator (run.moved), written by the host or the window as the program ends; a wake or an End ends it completed | superseded, the wake's before its wake run starts (ADR 0076 as amended 2026-11-25).\n- Hibernate is decided and done in the chat's input lane; the flag is in flight until the host answers, so Resume and a second Hibernate are refused meanwhile and a loser never clears the winner's flag; a failed act puts it back unless the program already ended as the hibernation.\n- Own work still out after its wait lapsed is refused, and paused is read from the chat's pauses.\n- The session host's window keeps its hibernated chats, so a wake or End is no 'not running'.\n- Hibernate is offered only where the harness resumes by id and the host speaks 1.96 (OpenChat.hibernates); the row reads hibernated from a per-chat flag beside the board, and the Chat log says the hibernation and the wake.\n- App-level tests for hibernate, wake, End, a double Resume and the races; the e2e asserts the same conversation, a wake run and a refusal.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M89X86F7HSGGQ4G5HSPNKQSZ\nPurlis-Persona: steward\n\n* Format shownState.test.ts (prettier)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6C6C5TP048KRJ0GFF03FF20\nPurlis-Persona: steward\n\n* SC-4a: fix #7659 CI: hibernation app tests run with no sandbox as main's Codex tests do; the Observed refusal names no command; Hibernate is offered to a chat the picker started (#7630, #1391)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M6C6C5TP048KRJ0GFF03FF20\nPurlis-Persona: steward\n\n* SC-4a e2e: the Hibernated band and the refusal are notes, folded into the pane's bell while notices are minimised, so the spec opens the bell to see them (#7630, #1391)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M6C6C5TP048KRJ0GFF03FF20\nPurlis-Persona: steward\n\n* SC-4a e2e: the profile's wrapper drops its arguments, so the stand-in records what the wrapper was handed; a pane band's Dismiss is an icon named by its label (#7630, #1391)\n\nResume did start the stand-in again (the spec saw a second start), but theProfilesProgram\nexecs its program with no arguments, so \"$*\" in the reporting shell was always empty.\nThe wrapper now exports what it was handed as SCENARIO_HARNESS_ARGS, and the stand-in\nrecords that. The refusal's Dismiss is an IconButton with aria-label=\"Dismiss\" and no\ntext, so the spec asks for it by that name.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BDVC0MDR9CHGPDBZA26XRP\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T08:51:54Z",
+          "tree_id": "fe6230e753a916b87a744db2c31260702e3df491",
+          "url": "https://github.com/purlis/purlis/commit/76464e0a18ea6503ead6552a9aa2c5a39bbaa172"
+        },
+        "date": 1795685872344,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5948869999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.569, 0.576, 0.595, 0.598, 0.600 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.381768,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.303, 16.350, 16.382, 16.410, 16.418 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.499377,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.365, 101.440, 101.499, 101.705, 101.834 ms"
           }
         ]
       }
