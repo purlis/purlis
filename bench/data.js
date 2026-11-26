@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795654959480,
+  "lastUpdate": 1795661161088,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55398,6 +55398,48 @@ window.BENCHMARK_DATA = {
             "value": 102.1335575,
             "unit": "ms",
             "extra": "median of 5 runs: 101.679, 101.845, 102.134, 102.245, 102.740 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8de1464ddb837c65a3433cd9643ab5b94cef59e0",
+          "message": "Branch folder states answer at once and stay kept until a folder changes (#7676)\n\n* wip: worktree_states answers partial from a watch-invalidated cache (H16)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M88XQKAA19D1VMHCEN962M5V\nPurlis-Persona: steward\n\n* worktree_states: regenerated bindings, unwatched answers last their round, clippy and fmt (H16)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M88XQKAA19D1VMHCEN962M5V\nPurlis-Persona: steward\n\n* worktree_states: never clean when the repo's .git moved, watched per folder, read at most every 2 s (#7667 review)\n\n- An event under the common .git outside another worktree's own folder\n  (refs, packed-refs, config, info/exclude) moves every folder of that repo.\n- A watch added or removed moves every folder: notify 8.2.2's FSEvents\n  restarts its stream from now on each.\n- A gitdir: is read relative to the folder, the common dir from commondir;\n  one that cannot be found leaves the folder unwatched.\n- Each folder and its repo's .git are watched, never the parent; the walk\n  runs off the shared lock; folders gone from their repo's listing are\n  forgotten and unwatched; the platform's watch limit unwatches all.\n- A folder that keeps moving is read at most once every 2 s, only when\n  asked; meanwhile it is still reading, never clean.\n- Flush markers live in each folder's gitdir, out of the work tree; ones a\n  crash left are swept; only pending markers are remembered.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8A33GXBJTTCVYH7RD431ZWJ\nPurlis-Persona: steward\n\n* worktree_states: no watch on Linux, a refused watch taken down, a removed folder watched afresh (#7667 review)\n\n- Linux streams every ask and keeps nothing: inotify's recursive watches walk target/ and\n  node_modules/ before any read, and fail part way past max_user_watches.\n- Any refused watch is taken down, with the folder's others, and no folder is kept after.\n- A watched folder removed or renamed is forgotten and watched again when next asked.\n- An idle worker, not a busy one, is counted before another is started.\n- A read no thread could start for is answered unread and tried again next round.\n- A folder with no .git is never kept; one no ask names for 10 minutes is forgotten.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8ADTHY43YR9CWHF9YDR509H\nPurlis-Persona: steward\n\n* worktree_states: an unkept answer's round is its own ask's, a lost entry answers early, a loss during a watch's setup is heard (#7667 review)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8AGTFX5F5KJ2PVNGD1W9821\nPurlis-Persona: steward\n\n* worktree_states: a refresh is an explicit round, an unkept answer is given only to a round that began before its read, and anything heard drops it (#7667 review)\n\nAn ask naming no round starts one and is told its id; the window's asks for the\nrest of that refresh name it. A read no watch vouches for is given only to a\nround that began before the read did, so a same-repo refresh during a round\nreads an edited folder again, and a continuation whose last read finished\nbetween two asks no longer reads the whole repo again. moved() and moved_all()\ndrop it too, so an event after limit() is heard. The round-3 own-keys check is\ngone. The command takes an optional round and each answer carries it, so a\nwindow or a link that never names one is answered as before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8AJHXDGSANVZQCM9Z0D07SG\nPurlis-Persona: steward\n\n* worktree_states: a new round flushes the watch, so a read that began before it and ends before its change is heard is not kept for it (#7667 review)\n\nEach ask without a round starts a new round: the worktree_states doc says so.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8AN44EFZEDPE6037JD66C5V\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T01:57:08Z",
+          "tree_id": "c14c139b57a755c45b02fb672275cd4c32d3f8b1",
+          "url": "https://github.com/purlis/purlis/commit/8de1464ddb837c65a3433cd9643ab5b94cef59e0"
+        },
+        "date": 1795661152501,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.529537,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.513, 0.529, 0.530, 0.540, 0.554 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4397465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.379, 16.424, 16.440, 16.520, 16.626 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9379655,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.323, 101.815, 101.938, 102.265, 102.687 ms"
           }
         ]
       }
