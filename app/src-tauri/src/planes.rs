@@ -4071,12 +4071,16 @@ impl Planes {
                     // is a bug to report, which the chat is not told to wait on, and neither is
                     // a block it only read back (#1884), whose quiet line nobody has to answer.
                     if !told.ours && told.quiet.is_none() {
-                        // R-229: an ask raised, in the chat's Chat log.
-                        crate::chatlog::raised(
-                            strong.hooks(),
-                            told.session,
-                            purlis_core::eventlog::stops::AskGroup::Sandbox,
-                        );
+                        // R-229: an ask raised, in the chat's Chat log, once per ask: the
+                        // proxy's raise of a held ask also came by `register_live`, which
+                        // wrote it if it was first (T1.1-27, Q262).
+                        crate::taskblocks::raise_once(strong.chats().blocks(), &told, || {
+                            crate::chatlog::raised(
+                                strong.hooks(),
+                                told.session,
+                                purlis_core::eventlog::stops::AskGroup::Sandbox,
+                            );
+                        });
                         let turn = strong.board().glance(told.session).turns;
                         strong.chats().blocks().raised(told.session, turn);
                         // A block heard while it waits on its own work is an ask (#3878).

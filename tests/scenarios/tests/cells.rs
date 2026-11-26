@@ -1080,16 +1080,21 @@ fn a_hook_word_purlis_answers_with_nothing_is_not_a_kind() {
 /// Chat 682's run record (test-matrix-phase-1.md §8, B0, 2026-11-15) as the plane's live checker
 /// judged its log (`tests/fixtures/chat-682-b0.json`): the step assertions that failed and the
 /// global checks that failed, judged against B0's marks. Every cell is `expected_fail` on the
-/// issues the record lists, M-PRB-03 included (its only failure is the doubled ask, #6674).
+/// issues the record lists, M-PRB-03 included (its only failure was the doubled ask, #6674).
+///
+/// #6674 is fixed (T1.1-27): its marks are gone from B0, so the record's one failure it explains,
+/// `require[0]` observing the two `ask.raised` of one ask, is dropped from the replay and the
+/// issue from the expected set. The record stays as it was drawn: a chat 682 that ran today
+/// would not have that failure. M-PRB-03 has no other failure, so it replays as a pass.
 #[test]
 fn b0_judges_chat_682s_record_as_the_record_says() {
     let b0 = Batch::from_value(read_json(&root().join("cells/B0.json"))).expect("B0 reads");
     let record = read_json(&root().join("tests/fixtures/chat-682-b0.json"));
     let live = run(Dialect::Claude, Leg::Live, TimingsMode::Production);
     let expected: [(&str, &[u64]); 7] = [
-        ("M-PRB-01", &[6672, 6673, 6674]),
-        ("M-PRB-02", &[6673, 6674]),
-        ("M-PRB-03", &[6674]),
+        ("M-PRB-01", &[6672, 6673]),
+        ("M-PRB-02", &[6673]),
+        ("M-PRB-03", &[]),
         ("M-PRB-04", &[6657]),
         ("M-PRB-04b", &[6657]),
         ("M-PRB-05", &[6675]),
@@ -1111,6 +1116,13 @@ fn b0_judges_chat_682s_record_as_the_record_says() {
             .as_array()
             .expect("failed")
             .iter()
+            // #6674, fixed: the double raise the record saw (`require[0]` observing 2) in the
+            // cells that pinned it.
+            .filter(|f| {
+                !(["M-PRB-01", "M-PRB-02", "M-PRB-03"].contains(&id)
+                    && f[0] == "require[0]"
+                    && f[1] == 2)
+            })
             .map(|f| fails(1, f[0].as_str().expect("an assertion"), f[1].clone()))
             .collect();
         let globals: Vec<GlobalFailure> = recorded[id]["globals"]
@@ -1122,13 +1134,14 @@ fn b0_judges_chat_682s_record_as_the_record_says() {
                 refusal: g["refusal"].as_str().expect("a refusal").into(),
             })
             .collect();
-        assert_eq!(
-            judge(cell, &live, &failed, &globals),
+        let want = if issues.is_empty() {
+            Verdict::Pass
+        } else {
             Verdict::ExpectedFail {
-                issues: issues.iter().copied().collect()
-            },
-            "{id}"
-        );
+                issues: issues.iter().copied().collect(),
+            }
+        };
+        assert_eq!(judge(cell, &live, &failed, &globals), want, "{id}");
     }
 }
 

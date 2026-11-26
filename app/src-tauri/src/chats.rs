@@ -10356,14 +10356,28 @@ fn register_live(
     let Some(block) = live_block(target) else {
         return false;
     };
-    let raised = !blocks.holds(chat, &block);
+    // The late report of an ask answered in this turn is its echo: held no more, listed no more,
+    // raised no more (T1.1-27).
+    if blocks.answered_this_turn(chat, &block) {
+        return true;
+    }
     blocks.heard_waiting(chat, block.clone());
     blocks.held_live(chat, &block, target);
-    if raised && let Some(write) = lock(stops).clone() {
+    // One owner per ask (T1.1-27, Q262): the first report of it, from this road or the hook
+    // road's, writes its raise; a later one joins it. Decided under the claim's one lock, so the
+    // two roads racing cannot both write.
+    // No writer yet: nothing is claimed, so the next report of the ask raises it.
+    let Some(write) = lock(stops).clone() else {
+        return true;
+    };
+    tracing::debug!(chat, block = ?block, road = "live", "purlis: register_live claims a raise");
+    if blocks.claim_raise(chat, &block) {
         let ask = Stop::AskRaised(AskRaised {
             ask: AskGroup::Sandbox,
         });
         if let Err(why) = write(chat, ask, BlockWritten::Raised) {
+            // Not written: the claim is given up, so a later report writes it.
+            blocks.release_raise(chat, &block);
             tracing::warn!("purlis: chat {chat}'s sandbox ask was not written ({why})");
         }
     }
@@ -10527,3 +10541,7 @@ mod windows_tests;
 #[cfg(test)]
 #[path = "chats/tests/switching.rs"]
 mod switching_tests;
+
+#[cfg(test)]
+#[path = "chats/tests/one_raise.rs"]
+mod one_raise_tests;

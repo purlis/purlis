@@ -1039,13 +1039,6 @@ fn two_chats_in_one_host_keep_their_grants_apart() {
     else {
         return;
     };
-    // #6674: a held network ask is raised twice, by two writers, with nothing between them; the
-    // one-ask, one-raise check finds it in the chat that nobody answers.
-    scenario.expected_fail(
-        checks::Check::OneAskOneRaise,
-        6674,
-        "a held network ask writes ask.raised twice",
-    );
     let host = "granted-to-one.example.test";
     let script = |step: &str| {
         serde_json::json!({
