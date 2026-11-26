@@ -2021,22 +2021,116 @@ fn after_a_new_key_a_wiped_nevers_file_is_never_read_as_no_nevers() {
     );
 }
 
+/// `list` as pairs.
+fn pairs(list: &[(&str, &str)]) -> Vec<(String, String)> {
+    list.iter()
+        .map(|(asking, target)| ((*asking).to_owned(), (*target).to_owned()))
+        .collect()
+}
+
+/// What the window shows of the nevers of the plane at `root` after a new key.
+fn shown_nevers(root: &std::path::Path) -> crate::dispatchnever::ToKeep {
+    crate::dispatchnever::to_keep_after_a_new_key(root).expect("the pairs are shown")
+}
+
 #[test]
-fn accepting_a_project_again_after_a_new_key_seals_its_nevers_as_they_stand() {
-    // F3: the person's Accept on that project seals the nevers the file holds with the new key
-    // (they only tighten), and the project leaves the list.
+fn accept_after_a_new_key_seals_no_never_and_the_shown_press_seals_exactly_what_was_shown() {
+    // H1 of #7734's round 3: Accept accepts exactly the policy the window showed, so it never
+    // seals nevers as a side effect, on the pressing project or another. With the file untouched,
+    // wiped or edited since the old key sealed it, the nevers stay unread after Accept; the
+    // window shows the pairs the file holds now, and the press that names them seals exactly
+    // those. A press naming anything else seals nothing.
+    use crate::dispatchnever::{Nevers, keep_shown_after_a_new_key, read};
     let _home = OwnConfigHome::new();
     let here = plane("[policy]\ntemplate = \"open\"\n", None);
-    let other = accepted_plane("[policy]\ntemplate = \"open\"\n");
-    a_never(other.path());
+    a_never(here.path());
+    let wiped = accepted_plane("[policy]\ntemplate = \"open\"\n");
+    a_never(wiped.path());
+    std::fs::remove_file(crate::dispatchnever::path(wiped.path())).expect("wiped");
+    let edited = accepted_plane("[policy]\ntemplate = \"open\"\n");
+    a_never(edited.path());
+    std::fs::write(
+        crate::dispatchnever::path(edited.path()),
+        r#"{"never": [{"asking": "steward", "target": "ops"}, {"asking": "devops", "target": "steward"}]}"#,
+    )
+    .expect("edited");
     crate::secrets::seal::set_foreign_for_this_test(true);
     press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
-    press(other.path(), &digest_of(other.path())).expect("accepted again");
-    assert_eq!(
-        crate::dispatchnever::read(other.path()),
-        crate::dispatchnever::Nevers::Read(vec![("steward".to_owned(), "devops".to_owned())])
+    for other in [&wiped, &edited] {
+        press(other.path(), &digest_of(other.path())).expect("accepted again");
+    }
+    for (root, kept) in [
+        (&here, pairs(&[("steward", "devops")])),
+        (&wiped, Vec::new()),
+        (&edited, pairs(&[("steward", "ops"), ("devops", "steward")])),
+    ] {
+        let root = root.path();
+        assert_eq!(read(root), Nevers::Unread, "Accept sealed no never");
+        assert!(standing(root).nevers_new_key);
+        let shown = shown_nevers(root);
+        assert_eq!(shown.pairs, kept);
+        assert!(keep_shown_after_a_new_key(root, "not what was shown").is_err());
+        assert_eq!(read(root), Nevers::Unread, "nothing kept");
+        keep_shown_after_a_new_key(root, &shown.digest).expect("kept as shown");
+        assert_eq!(read(root), Nevers::Read(kept));
+        assert!(!standing(root).nevers_new_key);
+        assert_eq!(crate::dispatchnever::to_keep_after_a_new_key(root), None);
+    }
+}
+
+#[test]
+fn a_nevers_file_changed_after_it_was_shown_keeps_nothing() {
+    // H1 of #7734's round 3: the press is bound to the pairs shown by their digest.
+    use crate::dispatchnever::{Nevers, keep_shown_after_a_new_key, read};
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(here.path());
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    let shown = shown_nevers(here.path());
+    std::fs::write(
+        crate::dispatchnever::path(here.path()),
+        r#"{"never": [{"asking": "steward", "target": "ops"}]}"#,
+    )
+    .expect("changed meanwhile");
+    let why = keep_shown_after_a_new_key(here.path(), &shown.digest)
+        .expect_err("nothing kept")
+        .to_string();
+    assert!(why.contains("changed since it was shown"), "{why}");
+    assert_eq!(read(here.path()), Nevers::Unread);
+}
+
+#[test]
+fn a_list_item_planted_under_a_healthy_key_offers_no_new_key_words_and_no_reseal() {
+    // H2 of #7734's round 3: a list that does not hold under the key of now only keeps the
+    // nevers unread. It says nothing of a new key, shows no pairs to keep, and no press, Accept
+    // or the shown pairs', seals the file as it stands.
+    use crate::dispatchnever::{Nevers, keep_shown_after_a_new_key, read, unread_said};
+    use crate::sandbox::local::anchor_key;
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(root.path());
+    std::fs::write(
+        crate::dispatchnever::path(root.path()),
+        r#"{"never": []}"#,
+    )
+    .expect("tampered");
+    crate::secrets::seal::set_replaced_for_this_test(
+        &crate::secrets::seal::a_foreign_list_for_this_test(&[format!(
+            "dispatch-nevers-live:{}",
+            anchor_key(root.path())
+        )]),
     );
-    assert!(!standing(other.path()).nevers_new_key);
+    assert_eq!(read(root.path()), Nevers::Unread);
+    let said = unread_said(root.path());
+    assert!(!said.contains("new seal key"), "{said}");
+    let now = standing(root.path());
+    assert!(!now.nevers_new_key, "{now:?}");
+    assert_eq!(crate::dispatchnever::to_keep_after_a_new_key(root.path()), None);
+    press(root.path(), &digest_of(root.path())).expect("accepted");
+    let none = crate::dispatchnever::digest_of_pairs(&[]);
+    assert!(keep_shown_after_a_new_key(root.path(), &none).is_err());
+    assert_eq!(read(root.path()), Nevers::Unread, "the tampered file is never sealed");
 }
 
 #[test]

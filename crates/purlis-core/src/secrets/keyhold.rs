@@ -218,6 +218,12 @@ fn spare_of(service: &str) -> String {
     format!("{service}/{SPARE}")
 }
 
+/// The spare the ownership probe ([`owned_here`]) keeps `service`'s value in while it makes the
+/// item again.
+pub(super) fn probe_spare_of(service: &str) -> String {
+    spare_of(service)
+}
+
 /// The last segment of [`spare_of`]'s spare item.
 const SPARE: &str = "spare";
 

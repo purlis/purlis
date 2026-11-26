@@ -372,6 +372,31 @@ pub(crate) fn keep_after_a_new_key(root: &Path) -> io::Result<()> {
     }
 }
 
+/// What the window shows of a plane's nevers after a new seal key: the pairs the person's
+/// press would keep, and the digest the press names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToKeep {
+    /// Each pair as asking persona and target persona, in the file's order.
+    pub pairs: Vec<(String, String)>,
+    /// The digest of `pairs`, which the press names.
+    pub digest: String,
+}
+
+/// The digest of `pairs`, as [`ToKeep`] names it.
+pub fn digest_of_pairs(_pairs: &[(String, String)]) -> String {
+    String::new()
+}
+
+/// The pairs a press would keep after a new seal key.
+pub fn to_keep_after_a_new_key(_root: &Path) -> Option<ToKeep> {
+    None
+}
+
+/// The person's press keeping the pairs that were shown.
+pub fn keep_shown_after_a_new_key(_root: &Path, _shown: &str) -> io::Result<()> {
+    Err(io::Error::other("not yet"))
+}
+
 /// The sealed set the file holds: its counter and live list, and each entry the app sealed.
 fn set_of(whole: &Whole, entries: &[Entry]) -> crate::secrets::sealed_set::Set {
     crate::secrets::sealed_set::Set {

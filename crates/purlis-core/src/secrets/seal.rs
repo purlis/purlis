@@ -812,7 +812,16 @@ impl KeyItems for TestKeychain {
         })
     }
 
-    fn owned_here(&self, service: &str, account: &str, _: &str) -> Result<bool, String> {
+    fn owned_here(&self, service: &str, account: &str, value: &str) -> Result<bool, String> {
+        // As `remake` probes it (M3 of #7734's round 3): whatever the probe's spare held is
+        // replaced by the value, the item made again where it is the app's own, and the spare
+        // deleted.
+        let probe = (super::keyhold::probe_spare_of(service), account.to_owned());
+        TEST_ELSEWHERE.with(|items| {
+            let mut items = items.borrow_mut();
+            items.insert(probe.clone(), (value.to_owned(), true));
+            items.remove(&probe);
+        });
         Ok(!Self::theirs(service, account))
     }
 
@@ -1270,6 +1279,28 @@ mod tests {
                 .borrow_mut()
                 .remove(&(service.to_owned(), ACCOUNT.to_owned()));
         }
+
+        /// The item made again with `value` as [`super::super::keyhold`]'s `remake` makes it,
+        /// with `spare` for its spare (M3 of #7734's round 3): whatever `spare` held is replaced
+        /// by the value first, the item deleted (refused where another program's, and the spare
+        /// deleted), the item made, then the spare deleted. `false` where it was refused.
+        fn remade(&self, service: &str, account: &str, value: &str, spare: &str) -> bool {
+            let key = (service.to_owned(), account.to_owned());
+            let spare = (spare.to_owned(), account.to_owned());
+            let mut items = self.0.borrow_mut();
+            items.insert(spare.clone(), (value.to_owned(), true));
+            let theirs = items.get(&key).is_some_and(|(_, ours)| !ours);
+            if !theirs {
+                items.insert(key, (value.to_owned(), true));
+            }
+            items.remove(&spare);
+            !theirs
+        }
+    }
+
+    /// The spare `remake` keeps a write's value in ([`super::super::keyhold::spares_of`]).
+    fn spare_of(service: &str) -> String {
+        super::super::keyhold::spares_of(service)[0].clone()
     }
 
     impl KeyItems for Items {
@@ -1282,17 +1313,16 @@ mod tests {
         }
 
         fn owned_here(&self, service: &str, account: &str, value: &str) -> Result<bool, String> {
-            let key = (service.to_owned(), account.to_owned());
-            let mut items = self.0.borrow_mut();
-            if items.get(&key).is_some_and(|(_, ours)| !ours) {
-                return Ok(false);
-            }
-            items.insert(key, (value.to_owned(), true));
-            Ok(true)
+            Ok(self.remade(
+                service,
+                account,
+                value,
+                &super::super::keyhold::probe_spare_of(service),
+            ))
         }
 
         fn make_own(&self, service: &str, account: &str, value: &str) -> Result<(), String> {
-            if self.owned_here(service, account, value)? {
+            if self.remade(service, account, value, &spare_of(service)) {
                 Ok(())
             } else {
                 Err("another program's item".to_owned())
@@ -1625,7 +1655,36 @@ mod tests {
         }
 
         fn owned_here(&self, service: &str, account: &str, value: &str) -> Result<bool, String> {
-            self.items.owned_here(service, account, value)
+            // The probe's steps as `remake` takes them (M3 of #7734's round 3), each one a press
+            // can be cut short at: the value at rest in the probe's spare, the item deleted and
+            // made again, then the spare deleted, best effort.
+            let probe = (
+                super::super::keyhold::probe_spare_of(service),
+                account.to_owned(),
+            );
+            let key = (service.to_owned(), account.to_owned());
+            if self.failed("make", &probe.0, account) {
+                return Err("cut short".to_owned());
+            }
+            let items = &self.items.0;
+            items
+                .borrow_mut()
+                .insert(probe.clone(), (value.to_owned(), true));
+            if items.borrow().get(&key).is_some_and(|(_, ours)| !ours) {
+                items.borrow_mut().remove(&probe);
+                return Ok(false);
+            }
+            if self.failed("delete", service, account) {
+                items.borrow_mut().remove(&probe);
+                return Err("cut short".to_owned());
+            }
+            items.borrow_mut().remove(&key);
+            if self.failed("make", service, account) {
+                return Err("cut short".to_owned());
+            }
+            items.borrow_mut().insert(key, (value.to_owned(), true));
+            items.borrow_mut().remove(&probe);
+            Ok(true)
         }
 
         fn make_own(&self, service: &str, account: &str, value: &str) -> Result<(), String> {
@@ -1699,17 +1758,29 @@ mod tests {
     fn a_new_key_cut_short_at_any_step_and_pressed_again_lists_every_project() {
         // F2 and F4 of #7734's review: at every write or delete a press can stop at, refused by
         // macOS or cut short, no project reads as never accepted (each is anchored still or
-        // listed), and the next press lists every one, vouched for, under the key it keeps.
+        // listed), and the next press lists every one, vouched for, under the key it keeps. M3
+        // of its round 3: the press's whole body, `found()`'s ownership probes and all, so a
+        // probe that took the new key from its spare is a step that fails here.
         let (items, projects) = after_an_update();
         let clean = FailingAt::new(items, |_, _, _| false);
-        renew(&clean, KINDS).expect("a new key");
+        let mut cache = KeyCache::default();
+        assert_eq!(
+            renew_key_with(&clean, KINDS, &mut || cache.found(true, &clean)),
+            Ok(true)
+        );
         let steps = clean.done.borrow().len();
         for n in 0..steps {
             let (items, _) = after_an_update();
             let cut = FailingAt::at(items, n);
-            // The last step, the new key's spare deleted, is best effort: the press is done.
-            if renew(&cut, KINDS).is_ok() {
-                assert_eq!(n, steps - 1, "step {n} stops the press");
+            let mut cache = KeyCache::default();
+            // The new key's spare deleted at the end of the replacement is best effort: the
+            // press is done.
+            if renew_key_with(&cut, KINDS, &mut || cache.found(true, &cut)).is_ok() {
+                assert_eq!(
+                    cut.done.borrow()[n],
+                    ("delete", spare(), ACCOUNT.to_owned()),
+                    "step {n} stops the press"
+                );
                 continue;
             }
             for (kind, anchor) in &projects {
@@ -1719,15 +1790,116 @@ mod tests {
                     cut.items.services_and_accounts()
                 );
             }
-            let made = held(renew(&cut.items, KINDS).expect("pressed again"));
-            assert_eq!(held(read_or_make(&cut.items)), made, "step {n}");
+            renew_key_with(&cut.items, KINDS, &mut || cache.found(true, &cut.items))
+                .expect("pressed again");
+            let made = held(read_or_make(&cut.items));
             let (entries, holds) = the_list(&cut.items, &made);
             assert!(holds, "step {n}");
             for (kind, anchor) in &projects {
                 assert_eq!(
                     entries.get(&format!("{kind}:{anchor}")),
                     Some(&true),
-                    "step {n}"
+                    "step {n}: {:?}",
+                    cut.done.borrow().get(n)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_press_refused_and_pressed_again_keeps_the_new_key_its_probe_finds_parked() {
+        // M3 of #7734's round 3: the next press first reads the key again, and proving the old
+        // key's item is another program's makes it again with a spare. That spare is never the
+        // one the new key waits in, so the next press finds it and the list it sealed holds.
+        let old = "ab".repeat(KEY_BYTES);
+        let items = Refusing(Items::default().with(SERVICE, &old, false).with_at(
+            SERVICE,
+            "policy-accepted:aaaa",
+            "00",
+            true,
+        ));
+        let mut cache = KeyCache::default();
+        assert_eq!(
+            renew_key_with(&items, KINDS, &mut || cache.found(true, &items)),
+            Err(RENEW_REFUSED)
+        );
+        let waiting = items.0.value(&spare()).expect("the new key at rest");
+        assert!(matches!(cache.found(true, &items), Found::Foreign));
+        assert_eq!(
+            items.0.value(&spare()),
+            Some(waiting.clone()),
+            "the probe left the new key where it waits"
+        );
+        assert_eq!(
+            renew_key_with(&items.0, KINDS, &mut || cache.found(true, &items.0)),
+            Ok(true)
+        );
+        let made = held(read_or_make(&items.0));
+        assert_eq!(crate::extension::hex(&made), waiting, "the same new key");
+        assert_eq!(
+            the_list(&items.0, &made),
+            (
+                Entries::from([("policy-accepted:aaaa".to_owned(), true)]),
+                true
+            )
+        );
+    }
+
+    #[test]
+    fn the_probe_cut_short_leaves_the_key_at_rest_and_it_is_the_key_again() {
+        // M3 of #7734's round 3: the probe's own spare holds the key while its item is made
+        // again, so a probe cut short between the delete and the add loses no key.
+        let key = "cd".repeat(KEY_BYTES);
+        let items = FailingAt::new(
+            Items::default().with(SERVICE, &key, true),
+            |what, service, account| what == "make" && service == SERVICE && account == ACCOUNT,
+        );
+        assert!(matches!(read_or_make(&items), Found::Unread));
+        assert_eq!(items.items.value(SERVICE), None, "cut between the two");
+        assert_eq!(held(read_or_make(&items.items)), vec![0xcd; KEY_BYTES]);
+    }
+
+    /// A list of [`REPLACED`] another program made, naming `accounts`.
+    fn stale(accounts: &[&str]) -> String {
+        a_foreign_list_for_this_test(&accounts.iter().map(|a| (*a).to_owned()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn a_list_written_where_both_slots_are_stale_never_deletes_one_that_is_not_covered() {
+        // M4 of #7734's round 3: neither slot holds under the key, and the write is cut short
+        // right after it deleted one. No entry either slot named is lost, so no project reads
+        // as never accepted.
+        let key = vec![0xcd; KEY_BYTES];
+        for (first, second) in [
+            (
+                vec!["policy-accepted:aaaa"],
+                vec!["policy-accepted:aaaa", "policy-accepted:bbbb"],
+            ),
+            (
+                vec!["policy-accepted:aaaa", "policy-accepted:bbbb"],
+                vec!["policy-accepted:aaaa"],
+            ),
+            (vec!["policy-accepted:aaaa"], vec!["policy-accepted:bbbb"]),
+        ] {
+            let items = Items::default()
+                .with(SERVICE, &crate::extension::hex(&key), true)
+                .with_at(SERVICE, REPLACED[0], &stale(&first), false)
+                .with_at(SERVICE, REPLACED[1], &stale(&second), false);
+            let deleted = std::cell::Cell::new(false);
+            let cut = FailingAt::new(items, move |what, _, _| {
+                let after = deleted.get();
+                deleted.set(after || what == "delete");
+                after && what == "make"
+            });
+            let mut merged = Entries::new();
+            merge(&mut merged, list_read(&stale(&first), &[&key]).0);
+            merge(&mut merged, list_read(&stale(&second), &[&key]).0);
+            let _ = write_list(&cut, &key, &merged);
+            for anchor in ["aaaa", "bbbb"] {
+                assert!(
+                    anchored_or_listed(&cut.items, "policy-accepted", anchor),
+                    "{first:?} {second:?}: {anchor} lost: {:?}",
+                    cut.items.services_and_accounts()
                 );
             }
         }
