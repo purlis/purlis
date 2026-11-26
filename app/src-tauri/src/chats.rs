@@ -7237,6 +7237,15 @@ impl Chats {
         std::mem::replace(&mut chat.runs_on, runs_on)
     }
 
+    /// Chat `session`'s record says `from` handed it off, as a dispatch's start writes it: for
+    /// a test of what is read of a task, without a dispatch.
+    #[cfg(test)]
+    pub fn handed_from_for_tests(&self, session: u32, from: purlis_core::reopen::HandedFrom) {
+        if let Some(open) = lock(&self.open).get_mut(&session) {
+            open.chat.from = Some(from);
+        }
+    }
+
     /// The handoff `session` was opened by, where one opened it.
     pub fn handed_from(&self, session: u32) -> Option<purlis_core::reopen::HandedFrom> {
         lock(&self.open).get(&session)?.chat.from.clone()

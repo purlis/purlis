@@ -8246,6 +8246,13 @@ export type HeldRowShown = {
 	value: string,
 };
 
+/**  What the window is answered when it asks for a chat's hibernation. */
+export type Hibernation = 
+/**  Its program ended as a hibernation. */
+{ outcome: "hibernated" } | 
+/**  It may not be hibernated now, for this reason. */
+{ outcome: "refused"; why: Why };
+
 /**
  *  The project's hosts as they changed (`sandbox::local::HostsChange`): each spelled as the
  *  sandbox writes it.
@@ -18740,6 +18747,13 @@ export type WhatChanged = {
 	 */
 	sinceTurnEnded: boolean,
 };
+
+/**
+ *  **Why a chat was not hibernated**, as the window is told it: the core's
+ *  [`NotRested`], one value for one reason, whose words are the window's
+ *  (`app/src/hibernationWords.ts`, `docs/ui-copy.md`).
+ */
+export type Why = "working" | "asking" | "paused" | "hibernated" | "ended" | "cannot_resume" | "cannot_see_its_own_work" | "own_work" | "task_open" | "report_owed" | "is_a_task" | "observed" | "on_a_runner" | "child_run" | "looked_at";
 
 /**
  *  A tint holds `token`, tinted, at least `distance` from `from` in OKLab, `from` as the tint
