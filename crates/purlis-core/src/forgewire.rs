@@ -713,7 +713,11 @@ fn git_pairs_for(
     let mut git_pairs = vec![("credential.helper".to_owned(), String::new())];
     hosts.sort_unstable();
     hosts.dedup();
-    let named: String = hosts.iter().map(|host| format!(" --host {host}")).collect();
+    // Each host is a host name ([`is_host_name`]), quoted anyway: git runs the line through `sh`.
+    let named: String = hosts
+        .iter()
+        .map(|host| format!(" --host '{host}'"))
+        .collect();
     for host in &hosts {
         git_pairs.push((
             format!("credential.https://{host}.helper"),
@@ -764,7 +768,7 @@ fn network_route(
     helper_exe: &Path,
 ) -> io::Result<crate::worktree::git::NetworkRoute> {
     let invalid = |why: &'static str| io::Error::new(io::ErrorKind::InvalidInput, why);
-    if !egress.starts_with("http://127.0.0.1:") {
+    if !is_loopback_port(egress) {
         return Err(invalid("a chat's forge route is on the loopback interface"));
     }
     if sentinel.is_empty() || sentinel.contains(|c: char| c.is_control() || c.is_whitespace()) {
@@ -807,7 +811,11 @@ pub fn this_chats_git_route(
 ) -> Option<io::Result<crate::worktree::git::NetworkRoute>> {
     let sentinel = env(SENTINEL_ENV)?;
     let invalid = |why: &'static str| io::Error::new(io::ErrorKind::InvalidInput, why);
-    let pairs = git_pairs_in(env);
+    let Some(pairs) = git_pairs_in(env) else {
+        return Some(Err(invalid(
+            "the chat's environment names more git settings than it holds",
+        )));
+    };
     let hosts: Vec<&str> = pairs
         .iter()
         .filter(|(_, value)| value.contains(SENTINEL_HELPER_ARG))
@@ -816,6 +824,11 @@ pub fn this_chats_git_route(
                 .strip_suffix(".helper")
         })
         .collect();
+    if !hosts.iter().all(|host| is_host_name(host)) {
+        return Some(Err(invalid(
+            "the chat's environment names a forge host that is not a host name",
+        )));
+    }
     let Some(first) = hosts.first() else {
         return Some(Err(invalid(
             "the chat's environment names no forge host for its sentinel",
@@ -846,19 +859,42 @@ pub fn this_chats_git_route(
 }
 
 /// The `GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>` pairs `env` holds, as many as
-/// `GIT_CONFIG_COUNT` says, stopping at the first that is missing.
-fn git_pairs_in(env: &dyn Fn(&str) -> Option<String>) -> Vec<(String, String)> {
+/// `GIT_CONFIG_COUNT` says; `None` where one of them is missing, as git itself refuses that.
+fn git_pairs_in(env: &dyn Fn(&str) -> Option<String>) -> Option<Vec<(String, String)>> {
     let count = env("GIT_CONFIG_COUNT")
         .and_then(|n| n.trim().parse::<usize>().ok())
         .unwrap_or(0);
     (0..count)
-        .map_while(|n| {
+        .map(|n| {
             Some((
                 env(&format!("GIT_CONFIG_KEY_{n}"))?,
                 env(&format!("GIT_CONFIG_VALUE_{n}"))?,
             ))
         })
         .collect()
+}
+
+/// Whether `host` is a host name, with an optional `:port`: ASCII letters, digits, `.` and `-`,
+/// then digits after the colon. Nothing else is ever put on the helper line git runs through
+/// `sh`.
+fn is_host_name(host: &str) -> bool {
+    let (name, port) = match host.split_once(':') {
+        Some((name, port)) => (name, Some(port)),
+        None => (host, None),
+    };
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'))
+        && port.is_none_or(|port| !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Whether `url` is exactly `http://127.0.0.1:<port>`, with an optional trailing `/`: the chat's
+/// own loopback port, and nothing that merely starts like it (a user-info part, a path).
+fn is_loopback_port(url: &str) -> bool {
+    url.strip_prefix("http://127.0.0.1:")
+        .map(|rest| rest.strip_suffix('/').unwrap_or(rest))
+        .is_some_and(|port| !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// **`env`, a chat's environment, with `wiring` applied**: its variables set over the chat's own

@@ -428,7 +428,13 @@ const NO_ROUTE: &str = "this chat has no forge route, so purlis does not push or
 /// sentinel and the authority from the same environment.
 ///
 /// **In a sandboxed chat with no route** nothing is pushed, and the refusal names the step that
-/// gives the chat one. Anywhere else, as from the person's own terminal, the push is as before.
+/// gives the chat one. That refusal is a courtesy read from the chat's own environment, not a
+/// boundary: a chat can unset `PURLIS_SANDBOXED`, and what keeps the person's logins from it is
+/// its sandbox. Anywhere else, as from the person's own terminal, the push is as before.
+///
+/// **A route the environment holds but git cannot use** (a host that is not a host name, an
+/// egress off the loopback port, a missing setting) is refused wherever it is read, sandboxed or
+/// not, so nothing it carries runs.
 pub fn push_in_chat(
     plane: &Path,
     ws: &str,

@@ -250,7 +250,7 @@ fn gits_pairs_name_the_reset_first_then_a_helper_and_a_ca_for_each_recorded_host
         .display()
         .to_string();
     let helper = |_host: &str| {
-        "!'/opt/purlis/purlis' purlis-git-sentinel --host git.example.org --host github.com"
+        "!'/opt/purlis/purlis' purlis-git-sentinel --host 'git.example.org' --host 'github.com'"
             .to_owned()
     };
     assert_eq!(

@@ -887,9 +887,12 @@ fn cli_env_from(
     if let Some(home) = var("HOME") {
         env.push(("HOME".to_string(), home.to_string_lossy().into_owned()));
     }
+    // The chat's authority goes only where a chat's route is held: its sentinel is set.
+    let routed = var(gitcredential::SENTINEL_ENV).is_some();
+    let trust = CLI_TRUST_ENV.into_iter().filter(|_| routed);
     for name in git::CREDENTIAL_ENV
         .into_iter()
-        .chain(CLI_TRUST_ENV)
+        .chain(trust)
         .filter(|name| keep(name))
     {
         if let Some(value) = var(name) {
@@ -902,8 +905,10 @@ fn cli_env_from(
 /// The authority a forge CLI trusts besides the system's, named for it alone: in a chat with a
 /// forge route, `GLAB_CA_CERT` is the chat's authority, which signs the certificates of the
 /// chat's proxy, and glab trusts it only where this names it (#7693). It is the same trade as
-/// [`git::CREDENTIAL_ENV`]'s `SSL_CERT_FILE`, and passed only where that is.
-const CLI_TRUST_ENV: [&str; 1] = ["GLAB_CA_CERT"];
+/// [`git::CREDENTIAL_ENV`]'s `SSL_CERT_FILE`, and passed only where that is, only where the
+/// chat's sentinel is set, and never to a call with the person's own login
+/// ([`cli::Cli::as_the_operator`]), which trusts the system's authorities alone.
+pub(crate) const CLI_TRUST_ENV: [&str; 1] = ["GLAB_CA_CERT"];
 
 /// `urllib.parse.quote(value, safe="")`.
 pub fn quote(value: &str) -> String {
