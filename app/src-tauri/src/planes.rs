@@ -628,22 +628,43 @@ impl Held {
     /// watch that was partial and is whole again has `model` read again whole first, since a
     /// change between the folder's last look and its watch was told to nobody.
     fn trusted(&self, model: &mut Model) -> bool {
-        let standing = self
-            .watch
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .as_ref()
-            .map(crate::planewatch::Watch::standing);
-        match standing {
+        match self.watch_standing() {
             None => false,
             Some(crate::planewatch::Standing::WholeAgain) => {
                 model.apply(&self.root, None);
                 // A change in the gap was told to nobody: the chats' skill stamps too (#4738).
                 self.chats.skills_now().forget();
-                self.start_answers.moved();
                 true
             }
             Some(crate::planewatch::Standing::Whole | crate::planewatch::Standing::Partial) => true,
+        }
+    }
+
+    /// The watch's standing ([`crate::planewatch::Watch::standing`]), `None` for a plane not
+    /// watched, its `WholeAgain` said to the one reader that reads the model again.
+    ///
+    /// **A `WholeAgain` drops the picker's answers under the watch's lock** (h19): the picker
+    /// does not wait on the model's lock, and once `WholeAgain` is said it sees `Whole`, so an
+    /// answer kept over the gap would be served all through the re-read that follows.
+    pub(crate) fn watch_standing(&self) -> Option<crate::planewatch::Standing> {
+        let watch = self.watch.lock().unwrap_or_else(PoisonError::into_inner);
+        let standing = watch.as_ref().map(crate::planewatch::Watch::standing);
+        if standing == Some(crate::planewatch::Standing::WholeAgain) {
+            self.start_answers.moved();
+        }
+        standing
+    }
+
+    /// As if the plane's watch lapsed and is whole again ([`crate::planewatch::Watch::lapse`]).
+    #[cfg(test)]
+    pub(crate) fn watch_lapsed(&self) {
+        if let Some(watch) = self
+            .watch
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+        {
+            watch.lapse();
         }
     }
 

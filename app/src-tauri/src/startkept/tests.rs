@@ -458,6 +458,33 @@ fn a_kept_first_answer_is_served_while_a_long_re_read_holds_the_model() {
 }
 
 #[test]
+fn a_watch_whole_again_drops_the_kept_details_before_the_model_is_read_again() {
+    // The watch lapsed and `.claude/settings.json` moved in the gap, where the details' stamp
+    // does not look. A sidebar ask says `WholeAgain` and reads the model again, 91-457 ms; the
+    // picker, which does not wait on the model, sees `Whole` from then on, and an open during
+    // that re-read was served the details kept from before the gap.
+    let (_dir, _planes, held) = held_plane();
+    let reads = Cell::new(0);
+    details(&held, &reads);
+    // A change in the gap (`.claude/settings.json`, say) was told to nobody: none is made here,
+    // or the watch could tell it and drop the details by itself.
+    held.watch_lapsed();
+
+    // What the sidebar does before its re-read.
+    assert_eq!(
+        held.watch_standing(),
+        Some(crate::planewatch::Standing::WholeAgain)
+    );
+    details(&held, &reads);
+
+    assert_eq!(
+        reads.get(),
+        2,
+        "the details kept over the gap were served during the re-read"
+    );
+}
+
+#[test]
 fn the_first_answers_read_is_timed_by_phase() {
     let project = a_project();
     std::fs::create_dir_all(project.path().join("personas/scribe")).expect("a persona");

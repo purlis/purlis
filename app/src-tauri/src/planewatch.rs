@@ -750,27 +750,37 @@ impl<W: notify::Watcher> Watch<W> {
     /// Whether this watch tells everything the panels and the sidebar read, and whether it
     /// has since it was last asked. `WholeAgain` is said once: asking again says `Whole`.
     pub fn standing(&self) -> Standing {
+        self.standing_said(true)
+    }
+
+    /// [`Self::standing`] without its `WholeAgain` said: a reader that does not read the
+    /// model again itself asks this first, and leaves `WholeAgain` to the one that does.
+    pub fn standing_seen(&self) -> Standing {
+        self.standing_said(false)
+    }
+
+    /// The standing, its `WholeAgain` said once where `said`.
+    fn standing_said(&self, said: bool) -> Standing {
         let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
         if !inner.unwatched.is_empty() {
             Standing::Partial
-        } else if std::mem::take(&mut inner.lapsed) {
+        } else if inner.lapsed {
+            if said {
+                inner.lapsed = false;
+            }
             Standing::WholeAgain
         } else {
             Standing::Whole
         }
     }
 
-    /// [`Self::standing`] without its `WholeAgain` said: a reader that does not read the
-    /// model again itself asks this first, and leaves `WholeAgain` to the one that does.
-    pub fn standing_seen(&self) -> Standing {
-        let inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-        if !inner.unwatched.is_empty() {
-            Standing::Partial
-        } else if inner.lapsed {
-            Standing::WholeAgain
-        } else {
-            Standing::Whole
-        }
+    /// As if some folder went unwatched and is watched again: the next standing is `WholeAgain`.
+    #[cfg(test)]
+    pub(crate) fn lapse(&self) {
+        self.inner
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .lapsed = true;
     }
 }
 
@@ -1680,6 +1690,26 @@ mod tests {
         told.recv_timeout(PATIENCE).expect("told about beta");
 
         assert_eq!(watch.standing(), Standing::WholeAgain);
+        assert_eq!(watch.standing(), Standing::Whole);
+    }
+
+    #[test]
+    fn a_watch_whole_again_seen_is_still_whole_again_for_the_reader_that_reads_again() {
+        // The picker only looks (h19): were its look to say `WholeAgain`, the sidebar's model
+        // would never be read again over the gap.
+        let plane = plane_with_todos(&[]);
+        let root = plane.path().canonicalize().expect("canonical");
+        let (watch, _told) = watching(&root);
+        watch.lapse();
+
+        assert_eq!(watch.standing_seen(), Standing::WholeAgain);
+        assert_eq!(
+            watch.standing_seen(),
+            Standing::WholeAgain,
+            "seen again, not said"
+        );
+        assert_eq!(watch.standing(), Standing::WholeAgain);
+        assert_eq!(watch.standing_seen(), Standing::Whole);
         assert_eq!(watch.standing(), Standing::Whole);
     }
 
