@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795698381829,
+  "lastUpdate": 1795698723535,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55902,6 +55902,48 @@ window.BENCHMARK_DATA = {
             "value": 101.68120400000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.658, 101.447, 101.681, 101.815, 102.065 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4e6396140c7335422e2f12b21aad5ccd33770e86",
+          "message": "Stories: HibernatedNotice's missing baselines (fixes main) (#7705)\n\n* Stories: HibernatedNotice's baselines, drawn by the update-baselines label (fixes main)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BPPK045V9WVX8TNZBQ3V8T\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-26T12:28:51Z",
+          "tree_id": "e0cdd6c86bc432cc8973d557f76c754ae3c75f6a",
+          "url": "https://github.com/purlis/purlis/commit/4e6396140c7335422e2f12b21aad5ccd33770e86"
+        },
+        "date": 1795698717197,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5246500000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.512, 0.515, 0.525, 0.533, 0.538 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.429478500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.258, 16.407, 16.429, 16.620, 17.045 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.12923749999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.411, 101.662, 102.129, 102.528, 104.325 ms"
           }
         ]
       }
