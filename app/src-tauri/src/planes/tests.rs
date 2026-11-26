@@ -7385,23 +7385,30 @@ fn hibernating_on(host: &Pretend, dir: &Path) -> (Planes, PathBuf, Arc<Held>) {
     (planes, logs, held)
 }
 
-/// A report of `event` from chat `session`'s harness naming its conversation `conversation`,
-/// as Codex names it on every hook (#5900), with `detail`.
+/// A report of `event` from chat `session`'s harness naming its conversation, as Codex names it
+/// on every hook (#5900), with `detail`.
+///
+/// The conversation is the one the board already knows for the chat, where it knows one: a
+/// woken or restarted run resumes its earlier run's conversation, and the board refuses a
+/// Codex report naming any other (`Tracked::naming_its_own`). A fresh chat names its own,
+/// `conversation-<session>`.
 fn a_named_report(
     held: &Held,
     session: u32,
     event: purlis_core::state::Event,
     detail: purlis_core::state::Detail,
 ) {
+    let conversation = held
+        .board()
+        .conversation(session)
+        .unwrap_or_else(|| format!("conversation-{session}"));
     purlis_core::hookwire::send(
         held.hooks().socket().expect("the plane is listening"),
         Some(&held.hooks().token_for(session)),
         &purlis_core::hookwire::Report {
             chat: session,
             event,
-            conversation: purlis_core::hookwire::Conversation::Named(format!(
-                "conversation-{session}"
-            )),
+            conversation: purlis_core::hookwire::Conversation::Named(conversation),
             pid: None,
             agent: None,
             detail,
