@@ -95,8 +95,9 @@ The route decides in this order:
    context (`context.owner` included: ADR 0125, amended 2026-11-27). A held row is not asked of
    Cedar: it goes to the person's press.
 
-On a forge action, `context.owner` is the owner of the branch the act writes or runs on (a pull
-request's head, a run's head branch). Who created a non-branch object (a comment, an issue, a
+On a forge action, `context.owner` is the relation to the actor (ADR 0125, amended 2026-11-27,
+§5: `"self"`, `"task"`, `"asker"`, `"other"`, `"none"`) of the chat the forge route recorded
+creating the branch the act writes or runs on (a pull request's head, a run's head branch). Who created a non-branch object (a comment, an issue, a
 milestone) is a separate optional field, `context.made_by`, with the same values. It is reserved
 in the version-1 schema now and filled in M81, from the record of the objects a chat created.
 
@@ -150,7 +151,9 @@ that names that action explicitly in its scope.
 
 This is the chat-to-chat rulings' class, "new abilities by explicit permit only" (ADR 0125,
 amended 2026-11-27), applied to the forge. Every operation that is refused today and opened by
-this amendment or by M81 is in it. Today's operations are not: they keep today's outcome.
+this amendment or by M81 is in it. Today's operations are not, and keep today's outcome, with
+one exception the person ruled: assignee changes (`issue.assign`, `pull.assign`), which are
+forwarded today and join the class (§8).
 
 ### 6. The fixed forge floor
 
@@ -181,10 +184,12 @@ approval writes are on the floor.
 - environments, their protection rules and their branch policies;
 - pipeline schedules (`pipeline_schedules`), and GitLab's `POST pipeline` with variables;
 - collaborators, members, invitations, teams and permissions;
-- deleting, renaming or transferring the repo, changing its visibility, and its settings;
+- deleting, renaming or transferring the repo, importing into it, changing its visibility, and
+  its settings (`settings`, `autolinks`, `vulnerability-alerts`, `security-and-analysis`,
+  `import`, `rename`, `transfer`);
 - commits and ref writes through the API: `git/refs`, `git/commits`, `git/trees`, `git/blobs`,
-  `git/tags`, `contents` and GitLab's `repository/files`, `repository/commits` and
-  `repository/tags` writes, and `merge-upstream`. Code moves only by push (D3f, D8.3), and a
+  `contents` and GitLab's `repository/files` and `repository/commits` writes, `repository/tags`
+  writes other than a new tag's creation (below), and `merge-upstream`. Code moves only by push (D3f, D8.3), and a
   branch is deleted only by push, so `DELETE git/refs/heads/…` and GitLab's
   `DELETE repository/branches/…` are here too.
   Two exceptions: a new tag's creation (`git/refs` naming `refs/tags/…`, `git/tags`, GitLab's
@@ -227,7 +232,9 @@ asked.
 - **A pull request's branch update** (GitHub's `PUT pulls/{n}/update-branch` and
   `updatePullRequestBranch`, GitLab's `PUT merge_requests/{iid}/rebase`) writes to the pull
   request's head, so it is `guards.git`'s `update` action on that `Branch`, with `context.owner`
-  of the head. The head-ownership check stays structural (§2, step 4). It is not a `guards.forge`
+  read from the forge route's record of the head (`branch_owner`), as `push` reads it: an API
+  update has no branch folder, so no claim. This amends ADR 0125 (amended 2026-11-27, §5), where
+  `update` reads the folder claim: that holds for a local update alone. The head-ownership check stays structural (§2, step 4). It is not a `guards.forge`
   action.
 - No other ref-writing API route maps to any action (§6).
 
@@ -279,7 +286,9 @@ comments; labels, assignees and milestones, read. An assignee is set only as `is
 A forge refusal is one of two kinds, and says which:
 
 - **No action:** "purlis doesn't carry this request (`<METHOD> <canonical path>` on
-  `<host>/<owner>/<repo>`), so it was refused. No policy can allow it." A floor act also names
+  `<host>/<owner>/<repo>`), so it was refused. No policy can allow it." For a request no row
+  matches, each path segment outside the route vocabulary is shown as `{…}`, the query is
+  dropped, and the text is capped and drawn inert. A floor act also names
   its entry and that it's the person's to do on the forge. Neither is askable.
 - **A known act the policy doesn't allow:** "`<action>` on `<host>/<owner>/<repo>` isn't allowed
   by `<rule @id>` (`<level>`, `<owner>`)." An askable act raises an Ask in the person's Asks in
