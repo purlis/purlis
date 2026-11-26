@@ -62,6 +62,11 @@ updates:
         versions: [">= 0.27"]
       - dependency-name: minidump-unwind
         versions: [">= 0.27"]
+      # jiff 1.0 renames the types purlis-core is written against (`Zoned` is `ZonedDateTime`,
+      # among others), so the major alone does not compile (#7687), and gix still builds on 0.2.
+      # The move is #7671: remove this ignore in that ticket's PR.
+      - dependency-name: jiff
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: npm
     directory: /app
     target-branch: main

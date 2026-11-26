@@ -16,7 +16,7 @@ use purlis_core::engine::{AlacrittyEngine, Size};
 use purlis_core::hookwire::ChatTokens;
 use purlis_core::session::{Attachment, Session};
 
-use crate::host::{Ends, Opening, Readiness, SessionHost, Sink, Watching};
+use crate::host::{Ends, Opening, Readiness, SessionHost, Sink, Watching, Whole};
 
 /// How many lines of history each session keeps, in the window or in the session host. The pane
 /// showing it is told, so its own terminal keeps the same.
@@ -156,6 +156,46 @@ impl Sessions {
 }
 
 /// Each call is documented once, on [`SessionHost`].
+impl Sessions {
+    /// [`SessionHost::watch`], `whole` told once its snapshot has been handed to `sink`.
+    fn watch_telling(
+        &self,
+        id: u32,
+        mut sink: Sink,
+        whole: Option<Whole>,
+    ) -> Result<Watching, String> {
+        self.with(id, |running| {
+            let (open, size, output) = running.session.attach().into_parts();
+            // A thread of its own reads the view, so nothing the UI does runs on the
+            // session's reading thread, and a slow pane holds up only itself. The queue ends
+            // when the view is closed or the program ends, and the thread ends with it.
+            std::thread::Builder::new()
+                .name("charter-view".into())
+                .spawn(move || {
+                    // As the program wrote them: the pane's terminal decodes them (#4745).
+                    // Its snapshot is the queue's first piece, whole (`Session::attach`).
+                    let mut whole = whole;
+                    for bytes in output {
+                        sink(bytes.to_vec());
+                        if let Some(whole) = whole.take() {
+                            whole();
+                        }
+                    }
+                    sink(ENDED.as_bytes().to_vec());
+                })
+                .map_err(|err| format!("cannot read the session: {err}"))?;
+            running.watched += 1;
+            let id = running.watched;
+            running.views.insert(id, open);
+            Ok(Watching {
+                view: id,
+                size,
+                older: 0,
+            })
+        })
+    }
+}
+
 impl SessionHost for Sessions {
     fn open(
         &self,
@@ -302,31 +342,20 @@ impl SessionHost for Sessions {
         })
     }
 
-    fn watch(&self, id: u32, mut sink: Sink) -> Result<Watching, String> {
-        self.with(id, |running| {
-            let (open, size, output) = running.session.attach().into_parts();
-            // A thread of its own reads the view, so nothing the UI does runs on the
-            // session's reading thread, and a slow pane holds up only itself. The queue ends
-            // when the view is closed or the program ends, and the thread ends with it.
-            std::thread::Builder::new()
-                .name("charter-view".into())
-                .spawn(move || {
-                    // As the program wrote them: the pane's terminal decodes them (#4745).
-                    for bytes in output {
-                        sink(bytes.to_vec());
-                    }
-                    sink(ENDED.as_bytes().to_vec());
-                })
-                .map_err(|err| format!("cannot read the session: {err}"))?;
-            running.watched += 1;
-            let id = running.watched;
-            running.views.insert(id, open);
-            Ok(Watching {
-                view: id,
-                size,
-                older: 0,
-            })
-        })
+    fn watch(&self, id: u32, sink: Sink) -> Result<Watching, String> {
+        self.watch_telling(id, sink, None)
+    }
+
+    /// Its view draws all of its history, whatever `history` asks.
+    fn watch_whole(
+        &self,
+        id: u32,
+        sink: Sink,
+        history: u32,
+        whole: Whole,
+    ) -> Result<Watching, String> {
+        let _ = history;
+        self.watch_telling(id, sink, Some(whole))
     }
 
     fn unwatch(&self, id: u32, view: u32) -> Result<(), String> {

@@ -865,6 +865,12 @@ export type Offer = {
    */
   menuOnly?: true;
   /**
+   * **The window's key for this row works here now** (#6488): set on a pane's *Links in this
+   * pane…* row while that pane is the focused one of the tab in front, the only terminal
+   * ⇧⌘L reaches. A menu draws the key on this row alone (`menuModel.ts`).
+   */
+  keyHere?: true;
+  /**
    * **A row about the chat in front, though its id names it** (#4851): the palette ranks it
    * with the rows that name nothing ({@link aboutWhatIsInFront}). A chat's Branch rows used to
    * be `worktree.merge` and `worktree.remove`, about the chat in front alone, and at fifty
@@ -4796,12 +4802,28 @@ function chatRows(now: Now): Offer[] {
   const drawn = new Set(
     now.tabs.order.flatMap((tab) => panesOf(now.tabs, tab).map((one) => one.session)),
   );
+  const focused = focusedChat(now.tabs);
+  /**
+   * **Links in this pane…** (#6332, spec #6208 D10): the links on its pane's screen, to pick
+   * from by the keyboard, on its list's Open ▸ and in the palette, as Use skill… is (#4753). A
+   * chat no pane draws has no screen to list. ⇧⌘L is said on the focused pane's row alone.
+   */
+  const linksRow = (session: number, name: string): Offer[] =>
+    drawn.has(session)
+      ? [
+          {
+            ...can(chatLinksId(session), `Links in ${name}…`, { verb: "listLinks", session }, name),
+            ...(session === focused ? { keyHere: true as const } : {}),
+          },
+        ]
+      : [];
   for (const { session, name } of chatsHere(now)) {
     // **A chat ended on purpose that its pane still shows** (#5019): the core has closed it, so
-    // only what reads it is left, its Activity and its Network. The ended band's Resume and
-    // Clear pane are its ways out, and no End… is offered a second time.
+    // only what reads it is left, its Activity and its Network, and its pane's links (#6488).
+    // The ended band's Resume and Clear pane are its ways out, and no End… is offered a second
+    // time.
     if (endedHere.has(session)) {
-      offers.push(...readingRows(session, name));
+      offers.push(...linksRow(session, name), ...readingRows(session, name));
       continue;
     }
     // A shell runs no harness: no tool with skills, no profile to ask a persona on.
@@ -4827,13 +4849,7 @@ function chatRows(now: Now): Offer[] {
       can(renameId(session), `Rename chat ${name}…`, { verb: "renameChat", session }, name),
     );
 
-    // **Links in this pane…** (#6332, spec #6208 D10): the links on its pane's screen, to pick
-    // from by the keyboard, on its list's Open ▸ and in the palette, as Use skill… is (#4753). A
-    // chat no pane draws has no screen to list.
-    if (drawn.has(session))
-      offers.push(
-        can(chatLinksId(session), `Links in ${name}…`, { verb: "listLinks", session }, name),
-      );
+    offers.push(...linksRow(session, name));
 
     // **Move…** (#4764): the keyboard's drag of the chat, as its row's drag is the pointer's.
     // Every chat's, as Rename is; ⌘⇧M on its row or its pane does the same.

@@ -554,6 +554,7 @@ export const commands = {
 	chatHibernated: (plane: PlaneId, session: number) => typedError<{
 	by: By,
 } | null, string>(__TAURI_INVOKE("chat_hibernated", { plane, session })),
+	hibernatedChatScreen: __WINDOW_ONLY_RESULT,
 	/**  The chats of `plane` that are hibernated: what the window reads its rows by as it opens. */
 	hibernatedChats: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("hibernated_chats", { plane })),
 	hibernateChat: __WINDOW_ONLY_RESULT,
@@ -8936,6 +8937,11 @@ export type LinkSeen = {
 	does: LinkDoes,
 	/**  The words of a link a program marked, where they name another target than it goes to. */
 	its_text?: string | null,
+	/**
+	 *  Why the editor checks this file only as it opens (#6489): its branch could not say
+	 *  whether it offers it. None for every other link.
+	 */
+	unchecked?: string | null,
 	/**  What the chat a chat link names is: none for every other kind. */
 	chat: ChatSeen | null,
 };

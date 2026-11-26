@@ -31,7 +31,9 @@ mod asks;
 mod file;
 mod osc8;
 pub use asks::{Asks, Identity};
-pub use file::{FileAt, Home, HomeIs, LocalFile, NOT_OFFERED, Offers, ReadFrom, home_of};
+pub use file::{
+    FileAt, Home, HomeIs, LocalFile, NOT_OFFERED, Offers, OffersFiles, ReadFrom, UNCHECKED, home_of,
+};
 mod chat;
 pub mod onrunner;
 mod runner;
@@ -229,6 +231,16 @@ impl Resolver {
         Self { kinds }
     }
 
+    /// **The kinds purlis links, a branch's files asked of `offers`** (#6357, #6489): web
+    /// addresses, and file paths whose branch's file is no link where `offers` says the branch
+    /// doesn't offer it, as the light editor would refuse it. [`Resolver::default`] with that.
+    pub fn offering(offers: impl OffersFiles + 'static) -> Self {
+        Self::with(vec![
+            Box::new(WebAddress),
+            Box::new(LocalFile::here().offered_by(offers)),
+        ])
+    }
+
     /// This resolver with `kind` too: a kind that needs what only its caller knows, as the chat
     /// kind needs the chats open now ([`ChatNumber`]).
     #[must_use]
@@ -273,6 +285,9 @@ impl Resolver {
     /// **What opening `target`, read from `candidate`, does**, by its kind; a marked link
     /// whose words read as another target asks first ([`osc8::reconsidered`]).
     fn opening(kind: &dyn LinkKind, target: Target, candidate: &Candidate, pane: &Pane) -> Opening {
+        if candidate.kind != Kind::Osc8 {
+            return kind.opening(target, &candidate.text, pane);
+        }
         let opening = kind.opening(target.clone(), &candidate.text, pane);
         osc8::reconsidered(opening, candidate, target, pane)
     }

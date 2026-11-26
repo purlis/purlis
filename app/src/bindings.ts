@@ -1256,6 +1256,12 @@ export const commands = {
 	chatHibernated: (plane: PlaneId, session: number) => typedError<{
 	by: By,
 } | null, string>(__TAURI_INVOKE("chat_hibernated", { plane, session })),
+	/**
+	 *  **What hibernated chat `session` showed as it was hibernated** (SC-4b, #7631): what its pane
+	 *  draws read-only with Resume. Null where it is not hibernated, has no id, or nothing was
+	 *  kept: a missing, corrupt or oversize file reads as none kept.
+	 */
+	hibernatedChatScreen: (plane: PlaneId, session: number) => typedError<string | null, string>(__TAURI_INVOKE("hibernated_chat_screen", { plane, session })),
 	/**  The chats of `plane` that are hibernated: what the window reads its rows by as it opens. */
 	hibernatedChats: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("hibernated_chats", { plane })),
 	/**
@@ -12363,6 +12369,11 @@ export type LinkSeen = {
 	does: LinkDoes,
 	/**  The words of a link a program marked, where they name another target than it goes to. */
 	its_text?: string | null,
+	/**
+	 *  Why the editor checks this file only as it opens (#6489): its branch could not say
+	 *  whether it offers it. None for every other link.
+	 */
+	unchecked?: string | null,
 	/**  What the chat a chat link names is: none for every other kind. */
 	chat: ChatSeen | null,
 };

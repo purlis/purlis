@@ -98,7 +98,7 @@ export interface ReadOnlyTerminalProps {
   links?: LinkCore;
   /** What a `chat 641` link ⌘-clicked shows (#6217, `PaneLinkChats.tsx`). A saved screen is in
    *  no project, so the core links no chat in it; a story stands a core in that does. */
-  onChat?: (go: ChatGo, place: LinkPlace | undefined) => void;
+  onChat?: (go: ChatGo, place: LinkPlace) => void;
 }
 
 /**
@@ -267,9 +267,12 @@ export function ReadOnlyTerminal({
         {note}
       </p>
       <div className="read-only-terminal-frame">
+        {/* Its role written out, as well as a named section's own: a scenario spec asks for it
+          by `[role="region"]`, which a CSS selector matches only when the attribute is there. */}
         <section
           ref={region}
           className="read-only-terminal-screen"
+          role="region"
           aria-label={label}
           aria-describedby={noteId}
           tabIndex={still ? undefined : 0}

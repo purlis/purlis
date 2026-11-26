@@ -34,7 +34,7 @@ use std::time::{Duration, Instant};
 use purlis_core::files::{Answer, Ask, Branch, Reader};
 use purlis_core::panelinks::{
     Asking, Asks, Candidate, ChatAt, ChatNumber, FileAt, Goes, Home, HomeIs, Hover, Kind,
-    LocalFile, NOT_A_LINK, Opening, Pane, ReadFrom, Resolver, RunnerFile, Runs, Target, UNASKABLE,
+    NOT_A_LINK, Opening, Pane, ReadFrom, Resolver, RunnerFile, Runs, Target, UNASKABLE, UNCHECKED,
     WebAddress,
 };
 use serde::{Deserialize, Serialize};
@@ -84,7 +84,7 @@ impl From<Kind> for KindHint {
 pub struct LinkCandidate {
     pub kind: KindHint,
     pub text: String,
-    #[serde(default)]
+    // Left out, it is `None`: serde reads a missing `Option` so with no `default`.
     #[specta(optional)]
     pub target: Option<String>,
 }
@@ -200,6 +200,10 @@ pub struct LinkSeen {
     /// The words of a link a program marked, where they name another target than it goes to.
     #[specta(optional)]
     pub its_text: Option<String>,
+    /// Why the editor checks this file only as it opens (#6489): its branch could not say
+    /// whether it offers it. None for every other link.
+    #[specta(optional)]
+    pub unchecked: Option<String>,
     /// What the chat a chat link names is: none for every other kind.
     pub chat: Option<ChatSeen>,
 }
@@ -440,6 +444,7 @@ pub(crate) fn seen_in(
                 },
                 chat: Some(chat),
                 its_text: None,
+                unchecked: None,
             }
         }
         Hover::Link { target, opening } => LinkSeen {
@@ -449,6 +454,10 @@ pub(crate) fn seen_in(
                     shown,
                     ..
                 } => Some(shown.clone()),
+                _ => None,
+            },
+            unchecked: match &target {
+                Target::File(file) if file.unchecked => Some(UNCHECKED.to_owned()),
                 _ => None,
             },
             kind: target.kind().into(),
@@ -476,6 +485,7 @@ pub(crate) fn seen_in(
                 shown: named.clone(),
                 does: LinkDoes::Refused { reason },
                 its_text: None,
+                unchecked: None,
                 chat: None,
             }
         }
@@ -663,29 +673,40 @@ pub(crate) fn looked<T: Send + 'static>(
 pub(crate) fn resolver() -> Resolver {
     let reader = crate::reader();
     let lists = std::sync::Mutex::new(Lists::new());
-    Resolver::with(vec![
-        Box::new(WebAddress),
-        Box::new(LocalFile::here().offered_by(move |project, branch, path| {
-            let key = (
-                branch.ws.to_owned(),
-                branch.repo.to_owned(),
-                branch.piece.map(str::to_owned),
-            );
-            let mut lists = lists.lock().ok()?;
-            let list = lists
-                .entry(key)
-                .or_insert_with(|| offered_list(&reader, project, branch));
-            Some(
-                list.as_ref()?
-                    .binary_search_by(|one| one.as_str().cmp(path))
-                    .is_ok(),
-            )
-        })),
-    ])
+    Resolver::offering(move |project, branch, path| {
+        let mut lists = lists.lock().ok()?;
+        let list = lists
+            .entry(BranchKey::of(branch))
+            .or_insert_with(|| offered_list(&reader, project, branch));
+        Some(
+            list.as_ref()?
+                .binary_search_by(|one| one.as_str().cmp(path))
+                .is_ok(),
+        )
+    })
 }
 
-/// Each branch's offered list a resolver read, by workspace, repo and piece.
-type Lists = std::collections::HashMap<(String, String, Option<String>), Option<Vec<String>>>;
+/// **A branch, as a resolver keeps the list it read of it** (#6489): its workspace, repo and
+/// piece, owned.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct BranchKey {
+    workspace: String,
+    repo: String,
+    piece: Option<String>,
+}
+
+impl BranchKey {
+    fn of(branch: Branch<'_>) -> Self {
+        Self {
+            workspace: branch.ws.to_owned(),
+            repo: branch.repo.to_owned(),
+            piece: branch.piece.map(str::to_owned),
+        }
+    }
+}
+
+/// Each branch's offered list a resolver read.
+type Lists = std::collections::HashMap<BranchKey, Option<Vec<String>>>;
 
 /// **What `branch` offers**: the list the light editor's open checks a path against (what git
 /// tracks there, or doesn't ignore), sorted. `None` where the reader could not say (an index
@@ -873,12 +894,13 @@ pub async fn pane_link_open(
     let session = from.session;
     let (pane, held) = pane_of(&app.state::<Planes>(), from);
     let candidate: Candidate = candidate.into();
-    // A web address opens here, in the browser; a file, or a marked link purlis refuses, is
+    // A web address opens here, in the browser, read by the web kind alone: no branch's file list
+    // is asked, so no reader is made (#6489). A file, or a marked link purlis refuses, is
     // answered on a thread of its own.
     if candidate.read_by() == Some(Kind::Url) {
         let asks = app.state::<PaneLinkAsks>();
         return answer(
-            &resolver(),
+            &Resolver::with(vec![Box::new(WebAddress)]),
             &pane,
             &asks.0,
             &candidate,

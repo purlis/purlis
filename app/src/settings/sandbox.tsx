@@ -37,7 +37,7 @@ import type { Collection, LiveSetting } from "./groups";
 import { showPersona } from "./links";
 import { OutLink } from "./OutLink";
 import { Button } from "../ui/button/Button";
-import { capitalised } from "../chatEnded";
+import { capitalised } from "../textCase";
 
 /**
  * **Settings › Project › Sandbox explains what a chat here can do** (#1340, spec #1330): one

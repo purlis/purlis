@@ -47,6 +47,9 @@ pub struct FileAt {
     pub read_from: ReadFrom,
     /// Whether it is in the chat's home ([`Home`]): one that is not asks first.
     pub in_home: bool,
+    /// Whether its branch could not say if it offers the file (#6489): it links, and the editor
+    /// decides when it opens, which its hover says up front.
+    pub unchecked: bool,
     /// The path in full with its `:line:col`, as an ask shows it and *Copy link* copies it.
     pub(super) shown: String,
     /// The path from the chat's home with its `:line:col`, for a file in it: what a hover's
@@ -151,12 +154,22 @@ const MOST_LINKS: usize = 40;
 /// **Whether a branch offers one of its files** (#6357): asked with the project (resolved), the
 /// branch, and the file's path in its folder. `Some(true)` for a file git tracks there or does
 /// not ignore, `Some(false)` for one it doesn't offer, and `None` where it could not say.
-pub type Offers = dyn Fn(&Path, Branch<'_>, &str) -> Option<bool> + Send + Sync;
+pub type Offers = dyn OffersFiles;
+
+/// The one bound of what says whether a branch offers a file ([`Offers`]), written once for the
+/// boxed one and for [`LocalFile::offered_by`]'s argument (#6489): any such function is one.
+pub trait OffersFiles: Fn(&Path, Branch<'_>, &str) -> Option<bool> + Send + Sync {}
+
+impl<F: Fn(&Path, Branch<'_>, &str) -> Option<bool> + Send + Sync> OffersFiles for F {}
 
 /// What the hover of a file its branch doesn't offer says (#6357). It names no cause: an ignored
 /// file and one in a submodule are both outside what the editor opens.
 pub const NOT_OFFERED: &str =
     "purlis will not open this file in its editor: it is not one of its branch's own files";
+
+/// What the hover of a file its branch could not say about adds (#6489): it links, and the
+/// editor checks it when it opens.
+pub const UNCHECKED: &str = "purlis could not read which files this branch offers, so its editor checks this one when it opens";
 
 /// **A file path** (#6216): opened in the light editor, at its line, never by the system.
 pub struct LocalFile {
@@ -183,18 +196,16 @@ impl LocalFile {
     /// link and the light editor agree: the editor opens only what git tracks or doesn't ignore.
     /// The app asks its bounded reader, which starts no git in the app's process.
     #[must_use]
-    pub fn offered_by(
-        mut self,
-        offers: impl Fn(&Path, Branch<'_>, &str) -> Option<bool> + Send + Sync + 'static,
-    ) -> Self {
+    pub fn offered_by(mut self, offers: impl OffersFiles + 'static) -> Self {
         self.offers = Some(Box::new(offers));
         self
     }
 
-    /// Whether the branch `read_from` names doesn't offer the file: only `Some(false)` is.
-    fn not_offered(&self, project: Option<&Path>, read_from: &ReadFrom) -> bool {
+    /// **Whether the branch `read_from` names offers the file**: `None` where it could not
+    /// say, and `Some(true)` for a file in no branch, or where nothing is asked.
+    fn offered(&self, project: Option<&Path>, read_from: &ReadFrom) -> Option<bool> {
         let (Some(offers), Some(project)) = (self.offers.as_deref(), project) else {
-            return false;
+            return Some(true);
         };
         let ReadFrom::Branch {
             ws,
@@ -203,13 +214,13 @@ impl LocalFile {
             path,
         } = read_from
         else {
-            return false;
+            return Some(true);
         };
         let branch = match piece {
             Some(piece) => Branch::piece(ws, repo, piece),
             None => Branch::repo(ws, repo),
         };
-        offers(project, branch, path) == Some(false)
+        offers(project, branch, path)
     }
 
     /// Paths read with the person's own home folder, and this system's guarded folders.
@@ -379,7 +390,8 @@ impl LinkKind for LocalFile {
         let Some(read_from) = read_from(project.as_deref(), &path) else {
             return Resolved::Quiet;
         };
-        if self.not_offered(project.as_deref(), &read_from) {
+        let offered = self.offered(project.as_deref(), &read_from);
+        if offered == Some(false) {
             return Resolved::NotALink(NOT_OFFERED.into());
         }
         let home = home_of(pane);
@@ -399,6 +411,7 @@ impl LinkKind for LocalFile {
             column,
             read_from,
             in_home,
+            unchecked: offered.is_none(),
             shown,
             short,
         })))
@@ -582,5 +595,4 @@ pub(super) fn addressed(words: &str) -> bool {
 }
 
 #[cfg(test)]
-#[path = "file_tests.rs"]
 mod tests;
