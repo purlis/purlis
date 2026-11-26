@@ -3,6 +3,8 @@
 
 use std::cell::RefCell;
 
+use purlis_core::panelinks::IssueRef;
+
 use super::*;
 
 fn url(text: &str) -> Candidate {
@@ -1050,6 +1052,7 @@ fn an_issue_s_number_says_it_is_one_and_opens_its_forge_page_in_the_browser() {
                 into: OpensIn::Browser
             },
             chat: None,
+            unchecked: None,
         })
     );
     let handed = RefCell::new(Vec::new());
