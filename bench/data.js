@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795687249756,
+  "lastUpdate": 1795691846097,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55776,6 +55776,48 @@ window.BENCHMARK_DATA = {
             "value": 101.0530965,
             "unit": "ms",
             "extra": "median of 5 runs: 99.395, 101.020, 101.053, 101.134, 102.216 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ba094174ca624ce22369689cb17156a0713c7def",
+          "message": "Held CI-file push: never revert the base; send only the branch's own changes (#7690) (#7696)\n\n* Held CI-file push: tests for a branch behind its base (#7690)\n\nRed: a tip that does not contain the commit the push is parented on is\nheld and pushed, its one commit reverting what the base gained; both\nforge adapters send it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BGX961MAY2X6QCKKX6DYER\nPurlis-Persona: steward\n\n* Held CI-file push: never revert the base; send only the branch's own changes (#7690)\n\nThe push is one commit through the forge's API, parented on the base the\nask showed (the forge's branch tip, or the default branch's tip for a new\nbranch), with the tree diff base..tip. A tip cut from an older point does\nnot contain that base, so the diff held the undoing of everything the base\ngained since, and the commit reverted it.\n\nNow a tip that lacks any commit of its base is refused before anything is\nsent: at the ask and again at the press (prepare reads it again), with\n\"the branch is behind <base>: run `purlis worktree update --merge` and\npush again\", and in TipFiles::changes, which both adapters call before\nany write. Where the tip contains the base, the base is the merge-base,\nso the files sent are exactly the branch's own changes.\n\nThe adapter tests read through a real quarantine, as production does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BGX961MAY2X6QCKKX6DYER\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T10:36:12Z",
+          "tree_id": "045da87cdf6d6ffd7b6ed839703f42893037845b",
+          "url": "https://github.com/purlis/purlis/commit/ba094174ca624ce22369689cb17156a0713c7def"
+        },
+        "date": 1795691838843,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.557981,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.551, 0.552, 0.558, 0.561, 0.604 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.266143,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.195, 16.239, 16.266, 16.321, 16.350 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.47265,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.053, 100.482, 101.473, 101.620, 103.060 ms"
           }
         ]
       }
