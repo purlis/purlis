@@ -33,7 +33,9 @@ permit-required class (3), the family names (4), the relation facts and their so
 schema's growth rule (6). It also maps today's chat-to-chat rows to rules or to `later:` targets.
 A new milestone, **M76 "Chats as resources"**, adds the `Chat` resource and the actions between
 chats. Nothing is dropped: every gap the 2026-11-26 map lists is an M76 issue, or an M75 issue
-where it is a bypass on `main` today.
+where it is a bypass on `main` today. "M76" is the ruling's name for it. The forge's milestone
+M76 is already "One login: your sign-in, brokered", so the new milestone's number is settled when
+it is created. Its issues are #7753 to #7767.
 
 ### 2. The fixed floor
 
