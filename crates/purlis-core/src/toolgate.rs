@@ -645,7 +645,7 @@ impl Gate<'_> {
         if arm.family() == Some(Family::Sandbox) {
             return Mode::Enforce;
         }
-        let mode = arm.family().map_or(Mode::Enforce, |family| modes(family));
+        let mode = arm.family().map_or(Mode::Enforce, modes);
         if arm == Arm::HookSkip {
             return mode.max(modes(Family::GuardsCredential));
         }
