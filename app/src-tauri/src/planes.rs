@@ -685,8 +685,20 @@ impl Held {
         &self,
         read: impl FnOnce() -> Result<(crate::StartOptions, purlis_core::pickerstamp::Stamp), String>,
     ) -> Result<crate::StartOptions, String> {
-        let trusted = self.start_answers_trusted();
+        let trusted = purlis_core::opening::phase("watch", || self.start_answers_trusted());
         self.start_answers.first.served(trusted, read)
+    }
+
+    /// Whether the picker's first answer is kept, so the next open is served it (h19).
+    #[cfg(test)]
+    pub(crate) fn start_first_is_kept(&self) -> bool {
+        self.start_answers.first.is_kept()
+    }
+
+    /// The sidebar's model, held as a long re-read holds it: for a test of what waits on it.
+    #[cfg(test)]
+    pub(crate) fn model_held(&self) -> MutexGuard<'_, Model> {
+        self.model.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// **The new-chat picker's second answer** (#4737), each row's details, kept as
@@ -701,9 +713,45 @@ impl Held {
 
     /// Whether the picker's answers may be kept: the plane is watched wholly, as the sidebar's
     /// model must be ([`Self::trusted`]), which drops them where the watch lapsed meanwhile.
+    ///
+    /// **Without the model's lock unless the watch lapsed** (h19): the watch's re-read of the
+    /// plane, a restore's changes applied and a panel served each hold it, and the picker's
+    /// first open after a restart waited on them before it looked at what it kept. Only a watch
+    /// whole again reads the model again, under its lock, as [`Self::trusted`] does.
     fn start_answers_trusted(&self) -> bool {
-        let mut model = self.model.lock().unwrap_or_else(PoisonError::into_inner);
-        self.trusted(&mut model)
+        let standing = self
+            .watch
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .map(crate::planewatch::Watch::standing_seen);
+        match standing {
+            None => false,
+            Some(crate::planewatch::Standing::Whole | crate::planewatch::Standing::Partial) => true,
+            Some(crate::planewatch::Standing::WholeAgain) => {
+                let mut model = self.model.lock().unwrap_or_else(PoisonError::into_inner);
+                self.trusted(&mut model)
+            }
+        }
+    }
+
+    /// **Reads the picker's first answer ahead of the picker** (h19), where it is not kept: the
+    /// first open after a restart is then served kept, and never reads it behind the restore of
+    /// every chat. Called once the plane is held and again once its chats are put back.
+    pub(crate) fn read_start_first_ahead(&self) {
+        let began = std::time::Instant::now();
+        if self
+            .kept_start_first(|| {
+                crate::start_first_stamped(&self.root, purlis_core::profiles::for_launch)
+            })
+            .is_ok()
+        {
+            tracing::debug!(
+                "purlis: {}: the picker's first answer is ready, in {} ms",
+                self.root.display(),
+                began.elapsed().as_millis()
+            );
+        }
     }
 
     /// The window moved the plane's workspaces itself — made, renamed or removed one, or set
@@ -3652,6 +3700,18 @@ impl Planes {
         }
         let held = Arc::new(self.hold(id.clone(), root));
         let _ = held.me.set(Arc::downgrade(&held));
+        // The picker's first answer, read ahead on a thread of its own (h19): a `Weak`, so a
+        // plane closed meanwhile is not kept alive for it.
+        {
+            let ahead = Arc::downgrade(&held);
+            let _ = std::thread::Builder::new()
+                .name("purlis-picker-ahead".into())
+                .spawn(move || {
+                    if let Some(held) = ahead.upgrade() {
+                        held.read_start_first_ahead();
+                    }
+                });
+        }
         // Stuck? and work left behind (#6014): told to the window with the chats' other news.
         held.noticed
             .held_as(Arc::downgrade(&held), Arc::clone(&self.noticed));
@@ -4494,6 +4554,9 @@ impl Planes {
                 plane: held.id.clone(),
                 outcome,
             });
+            // Read again where what the chats wrote as they came back dropped it (h19): served
+            // kept, at no cost, where it did not.
+            held.read_start_first_ahead();
         };
         if !self.restores_behind {
             put_back(held, begun);

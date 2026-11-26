@@ -759,6 +759,19 @@ impl<W: notify::Watcher> Watch<W> {
             Standing::Whole
         }
     }
+
+    /// [`Self::standing`] without its `WholeAgain` said: a reader that does not read the
+    /// model again itself asks this first, and leaves `WholeAgain` to the one that does.
+    pub fn standing_seen(&self) -> Standing {
+        let inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        if !inner.unwatched.is_empty() {
+            Standing::Partial
+        } else if inner.lapsed {
+            Standing::WholeAgain
+        } else {
+            Standing::Whole
+        }
+    }
 }
 
 impl<W: notify::Watcher + Send + 'static> Watch<W> {

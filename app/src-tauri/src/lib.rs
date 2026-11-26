@@ -1674,15 +1674,59 @@ async fn start_options_first(
 ) -> Result<StartOptions, String> {
     let held = planes.held(&plane)?;
     let kept = std::sync::Arc::clone(&held);
+    let asked = std::time::Instant::now();
     let mut options = tauri::async_runtime::spawn_blocking(move || {
-        kept.kept_start_first(|| {
-            start_first_stamped(kept.root(), purlis_core::profiles::for_launch)
-        })
+        // Timed by phase, and written to the slow log where it took a second or more (h19):
+        // its time in line for a blocking thread first, then the read's own phases.
+        let in_line = u32::try_from(asked.elapsed().as_millis()).unwrap_or(u32::MAX);
+        let timed = purlis_core::opening::timed(|| {
+            kept.kept_start_first(|| {
+                start_first_stamped(kept.root(), purlis_core::profiles::for_launch)
+            })
+        });
+        let mut phases = vec![purlis_core::slowlog::Took {
+            name: "in line".to_owned(),
+            ms: in_line,
+        }];
+        phases.extend(timed.phases);
+        let hot = kept.chats().open_count();
+        if let Some(slow) =
+            first_answer_slow(in_line.saturating_add(timed.ms), now_ms(), hot, phases)
+        {
+            let _ = purlis_core::slowlog::record(&slow);
+        }
+        timed.out
     })
     .await
     .map_err(|err| format!("purlis could not read the profiles: {err}"))??;
     options.next_number = Some(held.chats().next_number());
     Ok(options)
+}
+
+/// Milliseconds since 1970 by this machine's clock: 0 for a clock set before then.
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| {
+            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+        })
+}
+
+/// The slow-log line of a first answer that took `ms`, at `at`, with `hot` chats open, and the
+/// `phases` its read passed through (h19).
+fn first_answer_slow(
+    ms: u32,
+    at: u64,
+    hot: u32,
+    phases: Vec<purlis_core::slowlog::Took>,
+) -> Option<purlis_core::slowlog::Slow> {
+    (ms >= purlis_core::opening::SLOW_MS).then(|| purlis_core::slowlog::Slow::Answer {
+        command: "startOptionsFirst".to_owned(),
+        ms,
+        at,
+        hot,
+        phases,
+    })
 }
 
 /// **The picker's second answer** (#4736): each row's approval, sandbox and billing, by its
@@ -1725,10 +1769,13 @@ fn start_first_stamped(
     root: &std::path::Path,
     profiles: impl FnOnce(&std::path::Path) -> LaunchProfiles,
 ) -> Result<(StartOptions, purlis_core::pickerstamp::Stamp), String> {
+    use purlis_core::opening::phase;
     purlis_core::profiles::git_asked_once(|| {
         // Stamped before the reads it covers, so a change made while they read breaks it.
-        let before = purlis_core::pickerstamp::Stamp::before_reading(root);
-        let (set, check) = profiles(root);
+        let before = phase("stamp", || {
+            purlis_core::pickerstamp::Stamp::before_reading(root)
+        });
+        let (set, check) = phase("profiles", || profiles(root));
         let stamp = before.and_named_by(&set);
         Ok((start_first_of(root, &set, &check)?, stamp))
     })
@@ -1842,42 +1889,49 @@ fn start_first_of(
     set: &purlis_core::profiles::ProfileSet,
     check: &purlis_core::profiles::IgnoreCheck,
 ) -> Result<StartOptions, String> {
+    // Each read timed as a phase (h19): a slow first answer's line in the slow log names it.
+    use purlis_core::opening::phase;
     let on_disk = purlis_core::workspaces::Plane::open(root);
     // Every harness the project has, read once for every row (HP-19).
-    let cards = purlis_core::harness_card::read(root);
-    let personas = on_disk.personas().map_err(|err| err.to_string())?;
-    let offered = purlis_core::personaprofile::offers_of(
-        root,
-        set,
-        &purlis_core::harness_declaration::read(root),
-    );
+    let cards = phase("harness cards", || purlis_core::harness_card::read(root));
+    let personas = phase("personas", || on_disk.personas()).map_err(|err| err.to_string())?;
+    let offered = phase("offers", || {
+        purlis_core::personaprofile::offers_of(
+            root,
+            set,
+            &purlis_core::harness_declaration::read(root),
+        )
+    });
     // Each persona's own profile and its line, each definition read once (#4736).
-    let said = purlis_core::personaprofile::for_the_picker(root, &personas, &offered);
+    let said = phase("persona profiles", || {
+        purlis_core::personaprofile::for_the_picker(root, &personas, &offered)
+    });
     // Every row's icon, each person's SVG read once and held to one budget for the answer.
     let mut icons = harnessicon::Icons::default();
-    let profiles = set
-        .profiles()
-        .iter()
-        .map(|p| ProfileRow {
-            name: p.name.clone(),
-            kind: p.kind.clone(),
-            shown: purlis_core::profiletrust::shown(root, p),
-            source: p.source.as_str().to_owned(),
-            is_default: set.default.as_deref() == Some(p.name.as_str()),
-            approval: None,
-            ready_to_type: purlis_core::harness::Harness::of_kind(&p.kind)
-                .and_then(purlis_core::harness::Harness::ready_to_type)
-                .is_some(),
-            harness: cards
-                .iter()
-                .find(|card| card.name == p.kind)
-                .map(HarnessGlance::from),
-            sandbox: None,
-            model: Some(purlis_core::profilesignin::THE_HARNESS_DEFAULT.to_owned()),
-            billed_to: None,
-            icon: Some(icons.row(&p.name, &p.kind, set.icon_of(&p.name))),
-        })
-        .collect();
+    let profiles = phase("rows", || {
+        set.profiles()
+            .iter()
+            .map(|p| ProfileRow {
+                name: p.name.clone(),
+                kind: p.kind.clone(),
+                shown: purlis_core::profiletrust::shown(root, p),
+                source: p.source.as_str().to_owned(),
+                is_default: set.default.as_deref() == Some(p.name.as_str()),
+                approval: None,
+                ready_to_type: purlis_core::harness::Harness::of_kind(&p.kind)
+                    .and_then(purlis_core::harness::Harness::ready_to_type)
+                    .is_some(),
+                harness: cards
+                    .iter()
+                    .find(|card| card.name == p.kind)
+                    .map(HarnessGlance::from),
+                sandbox: None,
+                model: Some(purlis_core::profilesignin::THE_HARNESS_DEFAULT.to_owned()),
+                billed_to: None,
+                icon: Some(icons.row(&p.name, &p.kind, set.icon_of(&p.name))),
+            })
+            .collect::<Vec<_>>()
+    });
     Ok(StartOptions {
         profiles,
         own_icons: Some(icons.svgs()),
