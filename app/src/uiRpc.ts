@@ -554,6 +554,7 @@ export const commands = {
 	chatHibernated: (plane: PlaneId, session: number) => typedError<{
 	by: By,
 } | null, string>(__TAURI_INVOKE("chat_hibernated", { plane, session })),
+	hibernatedChatScreen: __WINDOW_ONLY_RESULT,
 	/**  The chats of `plane` that are hibernated: what the window reads its rows by as it opens. */
 	hibernatedChats: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("hibernated_chats", { plane })),
 	hibernateChat: __WINDOW_ONLY_RESULT,
@@ -3356,6 +3357,11 @@ export type AnswerPath =
  *  clone Notice's own command, and each clone it trusts leaves the ask (R-336).
  */
 { via: "trust-clones"; clones: CloneToVouch[] } | 
+/**
+ *  `press_held_act` twice and `dont_held_act`, for held act `ask`, from its own card in Asks,
+ *  which draws exactly what the core read and hands back its digest (#7685).
+ */
+{ via: "held-act"; ask: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3874,7 +3880,13 @@ export type AskSource =
  *  **Pool setup's cluster is ready** (#4496): the admin the person asked has given what
  *  the install couldn't, and Pool setup goes on. Said once, about no chat.
  */
-"pool-setup";
+"pool-setup" | 
+/**
+ *  **A forge act a chat's route held** (ADR 0128 D8, #7685): a tag, a release, a push that
+ *  changes CI files or a fork. The chat did not do it: the person's two presses make it,
+ *  with their own sign-in, on its card in Asks (`HeldActAsks`).
+ */
+"held-act";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -8246,6 +8258,13 @@ export type HeldRowShown = {
 	value: string,
 };
 
+/**  What the window is answered when it asks for a chat's hibernation. */
+export type Hibernation = 
+/**  Its program ended as a hibernation. */
+{ outcome: "hibernated" } | 
+/**  It may not be hibernated now, for this reason. */
+{ outcome: "refused"; why: Why };
+
 /**
  *  The project's hosts as they changed (`sandbox::local::HostsChange`): each spelled as the
  *  sandbox writes it.
@@ -8918,6 +8937,11 @@ export type LinkSeen = {
 	does: LinkDoes,
 	/**  The words of a link a program marked, where they name another target than it goes to. */
 	its_text?: string | null,
+	/**
+	 *  Why the editor checks this file only as it opens (#6489): its branch could not say
+	 *  whether it offers it. None for every other link.
+	 */
+	unchecked?: string | null,
 	/**  What the chat a chat link names is: none for every other kind. */
 	chat: ChatSeen | null,
 };
@@ -18740,6 +18764,13 @@ export type WhatChanged = {
 	 */
 	sinceTurnEnded: boolean,
 };
+
+/**
+ *  **Why a chat was not hibernated**, as the window is told it: the core's
+ *  [`NotRested`], one value for one reason, whose words are the window's
+ *  (`app/src/hibernationWords.ts`, `docs/ui-copy.md`).
+ */
+export type Why = "working" | "asking" | "paused" | "hibernated" | "ended" | "cannot_resume" | "cannot_see_its_own_work" | "own_work" | "line_coming" | "task_open" | "finished_task_open" | "report_owed" | "is_a_task" | "observed" | "on_a_runner" | "child_run" | "looked_at";
 
 /**
  *  A tint holds `token`, tinted, at least `distance` from `from` in OKLab, `from` as the tint

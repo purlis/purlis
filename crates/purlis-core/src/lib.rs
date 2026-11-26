@@ -144,6 +144,7 @@ pub mod harness_plugin;
 pub(crate) mod held;
 pub mod heldact;
 pub mod heredoc;
+pub mod hibernatedscreens;
 #[cfg(unix)]
 pub mod hookchannel;
 pub mod hookreg;
@@ -252,6 +253,7 @@ pub mod report;
 pub mod repos;
 pub mod reposave;
 pub mod restartends;
+pub mod rested;
 pub mod retention;
 pub mod rewrite;
 pub mod rootupdate;

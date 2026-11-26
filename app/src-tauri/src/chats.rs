@@ -4057,9 +4057,18 @@ impl Chats {
     /// chat asked the person to remove a workspace, or that question was answered): the window
     /// is told its asks, so it reads the registry again.
     pub fn asks_may_have_moved(&self) {
-        if let Some(moved) = lock(&self.asks_moved).clone() {
-            moved();
-        }
+        let _ = self.told_asks_moved();
+    }
+
+    /// [`Self::asks_may_have_moved`], answering whether anyone was told: nobody is until
+    /// [`Self::tell_asks_moved_to`] names who.
+    #[must_use]
+    pub fn told_asks_moved(&self) -> bool {
+        let Some(moved) = lock(&self.asks_moved).clone() else {
+            return false;
+        };
+        moved();
+        true
     }
 
     /// Who hears, from now on, each connection purlis's own proxy carries for a chat it wraps
@@ -4399,9 +4408,9 @@ impl Chats {
 
     /// What follows a restart of chat `session` as `started`: if the chat was closed while it
     /// restarted, the new run is ended (nobody asked for it any more, and it would keep the
-    /// chat's grants alive unseen); otherwise the new run takes its place, and what was queued
-    /// for the old one meanwhile to tell it is owed to the new one where `keep_owed`, else
-    /// dropped.
+    /// chat's grants alive unseen); otherwise the new run takes its place, what it was handed is
+    /// carried to it, and what was queued for the old one meanwhile to tell it is owed to the new
+    /// one where `keep_owed`, else dropped.
     fn restarted(&self, session: u32, started: u32, keep_owed: bool) -> Result<u32, String> {
         if !lock(&self.open).contains_key(&session) {
             lock(&self.owed).remove(&session);
@@ -4422,6 +4431,15 @@ impl Chats {
         // ran, is answered by this restart.
         if keep_owed && !queued.is_empty() {
             lock(&self.owed).insert(started, queued);
+        }
+        // **What the earlier run was handed stays known to the new one** (SC-4b, #7631): every
+        // start that takes a chat's place resumes its conversation, which may draw it again, and
+        // the old run's close forgets it. Before that close, which is the caller's next step.
+        let id = lock(&self.open)
+            .get(&session)
+            .and_then(|one| one.chat.identity.id.clone());
+        if let Some(id) = id {
+            purlis_core::secrets::handedto::carry_over(&self.project, session, started, &id);
         }
         self.took_the_place_of(session, started);
         self.unclaim(session);
@@ -7260,6 +7278,15 @@ impl Chats {
         let mut open = lock(&self.open);
         let chat = &mut open.get_mut(&session)?.chat;
         std::mem::replace(&mut chat.runs_on, runs_on)
+    }
+
+    /// Chat `session`'s record says `from` handed it off, as a dispatch's start writes it: for
+    /// a test of what is read of a task, without a dispatch.
+    #[cfg(test)]
+    pub fn handed_from_for_tests(&self, session: u32, from: purlis_core::reopen::HandedFrom) {
+        if let Some(open) = lock(&self.open).get_mut(&session) {
+            open.chat.from = Some(from);
+        }
     }
 
     /// The handoff `session` was opened by, where one opened it.

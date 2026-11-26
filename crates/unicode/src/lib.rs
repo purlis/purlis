@@ -25,7 +25,11 @@
 //!
 //! The crate also holds the other generated tables ([`tables`]): one generator writes one
 //! file, so every table is of one Unicode version.
+//!
+//! Beside them, two short lists kept by hand ([`lookalike`]), because no Unicode property names
+//! them: the look-alikes of a dot that UTS #39 leaves out, and the punctuation around a word.
 
+pub mod lookalike;
 pub mod tables;
 
 /// Is `ch` in one of `table`'s inclusive ranges?

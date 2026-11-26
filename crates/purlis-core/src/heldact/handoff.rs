@@ -9,6 +9,11 @@
 //!
 //! A merge is the merge hold's ([`crate::mergehold`]): the context raises it and says what the
 //! chat is told.
+//!
+//! **The chat is told the person was asked only once the window was** (#7685): a held act is
+//! handed to the [`AsksWindow`], which lists it in the person's Asks and tells the window to read
+//! them again. Where it cannot be shown there, the ask is withdrawn and the chat is told nobody
+//! was asked, never that the person was.
 
 use std::sync::Arc;
 
@@ -55,15 +60,32 @@ pub trait HeldContext: Send + Sync {
     fn merge(&self, chat: &ChatId, request: &Request) -> String;
 }
 
+/// **Where the person is asked** (#7685): the window's Asks, told of each held act as it waits.
+pub trait AsksWindow: Send + Sync {
+    /// Ask `id` of chat `session` waits on the person now: Asks lists it, and the window and the
+    /// notifier are told to read the asks again. `Err` says why it cannot be shown to the
+    /// person, and the ask is then withdrawn.
+    fn raised(&self, session: u32, id: u64) -> Result<(), String>;
+}
+
 /// The proxy's [`HeldSink`], over the app's [`HeldActs`].
 pub struct Handoff {
     held: Arc<HeldActs>,
     context: Arc<dyn HeldContext>,
+    window: Arc<dyn AsksWindow>,
 }
 
 impl Handoff {
-    pub fn new(held: Arc<HeldActs>, context: Arc<dyn HeldContext>) -> Handoff {
-        Handoff { held, context }
+    pub fn new(
+        held: Arc<HeldActs>,
+        context: Arc<dyn HeldContext>,
+        window: Arc<dyn AsksWindow>,
+    ) -> Handoff {
+        Handoff {
+            held,
+            context,
+            window,
+        }
     }
 }
 
@@ -103,6 +125,11 @@ impl HeldSink for Handoff {
         );
         match asked {
             Asked::Held { id, .. } => {
+                // Nobody is said to be asked of an ask the person cannot see (#7685).
+                if let Err(why) = self.window.raised(session, id) {
+                    self.held.withdraw(id);
+                    return not_asked(Refused::NotShown(why));
+                }
                 let naming = self
                     .held
                     .shown(id)

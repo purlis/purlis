@@ -30,13 +30,16 @@ const WAIT: &str = "Wait for this commit's ci on main, before anything is signed
 const COMPILES_BEFORE_THE_GATE: [&str; 2] = ["build", "runner-binary-aarch64"];
 
 /// The jobs that are not behind the gate, and why: `gate` is the gate; `plan` and `keys` hold
-/// nothing and publish nothing; the two above wait inside their own steps; `profile-guard` only
-/// reports a nightly build's result and the gate passes a nightly at once.
-const NOT_BEHIND_THE_GATE: [&str; 6] = [
+/// nothing and publish nothing; the two above wait inside their own steps; `build-signer` holds
+/// nothing, publishes nothing and hands its one binary to `sign-macos` alone, which is behind the
+/// gate (`the_developer_id_key_is_imported_on_a_hosted_runner_only` holds it to that);
+/// `profile-guard` only reports a nightly build's result and the gate passes a nightly at once.
+const NOT_BEHIND_THE_GATE: [&str; 7] = [
     "gate",
     "plan",
     "keys",
     "build",
+    "build-signer",
     "runner-binary-aarch64",
     "profile-guard",
 ];

@@ -239,6 +239,7 @@ import { useHarnessCards } from "./harnessCards";
 import { useEditorTabs, type EditorTabOpened } from "./editorTab";
 import { Notice, NoticeInCentre, NoticeOf, type NoticesDot } from "./Notice";
 import { hibernateRefused } from "./HibernatedNotice";
+import { NOT_HIBERNATED } from "./hibernationWords";
 import { useAskedControl } from "./windowControls";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { LivesHere } from "./LivesHere";
@@ -492,7 +493,7 @@ import {
 
 /** Which window action a trouble line is about (NO-4): the picker's options, a shell, Needs
  *  you, or a browser (#2012). */
-type TroubleFrom = "start-options" | "shell" | "needs-you" | "browser";
+type TroubleFrom = "start-options" | "shell" | "needs-you" | "browser" | "links";
 
 /** **A chat ended on purpose in its pane** (#5019), as the window held it when it ended: its
  *  name, and the record a Smart close wrote, which is its way back. */
@@ -802,7 +803,7 @@ import {
   whenAChatLogIsAsked,
 } from "./blockedMarkers";
 import { SeenRowsOf } from "./seenRows";
-import { listLinksOf } from "./paneLinksOpen";
+import { LINKS_UNLISTED, listLinksOf } from "./paneLinksOpen";
 
 /** Whether two lists of the right side's extension panels draw the same tabs. */
 const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
@@ -8200,14 +8201,17 @@ export const PlaneView = memo(function PlaneView({
       ].find((one) => one.session === session)?.hibernates === true,
     [reopened, sidebar],
   );
-  /** Hibernates chat `session` by hand (#7630): the core refuses, in a sentence, where it may
-   *  not, and the sentence is said on the chat's pane. */
+  /** Hibernates chat `session` by hand (#7630): where it may not be, the core says why as a
+   *  typed reason (#7632), and its words are said on the chat's pane; where the act could not be
+   *  done, the core's sentence is. */
   const hibernateChat = useCallback(
     (session: number) => {
       void commands
         .hibernateChat(plane, session)
         .then((done) => {
           if (done.status === "error") hibernateRefused(plane, session, done.error);
+          else if (done.data.outcome === "refused")
+            hibernateRefused(plane, session, NOT_HIBERNATED[done.data.why]);
         })
         .catch((err: unknown) =>
           hibernateRefused(plane, session, `purlis could not hibernate the chat: ${String(err)}`),
@@ -9003,8 +9007,12 @@ export const PlaneView = memo(function PlaneView({
       // A chat's Ask {persona}… and Use skill… open their dialogs: the one way in to each.
       askPersona: openAskPersona,
       useSkill: openUseSkill,
-      // The pane's own list (#6332): the pane drawing the chat says how to open it.
-      listLinks: (session) => void listLinksOf(plane, session),
+      // The pane's own list (#6332): the pane drawing the chat says how to open it. Where none
+      // has yet, the row says so rather than nothing (#6488).
+      listLinks: (session) => {
+        if (listLinksOf(plane, session)) succeeded("links");
+        else refusedBy("links", LINKS_UNLISTED);
+      },
       showChatSkills: (session) => askChatSkills(plane, session),
       openStudioChat: (session) => {
         const link = studioLinks[session];
@@ -9181,6 +9189,8 @@ export const PlaneView = memo(function PlaneView({
       shellInFolder,
       startChatHere,
       plane,
+      refusedBy,
+      succeeded,
       focusWorkspace,
       ofWorkspace,
       ignoreNeedsYou,

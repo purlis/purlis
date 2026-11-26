@@ -81,7 +81,7 @@ mod tip;
 pub use ci::{
     CiDiff, GITLAB_DEFAULT, GitTrees, MOST_DIFF, NoClone, PushCheck, check_push, check_push_since,
 };
-pub use handoff::{Handoff, HeldContext, OwnedWorld};
+pub use handoff::{AsksWindow, Handoff, HeldContext, OwnedWorld};
 pub use holds::{
     Asked, HeldActs, NotDone, Performed, Pressed, Waiting, holds_global_limit, holds_limits,
 };
@@ -417,6 +417,8 @@ pub enum Refused {
     Forge(String),
     /// Nobody is here to approve it.
     Unattended { queued: bool },
+    /// The person's window could not show the ask, in these words (#7685).
+    NotShown(String),
 }
 
 impl std::fmt::Display for Refused {

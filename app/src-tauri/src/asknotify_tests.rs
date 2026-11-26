@@ -922,6 +922,7 @@ fn the_person_is_looking_only_from_the_window_in_front_at_the_inbox_or_the_chat(
         window_in_front: true,
         inbox_open: true,
         chat_on_screen: false,
+        asks_off_its_pane: false,
     };
     assert!(
         in_front.is_looking(),
@@ -951,6 +952,29 @@ fn the_person_is_looking_only_from_the_window_in_front_at_the_inbox_or_the_chat(
         }
         .is_looking(),
         "the Inbox open in a window behind another app"
+    );
+}
+
+#[test]
+fn a_chat_on_screen_is_no_look_at_an_ask_its_pane_draws_nowhere_but_its_asks_open_are() {
+    // A held forge act (#7685) has no Notice on its chat's pane: only its card in Asks draws it.
+    let on_screen = Looking {
+        window_in_front: true,
+        inbox_open: false,
+        chat_on_screen: true,
+        asks_off_its_pane: true,
+    };
+    assert!(
+        !on_screen.is_looking(),
+        "its chat on screen shows the person nothing of it"
+    );
+    assert!(
+        Looking {
+            inbox_open: true,
+            ..on_screen
+        }
+        .is_looking(),
+        "Asks open in front draws its card"
     );
 }
 
