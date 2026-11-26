@@ -8646,3 +8646,126 @@ fn opening_a_plane_sets_a_pool_named_for_a_workspace_no_longer_there_to_this_mac
         machine::WorkspacePlace::Pool("builds".to_owned())
     );
 }
+
+/// Chat `session`'s ULID, which its kept screen is under.
+fn the_id_of(held: &Held, session: u32) -> String {
+    held.chats()
+        .recorded_chat(session)
+        .and_then(|chat| chat.identity.id)
+        .expect("a chat with an id")
+}
+
+#[test]
+fn hibernating_a_chat_keeps_its_screen_masked_and_its_pane_reads_it() {
+    // SC-4b (#7631): what it showed is taken from the host before its program ends, masked
+    // with what purlis handed it (an obvious fake), and read back for its pane.
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_chat_at_rest(&held, dir.path());
+    let id = the_id_of(&held, session);
+    host.shows(session, "deployed with FAKE-VAULT-VALUE-7631\r\n");
+    purlis_core::secrets::handedto::remember(
+        held.root(),
+        session,
+        Some(&id),
+        &purlis_core::secrets::handedto::Entry::new("team", "deploy-key"),
+        "FAKE-VAULT-VALUE-7631",
+    )
+    .expect("named");
+
+    held.hibernate_chat(session).expect("it hibernates");
+
+    let shown = Some("deployed with ‹secret: deploy-key›\r\n".to_owned());
+    assert_eq!(
+        purlis_core::hibernatedscreens::kept(held.root(), &id),
+        shown
+    );
+    assert_eq!(crate::hibernation::screen_of(&held, session), shown);
+}
+
+#[test]
+fn a_screen_that_cannot_be_written_never_stops_the_hibernation_and_leaves_no_file() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_chat_at_rest(&held, dir.path());
+    let id = the_id_of(&held, session);
+    host.shows(session, "all green\r\n");
+    // A file where the store's folder goes: nothing can be written there.
+    let store = purlis_core::hibernatedscreens::dir(held.root());
+    std::fs::create_dir_all(store.parent().expect("its parent")).expect("made");
+    std::fs::write(&store, "in the way").expect("written");
+
+    held.hibernate_chat(session)
+        .expect("it hibernates all the same");
+
+    assert_eq!(
+        held.hibernated().of(session),
+        Some(crate::hibernation::By::Operator)
+    );
+    assert_eq!(purlis_core::hibernatedscreens::kept(held.root(), &id), None);
+    assert_eq!(crate::hibernation::screen_of(&held, session), None);
+}
+
+#[test]
+fn a_hibernated_chat_closed_takes_its_kept_screen_with_it() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_chat_at_rest(&held, dir.path());
+    let id = the_id_of(&held, session);
+    host.shows(session, "all green\r\n");
+    held.hibernate_chat(session).expect("it hibernates");
+    assert!(purlis_core::hibernatedscreens::kept(held.root(), &id).is_some());
+
+    held.close_chat(session).expect("it closes");
+
+    assert_eq!(purlis_core::hibernatedscreens::kept(held.root(), &id), None);
+}
+
+#[test]
+fn a_woken_chat_keeps_its_screen_until_its_new_run_has_drawn() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_chat_at_rest(&held, dir.path());
+    let id = the_id_of(&held, session);
+    host.shows(session, "all green\r\n");
+    held.hibernate_chat(session).expect("it hibernates");
+    let woken = held.wake_chat(session, STARTING).expect("it wakes");
+    assert!(
+        purlis_core::hibernatedscreens::kept(held.root(), &id).is_some(),
+        "kept until the new run draws"
+    );
+
+    let _ = held.session_drawn(woken, 1, 0);
+    assert!(
+        purlis_core::hibernatedscreens::kept(held.root(), &id).is_some(),
+        "nothing drawn yet"
+    );
+    let _ = held.session_drawn(woken, 1, 1);
+
+    assert_eq!(purlis_core::hibernatedscreens::kept(held.root(), &id), None);
+}
+
+#[test]
+fn removing_a_workspace_takes_every_screen_no_hibernated_chat_names() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_chat_at_rest(&held, dir.path());
+    let id = the_id_of(&held, session);
+    host.shows(session, "all green\r\n");
+    held.hibernate_chat(session).expect("it hibernates");
+    let orphan = "01K6H1BERNATED00000000000Z";
+    purlis_core::hibernatedscreens::keep(held.root(), orphan, "a chat gone").expect("kept");
+
+    held.hibernated_screens_swept();
+
+    assert!(purlis_core::hibernatedscreens::kept(held.root(), &id).is_some());
+    assert_eq!(
+        purlis_core::hibernatedscreens::kept(held.root(), orphan),
+        None
+    );
+}
