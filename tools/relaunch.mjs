@@ -536,7 +536,7 @@ const second = await theAppRuns(
   pressing("Reopen all sessions", argvFile, 0),
 );
 check(
-  "a second launch, chats now in the session host, brings the chat back again",
+  "a second launch brings the chat back again",
   second.ok,
   second.ok ? "" : `the app said:\n${second.output}`,
 );

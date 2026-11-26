@@ -3810,7 +3810,7 @@ impl HostedSessions {
     }
 
     /// The number a chat opens under: `wanted` where it can still be had, else the next the
-    /// host deals (`crate::sessions::Sessions`'s rule, the host dealing).
+    /// host deals.
     fn number_for(&self, wanted: Option<u32>) -> Result<u32, String> {
         let free = wanted.filter(|wanted| *wanted > 0 && !lock(&self.running).contains_key(wanted));
         match free {

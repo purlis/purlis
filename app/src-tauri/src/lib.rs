@@ -512,13 +512,14 @@ fn refresh_installed_plugin(binary: PathBuf, plugin: PathBuf) {
 /// writes it, and the window hands it every write (`where_chats_run`), so the device has one
 /// writer.
 fn events() -> Option<hooks::Events> {
-    // Where there is no session host the window still holds the log, though no chat runs.
+    // The session host writes it: the window only says where it is.
     if cfg!(unix) {
         if let Some(dir) = purlis_core::eventlog::Recorder::dir_on_this_machine() {
             let _ = EVENT_LOG.set(Ok(dir));
         }
         return None;
     }
+    // Where there is no session host the window still holds the log, though no chat runs.
     let opened = purlis_core::eventlog::Recorder::open();
     let _ = EVENT_LOG.set(match &opened {
         Ok(recorder) => Ok(recorder.dir().to_path_buf()),
@@ -3929,6 +3930,8 @@ fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
                         as std::sync::Arc<dyn chatbrowsers::Driver>),
                 None => planes,
             };
+        // The relaunch check reads this line (`tools/relaunch.mjs`).
+        tracing::info!("purlis: chats run in the session host on this launch");
         let host = app.state::<sessionhost::SessionHost>();
         let connection = host.connection();
         hold_the_switch_in_the_host(app.handle(), &planes, &connection);

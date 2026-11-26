@@ -2123,8 +2123,8 @@ mod tests;
 
 /// Why a chat is refused where no session host runs it (#2005): no chat runs outside the session
 /// host, and there is no fallback to the window's own process (ADR 0068, Ruled 3).
-pub const NO_SESSION_HOST: &str = "chats run only in purlis's session host, and this window has \
-     none, so nothing was started. Quit purlis and start it again.";
+pub const NO_SESSION_HOST: &str = "chats run only in purlis's session host, and purlis runs \
+     none on this system, so nothing was started.";
 
 /// **Where no session host runs a plane's chats** (#2005): every start is refused, saying why,
 /// and nothing runs. What a plane's chats run on until the launch hands its planes the session

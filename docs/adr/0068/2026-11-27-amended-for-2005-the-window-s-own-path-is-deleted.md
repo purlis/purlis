@@ -20,10 +20,12 @@ its way back. 0.5.0 (2026-11-05) and 0.5.1 (2026-11-10) both did. This note dele
    reattaches to the host serving its config home (#2006). Item 6 of the amendment for #2004 is
    retired.
 4. **The behaviour suite's targets are the host's alone**: its code over an in-memory link, a
-   real host process, through a link, and in a Docker pool. The upgrade test (item 3 of the
-   amendment for #2004) stays: its first launch is a build before #2004, played by an
-   in-process stand-in that only a test build compiles, and the chats' and planes' own tests are
-   still written against that stand-in until they move to the host's code over an in-memory
+   real host process, through a link, and in a Docker pool. The upgrade test of item 3 of the
+   amendment for #2004 keeps its in-process half: its first launch, a build before #2004, is
+   played by an in-process stand-in that only a test build compiles. The relaunch check
+   (`tools/relaunch.mjs`) no longer plays an upgrade: both its launches run chats in the host,
+   since no build it could start runs them anywhere else. The chats' and planes' own tests are
+   still written against the stand-in until they move to the host's code over an in-memory
    link.
 
 **Why this is safe to do.** Nothing a person keeps moves: the session host has read and written
