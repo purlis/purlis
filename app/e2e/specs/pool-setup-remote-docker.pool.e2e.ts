@@ -54,7 +54,9 @@ describe("Pool setup on Docker on another machine", () => {
   it("makes the pool in the one press of Trust and create the pool, and a real chat starts on it", async () => {
     expect(IMAGE).toMatch(/@sha256:[0-9a-f]{64}$/);
     await openThroughTheTrustQuestion({ within: 5_000, ifAsked: true });
-    wereOpen ??= await tabNames();
+    // The first walk's Pool setup and Try it tabs go first, so nothing here finds their controls.
+    if (wereOpen !== null) await closeTheViewTabsOpenedSince(wereOpen);
+    wereOpen = await tabNames();
     await watchTheTabs();
 
     await runFromThePalette("Add a pool", "pool.add");

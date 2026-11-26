@@ -1582,8 +1582,8 @@ fn a_build_anyone_is_given_never_offers_the_scenario_runs_image() {
 }
 
 /// **The scenario build offers a new pool the image its run names** (#7780), so the one press of
-/// Trust and create the pool can be walked end to end; where the run names none, it offers what
-/// any build would.
+/// Trust and create the pool can be walked end to end; where the run names none, or no image by
+/// digest, it offers what any build would.
 #[test]
 #[cfg(feature = "e2e")]
 fn the_scenario_build_offers_the_image_its_run_names() {
@@ -1597,5 +1597,9 @@ fn the_scenario_build_offers_the_image_its_run_names() {
         })
     );
     assert_eq!(scenario_image(named("  ")), None);
+    assert_eq!(
+        scenario_image(named("localhost:5000/purlis-runner:candidate")),
+        None
+    );
     assert_eq!(scenario_image(|_| None), None);
 }

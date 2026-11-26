@@ -254,7 +254,8 @@ pub fn said(
 pub const SCENARIO_IMAGE_VARIABLE: &str = "PURLIS_E2E_REMOTE_POOL_IMAGE";
 
 /// **The image the scenario run names for a new pool** (#7780): in the `e2e` build alone, the
-/// one [`SCENARIO_IMAGE_VARIABLE`] names (`var` reads the environment), where it names one.
+/// one `PURLIS_E2E_REMOTE_POOL_IMAGE` names (`var` reads the environment), where it names an
+/// image by digest; a value that is not one is passed over, as no image named.
 /// **Every other build reads nothing**: the variable is never looked up, so a build anyone is
 /// given offers only its own release's image whatever its environment holds.
 #[cfg(unix)]
@@ -262,9 +263,10 @@ pub fn scenario_image(var: impl FnOnce(&str) -> Option<String>) -> Option<Runner
     #[cfg(feature = "e2e")]
     {
         var(SCENARIO_IMAGE_VARIABLE)
-            .map(|image| image.trim().to_owned())
-            .filter(|image| !image.is_empty())
-            .map(|image| RunnerImageOffered::Ours { image })
+            .and_then(|image| Image::pinned(image.trim()).ok())
+            .map(|image| RunnerImageOffered::Ours {
+                image: image.as_str().to_owned(),
+            })
     }
     #[cfg(not(feature = "e2e"))]
     {
