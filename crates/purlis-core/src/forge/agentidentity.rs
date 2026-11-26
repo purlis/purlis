@@ -744,7 +744,7 @@ pub fn credentials_note(
         return Some(format!(
             "This chat cannot use your own forge login, because its sandbox holds your \
              credentials back. It acts on {} through your sign-in: sign in under Settings › \
-             Forges. It takes effect when the chat restarts.",
+             Accounts. It takes effect when the chat restarts.",
             hosts.join(", ")
         ));
     }

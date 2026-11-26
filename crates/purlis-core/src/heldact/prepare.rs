@@ -455,6 +455,21 @@ fn ci_push(
         PushCheck::NoCiFiles => return Err(Refused::NoCiFiles),
         PushCheck::Refuse(why) => return Err(Refused::CiDiff(why)),
     };
+    // The push is one commit parented on `base` with the files the tip changes against it. A tip
+    // that lacks any commit of `base` would make that commit undo them (#7690): it is not offered,
+    // and at the press, which reads this again, it is not performed.
+    match world.trees.missing(&base, tip) {
+        Ok(0) => {}
+        Ok(_) => {
+            return Err(Refused::Behind(match &against {
+                Against::BranchTip => {
+                    format!("{} on the forge", shown_text(branch.as_str(), MOST_ENTRY))
+                }
+                Against::DefaultBranch(default) => shown_text(default.as_str(), MOST_ENTRY),
+            }));
+        }
+        Err(why) => return Err(Refused::CiDiff(why)),
+    }
     // A path is shown as it is, so one that holds a line break or a character that draws nothing
     // could read as other paths or other words: such a push is not offered.
     if let Some(bad) = diff

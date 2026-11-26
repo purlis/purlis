@@ -133,6 +133,7 @@ mod handoff;
 mod harnessdecls;
 mod harnessicon;
 mod heard;
+mod hibernation;
 mod hooks;
 mod host;
 mod inboxupdates;
@@ -255,6 +256,7 @@ mod specimen;
 mod staleclones;
 mod startkept;
 mod starttiming;
+mod statecache;
 mod stopping;
 #[cfg(test)]
 mod storythemes;
@@ -892,6 +894,11 @@ struct OpenChat {
     /// a runner before 1.51, whose Move here row says such a clone stays there.
     #[specta(optional)]
     clones_come_back: Option<bool>,
+    /// Whether its row offers Hibernate (SC-4a, #7630): its harness resumes a conversation by
+    /// id and its session host can hibernate a chat (session protocol 1.96). `null` otherwise:
+    /// a shell, a harness that cannot, or a host that would refuse it.
+    #[specta(optional)]
+    hibernates: Option<bool>,
     /// The persona it adopted.
     persona: Option<String>,
     /// What its harness cannot tell charter, said on the chat — none where it tells all.
@@ -1015,11 +1022,13 @@ fn drawn_of(held: &planes::Held, open: chats::Open) -> OpenChat {
     let browser_sites = browser_sites_of(held, open.session);
     let pool = held.chats().pool_of(open.session);
     let clones_come_back = held.chats().clones_come_back(open.session).then_some(true);
+    let hibernates = crate::hibernation::offered(held, open.session).then_some(true);
     OpenChat {
         id,
         browser_sites,
         pool,
         clones_come_back,
+        hibernates,
         ..OpenChat::from(open)
     }
 }
@@ -1665,15 +1674,59 @@ async fn start_options_first(
 ) -> Result<StartOptions, String> {
     let held = planes.held(&plane)?;
     let kept = std::sync::Arc::clone(&held);
+    let asked = std::time::Instant::now();
     let mut options = tauri::async_runtime::spawn_blocking(move || {
-        kept.kept_start_first(|| {
-            start_first_stamped(kept.root(), purlis_core::profiles::for_launch)
-        })
+        // Timed by phase, and written to the slow log where it took a second or more (h19):
+        // its time in line for a blocking thread first, then the read's own phases.
+        let in_line = u32::try_from(asked.elapsed().as_millis()).unwrap_or(u32::MAX);
+        let timed = purlis_core::opening::timed(|| {
+            kept.kept_start_first(|| {
+                start_first_stamped(kept.root(), purlis_core::profiles::for_launch)
+            })
+        });
+        let mut phases = vec![purlis_core::slowlog::Took {
+            name: "in line".to_owned(),
+            ms: in_line,
+        }];
+        phases.extend(timed.phases);
+        let hot = kept.chats().open_count();
+        if let Some(slow) =
+            first_answer_slow(in_line.saturating_add(timed.ms), now_ms(), hot, phases)
+        {
+            let _ = purlis_core::slowlog::record(&slow);
+        }
+        timed.out
     })
     .await
     .map_err(|err| format!("purlis could not read the profiles: {err}"))??;
     options.next_number = Some(held.chats().next_number());
     Ok(options)
+}
+
+/// Milliseconds since 1970 by this machine's clock: 0 for a clock set before then.
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| {
+            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+        })
+}
+
+/// The slow-log line of a first answer that took `ms`, at `at`, with `hot` chats open, and the
+/// `phases` its read passed through (h19).
+fn first_answer_slow(
+    ms: u32,
+    at: u64,
+    hot: u32,
+    phases: Vec<purlis_core::slowlog::Took>,
+) -> Option<purlis_core::slowlog::Slow> {
+    (ms >= purlis_core::opening::SLOW_MS).then(|| purlis_core::slowlog::Slow::Answer {
+        command: "startOptionsFirst".to_owned(),
+        ms,
+        at,
+        hot,
+        phases,
+    })
 }
 
 /// **The picker's second answer** (#4736): each row's approval, sandbox and billing, by its
@@ -1716,10 +1769,13 @@ fn start_first_stamped(
     root: &std::path::Path,
     profiles: impl FnOnce(&std::path::Path) -> LaunchProfiles,
 ) -> Result<(StartOptions, purlis_core::pickerstamp::Stamp), String> {
+    use purlis_core::opening::phase;
     purlis_core::profiles::git_asked_once(|| {
         // Stamped before the reads it covers, so a change made while they read breaks it.
-        let before = purlis_core::pickerstamp::Stamp::before_reading(root);
-        let (set, check) = profiles(root);
+        let before = phase("stamp", || {
+            purlis_core::pickerstamp::Stamp::before_reading(root)
+        });
+        let (set, check) = phase("profiles", || profiles(root));
         let stamp = before.and_named_by(&set);
         Ok((start_first_of(root, &set, &check)?, stamp))
     })
@@ -1833,42 +1889,51 @@ fn start_first_of(
     set: &purlis_core::profiles::ProfileSet,
     check: &purlis_core::profiles::IgnoreCheck,
 ) -> Result<StartOptions, String> {
+    // Each read timed as a phase (h19): a slow first answer's line in the slow log names it.
+    use purlis_core::opening::phase;
     let on_disk = purlis_core::workspaces::Plane::open(root);
     // Every harness the project has, read once for every row (HP-19).
-    let cards = purlis_core::harness_card::read(root);
-    let personas = on_disk.personas().map_err(|err| err.to_string())?;
-    let offered = purlis_core::personaprofile::offers_of(
-        root,
-        set,
-        &purlis_core::harness_declaration::read(root),
-    );
+    let cards = phase("harness cards", || purlis_core::harness_card::read(root));
+    let personas = phase("personas", || {
+        on_disk.personas().map_err(|err| err.to_string())
+    })?;
+    let offered = phase("offers", || {
+        purlis_core::personaprofile::offers_of(
+            root,
+            set,
+            &purlis_core::harness_declaration::read(root),
+        )
+    });
     // Each persona's own profile and its line, each definition read once (#4736).
-    let said = purlis_core::personaprofile::for_the_picker(root, &personas, &offered);
+    let said = phase("persona profiles", || {
+        purlis_core::personaprofile::for_the_picker(root, &personas, &offered)
+    });
     // Every row's icon, each person's SVG read once and held to one budget for the answer.
     let mut icons = harnessicon::Icons::default();
-    let profiles = set
-        .profiles()
-        .iter()
-        .map(|p| ProfileRow {
-            name: p.name.clone(),
-            kind: p.kind.clone(),
-            shown: purlis_core::profiletrust::shown(root, p),
-            source: p.source.as_str().to_owned(),
-            is_default: set.default.as_deref() == Some(p.name.as_str()),
-            approval: None,
-            ready_to_type: purlis_core::harness::Harness::of_kind(&p.kind)
-                .and_then(purlis_core::harness::Harness::ready_to_type)
-                .is_some(),
-            harness: cards
-                .iter()
-                .find(|card| card.name == p.kind)
-                .map(HarnessGlance::from),
-            sandbox: None,
-            model: Some(purlis_core::profilesignin::THE_HARNESS_DEFAULT.to_owned()),
-            billed_to: None,
-            icon: Some(icons.row(&p.name, &p.kind, set.icon_of(&p.name))),
-        })
-        .collect();
+    let profiles = phase("rows", || {
+        set.profiles()
+            .iter()
+            .map(|p| ProfileRow {
+                name: p.name.clone(),
+                kind: p.kind.clone(),
+                shown: purlis_core::profiletrust::shown(root, p),
+                source: p.source.as_str().to_owned(),
+                is_default: set.default.as_deref() == Some(p.name.as_str()),
+                approval: None,
+                ready_to_type: purlis_core::harness::Harness::of_kind(&p.kind)
+                    .and_then(purlis_core::harness::Harness::ready_to_type)
+                    .is_some(),
+                harness: cards
+                    .iter()
+                    .find(|card| card.name == p.kind)
+                    .map(HarnessGlance::from),
+                sandbox: None,
+                model: Some(purlis_core::profilesignin::THE_HARNESS_DEFAULT.to_owned()),
+                billed_to: None,
+                icon: Some(icons.row(&p.name, &p.kind, set.icon_of(&p.name))),
+            })
+            .collect::<Vec<_>>()
+    });
     Ok(StartOptions {
         profiles,
         own_icons: Some(icons.svgs()),
@@ -1997,47 +2062,51 @@ async fn start_chat(
     let config = planes.config().map(std::path::Path::to_path_buf);
     let cancel = hostedsessions::a_cancellable_start(held.root());
     tauri::async_runtime::spawn_blocking(move || {
-        let named = label.clone();
-        let show_footer = boxes.show_footer;
-        let runs_on = boxes.runs_on.map(RunsOnPick::choice).transpose()?;
-        let without_sandbox = boxes
-            .without_sandbox
-            .map(|asked| purlis_core::sandbox::OptOut {
-                reason: asked.reason,
-            });
-        // git is asked once about the local file for the whole start (#2179).
-        let (mut started, said) = poolprofiles::offering_limits(|| {
-            hostedsessions::cancelled_by(cancel, || {
-                purlis_core::profiles::git_asked_once(|| {
-                    worktrees::on_a_branch(
-                        held.root(),
-                        config.as_deref(),
-                        cwd.as_deref().map(std::path::Path::new),
-                        named.as_deref(),
-                        boxes.new_branch,
-                        |cwd| {
-                            start_chat_in(
-                                &held,
-                                profile,
-                                persona,
-                                cwd,
-                                name,
-                                label,
-                                Picked {
-                                    show_footer,
-                                    without_sandbox,
-                                    runs_on,
-                                },
-                                columns,
-                                rows,
-                            )
-                        },
-                    )
+        // Timed by phase, and written to the slow log where it took a second or more (H12).
+        let hot = held.chats().open_count();
+        purlis_core::opening::recording(hot, move || {
+            let named = label.clone();
+            let show_footer = boxes.show_footer;
+            let runs_on = boxes.runs_on.map(RunsOnPick::choice).transpose()?;
+            let without_sandbox = boxes
+                .without_sandbox
+                .map(|asked| purlis_core::sandbox::OptOut {
+                    reason: asked.reason,
+                });
+            // git is asked once about the local file for the whole start (#2179).
+            let (mut started, said) = poolprofiles::offering_limits(|| {
+                hostedsessions::cancelled_by(cancel, || {
+                    purlis_core::profiles::git_asked_once(|| {
+                        worktrees::on_a_branch(
+                            held.root(),
+                            config.as_deref(),
+                            cwd.as_deref().map(std::path::Path::new),
+                            named.as_deref(),
+                            boxes.new_branch,
+                            |cwd| {
+                                start_chat_in(
+                                    &held,
+                                    profile,
+                                    persona,
+                                    cwd,
+                                    name,
+                                    label,
+                                    Picked {
+                                        show_footer,
+                                        without_sandbox,
+                                        runs_on,
+                                    },
+                                    columns,
+                                    rows,
+                                )
+                            },
+                        )
+                    })
                 })
-            })
-        })?;
-        started.notices.splice(0..0, said);
-        Ok(started)
+            })?;
+            started.notices.splice(0..0, said);
+            Ok(started)
+        })
     })
     .await
     .map_err(|err| format!("purlis could not start the chat: {err}"))?
@@ -3150,6 +3219,7 @@ impl From<chats::Open> for OpenChat {
             profile: open.profile,
             pool: None,
             clones_come_back: None,
+            hibernates: None,
             workspace: open.workspace,
             persona: open.persona,
             in_front: open.in_front,
@@ -4063,6 +4133,8 @@ pub fn run() {
         .manage(artifacts::Artifacts::default())
         // The links its pages followed, waiting on the person (#5956, ADR 0122 §5).
         .manage(artifact_links::Links::default())
+        // The device's RAM class, read when the app starts (ADR 0082 §3, SC-4f #7635).
+        .manage(diagnostics::Device::default())
         .manage(pane_links::PaneLinkAsks::default())
         .register_uri_scheme_protocol(purlis_core::artifact::serve::SCHEME, |ctx, request| {
             mainwatch::command("artifact page request", || {
@@ -4442,6 +4514,9 @@ pub fn run() {
             }
             panics::send_waiting();
             app.manage(Quitting::default());
+            // The device's RAM class, read from the operating system when the app starts (ADR
+            // 0082 §3), on a thread of its own: the read runs a process.
+            app.state::<diagnostics::Device>().begin_reading();
             // What a quit does, read at each one: to the background while something keeps the
             // session host running (FD-17).
             #[cfg(unix)]

@@ -13,7 +13,9 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use super::transport::{Call, Endpoint, Field, NoAnswer, Reply, Transport};
-use super::{Forge, ForgeError, Kind, STATUS_TIMEOUT, TOKEN_ENV, cli_env_keeping, find_cli};
+use super::{
+    CLI_TRUST_ENV, Forge, ForgeError, Kind, STATUS_TIMEOUT, TOKEN_ENV, cli_env_keeping, find_cli,
+};
 use crate::netlog::{self, Feature, Via};
 use crate::worktree::git;
 
@@ -26,11 +28,17 @@ pub struct Cli {
 
 impl Cli {
     /// The CLI logged in as the operator's own stored login, and never as a token in this
-    /// process's environment: it is given none of [`TOKEN_ENV`].
+    /// process's environment: it is given none of [`TOKEN_ENV`], and no authority of a chat's
+    /// route ([`CLI_TRUST_ENV`]).
     pub fn as_the_operator() -> Cli {
         Cli {
             withhold_tokens: true,
         }
+    }
+
+    /// Whether the variable `name` of this process's environment is passed on to the CLI.
+    pub(crate) fn passes(&self, name: &str) -> bool {
+        !(self.withhold_tokens && (TOKEN_ENV.contains(&name) || CLI_TRUST_ENV.contains(&name)))
     }
 
     /// Run the CLI with `args`, under `timeout`, listing it in the network log as a forge
@@ -59,11 +67,8 @@ impl Cli {
         timeout: Duration,
         listed: Listed<'_>,
     ) -> Result<Reply, NoAnswer> {
-        let withhold = self.withhold_tokens;
         let started = Instant::now();
-        let answer = call_with(kind, args, timeout, |name| {
-            !(withhold && TOKEN_ENV.contains(&name))
-        });
+        let answer = call_with(kind, args, timeout, |name| self.passes(name));
         // A CLI that could not be found or started made no call; one that ran or timed out did.
         if !matches!(answer, Err(NoAnswer::Missing(_))) {
             netlog::record(netlog::Call {

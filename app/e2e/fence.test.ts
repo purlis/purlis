@@ -46,6 +46,7 @@ function inside(path: string, tree: string): boolean {
 const launchers = [
   "wdio.conf.js",
   "wdio.state.conf.js",
+  "wdio.hibernate.conf.js",
   "wdio.bench.conf.js",
   "wdio.upgrade.conf.js",
   "wdio.picked.conf.js",

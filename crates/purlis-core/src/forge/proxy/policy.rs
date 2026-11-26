@@ -606,6 +606,14 @@ impl ChatPolicy {
             }));
     }
 
+    /// Whether `host` is the API host of one of the chat's GitHub repos on port 443: the one
+    /// place a `Host` without a port on the plain door is read as meaning 443 (#7679).
+    pub fn is_github_api_host(&self, host: &str) -> bool {
+        self.repos.iter().any(|r| {
+            r.kind == Kind::GitHub && r.port == 443 && r.api_host().eq_ignore_ascii_case(host)
+        })
+    }
+
     /// What `gh`'s `GH_HOST=github.localhost` means for this chat (ADR 0128 D3c): the one GitHub
     /// host its repos are on. `None` is: not that name. `Some(Err(AmbiguousHost))` is: two GitHub
     /// hosts are recorded (github.com and a GHES, or two GHES), which of them a call that names

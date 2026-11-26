@@ -196,3 +196,26 @@ fn a_harness_found_nowhere_but_the_shims_is_refused_with_the_shells_not_found_co
         "{ran:?}"
     );
 }
+
+#[test]
+fn a_harness_started_by_hand_in_a_shell_tab_does_not_carry_the_tabs_mark_of_the_person() {
+    // #7694: the mark lets `purlis worktree adopt` trust the person's own shell tab. A harness
+    // started there is no longer the person typing, so it starts without it.
+    let tab = Tab::new();
+    let mark = purlis_core::shellguard::SHELL_TAB_ENV;
+    let seen = tab.dir.path().join("mark");
+    let real = tab.dir.path().join("real").join("claude");
+    std::fs::write(
+        &real,
+        format!(
+            "#!/bin/sh\nprintf '<%s>' \"${{{mark}-unset}}\" > '{}'\n",
+            seen.display()
+        ),
+    )
+    .unwrap();
+
+    let ran = tab.guard("claude", &[], &[(mark, "1")]);
+
+    assert!(ran.status.success(), "{ran:?}");
+    assert_eq!(std::fs::read_to_string(&seen).unwrap(), "<unset>");
+}

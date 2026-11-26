@@ -106,6 +106,9 @@ fn a_graphql_search_of_another_repo_or_none_or_two_or_another_type_is_refused() 
         "org:acme is:issue",
         "repo:acme/app repo:acme/other is:issue",
         "repo:acme/app OR repo:acme/other",
+        // Only a lower-case `repo:` is the forge's qualifier: any other casing is text to it.
+        "REPO:acme/app is:issue",
+        "Repo:acme/app is:issue",
     ] {
         let out = issue_search(&s, q, "ISSUE");
         assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{q}: {out:?}");
@@ -132,6 +135,11 @@ fn a_rest_issue_search_on_the_chats_repo_is_answered() {
         (
             "/search/issues?q=repo%3Aacme%2Fapp%20in%3Atitle&per_page=5&page=2&sort=updated&order=desc",
             "https://api.github.com/search/issues?q=repo%3Aacme%2Fapp+in%3Atitle&per_page=5&page=2&sort=updated&order=desc",
+        ),
+        // A label gh quotes because it holds a space.
+        (
+            "/search/issues?q=repo:acme/app+label:%22a+b%22",
+            "https://api.github.com/search/issues?q=repo%3Aacme%2Fapp+label%3A%22a+b%22",
         ),
     ] {
         let out = get(&s, target);
@@ -160,6 +168,11 @@ fn a_rest_issue_search_of_another_repo_or_none_or_two_is_refused() {
         // a prefixed qualifier the forge may read as plain text, leaving the search unscoped
         "/search/issues?q=%2Brepo:acme/app+password",
         "/search/issues?q=-repo:acme/app",
+        // a `repo:` in any casing but lower, which the forge reads as text
+        "/search/issues?q=REPO:acme/app+is:issue",
+        "/search/issues?q=Repo:acme/app+is:issue",
+        // a quoted repo, which the forge may read as text
+        "/search/issues?q=repo:%22acme/app%22",
         // a pipe the forge is not known to read as OR, refused rather than guessed at
         "/search/issues?q=repo:acme/app+%7C%7C+is:private",
         // no q, two q, a key the proxy does not know

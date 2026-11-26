@@ -429,6 +429,9 @@ pub struct Held {
     /// The chats whose program ended with their session host, until the person answers
     /// (#2007).
     lost_with_the_host: Arc<crate::hostlost::Lost>,
+    /// The chats the person hibernated, until they are woken or ended another way (SC-4a,
+    /// #7630). In memory: SC-4e makes it durable.
+    hibernated: Arc<crate::hibernation::Hibernated>,
     /// The dispatches waiting on the person, and the dispatch grants made for one chat
     /// (#1437).
     dispatch_grants: crate::dispatchgrants::Store,
@@ -625,22 +628,43 @@ impl Held {
     /// watch that was partial and is whole again has `model` read again whole first, since a
     /// change between the folder's last look and its watch was told to nobody.
     fn trusted(&self, model: &mut Model) -> bool {
-        let standing = self
-            .watch
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .as_ref()
-            .map(crate::planewatch::Watch::standing);
-        match standing {
+        match self.watch_standing() {
             None => false,
             Some(crate::planewatch::Standing::WholeAgain) => {
                 model.apply(&self.root, None);
                 // A change in the gap was told to nobody: the chats' skill stamps too (#4738).
                 self.chats.skills_now().forget();
-                self.start_answers.moved();
                 true
             }
             Some(crate::planewatch::Standing::Whole | crate::planewatch::Standing::Partial) => true,
+        }
+    }
+
+    /// The watch's standing ([`crate::planewatch::Watch::standing`]), `None` for a plane not
+    /// watched, its `WholeAgain` said to the one reader that reads the model again.
+    ///
+    /// **A `WholeAgain` drops the picker's answers under the watch's lock** (h19): the picker
+    /// does not wait on the model's lock, and once `WholeAgain` is said it sees `Whole`, so an
+    /// answer kept over the gap would be served all through the re-read that follows.
+    pub(crate) fn watch_standing(&self) -> Option<crate::planewatch::Standing> {
+        let watch = self.watch.lock().unwrap_or_else(PoisonError::into_inner);
+        let standing = watch.as_ref().map(crate::planewatch::Watch::standing);
+        if standing == Some(crate::planewatch::Standing::WholeAgain) {
+            self.start_answers.moved();
+        }
+        standing
+    }
+
+    /// As if the plane's watch lapsed and is whole again ([`crate::planewatch::Watch::lapse`]).
+    #[cfg(test)]
+    pub(crate) fn watch_lapsed(&self) {
+        if let Some(watch) = self
+            .watch
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+        {
+            watch.lapse();
         }
     }
 
@@ -682,8 +706,20 @@ impl Held {
         &self,
         read: impl FnOnce() -> Result<(crate::StartOptions, purlis_core::pickerstamp::Stamp), String>,
     ) -> Result<crate::StartOptions, String> {
-        let trusted = self.start_answers_trusted();
+        let trusted = purlis_core::opening::phase("watch", || self.start_answers_trusted());
         self.start_answers.first.served(trusted, read)
+    }
+
+    /// Whether the picker's first answer is kept, so the next open is served it (h19).
+    #[cfg(test)]
+    pub(crate) fn start_first_is_kept(&self) -> bool {
+        self.start_answers.first.is_kept()
+    }
+
+    /// The sidebar's model, held as a long re-read holds it: for a test of what waits on it.
+    #[cfg(test)]
+    pub(crate) fn model_held(&self) -> MutexGuard<'_, Model> {
+        self.model.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// **The new-chat picker's second answer** (#4737), each row's details, kept as
@@ -698,9 +734,45 @@ impl Held {
 
     /// Whether the picker's answers may be kept: the plane is watched wholly, as the sidebar's
     /// model must be ([`Self::trusted`]), which drops them where the watch lapsed meanwhile.
+    ///
+    /// **Without the model's lock unless the watch lapsed** (h19): the watch's re-read of the
+    /// plane, a restore's changes applied and a panel served each hold it, and the picker's
+    /// first open after a restart waited on them before it looked at what it kept. Only a watch
+    /// whole again reads the model again, under its lock, as [`Self::trusted`] does.
     fn start_answers_trusted(&self) -> bool {
-        let mut model = self.model.lock().unwrap_or_else(PoisonError::into_inner);
-        self.trusted(&mut model)
+        let standing = self
+            .watch
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .map(crate::planewatch::Watch::standing_seen);
+        match standing {
+            None => false,
+            Some(crate::planewatch::Standing::Whole | crate::planewatch::Standing::Partial) => true,
+            Some(crate::planewatch::Standing::WholeAgain) => {
+                let mut model = self.model.lock().unwrap_or_else(PoisonError::into_inner);
+                self.trusted(&mut model)
+            }
+        }
+    }
+
+    /// **Reads the picker's first answer ahead of the picker** (h19), where it is not kept: the
+    /// first open after a restart is then served kept, and never reads it behind the restore of
+    /// every chat. Called once the plane is held and again once its chats are put back.
+    pub(crate) fn read_start_first_ahead(&self) {
+        let began = std::time::Instant::now();
+        if self
+            .kept_start_first(|| {
+                crate::start_first_stamped(&self.root, purlis_core::profiles::for_launch)
+            })
+            .is_ok()
+        {
+            tracing::debug!(
+                "purlis: {}: the picker's first answer is ready, in {} ms",
+                self.root.display(),
+                began.elapsed().as_millis()
+            );
+        }
     }
 
     /// The window moved the plane's workspaces itself — made, renamed or removed one, or set
@@ -966,6 +1038,11 @@ impl Held {
     /// (#2007).
     pub fn lost_with_the_host(&self) -> &crate::hostlost::Lost {
         &self.lost_with_the_host
+    }
+
+    /// The chats the person hibernated (SC-4a, #7630).
+    pub fn hibernated(&self) -> &crate::hibernation::Hibernated {
+        &self.hibernated
     }
 
     /// The dispatches waiting on the person, and the grants made for one chat (#1437).
@@ -1681,6 +1758,14 @@ impl Held {
         self.runner_dispatches.forget(session);
         self.mcp_failures.forget(session);
         self.lost_with_the_host.forget(session);
+        // **A hibernated chat ended by the person** (#7630, ADR 0076 as amended 2026-11-25):
+        // its run, `hibernated` since its program ended, ends `completed | superseded` now. Its
+        // program is gone, so no end of it is heard to write that. A wake forgot it before
+        // ending it here, and wrote its own.
+        if self.hibernated.of(session).is_some() {
+            self.chats.superseded(session);
+        }
+        self.hibernated.forget(session);
         // Its id, read before it goes: its dispatch grant for "this chat" ends where its
         // sandbox grants do, when no session of the chat is left open (#1437, D-1348-1).
         let id = self
@@ -1814,12 +1899,91 @@ impl Held {
         if self.stopping.is_stopping(session) {
             return Ok(Restarted::NotYet(WAITS_WHILE_YOU_STOP_IT));
         }
+        // **Resume on a hibernated chat** (#7630): it has no program to restart, so it is woken,
+        // a new `wake` run on its conversation, in the old one's place. Not while it is still
+        // being hibernated: that would start a second program beside the one ending.
+        if self.hibernated.in_flight(session) {
+            return Err(crate::hibernation::STILL_HIBERNATING.to_owned());
+        }
+        if self.hibernated.of(session).is_some() {
+            return self.wake_chat(session, size).map(Restarted::Started);
+        }
         if when == When::AtAPause && self.board().glance(session).own_work {
             return Ok(Restarted::NotYet(WAITS_ON_ITS_OWN_WORK));
         }
         let started = self.chats.restart(session, size)?;
         self.in_its_place(session, started);
         Ok(Restarted::Started(started))
+    }
+
+    /// Hibernates chat `session` by the person's hand (SC-4a, #7630): refused with the core's
+    /// typed reason where [`purlis_core::rested::by_hand`] says it may not be (SC-4c, #7632);
+    /// otherwise its program is ended at its turn boundary and its engine dropped by the
+    /// session host.
+    ///
+    /// **Decided and done in the chat's turn in its lane** (ADR 0108): a prompt, a report or
+    /// anything else typed into it waits behind the act, so nothing starts a turn between the
+    /// facts being read and the program ending. The flag is written first, in flight, so the
+    /// exit that follows is read as a hibernation and no run ends `failed | exited`; it is
+    /// hibernated, and Resume offered, only once the host has answered. A second press while one
+    /// is in flight is refused and leaves the first alone. Where the act fails the flag goes
+    /// again, unless the program's end was already heard as the hibernation.
+    pub fn hibernate_chat(&self, session: u32) -> Result<(), crate::hibernation::Refused> {
+        self.lanes
+            .in_turn(session, || self.hibernate_in_its_turn(session))
+    }
+
+    fn hibernate_in_its_turn(&self, session: u32) -> Result<(), crate::hibernation::Refused> {
+        use crate::hibernation::Refused;
+        if self.hibernated.in_flight(session) {
+            return Err(crate::hibernation::ALREADY_HIBERNATING.to_owned().into());
+        }
+        if self.stopping.is_stopping(session) {
+            return Err("Not hibernated: you are stopping this chat."
+                .to_owned()
+                .into());
+        }
+        // The looked-at clock holds back only the app's own hibernation.
+        let facts = crate::hibernation::facts_of(self, session, false);
+        purlis_core::rested::by_hand(&facts).map_err(Refused::Not)?;
+        if !self
+            .hibernated
+            .intend(session, crate::hibernation::By::Operator)
+        {
+            return Err(crate::hibernation::ALREADY_HIBERNATING.to_owned().into());
+        }
+        if let Err(why) = self.chats.sessions().hibernate(session) {
+            if self.hibernated.failed(session) {
+                return Ok(());
+            }
+            return Err(why.into());
+        }
+        if !self.hibernated.settle(session) {
+            // Another end won while it ended (a close, a quit, a stop, the kill switch).
+            return Err(crate::hibernation::ENDED_ANOTHER_WAY.to_owned().into());
+        }
+        Ok(())
+    }
+
+    /// Wakes hibernated chat `session` (SC-4a, #7630): a new `wake` run on its conversation,
+    /// in the old one's place, the hibernated run ending `completed | superseded` as it begins
+    /// (ADR 0076 as amended 2026-11-25). Refused for a chat that is not hibernated, or is still
+    /// being hibernated. A second Resume while one wakes it is refused by the wake's claim, and
+    /// one after it finds the chat awake: one wake however many presses.
+    pub fn wake_chat(&self, session: u32, size: Size) -> Result<u32, String> {
+        if self.hibernated.in_flight(session) {
+            return Err(crate::hibernation::STILL_HIBERNATING.to_owned());
+        }
+        if self.hibernated.of(session).is_none() {
+            return Err(format!(
+                "purlis did not resume chat {session}: it is not hibernated."
+            ));
+        }
+        let started = self.chats.wake(session, size)?;
+        // Forgotten before its end here, which would otherwise end its run a second time.
+        self.hibernated.forget(session);
+        self.in_its_place(session, started);
+        Ok(started)
     }
 
     /// **Starts chat `session` again without the sandbox** (#1342): the person's own choice on a
@@ -3557,6 +3721,18 @@ impl Planes {
         }
         let held = Arc::new(self.hold(id.clone(), root));
         let _ = held.me.set(Arc::downgrade(&held));
+        // The picker's first answer, read ahead on a thread of its own (h19): a `Weak`, so a
+        // plane closed meanwhile is not kept alive for it.
+        {
+            let ahead = Arc::downgrade(&held);
+            let _ = std::thread::Builder::new()
+                .name("purlis-picker-ahead".into())
+                .spawn(move || {
+                    if let Some(held) = ahead.upgrade() {
+                        held.read_start_first_ahead();
+                    }
+                });
+        }
         // Stuck? and work left behind (#6014): told to the window with the chats' other news.
         held.noticed
             .held_as(Arc::downgrade(&held), Arc::clone(&self.noticed));
@@ -4399,6 +4575,9 @@ impl Planes {
                 plane: held.id.clone(),
                 outcome,
             });
+            // Read again where what the chats wrote as they came back dropped it (h19): served
+            // kept, at no cost, where it did not.
+            held.read_start_first_ahead();
         };
         if !self.restores_behind {
             put_back(held, begun);
@@ -5195,6 +5374,8 @@ impl Planes {
         let mcp_failures: Arc<crate::mcpfailed::Failures> = Arc::default();
         // The chats whose program ends with their session host (#2007).
         let lost_with_the_host: Arc<crate::hostlost::Lost> = Arc::default();
+        // The chats the person hibernated (#7630).
+        let hibernated: Arc<crate::hibernation::Hibernated> = Arc::default();
         {
             let board = hooks.shared_board();
             chats.when_one_starts(Box::new({
@@ -5297,6 +5478,7 @@ impl Planes {
             let events_root = id.root().to_path_buf();
             // Who hears of a chat whose program ended with its session host (#2007).
             let lost = Arc::clone(&lost_with_the_host);
+            let hibernated = Arc::clone(&hibernated);
             let tell_lost = Arc::clone(&self.lost_with_the_host);
             chats
                 .sessions()
@@ -5336,6 +5518,33 @@ impl Planes {
                             crate::dispatched::moved(&held, session);
                         }
                         return;
+                    }
+                    // **Its program ended as a hibernation the person asked for** (#7630, ADR
+                    // 0076 as amended 2026-11-25): the host's own lowest act, so any other end
+                    // racing it (the kill switch, a quit, the person's stop, a close) wins and
+                    // is handled below. It is not an end of the chat: the board keeps what it
+                    // said, no run ends `failed | exited` and no task is told it failed. Its run
+                    // moves to `hibernated | operator`, and ends when it is woken or ended.
+                    if hibernated.ends_as_one(session) {
+                        let held = me.get().and_then(std::sync::Weak::upgrade);
+                        let by = the_host_s_stop(
+                            every_agent.is_stopped(),
+                            held.as_ref().is_some_and(|held| held.chats.ending()),
+                            held.as_ref()
+                                .is_some_and(|held| held.stopping().is_stopping(session)),
+                            held.as_ref()
+                                .is_some_and(|held| held.chats.recorded_chat(session).is_none()),
+                        );
+                        if by.is_none() {
+                            // Its run moves to `hibernated` for `operator`, where the window
+                            // writes the log: the host writes it where the host does.
+                            if let Some(log) = events.as_ref().and_then(hooks::Events::held) {
+                                its_run_hibernates(log, &events_root, session);
+                            }
+                            return;
+                        }
+                        // Another end won: the chat is not hibernated.
+                        hibernated.forget(session);
                     }
                     // **Its program ended with its session host** (#2007): what its run is left
                     // in is read from the board as it was, before its end moves it, and said on
@@ -5664,6 +5873,7 @@ impl Planes {
             moves,
             mcp_failures,
             lost_with_the_host,
+            hibernated,
             dispatch_grants: crate::dispatchgrants::Store::default(),
             held_dispatches: crate::handoff::HeldDispatches::default(),
             at_limits: crate::atlimit::AtLimits::default(),
@@ -6698,7 +6908,7 @@ fn the_host_s_stop(
 
 /// What a chat's end leaves in the event log, read and written as both binaries' session hosts
 /// do (#2494).
-pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_run_ends};
+pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_run_ends, its_run_hibernates};
 
 #[path = "planes/tab_windows.rs"]
 mod tab_windows;

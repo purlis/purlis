@@ -154,6 +154,24 @@ pub fn for_ci_push(
     Ok(CiPushCredential::Token(held))
 }
 
+/// **The forge answered 401 to the second token**: it is dead (a classic OAuth token does not
+/// expire, but GitHub revokes the oldest once a user holds more than 10 for one app and scope
+/// set, and the person may have revoked it), and sending it again can never work. The kept item
+/// is deleted, so [`availability`] says [`Availability::NeedsPress`] and Settings no longer shows
+/// CI files as allowed, and the window is told ([`Trouble::SecondSignInRefused`]). The everyday
+/// token is untouched. Only the app's own held-push code calls this.
+pub fn refused(
+    _host: &HostScope,
+    keyring: &dyn Store,
+    account: &ForgeAccount,
+) -> Result<(), String> {
+    remove(keyring, account)?;
+    // Told every time, not once per run: a second token made and refused again is new news.
+    crate::forge::refresh::forget_raised_of(&account.id, &Trouble::SecondSignInRefused);
+    crate::forge::refresh::raise_once(account, &Trouble::SecondSignInRefused);
+    Ok(())
+}
+
 /// **Starts the second sign-in's account out as not known to be free of `workflow`**, before any
 /// step that can fail or be abandoned. The second grant may widen the one the everyday token
 /// belongs to, and a flow can end in ways that never reach [`keep`] (cancelled, expired, a poll

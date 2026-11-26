@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use super::super::policy::Locks;
 use super::{
     FIRST_ON_PATH, Handed, Ready, Tool, caution, first_on_path, general_purpose, guard_forges,
-    keyed, loads_code, refused_name, refused_program, resolve_beside, shim,
+    keyed, loads_code, refused_name, refused_program, resolve_beside, shim, without_guard,
 };
 
 const HERE: &str = "sandbox.personas.devops";
@@ -1910,10 +1910,88 @@ fn a_program_is_an_init_script_only_where_it_or_a_link_on_the_way_sits_in_init_d
 #[test]
 fn a_guarded_glab_says_to_sign_in_and_names_no_token_flow() {
     let said = crate::sandbox::tools::undeclared_glab_said("dev", Some("gitlab.com"));
-    assert!(said.contains("Settings › Forges"), "{said}");
+    assert!(said.contains("Settings › Accounts"), "{said}");
+    assert!(!said.contains("Settings › Forges"), "{said}");
+    assert!(!said.contains("never uses the person's own"), "{said}");
     assert!(!said.contains("gitlab access"), "{said}");
     assert_eq!(
         crate::sandbox::tools::declared_glab_not_running_said("dev"),
         said
     );
+}
+
+/// **`without_guard` takes out the one guard it is asked for** (ADR 0128): a persona with ready
+/// tools keeps them and goes back to its own folder, a guard of another name stays, a tool the
+/// persona declares but has not had allowed loses its guard too (the sign-in replaces the tokens
+/// that tool would have run with), the persona's own tool is left alone, and
+/// nothing is returned only where nothing is left to arm or to say.
+#[test]
+fn without_guard_takes_out_the_one_guard_and_names_the_folder_by_what_is_left() {
+    let root = outside_temp("without-guard-root");
+    let system = outside_temp("without-guard-system");
+    program(&system, "kubectl");
+    let resolved = |tools: &[Tool]| {
+        resolve(
+            &root,
+            "devops",
+            tools,
+            &Locks::none(),
+            std::slice::from_ref(&system),
+            &[],
+        )
+    };
+    let names = |one: &super::Resolved| -> Vec<String> {
+        one.ready
+            .iter()
+            .map(|ready| ready.tool.name.clone())
+            .collect()
+    };
+    // Ready tools and a guard: the guard goes, the tools stay, and the folder is the persona's.
+    let plain = resolved(&[kubectl()]).expect("tools");
+    let guarded = guard_forges(Some(plain.clone()), &root, "devops", &[], &[]).expect("tools");
+    assert_ne!(
+        guarded.folder, plain.folder,
+        "a guard has a folder of its own"
+    );
+    let open = without_guard(guarded.clone(), &root, "glab").expect("kubectl is left");
+    assert!(open.guards.is_empty(), "{:?}", open.guards);
+    assert_eq!(names(&open), ["kubectl"]);
+    assert_eq!(open.folder, plain.folder, "not a refusing/<digest> folder");
+    assert!(!open.only_refuses);
+    // A guard of another name stays, and nothing changes.
+    assert_eq!(without_guard(guarded.clone(), &root, "gh"), Some(guarded));
+    // A program the persona declares but that is not ready loses it too: the route runs it.
+    let waiting = guard_forges(
+        resolved(&[kubectl()]),
+        &root,
+        "devops",
+        &[],
+        &["glab".to_owned()],
+    )
+    .expect("tools");
+    assert_eq!(waiting.guards.len(), 1);
+    let open = without_guard(waiting, &root, "glab").expect("kubectl is left");
+    assert!(open.guards.is_empty(), "{:?}", open.guards);
+    // The persona's own ready tool of that name has no guard to take: it is left as it is.
+    let mut own = plain.clone();
+    own.ready[0].tool.name = "glab".to_owned();
+    let own = guard_forges(Some(own), &root, "devops", &[], &[]).expect("tools");
+    assert!(own.guards.is_empty());
+    assert_eq!(without_guard(own.clone(), &root, "glab"), Some(own));
+    // A guard and nothing else: nothing is left.
+    let only = guard_forges(None, &root, "devops", &[], &[]).expect("a guard");
+    assert!(only.only_refuses);
+    assert_eq!(without_guard(only.clone(), &root, "glab"), None);
+    // But tools left out or absent still say they run nothing when armed, so they are kept.
+    let mut left = only.clone();
+    left.left = vec!["kubectl is left out".to_owned()];
+    let kept = without_guard(left, &root, "glab").expect("a left tool is kept");
+    assert!(kept.guards.is_empty());
+    assert_eq!(kept.left, ["kubectl is left out"]);
+    assert!(kept.only_refuses);
+    let mut absent = only;
+    absent.absent = vec!["psql".to_owned()];
+    assert!(without_guard(absent, &root, "glab").is_some());
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(system);
 }

@@ -43,10 +43,7 @@ fn merge_of(number: u64) -> Recognised {
 fn glab_mr_merge_sends_a_request_the_proxy_holds_as_a_merge_of_that_request() {
     purlis_core::unsteered!();
     // glab: PUT /projects/:id/merge_requests/:iid/merge, whatever flags it carries.
-    for body in [
-        json!({}),
-        json!({"squash": true, "sha": "abc", "merge_when_pipeline_succeeds": true}),
-    ] {
+    for body in [json!({}), json!({"squash": true, "sha": "abc"})] {
         assert_eq!(
             run(
                 Kind::GitLab,
@@ -82,7 +79,7 @@ fn glab_mr_merge_sends_a_request_the_proxy_holds_as_a_merge_of_that_request() {
     ]
     .map(str::to_owned)
     .to_vec();
-    let body = json!({"merge_when_pipeline_succeeds": true});
+    let body = json!({"squash": true});
     let call = Call {
         method: "PUT",
         segments: &segments,

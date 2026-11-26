@@ -278,7 +278,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
       - run: mkdir -p app/dist
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # **The programs the tests run beside their own binaries, built here once.** A test finds
@@ -388,7 +388,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
       - run: mkdir -p app/dist
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # **The programs the tests run beside their own binaries, built here once.** A test finds
@@ -499,7 +499,7 @@ jobs:
       # cargo-nextest runs every test binary's tests at once, each test in a process of its own,
       # where `cargo test` runs the binaries one after another. Its settings are in
       # `.config/nextest.toml`. A machine without it runs the same tests with `cargo test`.
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # The pinned engine makes its sandbox with user namespaces, which Ubuntu 23.10 and later
@@ -742,7 +742,7 @@ jobs:
       # cargo-nextest runs every test binary's tests at once, each test in a process of its own,
       # where `cargo test` runs the binaries one after another. Its settings are in
       # `.config/nextest.toml`. A machine without it runs the same tests with `cargo test`.
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # The pinned engine makes its sandbox with user namespaces, which Ubuntu 23.10 and later
@@ -822,7 +822,7 @@ jobs:
         with:
           shared-key: rust
           save-if: false
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # Where a person's `git lfs install` writes it, for every git of this machine's.
@@ -956,7 +956,7 @@ jobs:
         with:
           shared-key: forgeroute-linux
           save-if: false
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
@@ -979,7 +979,7 @@ jobs:
         with:
           shared-key: forgeroute-macos
           save-if: false
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - run: mkdir -p app/dist
@@ -1069,7 +1069,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - if: steps.scope.outputs.run == 'true'
-        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
@@ -1210,7 +1210,7 @@ jobs:
         with:
           save-if: false
       - if: steps.scope.outputs.run == 'true'
-        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - name: The tests, purlis and the fake harness, built
@@ -2070,7 +2070,7 @@ jobs:
         run: sudo mdutil -a -i off
       # tauri::generate_context! reads the built frontend, as in the `rust` job.
       - run: mkdir -p app/dist
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
         with:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       # The names the studio probe's network tests look up, from the hosts file, not outside DNS
@@ -2497,19 +2497,28 @@ jobs:
       # (2026-10-30, three merge-queue drops). The server is started here; only one that comes
       # up is put in front of rustc, and SCCACHE_IGNORE_SERVER_IO_ERROR has a later failure
       # compile without it.
+      #
+      # `SCCACHE_IDLE_TIMEOUT=0`: the server lives as long as the job, and so does one the wrapper
+      # starts again after a failure (it is in `$GITHUB_ENV` too). With sccache's default of
+      # 600 s it stopped in every one of 8 outcome-bars runs on 2026-11-25/26, about ten minutes
+      # into purlis-core's release compile, during which no new request came ("The server looks
+      # like it shut down unexpectedly, compiling locally instead"). Every crate after that
+      # compiled without it, and its notice counted one request. A hosted runner is discarded with
+      # the job; on a self-hosted one, `outcome-bars.yml`'s last step stops the server.
       - name: Compile through sccache
         if: runner.os == 'macOS'
         env:
           MODE: ${{ github.ref == 'refs/heads/main' && 'READ_WRITE' || 'READ_ONLY' }}
           ARRIVED: ${{ steps.sccache.outcome }}
         run: |
-          export SCCACHE_GHA_ENABLED=true SCCACHE_GHA_RW_MODE="$MODE"
+          export SCCACHE_GHA_ENABLED=true SCCACHE_GHA_RW_MODE="$MODE" SCCACHE_IDLE_TIMEOUT=0
           if sccache --start-server >/dev/null 2>&1 && sccache --show-stats >/dev/null 2>&1; then
             {
               echo "RUSTC_WRAPPER=sccache"
               echo "SCCACHE_GHA_ENABLED=true"
               echo "SCCACHE_GHA_RW_MODE=$MODE"
               echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
+              echo "SCCACHE_IDLE_TIMEOUT=0"
             } >> "$GITHUB_ENV"
           elif [ "$ARRIVED" = success ]; then
             echo "::warning title=sccache::the build cache did not answer, so this job compiles without it"
@@ -2598,9 +2607,12 @@ jobs:
       # the dev profile, and #3560's opt-level made the cold build 21 to 32 min), another linker
       # (6 s to win), a `target/` cache (rust-cache already restores the dependencies, and the
       # workspace's crates change with every pull request that runs this job).
-      # Off before the build, so it indexes none of it (#4351): see the outcome bars below.
+      # Off before the build, so it indexes none of it (#4351): see the outcome bars below. Only on
+      # GitHub's runners, never on a self-hosted Mac (`outcome-bars.yml`'s `OUTCOME_BARS_RUNNER`):
+      # `-a` turns Spotlight off for the whole machine, which is the operator's to decide, and its
+      # runner user has no sudo.
       - name: Spotlight off for the outcome bars
-        if: ${{ runner.os == 'macOS' && matrix.outcome }}
+        if: ${{ runner.os == 'macOS' && matrix.outcome && runner.environment == 'github-hosted' }}
         continue-on-error: true
         timeout-minutes: 2
         run: sudo mdutil -a -i off
@@ -2765,6 +2777,16 @@ jobs:
         run: xvfb-run -a npm run e2e:state
         if: runner.os == 'Linux' && matrix.extras
         working-directory: app
+      # Hibernate a chat from its row and Resume it (#7630): its own run, on a harness that
+      # names its conversation, which the state run's Codex stand-in does not.
+      - name: Hibernate a chat and resume it
+        run: npm run e2e:hibernate
+        if: runner.os == 'macOS' && matrix.extras
+        working-directory: app
+      - name: Hibernate a chat and resume it
+        run: xvfb-run -a npm run e2e:hibernate
+        if: runner.os == 'Linux' && matrix.extras
+        working-directory: app
       # What GitHub's macOS image is busy with around each harness's bars (#4351), to read beside
       # their numbers. Spotlight went off before the build. Nothing waits for the runner: waiting
       # brought L10 no gain (the person's ruling of 2026-11-05).
@@ -2773,8 +2795,9 @@ jobs:
         continue-on-error: true
         timeout-minutes: 1
         run: ps -Ao pcpu,comm -r | sed -n 1,7p
-      # The Skill studio's outcome bars, one run per harness on its stand-in (#4343). `outcome-bars`
-      # alone runs these. Each runs whatever the one before it did, so a red run names every miss.
+      # The Skill studio's outcome bars, one run per harness on its stand-in (#4343). The outcome
+      # bars alone run these (`outcome-bars.yml` on macOS, `outcome-bars-linux`). Each runs
+      # whatever the one before it did, so a red run names every miss.
       - name: The Skill studio's outcome bars on claude's stand-in
         run: npm run e2e:outcome
         if: ${{ !cancelled() && runner.os == 'macOS' && matrix.outcome }}
@@ -3025,59 +3048,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps: *scenario-steps
 
-  # **The Skill studio's outcome bars** (SK-23, #4343): the scenario legs' steps, with every leg's
-  # own flag off and `outcome` on, so it runs the three runs alone, on a `dev-release` build
-  # (2026-11-03, #4351). Its macOS leg is not required, and no `scenario-checks` waits on it: it
-  # measures on a shared runner, and a miss is a ticket (the operator's ruling of 2026-10-31), not a
-  # block on every merge. It becomes required with the flag's flip (#2786). Its Linux leg is
-  # `outcome-bars-linux`, below, and is required. Each says L10's p95 and judges a median guard
-  # of its own platform: the 300 ms is judged on a real Mac (ADR 0086, amended 2026-11-05 and
-  # 2026-11-06).
-  #
-  # On main's push and on the nightly run, and on neither a pull request nor the merge queue
-  # (#7335, ADR 0127, the steward's ruling of 2026-11-23): Macs are the queue's scarce resource, so
-  # the queue does not run it, and a pull request's run is a subset of the queue's, so a pull
-  # request does not either. It took a pull request that touched what the bars measure, by the
-  # operator's choice of 2026-11-01: it takes a macOS runner, for 11 to 17 minutes on the debug
-  # build it used to make, and for about 31 on the release build warm (#4351). A regression shows
-  # on main, and the Linux leg below still runs on a pull request its gate lets in.
-  outcome-bars:
-    # Named outright, not by `matrix.os`: a pattern would match the Linux leg's required check too.
-    name: outcome bars (macos-latest)
-    needs: changes
-    # A missed bar keeps this job red and the `ci` run green, so it does not stop `tools/land.mjs`,
-    # which refuses to land while main's newest finished `ci` run failed. This line goes once its
-    # bars are met (#4352 among them), and the job is made required before the flag's flip (#2786).
-    continue-on-error: true
-    # A timed-out job still turns the run `cancelled`, which skips the release: this bounds that,
-    # and main's queue behind it, from the 6 hours a job gets by default. 75, not the 40 the debug
-    # build had (twice its slowest, 9 to 18 minutes), for the release build (the operator's ruling
-    # of 2026-11-03, #4351): cold, with no cache, it ran past 40 twice and was cut off before
-    # rust-cache saved anything, so the cache main writes was never warm. Warm, a release run took
-    # 31 minutes. 130 since 2026-11-11: at 75 a cold build (70-73 min) was cut off on every main
-    # run from 05:41 to 10:44, so the cache was never saved, every run ended `cancelled`, and no dev
-    # build shipped. One run that finishes warms the cache again.
-    timeout-minutes: 130
-    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') }}
-    # Where the specs find the build: the profile the build step names for `outcome` (one place
-    # for the path, so no harness's run can take another build's program).
-    env:
-      CHARTER_TARGET_DIR: ${{ github.workspace }}/target/dev-release
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest]
-        shard: [bars]
-        shards: [1]
-        extras: [false]
-        specs: [false]
-        sandbox: [false]
-        outcome: [true]
-    runs-on: ${{ matrix.os }}
-    steps: *scenario-steps
+  # **The Skill studio's outcome bars on macOS** (SK-23, #4343) run in `outcome-bars.yml`, on
+  # main's push and the nightly, since 2026-11-26 (ADR 0127, amended that day). As a job here, one
+  # that decides nothing, it held every main run open for 10 to 40 minutes after the last gating job,
+  # and `release.yml`'s gate waits for the whole run. Its steps there are this file's scenario steps
+  # (`tools/outcome-bars-workflow.test.mjs` holds them to these).
 
-  # **The outcome bars' Linux leg, required** (#5277): what `outcome-bars` does, on Linux, with no
-  # `continue-on-error`. A runner shutdown cut it off until #5379 gave its build a swap file, which
+  # **The outcome bars' Linux leg, required** (#5277): what `outcome-bars.yml` does on macOS, on
+  # Linux, with no `continue-on-error`. A runner shutdown cut it off until #5379 gave its build a swap file, which
   # the app crate's `opt-level = 1` made unneeded (#5277). It passed on all 14 of main's runs that
   # finished it from #5379's merge to 2026-11-06, so it is required, as the person's ruling of
   # 2026-11-05 said it would be once #5277 was fixed. It judges L10's Linux guard (ADR 0086,
@@ -3086,7 +3064,7 @@ jobs:
   outcome-bars-linux:
     name: outcome bars run (ubuntu-24.04)
     needs: changes
-    # `outcome-bars`'s bound, for the same build: cold, it took 27 minutes here.
+    # `outcome-bars.yml`'s bound, for the same build: cold, it took 27 minutes here.
     timeout-minutes: 75
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.outcome-bars != 'false') && !github.event.pull_request.draft }}
     env:

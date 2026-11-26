@@ -17,7 +17,12 @@ export const SIGN_IN_TROUBLE = "forge-sign-in-trouble";
 /** What {@link SIGN_IN_TROUBLE} carries: the account's id and the kind of trouble. */
 export type SignInTrouble = {
   account: string;
-  trouble: "pin-changed" | "renewal-failing" | "everyday-holds-workflow" | "scopes-unknown";
+  trouble:
+    | "pin-changed"
+    | "renewal-failing"
+    | "everyday-holds-workflow"
+    | "scopes-unknown"
+    | "second-sign-in-refused";
 };
 
 /** Whether `account` is a pasted token or an imported login: no sign-in of purlis's own to repeat. */
@@ -163,7 +168,8 @@ export function ForgeSignInEnded() {
           tone="trouble"
           fixes={
             // A pasted token has no sign-in to repeat: signing in again does not make it checkable.
-            trouble === "scopes-unknown" && pasted(account)
+            (trouble === "scopes-unknown" && pasted(account)) ||
+            trouble === "second-sign-in-refused"
               ? undefined
               : [{ label: "Sign in again", onPress: () => setAgain(account.kind) }]
           }
@@ -186,6 +192,12 @@ export function ForgeSignInEnded() {
               {account.host} did not say what purlis&apos;s sign-in as {account.login} may do, so it
               may allow CI files (<code>workflow</code>) and purlis gives it to no chat. Sign in
               again to check it.
+            </>
+          ) : trouble === "second-sign-in-refused" ? (
+            <>
+              {account.host} refused the sign-in that lets purlis push CI files as {account.login},
+              so purlis removed it. To push a CI file again, allow CI files in Settings › You ›
+              Accounts.
             </>
           ) : trouble === "pin-changed" ? (
             <>

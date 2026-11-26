@@ -19,8 +19,9 @@ export const SLOW_ENTRIES_COPIED = 200;
 /**
  * **Copy diagnostics' report** (#4774): plain text a person pastes into an issue or a chat in
  * one step. The app's version and build, the system, each harness's installed version, the open
- * and hot chats and, where it could be read, the slow-answer and stall log's newest
- * {@link SLOW_ENTRIES_COPIED} entries (#4725), one JSON line each.
+ * and hot chats with the device's hot-chat target and RAM class and, where it could be read,
+ * the slow-answer and stall log's newest {@link SLOW_ENTRIES_COPIED} entries (#4725), one JSON
+ * line each.
  *
  * **Nothing secret goes in.** Every line is built here from fields picked by name, never by
  * passing an answer through: a harness profile carries its folders and how it signs in, and
@@ -63,7 +64,7 @@ export function diagnosticsReport({
     `Version: ${about.version}${buildSaid(about)}, ${about.profile} profile`,
     `System: ${here.os}`,
     `Harnesses: ${harnessesSaid(profiles)}`,
-    `Chats: ${here.open} open, ${here.hot} hot`,
+    `Chats: ${here.open} open, ${here.hot} hot, ${targetSaid(here)}`,
   ];
   if (slow !== null) {
     if (slow.length === 0) lines.push("Slow answers and stalls: none recorded");
@@ -78,6 +79,17 @@ export function diagnosticsReport({
     }
   }
   return lines.join("\n");
+}
+
+/**
+ * The hot-chat target, and the RAM class it comes from (ADR 0082 §3). A memory that could not be
+ * read has no class and so no target, which is not the same as a device under 8 GB.
+ */
+function targetSaid({ device }: DiagnosticsHere): string {
+  if (device.kind === "reading") return "class still being read";
+  if (device.kind === "not_known") return "class not known";
+  const class_ = device.class_gb === null ? "under 8 GB" : `${device.class_gb} GB class`;
+  return `target ${device.hot_target} (${class_})`;
 }
 
 function buildSaid({ build }: About): string {

@@ -313,7 +313,7 @@ fn old_forge_token_lines_are_one_warning_naming_the_step_and_each_tool() {
     // Only the line to delete is the finding: the `mint` line guards its App's key.
     assert!(row.detail.starts_with("1 tool line"), "{}", row.detail);
     assert!(row.detail.contains("glab of dev") && !row.detail.contains("gh of dev"));
-    assert!(row.hint.contains("Settings › Forges"));
+    assert!(row.hint.contains("Settings › Accounts"));
     assert_eq!(replaced_by_sign_in_row(&[]), None);
 }
 

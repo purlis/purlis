@@ -108,9 +108,9 @@ pub enum WorktreeCommand {
     },
     /// Record the branch a piece is on as the one it was cut for. A piece cut before purlis kept
     /// that note, on a branch whose name is not the folder's (`--branch`), has none, and the
-    /// app's git then does not act on it for a chat. Run it once, from your own terminal, after
-    /// checking the folder is on the right branch: refused where another folder has that branch,
-    /// and in a chat.
+    /// app's git then does not act on it for a chat. Run it once, from your own terminal or the
+    /// window's shell tab, after checking the folder is on the right branch: refused where another
+    /// folder has that branch, and in a chat.
     Adopt {
         repo: String,
         piece: String,
@@ -304,8 +304,9 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, CliError> {
             workspace,
         } => {
             let ws = here.active_workspace(workspace.as_deref())?;
-            // What the folder is on is trusted once: only the person says so.
-            if crate::session::chat_number().is_some() {
+            // What the folder is on is trusted once: only the person says so, in a terminal of
+            // their own or the window's shell tab (#7694).
+            if crate::session::run_by_a_chat_in(&purlis_core::envvar::var) {
                 say(purlis_core::repocmd::Say::Fail(
                     format!(
                         "`purlis worktree adopt` records what {repo} \u{b7} {piece} is on as the \

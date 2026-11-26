@@ -12581,6 +12581,10 @@ mod needed_you_at_the_hook;
 /// No block is ever the source of an ask: Asks holds asks only (R-171, R-240, #6417).
 mod blocks_are_never_asks;
 
+/// A held CI-file push from a dispatched task reaches the person's Asks, and only their press
+/// pushes it (#7685).
+mod held_ci_pushes;
+
 /// **A task another chat dispatches starts where its asking chat runs** (#2003, D-2003-7): the
 /// window's answer to the dispatch (`task_dispatched`) starts it through the seam every chat
 /// starts through, so in a project whose chats run in the session host, the host runs it. Who

@@ -515,3 +515,66 @@ fn a_gitlab_ci_config_path_that_cannot_be_read_refuses_the_ask_and_asks_nobody()
     assert!(format!("{why:?}").contains("403"), "{why:?}");
     assert!(held.every().is_empty());
 }
+
+#[test]
+fn a_401_on_the_second_sign_in_ends_the_ask_without_a_retry_and_marks_it_refused() {
+    purlis_core::unsteered!();
+    let clone = Clone::new();
+    let tip = evil_workflow(&clone, "feature");
+    let (forge, held) = (forge_at(&clone), HeldActs::default());
+    forge.with(|s| s.second_refused = Some("Bad credentials (HTTP 401)".to_owned()));
+    let (second, rec) = (Second::there(), Rec::acme());
+    let trees = clone.trees();
+    let world = world(&forge, &trees, &second, &rec);
+
+    let Asked::Held { id, .. } = held.ask(&world, 1, true, &push("feature", &tip), 10) else {
+        panic!("held");
+    };
+    let (_, digest) = held.shown(id).unwrap();
+    press(&held, &world, id, &digest).unwrap();
+    let refused = press(&held, &world, id, &digest).unwrap_err();
+
+    assert!(
+        matches!(refused, NotDone::SecondSignInRefused { .. }),
+        "{refused:?}"
+    );
+    let said = refused.to_string();
+    assert!(
+        said.contains("Settings › You › Accounts") && said.contains("ask the chat to push again"),
+        "{said}"
+    );
+    // The forge's words are said once, and never inside a second pair of brackets.
+    assert!(
+        said.contains("pushed: Bad credentials (HTTP 401)."),
+        "{said}"
+    );
+    assert!(!said.contains("(Bad credentials"), "{said}");
+    assert!(!said.contains("Once more"), "{said}");
+    // The second sign-in is marked no longer valid, once.
+    assert_eq!(second.refusals(), 1);
+    // The ask is gone: nothing waits to be pressed once more.
+    assert!(held.shown(id).is_none(), "the ask must end");
+    assert!(forge.log().is_empty());
+}
+
+#[test]
+fn a_forge_refusal_that_is_not_the_second_sign_ins_keeps_the_ask_waiting() {
+    purlis_core::unsteered!();
+    let clone = Clone::new();
+    let tip = evil_workflow(&clone, "feature");
+    let (forge, held) = (forge_at(&clone), HeldActs::default());
+    forge.with(|s| s.refuses = Some("Update is not a fast forward".to_owned()));
+    let (second, rec) = (Second::there(), Rec::acme());
+    let trees = clone.trees();
+    let world = world(&forge, &trees, &second, &rec);
+
+    let Asked::Held { id, .. } = held.ask(&world, 1, true, &push("feature", &tip), 10) else {
+        panic!("held");
+    };
+    let (_, digest) = held.shown(id).unwrap();
+    press(&held, &world, id, &digest).unwrap();
+    let refused = press(&held, &world, id, &digest).unwrap_err();
+    assert!(matches!(refused, NotDone::Forge(_)), "{refused:?}");
+    assert_eq!(second.refusals(), 0);
+    assert!(held.shown(id).is_some(), "the ask waits again");
+}

@@ -495,6 +495,13 @@ export const LONG_ASKED_COMMAND = `echo a long ask the Inbox reads whole and wra
 /** The conversation the reporting harness names, where it names one, as Codex's `session_id`. */
 export const SCENARIO_CONVERSATION = "scenario";
 
+/**
+ * **What the reporting harness was started with, one line a start** (#7630): written by the
+ * stand-in that names its conversation, so a spec can tell a start on a conversation (opencode's
+ * `-s <id>`) from a fresh one without reading the pane.
+ */
+export const STARTED_WITH = join(THE_RUNS_TREE, "reporting-harness-started-with");
+
 export function writeReportingShell(
   fakeHarness: string,
   charter: string,
@@ -529,7 +536,11 @@ export function writeReportingShell(
       // Codex and opencode name their conversation, on every hook, and a chat with none has
       // nothing to restart on (`wdio.outcome.conf.ts`).
       ...(namesItsConversation
-        ? [`${hookCommand("sessionstart", "SessionStart", { source: "startup" })} >/dev/null`]
+        ? [
+            // The profile's wrapper drops its arguments, and says what they were.
+            `printf '%s\\n' "\${SCENARIO_HARNESS_ARGS-$*}" >> ${singleQuoted(STARTED_WITH)}`,
+            `${hookCommand("sessionstart", "SessionStart", { source: "startup" })} >/dev/null`,
+          ]
         : []),
       "# The turn's rising edge, before a byte of output exists.",
       hookCommand("userpromptsubmit", "UserPromptSubmit"),
@@ -1113,6 +1124,10 @@ function theProfilesProgram(program: string): string {
     "  # The binary the bundled plugin's hooks run (`purlis_core::plugin::BINARY_ENV`).",
     `  printf '%s' "\${CHARTER_HOOK_BINARY:-}" > "$SEEN/hookbinary-$CHARTER_CHAT"`,
     "fi",
+    "# What this start was handed, before the loop below drops it, for a stand-in that records",
+    "# it (`STARTED_WITH`): the wrapper execs its program with no arguments.",
+    'SCENARIO_HARNESS_ARGS="$*"',
+    "export SCENARIO_HARNESS_ARGS",
     "while [ $# -gt 0 ]; do",
     '  if [ "$1" = "--session-id" ]; then',
     "    CLAUDE_CODE_SESSION_ID=$2",

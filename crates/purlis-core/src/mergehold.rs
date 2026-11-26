@@ -237,6 +237,10 @@ pub enum Held {
     /// A merge purlis cannot name the request of (a raw API call, a merge with no number, two
     /// merges on one line): refused, and nobody is asked.
     Unreadable,
+    /// A merge that asks the forge to merge later (`--auto` of gh, `--auto-merge` of glab):
+    /// refused, and nobody is asked, because the person's press merges at once and the forge
+    /// would merge any head pushed later, unseen (#7597).
+    AutoMerge,
     /// `purlis change land`, which lands a change's requests: refused in a chat the app started,
     /// as the person's to do now (Q9, Q93), and nobody is asked.
     Land,
@@ -255,9 +259,17 @@ pub fn held(cmd: &str) -> Option<Held> {
     if segments.iter().any(|toks| lands(toks)) {
         return Some(Held::Land);
     }
-    let mut found = segments.iter().filter_map(|toks| merge_of(toks));
-    Some(match (found.next(), found.next()) {
-        (Some(Some(request)), None) => Held::Request(request),
+    let merges: Vec<Merge> = segments.iter().filter_map(|toks| merge_of(toks)).collect();
+    if merges.iter().any(|merge| merge.later) {
+        return Some(Held::AutoMerge);
+    }
+    Some(match &merges[..] {
+        [
+            Merge {
+                request: Some(request),
+                ..
+            },
+        ] => Held::Request(request.clone()),
         _ => Held::Unreadable,
     })
 }
@@ -374,36 +386,69 @@ fn lands(toks: &[String]) -> bool {
         && words.next().map(String::as_str) == Some("land")
 }
 
-/// The flags of `gh pr merge` and `glab mr merge` that take a value, which is never the
-/// request's number.
-const VALUE_FLAGS: &[&str] = &[
-    "-b",
-    "--body",
-    "-F",
-    "--body-file",
-    "-t",
-    "--subject",
-    "-A",
-    "--author-email",
-    "--match-head-commit",
-    "-m",
-    "--message",
-    "--sha",
-    "--squash-message",
+/// The flags of each CLI's merge that take a value, which is never the request's number, from
+/// `gh pr merge --help` and `glab mr merge --help`. They differ: `-m` is gh's boolean `--merge`
+/// and glab's `--message`, so a word after it is a value on one CLI only.
+const VALUE_FLAGS: &[(&str, &[&str])] = &[
+    (
+        "gh",
+        &[
+            "-A",
+            "--author-email",
+            "-b",
+            "--body",
+            "-F",
+            "--body-file",
+            "--match-head-commit",
+            "-t",
+            "--subject",
+        ],
+    ),
+    ("glab", &["-m", "--message", "--sha", "--squash-message"]),
 ];
 
-/// One segment's merge: `None` where it is no `gh pr merge`, `glab mr merge` or `glab mr
-/// accept`; the request it merges where that can be read, or `Some(None)`. A flag's value is
-/// never read as a word. A help is [`asks_for_help`]'s to read, never this one's.
-fn merge_of(toks: &[String]) -> Option<Option<Request>> {
+/// One segment's merge, as [`merge_of`] reads it.
+struct Merge {
+    /// The request it merges, where that can be read.
+    request: Option<Request>,
+    /// Whether it asks the forge to merge later, on a pipeline or checks ([`merges_later`]).
+    later: bool,
+}
+
+/// The flags of the merge commands that ask the forge to merge later: `--auto` of gh, and
+/// `--auto-merge` and the older `--when-pipeline-succeeds` of glab. Neither CLI has a short
+/// spelling of one, so a cluster of short flags never carries it.
+const MERGE_LATER_FLAGS: &[&str] = &["--auto", "--auto-merge", "--when-pipeline-succeeds"];
+
+/// Whether `arg` turns one of [`MERGE_LATER_FLAGS`] on: bare, or as `--flag=value` where the value
+/// is not one of the spellings of false that pflag reads. A value pflag cannot read is taken as on.
+fn merges_later(arg: &str) -> bool {
+    let (flag, value) = arg
+        .split_once('=')
+        .map_or((arg, None), |(flag, value)| (flag, Some(value)));
+    MERGE_LATER_FLAGS.contains(&flag)
+        && !matches!(value, Some("0" | "f" | "F" | "false" | "False" | "FALSE"))
+}
+
+/// One segment's merge: `None` where it is no merge command of gh or glab (`pr merge`, `mr
+/// merge`, `mr accept`). A flag's value is never read as a word. A help is [`asks_for_help`]'s
+/// to read, never this one's.
+fn merge_of(toks: &[String]) -> Option<Merge> {
     let (prog, _, argv) = crate::shellwrap::split_env(toks);
     let base = crate::shellwrap::base_lower(&prog);
     let args = argv.get(1..).unwrap_or(&[]);
+    let value_flags = VALUE_FLAGS
+        .iter()
+        .find(|(cli, _)| *cli == base)
+        .map(|(_, flags)| *flags)?;
     let mut repo = None;
     let mut words = Vec::new();
+    let mut later = false;
     let mut i = 0;
     while i < args.len() {
         let arg = args[i].as_str();
+        // A flag's value is never a flag: `--body --auto` merges now, with the body `--auto`.
+        later |= merges_later(arg);
         if arg == "-R" || arg == "--repo" {
             repo = Some(args.get(i + 1).map(String::as_str));
             i += 2;
@@ -411,7 +456,7 @@ fn merge_of(toks: &[String]) -> Option<Option<Request>> {
         }
         if let Some(value) = arg.strip_prefix("--repo=") {
             repo = Some(Some(value));
-        } else if VALUE_FLAGS.contains(&arg) {
+        } else if value_flags.contains(&arg) {
             i += 1;
         } else if !arg.starts_with('-') {
             words.push(arg);
@@ -432,10 +477,15 @@ fn merge_of(toks: &[String]) -> Option<Option<Request>> {
         None => None,
         Some(named) => match named.map(Repo::try_from) {
             Some(Ok(repo)) => Some(repo),
-            _ => return Some(None),
+            _ => {
+                return Some(Merge {
+                    request: None,
+                    later,
+                });
+            }
         },
     };
-    Some(match words[2..] {
+    let request = match words[2..] {
         [number] => number
             .parse::<u64>()
             .ok()
@@ -446,7 +496,8 @@ fn merge_of(toks: &[String]) -> Option<Option<Request>> {
                 act: LandAs::Merge,
             }),
         _ => None,
-    })
+    };
+    Some(Merge { request, later })
 }
 
 /// **What the app answered about a held merge** (Q239), as the hook heard it.
@@ -505,7 +556,7 @@ pub fn ways_out(held: &Held, app: &AppSaid<'_>) -> &'static [WayOut] {
             &[WayOut::OneBuild, WayOut::AskThePerson]
         }
         (Held::Unreadable, _) => &[WayOut::MergeOnItsOwn],
-        (Held::Land, _) => &[WayOut::AskThePerson, WayOut::MergeOnItsOwn],
+        (Held::Land | Held::AutoMerge, _) => &[WayOut::AskThePerson, WayOut::MergeOnItsOwn],
     }
 }
 
@@ -516,7 +567,7 @@ pub fn reason(held: &Held, app: &AppSaid<'_>) -> &'static str {
     match (held, app) {
         (Held::Request(_), AppSaid::Held(_)) => REASON,
         (Held::Request(_), _) => REASON_NOT_ASKED,
-        (Held::Unreadable | Held::Land, _) => REASON_UNREADABLE,
+        (Held::Unreadable | Held::Land | Held::AutoMerge, _) => REASON_UNREADABLE,
     }
 }
 
@@ -569,9 +620,30 @@ pub fn refusal(held: &Held, app: &AppSaid<'_>) -> String {
              the window, or run `gh pr merge <number>` (or `glab mr merge <number>`) for one \
              request, and the person is asked to merge it in Asks."
         ),
+        (Held::AutoMerge, _) => format!("{OPENS} {AUTO_MERGE_SAID} {NO_YES}"),
         (Held::Unreadable, _) => unreadable_said(None),
     }
 }
+
+/// **Why a chat's auto-merge is refused and never held, in one place** (#7597): it pins the head
+/// only when it is turned on, so the forge would merge any head pushed later, unseen, and the
+/// person's press merges at once. A macro so a `&'static str` that other routes add their own way
+/// out to can be made with `concat!`; the hook, the GraphQL route and the REST route all say this.
+macro_rules! auto_merge_why {
+    () => {
+        "auto-merge would merge any head pushed later, unseen, so purlis does not hold it."
+    };
+}
+pub(crate) use auto_merge_why;
+
+/// What a chat is told when it asks the forge to merge later, which is refused and never held:
+/// [`auto_merge_why!`] and the hook's way out.
+pub const AUTO_MERGE_SAID: &str = concat!(
+    "Nobody was asked: ",
+    auto_merge_why!(),
+    " Ask the person to merge it, or run the merge without the auto flag and the person is asked \
+     to merge it in Asks."
+);
 
 /// **The refusal of `held` for the line `cmd`, naming what purlis took for a merge** (#7176):
 /// [`refusal`], and for a [`Held::Unreadable`] line the cause the release floor read it by, so

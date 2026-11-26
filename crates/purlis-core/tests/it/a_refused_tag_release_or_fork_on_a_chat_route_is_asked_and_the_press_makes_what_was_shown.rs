@@ -5,13 +5,13 @@
 //! route is not forwarded. The proxy answers with the one sentence that names the ask, the person
 //! is asked, and the press makes exactly the act the ask showed, as the person.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use purlis_core::forge::proxy::{
     AllowedRepo, ChatId, ForgeProxy, Inbound, Kind, NoCredentials, NoObjects, Outcome, Refusal,
     RequestHead, Sentinel,
 };
-use purlis_core::heldact::{Handoff, HeldActs, HeldContext, OwnedWorld, Pressed};
+use purlis_core::heldact::{AsksWindow, Handoff, HeldActs, HeldContext, OwnedWorld, Pressed};
 use purlis_core::mergehold::{Repo, Request};
 
 use crate::support::held_acts::{Fake, NoTrees, Rec, Second, press, sha};
@@ -44,15 +44,39 @@ impl HeldContext for App {
     }
 }
 
+/// The person's window: what it was told waits on them, and why it cannot show an ask, where it
+/// cannot.
+#[derive(Default)]
+pub(crate) struct Window {
+    pub(crate) told: Mutex<Vec<(u32, u64)>>,
+    pub(crate) cannot: Option<&'static str>,
+}
+
+impl AsksWindow for Window {
+    fn raised(&self, session: u32, id: u64) -> Result<(), String> {
+        if let Some(why) = self.cannot {
+            return Err(why.to_owned());
+        }
+        self.told.lock().unwrap().push((session, id));
+        Ok(())
+    }
+}
+
 pub(crate) struct Scene {
     pub(crate) proxy: ForgeProxy,
     pub(crate) chat: ChatId,
     pub(crate) sentinel: Sentinel,
     pub(crate) forge: Arc<Fake>,
     pub(crate) held: Arc<HeldActs>,
+    pub(crate) window: Arc<Window>,
 }
 
 pub(crate) fn scene(attended: bool) -> Scene {
+    scene_shown_in(attended, Window::default())
+}
+
+/// The scene, its asks shown in `window`.
+pub(crate) fn scene_shown_in(attended: bool, window: Window) -> Scene {
     let forge = Arc::new(Fake::github());
     forge.with(|s| {
         s.revs.insert("main".into(), sha('1'));
@@ -60,12 +84,14 @@ pub(crate) fn scene(attended: bool) -> Scene {
         s.merged.insert(sha('1'));
     });
     let held = Arc::new(HeldActs::default());
+    let window = Arc::new(window);
     let handoff = Handoff::new(
         held.clone(),
         Arc::new(App {
             forge: forge.clone(),
             attended,
         }),
+        window.clone(),
     );
     let proxy =
         ForgeProxy::new(Box::new(NoCredentials), Box::new(NoObjects)).with_held(Box::new(handoff));
@@ -80,6 +106,7 @@ pub(crate) fn scene(attended: bool) -> Scene {
         sentinel,
         forge,
         held,
+        window,
     }
 }
 
@@ -306,4 +333,52 @@ fn without_a_hand_off_the_same_requests_are_refused_as_before() {
         matches!(out, Outcome::Refused(Refusal::ReleaseOrTag)),
         "{out:?}"
     );
+}
+
+/// A tag asked for, as the chat's `POST` of its ref.
+fn a_tag(s: &Scene) -> String {
+    said(s.own(
+        "POST",
+        "/repos/acme/app/git/refs",
+        &format!(r#"{{"ref":"refs/tags/v1","sha":"{}"}}"#, sha('2').as_str()),
+    ))
+}
+
+#[test]
+fn a_held_act_is_said_to_be_asked_only_once_the_persons_window_was_told_of_it() {
+    purlis_core::unsteered!();
+    let s = scene(true);
+
+    let said = a_tag(&s);
+
+    assert!(said.contains("It has asked the person"), "{said}");
+    let waiting = s.held.every();
+    assert_eq!(waiting.len(), 1);
+    assert_eq!(*s.window.told.lock().unwrap(), vec![(7, waiting[0].id)]);
+}
+
+#[test]
+fn a_held_act_the_window_cannot_show_is_withdrawn_and_the_chat_told_nobody_was_asked() {
+    purlis_core::unsteered!();
+    let s = scene_shown_in(
+        true,
+        Window {
+            cannot: Some("this chat is not open in the window"),
+            ..Window::default()
+        },
+    );
+
+    let said = a_tag(&s);
+
+    assert!(!said.contains("It has asked the person"), "{said}");
+    assert!(!said.contains("Ask 1"), "{said}");
+    assert!(
+        said.contains("Nobody was asked") && said.contains("this chat is not open in the window"),
+        "{said}"
+    );
+    assert!(
+        s.held.every().is_empty(),
+        "nobody can answer it, so it waits on nobody"
+    );
+    assert!(s.forge.log().is_empty(), "{:?}", s.forge.log());
 }

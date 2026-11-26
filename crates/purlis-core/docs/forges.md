@@ -61,7 +61,7 @@ still comes. A repo not probed is listed unmarked. Nothing is cloned until the p
   is on this one route. There is no agent identity, no GitHub App the organisation registers
   for a chat, and no token a vault hands a chat: a project's `mint = "github-app"` line and a
   tool that hands a vault value in `GH_TOKEN` or `GITLAB_TOKEN` still load, run nothing, and
-  raise a Notice and a `purlis doctor` row that say to sign in under Settings › Forges and
+  raise a Notice and a `purlis doctor` row that say to sign in under Settings › Accounts and
   delete the line. purlis never deletes a vault item or a keyring entry for you: it offers, and
   waits for your press. A runner holds no sign-in either: with the desktop present its forge
   calls go to the desktop's proxy, and a headless runner uses a token connection the operator

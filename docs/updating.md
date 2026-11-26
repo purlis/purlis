@@ -421,6 +421,33 @@ operator's word, not GitHub's, and a compromised self-hosted Mac signs what it l
 a stable release never uses one, why the three conditions above come first, and why a self-hosted
 run says so in its summary ("Built on a self-hosted runner").
 
+### The outcome bars on a self-hosted Mac
+
+`outcome-bars.yml` (the Skill studio's outcome bars on macOS, on main's push and the nightly) runs
+where the repository variable `OUTCOME_BARS_RUNNER` says, read the same way as
+`fromJSON(vars.OUTCOME_BARS_RUNNER || '"macos-latest"')`: unset, `macos-latest`; set, a JSON array
+of labels:
+
+```sh
+gh variable set OUTCOME_BARS_RUNNER --repo purlis/purlis \
+  --body '["self-hosted","macOS","ARM64","purlis-bars"]'
+```
+
+Delete the variable to go back to GitHub's runners. Its own label, `purlis-bars`, and its own
+**runner group `purlis-bars`**, restricted to the `purlis/purlis` repository and under "Workflow
+access" to `purlis/purlis/.github/workflows/outcome-bars.yml@refs/heads/main` alone, so that neither
+group's runner takes the other's job. The workflow has no pull request, `pull_request_target`, merge
+queue or `workflow_run` trigger (`tools/no-self-hosted-on-pull-request.test.mjs` holds that), and it
+holds no secret. The job does what `release.yml`'s build does on a persistent runner (it empties the
+work folder before the checkout, keeps Cargo's, rustup's, npm's and the temporary folder under
+`$RUNNER_TEMP/job-home`, says "Built on a self-hosted runner" in its summary, and removes the job
+folder and stops sccache at the end, `always()`). Unlike that build it restores and, on `main`,
+saves its rust-cache and sccache entries, as on a hosted runner. It never turns Spotlight off,
+which on GitHub's runners it does with `sudo`. The runner user is the dedicated non-admin user above.
+
+The bars' limits were set on `macos-latest` (`app/e2e/outcomeBars.ts`), so a faster Mac passes
+them more easily. Re-set them from its runs before reading a green run there as the same claim.
+
 ## Cutting a stable release
 
 What a release brought is written as it merges, one changelog fragment per pull request in

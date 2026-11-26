@@ -84,6 +84,12 @@ pub fn refused_request(why: &Why) -> String {
         }
         Why::MergesWithoutRequest => "purlis never merges a branch without a pull request or merge request. Open one and ask for it to be merged.".to_owned(),
         Why::ReleaseEdit => "purlis holds the making of a release only. Changing, deleting or adding files to one is the person's to do on the forge.".to_owned(),
+        Why::AutoMerge => concat!(
+            "Nobody was asked: ",
+            crate::mergehold::auto_merge_why!(),
+            " Ask the person to merge it, or send the merge without `merge_when_pipeline_succeeds` or `auto_merge` and the person is asked to merge it in Asks."
+        )
+        .to_owned(),
         Why::Unreadable(what) => {
             format!("purlis could not read this request ({what}), so it did nothing.")
         }
@@ -114,12 +120,17 @@ pub fn refused(why: &Refused) -> String {
             "A push that may change CI files is refused, because its changes could not be \
              shown: {why}"
         ),
+        Refused::Behind(base) => format!("Not offered: {}.", super::behind(base)),
         Refused::ForkNotAllowed(repo) => format!(
             "The host does not let the person fork {}. Ask an owner to allow forks.",
             repo.as_str()
         ),
         Refused::Text(what) => format!("Not offered: {what}."),
         Refused::Forge(why) => format!("The forge did not say: {why}."),
+        Refused::NotShown(why) => format!(
+            "purlis could not show the ask in the person's window: {why}. Tell the person, who \
+             can make it themselves."
+        ),
         Refused::Unattended { .. } => NOBODY_HERE.to_owned(),
     }
 }
