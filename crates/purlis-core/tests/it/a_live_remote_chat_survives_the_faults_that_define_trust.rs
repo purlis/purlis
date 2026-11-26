@@ -22,7 +22,7 @@
 //! [`seam::pool_state_named`] from what its check found; Pool forgotten is still `#[ignore]`d,
 //! see its reason): Unreachable by the 90 s drop
 //! (`a_90_second_drop_is_named_unreachable_while_it_lasts`) and by the registry down
-//! (`a_registry_that_is_down_names_the_pool_unreachable`, #7661), Host key changed by case 3,
+//! (case 9, #7661), Host key changed by case 3,
 //! Pool forgotten by case 7. Runner gone is a container removed outside purlis, which the
 //! systemd rig's runner has none of: case 4 checks its outage rules, and the app's tests hold the
 //! name (see the case).
@@ -471,7 +471,7 @@ mod seam {
 
     /// The name of the state a pool is in, as the window words it, for a pool with no chat of its
     /// own: read from what its check found, through train A's `Finding::remote_state` (#7187),
-    /// as the window's `LinkState` takes it.
+    /// the core's `RemoteState`, which the window's `LinkState` mirrors.
     pub fn pool_state_named(found: &purlis_core::sshroute::connect::Finding) -> String {
         use purlis_core::sshroute::connect::RemoteState;
         match found.remote_state() {
@@ -746,7 +746,18 @@ fn a_killed_runner_host_ends_its_chat_never_reconnecting_for_ever_and_the_next_c
         let fault_at = rig.fault(&["kill-runner"]);
         kept.until_down(fault_at, QUIET_LIMIT).await;
         told_within(&kept.told(), fault_at, QUIET_LIMIT);
-        // Not "Reconnecting…" for ever: inside the limit the chat is ended, by name.
+        // A host's crash is a fault waiting can mend: the link is retried, not refused or gone.
+        let told = kept.told();
+        let first_down = told
+            .iter()
+            .position(|(at, what)| *at >= fault_at && matches!(what, Told::Down { .. }))
+            .expect("until_down saw it");
+        assert_eq!(
+            seam::state_named(&told[..=first_down]),
+            "Unreachable",
+            "{told:?}"
+        );
+        // Not "Reconnecting…" for ever: the chat is ended inside the limit.
         let deadline = Instant::now() + START_LIMIT;
         let after = kept
             .until_working(START_LIMIT, "the host started again")
@@ -759,8 +770,8 @@ fn a_killed_runner_host_ends_its_chat_never_reconnecting_for_ever_and_the_next_c
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
         assert!(
-            first_up_after(&kept.told(), fault_at).is_some(),
-            "the link came back, to the host systemd started again: {:?}",
+            first_up_after(&kept.told(), fault_at).is_some_and(|back| back <= START_LIMIT),
+            "the link came back inside the limit, to the host systemd started again: {:?}",
             kept.told()
         );
         // The next chat starts a new host's chat, inside the limit.
@@ -955,25 +966,13 @@ fn a_half_open_link_is_found_within_the_stated_bound_and_the_chat_survives_it() 
 // Case 9, on the Docker pool: the registry down.
 // ---------------------------------------------------------------------------------------------
 
-#[test]
-fn a_registry_that_is_down_fails_the_check_within_its_budget_as_image_unreachable_and_leaves_no_container()
- {
-    purlis_core::unsteered!();
-    a_registry_that_is_down(false);
-}
-
-/// Case 9's other half, the state the window names for it: Unreachable (train A, #7187). A
-/// registry that is down is a fault waiting can mend, not one the person must act on (#7661).
-#[test]
-fn a_registry_that_is_down_names_the_pool_unreachable() {
-    purlis_core::unsteered!();
-    a_registry_that_is_down(true);
-}
-
 /// The registry inside dind goes down under a Docker pool; the check fails inside its budget as
-/// image unreachable and leaves no runner container; with `names_the_state`, the pool is also
-/// named `Unreachable`, as the window words it.
-fn a_registry_that_is_down(names_the_state: bool) {
+/// image unreachable, names the pool `Unreachable` as the window words it (train A, #7187), and
+/// leaves no runner container. A registry that is down is a fault waiting can mend, not one the
+/// person must act on (#7661). One case, one rig run: the fault step is near its time budget.
+#[test]
+fn a_registry_that_is_down_fails_the_check_within_its_budget_as_image_unreachable_names_the_pool_unreachable_and_leaves_no_container()
+ {
     use purlis_core::dockerpool::{Docker, Image};
     use purlis_core::poolsetup::doctoring;
     use purlis_core::runners::{Pool, Remote, Set};
@@ -1063,9 +1062,7 @@ fn a_registry_that_is_down(names_the_state: bool) {
     let took = began.elapsed();
     forward::let_go("regdown");
     let finding = found.expect_err("doctor finds the registry down");
-    if names_the_state {
-        assert_eq!(seam::pool_state_named(&finding), "Unreachable");
-    }
+    assert_eq!(seam::pool_state_named(&finding), "Unreachable");
     assert!(
         matches!(finding, connect::Finding::ImageUnreachable { .. }),
         "image unreachable, not another finding: {finding:?}"
@@ -1177,7 +1174,7 @@ fn b3_a_pool_forgotten_with_a_browser_open_ends_it_as_pool_forgotten() {
 }
 
 #[test]
-#[ignore = "train D's runner browsers are the app's (app/src-tauri chatbrowsers.rs), which purlis-core cannot open, and the systemd rig's machine has no browser engine (tests/ssh-runner/systemd.Dockerfile); the quit and the reattach are the app's too (browsersatquit) (#7662)"]
+#[ignore = "train D's runner browsers are the app's (app/src-tauri chatbrowsers.rs), which purlis-core cannot open, and the systemd rig's machine has no browser engine (tests/ssh-runner/systemd.Dockerfile); the reattach is the app's too (app/src-tauri/src/hostedsessions/tests/browsers_back.rs, #2025) (#7662)"]
 fn b4_an_app_quit_with_a_runner_browser_open_leaves_it_running_and_purlis_reattaches() {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
