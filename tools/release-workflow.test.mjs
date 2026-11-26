@@ -306,7 +306,7 @@ test("a dev build is the commit its green ci ran on, the run's own commit, and n
   assert.equal(plan.find((line) => line.trim().startsWith("ref:"))?.trim(), `ref: ${sha}`);
   assert.ok(plan.includes(`          SHA: ${sha}`), "plan's SHA is not the ci run's commit");
   assert.ok(plan.includes('            echo "sha=$SHA"; echo "tag=$tag"; echo "skip=$skip"'));
-  for (const name of ["build", "sbom", "manifest", "publish"]) {
+  for (const name of ["build", "build-signer", "sbom", "manifest", "publish"]) {
     const refs = job(name).filter((line) => line.trim().startsWith("ref:"));
     assert.deepEqual(
       refs.map((line) => line.trim()),
@@ -385,6 +385,7 @@ test("every job has a deadline, so a hung one cannot hold the dev builds' group 
     "plan",
     "keys",
     "build",
+    "build-signer",
     "sign-macos",
     "runner-image",
     "runner-image-signature",
@@ -652,6 +653,46 @@ test("the runner binaries are build's own and one keyless job's, signed by a job
       `${target} is handed on by its exact name`,
     );
   }
+});
+
+// The macOS updater archive's signer: compiled by a keyless job on a hosted runner while `build`
+// compiles, and run by `sign-macos` only once its bytes are the ones that job hashed.
+test("the updater archive's signer is a keyless hosted job's, and sign-macos runs it only once its sha256 matches", () => {
+  const built = job("build-signer");
+  assert.equal(value(built, 4, "needs"), "[plan, keys]", "it starts with the build, not after it");
+  assert.equal(value(built, 4, "runs-on"), "macos-latest");
+  for (const key of ["environment", "strategy", "container"]) {
+    assert.ok(!built.some((line) => line.startsWith(`    ${key}:`)), `build-signer has \`${key}:\``);
+  }
+  assert.ok(!built.some((line) => !line.trim().startsWith("#") && /secrets|vars\.|github\.token/.test(line)), "nothing in reach");
+  assert.deepEqual(
+    built.slice(built.indexOf("    permissions:") + 1, built.indexOf("    permissions:") + 2).map((l) => l.trim()),
+    ["contents: read"],
+  );
+  assert.equal(value(built, 4, "permissions"), "");
+  assert.ok(built.some((line) => line.trim() === "sha256: ${{ steps.signer.outputs.sha256 }}"));
+  const compile = step(built, "The updater archive's signer, built with no key in reach");
+  assert.ok(compile.includes("cargo build --locked --release -p release-manifest --bin sign-updater-archive"));
+  assert.ok(compile.includes(`sha=$(shasum -a 256 target/release/sign-updater-archive | cut -d' ' -f1)`));
+
+  const sign = job("sign-macos");
+  assert.equal(value(sign, 4, "needs"), "[gate, plan, keys, build, build-signer]");
+  assert.ok(value(sign, 4, "if").includes("needs.build-signer.result == 'success'"));
+  assert.ok(
+    !sign.some((line) => !line.trim().startsWith("#") && /\bcargo\b|rust-toolchain/.test(line)),
+    "sign-macos compiles nothing",
+  );
+  const check = step(sign, "The signer is the one build-signer built");
+  assert.ok(check.includes("SIGNER_SHA256: ${{ needs.build-signer.outputs.sha256 }}"));
+  assert.ok(check.includes(`got=$(shasum -a 256 signer/sign-updater-archive | cut -d' ' -f1)`));
+  assert.ok(check.some((line) => line.startsWith('[ "$got" = "$SIGNER_SHA256" ]')));
+  const at = (name) => sign.findIndex((line) => line.trim() === `- name: ${name}`);
+  const downloaded = sign.findIndex((line) => line.trim() === "name: purlis-updater-signer-${{ needs.plan.outputs.version }}");
+  assert.ok(downloaded !== -1 && downloaded < at("The signer is the one build-signer built"));
+  assert.ok(at("The signer is the one build-signer built") < at("The updater archive's signature"));
+  assert.ok(
+    step(sign, "The updater archive's signature").includes('signer/sign-updater-archive dist/purlis-darwin-aarch64.app.tar.gz "$VERSION"'),
+  );
 });
 
 test("a dev publish keeps the last dev builds' runner assets, not only its own", () => {

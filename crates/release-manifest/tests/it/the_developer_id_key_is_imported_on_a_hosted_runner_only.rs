@@ -13,9 +13,18 @@
 //! the gate, sign after it, every other job behind the gate) is held there, and `sign-macos` is one
 //! of the jobs it holds behind the gate; this file holds what is new.
 
-use crate::workflow::{Job, jobs, read, run_lines, step_uses, workflows_dir};
+use crate::workflow::{Job, jobs, read, run_lines, step_uses, step_value, workflows_dir};
 
 const SIGN: &str = "sign-macos";
+
+/// The job that compiles the updater archive's signer, which `sign-macos` runs with the
+/// updater's key, so it is held as if it held the key: hosted, and nothing in reach.
+const SIGNER: &str = "build-signer";
+
+/// The one name the signer is handed on under, and the path it is run from once checked.
+const SIGNER_ARTIFACT: &str = "purlis-updater-signer-${{ needs.plan.outputs.version }}";
+const SIGNER_PATH: &str = "signer/sign-updater-archive";
+const SIGNER_CHECK: &str = "The signer is the one build-signer built";
 
 fn release_text() -> String {
     read(&workflows_dir().join("release.yml"))
@@ -125,15 +134,20 @@ fn only_the_signing_job_names_an_apple_secret(text: &str) -> Result<(), String> 
 /// `sign-macos` runs on a runner GitHub hosts: a literal `macos-` label, no expression, no
 /// `self-hosted`, no variable, no matrix, no container.
 fn the_signing_job_runs_on_a_hosted_runner(text: &str) -> Result<(), String> {
+    runs_on_a_hosted_runner(text, SIGN)
+}
+
+/// Job `name` runs on a runner GitHub hosts, as `sign-macos` must.
+fn runs_on_a_hosted_runner(text: &str, name: &str) -> Result<(), String> {
     let all = jobs(text);
-    let job = find(&all, SIGN)?;
+    let job = find(&all, name)?;
     let runs_on: Vec<&String> = job
         .body
         .iter()
         .filter(|l| l.starts_with("    runs-on:"))
         .collect();
     let [line] = runs_on.as_slice() else {
-        return Err(format!("{SIGN} has {} `runs-on:` lines", runs_on.len()));
+        return Err(format!("{name} has {} `runs-on:` lines", runs_on.len()));
     };
     let label = line.trim_start_matches("    runs-on:").trim();
     let literal = label.starts_with("macos-")
@@ -142,19 +156,19 @@ fn the_signing_job_runs_on_a_hosted_runner(text: &str) -> Result<(), String> {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.');
     if !literal {
         return Err(format!(
-            "{SIGN} runs on `{label}`, and it must be a literal GitHub-hosted `macos-` label"
+            "{name} runs on `{label}`, and it must be a literal GitHub-hosted `macos-` label"
         ));
     }
     for key in ["    strategy:", "    container:", "    services:"] {
         if job.body.iter().any(|l| l.starts_with(key)) {
-            return Err(format!("{SIGN} has `{}`", key.trim()));
+            return Err(format!("{name} has `{}`", key.trim()));
         }
     }
     for line in job.body.iter().filter(|l| !is_comment(l)) {
         for word in ["self-hosted", "vars.", "inputs."] {
             if line.contains(word) {
                 return Err(format!(
-                    "{SIGN} mentions `{word}`, which could move it off a hosted runner: {}",
+                    "{name} mentions `{word}`, which could move it off a hosted runner: {}",
                     line.trim()
                 ));
             }
@@ -526,6 +540,210 @@ fn only_the_signing_job_takes_the_unsigned_bundle(text: &str) -> Result<(), Stri
     Ok(())
 }
 
+/// `build-signer` compiles the updater archive's signer with nothing in reach: a hosted runner,
+/// `plan` its only need (so it compiles while `build` does), no environment, no secret, no token
+/// but `contents: read`, and it hands on the one binary under one name with its sha256 as an
+/// output. No cache is held by `the_workflows_run_only_what_they_pinned`, for every job of
+/// `release.yml`.
+fn the_signer_is_built_on_a_hosted_runner_with_nothing_in_reach(text: &str) -> Result<(), String> {
+    runs_on_a_hosted_runner(text, SIGNER)?;
+    let all = jobs(text);
+    let job = find(&all, SIGNER)?;
+    if job.needs() != ["plan", "keys"] {
+        return Err(format!(
+            "{SIGNER} needs {:?}, and it needs `plan` and `keys` alone",
+            job.needs()
+        ));
+    }
+    if let Some(environment) = job.environment() {
+        return Err(format!("{SIGNER} is in the environment `{environment}`"));
+    }
+    // `secrets.X`, `secrets[..]`, `toJSON(secrets)` and `secrets: inherit` all say `secrets`.
+    if let Some(line) = job.body.iter().find(|l| l.contains("secrets")) {
+        return Err(format!("{SIGNER} names a secret: {}", line.trim()));
+    }
+    for key in ["github.token", "GITHUB_TOKEN", "KEY"] {
+        if let Some(line) = job.body.iter().find(|l| l.contains(key)) {
+            return Err(format!("{SIGNER} names `{key}`: {}", line.trim()));
+        }
+    }
+    let permissions = job.permissions().unwrap_or_default();
+    if permissions != [("contents".to_owned(), "read".to_owned())] {
+        return Err(format!(
+            "{SIGNER} holds more than `contents: read`: {permissions:?}"
+        ));
+    }
+    if job
+        .body
+        .iter()
+        .any(|l| l.trim_start().starts_with("continue-on-error"))
+    {
+        return Err(format!("{SIGNER} has a `continue-on-error`"));
+    }
+    if !job
+        .body
+        .iter()
+        .any(|l| l.trim() == "sha256: ${{ steps.signer.outputs.sha256 }}")
+    {
+        return Err(format!(
+            "{SIGNER} does not give the signer's sha256 as an output"
+        ));
+    }
+    let steps = job.steps();
+    let built = steps
+        .iter()
+        .position(|s| s.iter().any(|l| l.trim() == "id: signer"))
+        .ok_or_else(|| format!("{SIGNER} has no step `signer`"))?;
+    let run = run_lines(&steps[built]);
+    for want in [
+        "cargo build --locked --release -p release-manifest --bin sign-updater-archive",
+        "sha=$(shasum -a 256 target/release/sign-updater-archive | cut -d' ' -f1)",
+        r#"echo "sha256=$sha" >> "$GITHUB_OUTPUT""#,
+    ] {
+        if !run.iter().any(|l| l == want) {
+            return Err(format!("{SIGNER}'s step `signer` does not run `{want}`"));
+        }
+    }
+    let uploads: Vec<usize> = steps
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| step_uses(s).is_some_and(|u| u.contains("upload-artifact")))
+        .map(|(i, _)| i)
+        .collect();
+    let [upload] = uploads.as_slice() else {
+        return Err(format!(
+            "{SIGNER} has {} uploads, and it has one",
+            uploads.len()
+        ));
+    };
+    let up = &steps[*upload];
+    let with = |key: &str| step_value(up, "with", key);
+    if with("name") != Some(SIGNER_ARTIFACT)
+        || with("path") != Some("target/release/sign-updater-archive")
+        || *upload < built
+    {
+        return Err(format!(
+            "{SIGNER} uploads something other than the signer it hashed, under `{SIGNER_ARTIFACT}`"
+        ));
+    }
+    Ok(())
+}
+
+/// `sign-macos` compiles nothing: it downloads the signer `build-signer` built, holds its bytes
+/// to the sha256 that job gave before anything runs it, and runs it from there. No other job
+/// takes the signer.
+fn the_signing_job_runs_only_the_signer_it_checked(text: &str) -> Result<(), String> {
+    let all = jobs(text);
+    for other in &all {
+        if other.name == SIGN || other.name == SIGNER {
+            continue;
+        }
+        // A download by `pattern:`, or of every artifact (no `name:`), could take the signer
+        // without naming it; only one that names its artifact passes.
+        for step in other.steps() {
+            if step_uses(&step).is_some_and(|u| u.starts_with("actions/download-artifact@"))
+                && step_value(&step, "with", "name").is_none()
+            {
+                let pattern = step_value(&step, "with", "pattern").unwrap_or("every artifact");
+                if !pattern.contains("-symbols-") {
+                    return Err(format!(
+                        "job `{}` takes the updater archive's signer, or may, by `{pattern}`",
+                        other.name
+                    ));
+                }
+            }
+        }
+        if let Some(line) = other
+            .body
+            .iter()
+            .find(|l| l.contains("purlis-updater-signer"))
+        {
+            return Err(format!(
+                "job `{}` takes the updater archive's signer: {}",
+                other.name,
+                line.trim()
+            ));
+        }
+    }
+    let job = find(&all, SIGN)?;
+    if !job.needs().iter().any(|n| n == SIGNER) {
+        return Err(format!("{SIGN} does not need `{SIGNER}`"));
+    }
+    if !and_terms(job.condition().unwrap_or_default())
+        .iter()
+        .any(|t| t == "needs.build-signer.result == 'success'")
+    {
+        return Err(format!("{SIGN} does not ask {SIGNER} for its success"));
+    }
+    for line in &job.body {
+        let words = line.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+        if let Some(word) = words
+            .into_iter()
+            .find(|w| ["cargo", "rustc", "rust-toolchain"].contains(w))
+        {
+            return Err(format!("{SIGN} compiles (`{word}`): {}", line.trim()));
+        }
+    }
+    let steps = job.steps();
+    let downloaded = steps
+        .iter()
+        .position(|s| {
+            step_uses(s).is_some_and(|u| u.starts_with("actions/download-artifact@"))
+                && step_value(s, "with", "name") == Some(SIGNER_ARTIFACT)
+                && step_value(s, "with", "path") == Some("signer")
+        })
+        .ok_or_else(|| format!("{SIGN} does not download `{SIGNER_ARTIFACT}` into `signer`"))?;
+    let (checked, check) =
+        step_named(job, SIGNER_CHECK).ok_or_else(|| format!("{SIGN} has no `{SIGNER_CHECK}`"))?;
+    if check.iter().any(|l| l.trim_start().starts_with("if:")) {
+        return Err(format!(
+            "`{SIGNER_CHECK}` has a condition, so it may not run"
+        ));
+    }
+    if step_value(&check, "env", "SIGNER_SHA256")
+        != Some("${{ needs.build-signer.outputs.sha256 }}")
+    {
+        return Err(format!("`{SIGNER_CHECK}` does not read {SIGNER}'s sha256"));
+    }
+    let run = run_lines(&check).join("\n");
+    for want in [
+        "set -euo pipefail",
+        r#"[[ "$SIGNER_SHA256" =~ ^[0-9a-f]{64}$ ]]"#,
+        &format!("got=$(shasum -a 256 {SIGNER_PATH} | cut -d' ' -f1)"),
+        r#"[ "$got" = "$SIGNER_SHA256" ]"#,
+    ] {
+        if !run.contains(want) {
+            return Err(format!("`{SIGNER_CHECK}` does not compare `{want}`"));
+        }
+    }
+    let runs: Vec<(usize, Vec<String>)> = steps
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != checked)
+        .map(|(i, s)| (i, run_lines(s)))
+        .filter(|(_, lines)| lines.iter().any(|l| l.contains("sign-updater-archive")))
+        .collect();
+    let [(signs, lines)] = runs.as_slice() else {
+        return Err(format!(
+            "{SIGN} runs the signer in {} steps, and it runs it in one",
+            runs.len()
+        ));
+    };
+    let from_the_checked_path = lines
+        .iter()
+        .filter(|l| l.contains("sign-updater-archive"))
+        .all(|l| l.starts_with(&format!("{SIGNER_PATH} ")));
+    if !from_the_checked_path {
+        return Err(format!("{SIGN} runs a signer other than `{SIGNER_PATH}`"));
+    }
+    if !(downloaded < checked && checked < *signs) {
+        return Err(format!(
+            "{SIGN} downloads, checks and only then runs the signer, in that order"
+        ));
+    }
+    Ok(())
+}
+
 // ----- the real workflow keeps them -----
 
 #[test]
@@ -597,6 +815,16 @@ fn the_macos_bundle_every_later_job_takes_is_the_one_sign_macos_uploads() {
             "{name} does not ask {SIGN} for its success"
         );
     }
+}
+
+#[test]
+fn the_updater_archives_signer_is_built_on_a_hosted_runner_with_no_secret_environment_or_key() {
+    the_signer_is_built_on_a_hosted_runner_with_nothing_in_reach(&release_text()).unwrap();
+}
+
+#[test]
+fn sign_macos_compiles_nothing_and_runs_the_signer_only_once_its_sha256_is_build_signers() {
+    the_signing_job_runs_only_the_signer_it_checked(&release_text()).unwrap();
 }
 
 // ----- each rule fails on a workflow broken on purpose -----
@@ -768,8 +996,8 @@ fn a_signing_job_outside_the_release_environment_or_ahead_of_the_gate_is_refused
         the_signing_job_is_behind_the_gate_in_the_release_environment(&swap(
             &text,
             SIGN,
-            "needs: [gate, plan, keys, build]",
-            "needs: [plan, keys, build]",
+            "needs: [gate, plan, keys, build, build-signer]",
+            "needs: [plan, keys, build, build-signer]",
         )),
         "does not need `gate`",
     );
@@ -1056,4 +1284,257 @@ fn a_job_that_downloads_the_unsigned_bundle_beside_sign_macos_is_refused() {
         only_the_signing_job_takes_the_unsigned_bundle(&broken),
         "takes the unsigned bundle",
     );
+}
+
+#[test]
+fn a_signer_built_on_a_self_hosted_or_variable_runner_is_refused() {
+    for runs_on in [
+        "self-hosted",
+        "${{ fromJSON(vars.MACOS_RELEASE_RUNNER || '\"macos-latest\"') }}",
+        "ubuntu-24.04",
+    ] {
+        let broken = swap(
+            &release_text(),
+            SIGNER,
+            "runs-on: macos-latest",
+            &format!("runs-on: {runs_on}"),
+        );
+        refuses(
+            the_signer_is_built_on_a_hosted_runner_with_nothing_in_reach(&broken),
+            "literal GitHub-hosted",
+        );
+    }
+}
+
+#[test]
+fn a_signer_built_after_the_build_or_the_gate_is_refused() {
+    for needs in ["[plan, keys, build]", "[gate, plan, keys]"] {
+        let broken = swap(
+            &release_text(),
+            SIGNER,
+            "    needs: [plan, keys]\n",
+            &format!("    needs: {needs}\n"),
+        );
+        refuses(
+            the_signer_is_built_on_a_hosted_runner_with_nothing_in_reach(&broken),
+            "it needs `plan` and `keys` alone",
+        );
+    }
+}
+
+#[test]
+fn a_signer_built_with_an_environment_a_secret_or_a_key_in_reach_is_refused() {
+    let text = release_text();
+    refuses(
+        the_signer_is_built_on_a_hosted_runner_with_nothing_in_reach(&swap(
+            &text,
+            SIGNER,
+            "    permissions:\n",
+            "    environment: release\n    permissions:\n",
+        )),
+        "is in the environment",
+    );
+    for env in [
+        "TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}",
+        "ALL: ${{ toJSON(secrets) }}",
+    ] {
+        refuses(
+            the_signer_is_built_on_a_hosted_runner_with_nothing_in_reach(&swap(
+                &text,
+                SIGNER,
+                "        id: signer\n",
+                &format!("        id: signer\n        env:\n          {env}\n"),
+            )),
+            "names a secret",
+        );
+    }
+    refuses(
+        the_signer_is_built_on_a_hosted_runner_with_nothing_in_reach(&swap(
+            &text,
+            SIGNER,
+            "        id: signer\n",
+            "        id: signer\n        env:\n          GH_TOKEN: ${{ github.token }}\n",
+        )),
+        "github.token",
+    );
+    refuses(
+        the_signer_is_built_on_a_hosted_runner_with_nothing_in_reach(&swap(
+            &text,
+            SIGNER,
+            "    permissions:\n      contents: read\n",
+            "    permissions:\n      contents: read\n      actions: write\n",
+        )),
+        "more than `contents: read`",
+    );
+}
+
+#[test]
+fn a_signer_handed_on_without_its_sha256_or_under_another_name_is_refused() {
+    let text = release_text();
+    refuses(
+        the_signer_is_built_on_a_hosted_runner_with_nothing_in_reach(&swap(
+            &text,
+            SIGNER,
+            "      sha256: ${{ steps.signer.outputs.sha256 }}\n",
+            "",
+        )),
+        "sha256 as an output",
+    );
+    refuses(
+        the_signer_is_built_on_a_hosted_runner_with_nothing_in_reach(&swap(
+            &text,
+            SIGNER,
+            r#"          echo "sha256=$sha" >> "$GITHUB_OUTPUT""#,
+            r#"          echo "sha256=0000" >> "$GITHUB_OUTPUT""#,
+        )),
+        "does not run",
+    );
+    refuses(
+        the_signer_is_built_on_a_hosted_runner_with_nothing_in_reach(&swap(
+            &text,
+            SIGNER,
+            "          path: target/release/sign-updater-archive\n",
+            "          path: target/release/\n",
+        )),
+        "uploads something other",
+    );
+}
+
+#[test]
+fn a_signing_job_that_compiles_the_signer_again_is_refused() {
+    let broken = swap(
+        &release_text(),
+        SIGN,
+        "      - name: The bundle `build` made\n",
+        "      - run: cargo build --locked --release -p release-manifest --bin sign-updater-archive\n      - name: The bundle `build` made\n",
+    );
+    refuses(
+        the_signing_job_runs_only_the_signer_it_checked(&broken),
+        "compiles (`cargo`)",
+    );
+}
+
+#[test]
+fn a_signing_job_that_runs_the_signer_unchecked_is_refused() {
+    let text = release_text();
+    // No check at all.
+    refuses(
+        the_signing_job_runs_only_the_signer_it_checked(&swap(
+            &text,
+            SIGN,
+            &format!("      - name: {SIGNER_CHECK}\n"),
+            "      - name: The signer\n",
+        )),
+        "has no `The signer is the one build-signer built`",
+    );
+    // A check that compares the file with itself.
+    refuses(
+        the_signing_job_runs_only_the_signer_it_checked(&swap(
+            &text,
+            SIGN,
+            r#"[ "$got" = "$SIGNER_SHA256" ]"#,
+            r#"[ "$got" = "$got" ]"#,
+        )),
+        "does not compare",
+    );
+    // A check against a hash of the job's own making.
+    refuses(
+        the_signing_job_runs_only_the_signer_it_checked(&swap(
+            &text,
+            SIGN,
+            "SIGNER_SHA256: ${{ needs.build-signer.outputs.sha256 }}",
+            "SIGNER_SHA256: ${{ env.ANYTHING }}",
+        )),
+        "does not read build-signer's sha256",
+    );
+    // A check that may be skipped.
+    refuses(
+        the_signing_job_runs_only_the_signer_it_checked(&swap(
+            &text,
+            SIGN,
+            &format!("      - name: {SIGNER_CHECK}\n"),
+            &format!("      - name: {SIGNER_CHECK}\n        if: false\n"),
+        )),
+        "has a condition",
+    );
+    // A signer run from somewhere the check did not read.
+    refuses(
+        the_signing_job_runs_only_the_signer_it_checked(&swap(
+            &text,
+            SIGN,
+            "          signer/sign-updater-archive dist/",
+            "          ./sign-updater-archive dist/",
+        )),
+        "a signer other than",
+    );
+    // A signing job that no longer waits for the signer's job.
+    refuses(
+        the_signing_job_runs_only_the_signer_it_checked(&swap(
+            &text,
+            SIGN,
+            " && needs.build-signer.result == 'success'",
+            "",
+        )),
+        "for its success",
+    );
+}
+
+#[test]
+fn a_signing_job_that_runs_the_signer_before_it_checks_it_is_refused() {
+    let text = release_text();
+    let (start, end) = span(&text, SIGN);
+    let job = &text[start..end];
+    let head = format!("      - name: {SIGNER_CHECK}\n");
+    let at = job.find(&head).expect("the check step");
+    let len = job[at + head.len()..]
+        .find("\n      - ")
+        .map(|n| head.len() + n + 1)
+        .expect("a step after the check");
+    let check = &job[at..at + len];
+    let moved = job.replacen(check, "", 1).replacen(
+        "      # The `.dmg` is allowed to fail",
+        &format!("{check}      # The `.dmg` is allowed to fail"),
+        1,
+    );
+    assert_ne!(moved, job, "the check step did not move");
+    let broken = format!("{}{}{}", &text[..start], moved, &text[end..]);
+    refuses(
+        the_signing_job_runs_only_the_signer_it_checked(&broken),
+        "in that order",
+    );
+}
+
+#[test]
+fn a_job_that_takes_the_signer_beside_sign_macos_is_refused() {
+    let broken = swap(
+        &release_text(),
+        "publish",
+        "    steps:\n",
+        "    steps:\n      - uses: actions/download-artifact@v8\n        with:\n          name: purlis-updater-signer-${{ needs.plan.outputs.version }}\n",
+    );
+    refuses(
+        the_signing_job_runs_only_the_signer_it_checked(&broken),
+        "takes the updater archive's signer",
+    );
+}
+
+#[test]
+fn a_job_that_downloads_by_a_pattern_that_could_take_the_signer_is_refused() {
+    for with in [
+        "          pattern: purlis-*-${{ needs.plan.outputs.version }}\n",
+        "          path: all\n",
+    ] {
+        let broken = swap(
+            &release_text(),
+            "publish",
+            "    steps:\n",
+            &format!(
+                "    steps:\n      - uses: actions/download-artifact@v8\n        with:\n{with}"
+            ),
+        );
+        refuses(
+            the_signing_job_runs_only_the_signer_it_checked(&broken),
+            "or may, by",
+        );
+    }
 }
