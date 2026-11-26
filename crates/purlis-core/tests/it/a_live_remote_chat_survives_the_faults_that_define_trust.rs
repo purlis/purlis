@@ -21,11 +21,11 @@
 //! [`seam::state_named`] from what the kept link told (of a pool with no chat, through
 //! [`seam::pool_state_named`] from what its check found; Pool forgotten is still `#[ignore]`d,
 //! see its reason): Unreachable by the 90 s drop
-//! (`a_90_second_drop_is_named_unreachable_while_it_lasts`) and by the registry down
-//! (case 9, #7661), Host key changed by case 3,
+//! (`a_90_second_drop_is_named_unreachable_while_it_lasts`), by the killed runner's retries
+//! (case 4) and by the registry down (case 9, #7661), Host key changed by case 3,
 //! Pool forgotten by case 7. Runner gone is a container removed outside purlis, which the
-//! systemd rig's runner has none of: case 4 checks its outage rules, and the app's tests hold the
-//! name (see the case).
+//! systemd rig's runner has none of: case 4 checks its outage rules and that its host's end is
+//! Unreachable, and the app's tests hold the name Runner gone (see the case).
 //!
 //! **Faults** are `tests/remote-faults/faults.sh`'s, put on the rig's containers and taken off by
 //! `restore`, which every test runs before it starts and again as it ends, however it ends: a
@@ -746,17 +746,6 @@ fn a_killed_runner_host_ends_its_chat_never_reconnecting_for_ever_and_the_next_c
         let fault_at = rig.fault(&["kill-runner"]);
         kept.until_down(fault_at, QUIET_LIMIT).await;
         told_within(&kept.told(), fault_at, QUIET_LIMIT);
-        // A host's crash is a fault waiting can mend: the link is retried, not refused or gone.
-        let told = kept.told();
-        let first_down = told
-            .iter()
-            .position(|(at, what)| *at >= fault_at && matches!(what, Told::Down { .. }))
-            .expect("until_down saw it");
-        assert_eq!(
-            seam::state_named(&told[..=first_down]),
-            "Unreachable",
-            "{told:?}"
-        );
         // Not "Reconnecting…" for ever: the chat is ended inside the limit.
         let deadline = Instant::now() + START_LIMIT;
         let after = kept
@@ -769,11 +758,29 @@ fn a_killed_runner_host_ends_its_chat_never_reconnecting_for_ever_and_the_next_c
             assert!(Instant::now() < deadline, "the chat was never ended");
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
+        // A host's crash is a fault waiting can mend: every Down from the fault until the link
+        // is back is named Unreachable, retried, never refused, gone or a changed key. The
+        // first is the held link's end, which is always plain; the retries' dials after it are
+        // the ones that could say otherwise.
+        let told = kept.told();
+        let first_down = told
+            .iter()
+            .position(|(at, what)| *at >= fault_at && matches!(what, Told::Down { .. }))
+            .expect("until_down saw it");
+        let down_at = told[first_down].0;
+        let back = first_up_after(&told, down_at);
         assert!(
-            first_up_after(&kept.told(), fault_at).is_some_and(|back| back <= START_LIMIT),
-            "the link came back inside the limit, to the host systemd started again: {:?}",
-            kept.told()
+            back.is_some_and(|back| down_at - fault_at + back <= START_LIMIT),
+            "the link came back inside the limit, to the host systemd started again: {told:?}"
         );
+        for end in first_down..told.len() {
+            match &told[end].1 {
+                Told::Up => break,
+                Told::Down { .. } => {
+                    assert_eq!(seam::state_named(&told[..=end]), "Unreachable", "{told:?}")
+                }
+            }
+        }
         // The next chat starts a new host's chat, inside the limit.
         let began = Instant::now();
         let next = typing_chat(&after, "killed-next").await;
@@ -1062,7 +1069,6 @@ fn a_registry_that_is_down_fails_the_check_within_its_budget_as_image_unreachabl
     let took = began.elapsed();
     forward::let_go("regdown");
     let finding = found.expect_err("doctor finds the registry down");
-    assert_eq!(seam::pool_state_named(&finding), "Unreachable");
     assert!(
         matches!(finding, connect::Finding::ImageUnreachable { .. }),
         "image unreachable, not another finding: {finding:?}"
@@ -1087,6 +1093,12 @@ fn a_registry_that_is_down_fails_the_check_within_its_budget_as_image_unreachabl
         String::from_utf8_lossy(&left.stdout).trim(),
         "",
         "a failed check leaves no runner container"
+    );
+    // Last, so a wrong name does not hide the checks above.
+    assert_eq!(
+        seam::pool_state_named(&finding),
+        "Unreachable",
+        "{finding:?}"
     );
 }
 
@@ -1174,7 +1186,7 @@ fn b3_a_pool_forgotten_with_a_browser_open_ends_it_as_pool_forgotten() {
 }
 
 #[test]
-#[ignore = "train D's runner browsers are the app's (app/src-tauri chatbrowsers.rs), which purlis-core cannot open, and the systemd rig's machine has no browser engine (tests/ssh-runner/systemd.Dockerfile); the reattach is the app's too (app/src-tauri/src/hostedsessions/tests/browsers_back.rs, #2025) (#7662)"]
+#[ignore = "train D's runner browsers are the app's (app/src-tauri chatbrowsers.rs), which purlis-core cannot open, and the systemd rig's machine has no browser engine (tests/ssh-runner/systemd.Dockerfile); a browser that outlives the window is the app's too, and only after a crash (app/src-tauri/src/hostedsessions/tests/browsers_back.rs, #2025): a quit ends every browser (#2022), so B4's premise is to be checked (#7816) (#7662)"]
 fn b4_an_app_quit_with_a_runner_browser_open_leaves_it_running_and_purlis_reattaches() {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
