@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795729756839,
+  "lastUpdate": 1795730366818,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56322,6 +56322,48 @@ window.BENCHMARK_DATA = {
             "value": 101.67184649999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.905, 101.261, 101.672, 101.919, 102.224 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b37d426c298801376531b2bece9da01a58e19151",
+          "message": "stress: T1 (event log 1,000 events/s) asserted, as evidence until it holds on the runner (#7742) (#7744)\n\n* T1 asserted in stress: the event log keeps 1,000 events/s with each write inside L5 (#7742)\n\nA purlis-core test drives 50 hook threads through the host's EventLog::write\nat 1,250 events/s for 10 s, and fails below 1,000 events/s or above a 50 ms\nwrite p95. stress.yml runs it on Linux as `event log throughput`, CI absolute.\nT2's subject, the audit writer (AU-3), is not written, so its row now says\nit is not measured yet rather than claiming `stress`.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CNB1AP6FCY9YTXG8KN0DG9\nPurlis-Persona: steward\n\n* T1's job reuses the rust job's cache, and is held to the median of three rounds (#7742)\n\nReview: the job named a release cache it never restored, so every run was a\ncold release build; it now restores the rust job's dev-profile cache as\n`standing` does. ADR 0086 §1 holds a CI absolute timing to a median, never one\nsample, so the load runs three ten-second rounds and each budget is judged at\ntheir median. The test whose name miscounted its slow writes is renamed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8CNB1AP6FCY9YTXG8KN0DG9\nPurlis-Persona: steward\n\n* stress: T1 starts as evidence until five main runs hold it on a shared Ubuntu runner\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* tests: the event-log throughput tests open by shedding the shell's steering (unsteered!)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T21:02:31Z",
+          "tree_id": "1131f9fb0a1a0ccfc4bb078633a9d79fa5ba567a",
+          "url": "https://github.com/purlis/purlis/commit/b37d426c298801376531b2bece9da01a58e19151"
+        },
+        "date": 1795730359944,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.663594,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.651, 0.661, 0.664, 0.681, 0.704 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.585224,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.479, 16.584, 16.585, 16.747, 16.820 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.888228,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.490, 101.535, 101.888, 102.532, 102.876 ms"
           }
         ]
       }
