@@ -3368,3 +3368,20 @@ fn daemontools_supervisors_multilog_and_chain_loaders_are_offered_no_run_grant()
         refused_as_running_others(name);
     }
 }
+
+/// The leads round 2 of #6556's review left (#6564): `aptitude` takes any setting with `-o`, and
+/// `Dir::Bin::Methods::<scheme>` names the program a download runs, as `apt-get`'s does;
+/// `run-parts <folder>` runs every program in the folder; `capsh -- -c <cmd>` hands the words
+/// after `--` to a shell; `cpanm ./<folder>`, and every install, runs the distribution's
+/// `Makefile.PL` or `Build.PL`, as `cpan` and `cpm` do, and `carton exec` runs the command it is
+/// handed; and `dnf` and `yum` load the Python plugins of the `pluginpath` a `--setopt` or `-c`
+/// file names. Their source was out of reach, so each is refused on what the tool is for, the
+/// side that only takes away an Allow.
+#[test]
+fn aptitude_run_parts_capsh_the_perl_installers_and_dnf_are_offered_no_run_grant() {
+    for name in [
+        "aptitude", "run-parts", "capsh", "cpanm", "cpan", "cpm", "carton", "dnf", "dnf5", "yum",
+    ] {
+        refused_as_running_others(name);
+    }
+}

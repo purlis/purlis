@@ -33,3 +33,22 @@ issue (see the pull request).
 
 `svc`, `svok` and `svstat` are left offered: they talk to a `supervise` already running, over its
 `supervise/control` and `supervise/status` files, and run nothing themselves.
+
+## aptitude, run-parts, capsh, cpanm and dnf (#6564)
+
+The leads round 2 of #6556's review left unchecked, with the kin each one has:
+
+- **`aptitude`** is built on the same `apt-pkg` as `apt-get`, takes any setting with `-o`, and
+  downloads through the method program `Dir::Bin::Methods::<scheme>` names, the reason
+  `apt-get` and `apt` were refused on 2026-11-13. A name such as `aptitude-curses` reaches the
+  row by its first part.
+- **`run-parts <folder>`** runs every program in the folder it is named. That is its purpose.
+- **`capsh`** hands the words after `--` to a shell (`capsh -- -c <cmd>`), and `==` runs `capsh`
+  again with what follows.
+- **`cpanm`** builds the distribution it is named, a folder like `./<folder>` among them, by
+  running its `Makefile.PL` or `Build.PL` and then `make`, and so does every install from CPAN.
+  **`cpan`** (CPAN.pm's shell) and **`cpm`** install the same way, and **`carton exec`** runs the
+  command it is handed. All refused.
+- **`dnf`** loads the Python plugins in the folders its `pluginpath` names, which a `--setopt` or
+  the `-c` file it is given sets, and **`yum`** does the same. `dnf5` and `dnf-3` reach the row
+  by the name without the version.

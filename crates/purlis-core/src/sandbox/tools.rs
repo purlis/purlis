@@ -2292,6 +2292,21 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "s6-softlimit",
     "s6-applyuidgid",
     "coredumpctl",
+    // and the leads it left (#6564), whose source was out of reach, refused on what each is for:
+    // `aptitude -o Dir::Bin::Methods::<scheme>=` names the program a download runs, as
+    // `apt-get`'s does; `run-parts` runs every program in the folder it is named; `capsh --`
+    // hands what follows to a shell; `cpanm`, `cpan` and `cpm` run a distribution's
+    // `Makefile.PL` or `Build.PL`, and `carton exec` the command it is handed; and `dnf` and
+    // `yum` load the Python plugins of the `pluginpath` a `--setopt` or a `-c` file names.
+    "aptitude",
+    "run-parts",
+    "capsh",
+    "cpanm",
+    "cpan",
+    "cpm",
+    "carton",
+    "dnf",
+    "yum",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
