@@ -1849,7 +1849,7 @@ impl Chats {
     }
 
     /// Chats of the project at `project`, whose record `record_it` writes, on `host` —
-    /// whatever runs the sessions, which is [`crate::sessions::Sessions`] in the app.
+    /// whatever runs the sessions, which is the session host in the app (#2005).
     ///
     /// **`project` is the open project's own root, as the app holds it** (#1410): every chat
     /// started here takes its project, and so its sandbox, from it — never from a walk up

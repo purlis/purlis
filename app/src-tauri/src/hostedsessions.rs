@@ -1,15 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! A project's chats run in the session host, the default since #2004 (#1998).
+//! A project's chats run in the session host, and nowhere else (#1998, #2004, #2005).
 //!
-//! **One build holds both ways of running a chat, for the migration only** (spec #1974, ruled
-//! 2026-10-14): in the session host the window started ([`HostedSessions`], the default), or in
-//! the window's own process ([`crate::sessions::Sessions`]) where the start-time switch says so
-//! ([`SWITCH`] set to `0`), chosen once as the app starts ([`chats_run_in_the_host`]) and never
-//! switched while it runs. #2005 deletes the window's own path. With no host of the window's
-//! own, the window runs no chats and says why: there is no fallback to the window's own process
-//! (ADR 0068, Ruled 3).
+//! **There is one way of running a chat**: in the session host the window started
+//! ([`HostedSessions`]). The start-time switch that ran them in the window's own process was
+//! deleted with that path (#2005, spec #1974). With no host of the window's own, the window runs
+//! no chats and says why: there is no fallback to the window's own process (ADR 0068, Ruled 3).
 //!
 //! **Above the seam nothing changes.** The window composes a chat's start as it always has (its
 //! sandbox, its hooks, its `PATH`), and hands the host that start as its [`Launch`];
@@ -78,22 +75,12 @@ use crate::host::{
 use crate::reconnecting::Reconnection;
 use crate::sessions::{ENDED, STOPPED};
 
-/// The start-time switch: set to `0`, it runs this launch's chats in the window's own process,
-/// the way back while the window's own path is still built (#2004). Read once, as the app
-/// starts; internal to the migration, and gone with it (#2005, spec #1974).
-pub const SWITCH: &str = "PURLIS_CHATS_IN_THE_HOST";
+/// The start-time switch of the migration (#1998, #2004), deleted with the window's own path
+/// (#2005). It is never read to choose anything: a launch that still has it set logs once that
+/// it is ignored (`where_chats_run`), for a person who set it as the way back.
+pub const RETIRED_SWITCH: &str = "PURLIS_CHATS_IN_THE_HOST";
 
-/// Whether this launch runs its chats in the session host: the default, and anything but
-/// [`SWITCH`] set to `0`, which is the window's own process.
-pub fn chats_run_in_the_host() -> bool {
-    switched_on(purlis_core::envvar::var(SWITCH).as_deref())
-}
-
-fn switched_on(value: Option<&str>) -> bool {
-    value != Some("0")
-}
-
-/// **What a launch whose chats run in the session host makes of its planes** (#1998 to #2003):
+/// **What a launch makes of its planes** (#1998 to #2003):
 /// every project's chats run in the host `connection` reaches, over a link of each root's own;
 /// their hooks are heard through the host, which owns each project's hook channel, so nothing
 /// in the window reports anywhere (#2000); and the host writes the event log, the window
@@ -130,9 +117,8 @@ pub fn chats_in_the_host(
 
 /// Why a chat whose profile hands it credentials is not started in the session host (#2036).
 pub const NOT_HANDED_IN_THE_HOST: &str = "this chat's profile signs it in with credentials from \
-     your vault, and purlis hands those only to a chat the window starts, never over the link to \
-     the session host, so nothing was started. Start purlis with PURLIS_CHATS_IN_THE_HOST=0 to \
-     run it in the window.";
+     your vault, and purlis does not yet hand those over the link to the session host, so \
+     nothing was started. Start it on a profile that signs in through its harness.";
 
 /// Why the window's own launch of a harness is not sent to a runner (#2446): a runner composes
 /// its harness chats, with the sandbox it compiles for itself (ADR 0068, amended for #2217).

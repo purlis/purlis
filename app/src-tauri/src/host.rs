@@ -3,10 +3,9 @@
 
 //! What the app asks of whatever runs its sessions and hears their hooks: the session host.
 //!
-//! Today the host is in the app's own process: [`crate::sessions::Sessions`] runs the
-//! sessions, and [`crate::hooks::Hooks`] holds the board their hooks report to. ADR 0068
-//! (accepted 2026-09-30) moves both into `charterd`, behind a socket. These two traits are that
-//! seam, drawn first in place with nothing moved and nothing changed. The app reaches a session
+//! The host is the session host, a process of its own behind a socket (ADR 0068): every chat
+//! runs in it (#2005), and [`crate::hooks::Hooks`] holds the board their hooks report to. These
+//! two traits are that seam, drawn first in place, when the host was the app's own process. The app reaches a session
 //! only through [`SessionHost`], and a chat's hook state only through [`ChatBoard`].
 //!
 //! - [`SessionHost`] starts a session, writes to it, resizes it, opens and closes views of it,
@@ -2121,3 +2120,85 @@ pub(crate) mod pretend {
 
 #[cfg(test)]
 mod tests;
+
+/// Why a chat is refused where no session host runs it (#2005): no chat runs outside the session
+/// host, and there is no fallback to the window's own process (ADR 0068, Ruled 3).
+pub const NO_SESSION_HOST: &str = "chats run only in purlis's session host, and this window has \
+     none, so nothing was started. Quit purlis and start it again.";
+
+/// **Where no session host runs a plane's chats** (#2005): every start is refused, saying why,
+/// and nothing runs. What a plane's chats run on until the launch hands its planes the session
+/// host (`where_chats_run`), and on a platform that has none.
+#[derive(Default)]
+pub struct NoHost {
+    dealt: std::sync::atomic::AtomicU32,
+}
+
+impl NoHost {
+    fn none(id: u32) -> String {
+        format!("no chat {id} runs here: {NO_SESSION_HOST}")
+    }
+}
+
+impl SessionHost for NoHost {
+    fn open(&self, _: Option<u32>, _: &Opening, _: &dyn Fn(u32)) -> Result<u32, String> {
+        Err(NO_SESSION_HOST.to_owned())
+    }
+
+    fn input(&self, id: u32, _: &[u8]) -> Result<(), String> {
+        Err(Self::none(id))
+    }
+
+    fn resize(&self, id: u32, _: Size) -> Result<(), String> {
+        Err(Self::none(id))
+    }
+
+    fn watch(&self, id: u32, _: Sink) -> Result<Watching, String> {
+        Err(Self::none(id))
+    }
+
+    fn watch_whole(&self, id: u32, _: Sink, _: u32, _: Whole) -> Result<Watching, String> {
+        Err(Self::none(id))
+    }
+
+    fn unwatch(&self, id: u32, _: u32) -> Result<(), String> {
+        Err(Self::none(id))
+    }
+
+    fn close(&self, id: u32) -> Result<(), String> {
+        Err(Self::none(id))
+    }
+
+    fn end_all(&self) {}
+
+    fn stop_every_program(&self) -> usize {
+        0
+    }
+
+    fn stopped_by(&mut self, _: Arc<crate::killswitch::KillSwitch>) {}
+
+    fn when_one_ends(&self, _: Ends) {}
+
+    fn running(&self) -> Vec<u32> {
+        Vec::new()
+    }
+
+    fn readiness(&self, id: u32) -> Result<Readiness, String> {
+        Err(Self::none(id))
+    }
+
+    fn deal(&self) -> u32 {
+        self.dealt
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1
+    }
+
+    fn dealt(&self) -> u32 {
+        self.dealt.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn already_dealt(&self, dealt: u32) {
+        self.dealt
+            .fetch_max(dealt, std::sync::atomic::Ordering::Relaxed);
+    }
+}

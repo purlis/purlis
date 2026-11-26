@@ -5,10 +5,9 @@
 //! run (spec #1974, #1998). It is the gate each later step of moving chats into the session
 //! host passes: a behaviour is added here once, and every target runs it.
 //!
-//! **The targets are the two ways the start-time switch runs a chat** (`crate::hostedsessions`):
-//! in the window's own process ([`crate::sessions::Sessions`]), and in a session host the window
-//! speaks the session protocol to ([`crate::hostedsessions::HostedSessions`]). The host is a
-//! real host process (`in_a_host_process`, #2170): the window's own binary, started and
+//! **Every target is a session host**, the one place a chat runs (#2005, ADR 0068, Ruled 3):
+//! one the window speaks the session protocol to ([`crate::hostedsessions::HostedSessions`]).
+//! The host is a real host process (`in_a_host_process`, #2170): the window's own binary, started and
 //! connected to by the window's own code ([`crate::sessionhost::SessionHost`]), spoken to over
 //! its socket, with real terminals. It runs on Linux, where each test gives its host a socket
 //! and a config home of its own; the host's code over an in-memory link (`in_the_host`) runs
@@ -16,8 +15,8 @@
 //! host over the link between hosts ([`through_a_link`], #2042). Each behaviour speaks only what
 //! the window speaks to any of them, [`SessionHost`], and checks only what the window can
 //! observe: what its pane draws, what it is told, what ends. A test ends the host process it
-//! started. When the in-app path is deleted (#2005), its target goes with it, and the host's
-//! stay; Docker and a cluster join as targets of their own (spec #2041).
+//! started. The window's own process was a target until #2005 deleted that path; Docker and a
+//! cluster join as targets of their own (spec #2041).
 //!
 //! **The chat's program is the repo's fake harness** (`crates/fake-harness`), or a shell where a
 //! behaviour needs the terminal itself (its size, its line discipline) or runs `purlis hook` as
@@ -25,20 +24,17 @@
 //! first run on CI.
 //!
 //! **Each target has a project, and the window's own hooks for it** (#2000): the board and the
-//! asks the window draws Needs you and its asks from. In the window's own process the window
-//! binds the project's hook socket and issues each chat its token; in the session host, the
-//! host does both and hands each line it admits on to the window. A behaviour checks only what
-//! the window is told either way.
+//! asks the window draws Needs you and its asks from. The host binds the project's hook socket,
+//! issues each chat its token, and hands each line it admits on to the window. A behaviour
+//! checks only what the window is told.
 //!
 //! **The kill switch is each target's** (#2001): the window's own switch, kept in a config home
-//! of the test's, which in the host's target holds the host's switch too, as the app's does
-//! when chats run in the host. What the host itself does with it, across its restart and for
+//! of the test's, which holds the host's switch too, as the app's does. What the host itself does with it, across its restart and for
 //! links that are not the window's, is the host's own tests'
 //! (`crates/host/tests/it/the_kill_switch_is_held_by_the_host.rs`).
 //!
-//! **The event log has one writer on each target** (#2003): the window, holding it in a data
-//! home of the test's, or the host, holding it there while the window hands it each write and
-//! never opens it.
+//! **The event log has one writer on each target** (#2003): the host, holding it in a data home
+//! of the test's while the window hands it each write and never opens it.
 //!
 //! **To add a behaviour:** write `fn the_behaviour(target: &Target)`, and name it in the
 //! [`on_every_target!`] list at the bottom.
@@ -61,7 +57,7 @@ use crate::hooks::{Hooks, Moved};
 use crate::host::{Opening, SessionHost, Sink};
 use crate::hostedsessions::{Connection, HostLink, HostedSessions};
 use crate::killswitch::KillSwitch;
-use crate::sessions::{ENDED, Sessions};
+use crate::sessions::ENDED;
 
 const SIZE: Size = Size {
     columns: 80,
@@ -270,36 +266,7 @@ fn an_event_log(dir: &Path) -> std::io::Result<purlis_core::eventlog::Recorder> 
 /// The device every target's event log is written for.
 const DEVICE: &str = "01J9ZZDEVICE0000000000000";
 
-/// A chat in the window's own process: the switch set to `0`, the way back until #2005.
-pub(crate) fn in_the_window() -> Target {
-    let (project, root) = a_project();
-    let (hooks, moved) = hooks_of(&root, false);
-    let config = tempfile::tempdir().expect("a config home");
-    let data = tempfile::tempdir().expect("a data home");
-    hooks.record_into(crate::hooks::Events::here(
-        an_event_log(data.path()).expect("the event log"),
-    ));
-    let switch = KillSwitch::kept_in(Some(config.path().to_path_buf()));
-    let mut sessions = Sessions::reporting_to(hooks.reporting());
-    sessions.stopped_by(Arc::clone(&switch));
-    Target {
-        sessions: Box::new(sessions),
-        hooks,
-        moved,
-        root,
-        switch,
-        inherited: std::env::vars_os().collect(),
-        savers_here: 1,
-        log: data.path().to_path_buf(),
-        host: None,
-        kill_the_host: None,
-        runner: None,
-        saved_by: None,
-        _keeps: vec![Box::new(project), Box::new(config), Box::new(data)],
-    }
-}
-
-/// A chat in the session host: the default. The host's own code, serving the session protocol
+/// A chat in the session host. The host's own code, serving the session protocol
 /// over an in-memory link, its programs each in a real terminal, composed as the window's binary
 /// composes them, and its projects saved as the window's binary saves them.
 pub(crate) fn in_the_host() -> Target {
@@ -3447,73 +3414,6 @@ fn twenty_live_chats_reattach_after_the_window_is_killed_and_started_again() {
     first.ended_by_the_quit();
 }
 
-/// **The way back after a crash** (#2004): a window running its chats in the session host is
-/// killed outright, and the host keeps a chat for the grace period. The window started again
-/// with its chats in its own process (`PURLIS_CHATS_IN_THE_HOST=0`) ends that host as a quit
-/// before it puts any chat back: by the time its gate lets the chats back, the chat the host
-/// kept has ended, so its conversation never has two programs at once. Then it starts a host of
-/// its own. A host process's target only. The test ends every host it started.
-#[cfg(target_os = "linux")]
-#[test]
-fn a_window_flipped_back_after_a_crash_ends_the_chats_the_host_kept_before_it_puts_any_back() {
-    let home = tempfile::tempdir().expect("the host's home");
-    let HostHome {
-        place, inherited, ..
-    } = a_host_home(home.path());
-    let (_project, root) = a_project();
-    let marks = tempfile::tempdir().expect("a folder for the chat's process");
-    let pid_file = marks.path().join("pid");
-    let starts = {
-        let inherited = inherited.clone();
-        move || {
-            let mut command = crate::sessionhost::command(&purlis_app());
-            command.env_clear().envs(inherited.iter().cloned());
-            Ok(command)
-        }
-    };
-    let first = KilledWindow::start(&place, &root, starts.clone());
-    let script = format!("echo $$ > '{}'; exec sleep 600", pid_file.display());
-    first
-        .sessions
-        .open(None, &a_shell(&script), &|_| {})
-        .expect("the chat starts in the host");
-    until("the chat to say its process", || {
-        std::fs::read_to_string(&pid_file).is_ok_and(|said| said.ends_with('\n'))
-    });
-    let pid: i32 = std::fs::read_to_string(&pid_file)
-        .expect("its process")
-        .trim()
-        .parse()
-        .expect("a pid");
-    let first = first.killed();
-    // Running, and not a zombie waiting for its parent.
-    let alive = |pid: i32| {
-        std::fs::read_to_string(format!("/proc/{pid}/stat"))
-            .is_ok_and(|stat| stat.split_whitespace().nth(2) != Some("Z"))
-    };
-    assert!(
-        alive(pid),
-        "the host keeps the chat while no window is there"
-    );
-
-    let back = Ends(crate::sessionhost::SessionHost::default());
-    back.0.ending_a_host_it_finds();
-    purlis_core::hostsocket::make_the_folder(&place.socket).expect("the socket's folder");
-    back.0.start_at(place, starts);
-    let gate = back.0.before_chats_are_put_back(PATIENCE);
-
-    assert_eq!(gate(), Ok(()), "the window may put its chats back");
-    assert!(
-        !alive(pid),
-        "the chat the host kept still runs as the window puts chats back"
-    );
-    first.ended_by_the_quit();
-    back.0
-        .connection()
-        .wait(PATIENCE)
-        .expect("a host of the window's own serves");
-}
-
 /// **A change written while the window is gone is committed by the host process** (#2287,
 /// #2002): a window started on a real git plane has the host save it, and is killed outright
 /// (its links and the host's standard input gone, with no quit). A file then written in the
@@ -3917,7 +3817,7 @@ fn the_event_log_has_one_writer_and_each_hook_line_is_written_once(target: &Targ
 fn a_turn_is_recorded_by_its_hooks_and_its_diff_is_what_it_edited() {
     use purlis_core::files::{self, Branch};
     const CHAT: &str = "01J9CHAT0000000000000000TN";
-    let target = in_the_window();
+    let target = in_the_host();
     let folder = target.root.join("workspaces/ws/app");
     std::fs::create_dir_all(&folder).expect("the repo's folder");
     let git = |args: &[&str]| {
@@ -4142,18 +4042,13 @@ fn a_chat_ending_with_the_window_gone_still_writes_its_record_and_its_dispatch_r
 }
 
 /// Each behaviour, as a test of its own on every target. Each group after `not yet through a
-/// link` runs on the window's and the host's targets, and through a link and in a Docker pool
+/// link` runs on the host's own targets, and through a link and in a Docker pool
 /// (whose runner is reached through a link) waits for what its reason names (#2042). Each
 /// group after `not yet in a Docker pool` runs on every target but a Docker pool's, which waits
 /// for what its reason names (#2045).
 macro_rules! on_every_target {
     (@one $behaviour:ident, through_a_link: [$($link:meta)*], in_a_docker_pool: [$($docker:meta)*]) => {
         mod $behaviour {
-            #[test]
-            fn in_the_window() {
-                super::$behaviour(&super::in_the_window());
-            }
-
             #[test]
             fn in_the_host() {
                 super::$behaviour(&super::in_the_host());

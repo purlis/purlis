@@ -61,18 +61,13 @@ pub fn manager() -> Option<(Arc<dyn Manager>, bool)> {
         crate::sessionhost::managed::log_here()?,
         loginitem::runs_for_real(),
     )?;
-    let runs_it = runs_the_host(
-        loginitem::supervisor(&reasons(), os, systemd_user),
-        kind,
-        crate::hostedsessions::chats_run_in_the_host(),
-    );
+    let runs_it = runs_the_host(loginitem::supervisor(&reasons(), os, systemd_user), kind);
     Some((manager, runs_it))
 }
 
-/// Whether the manager of kind `manager` runs the host: the supervisor chosen is that manager,
-/// and the chats run in the host.
-fn runs_the_host(chosen: Supervisor, manager: Supervisor, chats_in_the_host: bool) -> bool {
-    chats_in_the_host && chosen == manager && chosen != Supervisor::Window
+/// Whether the manager of kind `manager` runs the host: the supervisor chosen is that manager.
+fn runs_the_host(chosen: Supervisor, manager: Supervisor) -> bool {
+    chosen == manager && chosen != Supervisor::Window
 }
 
 #[cfg(test)]
@@ -80,25 +75,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_manager_runs_the_host_only_when_it_is_chosen_and_the_chats_run_in_the_host() {
-        assert!(runs_the_host(
-            Supervisor::Launchd,
-            Supervisor::Launchd,
-            true
-        ));
+    fn the_manager_runs_the_host_only_when_it_is_chosen() {
+        assert!(runs_the_host(Supervisor::Launchd, Supervisor::Launchd));
         assert!(runs_the_host(
             Supervisor::SystemdUser,
-            Supervisor::SystemdUser,
-            true
+            Supervisor::SystemdUser
         ));
-        assert!(!runs_the_host(
-            Supervisor::Window,
-            Supervisor::Launchd,
-            true
-        ));
-        assert!(
-            !runs_the_host(Supervisor::Launchd, Supervisor::Launchd, false),
-            "a window whose chats run in its own process supervises its host"
-        );
+        assert!(!runs_the_host(Supervisor::Window, Supervisor::Launchd));
+        assert!(!runs_the_host(Supervisor::Launchd, Supervisor::SystemdUser));
     }
 }
