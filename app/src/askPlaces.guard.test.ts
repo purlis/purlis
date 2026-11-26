@@ -71,6 +71,9 @@ const PLACES = {
   },
   "trust-clones": { at: "no-chat" },
   "let-chat-push": { at: "pane" },
+  // A forge act a chat's route held (#7685): counted with the asks, and drawn on its own card in
+  // Asks, which reads what the core read and presses it twice (`HeldActAsks`).
+  "held-act": { at: "its-own", how: "its own card in Asks, with its two presses" },
 } as const satisfies Record<AskSource, Place>;
 
 /** Each kind's place, as any place: a kind may move to or from Asks alone. */

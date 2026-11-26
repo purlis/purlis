@@ -1172,6 +1172,7 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::TrustClone => "Asks you to trust a clone",
         AskSource::LetChatPush => "Asks you to let it push a branch it has no record of",
         AskSource::TrustClones => "Asks you to trust clones purlis did not clone",
+        AskSource::HeldAct => "Asks you to approve a forge act it was not let do",
     }
 }
 

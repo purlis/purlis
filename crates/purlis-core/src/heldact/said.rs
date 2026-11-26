@@ -126,6 +126,10 @@ pub fn refused(why: &Refused) -> String {
         ),
         Refused::Text(what) => format!("Not offered: {what}."),
         Refused::Forge(why) => format!("The forge did not say: {why}."),
+        Refused::NotShown(why) => format!(
+            "purlis could not show the ask in the person's window: {why}. Tell the person, who \
+             can make it themselves."
+        ),
         Refused::Unattended { .. } => NOBODY_HERE.to_owned(),
     }
 }

@@ -22,14 +22,21 @@
 //! the slice that turns the proxy on per chat sets it, from the person's sign-in and the chat's
 //! clone). Until it is set, no act is asked, and a press says so and does nothing.
 //!
+//! **The person is asked in Asks** (#7685): each ask, as it is raised, is told to the project's
+//! window ([`InTheWindow`]): the asks registry lists it (`crate::asking::held_act`), so the ✋
+//! counts it and the notifier tells of it, and the window reads its asks again. An ask of a chat
+//! the window does not have open is withdrawn, and the chat is told nobody was asked.
+//!
 //! **Tier** (ADR 0069): memory only; a relaunch holds none and the chat's next try asks again.
 
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, Weak};
 
 use purlis_core::harness::asks::{Admitted, Answerer};
-use purlis_core::heldact::{Act, Handoff, HeldActs, HeldContext, NotDone, Pressed, Shown, World};
+use purlis_core::heldact::{
+    Act, AsksWindow, Handoff, HeldActs, HeldContext, NotDone, Pressed, Shown, World,
+};
 
-use crate::planes::{PlaneId, Planes};
+use crate::planes::{Held, PlaneId, Planes};
 
 /// The held acts a project's chats asked for, and the context they read the forge through.
 #[derive(Default)]
@@ -156,10 +163,10 @@ impl HeldActState {
             .clone()
     }
 
-    /// **The proxy's sink** for this project's chats, where a context is set (seam "J").
-    #[allow(dead_code)]
-    pub fn handoff(&self) -> Option<Handoff> {
-        Some(Handoff::new(self.acts.clone(), self.context()?))
+    /// **The proxy's sink** for this project's chats, where a context is set (seam "J"): each
+    /// ask it raises is told to `window`.
+    pub fn handoff(&self, window: Arc<dyn AsksWindow>) -> Option<Handoff> {
+        Some(Handoff::new(self.acts.clone(), self.context()?, window))
     }
 
     /// Chat `session` has closed: none of its held acts waits.
@@ -169,12 +176,21 @@ impl HeldActState {
 
     /// **Every held act that waits**, oldest first, as drawn.
     pub fn waiting(&self) -> Vec<HeldActShown> {
+        self.waiting_since()
+            .into_iter()
+            .map(|(shown, _)| shown)
+            .collect()
+    }
+
+    /// [`Self::waiting`], each with when it was asked (seconds since 1970): what the asks
+    /// registry lists.
+    pub fn waiting_since(&self) -> Vec<(HeldActShown, u64)> {
         self.acts
             .every()
             .iter()
             .filter_map(|one| {
                 let (shown, digest) = self.acts.shown(one.id)?;
-                shown_of(one.id, one.session, &shown, digest)
+                Some((shown_of(one.id, one.session, &shown, digest)?, one.since))
             })
             .collect()
     }
@@ -222,6 +238,35 @@ impl HeldActState {
             .dont(u64::from(ask), by)
             .map_err(|why| why.to_string())
     }
+}
+
+/// **The person's window, as the held acts' [`AsksWindow`]** (#7685): the project's Asks, where
+/// an ask of a chat the window has open is listed. Weak, as the project holds the registry.
+pub struct InTheWindow(pub Weak<Held>);
+
+impl AsksWindow for InTheWindow {
+    fn raised(&self, session: u32, _: u64) -> Result<(), String> {
+        let held = self
+            .0
+            .upgrade()
+            .ok_or_else(|| "this project is not open in the window".to_owned())?;
+        shown_in(held.as_ref(), session)
+    }
+}
+
+/// **Whether chat `session`'s held act is shown to the person in project `held`**, and the
+/// window told to read its asks again where it is. A chat the window has not open, or one it
+/// draws nowhere (a grade's), has no Asks to show it in.
+pub(crate) fn shown_in(held: &Held, session: u32) -> Result<(), String> {
+    let chats = held.chats();
+    if !chats.open_now().iter().any(|open| open.session == session) {
+        return Err(format!("chat {session} is not open in the window"));
+    }
+    if chats.kept_from_the_window(session) {
+        return Err(format!("chat {session} is not drawn in the window"));
+    }
+    chats.asks_may_have_moved();
+    Ok(())
 }
 
 /// **The held acts a project's chats asked for**, for Asks.

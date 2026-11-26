@@ -859,8 +859,10 @@ impl HeldSinks for AppHeldSinks {
 
 /// **The forge route's sink for project `held`'s held acts**, over its registry and the context
 /// last set on it: `None` until one is.
+/// Each ask it raises is told to the project's window, which lists it in Asks (#7685).
 pub(crate) fn sink_of(held: &Arc<Held>) -> Option<Box<dyn HeldSink>> {
-    let handoff: Handoff = held.held_acts().handoff()?;
+    let window = Arc::new(crate::heldacts::InTheWindow(Arc::downgrade(held)));
+    let handoff: Handoff = held.held_acts().handoff(window)?;
     Some(Box::new(handoff))
 }
 

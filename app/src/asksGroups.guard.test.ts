@@ -78,6 +78,8 @@ const GROUP_OF = {
   "pool-setup": "consent",
   // What purlis refused the chat and raised as an ask (R-114).
   "merge-hold": "hold",
+  // A forge act a chat's route held, waiting on the person's press (ADR 0128 D8, #7685).
+  "held-act": "hold",
   looping: "loop_pause",
   budget: "budget",
   // A prompt in the harness's own terminal that no hook holds: "Waiting in its terminal".

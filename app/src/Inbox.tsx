@@ -501,7 +501,11 @@ export function Inbox({
       : part !== "updates"
         ? { ...updates, rows: shownRows }
         : heldBy(hold, updates, shownRows, from === "project" ? teammatesClear : undefined);
-  const listed = (unheld ?? []).filter(scopeHolds(scope, sets));
+  // A held forge act (#7685) is counted with the asks, and drawn by its own card below, with its
+  // two presses (`HeldActAsks`): never a row of its own as well.
+  const listed = (unheld ?? [])
+    .filter((ask) => ask.answer.via !== "held-act")
+    .filter(scopeHolds(scope, sets));
   /** This project's name, as its tab says it: every row is tagged with it and its workspace (ADR
    *  0121 decision 5, #6006). */
   const project = elsewhere?.waitingHere?.find((one) => one.plane === plane)?.project;
