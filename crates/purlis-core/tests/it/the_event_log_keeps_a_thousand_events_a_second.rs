@@ -10,22 +10,24 @@
 //! `fsync` outside it, which lines written at once share (group commit, FD-30). Between them
 //! they offer [`OFFERED`] events a second for [`SECONDS`] seconds, each chat's lines on a fixed
 //! schedule, so a write that falls behind makes the next one late rather than the load lighter.
+//! The load runs [`ROUNDS`] times, each into a log of its own, and each budget is held to the
+//! median of the rounds (ADR 0086 §1: a CI absolute timing is a median, never one sample).
 //!
 //! **What is held** ([`judged`]):
-//! - **T1**: the events made durable, over the time from the first one's slot to the last one's
-//!   durability, are at least [`EVENTS_A_SECOND`] a second. The load offers a quarter more, so a
+//! - **T1**: the events made durable in a round, over the time from its first line's slot to its
+//!   last line's durability, are at least [`EVENTS_A_SECOND`] a second. The load offers a quarter more, so a
 //!   log that keeps up passes with room and one that falls behind is measured at its own pace.
-//! - **L5 inside its budget**: a write's p95, from the slot its line was due in to the moment it
+//! - **L5 inside its budget**: a round's p95 of its writes, from the slot its line was due in to the moment it
 //!   is durable, is within [`HOOK_P95`]. A hook is told its line is taken only then (FD-30), so
 //!   this is the log's share of every tool hook's time, and L5 can be inside 50 ms only if it is.
 //!   The rest of L5, the hook's own command at the scale target, is `scale`'s (`scale.yml`).
 //!
-//! It is ignored by default, because it runs for [`SECONDS`] seconds. `stress.yml`'s `event log
+//! It is ignored by default, because it runs for half a minute. `stress.yml`'s `event log
 //! throughput` step runs it on Linux and fails for a miss (CI absolute: the budget is many times
-//! the median, ADR 0086 §1):
+//! the median, ADR 0086 §1), in the dev profile the `rust` job caches:
 //!
 //! ```text
-//! cargo test --release -p purlis-core --test it -- \
+//! cargo test -p purlis-core --test it -- \
 //!   the_event_log_keeps_a_thousand_events_a_second:: --ignored --nocapture
 //! ```
 //!
@@ -53,12 +55,16 @@ const CHATS: u32 = 50;
 /// keeps up is measured above it.
 const OFFERED: f64 = EVENTS_A_SECOND * 1.25;
 
-/// How long the load is sustained.
+/// How long the load is sustained in each round.
 const SECONDS: u64 = 10;
 
+/// How many times the load runs: each budget is held to the rounds' median.
+const ROUNDS: usize = 3;
+
+/// The device the logs are written for.
 const DEVICE: &str = "01J9ZZDEVICE0000000000000";
 
-/// What one run of the load measured.
+/// What one round of the load measured.
 #[derive(Debug, Clone)]
 struct Measured {
     /// Events made durable.
@@ -70,8 +76,31 @@ struct Measured {
 }
 
 impl Measured {
+    /// Events made durable a second: 0 for a round that took no time.
     fn events_a_second(&self) -> f64 {
-        self.events as f64 / self.elapsed.as_secs_f64()
+        if self.elapsed.is_zero() {
+            0.0
+        } else {
+            self.events as f64 / self.elapsed.as_secs_f64()
+        }
+    }
+
+    /// The p95 of its writes: `None` for a round that wrote nothing.
+    fn p95(&self) -> Option<Duration> {
+        percentile(&self.writes, 0.95)
+    }
+
+    /// The round in one line, for the job's log and summary.
+    fn said(&self) -> String {
+        let ms = |at: Option<Duration>| at.map_or(f64::NAN, |at| at.as_secs_f64() * 1000.0);
+        format!(
+            "T1 | {} events in {:.2} s | {:.0} events/s | write p95 {:.1} ms | worst {:.1} ms",
+            self.events,
+            self.elapsed.as_secs_f64(),
+            self.events_a_second(),
+            ms(self.p95()),
+            ms(self.writes.iter().max().copied()),
+        )
     }
 }
 
@@ -83,29 +112,32 @@ fn percentile(all: &[Duration], p: f64) -> Option<Duration> {
     sorted.get(rank.max(1) - 1).copied()
 }
 
-/// **Each budget `measured` missed, as a line that says by how much**: none for a run inside
-/// both. A run that wrote nothing misses both.
-fn judged(measured: &Measured, events_a_second: f64, p95: Duration) -> Vec<String> {
+/// The middle of `all`, the lower of the two for an even count: `None` for none.
+fn median<T: PartialOrd + Copy>(mut all: Vec<T>) -> Option<T> {
+    all.sort_by(|a, b| a.partial_cmp(b).expect("no NaN is measured"));
+    all.get(all.len().saturating_sub(1) / 2).copied()
+}
+
+/// **Each budget the rounds missed at their median, as a line that says by how much**: none for
+/// rounds inside both. Rounds that wrote nothing miss both.
+fn judged(rounds: &[Measured]) -> Vec<String> {
     let mut missed = Vec::new();
-    let rate = if measured.elapsed.is_zero() {
-        0.0
-    } else {
-        measured.events_a_second()
-    };
-    if rate < events_a_second {
+    let rate = median(rounds.iter().map(Measured::events_a_second).collect()).unwrap_or(0.0);
+    if rate < EVENTS_A_SECOND {
         missed.push(format!(
-            "T1: the event log kept {rate:.0} events/s, under its {events_a_second:.0} \
-             ({} events in {:.2} s)",
-            measured.events,
-            measured.elapsed.as_secs_f64()
+            "T1: the event log kept {rate:.0} events/s at the median of {} rounds, under its \
+             {EVENTS_A_SECOND:.0}",
+            rounds.len()
         ));
     }
-    match percentile(&measured.writes, 0.95) {
-        Some(at) if at <= p95 => {}
+    match median(rounds.iter().filter_map(Measured::p95).collect()) {
+        Some(at) if at <= HOOK_P95 => {}
         Some(at) => missed.push(format!(
-            "L5 at T1's load: a write's p95 was {:.1} ms, over L5's {} ms",
+            "L5 at T1's load: a write's p95 was {:.1} ms at the median of {} rounds, over L5's \
+             {} ms",
             at.as_secs_f64() * 1000.0,
-            p95.as_millis()
+            rounds.len(),
+            HOOK_P95.as_millis()
         )),
         None => missed.push("L5 at T1's load: no write was measured".to_owned()),
     }
@@ -150,11 +182,12 @@ fn a_tool_line(plane: &Path, chat: u32, n: u64) -> Entry {
     }
 }
 
-/// Runs the load against a log in `dir`.
-fn the_load(dir: &Path) -> Measured {
+/// Runs one round of the load against a new log in `dir`.
+fn a_round(dir: &Path) -> Measured {
     let log = a_log_in(&dir.join("events"));
     let plane = dir.join("plane");
-    let each = Duration::from_secs_f64(f64::from(CHATS) / OFFERED);
+    // The time between one chat's slots: every chat sends at the same pace.
+    let slot_gap = Duration::from_secs_f64(f64::from(CHATS) / OFFERED);
     let lines = (OFFERED * SECONDS as f64 / f64::from(CHATS)) as u64;
     // Every chat's first line is written before the clock starts, so a run's `run.started` is
     // not in what is timed: the load is the tool hooks of chats already running.
@@ -167,12 +200,12 @@ fn the_load(dir: &Path) -> Measured {
         .map(|chat| {
             let log = log.clone();
             let plane = plane.clone();
-            // The chats' slots are spread across `each`, as hooks arrive, not in one burst.
-            let offset = each.mul_f64(f64::from(chat - 1) / f64::from(CHATS));
+            // The chats' slots are spread across `slot_gap`, as hooks arrive, not in one burst.
+            let offset = slot_gap.mul_f64(f64::from(chat - 1) / f64::from(CHATS));
             std::thread::spawn(move || {
                 let mut writes = Vec::with_capacity(lines as usize);
                 for n in 1..=lines {
-                    let due = start + offset + each * (n - 1) as u32;
+                    let due = start + offset + slot_gap * (n - 1) as u32;
                     if let Some(wait) = due.checked_duration_since(Instant::now()) {
                         std::thread::sleep(wait);
                     }
@@ -196,21 +229,17 @@ fn the_load(dir: &Path) -> Measured {
 }
 
 #[test]
-#[ignore = "runs for ten seconds: stress.yml's `event log throughput` step runs it"]
+#[ignore = "runs for half a minute: stress.yml's `event log throughput` step runs it"]
 fn the_log_keeps_a_thousand_events_a_second_with_each_write_inside_l5() {
-    let dir = tempfile::tempdir().unwrap();
-    let measured = the_load(dir.path());
-    let p95 = percentile(&measured.writes, 0.95).unwrap_or_default();
-    let worst = measured.writes.iter().max().copied().unwrap_or_default();
-    println!(
-        "T1 | {} events in {:.2} s | {:.0} events/s | write p95 {:.1} ms | worst {:.1} ms",
-        measured.events,
-        measured.elapsed.as_secs_f64(),
-        measured.events_a_second(),
-        p95.as_secs_f64() * 1000.0,
-        worst.as_secs_f64() * 1000.0,
-    );
-    let missed = judged(&measured, EVENTS_A_SECOND, HOOK_P95);
+    let rounds: Vec<Measured> = (0..ROUNDS)
+        .map(|_| {
+            let dir = tempfile::tempdir().unwrap();
+            let round = a_round(dir.path());
+            println!("{}", round.said());
+            round
+        })
+        .collect();
+    let missed = judged(&rounds);
     assert!(missed.is_empty(), "{}", missed.join("\n"));
 }
 
@@ -218,67 +247,73 @@ fn ms(n: u64) -> Duration {
     Duration::from_millis(n)
 }
 
-#[test]
-fn a_run_inside_both_budgets_misses_nothing() {
-    let measured = Measured {
-        events: 12_500,
-        elapsed: Duration::from_secs(10),
-        writes: vec![ms(2); 100],
-    };
-    assert_eq!(
-        judged(&measured, EVENTS_A_SECOND, HOOK_P95),
-        Vec::<String>::new()
-    );
-}
-
-#[test]
-fn a_log_that_falls_behind_misses_t1_by_its_own_rate() {
-    let measured = Measured {
-        events: 8_000,
-        elapsed: Duration::from_secs(10),
-        writes: vec![ms(2); 100],
-    };
-    assert_eq!(
-        judged(&measured, EVENTS_A_SECOND, HOOK_P95),
-        ["T1: the event log kept 800 events/s, under its 1000 (8000 events in 10.00 s)"]
-    );
-}
-
-#[test]
-fn a_slow_twentieth_of_writes_misses_l5_and_a_slow_nineteenth_part_does_not() {
-    // Six slow writes in a hundred: the 95th is one of them.
-    let mut writes = vec![ms(2); 94];
-    writes.extend([ms(80); 6]);
-    let slow = Measured {
-        events: 12_500,
+/// A round of `events` in ten seconds, its writes each `writes`.
+fn a_round_of(events: usize, writes: Vec<Duration>) -> Measured {
+    Measured {
+        events,
         elapsed: Duration::from_secs(10),
         writes,
-    };
+    }
+}
+
+#[test]
+fn rounds_inside_both_budgets_miss_nothing() {
+    let rounds = vec![a_round_of(12_500, vec![ms(2); 100]); 3];
+    assert_eq!(judged(&rounds), Vec::<String>::new());
+}
+
+#[test]
+fn a_log_that_falls_behind_misses_t1_by_its_median_rate() {
+    let rounds = [
+        a_round_of(12_500, vec![ms(2); 100]),
+        a_round_of(8_000, vec![ms(2); 100]),
+        a_round_of(9_000, vec![ms(2); 100]),
+    ];
     assert_eq!(
-        judged(&slow, EVENTS_A_SECOND, HOOK_P95),
-        ["L5 at T1's load: a write's p95 was 80.0 ms, over L5's 50 ms"]
+        judged(&rounds),
+        ["T1: the event log kept 900 events/s at the median of 3 rounds, under its 1000"]
+    );
+}
+
+#[test]
+fn one_slow_round_of_three_misses_nothing() {
+    let rounds = [
+        a_round_of(12_500, vec![ms(2); 100]),
+        a_round_of(4_000, vec![ms(90); 100]),
+        a_round_of(12_400, vec![ms(3); 100]),
+    ];
+    assert_eq!(judged(&rounds), Vec::<String>::new());
+}
+
+#[test]
+fn six_slow_writes_in_a_hundred_miss_l5_and_five_do_not() {
+    // Six slow writes in a hundred: the 95th is one of them.
+    let mut six = vec![ms(2); 94];
+    six.extend([ms(80); 6]);
+    assert_eq!(
+        judged(&vec![a_round_of(12_500, six); 3]),
+        ["L5 at T1's load: a write's p95 was 80.0 ms at the median of 3 rounds, over L5's 50 ms"]
     );
     // Five in a hundred: the 95th is the last fast one.
-    let mut writes = vec![ms(2); 95];
-    writes.extend([ms(80); 5]);
-    let tail = Measured { writes, ..slow };
+    let mut five = vec![ms(2); 95];
+    five.extend([ms(80); 5]);
     assert_eq!(
-        judged(&tail, EVENTS_A_SECOND, HOOK_P95),
+        judged(&vec![a_round_of(12_500, five); 3]),
         Vec::<String>::new()
     );
 }
 
 #[test]
-fn a_run_that_wrote_nothing_misses_both() {
-    let measured = Measured {
+fn rounds_that_wrote_nothing_miss_both() {
+    let nothing = Measured {
         events: 0,
         elapsed: Duration::ZERO,
         writes: Vec::new(),
     };
     assert_eq!(
-        judged(&measured, EVENTS_A_SECOND, HOOK_P95),
+        judged(&vec![nothing; 3]),
         [
-            "T1: the event log kept 0 events/s, under its 1000 (0 events in 0.00 s)",
+            "T1: the event log kept 0 events/s at the median of 3 rounds, under its 1000",
             "L5 at T1's load: no write was measured",
         ]
     );
