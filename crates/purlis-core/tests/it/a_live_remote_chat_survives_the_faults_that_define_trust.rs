@@ -781,8 +781,13 @@ fn a_killed_runner_host_ends_its_chat_never_reconnecting_for_ever_and_the_next_c
                 }
             }
         }
-        // The next chat starts a new host's chat, inside the limit.
+        // The next chat starts a new host's chat, inside the limit. A new host holds nothing yet:
+        // the app holds the project again on the new link before it starts a chat, as here.
         let began = Instant::now();
+        after
+            .hold_project(PROJECT, "")
+            .await
+            .expect("the new host holds the project");
         let next = typing_chat(&after, "killed-next").await;
         assert!(
             began.elapsed() <= START_LIMIT,
@@ -980,12 +985,12 @@ fn a_half_open_link_is_found_within_the_stated_bound_and_the_chat_survives_it() 
 #[test]
 fn a_registry_that_is_down_fails_the_check_within_its_budget_as_image_unreachable_names_the_pool_unreachable_and_leaves_no_container()
  {
+    purlis_core::unsteered!();
     use purlis_core::dockerpool::{Docker, Image};
     use purlis_core::poolsetup::doctoring;
     use purlis_core::runners::{Pool, Remote, Set};
     use purlis_core::sshroute::{EnginePin, Pin, forward};
 
-    purlis_core::unsteered!();
     let found = (|| {
         Some((
             std::env::var("REMOTE_DOCKER_TEST_ROUTE").ok()?,
@@ -1265,8 +1270,8 @@ fn b5_two_runners_that_start_browsers_at_once_run_them_in_parallel() {
 /// says no is Refused.
 #[test]
 fn a_pools_state_is_named_from_what_its_check_found_as_the_window_words_it() {
-    use purlis_core::sshroute::connect::Finding;
     purlis_core::unsteered!();
+    use purlis_core::sshroute::connect::Finding;
     let host = || "box".to_owned();
     for (found, named) in [
         (
