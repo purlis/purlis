@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795723506006,
+  "lastUpdate": 1795728070124,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56196,6 +56196,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4338665,
             "unit": "ms",
             "extra": "median of 5 runs: 100.217, 100.980, 101.434, 101.649, 102.370 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ff1537e4c2fd1fd87b2ef90decf65cd935d1849c",
+          "message": "Dependabot holds jiff majors until #7671 moves the workspace to jiff 1.0 (#7727)\n\njiff 1.0 renames the types purlis-core uses (Zoned is ZonedDateTime, and\nothers), so the rust group's bump (#7687) fails to compile, and gix is still\non jiff 0.2. The ignore comment on #7603 did not carry over to the group\nDependabot recreated, so the hold goes in the config. #7671's Done when\nalready says to lift it.\n\nRefs #7671, #7687\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BMVY637EX2DT2WDDEB6TFE\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T20:49:16Z",
+          "tree_id": "016bfb7e9190afd75efb651466c971459ae6d41a",
+          "url": "https://github.com/purlis/purlis/commit/ff1537e4c2fd1fd87b2ef90decf65cd935d1849c"
+        },
+        "date": 1795728062343,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4626925,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.436, 0.456, 0.463, 0.467, 0.468 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4996345,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.183, 16.223, 16.500, 16.533, 16.540 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.178497,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.975, 102.123, 102.178, 102.268, 103.878 ms"
           }
         ]
       }
