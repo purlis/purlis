@@ -56,9 +56,7 @@ describe("a chat the person started", () => {
 
   it("reads hibernated once the person hibernated it, over how its turn ended (#7630)", () => {
     expect(said({ board: "waiting", hibernated: true })).toBe("pause hibernated");
-    expect(said({ board: "waiting", hibernated: true, leftWork: false })).toBe(
-      "pause hibernated",
-    );
+    expect(said({ board: "waiting", hibernated: true, leftWork: false })).toBe("pause hibernated");
     // Idle's mark until Hibernated is a Chat state of its own (SC-4i, #7638).
     expect(shownState(of({ board: "waiting", hibernated: true })).mark).toBe("idle");
     // The person's next move is still above it.
