@@ -265,22 +265,119 @@ fn adopt_is_refused_to_a_chat_and_to_a_shell_tab_a_harness_was_started_in() {
     assert!(tab.contains("started by hand"), "{tab}");
 }
 
-#[test]
-fn a_shell_tab_s_adopt_reaches_the_core() {
-    let (_dir, held, session) = a_held_chat();
-    let ask = GitAsk {
-        chat: session,
+/// A project the app holds, with workspace `alpha` holding clone `svc` and its branch folder
+/// `p1` on `fix/p1-other`, a branch not named as the folder, and the window's shell tab open in
+/// it, started as the operator's shell is. Like [`a_held_chat`], CI runs it first.
+fn a_held_shell_tab_with_a_folder_to_adopt() -> (tempfile::TempDir, std::sync::Arc<Held>, u32) {
+    let dir = tempfile::tempdir().expect("a directory");
+    let root = dir.path().join("project");
+    let clone = root.join("workspaces/alpha/svc");
+    std::fs::create_dir_all(&clone).expect("the clone");
+    std::fs::write(purlis_core::names::manifest(&root), "schema = 1\n").expect("its file");
+    let git = |args: &[&str]| {
+        let ran = std::process::Command::new("git")
+            .args(["-c", "user.name=Tester", "-c", "user.email=t@e.invalid"])
+            .args(args)
+            .current_dir(&clone)
+            .output()
+            .expect("git runs");
+        assert!(ran.status.success(), "{ran:?}");
+    };
+    git(&["init", "-q", "-b", "main", "."]);
+    std::fs::write(clone.join("README.md"), "one\n").expect("a file");
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "one"]);
+    let folder = root.join("workspaces/alpha/.worktrees/svc/p1");
+    git(&[
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        "fix/p1-other",
+        folder.to_str().expect("a path"),
+    ]);
+    let planes = crate::planes::Planes::telling(
+        std::sync::Arc::new(|_| {}),
+        crate::Shipped::default(),
+        None,
+    );
+    let id = planes.open(&root);
+    let held = planes.held(&id).expect("held");
+    let chat = purlis_core::reopen::Chat {
+        program: "/bin/sh".to_owned(),
+        args: vec!["-c".to_owned(), "sleep 5".to_owned()],
+        name: "sh".to_owned(),
+        cwd: Some(root.clone()),
+        ..Default::default()
+    };
+    let session = held
+        .chats()
+        .start_operator_shell(
+            &chat,
+            purlis_core::engine::Size {
+                columns: 80,
+                rows: 24,
+            },
+        )
+        .expect("it runs");
+    (dir, held, session)
+}
+
+/// Chat `chat`'s ask to adopt `svc · p1` in workspace `alpha`.
+fn adopt_ask(chat: u32) -> GitAsk {
+    GitAsk {
+        chat,
         workspace: "alpha".to_owned(),
         alive: false,
         work: GitWork::WorktreeAdopt {
             repo: "svc".to_owned(),
             piece: "p1".to_owned(),
         },
+    }
+}
+
+#[test]
+fn a_shell_tab_s_adopt_reaches_the_core() {
+    let (_dir, held, session) = a_held_shell_tab_with_a_folder_to_adopt();
+
+    // The core ran it: the branch the folder is on is recorded as the one it was cut for.
+    let said = answer(&held, &adopt_ask(session));
+    let Answer::Said { lines, code } = &said else {
+        panic!("{said:?}");
     };
-    // The core ran it: the workspace has no such folder, which is the core's own sentence.
-    let said = answer(&held, &ask);
+    assert_eq!(*code, 0, "{said:?}");
+    let told = format!("{lines:?}");
+    assert!(told.contains("recorded"), "{told}");
+    assert!(told.contains("fix/p1-other"), "{told}");
+}
+
+#[test]
+fn a_harness_started_by_hand_in_the_shell_tab_makes_its_next_adopt_refused() {
+    let (_dir, held, session) = a_held_shell_tab_with_a_folder_to_adopt();
+    let hooks = held.hooks();
+    purlis_core::hookwire::tell(
+        hooks.socket().expect("a socket"),
+        Some(&hooks.token_for(session)),
+        &purlis_core::hookwire::StartedByHand {
+            chat: session,
+            started_by_hand: "codex".to_owned(),
+            cwd: None,
+        },
+    )
+    .expect("told");
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !hooks.harness_started_by_hand_in(session) {
+        assert!(
+            std::time::Instant::now() < until,
+            "the line was never heard"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+
+    let said = answer(&held, &adopt_ask(session));
+
     assert!(
-        !matches!(&said, Answer::No { why } if why.contains("only you do")),
+        matches!(&said, Answer::No { why } if why.contains("started by hand")),
         "{said:?}"
     );
 }

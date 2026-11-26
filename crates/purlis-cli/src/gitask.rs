@@ -112,16 +112,37 @@ pub fn unsure_prune(dry_run: bool, cause: &str, removed: &[String]) -> String {
 /// names it ([`hookwire::reach`]); answers [`Forwarded::NotTaken`] where this is no chat's, and
 /// refuses where it is one's and no app, or something that is not the app, answers.
 fn asked(of: impl FnOnce(u32) -> hookwire::Ask, within: Duration) -> Forwarded {
+    asked_of_a_chat(of, within).unwrap_or(Forwarded::NotTaken)
+}
+
+/// [`asked`], answering `None` only where this process is no chat's
+/// ([`hookwire::reach::Unreached::NotAChat`]): every other answer is the app's, or the way
+/// asking an app that named this process a chat failed.
+fn asked_of_a_chat(of: impl FnOnce(u32) -> hookwire::Ask, within: Duration) -> Option<Forwarded> {
     use hookwire::reach::{self, Unreached};
     let cwd = std::env::current_dir().unwrap_or_default();
     match reach::reach(&cwd, &purlis_core::envvar::var, within) {
         Ok(reached) => {
             let mut asking = hookwire::Asking::over(reached.stream, reached.token);
-            answered(asking.ask(&of(reached.chat), within))
+            Some(answered(asking.ask(&of(reached.chat), within)))
         }
-        Err(Unreached::NotAChat) => Forwarded::NotTaken,
-        Err(not) => Forwarded::Refused(not.said().unwrap_or_default()),
+        Err(Unreached::NotAChat) => None,
+        Err(not) => Some(Forwarded::Refused(not.said().unwrap_or_default())),
     }
+}
+
+/// `purlis worktree adopt` handed to the app (#7700), which only the person may ask for: it
+/// runs here ([`Forwarded::NotTaken`]) only where this process is no chat's.
+pub fn adopt_forwarded(workspace: &str, work: GitWork, within: Duration) -> Forwarded {
+    for_the_person(asked_of_a_chat(
+        |chat| hookwire::Ask::Git(Box::new(git_ask(chat, workspace, work))),
+        within,
+    ))
+}
+
+/// What `asked`, an [`asked_of_a_chat`] answer, makes of work only the person may ask for.
+fn for_the_person(asked: Option<Forwarded>) -> Forwarded {
+    asked.unwrap_or(Forwarded::NotTaken)
 }
 
 /// How long the app may take to update a branch folder, or stay silent pushing one: a fetch and

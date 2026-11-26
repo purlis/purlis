@@ -307,7 +307,7 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, CliError> {
             // What the folder is on is trusted once, and only the person says so (#7700): in a
             // session the app started, the app decides, by its own record of who asks (its
             // shell tab, with no harness started in it), never by this process's environment.
-            let forwarded = crate::gitask::forwarded(
+            let forwarded = crate::gitask::adopt_forwarded(
                 &ws,
                 GitWork::WorktreeAdopt {
                     repo: repo.clone(),

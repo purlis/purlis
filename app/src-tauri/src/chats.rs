@@ -540,6 +540,9 @@ struct Running {
     /// attributes its run began with: what a block its hook line reports is worth toward the
     /// block loop (R-209).
     reports_verified: bool,
+    /// **Whether it was started as the operator's shell** (#7707): from the window's shell
+    /// button ([`Chats::start_operator_shell`]), never from a record or by a chat.
+    operator_shell: bool,
 }
 
 /// **Whether the plane's skills reach a chat starting now** (#3445, #3466): a chat
@@ -2040,7 +2043,9 @@ impl Chats {
     }
 
     /// **Whether `session` is the window's shell tab** (#7700): a chat open on no profile and
-    /// running no harness, by this app's own record of it, wherever it stands.
+    /// running no harness, by this app's own record of it, wherever it stands, and either
+    /// started as the operator's shell or running it (#7707). An unprofiled chat running a
+    /// program purlis does not know as a harness is not one by that alone.
     pub fn is_shell_tab(&self, session: u32) -> bool {
         lock(&self.open)
             .get(&session)
@@ -6635,6 +6640,7 @@ impl Chats {
                 reports_verified: purlis_core::eventlog::stops::reported_from_outside_its_reach(
                     &attributes,
                 ),
+                operator_shell,
             },
         );
         drop(open);

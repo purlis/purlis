@@ -1863,6 +1863,86 @@ fn a_shell_tab_adopts_its_folder_through_the_app() {
     assert!(adopt_asked(&asked), "adopted here, not by the app");
 }
 
+/// Whether anything under `root` records a branch a folder was cut for: the note `worktree
+/// adopt` writes, wherever the project's state keeps it.
+fn adopted_anything(root: &Path) -> bool {
+    fn walk(dir: &Path) -> bool {
+        std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|entry| {
+                let path = entry.path();
+                if path.file_name().and_then(|n| n.to_str())
+                    == Some(purlis_core::worktree::record::BRANCH_NOTE)
+                {
+                    return true;
+                }
+                entry.file_type().is_ok_and(|kind| kind.is_dir()) && walk(&path)
+            })
+    }
+    walk(root)
+}
+
+/// `purlis worktree adopt` from the shell tab's environment, chat 3's, under an app that
+/// answers each git ask with `answer`.
+fn adopt_under(
+    test: &str,
+    name: &str,
+    answer: impl Fn(Ask) -> Answer + Send + Sync + 'static,
+) -> Option<(Output, PathBuf, mpsc::Receiver<Ask>)> {
+    let base = played_by_the_app(test)?;
+    let world = World::at(&base);
+    let root = a_folder_to_adopt(&world, name);
+    let (_reading, token, socket, asked) = an_app(&world.base, answer);
+    let mut env = chat_3(&socket, &token).to_vec();
+    env.push((purlis_core::shellguard::SHELL_TAB_ENV, "1"));
+    let ran = worktree_adopt(&world, &root, &env);
+    Some((ran, root, asked))
+}
+
+#[test]
+fn an_app_with_nothing_to_answer_adopt_refuses_it_and_nothing_is_adopted_here() {
+    purlis_core::unsteered!();
+    let Some((ran, root, asked)) = adopt_under(
+        "brokered_git::an_app_with_nothing_to_answer_adopt_refuses_it_and_nothing_is_adopted_here",
+        "unwired",
+        |_| Answer::No {
+            why: hookwire::NOTHING_ANSWERS.to_owned(),
+        },
+    ) else {
+        return;
+    };
+
+    assert_eq!(ran.status.code(), Some(1), "{}", both(&ran));
+    assert!(both(&ran).contains("nothing was adopted"), "{}", both(&ran));
+    assert!(adopt_asked(&asked), "the app was never asked");
+    assert!(!adopted_anything(&root), "adopted here: {}", both(&ran));
+}
+
+#[test]
+fn an_app_that_drops_the_adopt_ask_refuses_it_and_nothing_is_adopted_here() {
+    purlis_core::unsteered!();
+    let Some((ran, root, asked)) = adopt_under(
+        "brokered_git::an_app_that_drops_the_adopt_ask_refuses_it_and_nothing_is_adopted_here",
+        "dropped",
+        // A connection whose serving panics is closed with no answer: the asker reads its end.
+        |ask| match ask {
+            Ask::Git(_) => panic!("the app drops this connection"),
+            _ => Answer::No {
+                why: hookwire::NOTHING_ANSWERS.to_owned(),
+            },
+        },
+    ) else {
+        return;
+    };
+
+    assert_eq!(ran.status.code(), Some(1), "{}", both(&ran));
+    assert!(both(&ran).contains("nothing was adopted"), "{}", both(&ran));
+    assert!(adopt_asked(&asked), "the app was never asked");
+    assert!(!adopted_anything(&root), "adopted here: {}", both(&ran));
+}
+
 #[test]
 fn a_terminal_with_no_app_adopts_its_folder_here() {
     purlis_core::unsteered!();
