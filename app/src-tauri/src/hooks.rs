@@ -2494,6 +2494,14 @@ impl Hooks {
         let listener = Listener::bind(&at.within, &at.socket)?;
         let socket = listener.path().to_path_buf();
         let tokens = listener.tokens();
+        // The person's own `policy why` is answered only with a credential signed by this plane's
+        // key, which no chat's sandbox reads (read each time, never made here).
+        let root = plane.root().to_path_buf();
+        tokens.prove_the_person_by(move |ask| {
+            let ctx =
+                purlis_core::secrets::Ctx::new(&root, purlis_core::secrets::Env::from_process());
+            ask.is_signed_for(&ctx)
+        });
         let (mut hooks, hearing) = Self::wired(plane, socket, moved, told_by_hand);
         hooks.tokens = Some(tokens);
         hooks.reading = Mutex::new(Some(listener.hear(hearing)));
@@ -3444,6 +3452,24 @@ impl Hooks {
                 body: audited.body(purlis_core::skills::source::policy::MadeAt::Window),
             })
             .map_err(|why| format!("the event log refused it: {why}"))
+    }
+
+    /// **Writes the quiet Journal line a timed grant's end is** (M75-21): its time ran out or its
+    /// chat closed. Under chat `number` where the end came with that chat's close. Refused where
+    /// this machine has no event log open, or the log refused it; the end is not undone for that.
+    pub fn record_timed_grant_ended(
+        &self,
+        root: &Path,
+        number: Option<u32>,
+        ended: &purlis_core::policy::grants::Ended,
+    ) -> Result<(), String> {
+        self.audit(
+            root,
+            number,
+            purlis_core::policy::grants::ENDED_KIND,
+            ended.body(),
+            ("recorded", "timed grant's end"),
+        )
     }
 
     /// **Audits a dispatch grant or revoke** (#1437) in the host's event log, under chat

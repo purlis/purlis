@@ -59,7 +59,8 @@ pub enum Kind {
     /// watcher does not see every file it moved.
     Git,
     /// How the project's chats stand, and no file of its tree: something the app holds about a
-    /// chat that its row says has changed ([`chats`]). Never a path's kind.
+    /// chat that its row says has changed, or that the policy its sandbox was compiled under
+    /// has moved ([`chats`], M75-23). Never a path's kind.
     Chats,
 }
 
@@ -285,7 +286,9 @@ fn answers_of(change: &Change) -> Vec<Answer> {
             Answer::Views,
         ],
         Kind::Git => vec![Answer::Git],
-        Kind::Chats => vec![Answer::Sidebar],
+        // The rows ride the sidebar, and a chat's out-of-date mark (the policy its sandbox was
+        // compiled under moved, M75-23) rides the instructions' answer, `chats_plane_updated`.
+        Kind::Chats => vec![Answer::Sidebar, Answer::Instructions],
     }
 }
 
@@ -761,8 +764,11 @@ mod tests {
     }
 
     #[test]
-    fn how_the_chats_stand_concerns_the_sidebar_and_nothing_else() {
-        assert_eq!(answers_to(chats()), vec![Answer::Sidebar]);
+    fn how_the_chats_stand_concerns_the_sidebar_and_the_marks_of_chats_out_of_date() {
+        assert_eq!(
+            answers_to(chats()),
+            vec![Answer::Sidebar, Answer::Instructions]
+        );
     }
 
     #[test]

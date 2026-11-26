@@ -295,6 +295,21 @@ pub type Recorder = Box<dyn Fn(&Record) + Send + Sync>;
 /// report about it.
 pub type Starting = Box<dyn Fn(u32, Option<Harness>, Option<String>, bool) + Send + Sync>;
 
+/// Asked as each chat starts or is reattached, BEFORE its sandbox is applied, with the host's own
+/// record of it (M75-23): what the chat's sandbox is compiled for, and whether the app found it
+/// already running. It reads what the policy says then
+/// ([`purlis_core::policy::running::AtStart`]), so a change made while the start goes on only
+/// ever over-marks, and answers how to tell the app which session that reading is for, which the
+/// start does once the session exists.
+pub type StartedUnder =
+    Box<dyn Fn(purlis_core::policy::running::Facts, bool) -> UnderTold + Send + Sync>;
+
+/// [`StartedUnder`] as the chats hold it: shared, so a start calls it outside the lock.
+type HeldUnder = Arc<dyn Fn(purlis_core::policy::running::Facts, bool) -> UnderTold + Send + Sync>;
+
+/// What a [`StartedUnder`] hands back: how to tell the app which session the reading is for.
+pub type UnderTold = Box<dyn FnOnce(u32) + Send>;
+
 /// [`Chats::named_while_starting`]: each chat starting, and what its harness has named so far.
 type NamedWhileStarting = HashMap<u32, Option<(SessionId, Option<String>)>>;
 
@@ -857,6 +872,8 @@ pub struct Chats {
     /// Told as each chat put back is reattached in the session host, before anything else is
     /// told of it (#2006).
     reattached: Mutex<Option<Starting>>,
+    /// Asked what each chat's sandbox is compiled for, as it starts or is reattached (M75-23).
+    started_under: Mutex<Option<HeldUnder>>,
     /// Told of the run each start begins, before its program runs (ADR 0066).
     beginning: Mutex<Option<Beginning>>,
     /// Told the number of a run about to be replaced at once ([`Self::when_a_run_is_replaced`]).
@@ -1858,6 +1875,7 @@ impl Chats {
             sessions: Arc::from(host),
             starting: Mutex::new(None),
             reattached: Mutex::new(None),
+            started_under: Mutex::new(None),
             beginning: Mutex::new(None),
             replaced_told: Mutex::new(None),
             router: Mutex::new(None),
@@ -1989,6 +2007,13 @@ impl Chats {
     /// a report about it where it does not know the chat yet.
     pub fn when_one_is_reattached(&self, tell: Starting) {
         *lock(&self.reattached) = Some(tell);
+    }
+
+    /// Calls `read` as each chat starts or is reattached, before its sandbox is applied, with
+    /// what that sandbox is compiled for (M75-23): a chat is out of date when the policy tightens
+    /// past it ([`purlis_core::policy::running`]). `true` is a chat the app found already running.
+    pub fn when_one_starts_under(&self, read: StartedUnder) {
+        *lock(&self.started_under) = Some(Arc::from(read));
     }
 
     /// Calls `tell` as each chat starts, BEFORE its program does, with the run that start
@@ -3582,6 +3607,20 @@ impl Chats {
         lock(&self.open)
             .values()
             .any(|one| one.chat.identity.id.as_deref() == Some(id))
+    }
+
+    /// **Runs `keep` only while a session of the chat whose id is `id` is open**, under the lock a
+    /// close takes, so the chat cannot close between the check and `keep` (as
+    /// [`Self::commit_grant`] does). `None` where it is not open and `keep` did not run. `keep`
+    /// must not take this chat's locks.
+    pub(crate) fn while_open<T>(&self, id: &str, keep: impl FnOnce() -> T) -> Option<T> {
+        let open = lock(&self.open);
+        let still = open
+            .values()
+            .any(|one| one.chat.identity.id.as_deref() == Some(id));
+        let kept = still.then(keep);
+        drop(open);
+        kept
     }
 
     /// Chat `session`'s board of live asks (#1666), where its proxy holds a connection while
@@ -5280,6 +5319,32 @@ impl Chats {
                 resumed_from: chat.identity.resumed_from.clone(),
             },
         };
+        // **What the policy says now, for the sandbox this start compiles** (M75-23), read BEFORE
+        // the sandbox is applied below: a change that lands while the start goes on is then in
+        // the chat's next reading and not its baseline, so it can only over-mark it, never hide.
+        // Told of the session, once there is one, by `announce`.
+        // The reader is taken out of its lock first: it loads and compiles the policy, and under
+        // the lock every start would wait for the one before it.
+        let reads_under = lock(&self.started_under).clone();
+        let told_under: Mutex<Option<UnderTold>> = Mutex::new(reads_under.as_ref().map(|read| {
+            read(
+                purlis_core::policy::running::Facts {
+                    chat: identity.id.clone(),
+                    workspace: workspace.clone(),
+                    persona: chat.persona.clone(),
+                    sandbox: match sandbox
+                        .filter(|_| !on_the_runner)
+                        .map(|applied| applied.confines().level)
+                    {
+                        None => "off",
+                        Some(purlis_core::sandbox::Level::Full) => "full",
+                        Some(purlis_core::sandbox::Level::Floor) => "floor",
+                    }
+                    .to_owned(),
+                },
+                reattaching,
+            )
+        }));
         // The run's forge route (ADR 0128 J), held by a guard: stopped by any return below until
         // the chat is open, then by the session's close, its program's end or its project's.
         // Keyed by this run, so a restart's old run ending leaves the new run's route alone.
@@ -6202,6 +6267,9 @@ impl Chats {
                 );
             }
             untold.tell_untold();
+            if let Some(tell) = lock(&told_under).take() {
+                tell(session);
+            }
             // A chat reattached is where it was: its state, its model and its run are as the
             // host kept them (#2006).
             if reattaching {

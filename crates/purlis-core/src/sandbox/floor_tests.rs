@@ -3087,6 +3087,48 @@ fn the_sockets_ports_off_still_holds_are_named_as_purlis_makes_them() {
     }
 }
 
+/// #7605: the hook socket's long-path fallback (a plane nested too deep for a socket path, so the
+/// socket sits in the runtime or temporary folder, which a chat writes) is a file named
+/// `hooks.sock`, and the names held at every floor stop a chat creating or linking one anywhere:
+/// in the seatbelt and Linux profiles by regex, and in Claude Code's settings by glob. So no chat
+/// listens at the path the person's terminal knocks at, with the app down or up.
+#[test]
+fn a_chat_cannot_create_the_hook_socket_a_plane_too_deep_for_a_socket_path_falls_back_to() {
+    let deep = std::path::PathBuf::from("/Users/operator").join("a".repeat(120));
+    let at = crate::hookchannel::socket_for(Some(&deep));
+    assert!(
+        !at.socket.starts_with(&deep),
+        "the fallback is outside the plane"
+    );
+    let name = at
+        .socket
+        .file_name()
+        .and_then(|it| it.to_str())
+        .expect("a name");
+    let written = super::seatbelt::held_socket_names_unwritten();
+    for path in [
+        at.socket.display().to_string(),
+        at.socket.display().to_string().to_uppercase(),
+    ] {
+        let by_regex = written.iter().any(|rule| {
+            rule.split_once("(regex #\"")
+                .and_then(|(_, rest)| rest.split_once("\")"))
+                .is_some_and(|(regex, _)| {
+                    regex::Regex::new(regex).expect("a regex").is_match(&path)
+                })
+        });
+        assert!(
+            by_regex,
+            "{path} is not held from being created in {written:?}"
+        );
+    }
+    let (globs, _) = super::seatbelt::held_socket_globs();
+    assert!(
+        globs.iter().any(|glob| glob == name),
+        "{name} is not in {globs:?}"
+    );
+}
+
 /// **The names of purlis's sockets are held from being written or linked at every floor, whatever
 /// `ports` says** (round 5 of #7105): a socket moved while ports are enforced is still reached
 /// once `ports = "off"` is pressed, so the plain floor's profile and the full profile hold the

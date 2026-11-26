@@ -153,7 +153,7 @@ type Core = {
   /** The chats a stop of everything below does not end. */
   spared?: number[];
   /** The chats the project's instructions changed under, with the files. */
-  updated?: { session: number; files: string[] }[];
+  updated?: { session: number; files: string[]; policy: string[] }[];
   /** What the core says to a fresh start, refusing it (a brief it cannot confirm, #1609). */
   fresh?: string;
 };
@@ -860,7 +860,9 @@ describe("after a relaunch", () => {
 });
 
 describe("nothing drawn on a task's tab ends it (fix round 1, M2)", () => {
-  const changed = { updated: [1, 4].map((session) => ({ session, files: ["CLAUDE.md"] })) };
+  const changed = {
+    updated: [1, 4].map((session) => ({ session, files: ["CLAUDE.md"], policy: [] })),
+  };
 
   it.skipIf(TASKS_START_FRESH)(
     "draws no Start fresh mark on a task's own tab, where a chat's tab has one",

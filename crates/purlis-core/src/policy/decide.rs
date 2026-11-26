@@ -175,6 +175,11 @@ pub struct Decision {
     /// Who locks the family or the action, where a level does: the mode was then `enforce`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lock: Option<String>,
+    /// The level that holds [`Decision::lock`]. Not on the wire (a decision's wire is the one an
+    /// older hook parses): `policy why` reads it where it names the level that could lift the lock,
+    /// and carries the result itself ([`super::why::Why::loosen`]).
+    #[serde(skip)]
+    pub lock_level: Option<Level>,
     /// The sealed grant that decided, where one did (slice 20). Always empty here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grant: Option<String>,
@@ -197,6 +202,11 @@ pub struct Decision {
     /// What [`Decision::asked`] would offer, were a floor to put those asks back. Not on the wire.
     #[serde(skip)]
     pub asked_scopes: Option<Scopes>,
+    /// **The permits a forbid overrode** (Q318.7, `policy why`): the permits that apply on their
+    /// own where what is enforced is not an allow. Not on the wire: a decision's wire is the one
+    /// an older hook parses, and `policy why` carries this itself ([`super::why::Why`]).
+    #[serde(skip)]
+    pub overrode: Vec<Deciding>,
     /// Set where the plane's sealed answers are in the deny state and this is its refusal of an
     /// action but `start` (M75-07b): the causes, and the re-press that ends it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -433,12 +443,14 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
                 lifted: Vec::new(),
                 asked: Vec::new(),
                 lock: loaded.lock_on(&family, request.action),
+                lock_level: loaded.lock_level_on(&family, request.action),
                 grant: None,
                 unasked,
                 keep: None,
                 timed: None,
                 lifted_scopes: None,
                 asked_scopes: None,
+                overrode: Vec::new(),
                 deny_state: None,
             },
         )
@@ -515,6 +527,12 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
     // only. A `log` would read as a would-have-blocked line over an allow, which it is not, so
     // `policy why` reads `enforce` for it; an `off` family stays `off`, as it says (Q319 C2).
     let by_no_permit = rules.iter().any(|r| r.id == EVERYTHING_ELSE);
+    let lock_level = reference.iter().find_map(|r| {
+        r.lock.as_ref()?;
+        loaded
+            .lock_level_on(&family, request.action)
+            .or_else(|| loaded.lock_level_on(&r.mode_family, request.action))
+    });
     scoped(
         loaded,
         Decision {
@@ -530,12 +548,18 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
             lifted,
             asked,
             lock: reference.iter().find_map(|r| r.lock.clone()),
+            lock_level,
             grant: None,
             unasked: None,
             keep: None,
             timed: None,
             lifted_scopes: None,
             asked_scopes: None,
+            overrode: if after_mode == Outcome::Allow {
+                Vec::new()
+            } else {
+                named(&full.permits)
+            },
             deny_state: None,
         },
     )
@@ -568,6 +592,10 @@ fn scopes_of(loaded: &Loaded, rules: &[Deciding], families: [&str; 2]) -> Scopes
         0 => 1,
         _ => 2,
     };
+    // The timed-grant lock (`[policy.locks] timed`) caps every ask, as the scope lock does (M75-21).
+    let timed_locks = [&loaded.organisation_locks, &loaded.project_locks]
+        .into_iter()
+        .filter_map(|locks| locks.timed.clone());
     Scopes {
         keep: rules
             .iter()
@@ -577,6 +605,7 @@ fn scopes_of(loaded: &Loaded, rules: &[Deciding], families: [&str; 2]) -> Scopes
         timed: rules
             .iter()
             .filter_map(|r| r.timed.clone())
+            .chain(timed_locks)
             .min_by_key(|w| rank(w)),
     }
 }
@@ -693,7 +722,7 @@ impl Asker<'_> {
     /// The context of `action` as the host makes it: each field the action's context declares
     /// that the host knows. A field it does not know is left out, so the request does not fit
     /// the schema and is denied, never guessed (§6.3).
-    fn context(&self, action: &str, machine: Option<&str>) -> serde_json::Value {
+    pub(super) fn context(&self, action: &str, machine: Option<&str>) -> serde_json::Value {
         let mut context = serde_json::Map::new();
         for field in super::context_fields(action) {
             let value: serde_json::Value = match field.as_str() {
@@ -740,15 +769,40 @@ pub struct Sealed {
     /// The asking chat's ULID, which a Once or This-chat grant is keyed on (M75-20). Unset, no
     /// grant of those scopes serves.
     pub chat: Option<String>,
+    /// The time the decision is made at, in seconds since 1970, which a timed grant is read
+    /// against (M75-21). Unset reads the clock; a test sets it.
+    pub now: Option<u64>,
+    /// The timed grants this decision found lost with their rule and left in the store, for the
+    /// caller to end with their Journal line ([`force::retire_lost_grants`]): the core has no
+    /// Journal, the app has. Filled by the decision, taken by the caller; a clone shares it.
+    pub retired: std::sync::Arc<std::sync::Mutex<Vec<grants::Ended>>>,
 }
 
 impl Sealed {
+    /// The time a decision is made at: the one set, or now ([`grants::clock_now`], which reads a
+    /// clock that fails as the end of time, so a timed grant is then ended, never served).
+    pub fn at(&self) -> u64 {
+        self.now.unwrap_or_else(grants::clock_now)
+    }
+
+    /// The timed grants the decisions made with this found lost with their rule, taken once.
+    pub fn take_retired(&self) -> Vec<grants::Ended> {
+        std::mem::take(
+            &mut *self
+                .retired
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+
     /// What the sealed store of the plane at `root` says now.
     pub fn of(root: &std::path::Path) -> Self {
         Self {
             standing: answers::standing(root),
             machine: answers::context_machine(),
             chat: None,
+            now: None,
+            retired: Default::default(),
         }
     }
 
@@ -767,6 +821,8 @@ impl Sealed {
             standing: Standing::fresh(),
             machine: None,
             chat: None,
+            now: None,
+            retired: Default::default(),
         }
     }
 }
@@ -812,6 +868,28 @@ pub fn in_plane_held_to(
     )
 }
 
+/// **The sources the policy is loaded from for the plane at `root`**, built as a decision builds
+/// them (the plane's workspaces and personas now, the Organisation's files) and lent to `with`
+/// (M75-23: a running chat's sandbox is compiled from the same ones).
+pub(super) fn with_sources<R>(
+    root: &std::path::Path,
+    with: impl FnOnce(&levels::Sources<'_>) -> R,
+) -> R {
+    let plane = crate::workspaces::Plane::open(root);
+    let workspaces = plane.workspaces().unwrap_or_default();
+    let personas = plane.personas().unwrap_or_default();
+    let workspaces: Vec<&str> = workspaces.iter().map(String::as_str).collect();
+    let personas: Vec<&str> = personas.iter().map(String::as_str).collect();
+    let organisation = organisation::in_force();
+    with(&levels::Sources {
+        root,
+        workspaces: &workspaces,
+        personas: &personas,
+        organisation: organisation.as_ref().map(organisation::Found::as_sources),
+        accepted: None,
+    })
+}
+
 /// **The policy in force's decision, then `settle`, then the person's answers** (M75-20): `settle`
 /// makes every change that can turn the answer into an ask (a floor put back, the shipped hold),
 /// so a Once grant is spent only on the decision that stands, never before a later step undoes it
@@ -825,43 +903,123 @@ fn judged_in_plane(
     floor: Option<&crate::enforcement::Resolved>,
     settle: impl FnOnce(Decision, &Request<'_>) -> Decision,
 ) -> Decision {
-    if let Some(refusal) = deny_state::refused(action, &sealed.standing) {
-        return refusal;
-    }
-    let plane = crate::workspaces::Plane::open(root);
-    let workspaces = plane.workspaces().unwrap_or_default();
-    let personas = plane.personas().unwrap_or_default();
-    let workspaces: Vec<&str> = workspaces.iter().map(String::as_str).collect();
-    let personas: Vec<&str> = personas.iter().map(String::as_str).collect();
-    let organisation = organisation::in_force();
-    let sources = levels::Sources {
+    judged(
         root,
-        workspaces: &workspaces,
-        personas: &personas,
-        organisation: organisation.as_ref().map(organisation::Found::as_sources),
-        accepted: None,
-    };
-    let chat = asker.chat.to_string();
-    let request = Request {
-        chat: &chat,
-        of: asker.of,
+        asker,
         action,
         resource,
-        context: asker.context(action, sealed.machine.as_deref()),
-    };
-    // The policy in force: the project as committed now and what the person accepted, the
-    // stricter winning, and what the app saw tighten sealed into the accepted floor (M75-14).
-    let decision = force::in_force(root, &sources, &sealed.standing, &request, floor);
-    let decision = settle(decision, &request);
-    // The person's answers: nevers in every mode, then a grant at an ask (M75-20). A Once grant's
-    // use is recorded first, and a use that cannot be recorded does not serve.
-    grants::apply(
-        decision,
-        &request,
-        sealed.chat.as_deref(),
-        &sealed.standing,
-        &mut |texts| answers::use_once_grants(root, texts).is_ok(),
+        sealed,
+        floor,
+        How::Host,
+        settle,
     )
+}
+
+/// **What a decision does besides answering.** The host seals what it sees tighten and spends a
+/// Once grant ([`How::Host`]); `policy why` does neither, since it answers without running or
+/// changing anything (spec §10.1).
+pub(super) enum How {
+    /// The host's: the policy in force, sealed and spent as it goes.
+    Host,
+    /// The policy in force with the current side read from this head, nothing sealed or spent.
+    Explain(force::Head),
+    /// One version alone, as if the person had accepted it: no accepted copy and no floor beside
+    /// it. Nothing sealed or spent.
+    Alone(force::Version),
+}
+
+/// **One decision, then the person's answers applied to it**: [`judged_then`] with the answers
+/// of M75-20 as its finish. Explaining records nothing: a Once grant is shown as serving, and stays
+/// unspent.
+#[allow(clippy::too_many_arguments, reason = "one decision, its eight inputs")]
+fn judged(
+    root: &std::path::Path,
+    asker: &Asker<'_>,
+    action: &str,
+    resource: (&str, &str),
+    sealed: &Sealed,
+    floor: Option<&crate::enforcement::Resolved>,
+    how: How,
+    settle: impl FnOnce(Decision, &Request<'_>) -> Decision,
+) -> Decision {
+    let explaining = !matches!(how, How::Host);
+    judged_then(
+        root,
+        asker,
+        action,
+        resource,
+        sealed,
+        floor,
+        how,
+        settle,
+        |refusal| refusal,
+        |decision, request| {
+            // The person's answers: nevers in every mode, then a grant at an ask (M75-20). A Once
+            // grant's use is recorded first, and a use that cannot be recorded does not serve.
+            grants::apply(
+                decision,
+                request,
+                sealed.chat.as_deref(),
+                &sealed.standing,
+                sealed.at(),
+                &mut |texts| explaining || answers::use_once_grants(root, texts).is_ok(),
+            )
+        },
+    )
+}
+
+/// The decision the policy in force makes and `settle` settles, handed to `finish` with the request
+/// it was made for, **before any answer of the person's is applied**: what [`judged`] applies them
+/// to, and what a grant is given for ([`timed_for_chat`]). `refused` takes the deny state's
+/// refusal, which is never judged further.
+#[allow(clippy::too_many_arguments, reason = "one decision, its nine inputs")]
+fn judged_then<T>(
+    root: &std::path::Path,
+    asker: &Asker<'_>,
+    action: &str,
+    resource: (&str, &str),
+    sealed: &Sealed,
+    floor: Option<&crate::enforcement::Resolved>,
+    how: How,
+    settle: impl FnOnce(Decision, &Request<'_>) -> Decision,
+    refused: impl FnOnce(Decision) -> T,
+    finish: impl FnOnce(Decision, &Request<'_>) -> T,
+) -> T {
+    if let Some(refusal) = deny_state::refused(action, &sealed.standing) {
+        return refused(refusal);
+    }
+    with_sources(root, |sources| {
+        let chat = asker.chat.to_string();
+        let request = Request {
+            chat: &chat,
+            of: asker.of,
+            action,
+            resource,
+            context: asker.context(action, sealed.machine.as_deref()),
+        };
+        // The policy in force: the project as committed now and what the person accepted, the
+        // stricter winning, and what the app saw tighten sealed into the accepted floor (M75-14).
+        let decision = match how {
+            How::Host => {
+                let (decision, retired) =
+                    force::in_force(root, sources, &sealed.standing, &request, floor);
+                if !retired.is_empty() {
+                    sealed
+                        .retired
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .extend(retired);
+                }
+                decision
+            }
+            How::Explain(head) => {
+                force::judge_at(root, sources, &sealed.standing, &request, floor, head).0
+            }
+            How::Alone(version) => force::side(sources, &version, root, &request, floor),
+        };
+        let decision = settle(decision, &request);
+        finish(decision, &request)
+    })
 }
 
 /// **Whether an enforcement point asks the host about `action` on a `kind` of resource**: only
@@ -919,7 +1077,117 @@ pub fn for_chat(
     resource: (&str, &str),
 ) -> Option<Decision> {
     let facts = facts?;
-    let asker = Asker {
+    let asker = asker_of(chat, facts);
+    Some(judged_in_plane(
+        root,
+        &asker,
+        action,
+        resource,
+        sealed,
+        Some(floor),
+        |decision, request| settled_by_the_floor(decision, request, floor),
+    ))
+}
+
+/// **The timed grants the person gives chat `chat` at its ask** (M75-21): the decision the host
+/// makes for `action` on `resource`, before any answer is applied, handed to [`grants::give_timed`]
+/// so what is granted is what the host decides now, never what a window says the ask was. `None`
+/// for a chat the host does not have open. `Err` says why nothing was given ([`grants::Refused`]),
+/// and that the sealed answers are in the deny state counts as no ask.
+#[allow(clippy::too_many_arguments)]
+pub fn timed_for_chat(
+    root: &std::path::Path,
+    chat: u32,
+    facts: Option<&ChatFacts>,
+    floor: &crate::enforcement::Resolved,
+    sealed: &Sealed,
+    action: &str,
+    resource: (&str, &str),
+    (span, reason): (grants::Span, &str),
+) -> Option<Result<Vec<grants::Grant>, grants::Refused>> {
+    let facts = facts?;
+    let asker = asker_of(chat, facts);
+    Some(judged_then(
+        root,
+        &asker,
+        action,
+        resource,
+        sealed,
+        Some(floor),
+        How::Host,
+        |decision, request| settled_by_the_floor(decision, request, floor),
+        |_| Err(grants::Refused::NotAnAsk),
+        |decision, request| {
+            grants::give_timed(
+                &decision,
+                request,
+                sealed.chat.as_deref(),
+                span,
+                reason,
+                sealed.at(),
+            )
+        },
+    ))
+}
+
+/// **What the policy in force decides of chat `chat`'s `action` on `resource` before any answer of
+/// the person's is applied** (M75-21): the decision [`timed_for_chat`] gives a grant for, read
+/// without spending a Once grant or applying a never. For a read that must change nothing, such
+/// as whether a timed grant on the Allowed list still serves. `None` for a chat the host does not
+/// have open.
+pub fn unanswered_for_chat(
+    root: &std::path::Path,
+    chat: u32,
+    facts: Option<&ChatFacts>,
+    floor: &crate::enforcement::Resolved,
+    sealed: &Sealed,
+    action: &str,
+    resource: (&str, &str),
+) -> Option<Decision> {
+    let facts = facts?;
+    let asker = asker_of(chat, facts);
+    Some(judged_then(
+        root,
+        &asker,
+        action,
+        resource,
+        sealed,
+        Some(floor),
+        How::Host,
+        |decision, request| settled_by_the_floor(decision, request, floor),
+        |refusal| refusal,
+        |decision, _| decision,
+    ))
+}
+
+/// **One decision as `policy why` asks it** ([`How`]): the same answer the host gives (held to
+/// `floor` where there is one: the app's, for a chat), with nothing sealed, spent or written.
+pub(super) fn explained(
+    root: &std::path::Path,
+    asker: &Asker<'_>,
+    (action, resource): (&str, (&str, &str)),
+    sealed: &Sealed,
+    floor: Option<&crate::enforcement::Resolved>,
+    how: How,
+) -> Decision {
+    judged(
+        root,
+        asker,
+        action,
+        resource,
+        sealed,
+        floor,
+        how,
+        |decision, request| match floor {
+            Some(floor) => settled_by_the_floor(decision, request, floor),
+            None => decision,
+        },
+    )
+}
+
+/// What the host records of chat `chat` is what it is asked as.
+pub(super) fn asker_of(chat: u32, facts: &ChatFacts) -> Asker<'_> {
+    Asker {
         chat,
         of: Chat {
             workspace: facts.workspace.as_deref(),
@@ -938,46 +1206,45 @@ pub fn for_chat(
         depth: 0,
         via: "hook",
         start: None,
-    };
-    Some(judged_in_plane(
-        root,
-        &asker,
-        action,
-        resource,
-        sealed,
-        Some(floor),
-        |decision, request| {
-            let mut decision = decision.held_to(floor);
-            // A rule the project set `off` is not in its policy at all, so no mode brings it
-            // back: where the floor enforces the merge hold and the project's rules let the
-            // merge through, the shipped default under `strict`, which is the hold as it always
-            // ran, answers instead. Where the project's own ask stands (its own rule, accepted),
-            // the hold it set aside is asked beside it, so a grant for the project's ask alone
-            // never lets the merge through (review round 3, N1). The person's grants apply to
-            // whichever stands.
-            if decision.family != MERGE_FAMILY
-                || !matches!(decision.after_mode, Outcome::Allow | Outcome::Ask)
-                || !floor_enforces(floor, &decision.family)
-            {
-                return decision;
+    }
+}
+
+/// `decision` held to `floor` ([`Decision::held_to`]), and the shipped merge hold put back where
+/// the floor enforces it and the project's rules let the merge through.
+fn settled_by_the_floor(
+    decision: Decision,
+    request: &Request<'_>,
+    floor: &crate::enforcement::Resolved,
+) -> Decision {
+    let mut decision = decision.held_to(floor);
+    // A rule the project set `off` is not in its policy at all, so no mode brings it
+    // back: where the floor enforces the merge hold and the project's rules let the
+    // merge through, the shipped default under `strict`, which is the hold as it always
+    // ran, answers instead. Where the project's own ask stands (its own rule, accepted),
+    // the hold it set aside is asked beside it, so a grant for the project's ask alone
+    // never lets the merge through (review round 3, N1). The person's grants apply to
+    // whichever stands.
+    if decision.family != MERGE_FAMILY
+        || !matches!(decision.after_mode, Outcome::Allow | Outcome::Ask)
+        || !floor_enforces(floor, &decision.family)
+    {
+        return decision;
+    }
+    let shipped = decide_locally(request);
+    if shipped.after_mode == Outcome::Ask && decision.after_mode == Outcome::Ask {
+        for rule in shipped.deciding {
+            if !decision.deciding.iter().any(|one| one.id == rule.id) {
+                decision.deciding.push(rule);
             }
-            let shipped = decide_locally(request);
-            if shipped.after_mode == Outcome::Ask && decision.after_mode == Outcome::Ask {
-                for rule in shipped.deciding {
-                    if !decision.deciding.iter().any(|one| one.id == rule.id) {
-                        decision.deciding.push(rule);
-                    }
-                }
-                decision.keep = force::narrower_keep(decision.keep.take(), shipped.keep);
-                decision.timed = force::stricter_timed(decision.timed.take(), shipped.timed);
-                decision
-            } else if shipped.after_mode == Outcome::Allow {
-                decision
-            } else {
-                shipped
-            }
-        },
-    ))
+        }
+        decision.keep = force::narrower_keep(decision.keep.take(), shipped.keep);
+        decision.timed = force::stricter_timed(decision.timed.take(), shipped.timed);
+        decision
+    } else if shipped.after_mode == Outcome::Allow {
+        decision
+    } else {
+        shipped
+    }
 }
 
 /// The family whose hold a floor keeps whatever the project's rules say, until slices 06 and 14.

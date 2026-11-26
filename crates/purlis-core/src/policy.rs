@@ -49,9 +49,11 @@ pub mod needsyou;
 pub mod organisation;
 pub mod press;
 pub mod resolver;
+pub mod running;
 pub mod sandbox_level;
 pub mod sandbox_rules;
 pub mod selfchange;
+pub mod why;
 
 use cedar_policy::{
     ActionConstraint, Authorizer, Context, Decision as CedarDecision, Effect, Entities, EntityId,
@@ -378,6 +380,32 @@ pub fn context_fields(action: &str) -> &'static [String] {
             fields.insert(name.clone(), names);
         }
         fields
+    });
+    read.get(action).map(Vec::as_slice).unwrap_or(&[])
+}
+
+/// **The kinds of resource `action` applies to**, read from the embedded schema once: `Branch` for
+/// `merge`, `Plane` and `Repo` for `save`. Empty for a word the schema has no action for.
+pub fn resource_kinds(action: &str) -> &'static [String] {
+    static READ: OnceLock<BTreeMap<String, Vec<String>>> = OnceLock::new();
+    let read = READ.get_or_init(|| {
+        let mut kinds = BTreeMap::new();
+        let Ok(json) = schema_json(SCHEMA) else {
+            return kinds;
+        };
+        for (name, action) in json["actions"].as_object().into_iter().flatten() {
+            let types: Vec<String> = action["appliesTo"]["resourceTypes"]
+                .as_array()
+                .map(|types| {
+                    types
+                        .iter()
+                        .filter_map(|one| one.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default();
+            kinds.insert(name.clone(), types);
+        }
+        kinds
     });
     read.get(action).map(Vec::as_slice).unwrap_or(&[])
 }

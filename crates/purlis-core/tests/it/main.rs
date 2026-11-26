@@ -274,6 +274,7 @@ mod forge_contract;
 mod forge_device_sign_in;
 mod forge_one_start_asks_the_keychain_once;
 mod forge_state_is_read_from_a_cache_and_never_fetched;
+mod generated_policies_are_proven;
 mod harness_profiles;
 mod known_gaps_are_declared_per_harness_and_os;
 mod mode_runners_consents_processes_and_audit_retention;

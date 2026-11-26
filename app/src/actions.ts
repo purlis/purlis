@@ -1084,6 +1084,10 @@ export type Now = {
   /** The files each chat started on that the project has changed since, by session
    *  (`chats_plane_updated`, charter#369): such a chat is offered Start fresh (NO-3). */
   planeUpdated?: Readonly<Record<number, readonly string[]>>;
+  /** Why each chat's shell sandbox, compiled at its start, is older than the policy, by session
+   *  (`chats_plane_updated`, M75-23): such a chat's Restart chat row says so, and is the way out
+   *  where Start fresh is greyed. */
+  sandboxOld?: Readonly<Record<number, readonly string[]>>;
   /** Whether a chat can be restarted on its conversation: it has a Restart chat row. A shell
    *  has no conversation, and no row. */
   restartable?: (session: number) => boolean;
@@ -4748,6 +4752,16 @@ export function chatsHere(now: Pick<Now, "tabs" | "listed" | "nameOf" | "endedHe
 export const FRESH_UNCHANGED =
   "Nothing it read at its start has changed in the project since, so there is nothing new to start on.";
 
+/** What a chat's mark says of its shell sandbox: held to an older policy than the tool calls are
+ *  (M75-23). `why` is the core's own words (`policy::running::Why::said`). */
+export function sandboxOldSaid(why: readonly string[]): string {
+  return `Its shell sandbox is older than the policy (${why.join(", ")}). Its tool calls already follow every tightening; the commands it runs in its shell do not until it restarts.`;
+}
+
+/** [`FRESH_UNCHANGED`], for a chat whose shell sandbox is older than the policy: its way out is a
+ *  restart (M75-23). */
+export const FRESH_UNCHANGED_SANDBOX = `${FRESH_UNCHANGED} Its shell sandbox is older than the policy: Restart chat compiles it again.`;
+
 /**
  * **A chat's rows, one set per chat, keyed by its number** (#4753, spec #4750). The rows a
  * chat's pane head's ⋯, its sidebar row's ⋯ and right-click, and the palette all read
@@ -4898,10 +4912,14 @@ function chatRows(now: Now): Offer[] {
     // says so (`midTurn`); a chat that reports no state restarts at once (`noState`). A shell
     // has no conversation, and no row. A task is asked first, where the person is.
     const restartable = now.restartable?.(session) ?? false;
+    const sandboxOld = now.sandboxOld?.[session] ?? [];
     if (restartable)
       offers.push({
         ...can(restartId(session), `Restart chat ${name}`, { verb: "restartChat", session }, name),
-        note: RESTART_NOTE,
+        // Where its shell sandbox is older than the policy, the note says why a restart is the
+        // way out (M75-23): the chat's tool calls already follow every tightening.
+        note:
+          sandboxOld.length > 0 ? `${sandboxOldSaid(sandboxOld)} ${RESTART_NOTE}` : RESTART_NOTE,
         midTurn: { session, title: `Restart chat ${name} when this turn ends` },
         noState: { session, note: restartNoteNoState(name) },
       });
@@ -4912,7 +4930,15 @@ function chatRows(now: Now): Offer[] {
     const files = now.planeUpdated?.[session] ?? [];
     if (files.length > 0 || restartable) {
       const title = `Start chat ${name} fresh`;
-      if (files.length === 0) offers.push(cannot(freshId(session), title, FRESH_UNCHANGED, name));
+      if (files.length === 0)
+        offers.push(
+          cannot(
+            freshId(session),
+            title,
+            sandboxOld.length > 0 ? FRESH_UNCHANGED_SANDBOX : FRESH_UNCHANGED,
+            name,
+          ),
+        );
       // **A task** (#1489, #1609): a fresh start is a new conversation, and a task's brief is
       // in the one it has. Where the core hands the brief again it runs, and says so.
       else if (task)

@@ -915,12 +915,14 @@ fn asked_by_the_merge_hold() -> crate::policy::decide::Decision {
         lifted: Vec::new(),
         asked: Vec::new(),
         lock: None,
+        lock_level: None,
         grant: None,
         unasked: None,
         keep: None,
         timed: None,
         lifted_scopes: None,
         asked_scopes: None,
+        overrode: Vec::new(),
         deny_state: None,
     }
 }
@@ -964,6 +966,7 @@ fn a_grant_given_in_the_inbox_serves_the_same_ask_through_the_sealed_store_s_app
             &request(force),
             Some("01M85WM43DT07ANNAQ6NQEJTXD"),
             &standing,
+            NOW,
             &mut |_| true,
         )
     };
@@ -986,6 +989,7 @@ fn a_grant_given_in_the_inbox_serves_the_same_ask_through_the_sealed_store_s_app
         &request(false),
         None,
         &none,
+        NOW,
         &mut |_| true,
     );
     assert_eq!(said.after_mode, Outcome::Ask, "{said:?}");

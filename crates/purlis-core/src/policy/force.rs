@@ -148,6 +148,47 @@ impl Version {
         Head::Unread
     }
 
+    /// **The commit `HEAD` names**, in full, where there is one: what a dry run says it was
+    /// computed for.
+    pub fn head_sha(root: &Path) -> Option<String> {
+        match head_commit(root) {
+            Tip::Commit(sha) => Some(sha),
+            Tip::None | Tip::Unread => None,
+        }
+    }
+
+    /// **The commit a branch, tag or commit name resolves to** (`policy why --policy <branch>`),
+    /// in full: `Ok(None)` where the name is no commit of this project, and `Err` where git did
+    /// not answer.
+    pub fn resolve_rev(root: &Path, rev: &str) -> Result<Option<String>, String> {
+        // A name that starts with a dash would be read by git as an option.
+        if rev.is_empty() || rev.starts_with('-') {
+            return Ok(None);
+        }
+        let spelled = format!("{rev}^{{commit}}");
+        let run = crate::worktree::git::run_as_written(
+            root,
+            &["rev-parse", "--verify", "--quiet", &spelled],
+            GIT_WAIT,
+        )
+        .map_err(|why| format!("git did not answer for `{rev}`: {why}"))?;
+        Ok(run.ok().then(|| run.out.trim().to_owned()))
+    }
+
+    /// **The project as the commit `sha` holds it**, with the local file as it is now: `None`
+    /// where git could not read it stably.
+    pub fn at_sha(root: &Path, sha: &str) -> Option<Self> {
+        Self::read_head(root, sha)
+    }
+
+    /// This version with `rules` as its `policy.cedar`: the project as it would be with that file.
+    pub fn with_rules(&self, rules: String) -> Self {
+        Self {
+            rules: Some(rules),
+            ..self.clone()
+        }
+    }
+
     fn read_head(root: &Path, sha: &str) -> Option<Self> {
         let names: Vec<&'static str> = crate::names::PLANE_MANIFEST.spellings().collect();
         let mut read = committed_files_at(root, sha, &[&names, &[RULES_FILE], &[VAULTS_FILE]]);
@@ -237,6 +278,14 @@ enum Tip {
     None,
     /// Git did not say.
     Unread,
+}
+
+/// The commit `HEAD` names at the plane root now, or none (no commit, or one that does not read).
+pub(super) fn head_sha(root: &Path) -> Option<String> {
+    match head_commit(root) {
+        Tip::Commit(sha) => Some(sha),
+        Tip::None | Tip::Unread => None,
+    }
 }
 
 fn head_commit(root: &Path) -> Tip {
@@ -563,7 +612,7 @@ fn held(decision: Decision, floor: Option<&Resolved>) -> Decision {
 }
 
 /// One side's decision: `version` judged by its own policy and its own world.
-fn side(
+pub(super) fn side(
     sources: &Sources<'_>,
     version: &Version,
     root: &Path,
@@ -664,13 +713,13 @@ pub fn in_force(
     standing: &Standing,
     request: &Request<'_>,
     floor: Option<&Resolved>,
-) -> Decision {
+) -> (Decision, Vec<super::grants::Ended>) {
     let (decision, seen) = judge(root, sources, standing, request, floor);
     if let Some(seen) = seen {
         seal(root, &seen);
     }
-    retire_lost_grants(root, sources, standing, floor);
-    decision
+    let retired = retire_lost_grants(root, sources, standing, floor);
+    (decision, retired)
 }
 
 /// **Takes out of the store every grant whose rule is in no side in force** (M75-20, spec §8.7: a
@@ -685,22 +734,28 @@ pub fn in_force(
 /// A shipped rule that no side holds still decides where `floor` enforces its family (the merge
 /// hold where every side has it off, [`super::decide::for_chat`]), so its grants stay (review round
 /// 3, N5).
+///
+/// **A timed grant that was lost is not taken out here but handed back** (its `Ended`, `how`
+/// [`super::grants::Ending::RuleRemoved`]): its end is one line in the Journal, which only the
+/// app writes, and the line is written before the entry goes so that a failed write loses
+/// neither. Until the caller ends it the grant serves nothing, as its rule decides nothing.
+#[must_use = "a lost timed grant is ended with its Journal line by the caller"]
 pub fn retire_lost_grants(
     root: &Path,
     sources: &Sources<'_>,
     standing: &Standing,
     floor: Option<&Resolved>,
-) {
+) -> Vec<super::grants::Ended> {
     if !matches!(standing.state, State::Holds)
         || !standing.entries.iter().any(|e| e.kind == answers::GRANT)
     {
-        return;
+        return Vec::new();
     }
     let mut known = BTreeSet::new();
     for side in decided_sides(sources, standing) {
         match side {
             LimitSide::Read(loaded) => known.extend(loaded.policy.rules()),
-            LimitSide::Unread => return,
+            LimitSide::Unread => return Vec::new(),
         }
     }
     if let Some(floor) = floor {
@@ -708,16 +763,24 @@ pub fn retire_lost_grants(
     }
     let gone = super::grants::lost(&standing.entries, &known);
     if gone.is_empty() {
-        return;
+        return Vec::new();
     }
+    let timed: Vec<super::grants::Ended> = gone
+        .iter()
+        .filter_map(|entry| super::grants::Ended::of(entry, super::grants::Ending::RuleRemoved))
+        .collect();
     let taken = answers::commit(root, |draft| {
-        for entry in &gone {
+        for entry in gone
+            .iter()
+            .filter(|entry| !timed.iter().any(|one| one.entry == **entry))
+        {
             draft.remove_narrowing(answers::GRANT, &entry.text);
         }
     });
     if let Err(why) = taken {
         tracing::debug!("purlis: a grant of a removed rule was not taken out ({why})");
     }
+    timed
 }
 
 /// **The shipped default's rules that a `floor` keeps in force** whatever the project says: those
@@ -751,8 +814,28 @@ pub fn judge(
     floor: Option<&Resolved>,
 ) -> (Decision, Option<Seen>) {
     // HEAD is read once, and the current side is built from that one read.
+    judge_at(
+        root,
+        sources,
+        standing,
+        request,
+        floor,
+        Version::at_head(root),
+    )
+}
+
+/// **[`judge`] with the current side read from `head`**, which the caller chose: what `policy why
+/// --policy <branch>` asks, and nothing else. Nothing is sealed here either: [`in_force`] does it.
+pub fn judge_at(
+    root: &Path,
+    sources: &Sources<'_>,
+    standing: &Standing,
+    request: &Request<'_>,
+    floor: Option<&Resolved>,
+    head: Head,
+) -> (Decision, Option<Seen>) {
     let none = Version::default();
-    let (here, current, first) = match Version::at_head(root) {
+    let (here, current, first) = match head {
         Head::Read(version) => {
             let loaded = loaded_for(sources, &version);
             let first = decided(&loaded, &version, root, request, floor);
@@ -904,7 +987,7 @@ pub fn orphaned_replacements(sources: &Sources<'_>, standing: &Standing) -> Vec<
 }
 
 /// One side that holds a limit: a version's own policy, or one that did not read.
-enum LimitSide {
+pub(super) enum LimitSide {
     Read(Box<levels::Loaded>),
     Unread,
 }
@@ -924,7 +1007,7 @@ fn limit_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
 /// [`judge`] reads it: the project at the one `HEAD` read ([`Version::at_head`]), never the
 /// working tree's own reading (review round 2, F8). A `HEAD` that was not read stably is an
 /// unread side, so nothing is purged on a guess.
-fn decided_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
+pub(super) fn decided_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
     let first = match Version::at_head(sources.root) {
         Head::Read(version) => LimitSide::Read(Box::new(loaded_for(sources, &version))),
         Head::NoCommit => LimitSide::Read(Box::new(levels::load(sources))),
@@ -933,6 +1016,73 @@ fn decided_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
     let mut sides = vec![first];
     sides.extend(held_sides(sources, standing));
     sides
+}
+
+/// **What one side's sandbox rules hold, as places** (M75-23): what its `read` and `write`
+/// permits let through and what its forbids hold, each resolved against the plane's layout and
+/// the side's own named sets ([`super::sandbox_rules::ActionRules::allowed`] and `forbidden`).
+/// Compared by what the terms resolve to, never by their text: a `PathSet`, `Repo::` or `Branch::`
+/// term keeps its text while its reach changes.
+pub(super) struct SidePlaces {
+    pub read: ActionPlaces,
+    pub write: ActionPlaces,
+}
+
+/// One action's places for one side.
+pub(super) struct ActionPlaces {
+    pub permits: Vec<super::sandbox_rules::Reach>,
+    pub forbids: Vec<super::sandbox_rules::Reach>,
+}
+
+impl ActionPlaces {
+    /// What a side that cannot be compiled stands for: it allows nothing and forbids everything,
+    /// so the policy reading later is never a tightening that was missed.
+    fn closed() -> Self {
+        Self {
+            permits: Vec::new(),
+            forbids: vec![super::sandbox_rules::Reach::Everything],
+        }
+    }
+}
+
+/// **The places every side in force holds for `chat`** (M75-23): each side as [`judge`] reads it
+/// ([`decided_sides`]), compiled ([`super::sandbox_rules::compile`]) and resolved over `layout`.
+/// **Fails closed:** a side that does not read, and one the compile refuses, stand for no permit
+/// and every forbid. A rule that errs makes its action forbid everything
+/// ([`super::sandbox_rules::ActionRules::forbidden`]). The places live in memory only and hold
+/// paths, so they are never recorded.
+pub(super) fn compiled_places(
+    sides: &[LimitSide],
+    layout: &super::resolver::Layout,
+    chat: &super::sandbox_rules::Chat<'_>,
+) -> Vec<SidePlaces> {
+    sides
+        .iter()
+        .map(|side| {
+            let compiled = match side {
+                LimitSide::Read(loaded) => super::sandbox_rules::compile(&loaded.policy, chat)
+                    .ok()
+                    .map(|compiled| (compiled, &loaded.sets)),
+                LimitSide::Unread => None,
+            };
+            match compiled {
+                Some((compiled, sets)) => {
+                    let of = |rules: &super::sandbox_rules::ActionRules| ActionPlaces {
+                        permits: rules.allowed(layout, sets),
+                        forbids: rules.forbidden(layout, sets),
+                    };
+                    SidePlaces {
+                        read: of(&compiled.read),
+                        write: of(&compiled.write),
+                    }
+                }
+                None => SidePlaces {
+                    read: ActionPlaces::closed(),
+                    write: ActionPlaces::closed(),
+                },
+            }
+        })
+        .collect()
 }
 
 /// The accepted copy and every floor version, as sides.

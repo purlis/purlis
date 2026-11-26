@@ -940,3 +940,56 @@ async fn a_call_that_names_a_workspaces_own_files_is_refused_before_the_command_
     }
     assert!(commands.asked.lock().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn the_four_timed_grant_commands_are_refused_over_a_link_even_to_the_window() {
+    // M75-21: "Allow for this chat, for…" is the person's press, and its list is theirs: a host
+    // built with the app's whole command list still answers a link none of the four, and its
+    // handler is never asked.
+    let commands = Commands::default();
+    let (a, b) = duplex(64 * 1024);
+    let (client, served) = tokio::join!(
+        link::connect(
+            a,
+            session::speaks(),
+            Scope::LocalUi,
+            HELD.of(Scope::LocalUi)
+        ),
+        link::serve_any(b, session::speaks(), &HELD)
+    );
+    let four = [
+        "ask_offered",
+        "give_timed_grant",
+        "allowed_answers",
+        "remove_allowed_answer",
+    ];
+    let ui = ui::Server::new(
+        BUILD,
+        four.iter().chain(["rename_chat"].iter()).copied(),
+        commands.clone(),
+    );
+    tokio::spawn(session::serve(served.unwrap(), Sessions, Some(ui)));
+    let client = Client::new(client.unwrap()).0;
+    let ui = client.ui(BUILD).await.unwrap();
+
+    for name in four {
+        assert!(
+            ui::WINDOW_ONLY.contains(&name),
+            "{name} is the window's alone"
+        );
+        let refused = ui
+            .call(
+                name,
+                json!({"plane": 1, "chat": 3, "action": "exec", "kind": "Command",
+                       "resource": "npm", "length": "1h", "reason": "a build", "id": "x"}),
+            )
+            .await
+            .unwrap();
+        assert!(refused.is_err(), "{name}: {refused:?}");
+    }
+    assert!(commands.asked.lock().unwrap().is_empty());
+
+    // Control: a command that is served still reaches its handler on this link.
+    let served = ui.call("rename_chat", json!({"name": "x"})).await.unwrap();
+    assert!(served.is_ok(), "{served:?}");
+}

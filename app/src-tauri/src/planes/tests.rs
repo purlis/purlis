@@ -7730,6 +7730,7 @@ fn a_chat_is_marked_when_the_instructions_it_started_on_change_under_it() {
             skills_added: Vec::new(),
             skills_gone: Vec::new(),
             skills_edited: Vec::new(),
+            policy: Vec::new(),
         }]
     );
     held.close_chat(session).expect("it closes");
@@ -7737,6 +7738,194 @@ fn a_chat_is_marked_when_the_instructions_it_started_on_change_under_it() {
         held.plane_updated(),
         Vec::new(),
         "a closed chat is not marked"
+    );
+    planes.close(&plane).expect("it closes");
+}
+
+/// A plane whose project settings say `strict`, with a workspace `web` and its ledger, **under git
+/// with one commit** (so a policy is read at `HEAD`, as a decision reads it), and `home`, the
+/// folder git's identity comes from.
+#[cfg(unix)]
+fn a_strict_plane_in_git(base: &Path) -> (PathBuf, PathBuf) {
+    let home = base.join("home");
+    std::fs::create_dir_all(&home).expect("home");
+    let root = std::fs::canonicalize(a_plane(&base.join("plane"))).expect("a real path");
+    std::fs::write(
+        root.join(purlis_core::plane::MANIFEST),
+        "[policy]\ntemplate = \"strict\"\n",
+    )
+    .expect("the project's settings");
+    std::fs::create_dir_all(root.join("workspaces/web")).expect("a workspace");
+    std::fs::write(root.join("workspaces/web/README.md"), "web\n").expect("a file");
+    // Outside every workspace: the chats here have no workspace, so the shipped
+    // `sandbox-other-workspace-read` already forbids each workspace's folder to them, and a ban
+    // inside one would tighten nothing.
+    std::fs::create_dir_all(root.join("ledger")).expect("a folder");
+    std::fs::write(root.join("ledger/2026.csv"), "1\n").expect("a file");
+    git_in(&home, &root, &["init", "-q", "-b", "main", "."]);
+    commit_all(&home, &root, "one");
+    (root, home)
+}
+
+#[cfg(unix)]
+fn commit_all(home: &Path, root: &Path, message: &str) {
+    git_in(home, root, &["add", "-A"]);
+    git_in(home, root, &["commit", "-q", "-m", message]);
+}
+
+/// The rule that forbids reading the plane's `ledger` folder, written to the plane's `policy.cedar`.
+#[cfg(unix)]
+fn ban_the_ledger(root: &Path) {
+    std::fs::write(
+        root.join("policy.cedar"),
+        format!(
+            "// purlis-policy 1\n@id(\"sandbox-no-ledger\") @level(\"project\")\n\
+             forbid (principal, action == Action::\"read\", resource) when {{ \
+             resource in Path::\"{}/ledger\" }};\n",
+            root.display()
+        ),
+    )
+    .expect("a path rule");
+}
+
+/// The plane at `root` opened with one chat running `/bin/cat`, and that chat's session.
+#[cfg(unix)]
+fn opened_with_a_chat(planes: &Planes, root: &Path) -> (PlaneId, Arc<Held>, u32) {
+    a_record_naming(root, "/bin/cat");
+    let shown = asking(planes.open_if_approved(root).expect("it is a plane")).contributes;
+    let plane = planes.approve_and_open(root, &shown).expect("yes");
+    let held = planes.held(&plane).expect("it is held");
+    let session = held.chats().open_now()[0].session;
+    (plane, held, session)
+}
+
+#[cfg(unix)]
+#[test]
+fn a_chat_is_marked_out_of_date_when_a_committed_policy_tightens_under_it_and_a_fresh_start_clears_it()
+ {
+    // M75-23, spec §9.5: the sandbox a chat's shell commands run in is compiled at its start, so
+    // a path rule committed after it is a mark on the chat and an offer to start it fresh. The
+    // plane has a commit, so the policy is read at `HEAD` (a working-tree edit is not read).
+    // What the policy forbids at its next decision needs no mark (`policy::running` tests).
+    let dir = tempfile::tempdir().expect("a directory");
+    let (root, home) = a_strict_plane_in_git(dir.path());
+    let planes = planes_keeping(&dir.path().join("config"));
+    let (plane, held, session) = opened_with_a_chat(&planes, &root);
+    assert_eq!(held.plane_updated(), Vec::new(), "nothing has changed yet");
+
+    ban_the_ledger(&root);
+    assert_eq!(
+        held.plane_updated(),
+        Vec::new(),
+        "a rule that is not committed is not read"
+    );
+    commit_all(&home, &root, "ban the ledger");
+
+    let marked = held.plane_updated();
+    assert_eq!(marked.len(), 1, "{marked:?}");
+    assert_eq!(marked[0].session, session);
+    assert_eq!(marked[0].policy, vec!["a path rule tightened".to_owned()]);
+    assert!(marked[0].files.is_empty(), "no instruction file moved");
+
+    // Started fresh, the new chat is compiled with the rule, and is not marked.
+    let started = held
+        .start_chat_fresh(
+            session,
+            Size {
+                columns: 80,
+                rows: 24,
+            },
+        )
+        .expect("it starts again");
+    assert_ne!(started, session);
+    assert_eq!(
+        held.plane_updated(),
+        Vec::new(),
+        "the new one started on it"
+    );
+    planes.close(&plane).expect("it closes");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_committed_loosening_marks_no_chat() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let (root, home) = a_strict_plane_in_git(dir.path());
+    ban_the_ledger(&root);
+    commit_all(&home, &root, "ban the ledger");
+    let planes = planes_keeping(&dir.path().join("config"));
+    let (plane, held, _) = opened_with_a_chat(&planes, &root);
+
+    git_in(&home, &root, &["rm", "-q", "policy.cedar"]);
+    git_in(&home, &root, &["commit", "-q", "-m", "lift the ban"]);
+
+    assert_eq!(held.plane_updated(), Vec::new());
+    planes.close(&plane).expect("it closes");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_workspace_created_after_a_chat_started_marks_it_and_the_window_is_told_to_ask() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let (root, home) = a_strict_plane_in_git(dir.path());
+    let told: Arc<Mutex<Vec<Option<Vec<purlis_core::planechange::Change>>>>> = Arc::default();
+    let planes = planes_keeping(&dir.path().join("config")).telling_changes({
+        let told = Arc::clone(&told);
+        Arc::new(move |_, changes| told.lock().expect("told").push(changes))
+    });
+    let (plane, held, session) = opened_with_a_chat(&planes, &root);
+    assert_eq!(held.plane_updated(), Vec::new());
+
+    std::fs::create_dir_all(root.join("workspaces/api")).expect("a workspace");
+    std::fs::write(root.join("workspaces/api/README.md"), "api\n").expect("a file");
+    commit_all(&home, &root, "a second workspace");
+
+    let marked = held.plane_updated();
+    assert_eq!(marked.len(), 1, "{marked:?}");
+    assert_eq!(marked[0].session, session);
+    assert!(
+        marked[0]
+            .policy
+            .contains(&"a workspace was created".to_owned()),
+        "{marked:?}"
+    );
+
+    // The commit moved the plane's `HEAD`, which the watch does not see: it is what tells the
+    // window to ask again, through the plane's own change (`chats`, which concerns the answer
+    // `chats_plane_updated` reads).
+    let last = Mutex::new(purlis_core::policy::running::head_of(&root));
+    assert!(!head_moved(&last, &root), "the commit was already held");
+    git_in(
+        &home,
+        &root,
+        &["commit", "-q", "--allow-empty", "-m", "again"],
+    );
+    assert!(head_moved(&last, &root), "a move of HEAD");
+    assert!(!head_moved(&last, &root), "told once");
+    assert!(
+        purlis_core::planechange::answers(Some(&[purlis_core::planechange::chats()]))
+            .expect("known")
+            .contains(&purlis_core::planechange::Answer::Instructions)
+    );
+    // A press and a write of the sealed store say the same thing. Counted from here, since the
+    // plane's own watch of its git standing tells a move of `HEAD` in its own time (once, on CI,
+    // for the commits above): each call below must add its own, and both calls tell at once.
+    let asked = || {
+        told.lock()
+            .expect("told")
+            .iter()
+            .filter(|changes| changes.as_deref() == Some(&[purlis_core::planechange::chats()][..]))
+            .count()
+    };
+    let before = asked();
+    held.rows_changed();
+    let after_a_press = asked();
+    assert!(after_a_press > before, "a press says it: {:?}", told.lock());
+    purlis_core::secrets::answers::written_for_test(&root);
+    assert!(
+        asked() > after_a_press,
+        "a write says it: {:?}",
+        told.lock()
     );
     planes.close(&plane).expect("it closes");
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { commands, type PlaneId, type SandboxGrant } from "../bindings";
+import { type AllowedAnswer, commands, type PlaneId, type SandboxGrant } from "../bindings";
 import { Notice } from "../Notice";
 import { inTheWindow } from "../personaHostsAllow";
 import { useReadOnlySaid } from "../ReadOnlyLine";
@@ -224,6 +224,123 @@ export function AllowedRows({ plane, file, ids }: { plane: PlaneId; file: string
       )}
       {!canRemove && grants !== undefined && grants.length > 0 && (
         <p className="granted-note">Remove one from purlis's own window on this machine.</p>
+      )}
+      {said !== undefined && <Trouble said={said} onDismiss={() => setSaid(undefined)} />}
+    </div>
+  );
+}
+
+/** How a countdown reads: whole minutes, rounded up, and under a minute as "less than a minute". */
+export function leftSaid(seconds: number): string {
+  if (seconds <= 0) return "ended";
+  if (seconds < 60) return "less than a minute";
+  const minutes = Math.ceil(seconds / 60);
+  return minutes === 1 ? "1 min" : `${minutes} min`;
+}
+
+/** One answer on the Allowed list, as a sentence: what it covers, at which scope, and for a timed
+ *  grant its chat and rule, how long is left and why it was given (M75-21). A timed grant that no
+ *  longer serves (a cap tightened, a lock was added, its rule stopped asking) says so instead of
+ *  counting down, and is still there to Remove. */
+export function answerSaid(one: AllowedAnswer, left: number | null): string {
+  const covers = `${one.action} ${one.resource}`;
+  if (one.scope === "timed") {
+    const chat = one.chat_name ?? "a chat that is not open";
+    const state = one.serving
+      ? `Allowed for ${leftSaid(left ?? 0)}`
+      : "No longer serving: a limit or rule changed";
+    return `${state} · ${chat} · ${one.rule} · ${covers} · ${one.reason ?? ""}`;
+  }
+  const where: Record<string, string> = {
+    once: "This chat, once",
+    "this chat": "This chat",
+    "this workspace": "This workspace",
+    everywhere: "Everywhere",
+  };
+  return `Allowed · ${covers} · ${where[one.scope] ?? one.scope}`;
+}
+
+/**
+ * **The Allowed list of the answers the project's asks were given** (M75-21, spec §8.8): the grants
+ * and the timed grants, each with what it covers, a timed one with its reason and a countdown, and
+ * Remove. Slice 38 mounts it. A timed grant counts down here by the clock and is read again when
+ * its time is up, since the host takes it out and writes its Journal line then; one that has
+ * ended is never drawn.
+ */
+export function AllowedList({
+  plane,
+  ids,
+  now: clock = Date.now,
+}: {
+  plane: PlaneId;
+  ids: RowIds;
+  /** The clock, in milliseconds: a story hands it a fixed one so the countdown draws the same
+   *  picture every run. */
+  now?: () => number;
+}) {
+  const [rows, setRows] = useState<readonly AllowedAnswer[]>();
+  const [said, setSaid] = useState<string>();
+  const [now, setNow] = useState(() => Math.floor(clock() / 1000));
+  const asking = useRef(0);
+  const read = useCallback(() => {
+    const mine = ++asking.current;
+    void commands
+      .allowedAnswers(plane)
+      .then((done) => {
+        if (mine !== asking.current) return;
+        if (done.status === "error") setSaid(done.error);
+        else setRows(done.data);
+      })
+      .catch(
+        (err: unknown) =>
+          mine === asking.current &&
+          setSaid(`purlis could not list what was allowed: ${String(err)}`),
+      );
+  }, [plane]);
+  useEffect(read, [read]);
+  // The countdown moves every few seconds, and the list is read again when a timed grant's time
+  // is up, so the host takes it out and it leaves the list.
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Math.floor(clock() / 1000)), 5000);
+    return () => clearInterval(tick);
+  }, [clock]);
+  const outstanding = (rows ?? []).filter((one) => one.until !== null && one.until <= now);
+  useEffect(() => {
+    if (outstanding.length > 0) read();
+  }, [outstanding.length, read]);
+
+  const remove = (one: AllowedAnswer) => {
+    setSaid(undefined);
+    void commands
+      .removeAllowedAnswer(plane, one.id)
+      .then((done) => {
+        if (done.status === "error") setSaid(done.error);
+        else read();
+      })
+      .catch((err: unknown) => setSaid(`purlis could not remove it: ${String(err)}`));
+  };
+
+  const live = (rows ?? []).filter((one) => one.until === null || one.until > now);
+  return (
+    <div id={ids.id} aria-labelledby={ids.labelledBy}>
+      {rows === undefined ? (
+        said === undefined && <p>Reading what was allowed…</p>
+      ) : live.length === 0 ? (
+        <p>Nothing was allowed at an ask.</p>
+      ) : (
+        <ul className="granted-list" aria-label="Allowed at an ask">
+          {live.map((one) => (
+            <li key={one.id}>
+              <span>{answerSaid(one, one.until === null ? null : one.until - now)}</span>
+              <Button
+                aria-label={`Remove ${one.scope === "timed" ? "the timed grant for" : "the grant for"} ${one.action} ${one.resource}`}
+                onPress={() => remove(one)}
+              >
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
       )}
       {said !== undefined && <Trouble said={said} onDismiss={() => setSaid(undefined)} />}
     </div>

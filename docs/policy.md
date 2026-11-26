@@ -121,6 +121,34 @@ The window only says the policy; the app resolves it, as below.
 - **A value purlis cannot read never loosens anything**: an unknown template is `strict`, an
   unknown mode is `enforce`, and the window says which.
 
+## What a chat that is already running picks up
+
+**Every hook and permission decision uses the current policy**, so a tightening applies at once and
+a loosening applies at the next decision after you press Accept. Only the shell sandbox, compiled
+when the chat started, waits for a restart (ADR 0127, amended 2026-11-25).
+
+- **A tightening reaches it at its next decision**, with no restart: every hook and proxy ask reads
+  the committed project and your sealed answers afresh, and seals each tightening it sees into the
+  accepted floor.
+- **A loosening reaches it at its next decision after your press**, not only at its next start. A
+  rule you drop, a Never you remove: nothing reaches the chat until you press Accept (the accepted
+  copy only moves at the press), and from then on its decisions follow it. The chat is not marked.
+- **The sandbox its shell commands run in is compiled at its start**, so a tightening cannot reach
+  it. The chat is marked as having an **older shell sandbox** (not as the project updated, which
+  is what **Plane updated** says of its instructions), and its pane offers **Restart chat**, which
+  compiles the sandbox again, when
+  - a Never reaches it,
+  - a grant that served its reads or writes is removed,
+  - a forbid comes into force, or a permit that let a place through is gone or narrower (a read is
+    allowed only where a permit allows it): rules are compared by the places they resolve to, so a
+    named set or repo that grows counts, and a rule whose text is unchanged does not hide it,
+  - the sealed answers enter their deny state, or your answers for everywhere cannot be read,
+  - a workspace is created after it started, or
+  - purlis restarted under it.
+
+  The mark's tooltip says which. The window asks again when the plane's `HEAD` moves, when a Never
+  or a grant is written or removed, and when you press Accept.
+
 ## When a guard is wrong about your case
 
 Set its family to `log` in `[policy]`, commit it, and press Accept in the window; the chat's

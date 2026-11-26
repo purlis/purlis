@@ -5062,6 +5062,30 @@ write into this folder cannot make its own text arrive as the person's.
   workspace`, in the plane's store, or `everywhere`, in the machine-level entry) or an earlier
   build's `asking -> target` (the dispatch family's); **a text that is neither denies every
   action in every mode**. Same store, same tier.
+- **The timed grant** (M75 slice 21, #7030; spec §8.8; Q312; no new store, one more shape of the
+  `grant` kind above). `scope` is `timed` and the object also carries `span` (`15m` or `1h`, the
+  most a line can say: an hour is the hard cap, so any other word is no grant), `given` (seconds
+  since 1970) and `reason` (the person's one marked line, never blank, kept on this machine and
+  nowhere else). `chat` is required, since it is keyed on the chat's ULID: **a dispatched chat has
+  its own ULID and so never has it**. It serves one ask, like any grant, and only **before
+  `given` plus `span`**, only while `@timed` and the locks' `timed` still allow its length, and
+  only while the deciding rules' `@keep` reaches as far as `timed`; a tightening applies at once.
+  A line that says `scope: "timed"` without a length, a time or a reason, or that says a length
+  without being timed, does not read. It **ends** at its time, with its chat's close (whichever
+  comes first), when its rule is removed from the policy in force, or when the person presses
+  Remove on the Allowed list. The app writes **one** quiet line to the Journal (the host's event
+  log, an `Audited` entry of kind `trust.timed_grant.ended` with `what`, `ended` (`time`, `chat
+  closed`, `rule removed` or `removed`), `chat`, `rule`, `action`, `resource_kind`, `resource`
+  and `span`, never the reason) and then takes the entry out of the store, under a commit that
+  needs no press (its removal only narrows). **The line comes first**, so a line that cannot be
+  written loses nothing: the entry stays and is ended at the next look. The line is written once
+  per end while the app runs (one end at a time in the process, and an entry whose line is
+  written but whose removal failed is remembered); **across a crash between the line and the
+  removal it is written once more, so it is at least once, never none.** The entry is taken out
+  where a decision, the Allowed list, Remove or the chat's close finds it ended; one that
+  outlives its end in the store serves nothing in the meantime (it serves only from `given`
+  to `given` plus `span` by the clock, and a clock that cannot be read reads it as ended). Same
+  store, same tier.
 - **The accepted copy and the accepted floor** (M75 slice 14, #7023; spec §9.1): the `accepted`
   entry's text and each `floor` entry's is **one JSON object, a version of the project as it was
   held**: `settings_file` and `settings` (the project file's name and text as `HEAD` held them),
@@ -5817,6 +5841,18 @@ line carries): `--env NAME=<key>`, `--file ENVVAR=<key>` (0600 temp file, prefix
   (`charter/secrets/fingerprint.py:94`, `:111`). purlis (#434) replaces the key whole
   (temp beside, created 0600 and read back, fsync, rename) and refuses a key that is a
   symlink; a crash mid-write leaves the old file.
+- **Also signs the person's own `purlis policy why`** (M75-18, purlis only): the CLI seals the
+  ask's other fields under a key derived from `fingerprint.key` for the purpose `person-why`
+  (`fingerprint::seal`) and the app checks the seal (`seal_with_the_key_there`, which never makes
+  the key) before it answers `PersonWhy` (`PersonWhyAsk::credential`). No chat's sandbox reads the
+  key (seatbelt, Linux and Claude Code's `denyRead` all name it under every state-folder spelling),
+  so a process that left its chat's tree by double-fork and `setsid` still cannot sign. **The
+  exception is a chat at sandbox level `off`**, which has no sandbox: it runs as the person, can read
+  the key and so can sign, and the credential does not stand between it and the person's own `policy
+  why`. The CLI signs for the root `plane::resolve` names (`$PURLIS_ROOT` first) and knocks at that
+  root's socket, and the folder `$PURLIS_HOME` puts the state in is held whole like the default
+  spellings (#7605). A hook socket in the long-path fallback folder is a file named `hooks.sock`,
+  which no chat's sandbox may create. No new file, so no new tier.
 - **Fingerprint format on output:** `fp:` + first 12 hex chars of
   `HMAC-SHA256(key, value.encode("utf-8"))` (`charter/secrets/fingerprint.py:134`). The
   masked line is `<size band> · fp:<12 hex>`, or just the band when no key can be made

@@ -1,0 +1,139 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * **The Allowed list of answers given at an ask** (M75-21, spec §8.8): a timed grant with its
+ * reason and countdown beside a grant that lasts, each with a Remove. The core is faked at its
+ * command boundary. Slice 38 mounts the list in Settings.
+ */
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, userEvent, waitFor, within } from "storybook/test";
+import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import type { AllowedAnswer } from "../bindings";
+import { expectFocusInSight, untilFocused } from "../stories.testkit";
+import { AllowedList } from "./GrantedList";
+
+/** The story's clock, fixed: the countdown is `until - now`, so a fixed pair draws the same picture
+ *  every run. The grant ends 42 minutes after it. */
+const NOW = 1_800_000_000;
+const clock = () => NOW * 1000;
+
+const TIMED: AllowedAnswer = {
+  id: "aaaaaaaaaaaaaaaa",
+  scope: "timed",
+  rule: "processes-curl",
+  action: "exec",
+  resource: "curl",
+  chat: "01M85WM43DT07ANNAQ6NQEJTXD",
+  workspace: null,
+  reason: "Run the release build",
+  until: NOW + 2520,
+  left: 2520,
+  chat_name: "Release build",
+  serving: true,
+};
+const LASTING: AllowedAnswer = {
+  id: "bbbbbbbbbbbbbbbb",
+  scope: "this workspace",
+  rule: "processes-curl",
+  action: "exec",
+  resource: "ls",
+  chat: null,
+  workspace: "shop",
+  reason: null,
+  until: null,
+  left: null,
+  chat_name: null,
+  serving: true,
+};
+
+/** Which answers the core was told to remove, for the story to read. */
+let removed: unknown[] = [];
+
+const meta = {
+  component: AllowedList,
+  args: {
+    plane: "/Users/you/work/shop",
+    now: clock,
+    ids: { id: "allowed-at-an-ask", labelledBy: undefined },
+  },
+  parameters: { screenshot: "page" },
+  beforeEach: () => {
+    removed = [];
+    let held = [TIMED, LASTING];
+    mockIPC((cmd, args) => {
+      if (cmd === "allowed_answers") return structuredClone(held);
+      if (cmd === "remove_allowed_answer") {
+        const { id } = args as { id: string };
+        removed.push(id);
+        held = held.filter((one) => one.id !== id);
+        return null;
+      }
+      return null;
+    });
+    return () => clearMocks();
+  },
+} satisfies Meta<typeof AllowedList>;
+
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+/** A timed grant says it is allowed for a while, with its reason; Tab walks the Remove buttons. */
+export const TimedBesideAGrant: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const list = await canvas.findByRole("list", { name: "Allowed at an ask" });
+    await expect(list).toHaveTextContent(
+      "Allowed for 42 min · Release build · processes-curl · exec curl · Run the release build",
+    );
+    await expect(list).toHaveTextContent("Allowed · exec ls · This workspace");
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Remove the timed grant for exec curl" }),
+      "the keyboard reaches the timed grant's Remove",
+    );
+    expectFocusInSight();
+    await userEvent.tab();
+    await untilFocused(
+      () => canvas.getByRole("button", { name: "Remove the grant for exec ls" }),
+      "Tab goes on to the next",
+    );
+    await expect(removed).toEqual([]);
+  },
+};
+
+/** Remove sends the core that answer's id alone, and the list draws what is left. */
+export const RemoveTakesATimedGrantBack: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole("list", { name: "Allowed at an ask" });
+    await userEvent.tab();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(removed).toEqual([TIMED.id]));
+    await waitFor(() =>
+      expect(canvas.getByRole("list", { name: "Allowed at an ask" })).not.toHaveTextContent(
+        "Run the release build",
+      ),
+    );
+  },
+};
+
+/** A timed grant a cap now rules out is not drawn as allowed: it says it no longer serves. */
+export const ACapTightenedUnderATimedGrant: Story = {
+  beforeEach: () => {
+    mockIPC((cmd) =>
+      cmd === "allowed_answers" ? structuredClone([{ ...TIMED, serving: false }]) : null,
+    );
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const list = await canvas.findByRole("list", { name: "Allowed at an ask" });
+    await expect(list).toHaveTextContent(
+      "No longer serving: a limit or rule changed · Release build · processes-curl · exec curl · Run the release build",
+    );
+    await expect(list).not.toHaveTextContent(/Allowed for/);
+    await expect(
+      canvas.getByRole("button", { name: "Remove the timed grant for exec curl" }),
+    ).toBeVisible();
+  },
+};

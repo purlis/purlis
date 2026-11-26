@@ -260,6 +260,14 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
 - Disk: `cargo test -p purlis-core --lib --test it` plus the CLI's replay builds about 5 GB of
   `target/`. With under ~10 GB free run `--lib` and `--test it` in separate calls and `rm -rf
   target` between them. macOS `sed -i` needs `-i ''`; use a Python edit script from the scratchpad.
+- Generated policies (M75-42) are `policy_proof/generator.rs`: `generate(seed)`, `cells()`, `seeds()`
+  (`PURLIS_PROOF_SEEDS=a,b,c` replays a night; the lib's sandbox differential reads it too). The
+  oracle asks over no entities, so an action whose shipped rule reads `principal.*` (`dispatch-to`,
+  `use`) cannot be a generated cell yet. A sandbox rule may carry one condition only. The workflow
+  is `policy-nightly.yml`; `tools/cedar-bump.sh <base> <head>` says whether a cedar crate moved.
+  Seeds are `u64`. The equality test loads each policy once (`equality_of_one_policy`, `oracle::Prepared`):
+  13 to 40 s warm, and it asserts that a generated rule decides. `df -g /` fell to 2 GB after three cold test builds, so
+  remove `target/` between runs.
 - A limits-table key may carry `min` and `max` (`limits.toml`; `Spec::bounded`): a number outside
   reads as the nearest end, with a Notice. `[policy] limits = "off"` and a `[policy.limits]` table
   are the same TOML key, so one file cannot say both: a test of the mode and of the numbers
@@ -272,3 +280,30 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   A cold lib-test build can pass the 10-minute tool limit: run it in the background and read its
   output file, and print `^error` lines too, or a compile failure looks like a silent pass.
 - A wall-clock test (`every_guard_reads_a_hostile_command_in_linear_time::the_whole_verdict_…`) is run alone and last under nextest (`threads-required = "num-cpus"`, `.config/nextest.toml`, #7514). In a loaded sandbox its release run reads 0.9 to 1.0 s on the two slowest shapes against a 1 s bound, on `main` as on `m75-policy`: judge a regression by comparing both on one machine, and set `TIMING_OUT`-style file logging, because this test binary swallows stdout and stderr even with `--nocapture`.
+- An Audited event's kind must start with `trust.` and use only lowercase letters, `.` and `_`
+  (`eventlog/entry.rs::trust_kind`); a hyphen or another prefix is refused at write time, and
+  `Hooks::audit` only logs it. A test of a Journal line needs `Hooks::relayed` (no socket) with
+  `Events::here(Recorder::new(..))`: `listening_on` cannot bind in a sandboxed chat. BSD `sed -i`
+  needs `''`: use `perl -pi -e` to rename across files.
+- A sandboxed chat can run `npm ci --ignore-scripts`, `tsc --noEmit`, `eslint` and
+  `vitest run --project unit --maxWorkers=2` (about 10 minutes; run it in the background). Its
+  only failures are `e2e/` files that bind a port or run git (`listen EPERM`), and the stories
+  project cannot start at all (no local port): CI's `stories` run is the first for a story.
+  `cargo test -p purlis-core --test it` fails about 425 tests there for the same reasons; the
+  `every_store_the_plane_format_names_has_a_tier` ones pass bar the child that binds a socket.
+- The sealed store's keyring seam is `cfg(test)` in `purlis-core` only, so an app test cannot hold
+  entries in it: `app/src-tauri/src/timedgrants.rs` reads and changes the store through its small
+  `Store` trait, and its tests use an in-memory one. `cargo test -p purlis-app -- --ignored`
+  rewrites `app/src/bindings.ts`; `npm ci --ignore-scripts` in `app/` gives tsc, eslint and vitest.
+- A fresh worktree has no `app/node_modules`: `cd app && npm ci --ignore-scripts` works in a
+  sandboxed chat (registry reachable), then `npx tsc --noEmit`, `npx eslint <files>` and
+  `npx vitest run --project unit <files>` run from `app/`. `FreshMark`-like React tests need an
+  explicit `afterEach(cleanup)`: the project's vitest has no auto-cleanup. BSD `sed -i` in this
+  sandbox chokes on a `|` in a replacement: use the Edit tool.
+- The running-chat marks (`policy/running.rs`, M75-23): `Shared::read(root)` once per
+  `chats_plane_updated`, `AtStart::take` before the sandbox is applied (`chats.rs`), rules
+  compared by the places they resolve to. The shipped catch-all permit `policy-everything-else`
+  cannot be replaced by a project (the `policy-` prefix is reserved), so a permit narrows only
+  through an Organisation rule: its plane-level test is not writable, test `Places::of`. The
+  app's tests cannot seal an answer (no keyring): `answers::written_for_test` says a write
+  without one.

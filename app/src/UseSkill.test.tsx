@@ -547,6 +547,7 @@ describe("the Skills chip on a chat's pane", () => {
       skills_added: ["triage"],
       skills_gone: [],
       skills_edited: [],
+      policy: [],
     };
     const missing = {
       persona: "reviewer",
@@ -632,6 +633,7 @@ describe("the Skills chip on a chat's pane", () => {
       skills_added: [],
       skills_gone: ["old"],
       skills_edited: [],
+      policy: [],
     };
     const { result, rerender } = renderHook(
       ({ sessions, now }) => useChatSkillSets("p", sessions, true, now),
