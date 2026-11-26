@@ -4,7 +4,8 @@
 //! #7679, #7680, #7681: three reads a chat makes of its own recorded repo through the forge route.
 //!
 //! - `gh run view <id> --json jobs` follows the run's `jobs_url`, an absolute
-//!   `https://api.github.com/...` address, so it arrives on the TLS route with gh's own headers
+//!   `https://api.github.com/...` address, which gh's socket transport sends to the plain door as
+//!   plain HTTP with gh's own headers
 //!   (`Host: api.github.com`, `Content-Type` on a `GET`, `Accept-Encoding: gzip`). The headers
 //!   below are what gh 2.69 sent, captured with `GH_DEBUG=api`.
 //! - `gh pr list --author ...` lists through GraphQL `search(query: $q, type: ISSUE)`, with the
@@ -77,6 +78,13 @@ fn a_portless_host_on_the_socket_names_only_the_https_port_and_only_the_chats_ho
         let reply = plain(&w, &gh_run_view_jobs(&w, JOBS, host, ""));
         assert_eq!(reply.status, 403, "{host}: {}", reply.text());
     }
+    // A recorded host that is not GitHub's, without a port: the door is gh's alone, and only a
+    // GitHub API host's port is left out to mean 443.
+    let reply = plain(
+        &w,
+        &gh_run_view_jobs(&w, "/api/v4/projects/group%2Fproj", "gitlab.com", ""),
+    );
+    assert_eq!(reply.status, 403, "{}", reply.text());
     // Another repo on the right host is still another repo.
     let reply = plain(
         &w,
@@ -109,6 +117,8 @@ fn a_request_that_is_still_malformed_is_refused_and_told_which_check_failed() {
             "Content-Type",
         ),
         ("Host: evil.example\r\n", "api.github.com", "Host"),
+        // The same portless Host twice: two Hosts name nothing.
+        ("Host: api.github.com\r\n", "api.github.com", "Host"),
         (
             "Content-Encoding: gzip\r\n",
             "api.github.com",
@@ -197,6 +207,17 @@ fn a_pr_list_search_of_another_repo_none_an_org_or_a_user_is_refused() {
         "repo:\"acme/app\"x type:pr",
         "repo:\"acme/app\" \"\" org:acme",
         "repo:acme/app OR is:public",
+        // The forge reads only a lower-case `repo:` as the qualifier: any other casing is text to
+        // it, and the search would be of everything the person's token sees.
+        "REPO:acme/app type:pr",
+        "Repo:acme/app type:pr",
+        "rEpO:acme/app type:pr",
+        "repo:acme/app ORG:acme",
+        // A qualifier with no name, and a quoted value with a `:` in it, which is refused rather
+        // than trusted to be read as the value alone.
+        ":\"org:acme\" repo:acme/app",
+        "x:\"org:acme\" repo:acme/app",
+        "label:\"bug org:acme\" repo:acme/app",
     ] {
         let out = pr_search(&s, q);
         assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{q}: {out:?}");
@@ -256,6 +277,14 @@ fn a_write_to_an_alert_and_another_repos_alerts_are_refused() {
         "/repos/acme/app/dependabot/alerts/x",
         "/repos/acme/app/dependabot/alerts/12/x",
         "/repos/acme/app/dependabot/secrets",
+        // A key the list does not read, and an impersonation.
+        "/repos/acme/app/dependabot/alerts?unknown=1",
+        "/repos/acme/app/dependabot/alerts?sudo=someone",
+        // An organisation's or an enterprise's alerts are not a repo's.
+        "/orgs/acme/dependabot/alerts",
+        "/enterprises/acme/dependabot/alerts",
+        // An encoded slash is not a path separator to this reading.
+        "/repos/acme/app/dependabot%2Falerts",
     ] {
         let out = s.send("GET", "api.github.com", target, b"");
         assert!(!matches!(out, Outcome::Forward(_)), "{target}: {out:?}");
