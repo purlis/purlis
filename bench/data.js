@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795703849416,
+  "lastUpdate": 1795705857671,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56070,6 +56070,48 @@ window.BENCHMARK_DATA = {
             "value": 101.829311,
             "unit": "ms",
             "extra": "median of 5 runs: 101.178, 101.624, 101.829, 102.039, 104.021 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "086d2ea5e43baf46dc6a896eb9570f8387aba098",
+          "message": "SC-4c: the rested predicate, and the typed reasons a chat cannot be hibernated (#7632) (#7712)\n\n* SC-4c: the rested predicate, and the typed reasons a chat cannot be hibernated (#7632, #1391)\n\nCore: purlis_core::rested, one pure rested(facts) over plain facts (no Ledger, no timer) with a\ntyped NotRested, and by_hand, the operator's act's refusals from the same reasons (the\nlooked-at clock and a harness whose own work purlis cannot see hold back only the app; any\nopen task and being a task stay refused until SC-4j). A new adapter method,\nreports_its_own_work, answered yes by Claude Code alone.\n\nApp: facts_of gathers the core's facts from the board, the chat records and Ledger::state, never\nturn_ended_owing (a grep test). Hibernate answers a typed reason, which the window words from\napp/src/hibernationWords.ts (docs/ui-copy.md); the e2e asserts those words.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BTFJAMR7T6NSWW38QKZXA4\nPurlis-Persona: steward\n\n* SC-4c review: a line coming holds a chat back, and a finished open task is not TaskOpen (#7632)\n\nA task's report, or its end without one, makes Ledger::state read it over at\nonce, before the line telling its parent has started a turn. rested() and\nby_hand() now refuse on a line_coming fact (Ledger::line_coming, read-only),\nwith its own reason, LineComing. by_hand says FinishedTaskOpen, not TaskOpen,\nfor an open task row whose report is no longer owed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BYY7Z8AQW635N2JHNPA25N\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T14:23:18Z",
+          "tree_id": "2bf6ba3bd3e06672a9ea1046d17d9f8bf1591dd0",
+          "url": "https://github.com/purlis/purlis/commit/086d2ea5e43baf46dc6a896eb9570f8387aba098"
+        },
+        "date": 1795705852283,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5826475,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.573, 0.579, 0.583, 0.583, 0.583 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3547355,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.278, 16.350, 16.355, 16.375, 16.457 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9479945,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.286, 100.684, 101.948, 102.544, 103.407 ms"
           }
         ]
       }
