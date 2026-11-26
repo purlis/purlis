@@ -281,7 +281,9 @@ fn a_chat_is_kept_only_on_a_pool_this_machine_keeps_and_goes_with_its_end() {
 }
 
 /// **A draining runner's work is owed while a project may still have some of it to fetch**
-/// (#5393), and a chat kept on the pool's next runner holds nothing back.
+/// (#5393), and a chat kept on the pool's next runner holds nothing back. Nor does a record that
+/// can't say which runner it is on: only the runner can say whether that chat runs there, so the
+/// drain asks it, and a record read here never holds every older runner of the pool for ever.
 #[test]
 fn work_is_owed_from_a_draining_runner_until_its_fetch_and_a_chat_on_the_next_runner_owes_none() {
     let config = tempfile::tempdir().unwrap();
@@ -323,7 +325,10 @@ fn work_is_owed_from_a_draining_runner_until_its_fetch_and_a_chat_on_the_next_ru
         store.keep_chat_on_pool(plane, 3, chat(None));
     })
     .unwrap();
-    assert_eq!(owed(), [plane], "a record that can't say counts for each");
+    assert!(
+        owed().is_empty(),
+        "a record that can't say is the runner's to answer, not owed here"
+    );
 
     crate::machine::update(config.path(), |store| store.leave_chat_on_pool(plane, 3)).unwrap();
     assert_eq!(owed(), [plane], "its chat ended, and its fetch has not run");

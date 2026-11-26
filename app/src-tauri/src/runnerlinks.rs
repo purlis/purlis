@@ -403,6 +403,11 @@ pub fn cluster_reached(
 /// as `<pool>/<runner>`. Only one that runs: a link wakes a suspended runner (#2051), which holds
 /// no chat. None whose drain began, which takes no link or has no chat left. Why, for one that
 /// can't be told, which says nothing of the chats it may run (#4590).
+///
+/// **Asked of the pool's own engine** (#6266, 2026-11-26), as the drain asks it: a pool on another
+/// machine is reached through its forward, and this machine's Docker answers *No such container*
+/// for each of its runners, which made every fetch of the pool fail and so no draining runner of
+/// it ever go.
 pub fn draining_to_ask(config: &Path, pool: &str) -> Vec<Result<String, String>> {
     // None of that pool drains: a machine with no Docker has nothing to say of it.
     if purlis_core::runners::draining(config)
@@ -410,13 +415,17 @@ pub fn draining_to_ask(config: &Path, pool: &str) -> Vec<Result<String, String>>
     {
         return Vec::new();
     }
-    match docker() {
+    let docker =
+        docker().and_then(|here| purlis_core::sshroute::pool::docker_of_named(config, &here, pool));
+    match docker {
         Ok(docker) => draining_to_ask_on(&docker, config, pool),
         Err(why) => vec![Err(why)],
     }
 }
 
-/// [`draining_to_ask`], through `docker`.
+/// [`draining_to_ask`], through `docker`: **each runner checked at once** (2026-11-26), so a slow
+/// or gone one adds its own wait, never the sum of all of theirs, to the restart, fetch or record
+/// that asks.
 pub(crate) fn draining_to_ask_on(
     docker: &Docker,
     config: &Path,
@@ -426,16 +435,29 @@ pub(crate) fn draining_to_ask_on(
         Ok(draining) => draining,
         Err(why) => return vec![Err(why.to_string())],
     };
-    draining
+    let asked: Vec<Kept> = draining
         .into_iter()
         .filter(|kept| kept.pool() == pool)
         .filter(|kept| !kept.unpaired && !kept.carried && !kept.carry_failed)
-        .filter_map(|kept| match docker.running(&kept.made) {
-            Ok(true) => Some(Ok(format!("{}/{}", kept.pool(), kept.name()))),
-            Ok(false) => None,
-            Err(why) => Some(Err(why.to_string())),
-        })
-        .collect()
+        .collect();
+    std::thread::scope(|scope| {
+        let checks: Vec<_> = asked
+            .iter()
+            .map(|kept| (kept, scope.spawn(|| docker.running(&kept.made))))
+            .collect();
+        checks
+            .into_iter()
+            .filter_map(|(kept, check)| match check.join() {
+                Ok(Ok(true)) => Some(Ok(format!("{}/{}", kept.pool(), kept.name()))),
+                Ok(Ok(false)) => None,
+                Ok(Err(why)) => Some(Err(why.to_string())),
+                Err(_) => Some(Err(format!(
+                    "whether runner {} runs could not be read",
+                    kept.name()
+                ))),
+            })
+            .collect()
+    })
 }
 
 /// This machine's `docker`, where the window's `PATH` or Docker's installers put it.

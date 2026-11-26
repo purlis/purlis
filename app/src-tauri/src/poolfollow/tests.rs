@@ -319,6 +319,169 @@ fn a_chat_on_the_pools_next_runner_does_not_hold_a_draining_one_back() {
     assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
 }
 
+/// Pool `first`'s draining runner owes the fetch of workspace `ide` into `plane`.
+fn work_owed_into(machine: &Machine, plane: &std::path::Path) {
+    purlis_core::machine::update(&machine.config, |store| {
+        store.remember(plane, 1);
+        store.keep_chat_on_pool(
+            plane,
+            7,
+            purlis_core::machine::ChatOnPool {
+                pool: "first".to_owned(),
+                workspace: "ide".to_owned(),
+                runner: Some("first".to_owned()),
+            },
+        );
+        store.leave_chat_on_pool(plane, 7);
+    })
+    .unwrap();
+}
+
+/// **A runner that stays for what it owes is not linked to** (slow new chats, 2026-11-26): what it
+/// owes is read here, so a look that would keep it anyway asks it nothing, and makes no link
+/// beside the new chats' own.
+#[test]
+fn a_draining_runner_that_owes_a_fetch_stays_without_a_link() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    work_owed_into(&machine, std::path::Path::new("/planes/a"));
+    let asked = std::sync::atomic::AtomicU32::new(0);
+    let counted = |_: &ToARunner| {
+        asked.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok(0)
+    };
+    let listed = |_: &ToARunner| -> Result<Vec<String>, String> {
+        asked.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Ok(Vec::new())
+    };
+
+    let said = follow_and_drain(&machine, None, &counted, &listed);
+
+    assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
+    assert_eq!(
+        asked.load(std::sync::atomic::Ordering::Relaxed),
+        0,
+        "the runner was linked to: {said:?}"
+    );
+}
+
+/// **What a runner owes is said once** (slow new chats, 2026-11-26): every look kept it for the
+/// same fetch and said so again, 51 times a day. Said again only once what it waits on changes,
+/// and the line says where no fetch here can bring it, as the folder is not on this machine.
+#[test]
+fn what_a_draining_runner_waits_on_is_said_once_and_a_folder_not_here_is_named_so() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    let gone = config.path().join("not-here");
+    work_owed_into(&machine, &gone);
+    let owed_lines = |said: &[String]| -> Vec<String> {
+        said.iter()
+            .filter(|line| line.contains("stays until its work is fetched"))
+            .cloned()
+            .collect()
+    };
+
+    let first = follow_and_drain(&machine, None, &|_| Ok(0), &nothing_held);
+    let again = follow_and_drain(&machine, None, &|_| Ok(0), &nothing_held);
+
+    let first = owed_lines(&first);
+    assert_eq!(first.len(), 1, "{first:?}");
+    assert!(first[0].contains("not on this machine"), "{first:?}");
+    assert_eq!(owed_lines(&again), Vec::<String>::new(), "said again");
+
+    let here = config.path().join("here");
+    std::fs::create_dir(&here).unwrap();
+    work_owed_into(&machine, &here);
+    let changed = owed_lines(&follow_and_drain(&machine, None, &|_| Ok(0), &nothing_held));
+    assert_eq!(changed.len(), 1, "what it waits on changed: {changed:?}");
+}
+
+/// **A chat whose record can't say which runner it is on holds a draining runner only while that
+/// runner runs a chat** (slow new chats, 2026-11-26): a restart's record of every chat it found
+/// held every older runner of the pool for ever. The runner's own count is what says, so one that
+/// runs a chat stays, and one that runs none goes, once it holds nothing a fetch does not bring.
+#[test]
+fn a_chat_of_unknown_runner_holds_a_draining_runner_only_while_one_runs_there() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    let plane = std::path::Path::new("/planes/a");
+    purlis_core::machine::update(&machine.config, |store| {
+        store.remember(plane, 1);
+        store.keep_chat_on_pool(
+            plane,
+            7,
+            purlis_core::machine::ChatOnPool {
+                pool: "first".to_owned(),
+                workspace: "ide".to_owned(),
+                runner: None,
+            },
+        );
+    })
+    .unwrap();
+
+    let said = follow_and_drain(&machine, None, &|_| Ok(1), &nothing_held);
+    assert_eq!(names(&machine), ["first", "first-fedcba98"], "{said:?}");
+
+    let said = follow_and_drain(&machine, None, &|_| Ok(0), &holds_a_stash);
+    assert_eq!(
+        names(&machine),
+        ["first", "first-fedcba98"],
+        "it holds work no fetch brings: {said:?}"
+    );
+
+    let said = follow_and_drain(&machine, None, &|_| Ok(0), &nothing_held);
+    assert_eq!(names(&machine), ["first-fedcba98"], "{said:?}");
+}
+
+/// **The window asks every draining runner of a pool whether it runs at once, not one after
+/// another** (slow new chats, 2026-11-26): a restart's take-back, a fetch and a record's settling
+/// each ask, and a slow or gone runner made the wait for each the sum of all of them.
+#[test]
+fn the_draining_runners_a_window_asks_are_checked_together() {
+    let config = tempfile::tempdir().unwrap();
+    let machine = a_machine(config.path());
+    a_pool_draining(&machine);
+    let ours = machine.desktop_made().unwrap().pinned();
+    let locked = runners::lock(&machine.config);
+    for (at, id) in [(2, 'c'), (3, 'd')] {
+        runners::succeed_locked(
+            &machine.config,
+            "first",
+            &made(&format!("first-{at}"), NEW, id),
+            &answers(&format!("01JB0RUNNER000000000000000{at}")),
+            &ours,
+            &locked,
+        )
+        .unwrap();
+    }
+    drop(locked);
+    let slow = config.path().join("slow-docker");
+    std::fs::write(
+        &slow,
+        "#!/bin/sh
+case \"$1 $2\" in 'container inspect') sleep 1; \
+         echo '[{\"State\":{\"Running\":true}}]' ;; esac\nexit 0\n",
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&slow, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let docker = Docker::at(slow).with_settings_in(config.path().join("docker-settings"));
+
+    let began = std::time::Instant::now();
+    let asked = crate::runnerlinks::draining_to_ask_on(&docker, &machine.config, "first");
+    let took = began.elapsed();
+
+    assert_eq!(asked.len(), 3, "{asked:?}");
+    assert!(asked.iter().all(Result::is_ok), "{asked:?}");
+    assert!(
+        took < std::time::Duration::from_millis(2500),
+        "three checks of a second each took {took:?}"
+    );
+}
+
 #[test]
 fn a_draining_runner_is_removed_once_no_chat_is_left_on_it_and_not_before() {
     let config = tempfile::tempdir().unwrap();
