@@ -6,6 +6,7 @@ import { browser, expect, $, $$ } from "@wdio/globals";
 import { fromThePalette, pressAndStart } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import { READY, SCENARIO_CONVERSATION, STARTED_WITH } from "../harness.js";
+import { minimiseNoticesExpandedHere } from "../reach.js";
 
 /**
  * **Hibernate a chat from its row, then Resume it** (SC-4a, #7630), through the real binary, the
@@ -48,11 +49,29 @@ async function untilTheTurnEnds(): Promise<void> {
   );
 }
 
+/**
+ * **The Notice `selector` names, shown**: it is a note, and a pane's notes fold into its bell
+ * while notices are minimised, the window's default (#4754), so it stands in the band `hidden`.
+ * A person presses the bell to see it, and so does this, once the Notice is there.
+ */
+async function shown(selector: string, timeoutMsg: string): Promise<WebdriverIO.Element> {
+  const notice = await $(selector);
+  await notice.waitForExist({ timeout: 30_000, timeoutMsg });
+  const bell = await $(`.pane-frame:has(${selector}) [data-way="bell"]`);
+  if ((await bell.isExisting()) && (await bell.getAttribute("aria-expanded")) === "false") {
+    await bell.click();
+    // The window keeps this choice: `minimiseNoticesExpandedHere` undoes it (#5586).
+    await browser.execute(() => {
+      (window as unknown as Record<string, boolean>).__e2eNoticesExpanded = true;
+    });
+  }
+  await notice.waitForDisplayed({ timeout: 10_000, timeoutMsg });
+  return await notice.getElement();
+}
+
 /** The band, once it is drawn. */
 async function theBand(): Promise<WebdriverIO.Element> {
-  const band = await $(BAND);
-  await band.waitForDisplayed({ timeout: 30_000, timeoutMsg: "no Hibernated band was drawn" });
-  return await band.getElement();
+  return await shown(BAND, "no Hibernated band was drawn");
 }
 
 /** Waits until no Hibernated band is left. */
@@ -73,6 +92,8 @@ describe("hibernating a chat and resuming it", () => {
     await untilTheTurnEnds();
   });
   after(async () => {
+    // While its pane is still open: only a pane's bell sets the choice.
+    await minimiseNoticesExpandedHere();
     await endTheChatsStartedSince(wereOpen);
   });
 
@@ -101,11 +122,7 @@ describe("hibernating a chat and resuming it", () => {
     // Woken, its turn has begun and not ended: the stand-in reports its prompt as it starts.
     await fromThePalette("Hibernate chat");
 
-    const refused = await $(REFUSED);
-    await refused.waitForDisplayed({
-      timeout: 30_000,
-      timeoutMsg: "no refusal was said for a chat that is working",
-    });
+    const refused = await shown(REFUSED, "no refusal was said for a chat that is working");
     await expect(refused).toHaveText(expect.stringContaining("this chat is working"));
     expect(await $(BAND).isExisting()).toBe(false);
     await (await refused.$("button=Dismiss")).click();
