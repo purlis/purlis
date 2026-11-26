@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795698723535,
+  "lastUpdate": 1795701081898,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55944,6 +55944,48 @@ window.BENCHMARK_DATA = {
             "value": 102.12923749999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.411, 101.662, 102.129, 102.528, 104.325 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "37efae04050a0c4077c7d948bbbba7fb5c6bfbdb",
+          "message": "The first new chat after a restart opens at once (h19) (#7708)\n\n* The first new chat after a restart opens at once (h19)\n\nThe picker's first answer is read ahead once a project is held and again\nonce its chats are back, so the first open is served kept instead of\nreading behind the restore of every chat. Its keep is checked without the\nsidebar model's lock unless the plane's watch lapsed, so a long re-read no\nlonger holds it up. A slow first answer writes its own slow-log answer\nline with each phase's ms (in line, watch, stamp, profiles, harness cards,\npersonas, offers, persona profiles, rows).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BNXQCBQWXAFQQ3MVGKTD7G\nPurlis-Persona: steward\n\n* A watch whole again drops the picker's answers before the re-read (h19 review)\n\nThe picker no longer waits on the sidebar model's lock, so once a sidebar\nask said WholeAgain and began its 91-457 ms re-read, a picker open saw\nWhole and was served answers kept over the gap: the details most of all,\nsince .claude/ is not in their stamp. Held::watch_standing now drops both\nanswers under the watch's lock, as it consumes WholeAgain. standing_seen\nshares standing's logic.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BV8R1GNWNE127PZMP73PTQ\nPurlis-Persona: steward\n\n* Pass the personas error on from personas() itself, so the copy check reads it (h19)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6C6C5TP048KRJ0GFF03FF20\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T13:12:05Z",
+          "tree_id": "48689a74162bcbece7f658bfbca9b59f0e393f79",
+          "url": "https://github.com/purlis/purlis/commit/37efae04050a0c4077c7d948bbbba7fb5c6bfbdb"
+        },
+        "date": 1795701074405,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.565185,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.556, 0.563, 0.565, 0.573, 0.575 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2730815,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.241, 16.272, 16.273, 16.284, 16.298 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.504531,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.134, 101.450, 101.505, 101.965, 102.242 ms"
           }
         ]
       }
