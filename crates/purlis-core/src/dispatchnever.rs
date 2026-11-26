@@ -256,8 +256,42 @@ fn on_disk(root: &Path) -> Nevers {
     })
 }
 
-/// What a write is refused with on a record that does not read, and what the person is told.
+/// **What a write is refused with on a record that does not read, and what the person is told**,
+/// by its cause (ADR 0130 §7): where it does not read only because this machine's acceptance of
+/// the project's policy is Broken ([`unread_by_the_policy`]), the unaccepted policy, which the
+/// press in the window mends; otherwise the file itself ([`file_unread_said`]).
 pub fn unread_said(root: &Path) -> String {
+    if unread_by_the_policy(root) {
+        unaccepted_said(crate::enforcement::AcceptedOn::ThisMachine)
+    } else {
+        file_unread_said(root)
+    }
+}
+
+/// **What the person is told where the record does not read only because the project's policy
+/// isn't accepted** (ADR 0130 §7), `on` where that acceptance lives. Never "the list of pairs
+/// you said never to": the list is as purlis wrote it.
+pub fn unaccepted_said(on: crate::enforcement::AcceptedOn<'_>) -> String {
+    format!(
+        "No dispatch grant counts and nothing was changed because {}",
+        crate::enforcement::unaccepted_said(on)
+    )
+}
+
+/// **Whether the record does not read only because this machine's acceptance of the project's
+/// policy is Broken** (ADR 0125 §3: the nevers are sealed with the same anchor): its seals do
+/// not hold while the acceptance does not, and the file itself reads as the shape it has, or is
+/// not there. A file that is not that shape does not read for its own reason, and **neither does
+/// one where no seal key reads at all** (a keyring that did not start, #7153): the press cannot
+/// mend that, and [`crate::dispatchgrant::NEVERS_UNREAD`] says what does. A key another program
+/// made is the acceptance's cause, which the press replaces (#7714).
+pub fn unread_by_the_policy(root: &Path) -> bool {
+    false
+}
+
+/// What the person is told where the record itself does not read: not the shape purlis wrote,
+/// or changed or removed by something other than the app.
+pub fn file_unread_said(root: &Path) -> String {
     let path = path(root);
     let shown = path
         .strip_prefix(root)
