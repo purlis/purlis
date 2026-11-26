@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795728737711,
+  "lastUpdate": 1795729756839,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56280,6 +56280,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9685315,
             "unit": "ms",
             "extra": "median of 5 runs: 100.975, 101.861, 101.969, 101.983, 102.927 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "81890e8cb6a1d2f9f186c08277e451623c5919e1",
+          "message": "A hibernated chat keeps a masked snapshot of its screen (SC-4b) (#7711)\n\n* SC-4b: a hibernated chat keeps a masked snapshot of its screen, and opening it shows it (#7631, #1391)\n\nCore: hibernatedscreens, .charter/app/hibernated-screens/<ULID>.screen (Clone state, not rebuildable; plane-format first), at most 1 MiB, fitted by taking fewer lines of history so it is cut only at a line the engine drew; written whole through keptscreen, 0600 in 0700, read through no link; a refused or failed write leaves no file; swept at the open (none survives a restart until SC-4e) and at 30 days; denied to every sandboxed chat for reading and writing.\n\nApp: the act takes the screen through watch_within before the program ends, each look masked by secrets::handedto; nothing there stops the hibernation. Removed on close or kill, once a woken run's pane has drawn, and on a workspace's removal. The pane shows it read-only in place of the terminal (HibernatedOr), or says none was kept; story with and without; e2e Hibernate then see it then Resume; two behaviours (1 MiB, alternate screen alone).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BM6Q2PGRFK8WNK95WDRQDC\nPurlis-Persona: steward\n\n* SC-4b review: module gate, no screen after a failed hibernate, handed names carried over a wake (#7631)\n\n- purlis-core: hibernatedscreens is built on every platform; hookchannel keeps its cfg(unix).\n- A hibernation the host refuses, or another end wins, forgets the screen it took.\n- A wake carries what the earlier run was handed to the new run (handedto::carry_over), in\n  memory and on disk, so a second hibernation masks a secret the resumed run draws again.\n- A woken run hibernated before it drew no longer lets its new screen go at the next wake.\n- The two kept-screen behaviour tests say on stderr when a target cannot hibernate.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BR9B7MJAC6FR4Z5ZQ675HM\nPurlis-Persona: steward\n\n* SC-4b review: every restart on a chat's conversation carries what it was handed (#7631)\n\n- handedto::carry_over moves from the wake into Chats::restarted, which every start that takes\n  a chat's place goes through (restart for a grant or the person, restart for project settings,\n  restart without the sandbox, a move's took_over, and a wake), before the old run's close\n  forgets the names. The wake's own call goes.\n- carry_over's doc names every such start and says that a failed write's blind hold lives in\n  this process's memory only.\n- Test: a secret handed before a grant's restart is masked when the restarted chat hibernates.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BWXD4K42Q2NTCQS9A8J6HP\nPurlis-Persona: steward\n\n* SC-4b CI: a resumed run's reports name its conversation; the kept screen's region role is written out (#7631)\n\nA woken or restarted Codex run resumes its earlier run's conversation, and the\nboard refuses a report naming any other (Tracked::naming_its_own). The test\nhelper named conversation-<new session>, so the new run's turn never began.\nIt now names the conversation the board already knows for the chat.\n\nThe e2e spec asks for the kept screen by [role=\"region\"], which a CSS\nselector matches only when the attribute is written; ReadOnlyTerminal's\nnamed <section> had the role implicitly only.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8C05B5A47DYFGXYFX3QT9FR\nPurlis-Persona: steward\n\n* SC-4b CI: a kept screen waits for its whole snapshot, and a look cut short is no screen (#7631)\n\nOver SSH and TLS a remote view's snapshot came slower than a look waited\n(2 s, or 300 ms of quiet), so the first 736 KiB of a multi-MiB screen was\ntaken as all of it, and hibernatedscreens::fitted would have kept that cut\nlook, its oldest lines without the screen, as under 1 MiB.\n\nA host now tells when a view's snapshot has all been handed over\n(SessionHost::watch_whole, and watch_left's whole): the hosted client from\nthe protocol's Reader::snapshot_complete, the window's own after the\nsnapshot its queue starts with. A look waits for that, up to 20 s or 2 s\nof a stalled view, and is None where it does not come.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8C4SNWNAMPJY63C5HZ378VR\nPurlis-Persona: steward\n\n* SC-4b: a refused hibernation's test reads SC-4c's typed refusal (#7631)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M6C6C5TP048KRJ0GFF03FF20\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T20:58:32Z",
+          "tree_id": "cdeb4337c5b3ecac4779387c48a47e9dcb9190dd",
+          "url": "https://github.com/purlis/purlis/commit/81890e8cb6a1d2f9f186c08277e451623c5919e1"
+        },
+        "date": 1795729748010,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.696923,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.679, 0.696, 0.697, 0.704, 0.718 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.580247,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.337, 16.474, 16.580, 16.680, 16.835 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.67184649999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.905, 101.261, 101.672, 101.919, 102.224 ms"
           }
         ]
       }
