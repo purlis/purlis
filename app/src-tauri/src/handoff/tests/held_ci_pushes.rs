@@ -232,6 +232,9 @@ fn a_graded_chat(held: &Held, plane: &Plane, _: u32) -> u32 {
         profile: Some("work".to_owned()),
         name: "1".to_owned(),
         cwd: Some(plane.root.clone()),
+        // Made as `curation::start_graded` makes it, so where purlis wraps a Claude Code chat it
+        // reads the level [`Plane::new`] switched off there (ADR 0067 as amended 2026-11-10).
+        made: purlis_core::sandbox::Made::Window,
         ..Default::default()
     };
     let ready = purlis_core::start::ready(&start, &plane.root).expect("the grade's chat starts");
