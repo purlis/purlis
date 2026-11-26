@@ -389,9 +389,6 @@ const GITLAB_READS: &[&[&str]] = &[
     &["pipelines", "#", "test_report_summary"],
 ];
 
-/// The query keys a read on a listed route may carry. Anything else is refused: a rendering
-/// switch (`render_html`), an impersonation (`sudo`) or a key the forge reads that the proxy
-/// does not know is the forge doing more than the route says.
 /// The Dependabot alert reads: the list, and one alert by its number.
 const DEPENDABOT_READS: &[&[&str]] = &[&["dependabot", "alerts"], &["dependabot", "alerts", "#"]];
 
@@ -407,6 +404,9 @@ const DEPENDABOT_QUERY_KEYS: &[&str] = &[
     "after",
 ];
 
+/// The query keys a read on a listed route may carry. Anything else is refused: a rendering
+/// switch (`render_html`), an impersonation (`sudo`) or a key the forge reads that the proxy
+/// does not know is the forge doing more than the route says.
 const READ_QUERY_KEYS: &[&str] = &[
     "page",
     "per_page",

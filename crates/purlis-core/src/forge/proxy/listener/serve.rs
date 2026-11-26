@@ -103,10 +103,15 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
         Route::Plain => {
             // Only the chat's `gh` speaks on this door, and its socket transport sends an
             // `https://` address it follows (a run's `jobs_url`) as plain HTTP with that address's
-            // `Host`, port left out: the port it means is 443, as the core reads a `Host` without
-            // one (#7679). A port said out loud is that port.
+            // `Host`, port left out: for one of the chat's GitHub API hosts, the port it means is
+            // 443 (#7679). Any other host without a port is port 80, which no repo is on. A port
+            // said out loud is that port.
             let (host, port) = plain_host(&headers);
-            let port = port.unwrap_or(443);
+            let port = port.unwrap_or(if w.proxy.is_github_api_host(&w.chat, &host) {
+                443
+            } else {
+                80
+            });
             match w.proxy.github_alias(&w.chat, &host) {
                 Some(Ok(alias)) => {
                     let value = if alias.port == 443 {

@@ -564,6 +564,10 @@ pub(crate) fn search_repos(query: &str, repos: &[&AllowedRepo]) -> Option<Vec<us
             Term::Phrase(text) if text.contains(':') => return None,
             Term::Phrase(_) => continue,
             Term::Word(word) => (word, None),
+            // A qualifier with no name (`:"..."`) is not known to be read as one. A quoted value
+            // with a `:` in it is refused as a phrase with one is: `x:"org:a"` may be read as the
+            // text `x:` and a qualifier.
+            Term::Quoted { name, value } if name == ":" || value.contains(':') => return None,
             Term::Quoted { name, value } => (name, Some(value)),
         };
         if ["or", "and", "not"]
@@ -577,21 +581,15 @@ pub(crate) fn search_repos(query: &str, repos: &[&AllowedRepo]) -> Option<Vec<us
         if token.chars().all(|c| c == '|' || c == '&') {
             return None;
         }
-        let lower = token
-            .trim_start_matches(['(', '-', '+', '!'])
-            .to_ascii_lowercase();
-        if let Some(path) = lower.strip_prefix("repo:") {
-            // The qualifier is read only as the forge surely reads it: the token starts with
-            // `repo:` itself. A prefix (`+repo:`, `-repo:`, `!repo:`) may make it plain text to
-            // the forge, which would leave the search unscoped.
+        // The forge reads only a lower-case `repo:` at the token's start as the qualifier: `REPO:`
+        // or `Repo:` is text to it, and a prefix (`+repo:`, `-repo:`, `!repo:`) may be, either of
+        // which leaves the search unscoped. So only that spelling scopes, and any other spelling
+        // of a qualifier that says which repos is refused.
+        if let Some(path) = token.strip_prefix("repo:") {
             // A quoted repo (`repo:"a/b"`) is refused: were the forge to read it as text, the
             // search would be of everything the person's token sees. A quote only ever narrows
             // a search on another qualifier.
-            if value.is_some()
-                || !token.to_ascii_lowercase().starts_with("repo:")
-                || path.is_empty()
-                || path.contains(['(', ')', ',', '*'])
-            {
+            if value.is_some() || path.is_empty() || path.contains(['(', ')', ',', '*']) {
                 return None;
             }
             // The recorded path as it is, case aside: not what `normalise_repo_path` makes of a
@@ -602,11 +600,16 @@ pub(crate) fn search_repos(query: &str, repos: &[&AllowedRepo]) -> Option<Vec<us
             if !at.contains(&one) {
                 at.push(one);
             }
-        } else if ["org:", "user:", "owner:", "team:", "enterprise:"]
-            .iter()
-            .any(|q| lower.starts_with(q))
-        {
-            return None;
+        } else {
+            let lower = token
+                .trim_start_matches(['(', '-', '+', '!'])
+                .to_ascii_lowercase();
+            if ["repo:", "org:", "user:", "owner:", "team:", "enterprise:"]
+                .iter()
+                .any(|q| lower.starts_with(q))
+            {
+                return None;
+            }
         }
     }
     (!at.is_empty()).then_some(at)

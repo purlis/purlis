@@ -568,6 +568,16 @@ impl ForgeProxy {
         self.sentinels.revoke(chat);
     }
 
+    /// Whether `host` is the API host of one of `chat`'s GitHub repos on port 443 (see
+    /// [`ChatPolicy::is_github_api_host`]).
+    pub fn is_github_api_host(&self, chat: &ChatId, host: &str) -> bool {
+        self.policies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(chat)
+            .is_some_and(|policy| policy.is_github_api_host(host))
+    }
+
     /// Where `github.localhost` leads for `chat` (`gh`'s `GH_HOST`, on its unix socket): the one
     /// GitHub host its repos are on, and a refusal when it has two or none. `None` for any other
     /// name. The listener rewrites the request to that host before it asks [`Self::handle`], so
