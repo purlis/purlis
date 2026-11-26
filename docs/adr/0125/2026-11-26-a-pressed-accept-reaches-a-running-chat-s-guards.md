@@ -23,29 +23,37 @@ its next step, in all three places.** Its hook-judged families, the policy a tas
 starts with, and its forge route's `guards.merge` all run the accepted policy, so within one run
 of the app the three never disagree. The hook asks the app, which knows the press; for a loosening
 the person pressed after the chat started, `PURLIS_POLICY` no longer floors the app's answer, the
-chain's recorded policy no longer floors it where every chat above it is in this project by the
-app's record, and the route's `started` no longer floors its `merge_mode`. These are the only
-cases where the start's resolution does not floor it.
+chain's recorded policy no longer floors it where each chat above it is found, by id, among this
+project's open chats, and the route's `started` no longer floors its `merge_mode`. These are the
+only cases where the start's resolution does not floor it.
 
 **Only the press lifts the floor, and it fails closed.** The app's Policy answer says whether the
 person pressed Accept for this project since the asking chat started, by the app's own record of
 both; only then does the hook, the chain and the route run the answer without the start's floor.
-An answer without it (an older app) keeps the floor. A chain the app cannot place wholly in this
-project keeps its floor.
+An answer without it (an older app) keeps the floor. Each chat above it is found, by id, among
+this project's open chats; one that has closed or is not found keeps the floor (fail closed), and
+so does a chain through another project.
 
 **The press updates the chain's record (R10).** When the person presses Accept, the app clears the
 strict inherited chain policy (`HandedFrom::policy`, `app/reopen.json`'s `chats[].from.policy`) of
-each running chat in this project that the press lifts. It is the one write the press makes, and
-only the person's press causes it. The record is the app's, and no chat can write it. So a
-dispatched chat follows the accepted policy now, after its own restart (its start resolves with no
-chain to floor it), and after an app restart. A chain through another project is not lifted, and
-its record is untouched.
+each running chat in this project that the press lifts. It is the only thing the press writes,
+and only the person's press causes it. The record is the app's, and no chat can write it. So a
+dispatched chat follows the accepted policy now, and at its restart, before or after an app
+restart (its start resolves with no chain to floor it). A chain whose chat above has closed or is
+not found, or that runs through another project, is not lifted, and its record is untouched.
+
+**The start is recorded (R11).** Each running chat's start policy, as `PURLIS_POLICY` spells it
+(`enforcement::Resolved::spelled`), is kept in the app's session record: a `policy` on the host
+record's `Started` (`crates/host/src/hostrecord.rs`), written when the chat starts, never by the
+press and never from anything a chat sent. It has its own row and tier in `docs/plane-format.md`.
 
 **The fact of the press is kept in the app's memory only.** After the app restarts, every chat
 still running gets its start's floor (`PURLIS_POLICY`, and the route's `started`) back until it
-restarts, and the window's Notice for such a chat says so. A dispatched chat the press lifted stays
-lifted from its chain: its record was updated, so its chain floors it nowhere, and its restart
-starts under the accepted policy.
+restarts. The re-attached forge route takes its `started` from the recorded start, and the
+window's Notice for such a chat reads it and says so. A dispatched chat the press lifted gets its
+start's floor back as any chat does, and that floor holds the chain's policy it started with
+(`PURLIS_POLICY` folds it in). Its record stays cleared, so its restart starts under the accepted
+policy.
 
 ## What does not change
 
@@ -59,7 +67,9 @@ starts under the accepted policy.
   `PURLIS_POLICY` still floors whatever it runs.
 - A tightening still applies at once, with no press.
 - The format of `app/reopen.json` does not change: the press empties a field it already has
-  (Clone state, ADR 0069; its row in `docs/plane-format.md` says so).
+  (Clone state, ADR 0069; its row in `docs/plane-format.md` says so). The host record gains one
+  optional field, `started.policy` (R11), absent from a line an older host wrote, which reads as
+  no recorded start: the floor is then the strictest, the full sandbox with every family enforced.
 
 ## Why
 
@@ -82,7 +92,8 @@ chat can write loosens anything.
   `docs/policy.md`'s "the chat's next start runs it that way" change with the code (#7729).
 - `hookwire`'s Policy answer gains the fact of the press; an app that does not send it is read as
   no press.
-- `docs/plane-format.md`'s `chats[].from.policy` row names the press as its one writer after the
-  dispatch.
+- `docs/plane-format.md`'s `chats[].from.policy` row names the press as the only thing that
+  empties it while the chat keeps its `from`, and a new row records the host record's
+  `started.policy` (R11) with its tier.
 - A runner chat follows its starting machine's Accept the same way, once the app answers for it
   (#7722).

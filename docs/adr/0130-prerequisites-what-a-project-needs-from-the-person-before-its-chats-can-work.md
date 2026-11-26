@@ -165,11 +165,18 @@ expired and a migration are later prerequisites, each with a decision of its own
   since the chat started, the floor still holds.
 - **The press updates the chain's record** (R10): the app clears the inherited chain policy of
   each running chat in this project the press lifts, in its own record, which no chat can write.
-  That is the press's one write. A chain through another project is not lifted.
+  That is the only thing the press writes. A chain is lifted only where each chat above it is
+  found, by id, among this project's open chats; one that has closed or is not found keeps the
+  floor (fail closed), and so does a chain through another project.
+- **The start is recorded** (R11): each running chat's start policy, as `PURLIS_POLICY` spells
+  it, is kept in the app's session record (a `policy` on the host record's `Started`), written
+  when the chat starts and never by the press.
 - **After an app restart**, the fact of the press is gone (it is kept in memory), so every chat
-  still running has its start's floor back until it restarts, and its Notice says so. A dispatched
-  chat the press lifted stays lifted from its chain, because its record was updated, and its
-  restart starts under the accepted policy.
+  still running has its start's floor back until it restarts. The re-attached forge route and the
+  chat's Notice read that floor from the recorded start, and the Notice says so. A dispatched chat
+  the press lifted gets its start's floor back as any chat does, and that floor holds the chain's
+  policy it started with (`PURLIS_POLICY` folds it in). Its record stays cleared, so its restart
+  starts under the accepted policy.
 - **These start at once, under the policy in force, and do not wait:** a chat restored at open, a
   task a running chat dispatches, a chat a running chat opens with `purlis handoff` (it starts
   under the policy in force, strict mode under Broken, as a dispatched task does), and a scheduled
@@ -229,8 +236,11 @@ not read for its own reason keeps today's sentence.
   2026-11-26).
 - A running chat's guards, its chain and its forge route follow a pressed Accept from its next
   step, its sandbox level as it started (ADR 0125's amendment of 2026-11-26), so the Notice after
-  Accept says what is true. The press clears the chain's record of each chat it lifts, its one
-  write (`app/reopen.json`, Clone state).
+  Accept says what is true. The press clears the chain's record of each chat it lifts, the only
+  thing it writes (`app/reopen.json`, Clone state).
+- Each running chat's start policy is recorded on the host record's `Started` (R11; a new row
+  in `docs/plane-format.md`, Machine, device-bound, transient), so after an app restart the
+  re-attached forge route and the Notice read the floor the chat started under.
 - ADR 0120 documents a second code beside 70: 75 for a start a prerequisite held (its amendment of
   2026-11-26).
 - `ProjectPolicyNotice` keeps only what is not a prerequisite: the policy purlis could not read
