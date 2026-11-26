@@ -38,3 +38,9 @@ drafting every refusal too, and nothing may parse what a command printed to deci
 
 A script that compared a `purlis` command's status with 101 or 134 to spot a crash now sees 70.
 None in this repository does.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0120/`](0120/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record.
