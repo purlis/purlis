@@ -47,8 +47,11 @@ import {
 } from "react-aria-components";
 // React Aria's own careful focus, which its hand-back uses: it is not in the package's index.
 import { focusSafely } from "react-aria/private/interactions/focusSafely";
+// Whether a part is drawn in the hidden copy a collection is read from: not in the index either.
+import { useIsHidden } from "react-aria/private/collections/Hidden";
 import { useProjectShown } from "../../projectShown";
 import { moves } from "../../workspaceSlide";
+import { useLayerUp } from "../layers";
 import { pressableTrigger } from "../trigger";
 import { keptOffPages } from "./offPage";
 
@@ -249,6 +252,17 @@ function HandsBack({
   return null;
 }
 
+/**
+ * **A menu counted while it is open** (`ui/layers.ts`, #7728): drawn in the surface, so only
+ * while React Aria draws it open. A select's list is a menu too. React Aria also draws a
+ * select's surface, open or not, in the hidden copy it reads the select's options from, and
+ * that copy is no menu.
+ */
+function MenuUp() {
+  useLayerUp("menu", !useIsHidden());
+  return null;
+}
+
 /** The item of a React Aria collection an element stands in: the nearest `data-key` around it. */
 function itemOf(element: Element | null): string | null {
   return element?.closest("[data-key]")?.getAttribute("data-key") ?? null;
@@ -333,6 +347,7 @@ export function Surface({
     >
       <SurfaceAround.Provider value={inner}>{children}</SurfaceAround.Provider>
       <HandsBack surface={surface} gone={gone} outer={outer} inner={inner} />
+      {kind === "menu" && <MenuUp />}
     </AriaPopover>
   );
 }
