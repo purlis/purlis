@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795732084518,
+  "lastUpdate": 1795732993245,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56406,6 +56406,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4748515,
             "unit": "ms",
             "extra": "median of 5 runs: 100.291, 101.122, 101.475, 101.536, 102.253 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3504295c9b5928f454b5b162b34932f903c2e180",
+          "message": "Pane links: the review follow-ups of #6384, #6446 and #6449 (#6601, #6489, #6488) (#7147)\n\n* Pane links: #6384's review follow-ups (#6601)\n\n- osc8::shape checks ASCII before it builds a skeleton for a character.\n- The core reads a candidate's words again (osc8::reconsidered) only for a\n  marked link: Resolver::opening checks Kind::Osc8 once.\n- DOTS and WRAPPERS move to purlis-unicode (lookalike), the same\n  characters, still kept by hand: no Unicode property names them.\n- A marked span's start and end are kept as Cells read through their\n  markers, not rebuilt where they are read.\n- marking()'s cost measured (parser alone, 8 MB of a busy TUI: ~4%;\n  nothing but cursor moves: ~11%, 10 ns a sequence) and paneLinks.ts's\n  comment says it runs while output streams.\n- LinkCandidate's target loses a #[serde(default)] serde never needed; a\n  wire test pins a missing and a null target.\n- The sign-in terminal's stale comment.\n- Tests: ⌘-click on a Mac opens a marked link (Ctrl does not there), and\n  Copy link on one copies its target, not its words.\n- S8's ask names the chat it came from under its title, as S7's does.\n- docs/pane-links.md: what links, what asks first and why, what is refused.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7P4C48EX7P9GX8Q7PYBN756\nPurlis-Persona: steward\n\n* Pane links: a marked link's trim passes its wrapper test, not a closure (#6601)\n\nClippy's redundant_closure, which CI's clippy caught on the first commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7P4C48EX7P9GX8Q7PYBN756\nPurlis-Persona: steward\n\n* Pane links: #6446's review follow-ups (#6489)\n\n1. Measured: reading a branch's offered list on 100,000 files takes a\n   median 514 ms in a debug build (purlis's own checkout reads in less),\n   against the 2 s a hover is waited for. Not slow enough to cache per\n   branch head; declined, with the figure in the PR.\n2. A file whose branch's list could not be read (an index gitoxide can't\n   read, a read past its bounds) still links, and its hover says first\n   that the editor checks it as it opens (FileAt::unchecked,\n   LinkSeen::unchecked, panelinks::UNCHECKED).\n3. useLandedJump (fileJump.ts) is the Files tab's and a root file's tab's\n   one way to take a pending jump; Resolver::offering builds the default\n   kinds with a branch's files asked of an Offers function.\n4. BranchKey names the branch a resolver keeps a list of; the Fn bound is\n   OffersFiles, written once; landed/lands/sourceFor are jumped,\n   startLine and sourceShownFor; a URL's open builds no file reader; the\n   file kind's tests move to panelinks/file/tests.rs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7P4C48EX7P9GX8Q7PYBN756\nPurlis-Persona: steward\n\n* Links in this pane: #6449's review follow-ups (#6488)\n\n1. ⇧⌘L is drawn only on the focused pane's Links row: the registry no\n   longer names chat.links:, and the catalogue marks the focused pane's\n   row (Offer.keyHere), which menuModel alone draws the key on.\n2. A Links row that opens no list says so (the window's NO-4 trouble\n   line, LINKS_UNLISTED), and each chat keeps a stack of its panes'\n   registrations, so the second of two panes going leaves the first's.\n3. A chat ended on purpose that its pane still shows has its Links row.\n4. A link's place is required everywhere (ScreenLink.place, openLink,\n   onChat, an ask's answer), so tsc rules out the top-left card; placed()\n   is gone and a marked link's click is opened from where it is drawn.\n5. The registry's Shortcut.place is whereSaid.\n6. capitalised lives in textCase.ts, not chatEnded.ts.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7P4C48EX7P9GX8Q7PYBN756\nPurlis-Persona: steward\n\n* Links in this pane: the task line's story is the focused pane, which draws ⇧⌘L (#6488)\n\nIts hand-made Links row now says so (keyHere), as the catalogue marks the\nfocused pane's row. CI's stories run caught it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7P4C48EX7P9GX8Q7PYBN756\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T21:58:19Z",
+          "tree_id": "9f0826313f2bf5034938ed03c32c12474b71a72a",
+          "url": "https://github.com/purlis/purlis/commit/3504295c9b5928f454b5b162b34932f903c2e180"
+        },
+        "date": 1795732985129,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5395365000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.525, 0.535, 0.540, 0.553, 0.555 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4335965,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.416, 16.429, 16.434, 16.510, 16.635 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.91287399999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.928, 101.302, 101.913, 103.295, 103.500 ms"
           }
         ]
       }
