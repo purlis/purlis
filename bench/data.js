@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795703002151,
+  "lastUpdate": 1795703849416,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56028,6 +56028,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2655125,
             "unit": "ms",
             "extra": "median of 5 runs: 101.530, 101.624, 102.266, 102.285, 102.497 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c544eca8a638bf6c808907086a1ddc8c114f0a04",
+          "message": "Stories: HibernatedNotice's missing baselines (fixes main; replaces #7705) (#7713)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BZJ9PG2V7P0YXEA6C87CNR\nPurlis-Persona: steward",
+          "timestamp": "2026-11-26T13:59:51Z",
+          "tree_id": "38ef541654a2a2b218d7c23e7af48459e8985d4c",
+          "url": "https://github.com/purlis/purlis/commit/c544eca8a638bf6c808907086a1ddc8c114f0a04"
+        },
+        "date": 1795703842042,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5731345,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.559, 0.561, 0.573, 0.576, 0.633 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3854385,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.159, 16.170, 16.385, 16.453, 16.514 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.829311,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.178, 101.624, 101.829, 102.039, 104.021 ms"
           }
         ]
       }
