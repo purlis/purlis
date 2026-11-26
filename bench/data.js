@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795735454326,
+  "lastUpdate": 1795736335838,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56490,6 +56490,48 @@ window.BENCHMARK_DATA = {
             "value": 102.024586,
             "unit": "ms",
             "extra": "median of 5 runs: 101.113, 101.514, 102.025, 102.126, 102.476 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f8054bfacd31d12d45805f190bc0a5e817a8919a",
+          "message": "ADR: prerequisites (and amendments to 0121 and 0104) (#7716)\n\n* ADR 0130: prerequisites, and amendments to 0121 and 0104\n\nA prerequisite is a condition a project must meet before its chats can\nwork, raised by the core; the first is the policy one (Broken, Waiting).\nADR 0121 gains its one exception (an open prerequisite's modal), ADR 0104\nan app-raised alert of the dialog family, and CONTEXT.md the term.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8C183YGVA4AG39G2VMTEKP5\nPurlis-Persona: steward\n\n* ADR 0130: fold in the review round's rulings and findings\n\nR1-R5 by the person: per-state answer labels and strict mode defined,\nthe truthful news Notice after Accept, no system notification, the new\ntitle, other projects staying Broken after a new key. The event spec,\nthe answer's lifetime, Never and Waiting, the summary, the modal's\nmechanics (0104), window-only answers, which starts wait, and exit 75\n(a new ADR 0120 amendment). 0121-am now amends decisions 2 and 16.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8C2HXW8700P0ZGFYWXQ9APT\nPurlis-Persona: steward\n\n* ADR 0130: the third pass (rulings R6-R9, review findings)\n\nR6 amends ADR 0125 §3: a pressed Accept reaches a running chat's guards\nfrom its next step; the sandbox level stays as started. R7: under Broken\nthe reason is broken alone. R8: a chat's handoff does not wait. R9: the\nwhy-line for nothing kept. Findings 4, 5, 9 and the strict-mode note.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8C3TD7T03PC6DSMZVEQPSWJ\nPurlis-Persona: steward\n\n* ADR 0130: the fourth pass (R6 lifts the chain's and the route's floors too, only on a press, in memory; #7729)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8C5BA2FQ9VQVTRM0DMGBWYW\nPurlis-Persona: steward\n\n* ADR 0130: the fifth pass (R10: the press clears a lifted chat's chain record; one chain floor; #7729)\n\nThe press is the one write: it clears HandedFrom::policy (app/reopen.json chats[].from.policy,\nClone state, row added to docs/plane-format.md) for each running chat in this project it lifts,\nso a dispatched chat follows the accepted policy now, after its restart and after an app restart.\nThe chain floor applies wherever the app judges for a chat. After an app restart every chat still\nrunning gets its start's floor back until it restarts; a dispatched chat stays lifted from its chain.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8C69NMP4RYA1DHWZ68VNJPY\nPurlis-Persona: steward\n\n* ADR 0130: the round-5 final check (R11 records the start; a lifted chat's floor after an app restart; a closed parent keeps the floor; the writer line)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CRZDCKMAD9X9ADTYXMYGZ7\nPurlis-Persona: steward\n\n* ADR 0125 amendment and plane-format: a missing start record reads the policy in force, not the strictest floor (the person's ruling of 2026-11-27)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8CYKNWFPCQDYZPXV3KGHKKF\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T22:54:35Z",
+          "tree_id": "7346598318e44dd073f4f6567d97a09126bd9317",
+          "url": "https://github.com/purlis/purlis/commit/f8054bfacd31d12d45805f190bc0a5e817a8919a"
+        },
+        "date": 1795736328825,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.616315,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.586, 0.609, 0.616, 0.622, 0.626 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3406185,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.230, 16.302, 16.341, 16.408, 16.446 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.2429015,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.010, 101.133, 101.243, 101.823, 102.244 ms"
           }
         ]
       }
