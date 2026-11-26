@@ -2869,6 +2869,25 @@ pub(crate) fn screen_of(host: &dyn crate::host::SessionHost, session: u32) -> Op
     )
 }
 
+/// [`screen_of`], with at most `history` lines of history above the screen, the newest
+/// (`host::SessionHost::watch_within`): what a hibernated chat's kept screen is fitted by
+/// (SC-4b, #7631). `None` for `history` is the whole of it.
+pub(crate) fn screen_within(
+    host: &dyn crate::host::SessionHost,
+    session: u32,
+    history: Option<u32>,
+) -> Option<String> {
+    let Some(history) = history else {
+        return screen_of(host, session);
+    };
+    screen_through(
+        |sink| host.watch_within(session, sink, history),
+        |view| {
+            let _ = host.unwatch(session, view);
+        },
+    )
+}
+
 /// [`screen_of`] chat `number`, left in the session host from before this window and not
 /// reattached (#6504): a finished task's, which a launch keeps before it closes the chat.
 pub(crate) fn screen_left_of(host: &dyn crate::host::SessionHost, number: u32) -> Option<String> {

@@ -1693,8 +1693,19 @@ impl Held {
         // its run, `hibernated` since its program ended, ends `completed | superseded` now. Its
         // program is gone, so no end of it is heard to write that. A wake forgot it before
         // ending it here, and wrote its own.
-        if self.hibernated.of(session).is_some() {
+        // Its kept screen goes with it (SC-4b, #7631): a hibernated chat closed or killed, or a
+        // woken one closed before its new run drew.
+        let hibernated = self.hibernated.of(session).is_some();
+        if hibernated {
             self.chats.superseded(session);
+        }
+        if (hibernated || self.hibernated.drawn(session).is_some())
+            && let Some(id) = self
+                .chats
+                .recorded_chat(session)
+                .and_then(|chat| chat.identity.id)
+        {
+            purlis_core::hibernatedscreens::forget(self.root(), &id);
         }
         self.hibernated.forget(session);
         // Its id, read before it goes: its dispatch grant for "this chat" ends where its
@@ -1883,6 +1894,15 @@ impl Held {
         {
             return Err(crate::hibernation::ALREADY_HIBERNATING.to_owned());
         }
+        // What it shows is kept while its program is still there to show it (SC-4b, #7631);
+        // nothing that goes wrong there stops the hibernation.
+        if let Some(id) = self
+            .chats
+            .recorded_chat(session)
+            .and_then(|chat| chat.identity.id)
+        {
+            crate::hibernation::keep_screen(self.root(), self.chats.sessions(), session, &id);
+        }
         if let Err(why) = self.chats.sessions().hibernate(session) {
             if self.hibernated.failed(session) {
                 return Ok(());
@@ -1910,11 +1930,47 @@ impl Held {
                 "purlis did not resume chat {session}: it is not hibernated."
             ));
         }
+        let id = self
+            .chats
+            .recorded_chat(session)
+            .and_then(|chat| chat.identity.id);
         let started = self.chats.wake(session, size)?;
         // Forgotten before its end here, which would otherwise end its run a second time.
         self.hibernated.forget(session);
+        // Its kept screen stays until the new run has drawn (SC-4b, #7631).
+        if let Some(id) = id {
+            self.hibernated.woke(started, id);
+        }
         self.in_its_place(session, started);
         Ok(started)
+    }
+
+    /// **The pane showing chat `session` drew `pieces` of what it was handed** (#4733): told to
+    /// the session host, and, where it is a woken chat's new run, its kept screen is no longer
+    /// needed and goes (SC-4b, #7631).
+    pub fn session_drawn(&self, session: u32, view: u32, pieces: u32) -> Result<(), String> {
+        if pieces > 0
+            && let Some(id) = self.hibernated.drawn(session)
+        {
+            purlis_core::hibernatedscreens::forget(self.root(), &id);
+        }
+        self.chats.sessions().drawn(session, view, pieces)
+    }
+
+    /// **A workspace was removed** (SC-4b, #7631): every hibernated chat's kept screen that no
+    /// hibernated chat of this window names goes.
+    pub fn hibernated_screens_swept(&self) {
+        let named: std::collections::HashSet<String> = self
+            .hibernated
+            .now()
+            .into_iter()
+            .filter_map(|session| self.chats.recorded_chat(session)?.identity.id)
+            .collect();
+        purlis_core::hibernatedscreens::sweep(
+            self.root(),
+            |id| named.contains(id),
+            std::time::SystemTime::now(),
+        );
     }
 
     /// **Starts chat `session` again without the sandbox** (#1342): the person's own choice on a

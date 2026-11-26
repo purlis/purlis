@@ -145,6 +145,7 @@ pub(crate) mod held;
 pub mod heldact;
 pub mod heredoc;
 #[cfg(unix)]
+pub mod hibernatedscreens;
 pub mod hookchannel;
 pub mod hookreg;
 pub mod hookstate;
