@@ -72,7 +72,9 @@ use purlis_session_protocol::view::{Chunk, Opened, Reader, Viewer};
 use purlis_core::hookwire::relay::{Heard, Replied, Reply};
 
 use crate::hooks::Relayed;
-use crate::host::{Ends, Named, Opening, Readiness, Reconnecting, SessionHost, Sink, Watching};
+use crate::host::{
+    Ends, Named, Opening, Readiness, Reconnecting, SessionHost, Sink, Watching, Whole,
+};
 use crate::reconnecting::Reconnection;
 use crate::sessions::{ENDED, STOPPED};
 
@@ -489,6 +491,9 @@ pub type Dial = Arc<
 struct LostChat {
     /// That host was a runner gone for good, then or since (#4350, #4421).
     with_the_runner: bool,
+    /// The pool it ran on was forgotten here (#7187, Pool forgotten): the runner and its home
+    /// may be there still, but this machine no longer reaches them.
+    pool_forgotten: bool,
     /// The runner it ended on, as [`HostLink::reached_runner`] names it, where its host said.
     on: Option<String>,
 }
@@ -561,10 +566,18 @@ impl Connection {
     /// runner ends, each chat on it told it ended with that runner (#4350), and whatever comes
     /// next is dialled anew, by the name, to the runner kept under it now. What the window held
     /// against that name goes too: a pool added under it is a new runner.
-    pub fn pool_removed(&self, pool: &str) {
+    ///
+    /// `forgotten` is a pool the person only forgot here (#7187): its runner and its home may be
+    /// there still, so its chats end as **Pool forgotten**, and not with the runner.
+    pub fn pool_removed(&self, pool: &str, forgotten: bool) {
         lock(&self.untrusted).remove(pool);
+        purlis_core::sshroute::pool::pool_gone(pool);
         for link in self.links_of_pool(pool) {
-            link.end_with_its_runner();
+            if forgotten {
+                link.end_with_its_pool_forgotten();
+            } else {
+                link.end_with_its_runner();
+            }
         }
         let of_it = lock(&self.pools).get(pool).cloned();
         if let Some(of_it) = of_it {
@@ -1264,6 +1277,8 @@ enum Draws {
 struct TextSink {
     sink: Sink,
     paced: Option<Paced>,
+    /// Told once the first stream's snapshot has all been handed to `sink` (SC-4b, #7631).
+    whole: Option<Whole>,
 }
 
 /// **A view paced by what its pane has drawn** (#4733): each piece handed to the pane is
@@ -1342,6 +1357,9 @@ pub struct HostLink {
     /// Whether it ended because its runner is gone for good ([`HostLink::end_with_its_runner`]):
     /// its chats' conversations went with that runner's home (#4350).
     runner_gone: Arc<std::sync::atomic::AtomicBool>,
+    /// Whether it ended because its pool was forgotten here ([`HostLink::end_with_its_pool_forgotten`],
+    /// #7187).
+    pool_forgotten: Arc<std::sync::atomic::AtomicBool>,
     /// Why the host did not take the window's name on it, where it was named and did not
     /// (#2623): said by whoever opened it, never with the name.
     unnamed: Option<String>,
@@ -1622,6 +1640,16 @@ pub(crate) enum Reconnect {
     /// The host says the runner was removed outside purlis (`gone`, #4149): it does not link to
     /// it again until it is made again.
     Gone,
+    /// The host says the runner's machine answers and refuses (`refused`, #7187): its sign-in,
+    /// Docker or forwarding fails, and it does not link to it again on its own.
+    Refused,
+    /// The host says the runner's machine presents another host key, CA or engine than the
+    /// pinned one (`host_key_changed`, #7187): never linked again on its own; the person says it
+    /// is all right in the pool's settings.
+    HostKeyChanged,
+    /// The pool was forgotten on this machine (#7187): every link to its runner ends, and each
+    /// chat on it with them.
+    PoolForgotten,
 }
 
 /// Told what a link hears of the runner its host relays it to.
@@ -1813,6 +1841,7 @@ impl HostLink {
             hearing,
             ended: std::sync::atomic::AtomicBool::new(false),
             runner_gone: Arc::default(),
+            pool_forgotten: Arc::default(),
             unnamed,
             most_bundle_bytes: purlis_session_protocol::code::MOST_BUNDLE_BYTES,
             pool: relaying.map(str::to_owned),
@@ -1840,6 +1869,15 @@ impl HostLink {
     /// runner, not that nothing was lost (#4350).
     pub(crate) fn end_with_its_runner(&self) {
         self.runner_gone.store(true, Ordering::SeqCst);
+        self.end();
+    }
+
+    /// [`Self::end`], **its pool being forgotten on this machine** (#7187): each chat on it says
+    /// the pool was forgotten, and the link's chats are told so before it ends. The runner may
+    /// be there still: its home is not lost, only no longer reached from here.
+    pub(crate) fn end_with_its_pool_forgotten(&self) {
+        self.pool_forgotten.store(true, Ordering::SeqCst);
+        reconnect(&self.shared, Reconnect::PoolForgotten);
         self.end();
     }
 
@@ -2065,6 +2103,8 @@ impl HostLink {
         late: impl FnOnce(Result<Answer, session::CallError>, Arc<Client>) + Send + 'static,
     ) -> Result<Answer, session::Refusal> {
         use purlis_core::poollimits::LimitId::AnswerWait;
+        // The window's wait for a program to start, over the link and the relay if any (#7182).
+        let step = purlis_session_protocol::steps::begin("start_program_call");
         let waits = (self.pool.is_some() && !can_be_cancelled()).then(|| {
             let secs = self.limits().in_force(AnswerWait);
             (Instant::now() + Duration::from_secs(secs), secs)
@@ -2099,6 +2139,8 @@ impl HostLink {
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) if was_cancelled() => {
                     // Taken before this gave up: its answer is on its way.
                     if lock(&waited_for).take().is_some() {
+                        // The person's Cancel, not a refusal of the start.
+                        step.cancelled();
                         return Err(session::Refusal {
                             code: CANCELLED.to_owned(),
                             why: START_CANCELLED.to_owned(),
@@ -2112,6 +2154,9 @@ impl HostLink {
                     if lock(&waited_for).take().is_some() {
                         let secs = waits.map_or(0, |(_, secs)| secs);
                         let hit = self.limits().waited(AnswerWait, secs, None);
+                        // The runner may still start the program after this (its answer goes to
+                        // `late`): the window gave up, the start was not refused.
+                        step.gave_up();
                         return Err(session::Refusal {
                             code: WAITED_OUT.to_owned(),
                             why: format!(
@@ -2124,12 +2169,18 @@ impl HostLink {
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             }
         };
-        said.map_err(|why| {
+        let answer = said.map_err(|why| {
             why.refusal().cloned().unwrap_or_else(|| session::Refusal {
                 code: String::new(),
                 why: why.to_string(),
             })
-        })
+        });
+        // A Cancel the host answers with its own refusal is a cancel, not a refused start.
+        if matches!(&answer, Err(refusal) if refusal.code == CANCELLED) {
+            step.cancelled();
+            return answer;
+        }
+        step.ended(answer)
     }
 
     /// Send `command` and do not wait for its answer: what it refuses is logged.
@@ -2639,10 +2690,12 @@ impl HostLink {
 
     /// Draw view `view` with `sink`: its stream may already be here.
     /// `paced`: acknowledged only as the pane reports it drew it (#4733), not as it is handed.
-    fn draw(&self, view: u32, sink: Sink, paced: bool) {
+    /// `whole` is told once a snapshot has all been handed to `sink` (SC-4b, #7631).
+    fn draw(&self, view: u32, sink: Sink, paced: bool, whole: Option<Whole>) {
         let sink = TextSink {
             sink,
             paced: paced.then(Paced::default),
+            whole,
         };
         self.draw_into(view, Draws::Text(Arc::new(Mutex::new(sink))));
     }
@@ -3013,6 +3066,10 @@ async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
     if epoch > 1 {
         give(&shared, view, epoch, 0, RESET.as_bytes().to_vec());
     }
+    // An empty snapshot is whole before anything is read.
+    if reader.snapshot_complete() {
+        told_whole(&shared, view);
+    }
     let mut first = true;
     loop {
         let chunk = tokio::select! {
@@ -3039,6 +3096,9 @@ async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
         // Each chunk is one piece, and carries exactly its own bytes: a character cut between
         // two chunks is the pane's terminal's to put together, so nothing is held back here.
         give(&shared, view, epoch, bytes.len(), bytes.to_vec());
+        if reader.snapshot_complete() {
+            told_whole(&shared, view);
+        }
         // It draws a snapshot, which comes only over a link that is up: whatever was said of its
         // runner's link, it is reconnected (#2496).
         if std::mem::take(&mut first) {
@@ -3186,6 +3246,16 @@ fn give(shared: &Shared, view: u32, epoch: u32, bytes: usize, piece: Vec<u8>) {
     }
     if let Some(sink) = text_sink(shared, view) {
         lock(&sink).hand(epoch, bytes, piece);
+    }
+}
+
+/// The snapshot of view `view` has all been handed to its sink: whoever waits on it whole is
+/// told, once (SC-4b, #7631). After a reset, the stream's own snapshot: what came before it is
+/// drawn over.
+fn told_whole(shared: &Shared, view: u32) {
+    let whole = text_sink(shared, view).and_then(|sink| lock(&sink).whole.take());
+    if let Some(whole) = whole {
+        whole();
     }
 }
 
@@ -3341,6 +3411,8 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                 why,
                 key_changed,
                 gone,
+                refused,
+                host_key_changed,
             }) => {
                 // The runner let go of every line it handed on over the link that went: each
                 // command of its that waits here has gone, its Ask with it (#3408).
@@ -3355,6 +3427,12 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                 }
                 if gone {
                     reconnect(&shared, Reconnect::Gone);
+                }
+                if refused {
+                    reconnect(&shared, Reconnect::Refused);
+                }
+                if host_key_changed {
+                    reconnect(&shared, Reconnect::HostKeyChanged);
                 }
             }
             Told::Pushed(Pushed::LinkBack {}) => {
@@ -3436,6 +3514,9 @@ pub struct HostedSessions {
     /// What hears the lines the host hands on from the project's hook channel (#2000).
     relayed: Arc<Mutex<Option<Arc<Relayed>>>>,
     running: Arc<Mutex<HashMap<u32, Program>>>,
+    /// The chats the host let go of as hibernated (#7630): not running, and still the window's
+    /// until they are woken or ended, which closes nothing in the host.
+    hibernated: Arc<Mutex<std::collections::HashSet<u32>>>,
     /// The highest number the window knows went out: the host deals them (#2000), and this is
     /// what the window's record keeps and what it tells the host went out before it held the
     /// project. It only rises.
@@ -3519,6 +3600,7 @@ impl HostedSessions {
             relayed: Arc::default(),
             reconnects: reconnects_of(&running, &reconnecting),
             running,
+            hibernated: Arc::default(),
             opened: Arc::default(),
             ended,
             kill_switch: crate::killswitch::KillSwitch::unthrown(),
@@ -3808,9 +3890,11 @@ fn reconnects_of(
                     .down
                     .as_ref()
                     .map_or_else(crate::reconnecting::now_secs, |was| was.since);
+                // Unreachable until the host says it refused (#7187): it says so next.
                 dimmed.down = Some(crate::reconnecting::LinkDown {
                     why: why.to_string(),
                     since,
+                    state: crate::reconnecting::LinkState::Unreachable,
                 });
                 (chats, Reconnection::Reconnecting)
             }
@@ -3819,19 +3903,43 @@ fn reconnects_of(
                 let chats = std::mem::take(&mut lock(&dimmed).chats);
                 (chats.into_iter().collect(), Reconnection::Reconnected)
             }
-            // Said whatever chats there are: the window says it once for the project.
-            Reconnect::KeyChanged | Reconnect::Gone => {
+            // A changed key is said whatever chats there are: the window says it once for the
+            // project, and its chats stay dimmed.
+            Reconnect::KeyChanged => {
                 lock(&dimmed).down = None;
                 let chats: Vec<u32> = lock(&dimmed).chats.iter().copied().collect();
-                let said = if heard == Reconnect::Gone {
-                    Reconnection::RunnerGone
-                } else {
-                    Reconnection::KeyChanged
-                };
                 if let Some(tell) = lock(&dimmed).tell.clone() {
-                    tell(chats, said);
+                    tell(chats, Reconnection::KeyChanged);
                 }
                 return;
+            }
+            // **A runner gone ends its chats** (#7187, CONTEXT.md: Start again on this pool),
+            // as a forgotten pool does: nothing is left to reconnect, so they are not dimmed.
+            Reconnect::Gone => {
+                lock(&dimmed).down = None;
+                let chats = std::mem::take(&mut lock(&dimmed).chats);
+                (chats.into_iter().collect(), Reconnection::RunnerGone)
+            }
+            // The chats stay dimmed, and the reason stays in the link's down: the window shows
+            // it as refused, with Check pool (#7187).
+            Reconnect::Refused => {
+                let chats: Vec<u32> = lock(&dimmed).chats.iter().copied().collect();
+                if let Some(down) = lock(&dimmed).down.as_mut() {
+                    down.state = crate::reconnecting::LinkState::Refused;
+                }
+                (chats, Reconnection::Refused)
+            }
+            Reconnect::HostKeyChanged => {
+                let chats: Vec<u32> = lock(&dimmed).chats.iter().copied().collect();
+                if let Some(down) = lock(&dimmed).down.as_mut() {
+                    down.state = crate::reconnecting::LinkState::HostKeyChanged;
+                }
+                (chats, Reconnection::HostKeyChanged)
+            }
+            Reconnect::PoolForgotten => {
+                lock(&dimmed).down = None;
+                let chats = std::mem::take(&mut lock(&dimmed).chats);
+                (chats.into_iter().collect(), Reconnection::PoolForgotten)
             }
             Reconnect::Drawn(view) => {
                 let chat = lock(&running)
@@ -4859,16 +4967,17 @@ struct Begun {
 impl HostedSessions {
     /// Opens a terminal view of session `id` into `sink`, with at most `history` lines of
     /// history (#4742), `paced` by what the pane reports it drew (#4733) or acknowledged as it
-    /// is handed over.
+    /// is handed over; `whole` told once its snapshot has all been handed to `sink`.
     fn watch_paced(
         &self,
         id: u32,
         sink: Sink,
         history: u32,
         paced: bool,
+        whole: Option<Whole>,
     ) -> Result<Watching, String> {
         let (link, program) = self.program(id)?;
-        attach_terminal(&link, program, history, sink, paced, |view| {
+        attach_terminal(&link, program, history, sink, paced, whole, |view| {
             // Listed before it draws, so its first snapshot finds whose view it is (#2496).
             if let Some(program) = lock(&self.running).get_mut(&id) {
                 program.views.push(view);
@@ -4878,14 +4987,15 @@ impl HostedSessions {
 }
 
 /// **Opens a terminal view of `program` on `link`**, with at most `history` lines of history,
-/// drawn into `sink` (`paced` by what the pane reports it drew): `listed` is told the view before
-/// anything is drawn.
+/// drawn into `sink` (`paced` by what the pane reports it drew), `whole` told once its snapshot
+/// has all been handed to it: `listed` is told the view before anything is drawn.
 fn attach_terminal(
     link: &HostLink,
     program: String,
     history: u32,
     sink: Sink,
     paced: bool,
+    whole: Option<Whole>,
     listed: impl FnOnce(u32),
 ) -> Result<Watching, String> {
     let attached = match link.call(Command::AttachView {
@@ -4899,7 +5009,7 @@ fn attach_terminal(
         other => return Err(format!("the session host answered a view with {other:?}")),
     };
     listed(attached.view);
-    link.draw(attached.view, sink, paced);
+    link.draw(attached.view, sink, paced, whole);
     Ok(Watching {
         view: attached.view,
         size: Size {
@@ -5123,11 +5233,21 @@ impl SessionHost for HostedSessions {
 
     /// A host before 1.71 draws all of its history, and says nothing is older (#4742).
     fn watch_within(&self, id: u32, sink: Sink, history: u32) -> Result<Watching, String> {
-        self.watch_paced(id, sink, history, false)
+        self.watch_paced(id, sink, history, false, None)
+    }
+
+    fn watch_whole(
+        &self,
+        id: u32,
+        sink: Sink,
+        history: u32,
+        whole: Whole,
+    ) -> Result<Watching, String> {
+        self.watch_paced(id, sink, history, false, Some(whole))
     }
 
     fn watch_drawn(&self, id: u32, sink: Sink, history: u32) -> Result<Watching, String> {
-        self.watch_paced(id, sink, history, true)
+        self.watch_paced(id, sink, history, true, None)
     }
 
     fn drawn(&self, id: u32, view: u32, pieces: u32) -> Result<(), String> {
@@ -5162,7 +5282,15 @@ impl SessionHost for HostedSessions {
         if let Some(relayed) = self.relayed() {
             relayed.ended(id, None);
         }
-        let program = lock(&self.running).remove(&id).ok_or_else(|| gone(id))?;
+        let Some(program) = lock(&self.running).remove(&id) else {
+            // **A hibernated chat is closed here alone** (#7630): the host let go of it as it
+            // hibernated, so its wake or End has nothing to ask the host to close.
+            if lock(&self.hibernated).remove(&id) {
+                return Ok(());
+            }
+            return Err(gone(id));
+        };
+        lock(&self.hibernated).remove(&id);
         lock(&self.lost).remove(&id);
         // A chat put back under its number starts reconnected (#2496).
         let dimmed = {
@@ -5239,6 +5367,36 @@ impl SessionHost for HostedSessions {
         }
     }
 
+    /// Only of a link already open, as a tab is drawn: a host before 1.96 refuses `hibernate`.
+    fn can_hibernate(&self, id: u32) -> bool {
+        lock(&self.running).contains_key(&id)
+            && self
+                .own_link(Duration::ZERO)
+                .is_ok_and(|link| link.version() >= session::KNOWS_HIBERNATE)
+    }
+
+    /// Asked of a host of 1.96 or later only: one before refuses `hibernate`, and the chat is
+    /// not hibernated, with that said.
+    fn hibernate(&self, id: u32) -> Result<(), String> {
+        let (link, program) = self.program(id)?;
+        if link.version() < session::KNOWS_HIBERNATE {
+            return Err(format!(
+                "purlis did not hibernate chat {id}: its session host is older than this window \
+                 and cannot hibernate a chat. Restart purlis to update it."
+            ));
+        }
+        link.call(Command::Hibernate { program })?;
+        // The host let go of it: its views ended with its engine. It is kept as hibernated, so
+        // its wake or its End closes it here and asks nothing of the host.
+        if let Some(program) = lock(&self.running).remove(&id) {
+            lock(&self.hibernated).insert(id);
+            for view in &program.views {
+                link.undraw(*view);
+            }
+        }
+        Ok(())
+    }
+
     fn when_one_ends(&self, tell: Ends) {
         *lock(&self.ended) = Some(tell);
     }
@@ -5285,6 +5443,12 @@ impl SessionHost for HostedSessions {
         lock(&self.lost)
             .get(&id)
             .is_some_and(|lost| lost.with_the_runner)
+    }
+
+    fn lost_with_its_pool_forgotten(&self, id: u32) -> bool {
+        lock(&self.lost)
+            .get(&id)
+            .is_some_and(|lost| lost.pool_forgotten)
     }
 
     fn running(&self) -> Vec<u32> {
@@ -5794,14 +5958,14 @@ impl SessionHost for HostedSessions {
 
     /// By the program the host said it left (#6504): never drawn into a pane, so nothing paces
     /// it, and no running chat lists it.
-    fn watch_left(&self, number: u32, sink: Sink) -> Result<Watching, String> {
+    fn watch_left(&self, number: u32, sink: Sink, whole: Whole) -> Result<Watching, String> {
         let (link, _) = self.link()?;
         let program = lock(&self.left)
             .get(&number)
             .map(|left| left.program.clone())
             .ok_or_else(|| format!("chat {number} was not left in the session host"))?;
         // All of its history, as [`SessionHost::watch`] asks.
-        attach_terminal(&link, program, u32::MAX, sink, false, |_| {})
+        attach_terminal(&link, program, u32::MAX, sink, false, Some(whole), |_| {})
     }
 
     fn unwatch_left(&self, number: u32, view: u32) {
@@ -5885,6 +6049,7 @@ impl HostedSessions {
         let running = Arc::clone(&self.running);
         let lost = Arc::clone(&self.lost);
         let runner_gone = Arc::clone(&link.runner_gone);
+        let pool_forgotten = Arc::clone(&link.pool_forgotten);
         let on = link.reached_runner().map(str::to_owned);
         let ended = program.to_owned();
         link.when_it_ends(
@@ -5910,6 +6075,7 @@ impl HostedSessions {
                             id,
                             LostChat {
                                 with_the_runner: runner_gone.load(Ordering::SeqCst),
+                                pool_forgotten: pool_forgotten.load(Ordering::SeqCst),
                                 on: on.clone(),
                             },
                         );

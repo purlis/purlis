@@ -30,6 +30,9 @@ on:
       - crates/purlis-core/Cargo.toml
       - tests/fixtures/one-login-graphql/**
       - .github/workflows/one-login-proxy-listener.yml
+  # The merge queue's run, on the paths of the filter above (`workflow-scope`, #7420).
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 # Nothing by default: the job names what it needs.
@@ -40,8 +43,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A merge group carries no `paths`, so its run is scoped by this workflow's own filter
+  # (`workflow-scope`, #7420): the jobs below run in the queue only when the change meets it.
+  scope:
+    name: does the change need this
+    if: github.event_name == 'merge_group'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The token stays: `change-base` fetches the group's base by its SHA.
+          fetch-depth: 2
+      - id: scope
+        uses: ./.github/actions/workflow-scope
+        with:
+          workflow: one-login-proxy-listener.yml
+
   listener:
     name: listener (${{ matrix.os }})
+    needs: scope
+    if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.scope.outputs.run != 'false') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
     permissions:
@@ -94,7 +120,25 @@ jobs:
       # something that never comes is a failure with its output, not a job that ends at its limit.
       - name: the real gh, glab and git through the listener
         timeout-minutes: 15
-        run: cargo test -p purlis-core --locked --test it serves_the_real -- --nocapture --test-threads=1
+        shell: bash
+        # A failure is annotated with what it said: the failed tests, and each `panicked at` with
+        # the lines after it, so the run's page says why without its log (the log is kept whole).
+        run: |
+          status=0
+          cargo test -p purlis-core --locked --test it serves_the_real -- --nocapture --test-threads=1 > "$RUNNER_TEMP/real-clients.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/real-clients.log"
+          if [ "$status" -ne 0 ]; then
+            # `|| true`: the step runs under `bash -e`, and a grep that finds nothing must not end it.
+            grep -E 'test .* FAILED' "$RUNNER_TEMP/real-clients.log" | sed -e 's/%/%25/g' -e 's/^/::error title=failed::/' || true
+            # The log's tail says why when no test line does (a build error, a test that never ended).
+            tail -n 25 "$RUNNER_TEMP/real-clients.log" | sed -e 's/%/%25/g' -e 's/\r//g' | awk '{ printf "%s%s", (NR > 1 ? "%0A" : "::error title=log tail::"), $0 } END { print "" }'
+            awk '
+              /panicked at/ { n = 8; msg = "" }
+              n > 0 { gsub(/%/, "%25"); gsub(/\r/, ""); msg = msg (msg == "" ? "" : "%0A") $0; if (--n == 0) print "::error title=panicked::" msg }
+              END { if (n > 0) print "::error title=panicked::" msg }
+            ' "$RUNNER_TEMP/real-clients.log"
+          fi
+          exit "$status"
       # **K2:** `gh` and `git` run under the profile the sandbox generates for a chat with a route,
       # and another run's socket is refused. The sandbox is applied by `sandbox-exec`, so it runs
       # on the macOS runner and says it skips on Linux (purlis applies its own sandbox there).

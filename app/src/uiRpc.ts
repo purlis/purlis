@@ -550,6 +550,14 @@ export const commands = {
 	putAwayMcpFailure: __WINDOW_ONLY_RESULT,
 	putAwayLeftMessages: __WINDOW_ONLY_RESULT,
 	putAwayArrivedFiles: __WINDOW_ONLY_RESULT,
+	/**  Chat `session`, where it is hibernated. */
+	chatHibernated: (plane: PlaneId, session: number) => typedError<{
+	by: By,
+} | null, string>(__TAURI_INVOKE("chat_hibernated", { plane, session })),
+	hibernatedChatScreen: __WINDOW_ONLY_RESULT,
+	/**  The chats of `plane` that are hibernated: what the window reads its rows by as it opens. */
+	hibernatedChats: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("hibernated_chats", { plane })),
+	hibernateChat: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Chat `session`, where its program ended with its session host and the person has not put
 	 *  it away.
@@ -566,6 +574,11 @@ export const commands = {
 	 *  home (#4350).
 	 */
 	with_the_runner: boolean,
+	/**
+	 *  Its pool was forgotten on this machine (#7187, Pool forgotten): the chat ended, and the
+	 *  runner may be there still, though no longer reached from here.
+	 */
+	pool_forgotten: boolean,
 	/**
 	 *  **What it had left running of its own, which ended with its host** (#5752, spec #5743),
 	 *  in purlis's words ("1 background shell, 1 monitor"), from the record of its last turn's
@@ -986,6 +999,7 @@ export const commands = {
 	forgeProjectAccounts: __WINDOW_ONLY_RESULT,
 	forgeChooseProjectAccount: __WINDOW_ONLY_RESULT,
 	forgeTrustCloneRepo: __WINDOW_ONLY_RESULT,
+	forgeUnconfirmedClones: __WINDOW_ONLY_RESULT,
 	forgeCiPermissionStart: __WINDOW_ONLY_RESULT,
 	forgeCiPermissionWait: __WINDOW_ONLY_RESULT,
 	forgeCiPermissionCancel: __WINDOW_ONLY,
@@ -1739,6 +1753,8 @@ export const commands = {
 	fixStaleClone: __WINDOW_ONLY_RESULT,
 	clonesToVouch: __WINDOW_ONLY_RESULT,
 	vouchClone: __WINDOW_ONLY_RESULT,
+	allowChatPush: __WINDOW_ONLY_RESULT,
+	keepChatPushBlocked: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Make a workspace: `charter workspace create <name>`, with the vision when one was typed.
 	 * 
@@ -1919,8 +1935,18 @@ export const commands = {
 	/**
 	 *  The state of each of this repo's branch folders, asked once `worktree_list` has named them
 	 *  (#5321): what each has uncommitted, or why it could not be read.
+	 * 
+	 *  **An answer may be partial** (H16): a folder still being read has `reading` set and nothing
+	 *  else, and the window asks again at once, which waits for the next folder to finish. The
+	 *  whole of 133 folders took 47 s in one answer; the first now comes in about one status's time,
+	 *  and an ask with nothing changed reads nothing.
+	 * 
+	 *  **`round` is the refresh an ask continues** (#7667): an ask with none is a new refresh, and
+	 *  reads again what no watch vouches for; one naming the `round` an answer carried is given
+	 *  what that refresh has read. Each ask without a `round` starts a new round, so a window that
+	 *  never names one makes every ask a refresh of its own.
 	 */
-	worktreeStates: (plane: PlaneId, workspace: string, repo: string) => typedError<PieceState[], string>(__TAURI_INVOKE("worktree_states", { plane, workspace, repo })),
+	worktreeStates: (plane: PlaneId, workspace: string, repo: string, round: number | null) => typedError<PieceState[], string>(__TAURI_INVOKE("worktree_states", { plane, workspace, repo, round })),
 	/**
 	 *  **New branch**, from a repo's row (GL-1): cut a piece off the clone's HEAD and log it
 	 *  `claimed`. It starts nothing. `branch` is the name the operator typed, used exactly or
@@ -2055,6 +2081,9 @@ export const commands = {
 	dockerPools: __WINDOW_ONLY_RESULT,
 	poolSetup: __WINDOW_ONLY_RESULT,
 	poolSetupCheckAgain: __WINDOW_ONLY_RESULT,
+	poolSetupTryNow: __WINDOW_ONLY_RESULT,
+	poolSetupForgetRefused: __WINDOW_ONLY_RESULT,
+	poolSetupTrustAndCreate: __WINDOW_ONLY_RESULT,
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
 	poolSetupChooseRemoteDocker: __WINDOW_ONLY_RESULT,
 	poolSetupMachine: __WINDOW_ONLY_RESULT,
@@ -2070,6 +2099,7 @@ export const commands = {
 	poolSetupTlsFiles: __WINDOW_ONLY_RESULT,
 	poolSetupChooseOwned: __WINDOW_ONLY_RESULT,
 	poolSetupChooseCluster: __WINDOW_ONLY_RESULT,
+	poolSetupPluginFolder: __WINDOW_ONLY_RESULT,
 	poolSetupInstall: __WINDOW_ONLY_RESULT,
 	poolSetupOperatorImage: __WINDOW_ONLY_RESULT,
 	poolSetupClusterPool: __WINDOW_ONLY_RESULT,
@@ -3316,10 +3346,22 @@ export type AnswerPath =
  */
 { via: "trust-clone"; folder: string; place: string } | 
 /**
+ *  `allow_chat_push` for Allow and `keep_chat_push_blocked` for Keep blocked, each for the
+ *  ask the refusal raised: chat `chat`'s update of `branch` in `repo` (lower case) at `host`,
+ *  the repo the forge numbers `repo_id`. Allow records the chat as the owner at the branch's
+ *  tip **read from the forge as the person when pressed**, never one the chat said.
+ */
+{ via: "let-chat-push"; chat: string; host: string; repo: string; repo_id: string; branch: string } | 
+/**
  *  `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
  *  clone Notice's own command, and each clone it trusts leaves the ask (R-336).
  */
 { via: "trust-clones"; clones: CloneToVouch[] } | 
+/**
+ *  `press_held_act` twice and `dont_held_act`, for held act `ask`, from its own card in Asks,
+ *  which draws exactly what the core read and hands back its digest (#7685).
+ */
+{ via: "held-act"; ask: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3822,6 +3864,14 @@ export type AskSource =
  */
 "trust-clone" | 
 /**
+ *  **A chat refused an update of a branch it has no record of** (ADR 0128, amended
+ *  2026-11-23, #7363): pushed before the route existed, or by another chat. Allow records the
+ *  chat as its owner at the commit the forge holds when pressed, and Keep blocked leaves it
+ *  refused. One per chat and branch, and never for a protected, default, deploy or pages
+ *  branch.
+ */
+"let-chat-push" | 
+/**
  *  **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
  *  never one per clone. Trust all records each, as its Notice's Trust this clone does.
  */
@@ -3830,7 +3880,13 @@ export type AskSource =
  *  **Pool setup's cluster is ready** (#4496): the admin the person asked has given what
  *  the install couldn't, and Pool setup goes on. Said once, about no chat.
  */
-"pool-setup";
+"pool-setup" | 
+/**
+ *  **A forge act a chat's route held** (ADR 0128 D8, #7685): a tag, a release, a push that
+ *  changes CI files or a fork. The chat did not do it: the person's two presses make it,
+ *  with their own sign-in, on its card in Asks (`HeldActAsks`).
+ */
+"held-act";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -4476,6 +4532,11 @@ export type BusyChat = {
 	state: string,
 };
 
+/**  How a chat that is hibernated was put to rest. */
+export type By = 
+/**  The person did, from its row. */
+"operator";
+
 /**
  *  A harness the operator started by hand in a shell tab, as the window draws its banner.
  * 
@@ -4851,6 +4912,11 @@ export type ChatHeld = {
 	session: number,
 };
 
+/**  Chat `session` as the window reads its hibernation. */
+export type ChatHibernation = {
+	by: By,
+};
+
 /**  A chat's Chat log: whether purlis knows the chat, and its rows. */
 export type ChatLog = {
 	/**  purlis knows the chat by its number: open, or ended here and still kept. */
@@ -5003,6 +5069,12 @@ export type ChatNoticed = {
 	 *  whose adapter reports no mode purlis can check.
 	 */
 	mode: ModeDiffers | null,
+	/**
+	 *  The forge sign-ins its route found missing or ended (ADR 0128, #7290), one per host and
+	 *  in host order: each a standing fault its pane says in a Notice with a way into Settings ›
+	 *  You › Accounts. Empty until one is found.
+	 */
+	sign_in: SignInNeeded[],
 };
 
 /**  A chat on a device, as its row names it. */
@@ -5663,6 +5735,19 @@ export type DeletesCutShort = {
 	unsettled: string[],
 };
 
+/**  What Diagnostics says of the device's RAM class (ADR 0082 §3). */
+export type DeviceClass = 
+/**  The machine's memory is still being read. */
+{ kind: "reading" } | 
+/**  The machine's memory could not be read: no class is known, and so no target. */
+{ kind: "not_known" } | 
+/**  The class, and the hot target it gives: a budget, never a cap. */
+{ kind: "known"; 
+/**  The class in GB (8, 16, 32 or 64), or `None` under 8 GB. */
+class_gb: number | null; 
+/**  How many hot chats the device targets. */
+hot_target: number };
+
 /**
  *  **What the Devices view draws first** (#2052): this machine's version, where everything the
  *  window has open runs, and each pool's limits.
@@ -5693,10 +5778,12 @@ export type DiagnosticsHere = {
 	/**  The chats open in every project this app holds, a shell tab not among them. */
 	open: number,
 	/**
-	 *  The open chats whose run has a program (the glossary's **hot chat**): any not done or
-	 *  failed.
+	 *  The open chats whose run has a process (the glossary's **hot chat**): `starting`,
+	 *  `working`, `input-required` or `paused`. A queued or hibernated run is open, not hot.
 	 */
 	hot: number,
+	/**  The device's RAM class and its hot target. */
+	device: DeviceClass,
 };
 
 /**  What a discard is checked against. */
@@ -7327,6 +7414,12 @@ export type ForgeAccountRow = {
 	scopes: string[] | null,
 	/**  The scopes beyond what purlis needs (ADR 0077 §2). */
 	wider: string[],
+	/**
+	 *  Whether the second sign-in for CI files is already given (its token is kept apart, so the
+	 *  scopes above never show it). Only the listing ([`forge_accounts`]) asks the keychain; a row
+	 *  another command returns says `false`, and the window reads the list again.
+	 */
+	ci_allowed: boolean,
 };
 
 /**  What a press of *Use this application* changed. */
@@ -8165,6 +8258,13 @@ export type HeldRowShown = {
 	value: string,
 };
 
+/**  What the window is answered when it asks for a chat's hibernation. */
+export type Hibernation = 
+/**  Its program ended as a hibernation. */
+{ outcome: "hibernated" } | 
+/**  It may not be hibernated now, for this reason. */
+{ outcome: "refused"; why: Why };
+
 /**
  *  The project's hosts as they changed (`sandbox::local::HostsChange`): each spelled as the
  *  sandbox writes it.
@@ -8841,6 +8941,24 @@ export type LinkSeen = {
 	chat: ChatSeen | null,
 };
 
+/**
+ *  **Which remote state a pool's runner is in while its link is down** (#7187, CONTEXT.md), as
+ *  the window says it: the core's [`RemoteState`](purlis_core::sshroute::connect::RemoteState),
+ *  read where the link tells it. A runner gone and a pool forgotten are not here: a link that
+ *  says them is not down but ended, and they are told as [`Reconnection::RunnerGone`] and
+ *  [`Reconnection::PoolForgotten`], with no [`LinkDown`] kept.
+ */
+export type LinkState = 
+/**
+ *  Nothing answers, or not yet (Docker still starting on a machine whose `sshd` is up
+ *  included): purlis tries again, and the person may press Try now.
+ */
+"unreachable" | 
+/**  The machine answers and refuses: purlis stopped trying on its own; Try now and Check pool. */
+"refused" | 
+/**  The machine presents another key or engine than the pinned one. */
+"host_key_changed";
+
 /**  One repo the person can get. */
 export type ListedRepo = {
 	/**  `github` or `gitlab`. */
@@ -8965,6 +9083,11 @@ export type LostChat = {
 	 *  home (#4350).
 	 */
 	with_the_runner: boolean,
+	/**
+	 *  Its pool was forgotten on this machine (#7187, Pool forgotten): the chat ended, and the
+	 *  runner may be there still, though no longer reached from here.
+	 */
+	pool_forgotten: boolean,
 	/**
 	 *  **What it had left running of its own, which ended with its host** (#5752, spec #5743),
 	 *  in purlis's words ("1 background shell, 1 monitor"), from the record of its last turn's
@@ -10005,6 +10128,12 @@ export type OpenChat = {
 	 *  a runner before 1.51, whose Move here row says such a clone stays there.
 	 */
 	clones_come_back?: boolean | null,
+	/**
+	 *  Whether its row offers Hibernate (SC-4a, #7630): its harness resumes a conversation by
+	 *  id and its session host can hibernate a chat (session protocol 1.96). `null` otherwise:
+	 *  a shell, a harness that cannot, or a host that would refuse it.
+	 */
+	hibernates?: boolean | null,
 	/**  The persona it adopted. */
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */
@@ -10780,6 +10909,13 @@ export type PieceState = {
 	uncommitted?: number | null,
 	/**  As [`Piece::unread`]. */
 	unread?: string | null,
+	/**  Still being read: ask again (H16). Neither of the others is said while it is. */
+	reading?: boolean | null,
+	/**
+	 *  The refresh this answer belongs to, the same on every folder of one answer: the window
+	 *  names it when it asks again for the folders still reading (#7667).
+	 */
+	round?: number | null,
 };
 
 /**  What the plane's pin says against this charter. */
@@ -11386,6 +11522,17 @@ export type PoolLink =
 /**  It did not answer, and why. */
 { state: "down"; why: string } | 
 /**
+ *  **Its machine answers, but refuses** (#7187, Refused): its sign-in, Docker or forwarding
+ *  fails, and why. purlis stopped trying on its own; Check pool says what changed.
+ */
+{ state: "refused"; why: string } | 
+/**
+ *  **Its machine presents another host key, CA or engine than the pinned one** (#7187, Host
+ *  key changed), and why, as a link says it: a security stop, never tried again on its own;
+ *  the person says it is all right in the pool's settings.
+ */
+{ state: "host_key_changed"; why: string } | 
+/**
  *  It suspended itself, a day without a link (#2051): its container is stopped, its home
  *  kept, and the window's next chat there starts it again. A check never wakes it.
  */
@@ -11513,8 +11660,18 @@ export type PoolProfiles = {
 export type PoolRemoval = 
 /**  It is gone, or what of it stays is said in `left`. */
 { state: "removed"; left: string | null } | 
-/**  Its machine, `host`, doesn't answer, `why`: nothing was removed, and nothing was sent. */
-{ state: "unreachable"; why: string; host: string };
+/**
+ *  Its machine, `host`, doesn't answer, or presents another key or engine, `why`: nothing
+ *  was removed, and nothing was sent. Such a machine is never contacted (#7187, Unreachable,
+ *  Host key changed).
+ */
+{ state: "unreachable"; why: string; host: string } | 
+/**
+ *  Its machine, `host`, answers and refuses, `why` (#7187, Refused): nothing was removed.
+ *  Remove, which cleans the machine, stays offered beside Forget it here, and goes on where
+ *  it is asked again.
+ */
+{ state: "refused"; why: string; host: string };
 
 /**
  *  **A pool whose runner was removed outside purlis** (#4149): what the Notice of a refused
@@ -11602,6 +11759,23 @@ export type PoolSetupCheck = {
 	verdict: string,
 	title: string,
 	more: string | null,
+	/**
+	 *  How long the check took, in milliseconds, once it was done (#7191). None where it wasn't
+	 *  timed.
+	 */
+	took_ms: number | null,
+	/**  Where it has taken over thirty seconds: what it is waiting on and why (#7191). */
+	waiting_on: string | null,
+};
+
+/**
+ *  One check of the machine's engine, timed (#7191): by its cause, in milliseconds where it is
+ *  done, with what it waits on and why where it has taken past thirty seconds.
+ */
+export type PoolSetupCheckTook = {
+	cause: string,
+	took_ms: number | null,
+	waiting_on: string | null,
 };
 
 /**  The kubeconfig's contexts, by name alone, for Where's Options on a cluster (#4492). */
@@ -11611,6 +11785,11 @@ export type PoolSetupContexts = {
 	chosen: string | null,
 	/**  The chosen cluster's Pools, by name, where its operator runs (#4494). */
 	pools: string[],
+	/**
+	 *  The one kubeconfig file the contexts are read from (#7192): the one chosen, else the
+	 *  home's `.kube/config` where it exists. Its path, nothing of what is in it.
+	 */
+	kubeconfig: string | null,
 	/**
 	 *  Whether the person joins their team's install (#4495): the key is then confirmed by
 	 *  pasting the one their admin gave them.
@@ -11707,6 +11886,8 @@ export type PoolSetupMachine = {
 	checked?: string[] | null,
 	/**  That doctor couldn't measure Docker's disk there, which holds nothing up (#6272). */
 	disk_unmeasured?: boolean | null,
+	/**  **How long each of those checks took**, by cause, and what a slow one waits on (#7191). */
+	took?: PoolSetupCheckTook[] | null,
 };
 
 /**  A limit a profile is over. */
@@ -11740,6 +11921,16 @@ export type PoolSetupPodmanConnection = {
 	name: string,
 	route: string,
 	identity: string | null,
+};
+
+/**
+ *  **A pool's state, as the status bar reads it** (#7191): `unreachable`, `refused`,
+ *  `host-key-changed`, `runner-gone` or `pool-forgotten`, with the reason of a refusal.
+ */
+export type PoolSetupPoolState = {
+	pool: string,
+	state: string,
+	reason: string | null,
 };
 
 /**
@@ -11789,6 +11980,12 @@ export type PoolSetupShown = {
 	/**  The name a new pool is recommended, which no pool here has (#6256). */
 	recommended: string,
 	contexts: PoolSetupContexts,
+	/**
+	 *  **The pool's state, where there is one to say** (#7191): the status bar's. A failed add
+	 *  keeps the pool, `refused`, with its reason. Remote trains A's `RemoteState` replaces what
+	 *  reads this once it is on `main`.
+	 */
+	pool_state?: PoolSetupPoolState | null,
 };
 
 /**  This machine's profiles against pool `pool`'s limits (#4482). */
@@ -11809,6 +12006,8 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+	/**  How long the step took, in milliseconds, where it was timed (#7191): the rail shows it. */
+	took_ms: number | null,
 	/**  A second way on, beside `next`: on Where, the other kind (ADR 0123 §6). */
 	other: PoolSetupAction | null,
 	/**  The machine, on Connect (#6266). */
@@ -11861,6 +12060,19 @@ export type PoolSetupTried = {
 	link: PoolSetupCheck | null,
 	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
 	workspace: string | null,
+};
+
+/**
+ *  What **Trust and create the pool** did (#7191): what is shown now, and what stopped it where
+ *  the pool wasn't made.
+ */
+export type PoolSetupTrustedAndCreated = {
+	/**  Pool setup as it stands, with a finding of Connect's laid over Connect. */
+	shown: PoolSetupShown,
+	/**  What a team's image breaks, where it makes nothing. */
+	breaks: string[],
+	/**  Why the add was refused, where it was: the pool is kept, Refused, with this reason. */
+	refused: string | null,
 };
 
 /**
@@ -12837,11 +13049,25 @@ export type Reconnection =
  */
 "key_changed" | 
 /**
- *  The runner was removed outside purlis (#4149): its host does not link to it again until
- *  it is made again, so its chats stay dimmed and the window offers Make the runner again in
- *  a Notice of its own.
+ *  The runner was removed outside purlis (#4149, #7187 Runner gone): its chats end, as a
+ *  forgotten pool's do, and are not dimmed; the window offers Start again on this pool in a
+ *  Notice of its own.
  */
-"runner_gone";
+"runner_gone" | 
+/**
+ *  The runner's machine answers, but its sign-in, Docker or forwarding fails (#7187,
+ *  Refused): its host stops trying on its own, so its chats stay dimmed and the window says
+ *  why, with Check pool and Try now, which dials once.
+ */
+"refused" | 
+/**
+ *  The runner's machine presents another host key, CA or engine than the pinned one (#7187,
+ *  Host key changed): its host never links to it again on its own, so its chats stay dimmed
+ *  and the window says why, with Check and trust again in the pool's settings.
+ */
+"host_key_changed" | 
+/**  The pool was forgotten here (#7187, Pool forgotten): its chats end, and say so. */
+"pool_forgotten";
 
 /**
  *  The level a referrer is changed at, when it is not the entry's own
@@ -14047,6 +14273,8 @@ export type RunnerLinkDown = {
 	why: string,
 	/**  When the link went down, in seconds since 1970. */
 	since: number,
+	/**  Which state it is in (#7187): Refused says why and offers Check pool and Try now (purlis's own retries stopped). */
+	state: LinkState,
 };
 
 /**  How the window reads what a runner records (#3393). */
@@ -15319,6 +15547,15 @@ export type SidebarWorkspace = {
 	 *  (charter-app#301). Every place a workspace is drawn marks it.
 	 */
 	live: boolean,
+};
+
+/**
+ *  **A chat's forge route had no usable sign-in**: the host, and whether there never was one
+ *  (`missing`) or it ended (`ended`). Never told for a forge that merely could not be reached.
+ */
+export type SignInNeeded = {
+	host: string,
+	ended: boolean,
 };
 
 /**  A forge account setup adds the key to. */
@@ -16607,7 +16844,13 @@ export type SlowMoment =
  *  The command `command`, received on the core's main thread at `at`, held it for `ms`
  *  (`crate::mainwatch`). The core writes it; the window only reads it back.
  */
-{ kind: "core_command"; command: string; ms: number; at: number | null };
+{ kind: "core_command"; command: string; ms: number; at: number | null } | 
+/**
+ *  A new chat's opening that took `ms`, begun at `at`, while `hot` chats were open, and the
+ *  phases it passed through in the order it ran them (H12). The core writes it; the window
+ *  only reads it back.
+ */
+{ kind: "opening"; ms: number; at: number | null; hot: number; phases: StallTook[] };
 
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
 export type SlowStart = {
@@ -17960,6 +18203,14 @@ export type TurnPick = {
 	number: number,
 };
 
+/**  A clone the person trusted that is not confirmed with the forge, so no chat's route serves it. */
+export type UnconfirmedClone = {
+	/**  Its folder, relative to the project. */
+	folder: string,
+	/**  The `<host>/<owner>/<repo>` the trust list holds for it. */
+	place: string,
+};
+
 /**  What an undo came to. */
 export type UndoAnswer = 
 /**
@@ -18508,6 +18759,13 @@ export type WhatChanged = {
 	 */
 	sinceTurnEnded: boolean,
 };
+
+/**
+ *  **Why a chat was not hibernated**, as the window is told it: the core's
+ *  [`NotRested`], one value for one reason, whose words are the window's
+ *  (`app/src/hibernationWords.ts`, `docs/ui-copy.md`).
+ */
+export type Why = "working" | "asking" | "paused" | "hibernated" | "ended" | "cannot_resume" | "cannot_see_its_own_work" | "own_work" | "line_coming" | "task_open" | "finished_task_open" | "report_owed" | "is_a_task" | "observed" | "on_a_runner" | "child_run" | "looked_at";
 
 /**
  *  A tint holds `token`, tinted, at least `distance` from `from` in OKLab, `from` as the tint

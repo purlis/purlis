@@ -46,6 +46,7 @@ impl CredentialSource for Tokens {
             .map(|token| Credential {
                 token_kind: TokenKind::Oauth,
                 secret: Secret::new(token.clone()),
+                account: None,
             })
             .ok_or(CredentialError::Unavailable)
     }

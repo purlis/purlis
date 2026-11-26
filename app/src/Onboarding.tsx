@@ -56,7 +56,17 @@ export function Onboarding({
   /** Opens a project again, for a harness step resumed at a launch that did not bring it back. */
   reopen: (path: string) => void;
 }) {
-  const { progress, counted, dispatch, reread } = steps;
+  const { progress, counted, reread } = steps;
+  /** Whether a door, Back or another press has moved the steps since this appearance. */
+  const pressed = useRef(false);
+  const stepsDispatch = steps.dispatch;
+  const dispatch = useCallback<typeof stepsDispatch>(
+    (event) => {
+      pressed.current = true;
+      stepsDispatch(event);
+    },
+    [stepsDispatch],
+  );
   const { step } = progress;
   const linesAt = useContext(WindowLinesAt);
 
@@ -64,13 +74,21 @@ export function Onboarding({
   // went to and came back from, picks up where it was. The read is normally one IPC round trip;
   // one that has not answered by the deadline no longer holds the window (#2400).
   const [placeRead, setPlaceRead] = useState<"answered" | "late">();
+  const [guidingHeld, setGuidingHeld] = useState<boolean>();
   useEffect(() => {
     let gone = false;
     const late = setTimeout(() => {
       if (!gone) setPlaceRead((was) => was ?? "late");
     }, PLACE_READ_DEADLINE_MS);
     void reread().then(() => {
-      if (!gone) setPlaceRead((was) => was ?? "answered");
+      if (gone) return;
+      // A read that answers after the deadline and before any press releases the hold: nothing
+      // the person did is under it, so the steps (or the plain welcome) the kept place says
+      // swap in. A press keeps the hold (#2400).
+      if (!pressed.current) {
+        setPlaceRead("answered");
+        setGuidingHeld(undefined);
+      } else setPlaceRead((was) => was ?? "answered");
     });
     return () => {
       gone = true;
@@ -79,8 +97,8 @@ export function Onboarding({
   }, [reread]);
   // **Past the deadline, whether the steps guide this window is decided from what is known, and
   // held for this appearance**: a read that answers later still updates the place, but it does
-  // not swap one welcome for the other under a door press.
-  const [guidingHeld, setGuidingHeld] = useState<boolean>();
+  // not swap one welcome for the other under a door press (one that answers before any press
+  // does swap it: see the read above).
   if (placeRead === "late" && guidingHeld === undefined) setGuidingHeld(steps.guiding);
   const guiding = guidingHeld ?? steps.guiding;
 

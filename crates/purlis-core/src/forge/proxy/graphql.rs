@@ -29,12 +29,12 @@ use std::collections::HashMap;
 
 use graphql_parser::query::{
     Definition, Document, Field, FragmentDefinition, OperationDefinition, Selection, SelectionSet,
-    TypeCondition, Value, VariableDefinition, parse_query,
+    Type, TypeCondition, Value, VariableDefinition,
 };
 use serde_json::Value as Json;
 
 use super::commands;
-use super::policy::{Class, ObjectRepo, Refusal};
+use super::policy::{Class, ObjectRepo, OwnsHead, PullRef, Refusal};
 use super::repo::{AllowedRepo, Kind, normalise_repo_path};
 use super::rest;
 use super::schema::{self, Ty};
@@ -45,6 +45,43 @@ const MAX_DEPTH: usize = 16;
 
 /// The largest document read.
 const MAX_BODY: usize = 1 << 20;
+
+/// Whether `graphql-parser` 0.4.1 could panic reading `query` (#7589, #7596).
+///
+/// Its `unquote_block_string` (`common.rs`) takes `str::lines()` of a block string, sets the
+/// common indent to the least byte length of leading whitespace (`trim_start`, so
+/// `char::is_whitespace`) over every non-blank line after the first, and then cuts every line
+/// after the first, blank ones too, at `&line[common_indent..]`. That cut panics when it lands
+/// inside a character. If every line's leading whitespace is ASCII, `common_indent` is a count of
+/// ASCII bytes that each non-blank line starts with (it is the least of them) and a blank line
+/// too short for it is not cut, so the cut is always on a boundary. A panic therefore needs a
+/// line whose leading whitespace holds a non-ASCII character. The block string's lines are lines
+/// of the query (`lines()` and `split('\n')` cut alike; a lone `\r` is whitespace and a
+/// trailing `\r` is dropped by `lines()`, neither of which changes a line's leading whitespace),
+/// so this reads every line of the whole query: it also refuses a non-ASCII indent outside any
+/// block string, which no chat writes, and the first line of a block string, which the parser
+/// never cuts, in exchange for needing no tokenizer of its own.
+fn could_panic_the_parser(query: &str) -> bool {
+    query.contains("\"\"\"")
+        && query.split('\n').any(|line| {
+            line.chars()
+                .take_while(|c| c.is_whitespace())
+                .any(|c| !c.is_ascii())
+        })
+}
+
+/// The document `query` is, or none when it is not one the parser reads or could panic on. A
+/// shipped build aborts on any panic before it unwinds ([`crate::panicend::fatal`]), so the
+/// panic is never raised: such a query is refused before the parser sees it. The `catch_unwind`
+/// is a second line for debug and test builds only, which unwind.
+fn parse(query: &str) -> Option<Document<'_, String>> {
+    if could_panic_the_parser(query) {
+        return None;
+    }
+    std::panic::catch_unwind(|| graphql_parser::query::parse_query::<String>(query))
+        .ok()?
+        .ok()
+}
 
 /// What a value resolved to.
 #[derive(Debug, Clone)]
@@ -64,7 +101,8 @@ fn from_json(json: &Json) -> Val {
     }
 }
 
-/// The values a document's variables have: the request's, then each definition's default.
+/// The values a document's variables have: the request's, then each definition's default
+/// ([`defaults`]).
 struct Vars<'a> {
     given: &'a serde_json::Map<String, Json>,
     defaults: Vec<(String, Value<'a, String>)>,
@@ -141,12 +179,184 @@ fn mutation_allowed(kind: Kind, name: &str) -> bool {
     }
 }
 
+/// The mutations that merge, which `guards.merge` = `log` or `off` puts on the list: a merge, auto
+/// merge on or off, and the merge queue on or off. `mergeBranch` merges with no pull request and
+/// stays refused.
+fn merge_mutation(kind: Kind, name: &str) -> bool {
+    match kind {
+        Kind::GitHub => matches!(
+            name,
+            "mergePullRequest"
+                | "enablePullRequestAutoMerge"
+                | "disablePullRequestAutoMerge"
+                | "enqueuePullRequest"
+                | "dequeuePullRequest"
+        ),
+        Kind::GitLab => name == "mergeRequestAccept",
+    }
+}
+
+/// **The act a merge mutation asks for**, which the person's press performs (#7543): a merge
+/// now or a place in the merge queue. Each is held as the act it names and never as another: the
+/// press of an enqueue enqueues and never merges. Auto-merge is not held
+/// ([`unheld_merge_said`]), and undoing one (`disablePullRequestAutoMerge`,
+/// `dequeuePullRequest`) is never held.
+pub(super) fn merge_act(kind: Kind, name: &str) -> Option<crate::mergehold::LandAs> {
+    use crate::mergehold::LandAs;
+    match (kind, name) {
+        (Kind::GitHub, "mergePullRequest") | (Kind::GitLab, "mergeRequestAccept") => {
+            Some(LandAs::Merge)
+        }
+        (Kind::GitHub, "enqueuePullRequest") => Some(LandAs::Enqueue),
+        _ => None,
+    }
+}
+
+/// What a chat is told when it asks for auto-merge, which is refused and never held: it pins the
+/// head only when it is turned on, so the forge would merge any head pushed later, unseen.
+pub(super) fn unheld_merge_said(kind: Kind, name: &str) -> Option<&'static str> {
+    match (kind, name) {
+        (Kind::GitHub, "enablePullRequestAutoMerge") => Some(concat!(
+            crate::mergehold::auto_merge_why!(),
+            " Ask the person to merge it, or ask to enqueue it"
+        )),
+        _ => None,
+    }
+}
+
+/// What a chat is told when a GitLab accept sets a merge strategy: `strategy` and
+/// `autoMergeStrategy` ask GitLab to merge when the pipeline succeeds or through a train, which
+/// the person's press does not do ([`Merged::Now`](crate::mergehold::Merged)).
+const STRATEGY_SAID: &str = "this merge sets a merge strategy (merge when the pipeline succeeds, \
+                             or a merge train), which purlis does not hold: its press merges at \
+                             once. Ask the person to merge it, or merge now without a strategy";
+
+/// Whether a GitLab `mergeRequestAccept` document sets `strategy` or `autoMergeStrategy`, to a
+/// value or a variable: the document asks for more than a merge now, so it is refused with
+/// [`STRATEGY_SAID`] where `body` is one. `None` where it is not one or cannot be read.
+pub(super) fn strategy_said(kind: Kind, body: &[u8]) -> Option<&'static str> {
+    if kind != Kind::GitLab {
+        return None;
+    }
+    let (name, arguments) = mutation_arguments(body)?;
+    (name == "mergeRequestAccept" && has_key(&arguments, &["strategy", "autoMergeStrategy"]))
+        .then_some(STRATEGY_SAID)
+}
+
+/// Whether `val` holds any of `keys` as a field, at any depth.
+fn has_key(val: &Val, keys: &[&str]) -> bool {
+    match val {
+        Val::Obj(fields) => fields
+            .iter()
+            .any(|(k, v)| keys.contains(&k.as_str()) || has_key(v, keys)),
+        Val::List(items) => items.iter().any(|v| has_key(v, keys)),
+        _ => false,
+    }
+}
+
+/// The first string `key` holds in `val`, at any depth.
+fn find_str<'v>(val: &'v Val, key: &str) -> Option<&'v str> {
+    match val {
+        Val::Obj(fields) => fields.iter().find_map(|(k, v)| match v {
+            Val::Str(s) if k == key => Some(s.as_str()),
+            _ => find_str(v, key),
+        }),
+        Val::List(items) => items.iter().find_map(|v| find_str(v, key)),
+        _ => None,
+    }
+}
+
+/// **The one mutation a document is**, as its field's name and its arguments, variables
+/// resolved: `None` where the document is not exactly one mutation with one field, or an
+/// argument cannot be resolved.
+fn mutation_arguments(body: &[u8]) -> Option<(String, Val)> {
+    let json: Json = serde_json::from_slice(body).ok()?;
+    let Json::Object(object) = &json else {
+        return None;
+    };
+    let Some(Json::String(query)) = object.get("query") else {
+        return None;
+    };
+    let empty = serde_json::Map::new();
+    let given = match object.get("variables") {
+        None | Some(Json::Null) => &empty,
+        Some(Json::Object(map)) => map,
+        Some(_) => return None,
+    };
+    let parsed = parse(query)?;
+    let mut operations = parsed.definitions.iter().filter_map(|d| match d {
+        Definition::Operation(operation) => Some(operation),
+        Definition::Fragment(_) => None,
+    });
+    let Some(OperationDefinition::Mutation(mutation)) = operations.next() else {
+        return None;
+    };
+    if operations.next().is_some() {
+        return None;
+    }
+    let [Selection::Field(field)] = mutation.selection_set.items.as_slice() else {
+        return None;
+    };
+    let vars = Vars {
+        given,
+        defaults: defaults(&mutation.variable_definitions),
+    };
+    let mut arguments = Vec::new();
+    for (name, value) in &field.arguments {
+        arguments.push((name.clone(), vars.resolve(value).ok()?));
+    }
+    let arguments = Val::Obj(arguments);
+    Some((field.name.clone(), arguments))
+}
+
+/// **The pull request a merge document is about**: the path of the one recorded repo of `repos`
+/// it is in and its number, for a document that is exactly one holdable merge mutation
+/// ([`merge_act`]), with that act. On GitHub the node id is resolved by `objects`; on GitLab the
+/// project path and `iid` are in the document. `None` where any of it is missing or not a plain
+/// number.
+/// Never decides whether the request is allowed: [`decide`] does that.
+pub(super) fn merge_target(
+    kind: Kind,
+    repos: &[&AllowedRepo],
+    body: &[u8],
+    objects: &dyn ObjectRepo,
+) -> Option<(String, u64, crate::mergehold::LandAs)> {
+    let (name, arguments) = mutation_arguments(body)?;
+    let act = merge_act(kind, &name)?;
+    match kind {
+        Kind::GitHub => {
+            let id = find_str(&arguments, "pullRequestId")?;
+            repos.iter().filter(|r| r.kind == kind).find_map(|r| {
+                objects
+                    .pull_of(r.kind, &r.host, id)
+                    .filter(|(path, number)| *path == r.path && *number > 0)
+                    .map(|(path, number)| (path, number, act))
+            })
+        }
+        Kind::GitLab => {
+            let project = find_str(&arguments, "projectPath")?;
+            let iid = find_str(&arguments, "iid")?;
+            let number = iid
+                .parse::<u64>()
+                .ok()
+                .filter(|n| *n > 0 && iid.bytes().all(|b| b.is_ascii_digit()))?;
+            let path = normalise_repo_path(kind, project).ok()?;
+            repos
+                .iter()
+                .find(|r| r.kind == kind && r.path == path)
+                .map(|r| (r.path.clone(), number, act))
+        }
+    }
+}
+
 /// What a mutation not on the list is, by its name, so the refusal says so.
 fn named_mutation_refusal(name: &str) -> Refusal {
     let n = name.to_ascii_lowercase();
     let has = |words: &[&str]| words.iter().any(|w| n.contains(w));
     if has(&["automerge", "auto_merge"])
         || n == "mergepullrequest"
+        || n == "enqueuepullrequest"
+        || n == "dequeuepullrequest"
         || n == "mergebranch"
         || n.starts_with("mergerequestaccept")
     {
@@ -222,6 +432,8 @@ pub(crate) fn decide<'a>(
     repos: &[&'a AllowedRepo],
     body: &[u8],
     objects: &dyn ObjectRepo,
+    owns: OwnsHead<'_>,
+    merging: bool,
 ) -> Result<Decided<'a>, Refusal> {
     if body.len() > MAX_BODY {
         return Err(Refusal::BodyUnreadable);
@@ -239,7 +451,7 @@ pub(crate) fn decide<'a>(
         Some(Json::Object(map)) => map,
         Some(_) => return Err(Refusal::GraphqlParse),
     };
-    let document: Document<'_, String> = parse_query(query).map_err(|_| Refusal::GraphqlParse)?;
+    let document = parse(query).ok_or(Refusal::GraphqlParse)?;
 
     let mut fragments = HashMap::new();
     for definition in &document.definitions {
@@ -255,6 +467,8 @@ pub(crate) fn decide<'a>(
         kind,
         repos,
         objects,
+        owns,
+        merging,
         fragments,
         touched: std::cell::RefCell::new(Vec::new()),
     };
@@ -279,7 +493,22 @@ pub(crate) fn decide<'a>(
                     defaults: defaults(defs),
                 };
                 if is_mutation {
-                    class = ctx.check_mutation(selection_set, &vars)?;
+                    class = ctx
+                        .check_mutation(selection_set, &vars)
+                        .map_err(|refusal| {
+                            // Only these two have a REST route to be told of (`Refusal::advice`).
+                            let names_one = selection_set.items.iter().any(|s| {
+                                matches!(s, Selection::Field(f) if matches!(
+                                    f.name.as_str(),
+                                    "createPullRequest" | "updatePullRequestBranch"
+                                ))
+                            });
+                            if refusal == Refusal::GraphqlOtherRepo && names_one {
+                                Refusal::GraphqlPullRequestOtherRepo
+                            } else {
+                                refusal
+                            }
+                        })?;
                 } else {
                     ctx.check_query(selection_set, &vars)?;
                 }
@@ -295,9 +524,172 @@ pub(crate) fn decide<'a>(
     Ok(Decided { class, touched })
 }
 
+/// The index in `repos` of the one repo a search query names, or `None` when it is not a search
+/// of exactly one of them: [`search_repos`] naming one repo, however many times. REST's
+/// `GET /search/issues?q=` is sent with one repo's credential, so it reads only this.
+pub(crate) fn search_repo(query: &str, repos: &[&AllowedRepo]) -> Option<usize> {
+    match search_repos(query, repos)?.as_slice() {
+        [one] => Some(*one),
+        _ => None,
+    }
+}
+
+/// The indexes in `repos` of the repos a search query is scoped to, once each, or `None` when it
+/// is not a search of the chat's repos alone (GraphQL's `search(query:)`, and REST's
+/// `GET /search/issues?q=` through [`search_repo`]). Every `repo:` must name one of `repos`, at
+/// least one must be there, and no qualifier may name an organisation, a user, an owner, a team
+/// or an enterprise: search says which repos by those qualifiers alone, and several `repo:` are
+/// read by the forge as any of them.
+pub(crate) fn search_repos(query: &str, repos: &[&AllowedRepo]) -> Option<Vec<usize>> {
+    // A zero-width space or a control character is a separator or nothing to the forge and a
+    // letter of a word to this reading: only printable ASCII and the space are read.
+    if !query.bytes().all(|b| b == b' ' || b.is_ascii_graphic()) {
+        return None;
+    }
+    // A single quote, a backslash or a backtick may hide a qualifier from this reading and not
+    // from the forge's. A double quote is read (`label:"needs review"`, as gh quotes a value with
+    // a space), by [`search_terms`], and never around a `repo:`.
+    if query.contains(['\'', '\\', '`']) {
+        return None;
+    }
+    // Without a boolean operator or a group, every other term only narrows the repos' results;
+    // with one, `repo:a OR is:issue` widens them to the whole forge.
+    if query.contains(['(', ')']) {
+        return None;
+    }
+    let mut at = Vec::new();
+    for term in search_terms(query)? {
+        let (token, value) = match term {
+            // A quoted phrase is text the forge looks for, not a qualifier. One with a `:` in it
+            // is refused rather than trusted to be read as text.
+            Term::Phrase(text) if text.contains(':') => return None,
+            Term::Phrase(_) => continue,
+            Term::Word(word) => (word, None),
+            // A qualifier with no name (`:"..."`) is not known to be read as one. A quoted value
+            // with a `:` in it is refused as a phrase with one is: `x:"org:a"` may be read as the
+            // text `x:` and a qualifier.
+            Term::Quoted { name, value } if name == ":" || value.contains(':') => return None,
+            Term::Quoted { name, value } => (name, Some(value)),
+        };
+        if ["or", "and", "not"]
+            .iter()
+            .any(|op| token.eq_ignore_ascii_case(op))
+        {
+            return None;
+        }
+        // `|`, `||`, `&` and `&&` are not the forge's operators as far as is known, but a token
+        // of nothing else is refused rather than guessed at.
+        if token.chars().all(|c| c == '|' || c == '&') {
+            return None;
+        }
+        // The forge reads only a lower-case `repo:` at the token's start as the qualifier: `REPO:`
+        // or `Repo:` is text to it, and a prefix (`+repo:`, `-repo:`, `!repo:`) may be, either of
+        // which leaves the search unscoped. So only that spelling scopes, and any other spelling
+        // of a qualifier that says which repos is refused.
+        if let Some(path) = token.strip_prefix("repo:") {
+            // A quoted repo (`repo:"a/b"`) is refused: were the forge to read it as text, the
+            // search would be of everything the person's token sees. A quote only ever narrows
+            // a search on another qualifier.
+            if value.is_some() || path.is_empty() || path.contains(['(', ')', ',', '*']) {
+                return None;
+            }
+            // The recorded path as it is, case aside: not what `normalise_repo_path` makes of a
+            // prefix or a `.git` suffix, which the forge's search does not read as the repo.
+            let one = repos
+                .iter()
+                .position(|r| r.path.eq_ignore_ascii_case(path))?;
+            if !at.contains(&one) {
+                at.push(one);
+            }
+        } else {
+            let lower = token
+                .trim_start_matches(['(', '-', '+', '!'])
+                .to_ascii_lowercase();
+            if ["repo:", "org:", "user:", "owner:", "team:", "enterprise:"]
+                .iter()
+                .any(|q| lower.starts_with(q))
+            {
+                return None;
+            }
+        }
+    }
+    (!at.is_empty()).then_some(at)
+}
+
+/// One term of a search query, as [`search_terms`] splits it.
+enum Term<'q> {
+    /// No quote in it.
+    Word(&'q str),
+    /// `"..."`: text.
+    Phrase(&'q str),
+    /// `name:"value"`: a qualifier whose value is quoted. `name` keeps its `:`.
+    Quoted { name: &'q str, value: &'q str },
+}
+
+/// A query split at spaces outside double quotes. `None` for a quote left open, or a quote
+/// anywhere but around a whole term or a whole qualifier's value: the forge's reading of
+/// `re"po":x` or `repo:"a"b` is not known, so neither is guessed at.
+fn search_terms(query: &str) -> Option<Vec<Term<'_>>> {
+    let mut terms = Vec::new();
+    let mut start = None;
+    let mut quoted = false;
+    for (i, c) in query.char_indices() {
+        match (c, start) {
+            ('"', _) => {
+                quoted = !quoted;
+                start.get_or_insert(i);
+            }
+            (' ', Some(from)) if !quoted => {
+                terms.push(&query[from..i]);
+                start = None;
+            }
+            (' ', _) => {}
+            (_, None) => start = Some(i),
+            _ => {}
+        }
+    }
+    if quoted {
+        return None;
+    }
+    if let Some(from) = start {
+        terms.push(&query[from..]);
+    }
+    terms
+        .into_iter()
+        .map(|term| {
+            let quotes = term.matches('"').count();
+            if quotes == 0 {
+                return Some(Term::Word(term));
+            }
+            if quotes != 2 || !term.ends_with('"') {
+                return None;
+            }
+            if let Some(inner) = term.strip_prefix('"') {
+                return Some(Term::Phrase(&inner[..inner.len() - 1]));
+            }
+            let (name, value) = term.split_once(":\"")?;
+            (!name.contains('"')).then(|| Term::Quoted {
+                name: &term[..=name.len()],
+                value: &value[..value.len() - 1],
+            })
+        })
+        .collect()
+}
+
+/// The value each declared variable takes when the request gives it none: its default, or, for
+/// a nullable one with no default, null (GraphQL, "Coercing Variable Values"). A non-null variable
+/// with no default has none, so a document that uses it unbound is not resolved; nor is one that
+/// uses a variable it never declared.
 fn defaults<'a>(defs: &[VariableDefinition<'a, String>]) -> Vec<(String, Value<'a, String>)> {
     defs.iter()
-        .filter_map(|d| d.default_value.clone().map(|v| (d.name.clone(), v)))
+        .filter_map(|d| {
+            let value = match (&d.default_value, &d.var_type) {
+                (Some(default), _) => default.clone(),
+                (None, Type::NonNullType(_)) => return None,
+                (None, _) => Value::Null,
+            };
+            Some((d.name.clone(), value))
+        })
         .collect()
 }
 
@@ -305,6 +697,10 @@ struct Context<'a, 'd> {
     kind: Kind,
     repos: &'a [&'a AllowedRepo],
     objects: &'a dyn ObjectRepo,
+    /// Whether the chat may write to a pull request's head (update-branch).
+    owns: OwnsHead<'a>,
+    /// `guards.merge` lets a merge mutation ([`merge_mutation`]) through.
+    merging: bool,
     fragments: HashMap<&'d str, &'d FragmentDefinition<'d, String>>,
     /// Indexes into `repos` of each repo the document named, once each, in the order met.
     touched: std::cell::RefCell<Vec<usize>>,
@@ -410,10 +806,11 @@ impl<'d> Context<'_, 'd> {
     }
 
     /// `search(query:, type: ISSUE)`, which `gh pr status` and a filtered `gh pr list` use: only
-    /// issues and pull requests, and only of the chat's repos. The query must name **exactly one**
-    /// `repo:` and it must be one of the chat's, and it may not name an organisation, a user, an
-    /// owner, a team or an enterprise, or negate any of them: search says which repos by those
-    /// qualifiers alone, so a query with none of them but the one is a search of that repo. No
+    /// issues and pull requests, and only of the chat's repos ([`search_repos`]). Every `repo:`
+    /// must be one of the chat's, at least one must be there, and it may not name an organisation,
+    /// a user, an owner, a team or an enterprise, or negate any of them: search says which repos
+    /// by those qualifiers alone, so a query with none of them but those is a search of them. Each
+    /// repo it names is touched, so each is served by the same account. No
     /// boolean operator (`OR`, `AND`, `NOT`, any case) and no parenthesis is read: `gh` sends
     /// neither for `pr status` or a filtered `pr list`, which join their terms by spaces.
     fn check_search(&self, field: &Field<'_, String>, vars: &Vars<'_>) -> Result<(), Refusal> {
@@ -425,10 +822,18 @@ impl<'d> Context<'_, 'd> {
                 return Err(refuse);
             }
         }
-        let is_issue = field
-            .arguments
-            .iter()
-            .any(|(n, v)| n == "type" && matches!(v, Value::Enum(e) if e == "ISSUE"));
+        // `gh issue list --search` sends the type as a variable (`$type: SearchType!`, given
+        // `"ISSUE"`), which is read by its value like the query's.
+        let is_issue = field.arguments.iter().any(|(n, v)| {
+            n == "type"
+                && match v {
+                    Value::Enum(e) => e == "ISSUE",
+                    Value::Variable(_) => {
+                        matches!(vars.resolve(v), Ok(Val::Str(s)) if s == "ISSUE")
+                    }
+                    _ => false,
+                }
+        });
         if !is_issue {
             return Err(refuse);
         }
@@ -442,59 +847,10 @@ impl<'d> Context<'_, 'd> {
                 _ => None,
             })
             .ok_or(refuse)?;
-        // A zero-width space or a control character is a separator or nothing to the forge and a
-        // letter of a word to this reading: only printable ASCII and the space are read.
-        if !query.bytes().all(|b| b == b' ' || b.is_ascii_graphic()) {
-            return Err(refuse);
+        for at in search_repos(&query, self.repos).ok_or(refuse)? {
+            self.touch(at);
         }
-        // A quote hides a qualifier from this reading and not from the forge's.
-        if query.contains(['"', '\'', '\\', '`']) {
-            return Err(refuse);
-        }
-        // Without a boolean operator or a group, every other term only narrows the one repo's
-        // results; with one, `repo:a OR is:issue` widens them to the whole forge.
-        if query.contains(['(', ')']) {
-            return Err(refuse);
-        }
-        let mut repos = Vec::new();
-        for token in query.split_whitespace() {
-            if ["or", "and", "not"]
-                .iter()
-                .any(|op| token.eq_ignore_ascii_case(op))
-            {
-                return Err(refuse);
-            }
-            let lower = token
-                .trim_start_matches(['(', '-', '+', '!'])
-                .to_ascii_lowercase();
-            if let Some(path) = lower.strip_prefix("repo:") {
-                if token.starts_with(['-', '!']) || path.contains(['(', ')', ',', '*']) {
-                    return Err(refuse);
-                }
-                repos.push(path.to_string());
-            } else if ["org:", "user:", "owner:", "team:", "enterprise:"]
-                .iter()
-                .any(|q| lower.starts_with(q))
-            {
-                return Err(refuse);
-            }
-        }
-        let [path] = repos.as_slice() else {
-            return Err(refuse);
-        };
-        // The recorded path as it is, case aside: not what `normalise_repo_path` makes of a
-        // prefix or a `.git` suffix, which the forge's search does not read as the repo.
-        match self
-            .repos
-            .iter()
-            .position(|r| r.path.eq_ignore_ascii_case(path))
-        {
-            Some(at) => {
-                self.touch(at);
-                Ok(())
-            }
-            None => Err(refuse),
-        }
+        Ok(())
     }
 
     /// `node(id:)` and `nodes(ids:)`: every id must be one of the chat's repos' own, or resolve
@@ -601,7 +957,9 @@ impl<'d> Context<'_, 'd> {
             if field.name == "__typename" {
                 continue;
             }
-            if !mutation_allowed(self.kind, &field.name) {
+            if !mutation_allowed(self.kind, &field.name)
+                && !(self.merging && merge_mutation(self.kind, &field.name))
+            {
                 return Err(named_mutation_refusal(&field.name));
             }
             let mut ids = Vec::new();
@@ -622,10 +980,15 @@ impl<'d> Context<'_, 'd> {
                 }) {
                     return Err(Refusal::MergeCommand);
                 }
-                if strings(&val)
-                    .iter()
-                    .any(|text| commands::has_merge_command(text))
-                {
+                // `updatePullRequestBranch`'s `updateMethod` is an enum (`MERGE` or `REBASE`) that
+                // says how the base is brought into the branch, not a command a bot reads: gh
+                // sends it for `gh pr update-branch`, and `MERGE` would read as a merge label.
+                let texts = if field.name == "updatePullRequestBranch" {
+                    strings(&without_update_method(&val))
+                } else {
+                    strings(&val)
+                };
+                if texts.iter().any(|text| commands::has_merge_command(text)) {
                     return Err(Refusal::MergeCommand);
                 }
                 if self.kind == Kind::GitLab
@@ -645,14 +1008,77 @@ impl<'d> Context<'_, 'd> {
                     {
                         return Err(Refusal::GraphqlOtherRepo);
                     }
+                    // A head that is the default branch makes update-branch merge the base into
+                    // it on the forge's side (#7494).
+                    if heads
+                        .iter()
+                        .any(|head| self.repos.iter().any(|r| rest::head_is_default(head, r)))
+                    {
+                        return Err(Refusal::ProtectedPullHead);
+                    }
+                }
+                // A merge request from the default branch is the wrong way round, as REST's is
+                // (#7585). `projectPath` is already tied to the chat's repos by the scope check,
+                // so the source is a branch of that project, as in REST.
+                if field.name == "mergeRequestCreate" {
+                    let mut sources = Vec::new();
+                    collect_named("sourceBranch", &val, &mut sources);
+                    if sources
+                        .iter()
+                        .any(|src| self.repos.iter().any(|r| rest::head_is_default(src, r)))
+                    {
+                        return Err(Refusal::ProtectedPullHead);
+                    }
                 }
             }
             self.check_scoped(&ids)?;
+            if field.name == "updatePullRequestBranch" {
+                self.check_update_branch_head(&field.arguments, vars)?;
+            }
             // What a mutation asks back is read like any query: it may not walk out of the repo.
             self.walk(&Ty::Obj("Payload"), &field.selection_set, 0)?;
             class = Some(Class::GraphqlMutation(field.name.clone()));
         }
         class.ok_or(Refusal::GraphqlUnknownMutation)
+    }
+
+    /// `updatePullRequestBranch` merges (or, with `updateMethod: REBASE`, rebases) the base into
+    /// the pull request's **head**: that head must be a branch of the repo the pull request is
+    /// in that this chat put its own tip on, at the tip the forge reports now ([`OwnsHead`], the
+    /// push rule's record; #7526). A head the forge cannot place is refused. Every
+    /// `pullRequestId` of the mutation is asked.
+    fn check_update_branch_head(
+        &self,
+        arguments: &[(String, Value<'d, String>)],
+        vars: &Vars<'_>,
+    ) -> Result<(), Refusal> {
+        let mut pulls = Vec::new();
+        for (_, value) in arguments {
+            let val = vars
+                .resolve(value)
+                .map_err(|()| Refusal::ProtectedPullHead)?;
+            collect_named("pullRequestId", &val, &mut pulls);
+        }
+        if pulls.is_empty() {
+            return Err(Refusal::ProtectedPullHead);
+        }
+        for id in &pulls {
+            let ours = self.repos.iter().find(|r| {
+                self.objects
+                    .repo_of(r.kind, &r.host, id)
+                    .is_some_and(|path| r.path == path)
+            });
+            let head = ours.and_then(|r| {
+                self.objects
+                    .pull_head(r.kind, &r.host, PullRef::Node(id))
+                    .map(|head| (r, head))
+            });
+            match head {
+                Some((r, head)) if (self.owns)(r, &head) => {}
+                _ => return Err(Refusal::ProtectedPullHead),
+            }
+        }
+        Ok(())
     }
 
     /// Every id the mutation names is tied to an allowed repo, and it names at least one.
@@ -715,7 +1141,7 @@ pub fn mutation_repo(
         Some(Json::Object(map)) => map,
         Some(_) => return None,
     };
-    let parsed: Document<'_, String> = parse_query(query).ok()?;
+    let parsed = parse(query)?;
     let mut ids = Vec::new();
     for definition in &parsed.definitions {
         let Definition::Operation(OperationDefinition::Mutation(mutation)) = definition else {
@@ -844,6 +1270,24 @@ fn has_label_id_key(val: &Val) -> bool {
     }
 }
 
+/// `val` without an `updateMethod` that is one of the two enum values the forge takes. Any other
+/// value under that key stays, and is read as text like the rest.
+fn without_update_method(val: &Val) -> Val {
+    match val {
+        Val::Obj(fields) => Val::Obj(
+            fields
+                .iter()
+                .filter(|(k, v)| {
+                    !(k == "updateMethod"
+                        && matches!(v, Val::Str(s) if s == "MERGE" || s == "REBASE"))
+                })
+                .map(|(k, v)| (k.clone(), without_update_method(v)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
 /// Every string in a value.
 fn strings(val: &Val) -> Vec<String> {
     match val {
@@ -851,5 +1295,27 @@ fn strings(val: &Val) -> Vec<String> {
         Val::List(items) => items.iter().flat_map(strings).collect(),
         Val::Obj(fields) => fields.iter().flat_map(|(_, v)| strings(v)).collect(),
         Val::Other => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A block string whose second line indents with U+3000, which panics `graphql-parser` (#7589).
+    fn panicking(mutation: &str) -> Vec<u8> {
+        let query = format!(
+            "mutation{{ {mutation}(input:{{pullRequestId:\"PR_kwDO_1\", commitBody:\"\"\"x\r\n a\r\n\u{3000}\r\n b\r\n\"\"\"}}){{ clientMutationId }} }}"
+        );
+        serde_json::to_vec(&serde_json::json!({ "query": query })).expect("json")
+    }
+
+    #[test]
+    fn a_merge_or_enqueue_document_with_a_block_string_the_parser_panics_on_is_not_read() {
+        for mutation in ["mergePullRequest", "enqueuePullRequest"] {
+            let body = panicking(mutation);
+            assert!(mutation_arguments(&body).is_none(), "{mutation}");
+            assert!(strategy_said(Kind::GitHub, &body).is_none(), "{mutation}");
+        }
     }
 }

@@ -468,6 +468,8 @@ fn tree() -> Tree {
             &top.display().to_string(),
         ],
     ));
+    // As a cut notes it (#7594).
+    worktree::record::note_branch(&root, &top, "piece").expect("noted");
     let here = Here {
         cwd: top.clone(),
         git_dir: store.join("worktrees/piece"),
@@ -976,13 +978,16 @@ fn a_chat_standing_below_the_top_is_held_to_the_checked_git_directory() {
 #[test]
 fn what_an_interrupted_commit_staged_is_put_back_and_the_next_ask_carries_on() {
     let t = tree();
+    let notes = crate::pieceupdate::notes_of(&t.root, &t.here.git_dir);
+    std::fs::create_dir_all(&notes).unwrap();
+    let noted = notes.join(NOTE);
     let top = &t.here.top;
     std::fs::write(top.join("README.md"), "changed\n").unwrap();
     std::fs::write(top.join("new.txt"), "new\n").unwrap();
     // An app that stopped after staging: the note names the tree it staged.
     t.git(&["add", "new.txt"]);
     let tree = t.git(&["write-tree"]);
-    std::fs::write(t.here.git_dir.join(NOTE), &tree).unwrap();
+    std::fs::write(&noted, &tree).unwrap();
 
     let lines = t.asked(Stage::Tracked).expect("committed");
 
@@ -995,22 +1000,18 @@ fn what_an_interrupted_commit_staged_is_put_back_and_the_next_ask_carries_on() {
         "README.md"
     );
     assert_eq!(t.git(&["status", "--porcelain"]), "?? new.txt");
-    assert!(!t.here.git_dir.join(NOTE).exists());
+    assert!(!noted.exists());
 
     // One that stopped while staging left an empty note: whatever is staged is its own.
     std::fs::write(top.join("README.md"), "changed again\n").unwrap();
     t.git(&["add", "new.txt"]);
-    std::fs::write(t.here.git_dir.join(NOTE), "").unwrap();
+    std::fs::write(&noted, "").unwrap();
     t.asked(Stage::Tracked).expect("committed");
     assert_eq!(t.git(&["status", "--porcelain"]), "?? new.txt");
 
     // A note that names another tree: what is staged now is someone's, and stays.
     t.git(&["add", "new.txt"]);
-    std::fs::write(
-        t.here.git_dir.join(NOTE),
-        "0000000000000000000000000000000000000000",
-    )
-    .unwrap();
+    std::fs::write(&noted, "0000000000000000000000000000000000000000").unwrap();
     let theirs = t.asked(Stage::Tracked).expect_err("refused");
     assert!(theirs.contains("purlis did not stage"), "{theirs}");
     assert_eq!(t.git(&["diff", "--cached", "--name-only"]), "new.txt");
@@ -1300,6 +1301,8 @@ fn the_scan_runs_under_the_held_projects_policy_not_one_found_from_the_folder() 
     .unwrap();
     crate::enforcement::press(&held.1, &crate::enforcement::digest_of(&held.1))
         .expect("the person's press");
+    // The branch note is kept under the root the commit is made for, which here is the held one.
+    worktree::record::note_branch(&held.1, &t.here.top, "piece").expect("noted");
     let key = ["-----BEGIN RSA PRIV", "ATE KEY-----"].concat();
     std::fs::write(t.here.top.join("id"), format!("{key}\nMIIB\n")).unwrap();
 
@@ -1343,6 +1346,8 @@ fn a_logged_finding_of_the_scan_is_kept_in_the_asking_chats_own_log() {
     .unwrap();
     crate::enforcement::press(&held.1, &crate::enforcement::digest_of(&held.1))
         .expect("the person's press");
+    // The branch note is kept under the root the commit is made for, which here is the held one.
+    worktree::record::note_branch(&held.1, &t.here.top, "piece").expect("noted");
     let key = ["-----BEGIN RSA PRIV", "ATE KEY-----"].concat();
     std::fs::write(t.here.top.join("id"), format!("{key}\nMIIB\n")).unwrap();
 
@@ -1370,4 +1375,268 @@ fn a_logged_finding_of_the_scan_is_kept_in_the_asking_chats_own_log() {
     assert_eq!(logged.len(), 1, "{logged:?}");
     assert_eq!(logged[0].family, "guards.credential");
     assert!(crate::enforcement::read_log(&held.1, crate::enforcement::UNKNOWN_CHAT).is_empty());
+}
+
+/// #7553: a file a chat planted as a link in the worktree's git record, with what it would
+/// have git write through it.
+#[cfg(unix)]
+fn planted(t: &Tree, name: &str) -> (PathBuf, String) {
+    let victim = t.root.join("victim.txt");
+    std::fs::write(&victim, "the person's own file\n").unwrap();
+    let at = t.here.git_dir.join(name);
+    std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+    let _ = std::fs::remove_file(&at);
+    std::os::unix::fs::symlink(&victim, &at).unwrap();
+    (victim, "the person's own file\n".to_owned())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_planted_in_the_worktrees_git_record_is_refused_and_what_it_points_at_is_untouched() {
+    for name in [
+        "COMMIT_EDITMSG",
+        "logs/HEAD",
+        "FETCH_HEAD",
+        "index",
+        "HEAD",
+        "MERGE_MSG",
+        "ORIG_HEAD",
+        "rebase-merge/git-rebase-todo",
+        NOTE,
+    ] {
+        let t = tree();
+        std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+        let (victim, kept) = planted(&t, name);
+
+        let said = t.asked(staging(&["README.md"])).expect_err(name);
+
+        assert!(said.contains("is a link"), "{name}: {said}");
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), kept, "{name}");
+        assert!(
+            std::fs::symlink_metadata(t.here.git_dir.join(name))
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "{name}: the link was replaced"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_record_entry_that_is_not_a_file_or_a_folder_is_refused() {
+    let t = tree();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+    let pipe = t.here.git_dir.join("FETCH_HEAD");
+    assert!(
+        crate::forklock::status(std::process::Command::new("mkfifo").arg(&pipe))
+            .unwrap()
+            .success()
+    );
+    let said = t.asked(staging(&["README.md"])).expect_err("refused");
+    assert!(said.contains("neither a file nor a folder"), "{said}");
+}
+
+#[test]
+fn a_head_repointed_to_another_branch_is_refused_and_that_branch_does_not_move() {
+    let t = tree();
+    t.git(&["branch", "other"]);
+    let other = t.git(&["rev-parse", "refs/heads/other"]);
+    std::fs::write(t.here.git_dir.join("HEAD"), "ref: refs/heads/other\n").unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+
+    let said = t.asked(staging(&["README.md"])).expect_err("refused");
+
+    assert!(said.contains("other") && said.contains("piece"), "{said}");
+    assert_eq!(t.git(&["rev-parse", "refs/heads/other"]), other);
+    assert!(t.nothing_staged());
+}
+
+#[test]
+fn a_detached_head_is_refused() {
+    let t = tree();
+    let id = t.git(&["rev-parse", "HEAD"]);
+    std::fs::write(t.here.git_dir.join("HEAD"), format!("{id}\n")).unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+    let said = t.asked(staging(&["README.md"])).expect_err("refused");
+    assert!(said.contains("not on a branch"), "{said}");
+}
+
+#[cfg(unix)]
+#[test]
+fn the_apps_note_is_kept_outside_the_git_directory_and_written_through_no_link() {
+    let t = tree();
+    let notes = crate::pieceupdate::notes_of(&t.root, &t.here.git_dir);
+    let victim = t.root.join("victim.txt");
+    std::fs::write(&victim, "the person's own file\n").unwrap();
+    std::fs::create_dir_all(&notes).unwrap();
+    std::os::unix::fs::symlink(&victim, notes.join(NOTE)).unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+
+    let seen = std::rc::Rc::new(std::cell::RefCell::new(None));
+    let seen_in = seen.clone();
+    let (git_dir, noted) = (t.here.git_dir.clone(), notes.join(NOTE));
+    swapping(
+        move |_| {
+            *seen_in.borrow_mut() = Some((
+                git_dir.join(NOTE).symlink_metadata().is_ok(),
+                std::fs::symlink_metadata(&noted).is_ok_and(|m| m.file_type().is_symlink()),
+            ));
+        },
+        || t.asked(staging(&["README.md"])).expect("committed"),
+    );
+
+    assert_eq!(
+        *seen.borrow(),
+        Some((false, false)),
+        "no note in git's directory, and the planted link replaced by the app's own file"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&victim).unwrap(),
+        "the person's own file\n"
+    );
+}
+
+/// The branch the cut noted is the folder's own, however it is named: a piece cut with
+/// `--branch` has a `/` in it and is not the folder's name.
+#[test]
+fn a_piece_cut_on_a_branch_unlike_its_folder_commits() {
+    let t = tree();
+    t.git(&["branch", "-m", "piece", "fix/6494-piece-token"]);
+    worktree::record::note_branch(&t.root, &t.here.top, "fix/6494-piece-token").unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+
+    let lines = t.asked(staging(&["README.md"])).expect("committed");
+
+    assert!(
+        format!("{lines:?}").contains("on fix/6494-piece-token"),
+        "{lines:?}"
+    );
+}
+
+/// The folder's name is not the record: a folder named after another branch, with `HEAD`
+/// repointed to it, is refused, and that branch does not move.
+#[test]
+fn a_head_repointed_to_the_folders_own_name_is_refused_when_the_cut_noted_another_branch() {
+    let t = tree();
+    t.git(&["branch", "-m", "piece", "fix/real"]);
+    worktree::record::note_branch(&t.root, &t.here.top, "fix/real").unwrap();
+    t.git(&["branch", "piece"]);
+    let piece = t.git(&["rev-parse", "refs/heads/piece"]);
+    std::fs::write(t.here.git_dir.join("HEAD"), "ref: refs/heads/piece\n").unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+
+    let said = t.asked(staging(&["README.md"])).expect_err("refused");
+
+    assert!(
+        said.contains("fix/real") && said.contains("`piece`"),
+        "{said}"
+    );
+    assert_eq!(t.git(&["rev-parse", "refs/heads/piece"]), piece);
+    assert!(t.nothing_staged());
+}
+
+/// `HEAD` is exactly `ref: refs/heads/<the branch>`: nothing after it.
+#[test]
+fn a_head_that_is_more_than_the_one_line_is_refused() {
+    for head in [
+        "ref: refs/heads/piece\nref: refs/heads/other\n",
+        "ref: refs/heads/piece \n",
+        "ref:  refs/heads/piece\n",
+    ] {
+        let t = tree();
+        std::fs::write(t.here.git_dir.join("HEAD"), head).unwrap();
+        std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+        let said = t.asked(staging(&["README.md"])).expect_err(head);
+        assert!(said.contains("HEAD"), "{head:?}: {said}");
+    }
+}
+
+/// #7594: a pseudo-ref that is a regular file holding `ref: <name>` makes a rebase or a reset
+/// move the branch it names. The type check passed it; its content does not.
+#[test]
+fn a_pseudo_ref_that_holds_a_symbolic_ref_is_refused_and_the_branch_it_names_does_not_move() {
+    for name in [
+        "ORIG_HEAD",
+        "REBASE_HEAD",
+        "AUTO_MERGE",
+        "MERGE_HEAD",
+        "CHERRY_PICK_HEAD",
+        "REVERT_HEAD",
+        "FETCH_HEAD",
+    ] {
+        let t = tree();
+        t.git(&["branch", "victim"]);
+        let victim = t.git(&["rev-parse", "refs/heads/victim"]);
+        std::fs::write(t.here.git_dir.join(name), "ref: refs/heads/victim\n").unwrap();
+        std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+
+        let said = t.asked(staging(&["README.md"])).expect_err(name);
+
+        assert!(said.contains("symbolic ref"), "{name}: {said}");
+        assert_eq!(t.git(&["rev-parse", "refs/heads/victim"]), victim, "{name}");
+        assert!(t.nothing_staged(), "{name}");
+    }
+}
+
+/// A pseudo-ref that holds an id, as git writes one, is fine.
+#[test]
+fn a_pseudo_ref_that_holds_an_id_is_fine() {
+    let t = tree();
+    let id = t.git(&["rev-parse", "HEAD"]);
+    std::fs::write(t.here.git_dir.join("ORIG_HEAD"), format!("{id}\n")).unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+    t.asked(staging(&["README.md"])).expect("committed");
+}
+
+/// A piece cut before the app kept the branch note: the branch it is on is noted now, said, and
+/// held to from then on. One `HEAD` was repointed to before that is refused.
+#[test]
+fn a_piece_cut_before_the_note_is_noted_from_its_own_branch_and_a_repointed_head_is_refused() {
+    let t = tree();
+    // The check finds the clone three levels above the worktree's git directory, as a real
+    // clone's `.git/worktrees/<piece>` has it. This fixture keeps its store beside the clone, so
+    // that level is `t.root`: make it a repository of its own, where no other folder has `piece`.
+    assert!(crate::testgit::run(&t.root, &["init", "-q"]).ok());
+    let notes = crate::pieceupdate::notes_of(&t.root, &t.here.git_dir);
+    let noted = notes.join(worktree::record::BRANCH_NOTE);
+    std::fs::remove_file(&noted).unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+
+    let lines = t.asked(staging(&["README.md"])).expect("committed");
+
+    assert!(
+        format!("{lines:?}").contains("noted piece now"),
+        "{lines:?}"
+    );
+    assert_eq!(std::fs::read_to_string(&noted).unwrap(), "piece\n");
+
+    std::fs::remove_file(&noted).unwrap();
+    t.git(&["branch", "other"]);
+    std::fs::write(t.here.git_dir.join("HEAD"), "ref: refs/heads/other\n").unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed again\n").unwrap();
+    let said = t.asked(staging(&["README.md"])).expect_err("refused");
+    assert!(said.contains("`other`"), "{said}");
+    assert!(!noted.exists(), "a branch it was repointed to was noted");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_on_the_shared_reflog_of_the_branch_is_refused_and_written_through_by_nothing() {
+    let t = tree();
+    let victim = t.root.join("victim.txt");
+    std::fs::write(&victim, "the person's own file\n").unwrap();
+    let log = t.here.common.join("logs/refs/heads/piece");
+    std::fs::create_dir_all(log.parent().unwrap()).unwrap();
+    let _ = std::fs::remove_file(&log);
+    std::os::unix::fs::symlink(&victim, &log).unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+
+    let said = t.asked(staging(&["README.md"])).expect_err("refused");
+
+    assert!(said.contains("is a link"), "{said}");
+    assert_eq!(
+        std::fs::read_to_string(&victim).unwrap(),
+        "the person's own file\n"
+    );
 }

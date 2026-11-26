@@ -1571,6 +1571,9 @@ fn the_variables_a_session_must_not_inherit_are_the_ones_that_name_a_harness() {
     assert!(NOT_INHERITED.contains(&crate::noterminal::RELAUNCHED_ENV));
     // Nor the launcher's chat's id, which its harness's figure is kept under.
     assert!(NOT_INHERITED.contains(&CHAT_ID_ENV));
+    // Nor a shell tab's mark (#7694): an app started from a shell tab hands no chat the
+    // person's terminal.
+    assert!(NOT_INHERITED.contains(&crate::shellguard::SHELL_TAB_ENV));
     // charter's own two are set per session, after these are removed, so they are not
     // here — removing them would remove what the app just put in.
     assert!(!NOT_INHERITED.contains(&SOCKET_ENV));
@@ -2886,7 +2889,8 @@ fn an_app_at(path: &std::path::Path, within: &std::path::Path) -> (Reading, Chat
                 | Ask::Merge(_)
                 | Ask::Attendance(_)
                 | Ask::Policy(_)
-                | Ask::PolicyLog(_) => Answer::No {
+                | Ask::PolicyLog(_)
+                | Ask::RemoteRefs(_) => Answer::No {
                     why: "not here".to_owned(),
                 },
             }
@@ -5606,4 +5610,52 @@ fn a_chat_is_named_only_where_one_chat_s_program_holds_the_asker() {
     assert_eq!(tokens.chat_by(&|_| false), ChatOf::InNone);
     // Inside both: nothing names one chat, and that is no answer that it is in none.
     assert_eq!(tokens.chat_by(&|_| true), ChatOf::InDoubt);
+}
+
+#[test]
+fn a_remote_refs_answer_of_the_most_tips_comes_back_whole_on_the_framed_stream_and_not_on_a_line() {
+    // #7302: purlis/purlis has about 1,150 refs, and a full object id is 40 bytes plus JSON
+    // punctuation, so the most tips the scan keeps is well past the 64 KiB a line is read to.
+    let dir = tempfile::tempdir().expect("a directory");
+    let within = std::time::Duration::from_secs(5);
+    let tips: Vec<String> = (0..crate::diffscan::KNOWN_AT_MOST)
+        .map(|n| format!("{n:040x}"))
+        .collect();
+    let answer = Answer::RemoteRefs { tips };
+    let size = serde_json::to_vec(&answer).unwrap().len();
+    assert!(size as u64 > A_REPORT_IS_AT_MOST, "{size}");
+    let path = dir.path().join("hooks.sock");
+    let (_reading, token) = an_app_answering(&path, dir.path(), answer.clone());
+    let ask = Ask::RemoteRefs(RemoteRefsAsk {
+        chat: 3,
+        url: "https://github.com/acme/app.git".to_owned(),
+    });
+
+    let reply = framed_on(&path, &token)
+        .ask(&ask, within)
+        .expect("a reply past a line");
+    assert_eq!(reply.answer, answer);
+
+    // On a line, the same answer is cut at the cap and cannot be read.
+    assert!(
+        Asking::on(&path, Some(token))
+            .expect("connected")
+            .ask(&ask, within)
+            .is_err()
+    );
+}
+
+#[test]
+fn a_remote_refs_ask_and_its_answer_cross_the_wire_unchanged() {
+    let ask = Ask::RemoteRefs(RemoteRefsAsk {
+        chat: 7,
+        url: "https://github.com/acme/app.git".to_owned(),
+    });
+    let line = serde_json::to_string(&ask).unwrap();
+    assert_eq!(serde_json::from_str::<Ask>(&line).unwrap(), ask);
+    let answer = Answer::RemoteRefs {
+        tips: vec!["a".repeat(40), "b".repeat(40)],
+    };
+    let line = serde_json::to_string(&answer).unwrap();
+    assert_eq!(serde_json::from_str::<Answer>(&line).unwrap(), answer);
 }

@@ -524,6 +524,64 @@ fn the_start_and_end_rows_are_built_from_the_start_and_end_events() {
     ));
 }
 
+#[test]
+fn a_hibernated_run_s_superseded_end_says_it_was_hibernated_and_its_wake_starts_the_next() {
+    // SC-4a (#7630): a run the person hibernated ends `superseded` as it is woken. Its row says
+    // the hibernation, never a change of the project's settings, and the wake's row follows.
+    let dir = tempfile::tempdir().unwrap();
+    let mut written = Log::open(dir.path(), DEVICE).unwrap();
+    let moved =
+        serde_json::json!({"from": "input-required", "to": "hibernated", "cause": "operator"});
+    let superseded = serde_json::json!({"state": "completed", "cause": "superseded"});
+    run_started(&mut written, ONE, RUN_ONE, None);
+    written
+        .append(Some(ONE), Some(RUN_ONE), None, "run.moved", moved)
+        .unwrap();
+    written
+        .append(
+            Some(ONE),
+            Some(RUN_ONE),
+            None,
+            "run.ended",
+            superseded.clone(),
+        )
+        .unwrap();
+    written
+        .append(
+            Some(ONE),
+            Some(CLEARED),
+            None,
+            "run.started",
+            serde_json::json!({"cause": "wake"}),
+        )
+        .unwrap();
+    // A run the project's settings replaced is still said as that.
+    written
+        .append(Some(ONE), Some(CLEARED), None, "run.ended", superseded)
+        .unwrap();
+    drop(written);
+    let events = crate::eventlog::read(dir.path()).unwrap();
+
+    let drawn = rows(&events, ONE);
+    let said: Vec<(&str, &str)> = drawn
+        .iter()
+        .map(|row| match row {
+            Row::Started { cause, .. } => ("started", cause.as_str()),
+            Row::Ended { cause, .. } => ("ended", cause.as_str()),
+            _ => ("other", ""),
+        })
+        .collect();
+    assert_eq!(
+        said,
+        [
+            ("started", "start"),
+            ("ended", HIBERNATED),
+            ("started", "wake"),
+            ("ended", "superseded"),
+        ]
+    );
+}
+
 /// Every group of ask (R-229), in the order the log names them.
 const GROUPS: [AskGroup; 7] = [
     AskGroup::Sandbox,

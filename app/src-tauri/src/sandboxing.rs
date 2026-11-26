@@ -726,8 +726,23 @@ pub async fn sandbox_state(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
 ) -> Result<SandboxState, String> {
-    let root = planes.held(&plane)?.root().to_path_buf();
-    crate::off_the_window(READING_SANDBOX, move || Ok(state_of(&root))).await
+    let held = planes.held(&plane)?;
+    crate::off_the_window(READING_SANDBOX, move || Ok(state_once(&held))).await
+}
+
+/// [`state_of`] the plane once per burst (H15): the window asks on every plane change, and a
+/// start emits several, so the asks that come while a read runs share the one read that starts
+/// after them.
+pub(crate) fn state_once(held: &crate::planes::Held) -> SandboxState {
+    state_in_a_burst(held, || state_of(held.root()))
+}
+
+/// `read`, as the plane's sandbox-state burst runs it.
+fn state_in_a_burst(
+    held: &crate::planes::Held,
+    read: impl FnOnce() -> SandboxState,
+) -> SandboxState {
+    held.bursts().sandbox_state.ask(read)
 }
 
 /// The person's answer to the one-time offer: `turn_on` writes `[sandbox] mode = "on"` into

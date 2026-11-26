@@ -1118,7 +1118,7 @@ fn a_chat_that_cannot_use_the_persons_login_is_pointed_to_the_sign_in_and_no_flo
         Some("dev"),
     )
     .expect("a note");
-    assert!(note.contains("sign in under Settings › Forges"), "{note}");
+    assert!(note.contains("sign in under Settings › Accounts"), "{note}");
     assert!(!note.contains("Agent identity"), "{note}");
     assert!(!note.contains("purlis gitlab access"), "{note}");
 }

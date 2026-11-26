@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { ForgeAccountRow } from "../bindings";
 import { accountsGroup } from "./accounts";
+import { SIGN_IN_TROUBLE } from "../ForgeSignInEnded";
 import type { LiveSetting } from "./groups";
 import { findGrid } from "../ui/table/table.testkit";
 
@@ -28,6 +30,7 @@ function account(login: string, host: string, more: Partial<ForgeAccountRow> = {
     signed_in: true,
     scopes: [],
     wider: [],
+    ci_allowed: false,
     ...more,
   } satisfies ForgeAccountRow;
 }
@@ -80,6 +83,52 @@ describe("You › Accounts › Forge accounts", () => {
     expect(within(sam).getByText("token; wider than needed: api")).toBeTruthy();
     expect(
       within(sam).getByRole("button", { name: "Sign out of sam on gitlab.example.org" }),
+    ).toBeTruthy();
+  });
+
+  it("offers Allow CI files until the second sign-in is given, then says it is", async () => {
+    accounts = [account("octocat", "github.com")];
+    const first = render(<Accounts />);
+    const table = await findGrid(screen, "Forge accounts");
+    expect(
+      within(table).getByRole("button", { name: "Allow CI files for octocat on github.com" }),
+    ).toBeTruthy();
+    first.unmount();
+    accounts = [account("octocat", "github.com", { ci_allowed: true })];
+    render(<Accounts />);
+    const again = await findGrid(screen, "Forge accounts");
+    expect(within(again).queryByRole("button", { name: /Allow CI files/ })).toBeNull();
+    expect(within(again).getByText("browser; CI files allowed")).toBeTruthy();
+  });
+
+  it("stops saying CI files are allowed once the core tells of a refused second sign-in", async () => {
+    accounts = [account("octocat", "github.com", { ci_allowed: true })];
+    clearMocks();
+    mockIPC((cmd) => (cmd === "forge_accounts" ? structuredClone(accounts) : null), {
+      shouldMockEvents: true,
+    });
+    render(<Accounts />);
+    const table = await findGrid(screen, "Forge accounts");
+    expect(within(table).getByText("browser; CI files allowed")).toBeTruthy();
+    // The core deleted the dead second token, then told the window.
+    accounts = [account("octocat", "github.com", { ci_allowed: false })];
+    await act(() =>
+      emit(SIGN_IN_TROUBLE, { account: accounts[0].id, trouble: "second-sign-in-refused" }),
+    );
+    expect(
+      await within(table).findByRole("button", {
+        name: "Allow CI files for octocat on github.com",
+      }),
+    ).toBeTruthy();
+    expect(within(table).queryByText("browser; CI files allowed")).toBeNull();
+  });
+
+  it("keeps the wider-than-needed note beside the CI files one", async () => {
+    accounts = [account("octocat", "github.com", { wider: ["gist"], ci_allowed: true })];
+    render(<Accounts />);
+    const table = await findGrid(screen, "Forge accounts");
+    expect(
+      within(table).getByText("browser; wider than needed: gist; CI files allowed"),
     ).toBeTruthy();
   });
 

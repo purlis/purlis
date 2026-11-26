@@ -44,6 +44,7 @@ const OCTOCAT: ForgeAccountRow = {
   signed_in: true,
   scopes: ["repo", "read:org"],
   wider: [],
+  ci_allowed: false,
 };
 
 let accounts: ForgeAccountRow[];
@@ -345,6 +346,26 @@ describe("a browser sign-in the forge ended", () => {
     await userEvent.click(screen.getAllByRole("button", { name: /Dismiss/ })[0]);
     await waitFor(() => expect(screen.queryByText(/stopped renewing/)).toBeNull());
     expect(screen.getByText(/could not renew its sign-in/)).toBeTruthy();
+  });
+
+  it("says a refused second sign-in was removed and where to allow CI files, with no Sign in again", async () => {
+    accounts = [OCTOCAT];
+    render(<Lines />);
+    await waitFor(() => expect(commandsSent("forge_accounts")).toHaveLength(1));
+    await act(() =>
+      emit(SIGN_IN_TROUBLE, { account: OCTOCAT.id, trouble: "second-sign-in-refused" }),
+    );
+    const refused = await screen.findByText(
+      /github.com refused the sign-in that lets purlis push CI files as octocat, so purlis removed it/,
+    );
+    expect(refused).toHaveTextContent("allow CI files in Settings › You › Accounts");
+    expect(refused.closest("[data-cause]")).toHaveAttribute(
+      "data-cause",
+      "forge-sign-in-second-sign-in-refused:01J9OCTOCAT",
+    );
+    expect(screen.queryByRole("button", { name: "Sign in again" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /Dismiss/ }));
+    await waitFor(() => expect(screen.queryByText(/so purlis removed it/)).toBeNull());
   });
 
   it("draws nothing for a trouble of an account that is not listed or not signed in, and clears them when an account is signed in or out", async () => {

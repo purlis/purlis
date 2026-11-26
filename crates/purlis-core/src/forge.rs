@@ -46,6 +46,7 @@ pub mod checks;
 pub mod cli;
 pub mod cliimport;
 pub mod confirmed;
+pub mod createdbranches;
 pub mod credential;
 pub mod device;
 pub mod etag;
@@ -56,6 +57,7 @@ pub mod gitlabaccess;
 pub mod held;
 pub mod http;
 pub mod loopback;
+pub mod mergestance;
 #[cfg(unix)]
 pub mod mintport;
 pub mod oauth;
@@ -851,6 +853,15 @@ pub(super) fn cli_env_keeping(
     cli_dir: Option<&Path>,
     keep: impl Fn(&str) -> bool,
 ) -> Vec<(String, String)> {
+    cli_env_from(cli_dir, keep, &|name| std::env::var_os(name))
+}
+
+/// [`cli_env_keeping`], reading this process's environment through `var`.
+fn cli_env_from(
+    cli_dir: Option<&Path>,
+    keep: impl Fn(&str) -> bool,
+    var: &dyn Fn(&str) -> Option<std::ffi::OsString>,
+) -> Vec<(String, String)> {
     let mut dirs: Vec<String> = Vec::new();
     if let Some(dir) = cli_dir {
         dirs.push(dir.display().to_string());
@@ -873,16 +884,31 @@ pub(super) fn cli_env_keeping(
         ("GLAB_PAGER".to_string(), "cat".to_string()),
         ("GH_PAGER".to_string(), "cat".to_string()),
     ];
-    if let Some(home) = std::env::var_os("HOME") {
+    if let Some(home) = var("HOME") {
         env.push(("HOME".to_string(), home.to_string_lossy().into_owned()));
     }
-    for name in git::CREDENTIAL_ENV.into_iter().filter(|name| keep(name)) {
-        if let Some(value) = std::env::var_os(name) {
+    // The chat's authority goes only where a chat's route is held: its sentinel is set.
+    let routed = var(gitcredential::SENTINEL_ENV).is_some();
+    let trust = CLI_TRUST_ENV.into_iter().filter(|_| routed);
+    for name in git::CREDENTIAL_ENV
+        .into_iter()
+        .chain(trust)
+        .filter(|name| keep(name))
+    {
+        if let Some(value) = var(name) {
             env.push((name.to_string(), value.to_string_lossy().into_owned()));
         }
     }
     env
 }
+
+/// The authority a forge CLI trusts besides the system's, named for it alone: in a chat with a
+/// forge route, `GLAB_CA_CERT` is the chat's authority, which signs the certificates of the
+/// chat's proxy, and glab trusts it only where this names it (#7693). It is the same trade as
+/// [`git::CREDENTIAL_ENV`]'s `SSL_CERT_FILE`, and passed only where that is, only where the
+/// chat's sentinel is set, and never to a call with the person's own login
+/// ([`cli::Cli::as_the_operator`]), which trusts the system's authorities alone.
+pub(crate) const CLI_TRUST_ENV: [&str; 1] = ["GLAB_CA_CERT"];
 
 /// `urllib.parse.quote(value, safe="")`.
 pub fn quote(value: &str) -> String {
@@ -1057,6 +1083,49 @@ pub fn py_str(value: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    /// #7693: in a chat with a forge route, `glab` reaches the forge through the chat's proxy,
+    /// whose certificates are signed by the chat's authority, which glab trusts only where it is
+    /// named in `GLAB_CA_CERT`. A call that passes no credential variable passes no authority
+    /// either.
+    #[test]
+    fn a_forge_cli_is_given_the_authority_a_chats_route_names_for_glab() {
+        let var = |name: &str| {
+            matches!(
+                name,
+                "GLAB_CA_CERT" | "GITLAB_TOKEN" | "HTTPS_PROXY" | gitcredential::SENTINEL_ENV
+            )
+            .then(|| std::ffi::OsString::from(format!("set-{name}")))
+        };
+        let given = cli_env_from(None, |_| true, &var);
+        let named = |name: &str| {
+            given
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, v)| v.as_str())
+        };
+        assert_eq!(named("GLAB_CA_CERT"), Some("set-GLAB_CA_CERT"), "{given:?}");
+        assert_eq!(named("GITLAB_TOKEN"), Some("set-GITLAB_TOKEN"), "{given:?}");
+        let none = cli_env_from(None, |_| false, &var);
+        assert!(none.iter().all(|(n, _)| n != "GLAB_CA_CERT"), "{none:?}");
+    }
+
+    /// Review of #7704: the chat's authority goes to glab only where a chat's route is held (its
+    /// sentinel is in the environment), and never to a call made with the person's own stored
+    /// login (`Cli::as_the_operator`), which trusts the system's authorities alone.
+    #[test]
+    fn a_forge_cli_is_given_glab_ca_cert_only_under_a_chats_route_and_never_as_the_operator() {
+        let no_route = |name: &str| {
+            matches!(name, "GLAB_CA_CERT" | "GITLAB_TOKEN")
+                .then(|| std::ffi::OsString::from(format!("set-{name}")))
+        };
+        let given = cli_env_from(None, |_| true, &no_route);
+        assert!(given.iter().all(|(n, _)| n != "GLAB_CA_CERT"), "{given:?}");
+        assert!(given.iter().any(|(n, _)| n == "GITLAB_TOKEN"), "{given:?}");
+        let operator = cli::Cli::as_the_operator();
+        assert!(!operator.passes("GLAB_CA_CERT"));
+        assert!(cli::Cli::default().passes("GLAB_CA_CERT"));
+    }
 
     /// `Cli::as_the_operator` withholds only credential variables a forge call would pass.
     #[test]

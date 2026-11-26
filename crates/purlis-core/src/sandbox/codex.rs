@@ -131,6 +131,10 @@ pub const HOME_FILES: [&str; 3] = ["history.jsonl", "installation_id", "auth.jso
 /// sandboxed chat can leave for a later one of the same project, never for an unsandboxed run.
 pub const SHARED_STORES: [&str; 3] = ["memories", "goals", "queue"];
 
+/// The end of a regex on the path of one of Codex's SQLite stores in its home, with the files
+/// SQLite keeps beside it.
+const STORE_FILES: &str = "[a-z_]+_[0-9]+\\.sqlite(-wal|-shm|-journal)?$";
+
 /// The variable that names Codex's home.
 pub const HOME_ENV: &str = "CODEX_HOME";
 
@@ -706,13 +710,13 @@ fn own(wrap: &Wrap) -> Result<Own, &'static str> {
     if let Some(profiles) = wrap.carved() {
         carve(&mut own, profiles, home)?;
     }
-    own.allow.push(format!(
-        "(regex {})",
-        string(&under(
-            home,
-            "[a-z_]+_[0-9]+\\.sqlite(-wal|-shm|-journal)?$"
-        ))?
-    ));
+    let stores = string(&under(home, STORE_FILES))?;
+    own.allow.push(format!("(regex {stores})"));
+    // SQLite takes `fcntl` locks on a store and its `-shm`, and under `(deny default)` that is
+    // `file-lock`, which `file-write*` does not give (#7352): without it Codex cannot create or
+    // migrate `state_5.sqlite`. Only the stores, never the home or any other file.
+    own.after
+        .push(format!("(allow file-lock (regex {stores}))"));
     own.allow.push(format!(
         "(regex {})",
         string(&under(home, &format!("({})/.+", HOME_DIRS.join("|"))))?

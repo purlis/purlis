@@ -13,7 +13,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use purlis_core::forge::proxy::{
     AllowedRepo, ChatId, Credential, CredentialError, CredentialRequest, CredentialSource,
-    ForgeProxy, Inbound, Kind, ObjectRepo, Outcome, RequestHead, Sentinel, TokenKind,
+    ForgeProxy, Inbound, Kind, ObjectRepo, Outcome, PullHead, PullRef, RequestHead, Sentinel,
+    TokenKind,
 };
 use purlis_core::secrets::keyring::Secret;
 
@@ -34,6 +35,7 @@ impl CredentialSource for Creds {
         Ok(Credential {
             token_kind: self.token_kind,
             secret: Secret::new(REAL.to_string()),
+            account: None,
         })
     }
 }
@@ -45,6 +47,72 @@ pub struct Objects(pub HashMap<String, String>);
 impl ObjectRepo for Objects {
     fn repo_of(&self, _: Kind, _: &str, id: &str) -> Option<String> {
         self.0.get(id).cloned()
+    }
+}
+
+/// [`Objects`] that also say what each pull request's head is, by node id (`Node`) and by
+/// `owner/repo#number` (`Number`): the forge's answer to update-branch's lookup. A pull request
+/// not listed is one the forge could not place.
+#[derive(Default)]
+pub struct ObjectsWithHeads {
+    pub objects: Objects,
+    /// Keyed by node id, or `owner/repo#number`; the value is (repo, branch, tip).
+    pub heads: HashMap<String, (String, String, String)>,
+}
+
+impl ObjectsWithHeads {
+    /// A pull request of `repo` with this node id and number, whose head is `head_repo`:`branch`,
+    /// at the tip `1` * 40 (the one a push by the test's chat leaves, [`push_body`]).
+    pub fn pull(self, repo: &str, id: &str, number: u64, head_repo: &str, branch: &str) -> Self {
+        self.pull_at(repo, id, number, head_repo, branch, &"1".repeat(40))
+    }
+
+    /// As [`Self::pull`], with the head at `oid`.
+    pub fn pull_at(
+        mut self,
+        repo: &str,
+        id: &str,
+        number: u64,
+        head_repo: &str,
+        branch: &str,
+        oid: &str,
+    ) -> Self {
+        self.objects.0.insert(id.into(), repo.into());
+        let head = (head_repo.to_string(), branch.to_string(), oid.to_string());
+        self.heads.insert(id.into(), head.clone());
+        self.heads.insert(format!("{repo}#{number}"), head);
+        self
+    }
+}
+
+impl ObjectRepo for ObjectsWithHeads {
+    fn repo_of(&self, kind: Kind, host: &str, id: &str) -> Option<String> {
+        self.objects.repo_of(kind, host, id)
+    }
+
+    fn pull_head(&self, _: Kind, _: &str, pull: PullRef<'_>) -> Option<PullHead> {
+        let key = match pull {
+            PullRef::Node(id) => id.to_string(),
+            PullRef::Number { repo, number } => format!("{repo}#{number}"),
+        };
+        self.heads.get(&key).map(|(repo, branch, oid)| PullHead {
+            repo: repo.clone(),
+            branch: branch.clone(),
+            oid: oid.clone(),
+        })
+    }
+}
+
+/// [`Objects`] that count each ask: how often the proxy resolved a node id.
+pub struct CountingObjects {
+    pub known: Objects,
+    pub asked: Arc<AtomicUsize>,
+}
+
+impl ObjectRepo for CountingObjects {
+    fn repo_of(&self, kind: Kind, host: &str, id: &str) -> Option<String> {
+        self.asked.fetch_add(1, Ordering::SeqCst);
+        self.known.repo_of(kind, host, id)
     }
 }
 
@@ -86,7 +154,35 @@ impl Scene {
         Self::build(token_kind, objects, true)
     }
 
+    /// As [`Scene::with`], with the proxy changed by `tune` before the chats are enrolled.
+    pub fn tuned(
+        objects: impl ObjectRepo + 'static,
+        tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
+    ) -> Self {
+        Self::build_tuned(TokenKind::Oauth, objects, false, &[], tune)
+    }
+
+    /// As [`Scene::tuned`], with chat-a's github.com repo (`Acme/App`) holding a tip of its own,
+    /// `(branch, tip)`, on each of `own`: the branches the chat made through the route.
+    pub fn tuned_owning(
+        objects: impl ObjectRepo + 'static,
+        own: &[(&str, &str)],
+        tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
+    ) -> Self {
+        Self::build_tuned(TokenKind::Oauth, objects, false, own, tune)
+    }
+
     fn build(token_kind: TokenKind, objects: Objects, ghes: bool) -> Self {
+        Self::build_tuned(token_kind, objects, ghes, &[], |proxy| proxy)
+    }
+
+    fn build_tuned(
+        token_kind: TokenKind,
+        objects: impl ObjectRepo + 'static,
+        ghes: bool,
+        own: &[(&str, &str)],
+        tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
+    ) -> Self {
         let asked = Arc::new(AtomicUsize::new(0));
         let proxy = ForgeProxy::new(
             Box::new(Creds {
@@ -95,17 +191,19 @@ impl Scene {
             }),
             Box::new(objects),
         );
+        let proxy = tune(proxy);
         let a = ChatId::new("chat-a");
         let b = ChatId::new("chat-b");
         let mut a_repos = vec![
             AllowedRepo::new(Kind::GitHub, "github.com", 443, "Acme/App", "main")
                 .unwrap()
                 .with_node_id("R_acme_app")
+                .with_own_branches(own)
                 .with_protected_branches(&["release"]),
             AllowedRepo::new(Kind::GitLab, "gitlab.com", 443, "group/proj", "main")
                 .unwrap()
                 .with_forge_id(purlis_core::forge::proxy::ForgeRepoId::for_a_test(42))
-                .with_own_branches(&["work"]),
+                .with_own_branches(&[("work", &"1".repeat(40))]),
             AllowedRepo::new(Kind::GitLab, GITLAB_SELF, 8443, "grp/sub/proj", "main").unwrap(),
         ];
         if ghes {
@@ -172,6 +270,21 @@ impl Scene {
         )
     }
 
+    /// `chat-a` sends a write whose `Content-Type` the test names, whatever the body looks like.
+    pub fn send_typed(&self, host: &str, target: &str, content_type: &str, body: &[u8]) -> Outcome {
+        let head = RequestHead::new("POST", host, 443, target);
+        let mut headers = headers(Auth::Bearer(self.a_sentinel.expose()));
+        headers.push(("Content-Type".into(), content_type.into()));
+        self.proxy.handle(
+            &self.a,
+            &Inbound {
+                head: &head,
+                headers: &headers,
+                body,
+            },
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn send_as(
         &self,
@@ -227,10 +340,11 @@ pub fn push_body(commands: &[(&str, &str)]) -> Vec<u8> {
     let zero = "0".repeat(40);
     let mut out = Vec::new();
     for (i, (kind, name)) in commands.iter().enumerate() {
+        // An update names the tip the chat's own create (or its given branch) left: `1` * 40.
         let old = if *kind == "create" {
             zero.clone()
         } else {
-            "2".repeat(40)
+            "1".repeat(40)
         };
         let new = if *kind == "delete" {
             zero.clone()

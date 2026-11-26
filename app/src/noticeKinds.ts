@@ -32,6 +32,7 @@ export const NOTICE_KINDS: Readonly<Record<string, NoticeKind>> = {
     one: "Forge token lines replaced by sign-in",
     many: "Forge token lines replaced by sign-in",
   },
+  "forge-sign-in-needed": { one: "Forge sign-in needed", many: "Forge sign-ins needed" },
   "pin-dormant": { one: "Dormant workspace", many: "Dormant workspaces" },
   "chat-resumed": REOPENED,
   "chat-guessed": REOPENED,

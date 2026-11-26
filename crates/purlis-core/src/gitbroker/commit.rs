@@ -52,11 +52,25 @@
 //! with one name, refuses the commit, is unstaged, and its blob is taken out of the object
 //! store where it is a loose object nothing else reaches.
 //!
+//! # What the git record is held to (#7553, #7594)
+//!
+//! Where a chat may write the worktree's record (`.git/worktrees/<piece>/`), it can plant a
+//! link for git to write through, repoint `HEAD`, or put `ref: refs/heads/<another>` in a
+//! pseudo-ref (`ORIG_HEAD`). So before any git runs, the record and what git reads or writes in
+//! it must be regular files and folders, no pseudo-ref may be symbolic ([`worktree::record`]),
+//! and `HEAD` must be exactly `ref: refs/heads/<the branch the cut noted>`: that note is the
+//! app's own (`app/worktree-updates/<id>/purlis-branch`), not the folder's name, which `--branch`
+//! makes a different string and a chat can choose. A detached `HEAD` or another branch is refused.
+//! The record is looked at again after git ran, and reported if it changed. A link planted
+//! *while* git runs is not prevented: that window stays, as does the one on a rebase's plan; and
+//! with the sandbox off the notes folder of a piece is writable too.
+//!
 //! # One at a time, and never left half done
 //!
-//! One commit runs in a branch folder at a time. Before it stages, the app leaves a note in
-//! the worktree's git directory, which no chat writes, and takes it away when it has
-//! committed or put the index back. An app that stopped in between is found out by the next
+//! One commit runs in a branch folder at a time. Before it stages, the app leaves a note in its
+//! own notes folder for the branch folder (`app/worktree-updates/<id>/`, outside every git
+//! directory, written through no link), and takes it away when it has committed or put the
+//! index back. An app that stopped in between is found out by the next
 //! ask: what is staged is what that note says the app staged, so it is unstaged and the ask
 //! carries on. Staged changes that are not the app's are someone's, and are left alone.
 //!
@@ -112,15 +126,17 @@ pub const STAGING: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 /// How long git may take to write the commit.
 pub const COMMITTING: std::time::Duration = std::time::Duration::from_secs(2 * 60);
 
-/// The note the app leaves in a worktree's git directory while it commits there: empty until
-/// staging ends, then the id of the tree it staged.
+/// The note the app leaves, in the folder of its notes for a branch folder, while it commits
+/// there: empty until staging ends, then the id of the tree it staged.
 const NOTE: &str = "purlis-brokered-commit";
 
 /// The commit itself, its message on standard input. Told on its own command line to start no
 /// editor (`--no-edit`), no signer and no upkeep after it, whatever the repository's
 /// configuration says (#1476). Its hooks are off as every call's are (the hooks folder), and a
 /// hook a configuration defines is refused before any git runs ([`super::runs_a_program`]).
-const COMMIT: [&str; 10] = [
+const COMMIT: [&str; 12] = [
+    "-c",
+    "core.logAllRefUpdates=false",
     "-c",
     "gc.auto=0",
     "-c",
@@ -524,6 +540,9 @@ fn made(
     identity: &git::Isolated,
 ) -> Result<Vec<Say>, Refused> {
     here.borrows_nothing()?;
+    // The record is looked at before any git runs in it, and the note the app once kept in it
+    // is looked at too: one there is a link or nothing.
+    worktree::record::refused_with(&here.git_dir, &[NOTE])?;
     let top = here.top.as_path();
     // Made as the email chosen for the forge account its `origin` is on (#5788), where one was.
     let origin = said(top, &["remote", "get-url", "origin"])?.unwrap_or_default();
@@ -561,17 +580,27 @@ fn made(
         "this folder is not on a branch (a detached HEAD), so there is no branch to \
          commit on",
     )?;
+    let own = worktree::record::held(root, &here.git_dir, &here.top, &branch)?;
     here.mid_nothing()?;
     let before = ran(
         top,
         &["diff", "--cached", "--quiet", "--ignore-submodules=none"],
     )?;
     let mut lines = Vec::new();
+    if own.is_some_and(|own| own.noted_now) {
+        lines.push(Say::Warn(
+            format!(
+                "this folder was cut before purlis kept a note of its branch, so purlis noted \
+                 {branch} now, the branch it is on, which has a base recorded by its cut"
+            )
+            .into(),
+        ));
+    }
     match before.code {
-        Some(0) => here.forget(),
-        Some(1) if here.left_by_an_interrupted_commit() => {
+        Some(0) => here.forget(root),
+        Some(1) if here.left_by_an_interrupted_commit(root) => {
             unstage(top);
-            here.forget();
+            here.forget(root);
             lines.push(Say::Info(
                 "an earlier commit for this chat was interrupted after it staged; what it \
                  had staged was unstaged first, and the files are as they were"
@@ -600,7 +629,7 @@ fn made(
     {
         return Err(not_the_file(&refusal).into());
     }
-    here.note("")?;
+    here.note(root, "")?;
     let mut queue = None;
     // From here the index may hold what the ask named: anything that stops the commit puts
     // it back and takes the note away.
@@ -609,7 +638,7 @@ fn made(
             #[cfg(test)]
             tests::once_staged(top);
             let tree = said(top, &["write-tree"])?.unwrap_or_default();
-            here.note(&tree)
+            here.note(root, &tree)
         })
         .and_then(|()| staged(top))
         // What is staged is the file on disk now, with one name: a row that is not is taken
@@ -639,7 +668,7 @@ fn made(
         Ok(staged) => staged,
         Err(why) => {
             unstage(top);
-            here.forget();
+            here.forget(root);
             return Err(Refused { why, scan: queue });
         }
     };
@@ -665,13 +694,13 @@ fn made(
         Ok(committed) => committed,
         Err(why) => {
             unstage(top);
-            here.forget();
+            here.forget(root);
             return Err(why.into());
         }
     };
     if committed.code != Some(0) {
         unstage(top);
-        here.forget();
+        here.forget(root);
         if committed.code.is_none() {
             return Err(ran_out("write the commit", COMMITTING).into());
         }
@@ -681,8 +710,15 @@ fn made(
         )
         .into());
     }
-    here.forget();
+    here.forget(root);
     let made = said(top, &["rev-parse", "HEAD"])?.unwrap_or_default();
+    // Looked at again, now git has run: a link planted while it did is not prevented (#7594),
+    // only reported.
+    if let Err(why) = worktree::record::refused(&here.git_dir) {
+        lines.push(Say::Warn(
+            format!("the record changed while git ran: {why}").into(),
+        ));
+    }
     let (id, signed) = signed(top, &branch, made, identity.signer(), &mut lines);
     lines.insert(
         0,
@@ -950,25 +986,28 @@ impl Here {
         Ok(())
     }
 
-    /// Leaves the app's note in the worktree's git directory: `tree` is what it staged, or
-    /// nothing while it is staging.
-    fn note(&self, tree: &str) -> Result<(), String> {
-        std::fs::write(self.git_dir.join(NOTE), tree).map_err(|e| {
-            format!(
-                "the app could not write in this folder's git directory ({e}), so it did not commit"
-            )
+    /// Where the app's notes for this folder are: outside every git directory.
+    fn notes(&self, root: &Path) -> PathBuf {
+        crate::pieceupdate::notes_of(root, &self.git_dir)
+    }
+
+    /// Leaves the app's note in the folder's notes, written through no link: `tree` is what it
+    /// staged, or nothing while it is staging.
+    fn note(&self, root: &Path, tree: &str) -> Result<(), String> {
+        crate::pieceupdate::note(root, &self.notes(root), NOTE, tree).map_err(|e| {
+            format!("the app could not write its note for this folder ({e}), so it did not commit")
         })
     }
 
     /// Takes the note away.
-    fn forget(&self) {
-        let _ = std::fs::remove_file(self.git_dir.join(NOTE));
+    fn forget(&self, root: &Path) {
+        let _ = std::fs::remove_file(self.notes(root).join(NOTE));
     }
 
     /// Whether what is staged is what an interrupted commit of the app's left: its note is
     /// there, and says it was still staging or names the tree the index holds now.
-    fn left_by_an_interrupted_commit(&self) -> bool {
-        let Ok(noted) = std::fs::read_to_string(self.git_dir.join(NOTE)) else {
+    fn left_by_an_interrupted_commit(&self, root: &Path) -> bool {
+        let Ok(noted) = std::fs::read_to_string(self.notes(root).join(NOTE)) else {
             return false;
         };
         let noted = noted.trim();

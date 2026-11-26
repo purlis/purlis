@@ -306,6 +306,9 @@ export const DECISIONS: ReadonlySet<Shown["source"]> = new Set<Shown["source"]>(
   // is on the row, as Q181 has it.
   "trust-clone",
   "trust-clones",
+  // A chat refused a branch it has no record of: Allow and Keep blocked are on the row, and
+  // Allow records an owner, so it waits for the row to settle as every grant does.
+  "let-chat-push",
 ]);
 
 /** The option id only a block loop's pause offers: its lead, Tell it to stop trying (`pauses.rs`). */
@@ -350,6 +353,8 @@ export function questionOf(ask: Shown): string {
       ? `Allow ${run.persona} to use vault ${run.vault}?`
       : `Allow ${program} to use vault ${run.vault}?`;
   }
+  if (ask.answer.via === "let-chat-push")
+    return `Let this chat push ${ask.answer.branch} in ${ask.answer.host}/${ask.answer.repo}?`;
   return QUESTION[ask.source] ?? "Allow this?";
 }
 
@@ -552,6 +557,8 @@ export const SOURCE_SAID: Record<Shown["source"], string> = {
   "merge-hold": "Asks you to merge a request",
   "trust-clone": "Asks you to trust a clone",
   "trust-clones": "Asks you to trust clones purlis did not clone",
+  "let-chat-push": "Asks to push a branch it has no record of",
+  "held-act": "Asks you to approve a forge act it was not let do",
 };
 
 /** Why a task's question reached the person, as its row says it. */

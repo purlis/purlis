@@ -30,6 +30,8 @@ use std::time::{Duration, Instant};
 use crate::dockerpool::{Docker, Image};
 use crate::sshroute::connect::Finding;
 
+use super::timing::{self, Timed};
+
 /// **The platforms the runner image is built for** (`.github/workflows/runner-image.yml`, which
 /// checks its index holds these and no others).
 pub const RUNNER_PLATFORMS: [&str; 2] = ["linux/amd64", "linux/arm64"];
@@ -43,15 +45,29 @@ const PLATFORM: &str = "unsupported-architecture";
 const DOWNLOADS: &str = "image-unreachable";
 const KERNEL: &str = "kernel-short";
 const ROOM: &str = "disk-full";
+/// The link's own check, timed as one.
+const LINK: &str = "link";
 
 /// **Which of doctor's checks of the engine passed** (#6272): each by the cause it would fail
 /// with, in the order they ran, and whether the disk couldn't be measured, which holds nothing up
 /// and says nothing of room.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default)]
 pub struct Passed {
     pub checked: Vec<&'static str>,
     pub disk_unmeasured: bool,
+    /// **How long each check took** (#7191), by the cause it would fail with.
+    pub timed: Vec<Timed>,
 }
+
+/// Two answers are the same where the same checks passed: how long they took is a measurement,
+/// not what was found.
+impl PartialEq for Passed {
+    fn eq(&self, other: &Self) -> bool {
+        self.checked == other.checked && self.disk_unmeasured == other.disk_unmeasured
+    }
+}
+
+impl Eq for Passed {}
 
 impl Passed {
     /// Every check of the engine passed, its disk measured.
@@ -60,6 +76,7 @@ impl Passed {
         Passed {
             checked: vec![CONFINES, PLATFORM, DOWNLOADS, KERNEL, ROOM],
             disk_unmeasured: false,
+            timed: Vec::new(),
         }
     }
 }
@@ -142,7 +159,8 @@ pub fn after_reaching(
 /// platform, and that its kernel isn't before Linux 6.12 (#7084). `docker info` alone: no image
 /// is looked for or downloaded, since the pool's image is picked after Connect.
 pub fn on_connect(through: &Docker, host: &str) -> Result<Passed, Finding> {
-    let platform = machine(through, host)?;
+    let mut timed = Vec::new();
+    let platform = machine(through, host, &mut timed)?;
     if !runs_the_runner_image(&platform) {
         return Err(Finding::Architecture {
             host: host.to_owned(),
@@ -152,10 +170,11 @@ pub fn on_connect(through: &Docker, host: &str) -> Result<Passed, Finding> {
         });
     }
     let mut checked = vec![CONFINES, PLATFORM];
-    checked.extend(kernel_checked(through, host, None)?);
+    checked.extend(kernel_checked(through, host, None, &mut timed)?);
     Ok(Passed {
         checked,
         disk_unmeasured: false,
+        timed,
     })
 }
 
@@ -166,8 +185,9 @@ fn kernel_checked(
     through: &Docker,
     host: &str,
     image: Option<&Image>,
+    timed: &mut Vec<Timed>,
 ) -> Result<Option<&'static str>, Finding> {
-    match through.host_kernel(image) {
+    match timing::time(timed, KERNEL, host, || through.host_kernel(image)) {
         crate::dockerpool::kernel::HostKernel::Enough => Ok(Some(KERNEL)),
         crate::dockerpool::kernel::HostKernel::Unread => Ok(None),
         crate::dockerpool::kernel::HostKernel::Short(short) => Err(Finding::KernelShort {
@@ -178,12 +198,12 @@ fn kernel_checked(
 }
 
 /// That the engine `through` reaches, on `host`, confines runners: its platform, where it does.
-fn machine(through: &Docker, host: &str) -> Result<String, Finding> {
+fn machine(through: &Docker, host: &str, timed: &mut Vec<Timed>) -> Result<String, Finding> {
     let silent = |why: crate::dockerpool::Refused| Finding::EngineSilent {
         host: host.to_owned(),
         said: why.0,
     };
-    match through.confinement() {
+    match timing::time(timed, CONFINES, host, || through.confinement()) {
         crate::dockerpool::Confinement::Confined => {}
         crate::dockerpool::Confinement::Unconfined => {
             return Err(Finding::Unconfined {
@@ -193,7 +213,7 @@ fn machine(through: &Docker, host: &str) -> Result<String, Finding> {
         }
         crate::dockerpool::Confinement::Unread(why) => return Err(silent(why)),
     }
-    through.platform().map_err(silent)
+    timing::time(timed, PLATFORM, host, || through.platform()).map_err(silent)
 }
 
 /// **What the engine `through` reaches, on machine `host`, is asked for pool image `image`**: that
@@ -210,7 +230,8 @@ pub fn engine(through: &Docker, host: &str, image: &Image) -> Result<Passed, Fin
         host: host.to_owned(),
         said: why.0,
     };
-    let platform = machine(through, host)?;
+    let mut timed = Vec::new();
+    let platform = machine(through, host, &mut timed)?;
     let own_image = !image.is_purlis_own();
     let unbuilt = |built_for: Vec<String>| Finding::Architecture {
         host: host.to_owned(),
@@ -222,6 +243,7 @@ pub fn engine(through: &Docker, host: &str, image: &Image) -> Result<Passed, Fin
         host: host.to_owned(),
         registry: registry_of(image.as_str()),
     };
+    let downloading = timing::Stopwatch::start(DOWNLOADS, host);
     let there = match through.image_platform(image).map_err(silent)? {
         Some(there) => there,
         None => {
@@ -245,17 +267,18 @@ pub fn engine(through: &Docker, host: &str, image: &Image) -> Result<Passed, Fin
                 .ok_or_else(unreachable)?
         }
     };
+    timed.push(downloading.done());
     if there != platform {
         return Err(unbuilt(vec![there]));
     }
     let mut passed = Passed {
         checked: vec![CONFINES, PLATFORM, DOWNLOADS],
         disk_unmeasured: false,
+        timed,
     };
-    passed
-        .checked
-        .extend(kernel_checked(through, host, Some(image))?);
-    match through.room_for(image) {
+    let kernel = kernel_checked(through, host, Some(image), &mut passed.timed)?;
+    passed.checked.extend(kernel);
+    match timing::time(&mut passed.timed, ROOM, host, || through.room_for(image)) {
         crate::dockerpool::Room::Short(free) => Err(Finding::DiskFull {
             host: host.to_owned(),
             free,
@@ -314,6 +337,7 @@ pub fn lay_over(connect: &mut super::connecting::Connecting) {
         Some(Ok(passed)) => {
             connect.checked = passed.checked;
             connect.disk_unmeasured = passed.disk_unmeasured;
+            connect.timed = passed.timed;
         }
         _ => {}
     }
@@ -388,12 +412,16 @@ pub fn link_check(host: &str, measured: &Result<Duration, Finding>) -> super::Ch
             verdict: super::Verdict::Ok,
             title: round_trip_said(host, *took),
             more: None,
+            took_ms: None,
+            waiting_on: None,
         },
         Err(finding) => super::Check {
             about: super::CheckOf::Link,
             verdict: super::Verdict::Missing,
             title: format!("purlis couldn't time a docker command on {host}"),
             more: Some(super::connecting::said(finding)),
+            took_ms: None,
+            waiting_on: None,
         },
     }
 }
@@ -403,13 +431,20 @@ pub fn link_check(host: &str, measured: &Result<Duration, Finding>) -> super::Ch
 #[must_use]
 pub fn link_of(docker: &Docker, pool: &crate::runners::Pool) -> Option<super::Check> {
     let host = host_of(pool)?;
+    // The whole of it is timed: reaching the machine is part of what the link is.
+    let watch = timing::Stopwatch::start(LINK, &host);
     let measured = crate::sshroute::pool::docker_of(docker, pool).and_then(|through| {
         round_trip(&through).map_err(|why| Finding::EngineSilent {
             host: host.clone(),
             said: why.0,
         })
     });
-    Some(link_check(&host, &measured))
+    let timed = watch.done();
+    Some(super::Check {
+        took_ms: Some(timed.ms()),
+        waiting_on: timed.waited_on(&host),
+        ..link_check(&host, &measured)
+    })
 }
 
 /// **What `purlis pool doctor` says of pool `pool`, whose machine `machine` names, and its exit**: a pool
@@ -433,10 +468,21 @@ pub fn said_for(
             } else {
                 "has the runner image and room for a runner".to_owned()
             };
+            let mut timings = String::new();
+            for one in &healthy.passed.timed {
+                timings.push_str(&format!(
+                    "  {}: {}\n",
+                    timing::about(one.cause),
+                    timing::words(one.took)
+                ));
+                if let Some(waited) = one.waited_on(host) {
+                    timings.push_str(&format!("    {waited}\n"));
+                }
+            }
             return (
                 format!(
                     "Pool {pool}: {host} is the machine you trusted, and its engine the one you \
-                     trusted. Docker there confines runners and {disk}.\n{}\n",
+                     trusted. Docker there confines runners and {disk}.\n{}\n{timings}",
                     round_trip_said(host, healthy.round_trip),
                 ),
                 0,

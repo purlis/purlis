@@ -32,6 +32,7 @@ impl CredentialSource for Creds {
         Ok(Credential {
             token_kind: TokenKind::Oauth,
             secret: Secret::new(REAL.to_string()),
+            account: None,
         })
     }
 }
@@ -123,6 +124,19 @@ pub struct World {
     pub wiring: Wiring,
 }
 
+/// The plane's project id the recording world's chat belongs to.
+pub const PROJECT_ID: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2P";
+/// The branches a [`World::asking_in`] repo's advertisement lists: the ones a test may be asked
+/// about, and two the ask must not say (a name that is not ASCII, one that starts with `-`).
+pub const ASKING_ADVERTISES: &[&str] = &[
+    "main", "theirs", "other", "b1", "b2", "b3", "b4", "b5", "naïve", "-dash",
+];
+
+/// The session [`World::asking_in`]'s chat is.
+pub const SESSION: u32 = 7;
+/// The forge's id of `acme/app` in [`World`].
+pub const ACME_APP_ID: u64 = 41;
+
 impl World {
     /// One chat with a repo on github.com and one on gitlab.com.
     pub fn new() -> Self {
@@ -142,18 +156,171 @@ impl World {
         vec![
             AllowedRepo::new(Kind::GitHub, "github.com", 443, "acme/app", "main")
                 .unwrap()
-                .with_node_id("R_acme_app"),
+                .with_node_id("R_acme_app")
+                .with_forge_id(ForgeRepoId::for_a_test(41)),
             AllowedRepo::new(Kind::GitLab, "gitlab.com", 443, "group/proj", "main")
                 .unwrap()
                 .with_forge_id(ForgeRepoId::for_a_test(42)),
         ]
     }
 
+    /// [`Self::new`]'s repos, the proxy asking `stance` how `guards.merge` runs on each merge.
+    pub fn with_merge_stance(
+        stance: Arc<dyn purlis_core::forge::mergestance::MergeStance>,
+    ) -> Self {
+        Self::build(
+            Self::default_repos(),
+            Arc::new(purlis_core::forge::pin::NoPin),
+            Some(stance),
+            None,
+            None,
+            None,
+        )
+    }
+
     pub fn with_repos_and_pin(
         repos: Vec<AllowedRepo>,
         pin: Arc<dyn purlis_core::forge::pin::Pin>,
     ) -> Self {
-        let proxy = Arc::new(ForgeProxy::new(Box::new(Creds), Box::new(NoObjects)).with_pin(pin));
+        Self::build(repos, pin, None, None, None, None)
+    }
+
+    /// [`Self::new`]'s repos, with each branch the forge confirms the chat made recorded in the
+    /// config root `config`, as the app does ([`purlis_core::forge::createdbranches`]).
+    pub fn recording_to(config: std::path::PathBuf) -> Self {
+        Self::build(
+            Self::default_repos(),
+            Arc::new(purlis_core::forge::pin::NoPin),
+            None,
+            Some(config),
+            None,
+            None,
+        )
+    }
+
+    /// [`Self::recording_to`] over `repos` in place of [`Self::new`]'s.
+    pub fn recording_repos(repos: Vec<AllowedRepo>, config: std::path::PathBuf) -> Self {
+        Self::build(
+            repos,
+            Arc::new(purlis_core::forge::pin::NoPin),
+            None,
+            Some(config),
+            None,
+            None,
+        )
+    }
+
+    /// [`Self::recording_to`], where the chat may also move a branch a chat it dispatched made,
+    /// by the dispatch records of the project at `project`, as the app reads them.
+    pub fn recording_with_dispatches(
+        config: std::path::PathBuf,
+        project: std::path::PathBuf,
+    ) -> Self {
+        Self::build(
+            Self::default_repos(),
+            Arc::new(purlis_core::forge::pin::NoPin),
+            None,
+            Some(config),
+            Some(project),
+            None,
+        )
+    }
+
+    /// [`Self::recording_with_dispatches`], the repos also protecting `names` exactly, as the app
+    /// wires a project's `[risk] protected_branches` (`forgeroute`'s `repos`).
+    pub fn recording_with_dispatches_protecting(
+        config: std::path::PathBuf,
+        project: std::path::PathBuf,
+        names: &[&str],
+    ) -> Self {
+        let repos = Self::default_repos()
+            .into_iter()
+            .map(|repo| repo.with_protected_branches(names))
+            .collect();
+        Self::build(
+            repos,
+            Arc::new(purlis_core::forge::pin::NoPin),
+            None,
+            Some(config),
+            Some(project),
+            None,
+        )
+    }
+
+    /// [`Self::recording_to`], where an update of a branch the chat has no record of raises the
+    /// ask to let it push, in the project at `project`, as the app wires it
+    /// ([`purlis_core::windowonly::PushAsks`]): the chat is session [`SESSION`] of that project.
+    pub fn asking_in(config: std::path::PathBuf, project: std::path::PathBuf) -> Self {
+        Self::build(
+            Self::default_repos(),
+            Arc::new(purlis_core::forge::pin::NoPin),
+            None,
+            Some(config),
+            None,
+            Some(project),
+        )
+    }
+
+    fn build(
+        repos: Vec<AllowedRepo>,
+        pin: Arc<dyn purlis_core::forge::pin::Pin>,
+        stance: Option<Arc<dyn purlis_core::forge::mergestance::MergeStance>>,
+        record_to: Option<std::path::PathBuf>,
+        dispatches: Option<std::path::PathBuf>,
+        asking: Option<std::path::PathBuf>,
+    ) -> Self {
+        let mut proxy = ForgeProxy::new(Box::new(Creds), Box::new(NoObjects)).with_pin(pin);
+        if let Some(stance) = stance {
+            proxy = proxy.with_merge_stance(stance);
+        }
+        if let Some(config) = record_to {
+            let forgets = config.clone();
+            proxy = proxy.with_gone(Box::new(move |gone| {
+                purlis_core::forge::createdbranches::forget(&forgets, gone)
+                    .expect("the record ends");
+            }));
+            let tips = config.clone();
+            proxy = proxy.with_tips(std::sync::Arc::new(move |host, repo_id, branch| {
+                purlis_core::forge::createdbranches::tip_for(
+                    &tips,
+                    PROJECT_ID,
+                    "chat-listener",
+                    host,
+                    repo_id,
+                    branch,
+                    &|owner| {
+                        dispatches.as_ref().is_some_and(|project| {
+                            purlis_core::dispatchrecord::lineage_allows(
+                                project,
+                                "chat-listener",
+                                owner,
+                                branch,
+                            )
+                        })
+                    },
+                )
+            }));
+            proxy = proxy.with_created(Box::new(move |created| {
+                purlis_core::forge::createdbranches::record_via(
+                    &config,
+                    PROJECT_ID,
+                    "chat-listener",
+                    created,
+                    Some(purlis_core::forge::createdbranches::Via::Route),
+                )
+                .expect("the record is written");
+            }));
+        }
+        let asking_world = asking.is_some();
+        if let Some(root) = asking {
+            proxy = proxy.with_branch_ask(Box::new(purlis_core::windowonly::PushAsks {
+                root,
+                chat: "chat-listener".to_owned(),
+                session: Box::new(|| Some(SESSION)),
+                owner_of: Box::new(|_, _, _| None),
+            }));
+        }
+        let proxy = Arc::new(proxy);
         let chat = ChatId::new("chat-listener");
         let advertised: Vec<(String, String)> = repos
             .iter()
@@ -161,7 +328,12 @@ impl World {
             .collect();
         let sentinel = proxy.enrol(&chat, repos);
         for (host, path) in &advertised {
-            proxy.note_advertised(&chat, host, path, vec![]);
+            let listed = if asking_world {
+                ASKING_ADVERTISES.iter().map(|b| (*b).to_owned()).collect()
+            } else {
+                vec![]
+            };
+            proxy.note_advertised(&chat, host, path, listed);
         }
         let fake = Arc::new(Fake::default());
         let wiring = Wiring {

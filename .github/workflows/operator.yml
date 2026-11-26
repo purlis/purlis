@@ -119,10 +119,15 @@ on:
   # breaks the runner image the kind run builds, is reported though nothing here changed.
   schedule:
     - cron: "17 3 * * *"
+  # The merge queue's run, on the paths of the filter above (`workflow-scope`, #7420).
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 concurrency:
-  group: operator-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
+  # On `main` each commit has a group of its own (as in `ci.yml`): a group's one pending run is
+  # cancelled by the next push, and this run is that commit's only record.
+  group: operator-${{ github.event_name == 'schedule' && 'nightly' || (github.ref == 'refs/heads/main' && github.sha) || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -133,8 +138,31 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
+  # A merge group carries no `paths`, so its run is scoped by this workflow's own filter
+  # (`workflow-scope`, #7420): the jobs below run in the queue only when the change meets it.
+  scope:
+    name: does the change need this
+    if: github.event_name == 'merge_group'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The token stays: `change-base` fetches the group's base by its SHA.
+          fetch-depth: 2
+      - id: scope
+        uses: ./.github/actions/workflow-scope
+        with:
+          workflow: operator.yml
+
   checks:
     name: operator (fmt, clippy, test, chart, licences)
+    needs: scope
+    if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.scope.outputs.run != 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     defaults:
@@ -165,6 +193,8 @@ jobs:
 
   kind:
     name: operator on a kind cluster
+    needs: scope
+    if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.scope.outputs.run != 'false') }}
     runs-on: ubuntu-24.04
     # It also builds and runs the desktop's side of a cluster runner from the root workspace, and
     # Pool setup's cluster path on a second, bare cluster (#4492): about 50 minutes on main before

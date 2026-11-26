@@ -317,6 +317,21 @@ test("a cancelled or skipped push run gives no verdict: the run before it decide
   assert.equal(redRun([ciRun({ conclusion: "cancelled" })]), undefined);
 });
 
+test("several push runs in flight leave main's colour to the newest one that ended", () => {
+  const going = (n) => ciRun({ run_number: n, status: "in_progress", conclusion: null });
+  const red = ciRun({ run_number: 3, conclusion: "failure" });
+  // Runs 4 and 5 are going: main is still red from run 3, and run 2's green is older.
+  assert.equal(redRun([ciRun({ run_number: 2 }), red, going(4), going(5)]), red);
+  // Run 5 ended green while run 4 still goes: main is green, and run 4's red later would be
+  // older than run 5, so the order is by number, not by when they ended.
+  assert.equal(redRun([red, going(4), ciRun({ run_number: 5 })]), undefined);
+  assert.equal(
+    redRun([ciRun({ run_number: 5 }), ciRun({ run_number: 4, conclusion: "failure" })]),
+    undefined,
+    "an older red run that ended after a newer green one does not make main red",
+  );
+});
+
 test("checks sort into still going and failed, by gh's bucket", () => {
   const sorted = sortChecks([
     check("a", "pass"),

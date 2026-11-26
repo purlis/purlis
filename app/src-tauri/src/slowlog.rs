@@ -50,6 +50,15 @@ pub enum SlowMoment {
     /// The command `command`, received on the core's main thread at `at`, held it for `ms`
     /// (`crate::mainwatch`). The core writes it; the window only reads it back.
     CoreCommand { command: String, ms: u32, at: f64 },
+    /// A new chat's opening that took `ms`, begun at `at`, while `hot` chats were open, and the
+    /// phases it passed through in the order it ran them (H12). The core writes it; the window
+    /// only reads it back.
+    Opening {
+        ms: u32,
+        at: f64,
+        hot: u32,
+        phases: Vec<StallTook>,
+    },
 }
 
 /// Something the window's thread did in a stalled frame, by name, and how long it took there.
@@ -118,6 +127,7 @@ impl From<SlowMoment> for Slow {
                 ms,
                 at: at(when),
                 hot,
+                phases: Vec::new(),
             },
             SlowMoment::Stall {
                 ms,
@@ -160,6 +170,17 @@ impl From<SlowMoment> for Slow {
                 ms,
                 at: at(when),
             },
+            SlowMoment::Opening {
+                ms,
+                at: when,
+                hot,
+                phases,
+            } => Slow::Opening {
+                ms,
+                at: at(when),
+                hot,
+                phases: each(phases),
+            },
         }
     }
 }
@@ -174,6 +195,7 @@ impl From<Slow> for SlowMoment {
                 ms,
                 at,
                 hot,
+                ..
             } => SlowMoment::Answer {
                 command,
                 ms,
@@ -212,6 +234,17 @@ impl From<Slow> for SlowMoment {
                 command,
                 ms,
                 at: ms_of(at),
+            },
+            Slow::Opening {
+                ms,
+                at,
+                hot,
+                phases,
+            } => SlowMoment::Opening {
+                ms,
+                at: ms_of(at),
+                hot,
+                phases: each(phases),
             },
         }
     }

@@ -563,6 +563,43 @@ own, apart from the session protocol's. It belongs to **Project**, with the two 
 _Avoid_: connection (unqualified), session (that is the process), pairing (that is how the keys
 were pinned)
 
+**Unreachable** (a pool or runner):
+The first of the five states a pool on another machine is in when purlis cannot use it: nothing
+answers, or not yet: a Docker engine that does not answer yet (`dockerd` still starting after a
+reboot, while `sshd` is up) is this, and the notice says "Docker on <host> isn't answering yet", so
+a machine whose `sshd` comes up before its `dockerd` recovers unattended. purlis retries on its
+own, 5 to 120 seconds apart for the forward and at most 30 seconds apart for the link, and **Try now** forgets what was remembered of the failure
+and tries at once. A start waits up to 30 seconds with "Waiting for <pool>", then ends with the
+reason, offering Try now and Check pool. A part of **Pool** (ADR 0078, #7187).
+_Avoid_: offline, down (that is the link's own word for an outage, whatever its state), timed out
+
+**Refused** (a pool or runner):
+The machine answers, but sign-in, forwarding or Docker's permissions fail, or its disk is full (a
+Docker that is merely silent is **Unreachable**); so does a runners file that cannot be read, with
+its reason shown. purlis stops retrying on its own, shows the
+reason and offers Check pool and **Try now** (which dials once and is told again if nothing
+changed); the person's next start tries again too, and a start refused so does not wait. Said only of a machine that answered:
+one that did not is **Unreachable**. A part of **Pool** (#7187).
+_Avoid_: denied, failed, blocked
+
+**Host key changed** (a pool or runner):
+The machine presents another host key, or another engine, than the one pinned. A security stop:
+purlis never retries it on its own, and it ends only with the person's OK in pool settings. A
+part of **Pool** (ADR 0123, #7187).
+_Avoid_: key mismatch, untrusted, refused (that is a machine that answered and said no)
+
+**Runner gone** (a runner):
+The runner's container is no longer on its machine, removed outside purlis. Its chats end, and
+the window offers "Start again on this pool", which makes a runner again. A part of **Runner**
+(#4149, #7187).
+_Avoid_: removed (that is purlis's own Remove), lost, dead
+
+**Pool forgotten** (a pool):
+The person forgot the pool on this machine, whatever state it was in. Its chats and browsers end,
+and the window says so; what may be left on the machine, runners, browsers and logins, is listed
+before the person confirms. A part of **Pool** (#7122, #7139, #7187).
+_Avoid_: removed (Remove contacts the machine; forgetting does not), deleted
+
 **Label** (of a runner):
 What a runner not marked owned is for: exactly one of `harness` (runs chats), `app` (serves one
 version of a workspace repo) or `browser` (runs browsers only purlis drives). purlis enforces it
@@ -608,6 +645,15 @@ someone), and one step with one main action on the right. The steps of a kind of
 Everything it shows is read fresh, and only the person's choices are stored, so work done by hand
 or through `purlis pool` is picked up (spec #4469). Window text says Pool setup.
 _Avoid_: wizard, onboarding, add pool form (that is what it replaces)
+
+**Pool state**:
+The one state a **Pool** is in, when it is in trouble, said by Pool setup's status bar: *Unreachable*
+(purlis can't reach it and keeps trying), *Not added* (the machine or cluster would not take it; the
+pool is kept with its reason, and purlis stops trying; named `refused` in code, never *Refused* in
+the window, ui-copy R-170), *Host key changed* (purlis stops and waits for the person's OK),
+*Runner gone* (its home volume, with the sign-ins, is still there) and *Pool forgotten* (nothing to
+show). One status bar holds it and what can be done about it (#7191).
+_Avoid_: pool status, health
 
 **Claim**:
 One person's request for a runner from a pool, and the runner it is given. A **kept** claim has

@@ -42,6 +42,10 @@ pub fn run(shims: &Path, word: &str, args: &[OsString]) -> ExitCode {
     if std::env::var_os("PATH").is_some() {
         command.env("PATH", &plan.path);
     }
+    // A harness started in the person's shell tab is not the person typing (#7694).
+    for name in purlis_core::envvar::spellings(shellguard::SHELL_TAB_ENV) {
+        command.env_remove(name);
+    }
     started(command, word, &program)
 }
 

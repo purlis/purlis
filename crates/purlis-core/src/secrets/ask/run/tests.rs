@@ -165,15 +165,16 @@ fn allow_once_reaches_one_of_two_runs_holding_on_it_and_the_other_hears_so() {
         let one = scope.spawn(|| started(&asks, bound(7, &["a"]), Duration::from_secs(60)));
         let two = scope.spawn(|| started(&asks, bound(7, &["a"]), Duration::from_secs(60)));
         let id = loop {
-            let open = asks.open_runs();
-            let waiting = asks
+            // The ask and its waiters read under one lock: read apart, both runs can register
+            // between the reads, leaving an empty list beside a count of two.
+            let seen = asks
                 .inner()
                 .runs
                 .open
                 .first()
-                .map_or(0, |o| o.waiters.len());
-            if waiting == 2 {
-                break open[0].id;
+                .map(|o| (o.open.id, o.waiters.len()));
+            if let Some((id, 2)) = seen {
+                break id;
             }
             if one.is_finished() || two.is_finished() {
                 let ended = if one.is_finished() {

@@ -9,7 +9,7 @@
 //! That is what makes "the ask shows what will happen" checkable: a press performs the act a read
 //! gives **now**, and only while it is the act the person was shown.
 
-use super::ci::{PushCheck, check_push};
+use super::ci::{PushCheck, check_push_since};
 use super::recognise::valid_rev;
 use super::{Act, Against, Body, CiDiff, Prepared, Refused, Requested, Row, Shown, TagName, World};
 use crate::mergehold::{Base, HeadSha, Repo};
@@ -433,11 +433,43 @@ fn ci_push(
         }
     };
     let config = forge.ci_config_path(repo).map_err(forge_said)?;
-    let diff: CiDiff = match check_push(forge.kind(), config.as_deref(), world.trees, &base, tip) {
+    // A CI file the push leaves different from the default branch's tip now is a change, though
+    // an older base made it so; one the push leaves as the branch's tip on the forge had it is
+    // not the push's. `base` is the branch's tip, which the push's lease holds the forge to.
+    let (compare, already) = match against {
+        Against::BranchTip => {
+            let (_, default_tip) = forge.default_branch(repo).map_err(forge_said)?;
+            (default_tip, Some(&base))
+        }
+        Against::DefaultBranch(_) => (base.clone(), None),
+    };
+    let diff: CiDiff = match check_push_since(
+        forge.kind(),
+        config.as_deref(),
+        world.trees,
+        &compare,
+        already,
+        tip,
+    ) {
         PushCheck::Hold(diff) => diff,
         PushCheck::NoCiFiles => return Err(Refused::NoCiFiles),
         PushCheck::Refuse(why) => return Err(Refused::CiDiff(why)),
     };
+    // The push is one commit parented on `base` with the files the tip changes against it. A tip
+    // that lacks any commit of `base` would make that commit undo them (#7690): it is not offered,
+    // and at the press, which reads this again, it is not performed.
+    match world.trees.missing(&base, tip) {
+        Ok(0) => {}
+        Ok(_) => {
+            return Err(Refused::Behind(match &against {
+                Against::BranchTip => {
+                    format!("{} on the forge", shown_text(branch.as_str(), MOST_ENTRY))
+                }
+                Against::DefaultBranch(default) => shown_text(default.as_str(), MOST_ENTRY),
+            }));
+        }
+        Err(why) => return Err(Refused::CiDiff(why)),
+    }
     // A path is shown as it is, so one that holds a line break or a character that draws nothing
     // could read as other paths or other words: such a push is not offered.
     if let Some(bad) = diff
@@ -456,10 +488,7 @@ fn ci_push(
         ));
     }
     let compared = match &against {
-        Against::BranchTip => format!(
-            "the tip of {} on the forge",
-            shown_text(branch.as_str(), MOST_ENTRY)
-        ),
+        Against::BranchTip => String::new(),
         Against::DefaultBranch(default) => format!(
             "the tip of {}, the default branch: {} is a new branch",
             shown_text(default.as_str(), MOST_ENTRY),
@@ -470,7 +499,19 @@ fn ci_push(
         row("Repo", repo.as_str()),
         row("Branch", shown_text(branch.as_str(), MOST_ENTRY)),
         row("New tip", tip.as_str()),
-        row("Compared with", format!("{compared} ({})", base.as_str())),
+        row(
+            "Compared with",
+            match &against {
+                Against::BranchTip => format!(
+                    "the tip of the default branch ({}). {} is on the forge already, so a CI \
+                     file the push leaves as {} has it there is not counted",
+                    compare.as_str(),
+                    shown_text(branch.as_str(), MOST_ENTRY),
+                    shown_text(branch.as_str(), MOST_ENTRY)
+                ),
+                Against::DefaultBranch(_) => format!("{compared} ({})", base.as_str()),
+            },
+        ),
         row("CI files", diff.files.join(", ")),
         row("Commit message", message_row(&diff.message)?),
         row(

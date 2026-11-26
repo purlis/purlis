@@ -297,8 +297,8 @@ pub async fn forge_choose_project_account(
             .map_err(|_| "That repo is not one purlis knows.".to_string())?;
         let account = accounts::listed(&root)?
             .into_iter()
-            .find(|a| a.id == account_id)
-            .ok_or_else(|| "That account is not on this machine any more.".to_string())?;
+            .find(|a| a.id == account_id && a.state == State::SignedIn)
+            .ok_or_else(|| "That account is not signed in on this machine.".to_string())?;
         confirmed::choose_account(&scope, &root, &clone_key, kind, &host, repo_id, &account)
             .map(|_| ())
     })
@@ -344,6 +344,46 @@ pub async fn forge_trust_clone_repo(
         confirm_clone(&scope, &clone, account_id.as_deref())
     })
     .await
+}
+
+/// A clone the person trusted that is not confirmed with the forge, so no chat's route serves it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct UnconfirmedClone {
+    /// Its folder, relative to the project.
+    pub folder: String,
+    /// The `<host>/<owner>/<repo>` the trust list holds for it.
+    pub place: String,
+}
+
+/// The project's clones that are on the trust list and not confirmed with the forge: what Settings ›
+/// You › Accounts offers *Confirm* for. None in a fenced build, whose config home is not the
+/// person's.
+#[tauri::command]
+#[specta::specta]
+pub async fn forge_unconfirmed_clones(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<UnconfirmedClone>, String> {
+    let project = planes.held(&plane)?.root().to_path_buf();
+    blocking(move || {
+        host_scope()?;
+        Ok(unconfirmed_in(&project, &config_root()?))
+    })
+    .await
+}
+
+/// [`forge_unconfirmed_clones`] for `project`, against the config home `config_root`.
+pub(crate) fn unconfirmed_in(
+    project: &std::path::Path,
+    config_root: &std::path::Path,
+) -> Vec<UnconfirmedClone> {
+    purlis_core::forge::gitcredential::vouch::unconfirmed_clones(project, config_root)
+        .into_iter()
+        .map(|clone| UnconfirmedClone {
+            folder: clone.folder,
+            place: clone.place,
+        })
+        .collect()
 }
 
 /// The clone at `folder` of `project`: a child of the project, named relative to it, **as the
@@ -554,6 +594,14 @@ pub async fn forge_ci_permission_start(account_id: String) -> Result<ForgeDevice
             registration,
             &scopes,
         )?;
+        // The code stays approvable on GitHub whatever happens to this window, until it lapses.
+        workflow::pending(
+            &scope,
+            &root,
+            &account,
+            &started.user_code,
+            started.expires_in,
+        )?;
         let number = next_flow_number();
         let code = ForgeDeviceCode {
             flow: number,
@@ -613,20 +661,49 @@ pub async fn forge_ci_permission_wait(flow: u32) -> Result<CiPermissionAnswer, S
             *held = None;
         }
         drop(held);
+        // GitHub's own word that the code is over (it lapsed, or the person refused it) ends
+        // the pending record. A cancel or a failed poll does not: the code may still be approved.
+        if matches!(granted, Err(device::Ended::Denied | device::Ended::Expired)) {
+            workflow::dead(&scope, &root, &account, &started.user_code)?;
+        }
+        // What the person does next is read from the record: another code of theirs may still be
+        // live, and then a new sign-in would only record unknown again.
+        let next = workflow::held_back(&root, &account);
         let granted = granted.map_err(|why| match why {
             device::Ended::Denied => {
-                "You didn't allow it on GitHub, so nothing changed. A push that changes a CI file \
-                 stays held."
-                    .to_string()
+                format!(
+                    "You didn't allow it on GitHub. A push that changes a CI file stays held. {next}"
+                )
             }
-            other => other.said(registration.kind.display()),
+            device::Ended::Expired => {
+                format!("The code expired before you allowed it on GitHub. {next}")
+            }
+            // A cancel leaves the code live, so the record always has the wait to name.
+            device::Ended::Cancelled => format!("You cancelled. {next}"),
+            device::Ended::Failed(why) => format!("{why} {next}"),
         })?;
-        match workflow::keep(&scope, &root, keyring.as_ref(), &token_check, &account, granted)? {
+        match workflow::keep(
+            &scope,
+            &root,
+            keyring.as_ref(),
+            &token_check,
+            &account,
+            &started.user_code,
+            granted,
+        )? {
             workflow::Outcome::Kept => Ok(CiPermissionAnswer {
                 state: "ready".to_string(),
                 says: format!(
                     "{} may now push CI files when you approve one. Nothing pushes one without that.",
                     account.login
+                ),
+            }),
+            workflow::Outcome::KeptAccountHeld => Ok(CiPermissionAnswer {
+                state: "ready".to_string(),
+                says: format!(
+                    "{} may now push CI files when you approve one. {}",
+                    account.login,
+                    workflow::held_back(&root, &account)
                 ),
             }),
             workflow::Outcome::Folded(_) => Ok(CiPermissionAnswer {

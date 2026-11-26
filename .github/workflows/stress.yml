@@ -139,9 +139,10 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: stress-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
+  group: stress-${{ github.event_name == 'schedule' && 'nightly' || (github.ref == 'refs/heads/main' && github.sha) || github.ref }}
   # `ci.yml`'s reason: a PR's newest push supersedes the last, and a merge's run on `main` is
-  # the only record that commit gets.
+  # the only record that commit gets. On `main` each commit has a group of its own, since a
+  # group's one pending run is cancelled by the next push (as in `ci.yml`).
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -368,6 +369,54 @@ jobs:
         run: tools/tests-ran.sh -- cargo test -p purlis-core --lib -- planegit::tests::pollers_at_once --test-threads 1 --nocapture
         env:
           CHARTER_STANDING_FILES: "300000"
+
+  event-log-throughput:
+    # T1 (#7742): the event log keeps 1,000 events a second, sustained, from the 50 hook threads
+    # of the top class's hot chats, with each write's p95 inside L5's 50 ms. **CI absolute: a
+    # miss fails this job** (ADR 0086 §1: a timing whose budget is many times its median), so it
+    # has no `continue-on-error`, and each budget is held to the median of three ten-second
+    # rounds. Linux only, as the budgets table says. Like `fifty tabs`, it runs on `main`,
+    # nightly and by hand, never on a pull request (V70), so a miss turns `main` red after the
+    # merge that caused it rather than blocking one: the price of a load held for half a minute
+    # on a shared runner, which a pull request's run would make the slowest thing it waits for. T2 has no step yet: its subject, the audit's writer (AU-3), is
+    # not written (ADR 0075 §7), and the test's own header says so.
+    name: event log throughput (T1, ubuntu-24.04)
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Evidence first: the p95 budget is many times its median (5 ms measured), but the rate's is
+    # not (1,000/s against 1,250 offered), and it was measured on a Mac, not on this runner. Its
+    # first five main runs show whether a shared Ubuntu disk holds it (ADR 0086's starting value);
+    # then this line goes and a miss fails the job, as the table's CI absolute says.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/rust-toolchain
+      # Restores the `rust` job's cache, which builds purlis-core's tests in the dev profile, and
+      # saves none, as `standing` below does (the 10 GB the repository's caches may hold, as
+      # `stress` above says). The dev profile, not release: the budget is ten times the write's
+      # p95 there (5 ms on the operator's machine), and a release build would be a cold one.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: rust
+          save-if: false
+      # `shell: bash` for `pipefail`, so the test's own failure is the step's.
+      - name: 1,000 events a second into the event log, each write inside L5
+        shell: bash
+        run: |
+          tools/tests-ran.sh -- cargo test -p purlis-core --test it -- the_event_log_keeps_a_thousand_events_a_second:: --ignored --nocapture 2>&1 | tee t1.log
+      - name: The numbers, in the job summary
+        if: always()
+        shell: bash
+        run: |
+          touch t1.log
+          {
+            echo '### Event log throughput (T1, CI absolute)'
+            echo
+            echo '```text'
+            grep -e '^T1 | ' -e '^T1: ' -e '^L5 at ' t1.log || echo 'no measurement: the run stopped before one'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   search-at-scale:
     # FM-12 (#1115): ⌘P, ⌘⇧F and a branch's status on generated repos of 100,000 and 300,000

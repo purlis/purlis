@@ -31,15 +31,34 @@ name: stories
 # again. `workflow_dispatch` is how that job starts this one on the commit it pushed: the
 # `pull_request` run that push starts waits for a maintainer's approval.
 
+# **The ready gate** (#7335, ADR 0127). A draft's run starts no shard: `changes` says `stories` is
+# off for a draft, and marking it ready (`ready_for_review`) starts them without another push. A
+# ready pull request runs WebKit's shards alone, and the merge queue's run (`merge_group`) runs
+# both browsers, so what a pull request runs is a subset of what the queue runs
+# (`tools/ci-stages.test.mjs`). A pull request therefore draws and holds only WebKit's pictures,
+# **unless it asks for baselines**: the queue draws none, so a picture that differs in Chromium
+# alone could never be taken from it. The `update-baselines` label runs Chromium's shards too
+# (`tools/ci-scope.mjs`, `stories-browsers`), and `labeled` starts that run when the label is put
+# on after the last push; `stories-baselines.yml` takes the newest run of the head, which is it.
+# Without the label a pull request's picture that differs in Chromium alone first fails in the
+# queue: put the label on, or run this workflow by hand (both browsers), to draw it first.
+
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+  # The queue's run of the group a pull request joins: every scope, both browsers.
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main]
   workflow_dispatch:
 
 concurrency:
-  group: stories-${{ github.ref }}
-  # As in ci.yml: a newer push supersedes a PR's run, and every run on `main` is kept.
+  # A label other than `update-baselines` starts a run that does nothing (every job below skips
+  # it), so it takes a group of its own and cancels no real run.
+  group: stories-${{ github.ref == 'refs/heads/main' && github.sha || (github.event.action == 'labeled' && github.event.label.name != 'update-baselines' && github.run_id) || github.ref }}
+  # As in ci.yml: a newer push supersedes a PR's run, and every run on `main` is kept: it is
+  # grouped by its commit there, because a group's one pending run is cancelled by the next push.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -50,6 +69,8 @@ jobs:
   # on the runner, not a step of `stories`: that job's container is pulled before its first step.
   changes:
     name: what this change touches
+    # Not for a label other than `update-baselines`: every job skips then (see `concurrency`).
+    if: ${{ github.event.action != 'labeled' || github.event.label.name == 'update-baselines' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     # To read main's last run's jobs, for how many parts the stories need.
@@ -59,6 +80,7 @@ jobs:
     outputs:
       image: ${{ steps.image.outputs.image }}
       stories: ${{ steps.scope.outputs.stories }}
+      browsers: ${{ steps.scope.outputs.stories-browsers }}
       shards: ${{ steps.parts.outputs.shards }}
       of: ${{ steps.parts.outputs.of }}
     steps:
@@ -83,8 +105,7 @@ jobs:
 
   # Not a required check, so it is skipped whole when nothing it draws has changed: a docs-, skills-
   # or tools-only pull request pulls no Playwright image. A push to main and a run by hand run it;
-  # a `changes` that fails runs it too. This workflow has no merge-group run, so a scope rule that
-  # skips a story wrongly first shows on main's push run, not in the queue.
+  # a `changes` that fails runs it too. A merge group runs it with every scope, in both browsers.
   #
   # **The stories run in shards** (#4013): each browser's story files split by Vitest's `--shard`,
   # each shard a job of its own. All of them in one job took 28 minutes of its 30, and a pull
@@ -104,7 +125,8 @@ jobs:
       # Every shard runs to its end, so every story that failed is named.
       fail-fast: false
       matrix:
-        browser: [chromium, webkit]
+        # WebKit alone on a pull request, both on every other run (`stories-browsers`, #7335).
+        browser: ${{ fromJson(needs.changes.outputs.browsers || '["chromium","webkit"]') }}
         # `of` is how many parts `--shard` splits a browser's story files into, and `shard` lists
         # each part. Each report is named by both, so the check finds a part that never ran
         # (`tools/story-failures.mjs shards`).
@@ -241,9 +263,12 @@ jobs:
   stories:
     name: stories (Chromium and WebKit, axe, keyboard, screenshots)
     needs: [changes, shard]
-    if: ${{ !cancelled() && needs.changes.outputs.stories != 'false' }}
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.stories != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      # The browsers this run asked for, so a shard of one it did not run is not "missing".
+      STORY_BROWSERS: ${{ needs.changes.outputs.browsers }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

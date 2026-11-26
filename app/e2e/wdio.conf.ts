@@ -36,6 +36,8 @@ import { type Evidence, coreLogTail, recordFailure } from "./failures.js";
 import { whatTheWindowShows } from "./windowShows.js";
 import { aSessionBegins, aSessionEnds, recordTiming } from "./timings.js";
 import { specsOfPart } from "./parts.js";
+import { SPEC_FILE_RETRIES, flakesOfWorker } from "./flaky.js";
+import { quarantinedSpecs } from "./quarantined.js";
 
 /**
  * The scenario tests: WebdriverIO driving the real app, with the fake harness standing in for
@@ -176,6 +178,9 @@ export const config: WebdriverIO.Config = {
   exclude: [
     "./specs/**/*.state.e2e.ts",
     "./specs/**/*.finder.e2e.ts",
+    // Hibernate and Resume need a chat on a harness that names its conversation
+    // (`wdio.hibernate.conf.ts`, #7630).
+    "./specs/**/*.hibernate.e2e.ts",
     // The Skill studio's outcome bars are one run per harness (`wdio.outcome.conf.ts`).
     "./specs/**/*.outcome.e2e.ts",
     // The layout-file spec needs its file on disk before the app starts (`wdio.layout.conf.ts`).
@@ -196,8 +201,14 @@ export const config: WebdriverIO.Config = {
     // The nightly scale run opens a project of a thousand workspaces (`wdio.scale.conf.ts`, #5497).
     "./specs/**/*.scale.e2e.ts",
     ...(process.env.STRESS === "1" ? [] : ["./specs/stress.e2e.ts"]),
+    // A spec file that flaked three times in seven days waits in `ci/quarantine.toml` for its
+    // fix, and only the nightly run runs it (ADR 0127, `quarantined.ts`).
+    ...quarantinedSpecs(),
   ],
   maxInstances: 1,
+  // A spec file that fails is started once more in CI, and a pass on that retry is a flake: named
+  // as a warning, never silently green (ADR 0127, `flaky.ts`). Every config spreads this one.
+  specFileRetries: SPEC_FILE_RETRIES,
   framework: "mocha",
   reporters: ["spec"],
   logLevel: "warn",
@@ -215,6 +226,10 @@ export const config: WebdriverIO.Config = {
   beforeSession() {
     aSessionBegins();
     anEmptyRecord(plane);
+  },
+
+  onWorkerEnd(_cid, exitCode, specs, retriesLeft) {
+    for (const line of flakesOfWorker(exitCode, specs, retriesLeft)) console.log(line);
   },
 
   // Each spec file's whole time, for the run's notice of the slowest ones (`timings.ts`).

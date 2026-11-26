@@ -103,9 +103,11 @@ const VERDICT = new Set(["success", ...RED]);
 /**
  * The run that makes main red, of `runs` (the `ci` workflow's runs of pushes to main), or
  * `undefined`. Main's colour is its newest push run that gave a verdict: it ended green or red.
- * A run still going says nothing yet, and nor does a cancelled or skipped one: main keeps one
- * pending `ci` run, so each merge cancels the run waiting behind it, and a job that hits its time
- * limit ends `failure`, not `cancelled`. So a red main stays red until a run goes green, however
+ * A run still going says nothing yet, and nor does a cancelled or skipped one (a push's run has a
+ * concurrency group of its own, so several are in flight at once and none is displaced by the
+ * next merge; runs from before that, and one cancelled by hand, still end `cancelled`), and a job
+ * that hits its time limit ends `failure`, not `cancelled`. Runs are ordered by number, not by
+ * when they ended, so an older run that finishes after a newer one never moves main's colour. So a red main stays red until a run goes green, however
  * busy the queue is (#4578: from 2026-10-20 to 11-01, reading only the newest finished run called
  * a red main green for 9.4 of its 48.8 red hours, 170 of 575 push runs being cancelled). A rerun
  * that went green clears it, and a nightly or merge-queue run is not main's.

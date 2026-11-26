@@ -322,6 +322,110 @@ fn a_redirect_to_a_download_host_is_followed_once_with_no_credential() {
 }
 
 #[test]
+fn a_redirect_to_actions_log_and_artifact_storage_is_followed_once_with_no_credential() {
+    purlis_core::unsteered!();
+    for (path, signed) in [
+        (
+            "/repos/acme/app/actions/jobs/5/logs",
+            "https://productionresultssa7.blob.core.windows.net/actions-results/x/log.txt?sig=abc",
+        ),
+        (
+            "/repos/acme/app/actions/runs/5/logs",
+            "https://pipelines.actions.githubusercontent.com/abc/_apis/x?sig=abc",
+        ),
+        (
+            "/repos/acme/app/actions/artifacts/5/zip",
+            "https://results-receiver.actions.githubusercontent.com/a.zip?sig=abc",
+        ),
+    ] {
+        let w = World::new();
+        w.fake
+            .answer(Answer::ok("").status(302).with_header("Location", signed));
+        w.fake.answer(Answer::ok("LOGLINES"));
+        let reply = plain(&w, &gh_get(&w, path));
+        assert_eq!(reply.status, 200, "{path}: {}", reply.text());
+        assert_eq!(reply.body, b"LOGLINES");
+        let seen = w.fake.requests();
+        assert_eq!(seen.len(), 2, "{path}");
+        assert_eq!(seen[1].url, signed);
+        assert_eq!(seen[1].method, "GET");
+        assert!(
+            seen[1]
+                .headers
+                .iter()
+                .all(|(n, _)| !n.eq_ignore_ascii_case("authorization")),
+            "{path}: the credential followed the redirect: {:?}",
+            seen[1].headers
+        );
+        assert!(!format!("{:?}", seen[1]).contains(REAL));
+    }
+}
+
+#[test]
+fn a_redirect_to_a_storage_account_that_is_not_actions_results_is_not_followed() {
+    purlis_core::unsteered!();
+    let w = World::new();
+    for location in [
+        "https://attacker.blob.core.windows.net/x",
+        "https://productionresultssa.blob.core.windows.net/x",
+        "https://productionresultssa7x.blob.core.windows.net/x",
+        "https://productionresultssa7.blob.core.windows.net.evil.example/x",
+        "https://a.b.actions.githubusercontent.com/x",
+        "https://actions.githubusercontent.com/x",
+        "https://pipelines.actions.githubusercontent.com.evil.example/x",
+        "http://pipelines.actions.githubusercontent.com/x",
+        "https://pipelines.actions.githubusercontent.com:8443/x",
+        "https://pipelines.actions.githubusercontent.com./x",
+        "https://token.actions.githubusercontent.com/x",
+        "https://vstoken.actions.githubusercontent.com/x",
+        "https://productionresultssa123456.blob.core.windows.net/x",
+        "https://user@pipelines.actions.githubusercontent.com/x",
+        "https://user:pw@productionresultssa7.blob.core.windows.net/x",
+    ] {
+        w.fake
+            .answer(Answer::ok("").status(302).with_header("Location", location));
+        let reply = plain(&w, &gh_get(&w, "/repos/acme/app/actions/jobs/5/logs"));
+        assert_eq!(reply.status, 502, "{location}: {}", reply.text());
+        assert_eq!(w.fake.requests().len(), 1, "{location}");
+        w.fake.seen.lock().unwrap().clear();
+    }
+}
+
+#[test]
+fn a_second_redirect_from_ci_storage_and_one_after_a_write_are_not_followed() {
+    purlis_core::unsteered!();
+    let signed = "https://productionresultssa7.blob.core.windows.net/actions-results/x?sig=abc";
+    let w = World::new();
+    w.fake
+        .answer(Answer::ok("").status(302).with_header("Location", signed));
+    w.fake.answer(Answer::ok("").status(302).with_header(
+        "Location",
+        "https://pipelines.actions.githubusercontent.com/b",
+    ));
+    let reply = plain(&w, &gh_get(&w, "/repos/acme/app/actions/jobs/5/logs"));
+    assert!(reply.status >= 300, "{reply:?}");
+    assert_eq!(w.fake.requests().len(), 2);
+    assert!(
+        reply
+            .header("location")
+            .is_none_or(|l| !l.contains("actions.githubusercontent")),
+        "{reply:?}"
+    );
+
+    // A rerun (a write) answered with a redirect to the same place is never followed.
+    let w = World::new();
+    w.fake
+        .answer(Answer::ok("").status(302).with_header("Location", signed));
+    let request = format!(
+        "POST /repos/acme/app/actions/runs/9/rerun HTTP/1.1\r\nHost: api.github.localhost\r\nAuthorization: token {}\r\nContent-Length: 0\r\n\r\n",
+        sentinel(&w)
+    );
+    let reply = plain(&w, request.as_bytes());
+    assert_eq!(reply.status, 502, "{}", reply.text());
+    assert_eq!(w.fake.requests().len(), 1);
+}
+
+#[test]
 fn a_redirect_anywhere_else_or_a_second_one_is_not_followed() {
     purlis_core::unsteered!();
     let w = World::new();
@@ -509,13 +613,13 @@ fn a_push_is_decided_on_its_commands_and_its_branch_is_owned_only_when_the_forge
     let first = send(&push(&command("mine", &zero)));
     assert_eq!(first.status, 200, "{}", first.text());
     let moved = send(&push(&command("mine", &"2".repeat(40))));
-    assert_eq!(
-        moved.status,
-        403,
+    // Refused by the route in git's words: a report-status that rejects the ref with the reason.
+    assert_eq!(moved.status, 200, "{}", moved.text());
+    assert!(
+        moved.text().contains("ng refs/heads/mine purlis: "),
         "a branch the forge refused is not owned: {}",
         moved.text()
     );
-    assert!(moved.text().contains("ProtectedRef"), "{}", moved.text());
 
     // The forge takes it: now it is.
     w.fake.answer(Answer::ok(&format!(
@@ -524,12 +628,19 @@ fn a_push_is_decided_on_its_commands_and_its_branch_is_owned_only_when_the_forge
         pkt("ok refs/heads/mine\n")
     )));
     assert_eq!(send(&push(&command("mine", &zero))).status, 200);
+    // An update moves on only from the tip the chat put there, never from any other old id.
+    let stale = send(&push(&command("mine", &"2".repeat(40))));
+    assert!(
+        stale.status == 200 && stale.text().contains("ng refs/heads/mine purlis: "),
+        "an update from an old id the chat did not put there: {}",
+        stale.text()
+    );
     w.fake.answer(Answer::ok(&format!(
         "{}{}0000",
         pkt("unpack ok\n"),
         pkt("ok refs/heads/mine\n")
     )));
-    assert_eq!(send(&push(&command("mine", &"2".repeat(40)))).status, 200);
+    assert_eq!(send(&push(&command("mine", &new))).status, 200);
 
     // The same report inside side-band, as GitHub sends it.
     let inner = format!(
@@ -542,7 +653,7 @@ fn a_push_is_decided_on_its_commands_and_its_branch_is_owned_only_when_the_forge
     assert_eq!(send(&push(&command("banded", &zero))).status, 200);
     w.fake.answer(Answer::ok("{}"));
     assert_eq!(
-        send(&push(&command("banded", &"2".repeat(40)))).status,
+        send(&push(&command("banded", &new))).status,
         200,
         "owned after a banded report"
     );
@@ -554,7 +665,12 @@ fn a_push_is_decided_on_its_commands_and_its_branch_is_owned_only_when_the_forge
         command("release", &zero),
         command("release-1", &zero),
     ] {
-        assert_eq!(send(&push(&body)).status, 403, "{body}");
+        let reply = send(&push(&body));
+        assert!(
+            reply.status == 200 && reply.text().contains(" purlis: "),
+            "{body}: {}",
+            reply.text()
+        );
     }
     assert_eq!(w.fake.requests().len(), seen_before);
 }
@@ -614,7 +730,12 @@ fn a_push_advertisement_is_read_so_a_branch_that_exists_is_not_made() {
         push.as_bytes(),
     )
     .unwrap();
-    assert_eq!(reply.status, 403, "{}", reply.text());
+    assert_eq!(reply.status, 200, "{}", reply.text());
+    assert!(
+        reply.text().contains("ng refs/heads/taken purlis: "),
+        "{}",
+        reply.text()
+    );
 }
 
 /// An upstream whose answer arrives in pieces, with a pause before each: a long clone.

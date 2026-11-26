@@ -38,6 +38,9 @@ sha2 = "0.11"
 snow = { version = "0.10", default-features = false, features = ["use-chacha20poly1305", "use-blake2", "use-curve25519", "use-getrandom"] }
 # A link key's private half is wiped from memory when it is dropped.
 zeroize = "1"
+# The duration of each step of a remote start, as a local log line (`steps`, #7182; ADR 0075: no
+# telemetry). The version purlis-core and the app already link.
+tracing = "0.1"
 
 [target."cfg(unix)".dependencies]
 # Whether a connection's peer, and the credentials' directory and files, are this user's alone
@@ -64,6 +67,8 @@ dhat = "0.3"
 # The multiplexer's own constants, for the bounds the tests compute.
 yamux = "0.14"
 tempfile.workspace = true
+# What `steps` logged, read back by its test.
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt-multi-thread", "sync", "test-util", "time"] }
 
 # Every integration test but two as modules of one binary (#3613, #3752): each `tests/*.rs` was a

@@ -169,11 +169,15 @@ test("the gate answers green only when this commit's own ci, on its push to main
     'if [ "$DEV" != true ]; then',
     'echo "green=true" >> "$GITHUB_OUTPUT"',
     "exit 0",
-    'id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --branch main --limit 1 --json databaseId --jq \'.[0].databaseId // empty\')',
+    // One call reads both, three tries; a cancelled ci is `green=false`, never green.
+    'if out=$(gh run view "$1" --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq \'.status + " " + (.conclusion // "none")\'); then',
+    'id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --branch main --limit 1 --json databaseId --jq \'.[0].databaseId // empty\') || id=""',
+    "while :; do",
     'gh run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true',
-    'status=$(gh run view "$id" --repo "$GITHUB_REPOSITORY" --json status --jq .status)',
-    'conclusion=$(gh run view "$id" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)',
-    '[ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is built"; exit 1; }',
+    'if state=$(ask "$id"); then',
+    'read -r status conclusion <<< "$state"',
+    'if [ "$status" = completed ]; then',
+    'echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is built"',
     'if [ "$conclusion" = success ]; then',
     'echo "green=true" >> "$GITHUB_OUTPUT"',
     "else",
@@ -190,15 +194,85 @@ test("the gate answers green only when this commit's own ci, on its push to main
   assert.ok(gate.some((line) => line.startsWith('[ -n "$id" ] || { echo "::error::')));
 });
 
-test("plan runs only when the gate answered green, and a skipped plan builds and publishes nothing", () => {
-  const plan = job("plan");
-  assert.equal(value(plan, 4, "needs"), "gate");
-  const condition = value(plan, 4, "if");
-  for (const [green, runs] of [["true", true], ["false", false], ["", false]]) {
-    assert.equal(evaluate(condition, {}, { gate: { outputs: { green } } }), runs, `green=${green}`);
+test("the gate keeps waiting after a watch that ended early, and fails only once its deadline passes", () => {
+  // Dev build 45579545279: `gh run watch` ended on a 502 while `ci` was in progress, and the
+  // gate read `in_progress` and failed. Run the gate's own wait loop against a fake `gh`.
+  const run = job("gate").map((line) => line.replace(/^ {10}/, ""));
+  const from = run.findIndex((line) => line.startsWith("deadline="));
+  const to = run.findIndex((line, i) => i > from && line === "done");
+  assert.ok(from !== -1 && to !== -1, "the gate has no wait loop");
+  const loop = run.slice(from, to + 1).join("\n");
+  const ask = run.slice(run.findIndex((line) => line.startsWith("ask()")), run.findIndex((line) => line === "}") + 1).join("\n");
+  const dir = mkdtempSync(join(tmpdir(), "gate-wait-"));
+  const attempt = (views, seconds = 0) => {
+    writeFileSync(join(dir, "views"), views.join("\n") + "\n");
+    writeFileSync(join(dir, "count"), "0");
+    const script = `
+      set -euo pipefail
+      cd "${dir}"
+      sleep() { :; }
+      gh() {
+        case "$2" in
+          watch) return 1 ;; # every watch ends early, as on a 502
+          view)
+            n=$(( $(cat count) + 1 )); echo "$n" > count
+            line=$(sed -n "$(( n > $(wc -l < views) ? $(wc -l < views) : n ))p" views)
+            [ "$line" != error ] || return 1
+            echo "$line" ;;
+        esac
+      }
+      GITHUB_REPOSITORY=o/r GITHUB_SHA=abc id=1 gh=gh
+      ${ask.replaceAll('"$gh"', "gh")}
+      ${seconds ? `SECONDS=${seconds}` : ""}
+      ${loop.replaceAll('"$gh"', "gh").replace("$((SECONDS + 7200))", seconds ? "$((SECONDS - 1))" : "$((SECONDS + 7200))")}
+      echo "$status $conclusion"
+    `;
+    try {
+      return { out: execFileSync("bash", ["-c", script], { encoding: "utf8", timeout: 20_000, stdio: ["ignore", "pipe", "pipe"] }).trim(), ok: true };
+    } catch (error) {
+      return { out: `${error.stdout}${error.stderr}`, ok: false };
+    }
+  };
+  // An early watch exit, an API error and `in_progress` come first; the run ends success later.
+  const late = attempt(["in_progress none", "error", "error", "error", "in_progress none", "completed success"]);
+  assert.ok(late.ok, late.out);
+  // The two jobs that sign and upload carry the same loop as the gate, only `$gh` for `gh`.
+  const loopOf = (name) => job(name).map((l) => l.trim()).join("\n").replaceAll('"$gh"', "gh").match(/deadline=[\s\S]*?\ndone\n/)?.[0];
+  for (const name of ["build", "runner-binary-aarch64"]) {
+    const other = loopOf(name)?.replace(/so nothing is signed or uploaded/g, "so nothing is built");
+    assert.equal(other, loopOf("gate"), `${name}'s wait differs from the gate's`);
   }
-  assert.equal(value(job("build"), 4, "needs"), "plan");
-  assert.equal(value(job("runner-image"), 4, "needs"), "plan");
+  assert.equal(late.out, "completed success");
+  // A run that ends red is still read as red, for the caller's verdict.
+  assert.equal(attempt(["queued none", "completed failure"]).out, "completed failure");
+  // Past the deadline an unfinished run, or one that cannot be read, fails the step.
+  const stuck = attempt(["in_progress none"], 1);
+  assert.ok(!stuck.ok && stuck.out.includes("is in_progress after the wait"), stuck.out);
+  const unreadable = attempt(["error"], 1);
+  assert.ok(!unreadable.ok && unreadable.out.includes("could not read ci run"), unreadable.out);
+});
+
+test("plan does not wait for the gate, and what signs, uploads or publishes runs only when the gate answered green", () => {
+  // R2 (#7381): `plan` and `keys` hold nothing, and `build` compiles while `ci` runs. The jobs
+  // that publish are behind the gate; `crates/release-manifest` holds each of them on a workflow
+  // broken on purpose.
+  const plan = job("plan");
+  for (const key of ["needs", "if", "environment"]) {
+    assert.ok(!plan.some((line) => line.startsWith(`    ${key}:`)), `plan has \`${key}:\``);
+  }
+  assert.equal(value(job("keys"), 4, "needs"), "plan");
+  assert.equal(value(job("build"), 4, "needs"), "[plan, keys]");
+  const condition = value(job("runner-image"), 4, "if");
+  assert.equal(value(job("runner-image"), 4, "needs"), "[gate, plan, keys]");
+  for (const [green, publish, runs] of [
+    ["true", "true", true],
+    ["false", "true", false],
+    ["", "true", false],
+    ["true", "false", false],
+  ]) {
+    const needs = { gate: { outputs: { green } }, keys: { outputs: { publish } } };
+    assert.equal(evaluate(condition, {}, needs), runs, `green=${green} publish=${publish}`);
+  }
 });
 
 test("a dev build's commit is checked against main's history before anything from the checkout runs", () => {
@@ -231,8 +305,8 @@ test("a dev build is the commit its green ci ran on, the run's own commit, and n
   // The first checkout of `plan`, and the `SHA` every later job checks out as `plan`'s `sha`.
   assert.equal(plan.find((line) => line.trim().startsWith("ref:"))?.trim(), `ref: ${sha}`);
   assert.ok(plan.includes(`          SHA: ${sha}`), "plan's SHA is not the ci run's commit");
-  assert.ok(plan.includes('            echo "sha=$SHA"; echo "tag=$tag"; echo "signed=$HAS_UPDATER_KEY"; echo "skip=$skip"'));
-  for (const name of ["build", "sbom", "manifest", "publish"]) {
+  assert.ok(plan.includes('            echo "sha=$SHA"; echo "tag=$tag"; echo "skip=$skip"'));
+  for (const name of ["build", "build-signer", "sbom", "manifest", "publish"]) {
     const refs = job(name).filter((line) => line.trim().startsWith("ref:"));
     assert.deepEqual(
       refs.map((line) => line.trim()),
@@ -262,10 +336,11 @@ test("plan asks whether the dev channel already serves this commit or a later on
   assert.ok(ask < plan.indexOf('} >> "$GITHUB_OUTPUT"'));
   assert.ok(plan.includes("GH_TOKEN: ${{ github.token }}"));
   // And `skip` is what keeps every build, and so every publish, from starting.
-  assert.equal(value(job("build"), 4, "if"), "needs.plan.outputs.skip != 'true'");
+  assert.equal(value(job("keys"), 4, "if"), "needs.plan.outputs.skip != 'true'");
+  assert.equal(value(job("build"), 4, "if"), "needs.keys.outputs.skip != 'true'");
   assert.equal(
     value(job("publish"), 4, "needs"),
-    "[plan, build, runner-binaries, manifest, provenance]",
+    "[gate, plan, keys, build, sign-macos, runner-binaries, manifest, provenance]",
   );
 });
 
@@ -308,7 +383,10 @@ test("every job has a deadline, so a hung one cannot hold the dev builds' group 
   assert.deepEqual(names, [
     "gate",
     "plan",
+    "keys",
     "build",
+    "build-signer",
+    "sign-macos",
     "runner-image",
     "runner-image-signature",
     "runner-binary-aarch64",
@@ -338,10 +416,12 @@ test("every job has a deadline, so a hung one cannot hold the dev builds' group 
       continue;
     }
     const minutes = Number(value(body, 4, "timeout-minutes"));
-    // The build is one long job: a cold macOS build takes 65 to 68 minutes (ADR 0092). The gate
+    // The build is one long job: a cold macOS build took 65 to 68 minutes (ADR 0092), and 106 to
+    // 107 by 2026-11-22 (run 45030876196 hit its old 120 and was cancelled). The gate
     // is the other: it waits for this commit's `ci`, which took up to 111 minutes on a push to
     // main in the first week of November 2026.
-    const most = { build: 120, gate: 150 }[name] ?? 90;
+    // `runner-binary-aarch64` is the third: it compiles, then waits for the same `ci` (R2).
+    const most = { build: 150, gate: 150, "runner-binary-aarch64": 150 }[name] ?? 90;
     assert.ok(Number.isInteger(minutes) && minutes >= 10 && minutes <= most, `${name}: ${minutes}`);
     minutesOf.set(name, minutes);
   }
@@ -435,18 +515,18 @@ test("the Linux build turns on more swap before anything compiles", () => {
   const name = head.lastIndexOf("- name:");
   assert.match(head.slice(name), /if: runner\.os == 'Linux'/);
   assert.ok(swap < steps.indexOf("rust-toolchain"), "the swap is turned on before the toolchain is installed");
-  assert.ok(swap < steps.indexOf("Build the app"), "the swap is turned on before the app is built");
+  assert.ok(swap < steps.indexOf("Compile the app, the purlis binary"), "the swap is turned on before anything compiles");
 });
 
 test("the debug symbols go up in a job of their own that never holds a release back (#5692)", () => {
   const symbols = job("symbols");
   // After the build, from what it saved, so the build's own time is untouched.
-  assert.deepEqual(needsOf(symbols), ["plan", "build"]);
+  assert.deepEqual(needsOf(symbols), ["gate", "plan", "keys", "build"]);
   // Whenever the run publishes, even when one platform's build failed and the other's saved
   // its symbols; never in a cancelled run.
   assert.equal(
     value(symbols, 4, "if"),
-    "${{ !cancelled() && needs.plan.outputs.publish == 'true' }}",
+    "${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && needs.keys.result == 'success' }}",
   );
   // A red here leaves the run green, and nothing that publishes waits on it.
   assert.equal(value(symbols, 4, "continue-on-error"), "true");
@@ -499,7 +579,7 @@ test("the macOS build collects each dSYM cargo left behind its symlink, whole (#
   writeFileSync(join(dwarf, "purlis-0123"), "dwarf");
   symlinkSync("deps/purlis-0123.dSYM", join(dir, "target/release/purlis.dSYM"));
 
-  execFileSync("bash", ["-c", script], { cwd: dir, env: { ...process.env, PROFILE: "release" } });
+  execFileSync("bash", ["-c", script], { cwd: dir, timeout: 20_000, env: { ...process.env, PROFILE: "release" } });
 
   const kept = join(dir, "symbols/purlis.dSYM");
   assert.ok(lstatSync(kept).isDirectory(), "the dSYM itself, not its link");
@@ -524,14 +604,11 @@ test("every compile of a build takes the Report intake's address from the releas
   const build = job("build");
   // The secret is reached only where the build publishes: the job's environment says so, on
   // both channels, a dev build too (its reports say channel=dev, from its profile).
-  assert.equal(value(build, 4, "environment"), "${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}");
-  // `option_env!` reads it when purlis-core compiles: the command line's build and both of
-  // Tauri's. With the secret absent it is empty, which is no address, so nothing is sent.
-  for (const name of [
-    "The purlis binary the app's hooks run, its charter alias, and the built-in extensions",
-    "Build the app",
-    "Build the extra bundle",
-  ]) {
+  assert.equal(value(build, 4, "environment"), "${{ needs.keys.outputs.publish == 'true' && 'release' || '' }}");
+  // `option_env!` reads it when purlis-core compiles: the one cargo run, Tauri's (R1, #7380).
+  // With the secret absent it is empty, which is no address, so nothing is sent. The bundling
+  // steps compile nothing, so they are not given it.
+  for (const name of ["Compile the app, the purlis binary and the built-in extensions"]) {
     assert.ok(
       step(build, name).includes("PURLIS_REPORT_INTAKE_DSN: ${{ secrets.PURLIS_REPORT_INTAKE_DSN }}"),
       `${name} builds without the intake's address`,
@@ -557,7 +634,7 @@ test("the runner binaries are build's own and one keyless job's, signed by a job
   assert.ok(!arm.some((line) => line.includes("cargo install")));
 
   const sign = job("runner-binaries");
-  assert.equal(value(sign, 4, "needs"), "[plan, build, runner-binary-aarch64]");
+  assert.equal(value(sign, 4, "needs"), "[gate, plan, keys, build, runner-binary-aarch64]");
   const signer = step(sign, "The signer, built with no key in reach");
   assert.ok(!signer.some((line) => line.includes("secrets.")), "no secret where it compiles");
   const signing = step(sign, "Signed with the updater's key for this version and platform");
@@ -578,8 +655,138 @@ test("the runner binaries are build's own and one keyless job's, signed by a job
   }
 });
 
+// The macOS updater archive's signer: compiled by a keyless job on a hosted runner while `build`
+// compiles, and run by `sign-macos` only once its bytes are the ones that job hashed.
+test("the updater archive's signer is a keyless hosted job's, and sign-macos runs it only once its sha256 matches", () => {
+  const built = job("build-signer");
+  assert.equal(value(built, 4, "needs"), "[plan, keys]", "it starts with the build, not after it");
+  assert.equal(value(built, 4, "runs-on"), "macos-latest");
+  for (const key of ["environment", "strategy", "container"]) {
+    assert.ok(!built.some((line) => line.startsWith(`    ${key}:`)), `build-signer has \`${key}:\``);
+  }
+  assert.ok(!built.some((line) => !line.trim().startsWith("#") && /secrets|vars\.|github\.token/.test(line)), "nothing in reach");
+  assert.deepEqual(
+    built.slice(built.indexOf("    permissions:") + 1, built.indexOf("    permissions:") + 2).map((l) => l.trim()),
+    ["contents: read"],
+  );
+  assert.equal(value(built, 4, "permissions"), "");
+  assert.ok(built.some((line) => line.trim() === "sha256: ${{ steps.signer.outputs.sha256 }}"));
+  const compile = step(built, "The updater archive's signer, built with no key in reach");
+  assert.ok(compile.includes("cargo build --locked --release -p release-manifest --bin sign-updater-archive"));
+  assert.ok(compile.includes(`sha=$(shasum -a 256 target/release/sign-updater-archive | cut -d' ' -f1)`));
+
+  const sign = job("sign-macos");
+  assert.equal(value(sign, 4, "needs"), "[gate, plan, keys, build, build-signer]");
+  assert.ok(value(sign, 4, "if").includes("needs.build-signer.result == 'success'"));
+  assert.ok(
+    !sign.some((line) => !line.trim().startsWith("#") && /\bcargo\b|rust-toolchain/.test(line)),
+    "sign-macos compiles nothing",
+  );
+  const check = step(sign, "The signer is the one build-signer built");
+  assert.ok(check.includes("SIGNER_SHA256: ${{ needs.build-signer.outputs.sha256 }}"));
+  assert.ok(check.includes(`got=$(shasum -a 256 signer/sign-updater-archive | cut -d' ' -f1)`));
+  assert.ok(check.some((line) => line.startsWith('[ "$got" = "$SIGNER_SHA256" ]')));
+  const at = (name) => sign.findIndex((line) => line.trim() === `- name: ${name}`);
+  const downloaded = sign.findIndex((line) => line.trim() === "name: purlis-updater-signer-${{ needs.plan.outputs.version }}");
+  assert.ok(downloaded !== -1 && downloaded < at("The signer is the one build-signer built"));
+  assert.ok(at("The signer is the one build-signer built") < at("The updater archive's signature"));
+  assert.ok(
+    step(sign, "The updater archive's signature").includes('signer/sign-updater-archive dist/purlis-darwin-aarch64.app.tar.gz "$VERSION"'),
+  );
+});
+
 test("a dev publish keeps the last dev builds' runner assets, not only its own", () => {
   const publish = job("publish").join("\n");
   assert.match(publish, /node tools\/dev-runner-assets\.mjs "\$VERSION"/);
   assert.doesNotMatch(publish, /startswith\("purlis-'"\$VERSION"'-"\)/);
+});
+
+test("plan skips a dev build that ships nothing, asks before the order is asked, and says so in the summary", () => {
+  const plan = job("plan").map((line) => line.trim());
+  const ships = plan.findIndex((l) => l.startsWith('why=$(GITHUB_OUTPUT="$ships_out" node tools/ci-scope.mjs ships dev "$SHA")'));
+  assert.notEqual(ships, -1, "plan does not ask tools/ci-scope.mjs ships");
+  // Only a dev build is asked, and never after something already skipped it.
+  assert.equal(plan.slice(0, ships).findLast((l) => l.startsWith("if [")), 'if [ "$DEV" = true ] && [ "$skip" != "true" ]; then');
+  assert.ok(plan.slice(ships).some((l) => l.includes("skip=true; publish=false")));
+  assert.ok(plan.slice(ships, ships + 14).some((l) => l.includes(">> \"$GITHUB_STEP_SUMMARY\"")));
+  assert.ok(ships < plan.indexOf('order=$(node tools/dev-build-order.mjs --version "$version" --sha "$SHA")'));
+  assert.ok(ships < plan.indexOf('} >> "$GITHUB_OUTPUT"'));
+});
+
+// The macOS build may run on the operator's own Macs (docs/updating.md, "Building macOS on a
+// self-hosted Mac"), chosen by one repository variable and nothing in the code.
+const MACOS_RUNNER = `\${{ matrix.os == 'macos-latest' && needs.plan.outputs.channel == 'dev' && needs.plan.outputs.profile == 'dev-release' && fromJSON(vars.MACOS_RELEASE_RUNNER || '"macos-latest"') || matrix.os }}`;
+
+test("the macOS build's runner is the repository variable's, and macos-latest when it is unset", () => {
+  assert.equal(value(job("build"), 4, "runs-on"), MACOS_RUNNER);
+});
+
+test("a stable build, and the profile guard that builds like one, can never take the variable's runner", () => {
+  // The guard's own condition is held to what `plan` decides for each way in: a tag is channel
+  // `stable` with profile `release`; the schedule is `dev` with `release`; only a dev channel
+  // build has `dev-release`. Every one but the last stays on `macos-latest`.
+  const plan = job("plan").join("\n");
+  assert.match(plan, /channel=stable; publish=true[\s\S]*?profile=release;/);
+  assert.match(plan, /schedule\)[\s\S]*?channel=dev; publish=false\s+profile=release;/);
+  assert.equal(plan.match(/profile=dev-release/g)?.length >= 1, true);
+  const on = value(job("build"), 4, "runs-on");
+  for (const needle of ["needs.plan.outputs.channel == 'dev'", "needs.plan.outputs.profile == 'dev-release'"]) {
+    assert.ok(on.includes(needle), `build's runs-on lacks ${needle}`);
+  }
+  assert.ok(on.indexOf("dev-release") < on.indexOf("MACOS_RELEASE_RUNNER"), "the condition comes before the variable");
+  // And the provenance checks stay as they were: no verification of a release drops the flag.
+  assert.equal(text.match(/--deny-self-hosted-runners/g)?.length, 2);
+});
+
+test("the variable reaches no runner of release.yml but the build's, and no other job names a self-hosted one", () => {
+  const readers = [...lines.entries()].filter(([, l]) => l.includes("MACOS_RELEASE_RUNNER") && !l.trim().startsWith("#"));
+  assert.equal(readers.length, 1, "MACOS_RELEASE_RUNNER is read in one place");
+  for (const [name, body] of Object.entries(Object.fromEntries([...jobsOf()]))) {
+    if (name === "build") continue;
+    for (const line of body.filter((l) => l.startsWith("    runs-on:"))) {
+      assert.doesNotMatch(line, /self-hosted|vars\.|fromJSON/, `${name} runs-on`);
+    }
+  }
+  assert.doesNotMatch(lines.filter((l) => !l.trim().startsWith("#")).join("\n"), /runs-on:.*self-hosted/);
+});
+
+function* jobsOf() {
+  let current = null;
+  let body = [];
+  for (const line of block("jobs")) {
+    const m = /^ {2}([\w-]+):$/.exec(line);
+    if (m) {
+      if (current) yield [current, body];
+      current = m[1];
+      body = [];
+    } else body.push(line);
+  }
+  if (current) yield [current, body];
+}
+
+test("a persistent runner's build starts clean, keeps nothing of the last one, and drops its keychain even when it fails", () => {
+  const build = job("build");
+  const steps = build.join("\n").split(/\n {6}- /);
+  const named = (text) => steps.find((s) => s.startsWith(`name: ${text}`));
+  const wipe = named("A self-hosted runner's workspace starts empty");
+  const homes = named("A self-hosted runner's Cargo, rustup and temporary folder are this job's own");
+  const keychain = named("A self-hosted runner keeps no keychain, certificate or job folder");
+  assert.ok(wipe && homes && keychain, "a step of the self-hosted clean-up is missing");
+  for (const s of [wipe, homes]) assert.match(s, /if: runner\.environment == 'self-hosted'/);
+  assert.match(keychain, /if: steps\.ci\.outputs\.green == 'true' && always\(\) && runner\.environment == 'self-hosted' && runner\.os == 'macOS'/);
+  assert.match(keychain, /security delete-keychain/);
+  assert.match(homes, /CARGO_HOME=/);
+  assert.match(homes, /RUSTUP_HOME=/);
+  assert.match(homes, /TMPDIR=/);
+  // The workspace is emptied before the checkout, the homes are set before the toolchain installs,
+  // and the keychain goes last.
+  const order = (s) => build.join("\n").indexOf(s);
+  assert.ok(order(wipe) < order("uses: actions/checkout@"));
+  assert.ok(order(homes) < order("uses: ./.github/actions/rust-toolchain"));
+  assert.ok(order("Wait for this commit's ci on main") < order(keychain));
+  // Neither the swap file nor `sudo` may reach a Mac: both are Linux's.
+  assert.match(named("More swap for the build"), /if: runner\.os == 'Linux'/);
+  // (The summary step prints the person's install commands, `sudo` among them, and runs none.)
+  const nonLinux = steps.filter((s) => !/runner\.os == 'Linux'|RUNNER_OS" = "Linux"/.test(s) && !s.startsWith("name: What a person sees when they install it"));
+  assert.ok(nonLinux.every((s) => !/\bsudo\b|\bbrew\b/.test(s.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n"))), "a step without a Linux guard calls sudo or brew");
 });

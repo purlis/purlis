@@ -62,6 +62,16 @@ pub struct PolicyOverride {
     pub runs: String,
 }
 
+/// What the waiting row for the merge opt-in is named: the route changes, not the hook's mode.
+const MERGE_ROUTE_ROW: &str = "merges through the forge route";
+
+/// What the waiting row for lineage is named: a parent taking up its ended child's branch through
+/// the forge route (`[policy] lineage`).
+const LINEAGE_ROW: &str = "lineage through the forge route";
+
+/// What a waiting row for a protected branch the project dropped is named, before the branch.
+const PROTECTED_ROW: &str = "protected branch";
+
 /// The project's `[policy]` as the window says it: one [`enforcement::standing`], so the template,
 /// the families set apart, what waits and the digest Accept names are all of one read of the
 /// file. Only reads: the core alone resolves the policy, and nothing here keeps anything.
@@ -82,10 +92,21 @@ fn state_of(root: &std::path::Path) -> PolicyState {
         waiting: standing
             .waiting
             .into_iter()
-            .map(|(family, accepted, committed)| PolicyWaiting {
-                family: family.key().to_owned(),
-                accepted: accepted.word().to_owned(),
-                committed: committed.word().to_owned(),
+            .map(|(family, accepted, committed)| {
+                // The merge opt-in's row has equal modes, because the hook already runs the
+                // mode (`watch` is `log`): what changes is the forge route, held until now.
+                if family == enforcement::Family::GuardsMerge && accepted == committed {
+                    return PolicyWaiting {
+                        family: MERGE_ROUTE_ROW.to_owned(),
+                        accepted: "held".to_owned(),
+                        committed: committed.word().to_owned(),
+                    };
+                }
+                PolicyWaiting {
+                    family: family.key().to_owned(),
+                    accepted: accepted.word().to_owned(),
+                    committed: committed.word().to_owned(),
+                }
             })
             // The sandbox waits by its level (the follow-up's item 1): `off`, `floor` or `full`.
             .chain(standing.level.map(|(accepted, committed)| PolicyWaiting {
@@ -100,6 +121,23 @@ fn state_of(root: &std::path::Path) -> PolicyState {
                 accepted: "denied".to_owned(),
                 committed: "lifted".to_owned(),
             }))
+            // Lineage the person accepted a denial of, that the project's file now allows, and a
+            // protected branch it no longer names, wait for the same press.
+            .chain(standing.lineage_waiting.then(|| PolicyWaiting {
+                family: LINEAGE_ROW.to_owned(),
+                accepted: "denied".to_owned(),
+                committed: "allowed".to_owned(),
+            }))
+            .chain(
+                standing
+                    .protection_lifted
+                    .into_iter()
+                    .map(|name| PolicyWaiting {
+                        family: format!("{PROTECTED_ROW} {name}"),
+                        accepted: "protected".to_owned(),
+                        committed: "lifted".to_owned(),
+                    }),
+            )
             .collect(),
         refused: standing.refused,
         not_in_force: standing

@@ -51,3 +51,21 @@ describe("StepList", () => {
     expect(onGo).not.toHaveBeenCalled();
   });
 });
+
+describe("a step's time", () => {
+  it("is said in words under the step's line, and only where there is one", () => {
+    render(
+      <StepList
+        aria-label="Steps"
+        steps={[
+          { id: "a", name: "Where", state: "done", took: "4 s" },
+          { id: "b", name: "Pool", state: "current" },
+        ]}
+        showing="b"
+        onGo={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByText(/^took /)).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /Where.*took 4 s/ })).toBeTruthy();
+  });
+});

@@ -45,8 +45,9 @@ pub struct AllowedRepo {
     /// source checks the person's confirmation against, and which a GitLab REST path may use
     /// instead of the path.
     pub(crate) project_id: Option<u64>,
-    /// Branches the chat may move and delete from the start: the ones purlis made for it.
-    pub(crate) own_branches: Vec<String>,
+    /// Branches the chat may move from the start, each with the tip it stands at: the ones purlis
+    /// made for it. An update is let through only from that tip.
+    pub(crate) own_branches: Vec<(String, String)>,
 }
 
 impl AllowedRepo {
@@ -80,7 +81,9 @@ impl AllowedRepo {
         })
     }
 
-    /// Branches a push may never touch, besides the default one.
+    /// Branches a push may never touch, besides the default one and the built-in names
+    /// ([`Self::protects`]): each a name, or a pattern with `*`, as the project commits them
+    /// (`[risk] protected_branches`: [`crate::askrisk::committed_protected_branches`]).
     #[must_use]
     pub fn with_protected_branches(mut self, names: &[&str]) -> Self {
         self.protected_branches = names.iter().map(|n| (*n).to_string()).collect();
@@ -102,11 +105,15 @@ impl AllowedRepo {
         self
     }
 
-    /// Branches the chat owns from the start (the one purlis cut for its task). A branch the chat
-    /// creates later is recorded as it is pushed; any other it may not move or delete.
+    /// Branches the chat owns from the start, each as `(name, tip)`. A branch the chat creates
+    /// later is recorded as it is pushed; any other it may not move or delete, and an owned one it
+    /// may move only from its tip.
     #[must_use]
-    pub fn with_own_branches(mut self, names: &[&str]) -> Self {
-        self.own_branches = names.iter().map(|n| (*n).to_string()).collect();
+    pub fn with_own_branches(mut self, own: &[(&str, &str)]) -> Self {
+        self.own_branches = own
+            .iter()
+            .map(|(n, t)| ((*n).to_string(), t.to_ascii_lowercase()))
+            .collect();
         self
     }
 
@@ -124,6 +131,12 @@ impl AllowedRepo {
 
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    /// The forge's numeric id of the repo, where it was recorded: what a credential request
+    /// carries for it.
+    pub fn forge_id(&self) -> Option<u64> {
+        self.project_id
     }
 
     /// The host this repo's API answers on: `api.github.com` for github.com, the same host
@@ -154,14 +167,25 @@ impl AllowedRepo {
             "release",
             "deploy",
         ];
-        const PREFIXES: &[&str] = &["release/", "release-", "deploy/", "prod/", "production/"];
+        const PREFIXES: &[&str] = &[
+            "release/",
+            "release-",
+            "deploy/",
+            "prod/",
+            "production/",
+            // The one built-in integration namespace (ADR 0128, amended 2026-11-24): only the
+            // merge Ask lands on `integration/x`. Any other integration branch is named exactly
+            // in `[risk] protected_branches`; a prefix *shape* (`m75-*`, `phase-*`) would take
+            // the ordinary task branches a chat cuts, `m75-20-grants-and-nevers-7029-…`.
+            "integration/",
+        ];
         lower == self.default_branch.to_ascii_lowercase()
             || NAMES.contains(&lower.as_str())
             || PREFIXES.iter().any(|p| lower.starts_with(p))
             || self
                 .protected_branches
                 .iter()
-                .any(|p| lower == p.to_ascii_lowercase())
+                .any(|p| crate::askrisk::matches(&p.to_ascii_lowercase(), &lower))
     }
 }
 
@@ -228,4 +252,65 @@ fn is_name_segment(s: &str) -> bool {
         && s != ".."
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repo() -> AllowedRepo {
+        AllowedRepo::new(Kind::GitHub, "github.com", 443, "acme/app", "trunk").unwrap()
+    }
+
+    #[test]
+    fn only_the_integration_namespace_is_protected_by_shape_without_a_setting() {
+        let repo = repo();
+        for name in ["trunk", "integration/policy", "Integration/x"] {
+            assert!(repo.protects(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_task_branch_shaped_like_a_slice_is_not_protected_without_a_setting() {
+        let repo = repo();
+        for name in [
+            "m75-20-grants-and-nevers-7029-me7gkfx1",
+            "phase-1-proven-prs-take-the-new-base-d0d8j23f",
+            "m76-3-foo",
+            "m75-policy",
+            "phase-1-proven",
+            "integration-x",
+            "my-fix",
+            "m-x",
+            "phases",
+        ] {
+            assert!(!repo.protects(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_milestone_branch_the_project_names_exactly_is_protected_and_its_slices_are_not() {
+        let repo = repo().with_protected_branches(&["m75-policy", "phase-1-proven"]);
+        for name in ["m75-policy", "M75-Policy", "phase-1-proven"] {
+            assert!(repo.protects(name), "{name}");
+        }
+        for name in [
+            "m75-policy-2",
+            "m75-20-grants-and-nevers-7029-me7gkfx1",
+            "phase-1-proven-prs-take-the-new-base-d0d8j23f",
+        ] {
+            assert!(!repo.protects(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_committed_pattern_protects_what_it_matches_and_a_plain_name_only_itself() {
+        let repo = repo().with_protected_branches(&["stable", "lts/*", "*-frozen"]);
+        for name in ["stable", "Stable", "lts/1", "lts/a/b", "x-frozen"] {
+            assert!(repo.protects(name), "{name}");
+        }
+        for name in ["stable2", "lts", "frozen", "x-frozen-y"] {
+            assert!(!repo.protects(name), "{name}");
+        }
+    }
 }

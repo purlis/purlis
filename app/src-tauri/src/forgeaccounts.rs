@@ -59,6 +59,10 @@ pub struct ForgeAccountRow {
     pub scopes: Option<Vec<String>>,
     /// The scopes beyond what purlis needs (ADR 0077 §2).
     pub wider: Vec<String>,
+    /// Whether the second sign-in for CI files is already given (its token is kept apart, so the
+    /// scopes above never show it). Only the listing ([`forge_accounts`]) asks the keychain; a row
+    /// another command returns says `false`, and the window reads the list again.
+    pub ci_allowed: bool,
 }
 
 impl From<ForgeAccount> for ForgeAccountRow {
@@ -82,6 +86,7 @@ impl From<ForgeAccount> for ForgeAccountRow {
             login: account.login,
             scopes: account.scopes,
             wider,
+            ci_allowed: false,
         }
     }
 }
@@ -230,6 +235,7 @@ pub fn trouble_said(id: &str, trouble: &purlis_core::forge::refresh::Trouble) ->
             Trouble::RenewalFailing { .. } => "renewal-failing",
             Trouble::EverydayHoldsWorkflow => "everyday-holds-workflow",
             Trouble::ScopesUnknown => "scopes-unknown",
+            Trouble::SecondSignInRefused => "second-sign-in-refused",
         },
     }
 }
@@ -269,10 +275,29 @@ pub async fn forge_accounts() -> Result<Vec<ForgeAccountRow>, String> {
         let keyring = accounts::keyring_at(&root);
         Ok(accounts::list(&root, keyring.as_ref())?
             .into_iter()
-            .map(ForgeAccountRow::from)
+            .map(|account| {
+                let ci_allowed = ci_allowed(&account, || {
+                    accounts::workflow::availability(keyring.as_ref(), &account)
+                });
+                ForgeAccountRow {
+                    ci_allowed,
+                    ..ForgeAccountRow::from(account)
+                }
+            })
             .collect())
     })
     .await
+}
+
+/// Whether the second sign-in for CI files is given for `account`: GitHub only (GitLab has one
+/// token and no second to give), signed in, and the second token kept.
+fn ci_allowed(
+    account: &ForgeAccount,
+    availability: impl FnOnce() -> accounts::workflow::Availability,
+) -> bool {
+    account.kind == Kind::GitHub
+        && account.state == State::SignedIn
+        && availability() == accounts::workflow::Availability::Ready
 }
 
 /// The scopes a token needs on `kind` and the page that makes one on `host`, or why `host` is not
@@ -731,6 +756,33 @@ pub async fn forge_sign_out(id: String) -> Result<Option<bool>, String> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn ci_files_are_allowed_only_for_a_signed_in_github_account_that_holds_the_second_token() {
+        use super::*;
+        use accounts::workflow::Availability::{NeedsPress, Ready};
+        let account = |kind, state| ForgeAccount {
+            id: "01J9CIALLOWED".into(),
+            kind,
+            host: "ci-allowed.example.com".into(),
+            login: "octocat".into(),
+            method: Method::Device,
+            state,
+            scopes: Some(vec!["repo".into()]),
+            client_id: None,
+        };
+        let github = account(Kind::GitHub, State::SignedIn);
+        assert!(!ci_allowed(&github, || NeedsPress), "no second token yet");
+        assert!(ci_allowed(&github, || Ready));
+        assert!(
+            !ci_allowed(&account(Kind::GitHub, State::SignedOut), || Ready),
+            "a signed-out account allows nothing"
+        );
+        assert!(
+            !ci_allowed(&account(Kind::GitLab, State::SignedIn), || Ready),
+            "GitLab has one token and no second to allow"
+        );
+    }
+
+    #[test]
     fn a_trouble_is_told_to_the_window_by_account_and_kind_and_nothing_else() {
         use purlis_core::forge::refresh::Trouble;
         let pin = trouble_said("01J9ACCOUNT", &Trouble::PinChanged);
@@ -742,6 +794,11 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&failing).unwrap(),
             serde_json::json!({"account": "01J9ACCOUNT", "trouble": "renewal-failing"})
+        );
+        let refused = trouble_said("01J9ACCOUNT", &Trouble::SecondSignInRefused);
+        assert_eq!(
+            serde_json::to_value(&refused).unwrap(),
+            serde_json::json!({"account": "01J9ACCOUNT", "trouble": "second-sign-in-refused"})
         );
     }
 
@@ -829,10 +886,17 @@ mod tests {
         for _ in 0..2 {
             refresher.token_at(&account, near_its_end).unwrap();
         }
-        let heard = heard.lock().unwrap();
+        // Only this account's: the handler is the process's, and other tests raise troubles too.
+        let heard: Vec<serde_json::Value> = heard
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|one| serde_json::from_str::<serde_json::Value>(one).unwrap())
+            .filter(|one| one["account"] == account.id.as_str())
+            .collect();
         assert_eq!(heard.len(), 1, "{heard:?}");
         assert_eq!(
-            serde_json::from_str::<serde_json::Value>(&heard[0]).unwrap(),
+            heard[0],
             serde_json::json!({"account": account.id, "trouble": "pin-changed"})
         );
     }

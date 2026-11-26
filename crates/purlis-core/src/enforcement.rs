@@ -27,7 +27,10 @@
 //! - The setting is read from the **plane root's committed file** alone. The local file can only
 //!   tighten it ([`Settings::read`]).
 //! - It is **resolved once, at a chat's start** ([`at_start`]), and handed to the chat's hooks in
-//!   [`ENV`], which the app sets after anything a profile set.
+//!   [`ENV`], which the app sets after anything a profile set. The app's forge route is held to the
+//!   same rule for `guards.merge` ([`crate::forge::mergestance`]): it reads the policy live, for
+//!   the chat (never looser than its dispatch chain) and never looser than the chat started, so a
+//!   tightening reaches an open chat at once and a loosening press with its next start.
 //! - What a start resolves is never looser than what **this person last accepted**
 //!   ([`crate::sandbox::local::policy_accepted`], in their config home, which no sandboxed chat
 //!   writes). A tightening is accepted as the start reads it; a loosening waits for the person's
@@ -51,7 +54,7 @@
 //!
 //! [ADR 0125]: ../../../docs/adr/0125-blocks-are-off-by-default-and-opt-in-per-family.md
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 /// The table of the committed settings file that holds these keys.
@@ -59,6 +62,9 @@ pub const TABLE: &str = "policy";
 
 /// The key naming the template.
 pub const TEMPLATE_KEY: &str = "template";
+/// The `[policy]` key for lineage, a parent chat taking up its ended child's cut branch through
+/// the forge route: `"allow"` (the default, nothing set) or `"deny"`, the strict value.
+pub const LINEAGE_KEY: &str = "lineage";
 
 /// The variable a chat's hooks read what their chat started with from ([`Resolved::spelled`]).
 /// Set by the app at the launch, after anything a profile set, and never inherited.
@@ -486,9 +492,33 @@ pub struct Settings {
     /// and lifted, the way a family is. A file that does not read denies every dispatch across
     /// personas ([`crate::dispatchgrant::Denied::all`]).
     pub denies: crate::dispatchgrant::Denied,
+    /// **Whether the project denies lineage** (`[policy] lineage = "deny"`, [`LINEAGE_KEY`]): a
+    /// parent chat taking up its ended child's cut branch through the forge route. An allowance
+    /// whose strict value is the denial, so **`false` is what a file that says nothing means**,
+    /// and a value purlis cannot read, a file that is not TOML and a `HEAD` git could not read all
+    /// deny it ([`Self::from_text`], [`Self::read`]).
+    pub lineage_denied: bool,
+    /// **The branches the project's committed `[risk] protected_branches` names** (names, or
+    /// patterns with `*`): what the forge route refuses every chat push to. Read from the same
+    /// committed text as the rest, so a list edited in the working tree and not committed is no
+    /// list; an unread file adds none, which [`Resolved`]'s accepted floor then keeps.
+    pub protected: Vec<String>,
 }
 
 impl Settings {
+    /// **Whether the committed `[policy]` itself lets merges through the forge route** (the
+    /// person's ruling of 2026-11-22): it names `guards.merge` by key, or a template other than
+    /// the default `watch`. A project with no `[policy]`, or on `watch` with no `guards.merge`,
+    /// runs the guard as `log` for the hook by the template's default, and the route holds its
+    /// merges. Not enough alone: [`Resolved::merges_opted_in`] needs the person's press too.
+    pub fn merges_opted_in(&self) -> bool {
+        // A file that did not read, or holds a value that did not, is `strict` and opts in to nothing.
+        !self.unread
+            && self.refused.is_empty()
+            && (self.overrides.contains_key(&Family::GuardsMerge)
+                || (self.template_said && self.template != Template::Watch))
+    }
+
     /// What `text`, a settings file, says; the default where it is `None`, holds no `[policy]`,
     /// or is not TOML (that file's own reader says why).
     pub fn from_text(text: Option<&str>) -> Self {
@@ -501,6 +531,7 @@ impl Settings {
             said.template = Template::Strict;
             said.template_said = true;
             said.overrides.clear();
+            said.lineage_denied = true;
         }
         // A `log` a family does not take is that family enforced, and said (the review of
         // #7105): read, so never the whole policy strict.
@@ -519,18 +550,22 @@ impl Settings {
                     "the project's settings file is not TOML, so every family is enforced"
                         .to_owned(),
                 ],
+                lineage_denied: true,
                 ..Self::default()
             };
         };
         let sandbox = SandboxLevel::of_sandbox_mode(&top);
+        let protected = crate::askrisk::protected_in(&top);
         let Some(table) = top.get(TABLE).cloned() else {
             return Self {
                 sandbox,
+                protected,
                 ..Self::default()
             };
         };
         let mut said = Self {
             sandbox,
+            protected,
             ..Self::default()
         };
         let Some(table) = table.as_table() else {
@@ -539,6 +574,7 @@ impl Settings {
             said.refused.push(format!(
                 "[{TABLE}] is not a table, so every family is enforced"
             ));
+            said.lineage_denied = true;
             return said;
         };
         for (key, value) in table {
@@ -551,6 +587,18 @@ impl Settings {
                         said.refused.push(format!(
                             "{TABLE}.{TEMPLATE_KEY} is not open, watch, hold, team or strict, so \
                              every family it does not override is enforced"
+                        ));
+                    }
+                }
+            } else if key == LINEAGE_KEY {
+                // An allowance: `deny` is the tightening, and anything else is read as it.
+                match value.as_str() {
+                    Some("allow") => {}
+                    Some("deny") => said.lineage_denied = true,
+                    _ => {
+                        said.lineage_denied = true;
+                        said.refused.push(format!(
+                            "{TABLE}.{LINEAGE_KEY} is not allow or deny, so lineage is denied"
                         ));
                     }
                 }
@@ -637,11 +685,18 @@ impl Settings {
                 unread: true,
                 taken: Vec::new(),
                 denies: crate::dispatchgrant::Denied::all(),
+                lineage_denied: true,
+                protected: Vec::new(),
             },
         };
         let local = Self::from_text(layer_text(root, Which::Local).text());
         // The local file can add a deny, never take one away.
         project.denies = project.denies.with(&local.denies);
+        // And a denial of lineage; never one taken away. The protected branches are the committed
+        // file's alone, as `[risk]` is.
+        project.lineage_denied |= local.lineage_denied;
+        project.protected.sort();
+        project.protected.dedup();
         for family in Family::ALL {
             // Only what the local file says: a family it is silent on is the project's.
             let mine = local
@@ -769,12 +824,32 @@ pub fn digest_of(root: &Path) -> String {
 fn digest(resolved: &Resolved) -> String {
     use sha2::Digest;
     // The denies are part of what is accepted, so of what is digested (the review of #7113).
-    let text = format!("{}\n{}", resolved.spelled(), resolved.denies.spelled());
+    let text = format!(
+        "{}\n{}\nmerges={}\nlineage={}\nprotected={}",
+        resolved.spelled(),
+        resolved.denies.spelled(),
+        resolved.merges,
+        resolved.lineage,
+        resolved.protected_spelled()
+    );
     crate::extension::hex(&sha2::Sha256::digest(text.as_bytes()))
 }
 
 /// The key an acceptance keeps the denies it accepted under: no family's key.
 const DENIES_KEPT: &str = "dispatch.denies";
+
+/// The key an acceptance keeps a denial of lineage under ([`Resolved::lineage`]), kept only where
+/// lineage was denied: an acceptance with none (from before the key existed) reads as allowed,
+/// the default.
+const LINEAGE_KEPT: &str = "lineage";
+
+/// The key an acceptance keeps the protected branches it accepted under
+/// ([`Resolved::protected_branches`]), one per line (a branch name has no control character).
+const PROTECTED_KEPT: &str = "risk.protected_branches";
+
+/// The key an acceptance keeps the merge opt-in under ([`Resolved::merges_opted_in`]), kept only
+/// where it was accepted: an acceptance from before it existed has none, which reads as not opted in.
+const MERGES_KEPT: &str = "guards.merge.opted_in";
 
 /// How every family runs for one chat: what [`at_start`] resolved, the sandbox's level, and the
 /// dispatch denies.
@@ -786,6 +861,22 @@ pub struct Resolved {
     level: SandboxLevel,
     /// The dispatch denies (`[dispatch.denies]`, ticket T1.1-73).
     denies: crate::dispatchgrant::Denied,
+    /// **Whether the project opted in to merges through the forge route** ([`Settings::merges_opted_in`]).
+    /// Part of what a person accepts: turning it on is a loosening that waits for the press,
+    /// though `guards.merge` itself may read `log` either way (the default `watch` runs it as
+    /// `log`). Taking it away is a tightening, at once. An acceptance kept before this existed
+    /// reads as not opted in.
+    merges: bool,
+    /// **Whether a parent may take up its ended child's cut branch through the forge route**
+    /// (`[policy] lineage`, [`Settings::lineage_denied`]): an allowance, on by default, whose
+    /// strict value is the denial. Denying it is a tightening that holds at once and is kept;
+    /// allowing it again is a loosening that waits for the press. Unlike a family, it is not
+    /// carried to a hook ([`Self::spelled`]): only the app's route asks it.
+    lineage: bool,
+    /// **The protected branches the project's committed file named** ([`Settings::protected`]),
+    /// as this person accepted them: never fewer ([`Self::stricter`]), and a name the project
+    /// drops waits for the press ([`Self::protection_lifted`]).
+    protected: BTreeSet<String>,
 }
 
 impl Resolved {
@@ -805,6 +896,7 @@ impl Resolved {
                 .collect(),
             level,
             crate::dispatchgrant::Denied::default(),
+            false,
         )
     }
 
@@ -813,6 +905,7 @@ impl Resolved {
     pub fn strict() -> Self {
         Self {
             denies: crate::dispatchgrant::Denied::all(),
+            lineage: false,
             ..Self::all(Mode::Enforce)
         }
     }
@@ -822,12 +915,16 @@ impl Resolved {
         mut modes: BTreeMap<Family, Mode>,
         level: SandboxLevel,
         denies: crate::dispatchgrant::Denied,
+        merges: bool,
     ) -> Self {
         modes.insert(Family::Sandbox, mode_of_level(level));
         Self {
             modes,
             level,
             denies,
+            merges,
+            lineage: true,
+            protected: BTreeSet::new(),
         }
     }
 
@@ -839,14 +936,21 @@ impl Resolved {
         if locks.enforcement_floor(Family::Sandbox).is_some() {
             level = level.max(SandboxLevel::Floor);
         }
-        Self::of_modes(
-            Family::ALL
-                .into_iter()
-                .map(|family| (family, under(settings, locks, family)))
-                .collect(),
-            level,
-            settings.denies.clone(),
-        )
+        let modes: BTreeMap<Family, Mode> = Family::ALL
+            .into_iter()
+            .map(|family| (family, under(settings, locks, family)))
+            .collect();
+        // The opt-in counts only where it loosens the route: a `guards.merge` that resolves to
+        // `enforce` (a `hold`, `team` or `strict` template, a lock, or the key itself) holds
+        // merges in the hook and the route alike, so there is nothing to wait for.
+        let merges = settings.merges_opted_in()
+            && modes
+                .get(&Family::GuardsMerge)
+                .is_some_and(|mode| *mode < Mode::Enforce);
+        let mut resolved = Self::of_modes(modes, level, settings.denies.clone(), merges);
+        resolved.lineage = !settings.lineage_denied && !locks.forbids_lineage();
+        resolved.protected = settings.protected.iter().cloned().collect();
+        resolved
     }
 
     /// **How a chat runs, with `chain` the strictest policy along the chain that dispatched it**
@@ -878,28 +982,90 @@ impl Resolved {
         &self.denies
     }
 
+    /// **Whether merges through the forge route are opted in and accepted**: the project's
+    /// committed `[policy]` names `guards.merge` or a template other than `watch`
+    /// ([`Settings::merges_opted_in`]), and the person pressed Accept for it. In [`in_force`] it
+    /// is both at once.
+    pub fn merges_opted_in(&self) -> bool {
+        self.merges
+    }
+
     /// The stricter of `self` and `other`, family by family, the stricter level, and every deny
     /// of either.
     pub fn stricter(&self, other: &Self) -> Self {
-        Self::of_modes(
+        let mut stricter = Self::of_modes(
             Family::ALL
                 .into_iter()
                 .map(|family| (family, self.mode(family).max(other.mode(family))))
                 .collect(),
             self.level.max(other.level),
             self.denies.with(&other.denies),
-        )
+            self.merges && other.merges,
+        );
+        // An allowance holds only where both allow it; a protection where either has it.
+        stricter.lineage = self.lineage && other.lineage;
+        stricter.protected = self.protected.union(&other.protected).cloned().collect();
+        stricter
+    }
+
+    /// **Whether lineage is allowed**: the project does not deny it, no administrator's lock holds
+    /// it off, and what this person accepted does not deny it.
+    pub fn lineage(&self) -> bool {
+        self.lineage
+    }
+
+    /// Whether `self` allows lineage where `accepted` denies it: what a loosening press would
+    /// accept.
+    pub fn lineage_looser_than(&self, accepted: &Self) -> bool {
+        self.lineage && !accepted.lineage
+    }
+
+    /// **The protected branches**, names or patterns with `*`: what the committed file names and
+    /// this person accepted, never fewer than either.
+    pub fn protected_branches(&self) -> Vec<String> {
+        self.protected.iter().cloned().collect()
+    }
+
+    /// The protected branches `accepted` holds and `self` does not: what a press would lift.
+    pub fn protection_lifted(&self, accepted: &Self) -> Vec<String> {
+        accepted
+            .protected
+            .difference(&self.protected)
+            .cloned()
+            .collect()
+    }
+
+    fn protected_spelled(&self) -> String {
+        self.protected
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// The families `self` runs looser than `accepted`, each with both modes: what a loosening
     /// press would accept. The sandbox is [`Self::level_looser_than`]'s.
     pub fn looser_than(&self, accepted: &Self) -> Vec<(Family, Mode, Mode)> {
-        Family::ALL
+        let mut looser: Vec<(Family, Mode, Mode)> = Family::ALL
             .into_iter()
             .filter(|family| *family != Family::Sandbox)
             .filter(|family| self.mode(*family) < accepted.mode(*family))
             .map(|family| (family, accepted.mode(family), self.mode(family)))
-            .collect()
+            .collect();
+        // The merge opt-in is a loosening of the route, which holds every merge until it is
+        // accepted, even where the hook's mode reads the same (`watch` is `log`). Its row has
+        // equal modes (the hook's, accepted and now): no real loosening has, so the window
+        // says it as "merges through the forge route" (`policypress`).
+        if self.merges
+            && !accepted.merges
+            && !looser
+                .iter()
+                .any(|(family, _, _)| *family == Family::GuardsMerge)
+        {
+            let mode = self.mode(Family::GuardsMerge);
+            looser.push((Family::GuardsMerge, mode, mode));
+        }
+        looser
     }
 
     /// The accepted level and this one, where this one is looser: what a loosening press would
@@ -954,6 +1120,11 @@ impl Resolved {
                 .collect(),
             level,
             crate::dispatchgrant::Denied::default(),
+            // The spelling says nothing of the opt-in, so it never takes it away from what it
+            // is joined with ([`Self::stricter`]); [`Self::of_kept`] reads it from the record.
+            // Safe only because the route always joins this with a committed-and-accepted
+            // `Resolved` (`for_chat`, `in_force`): a `true` that stood alone would open merges.
+            true,
         )
     }
 
@@ -975,6 +1146,15 @@ impl Resolved {
         if !self.denies.is_empty() {
             kept.insert(DENIES_KEPT.to_owned(), self.denies.spelled());
         }
+        if self.merges {
+            kept.insert(MERGES_KEPT.to_owned(), "true".to_owned());
+        }
+        if !self.lineage {
+            kept.insert(LINEAGE_KEPT.to_owned(), "denied".to_owned());
+        }
+        if !self.protected.is_empty() {
+            kept.insert(PROTECTED_KEPT.to_owned(), self.protected_spelled());
+        }
         kept
     }
 
@@ -982,7 +1162,10 @@ impl Resolved {
         let mut resolved = Self::parse(
             &kept
                 .iter()
-                .filter(|(key, _)| key.as_str() != DENIES_KEPT)
+                .filter(|(key, _)| {
+                    ![DENIES_KEPT, MERGES_KEPT, LINEAGE_KEPT, PROTECTED_KEPT]
+                        .contains(&key.as_str())
+                })
                 .map(|(family, mode)| format!("{family}={mode}"))
                 .collect::<Vec<_>>()
                 .join(","),
@@ -990,7 +1173,31 @@ impl Resolved {
         if let Some(denies) = kept.get(DENIES_KEPT) {
             resolved.denies = crate::dispatchgrant::Denied::parse(denies);
         }
+        // Fail closed: only an acceptance that says so is opted in.
+        resolved.merges = kept.get(MERGES_KEPT).is_some_and(|said| said == "true");
+        // Any word under the key denies: only its absence allows.
+        resolved.lineage = !kept.contains_key(LINEAGE_KEPT);
+        resolved.protected = kept
+            .get(PROTECTED_KEPT)
+            .map(|spelled| {
+                spelled
+                    .lines()
+                    .filter(|line| !line.is_empty())
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
         resolved
+    }
+
+    #[cfg(test)]
+    pub(crate) fn as_kept_for_test(&self) -> BTreeMap<String, String> {
+        self.as_kept()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn of_kept_for_test(kept: &BTreeMap<String, String>) -> Self {
+        Self::of_kept(kept)
     }
 
     /// This, at `level` where that is looser or stricter: what the team's answer to its off
@@ -1020,6 +1227,15 @@ pub fn committed(root: &Path) -> Resolved {
     Resolved::of(
         &Settings::read(root),
         &crate::sandbox::policy::Locks::of(root),
+    )
+}
+
+/// [`committed`] for settings text, as a test names it.
+#[cfg(test)]
+pub(crate) fn committed_for_test(text: &str) -> Resolved {
+    Resolved::of(
+        &Settings::from_text(Some(text)),
+        &crate::sandbox::policy::Locks::none(),
     )
 }
 
@@ -1156,6 +1372,12 @@ pub struct Standing {
     /// holds, as [`crate::dispatchgrant::Denied::spelled`] spells one: still denied until the
     /// press, which would lift it (the review of #7113).
     pub lifted: Vec<String>,
+    /// Whether the project now allows lineage where this person accepted a denial of it: what the
+    /// press would lift.
+    pub lineage_waiting: bool,
+    /// Each protected branch this person accepted that the project's committed file no longer
+    /// names: still protected until the press, which would lift it.
+    pub protection_lifted: Vec<String>,
     /// What the project's `[policy]` holds that purlis could not read, each enforced.
     pub refused: Vec<String>,
     /// Whether an acceptance is kept here whose seal does not hold: it counts as none.
@@ -1195,6 +1417,8 @@ pub fn standing(root: &Path) -> Standing {
         level: now.level_looser_than(&accepted),
         not_in_force: not_in_force_at(now.level()),
         lifted: now.lifts(&accepted),
+        lineage_waiting: now.lineage_looser_than(&accepted),
+        protection_lifted: now.protection_lifted(&accepted),
         refused: settings.refused.clone(),
         unsealed: crate::sandbox::local::policy_unsealed(root),
         digest: digest(&now),
@@ -1348,6 +1572,42 @@ pub fn denies_in_force(root: &Path) -> crate::dispatchgrant::Denied {
         resolved_in_the_app(root).denies
     } else {
         Settings::read(root).denies
+    }
+}
+
+/// **Whether a parent chat may take up its ended child's cut branch through the forge route, for
+/// the project at `root`** (`[policy] lineage`, [`LINEAGE_KEY`]), an allowance whose strict value
+/// is the denial:
+///
+/// - **In the app**: [`in_force`]'s, so from the committed file at `HEAD`, never the working
+///   tree's, and never looser than this person accepted. A denial the project adds, or an
+///   administrator's lock (`sandbox.lineage: false`), holds at once; allowing it again waits for
+///   the press ([`press`]). A value that does not read, a file that is not TOML and a `HEAD` git
+///   cannot read all deny it.
+/// - **Anywhere else**: the committed file's at `HEAD` and the locks, as unreadable as strictly.
+///   Only the app's route asks.
+pub fn lineage_in_force(root: &Path) -> bool {
+    if in_the_app() {
+        resolved_in_the_app(root).lineage
+    } else {
+        !Settings::read(root).lineage_denied
+            && !crate::sandbox::policy::Locks::of(root).forbids_lineage()
+    }
+}
+
+/// **The protected branches in force for the project at `root`** (`[risk] protected_branches`,
+/// names or patterns with `*`), read as `[policy]` is:
+///
+/// - **In the app**: the committed file's at `HEAD`, never the working tree's, **and never fewer
+///   than this person accepted**, so a chat that edits the file without committing it, or breaks
+///   it, loses nothing. A name the project drops waits for the press ([`press`]); one it adds
+///   holds at once.
+/// - **Anywhere else**: the committed file's at `HEAD`, with no accepted copy to floor it.
+pub fn protected_branches_in_force(root: &Path) -> Vec<String> {
+    if in_the_app() {
+        resolved_in_the_app(root).protected_branches()
+    } else {
+        Settings::read(root).protected
     }
 }
 

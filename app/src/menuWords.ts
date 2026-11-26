@@ -52,6 +52,7 @@ export const SAID = {
   network: "Network",
   chatLog: "Chat log",
   restart: "Restart",
+  hibernate: "Hibernate",
   restartMidTurn: "Restart when this turn ends",
   startFresh: "Start fresh",
   stopAllTasks: "Stop all tasks",

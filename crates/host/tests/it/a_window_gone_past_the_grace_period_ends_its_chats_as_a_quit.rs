@@ -44,6 +44,9 @@ const PROJECT: &str = "01J9PRJCT00000000000000000";
 const OTHER: &str = "01J9PRJCT00000000000000001";
 const GRACE: Duration = Duration::from_millis(400);
 const PATIENCE: Duration = Duration::from_secs(5);
+/// A grace period no test waits out: the host that stops "at once" does so inside [`PATIENCE`],
+/// which a host that waited for this would miss by a minute, however slow the runner is.
+const A_GRACE_NO_TEST_WAITS_OUT: Duration = Duration::from_secs(60);
 
 static HELD: std::sync::LazyLock<Credentials> =
     std::sync::LazyLock::new(|| Credentials::mint().unwrap());
@@ -176,10 +179,15 @@ impl Host {
     /// The host's life with a window that may come back, as the window's host lives it, its
     /// starter still there.
     fn lives(&self) -> JoinHandle<()> {
+        self.lives_with(GRACE)
+    }
+
+    /// [`Self::lives`], with a grace period of `grace`.
+    fn lives_with(&self, grace: Duration) -> JoinHandle<()> {
         let hosting = self.hosting.clone();
         tokio::spawn(async move {
             hosting
-                .while_a_window_may_come_back(GRACE, std::future::pending())
+                .while_a_window_may_come_back(grace, std::future::pending())
                 .await;
         })
     }
@@ -373,10 +381,10 @@ async fn a_window_back_before_then_reads_how_each_program_ended_and_then_it_is_l
 #[tokio::test]
 async fn a_host_whose_window_went_with_nothing_to_come_back_for_stops_at_once() {
     let host = a_host();
-    let lives = host.lives();
+    let lives = host.lives_with(A_GRACE_NO_TEST_WAITS_OUT);
     drop(host.holding(PROJECT).await);
 
-    tokio::time::timeout(GRACE / 2, lives)
+    tokio::time::timeout(PATIENCE, lives)
         .await
         .expect("it stops before the grace period would have passed")
         .unwrap();
@@ -399,14 +407,14 @@ async fn a_host_whose_starter_went_before_linking_stops_at_once() {
     let hosting = host.hosting.clone();
     let lives = tokio::spawn(async move {
         hosting
-            .while_a_window_may_come_back(GRACE, async {
+            .while_a_window_may_come_back(A_GRACE_NO_TEST_WAITS_OUT, async {
                 let _ = goes.await;
             })
             .await;
     });
     drop(went);
 
-    tokio::time::timeout(GRACE / 2, lives)
+    tokio::time::timeout(PATIENCE, lives)
         .await
         .expect("nothing to come back for")
         .unwrap();

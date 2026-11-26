@@ -96,7 +96,7 @@ fn the_provenance_job_attests_what_the_build_made_whenever_the_run_publishes() {
     assert!(
         provenance
             .condition()
-            .is_some_and(|said| said.contains("needs.plan.outputs.publish == 'true'")),
+            .is_some_and(|said| said.contains("needs.keys.outputs.publish == 'true'")),
         "a published build is attested, and one published nowhere is not: {:?}",
         provenance.condition()
     );
@@ -251,11 +251,24 @@ fn provenance_and_publish_take_only_the_build_artifacts_by_their_exact_names() {
         r#"echo "triple=$triple""#,
         r#"echo "slug=$slug""#,
         r#"echo "updater=$updater""#,
-        r#"echo "artifact=purlis-$slug-${VERSION}""#,
+        r#"echo "artifact=$artifact""#,
         r#"} >> "$GITHUB_OUTPUT""#,
     ];
     assert!(
         lines.windows(outputs.len()).any(|w| w == outputs),
         "{outputs:#?} not one run of lines in {lines:#?}"
+    );
+    // A publish's macOS bundle is handed to `sign-macos` under an `-unsigned-` name, and
+    // `purlis-macos-arm64-<version>`, the name every job that publishes downloads, is the one
+    // that job uploads once it has signed (ADR 0042, amended 2026-11-25).
+    let named = [
+        r#"artifact="purlis-$slug-${VERSION}""#,
+        r#"if [ "$slug" = macos-arm64 ] && [ "$PUBLISH" = true ]; then"#,
+        r#"artifact="purlis-$slug-unsigned-${VERSION}""#,
+        "fi",
+    ];
+    assert!(
+        lines.windows(named.len()).any(|w| w == named),
+        "{named:#?} not one run of lines in {lines:#?}"
     );
 }

@@ -33,10 +33,49 @@ pub enum Reconnection {
     /// host sends it nothing and does not link to it again until it is removed and added anew,
     /// so its chats stay dimmed and the window says why in a Notice of its own.
     KeyChanged,
-    /// The runner was removed outside purlis (#4149): its host does not link to it again until
-    /// it is made again, so its chats stay dimmed and the window offers Make the runner again in
-    /// a Notice of its own.
+    /// The runner was removed outside purlis (#4149, #7187 Runner gone): its chats end, as a
+    /// forgotten pool's do, and are not dimmed; the window offers Start again on this pool in a
+    /// Notice of its own.
     RunnerGone,
+    /// The runner's machine answers, but its sign-in, Docker or forwarding fails (#7187,
+    /// Refused): its host stops trying on its own, so its chats stay dimmed and the window says
+    /// why, with Check pool and Try now, which dials once.
+    Refused,
+    /// The runner's machine presents another host key, CA or engine than the pinned one (#7187,
+    /// Host key changed): its host never links to it again on its own, so its chats stay dimmed
+    /// and the window says why, with Check and trust again in the pool's settings.
+    HostKeyChanged,
+    /// The pool was forgotten here (#7187, Pool forgotten): its chats end, and say so.
+    PoolForgotten,
+}
+
+/// **Which remote state a pool's runner is in while its link is down** (#7187, CONTEXT.md), as
+/// the window says it: the core's [`RemoteState`](purlis_core::sshroute::connect::RemoteState),
+/// read where the link tells it. A runner gone and a pool forgotten are not here: a link that
+/// says them is not down but ended, and they are told as [`Reconnection::RunnerGone`] and
+/// [`Reconnection::PoolForgotten`], with no [`LinkDown`] kept.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkState {
+    /// Nothing answers, or not yet (Docker still starting on a machine whose `sshd` is up
+    /// included): purlis tries again, and the person may press Try now.
+    #[default]
+    Unreachable,
+    /// The machine answers and refuses: purlis stopped trying on its own; Try now and Check pool.
+    Refused,
+    /// The machine presents another key or engine than the pinned one.
+    HostKeyChanged,
+}
+
+impl From<purlis_core::sshroute::connect::RemoteState> for LinkState {
+    fn from(state: purlis_core::sshroute::connect::RemoteState) -> LinkState {
+        use purlis_core::sshroute::connect::RemoteState;
+        match state {
+            RemoteState::Unreachable => LinkState::Unreachable,
+            RemoteState::Refused => LinkState::Refused,
+            RemoteState::HostKeyChanged => LinkState::HostKeyChanged,
+        }
+    }
 }
 
 /// A plane's chats that are reconnecting, or reconnected, as their panes show it.
@@ -56,6 +95,8 @@ pub struct LinkDown {
     pub why: String,
     /// When the link went down, in seconds since 1970: a try that fails again does not move it.
     pub since: u32,
+    /// Which state it is in: whether purlis still tries on its own (#7187).
+    pub state: LinkState,
 }
 
 /// **A pool's runner whose link is down, and why** (#7134): what the window says once its
@@ -68,6 +109,8 @@ pub struct RunnerLinkDown {
     pub why: String,
     /// When the link went down, in seconds since 1970.
     pub since: u32,
+    /// Which state it is in (#7187): Refused says why and offers Check pool and Try now (purlis's own retries stopped).
+    pub state: LinkState,
 }
 
 /// The pools' runners whose links are down now, for `plane`'s chats (#7134): read as a window

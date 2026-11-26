@@ -16,7 +16,7 @@
 //! are not on any table: a type that reaches *other* repos' content (`search`, `organization`,
 //! `user(login:)`, `topic`, `enterprise`, a fork's `forks`, GitLab's `group` and `namespace`), a
 //! type that holds the repo's administration (collaborators, rulesets, webhooks, keys, secrets,
-//! variables, protection rules, environments, merge queues), and any field this list was not
+//! variables, protection rules, environments, a merge queue's configuration), and any field this list was not
 //! told of. A field GitHub or GitLab adds tomorrow is refused until someone reads it and adds it.
 //!
 //! **A repo reached from an object** (a pull request's head repository, a fork's parent, an
@@ -145,6 +145,11 @@ pub(crate) fn narrow(kind: Kind, parent: &Ty, cond: &str) -> Option<Ty> {
     let Ty::Obj(parent) = parent else {
         return None;
     };
+    // A fragment on `Repository` spread on a fork's parent (`gh`'s `repo` fragment is) reads only
+    // what the parent's own table has: it narrows to that table, never to the whole repository.
+    if *parent == "RepoParent" && cond == "Repository" {
+        return Some(Obj("RepoParent"));
+    }
     let cond = type_named(kind, cond)?;
     let same = *parent == cond;
     let possible = POSSIBLE
@@ -242,6 +247,9 @@ const GITHUB: Table = &[
         ("comment", Obj("PullRequestReviewComment")),
         ("labelable", Obj("IssueOrPullRequest")),
         ("repository", Obj("RepoRef")),
+        // What `enqueuePullRequest` and `dequeuePullRequest` answer with (#7678): the entry of a
+        // pull request the mutation was already tied to the chat's repo by.
+        ("mergeQueueEntry", Obj("MergeQueueEntry")),
     ]),
     (REPO_REF, &["id", "name", "nameWithOwner", "url", "isPrivate", "viewerPermission", "databaseId"], &[
         ("owner", Obj("Actor")),
@@ -250,6 +258,17 @@ const GITHUB: Table = &[
     // A repository named by a reference in text: what names it, not what the viewer may do to it
     // or whether it is private (that would say whether a repo a chat typed exists).
     ("RepoName", &["id", "name", "nameWithOwner", "url", "databaseId"], &[("owner", Obj("Actor"))]),
+    // The upstream a fork was made from, as `gh pr create` reads it (#7485): its `repo` fragment
+    // is asked of the repo and of its `parent` alike. What names it and what the viewer may do
+    // to it, as RepoRef, and the three settings that fragment holds; no connection, so nothing of
+    // the parent beyond that can be walked into.
+    ("RepoParent", &[
+        "id", "name", "nameWithOwner", "url", "isPrivate", "viewerPermission", "databaseId",
+        "description", "hasIssuesEnabled", "hasWikiEnabled",
+    ], &[
+        ("owner", Obj("Actor")),
+        ("defaultBranchRef", Obj("RefName")),
+    ]),
     ("RefName", &["id", "name", "prefix"], &[]),
     ("Repository", &[
         "id", "databaseId", "name", "nameWithOwner", "url", "resourcePath", "description",
@@ -286,7 +305,7 @@ const GITHUB: Table = &[
         ("ref", Obj("Ref")),
         ("refs", Conn("Ref")),
         ("object", Obj("GitObject")),
-        ("parent", Obj("RepoRef")),
+        ("parent", Obj("RepoParent")),
         ("templateRepository", Obj("RepoRef")),
         ("assignableUsers", Conn("Actor")),
         ("mentionableUsers", Conn("Actor")),
@@ -295,6 +314,17 @@ const GITHUB: Table = &[
         ("contactLinks", Obj("ContactLink")),
         ("fundingLinks", Obj("FundingLink")),
         ("codeOfConduct", Obj("CodeOfConduct")),
+        ("mergeQueue", Obj("MergeQueue")),
+    ]),
+    // The state of a merge queue, read only (#7358): who is in it and where. Its `configuration`
+    // (the rule's settings) is left out. Enqueueing and dequeueing stay refused as merges.
+    ("MergeQueue", &["id", "url", "nextEntryEstimatedTimeToMerge"], &[
+        ("entries", Conn("MergeQueueEntry")),
+    ]),
+    ("MergeQueueEntry", &["id", "position", "state", "enqueuedAt", "estimatedTimeToMerge", "solo", "jump"], &[
+        ("enqueuer", Obj("Actor")),
+        ("pullRequest", Obj("PullRequest")),
+        ("headCommit", Obj("Commit")),
     ]),
     ("IssueOrPullRequest", &["id", "number", "title", "url", "state", "body"], &[]),
     ("SearchResultItem", &[], &[]),
@@ -346,7 +376,9 @@ const GITHUB: Table = &[
         "authorAssociation", "isReadByViewer", "viewerCanUpdate", "viewerCanReact",
         "viewerDidAuthor", "viewerSubscription", "viewerCanApplySuggestion",
         "viewerCanDeleteHeadRef", "includesCreatedEdit", "lastEditedAt", "publishedAt",
+        "isInMergeQueue", "isMergeQueueEnabled",
     ], &[
+        ("mergeQueueEntry", Obj("MergeQueueEntry")),
         ("author", Obj("Actor")),
         ("editor", Obj("Actor")),
         ("mergedBy", Obj("Actor")),

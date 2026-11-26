@@ -51,7 +51,9 @@
 //!   dropped from `words` before the table is read. The table entry alone would have been a
 //!   dead line: the lookup used to live under `elif base in ("gh", "glab")`.
 
+mod exact;
 mod merge;
+mod placed;
 mod token;
 
 use crate::credguard::git_subcommand;
@@ -432,7 +434,9 @@ fn metered(cmd: &str, unattended: bool) -> (Option<String>, usize) {
     } else {
         is_sole_call(cmd)
     });
+    let outer_scripts = SCRIPTS_READ.take();
     let said = floor(cmd, unattended, 0);
+    SCRIPTS_READ.replace(outer_scripts);
     SOLE_CALL.set(sole);
     // **A reading cut short never ends as an allow** (#7245, round 4): whichever way a limit
     // was crossed (the work meter, the depth, the nesting), it set this flag, and no one clears
@@ -447,6 +451,22 @@ fn metered(cmd: &str, unattended: bool) -> (Option<String>, usize) {
 fn closed_on_a_cutoff(said: Option<String>, cut: bool, unattended: bool) -> Option<String> {
     said.or_else(|| {
         (unattended && cut).then(|| format!("{RELEASE_FLOOR_FIX}{}", merge::UNREADABLE))
+    })
+}
+
+std::thread_local! {
+    /// The scripts the floor has read in this reading, with the depth and whether as a hedge:
+    /// one that was read and let through is not read again ([`first_read_of_script`]).
+    static SCRIPTS_READ: std::cell::RefCell<std::collections::HashSet<(String, usize, bool)>> =
+        std::cell::RefCell::new(std::collections::HashSet::new());
+}
+
+/// Whether `script` is read now for the first time at `depth` in this reading. A script that
+/// refused is never asked about twice, since the reading ends at its refusal.
+fn first_read_of_script(script: &str, depth: usize) -> bool {
+    SCRIPTS_READ.with(|read| {
+        read.borrow_mut()
+            .insert((script.to_owned(), depth, reading_a_hedge()))
     })
 }
 
@@ -508,7 +528,20 @@ fn may_read(text: &str) -> bool {
 pub const MAX_DEPTH: usize = crate::guardcaps::MAX_COMMAND_DEPTH;
 
 /// [`release_floor_reason`] at `depth` commands in.
+///
+/// Inside backticks the shell turns `\$` into `$`, so what the lexer kept as an escaped dollar is
+/// an expansion in the substitution it runs (#7423): where the line as written is let through,
+/// it is read as that shell reads it too. A refusal of the line as written is the one said.
 pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String> {
+    let said = floor_as_written(cmd, unattended, depth);
+    if said.is_some() || !unattended || depth > MAX_DEPTH {
+        return said;
+    }
+    rewrite_backticks(cmd).and_then(|rewritten| floor(&rewritten, unattended, depth + 1))
+}
+
+/// [`floor`] of the line as written.
+fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String> {
     if !unattended {
         return None;
     }
@@ -721,6 +754,9 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // text: a body line that is read as commands merely as bash 3.2's hedge (a `)` in a
     // quoted-substitution's heredoc body) is held for a literal merge by the segments above,
     // never for "could print any command" (#7131, the ruling on the large commit body).
+    let mut filled = None;
+    // Each segment's words read once, exactly, with its redirections taken out (#7423).
+    let mut exact_segments: Vec<exact::Segment> = Vec::new();
     for reading in shellseg::segment_readings(&lines)
         .into_iter()
         .filter(|_| !reading_a_hedge())
@@ -739,6 +775,18 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
                 }
             }
         }
+        // A forge API call whose arguments the shell fills in, read or not (#7416). Said after
+        // the segments' own reasons, which name more.
+        let exact = exact::of_reading(&reading);
+        if filled.is_none() {
+            filled = merge::shell_filled_api_reason(&exact, cmd).or_else(|| {
+                exact
+                    .clobber
+                    .as_deref()
+                    .and_then(|c| merge::shell_filled_api_reason(c, cmd))
+            });
+        }
+        exact_segments.push(exact);
         let (prog, ..) = shellwrap::split_env(&reading.own);
         if program_built_by_the_shell(&prog) {
             return Some(format!(
@@ -768,12 +816,32 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             return said;
         }
     }
+    // The segments of the commands a shell runs, read as the lexer's facts say they are: the
+    // words past their redirections, and the call from its program on.
+    if runs != lines {
+        for reading in shellseg::segment_readings(&runs)
+            .into_iter()
+            .filter(|_| !reading_a_hedge())
+        {
+            exact_segments.push(exact::of_reading(&reading));
+        }
+    }
+    let read: std::collections::HashSet<&[String]> = segments.iter().map(Vec::as_slice).collect();
+    for exact in &exact_segments {
+        let said = exact_reason(exact, cmd, unattended, depth, a_shell_reads_stdin, &read);
+        if said.is_some() {
+            return said;
+        }
+    }
+    if let Some(why) = filled {
+        return Some(format!("{fix}{why}"));
+    }
     // The hedged lines' own segments, and the substitutions on each line (the outer `$( … )`
     // steps over a quoted body, so `echo "$(gh pr merge 7)"` in one is found line by line).
     if !hedge_segments.is_empty() {
         let _hedge = ReadingAHedge::on();
         for toks in &hedge_segments {
-            let said = segment_reason(toks, cmd, unattended, depth, the_hedge_reads_stdin);
+            let said = words_reason(toks, cmd, unattended, depth, the_hedge_reads_stdin);
             if said.is_some() {
                 return said;
             }
@@ -812,7 +880,7 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
                     ));
                 }
                 for toks in commands_of(&body) {
-                    let said = segment_reason(&toks, cmd, unattended, depth, the_hedge_reads_stdin);
+                    let said = words_reason(&toks, cmd, unattended, depth, the_hedge_reads_stdin);
                     if said.is_some() {
                         return said;
                     }
@@ -839,6 +907,213 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     None
 }
 
+/// `text` with each backtick substitution written `$( … )` and its body as the shell reads it: a
+/// backslash before `$`, a backtick or another backslash is dropped.
+///
+/// Which backticks are live is the lexer's quoting ([`shellseg::backticks`], #7423): a quoted
+/// backtick (`'`'`) flips nothing, and `\\` before one is an escaped backslash, not an escaped
+/// backtick. A quoted backtick is respelled (`'$'\x60''`) so that no later pairing of backticks
+/// sees it. `None` where the text has no backtick the shell reads.
+fn rewrite_backticks(text: &str) -> Option<String> {
+    if !text.contains('`') {
+        return None;
+    }
+    let ticks = shellseg::backticks(text);
+    if ticks.is_empty() {
+        return None;
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len() + 8);
+    // Where the body of the substitution being read starts in `out`.
+    let mut body_at: Option<usize> = None;
+    let mut at = 0;
+    for (i, kind) in ticks {
+        out.extend(&chars[at..i]);
+        at = i + 1;
+        match kind {
+            shellseg::Backtick::Live => match body_at.take() {
+                Some(start) => {
+                    let body = out.split_off(start);
+                    out.push_str(&unescape_in_backticks(&body));
+                    out.push(')');
+                }
+                None => {
+                    out.push_str("$(");
+                    body_at = Some(out.len());
+                }
+            },
+            shellseg::Backtick::Single => out.push_str("'$'\\x60''"),
+            shellseg::Backtick::Ansi => out.push_str("\\x60"),
+        }
+    }
+    out.extend(&chars[at..]);
+    if let Some(start) = body_at {
+        let body = out.split_off(start);
+        out.push_str(&unescape_in_backticks(&body));
+    }
+    Some(out)
+}
+
+/// A backtick body as the shell reads it: a backslash before `$`, a backtick or another
+/// backslash is dropped.
+fn unescape_in_backticks(body: &str) -> String {
+    let mut out = String::with_capacity(body.len());
+    let mut chars = body.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\'
+            && let Some(&next) = chars.peek()
+            && matches!(next, '$' | '`' | '\\')
+        {
+            out.push(next);
+            chars.next();
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// `text` as the inner shell reads what a double-quoted string left it: a backslash before `$`,
+/// a backtick, `"` or another backslash is dropped.
+fn unescape_double_quoted(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\'
+            && let Some(&next) = chars.peek()
+            && matches!(next, '$' | '`' | '"' | '\\')
+        {
+            out.push(next);
+            chars.next();
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// What a refusal of a forge call that words handed to it could complete says.
+fn fed_said(name: &str) -> String {
+    format!(
+        "{} A program in front of `{name}` may hand it words (a pipe, a file, a here-string, the \
+         names it finds) that could be its noun and verb, or a method. Write the whole command \
+         out, noun and verb on the line (`{name} pr view 12`), with the flags after them. Only a \
+         short list of programs (`cp`, `grep`, `which`, `git log` and the like) is known never to \
+         run a word: if `{name}` is only a name here (`brew install {name}`, `git commit -m fix \
+         {name}`), run the `{name}` command first, on its own, or say what you want done.",
+        merge::UNREADABLE
+    )
+}
+
+/// The floor's refusal of a segment whose words the lexer's facts were read for (#7423): its
+/// call from the program on, where a forge CLI runs, or else its words past their redirections,
+/// and, where a forge CLI is named and the words in front of it cannot be placed exactly, the
+/// refusal for that. A segment already read as it stands (`read`) is not read again.
+fn exact_reason(
+    seg: &exact::Segment,
+    cmd: &str,
+    unattended: bool,
+    depth: usize,
+    a_shell_reads_stdin: bool,
+    read: &std::collections::HashSet<&[String]>,
+) -> Option<String> {
+    let words = seg.call().unwrap_or(&seg.words);
+    if !read.contains(words)
+        && let Some(said) = segment_reason(words, cmd, unattended, depth, a_shell_reads_stdin)
+    {
+        return Some(said);
+    }
+    if let Some(also) = &seg.also
+        && !read.contains(also.as_slice())
+        && let Some(said) = segment_reason(also, cmd, unattended, depth, a_shell_reads_stdin)
+    {
+        return Some(said);
+    }
+    if let Some(said) = seg.refusal.as_ref() {
+        return Some(format!("{RELEASE_FLOOR_FIX}{said}"));
+    }
+    // **The one rule for the words up to the verb** (#7423, round 10), read on the call as the
+    // lexer spelled it: the direct call, and the call read without the digit word that stands
+    // apart from a redirection.
+    if let Some(call) = seg.call() {
+        let name = base_lower(&call[0]);
+        let spelled = seg.call_spelled();
+        if let Some(said) = placed::reason(&name, call, spelled) {
+            return Some(format!("{RELEASE_FLOOR_FIX}{said}"));
+        }
+    }
+    if let Some(also) = &seg.also {
+        let name = base_lower(&also[0]);
+        if let Some(said) = placed::reason(&name, also, &[]) {
+            return Some(format!("{RELEASE_FLOOR_FIX}{said}"));
+        }
+    }
+    // A forge call behind a program no table knows is the call it would be without the program
+    // (#7423, round 8), read by the same rule, and, where that program is handed words (a pipe,
+    // a here-string), one the words could complete is held.
+    for call in &seg.behind {
+        let words = call.call().unwrap_or(&call.words);
+        if let Some(forge) = call.call() {
+            let name = base_lower(&forge[0]);
+            let spelled = call.call_spelled();
+            if let Some(said) = placed::reason(&name, forge, spelled) {
+                return Some(format!("{RELEASE_FLOOR_FIX}{said}"));
+            }
+            // The program in front may append words (`fd -x gh pr`, `xargs -a f gh`): a call
+            // that could still be given a verb or a method is held (round 11).
+            if placed::may_be_completed(&name, forge, spelled) {
+                return Some(format!("{RELEASE_FLOOR_FIX}{}", fed_said(&name)));
+            }
+        }
+        // A bare `{}` is a placeholder for gh, but a program that is not gh (`fd -x`, `parallel`)
+        // fills it in with a name: read as an argument the shell fills in (rounds 9 and 10). Only
+        // where it is the endpoint itself (`fd . repos -x gh api {}`) is it a read of that name.
+        let filled: Vec<String> = words.iter().map(|w| w.replace("{}", "$X")).collect();
+        let held = (!read.contains(words)
+            && segment_reason(words, cmd, unattended, depth, a_shell_reads_stdin).is_some())
+            || merge::shell_filled_api_reason(call, cmd).is_some()
+            || (filled != *words
+                && (segment_reason(&filled, cmd, unattended, depth, a_shell_reads_stdin)
+                    .is_some()
+                    || (!merge::brace_is_the_endpoint(&filled)
+                        && merge::shell_filled_api_reason(&exact::of_words(&filled), cmd)
+                            .is_some())));
+        if held {
+            return Some(format!(
+                "{RELEASE_FLOOR_FIX}{} {}",
+                merge::UNREADABLE,
+                exact::WAY_OUT
+            ));
+        }
+    }
+    // The reading zsh's clobber operators make of the same words (#7423, round 7).
+    seg.clobber
+        .as_deref()
+        .and_then(|c| exact_reason(c, cmd, unattended, depth, a_shell_reads_stdin, read))
+}
+
+/// [`segment_reason`] of words nothing measured (what a `find` runs, a hedged line), and of those
+/// words read exactly as far as that can be done ([`exact::of_words`]).
+fn words_reason(
+    toks: &[String],
+    cmd: &str,
+    unattended: bool,
+    depth: usize,
+    a_shell_reads_stdin: bool,
+) -> Option<String> {
+    segment_reason(toks, cmd, unattended, depth, a_shell_reads_stdin).or_else(|| {
+        let read = std::iter::once(toks).collect();
+        exact_reason(
+            &exact::of_words(toks),
+            cmd,
+            unattended,
+            depth,
+            a_shell_reads_stdin,
+            &read,
+        )
+    })
+}
+
 /// The floor's refusal of one segment of `cmd` at `depth`, read as its program's command.
 fn segment_reason(
     toks: &[String],
@@ -863,14 +1138,73 @@ fn segment_reason(
         Vec::new()
     };
     for inner in scripts.chain(fed) {
+        // A script read once at this depth, and let through, is let through again: the same
+        // string reached by the line as written and by the line read exactly is one read, which
+        // keeps a chain of nested shells linear (#7423).
+        if !first_read_of_script(&inner, depth) {
+            continue;
+        }
         if let Some(said) = inner_floor(&inner) {
             return Some(said);
+        }
+        // Inside double quotes the outer shell turns `\$` into `$`, so the inner shell expands
+        // what the lexer kept escaped (#7423).
+        let unescaped = unescape_double_quoted(&inner);
+        if unescaped != inner
+            && let Some(said) = inner_floor(&unescaped)
+        {
+            return Some(said);
+        }
+        // dash (`sh` on Linux) reads `&>` as `&` and then `>`: the command after it is a
+        // command of its own, with a redirection in front (#7423, round 7). Both readings.
+        if inner.contains("&>")
+            && matches!(base_lower(&prog).as_str(), "sh" | "dash" | "ash")
+            && let Some(said) = inner_floor(&inner.replace("&>", "& >"))
+        {
+            return Some(said);
+        }
+    }
+    // What a `find` runs for each file it finds is a command of its own (#7423).
+    for run in shellwrap::commands_a_find_runs(&prog, &argv) {
+        if let Some(said) = words_reason(&run, cmd, unattended, depth, a_shell_reads_stdin) {
+            return Some(said);
+        }
+        // `find` fills `{}` in with a file name, wherever it stands: a word the shell fills in
+        // (`-exec gh -R {} +`), not a plain value (#7423, round 12). And a forge run still short
+        // of its verb may be completed by the names `find` appends after a `+`, which the run no
+        // longer shows (`find pr merge 5 -maxdepth 0 -exec gh -R o/r +`): held.
+        let filled: Vec<String> = run.iter().map(|w| w.replace("{}", "$X")).collect();
+        if filled != run
+            && let Some(said) = words_reason(&filled, cmd, unattended, depth, a_shell_reads_stdin)
+        {
+            return Some(said);
+        }
+        let (forge, _, inner) = shellwrap::split_env(&run);
+        let forge = base_lower(&forge);
+        if matches!(forge.as_str(), "gh" | "glab") && placed::may_be_completed(&forge, &inner, &[])
+        {
+            return Some(format!("{RELEASE_FLOOR_FIX}{}", fed_said(&forge)));
         }
     }
     if !only_merges()
         && let Some(said) = token::keychain_read_reason(&prog, &argv)
     {
         return Some(said);
+    }
+    // zsh expands a word that begins with `=` to a program's path before any wrapper runs, so
+    // `env =gh pr merge 5` runs `gh`, though the wrapper's own rule reads `=gh` as an assignment
+    // (#7423): the word, with what follows it, is the command.
+    if let Some(at) = env.iter().position(|e| e.starts_with('=') && e.len() > 1) {
+        let toks: Vec<String> = env[..at]
+            .iter()
+            .cloned()
+            .chain(std::iter::once(env[at][1..].to_owned()))
+            .chain(env[at + 1..].iter().cloned())
+            .chain(argv.iter().cloned())
+            .collect();
+        if let Some(said) = segment_reason(&toks, cmd, unattended, depth, a_shell_reads_stdin) {
+            return Some(said);
+        }
     }
     // zsh reads `=gh` as the path of `gh`, so it is that program (#7131).
     if let Some(named) = prog.strip_prefix('=').filter(|named| !named.is_empty()) {
@@ -881,6 +1215,19 @@ fn segment_reason(
             .chain(argv.iter().skip(1).cloned())
             .collect();
         return segment_reason(&toks, cmd, unattended, depth, a_shell_reads_stdin);
+    }
+    // The words a script was handed, as the program (`"$@"`, `$*`), are any command (#7423,
+    // round 7), as the script's own name followed by them already is.
+    if prog.starts_with("$@")
+        || prog.starts_with("$*")
+        || prog.starts_with("${@")
+        || prog.starts_with("${*")
+    {
+        return Some(format!(
+            "{fix}{} The program `{prog}` is the words this script was handed, so purlis can't \
+             read which command this is. {WRITE_IT_OUT}",
+            merge::UNREADABLE
+        ));
     }
     // A program the shell fills in is read as each CLI it could be (#7124).
     // Only a word with `$` or a backtick: `[` is the test builtin, not a glob.
@@ -1072,6 +1419,11 @@ fn segment_reason(
             if let Some(why) = why {
                 return Some(format!("{fix}{why}"));
             }
+            // A flag before the noun may take the noun for its value (#7423). Said after the
+            // reasons above, which name more.
+            if let Some(why) = merge::unplaced_flag_reason(args) {
+                return Some(format!("{fix}{why}"));
+            }
         }
     }
     None
@@ -1098,21 +1450,25 @@ const NOUNS_THAT_MERGE: [&str; 4] = ["pr", "mr", "alias", "change"];
 fn filled_in_command_word<'a>(name: &str, words: &[&'a str]) -> Option<&'a str> {
     match words {
         [noun, ..] if merge::opaque(noun) => Some(noun),
-        [noun, verb, ..] if merge::opaque(verb) => {
-            let held = merge::held_commands(name)
-                .into_iter()
-                .chain(
-                    PUBLISH_SINCE
-                        .iter()
-                        .filter(|(cli, ..)| *cli == name)
-                        .map(|(_, noun, verb)| vec![*noun, *verb]),
-                )
-                .any(|command| command.len() > 1 && command[0] == *noun);
-            let matters = held && (!only_merges() || NOUNS_THAT_MERGE.contains(noun));
-            matters.then_some(verb)
-        }
+        [noun, verb, ..] if merge::opaque(verb) => noun_has_a_held_verb(name, noun).then_some(verb),
         _ => None,
     }
+}
+
+/// Whether `noun` begins a command of `name` that has a held verb, so a verb the shell fills in
+/// after it could be that verb: `pr` does, `issue` does not. With the merge half alone, only a
+/// noun that can merge counts ([`NOUNS_THAT_MERGE`]).
+fn noun_has_a_held_verb(name: &str, noun: &str) -> bool {
+    let held = merge::held_commands(name)
+        .into_iter()
+        .chain(
+            PUBLISH_SINCE
+                .iter()
+                .filter(|(cli, ..)| *cli == name)
+                .map(|(_, noun, verb)| vec![*noun, *verb]),
+        )
+        .any(|command| command.len() > 1 && command[0] == noun);
+    held && (!only_merges() || NOUNS_THAT_MERGE.contains(&noun))
 }
 
 /// Whether a `git push` flag is one the shell fills in, its name (`--$(echo tags)`, #7124) or
@@ -2721,14 +3077,15 @@ mod tests {
     /// Only the hedge is spared: the same shapes with a built program on a hedged line pass.
     #[test]
     fn a_built_program_on_a_hedged_line_is_not_refused() {
-        for built in [
-            "{gh,pr,view,7}",
-            "$(echo gh) pr view 7",
-            "\"$(echo gh)\" pr view 7",
-        ] {
+        for built in ["{gh,pr,view,7}", "$(echo gh) pr view 7"] {
             let text = hedged(built);
             assert_eq!(merge_reason(&text), None, "{text}");
         }
+        // Round 11 flipped this one to a hold: the lexer leaves a bare `gh` followed by a stray
+        // quote (`gh)"`, `"`) in the hedge's words, and a `gh` call whose noun is no command the
+        // allowlist knows is held, wherever it stands. A false hold, said in the refusal.
+        let text = hedged("\"$(echo gh)\" pr view 7");
+        assert!(merge_reason(&text).is_some(), "{text}");
     }
 
     /// A hedged line is read for a literal merge joined with its neighbours and on its own, with

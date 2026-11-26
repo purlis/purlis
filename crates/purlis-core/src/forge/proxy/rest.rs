@@ -12,7 +12,7 @@
 //! the refusal says why; they are never what lets a request through.
 
 use super::commands::{self, Body};
-use super::policy::{Class, Refusal};
+use super::policy::{Class, ObjectRepo, OwnsHead, PullRef, Refusal};
 use super::repo::{AllowedRepo, Kind};
 use super::request::{Target, is_read};
 
@@ -66,6 +66,54 @@ const RULESET: &[&str] = &[
     "deployment-protection-rules",
 ];
 
+/// The reads of a repo's rules that a chat may make (#7358): the rulesets that apply, and the
+/// rules that apply to a branch, which `tools/land.mjs` reads for the required checks. Every other
+/// route under [`RULESET`], and every write, stays refused.
+const RULE_READS: &[&[&str]] = &[
+    &["rulesets"],
+    &["rulesets", "#"],
+    &["rules", "branches", "*"],
+];
+
+/// The same on GitLab: the rules a chat may read. `approval_settings`, `push_rules` and
+/// every write stay refused under [`RULESET`].
+const GITLAB_RULE_READS: &[&[&str]] = &[
+    &["protected_branches"],
+    &["protected_branches", "*"],
+    &["approval_rules"],
+];
+
+fn rule_reads(kind: Kind) -> &'static [&'static [&'static str]] {
+    match kind {
+        Kind::GitHub => RULE_READS,
+        Kind::GitLab => GITLAB_RULE_READS,
+    }
+}
+
+/// What a chat may do to a workflow run of its own repo besides read it (#7358): rerun it, rerun
+/// its failed jobs. **Never `approve`**: that runs an outsider's fork code on the repo's runners,
+/// so it stays under [`APPROVAL`] and is refused: see ADR 0128's amendment of 2026-11-22.
+const CI_WRITES: &[&[&str]] = &[
+    &["actions", "runs", "#", "rerun"],
+    &["actions", "runs", "#", "rerun-failed-jobs"],
+];
+
+/// GitLab's one write: retry a pipeline, with an empty body, as GitHub's rerun. **Never `play`**:
+/// it starts a manual job, which can carry variables, and a manual job is gated code (a deploy, a
+/// job on a protected ref) that is the person's to start, as GitHub's `approve` is. Never a job's
+/// retry (it can enqueue a manual or delayed job at once) nor any cancel (GitHub has none, and it
+/// could stop a deploy mid-apply). Never the trigger routes, which start a pipeline with
+/// variables of the caller's choosing.
+const GITLAB_CI_WRITES: &[&[&str]] = &[&["pipelines", "#", "retry"]];
+
+fn is_ci_write(kind: Kind, method: &str, rel: &[String]) -> bool {
+    let list = match kind {
+        Kind::GitHub => CI_WRITES,
+        Kind::GitLab => GITLAB_CI_WRITES,
+    };
+    method == "POST" && list.iter().any(|p| matches(rel, p))
+}
+
 /// The repo's administration: refused for every method, reads included, because what a hook, a
 /// key or a variable holds is the point.
 const ADMIN: &[&str] = &[
@@ -106,7 +154,15 @@ const MERGE: &[&str] = &[
     "auto_merge",
 ];
 
-const APPROVAL: &[&str] = &["approve", "unapprove", "approvals", "approval", "reviews"];
+// `play` is GitLab's start of a manual job: held for the person like an approval.
+const APPROVAL: &[&str] = &[
+    "approve",
+    "unapprove",
+    "approvals",
+    "approval",
+    "reviews",
+    "play",
+];
 
 const RELEASE: &[&str] = &["releases", "tags", "tag"];
 
@@ -114,10 +170,41 @@ fn any(names: &[String], list: &[&str]) -> bool {
     names.iter().any(|n| list.contains(&n.as_str()))
 }
 
-/// The refusal a route earns by its name, if it earns one.
-fn named_refusal(method: &str, rel: &[String], target: &Target) -> Option<Refusal> {
+/// The merge routes `guards.merge` = `log` or `off` opens ([`decide`] with `merging`): GitHub's
+/// pull request merge, GitLab's merge request merge and its cancel of merge-when-pipeline-succeeds.
+/// Nothing else that merges is here: a branch merge (`POST merges`) and a flag in a query stay
+/// refused.
+fn merge_class(kind: Kind, method: &str, rel: &[String]) -> Option<Class> {
+    let rows: &[(&str, &[&str])] = match kind {
+        Kind::GitHub => &[("PUT", &["pulls", "#", "merge"])],
+        Kind::GitLab => &[
+            ("PUT", &["merge_requests", "#", "merge"]),
+            (
+                "POST",
+                &["merge_requests", "#", "cancel_merge_when_pipeline_succeeds"],
+            ),
+        ],
+    };
+    rows.iter()
+        .any(|(m, pattern)| *m == method && matches(rel, pattern))
+        .then_some(Class::MergeWrite)
+}
+
+/// The refusal a route earns by its name, if it earns one. `merging`: `guards.merge` lets a merge
+/// route of [`merge_class`] through.
+fn named_refusal(
+    kind: Kind,
+    method: &str,
+    rel: &[String],
+    target: &Target,
+    merging: bool,
+) -> Option<Refusal> {
     let names = names(rel);
-    if any(&names, RULESET) {
+    if is_ci_write(kind, method, rel) {
+        return None;
+    }
+    let rule_read = is_read(method) && rule_reads(kind).iter().any(|p| matches(rel, p));
+    if any(&names, RULESET) && !rule_read {
         return Some(Refusal::Ruleset);
     }
     if any(&names, ADMIN) {
@@ -126,9 +213,10 @@ fn named_refusal(method: &str, rel: &[String], target: &Target) -> Option<Refusa
     if is_read(method) {
         return None;
     }
-    if any(&names, MERGE)
+    if (any(&names, MERGE)
         || target.has_query_key("merge_when_pipeline_succeeds")
-        || target.has_query_key("auto_merge")
+        || target.has_query_key("auto_merge"))
+        && !(merging && merge_class(kind, method, rel).is_some())
     {
         return Some(Refusal::Merge);
     }
@@ -152,6 +240,9 @@ fn write_class(kind: Kind, method: &str, rel: &[String]) -> Option<Class> {
             .find(|(m, pattern, _)| *m == method && matches(rel, pattern))
             .map(|(_, _, class)| class.clone())
     };
+    if is_ci_write(kind, method, rel) {
+        return Some(Class::CiWrite);
+    }
     match kind {
         Kind::GitHub => allow(&[
             ("POST", &["pulls"], Class::PullRequestWrite),
@@ -269,6 +360,12 @@ const GITLAB_READS: &[&[&str]] = &[
     &["merge_requests", "#", "participants"],
     &["merge_requests", "#", "versions"],
     &["merge_requests", "#", "award_emoji"],
+    // Whether a merge request has the approvals it needs: a read of the state, never of
+    // the rules' settings.
+    &["merge_requests", "#", "approval_state"],
+    // Merge trains: who is in a project's train and where. Joining one stays a merge.
+    &["merge_trains"],
+    &["merge_trains", "merge_requests", "#"],
     &["issues"],
     &["issues", "#"],
     &["issues", "#", "notes"],
@@ -285,10 +382,26 @@ const GITLAB_READS: &[&[&str]] = &[
     // What `glab ci` reads: a pipeline and its jobs and test report. Not `bridges`, which names
     // the downstream projects a pipeline triggers, nor `variables`.
     &["pipelines"],
+    &["pipelines", "latest"],
     &["pipelines", "#"],
     &["pipelines", "#", "jobs"],
     &["pipelines", "#", "test_report"],
     &["pipelines", "#", "test_report_summary"],
+];
+
+/// The Dependabot alert reads: the list, and one alert by its number.
+const DEPENDABOT_READS: &[&[&str]] = &[&["dependabot", "alerts"], &["dependabot", "alerts", "#"]];
+
+/// What filters or pages an alert list besides [`READ_QUERY_KEYS`].
+const DEPENDABOT_QUERY_KEYS: &[&str] = &[
+    "severity",
+    "ecosystem",
+    "package",
+    "manifest",
+    "epss_percentage",
+    "has",
+    "before",
+    "after",
 ];
 
 /// The query keys a read on a listed route may carry. Anything else is refused: a rendering
@@ -377,6 +490,43 @@ pub(super) fn side_is_own(side: &str, repo: &AllowedRepo) -> bool {
     }
 }
 
+/// Whether a pull request's head, as written (`branch`, `owner:branch`, `refs/heads/branch`), is
+/// the repo's default branch: a pull request from it is the wrong way round, and nothing meant by
+/// it needs it (#7494). Every other unowned head is refused where it is written to, by
+/// [`head_is_owned`] (#7526), so a `release/*` head is a pull request like any other.
+pub(super) fn head_is_default(side: &str, repo: &AllowedRepo) -> bool {
+    let branch = side.rsplit_once(':').map_or(side, |(_, branch)| branch);
+    let branch = branch.strip_prefix("refs/heads/").unwrap_or(branch);
+    branch.eq_ignore_ascii_case(&repo.default_branch)
+}
+
+/// Update-branch (GitHub) and a rebase (GitLab) write to the pull request's **head**, so the head
+/// is what the chat must own: a branch of this repo that the push rule's record holds a tip of
+/// this chat's own on, equal to the head the forge reports now (#7526). When the forge cannot say
+/// what the head is, that is a refusal too. `number` is the pull request's number in `repo`.
+fn head_is_owned(
+    kind: Kind,
+    repo: &AllowedRepo,
+    number: &str,
+    objects: &dyn ObjectRepo,
+    owns: OwnsHead<'_>,
+) -> bool {
+    let Ok(number) = number.parse::<u64>() else {
+        return false;
+    };
+    let path = repo.path.to_ascii_lowercase();
+    objects
+        .pull_head(
+            kind,
+            &repo.host,
+            PullRef::Number {
+                repo: &path,
+                number,
+            },
+        )
+        .is_some_and(|head| owns(repo, &head))
+}
+
 /// A compare head or base written `owner:branch` or `owner/repo:branch` reaches that fork's
 /// objects: refused unless it names the recorded repo's owner.
 fn compare_is_own(kind: Kind, rel: &[String], target: &Target, repo: &AllowedRepo) -> bool {
@@ -428,6 +578,19 @@ fn read_allowed(kind: Kind, rel: &[String], target: &Target, repo: &AllowedRepo)
                 second.as_deref(),
                 Some("refs" | "trees" | "blobs" | "commits" | "matching-refs" | "ref")
             ),
+            "rulesets" | "rules" => listed(RULE_READS),
+            // A repo's Dependabot alerts, to match one to the pull request that fixes it (#7681):
+            // read only (an alert's `PATCH` dismisses it, and is not on the write list), and not
+            // Dependabot's secrets, which are administration.
+            "dependabot" => {
+                DEPENDABOT_READS.iter().any(|pattern| matches(rel, pattern))
+                    && target.query.iter().all(|(k, _)| {
+                        READ_QUERY_KEYS
+                            .iter()
+                            .chain(DEPENDABOT_QUERY_KEYS)
+                            .any(|allowed| k.eq_ignore_ascii_case(allowed))
+                    })
+            }
             "actions" => matches!(
                 second.as_deref(),
                 Some("runs" | "jobs" | "artifacts" | "workflows")
@@ -435,7 +598,8 @@ fn read_allowed(kind: Kind, rel: &[String], target: &Target, repo: &AllowedRepo)
             _ => false,
         },
         Kind::GitLab => match first.as_str() {
-            "merge_requests" | "issues" | "pipelines" => listed(GITLAB_READS),
+            "merge_requests" | "issues" | "pipelines" | "merge_trains" => listed(GITLAB_READS),
+            "protected_branches" | "approval_rules" => listed(GITLAB_RULE_READS),
             "jobs" | "labels" | "milestones" | "languages" | "releases" => true,
             "repository" => match second.as_deref() {
                 Some("compare") => compare_is_own(kind, rel, target, repo),
@@ -478,8 +642,25 @@ fn body_values(body: &Body, key: &str) -> Vec<String> {
         .collect()
 }
 
-/// What a write's request may not say: a query at all, a merge command in any text, and, on
-/// GitLab, a merge request aimed at another project.
+/// Whether `target`'s query is GitLab's own `merge_when_pipeline_succeeds=true|false`, **once, with
+/// that exact key** and nothing else, on a merge request's merge (`PUT …/merge_requests/<iid>/merge`):
+/// the form `glab` and the API's own docs send it in, which `guards.merge` = `log` or `off` takes
+/// as the body's field. A repeated flag or a key in another case is a query a forge may read
+/// differently from the proxy, so it stays refused.
+fn is_the_merge_flag(kind: Kind, method: &str, rel: &[String], target: &Target) -> bool {
+    kind == Kind::GitLab
+        && method == "PUT"
+        && matches(rel, &["merge_requests", "#", "merge"])
+        && matches!(
+            target.query.as_slice(),
+            [(k, v)] if k == "merge_when_pipeline_succeeds"
+                && matches!(v.as_str(), "true" | "false")
+        )
+}
+
+/// What a write's request may not say: a query at all (but the merge flag of
+/// [`is_the_merge_flag`], where `merging`), a merge command in any text, and, on GitLab, a merge
+/// request aimed at another project.
 fn check_body(
     kind: Kind,
     method: &str,
@@ -487,10 +668,11 @@ fn check_body(
     target: &Target,
     body: Option<&Body>,
     repo: &AllowedRepo,
+    merging: bool,
 ) -> Result<(), Refusal> {
     // No write carries a query: an unknown parameter is the forge reading something the proxy
     // did not.
-    if !target.query.is_empty() {
+    if !target.query.is_empty() && !(merging && is_the_merge_flag(kind, method, rel, target)) {
         return Err(Refusal::MalformedRequest);
     }
     let Some(body) = body else {
@@ -532,6 +714,14 @@ fn check_body(
         {
             return Err(Refusal::OtherRepo);
         }
+        // A pull request from the default branch into the chat's own makes update-branch merge
+        // that branch into the default one on the forge's side (#7494).
+        if body_values(body, "head")
+            .iter()
+            .any(|v| head_is_default(v, repo))
+        {
+            return Err(Refusal::ProtectedPullHead);
+        }
     }
     if kind == Kind::GitLab
         && rel
@@ -552,11 +742,36 @@ fn check_body(
         if named.iter().any(|n| Some(n) != own.as_ref()) {
             return Err(Refusal::OtherRepo);
         }
+        // A merge request from the default branch is the wrong way round (#7494).
+        if method == "POST"
+            && rel.len() == 1
+            && body_values(body, "source_branch").iter().any(|v| {
+                v.strip_prefix("refs/heads/")
+                    .unwrap_or(v)
+                    .eq_ignore_ascii_case(&repo.default_branch)
+            })
+        {
+            return Err(Refusal::ProtectedPullHead);
+        }
     }
     Ok(())
 }
 
+/// Whether a body is no body at all: no text, or a JSON `{}`.
+fn is_empty_object(body: &Body) -> bool {
+    body.form.is_empty()
+        && body.strings.is_empty()
+        && body
+            .json
+            .as_ref()
+            .is_none_or(|j| j.as_object().is_some_and(|m| m.is_empty()))
+}
+
 /// Decide one REST request under a chat's repo.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one request's parts, read together; a struct for them would only be built to be taken apart"
+)]
 pub(crate) fn decide(
     kind: Kind,
     method: &str,
@@ -564,8 +779,11 @@ pub(crate) fn decide(
     target: &Target,
     body: Option<&Body>,
     repo: &AllowedRepo,
+    objects: &dyn ObjectRepo,
+    owns: OwnsHead<'_>,
+    merging: bool,
 ) -> Result<Class, Refusal> {
-    if let Some(refusal) = named_refusal(method, rel, target) {
+    if let Some(refusal) = named_refusal(kind, method, rel, target, merging) {
         return Err(refusal);
     }
     if is_read(method) {
@@ -575,7 +793,22 @@ pub(crate) fn decide(
             Err(Refusal::NotOnList)
         };
     }
-    let class = write_class(kind, method, rel).ok_or(Refusal::NotOnList)?;
-    check_body(kind, method, rel, target, body, repo)?;
+    let class = write_class(kind, method, rel)
+        .or_else(|| merging.then(|| merge_class(kind, method, rel)).flatten())
+        .ok_or(Refusal::NotOnList)?;
+    check_body(kind, method, rel, target, body, repo, merging)?;
+    let writes_head = method == "PUT"
+        && match kind {
+            Kind::GitHub => matches(rel, &["pulls", "#", "update-branch"]),
+            Kind::GitLab => matches(rel, &["merge_requests", "#", "rebase"]),
+        };
+    if writes_head && !head_is_owned(kind, repo, &rel[1], objects, owns) {
+        return Err(Refusal::ProtectedPullHead);
+    }
+    if class == Class::CiWrite && body.is_some_and(|b| !is_empty_object(b)) {
+        // A rerun's body is `enable_debug_logging` and nothing else the chat may choose; GitLab's
+        // retry and cancel take none.
+        return Err(Refusal::MalformedRequest);
+    }
     Ok(class)
 }

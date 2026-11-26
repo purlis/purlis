@@ -1935,6 +1935,34 @@ impl State {
         self.excluded.retain(|key| key.frame != frame);
     }
 
+    /// The session of a process of its own that holds `frame` of `target`'s page, if the engine
+    /// told of one.
+    fn session_of_frame(&self, target: &str, frame: &str, besides: &str) -> Option<String> {
+        self.sessions.iter().find_map(|(session, kind)| match kind {
+            Session::Frame { page, frame: of }
+                if page == target && of == frame && session != besides =>
+            {
+                Some(session.clone())
+            }
+            _ => None,
+        })
+    }
+
+    /// Every session that holds a frame of `target`'s page, the page's own first.
+    fn sessions_of_page(&self, target: &str) -> Vec<String> {
+        let mut own: Vec<String> = self
+            .sessions
+            .iter()
+            .filter(|(_, kind)| match kind {
+                Session::Page(page) => page == target,
+                Session::Frame { page, .. } => page == target,
+            })
+            .map(|(session, _)| session.clone())
+            .collect();
+        own.sort();
+        own
+    }
+
     /// Whether `session` may say `frame` of `target`'s page is gone: the frame's own session, or
     /// the session of the frame or page it sits in (#4472).
     fn may_remove(&self, target: &str, frame: &str, session: &str) -> bool {
@@ -2538,13 +2566,9 @@ impl Browser {
             self.reads_once_settled()?;
             let _one = lock(&self.acting);
             let every = matches!(call, Call::Downloads);
-            return self.run_at(epoch, call).map(|answer| {
-                let mut answer = self.with_asked(answer);
-                if every {
-                    answer.downloads = lock(&self.inner.state).downloads.all();
-                }
-                answer
-            });
+            return self
+                .run_at(epoch, call)
+                .map(|answer| self.with_asked_as(answer, every));
         }
         match self.ledger.begin(id, &call) {
             Begin::Fresh(ticket) => {
@@ -2570,7 +2594,15 @@ impl Browser {
 
     /// `answer`, with the sites the judge asked about since the last answer (#2018).
     /// And the downloads that began or moved on since (#2020).
-    fn with_asked(&self, mut answer: Answer) -> Answer {
+    fn with_asked(&self, answer: Answer) -> Answer {
+        self.with_asked_as(answer, false)
+    }
+
+    /// [`Browser::with_asked`], and where `every_download` is set, the downloads it tells are
+    /// every one the browser has, taken in the same hold of its state as those still untold are
+    /// let go of: a download that moves on between the two would be listed as it now is and
+    /// told again by the next answer.
+    fn with_asked_as(&self, mut answer: Answer, every_download: bool) -> Answer {
         let mut state = lock(&self.inner.state);
         answer.asked = std::mem::take(&mut state.asked);
         for said in std::mem::take(&mut state.leaving_said) {
@@ -2579,7 +2611,12 @@ impl Browser {
                 None => said,
             });
         }
+        // Taken even where every download is listed: it lets go of the untold ones, so the next
+        // answer does not tell again what this one lists.
         answer.downloads = state.downloads.untold();
+        if every_download {
+            answer.downloads = state.downloads.all();
+        }
         if let Some(refused) = state.downloads.refused_since() {
             let said = format!(
                 "purlis cancelled {refused} more {} the page began: a browser makes at most {} \
@@ -6603,10 +6640,17 @@ impl Inner {
                     let target = text("/targetInfo/targetId");
                     let kind = text("/targetInfo/type").unwrap_or_default();
                     if let (Some(session), Some(target)) = (session, target) {
+                        // A frame's target the driver attached to itself is told of with no
+                        // session around it: it belongs to the page that holds the frame.
                         let parent_page = event
                             .session_id
                             .as_deref()
-                            .and_then(|s| state.page_of_session(s));
+                            .and_then(|s| state.page_of_session(s))
+                            .or_else(|| {
+                                (kind == "iframe")
+                                    .then(|| state.page_holding(&target))
+                                    .flatten()
+                            });
                         match (kind.as_str(), parent_page) {
                             ("page", _) if state.page(&target).is_some() => {
                                 if let Some(page) = state.page_mut(&target) {

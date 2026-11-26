@@ -12,7 +12,9 @@
 //! encoding never reach the forge.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
+
+use crate::forge::createdbranches::CreatedBranch;
 
 use super::commands;
 use super::git::{self, GitOp, PushError};
@@ -60,19 +62,33 @@ pub enum Refusal {
     Ruleset,
     /// The repo's administration: settings, hooks, keys, secrets, collaborators.
     Admin,
-    /// A push to the default branch, a protected one, a ref that is not a branch, or a branch the
-    /// chat did not create.
+    /// A push to the default branch, a protected one, a ref that is not a branch, a delete, or a
+    /// branch the chat owns but from a tip it did not leave there.
     ProtectedRef,
+    /// An update to a branch that is not protected and that this chat has no record of owning:
+    /// no one's, or another chat's. **The one push refusal the person may answer**: an ask in the
+    /// window lets this chat push it ([`crate::windowonly::Control::LetChatPush`]); nothing else
+    /// about the push has changed. A push with any other refusal in it is that refusal.
+    NotYourBranch,
     /// A push that carries push options, which a forge reads as commands (`merge_request.*`).
     PushOption,
     /// A push whose ref commands were not read, or a request body that is too big or missing.
     BodyUnreadable,
     /// A GraphQL document that does not parse as one request.
     GraphqlParse,
+    /// A pull request opened from the default branch, or an update-branch (GitHub) or rebase
+    /// (GitLab) on a pull request whose head is not a branch of the chat's own repo that this chat
+    /// put its own tip on, at the tip the forge reports now. The forge writes the base into the
+    /// head, so anything else would land the chat's code in a branch it does not own (#7494,
+    /// #7526).
+    ProtectedPullHead,
     /// A GraphQL mutation that is not on the list.
     GraphqlUnknownMutation,
     /// A GraphQL document that reaches a repo, or an object, that is not the chat's.
     GraphqlOtherRepo,
+    /// [`Self::GraphqlOtherRepo`] for a `createPullRequest` or `updatePullRequestBranch` mutation
+    /// (`gh pr create`, `gh pr update-branch`), the two that have a REST route to be told of.
+    GraphqlPullRequestOtherRepo,
     /// A credential in the query string, which the forge would read as the chat's own login.
     CredentialInQuery,
     /// A multipart body, which a chat may send only as one file to a route that takes an upload.
@@ -105,6 +121,12 @@ impl Refusal {
                 "set labels through the API's labels field, not a /label, /unlabel or /relabel line, and leave other quick actions out of the text",
             ),
             Self::LabelById => Some("name labels in the API's labels field, not by id"),
+            Self::GraphqlPullRequestOtherRepo => Some(
+                "if the repo is this chat's own, the REST route for the same act is answered: `gh api repos/OWNER/REPO/pulls -X POST -f title=... -f head=BRANCH -f base=main` for gh pr create, `gh api -X PUT repos/OWNER/REPO/pulls/N/update-branch` for gh pr update-branch",
+            ),
+            Self::ProtectedPullHead => Some(
+                "open the pull request from your feature branch into the default branch, never the other way round, and run update-branch or a rebase only on a pull request whose head is one of this chat's own branches in this repo, at the tip this chat pushed (push it first; an update-branch or rebase moves the head, so push again from the new tip)",
+            ),
             _ => None,
         }
     }
@@ -121,9 +143,15 @@ pub enum Class {
     /// An archive or a release download of a repo.
     PublicRead,
     PullRequestWrite,
+    /// A merge `guards.merge` = `log` or `off` let through: a pull request or merge request merge,
+    /// or GitLab's cancel of merge-when-pipeline-succeeds.
+    MergeWrite,
     CommentWrite,
     IssueWrite,
     LabelWrite,
+    /// A rerun of a workflow run of the chat's repo (#7358), or a retry or cancel of a GitLab
+    /// pipeline or job.
+    CiWrite,
     GraphqlQuery,
     /// The batch call of Git LFS, asking for download addresses only.
     LfsBatch,
@@ -163,9 +191,10 @@ pub struct Allowed {
     pub canonical_body: Option<Vec<u8>>,
     /// The `Content-Type` that body is sent with, said once.
     pub canonical_media: Option<String>,
-    /// Branches this push makes, as `(host, repo, branch)`. They become the chat's own only when
-    /// [`ForgeProxy::confirm_push`](super::ForgeProxy::confirm_push) is told the forge made them.
-    pub(crate) created: Vec<(String, String, String)>,
+    /// Branches this push makes or moves, with the tip it leaves them at. They are recorded, and
+    /// the tip moves, only when
+    /// [`ForgeProxy::confirm_push`](super::ForgeProxy::confirm_push) is told the forge took the push.
+    pub(crate) created: Vec<CreatedBranch>,
     pub(crate) surface: Surface,
     /// Every repo a GraphQL document named (empty for any other request): the credential is asked
     /// for each, and the request is served only if one account serves them all.
@@ -216,7 +245,45 @@ pub enum BodyNeed {
 pub trait ObjectRepo: Send + Sync {
     /// The normalised `owner/repo` path of the repo `node_id` is in, on `host`.
     fn repo_of(&self, kind: Kind, host: &str, node_id: &str) -> Option<String>;
+
+    /// The normalised `owner/repo` path and the number of the pull request `node_id` is, on
+    /// `host`: what a held merge names (#7543). `None` where the id is not a pull request or the
+    /// forge could not say, and the merge is then not asked about.
+    fn pull_of(&self, _kind: Kind, _host: &str, _node_id: &str) -> Option<(String, u64)> {
+        None
+    }
+
+    /// The head of the pull request `pull` names, on `host`, or `None` when the forge cannot say.
+    /// **`None` refuses**: update-branch writes to the head, so a head that is not known is not
+    /// written to (#7494). A resolver that does not implement it refuses every update-branch.
+    fn pull_head(&self, _kind: Kind, _host: &str, _pull: PullRef<'_>) -> Option<PullHead> {
+        None
+    }
 }
+
+/// A pull request's head as the forge says it: the repo it is in (lower-case `owner/repo`, which
+/// is not the base's when the pull request is from a fork) and the branch's short name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PullHead {
+    pub repo: String,
+    pub branch: String,
+    /// The head's tip as the forge says it now (`headRefOid`, GitLab's `diff_head_sha`): what the
+    /// ownership record must equal for the update to be let through (#7526).
+    pub oid: String,
+}
+
+/// How a pull request is named when its head is asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PullRef<'a> {
+    /// A GraphQL node id.
+    Node(&'a str),
+    /// A number in the repo `repo` (lower-case `owner/repo`), as REST names it.
+    Number { repo: &'a str, number: u64 },
+}
+
+/// Whether the chat may write to a pull request's head: the question update-branch and a rebase
+/// are asked ([`ChatPolicy::owns_head`]).
+pub(super) type OwnsHead<'a> = &'a dyn Fn(&AllowedRepo, &PullHead) -> bool;
 
 /// The resolver that knows nothing, so every mutation on an object is refused.
 #[derive(Debug, Default, Clone, Copy)]
@@ -242,8 +309,50 @@ pub fn is_download_host(host: &str) -> bool {
     DOWNLOAD_HOSTS.contains(&host)
 }
 
+/// Whether `host` is where GitHub Actions keeps a run's logs and artifacts (#7358): `*.actions.githubusercontent.com`
+/// (one label under it, as `pipelines.` and `results-receiver.`, but never `token.` or `vstoken.`) and Actions results storage,
+/// `productionresultssa<digits>.blob.core.windows.net`. **Never a bare `*.blob.core.windows.net`**,
+/// which is anyone's storage account. The address is pre-signed, so it is followed once, by a GET
+/// and with no credential, and only for the chat on its unix socket: it is never tunnelled to, so
+/// it is on no [`DOWNLOAD_HOSTS`] list and the chat's own egress still refuses it.
+pub fn is_ci_storage_host(host: &str) -> bool {
+    let label = |l: &str| {
+        !l.is_empty()
+            && l.bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            && !l.starts_with('-')
+    };
+    if let Some(sub) = host.strip_suffix(".actions.githubusercontent.com") {
+        // `token.` and `vstoken.` mint Actions tokens: never a place a log is kept.
+        return label(sub) && !matches!(sub, "token" | "vstoken");
+    }
+    host.strip_suffix(".blob.core.windows.net")
+        .and_then(|account| account.strip_prefix("productionresultssa"))
+        .is_some_and(|n| (1..=5).contains(&n.len()) && n.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Where gitlab.com keeps a job's artifacts and archived log: Google Cloud Storage, in the
+/// one bucket GitLab names for it, `gitlab-gprd-artifacts`. **Never a bare `storage.googleapis.com`**,
+/// which is anyone's bucket. `path` is the address's path as the URL parser left it, so a `..` in it
+/// is already resolved. Only gitlab.com's own redirect is followed ([`GITLAB_COM`]): a self-hosted
+/// GitLab serves a job's log and artifacts itself, and its object storage (an operator's choice
+/// of host) is not carried. As GitHub's, the address is pre-signed: followed once, by a GET, with
+/// no credential.
+pub fn is_gitlab_ci_storage(host: &str, path: &str) -> bool {
+    host == "storage.googleapis.com"
+        && path
+            .strip_prefix("/gitlab-gprd-artifacts/")
+            .is_some_and(|object| !object.is_empty())
+}
+
+/// The one GitLab host whose redirects to [`is_gitlab_ci_storage`] are followed.
+pub const GITLAB_COM: &str = "gitlab.com";
+
 /// The reads outside any repo that `gh`, `glab` and git need, and nothing else.
 const NON_REPO_READS: &[(&[&str], Kind)] = &[
+    // The API root, which `gh auth status` reads to check the token and its scopes: the same
+    // fixed document for anyone, and the scopes header is the brokered token's own.
+    (&[], Kind::GitHub),
     (&["user"], Kind::GitHub),
     (&["meta"], Kind::GitHub),
     (&["rate_limit"], Kind::GitHub),
@@ -305,15 +414,32 @@ impl GithubAlias {
 }
 
 /// A chat's repos, the branches it created, and the rule that decides every request against them.
-#[derive(Debug)]
 pub struct ChatPolicy {
     repos: Vec<AllowedRepo>,
-    /// `(host, repo path, branch)`, the branch's case exact: the branches the chat may move.
-    own_branches: Mutex<HashSet<(String, String, String)>>,
+    /// `(host, repo path, branch)`, the branch's case exact, and the tip this chat last put on it:
+    /// the branches the chat may move, from that tip. Decides only where there is no `tips`.
+    own_branches: Mutex<HashMap<(String, String, String), String>>,
+    /// Where the tip the chat last put on a branch is read from at each update, when the app
+    /// keeps it where every chat's pushes land. It decides over `own_branches`, so a push by
+    /// another chat moves it under this one.
+    tips: Option<TipSource>,
+    /// Where the branches the app's record holds for this chat are read from when an
+    /// advertisement is noted, so a branch recorded before this run, and gone from the forge
+    /// since, has its record ended too.
+    recorded: Option<RecordedBranches>,
     /// The branches each repo's last advertisement for a push named, as the listener told the
     /// proxy, keyed by `(host, repo path)`.
     advertised: Mutex<HashMap<(String, String), HashSet<String>>>,
 }
+
+/// The tip the chat last put on a branch, `(host, forge repo id, branch)`: asked at **every update**
+/// and never kept, so another chat's push, a branch made again, or a record that ended is seen at
+/// once. `None` is not this chat's, or no tip that reads: the update is refused.
+pub type TipSource = Arc<dyn Fn(&str, u64, &str) -> Option<String> + Send + Sync>;
+
+/// The branches of a repo the chat's record holds, `(host, forge repo id)`: asked each time an
+/// advertisement is noted, never kept.
+pub type RecordedBranches = Arc<dyn Fn(&str, u64) -> Vec<String> + Send + Sync>;
 
 /// The kind, path segments, query and host of a request, for the hand-off of a held act.
 pub(super) type HeldRoute = (Kind, Vec<String>, Vec<(String, String)>, String);
@@ -332,6 +458,15 @@ pub(crate) fn body_need(head: &RequestHead) -> BodyNeed {
     }
 }
 
+impl std::fmt::Debug for ChatPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChatPolicy")
+            .field("repos", &self.repos)
+            .field("tips", &self.tips.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
 impl ChatPolicy {
     pub fn new(repos: Vec<AllowedRepo>) -> Self {
         let own = repos
@@ -339,14 +474,31 @@ impl ChatPolicy {
             .flat_map(|r| {
                 r.own_branches
                     .iter()
-                    .map(|b| (r.host.clone(), r.path.clone(), b.clone()))
+                    .map(|(b, tip)| ((r.host.clone(), r.path.clone(), b.clone()), tip.clone()))
             })
             .collect();
         Self {
             repos,
             own_branches: Mutex::new(own),
+            tips: None,
+            recorded: None,
             advertised: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Read the tip of a branch from `tips` at each update, in place of what this policy kept.
+    #[must_use]
+    pub fn with_tips(mut self, tips: TipSource) -> Self {
+        self.tips = Some(tips);
+        self
+    }
+
+    /// Read the branches the record holds for this chat from `recorded` when an advertisement is
+    /// noted, so one gone from the forge ends its record whichever run recorded it.
+    #[must_use]
+    pub fn with_recorded(mut self, recorded: RecordedBranches) -> Self {
+        self.recorded = Some(recorded);
+        self
     }
 
     /// The forge kind, path segments, query and host a request of this chat is for, where one of
@@ -371,22 +523,95 @@ impl ChatPolicy {
 
     /// The listener read a repo's ref advertisement for a push, and these are its branches (short
     /// names). A push that makes a branch is decided against the latest one.
-    pub fn note_advertised(&self, host: &str, repo_path: &str, branches: Vec<String>) {
+    ///
+    /// **Returns the chat's own branches of that repo the advertisement does not list: they are
+    /// gone from the forge**, so they are the chat's own no more (a name made again is not the
+    /// chat's), and the caller ends their record. A repo always has its default branch, so an
+    /// advertisement with no branch at all is one that did not read, and ends nothing.
+    pub fn note_advertised(
+        &self,
+        host: &str,
+        repo_path: &str,
+        branches: Vec<String>,
+    ) -> Vec<CreatedBranch> {
+        let (host, repo_path) = (host.to_ascii_lowercase(), repo_path.to_ascii_lowercase());
+        let listed: HashSet<String> = branches.into_iter().collect();
+        let mut gone = Vec::new();
+        if !listed.is_empty()
+            && let Some(repo) = self
+                .repos
+                .iter()
+                .find(|r| r.host == host && r.path == repo_path)
+        {
+            self.own_branches
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .retain(|(h, p, branch), _| {
+                    let ours = *h == host && *p == repo_path;
+                    if ours && !listed.contains(branch) {
+                        gone.push(CreatedBranch {
+                            host: host.clone(),
+                            repo: repo_path.clone(),
+                            repo_id: repo.project_id,
+                            branch: branch.clone(),
+                            tip: String::new(),
+                        });
+                        return false;
+                    }
+                    true
+                });
+        }
+        // The record may hold branches this run never saw made (an earlier run's): any of them the
+        // advertisement does not list is gone from the forge too. Needs the repo's forge id, the
+        // record's key, and an advertisement that read.
+        if !listed.is_empty()
+            && let (Some(recorded), Some(repo)) = (
+                &self.recorded,
+                self.repos
+                    .iter()
+                    .find(|r| r.host == host && r.path == repo_path),
+            )
+            && let Some(repo_id) = repo.project_id
+        {
+            for branch in recorded(&host, repo_id) {
+                if !listed.contains(&branch) && !gone.iter().any(|g| g.branch == branch) {
+                    gone.push(CreatedBranch {
+                        host: host.clone(),
+                        repo: repo_path.clone(),
+                        repo_id: Some(repo_id),
+                        branch,
+                        tip: String::new(),
+                    });
+                }
+            }
+        }
         self.advertised
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(
-                (host.to_ascii_lowercase(), repo_path.to_ascii_lowercase()),
-                branches.into_iter().collect(),
-            );
+            .insert((host, repo_path), listed);
+        gone
     }
 
-    /// The forge made these branches (a push's report said so): they are the chat's own now.
-    pub(crate) fn confirm_created(&self, created: &[(String, String, String)]) {
+    /// The forge made or moved these branches (a push's report said so): they are the chat's own
+    /// now, at the tip that push left them at.
+    pub(crate) fn confirm_created(&self, created: &[CreatedBranch]) {
         self.own_branches
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend(created.iter().cloned());
+            .extend(created.iter().map(|c| {
+                (
+                    (c.host.clone(), c.repo.clone(), c.branch.clone()),
+                    c.tip.to_ascii_lowercase(),
+                )
+            }));
+    }
+
+    /// Whether `host` is the API host of one of the chat's GitHub repos on port 443: the one
+    /// place a `Host` without a port on the plain door is read as meaning 443 (#7679).
+    pub fn is_github_api_host(&self, host: &str) -> bool {
+        self.repos.iter().any(|r| {
+            r.kind == Kind::GitHub && r.port == 443 && r.api_host().eq_ignore_ascii_case(host)
+        })
     }
 
     /// What `gh`'s `GH_HOST=github.localhost` means for this chat (ADR 0128 D3c): the one GitHub
@@ -477,7 +702,78 @@ impl ChatPolicy {
 
     /// Decide one request. `body` is what [`body_need`] asked for: nothing for most requests.
     pub fn decide(&self, head: &RequestHead, body: &[u8], objects: &dyn ObjectRepo) -> Decision {
-        match self.try_decide(head, body, objects) {
+        self.decide_as(head, body, objects, false)
+    }
+
+    /// [`Self::decide`] with the merge routes open, for `guards.merge` = `log` or `off`: the REST
+    /// and GraphQL merges, auto-merge and the merge queue of [`graphql::merge_mutation`] and
+    /// [`rest::merge_class`], each still tied to a recorded repo of the chat by the same checks
+    /// as any write. A request that is anything else is decided exactly as [`Self::decide`] does.
+    pub fn decide_merging(
+        &self,
+        head: &RequestHead,
+        body: &[u8],
+        objects: &dyn ObjectRepo,
+    ) -> Decision {
+        self.decide_as(head, body, objects, true)
+    }
+
+    /// **The merge a GraphQL merge mutation asks for, to be held for the person** (#7543): what
+    /// `enforce` refuses as [`Refusal::Merge`] and the person's Merge press can perform.
+    ///
+    /// - `None` where the request is not a merge mutation the merge routes would let through: it
+    ///   passes every check of any write (a recorded repo, no merge command in its text), so a
+    ///   document that is anything else is refused as it was and nobody is asked.
+    /// - `Some(Err(why))` where it is one, but the pull request cannot be named (the forge did
+    ///   not say its number): refused, and the chat is told why.
+    /// - `Some(Ok(requested))` where it is one and the pull request is named.
+    ///
+    /// The merge and merge-queue mutations are each held as the act they name, which the
+    /// person's press performs and no other. Auto-merge, and a GitLab accept that sets a merge
+    /// strategy, are refused with a reason; undoing one is never held.
+    pub(super) fn held_graphql_merge(
+        &self,
+        head: &RequestHead,
+        body: &[u8],
+        objects: &dyn ObjectRepo,
+    ) -> Option<Result<crate::heldact::Requested, &'static str>> {
+        let Decision::Allow(allowed) = self.decide_merging(head, body, objects) else {
+            return None;
+        };
+        let Class::GraphqlMutation(name) = &allowed.class else {
+            return None;
+        };
+        let host = request::host(head).ok()?;
+        let repos: Vec<&AllowedRepo> = self
+            .repos
+            .iter()
+            .filter(|r| r.serves(&host, head.port))
+            .collect();
+        let kind = repos.first()?.kind;
+        if let Some(said) = graphql::unheld_merge_said(kind, name) {
+            return Some(Err(said));
+        }
+        graphql::merge_act(kind, name)?;
+        if let Some(said) = graphql::strategy_said(kind, body) {
+            return Some(Err(said));
+        }
+        let named = graphql::merge_target(kind, &repos, body, objects)
+            .and_then(|(path, number, act)| {
+                let repo = crate::mergehold::Repo::try_from(path).ok()?;
+                Some(crate::heldact::Requested::land_of(repo, number, act))
+            })
+            .ok_or("purlis could not read which pull request of this repo the document merges (it reads one mutation with one field); ask the person to merge it");
+        Some(named)
+    }
+
+    fn decide_as(
+        &self,
+        head: &RequestHead,
+        body: &[u8],
+        objects: &dyn ObjectRepo,
+        merging: bool,
+    ) -> Decision {
+        match self.try_decide(head, body, objects, merging) {
             Ok(allowed) => Decision::Allow(allowed),
             Err(refusal) => Decision::Refuse(refusal),
         }
@@ -488,6 +784,7 @@ impl ChatPolicy {
         head: &RequestHead,
         body: &[u8],
         objects: &dyn ObjectRepo,
+        merging: bool,
     ) -> Result<Allowed, Refusal> {
         let method = request::method(head).ok_or(Refusal::NotOnList)?;
         let host = request::host(head)?;
@@ -571,6 +868,45 @@ impl ChatPolicy {
             }
         }
 
+        // `GET /search/issues?q=`: issues and pull requests of one of the chat's own repos, which
+        // the query must name by exactly one `repo:` (the same reading as GraphQL's `search`).
+        if method == "GET" && kind == Kind::GitHub {
+            let prefix: &[&str] = if on_api_host || host == "github.com" {
+                &[]
+            } else {
+                &["api", "v3"]
+            };
+            if (on_api_host || host != "github.com")
+                && strs.len() == prefix.len() + 2
+                && strs[..prefix.len()] == *prefix
+                && strs[prefix.len()..] == ["search", "issues"]
+            {
+                if !self.has_one_host(Kind::GitHub) {
+                    return Err(Refusal::AmbiguousHost);
+                }
+                // One `q`, and only the keys that page or sort its answer: another key may select
+                // a different search (`advanced_search`).
+                let only_known = target
+                    .query
+                    .iter()
+                    .all(|(k, _)| ["q", "sort", "order", "per_page", "page"].contains(&k.as_str()));
+                let one_q = target.query.iter().filter(|(k, _)| k == "q").count() == 1;
+                let at = target
+                    .query_value("q")
+                    .and_then(|q| graphql::search_repo(q, &candidates));
+                return match at {
+                    Some(at) if only_known && one_q => Ok(allowed(
+                        candidates[at],
+                        Class::ApiRead,
+                        Surface::Api,
+                        segments,
+                        &target,
+                    )),
+                    _ => Err(Refusal::OtherRepo),
+                };
+            }
+        }
+
         // GraphQL: one URL, decided by the document.
         let graphql_path = match kind {
             Kind::GitHub if on_api_host => strs == ["graphql"],
@@ -592,7 +928,14 @@ impl ChatPolicy {
             if document.json.is_none() {
                 return Err(Refusal::GraphqlParse);
             }
-            let decided = graphql::decide(kind, &candidates, &document.canonical, objects)?;
+            let decided = graphql::decide(
+                kind,
+                &candidates,
+                &document.canonical,
+                objects,
+                &|r, h| self.owns_head(r, h),
+                merging,
+            )?;
             // Every id in the document was tied to one of the chat's repos, and the credential is
             // asked for each of them, not for the first: a document naming repo B is never sent
             // with repo A's token. One that touches none is a request outside a repo.
@@ -648,7 +991,17 @@ impl ChatPolicy {
             } else {
                 commands::parse(body, head.content_type.as_deref())?
             };
-            let class = rest::decide(kind, method, &rel, &target, parsed.as_ref(), repo)?;
+            let class = rest::decide(
+                kind,
+                method,
+                &rel,
+                &target,
+                parsed.as_ref(),
+                repo,
+                objects,
+                &|r, h| self.owns_head(r, h),
+                merging,
+            )?;
             let mut answer = allowed(repo, class, Surface::Api, segments, &target);
             if let Some(b) = parsed {
                 answer.canonical_media = Some(b.media);
@@ -749,16 +1102,15 @@ impl ChatPolicy {
 
     /// A push's commands against the repo: every ref a branch, none the default, a protected one,
     /// a deploy trigger or a pages branch; no ref deleted; a branch may be made if the proxy knows
-    /// from the repo's advertisement that it does not exist, and a branch may be moved only if it
-    /// is one the chat made (or was given). That refuses a force-push and a non-fast-forward on
-    /// anyone else's branch: the proxy sees old and new ids, never history. Push options are
-    /// refused. The branches this push makes are **returned, not recorded**: they are the chat's
-    /// own once the forge says it made them ([`Self::confirm_created`]).
-    fn check_push(
-        &self,
-        repo: &AllowedRepo,
-        body: &[u8],
-    ) -> Result<Vec<(String, String, String)>, Refusal> {
+    /// from the repo's advertisement that it does not exist, and a branch may be moved only from
+    /// the tip this chat last put on it (the record's last line, read at every update). Any other
+    /// old id is refused: a branch someone else made or moved, or one made again after it was
+    /// gone. The forge refuses the old id if the ref is no longer there, so together the two
+    /// refuse a force-push and a non-fast-forward on anyone else's branch: the proxy sees old and
+    /// new ids, never history. Push options are refused. The branches this push makes and moves
+    /// are **returned, not recorded**: they are the chat's once the forge confirms the whole push
+    /// ([`Self::confirm_created`]).
+    fn check_push(&self, repo: &AllowedRepo, body: &[u8]) -> Result<Vec<CreatedBranch>, Refusal> {
         let pushed = git::pushed_commands(body).map_err(|e| match e {
             PushError::Unreadable | PushError::PushCert => Refusal::BodyUnreadable,
         })?;
@@ -774,7 +1126,7 @@ impl ChatPolicy {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         let known = advertised.get(&(repo.host.clone(), repo.path.clone()));
-        let mut created: Vec<(String, String, String)> = Vec::new();
+        let mut created: Vec<CreatedBranch> = Vec::new();
         // Every command is examined before the push is classified: a push is refused as the most
         // severe class among its commands, never as the first one met, so a tag beside a delete
         // of `main` is a protected ref and not a "release or tag" that could be held and allowed.
@@ -803,8 +1155,8 @@ impl ChatPolicy {
         repo: &AllowedRepo,
         command: &git::RefCommand,
         known: Option<&HashSet<String>>,
-        own: &HashSet<(String, String, String)>,
-    ) -> Result<Option<(String, String, String)>, Refusal> {
+        own: &HashMap<(String, String, String), String>,
+    ) -> Result<Option<CreatedBranch>, Refusal> {
         let name = &command.name;
         if name.starts_with("refs/tags/") {
             return Err(Refusal::ReleaseOrTag);
@@ -815,20 +1167,179 @@ impl ChatPolicy {
         if branch.is_empty() || repo.protects(branch) || command.delete {
             return Err(Refusal::ProtectedRef);
         }
-        let key = (repo.host.clone(), repo.path.clone(), branch.to_string());
         if command.create {
             let known = known.ok_or(Refusal::NoAdvertisement)?;
             // Exact, and case-folded too: a `Fix` beside a colleague's `fix` is not made.
             if known.iter().any(|b| b.eq_ignore_ascii_case(branch)) {
                 return Err(Refusal::ProtectedRef);
             }
-            Ok(Some(key))
-        } else if !own.contains(&key) {
-            Err(Refusal::ProtectedRef)
+            Ok(Some(CreatedBranch {
+                host: repo.host.clone(),
+                repo: repo.path.clone(),
+                repo_id: repo.project_id,
+                branch: branch.to_string(),
+                tip: command.new_id.clone(),
+            }))
         } else {
-            Ok(None)
+            // **An update is let through only from the tip this chat last put on the branch**, read
+            // now: a branch deleted and made again, pushed to by anyone else (another chat
+            // through the route included), or never advertised to this chat has another tip.
+            // Nothing here depends on an advertisement having been read.
+            let tip = self.tip_in(own, repo, branch);
+            match tip {
+                Some(tip) if tip.eq_ignore_ascii_case(&command.old_id) => Ok(Some(CreatedBranch {
+                    host: repo.host.clone(),
+                    repo: repo.path.clone(),
+                    repo_id: repo.project_id,
+                    branch: branch.to_string(),
+                    tip: command.new_id.clone(),
+                })),
+                // The chat owns it, but not at this tip: someone moved it since. Not the person's
+                // to answer here; the chat fetches, or the person pushes.
+                Some(_) => Err(Refusal::ProtectedRef),
+                // No tip of this chat's: the branch has no owner here, or another's. Where the
+                // app keeps the record (`tips`) and the repo has its forge id, the person can let
+                // this chat push it ([`Self::unowned_updates`]).
+                None if self.tips.is_some() && repo.project_id.is_some() => {
+                    Err(Refusal::NotYourBranch)
+                }
+                None => Err(Refusal::ProtectedRef),
+            }
         }
     }
+}
+
+impl ChatPolicy {
+    /// The tip this chat last put on `branch`, from the record the push rule reads
+    /// (`tips`, else the policy's own).
+    fn tip_in(
+        &self,
+        own: &HashMap<(String, String, String), String>,
+        repo: &AllowedRepo,
+        branch: &str,
+    ) -> Option<String> {
+        match (&self.tips, repo.project_id) {
+            (Some(tips), Some(repo_id)) => tips(&repo.host, repo_id, branch),
+            (Some(_), None) => None,
+            (None, _) => own
+                .get(&(repo.host.clone(), repo.path.clone(), branch.to_string()))
+                .cloned(),
+        }
+    }
+
+    /// **Whether this chat may write to a pull request's head** (update-branch, a GitLab rebase;
+    /// #7526), by the record the push rule uses: the head is a branch of `repo` itself (not a
+    /// fork's), it is not protected, the chat has a tip of its own on it, and that tip is the one
+    /// the forge reports as the head now. Any other branch is somebody else's, whatever the pull
+    /// request's base says, and the head moving since the chat pushed is refused as the push is.
+    fn owns_head(&self, repo: &AllowedRepo, head: &PullHead) -> bool {
+        if !head.repo.eq_ignore_ascii_case(&repo.path) || repo.protects(&head.branch) {
+            return false;
+        }
+        let own = self
+            .own_branches
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        self.tip_in(&own, repo, &head.branch)
+            .is_some_and(|tip| !head.oid.is_empty() && tip.eq_ignore_ascii_case(&head.oid))
+    }
+}
+
+/// One branch of a push whose update the chat is refused for having no tip of its own on it
+/// ([`Refusal::NotYourBranch`]): what the ask in the window names, and what its Allow records.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotYours {
+    pub host: String,
+    /// The lower-case repo path.
+    pub repo: String,
+    /// The forge's numeric id of the repo: the record's key.
+    pub repo_id: u64,
+    pub branch: String,
+}
+
+impl ChatPolicy {
+    /// **The branches a push is refused for** ([`Refusal::NotYourBranch`]): each update, in a
+    /// push to one of the chat's repos, of a branch that is not protected and that the chat has no
+    /// tip of its own on. Read the way [`Self::decide`] reads the push, from the request alone and
+    /// nothing a chat can add: a protected or default branch, a deploy or pages branch, a delete,
+    /// a tag, a branch the chat owns at another tip and a branch made are never in it, so none of
+    /// them raises an ask. Each branch once.
+    pub fn unowned_updates(&self, head: &RequestHead, body: &[u8]) -> Vec<NotYours> {
+        let (Some(method), Ok(host), Ok(target), Some(tips)) = (
+            request::method(head),
+            request::host(head),
+            request::parse_target(&head.target),
+            &self.tips,
+        ) else {
+            return Vec::new();
+        };
+        let candidates: Vec<&AllowedRepo> = self
+            .repos
+            .iter()
+            .filter(|r| r.serves(&host, head.port))
+            .collect();
+        let Some(first) = candidates.first() else {
+            return Vec::new();
+        };
+        let kind = first.kind;
+        let Some((repo_segments, GitOp::ReceivePack)) =
+            git::classify(method, &target.segments, &target)
+        else {
+            return Vec::new();
+        };
+        let Ok(path) = normalise_repo_path(kind, &repo_segments.join("/")) else {
+            return Vec::new();
+        };
+        let Some(repo) = candidates
+            .iter()
+            .filter(|r| r.kind == kind)
+            .find(|r| r.path == path)
+        else {
+            return Vec::new();
+        };
+        let (Some(repo_id), Ok(pushed)) = (repo.project_id, git::pushed_commands(body)) else {
+            return Vec::new();
+        };
+        let advertised = self
+            .advertised
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        // A branch the repo does not list is not one to ask about: an invented name raises
+        // nothing, and the push is refused as it was.
+        let Some(listed) = advertised.get(&(repo.host.clone(), repo.path.clone())) else {
+            return Vec::new();
+        };
+        let mut out: Vec<NotYours> = Vec::new();
+        for command in &pushed.commands {
+            let Some(branch) = command.name.strip_prefix("refs/heads/") else {
+                continue;
+            };
+            if command.create
+                || command.delete
+                || branch.is_empty()
+                || repo.protects(branch)
+                || !listed.contains(branch)
+                || !is_askable_branch(branch)
+                || tips(&repo.host, repo_id, branch).is_some()
+                || out.iter().any(|one| one.branch == branch)
+            {
+                continue;
+            }
+            out.push(NotYours {
+                host: repo.host.clone(),
+                repo: repo.path.clone(),
+                repo_id,
+                branch: branch.to_owned(),
+            });
+        }
+        out
+    }
+}
+
+/// Whether a branch name a chat sent may be said in an ask: the base branch rule
+/// ([`crate::mergehold::Base`]), and printable ASCII only, so a name cannot dress up the ask.
+fn is_askable_branch(branch: &str) -> bool {
+    crate::mergehold::Base::try_from(branch).is_ok() && branch.bytes().all(|b| b.is_ascii_graphic())
 }
 
 /// How severe a push command's refusal is; a push is refused as its most severe. A tag is the
@@ -836,6 +1347,9 @@ impl ChatPolicy {
 /// protected, deleted or non-branch ref the most.
 fn push_severity(refusal: Refusal) -> u8 {
     match refusal {
+        // The only one the person may answer, so it is only ever the refusal of a push whose
+        // every other command is fine: any other refusal in the push is the push's.
+        Refusal::NotYourBranch => 0,
         Refusal::ReleaseOrTag => 1,
         Refusal::NoAdvertisement => 2,
         _ => 3,
@@ -1016,5 +1530,73 @@ impl crate::heldact::Recorded for RecordedRepos {
         self.0
             .iter()
             .any(|r| r.path.eq_ignore_ascii_case(repo.as_str()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_ci_storage_host, is_gitlab_ci_storage};
+
+    #[test]
+    fn gitlab_com_artifact_storage_is_named_exactly() {
+        for (host, path) in [
+            (
+                "storage.googleapis.com",
+                "/gitlab-gprd-artifacts/ab/cd/x.zip",
+            ),
+            ("storage.googleapis.com", "/gitlab-gprd-artifacts/x"),
+        ] {
+            assert!(is_gitlab_ci_storage(host, path), "{host}{path}");
+        }
+        for (host, path) in [
+            ("storage.googleapis.com", "/"),
+            ("storage.googleapis.com", "/gitlab-gprd-artifacts"),
+            ("storage.googleapis.com", "/gitlab-gprd-artifacts/"),
+            ("storage.googleapis.com", "/gitlab-gprd-artifacts-evil/x"),
+            ("storage.googleapis.com", "/attacker-bucket/x"),
+            ("storage.googleapis.com", "/other/gitlab-gprd-artifacts/x"),
+            ("gitlab-gprd-artifacts.storage.googleapis.com", "/x"),
+            (
+                "storage.googleapis.com.evil.example",
+                "/gitlab-gprd-artifacts/x",
+            ),
+            ("evilstorage.googleapis.com", "/gitlab-gprd-artifacts/x"),
+            (
+                "pipelines.actions.githubusercontent.com",
+                "/gitlab-gprd-artifacts/x",
+            ),
+        ] {
+            assert!(!is_gitlab_ci_storage(host, path), "{host}{path}");
+        }
+    }
+
+    #[test]
+    fn actions_log_and_artifact_storage_is_named_exactly() {
+        for host in [
+            "pipelines.actions.githubusercontent.com",
+            "results-receiver.actions.githubusercontent.com",
+            "productionresultssa0.blob.core.windows.net",
+            "productionresultssa19.blob.core.windows.net",
+        ] {
+            assert!(is_ci_storage_host(host), "{host}");
+        }
+        for host in [
+            "actions.githubusercontent.com",
+            "a.b.actions.githubusercontent.com",
+            "-x.actions.githubusercontent.com",
+            "token.actions.githubusercontent.com",
+            "vstoken.actions.githubusercontent.com",
+            "productionresultssa123456.blob.core.windows.net",
+            "pipelines.actions.githubusercontent.com.evil.example",
+            "evilactions.githubusercontent.com",
+            "productionresultssa.blob.core.windows.net",
+            "productionresultssa1a.blob.core.windows.net",
+            "attacker.blob.core.windows.net",
+            "blob.core.windows.net",
+            "productionresultssa1.blob.core.windows.net.evil.example",
+            "raw.githubusercontent.com",
+        ] {
+            assert!(!is_ci_storage_host(host), "{host}");
+        }
     }
 }

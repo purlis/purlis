@@ -731,3 +731,32 @@ fn two_writers_naming_one_chat_s_entries_at_once_lose_none_of_them() {
 
     assert_eq!(named(&root, 64).expect("named").len(), 120);
 }
+
+#[test]
+fn what_a_chat_was_handed_is_carried_to_its_next_run_and_masks_its_screen_after_the_first_closes() {
+    let (_dir, root) = a_project();
+    // Chat 46 and chat 47 are the same chat, woken under a new number: they share an id.
+    let chat = id(46);
+    remember(
+        &root,
+        46,
+        Some(&chat),
+        &Entry::new("team", "github-token"),
+        "FAKE-HANDED-VALUE-0046",
+    )
+    .unwrap();
+
+    carry_over(&root, 46, 47, &chat);
+    forget(&root, 46);
+
+    assert_eq!(
+        masked_for(&root, 47, &chat, "x FAKE-HANDED-VALUE-0046").as_deref(),
+        Some("x ‹secret: github-token›")
+    );
+    // And as a launch after a crash finds it, by its names on disk alone.
+    as_a_crash_leaves_it(&root, 47);
+    assert_eq!(
+        masked_for(&root, 47, &chat, "x FAKE-HANDED-VALUE-0046").as_deref(),
+        Some("x ‹secret: github-token›")
+    );
+}

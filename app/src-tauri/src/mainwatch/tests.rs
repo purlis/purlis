@@ -114,3 +114,71 @@ fn a_command_off_the_main_thread_is_run_and_never_timed() {
     assert_eq!(command("send_input", || 3), 3);
     assert_eq!(RUNNING.now(), None);
 }
+
+#[test]
+fn a_main_thread_waiting_on_a_lock_another_thread_holds_is_a_core_stall_naming_the_line_that_waits()
+{
+    static RUNNING: Running = Running::new();
+    static HELD: Mutex<u8> = Mutex::new(0);
+    let (sink, seen) = mpsc::channel();
+    let (holding, held_now) = mpsc::channel::<()>();
+    // A hook's thread, holding the lock across work that takes a while.
+    let holder = std::thread::spawn(move || {
+        let _held = HELD.lock().unwrap();
+        holding.send(()).unwrap();
+        std::thread::sleep(Duration::from_millis(400));
+    });
+    held_now.recv().unwrap();
+
+    // The main thread: a window event, which asks for the lock on this line.
+    let asks_at = std::panic::Location::caller();
+    let waiting = |ping: Box<dyn FnOnce() + Send>| {
+        std::thread::spawn(move || {
+            held("window event: focused", &RUNNING, None, HELD_LONG, || {
+                drop(lock_in(&HELD, asks_at, &RUNNING, None));
+            });
+            ping();
+        });
+        true
+    };
+    let handed = std::sync::atomic::AtomicBool::new(false);
+    watch(
+        |ping| {
+            if handed.swap(true, Ordering::SeqCst) {
+                return false;
+            }
+            waiting(ping)
+        },
+        &RUNNING,
+        &sink,
+        Duration::from_millis(5),
+        STALLED,
+    );
+    holder.join().unwrap();
+
+    let stalls: Vec<Slow> = seen.try_iter().collect();
+    let Some(Slow::CoreStall { running, .. }) = stalls.first() else {
+        panic!("no core stall: {stalls:?}");
+    };
+    let running = running.as_deref().unwrap_or("nothing");
+    assert!(
+        running.starts_with("window event: focused > waiting on a lock at ")
+            && running.contains("mainwatch/tests.rs"),
+        "{running}"
+    );
+}
+
+#[test]
+fn what_the_main_thread_runs_is_told_outermost_first_and_taken_off_as_each_ends() {
+    let running = Running::default();
+    held("window event: resized", &running, None, HELD_LONG, || {
+        held("inner", &running, None, HELD_LONG, || {
+            assert_eq!(
+                running.now().as_deref(),
+                Some("window event: resized > inner")
+            );
+        });
+        assert_eq!(running.now().as_deref(), Some("window event: resized"));
+    });
+    assert_eq!(running.now(), None);
+}

@@ -103,6 +103,13 @@ pub enum NotDone {
     /// The forge refused it, in its words. The ask waits.
     #[error("the forge did not do it: {0}")]
     Forge(String),
+    /// The forge answered 401 to the second sign-in: it is dead and sending the push again can
+    /// never work, so the ask ends. Carries the host and the forge's words.
+    #[error(
+        "{host} refused the sign-in that allows CI files, so nothing was pushed: {said}. Allow CI \
+         files again in Settings › You › Accounts, then ask the chat to push again"
+    )]
+    SecondSignInRefused { host: String, said: String },
     /// The fork the forge made is not in the person's own account. Nothing was recorded.
     #[error(
         "the forge made {made}, which is not in your account {account}, so purlis did not record it"
@@ -397,6 +404,8 @@ impl HeldActs {
                 by: scope_of(by),
                 forked,
             }))),
+            // The second sign-in is dead: the ask ends, with no offer to press once more.
+            Err(why @ NotDone::SecondSignInRefused { .. }) => Err(why),
             Err(why) => {
                 let mut state = locked(&self.state);
                 // The ask waits again, as it was, unless the chat asked it again meanwhile.
@@ -425,6 +434,12 @@ impl HeldActs {
             return Err(NotDone::NotTheWindow);
         }
         Ok(self.drop_ask(id).is_some())
+    }
+
+    /// **Ask `id` is withdrawn, unanswered**: the person's window could not show it (#7685), so
+    /// it waits on nobody. Answers whether it was waiting.
+    pub fn withdraw(&self, id: u64) -> bool {
+        self.drop_ask(id).is_some()
     }
 
     /// Chat `session` has closed: none of its held acts waits.
@@ -513,7 +528,16 @@ fn perform(world: &World<'_>, act: &Act) -> Result<Option<super::Forked>, NotDon
             let new_branch = !matches!(against, super::Against::BranchTip);
             forge
                 .push_tip(repo, branch, tip, base, new_branch, secret.as_ref())
-                .map_err(NotDone::Forge)?;
+                .map_err(|why| match why {
+                    super::PushError::SecondSignInRefused(said) => {
+                        world.workflow.refused(&forge.host());
+                        NotDone::SecondSignInRefused {
+                            host: forge.host(),
+                            said,
+                        }
+                    }
+                    super::PushError::Failed(said) => NotDone::Forge(said),
+                })?;
             Ok(None)
         }
         Act::Fork {

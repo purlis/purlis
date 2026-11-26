@@ -81,10 +81,11 @@ pub use commands::has_merge_command;
 pub use endpoint::UnixEndpoint;
 pub use endpoint::{ChatEndpoint, EndpointKind, LoopbackEndpoint, pick_endpoint};
 pub use graphql::mutation_repo;
-pub use held::{Held, HeldSink};
+pub use held::{BranchAsk, Held, HeldSink};
 pub use policy::{
-    Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, GithubAlias, NoObjects,
-    ObjectRepo, Refusal, TouchedRepo, is_download_host,
+    Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, GITLAB_COM, GithubAlias,
+    NoObjects, NotYours, ObjectRepo, PullHead, PullRef, RecordedBranches, Refusal, TipSource,
+    TouchedRepo, is_ci_storage_host, is_download_host, is_gitlab_ci_storage,
 };
 pub use repo::{AddressError, AllowedRepo, ForgeRepoId, Kind};
 pub use request::RequestHead;
@@ -94,7 +95,9 @@ pub use sentinel::{ChatId, Sentinel, SentinelRegistry};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use crate::forge::pin;
+use crate::enforcement::Mode;
+use crate::forge::createdbranches::CreatedBranch;
+use crate::forge::{mergestance, pin};
 use crate::secrets::keyring::Secret;
 
 /// What a credential is, which decides the header the forge reads it from.
@@ -129,6 +132,11 @@ pub struct CredentialRequest {
 pub struct Credential {
     pub token_kind: TokenKind,
     pub secret: Secret,
+    /// The id of the account the secret belongs to, or `None` for a source with one credential
+    /// per host and no accounts (a token connection). A request that touches several repos is
+    /// sent only when every repo is served by the same account: compared by this, never by the
+    /// token's bytes, which a renewal between two lookups changes.
+    pub account: Option<String>,
 }
 
 /// Why a credential could not be had. Either way the request is refused.
@@ -197,6 +205,7 @@ impl CredentialSource for BrokeredCredentials {
         Ok(Credential {
             token_kind,
             secret: Secret::new(held.expose().to_string()),
+            account: None,
         })
     }
 }
@@ -244,8 +253,8 @@ pub struct Forwarded {
     /// The body to send in place of the chat's, when the chat's was read: the canonical
     /// re-serialisation of what was checked. `headers` already carry its `Content-Length`.
     pub body: Option<Vec<u8>>,
-    /// Branches a push makes, for [`ForgeProxy::confirm_push`].
-    pub(crate) created: Vec<(String, String, String)>,
+    /// Branches a push makes or moves, for [`ForgeProxy::confirm_push`].
+    pub(crate) created: Vec<CreatedBranch>,
     /// What the answer must never hold: the real credential, as it is sent and in the other forms
     /// a forge or a proxy may give it back. The listener reads the answer for these; memory only,
     /// and zeroed with the request.
@@ -254,6 +263,9 @@ pub struct Forwarded {
     /// listener tells the core of a push's advertisement and its outcome.
     pub host: String,
     pub repo: String,
+    /// Which forge's rules the request was decided under; `None` for a fetch the listener makes
+    /// for itself (an LFS object). A redirect is followed by the rules of this one.
+    pub kind: Option<Kind>,
 }
 
 impl Forwarded {
@@ -271,6 +283,7 @@ impl Forwarded {
             needles: Vec::new(),
             host: host.to_string(),
             repo: String::new(),
+            kind: None,
         }
     }
 
@@ -292,6 +305,7 @@ impl Forwarded {
                 .collect(),
             host: self.host.clone(),
             repo: String::new(),
+            kind: self.kind,
         }
     }
 
@@ -323,9 +337,28 @@ pub struct ForgeProxy {
     objects: Box<dyn ObjectRepo>,
     audit: AuditLog,
     held: Option<Box<dyn HeldSink>>,
+    /// Where the ask to let a chat push a branch it has no record of is raised.
+    branch_ask: Option<Box<dyn BranchAsk>>,
     /// The administrator's never-allow pin, asked on every request and connection (D3g).
     pin: Arc<dyn pin::Pin>,
+    /// How `guards.merge` runs, asked on every merge a chat sends (ADR 0128 D8, 2026-11-22).
+    merges: Arc<dyn mergestance::MergeStance>,
+    /// Told the branches the forge confirmed a push made: the app's own record of them.
+    created: Option<CreatedSink>,
+    gone: Option<GoneSink>,
+    /// Where each chat's policy reads the tip it last put on a branch, at every update.
+    tips: Option<TipSource>,
+    /// Where each chat's policy lists the branches the record holds for it, when an advertisement
+    /// is noted.
+    recorded: Option<RecordedBranches>,
 }
+
+/// What is told the branches, and the tips, a confirmed push made or moved.
+pub type CreatedSink = Box<dyn Fn(&[CreatedBranch]) + Send + Sync>;
+
+/// Told which recorded branches the forge no longer lists ([`ForgeProxy::note_advertised`]), so
+/// their record ends ([`crate::forge::createdbranches::forget`]).
+pub type GoneSink = Box<dyn Fn(&[CreatedBranch]) + Send + Sync>;
 
 impl ForgeProxy {
     pub fn new(credentials: Box<dyn CredentialSource>, objects: Box<dyn ObjectRepo>) -> Self {
@@ -336,8 +369,56 @@ impl ForgeProxy {
             objects,
             audit: AuditLog::default(),
             held: None,
+            branch_ask: None,
             pin: Arc::new(pin::NoPin),
+            merges: Arc::new(mergestance::HoldMerges),
+            created: None,
+            gone: None,
+            tips: None,
+            recorded: None,
         }
+    }
+
+    /// Let a merge through where `merges` says `guards.merge` is `log` (and record it) or `off`,
+    /// asked on each merge and never kept. Without it, every merge is a held act. Only a recorded
+    /// repo of the chat's own run and a valid sentinel ever reach it, and an administrator's pin
+    /// and lock still win.
+    #[must_use]
+    pub fn with_merge_stance(mut self, merges: Arc<dyn mergestance::MergeStance>) -> Self {
+        self.merges = merges;
+        self
+    }
+
+    /// Tell `sink` each branch the forge confirms a chat's push made or moved, so the app can keep its own
+    /// record of what the chat created ([`crate::forge::createdbranches`]).
+    #[must_use]
+    pub fn with_created(mut self, sink: CreatedSink) -> Self {
+        self.created = Some(sink);
+        self
+    }
+
+    /// Where each update's old id is checked: the tip the chat last put on the branch, asked of
+    /// `tips` at every update (the app's record, which every chat's confirmed push moves).
+    /// Without it a policy checks against what it saw itself.
+    #[must_use]
+    pub fn with_tips(mut self, tips: TipSource) -> Self {
+        self.tips = Some(tips);
+        self
+    }
+
+    /// Where each chat's policy lists the branches the record holds for it, asked when an
+    /// advertisement is noted, so a recorded branch gone from the forge ends its record.
+    #[must_use]
+    pub fn with_recorded(mut self, recorded: RecordedBranches) -> Self {
+        self.recorded = Some(recorded);
+        self
+    }
+
+    /// Where a recorded branch the forge no longer lists is told, so its record ends.
+    #[must_use]
+    pub fn with_gone(mut self, sink: GoneSink) -> Self {
+        self.gone = Some(sink);
+        self
     }
 
     /// Refuse every request, connection and alias that names a forge `pin` pins as never allowed
@@ -384,6 +465,14 @@ impl ForgeProxy {
         self
     }
 
+    /// Raise an ask, through `sink`, for a push refused only because its branch is not the chat's
+    /// ([`Refusal::NotYourBranch`]). Without one the push is refused as it was, with no ask.
+    #[must_use]
+    pub fn with_branch_ask(mut self, sink: Box<dyn BranchAsk>) -> Self {
+        self.branch_ask = Some(sink);
+        self
+    }
+
     /// The listener read a push that changes CI files (from its objects, on a quarantined tree):
     /// hand it over. What the chat is told, or `None` where nothing is held here.
     pub fn hand_over(
@@ -402,10 +491,17 @@ impl ForgeProxy {
     /// Whatever it enrols, the pin is read on every request and connection all the same, so a pin
     /// set later reaches the chat at once.
     pub fn enrol(&self, chat: &ChatId, repos: Vec<AllowedRepo>) -> Sentinel {
+        let mut policy = ChatPolicy::new(repos);
+        if let Some(tips) = &self.tips {
+            policy = policy.with_tips(tips.clone());
+        }
+        if let Some(recorded) = &self.recorded {
+            policy = policy.with_recorded(recorded.clone());
+        }
         self.policies
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(chat.clone(), Arc::new(ChatPolicy::new(repos)));
+            .insert(chat.clone(), Arc::new(policy));
         self.sentinels.issue(chat)
     }
 
@@ -434,12 +530,17 @@ impl ForgeProxy {
             .get(chat)
             .cloned();
         if let Some(policy) = policy {
-            policy.note_advertised(host, repo_path, branches);
+            let gone = policy.note_advertised(host, repo_path, branches);
+            if let Some(sink) = &self.gone
+                && !gone.is_empty()
+            {
+                sink(&gone);
+            }
         }
     }
 
-    /// The forge's report of a push `forwarded` says it made its branches: only now are they the
-    /// chat's own to move. A push the forge refused, or one never sent, makes no branch the chat
+    /// The forge's report of a push `forwarded` says it made or moved its branches: only now are
+    /// they the chat's own to move, and their tip the one the next update must name. A push the forge refused, or one never sent, makes no branch the chat
     /// owns, so a branch cannot be claimed by asking for it.
     pub fn confirm_push(&self, chat: &ChatId, forwarded: &Forwarded) {
         let policy = self
@@ -450,6 +551,11 @@ impl ForgeProxy {
             .cloned();
         if let Some(policy) = policy {
             policy.confirm_created(&forwarded.created);
+            if let Some(sink) = &self.created
+                && !forwarded.created.is_empty()
+            {
+                sink(&forwarded.created);
+            }
         }
     }
 
@@ -460,6 +566,16 @@ impl ForgeProxy {
             .unwrap_or_else(PoisonError::into_inner)
             .remove(chat);
         self.sentinels.revoke(chat);
+    }
+
+    /// Whether `host` is the API host of one of `chat`'s GitHub repos on port 443 (see
+    /// [`ChatPolicy::is_github_api_host`]).
+    pub fn is_github_api_host(&self, chat: &ChatId, host: &str) -> bool {
+        self.policies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(chat)
+            .is_some_and(|policy| policy.is_github_api_host(host))
     }
 
     /// Where `github.localhost` leads for `chat` (`gh`'s `GH_HOST`, on its unix socket): the one
@@ -573,9 +689,53 @@ impl ForgeProxy {
             .head
             .clone()
             .with_content_type(header_value(inbound.headers, "content-type"));
-        let mut allowed = match policy.decide(&head, inbound.body, self.objects.as_ref()) {
+        // `guards.merge`, asked now: a merge is let through under `log` or `off` for a chat that
+        // proved itself, by the same recorded-repo checks as any write. Under `enforce`, and for
+        // anything that is not one of the merge routes, nothing changes.
+        //
+        // **No lookup before the sentinel is proved**: resolving a node id asks the forge with the
+        // person's credential, so a caller that has not proved itself is decided with
+        // [`NoObjects`] and costs the forge, and the person, nothing. It is refused the same way
+        // whatever the id is in.
+        let objects: &dyn ObjectRepo = if sentinel.is_ok() {
+            self.objects.as_ref()
+        } else {
+            &NoObjects
+        };
+        let mut logged_merge = false;
+        let mut decision = policy.decide(&head, inbound.body, objects);
+        if sentinel.is_ok()
+            && decision == Decision::Refuse(Refusal::Merge)
+            && let mode @ (Mode::Log | Mode::Off) = self.merges.mode()
+        {
+            let merging = policy.decide_merging(&head, inbound.body, objects);
+            if matches!(merging, Decision::Allow(_)) {
+                logged_merge = mode == Mode::Log;
+                decision = merging;
+            }
+        }
+        let mut allowed = match decision {
             Decision::Allow(allowed) => allowed,
             Decision::Refuse(refusal) => {
+                // A GraphQL merge, auto-merge or merge-queue mutation of a pull request the forge
+                // names is held like a REST merge is (#7543): the person's Merge press performs
+                // it, and nothing of the document is forwarded. Where the pull request cannot be
+                // named, the chat is refused and told why.
+                if sentinel.is_ok()
+                    && refusal == Refusal::Merge
+                    && let Some(sink) = &self.held
+                    && let Some(named) = policy.held_graphql_merge(&head, inbound.body, objects)
+                {
+                    let said = match named {
+                        Ok(requested) => sink.ask(chat, &requested),
+                        Err(why) => format!(
+                            "purlis holds merges. Nobody was asked, so the merge will not happen: {why}."
+                        ),
+                    };
+                    self.audit
+                        .record(chat, inbound.head, None, Verdict::Refused(refusal));
+                    return Outcome::Held(Held { refusal, said });
+                }
                 // Only a chat that proved itself asks, and only for a held route.
                 if sentinel.is_ok()
                     && held::is_a_held_route(refusal)
@@ -587,6 +747,21 @@ impl ForgeProxy {
                         refusal,
                         said: told,
                     });
+                }
+                // Only a chat that proved itself asks, and only for a branch the policy read
+                // from this push as unowned and unprotected.
+                if sentinel.is_ok()
+                    && refusal == Refusal::NotYourBranch
+                    && let Some(sink) = &self.branch_ask
+                {
+                    let unowned = policy.unowned_updates(&head, inbound.body);
+                    if !unowned.is_empty()
+                        && let Some(said) = sink.ask(chat, &unowned)
+                    {
+                        self.audit
+                            .record(chat, inbound.head, None, Verdict::Refused(refusal));
+                        return Outcome::Held(Held { refusal, said });
+                    }
                 }
                 return self.refuse(chat, inbound, None, refusal);
             }
@@ -621,6 +796,7 @@ impl ForgeProxy {
                 needles: Vec::new(),
                 host: allowed.host,
                 repo: allowed.repo,
+                kind: Some(allowed.kind),
             });
         }
         let request = |repo_id: Option<u64>, repo: &str| CredentialRequest {
@@ -646,7 +822,10 @@ impl ForgeProxy {
                 {
                     Ok(next) => match &first {
                         None => first = Some(next),
-                        Some(held) if held.secret.expose() == next.secret.expose() => {}
+                        // Both name an account, and the same one. A source that names none says
+                        // nothing about who it serves, so two such answers are **not** the same
+                        // account (`None == None` must not pass for a future source).
+                        Some(held) if held.account.is_some() && held.account == next.account => {}
                         Some(_) => outcome = Err(CredentialError::Unavailable),
                     },
                     Err(why) => outcome = Err(why),
@@ -661,6 +840,11 @@ impl ForgeProxy {
         else {
             return self.refuse(chat, inbound, Some(&allowed), Refusal::NoCredential);
         };
+        // One quiet line for a merge `log` let through, once the credential is in and it is sent.
+        if logged_merge {
+            self.merges
+                .forwarded(chat.as_str(), &allowed.host, &allowed.repo);
+        }
         self.audit
             .record(chat, inbound.head, Some(&allowed), Verdict::Allowed);
         apply_canonical(&mut headers, &allowed);
@@ -674,6 +858,7 @@ impl ForgeProxy {
             needles,
             host: allowed.host,
             repo: allowed.repo,
+            kind: Some(allowed.kind),
         })
     }
 
@@ -764,6 +949,32 @@ fn apply_canonical(headers: &mut Vec<(String, String)>, allowed: &Allowed) {
         headers.push(("Content-Type".to_string(), media));
     }
     headers.push(("Content-Length".to_string(), body.len().to_string()));
+}
+
+/// Which check found `inbound` malformed, in the words a chat is told after `MalformedRequest`:
+/// the checks [`ForgeProxy::handle`] makes, in its order, and otherwise the policy's reading of
+/// the request line.
+pub(crate) fn malformed_because(inbound: &Inbound<'_>) -> &'static str {
+    if !framing_is_unambiguous(inbound.headers) {
+        "its framing is ambiguous: more than one Content-Length, one that is not a number, a \
+         Transfer-Encoding other than one chunked, or both"
+    } else if inbound
+        .headers
+        .iter()
+        .any(|(n, _)| n.is_empty() || n.contains('_'))
+    {
+        "a header name is empty or has an underscore in it"
+    } else if !header_names_are_plain(inbound.headers) {
+        "it has more than one Content-Type"
+    } else if !host_agrees(inbound) {
+        "its Host header does not name the host and port it was sent to"
+    } else if has_header(inbound.headers, "content-encoding")
+        && request::parse_target(&inbound.head.target).is_ok()
+    {
+        "it has a Content-Encoding, which only a git fetch may send"
+    } else {
+        "its method, host, path, query or body cannot be read one way"
+    }
 }
 
 /// A header name is a token, and a forge's front end may read `Content_Type` as `Content-Type`

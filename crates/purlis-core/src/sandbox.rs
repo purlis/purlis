@@ -2593,6 +2593,14 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             app.join(crate::chatscreens::DIR_NAME),
             Access::ReadWrite,
         );
+        // Every hibernated chat's kept screen (#7631), neither read nor written: what a chat
+        // showed is the person's to read in its pane, and a chat that wrote one would choose
+        // what a hibernated chat's pane shows.
+        deny(
+            Class::Integrity,
+            app.join(crate::hibernatedscreens::DIR_NAME),
+            Access::ReadWrite,
+        );
         // What each chat was handed, by vault and key (#6309), neither read nor written: a chat
         // that rewrote its own would choose what its kept screen is masked with after a crash.
         deny(
@@ -2993,6 +3001,19 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
         paths.push(Denial {
             class: Class::Integrity,
             path: route_root,
+            access: Access::ReadWrite,
+            named: None,
+            reach: Reach::AndBelow,
+            any_case: machine.os == Os::MacOs,
+        });
+    }
+    // ...and the forge repos' object caches (ADR 0128, amended 2026-11-24), a held push's base
+    // read through an alternate: no chat reads or writes it, under every spelling of the data
+    // home, so none plants an object a push is then read against.
+    for data in Homes::data_homes(machine) {
+        paths.push(Denial {
+            class: Class::Integrity,
+            path: data.join(crate::forgewire::OBJECT_CACHE_DIR),
             access: Access::ReadWrite,
             named: None,
             reach: Reach::AndBelow,
@@ -5439,8 +5460,8 @@ impl Applied {
             line.env.extend(caches.env.iter().cloned());
         }
         // The persona's tools (#1407): their shims first on the chat's `PATH`.
-        if let Some(resolved) = &self.tools {
-            let gained = tools::armed(resolved, self.harness);
+        if let Some(resolved) = self.tools_for_line(at.confinement) {
+            let gained = tools::armed(&resolved, self.harness);
             line.env
                 .retain(|(key, _)| !gained.iter().any(|(set, _)| set == key));
             line.env.extend(gained);
@@ -5671,6 +5692,39 @@ impl Applied {
         }
         self.forge = Some(Box::new(inputs));
         self
+    }
+
+    /// **The persona's tools this chat's line arms** ([`Self::line`]): `self.tools`, except that
+    /// the guard of `glab` ([`tools::guard_forges`], written at the start, before any route is
+    /// known) is taken out where this chat's `glab` runs for real, wired to its forge route: its
+    /// shim would come first on the `PATH` and `glab` would never reach the route.
+    ///
+    /// **Keyed on what composes the wiring** ([`Self::forge_route`], the sentinel `GITLAB_TOKEN`,
+    /// `HTTPS_PROXY` and `GLAB_CA_CERT`), never on the inputs alone: a chat with a route in its
+    /// inputs but no confinement (an unwrapped Claude Code below its proxy-port floor) is wired to
+    /// nothing, so it keeps the guard. The guard is dropped only where the line carries the
+    /// sentinel. It is per program, so a route that covers one GitLab host unguards `glab` for
+    /// every host; the sentinel is worthless off the chat's own proxy, so `glab` against a host
+    /// no route covers has nothing to authenticate with (ADR 0128).
+    fn tools_for_line(
+        &self,
+        confinement: Option<&Confinement>,
+    ) -> Option<std::borrow::Cow<'_, tools::Resolved>> {
+        use std::borrow::Cow;
+        let resolved = self.tools.as_deref()?;
+        #[cfg(feature = "forge-wiring")]
+        if self.forge_route(confinement).is_some()
+            && self.forge.as_ref().is_some_and(|inputs| {
+                inputs
+                    .repos
+                    .iter()
+                    .any(|repo| repo.kind() == crate::forgewire::ForgeKind::GitLab)
+            })
+        {
+            return tools::without_guard(resolved.clone(), &self.root, "glab").map(Cow::Owned);
+        }
+        let _ = confinement;
+        Some(Cow::Borrowed(resolved))
     }
 
     /// **Where this chat's forge traffic goes** (ADR 0128 D3a), or none where it has no forge

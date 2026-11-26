@@ -1,0 +1,20 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# The quarantine (spec #7324, ADR 0127): tests that flaked three times in seven days. PR runs, the
+# queue run and the main run skip them in every runner; only the nightly run runs them, so it
+# shows when a fix works. The list starts empty.
+#
+# `ci-health` opens the pull request that adds an entry (#7333); the steward reviews and enqueues
+# it. The pull request that fixes the flake removes its entry. More than 10 entries turns
+# ci-health red. `tools/quarantine.mjs` reads this file and a test refuses an entry without a
+# ticket or a date.
+#
+# Each entry is a table of three keys, the id being the one a flake is annotated with:
+#
+#   [[test]]
+#   id = "purlis-core::it a_test_name"          # nextest: the binary id, a space, the test's name
+#   id = "src/Thing.test.ts > suite > a test"   # vitest: the file from app/, then the names
+#   id = "e2e/specs/thing.e2e.ts"               # wdio: the spec file, from app/
+#   ticket = 7001                               # the flake's ticket
+#   added = "2026-11-21"                        # the day it went in
