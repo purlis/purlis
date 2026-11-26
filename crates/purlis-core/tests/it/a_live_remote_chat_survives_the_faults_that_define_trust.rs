@@ -18,12 +18,12 @@
 //! [`QUIET_LIMIT`] of the fault, [`told_within`]); nothing started waits past three minutes
 //! ([`START_LIMIT`]); and where a state has a name, it is the name. **Each of the five is asserted
 //! by one case, and each is train A's (#7187, on `main`)** and reads the state through
-//! [`seam::state_named`] from what the kept link told (Refused, of a pool with no chat, through
-//! [`seam::pool_state_named`]; Runner gone and Pool forgotten are still `#[ignore]`d, see their
-//! reasons): Unreachable by the 90 s drop
-//! (`a_90_second_drop_is_named_unreachable_while_it_lasts`), Refused by the registry down
-//! (`a_registry_that_is_down_names_the_pool_refused`), Host key changed by case 3, Runner gone by
-//! case 4, Pool forgotten by case 7.
+//! [`seam::state_named`] from what the kept link told (of a pool with no chat, through
+//! [`seam::pool_state_named`] from what its check found; Runner gone and Pool forgotten are still
+//! `#[ignore]`d, see their reasons): Unreachable by the 90 s drop
+//! (`a_90_second_drop_is_named_unreachable_while_it_lasts`) and by the registry down
+//! (`a_registry_that_is_down_names_the_pool_unreachable`, #7661), Host key changed by case 3,
+//! Runner gone by case 4, Pool forgotten by case 7.
 //!
 //! **Faults** are `tests/remote-faults/faults.sh`'s, put on the rig's containers and taken off by
 //! `restore`, which every test runs before it starts and again as it ends, however it ends: a
@@ -467,11 +467,16 @@ mod seam {
     }
 
     /// The name of the state a pool is in, as the window words it, for a pool with no chat of its
-    /// own: `Refused` where its image cannot be fetched or its sign-in is turned away.
-    ///
-    /// Train A: as [`state_named`], read from the pool's `RemoteState`.
-    pub fn pool_state_named(_pool: &str) -> String {
-        todo!("needs #7187 train A: the pool's RemoteState, as the window names it")
+    /// own: read from what its check found, through train A's `Finding::remote_state` (#7187),
+    /// as the window's `LinkState` takes it.
+    pub fn pool_state_named(found: &purlis_core::sshroute::connect::Finding) -> String {
+        use purlis_core::sshroute::connect::RemoteState;
+        match found.remote_state() {
+            RemoteState::Unreachable => "Unreachable",
+            RemoteState::Refused => "Refused",
+            RemoteState::HostKeyChanged => "Host key changed",
+        }
+        .to_owned()
     }
 
     /// A second runner on another machine of the rig, with its own host, for the cases that need
@@ -944,17 +949,17 @@ fn a_registry_that_is_down_fails_the_check_within_its_budget_as_image_unreachabl
     a_registry_that_is_down(false);
 }
 
-/// Case 9's other half, the state the window names for it: Refused (train A, #7187).
+/// Case 9's other half, the state the window names for it: Unreachable (train A, #7187). A
+/// registry that is down is a fault waiting can mend, not one the person must act on (#7661).
 #[test]
-#[ignore = "A maps Finding::ImageUnreachable to RemoteState::Unreachable, the case says Refused: one of them is wrong (#7187)"]
-fn a_registry_that_is_down_names_the_pool_refused() {
+fn a_registry_that_is_down_names_the_pool_unreachable() {
     purlis_core::unsteered!();
     a_registry_that_is_down(true);
 }
 
 /// The registry inside dind goes down under a Docker pool; the check fails inside its budget as
 /// image unreachable and leaves no runner container; with `names_the_state`, the pool is also
-/// named `Refused`, as the window words it.
+/// named `Unreachable`, as the window words it.
 fn a_registry_that_is_down(names_the_state: bool) {
     use purlis_core::dockerpool::{Docker, Image};
     use purlis_core::poolsetup::doctoring;
@@ -1046,7 +1051,7 @@ fn a_registry_that_is_down(names_the_state: bool) {
     forward::let_go("regdown");
     let finding = found.expect_err("doctor finds the registry down");
     if names_the_state {
-        assert_eq!(seam::pool_state_named("regdown"), "Refused");
+        assert_eq!(seam::pool_state_named(&finding), "Unreachable");
     }
     assert!(
         matches!(finding, connect::Finding::ImageUnreachable { .. }),
@@ -1231,6 +1236,41 @@ fn b5_two_runners_that_start_browsers_at_once_run_them_in_parallel() {
         kept_other.task.abort();
     });
     rt.shutdown_timeout(Duration::from_secs(5));
+}
+
+/// The seam names a pool's state from what its check found, as the window does (#7661): a
+/// registry that is down is a fault waiting can mend, so Unreachable; a machine that answers and
+/// says no is Refused.
+#[test]
+fn a_pools_state_is_named_from_what_its_check_found_as_the_window_words_it() {
+    use purlis_core::sshroute::connect::Finding;
+    purlis_core::unsteered!();
+    let host = || "box".to_owned();
+    for (found, named) in [
+        (
+            Finding::ImageUnreachable {
+                host: host(),
+                registry: "registry.invalid".into(),
+            },
+            "Unreachable",
+        ),
+        (
+            Finding::NoAnswer {
+                host: host(),
+                port: 22,
+            },
+            "Unreachable",
+        ),
+        (Finding::SignInRefused { host: host() }, "Refused"),
+        (
+            Finding::ContextMoved {
+                name: "there".into(),
+            },
+            "Refused",
+        ),
+    ] {
+        assert_eq!(seam::pool_state_named(&found), named, "{found:?}");
+    }
 }
 
 #[test]
