@@ -60,6 +60,10 @@ let there = true;
 const PATH = "src/main.rs:42:7";
 const FULL = "/planes/one/workspaces/app/repos/app/src/main.rs:42:7";
 const HOSTS = "/etc/hosts:3";
+/** A branch's file whose list the core could not read (#6489), and what its hover says. */
+const UNREAD = "src/lib.rs:2";
+const UNCHECKED =
+  "purlis could not read which files this branch offers, so its editor checks this one when it opens";
 /** The file in the workspace as its hover says it: from the workspace (D2). */
 const SHORT = "repos/app/src/main.rs:42:7";
 
@@ -132,7 +136,15 @@ beforeEach(() => {
                   shown: HOSTS,
                   does: { does: "asks", reason: "outside app" },
                 }
-              : null,
+              : one.text === UNREAD
+                ? {
+                    kind: "file",
+                    target: `/planes/one/workspaces/app/repos/app/${UNREAD}`,
+                    shown: `repos/app/${UNREAD}`,
+                    does: { does: "opens", into: "editor-tab" },
+                    unchecked: UNCHECKED,
+                  }
+                : null,
       );
     }
     if (cmd === "pane_link_open") return opens.shift() ?? { answer: "refused", reason: "no" };
@@ -261,6 +273,16 @@ describe("a file path in a chat's pane", () => {
       from: { plane: "/planes/one", session: 1 },
       candidates: [{ kind: "file", text: PATH }],
     });
+  });
+
+  it("says up front that the editor checks a file whose branch's list could not be read (#6489)", async () => {
+    Object.defineProperty(navigator, "platform", { configurable: true, get: () => "MacIntel" });
+    const { drawn } = await pane(`at ${UNREAD} now`);
+    hover(drawn, 6, 0);
+
+    const tip = await screen.findByRole("tooltip", {}, { timeout: 2000 });
+    expect(tip).toHaveTextContent(UNCHECKED);
+    expect(tip).toHaveTextContent("⌘-click opens it in an editor tab");
   });
 
   it("shows the file from the workspace and that ⌘-click opens it in an editor tab", async () => {

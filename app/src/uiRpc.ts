@@ -8937,6 +8937,11 @@ export type LinkSeen = {
 	does: LinkDoes,
 	/**  The words of a link a program marked, where they name another target than it goes to. */
 	its_text?: string | null,
+	/**
+	 *  Why the editor checks this file only as it opens (#6489): its branch could not say
+	 *  whether it offers it. None for every other link.
+	 */
+	unchecked?: string | null,
 	/**  What the chat a chat link names is: none for every other kind. */
 	chat: ChatSeen | null,
 };

@@ -615,3 +615,27 @@ fn a_file_its_branch_does_not_offer_is_no_link_and_says_why() {
         ]
     );
 }
+
+/// #6489: **a file its branch could not say about still links, and is marked so**: the reader
+/// could not read the branch's list (an index gitoxide can't read, a read past its bounds), so
+/// the editor decides when it opens, and the hover says that up front. A file the branch
+/// offers, or one in no branch, is not marked.
+#[test]
+fn a_file_its_branch_could_not_say_about_links_marked_unchecked() {
+    let here = fixture();
+    let links = Resolver::with(vec![Box::new(
+        LocalFile::with(Some(here.home.clone()), Vec::new())
+            .offered_by(|_, _, path| (path == "src/lib.rs").then_some(true)),
+    )]);
+    let pane = here.chat();
+    let unchecked = |text: &str| match links.resolve(&file(text), &pane) {
+        Resolved::Link(Target::File(file)) => file.unchecked,
+        other => panic!("{text}: expected a file link, got {other:?}"),
+    };
+
+    assert!(!unchecked("src/lib.rs:1"));
+    assert!(unchecked("../../../repos/app/src/main.rs"));
+    assert!(!unchecked(
+        &here.project.join("README.md").display().to_string()
+    ));
+}

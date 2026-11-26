@@ -336,6 +336,7 @@ describe("Links in this pane… on the terminal's menu", () => {
 
   it("follows the terminal's rows over a link, the link rows first", async () => {
     drawn({
+      place: { left: 0, top: 0, width: 0, height: 0 },
       candidate: { kind: "url", text: TEXT },
       seen: {
         kind: "url",

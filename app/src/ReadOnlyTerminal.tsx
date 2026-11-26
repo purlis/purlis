@@ -98,7 +98,7 @@ export interface ReadOnlyTerminalProps {
   links?: LinkCore;
   /** What a `chat 641` link ⌘-clicked shows (#6217, `PaneLinkChats.tsx`). A saved screen is in
    *  no project, so the core links no chat in it; a story stands a core in that does. */
-  onChat?: (go: ChatGo, place: LinkPlace | undefined) => void;
+  onChat?: (go: ChatGo, place: LinkPlace) => void;
 }
 
 /**
