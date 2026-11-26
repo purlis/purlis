@@ -2004,6 +2004,17 @@ requires the sandbox in every project on that machine, which Settings shows as "
 policy" (ADR 0067 §1, §4 as amended).
 _Avoid_: supervisor, managed tier (in UI text; that is a harness vendor's), org settings
 
+**Prerequisite**:
+A condition a project must meet before its chats can work, which only the person can satisfy, in
+the window. The core defines, raises and clears each one and pushes a "prerequisites changed"
+event that the window, the CLI and the notifier read; the window never decides one itself. The
+first is the policy prerequisite: this machine's acceptance of the project's policy is Broken or
+Waiting. While one is open, a new chat the person starts there waits and running chats work in
+strict mode. The window raises it as one modal, an alert of the dialog family, with **Work in
+strict mode** and **Accept**, and keeps its **Notice** up after the first. It is never in Asks and
+adds nothing to the ✋ (ADR 0130).
+_Avoid_: gate, blocker, barrier
+
 ### Core and extensions
 
 **Core**:
