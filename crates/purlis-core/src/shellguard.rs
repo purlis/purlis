@@ -59,11 +59,12 @@ pub const SHIMMED: [Harness; 3] = [Harness::ClaudeCode, Harness::Codex, Harness:
 /// to hand it back. Unset when the operator had none, which means `$HOME`.
 pub const USER_ZDOTDIR_ENV: &str = "PURLIS_USER_ZDOTDIR";
 
-/// Set to `1` in a shell tab's environment, and in no chat's: the tab is the person's own
-/// terminal (#7694). A shell tab carries the chat marks ([`CHAT_ENV`]) its shims need to tell
-/// the app of a harness started by hand, so a command only the person runs reads this to tell
-/// the tab from a chat. The shims take it off a harness started there, which is no longer the
-/// person typing, and no chat inherits it ([`crate::hookwire::NOT_INHERITED`]).
+/// Set to `1` in the environment the app starts a shell tab with (#7694): a hint that the tab is
+/// the person's own terminal, **never proof**. Any process can set or unset it on its own
+/// command line, a chat's as well, so nothing decides on it: a command only the person runs
+/// asks the app, which knows its shell tab by its own record of who asks (#7700). The shims
+/// take it off a harness started in the tab, which is no longer the person typing, and the app
+/// leaves it out of what a chat inherits ([`crate::hookwire::NOT_INHERITED`]).
 pub const SHELL_TAB_ENV: &str = "PURLIS_SHELL_TAB";
 
 /// The line a harness started by hand says, on standard error, before it starts.

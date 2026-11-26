@@ -1195,9 +1195,13 @@ fn shell_tab(cwd: &Path) -> Asker {
 }
 
 #[test]
-fn a_shell_tab_has_its_folder_adopted_from_anywhere_in_the_project() {
+fn a_shell_tab_has_its_folder_adopted_wherever_it_stands() {
     let (_dir, root) = a_folder_to_adopt();
-    for cwd in [root.clone(), root.join("docs")] {
+    for cwd in [
+        root.clone(),
+        root.join("docs"),
+        root.join("workspaces/beta"),
+    ] {
         let said = adopted_for(&root, &shell_tab(&cwd));
         let Answer::Said { lines, code } = &said else {
             panic!("{}: {said:?}", cwd.display());

@@ -2310,6 +2310,12 @@ pub enum GitWork {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         keep_branches: bool,
     },
+    /// `purlis worktree adopt <repo> <piece>` (#7594, #7700): the branch `<repo>/<piece>` of the
+    /// ask's workspace is on recorded as the one it was cut for. **The person's alone**: the app
+    /// runs it only for the window's shell tab, by its own record of the asker, and refuses it
+    /// to a chat whatever the asker's environment says. A kind of its own, so an app that does
+    /// not know it answers nothing and records nothing.
+    WorktreeAdopt { repo: String, piece: String },
     /// **The guard's question before plain git writes a branch folder** (#3931): may this chat
     /// `act` in the folder `<repo>/<piece>` of the ask's workspace? The app runs no git: it
     /// judges the folder's claim against the chats it has, and takes the folder for the chat

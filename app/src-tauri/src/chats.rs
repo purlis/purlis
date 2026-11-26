@@ -2039,6 +2039,14 @@ impl Chats {
         *lock(&self.trusting) = Some(tell);
     }
 
+    /// **Whether `session` is the window's shell tab** (#7700): a chat open on no profile and
+    /// running no harness, by this app's own record of it, wherever it stands.
+    pub fn is_shell_tab(&self, session: u32) -> bool {
+        lock(&self.open)
+            .get(&session)
+            .is_some_and(|one| one.chat.profile.is_none() && one.harness.is_none())
+    }
+
     /// Whether `session` is a shell tab at `root`: a chat on no profile running no harness,
     /// in that directory. Where a profile's sign-in purlis types for the person may go, never
     /// an agent's pane.

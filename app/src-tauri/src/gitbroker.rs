@@ -235,9 +235,46 @@ fn route_for(
     }
 }
 
+/// **Why the app does not adopt `repo · piece` for chat `chat`** (#7700), or `None` where it
+/// does: only for the window's shell tab (`shell_tab`, the app's own record of the chat: no
+/// profile, no harness) in which no shim said a harness was started by hand (`by_hand`).
+/// Whatever the asker's environment said is never asked.
+fn adopt_refused(
+    chat: u32,
+    shell_tab: bool,
+    by_hand: bool,
+    repo: &str,
+    piece: &str,
+) -> Option<Answer> {
+    let why = if !shell_tab {
+        purlis_core::gitbroker::only_the_person_adopts(repo, piece)
+    } else if by_hand {
+        format!(
+            "a harness was started by hand in this shell tab, so the app no longer takes it for \
+             you typing and does not adopt {repo} \u{b7} {piece} for it: run `purlis worktree \
+             adopt` in a new shell tab or your own terminal"
+        )
+    } else {
+        return None;
+    };
+    tracing::info!("purlis: chat {chat} asked the app to adopt {repo} {piece}; refused: {why}");
+    Some(Answer::No { why })
+}
+
 /// Runs `ask` for its chat, or says why not.
 pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
     if let Some(no) = on_a_runner(held, ask.chat) {
+        return no;
+    }
+    if let GitWork::WorktreeAdopt { repo, piece } = &ask.work
+        && let Some(no) = adopt_refused(
+            ask.chat,
+            held.chats().is_shell_tab(ask.chat),
+            held.hooks().harness_started_by_hand_in(ask.chat),
+            repo,
+            piece,
+        )
+    {
         return no;
     }
     let asker = match asker(held, ask.chat) {
@@ -259,6 +296,7 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         GitWork::WorktreeUpdate { repo, piece, .. } => format!("worktree update {repo} {piece}"),
         GitWork::WorktreePush { repo, piece, .. } => format!("worktree push {repo} {piece}"),
         GitWork::WorktreeRemove { repo, piece, .. } => format!("worktree remove {repo} {piece}"),
+        GitWork::WorktreeAdopt { repo, piece } => format!("worktree adopt {repo} {piece}"),
         GitWork::CloneUpdate { repo, .. } => format!("worktree update {repo}"),
         GitWork::WorktreePrune { repo, .. } => match repo {
             Some(repo) => format!("worktree prune {repo}"),

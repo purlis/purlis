@@ -247,3 +247,40 @@ fn only_a_push_that_went_is_recorded_by_the_commit_it_sent() {
         "an update pushes nothing"
     );
 }
+
+#[test]
+fn adopt_is_refused_to_a_chat_and_to_a_shell_tab_a_harness_was_started_in() {
+    // #7700: only the window's shell tab, by the app's own record, with no harness a shim said
+    // was started there by hand.
+    let refused = |shell_tab, by_hand| match adopt_refused(7, shell_tab, by_hand, "svc", "p1") {
+        Some(Answer::No { why }) => Some(why),
+        Some(other) => panic!("{other:?}"),
+        None => None,
+    };
+    assert_eq!(refused(true, false), None);
+    let chat = refused(false, false).expect("a chat is refused");
+    assert!(chat.contains("only you do"), "{chat}");
+    assert!(refused(false, true).is_some_and(|why| why.contains("only you do")));
+    let tab = refused(true, true).expect("a tab with a harness started in it is refused");
+    assert!(tab.contains("started by hand"), "{tab}");
+}
+
+#[test]
+fn a_shell_tab_s_adopt_reaches_the_core() {
+    let (_dir, held, session) = a_held_chat();
+    let ask = GitAsk {
+        chat: session,
+        workspace: "alpha".to_owned(),
+        alive: false,
+        work: GitWork::WorktreeAdopt {
+            repo: "svc".to_owned(),
+            piece: "p1".to_owned(),
+        },
+    };
+    // The core ran it: the workspace has no such folder, which is the core's own sentence.
+    let said = answer(&held, &ask);
+    assert!(
+        !matches!(&said, Answer::No { why } if why.contains("only you do")),
+        "{said:?}"
+    );
+}

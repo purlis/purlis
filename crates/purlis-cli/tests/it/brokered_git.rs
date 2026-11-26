@@ -1844,7 +1844,8 @@ fn a_chat_that_marks_itself_a_shell_tab_and_drops_its_chat_marks_is_refused_adop
 #[test]
 fn a_shell_tab_adopts_its_folder_through_the_app() {
     purlis_core::unsteered!();
-    let Some(base) = played_by_the_app("brokered_git::a_shell_tab_adopts_its_folder_through_the_app")
+    let Some(base) =
+        played_by_the_app("brokered_git::a_shell_tab_adopts_its_folder_through_the_app")
     else {
         return;
     };

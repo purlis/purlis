@@ -375,6 +375,10 @@ pub struct Hooks {
     /// The skill run open in each chat, for the chip on its tab (SK-3). **In memory only**: the
     /// event log records the run itself.
     skill_runs: Arc<crate::skillrun::SkillRuns>,
+    /// The shell tabs a shim said a harness was started in by hand (#7700). **In memory only.**
+    /// Such a tab is no longer taken for the person typing: the app runs nothing in it that only
+    /// the person may ask for, for as long as the tab is open.
+    started_by_hand: Arc<Mutex<std::collections::HashSet<u32>>>,
     /// Told each sandbox block a chat's hook found (#1338), once it is kept for `purlis doctor`
     /// — a slot filled after the fact, for `answering`'s reason.
     blocked: Arc<Mutex<Option<HeardBlocks>>>,
@@ -2464,6 +2468,7 @@ impl Hooks {
             asks_told: Arc::new(Mutex::new(None)),
             doings,
             skill_runs,
+            started_by_hand: Arc::default(),
             touching: Arc::new(Mutex::new(None)),
             output: Arc::new(Mutex::new(None)),
             doing_heard: Arc::new(Mutex::new(None)),
@@ -2565,6 +2570,7 @@ impl Hooks {
         let doing_heard: Arc<Mutex<Option<Doings>>> = Arc::new(Mutex::new(None));
         let doings = crate::doing::Doings::new(plane.clone());
         let skill_runs = crate::skillrun::SkillRuns::new(plane.clone());
+        let started_by_hand: Arc<Mutex<std::collections::HashSet<u32>>> = Arc::default();
         let blocked: Arc<Mutex<Option<HeardBlocks>>> = Arc::new(Mutex::new(None));
         let repeated: Arc<Mutex<Option<Repeats>>> = Arc::new(Mutex::new(None));
         let secret_exec: Arc<Mutex<Option<SecretExecs>>> = Arc::new(Mutex::new(None));
@@ -2869,7 +2875,14 @@ impl Hooks {
             },
             noticed: {
                 let plane = plane.clone();
+                let started_by_hand = Arc::clone(&started_by_hand);
                 Box::new(move |notice| {
+                    // Kept whatever the harness is, before the window is told: any harness
+                    // started there means the tab is no longer the person typing (#7700).
+                    started_by_hand
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .insert(notice.chat);
                     if let Some(told) = by_hand(&plane, notice) {
                         told_by_hand(told);
                     }
@@ -2992,6 +3005,7 @@ impl Hooks {
             said_taken: Arc::new(Mutex::new(None)),
             doings,
             skill_runs,
+            started_by_hand,
             blocked,
             repeated,
             throttle,
@@ -3654,6 +3668,14 @@ impl Hooks {
     /// own run's.
     pub fn when_output(&self, outputs: Outputs) {
         *self.output.lock().unwrap_or_else(PoisonError::into_inner) = Some(outputs);
+    }
+
+    /// Whether a shim said a harness was started by hand in shell tab `session` (#7700).
+    pub fn harness_started_by_hand_in(&self, session: u32) -> bool {
+        self.started_by_hand
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains(&session)
     }
 
     /// What this project's working chats are doing (#1493).

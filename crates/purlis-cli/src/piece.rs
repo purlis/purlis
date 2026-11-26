@@ -304,18 +304,22 @@ pub fn run(here: &Here, command: WorktreeCommand) -> Result<u8, CliError> {
             workspace,
         } => {
             let ws = here.active_workspace(workspace.as_deref())?;
-            // What the folder is on is trusted once: only the person says so, in a terminal of
-            // their own or the window's shell tab (#7694).
-            if crate::session::run_by_a_chat_in(&purlis_core::envvar::var) {
-                say(purlis_core::repocmd::Say::Fail(
-                    format!(
-                        "`purlis worktree adopt` records what {repo} \u{b7} {piece} is on as the \
-                         branch it was cut for, so only you do: run it from your own terminal"
-                    )
-                    .into(),
-                ));
-                return Ok(1);
+            // What the folder is on is trusted once, and only the person says so (#7700): in a
+            // session the app started, the app decides, by its own record of who asks (its
+            // shell tab, with no harness started in it), never by this process's environment.
+            let forwarded = crate::gitask::forwarded(
+                &ws,
+                GitWork::WorktreeAdopt {
+                    repo: repo.clone(),
+                    piece: piece.clone(),
+                },
+                crate::gitask::A_WORKTREE_TAKES_AT_MOST,
+            );
+            if let Some(code) = crate::gitask::told(forwarded, &mut say) {
+                return Ok(code);
             }
+            // No app runs above this process and nothing says it is a chat's: the person's
+            // own terminal.
             piececmd::adopt(&root, &ws, &repo, &piece, &mut say)
         }
         WorktreeCommand::Done => {
