@@ -7385,23 +7385,30 @@ fn hibernating_on(host: &Pretend, dir: &Path) -> (Planes, PathBuf, Arc<Held>) {
     (planes, logs, held)
 }
 
-/// A report of `event` from chat `session`'s harness naming its conversation `conversation`,
-/// as Codex names it on every hook (#5900), with `detail`.
+/// A report of `event` from chat `session`'s harness naming its conversation, as Codex names it
+/// on every hook (#5900), with `detail`.
+///
+/// The conversation is the one the board already knows for the chat, where it knows one: a
+/// woken or restarted run resumes its earlier run's conversation, and the board refuses a
+/// Codex report naming any other (`Tracked::naming_its_own`). A fresh chat names its own,
+/// `conversation-<session>`.
 fn a_named_report(
     held: &Held,
     session: u32,
     event: purlis_core::state::Event,
     detail: purlis_core::state::Detail,
 ) {
+    let conversation = held
+        .board()
+        .conversation(session)
+        .unwrap_or_else(|| format!("conversation-{session}"));
     purlis_core::hookwire::send(
         held.hooks().socket().expect("the plane is listening"),
         Some(&held.hooks().token_for(session)),
         &purlis_core::hookwire::Report {
             chat: session,
             event,
-            conversation: purlis_core::hookwire::Conversation::Named(format!(
-                "conversation-{session}"
-            )),
+            conversation: purlis_core::hookwire::Conversation::Named(conversation),
             pid: None,
             agent: None,
             detail,
@@ -7415,7 +7422,6 @@ fn a_named_report(
 /// window test's stand-in is, because the board adopts its first report; a Claude Code report
 /// must carry its program's pid (ADR 0024), which a pretend program has none of.
 fn a_chat_at_rest(held: &Held, dir: &Path) -> u32 {
-    use purlis_core::state::Event::{SessionStart, Stop, UserPromptSubmit};
     // A program that is there, outside the project and outside every temp folder, as a start
     // sandboxed at full asks (`sandbox::program::temp_roots`): under the build's own `target`.
     // The pretend host never runs it. The chat works in a folder of the project, to be confined
@@ -7439,6 +7445,14 @@ fn a_chat_at_rest(held: &Held, dir: &Path) -> u32 {
         Some(purlis_core::harness::Harness::Codex),
         "not a harness that resumes by id, so nothing below is evidence"
     );
+    comes_to_rest(held, session);
+    session
+}
+
+/// Chat `session`'s harness takes its conversation, begins a turn and ends it: at rest, and one
+/// that may be hibernated.
+fn comes_to_rest(held: &Held, session: u32) {
+    use purlis_core::state::Event::{SessionStart, Stop, UserPromptSubmit};
     // One at a time, each taken before the next: two in flight land in either order.
     a_named_report(
         held,
@@ -7469,7 +7483,6 @@ fn a_chat_at_rest(held: &Held, dir: &Path) -> u32 {
         "it never came to rest: {:?}",
         crate::hibernation::facts_of(held, session, false)
     );
-    session
 }
 
 /// The first `number_of_starts` runs begun in the log at `dir`, by their ids.
@@ -8696,5 +8709,223 @@ fn opening_a_plane_sets_a_pool_named_for_a_workspace_no_longer_there_to_this_mac
     assert_eq!(
         store.workspace_place(&resolved, "kept"),
         machine::WorkspacePlace::Pool("builds".to_owned())
+    );
+}
+
+/// Chat `session`'s ULID, which its kept screen is under.
+fn the_id_of(held: &Held, session: u32) -> String {
+    held.chats()
+        .recorded_chat(session)
+        .and_then(|chat| chat.identity.id)
+        .expect("a chat with an id")
+}
+
+#[test]
+fn hibernating_a_chat_keeps_its_screen_masked_and_its_pane_reads_it() {
+    // SC-4b (#7631): what it showed is taken from the host before its program ends, masked
+    // with what purlis handed it (an obvious fake), and read back for its pane.
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_chat_at_rest(&held, dir.path());
+    let id = the_id_of(&held, session);
+    host.shows(session, "deployed with FAKE-VAULT-VALUE-7631\r\n");
+    purlis_core::secrets::handedto::remember(
+        held.root(),
+        session,
+        Some(&id),
+        &purlis_core::secrets::handedto::Entry::new("team", "deploy-key"),
+        "FAKE-VAULT-VALUE-7631",
+    )
+    .expect("named");
+
+    held.hibernate_chat(session).expect("it hibernates");
+
+    let shown = Some("deployed with ‹secret: deploy-key›\r\n".to_owned());
+    assert_eq!(
+        purlis_core::hibernatedscreens::kept(held.root(), &id),
+        shown
+    );
+    assert_eq!(crate::hibernation::screen_of(&held, session), shown);
+}
+
+#[test]
+fn a_screen_that_cannot_be_written_never_stops_the_hibernation_and_leaves_no_file() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_chat_at_rest(&held, dir.path());
+    let id = the_id_of(&held, session);
+    host.shows(session, "all green\r\n");
+    // A file where the store's folder goes: nothing can be written there.
+    let store = purlis_core::hibernatedscreens::dir(held.root());
+    std::fs::create_dir_all(store.parent().expect("its parent")).expect("made");
+    std::fs::write(&store, "in the way").expect("written");
+
+    held.hibernate_chat(session)
+        .expect("it hibernates all the same");
+
+    assert_eq!(
+        held.hibernated().of(session),
+        Some(crate::hibernation::By::Operator)
+    );
+    assert_eq!(purlis_core::hibernatedscreens::kept(held.root(), &id), None);
+    assert_eq!(crate::hibernation::screen_of(&held, session), None);
+}
+
+#[test]
+fn a_hibernated_chat_closed_takes_its_kept_screen_with_it() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_chat_at_rest(&held, dir.path());
+    let id = the_id_of(&held, session);
+    host.shows(session, "all green\r\n");
+    held.hibernate_chat(session).expect("it hibernates");
+    assert!(purlis_core::hibernatedscreens::kept(held.root(), &id).is_some());
+
+    held.close_chat(session).expect("it closes");
+
+    assert_eq!(purlis_core::hibernatedscreens::kept(held.root(), &id), None);
+}
+
+#[test]
+fn a_woken_chat_keeps_its_screen_until_its_new_run_has_drawn() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_chat_at_rest(&held, dir.path());
+    let id = the_id_of(&held, session);
+    host.shows(session, "all green\r\n");
+    held.hibernate_chat(session).expect("it hibernates");
+    let woken = held.wake_chat(session, STARTING).expect("it wakes");
+    assert!(
+        purlis_core::hibernatedscreens::kept(held.root(), &id).is_some(),
+        "kept until the new run draws"
+    );
+
+    let _ = held.session_drawn(woken, 1, 0);
+    assert!(
+        purlis_core::hibernatedscreens::kept(held.root(), &id).is_some(),
+        "nothing drawn yet"
+    );
+    let _ = held.session_drawn(woken, 1, 1);
+
+    assert_eq!(purlis_core::hibernatedscreens::kept(held.root(), &id), None);
+}
+
+#[test]
+fn removing_a_workspace_takes_every_screen_no_hibernated_chat_names() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_chat_at_rest(&held, dir.path());
+    let id = the_id_of(&held, session);
+    host.shows(session, "all green\r\n");
+    held.hibernate_chat(session).expect("it hibernates");
+    let orphan = "01K6H1BERNATED00000000000Z";
+    purlis_core::hibernatedscreens::keep(held.root(), orphan, "a chat gone").expect("kept");
+
+    held.hibernated_screens_swept();
+
+    assert!(purlis_core::hibernatedscreens::kept(held.root(), &id).is_some());
+    assert_eq!(
+        purlis_core::hibernatedscreens::kept(held.root(), orphan),
+        None
+    );
+}
+
+#[test]
+fn a_hibernation_the_host_refuses_keeps_no_screen() {
+    // #7706's review: the screen is taken before the host acts. A chat the host does not
+    // hibernate is not hibernated, and nothing would ever remove a screen left for it.
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_chat_at_rest(&held, dir.path());
+    let id = the_id_of(&held, session);
+    host.shows(session, "all green\r\n");
+    host.hibernates_none(Some("the host could not end it"));
+
+    let refused = held.hibernate_chat(session).expect_err("the host refused");
+
+    assert!(
+        matches!(&refused, crate::hibernation::Refused::Said(said) if said.contains("could not end it")),
+        "{refused:?}"
+    );
+    assert_eq!(held.hibernated().of(session), None);
+    assert_eq!(purlis_core::hibernatedscreens::kept(held.root(), &id), None);
+}
+
+#[test]
+fn a_secret_handed_before_a_wake_is_masked_when_the_woken_chat_is_hibernated_again() {
+    // #7706's review: the woken run resumes the conversation and may draw again what its
+    // earlier run was handed (an obvious fake), which the earlier run's close forgot.
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_chat_at_rest(&held, dir.path());
+    let id = the_id_of(&held, session);
+    purlis_core::secrets::handedto::remember(
+        held.root(),
+        session,
+        Some(&id),
+        &purlis_core::secrets::handedto::Entry::new("team", "deploy-key"),
+        "FAKE-VAULT-VALUE-7706",
+    )
+    .expect("named");
+    host.shows(session, "deployed with FAKE-VAULT-VALUE-7706\r\n");
+    held.hibernate_chat(session).expect("it hibernates");
+    let woken = held.wake_chat(session, STARTING).expect("it wakes");
+    host.shows(woken, "resumed: deployed with FAKE-VAULT-VALUE-7706\r\n");
+    comes_to_rest(&held, woken);
+
+    held.hibernate_chat(woken).expect("it hibernates again");
+
+    assert_eq!(
+        purlis_core::hibernatedscreens::kept(held.root(), &id).as_deref(),
+        Some("resumed: deployed with ‹secret: deploy-key›\r\n")
+    );
+}
+
+#[test]
+fn a_secret_handed_before_a_grants_restart_is_masked_when_the_restarted_chat_is_hibernated() {
+    // #7711's review: a restart resumes the conversation under a new number, as a wake does,
+    // and may draw again what its earlier run was handed (an obvious fake), which the earlier
+    // run's close forgot.
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_chat_at_rest(&held, dir.path());
+    let id = the_id_of(&held, session);
+    purlis_core::secrets::handedto::remember(
+        held.root(),
+        session,
+        Some(&id),
+        &purlis_core::secrets::handedto::Entry::new("team", "deploy-key"),
+        "FAKE-VAULT-VALUE-7711",
+    )
+    .expect("named");
+    host.shows(session, "deployed with FAKE-VAULT-VALUE-7711\r\n");
+    held.chats()
+        .owe_restart(session, "A grant was allowed.".to_owned());
+    let Restarted::Started(restarted) = held
+        .restart_chat(session, STARTING, When::Now)
+        .expect("the grant restarts it")
+    else {
+        panic!("the grant did not restart it at once");
+    };
+    assert_ne!(restarted, session, "a new run under a new number");
+    host.shows(
+        restarted,
+        "resumed: deployed with FAKE-VAULT-VALUE-7711\r\n",
+    );
+    comes_to_rest(&held, restarted);
+
+    held.hibernate_chat(restarted).expect("it hibernates");
+
+    assert_eq!(
+        purlis_core::hibernatedscreens::kept(held.root(), &id).as_deref(),
+        Some("resumed: deployed with ‹secret: deploy-key›\r\n")
     );
 }

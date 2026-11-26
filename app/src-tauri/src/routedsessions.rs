@@ -48,7 +48,7 @@ use chatskept::KeptPlaces;
 use chatskept::{ChatsKept, OnThisMachine};
 
 use crate::host::{
-    Composed, Ends, Named, Opening, Readiness, Reconnecting, SessionHost, Sink, Watching,
+    Composed, Ends, Named, Opening, Readiness, Reconnecting, SessionHost, Sink, Watching, Whole,
 };
 
 /// Which pool a chat of a workspace runs on, with what its start chose (#4536), as this machine's
@@ -957,6 +957,19 @@ impl SessionHost for RoutedSessions {
         }
     }
 
+    fn watch_whole(
+        &self,
+        id: u32,
+        sink: Sink,
+        history: u32,
+        whole: Whole,
+    ) -> Result<Watching, String> {
+        match self.host_of(id) {
+            Some(host) => host.watch_whole(id, sink, history, whole),
+            None => self.here.watch_whole(id, sink, history, whole),
+        }
+    }
+
     fn drawn(&self, id: u32, view: u32, pieces: u32) -> Result<(), String> {
         match self.host_of(id) {
             Some(host) => host.drawn(id, view, pieces),
@@ -1537,10 +1550,10 @@ impl SessionHost for RoutedSessions {
 
     /// Of the host that said it runs the chat ([`Self::left_running_in`] keeps a pool's), else of
     /// this machine's (#6504).
-    fn watch_left(&self, number: u32, sink: Sink) -> Result<Watching, String> {
+    fn watch_left(&self, number: u32, sink: Sink, whole: Whole) -> Result<Watching, String> {
         match self.host_of(number) {
-            Some(host) => host.watch_left(number, sink),
-            None => self.here.watch_left(number, sink),
+            Some(host) => host.watch_left(number, sink, whole),
+            None => self.here.watch_left(number, sink, whole),
         }
     }
 
