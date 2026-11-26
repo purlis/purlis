@@ -4408,9 +4408,9 @@ impl Chats {
 
     /// What follows a restart of chat `session` as `started`: if the chat was closed while it
     /// restarted, the new run is ended (nobody asked for it any more, and it would keep the
-    /// chat's grants alive unseen); otherwise the new run takes its place, and what was queued
-    /// for the old one meanwhile to tell it is owed to the new one where `keep_owed`, else
-    /// dropped.
+    /// chat's grants alive unseen); otherwise the new run takes its place, what it was handed is
+    /// carried to it, and what was queued for the old one meanwhile to tell it is owed to the new
+    /// one where `keep_owed`, else dropped.
     fn restarted(&self, session: u32, started: u32, keep_owed: bool) -> Result<u32, String> {
         if !lock(&self.open).contains_key(&session) {
             lock(&self.owed).remove(&session);
@@ -4431,6 +4431,15 @@ impl Chats {
         // ran, is answered by this restart.
         if keep_owed && !queued.is_empty() {
             lock(&self.owed).insert(started, queued);
+        }
+        // **What the earlier run was handed stays known to the new one** (SC-4b, #7631): every
+        // start that takes a chat's place resumes its conversation, which may draw it again, and
+        // the old run's close forgets it. Before that close, which is the caller's next step.
+        let id = lock(&self.open)
+            .get(&session)
+            .and_then(|one| one.chat.identity.id.clone());
+        if let Some(id) = id {
+            purlis_core::secrets::handedto::carry_over(&self.project, session, started, &id);
         }
         self.took_the_place_of(session, started);
         self.unclaim(session);

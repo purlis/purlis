@@ -72,7 +72,9 @@ use purlis_session_protocol::view::{Chunk, Opened, Reader, Viewer};
 use purlis_core::hookwire::relay::{Heard, Replied, Reply};
 
 use crate::hooks::Relayed;
-use crate::host::{Ends, Named, Opening, Readiness, Reconnecting, SessionHost, Sink, Watching};
+use crate::host::{
+    Ends, Named, Opening, Readiness, Reconnecting, SessionHost, Sink, Watching, Whole,
+};
 use crate::reconnecting::Reconnection;
 use crate::sessions::{ENDED, STOPPED};
 
@@ -1275,6 +1277,8 @@ enum Draws {
 struct TextSink {
     sink: Sink,
     paced: Option<Paced>,
+    /// Told once the first stream's snapshot has all been handed to `sink` (SC-4b, #7631).
+    whole: Option<Whole>,
 }
 
 /// **A view paced by what its pane has drawn** (#4733): each piece handed to the pane is
@@ -2686,10 +2690,12 @@ impl HostLink {
 
     /// Draw view `view` with `sink`: its stream may already be here.
     /// `paced`: acknowledged only as the pane reports it drew it (#4733), not as it is handed.
-    fn draw(&self, view: u32, sink: Sink, paced: bool) {
+    /// `whole` is told once a snapshot has all been handed to `sink` (SC-4b, #7631).
+    fn draw(&self, view: u32, sink: Sink, paced: bool, whole: Option<Whole>) {
         let sink = TextSink {
             sink,
             paced: paced.then(Paced::default),
+            whole,
         };
         self.draw_into(view, Draws::Text(Arc::new(Mutex::new(sink))));
     }
@@ -3060,6 +3066,10 @@ async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
     if epoch > 1 {
         give(&shared, view, epoch, 0, RESET.as_bytes().to_vec());
     }
+    // An empty snapshot is whole before anything is read.
+    if reader.snapshot_complete() {
+        told_whole(&shared, view);
+    }
     let mut first = true;
     loop {
         let chunk = tokio::select! {
@@ -3086,6 +3096,9 @@ async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
         // Each chunk is one piece, and carries exactly its own bytes: a character cut between
         // two chunks is the pane's terminal's to put together, so nothing is held back here.
         give(&shared, view, epoch, bytes.len(), bytes.to_vec());
+        if reader.snapshot_complete() {
+            told_whole(&shared, view);
+        }
         // It draws a snapshot, which comes only over a link that is up: whatever was said of its
         // runner's link, it is reconnected (#2496).
         if std::mem::take(&mut first) {
@@ -3233,6 +3246,16 @@ fn give(shared: &Shared, view: u32, epoch: u32, bytes: usize, piece: Vec<u8>) {
     }
     if let Some(sink) = text_sink(shared, view) {
         lock(&sink).hand(epoch, bytes, piece);
+    }
+}
+
+/// The snapshot of view `view` has all been handed to its sink: whoever waits on it whole is
+/// told, once (SC-4b, #7631). After a reset, the stream's own snapshot: what came before it is
+/// drawn over.
+fn told_whole(shared: &Shared, view: u32) {
+    let whole = text_sink(shared, view).and_then(|sink| lock(&sink).whole.take());
+    if let Some(whole) = whole {
+        whole();
     }
 }
 
@@ -4944,16 +4967,17 @@ struct Begun {
 impl HostedSessions {
     /// Opens a terminal view of session `id` into `sink`, with at most `history` lines of
     /// history (#4742), `paced` by what the pane reports it drew (#4733) or acknowledged as it
-    /// is handed over.
+    /// is handed over; `whole` told once its snapshot has all been handed to `sink`.
     fn watch_paced(
         &self,
         id: u32,
         sink: Sink,
         history: u32,
         paced: bool,
+        whole: Option<Whole>,
     ) -> Result<Watching, String> {
         let (link, program) = self.program(id)?;
-        attach_terminal(&link, program, history, sink, paced, |view| {
+        attach_terminal(&link, program, history, sink, paced, whole, |view| {
             // Listed before it draws, so its first snapshot finds whose view it is (#2496).
             if let Some(program) = lock(&self.running).get_mut(&id) {
                 program.views.push(view);
@@ -4963,14 +4987,15 @@ impl HostedSessions {
 }
 
 /// **Opens a terminal view of `program` on `link`**, with at most `history` lines of history,
-/// drawn into `sink` (`paced` by what the pane reports it drew): `listed` is told the view before
-/// anything is drawn.
+/// drawn into `sink` (`paced` by what the pane reports it drew), `whole` told once its snapshot
+/// has all been handed to it: `listed` is told the view before anything is drawn.
 fn attach_terminal(
     link: &HostLink,
     program: String,
     history: u32,
     sink: Sink,
     paced: bool,
+    whole: Option<Whole>,
     listed: impl FnOnce(u32),
 ) -> Result<Watching, String> {
     let attached = match link.call(Command::AttachView {
@@ -4984,7 +5009,7 @@ fn attach_terminal(
         other => return Err(format!("the session host answered a view with {other:?}")),
     };
     listed(attached.view);
-    link.draw(attached.view, sink, paced);
+    link.draw(attached.view, sink, paced, whole);
     Ok(Watching {
         view: attached.view,
         size: Size {
@@ -5208,11 +5233,21 @@ impl SessionHost for HostedSessions {
 
     /// A host before 1.71 draws all of its history, and says nothing is older (#4742).
     fn watch_within(&self, id: u32, sink: Sink, history: u32) -> Result<Watching, String> {
-        self.watch_paced(id, sink, history, false)
+        self.watch_paced(id, sink, history, false, None)
+    }
+
+    fn watch_whole(
+        &self,
+        id: u32,
+        sink: Sink,
+        history: u32,
+        whole: Whole,
+    ) -> Result<Watching, String> {
+        self.watch_paced(id, sink, history, false, Some(whole))
     }
 
     fn watch_drawn(&self, id: u32, sink: Sink, history: u32) -> Result<Watching, String> {
-        self.watch_paced(id, sink, history, true)
+        self.watch_paced(id, sink, history, true, None)
     }
 
     fn drawn(&self, id: u32, view: u32, pieces: u32) -> Result<(), String> {
@@ -5923,14 +5958,14 @@ impl SessionHost for HostedSessions {
 
     /// By the program the host said it left (#6504): never drawn into a pane, so nothing paces
     /// it, and no running chat lists it.
-    fn watch_left(&self, number: u32, sink: Sink) -> Result<Watching, String> {
+    fn watch_left(&self, number: u32, sink: Sink, whole: Whole) -> Result<Watching, String> {
         let (link, _) = self.link()?;
         let program = lock(&self.left)
             .get(&number)
             .map(|left| left.program.clone())
             .ok_or_else(|| format!("chat {number} was not left in the session host"))?;
         // All of its history, as [`SessionHost::watch`] asks.
-        attach_terminal(&link, program, u32::MAX, sink, false, |_| {})
+        attach_terminal(&link, program, u32::MAX, sink, false, Some(whole), |_| {})
     }
 
     fn unwatch_left(&self, number: u32, view: u32) {
