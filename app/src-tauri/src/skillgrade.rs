@@ -2848,21 +2848,41 @@ pub(crate) fn keep_grade_screen(
     }
 }
 
-/// How long a grade's chat has to hand over its screen before it closes.
-const A_SCREEN_TAKES_AT_MOST: Duration = Duration::from_secs(2);
+/// The longest a view's snapshot takes to come whole before the look is given up: a link that
+/// carries a few hundred KiB a second still brings a screen of `grades::kept::MOST_SCREEN_BYTES`.
+const A_SCREEN_TAKES_AT_MOST: Duration = Duration::from_secs(20);
 
-/// How long a view of a grade's chat stays quiet before what it was sent is taken as the whole
-/// screen: a host sends a snapshot in pieces, after a reset where the view is not its first.
-const A_SCREEN_IS_WHOLE_AFTER: Duration = Duration::from_millis(300);
+/// How long a view may send nothing before it is whole, before the look is given up as stalled.
+const A_SCREEN_STALLS_AFTER: Duration = Duration::from_secs(2);
 
 /// **What session `session` shows now, its scrollback with it**, as the escape sequences that draw
-/// it into a blank terminal: what a view of it is sent first (`host::SessionHost::watch`), which
-/// a host may send in pieces, so everything the view is sent until it is quiet for
-/// [`A_SCREEN_IS_WHOLE_AFTER`], at most [`A_SCREEN_TAKES_AT_MOST`] and
-/// `grades::kept::MOST_SCREEN_BYTES`. `None` where no view could be opened or nothing came.
+/// it into a blank terminal: the snapshot a view of it is sent first, which a host may send in
+/// pieces and a slow link slowly, so everything the view is sent until the host says the
+/// snapshot is whole (`host::SessionHost::watch_whole`, [`gathered`]). `None` where no view could
+/// be opened, nothing came, or the snapshot did not come whole: a look cut short is never taken
+/// as the screen (SC-4b, #7631).
 pub(crate) fn screen_of(host: &dyn crate::host::SessionHost, session: u32) -> Option<String> {
     screen_through(
-        |sink| host.watch(session, sink),
+        |sink, whole| host.watch_whole(session, sink, u32::MAX, whole),
+        |view| {
+            let _ = host.unwatch(session, view);
+        },
+    )
+}
+
+/// [`screen_of`], with at most `history` lines of history above the screen, the newest
+/// (`host::SessionHost::watch_within`): what a hibernated chat's kept screen is fitted by
+/// (SC-4b, #7631). `None` for `history` is the whole of it.
+pub(crate) fn screen_within(
+    host: &dyn crate::host::SessionHost,
+    session: u32,
+    history: Option<u32>,
+) -> Option<String> {
+    let Some(history) = history else {
+        return screen_of(host, session);
+    };
+    screen_through(
+        |sink, whole| host.watch_whole(session, sink, history, whole),
         |view| {
             let _ = host.unwatch(session, view);
         },
@@ -2873,7 +2893,7 @@ pub(crate) fn screen_of(host: &dyn crate::host::SessionHost, session: u32) -> Op
 /// reattached (#6504): a finished task's, which a launch keeps before it closes the chat.
 pub(crate) fn screen_left_of(host: &dyn crate::host::SessionHost, number: u32) -> Option<String> {
     screen_through(
-        |sink| host.watch_left(number, sink),
+        |sink, whole| host.watch_left(number, sink, whole),
         |view| host.unwatch_left(number, view),
     )
 }
@@ -2881,45 +2901,52 @@ pub(crate) fn screen_left_of(host: &dyn crate::host::SessionHost, number: u32) -
 /// What a view `watch` opens is sent until it is whole ([`gathered`]), and the view closed with
 /// `unwatch`.
 fn screen_through(
-    watch: impl FnOnce(crate::host::Sink) -> Result<crate::host::Watching, String>,
+    watch: impl FnOnce(crate::host::Sink, crate::host::Whole) -> Result<crate::host::Watching, String>,
     unwatch: impl FnOnce(u32),
 ) -> Option<String> {
     let (send, pieces) = std::sync::mpsc::channel();
+    let told = send.clone();
     let mut text = crate::sessions::Utf8Stream::default();
-    let view = watch(Box::new(move |bytes: Vec<u8>| {
-        let _ = send.send(text.push(&bytes));
-    }))
+    let view = watch(
+        Box::new(move |bytes: Vec<u8>| {
+            let _ = send.send(Piece::Shown(text.push(&bytes)));
+        }),
+        Box::new(move || {
+            let _ = told.send(Piece::Whole);
+        }),
+    )
     .ok()?;
     let shown = gathered(&pieces, Instant::now());
     unwatch(view.view);
     shown
 }
 
-/// Everything `pieces` holds until it is quiet for [`A_SCREEN_IS_WHOLE_AFTER`] once something
-/// was heard, at most [`A_SCREEN_TAKES_AT_MOST`] after `begun` and `grades::kept::MOST_SCREEN_BYTES`
-/// long. `None` where nothing but empty pieces came.
-fn gathered(pieces: &std::sync::mpsc::Receiver<String>, begun: Instant) -> Option<String> {
+/// What a view being taken is sent: text it shows, or word that its snapshot is all here.
+#[derive(Debug)]
+enum Piece {
+    Shown(String),
+    Whole,
+}
+
+/// Everything `pieces` holds until it says the snapshot is [`Piece::Whole`]. `None` where
+/// nothing but empty pieces came, or where the word does not come: the view ended, sent nothing
+/// for [`A_SCREEN_STALLS_AFTER`], or took past [`A_SCREEN_TAKES_AT_MOST`] after `begun`. Past
+/// `grades::kept::MOST_SCREEN_BYTES` it is no longer read: what it holds is past every bound a
+/// screen is kept within, so it is never kept as it is (`hibernatedscreens::fitted` only measures
+/// it, to ask again with fewer lines).
+fn gathered(pieces: &std::sync::mpsc::Receiver<Piece>, begun: Instant) -> Option<String> {
     let mut shown = String::new();
-    let mut heard = false;
     loop {
-        let left = A_SCREEN_TAKES_AT_MOST.saturating_sub(begun.elapsed());
-        if left.is_zero() || shown.len() > grades::kept::MOST_SCREEN_BYTES {
-            break;
+        if shown.len() > grades::kept::MOST_SCREEN_BYTES {
+            return Some(shown);
         }
-        let wait = if heard {
-            left.min(A_SCREEN_IS_WHOLE_AFTER)
-        } else {
-            left
-        };
-        match pieces.recv_timeout(wait) {
-            Ok(text) => {
-                heard |= !text.is_empty();
-                shown.push_str(&text);
-            }
-            Err(_) => break,
+        let left = A_SCREEN_TAKES_AT_MOST.saturating_sub(begun.elapsed());
+        match pieces.recv_timeout(left.min(A_SCREEN_STALLS_AFTER)) {
+            Ok(Piece::Shown(text)) => shown.push_str(&text),
+            Ok(Piece::Whole) => return (!shown.is_empty()).then_some(shown),
+            Err(_) => return None,
         }
     }
-    heard.then_some(shown)
 }
 
 pub(crate) mod after_edit;

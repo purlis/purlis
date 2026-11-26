@@ -16,6 +16,11 @@
 //! places: the core's [`purlis_core::rested`], the one pure answer to *may it be hibernated*,
 //! and [`Hibernated`], the one place that says which chats are.
 //!
+//! **What it showed is kept** (SC-4b, #7631): as it is hibernated, its screen and scrollback are
+//! taken from the session host, fitted to 1 MiB, masked and kept
+//! ([`purlis_core::hibernatedscreens`]), for its pane to show read-only with Resume. A screen
+//! that cannot be taken, masked or written never stops the hibernation ([`keep_screen`]).
+//!
 //! **The five-word board `State` gains no value.** A hibernated chat is a per-chat flag read
 //! where the board is read, as [`crate::hostlost::Lost`] is.
 
@@ -142,11 +147,35 @@ struct Held {
 /// (SC-4e makes it durable). The one answer to *is it hibernated*: the program-end path, the
 /// pane, the row and the wake read it here.
 #[derive(Debug, Default)]
-pub struct Hibernated(Mutex<HashMap<u32, Held>>);
+pub struct Hibernated {
+    held: Mutex<HashMap<u32, Held>>,
+    /// The chats woken whose new run has not drawn yet, by its session, each with the ULID its
+    /// kept screen is under: that screen goes once the run draws ([`Self::drawn`]).
+    woken: Mutex<HashMap<u32, String>>,
+}
 
 impl Hibernated {
     fn held(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Held>> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+        self.held.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn woken(&self) -> std::sync::MutexGuard<'_, HashMap<u32, String>> {
+        self.woken.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Chat `id` was woken as session `session`: its kept screen stays until that run has drawn.
+    pub fn woke(&self, session: u32, id: String) {
+        self.woken().insert(session, id);
+    }
+
+    /// Session `session`'s pane drew: where it is a woken chat's new run, the ULID of the screen
+    /// that is no longer needed, once. `None` for every other session.
+    pub fn drawn(&self, session: u32) -> Option<String> {
+        let mut woken = self.woken();
+        if woken.is_empty() {
+            return None;
+        }
+        woken.remove(&session)
     }
 
     /// The host is about to end chat `session`'s program as a hibernation, by `by`: written
@@ -157,6 +186,9 @@ impl Hibernated {
         if held.contains_key(&session) {
             return false;
         }
+        // A woken run hibernated before it drew has no screen of its earlier run to let go of:
+        // the screen kept now is its own (SC-4b, #7631).
+        self.woken().remove(&session);
         held.insert(
             session,
             Held {
@@ -232,6 +264,61 @@ impl Hibernated {
     /// It is awake, was ended another way, or is closed.
     pub fn forget(&self, session: u32) {
         self.held().remove(&session);
+    }
+}
+
+/// **Keeps what chat `session`, whose id is `id`, shows as it is hibernated** (SC-4b, #7631):
+/// its screen and scrollback taken from the session host while its program is still there,
+/// fitted to [`purlis_core::hibernatedscreens::MOST_BYTES`] by taking fewer lines of history
+/// (`skillgrade::screen_within`), each look masked with every secret purlis handed it, as a
+/// task's last screen is (#6309). **Nothing here stops the hibernation**: a screen that cannot
+/// be taken, masked or written is said in the log and leaves no file, the one an earlier
+/// hibernation kept included, and the chat is hibernated with none.
+pub(crate) fn keep_screen(
+    root: &std::path::Path,
+    host: &dyn crate::host::SessionHost,
+    session: u32,
+    id: &str,
+) {
+    keep_screen_taken(root, session, id, |history| {
+        crate::skillgrade::screen_within(host, session, history)
+    });
+}
+
+/// [`keep_screen`], the screen taken by `take` with at most so many lines of history (`None`
+/// for all of it).
+fn keep_screen_taken(
+    root: &std::path::Path,
+    session: u32,
+    id: &str,
+    mut take: impl FnMut(Option<u32>) -> Option<String>,
+) {
+    use purlis_core::hibernatedscreens;
+    let mut unmasked = false;
+    let fitted = hibernatedscreens::fitted(|history| {
+        let screen = take(history)?;
+        let masked = purlis_core::secrets::handedto::masked_for(root, session, id, &screen);
+        unmasked |= masked.is_none();
+        masked
+    });
+    let Some(screen) = fitted else {
+        // Never an older hibernation's screen in its place.
+        hibernatedscreens::forget(root, id);
+        if unmasked {
+            tracing::info!(
+                "purlis: hibernated chat {session}'s screen was not kept: what it was handed \
+                 could not be known to mask"
+            );
+        } else {
+            tracing::info!(
+                "purlis: hibernated chat {session}'s screen was not kept: it could not be read \
+                 within 1 MiB"
+            );
+        }
+        return;
+    };
+    if let Err(why) = hibernatedscreens::keep(root, id, &screen) {
+        tracing::info!("purlis: hibernated chat {session}'s screen was not kept ({why})");
     }
 }
 
@@ -363,6 +450,30 @@ pub fn chat_hibernated(
         .map(|by| ChatHibernation { by }))
 }
 
+/// **What hibernated chat `session` showed as it was hibernated** (SC-4b, #7631): what its pane
+/// draws read-only with Resume. Null where it is not hibernated, has no id, or nothing was
+/// kept: a missing, corrupt or oversize file reads as none kept.
+#[tauri::command]
+#[specta::specta]
+pub async fn hibernated_chat_screen(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+) -> Result<Option<String>, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading a hibernated chat's screen", move || {
+        Ok(screen_of(&held, session))
+    })
+    .await
+}
+
+/// [`hibernated_chat_screen`], of a plane held.
+pub(crate) fn screen_of(held: &crate::planes::Held, session: u32) -> Option<String> {
+    held.hibernated().of(session)?;
+    let id = held.chats().recorded_chat(session)?.identity.id?;
+    purlis_core::hibernatedscreens::kept(held.root(), &id)
+}
+
 /// Hibernate on a chat's row (SC-4a, #7630): the person's act. Where the chat may not be
 /// hibernated now it is answered why, as a typed reason the window words (SC-4c, #7632);
 /// where the act cannot be done, in a sentence. Otherwise its program ends and the window is
@@ -457,6 +568,99 @@ mod tests {
         assert!(hibernated.ends_as_one(4));
         assert!(hibernated.failed(4), "its program ended as a hibernation");
         assert_eq!(hibernated.of(4), Some(By::Operator));
+    }
+
+    const CHAT: &str = "01K6H1BERNATED00000000000B";
+
+    fn project() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().expect("a directory");
+        let root = std::fs::canonicalize(dir.path()).expect("canonical");
+        (dir, root)
+    }
+
+    #[test]
+    fn a_handed_secret_on_the_screen_is_masked_in_the_kept_screen() {
+        // An obvious fake: no credential is or was this.
+        let (_dir, root) = project();
+        purlis_core::secrets::handedto::remember(
+            &root,
+            31,
+            Some(CHAT),
+            &purlis_core::secrets::handedto::Entry::new("team", "github-token"),
+            "FAKE-VAULT-VALUE-7631",
+        )
+        .expect("named");
+
+        keep_screen_taken(&root, 31, CHAT, |_| {
+            Some("token: FAKE-VAULT-VALUE-7631\r\n".to_owned())
+        });
+
+        assert_eq!(
+            purlis_core::hibernatedscreens::kept(&root, CHAT).as_deref(),
+            Some("token: ‹secret: github-token›\r\n")
+        );
+    }
+
+    #[test]
+    fn a_screen_that_cannot_be_masked_is_not_kept_and_takes_an_older_one_with_it() {
+        let (_dir, root) = project();
+        purlis_core::hibernatedscreens::keep(&root, CHAT, "an older hibernation's").unwrap();
+        // A line naming what chat 32 was handed that purlis did not seal: what it was handed
+        // cannot be known, so nothing can be masked.
+        let named = purlis_core::secrets::handedto::dir(&root);
+        std::fs::create_dir_all(&named).expect("made");
+        std::fs::write(
+            named.join("32.names"),
+            format!(
+                "{{\"vault\":\"team\",\"key\":\"k\",\"shown\":[],\"seal\":\"{}\"}}\n",
+                "0".repeat(64)
+            ),
+        )
+        .expect("named");
+
+        keep_screen_taken(&root, 32, CHAT, |_| Some("token: whatever\r\n".to_owned()));
+
+        assert_eq!(purlis_core::hibernatedscreens::kept(&root, CHAT), None);
+        assert!(
+            !purlis_core::hibernatedscreens::dir(&root)
+                .join(format!("{CHAT}.screen"))
+                .exists()
+        );
+    }
+
+    #[test]
+    fn a_scrollback_past_a_mebibyte_is_taken_again_with_fewer_lines_and_kept_within_it() {
+        let (_dir, root) = project();
+        let line = format!("\x1b[32m{}\x1b[0m\r\n", "x".repeat(200));
+        let mut asked = Vec::new();
+        keep_screen_taken(&root, 33, CHAT, |history| {
+            asked.push(history);
+            let lines = history.map_or(20_000, |history| history.min(20_000)) + 24;
+            Some(line.repeat(lines as usize))
+        });
+        let kept = purlis_core::hibernatedscreens::kept(&root, CHAT).expect("kept");
+        assert!(kept.len() <= purlis_core::hibernatedscreens::MOST_BYTES);
+        assert_eq!(asked[0], None, "the whole of it first");
+        assert!(asked.len() > 1);
+    }
+
+    #[test]
+    fn a_woken_chat_s_screen_is_let_go_of_once_its_new_run_draws_and_only_then() {
+        let hibernated = Hibernated::default();
+        assert_eq!(hibernated.drawn(9), None);
+        hibernated.woke(9, CHAT.to_owned());
+        assert_eq!(hibernated.drawn(8), None, "another chat's pane");
+        assert_eq!(hibernated.drawn(9).as_deref(), Some(CHAT));
+        assert_eq!(hibernated.drawn(9), None, "once");
+    }
+
+    #[test]
+    fn a_woken_chat_hibernated_again_before_it_drew_has_no_earlier_screen_to_let_go_of() {
+        let hibernated = Hibernated::default();
+        hibernated.woke(9, CHAT.to_owned());
+        assert!(hibernated.intend(9, By::Operator));
+        assert!(hibernated.settle(9));
+        assert_eq!(hibernated.drawn(9), None, "the screen kept now is its own");
     }
 
     #[test]

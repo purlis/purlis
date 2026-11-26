@@ -654,6 +654,57 @@ pub fn forget(root: &Path, chat: u32) {
     }
 }
 
+/// **Carries what chat `from` of the project at `root`, whose id is `id`, was handed over to
+/// chat `to`**, the same chat in a new run on its conversation (a restart, a wake or a move,
+/// SC-4b, #7631), before `from` is forgotten as it closes: what the earlier run was handed may
+/// be drawn again by the new one, so the new one's kept screen masks it too. What this process
+/// knows is carried, and each line named on disk for `from` and sealed for `id` is named for
+/// `to`. Where that cannot be done (`from`'s names do not read, or `to`'s cannot be written),
+/// this process holds `to`'s screen as one whose secrets cannot be known, so it never keeps it
+/// unmasked. That hold is in memory only: a later process that finds `to` by its names on disk
+/// alone, after a crash, knows only the lines that were written.
+pub fn carry_over(root: &Path, from: u32, to: u32, id: &str) {
+    let ctx = super::Ctx::new(root, super::Env::from_process());
+    let on_disk = named(root, from).map(|mut lines| {
+        lines.retain(|line| !line.is_for_another_chat(&ctx, id));
+        lines
+    });
+    let mut held = handed();
+    let all = held.get_or_insert_with(HashMap::new);
+    let earlier = all.get(&(root.to_path_buf(), from)).cloned();
+    let one = all.entry((root.to_path_buf(), to)).or_default();
+    if let Some(earlier) = earlier {
+        one.known.extend(earlier.known);
+        one.blind |= earlier.blind;
+        for entry in earlier.entries {
+            if !one.entries.iter().any(|had| had.is_line(&entry)) {
+                one.entries.push(entry);
+            }
+        }
+    }
+    let lines = match on_disk {
+        Ok(lines) => lines,
+        Err(why) => {
+            one.blind = true;
+            tracing::info!("purlis: what chat {from} was handed could not be carried ({why})");
+            return;
+        }
+    };
+    drop(held);
+    if lines.is_empty() {
+        return;
+    }
+    if let Err(why) = name_on_disk(root, to, id, &lines) {
+        tracing::info!("purlis: what chat {from} was handed was not named for chat {to} ({why})");
+        if let Some(one) = handed()
+            .as_mut()
+            .and_then(|h| h.get_mut(&(root.to_path_buf(), to)))
+        {
+            one.blind = true;
+        }
+    }
+}
+
 /// What this process holds of chat `chat` of the project at `root` let go of, its names left on
 /// disk: as a crash leaves them.
 #[cfg(test)]

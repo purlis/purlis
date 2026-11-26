@@ -2593,6 +2593,14 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             app.join(crate::chatscreens::DIR_NAME),
             Access::ReadWrite,
         );
+        // Every hibernated chat's kept screen (#7631), neither read nor written: what a chat
+        // showed is the person's to read in its pane, and a chat that wrote one would choose
+        // what a hibernated chat's pane shows.
+        deny(
+            Class::Integrity,
+            app.join(crate::hibernatedscreens::DIR_NAME),
+            Access::ReadWrite,
+        );
         // What each chat was handed, by vault and key (#6309), neither read nor written: a chat
         // that rewrote its own would choose what its kept screen is masked with after a crash.
         deny(

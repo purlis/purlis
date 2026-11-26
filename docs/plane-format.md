@@ -134,6 +134,11 @@ its own plane:
   dispatch record names, or last written 30 days or more before (`chatscreens::on_open`, #6214).
   It runs whatever the reopen record says, so a screen never outlives its record.
   A killed write's temp file beside it goes too, once older than `chatscreens::LOCK_WAIT`.
+- a hibernated chat's kept screen, `.charter/app/hibernated-screens/<ULID>.screen`, that no
+  hibernated chat names, or last written 30 days or more before (`hibernatedscreens::on_open`,
+  #7631), whatever the reopen record says, and a killed write's temp file beside it. Until
+  SC-4e (#7634) makes the hibernated state durable, no chat is hibernated at an open, so every
+  one goes.
 - the names of what a chat was handed, `.charter/app/chat-handed/<chat>.names`, last written
   30 days or more before (`secrets::handedto::on_open`, #6309), unless the chat is one the
   reopen record will bring back, whose screen is still to be kept; where that record cannot
@@ -359,6 +364,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`app/chat-records/closed.json` — every chat that closed, by its number](#appchat-recordsclosedjson--every-chat-that-closed-by-its-number)
   - [`app/chat-screens/<ULID>.screen` — a dispatched task's last screen](#appchat-screensulidscreen--a-dispatched-tasks-last-screen)
   - [`app/chat-screens/.lock`](#appchat-screenslock)
+  - [`app/hibernated-screens/<ULID>.screen` — a hibernated chat's kept screen](#apphibernated-screensulidscreen--a-hibernated-chats-kept-screen)
   - [`app/chat-handed/<chat>.names` — what a chat was handed, by vault and key](#appchat-handedchatnames--what-a-chat-was-handed-by-vault-and-key)
   - [`app/hooks.sock`](#apphookssock)
   - [`app/slots.sock`](#appslotssock)
@@ -8091,6 +8097,37 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   them (#6451's review). Best effort, as `rewrite`'s lock is: on a filesystem that cannot
   `flock`, the store is written and deleted unlocked (#6508's review).
 - **Tier:** Clone state, rebuildable — deleted, it is made again by the next write.
+
+### `app/hibernated-screens/<ULID>.screen` — a hibernated chat's kept screen
+- **What:** what a chat showed, its screen and its scrollback, as the app or the operator
+  hibernated it (SC-4b, #7631; ADR 0082 as amended 2026-11-25), which its pane shows read-only
+  with Resume while it is hibernated. `<ULID>` is the chat's own id. A chat hibernated by a
+  quit, the grace period or a host crash has none: nothing took one.
+- **Format:** the escape sequences that draw the screen into a blank terminal, the engine's
+  snapshot, written whole through a temp file as `app/chat-screens/` is (`keptscreen`), mode
+  0600 in a 0700 folder, through no link. **At most 1 MiB** (`hibernatedscreens::MOST_BYTES`,
+  spec D3): a longer one is taken again with fewer lines of history until it fits, so it is cut
+  only at a line the engine drew and never inside an escape sequence, the oldest lines going
+  first; one whose screen alone is past it is not kept. While the alternate screen is open it
+  is the alternate screen alone (the engine's limit). **Masked before it is written** by
+  `secrets::handedto`, exactly as `app/chat-screens/` is; a screen that cannot be masked is not
+  kept, never kept unmasked. A screen that cannot be taken, masked or written never stops the
+  hibernation: the chat is hibernated with none, and no file is left. A file not named by a
+  ULID with `.screen`, a link, or one past 1 MiB reads as none kept, and Resume still works.
+- **Status:** **internal** — **purlis only**. Written by the app as it hibernates a chat; read
+  when its pane opens. Denied a sandboxed chat's reading and writing under every harness.
+  **Removed** when the chat is closed or killed, when it is woken and its new run has drawn,
+  when a workspace is removed (every screen no hibernated chat names goes), and **by the open's
+  sweep** (`hibernatedscreens::on_open`, from `retention::on_open`) when no hibernated chat
+  names it, or when it was written 30 days or more before. Until SC-4e (#7634) makes the
+  hibernated state durable no hibernated chat survives a restart, so the open's sweep removes
+  every screen. A write killed before its rename leaves
+  `.purlis-generated.<ULID>.screen.<pid>.<tag>.tmp`; the open's sweep takes it. One writer, the
+  app's act in the chat's lane, so there is no lock.
+- **Tier:** Clone state — a hibernated chat's kept view, not rebuildable: the process that held
+  the grid is gone. Lost, its pane says no copy was kept, and the chat still resumes by id.
+- **Git:** gitignored (under `/.charter/`).
+- **Written by:** `crates/purlis-core/src/hibernatedscreens.rs`.
 
 ### `app/chat-handed/<chat>.names` — what a chat was handed, by vault and key
 - **What:** each vault entry purlis handed chat `<chat>` (its number in the project), through a
