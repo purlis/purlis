@@ -907,17 +907,36 @@ fn github_forks_nothing_when_the_repo_is_not_the_one_the_ask_showed() {
 // A tip behind its base (#7690) -----------------------------------------------------------
 
 /// A repository whose `main` gained a release (CODEOWNERS deleted, a deploy file added) after
-/// `work` was cut from it to change both CI files, read as the quarantine reads one.
+/// `work` was cut from it to change both CI files, read through a quarantine as a push is.
 struct Behind {
-    _dir: tempfile::TempDir,
+    dir: tempfile::TempDir,
     root: std::path::PathBuf,
+}
+
+/// The forge, as the repository on this machine: every branch of it is fetched.
+struct Local<'a>(&'a std::path::Path);
+
+impl crate::heldact::BaseObjects for Local<'_> {
+    fn fetch(&self, into: &std::path::Path, _: &HeadSha) -> Result<(), String> {
+        let forge = self.0.to_string_lossy();
+        let argv = [
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            &forge,
+            "+refs/heads/*:refs/forge/*",
+        ];
+        let run = crate::testgit::run(into, &argv);
+        if run.ok() { Ok(()) } else { Err(run.err) }
+    }
 }
 
 impl Behind {
     fn new() -> Behind {
         let dir = tempfile::tempdir().unwrap();
-        let root = std::fs::canonicalize(dir.path()).unwrap();
-        let s = Behind { _dir: dir, root };
+        let root = std::fs::canonicalize(dir.path()).unwrap().join("forge");
+        std::fs::create_dir_all(&root).unwrap();
+        let s = Behind { dir, root };
         s.git(&["init", "-q", "-b", "main", "."]);
         s.write(".github/workflows/ci.yml", "on: push\n");
         s.write(".gitlab-ci.yml", "stages: [build]\n");
@@ -957,8 +976,10 @@ impl Behind {
         HeadSha::try_from(self.git(&["rev-parse", rev])).unwrap()
     }
 
-    fn files(&self) -> Arc<dyn TipFiles> {
-        Arc::new(crate::heldact::GitTrees::of_trusted_store(&self.root))
+    /// A quarantine holding the forge's commits, the one store a push's files are read from.
+    fn quarantine(&self) -> crate::heldact::Quarantine {
+        let parent = self.dir.path().join("quarantines");
+        crate::heldact::Quarantine::open(&parent, &self.sha("main"), &Local(&self.root)).unwrap()
     }
 }
 
@@ -994,7 +1015,9 @@ fn neither_adapter_sends_anything_for_a_tip_that_does_not_contain_the_base() {
     let s = Behind::new();
     let (main, tip) = (s.sha("main"), s.sha("work"));
     for kind in [Kind::GitHub, Kind::GitLab] {
-        let (forge, seen, _) = build_reading(kind, answers_every_push(&main), s.files());
+        let quarantine = s.quarantine();
+        let files = Arc::new(quarantine.trees());
+        let (forge, seen, _) = build_reading(kind, answers_every_push(&main), files);
         let secret = Secret::new("wf".to_owned());
         let said = forge
             .push_tip(
@@ -1023,7 +1046,9 @@ fn both_adapters_send_only_the_branchs_own_files_once_it_contains_the_base() {
     s.git(&["merge", "-q", "--no-edit", "main"]);
     let (main, tip) = (s.sha("main"), s.sha("work"));
     for kind in [Kind::GitHub, Kind::GitLab] {
-        let (forge, seen, _) = build_reading(kind, answers_every_push(&main), s.files());
+        let quarantine = s.quarantine();
+        let files = Arc::new(quarantine.trees());
+        let (forge, seen, _) = build_reading(kind, answers_every_push(&main), files);
         let secret = Secret::new("wf".to_owned());
         forge
             .push_tip(

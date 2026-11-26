@@ -93,7 +93,7 @@ pub use prepare::{pinned, prepare};
 pub use quarantine::{BaseObjects, FetchLimits, FromForge, Quarantine, sweep as sweep_quarantines};
 pub use recognise::{Call, Recognised, Recorded, Requested, Why, recognise, valid_rev};
 pub use tag::{InvalidTag, TagName};
-pub use tip::{MOST_BYTES, MOST_FILES, TipChange, TipFiles};
+pub use tip::{MOST_BYTES, MOST_FILES, TipChange, TipFiles, behind};
 
 /// The source a held act is listed under, and the one a rule made from an answer may never name.
 pub const SOURCE: &str = "held-act";
@@ -239,6 +239,12 @@ pub trait Trees: Send + Sync {
     /// The message of the commit `tip`, as a push of it sends it. A store that cannot say has no
     /// push to show.
     fn message(&self, _tip: &HeadSha) -> Result<String, String> {
+        Err("no clone".to_owned())
+    }
+    /// **How many commits `base` reaches that `tip` does not**: none where `tip` contains `base`.
+    /// A held push is one commit parented on its base, so a tip that lacks any of the base's
+    /// commits is never pushed (#7690). A store that cannot say has no push to make.
+    fn missing(&self, _base: &HeadSha, _tip: &HeadSha) -> Result<usize, String> {
         Err("no clone".to_owned())
     }
 }
@@ -401,6 +407,10 @@ pub enum Refused {
     Text(&'static str),
     /// The push's diff could not be computed or shown.
     CiDiff(String),
+    /// The tip does not contain the commit the push would be made on, named here as the person
+    /// knows it (`main`, or the branch on the forge): one commit on it with the tip's files would
+    /// undo what it has that the tip lacks (#7690).
+    Behind(String),
     /// The host or the organization forbids the person forking the repo.
     ForkNotAllowed(Repo),
     /// The forge did not say, in its words.
