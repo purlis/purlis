@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795691846097,
+  "lastUpdate": 1795695431247,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -55818,6 +55818,48 @@ window.BENCHMARK_DATA = {
             "value": 101.47265,
             "unit": "ms",
             "extra": "median of 5 runs: 100.053, 100.482, 101.473, 101.620, 103.060 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "35fa19adc379d74da40b51fbf68912cd84951ff5",
+          "message": "A restored chat keeps its forge route; worktree adopt works in the person's terminal (#7694) (#7699)\n\n* Tests: a restored chat keeps its forge route; worktree adopt works in the person's shell tab (#7694)\n\nRed: a chat put back from the session host gets no route for the app's\ngit, a shell tab carries no mark of the person's own, the shims hand\nthat mark on, and adopt takes a shell tab for a chat.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BHES3R7M9EVSPTPWYWCT82\nPurlis-Persona: steward\n\n* A restored chat keeps its forge route; worktree adopt works in the person's shell tab (#7694)\n\nA chat the session host kept running across an app restart is put back,\nnot started, and the route of the app that started it went with that\napp. The app's own git now gets a route for it through the same gates as\na start (recorded repos, pin, the person's sign-ins); its program is\nhanded nothing, and a route still live for the run is kept as it is. A\npool runner's chat stays the runner's to route.\n\nThe window's shell tab carries the chat marks its shims need, so adopt\ntook it for a chat. A shell tab now carries its own mark, which adopt\nreads; the shims take it off a harness started there, and no chat\ninherits it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BHES3R7M9EVSPTPWYWCT82\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T11:38:20Z",
+          "tree_id": "148beca1a064406d34d433912bfcc9649c11d360",
+          "url": "https://github.com/purlis/purlis/commit/35fa19adc379d74da40b51fbf68912cd84951ff5"
+        },
+        "date": 1795695424090,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3938665,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.376, 0.388, 0.394, 0.400, 0.418 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6532695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.476, 16.574, 16.653, 16.759, 16.847 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.94889599999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.234, 102.251, 102.949, 103.599, 106.300 ms"
           }
         ]
       }
