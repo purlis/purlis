@@ -78,30 +78,32 @@ export function noFramesSaid(painting: Painting): string | undefined {
  * every spec after would fail for it, each as its own.
  */
 export async function theWindowPaintsFrames(): Promise<void> {
-  const painting = await browser.execute(
-    (needed: number, waitMs: number) =>
-      new Promise<{ frames: number; waitedMs: number; visibility: string }>((resolve) => {
-        const started = performance.now();
-        let frames = 0;
-        const done = () =>
-          resolve({
-            frames,
-            waitedMs: performance.now() - started,
-            visibility: document.visibilityState,
-          });
-        const timer = setTimeout(done, waitMs);
-        const tick = () => {
-          frames += 1;
-          if (frames >= needed) {
-            clearTimeout(timer);
-            done();
-          } else requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      }),
+  // No function is named inside the page's script: the spec's bundler wraps a named one in a
+  // `__name` call the page does not have (`acting.ts`). So frames are counted by anonymous
+  // `requestAnimationFrame` callbacks a timer asks for, and the timer ends the wait.
+  const painting = await browser.executeAsync(
+    (
+      needed: number,
+      waitMs: number,
+      finish: (painting: { frames: number; waitedMs: number; visibility: string }) => void,
+    ) => {
+      const started = performance.now();
+      const seen = { frames: 0 };
+      const poll = setInterval(() => {
+        requestAnimationFrame(() => {
+          seen.frames += 1;
+        });
+        const waited = performance.now() - started;
+        if (seen.frames >= needed || waited >= waitMs) {
+          clearInterval(poll);
+          finish({ frames: seen.frames, waitedMs: waited, visibility: document.visibilityState });
+        }
+      }, 50);
+    },
     FRAMES_NEEDED,
     FRAMES_WAIT_MS,
   );
   const said = noFramesSaid(painting);
   if (said !== undefined) throw new Error(said);
 }
+
