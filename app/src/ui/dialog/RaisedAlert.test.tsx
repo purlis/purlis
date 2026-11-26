@@ -228,6 +228,45 @@ describe("an alert the app raises", () => {
     ).toBe(false);
   });
 
+  it("answers nothing with Esc held down in a field inside it", async () => {
+    const kept = vi.fn();
+    render(
+      <Asked keep={kept}>
+        <input aria-label="Note" />
+      </Asked>,
+    );
+    await opened();
+    passes(SETTLE_MS);
+    const note = screen.getByRole("textbox", { name: "Note" });
+    note.focus();
+    expect(fireEvent.keyDown(note, { key: "Escape", code: "Escape", repeat: true })).toBe(false);
+    await act(() => new Promise((done) => setTimeout(done, 20)));
+    expect(kept).not.toHaveBeenCalled();
+    expect(alertNamed()).toBeInTheDocument();
+  });
+
+  it("answers nothing with Return held down in a one-line field inside it, and lets it repeat in a text area", async () => {
+    const kept = vi.fn();
+    const accepted = vi.fn();
+    render(
+      <Asked keep={kept} accept={accepted}>
+        <input aria-label="Note" />
+        <textarea aria-label="Reason" />
+      </Asked>,
+    );
+    await opened();
+    passes(SETTLE_MS);
+    const note = screen.getByRole("textbox", { name: "Note" });
+    note.focus();
+    expect(fireEvent.keyDown(note, { key: "Enter", code: "Enter", repeat: true })).toBe(false);
+    const reason = screen.getByRole("textbox", { name: "Reason" });
+    reason.focus();
+    expect(fireEvent.keyDown(reason, { key: "Enter", code: "Enter", repeat: true })).toBe(true);
+    await act(() => new Promise((done) => setTimeout(done, 20)));
+    expect(kept).not.toHaveBeenCalled();
+    expect(accepted).not.toHaveBeenCalled();
+  });
+
   it("opens once a key with no keyup is forgotten, though the timer fires early", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
@@ -445,6 +484,183 @@ describe("an alert the app raises, as a key that opens a dialog is let go", () =
     expect(screen.queryByRole("alertdialog")).toBeNull();
     await userEvent.keyboard("{Escape}");
     await opened();
+  });
+});
+
+describe("an alert the app raises, as a layer closes in the same commit a dialog opens", () => {
+  /** Lets every task the alert's queue set for later run, and React draw what they set. */
+  const aTaskLater = () => act(() => new Promise((done) => setTimeout(done, 20)));
+
+  /** Asserts the dialog is up and the alert still waits, then closes the dialog. */
+  async function onlyTheDialog() {
+    await screen.findByRole("dialog", { name: "Rename workspace" });
+    await aTaskLater();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await userEvent.keyboard("{Escape}");
+    await opened();
+  }
+
+  /** A layer up, an alert waiting, and an answer in the layer that closes it and opens a dialog. */
+  function Swapping({
+    layer,
+    asked = true,
+  }: {
+    layer: (swap: () => void) => ReactNode;
+    asked?: boolean;
+  }) {
+    const [up, setUp] = useState(true);
+    const [renaming, setRenaming] = useState(false);
+    const swap = () => {
+      setUp(false);
+      setRenaming(true);
+    };
+    return (
+      <>
+        {up && layer(swap)}
+        {renaming && (
+          <Dialog onClose={() => setRenaming(false)} title="Rename workspace">
+            <input aria-label="Name" />
+          </Dialog>
+        )}
+        {asked && <Asked />}
+      </>
+    );
+  }
+
+  it("waits for a dialog the palette's row opened as the palette closed", async () => {
+    render(
+      <Swapping
+        layer={(swap) => (
+          <DialogSurface onClose={() => {}} aria-label="Command palette">
+            <Button onPress={swap}>Rename workspace…</Button>
+          </DialogSurface>
+        )}
+      />,
+    );
+    await screen.findByRole("dialog", { name: "Command palette" });
+    await userEvent.click(screen.getByRole("button", { name: "Rename workspace…" }));
+    await onlyTheDialog();
+  });
+
+  it("waits for a dialog a menu item opened as its menu closed", async () => {
+    render(
+      <Swapping
+        layer={(swap) => (
+          <MenuTrigger isOpen onOpenChange={() => {}}>
+            <Button>More</Button>
+            <Menu aria-label="More" onAction={swap}>
+              <MenuItem id="rename" textValue="Rename">
+                <MenuWords said="Rename" />
+              </MenuItem>
+            </Menu>
+          </MenuTrigger>
+        )}
+      />,
+    );
+    await screen.findByRole("menu");
+    await userEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    await onlyTheDialog();
+  });
+
+  it("waits for a dialog a Space let go on a menu's item opened as the menu closed", async () => {
+    const layer = (swap: () => void) => (
+      <MenuTrigger isOpen onOpenChange={() => {}}>
+        <Button>More</Button>
+        <Menu aria-label="More" onAction={swap}>
+          <MenuItem id="rename" textValue="Rename">
+            <MenuWords said="Rename" />
+          </MenuItem>
+        </Menu>
+      </MenuTrigger>
+    );
+    const { rerender } = render(<Swapping layer={layer} asked={false} />);
+    const rename = await screen.findByRole("menuitem", { name: "Rename" });
+    // Raised by the app while the menu is up, as the core's event raises one.
+    rerender(<Swapping layer={layer} />);
+    rename.focus();
+    fireEvent.keyDown(rename, { key: " ", code: "Space" });
+    // Let go where the keyboard is now, as a browser sends it.
+    fireEvent.keyUp(document.activeElement ?? document.body, { key: " ", code: "Space" });
+    await onlyTheDialog();
+  });
+});
+
+describe("alerts the app raises in projects a person switches between", () => {
+  /** Two projects, each with its alert; `front` is the one in front. */
+  function Projects({ front }: { front: "A" | "B" }) {
+    return (
+      <>
+        <ProjectShownProvider value={front === "A"}>
+          <Asked title="A policy" />
+        </ProjectShownProvider>
+        <ProjectShownProvider value={front === "B"}>
+          <Asked title="B policy" />
+        </ProjectShownProvider>
+      </>
+    );
+  }
+
+  it("counts no alert that went behind as answered, however often the person switches", async () => {
+    const { rerender } = render(<Projects front="A" />);
+    for (const front of ["A", "B", "A", "B", "A"] as const) {
+      rerender(<Projects front={front} />);
+      const alert = await opened(`${front} policy`);
+      await act(() => new Promise((done) => setTimeout(done, 20)));
+      expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
+      expect(alert).not.toHaveTextContent(/\d of \d/);
+    }
+  });
+
+  it("puts a project's alerts back in the order they were raised, behind the one shown, and counts them right", async () => {
+    function Window({ front }: { front: boolean }) {
+      const [shown, setShown] = useState({ x1: true, x2: true, w: true });
+      const answered = (which: keyof typeof shown) => () =>
+        setShown((was) => ({ ...was, [which]: false }));
+      return (
+        <>
+          <ProjectShownProvider value={front}>
+            <Asked title="X1 policy" raised={shown.x1} keep={answered("x1")} />
+            <Asked title="X2 policy" raised={shown.x2} keep={answered("x2")} />
+          </ProjectShownProvider>
+          <Asked title="W policy" raised={shown.w} keep={answered("w")} />
+        </>
+      );
+    }
+    const { rerender } = render(<Window front />);
+    expect(await opened("X1 policy")).toHaveTextContent("1 of 3");
+    rerender(<Window front={false} />);
+    const w = await opened("W policy");
+    expect(w).not.toHaveTextContent(/\d of \d/);
+    rerender(<Window front />);
+    await waitFor(() => expect(w).toHaveTextContent("1 of 3"));
+    expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
+    passes(SETTLE_MS);
+    await userEvent.click(answer("Keep my current rules"));
+    expect(await opened("X1 policy")).toHaveTextContent("2 of 3");
+    passes(SETTLE_MS);
+    await userEvent.click(answer("Keep my current rules"));
+    expect(await opened("X2 policy")).toHaveTextContent("3 of 3");
+  });
+
+  it("takes a returning project's alerts in the order they were raised, not the order they are drawn", async () => {
+    function Project({ front, first }: { front: boolean; first: boolean }) {
+      return (
+        <ProjectShownProvider value={front}>
+          <Asked title="First drawn" raised={first} />
+          <Asked title="Raised first" />
+        </ProjectShownProvider>
+      );
+    }
+    const { rerender } = render(<Project front first={false} />);
+    const raisedFirst = await opened("Raised first");
+    rerender(<Project front first />);
+    await waitFor(() => expect(raisedFirst).toHaveTextContent("1 of 2"));
+    rerender(<Project front={false} first />);
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    rerender(<Project front first />);
+    expect(await opened("Raised first")).toHaveTextContent("1 of 2");
+    await act(() => new Promise((done) => setTimeout(done, 20)));
+    expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
   });
 });
 
