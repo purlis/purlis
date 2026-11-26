@@ -131,8 +131,10 @@ struct Asked {
 fn ask(f: &Fixture) -> Asked {
     let start = Instant::now();
     let mut asks = Vec::new();
+    let mut round = None;
     loop {
-        let said = f.cache.states(&f.folders);
+        let (r, said) = f.cache.states(&f.folders, round);
+        round = Some(r);
         let answered = said.iter().flatten().count();
         asks.push((start.elapsed(), answered));
         if answered == f.folders.len() {
@@ -203,8 +205,8 @@ fn a_watch_that_lost_track_moves_every_folder() {
 fn a_refusal_is_never_kept() {
     let f = fixture(1);
     let cache = StateCache::watched_by(polled, |_| (None, Some("not a repository".into())));
-    while cache.states(&f.folders).iter().any(Option::is_none) {}
-    while cache.states(&f.folders).iter().any(Option::is_none) {}
+    answered(&cache, &f.folders);
+    answered(&cache, &f.folders);
     assert_eq!(cache.read_count(), 2);
 }
 
@@ -212,15 +214,17 @@ fn a_refusal_is_never_kept() {
 fn with_no_watch_nothing_is_kept() {
     let f = fixture(3);
     let cache = StateCache::watched_by(|_| None, |_| (Some(0), None));
-    while cache.states(&f.folders).iter().any(Option::is_none) {}
-    while cache.states(&f.folders).iter().any(Option::is_none) {}
+    answered(&cache, &f.folders);
+    answered(&cache, &f.folders);
     assert_eq!(cache.read_count(), 6);
 }
 
 /// Asks until every folder is answered, and gives the answers.
 fn answered(cache: &StateCache, folders: &[Folder]) -> Vec<Read> {
+    let mut round = None;
     loop {
-        let said = cache.states(folders);
+        let (r, said) = cache.states(folders, round);
+        round = Some(r);
         if said.iter().all(Option::is_some) {
             return said.into_iter().flatten().collect();
         }
@@ -720,10 +724,10 @@ fn a_folder_asked_while_another_is_read_is_not_held_behind_it() {
     });
     let first = cache.clone();
     let one = vec![f.folders[0].clone()];
-    let reading = std::thread::spawn(move || first.states(&one));
+    let reading = std::thread::spawn(move || first.states(&one, None).1);
     std::thread::sleep(Duration::from_millis(500));
     let start = Instant::now();
-    let said = cache.states(&f.folders);
+    let said = cache.states(&f.folders, None).1;
     let took = start.elapsed();
     assert!(said[1].is_some(), "the second folder was not answered");
     assert!(took < Duration::from_millis(1500), "it waited {took:?}");
@@ -736,7 +740,7 @@ fn a_read_no_thread_could_start_for_is_answered_unread_and_tried_again() {
     let cache = StateCache::watched_by(polled, |_| (Some(0), None));
     NO_THREADS.with(|n| n.set(true));
     let start = Instant::now();
-    let said = cache.states(&f.folders);
+    let said = cache.states(&f.folders, None).1;
     NO_THREADS.with(|n| n.set(false));
     assert!(
         start.elapsed() < Duration::from_secs(5),
@@ -810,7 +814,7 @@ fn a_folder_forgotten_while_it_is_read_does_not_hold_its_ask_for_the_full_wait()
     let asking = cache.clone();
     let folders = f.folders.clone();
     let start = Instant::now();
-    let ask = std::thread::spawn(move || asking.states(&folders));
+    let ask = std::thread::spawn(move || asking.states(&folders, None).1);
     std::thread::sleep(Duration::from_millis(300));
     std::fs::remove_dir_all(&path).unwrap();
     let said = ask.join().unwrap();
@@ -878,4 +882,87 @@ fn a_folder_removed_while_its_watch_is_set_up_is_watched_afresh() {
         [f.folders[0].path.clone(), f.folders[0].path.clone()],
         "the folder lost while being watched was kept on that watch"
     );
+}
+
+#[test]
+fn a_refresh_of_a_repo_whose_last_round_is_still_reading_reads_an_edited_folder_again() {
+    let f = fixture(3);
+    let quick = f.folders[0].path.clone();
+    let read_quick = quick.clone();
+    let cache = StateCache::watched_by(
+        |_| None,
+        move |path| {
+            if path != read_quick {
+                std::thread::sleep(Duration::from_secs(3));
+            }
+            files(path)
+        },
+    );
+    // The window's first refresh: the quick folder is read, the others still are.
+    let (_, said) = cache.states(&f.folders, None);
+    assert_eq!(said[0], Some((Some(0), None)));
+    assert!(said[1].is_none(), "{said:?}");
+    std::fs::write(quick.join("new"), "x").unwrap();
+    // The window refreshes while the first refresh's reads still go on: a new round.
+    assert_eq!(
+        answered(&cache, &f.folders),
+        [(Some(1), None), (Some(0), None), (Some(0), None)],
+        "the edited folder was answered from the last refresh"
+    );
+}
+
+#[test]
+fn past_the_watch_limit_an_event_in_a_folder_drops_its_unkept_answer() {
+    let f = fixture(2);
+    let quick = f.folders[0].path.clone();
+    let slow = f.folders[1].path.clone();
+    let cache = StateCache::watched_by(polled, move |path| {
+        if path == slow {
+            std::thread::sleep(Duration::from_secs(4));
+        }
+        files(path)
+    });
+    let (round, _) = cache.states(&f.folders, None);
+    lock(&cache.0.shared.0).limit();
+    // The quick folder is read again, unwatched now, while the slow one still is.
+    let mut said = cache.states(&f.folders, Some(round)).1;
+    while said[0].is_none() {
+        said = cache.states(&f.folders, Some(round)).1;
+    }
+    assert_eq!(said[0], Some((Some(0), None)));
+    assert!(said[1].is_none(), "{said:?}");
+    std::fs::write(quick.join("new"), "x").unwrap();
+    // The watch is still up and hears it.
+    std::thread::sleep(Duration::from_millis(300));
+    let mut said = cache.states(&f.folders, Some(round)).1;
+    while said[0].is_none() {
+        said = cache.states(&f.folders, Some(round)).1;
+    }
+    assert_eq!(
+        said[0],
+        Some((Some(1), None)),
+        "an answer read before the edit was given after it"
+    );
+}
+
+#[test]
+fn an_unwatched_folder_read_between_two_asks_of_one_refresh_is_not_read_again() {
+    let f = fixture(2);
+    let slow = f.folders[1].path.clone();
+    let cache = StateCache::watched_by(
+        |_| None,
+        move |path| {
+            if path == slow {
+                std::thread::sleep(Duration::from_secs(1));
+            }
+            (Some(0), None)
+        },
+    );
+    let (round, said) = cache.states(&f.folders, None);
+    assert!(said[1].is_none(), "{said:?}");
+    // The slow folder's read, the refresh's last, finishes before the window asks again.
+    std::thread::sleep(Duration::from_millis(1500));
+    let (_, said) = cache.states(&f.folders, Some(round));
+    assert!(said.iter().all(Option::is_some), "{said:?}");
+    assert_eq!(cache.read_count(), 2, "the refresh read its folders again");
 }

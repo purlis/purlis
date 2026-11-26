@@ -26,9 +26,13 @@
 //! waited for, and the
 //! platform's events come in order, so everything before it has been heard. A flush that times out moves every folder. A restart keeps nothing.
 //!
-//! On Linux nothing is watched (see [`platform`]): every ask reads every folder, as it streams.
+//! **A refresh is a round** (#7667): its first ask starts one and is told its id, and the
+//! window's asks for the rest of that refresh name it. What no watch vouches for (a refusal, a
+//! folder on Linux, where nothing is watched: see [`platform`]) is given only to a round that
+//! began before its read did, and is dropped by anything heard in the folder: a later
+//! refresh reads every such folder again, as it streams.
 //!
-//! Only a successful read is kept; a refusal is read again every time. A folder that keeps
+//! Only a successful read is kept; a refusal is read again every refresh. A folder that keeps
 //! moving (a build writing `target/`) is read at most once every [`READ_EVERY`], and only while
 //! someone asks: until a read hears nothing move, it is still being read, never clean.
 
@@ -108,12 +112,11 @@ struct Entry {
     /// Whether this folder is covered by a watch that is up.
     watched: bool,
     kept: Option<Read>,
-    /// A read that was not kept (a refusal, or no watch to vouch for it): given to every ask
-    /// while the round of reads it came from is still going, so the window's asks for the rest
-    /// do not read it again, and dropped by the first ask that begins with none of its own
-    /// folders being read. The round is the ask's own: another repo's reads going on at the
-    /// same time never keep it.
-    once: Option<Read>,
+    /// A read that was not kept (a refusal, or no watch to vouch for it), with when it began.
+    /// It is given only to an ask of a round that began before it did, so the window's asks
+    /// for the rest of one refresh do not read it again, and a later refresh never sees it.
+    /// Anything heard in the folder drops it.
+    once: Option<(Instant, Read)>,
     /// Waiting for a worker, or being read.
     reading: bool,
     /// A read finished that no ask has yet taken as news.
@@ -168,6 +171,10 @@ struct Shared {
     flushed: HashSet<PathBuf>,
     /// The platform could watch no more: nothing is kept again until a restart.
     limited: bool,
+    /// When each round still asked about began.
+    rounds: HashMap<Round, Instant>,
+    /// The round the last new one was given.
+    last_round: Round,
 }
 
 impl Shared {
@@ -175,6 +182,7 @@ impl Shared {
         for entry in self.entries.values_mut() {
             entry.heard += 1;
             entry.kept = None;
+            entry.once = None;
         }
     }
 
@@ -183,8 +191,22 @@ impl Shared {
             if entry.moved_by(folder, path) {
                 entry.heard += 1;
                 entry.kept = None;
+                entry.once = None;
             }
         }
+    }
+
+    /// The round an ask belongs to, and when it began: the one it names, or a new one from now
+    /// when it names none, or one no longer known (from before a restart, or too long ago).
+    fn round(&mut self, asked: Option<Round>, now: Instant) -> (Round, Instant) {
+        if let Some((&round, &began)) = asked.and_then(|r| self.rounds.get_key_value(&r)) {
+            return (round, began);
+        }
+        self.rounds
+            .retain(|_, began| now.saturating_duration_since(*began) <= FORGET_AFTER);
+        self.last_round = self.last_round.wrapping_add(1);
+        self.rounds.insert(self.last_round, now);
+        (self.last_round, now)
     }
 
     /// Something at `path` was removed or renamed. A watched folder at or below it has lost its
@@ -282,6 +304,10 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 /// One folder's answer so far: `None` while it is still being read.
 pub type Said = Option<Read>;
 
+/// Names one refresh of a repo: its first ask starts it, and the window's asks for the rest of
+/// that refresh name it again. `u32`, so it is a `number` in TypeScript and not a `bigint`.
+pub type Round = u32;
+
 impl StateCache {
     pub fn new(read: impl Fn(&Path) -> Read + Send + Sync + 'static) -> Self {
         Self::watched_by(platform, read)
@@ -329,9 +355,15 @@ impl StateCache {
     }
 
     /// Each of `folders`' answer as far as it is known, in order, `None` for one still being
-    /// read. Returns when every folder is answered, or soon after the first new answer.
-    pub fn states(&self, folders: &[Folder]) -> Vec<Said> {
+    /// read, and the round the ask belongs to. Returns when every folder is answered, or soon
+    /// after the first new answer.
+    ///
+    /// An ask naming no `round` starts one: what no watch vouches for is read again, by a read
+    /// that begins after the round did. An ask naming its refresh's round is given the reads
+    /// that round has had.
+    pub fn states(&self, folders: &[Folder], round: Option<Round>) -> (Round, Vec<Said>) {
         let inner = &self.0;
+        let (round, since) = lock(&inner.shared.0).round(round, Instant::now());
         let keys: Vec<PathBuf> = folders
             .iter()
             .map(|f| f.path.canonicalize().unwrap_or_else(|_| f.path.clone()))
@@ -344,17 +376,6 @@ impl StateCache {
         let started = Instant::now();
         let (shared, finished) = &*inner.shared;
         let mut guard = lock(shared);
-        let reading = keys
-            .iter()
-            .any(|key| guard.entries.get(key).is_some_and(|e| e.reading));
-        if !reading {
-            // A new round for these folders: what nothing vouched for is read again.
-            for key in &keys {
-                if let Some(entry) = guard.entries.get_mut(key) {
-                    entry.once = None;
-                }
-            }
-        }
         loop {
             let now = Instant::now();
             let mut queued = false;
@@ -370,7 +391,9 @@ impl StateCache {
                 // What a read finished since the last ask told is news, kept or not.
                 let news = std::mem::take(&mut entry.fresh);
                 if said[n].is_none() {
-                    if let Some(read) = entry.kept.clone().or_else(|| entry.once.clone()) {
+                    // A read that began before this round is read again, once it is done.
+                    let once = entry.once.as_ref().filter(|(began, _)| *began >= since);
+                    if let Some(read) = entry.kept.clone().or_else(|| once.map(|o| o.1.clone())) {
                         said[n] = Some(read);
                     } else if !entry.reading {
                         let ready = entry.began.map_or(now, |began| began + READ_EVERY);
@@ -392,7 +415,7 @@ impl StateCache {
                 continue;
             }
             if said.iter().all(Option::is_some) {
-                return said;
+                return (round, said);
             }
             let limit = match first_news {
                 Some(at) => at + GATHER,
@@ -400,7 +423,7 @@ impl StateCache {
             };
             let left = limit.saturating_duration_since(Instant::now());
             if left.is_zero() {
-                return said;
+                return (round, said);
             }
             let wake = due.map_or(left, |d| {
                 left.min(d.saturating_duration_since(Instant::now()))
@@ -459,7 +482,7 @@ impl Inner {
                         if let Some(entry) = shared.entries.get_mut(&key) {
                             entry.reading = false;
                             entry.fresh = true;
-                            entry.once = Some((None, Some(why.clone())));
+                            entry.once = Some((Instant::now(), (None, Some(why.clone()))));
                         }
                     }
                     return true;
@@ -475,7 +498,7 @@ impl Inner {
     fn work(&self) {
         let (shared, finished) = &*self.shared;
         loop {
-            let (key, path, heard) = {
+            let (key, path, heard, began) = {
                 let mut guard = lock(shared);
                 let Some(key) = guard.queue.pop_front() else {
                     guard.workers -= 1;
@@ -484,8 +507,9 @@ impl Inner {
                 let Some(entry) = guard.entries.get_mut(&key) else {
                     continue;
                 };
-                entry.began = Some(Instant::now());
-                let took = (key, entry.path.clone(), entry.heard);
+                let began = Instant::now();
+                entry.began = Some(began);
+                let took = (key, entry.path.clone(), entry.heard, began);
                 guard.busy += 1;
                 took
             };
@@ -504,7 +528,7 @@ impl Inner {
                 if entry.watched && said.1.is_none() {
                     entry.kept = Some(said);
                 } else {
-                    entry.once = Some(said);
+                    entry.once = Some((began, said));
                 }
             }
             // Otherwise something moved while git read: the answer may already be wrong, so
