@@ -418,6 +418,9 @@ export type Does =
   | { verb: "startFresh"; session: number }
   /** Restarts a chat on its conversation (#1462): by its number, with a tab or without. */
   | { verb: "restartChat"; session: number }
+  /** Hibernates a chat by hand (SC-4a, #7630): its program ends at a turn boundary and its
+   *  conversation is kept. Its Resume is Restart chat's. */
+  | { verb: "hibernateChat"; session: number }
   /** Moves a chat to pool `to`'s runner, or here for `null` (#2048): prepared now, it moves at
    *  the chat's next pause. */
   | { verb: "moveChat"; session: number; to: string | null }
@@ -1087,6 +1090,9 @@ export type Now = {
   /** Whether a chat can be restarted on its conversation: it has a Restart chat row. A shell
    *  has no conversation, and no row. */
   restartable?: (session: number) => boolean;
+  /** Whether a chat has a Hibernate row (SC-4a, #7630): not a shell, which has no conversation
+   *  to pick up. Whether it may be hibernated now is the core's answer, in words, when pressed. */
+  hibernatable?: (session: number) => boolean;
   /** Where a chat can move (#2048): each pool it may move to, or `null` for this machine, for a
    *  chat on a pool's runner. Nothing for a chat that does not move. */
   movesTo?: (session: number) => readonly (string | null)[];
@@ -1199,6 +1205,8 @@ export type Doing = {
   startFresh: (session: number) => void;
   /** Restarts the chat on its conversation, once its turn has ended. A task is asked first. */
   restartChat: (session: number) => void;
+  /** Hibernates the chat (SC-4a, #7630): the core refuses, in a sentence, where it may not. */
+  hibernateChat?: (session: number) => void;
   /** Asks for the chat to move to pool `to`'s runner, or here (#2048). */
   moveChat: (session: number, to: string | null) => void;
   /** Opens the dialog that asks `persona` for something from the chat. */
@@ -1828,6 +1836,13 @@ const RESTART_KEEPS =
  * is in the note, so the palette, which shows a row's plain title, says it as a menu does.
  */
 export const RESTART_NOTE = `${RESTART_KEEPS} Mid-turn, it restarts when the turn ends.`;
+
+/**
+ * The note on Hibernate chat (SC-4a, #7630): what it ends, what it keeps, and what brings the
+ * chat back. Only a chat at a turn's end, on a harness that resumes by itself, is hibernated.
+ */
+export const HIBERNATE_NOTE =
+  "Ends its program and keeps its conversation. Resume starts it again where it left off.";
 
 /**
  * The note for a chat that reports no state (docs/ui-copy.md, "Uncertainty is stated, not
@@ -3809,6 +3824,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "restartChat":
       doing.restartChat(does.session);
       return DID;
+    case "hibernateChat":
+      doing.hibernateChat?.(does.session);
+      return DID;
     case "moveChat":
       doing.moveChat(does.session, does.to);
       return DID;
@@ -4714,6 +4732,11 @@ export function restartId(session: number): string {
   return `chat.restart:${session}`;
 }
 
+/** The catalogue's id for Hibernate chat on a chat's row (SC-4a, #7630). */
+export function hibernateId(session: number): string {
+  return `chat.hibernate:${session}`;
+}
+
 /** One open chat the catalogue offers a chat's rows for (#4753), by its number. */
 export type ChatHere = { session: number; name: string };
 
@@ -4904,6 +4927,20 @@ function chatRows(now: Now): Offer[] {
         note: RESTART_NOTE,
         midTurn: { session, title: `Restart chat ${name} when this turn ends` },
         noState: { session, note: restartNoteNoState(name) },
+      });
+
+    // **Hibernate** (SC-4a, #7630): the chat's program ends at a turn boundary and its
+    // conversation is kept; Restart chat is its Resume. Where it may not be hibernated the core
+    // says why, in words, when it is pressed.
+    if (now.hibernatable?.(session) ?? false)
+      offers.push({
+        ...can(
+          hibernateId(session),
+          `Hibernate chat ${name}`,
+          { verb: "hibernateChat", session },
+          name,
+        ),
+        note: HIBERNATE_NOTE,
       });
 
     // **Start fresh** (NO-3, charter#369): for a chat the project's instructions changed under

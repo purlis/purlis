@@ -24,6 +24,8 @@ import {
   underneath,
   waitsOnItsPrompt,
   hotIn,
+  hibernatedNow,
+  isHibernated,
 } from "./chatState";
 import type { ChildAgent, Moved, OpenChat } from "./bindings";
 
@@ -562,5 +564,16 @@ describe("the hot chats, as the slow-answer log counts them (#4725)", () => {
       doing(5, "failed"),
     ].reduce(moved, nothingKnown);
     expect(hotIn(states)).toBe(3);
+  });
+});
+
+describe("a chat the person hibernated (#7630)", () => {
+  it("is hibernated once told so, and not once told it woke", () => {
+    const told = hibernatedNow(nothingKnown, 3, true);
+    expect(isHibernated(told, 3)).toBe(true);
+    expect(isHibernated(told, 4)).toBe(false);
+    const woken = hibernatedNow(told, 3, false);
+    expect(isHibernated(woken, 3)).toBe(false);
+    expect(hibernatedNow(woken, 3, false)).toBe(woken);
   });
 });

@@ -254,6 +254,8 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "chat.log": { said: SAID.chatLog, slot: "open", under: "open" },
   "needs.ignore": { said: SAID.ignore, slot: "open" },
   "chat.restart": { said: SAID.restart, midTurn: SAID.restartMidTurn, slot: "run" },
+  // It ends the program but keeps the conversation, as a restart does, so it is with what runs.
+  "chat.hibernate": { said: SAID.hibernate, slot: "run" },
   // It ends the program, so it is with what ends, as the menus' rule 4 keeps the danger colour.
   "chat.fresh": { said: SAID.startFresh, slot: "end", danger: true, warns: WARNS.fresh },
   "chat.stop": stopped(WARNS.stops),

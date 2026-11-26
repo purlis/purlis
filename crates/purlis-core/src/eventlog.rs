@@ -2460,6 +2460,32 @@ impl Recorder {
         }
     }
 
+    /// **Chat `number`'s current run is hibernated by the operator** (SC-4a, #7630, ADR 0076 as
+    /// amended 2026-11-25): a `run.moved` under it, from `input-required` to `hibernated` for
+    /// `operator`. Not an end: its sub-agents are left as they are, and the run ends
+    /// `completed | superseded` when the chat is woken or ended ([`Recorder::end_run_with`]).
+    /// None for a chat the log was never told of, one whose start is still held, or one whose
+    /// run has already ended.
+    pub fn hibernated(&mut self, plane: &Path, number: u32) -> io::Result<Option<Event>> {
+        let Some(who) = self.chats.get(&(plane.to_path_buf(), number)).cloned() else {
+            return Ok(None);
+        };
+        if who.held.is_some() || self.ended_runs.contains(&who.run) {
+            return Ok(None);
+        }
+        let under = Under {
+            chat: who.chat,
+            run: who.run,
+            parent: None,
+        };
+        let body = serde_json::json!({
+            "from": "input-required",
+            "to": "hibernated",
+            "cause": Cause::Operator.word(),
+        });
+        self.append(&under, "run.moved", body).map(Some)
+    }
+
     /// Records each line of the kill switch's journal under `config` that the log does not
     /// hold yet (#1375, ADR 0075's "ADR 0071, amended"): `killswitch.stop`, `killswitch.rearm`
     /// or `killswitch.tamper`, with no chat and no run, a `window` line as a person's, an `app`
