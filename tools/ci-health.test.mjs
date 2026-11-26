@@ -589,6 +589,7 @@ test("a workflow beside ci is read for its budgets on its own runs, and for its 
   assert.equal(side.suites.length, 7);
   // Run 7 is not main's, so it is no evidence of main's red.
   assert.equal(side.green.length, 6);
+  assert.deepEqual(side.greenOf, { "outcome-bars": 6 });
   assert.deepEqual(evidenceRed(side.green), [{ name: bars, times: 2 }]);
   assert.deepEqual(
     side.over.map(({ id, workflow, p50, n }) => ({ id, workflow, p50, n })),
@@ -605,4 +606,14 @@ test("the report says which other workflows' runs its job table read", () => {
     /Read from 2 of the week's 6 runs, spread evenly over it, and every run of `outcome-bars\.yml` \(9\)\. Minutes/,
   );
   assert.match(report(week), /Read from 2 of the week's 6 runs, spread evenly over it\. Minutes/);
+});
+
+test("red on a green run and the flaky tests count another workflow's runs apart from ci's", () => {
+  const read = report({
+    ...week,
+    sampled: { runs: 2, of: 6, others: [{ name: "outcome-bars", runs: 9 }] },
+    red: { runs: 8, others: [{ name: "outcome-bars", runs: 7 }], jobs: [] },
+  });
+  assert.match(read, /read from 8 of main's green push and nightly runs, and the green ones of `outcome-bars\.yml` \(7\): each/);
+  assert.match(read, /warning in those 2 runs, and every run of `outcome-bars\.yml` \(9\), by test:/);
 });

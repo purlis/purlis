@@ -549,6 +549,10 @@ export function headline(week) {
   ].join(", ");
 }
 
+/** ", and every run of `x.yml` (n)" for the other workflows a section also read, or "". */
+const alsoRead = (others, what = "every run") =>
+  (others ?? []).length > 0 ? `, and ${what} of ${others.map((one) => `\`${one.name}.yml\` (${one.runs})`).join(", ")}` : "";
+
 /** The whole report, as Markdown for the job summary and the issue's body. */
 export function report(week) {
   const { runs, queue, jobs, flaky, slowest, sampled, red, drift } = week;
@@ -598,11 +602,7 @@ export function report(week) {
     "",
     `### Jobs`,
     "",
-    `Read from ${sampled.runs} of the week's ${sampled.of} runs, spread evenly over it${
-      (sampled.others ?? []).length > 0
-        ? `, and every run of ${sampled.others.map((one) => `\`${one.name}.yml\` (${one.runs})`).join(", ")}`
-        : ""
-    }. Minutes, slowest p90 first:`,
+    `Read from ${sampled.runs} of the week's ${sampled.of} runs, spread evenly over it${alsoRead(sampled.others)}. Minutes, slowest p90 first:`,
     "",
     "| job | runs | p50 | p90 |",
     "| --- | ---: | ---: | ---: |",
@@ -633,7 +633,7 @@ export function report(week) {
     "### Red on a green run",
     "",
     `Jobs \`continue-on-error\` kept from turning the run red, read from ${red.runs} of main's green push and ` +
-      `nightly runs: each is evidence someone should read, and stops nothing.`,
+      `nightly runs${alsoRead(red.others, "the green ones")}: each is evidence someone should read, and stops nothing.`,
     "",
     ...(red.jobs.length === 0
       ? ["None."]
@@ -641,7 +641,7 @@ export function report(week) {
     "",
     "### Flaky tests",
     "",
-    `Every \`Flaky (passed on retry N)\` warning in those ${sampled.runs} runs, by test:`,
+    `Every \`Flaky (passed on retry N)\` warning in those ${sampled.runs} runs${alsoRead(sampled.others)}, by test:`,
     "",
     ...(flaky.length === 0
       ? ["None."]
@@ -793,9 +793,11 @@ async function releaseWeek({ repo, token, since, until }) {
 export function sideWeek(side, budgets, jobsOf) {
   const onMain = (run) => run.head_branch === "main" && run.conclusion === "success";
   const green = new Set(side.flatMap((week) => week.runs.filter(onMain).map((run) => run.id)));
+  const greenOf = (week) => week.suites.filter((suite) => green.has(suite?.workflowRun?.databaseId));
   return {
     suites: side.flatMap((week) => week.suites),
-    green: side.flatMap((week) => week.suites.filter((suite) => green.has(suite?.workflowRun?.databaseId))),
+    green: side.flatMap(greenOf),
+    greenOf: Object.fromEntries(side.map((week) => [week.name, greenOf(week).length])),
     over: side.flatMap((week) => overBudget(week.suites, budgets, jobsOf[week.name] ?? [], week.name)),
   };
 }
@@ -807,13 +809,19 @@ export function sideWeek(side, budgets, jobsOf) {
  */
 async function workflowWeek({ repo, token, name, since, until }) {
   try {
-    const list = async (event) =>
-      (
-        await call(
-          `/repos/${repo}/actions/workflows/${name}.yml/runs?created=${since}..${until}&event=${event}&status=completed&per_page=100`,
+    // Every page, to the list's cap of a thousand: a week of merges is more than one page of 100.
+    const list = async (event) => {
+      const all = [];
+      for (let page = 1; page <= LIST_CAP / 100; page += 1) {
+        const { workflow_runs: runs } = await call(
+          `/repos/${repo}/actions/workflows/${name}.yml/runs?created=${since}..${until}&event=${event}&status=completed&per_page=100&page=${page}`,
           { token },
-        )
-      ).workflow_runs;
+        );
+        all.push(...runs);
+        if (runs.length < 100) break;
+      }
+      return all.filter((run, i) => all.findIndex((other) => other.id === run.id) === i);
+    };
     const runs = [...(await list("schedule")), ...(await list("push"))].filter(
       (run) => run.conclusion === "success" || run.conclusion === "failure",
     );
@@ -914,7 +922,11 @@ async function measure({ repo, token, dayCount, sampleSize }) {
     flakes: flakeEvidence([...suites, ...side.suites]),
     slowest: slowestTests(lists),
     slowestFrom: mainGreen.length,
-    red: { runs: greenRuns.length + side.green.length, jobs: evidenceRed([...greenSuites, ...side.green]) },
+    red: {
+      runs: greenRuns.length,
+      others: others.map((week) => ({ name: week.name, runs: side.greenOf[week.name] ?? 0 })),
+      jobs: evidenceRed([...greenSuites, ...side.green]),
+    },
     // No names means the token could not read them, which says nothing of the list.
     drift: required.length > 0 ? requiredDrift(required) : undefined,
   };

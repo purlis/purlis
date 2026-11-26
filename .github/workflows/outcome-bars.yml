@@ -32,9 +32,12 @@ on:
     - cron: "41 2 * * *"
 
 concurrency:
-  # As `ci.yml`'s: a push to main is grouped by its commit, so a later push never cancels the
-  # pending run of an earlier one, and the nightly keeps a group of its own.
-  group: outcome-bars-${{ github.event_name == 'schedule' && 'nightly' || github.sha }}
+  # On GitHub's runners, as `ci.yml`'s: a push to main is grouped by its commit, so every merge gets
+  # its bars and runs side by side. On the one Mac `OUTCOME_BARS_RUNNER` names, one group for main's
+  # pushes, as `release.yml`'s dev build has: one run and the newest pending one, and a newer push
+  # replaces that pending run, so a day of merges never queues behind a 40-minute job (GitHub fails
+  # a job queued for 24 hours). The nightly keeps a group of its own.
+  group: outcome-bars-${{ github.event_name == 'schedule' && 'nightly' || (vars.OUTCOME_BARS_RUNNER && 'main' || github.sha) }}
   cancel-in-progress: false
 
 permissions:
@@ -75,9 +78,57 @@ jobs:
         specs: [false]
         sandbox: [false]
         outcome: [true]
-    runs-on: ${{ matrix.os }}
+    # Where the repository variable `OUTCOME_BARS_RUNNER` says, as `release.yml`'s dev build reads
+    # `MACOS_RELEASE_RUNNER` (#7641): unset, `macos-latest`; set, a JSON array of labels
+    # (`["self-hosted","macOS","ARM64","purlis-bars"]`), so moving the bars to the operator's own Mac
+    # and back is a variable and no commit (docs/updating.md, "The outcome bars on a self-hosted
+    # Mac"). This workflow has no trigger a pull request can reach (`on:` above), which
+    # `tools/no-self-hosted-on-pull-request.test.mjs` holds. The steps below that a persistent
+    # runner needs run only where `runner.environment` is `self-hosted`; on GitHub's runners they
+    # are skipped and the job is `ci.yml`'s scenario steps alone.
+    runs-on: ${{ fromJSON(vars.OUTCOME_BARS_RUNNER || '"macos-latest"') }}
     steps:
+      # Said in the run's summary, so nobody reads its numbers as macos-latest's: the bars' guards
+      # were set from GitHub's runners (`app/e2e/outcomeBars.ts`).
+      - name: Say that these bars ran on a self-hosted runner
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          echo "**Built on a self-hosted runner** ($RUNNER_NAME, $RUNNER_OS $RUNNER_ARCH): these outcome bars' times are this machine's, not macos-latest's, which their guards were set on (docs/updating.md)." >> "$GITHUB_STEP_SUMMARY"
+      # **A persistent runner starts from nothing**, as `release.yml`'s build does: a self-hosted Mac
+      # keeps its workspace between jobs, so the folder is emptied before the checkout, and only
+      # rust-cache's and sccache's own restores (as on a hosted runner) bring a build back.
+      - name: A self-hosted runner's workspace starts empty
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_WORKSPACE" in
+            /?*/?*) ;;
+            *) echo "::error::GITHUB_WORKSPACE is '$GITHUB_WORKSPACE', which is not a folder to empty"; exit 1 ;;
+          esac
+          find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # **Cargo's, rustup's, npm's and the temporary folder of a persistent runner are this job's
+      # own**, as in `release.yml`'s build: under `$RUNNER_TEMP/job-home`, which the runner empties
+      # before each job and the last step removes. Before the toolchain and rust-cache, which read
+      # `CARGO_HOME` and `RUSTUP_HOME` when they run.
+      - name: A self-hosted runner's Cargo, rustup and temporary folder are this job's own
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          home="$RUNNER_TEMP/job-home"
+          mkdir -p "$home/crate_home/bin" "$home/rustup_home" "$home/tmp" "$home/npm" "$home/cache"
+          {
+            echo "CARGO_HOME=$home/crate_home"
+            echo "RUSTUP_HOME=$home/rustup_home"
+            echo "TMPDIR=$home/tmp"
+            echo "npm_config_cache=$home/npm"
+            echo "XDG_CACHE_HOME=$home/cache"
+          } >> "$GITHUB_ENV"
+          echo "$home/crate_home/bin" >> "$GITHUB_PATH"
+          echo "job home: $home"
       - uses: ./.github/actions/rust-toolchain
       # Pool setup's run restores `scenario-linux`'s cache, the same app build, and saves none
       # (#5858): a cache of its own was 1.7 GB of the repository's 10.
@@ -114,12 +165,13 @@ jobs:
       # up is put in front of rustc, and SCCACHE_IGNORE_SERVER_IO_ERROR has a later failure
       # compile without it.
       #
-      # `SCCACHE_IDLE_TIMEOUT=0`: the server lives as long as the job. With sccache's default of
+      # `SCCACHE_IDLE_TIMEOUT=0`: the server lives as long as the job, and so does one the wrapper
+      # starts again after a failure (it is in `$GITHUB_ENV` too). With sccache's default of
       # 600 s it stopped in every one of 8 outcome-bars runs on 2026-11-25/26, about ten minutes
       # into purlis-core's release compile, during which no new request came ("The server looks
       # like it shut down unexpectedly, compiling locally instead"). Every crate after that
-      # compiled without it, and its notice counted one request. The runner is discarded with the
-      # job, so nothing is left running.
+      # compiled without it, and its notice counted one request. A hosted runner is discarded with
+      # the job; on a self-hosted one, `outcome-bars.yml`'s last step stops the server.
       - name: Compile through sccache
         if: runner.os == 'macOS'
         env:
@@ -133,6 +185,7 @@ jobs:
               echo "SCCACHE_GHA_ENABLED=true"
               echo "SCCACHE_GHA_RW_MODE=$MODE"
               echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
+              echo "SCCACHE_IDLE_TIMEOUT=0"
             } >> "$GITHUB_ENV"
           elif [ "$ARRIVED" = success ]; then
             echo "::warning title=sccache::the build cache did not answer, so this job compiles without it"
@@ -167,9 +220,12 @@ jobs:
       # the dev profile, and #3560's opt-level made the cold build 21 to 32 min), another linker
       # (6 s to win), a `target/` cache (rust-cache already restores the dependencies, and the
       # workspace's crates change with every pull request that runs this job).
-      # Off before the build, so it indexes none of it (#4351): see the outcome bars below.
+      # Off before the build, so it indexes none of it (#4351): see the outcome bars below. Only on
+      # GitHub's runners, never on a self-hosted Mac (`outcome-bars.yml`'s `OUTCOME_BARS_RUNNER`):
+      # `-a` turns Spotlight off for the whole machine, which is the operator's to decide, and its
+      # runner user has no sudo.
       - name: Spotlight off for the outcome bars
-        if: ${{ runner.os == 'macOS' && matrix.outcome }}
+        if: ${{ runner.os == 'macOS' && matrix.outcome && runner.environment == 'github-hosted' }}
         continue-on-error: true
         timeout-minutes: 2
         run: sudo mdutil -a -i off
@@ -288,3 +344,13 @@ jobs:
         with:
           name: scenario-logs-${{ matrix.os }}-${{ matrix.shard }}
           path: app/logs
+      # **Nothing of the job stays on a persistent runner** but its work folder, which the next job
+      # empties before its checkout: the sccache server (which `SCCACHE_IDLE_TIMEOUT=0` would keep
+      # alive) is stopped and the job's own home folders go, a failed or cancelled run's included.
+      - name: A self-hosted runner keeps no job folder
+        if: always() && runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -uo pipefail
+          sccache --stop-server >/dev/null 2>&1 || true
+          rm -rf "$RUNNER_TEMP/job-home"

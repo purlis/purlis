@@ -2498,12 +2498,13 @@ jobs:
       # up is put in front of rustc, and SCCACHE_IGNORE_SERVER_IO_ERROR has a later failure
       # compile without it.
       #
-      # `SCCACHE_IDLE_TIMEOUT=0`: the server lives as long as the job. With sccache's default of
+      # `SCCACHE_IDLE_TIMEOUT=0`: the server lives as long as the job, and so does one the wrapper
+      # starts again after a failure (it is in `$GITHUB_ENV` too). With sccache's default of
       # 600 s it stopped in every one of 8 outcome-bars runs on 2026-11-25/26, about ten minutes
       # into purlis-core's release compile, during which no new request came ("The server looks
       # like it shut down unexpectedly, compiling locally instead"). Every crate after that
-      # compiled without it, and its notice counted one request. The runner is discarded with the
-      # job, so nothing is left running.
+      # compiled without it, and its notice counted one request. A hosted runner is discarded with
+      # the job; on a self-hosted one, `outcome-bars.yml`'s last step stops the server.
       - name: Compile through sccache
         if: runner.os == 'macOS'
         env:
@@ -2517,6 +2518,7 @@ jobs:
               echo "SCCACHE_GHA_ENABLED=true"
               echo "SCCACHE_GHA_RW_MODE=$MODE"
               echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
+              echo "SCCACHE_IDLE_TIMEOUT=0"
             } >> "$GITHUB_ENV"
           elif [ "$ARRIVED" = success ]; then
             echo "::warning title=sccache::the build cache did not answer, so this job compiles without it"
@@ -2605,9 +2607,12 @@ jobs:
       # the dev profile, and #3560's opt-level made the cold build 21 to 32 min), another linker
       # (6 s to win), a `target/` cache (rust-cache already restores the dependencies, and the
       # workspace's crates change with every pull request that runs this job).
-      # Off before the build, so it indexes none of it (#4351): see the outcome bars below.
+      # Off before the build, so it indexes none of it (#4351): see the outcome bars below. Only on
+      # GitHub's runners, never on a self-hosted Mac (`outcome-bars.yml`'s `OUTCOME_BARS_RUNNER`):
+      # `-a` turns Spotlight off for the whole machine, which is the operator's to decide, and its
+      # runner user has no sudo.
       - name: Spotlight off for the outcome bars
-        if: ${{ runner.os == 'macOS' && matrix.outcome }}
+        if: ${{ runner.os == 'macOS' && matrix.outcome && runner.environment == 'github-hosted' }}
         continue-on-error: true
         timeout-minutes: 2
         run: sudo mdutil -a -i off

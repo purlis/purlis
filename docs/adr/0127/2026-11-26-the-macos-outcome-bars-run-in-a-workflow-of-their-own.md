@@ -18,7 +18,10 @@ nightly), job id, name, matrix and `continue-on-error`.
   `outcome bars (ubuntu-24.04)`): it runs on pull requests and in the merge queue, and it ends
   inside the other jobs' time.
 - **The steps are a copy** of `ci.yml`'s scenario steps, because an anchor does not reach another
-  file. `tools/outcome-bars-workflow.test.mjs` fails when a copied step differs from its original,
+  file. The standard ways to share them do not fit: a composite action's steps take no
+  `timeout-minutes`, which the build (110) and the bars' probes (1) rely on, and a reusable workflow
+  called from `ci.yml`'s scenario jobs would rename every check they post (`<caller> / <job>`),
+  required ones among them. `tools/outcome-bars-workflow.test.mjs` fails when a copied step differs from its original,
   comments aside, or when `ci.yml` gains a step the macOS outcome leg would run and the copy lacks.
 - **It stays watched.** Its budget is in `ci/job-budgets.toml` with `workflow = "outcome-bars"`
   (`JOB_WORKFLOWS` in `tools/job-budgets.mjs`). `ci-health` reads its runs for that budget, for
@@ -26,3 +29,11 @@ nightly), job id, name, matrix and `continue-on-error`.
 - **sccache's server now lives as long as the job** (`SCCACHE_IDLE_TIMEOUT=0`, in the scenario
   steps). At the default of 600 s it stopped in all 8 of those runs, about ten minutes into
   purlis-core's compile, and every crate after that compiled without it.
+- **Its runner is a repository variable**, `OUTCOME_BARS_RUNNER`, as `release.yml`'s dev build
+  reads `MACOS_RELEASE_RUNNER` (#7641): unset, `macos-latest`. It is for the operator's 64 GB M1
+  Max (the steward's ask of this day), in a runner group of its own (`purlis-bars`) that only this
+  workflow on `main` may use. On that one Mac, main's pushes share one concurrency group, so runs
+  never queue up behind each other. On a self-hosted runner it runs `release.yml`'s steps for a
+  persistent Mac and never takes `sudo` (docs/updating.md, "The outcome bars on a self-hosted
+  Mac"). The bars' limits were set on `macos-latest`. Re-setting them from the Mac's runs comes
+  after it has some.
