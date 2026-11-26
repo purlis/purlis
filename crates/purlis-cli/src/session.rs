@@ -335,16 +335,6 @@ fn chat_number_in(env: &dyn Fn(&str) -> Option<String>) -> Option<u32> {
         .find_map(|n| n.trim().parse::<u32>().ok().filter(|n| *n > 0))
 }
 
-/// Whether a command only the person runs is run by a chat here (#7694): in a session the app
-/// started ([`chat_number`]) that is not the window's shell tab. A shell tab carries the same chat
-/// marks, which its shims need, and its own mark
-/// ([`purlis_core::shellguard::SHELL_TAB_ENV`]) says it is the person's terminal; the shims take
-/// that mark off a harness started there, and no chat inherits it.
-pub(crate) fn run_by_a_chat_in(env: &dyn Fn(&str) -> Option<String>) -> bool {
-    let shell_tab = env(purlis_core::shellguard::SHELL_TAB_ENV).as_deref() == Some("1");
-    chat_number_in(env).is_some() && !shell_tab
-}
-
 /// Tells the app this chat's record is saved, and answers what becomes of the chat, as
 /// a sentence and whether it is a warning: the record is written whatever happens here, and a
 /// chat that nothing will end is the operator's to end.

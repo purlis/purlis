@@ -14,3 +14,6 @@
 - **`purlis worktree adopt` in tmux or screen started from the shell tab is now refused.** Their
   server runs outside the app's process tree, so the app cannot tell who asks. Run it in the
   shell tab itself or in your own terminal (#7700).
+- **`purlis worktree adopt` in a shell tab that kept running across a relaunch of the window is
+  refused.** The new window cannot know whether a harness was started in it by hand before. Run
+  it in a new shell tab (#7707).

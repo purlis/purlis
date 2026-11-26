@@ -324,3 +324,30 @@ fn work_only_the_person_asks_for_runs_here_only_where_this_process_is_no_chats()
         Forwarded::Refused(why) if why == "no"
     ));
 }
+
+#[test]
+fn what_adopt_says_when_the_app_did_not_take_it_reads_as_one_sentence_with_single_spaces() {
+    assert_eq!(
+        ADOPT_NOT_TAKEN,
+        "it did not take `purlis worktree adopt`, which only the person may ask for (it may be \
+         older than this command), so nothing was adopted. Run it from a new shell tab or from \
+         your own terminal outside purlis"
+    );
+    assert!(!ADOPT_NOT_TAKEN.contains("  "), "{ADOPT_NOT_TAKEN}");
+}
+
+#[test]
+fn only_a_process_that_is_no_chats_is_left_to_run_the_work_here() {
+    use hookwire::reach::Unreached;
+    assert!(unreached(&Unreached::NotAChat).is_none());
+    for not in [
+        Unreached::AppGone("gone".to_owned()),
+        Unreached::Refused("full".to_owned()),
+        Unreached::NotTheApp("someone else".to_owned()),
+    ] {
+        let Some(Forwarded::Refused(why)) = unreached(&not) else {
+            panic!("{not:?} was left to run here");
+        };
+        assert!(why.contains(hookwire::reach::NO_APP_ANSWERED), "{why}");
+    }
+}
