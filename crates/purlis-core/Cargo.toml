@@ -132,7 +132,7 @@ minidump-unwind = "0.26"
 # default features: their `cache` is a statement cache the index does not need, and the
 # `sqlite-wasm-rs` backend is for a target purlis never builds. rusqlite and libsqlite3-sys are
 # MIT; SQLite itself is in the public domain.
-rusqlite = { version = "0.42", default-features = false, features = ["bundled"] }
+rusqlite = { version = "0.43", default-features = false, features = ["bundled"] }
 # A branch's changes, read in-process (FM-4, D-88f): the explorer reads them by itself after
 # every write an agent makes, so no git process may start in a repository whose config the agent
 # can write. gitoxide reads the index, the working tree and the trees with no program run:
@@ -142,7 +142,7 @@ rusqlite = { version = "0.42", default-features = false, features = ["bundled"] 
 # core and walks for untracked files at the same time, as `git status` does with its preloaded
 # index: without it a status took about 4x git's at 100,000 files. It adds no crate the tree
 # lacks.
-gix = { version = "0.90", default-features = false, features = ["sha1", "status", "revision", "blob-diff", "excludes", "dirwalk", "index", "parallel"] }
+gix = { version = "0.91", default-features = false, features = ["sha1", "status", "revision", "blob-diff", "excludes", "dirwalk", "index", "parallel"] }
 # The bounded reader's memory cap (FM-4, D-88h): the child reads its own resident memory and
 # stops past the cap. Portable where `setrlimit` is not (macOS refuses an address-space limit
 # below what a process has already mapped). MIT OR Apache-2.0.
@@ -373,7 +373,7 @@ signal-hook = "0.4"
 # proxy and the sandbox's hosts refuse this machine's own interface addresses (#1341).
 # `resource` is for `setrlimit`: a brokered run writes no core file, which would hold its values
 # (#2047).
-nix = { version = "0.31", default-features = false, features = ["signal", "net", "resource"] }
+nix = { version = "0.32", default-features = false, features = ["signal", "net", "resource"] }
 # Delete on a workspace's own files (#5376) sends to the system's Trash, and never deletes for
 # good: the freedesktop.org trash on Linux (its `freedesktop` feature), `NSFileManager`'s on macOS.
 # The standard crate for it; without its default `chrono`, which only dates a Linux trash entry
