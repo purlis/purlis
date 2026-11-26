@@ -151,6 +151,79 @@ describe("the focused workspace's panels", () => {
     );
   });
 
+  it("fills in each folder as it is read, asking again while any is still reading", async () => {
+    // H16: an answer may be partial, a folder still being read says `reading`, and the store asks
+    // again at once. 133 folders took 47 s in one answer.
+    const answers = [
+      [
+        { piece: "one", uncommitted: 0 },
+        { piece: "two", reading: true },
+      ],
+      [
+        { piece: "one", uncommitted: 0 },
+        { piece: "two", uncommitted: 3 },
+      ],
+    ];
+    let asks = 0;
+    core((cmd, args) => {
+      if (cmd === "worktree_list")
+        return args.repo === "svc"
+          ? [piece("one", { reading: true }), piece("two", { reading: true })]
+          : [];
+      if (cmd === "worktree_states")
+        return args.repo === "svc" ? (answers[asks++] ?? answers[1]) : [];
+      return ORDINARY(cmd, args);
+    });
+    const { result } = renderHook(() => useWorkspaceState(PLANE, "alpha"));
+
+    await waitFor(() =>
+      expect(
+        result.current.pieces.svc?.map((one) => [one.piece, one.reading, one.uncommitted]),
+      ).toEqual([
+        ["one", undefined, 0],
+        ["two", undefined, 3],
+      ]),
+    );
+    expect(asks).toBe(2);
+  });
+
+  it("names its refresh's round when it asks again, and starts a new one on each refresh", async () => {
+    // #7667: an answer read for an earlier refresh is never given to a later one, so each
+    // refresh's first ask names no round, and its asks for the rest name the one it was told.
+    let round = 0;
+    let asks = 0;
+    const { asked } = core((cmd, args) => {
+      if (cmd === "worktree_list")
+        return args.repo === "svc"
+          ? [piece("one", { reading: true }), piece("two", { reading: true })]
+          : [];
+      if (cmd === "worktree_states") {
+        if (args.repo !== "svc") return [];
+        if (args.round === null) round += 1;
+        const first = asks++ % 2 === 0;
+        return [
+          { piece: "one", uncommitted: 0, round },
+          first ? { piece: "two", reading: true, round } : { piece: "two", uncommitted: 3, round },
+        ];
+      }
+      return ORDINARY(cmd, args);
+    });
+    const rounds = () =>
+      asked
+        .filter((one) => one.cmd === "worktree_states" && one.args.repo === "svc")
+        .map((one) => one.args.round);
+    const { result, rerender } = renderHook(
+      ({ again }: { again: number }) => useWorkspaceState(PLANE, "alpha", again),
+      { initialProps: { again: 0 } },
+    );
+    await waitFor(() => expect(result.current.pieces.svc?.[1]?.uncommitted).toBe(3));
+    expect(rounds()).toEqual([null, 1]);
+
+    rerender({ again: 1 });
+    await waitFor(() => expect(rounds()).toHaveLength(4));
+    expect(rounds()).toEqual([null, 1, null, 2]);
+  });
+
   it("says why a folder's state is unknown when reading the states is refused", async () => {
     // Never left "reading" for ever, and never drawn as clean (#1476).
     core((cmd, args) => {

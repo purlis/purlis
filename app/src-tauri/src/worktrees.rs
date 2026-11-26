@@ -285,14 +285,34 @@ pub struct PieceState {
     /// As [`Piece::unread`].
     #[specta(optional)]
     pub unread: Option<String>,
+    /// Still being read: ask again (H16). Neither of the others is said while it is.
+    #[specta(optional)]
+    pub reading: Option<bool>,
+    /// The refresh this answer belongs to, the same on every folder of one answer: the window
+    /// names it when it asks again for the folders still reading (#7667).
+    #[specta(optional)]
+    pub round: Option<crate::statecache::Round>,
 }
 
-/// How many folders' states are read at once: enough that sixty folders fill in within a few
-/// seconds, few enough that a listing never floods the machine with `git status` runs.
-const READ_AT_ONCE: usize = 8;
+/// Every branch folder's state, kept until something in the folder moves and read in the
+/// background, so an ask answers what is known and the window asks again for the rest (H16).
+static STATES: std::sync::LazyLock<crate::statecache::StateCache> =
+    std::sync::LazyLock::new(|| {
+        crate::statecache::StateCache::new(|path| counted(purlis_core::repos::state_of(path)))
+    });
 
 /// The state of each of this repo's branch folders, asked once `worktree_list` has named them
 /// (#5321): what each has uncommitted, or why it could not be read.
+///
+/// **An answer may be partial** (H16): a folder still being read has `reading` set and nothing
+/// else, and the window asks again at once, which waits for the next folder to finish. The
+/// whole of 133 folders took 47 s in one answer; the first now comes in about one status's time,
+/// and an ask with nothing changed reads nothing.
+///
+/// **`round` is the refresh an ask continues** (#7667): an ask with none is a new refresh, and
+/// reads again what no watch vouches for; one naming the `round` an answer carried is given
+/// what that refresh has read. Each ask without a `round` starts a new round, so a window that
+/// never names one makes every ask a refresh of its own.
 #[tauri::command]
 #[specta::specta]
 pub async fn worktree_states(
@@ -300,58 +320,52 @@ pub async fn worktree_states(
     plane: PlaneId,
     workspace: String,
     repo: String,
+    round: Option<crate::statecache::Round>,
 ) -> Result<Vec<PieceState>, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
-    crate::off_the_window(LISTING, move || states_of(&root, &workspace, &repo)).await
+    crate::off_the_window(LISTING, move || states_of(&root, &workspace, &repo, round)).await
 }
 
-/// Each branch folder's state, read [`READ_AT_ONCE`] at a time, in the listing's order. A
-/// folder that is gone is left out: it has nothing to read.
-fn states_of(plane: &Path, workspace: &str, repo: &str) -> Result<Vec<PieceState>, String> {
+/// Each branch folder's state as far as it is known, in the listing's order. A folder that is
+/// gone is left out: it has nothing to read.
+fn states_of(
+    plane: &Path,
+    workspace: &str,
+    repo: &str,
+    round: Option<crate::statecache::Round>,
+) -> Result<Vec<PieceState>, String> {
     let pieces: Vec<worktree::Piece> = worktree::list(plane, workspace, repo)
         .map_err(|refusal| refusal.in_window())?
         .into_iter()
         .filter(|p| p.prunable.is_none())
         .collect();
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    let read = Mutex::new(Vec::with_capacity(pieces.len()));
-    std::thread::scope(|scope| {
-        for _ in 0..READ_AT_ONCE.min(pieces.len()) {
-            scope.spawn(|| {
-                loop {
-                    let at = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    let Some(piece) = pieces.get(at) else { break };
-                    let (uncommitted, unread) = uncommitted_in(piece);
-                    read.lock().unwrap_or_else(PoisonError::into_inner).push((
-                        at,
-                        uncommitted,
-                        unread,
-                    ));
-                }
-            });
-        }
-    });
-    let mut read = read.into_inner().unwrap_or_else(PoisonError::into_inner);
-    read.sort_by_key(|(at, ..)| *at);
-    Ok(read
-        .into_iter()
-        .map(|(at, uncommitted, unread)| PieceState {
-            piece: pieces[at].piece.clone(),
-            uncommitted,
-            unread,
+    let folders: Vec<crate::statecache::Folder> = pieces
+        .iter()
+        .map(|p| crate::statecache::Folder {
+            path: p.path.clone(),
+        })
+        .collect();
+    let (round, said) = STATES.states(&folders, round);
+    Ok(pieces
+        .iter()
+        .zip(said)
+        .map(|(piece, said)| match said {
+            Some((uncommitted, unread)) => PieceState {
+                piece: piece.piece.clone(),
+                uncommitted,
+                unread,
+                reading: None,
+                round: Some(round),
+            },
+            None => PieceState {
+                piece: piece.piece.clone(),
+                uncommitted: None,
+                unread: None,
+                reading: Some(true),
+                round: Some(round),
+            },
         })
         .collect())
-}
-
-/// The files `piece`'s folder has uncommitted, by the status read a clone's row is counted by
-/// (`repos::state_of`, read-only and bounded): on this listing's blocking thread, never the
-/// window's, and why it did not read where it did not. Neither for a folder git still registers
-/// but that is gone.
-fn uncommitted_in(piece: &worktree::Piece) -> (Option<u32>, Option<String>) {
-    if piece.prunable.is_some() {
-        return (None, None);
-    }
-    counted(purlis_core::repos::state_of(&piece.path))
 }
 
 /// A folder's uncommitted count from its status read, or why the read failed: the sentence the
@@ -735,6 +749,26 @@ fn merge_piece(plane: &Path, workspace: &str, repo: &str, piece: &str) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The states as the window gets them: asked again, at once, each folder taken from the
+    /// first answer that has it, until every folder has one.
+    fn all_states(plane: &Path, workspace: &str, repo: &str) -> Vec<PieceState> {
+        let mut got: Vec<Option<PieceState>> = Vec::new();
+        let mut round = None;
+        loop {
+            let states = states_of(plane, workspace, repo, round).unwrap();
+            round = states.first().and_then(|s| s.round);
+            got.resize_with(states.len(), || None);
+            for (slot, state) in got.iter_mut().zip(states) {
+                if slot.is_none() && state.reading.is_none() {
+                    *slot = Some(state);
+                }
+            }
+            if got.iter().all(Option::is_some) {
+                return got.into_iter().flatten().collect();
+            }
+        }
+    }
 
     /// #1476: a branch folder the link check refused carries its sentence beside its unknown
     /// count, and one that read carries its count and no reason.
@@ -1210,8 +1244,7 @@ mod tests {
         std::fs::write(busy.join("README.md"), "changed\n").unwrap();
         std::fs::write(busy.join("new.txt"), "untracked\n").unwrap();
 
-        let counts: Vec<(String, Option<u32>)> = states_of(&root, "alpha", "thing")
-            .unwrap()
+        let counts: Vec<(String, Option<u32>)> = all_states(&root, "alpha", "thing")
             .into_iter()
             .map(|row| (row.piece, row.uncommitted))
             .collect();
@@ -1385,7 +1418,7 @@ mod tests {
         std::fs::write(busy.join("new.txt"), "untracked\n").unwrap();
 
         let asked = Instant::now();
-        let states = states_of(&root, "alpha", "thing").unwrap();
+        let states = all_states(&root, "alpha", "thing");
         let took = asked.elapsed();
 
         let mut counts: Vec<(&str, Option<u32>)> = states

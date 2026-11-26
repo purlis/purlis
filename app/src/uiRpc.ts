@@ -1927,8 +1927,18 @@ export const commands = {
 	/**
 	 *  The state of each of this repo's branch folders, asked once `worktree_list` has named them
 	 *  (#5321): what each has uncommitted, or why it could not be read.
+	 * 
+	 *  **An answer may be partial** (H16): a folder still being read has `reading` set and nothing
+	 *  else, and the window asks again at once, which waits for the next folder to finish. The
+	 *  whole of 133 folders took 47 s in one answer; the first now comes in about one status's time,
+	 *  and an ask with nothing changed reads nothing.
+	 * 
+	 *  **`round` is the refresh an ask continues** (#7667): an ask with none is a new refresh, and
+	 *  reads again what no watch vouches for; one naming the `round` an answer carried is given
+	 *  what that refresh has read. Each ask without a `round` starts a new round, so a window that
+	 *  never names one makes every ask a refresh of its own.
 	 */
-	worktreeStates: (plane: PlaneId, workspace: string, repo: string) => typedError<PieceState[], string>(__TAURI_INVOKE("worktree_states", { plane, workspace, repo })),
+	worktreeStates: (plane: PlaneId, workspace: string, repo: string, round: number | null) => typedError<PieceState[], string>(__TAURI_INVOKE("worktree_states", { plane, workspace, repo, round })),
 	/**
 	 *  **New branch**, from a repo's row (GL-1): cut a piece off the clone's HEAD and log it
 	 *  `claimed`. It starts nothing. `branch` is the name the operator typed, used exactly or
@@ -10857,6 +10867,13 @@ export type PieceState = {
 	uncommitted?: number | null,
 	/**  As [`Piece::unread`]. */
 	unread?: string | null,
+	/**  Still being read: ask again (H16). Neither of the others is said while it is. */
+	reading?: boolean | null,
+	/**
+	 *  The refresh this answer belongs to, the same on every folder of one answer: the window
+	 *  names it when it asks again for the folders still reading (#7667).
+	 */
+	round?: number | null,
 };
 
 /**  What the plane's pin says against this charter. */
