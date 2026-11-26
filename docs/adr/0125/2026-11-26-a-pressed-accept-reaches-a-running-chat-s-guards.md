@@ -68,8 +68,10 @@ policy.
 - A tightening still applies at once, with no press.
 - The format of `app/reopen.json` does not change: the press empties a field it already has
   (Clone state, ADR 0069; its row in `docs/plane-format.md` says so). The host record gains one
-  optional field, `started.policy` (R11), absent from a line an older host wrote, which reads as
-  no recorded start: the floor is then the strictest, the full sandbox with every family enforced.
+  optional field, `started.policy` (R11), absent from a line an older host wrote, which reads as no
+  recorded start: the chat's floor is then the policy in force, not the strictest, so its route
+  holds no merge for that alone, and its Notice says it started before purlis recorded start rules
+  (the person's ruling of 2026-11-27).
 
 ## Why
 
