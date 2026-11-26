@@ -23,15 +23,31 @@ export function hearLayers(tell: () => void): () => void {
   return () => void hearing.delete(tell);
 }
 
+/**
+ * Tells everyone who hears. One that throws is reported once the rest have heard, and the count
+ * it heard of stands: a throw out of the effect would take its undoing with it.
+ */
+function tellAll() {
+  for (const tell of [...hearing]) {
+    try {
+      tell();
+    } catch (error) {
+      queueMicrotask(() => {
+        throw error;
+      });
+    }
+  }
+}
+
 /** Counts a layer of `kind` while `isOpen`. */
 export function useLayerUp(kind: Layer, isOpen: boolean): void {
   useEffect(() => {
     if (!isOpen) return;
     open[kind] += 1;
-    for (const tell of [...hearing]) tell();
+    tellAll();
     return () => {
       open[kind] -= 1;
-      for (const tell of [...hearing]) tell();
+      tellAll();
     };
   }, [kind, isOpen]);
 }

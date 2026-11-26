@@ -434,11 +434,12 @@ describe("an alert the app raises, as a key that opens a dialog is let go", () =
       );
     }
     const { rerender } = render(<Opener asked={false} />);
-    screen.getByRole("button", { name: "Rename" }).focus();
-    await userEvent.keyboard("[Space>]");
+    const rename = screen.getByRole("button", { name: "Rename" });
+    rename.focus();
+    fireEvent.keyDown(rename, { key: " ", code: "Space" });
     rerender(<Opener asked />);
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    await userEvent.keyboard("[/Space]");
+    fireEvent.keyUp(rename, { key: " ", code: "Space" });
     await screen.findByRole("dialog", { name: "Rename workspace" });
     await act(() => new Promise((done) => setTimeout(done, 20)));
     expect(screen.queryByRole("alertdialog")).toBeNull();

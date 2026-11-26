@@ -26,8 +26,9 @@
  * **It closes where it is answered**: the screen stops raising it (`raised` false) once the
  * answer has landed. An answer that does not land (a refusal) leaves it up to say so.
  */
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { SETTLE_MS } from "../../noticeSettle";
+import { useProjectShown } from "../../projectShown";
 import { RaisedAlertFrame, type DialogAction, type DialogSize } from "./Dialog";
 import { useRaisedTurn } from "./raised";
 
@@ -40,6 +41,11 @@ export const RAISED_ALERT_CHANGED = "This question changed while it was open. Re
 
 /** The keys that answer: Return and Space press the answer they are on, Esc chooses `cancel`. */
 const ANSWER_KEYS = new Set(["Enter", " ", "Escape"]);
+
+/** A control a held key types into: its repeat is the person's text, not an answer. */
+const EDITABLE =
+  'textarea, [contenteditable]:not([contenteditable="false"]), ' +
+  'input:not([type="button"], [type="checkbox"], [type="radio"], [type="reset"], [type="submit"])';
 
 type Pressed<A> = A extends unknown
   ? Omit<A, "onPress"> & {
@@ -85,7 +91,12 @@ export interface RaisedAlertProps {
  * and `press`, which an answer's press goes through.
  */
 function useSettledPresses(open: boolean, shows: string) {
-  const [said, setSaid] = useState("");
+  // Each saying is a new one, though its words are the last one's: a screen reader says it again.
+  const [saidNow, setSaidNow] = useState({ words: "", nth: 0 });
+  const setSaid = useCallback(
+    (words: string) => setSaidNow((was) => ({ words, nth: was.nth + 1 })),
+    [],
+  );
   const [busy, setBusy] = useState(false);
   // What was last drawn: adjusted as it renders, so what it says is right in the same commit.
   const [drawn, setDrawn] = useState({ open, shows });
@@ -110,28 +121,37 @@ function useSettledPresses(open: boolean, shows: string) {
     shown.current = shows;
     if (!open || was === shows) return;
     armedAt.current = performance.now();
-    // Off any answer but the one that grants nothing.
-    const alert = saying.current?.closest('[role="alertdialog"]');
+    // Off any answer but the one that grants nothing, or onto the alert itself while that one
+    // cannot be pressed, as the family's dialogs open (`DialogKeyboard`).
+    const alert = saying.current?.closest<HTMLElement>('[role="alertdialog"]');
     const answers = alert?.querySelector('[data-scope="dialog"][data-part="actions"]');
-    const keep = answers?.querySelector<HTMLElement>('[data-dialog-action="cancel"]');
+    const keep =
+      answers?.querySelector<HTMLElement>('[data-dialog-action="cancel"]:not(:disabled)') ?? alert;
     const now = document.activeElement;
     if (keep && now !== keep && answers?.contains(now)) keep.focus();
   }, [open, shows]);
 
   // **No key answers while it settles, nor one held down**: heard on the window as it is
-  // captured, before anything in the alert or the family's own Esc.
+  // captured, before anything in the alert or the family's own Esc. Only while it is drawn
+  // (`open`); a key held in a field inside it types there.
   useEffect(() => {
     if (!open) return;
     const guard = (event: KeyboardEvent) => {
       if (!ANSWER_KEYS.has(event.key) || event.isComposing) return;
-      if (!event.repeat && performance.now() - armedAt.current >= SETTLE_MS) return;
+      const settledNow = performance.now() - armedAt.current >= SETTLE_MS;
+      if (event.repeat) {
+        const target = event.target;
+        const alert = saying.current?.closest('[role="alertdialog"]');
+        const typing = target instanceof Element && target.matches(EDITABLE);
+        if (settledNow && typing && alert?.contains(target)) return;
+      } else if (settledNow) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       if (!event.repeat) setSaid(RAISED_ALERT_TOO_SOON);
     };
     window.addEventListener("keydown", guard, true);
     return () => window.removeEventListener("keydown", guard, true);
-  }, [open]);
+  }, [open, setSaid]);
 
   const press = (onPress: RaisedAnswer["onPress"]) => {
     if (inFlight.current) return;
@@ -150,7 +170,7 @@ function useSettledPresses(open: boolean, shows: string) {
     };
     landing.then(landed, landed);
   };
-  return { said, busy, saying, press };
+  return { said: saidNow, busy, saying, press };
 }
 
 /** **An alert the app raises** (see above). */
@@ -169,7 +189,10 @@ export function RaisedAlert({
   "data-testid": testId,
   children,
 }: RaisedAlertProps) {
-  const turn = useRaisedTurn(raised);
+  // Only an alert that can be drawn takes the window's turn: one in a project behind waits, and
+  // its settle guard arms as it is drawn.
+  const inFront = useProjectShown();
+  const turn = useRaisedTurn(raised && inFront);
   const open = turn !== null;
   const { said, busy, saying, press } = useSettledPresses(open, shows);
   const answerOf = (answer: RaisedAnswer | undefined) =>
@@ -196,7 +219,7 @@ export function RaisedAlert({
       data-testid={testId}
     >
       <p ref={saying} role="status" data-scope="dialog" data-part="said" className="ui-text-body">
-        {said}
+        {said.words !== "" && <span key={said.nth}>{said.words}</span>}
       </p>
       {children}
     </RaisedAlertFrame>
