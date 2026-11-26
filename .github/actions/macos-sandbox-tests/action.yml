@@ -42,6 +42,14 @@ runs:
       shell: bash
       run: |
         tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- a_sandboxed_chat_listens_nowhere_under_seatbelt::
+    # Seatbelt's own report of a refusal, read for real (T1.1-52, Q294, Q295): a process under a
+    # tagged deny is refused, the receiver's `log stream` reads the kernel's report, and it is
+    # told as a `Refusal`; another chat's tag is never told. Needs an administrator (the runner is).
+    - name: A denial report becomes a refusal for the chat's process, read from the log
+      id: denial-report
+      shell: bash
+      run: |
+        tools/tests-ran.sh -- cargo test --locked -p purlis-core --test it -- a_macos_denial_report_becomes_a_refusal_for_the_chats_process::
     # A chat allowed to serve on a port, under its own compiled profile for real (#2019): its
     # own socket and no TCP port, reached through purlis's door alone.
     - name: A chat's server behind its door, confined by Seatbelt

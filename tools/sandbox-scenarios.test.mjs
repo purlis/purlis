@@ -187,6 +187,7 @@ test("the_existing_macos_sandbox_targets_run_on_the_branch_and_fail_on_red", () 
   for (const target of [
     "-p studio-probe",
     "-p purlis-core --test it -- a_sandboxed_chat_listens_nowhere_under_seatbelt::",
+    "-p purlis-core --test it -- a_macos_denial_report_becomes_a_refusal_for_the_chats_process::",
     "-p purlis-core --lib -- sandbox::localport::tests::under_seatbelt",
     "-p purlis-cli --test it -- a_chats_ssh_route_carries_from_inside_its_sandbox::",
     "-p purlis-core --lib -- secrets::brokered::tests::under_seatbelt",
