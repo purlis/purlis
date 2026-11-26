@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795732993245,
+  "lastUpdate": 1795735454326,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56448,6 +56448,48 @@ window.BENCHMARK_DATA = {
             "value": 101.91287399999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.928, 101.302, 101.913, 103.295, 103.500 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e2163dc1a8009c5dd3732b0eaf4a27c9190f3b5e",
+          "message": "ADR: what the policy rules between chats (M75) and what M80 adds (#7745)\n\n* ADR 0125: what the policy rules between chats (M75) and what M76 adds\n\nThe person's rulings of 2026-11-27 on chat-to-chat policy: the fixed floor,\nthe permit-required class, dispatch covering dispatch-to only, the reserved\nchats family, context.owner and context.relation as host-supplied facts,\nthe additive schema-growth rule, and the phasing into M75 and M76.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CQ8B02FCP72YE4FKJEEZGZ\nPurlis-Persona: steward\n\n* ADR 0125 amendment: name the new milestone's issues and the M76 clash\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CQ8B02FCP72YE4FKJEEZGZ\nPurlis-Persona: steward\n\n* ADR 0125 amendment 2026-11-27: the plan review's findings and the 2026-11-27 rulings\n\nFloor items ruled; owner values self/task/asker/other/none; sibling means the same parent; a push not one's own is outside policy-everything-else; the schema snapshot; M80.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CSXMPREEDYSGEE6YP9HWSP\nPurlis-Persona: steward\n\n* ADR 0125 amendment 2026-11-27: the Q338 rulings (lateral floor 7, per-parent cap, folder writes, port by reach)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8CYPYQ4N2NP0YMWPXD091RK\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T22:44:18Z",
+          "tree_id": "2dab323ccb5cf2eececc59882e6050dbe6e634c0",
+          "url": "https://github.com/purlis/purlis/commit/e2163dc1a8009c5dd3732b0eaf4a27c9190f3b5e"
+        },
+        "date": 1795735446738,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5226299999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.509, 0.518, 0.523, 0.530, 0.533 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.164574,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.054, 16.158, 16.165, 16.433, 16.651 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.024586,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.113, 101.514, 102.025, 102.126, 102.476 ms"
           }
         ]
       }
