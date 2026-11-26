@@ -1300,7 +1300,67 @@ pub fn at_start(root: &Path) -> Resolved {
 /// and **kept as accepted wherever it is stricter**, so a tightening holds until the person
 /// presses to loosen it, through a rolled-back `HEAD` or a broken file alike. Best effort: an
 /// acceptance that cannot be kept changes nothing this answers.
+///
+/// Resolved once per plane for one answer ([`resolved_once`]), never longer.
 fn resolved_in_the_app(root: &Path) -> Resolved {
+    if let Some(kept) =
+        RESOLVED_ONCE.with_borrow(|kept| kept.as_ref().and_then(|kept| kept.get(root).cloned()))
+    {
+        return kept;
+    }
+    let resolved = resolve_in_the_app(root);
+    RESOLVED_ONCE.with_borrow_mut(|kept| {
+        if let Some(kept) = kept {
+            kept.insert(root.to_path_buf(), resolved.clone());
+        }
+    });
+    resolved
+}
+
+/// Each project's policy as one answer resolved it in the app, by the plane; `None` outside one
+/// ([`resolved_once`]).
+type ResolvedOnce = Option<std::collections::HashMap<PathBuf, Resolved>>;
+
+thread_local! {
+    static RESOLVED_ONCE: std::cell::RefCell<ResolvedOnce> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// **`work`, with each project's policy resolved once** (H20): every [`in_force`] (and every
+/// other reader of [`resolved_in_the_app`]) in it gets what the first resolution found. A
+/// resolution runs git twice, reads the locks and verifies the sealed acceptance; the new-chat
+/// picker asked it once per persona, 44 s at 38 personas on a loaded Mac.
+///
+/// **For one answer, never longer**, as [`crate::personas::read_once`] (which opens it) is: the
+/// project's committed policy and the person's acceptance change, so what was resolved is
+/// dropped when `work` returns. The same strictness: a `HEAD` git could not read is strict for
+/// the whole answer and kept for none, and a tightening is kept as accepted by the first
+/// resolution, as it was before. A press in it is never answered from before the press
+/// ([`press`]).
+pub fn resolved_once<T>(work: impl FnOnce() -> T) -> T {
+    /// Drops what was resolved when the outermost answer ends, however it ends.
+    struct Answering(bool);
+    impl Drop for Answering {
+        fn drop(&mut self) {
+            if self.0 {
+                RESOLVED_ONCE.with_borrow_mut(|kept| *kept = None);
+            }
+        }
+    }
+    let _answering = Answering(RESOLVED_ONCE.with_borrow_mut(|kept| {
+        let outermost = kept.is_none();
+        if outermost {
+            *kept = Some(std::collections::HashMap::new());
+        }
+        outermost
+    }));
+    work()
+}
+
+/// [`resolved_in_the_app`], resolved now.
+fn resolve_in_the_app(root: &Path) -> Resolved {
+    #[cfg(test)]
+    RESOLUTIONS.with(|count| count.set(count.get() + 1));
     let accepted = accepted(root);
     let settings = Settings::read(root);
     let resolved =
@@ -1344,6 +1404,11 @@ pub fn press(root: &Path, shown: &str) -> std::io::Result<()> {
         ));
     }
     crate::sandbox::local::accept_policy(root, now.as_kept())?;
+    RESOLVED_ONCE.with_borrow_mut(|kept| {
+        if let Some(kept) = kept {
+            kept.remove(root);
+        }
+    });
     // One press for the level (the follow-up's item 1): where it accepts the team's off, the
     // team's own ask is answered with it, so nobody is asked twice.
     if now.level() == SandboxLevel::Off
@@ -1437,6 +1502,13 @@ thread_local! {
     static IN_THE_APP: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
     /// A test's stand-in for what the app answered this process ([`answered_by_the_app`]).
     static ANSWERED: std::cell::RefCell<Option<Resolved>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many times this thread has resolved a project's policy in the app (git, the locks
+    /// and the sealed acceptance), for a test of an answer that resolves it once.
+    pub(crate) static RESOLUTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// **A test's process is not the app** (or is again) for this thread.

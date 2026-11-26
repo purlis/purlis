@@ -409,6 +409,10 @@ thread_local! {
 /// a file the person and a chat edit, so what was read is dropped when `work` returns and the
 /// next answer reads it again. The reads are this thread's; an answer inside another shares
 /// them.
+///
+/// The project's policy is resolved once for the answer too
+/// ([`crate::enforcement::resolved_once`], H20): each persona's profile asks whether
+/// `[policy] tools` is enforced.
 pub fn read_once<T>(work: impl FnOnce() -> T) -> T {
     /// Drops what was read when the outermost answer ends, however it ends.
     struct Answering(bool);
@@ -426,7 +430,7 @@ pub fn read_once<T>(work: impl FnOnce() -> T) -> T {
         }
         outermost
     }));
-    work()
+    crate::enforcement::resolved_once(work)
 }
 
 /// The charter below the frontmatter, stripped — `persona._frontmatter`'s second answer.
