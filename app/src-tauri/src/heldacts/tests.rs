@@ -166,6 +166,15 @@ impl HeldContext for Context {
     }
 }
 
+/// The person's window, which shows every ask.
+struct Shown;
+
+impl purlis_core::heldact::AsksWindow for Shown {
+    fn raised(&self, _: u32, _: u64) -> Result<(), String> {
+        Ok(())
+    }
+}
+
 fn state() -> (HeldActState, Arc<Forge>) {
     let state = HeldActState::default();
     let forge = Arc::new(Forge::default());
@@ -176,7 +185,7 @@ fn state() -> (HeldActState, Arc<Forge>) {
 }
 
 fn ask_for_a_tag(state: &HeldActState) {
-    let sink = state.handoff().unwrap();
+    let sink = state.handoff(Arc::new(Shown)).unwrap();
     use purlis_core::forge::proxy::HeldSink;
     let said = sink.ask(
         &ChatId::new("chat-4"),
@@ -294,4 +303,28 @@ fn a_closed_chat_leaves_none_of_its_asks() {
     state.forget(4);
     assert!(state.waiting().is_empty());
     let _ = Asked::TooMany;
+}
+
+#[test]
+fn a_waiting_held_act_is_one_ask_in_the_registry_that_names_what_and_where_and_offers_no_answer_of_its_own()
+ {
+    let (state, _) = state();
+    ask_for_a_tag(&state);
+
+    let waiting = state.waiting();
+    let listed = crate::asking::held_act(&waiting[0]);
+
+    assert_eq!(listed.source, crate::asking::AskSource::HeldAct);
+    assert_eq!((listed.session, listed.ask.as_str()), (4, "held-act:1"));
+    assert_eq!(
+        listed.answer,
+        crate::asking::AnswerPath::HeldAct { ask: 1 },
+        "its card presses it, as it drew it"
+    );
+    assert!(listed.options.is_empty(), "{:?}", listed.options);
+    assert!(
+        listed.says.contains("tag") && listed.says.contains("acme/app"),
+        "{}",
+        listed.says
+    );
 }

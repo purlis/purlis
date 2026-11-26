@@ -115,8 +115,12 @@ function listedOnly<T>(record: Record<number, T>, listed: readonly HeldActShown[
   ) as Record<number, T>;
 }
 
-/** The asks of one project, as Asks draws them, each with its own two presses. */
-export function HeldActAsks({ plane }: { plane: PlaneId }) {
+/**
+ * The asks of one project, as Asks draws them, each with its own two presses. `listed` is the
+ * asks the registry lists in Asks' scope now, by number: only those are drawn, so the cards agree
+ * with what Asks counts. Without it, every one the core holds is.
+ */
+export function HeldActAsks({ plane, listed }: { plane: PlaneId; listed?: readonly number[] }) {
   const [acts, setActs] = useState<readonly HeldActShown[]>([]);
   const [firsts, setFirsts] = useState<Record<number, FirstPress>>({});
   const [refusals, setRefusals] = useState<Record<number, string>>({});
@@ -216,7 +220,8 @@ export function HeldActAsks({ plane }: { plane: PlaneId }) {
   };
 
   const endedSaid = Object.entries(ended);
-  if (acts.length === 0 && made === undefined && endedSaid.length === 0) return null;
+  const drawn = listed === undefined ? acts : acts.filter((act) => listed.includes(act.ask));
+  if (drawn.length === 0 && made === undefined && endedSaid.length === 0) return null;
   return (
     <>
       {made !== undefined && <p role="status">{made}</p>}
@@ -231,7 +236,7 @@ export function HeldActAsks({ plane }: { plane: PlaneId }) {
         </Notice>
       ))}
       <ul aria-label="Held forge acts" className="held-acts">
-        {acts.map((act) => (
+        {drawn.map((act) => (
           <HeldActRow
             key={act.ask}
             act={act}

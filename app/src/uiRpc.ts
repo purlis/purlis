@@ -3356,6 +3356,11 @@ export type AnswerPath =
  *  clone Notice's own command, and each clone it trusts leaves the ask (R-336).
  */
 { via: "trust-clones"; clones: CloneToVouch[] } | 
+/**
+ *  `press_held_act` twice and `dont_held_act`, for held act `ask`, from its own card in Asks,
+ *  which draws exactly what the core read and hands back its digest (#7685).
+ */
+{ via: "held-act"; ask: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -3874,7 +3879,13 @@ export type AskSource =
  *  **Pool setup's cluster is ready** (#4496): the admin the person asked has given what
  *  the install couldn't, and Pool setup goes on. Said once, about no chat.
  */
-"pool-setup";
+"pool-setup" | 
+/**
+ *  **A forge act a chat's route held** (ADR 0128 D8, #7685): a tag, a release, a push that
+ *  changes CI files or a fork. The chat did not do it: the person's two presses make it,
+ *  with their own sign-in, on its card in Asks (`HeldActAsks`).
+ */
+"held-act";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the

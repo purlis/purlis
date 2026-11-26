@@ -436,6 +436,12 @@ impl HeldActs {
         Ok(self.drop_ask(id).is_some())
     }
 
+    /// **Ask `id` is withdrawn, unanswered**: the person's window could not show it (#7685), so
+    /// it waits on nobody. Answers whether it was waiting.
+    pub fn withdraw(&self, id: u64) -> bool {
+        self.drop_ask(id).is_some()
+    }
+
     /// Chat `session` has closed: none of its held acts waits.
     pub fn forget(&self, session: u32) {
         let mut state = locked(&self.state);

@@ -4057,9 +4057,18 @@ impl Chats {
     /// chat asked the person to remove a workspace, or that question was answered): the window
     /// is told its asks, so it reads the registry again.
     pub fn asks_may_have_moved(&self) {
-        if let Some(moved) = lock(&self.asks_moved).clone() {
-            moved();
-        }
+        let _ = self.told_asks_moved();
+    }
+
+    /// [`Self::asks_may_have_moved`], answering whether anyone was told: nobody is until
+    /// [`Self::tell_asks_moved_to`] names who.
+    #[must_use]
+    pub fn told_asks_moved(&self) -> bool {
+        let Some(moved) = lock(&self.asks_moved).clone() else {
+            return false;
+        };
+        moved();
+        true
     }
 
     /// Who hears, from now on, each connection purlis's own proxy carries for a chat it wraps
