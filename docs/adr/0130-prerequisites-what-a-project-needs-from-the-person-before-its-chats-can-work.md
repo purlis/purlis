@@ -162,9 +162,14 @@ expired and a migration are later prerequisites, each with a decision of its own
   policy and the route's start no longer floor a loosening the person pressed (ADR 0125, as
   amended 2026-11-26). The chat's sandbox level stays as it started. Only the press lifts the
   floor: where the app does not answer, or its answer does not say the person pressed Accept
-  since the chat started, the floor still holds. The press is kept in memory only, so after the
-  app restarts a chat still running has its start's floor back until it restarts, and its Notice
-  says so.
+  since the chat started, the floor still holds.
+- **The press updates the chain's record** (R10): the app clears the inherited chain policy of
+  each running chat in this project the press lifts, in its own record, which no chat can write.
+  That is the press's one write. A chain through another project is not lifted.
+- **After an app restart**, the fact of the press is gone (it is kept in memory), so every chat
+  still running has its start's floor back until it restarts, and its Notice says so. A dispatched
+  chat the press lifted stays lifted from its chain, because its record was updated, and its
+  restart starts under the accepted policy.
 - **These start at once, under the policy in force, and do not wait:** a chat restored at open, a
   task a running chat dispatches, a chat a running chat opens with `purlis handoff` (it starts
   under the policy in force, strict mode under Broken, as a dispatched task does), and a scheduled
@@ -224,7 +229,8 @@ not read for its own reason keeps today's sentence.
   2026-11-26).
 - A running chat's guards, its chain and its forge route follow a pressed Accept from its next
   step, its sandbox level as it started (ADR 0125's amendment of 2026-11-26), so the Notice after
-  Accept says what is true.
+  Accept says what is true. The press clears the chain's record of each chat it lifts, its one
+  write (`app/reopen.json`, Clone state).
 - ADR 0120 documents a second code beside 70: 75 for a start a prerequisite held (its amendment of
   2026-11-26).
 - `ProjectPolicyNotice` keeps only what is not a prerequisite: the policy purlis could not read

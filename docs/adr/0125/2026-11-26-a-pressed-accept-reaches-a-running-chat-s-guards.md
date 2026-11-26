@@ -1,7 +1,7 @@
 # Amended 2026-11-26: a pressed Accept reaches a running chat's guards
 
 Amends [ADR 0125](../0125-blocks-are-off-by-default-and-opt-in-per-family.md) §3, by the person's
-ruling R6 of 2026-11-26 on the prerequisite design
+rulings R6 and R10 of 2026-11-26 on the prerequisite design
 ([ADR 0130](../0130-prerequisites-what-a-project-needs-from-the-person-before-its-chats-can-work.md)).
 
 ## What changes
@@ -12,19 +12,20 @@ the chat started. So a loosening the person pressed reached a running chat only 
 Two more floors are drawn at the same start, and held a running chat the same way:
 
 - **the chain's**: the strictest policy along the chat's dispatch chain, which the app recorded
-  when the chat was dispatched (`reopen::HandedFrom::policy`) and applies to its answer
-  (`enforcement::Resolved::for_chat`, in the app's `Ask::Policy`);
+  when the chat was dispatched (`reopen::HandedFrom::policy`) and applies wherever it judges for
+  that chat (`enforcement::Resolved::for_chat`): its hook's answer, what a task it dispatches
+  inherits, its brokered commits, its vault checks and its masking;
 - **the forge route's**: what the chat started under, which the route takes when it is made
   (`forge::mergestance::PolicyMergeStance`, `merge_mode`'s `started`).
 
 **Once the person presses Accept in the window, a running chat follows the accepted policy from
 its next step, in all three places.** Its hook-judged families, the policy a task it dispatches
-starts with, and its forge route's `guards.merge` all run the accepted policy, so the three never
-disagree. The hook asks the app, which knows the press; for a loosening the person pressed after
-the chat started, `PURLIS_POLICY` no longer floors the app's answer, the chain's recorded policy
-no longer floors it where every chat above it is in this project by the app's record, and the
-route's `started` no longer floors its `merge_mode`. These are the only cases where the start's
-resolution does not floor it.
+starts with, and its forge route's `guards.merge` all run the accepted policy, so within one run
+of the app the three never disagree. The hook asks the app, which knows the press; for a loosening
+the person pressed after the chat started, `PURLIS_POLICY` no longer floors the app's answer, the
+chain's recorded policy no longer floors it where every chat above it is in this project by the
+app's record, and the route's `started` no longer floors its `merge_mode`. These are the only
+cases where the start's resolution does not floor it.
 
 **Only the press lifts the floor, and it fails closed.** The app's Policy answer says whether the
 person pressed Accept for this project since the asking chat started, by the app's own record of
@@ -32,9 +33,19 @@ both; only then does the hook, the chain and the route run the answer without th
 An answer without it (an older app) keeps the floor. A chain the app cannot place wholly in this
 project keeps its floor.
 
-**The press is kept in the app's memory only.** After the app restarts, chats still running in
-the session host get their start's floor back until they restart. This fails closed, and the
-window's Notice for such a chat says so.
+**The press updates the chain's record (R10).** When the person presses Accept, the app clears the
+strict inherited chain policy (`HandedFrom::policy`, `app/reopen.json`'s `chats[].from.policy`) of
+each running chat in this project that the press lifts. It is the one write the press makes, and
+only the person's press causes it. The record is the app's, and no chat can write it. So a
+dispatched chat follows the accepted policy now, after its own restart (its start resolves with no
+chain to floor it), and after an app restart. A chain through another project is not lifted, and
+its record is untouched.
+
+**The fact of the press is kept in the app's memory only.** After the app restarts, every chat
+still running gets its start's floor (`PURLIS_POLICY`, and the route's `started`) back until it
+restarts, and the window's Notice for such a chat says so. A dispatched chat the press lifted stays
+lifted from its chain: its record was updated, so its chain floors it nowhere, and its restart
+starts under the accepted policy.
 
 ## What does not change
 
@@ -47,7 +58,8 @@ window's Notice for such a chat says so.
 - **It fails closed.** Where the app does not answer, the hook runs every family enforced, and
   `PURLIS_POLICY` still floors whatever it runs.
 - A tightening still applies at once, with no press.
-- Nothing new is written to disk: the press is a fact of the app's run (ADR 0069 needs no tier).
+- The format of `app/reopen.json` does not change: the press empties a field it already has
+  (Clone state, ADR 0069; its row in `docs/plane-format.md` says so).
 
 ## Why
 
@@ -57,8 +69,11 @@ any chat already running: an Accept made after an app update recovered nothing u
 was restarted. Lifting the hook's floor alone would have left a dispatched task and the forge route
 strict while the hook ran the accepted policy, so the chat would be told two things at once.
 
-Keeping the press on disk would let a file loosen a running chat; keeping it in memory means a
-restart can only put the stricter floor back.
+Keeping the fact of the press on disk would let a file loosen a running chat's start floor; keeping
+it in memory means an app restart can only put that floor back. The chain's record is different: a
+dispatched chat restarts from it, so leaving it strict would put a chain the person lifted back on
+every restart of the task. It is the app's own record, written only on the press, so no file a
+chat can write loosens anything.
 
 ## Consequences
 
@@ -67,5 +82,7 @@ restart can only put the stricter floor back.
   `docs/policy.md`'s "the chat's next start runs it that way" change with the code (#7729).
 - `hookwire`'s Policy answer gains the fact of the press; an app that does not send it is read as
   no press.
+- `docs/plane-format.md`'s `chats[].from.policy` row names the press as its one writer after the
+  dispatch.
 - A runner chat follows its starting machine's Accept the same way, once the app answers for it
   (#7722).
