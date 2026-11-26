@@ -424,6 +424,17 @@ struct Lexer {
     before_esc: (bool, isize),
     /// The raw text of the `$'…'` being read, escapes still in it.
     ansi: Vec<char>,
+    /// How many unquoted `{` of a parameter expansion (`${t%%|*}`) the word is inside. While it
+    /// is more than none, a blank or an operator character is part of the word, as the shell
+    /// reads it (#7709).
+    braces: usize,
+    /// Where the outermost `${` of the word was opened: the stream's cursor, the characters
+    /// pushed back, the token's length and its `bare`, `start` and quoting just past the `{`.
+    /// A `${` that does not close, or that holds a substitution, is read again from there the
+    /// way it always was.
+    brace_mark: Option<(usize, Vec<char>, usize, bool, isize, bool)>,
+    /// Whether this word's `${` was read again that way, so that no `${` in it is one word.
+    braces_off: bool,
 }
 
 impl Lexer {
@@ -443,6 +454,9 @@ impl Lexer {
             dollars: 0,
             before_esc: (true, -1),
             ansi: Vec::new(),
+            braces: 0,
+            brace_mark: None,
+            braces_off: false,
         }
     }
 
@@ -472,6 +486,23 @@ impl Lexer {
         self.state = value;
     }
 
+    /// Whether the `{` just read opens a parameter expansion (#7709): it follows a `$` the word
+    /// holds unquoted and unescaped, and the next character begins one, a name, a digit or one of
+    /// `#?@*!$-`. A bash 5.3 `${ …; }` or `${| …; }`, which runs a command, is left to the
+    /// reading it always had, which splits it at its operators.
+    fn opens_a_parameter_expansion(&self) -> bool {
+        if !self.cfg.bash_quoting || self.braces_off || self.dollars.is_multiple_of(2) {
+            return false;
+        }
+        let next = self
+            .pushback_chars
+            .last()
+            .or_else(|| self.instream.s.get(self.instream.i));
+        next.is_some_and(|c| {
+            c.is_ascii_alphanumeric() || matches!(c, '_' | '#' | '?' | '@' | '*' | '!' | '$' | '-')
+        })
+    }
+
     /// A shell begins a comment at `#` only where a WORD BEGINS. `shlex` honours it mid-word
     /// too and swallows the rest of the line, so `echo hi#; cat <vault>` — which runs the `cat`
     /// in bash — lexed as a lone `echo hi` and every later command became invisible.
@@ -489,6 +520,9 @@ impl Lexer {
         self.start = -1;
         self.end = -1;
         self.dollars = 0;
+        self.braces = 0;
+        self.brace_mark = None;
+        self.braces_off = false;
         let mut quoted = false;
         let mut escapedstate = St::Space;
         loop {
@@ -600,10 +634,45 @@ impl Lexer {
                     }
                 }
                 St::Word | St::Punct => {
+                    // A `${` that never closes, or that holds a substitution, is read from its
+                    // `{` on as it always was: split at its operators, so that the commands a
+                    // `$(…)`, a `` `…` ``, a `<(…)` or a zsh `=(…)` in it runs stay segments
+                    // of their own, and an unclosed one reads as the recorded answers read it.
+                    if self.state == St::Word
+                        && self.braces > 0
+                        && nextchar.is_none_or(|c| matches!(c, '(' | '`'))
+                        && let Some((at, pushed, len, bare, start, was_quoted)) =
+                            self.brace_mark.take()
+                    {
+                        self.instream.i = at;
+                        self.pushback_chars = pushed;
+                        self.token.truncate(len);
+                        (self.bare, self.start, quoted) = (bare, start, was_quoted);
+                        self.braces = 0;
+                        self.braces_off = true;
+                        self.dollars = 0;
+                        continue;
+                    }
                     let Some(c) = nextchar else {
                         self.set_state(St::Eof);
                         break;
                     };
+                    if self.state == St::Word
+                        && self.braces > 0
+                        && !QUOTES.contains(c)
+                        && c != ESCAPE
+                    {
+                        // Inside `${…}` the word runs to the `}` that closes it, past blanks and
+                        // operator characters, and bash counts each `{` in it (`${x:-{a}}`).
+                        match c {
+                            '{' => self.braces += 1,
+                            '}' => self.braces -= 1,
+                            _ => {}
+                        }
+                        self.dollars = if c == '$' { self.dollars + 1 } else { 0 };
+                        self.token.push(c);
+                        continue;
+                    }
                     if self.cfg.whitespace.contains(c) {
                         self.set_state(St::Space);
                         if !self.token.is_empty() || quoted {
@@ -651,8 +720,20 @@ impl Lexer {
                         || QUOTES.contains(c)
                         || !self.cfg.punctuation.contains(c)
                     {
+                        let opens = c == '{' && self.opens_a_parameter_expansion();
                         self.dollars = if c == '$' { self.dollars + 1 } else { 0 };
                         self.token.push(c);
+                        if opens {
+                            self.braces = 1;
+                            self.brace_mark = Some((
+                                self.instream.i,
+                                self.pushback_chars.clone(),
+                                self.token.len(),
+                                self.bare,
+                                self.start,
+                                quoted,
+                            ));
+                        }
                     } else {
                         self.pushback_chars.push(c);
                         self.set_state(St::Space);

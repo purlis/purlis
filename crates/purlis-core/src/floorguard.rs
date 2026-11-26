@@ -683,6 +683,10 @@ fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // A shell (or a program the shell builds, read as one) handed a process substitution reads
     // what its commands print as its script: `bash <(echo gh pr merge 12)`, `$SHELL < <(…)`.
     // Each body is read for what it could print, and only a merge among it is refused (round 7).
+    // What it prints is its words only for a program that prints them (`echo`, `printf`, a
+    // here-string): those words are read as a shell would read the line, the speculative checks
+    // too. Any other program's words lost their quoting in the join, so they are read for a
+    // literal merge alone: `jq -r 'sort_by(.iid) | .[]' f.json` prints no program `.[]` (#7709).
     if cmd.contains("<(") && segments.iter().any(|toks| hands_a_script_to_a_shell(toks)) {
         let (bodies, _) = substitution_bodies(cmd, true);
         if nested_too_deep() {
@@ -690,6 +694,7 @@ fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         }
         for body in bodies {
             for toks in commands_of(&body) {
+                let _hedge = (!prints_its_words(&toks)).then(ReadingAHedge::on);
                 for printed in fed_lines(&toks) {
                     if let Some(said) = inner_floor(&printed) {
                         return Some(said);
@@ -2625,6 +2630,14 @@ fn commands_of(line: &str) -> Vec<Vec<String>> {
 fn hands_a_script_to_a_shell(toks: &[String]) -> bool {
     let (prog, ..) = shellwrap::split_env(toks);
     shellwrap::runs_a_script_file(&prog) || prog.contains(['$', '`'])
+}
+
+/// Whether what a segment prints is its own words, read as a line (#7709): `echo`, `printf` and
+/// zsh's `print`, or a program handed a here-string, whose text the line spells out.
+fn prints_its_words(toks: &[String]) -> bool {
+    let (prog, _env, argv) = shellwrap::split_env(toks);
+    matches!(base_lower(&prog).as_str(), "echo" | "printf" | "print")
+        || argv.iter().any(|w| w == "<<<")
 }
 
 /// What a segment could print into a shell reading stdin: its words as one line, with and

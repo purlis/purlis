@@ -57,8 +57,14 @@ fn a_pipe_inside_a_parameter_expansion_is_part_of_the_word() {
         segment_argv("t='a|b'; f=${t%%|*}; echo \"$f\""),
         [vec!["t=a|b"], vec!["f=${t%%|*}"], vec!["echo", "$f"]]
     );
-    assert_eq!(segment_argv("echo ${x:-a b} | wc"), [vec!["echo", "${x:-a b}"], vec!["wc"]]);
-    assert_eq!(segment_argv("echo ${x:-{a}}; ls"), [vec!["echo", "${x:-{a}}"], vec!["ls"]]);
+    assert_eq!(
+        segment_argv("echo ${x:-a b} | wc"),
+        [vec!["echo", "${x:-a b}"], vec!["wc"]]
+    );
+    assert_eq!(
+        segment_argv("echo ${x:-{a}}; ls"),
+        [vec!["echo", "${x:-{a}}"], vec!["ls"]]
+    );
     for cmd in [
         "t=a; f=${t%%|*}",
         "f=${t%%|*}; echo $f",
