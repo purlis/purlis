@@ -1259,11 +1259,12 @@ export const commands = {
 	/**  The chats of `plane` that are hibernated: what the window reads its rows by as it opens. */
 	hibernatedChats: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("hibernated_chats", { plane })),
 	/**
-	 *  Hibernate on a chat's row (SC-4a, #7630): the person's act. Refused, in a sentence that
-	 *  says why and what to do, where the chat may not be hibernated; otherwise its program ends and
-	 *  the window is told. The window's alone (`WINDOW_ONLY`).
+	 *  Hibernate on a chat's row (SC-4a, #7630): the person's act. Where the chat may not be
+	 *  hibernated now it is answered why, as a typed reason the window words (SC-4c, #7632);
+	 *  where the act cannot be done, in a sentence. Otherwise its program ends and the window is
+	 *  told. The window's alone (`WINDOW_ONLY`).
 	 */
-	hibernateChat: (plane: PlaneId, session: number) => typedError<null, string>(__TAURI_INVOKE("hibernate_chat", { plane, session })),
+	hibernateChat: (plane: PlaneId, session: number) => typedError<Hibernation, string>(__TAURI_INVOKE("hibernate_chat", { plane, session })),
 	/**
 	 *  Chat `session`, where its program ended with its session host and the person has not put
 	 *  it away.
@@ -11671,6 +11672,13 @@ export type HeldRowShown = {
 	label: string,
 	value: string,
 };
+
+/**  What the window is answered when it asks for a chat's hibernation. */
+export type Hibernation = 
+/**  Its program ended as a hibernation. */
+{ outcome: "hibernated" } | 
+/**  It may not be hibernated now, for this reason. */
+{ outcome: "refused"; why: Why };
 
 /**
  *  The project's hosts as they changed (`sandbox::local::HostsChange`): each spelled as the
@@ -22166,6 +22174,13 @@ export type WhatChanged = {
 	 */
 	sinceTurnEnded: boolean,
 };
+
+/**
+ *  **Why a chat was not hibernated**, as the window is told it: the core's
+ *  [`NotRested`], one value for one reason, whose words are the window's
+ *  (`app/src/hibernationWords.ts`, `docs/ui-copy.md`).
+ */
+export type Why = "working" | "asking" | "paused" | "hibernated" | "ended" | "cannot_resume" | "cannot_see_its_own_work" | "own_work" | "line_coming" | "task_open" | "finished_task_open" | "report_owed" | "is_a_task" | "observed" | "on_a_runner" | "child_run" | "looked_at";
 
 /**
  *  A tint holds `token`, tinted, at least `distance` from `from` in OKLab, `from` as the tint

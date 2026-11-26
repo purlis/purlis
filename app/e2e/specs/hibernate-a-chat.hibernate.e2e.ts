@@ -7,6 +7,7 @@ import { fromThePalette, pressAndStart } from "../opening.js";
 import { chatsRunning, endTheChatsStartedSince, type Running } from "../chatsLeft.js";
 import { READY, SCENARIO_CONVERSATION, STARTED_WITH } from "../harness.js";
 import { minimiseNoticesExpandedHere } from "../reach.js";
+import { NOT_HIBERNATED } from "../../src/hibernationWords.ts";
 
 /**
  * **Hibernate a chat from its row, then Resume it** (SC-4a, #7630), through the real binary, the
@@ -118,12 +119,13 @@ describe("hibernating a chat and resuming it", () => {
     expect(await theStart(startsBefore + 2)).toContain(`-s ${SCENARIO_CONVERSATION}`);
   });
 
-  it("refuses to hibernate a chat that is working, and says why", async () => {
+  it("refuses to hibernate a chat that is working, and says why in the reason's words", async () => {
     // Woken, its turn has begun and not ended: the stand-in reports its prompt as it starts.
     await fromThePalette("Hibernate chat");
 
+    // The core answers a typed reason (SC-4c, #7632), and the window says it in its own words.
     const refused = await shown(REFUSED, "no refusal was said for a chat that is working");
-    await expect(refused).toHaveText(expect.stringContaining("this chat is working"));
+    await expect(refused).toHaveText(expect.stringContaining(NOT_HIBERNATED.working));
     expect(await $(BAND).isExisting()).toBe(false);
     // Its Dismiss is an icon, named by its label, as every pane band's is.
     await (await refused.$('button[aria-label="Dismiss"]')).click();

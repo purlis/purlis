@@ -410,6 +410,12 @@ impl HarnessAdapter for ClaudeCode {
         true
     }
 
+    /// Yes: its `Stop` hook says what the turn left running of its own (ADR 0068, amended
+    /// 2026-11-08), read into [`crate::ownwork::Said`].
+    fn reports_its_own_work(&self) -> bool {
+        true
+    }
+
     /// Yes: its mode is read from the hook purlis armed (R-095, T1-17).
     fn reports_a_mode_purlis_can_check(&self) -> bool {
         true
