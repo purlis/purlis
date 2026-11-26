@@ -132,6 +132,42 @@ export async function pickTheMachine(name: string, timeout = 30_000): Promise<vo
 }
 
 /**
+ * **Gives the Pool step the image `image`, by its digest, as a team's own** (#7780): where the
+ * build offers an image of its own (the scenario build does, `PURLIS_E2E_REMOTE_POOL_IMAGE`), the
+ * Image box is hidden until **My team's own image** is chosen under Options. That choice is a radio
+ * whose input React Aria draws hidden, so its row is pressed, as `pickTheMachine` presses a
+ * machine's.
+ */
+export async function typeTheTeamsImage(image: string, timeout = 30_000): Promise<void> {
+  const box = await $("aria/Image, by digest");
+  if (!(await box.isDisplayed().catch(() => false))) {
+    const options = await $("aria/Options");
+    if ((await options.getAttribute("aria-expanded")) !== "true") await options.click();
+    await browser
+      .waitUntil(
+        async () =>
+          browser.execute(() => {
+            const row = Array.from(document.querySelectorAll(".pool-setup-page label")).find(
+              (one) => (one.textContent ?? "").trim().startsWith("My team's own image"),
+            );
+            const radio = row?.querySelector<HTMLInputElement>('input[type="radio"]');
+            if (!row || !radio) return false;
+            if (!radio.checked) (row as HTMLElement).click();
+            return radio.checked;
+          }),
+        { timeout, interval: 500 },
+      )
+      .catch(async () => {
+        throw new Error(`no My team's own image to choose: ${await theStepSays()}`);
+      });
+  }
+  await box.waitForDisplayed({ timeout }).catch(async () => {
+    throw new Error(`no Image, by digest to type in: ${await theStepSays()}`);
+  });
+  await box.setValue(image);
+}
+
+/**
  * **Trusts the machine Connect just read, on the merged page** (#7191): where Connect and Pool are
  * one, the check of the key (or of the CA, over TLS) sits beside "Name the pool" and "Who can sign
  * in to <host>?". The pool is named there, the machine is trusted with **Trust this machine only**,
@@ -208,14 +244,7 @@ export async function addAndTryARemoteDockerPool(of: {
     const name = await $("aria/Name");
     await name.waitForDisplayed();
     await name.setValue(of.pool);
-    const image = await $("aria/Image, by digest");
-    if (!(await image.isDisplayed().catch(() => false))) {
-      const options = await $("aria/Options");
-      if ((await options.getAttribute("aria-expanded")) !== "true") await options.click();
-      await press("My team's own image");
-    }
-    await image.waitForDisplayed();
-    await image.setValue(of.image);
+    await typeTheTeamsImage(of.image);
     await press("Create the pool");
   }
 
