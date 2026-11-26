@@ -264,11 +264,27 @@ pub fn unread_said(root: &Path) -> String {
         .unwrap_or(&path)
         .display()
         .to_string();
+    let anchor = crate::sandbox::local::anchor_key(root);
+    let replaced = crate::secrets::seal::replaced();
+    if replaced.vouches(&ANCHOR_KINDS, &anchor) {
+        return format!(
+            "purlis made a new seal key on this machine, so it cannot vouch for the list of \
+             pairs you said never to ({shown} in this project), and no dispatch grant counts \
+             until you review it. Check that file, then accept the project's policy again in \
+             Settings › Project › Policy: purlis keeps every pair it holds."
+        );
+    }
+    let again = if replaced.lists(&ANCHOR_KINDS, &anchor) {
+        " If purlis made a new seal key on this machine, check that file, then accept the \
+         project's policy again in Settings › Project › Policy to keep every pair it holds."
+    } else {
+        ""
+    };
     format!(
         "purlis could not read the list of pairs you said never to ({shown} in this project), \
          or it was changed or removed by something other than purlis's app, so it changed \
          nothing there and no dispatch grant counts until it reads. Restore that file as \
-         purlis last wrote it."
+         purlis last wrote it.{again}"
     )
 }
 
@@ -319,6 +335,42 @@ const NEVER: &str = "never";
 /// The kind the file's whole-text seal was kept as by the build before the set (#6992): read
 /// once, at the import, so a file a chat changed since then is not imported as it stands.
 const WHOLE_KIND: &str = "dispatch-nevers";
+
+/// **The kinds of the keyring's anchors of a plane's nevers**: its set's
+/// ([`crate::secrets::sealed_set::anchor_kind`] of [`STORE`]) and the whole file's from before
+/// the set. A new seal key keeps the planes they anchored on its list (#7714, F3 of #7734's
+/// review).
+pub const ANCHOR_KINDS: [&str; 2] = ["dispatch-nevers-live", WHOLE_KIND];
+
+/// **Whether the plane at `root` had its nevers anchored by a seal key purlis has replaced
+/// since**, and not sealed again (F3 of #7734's review): they read as [`Nevers::Unread`], a file
+/// wiped since included, until the person accepts the project's policy again
+/// ([`keep_after_a_new_key`]). Only in the app.
+pub fn listed_for_a_new_key(root: &Path) -> bool {
+    crate::secrets::sealed_set::decides()
+        && crate::secrets::seal::replaced()
+            .lists(&ANCHOR_KINDS, &crate::sandbox::local::anchor_key(root))
+}
+
+/// **The nevers of a plane a replaced key anchored, sealed with the key of now as they stand**
+/// (F3 of #7734's review): the person's Accept on that project ([`crate::enforcement::press`]),
+/// after the window told them to review them. Nevers only tighten, so each the file holds is
+/// kept; a file wiped since keeps none, which the person was told to look at first. Then the
+/// plane leaves the list. A file that does not read is left as it is, still unread.
+pub(crate) fn keep_after_a_new_key(root: &Path) -> io::Result<()> {
+    if !listed_for_a_new_key(root) || whole_on_disk(root).is_none() {
+        return Ok(());
+    }
+    import(root)?;
+    let anchor = crate::sandbox::local::anchor_key(root);
+    if crate::secrets::seal::unlist_replaced(&ANCHOR_KINDS, &anchor) {
+        Ok(())
+    } else {
+        Err(io::Error::other(
+            "the project was not taken off the list of the old seal key",
+        ))
+    }
+}
 
 /// The sealed set the file holds: its counter and live list, and each entry the app sealed.
 fn set_of(whole: &Whole, entries: &[Entry]) -> crate::secrets::sealed_set::Set {
@@ -413,6 +465,12 @@ fn sealed_standing(root: &Path) -> Sealed {
     use crate::secrets::sealed_set::{Set, Standing};
     if !crate::secrets::sealed_set::decides() {
         return Sealed::Holds;
+    }
+    // Nevers a replaced key anchored (F3 of #7734's review): the file as it stands, or none at
+    // all where it was wiped, is not what the person last sealed, so neither counts until they
+    // accept again.
+    if listed_for_a_new_key(root) {
+        return Sealed::Unread;
     }
     // An acceptance of the project's `[policy]` that was kept and is not here now (the M75
     // review): the nevers it may have carried are unknown, so every dispatch across personas is

@@ -11352,6 +11352,12 @@ export type PolicyState = {
 	 */
 	new_key: boolean,
 	/**
+	 *  Whether this project's never-dispatch list was anchored by a seal key purlis has replaced
+	 *  since (#7714): it reads as unread until the person reviews it and presses Accept, which
+	 *  keeps every pair it holds.
+	 */
+	nevers_new_key: boolean,
+	/**
 	 *  The digest of the committed text this was read from: what Accept names, so a press on a
 	 *  file that changed since it was shown accepts nothing.
 	 */

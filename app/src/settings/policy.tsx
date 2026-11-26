@@ -8,6 +8,7 @@ import { SETTINGS, usePlaneChanged } from "../planeChanged";
 import { holdPolicy, modeSaid, templateSaid } from "../projectPolicy";
 import {
   mayAcceptPolicy,
+  NEVERS_NEW_KEY_SAID,
   POLICY_ACCEPT_MEANS,
   POLICY_UNSEALED_SAID,
   waitingSaid,
@@ -130,10 +131,11 @@ export function PolicyStanding({
               family is enforced.
             </p>
           )}
-          {(state.waiting.length > 0 || state.unsealed) && (
+          {(state.waiting.length > 0 || state.unsealed || state.nevers_new_key) && (
             <>
               <p>
                 {state.unsealed && `${POLICY_UNSEALED_SAID} `}
+                {state.nevers_new_key && `${NEVERS_NEW_KEY_SAID} `}
                 {state.waiting.length > 0 &&
                   `The project loosened its policy: ${waitingSaid(state)}. ${POLICY_ACCEPT_MEANS}`}
                 {!canAccept && " Accept it from purlis's own window on this machine."}

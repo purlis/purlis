@@ -1484,10 +1484,7 @@ fn a_press_with_a_seal_key_another_program_made_says_how_to_recover_and_then_acc
         !why.contains("earlier build"),
         "never claims the origin: {why}"
     );
-    assert!(
-        why.contains("security delete-generic-password -s purlis-seal"),
-        "{why}"
-    );
+    assert!(why.contains("Keychain Access"), "{why}");
     press(root.path(), &digest_of(root.path())).expect("accepted once the item is gone");
     assert!(!broken(root.path()));
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
@@ -1812,13 +1809,10 @@ fn a_new_key_press_macos_refuses_says_the_manual_step_and_accepts_nothing() {
         .to_string();
     crate::secrets::seal::set_renew_refused_for_this_test(false);
     assert!(
-        why.contains("macOS did not let purlis replace its key, so nothing was accepted"),
+        why.contains("macOS did not let purlis replace its old key, so nothing was accepted"),
         "{why}"
     );
-    assert!(
-        why.contains("security delete-generic-password -s purlis-seal"),
-        "{why}"
-    );
+    assert!(why.contains("Keychain Access"), "{why}");
     assert!(crate::secrets::seal::key_is_foreign());
     assert!(broken(root.path()));
     // The press can be made again, and this time macOS allows it.
@@ -1907,11 +1901,12 @@ fn a_list_of_replaced_planes_whose_seal_does_not_hold_gives_no_new_key_words() {
     crate::secrets::seal::set_foreign_for_this_test(true);
     press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
     assert!(standing(other.path()).new_key, "the list holds");
-    crate::secrets::seal::set_replaced_for_this_test(&format!(
-        "{}\n{}",
-        "00".repeat(32),
-        anchor_key(other.path())
-    ));
+    crate::secrets::seal::set_replaced_for_this_test(
+        &crate::secrets::seal::a_foreign_list_for_this_test(&[format!(
+            "policy-accepted:{}",
+            anchor_key(other.path())
+        )]),
+    );
     assert!(
         !standing(other.path()).new_key,
         "a list that does not hold says nothing"
@@ -1929,7 +1924,9 @@ fn a_project_accepted_again_after_the_new_key_is_taken_off_the_list() {
     let other = accepted_plane("[policy]\ntemplate = \"open\"\n");
     crate::secrets::seal::set_foreign_for_this_test(true);
     press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
-    assert!(crate::secrets::seal::replaced().holds_for(&anchor_key(other.path())));
+    assert!(
+        crate::secrets::seal::replaced().vouches(&["policy-accepted"], &anchor_key(other.path()))
+    );
     press(other.path(), &digest_of(other.path())).expect("accepted again");
     assert_eq!(
         crate::secrets::seal::replaced(),
@@ -1960,8 +1957,14 @@ fn a_second_new_key_adds_to_the_planes_the_first_listed() {
     let again = plane("[policy]\ntemplate = \"team\"\n", None);
     press_with_new_key(again.path(), &digest_of(again.path())).expect("a second new key");
     let listed = crate::secrets::seal::replaced();
-    assert!(listed.holds_for(&anchor_key(first.path())), "{listed:?}");
-    assert!(listed.holds_for(&anchor_key(here.path())), "{listed:?}");
+    assert!(
+        listed.vouches(&["policy-accepted"], &anchor_key(first.path())),
+        "{listed:?}"
+    );
+    assert!(
+        listed.vouches(&["policy-accepted"], &anchor_key(here.path())),
+        "{listed:?}"
+    );
     assert!(standing(first.path()).new_key && standing(here.path()).new_key);
 }
 
@@ -2034,4 +2037,93 @@ fn accepting_a_project_again_after_a_new_key_seals_its_nevers_as_they_stand() {
         crate::dispatchnever::Nevers::Read(vec![("steward".to_owned(), "devops".to_owned())])
     );
     assert!(!standing(other.path()).nevers_new_key);
+}
+
+#[test]
+fn a_new_key_press_refused_part_way_after_an_update_and_pressed_again_lists_every_project() {
+    // F2 and F4 of #7734's review, on the press's whole body: every item is the old build's
+    // after an update, and macOS refuses one anchor's delete after another anchor went. No
+    // project reads as never accepted, or its nevers as none, and the next press lists each.
+    use crate::sandbox::local::{PolicyAccepted, anchor_key, policy_accepted_record};
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let mut others = [
+        accepted_plane("[policy]\ntemplate = \"strict\"\n"),
+        accepted_plane("[policy]\ntemplate = \"strict\"\n"),
+    ];
+    others.sort_by_key(|one| anchor_key(one.path()));
+    let nevers = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(nevers.path());
+    crate::secrets::seal::an_update_for_this_test();
+    crate::secrets::seal::set_delete_refused_for_this_test(&format!(
+        "policy-accepted:{}",
+        anchor_key(others[1].path())
+    ));
+    let why = press_with_new_key(here.path(), &digest_of(here.path()))
+        .expect_err("refused part way")
+        .to_string();
+    assert!(
+        why.contains("macOS did not let purlis replace its old key"),
+        "{why}"
+    );
+    assert!(crate::secrets::seal::key_is_foreign());
+    for other in &others {
+        assert_ne!(policy_accepted_record(other.path()), PolicyAccepted::Never);
+    }
+    assert_eq!(
+        crate::dispatchnever::read(nevers.path()),
+        crate::dispatchnever::Nevers::Unread
+    );
+    crate::secrets::seal::set_renew_refused_for_this_test(false);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("pressed again");
+    for other in &others {
+        assert_eq!(policy_accepted_record(other.path()), PolicyAccepted::Broken);
+        assert!(standing(other.path()).new_key);
+    }
+    assert!(standing(nevers.path()).nevers_new_key);
+    assert!(
+        crate::dispatchnever::unread_said(nevers.path()).contains("purlis made a new seal key")
+    );
+}
+
+#[test]
+fn a_plane_only_a_foreign_list_names_stays_broken_without_the_new_key_words() {
+    // F5 of #7734's review: a list before the press that holds under no key of the app's is
+    // carried, so its plane never reads as never accepted, and is never vouched for.
+    use crate::sandbox::local::{PolicyAccepted, anchor_key, policy_accepted_record};
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let ghost = accepted_plane("[policy]\ntemplate = \"strict\"\n");
+    std::fs::remove_file(crate::sandbox::local::path(ghost.path())).expect("record gone");
+    crate::secrets::seal::forget_kept_for_this_test();
+    crate::secrets::seal::set_replaced_for_this_test(
+        &crate::secrets::seal::a_foreign_list_for_this_test(&[format!(
+            "policy-accepted:{}",
+            anchor_key(ghost.path())
+        )]),
+    );
+    crate::secrets::seal::an_update_for_this_test();
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    assert_eq!(policy_accepted_record(ghost.path()), PolicyAccepted::Broken);
+    assert!(!standing(ghost.path()).new_key, "never vouched for");
+}
+
+#[test]
+fn accepting_a_plane_a_list_that_does_not_hold_names_takes_it_off_that_list() {
+    // F6 of #7734's review: the list is cleaned up even where its seal does not hold. Its last
+    // entry gone, the item goes with it.
+    use crate::sandbox::local::anchor_key;
+    let _home = OwnConfigHome::new();
+    let other = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::set_replaced_for_this_test(
+        &crate::secrets::seal::a_foreign_list_for_this_test(&[format!(
+            "policy-accepted:{}",
+            anchor_key(other.path())
+        )]),
+    );
+    assert!(
+        crate::secrets::seal::replaced().lists(&["policy-accepted"], &anchor_key(other.path()))
+    );
+    press(other.path(), &digest_of(other.path())).expect("accepted");
+    assert!(crate::secrets::seal::replaced().is_empty());
 }

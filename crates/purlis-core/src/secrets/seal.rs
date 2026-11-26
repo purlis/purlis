@@ -189,7 +189,10 @@ fn found(again: bool) -> Found {
 fn key() -> Option<zeroize::Zeroizing<Vec<u8>>> {
     #[cfg(test)]
     {
-        if TEST_FOREIGN.with(std::cell::Cell::get) || TEST_NO_KEYRING.with(std::cell::Cell::get) {
+        if TEST_FOREIGN.with(std::cell::Cell::get)
+            || TEST_NO_KEYRING.with(std::cell::Cell::get)
+            || TEST_KEY_GONE.with(std::cell::Cell::get)
+        {
             return None;
         }
         TEST_KEY.with(|held| held.borrow().clone().map(zeroize::Zeroizing::new))
@@ -224,79 +227,89 @@ pub fn key_is_foreign() -> bool {
 }
 
 /// What Accept says where another program made the seal's key item (#7073, #7714). It never
-/// claims who made it: an ad-hoc signature's origin cannot be proven. The manual step stays,
-/// until the window draws the press that replaces it ([`renew_key`], #7719).
+/// claims who made it: an ad-hoc signature's origin cannot be proven. It names Keychain Access,
+/// which can delete any item of the person's, never `security` in a terminal, which macOS may
+/// refuse as it refuses the app. The manual step stays until the window draws the press that
+/// replaces it ([`renew_key`], #7719).
 pub const FOREIGN_KEY: &str = "purlis cannot trust its seal key on this machine, because another \
      program made the keychain item it is kept in (purlis-seal), so it accepted nothing. This \
-     happens after an update that macOS treats as a different app. Delete every keychain item \
-     named purlis-seal, in Keychain Access or with `security delete-generic-password -s \
-     purlis-seal` once for each, then press Accept again: purlis makes a new key, and every \
+     happens after an update that macOS treats as a different app. Open Keychain Access, delete \
+     every item named purlis-seal, then press Accept again: purlis makes a new key, and every \
      project on this machine needs accepting again";
 
 /// What the press to make a new key says where macOS did not let purlis delete the old items
-/// (#7714): the person denied its prompt, gave a wrong password, or the keychain is locked.
-/// Nothing was accepted, the press can be made again, and the manual step is named.
-pub const RENEW_REFUSED: &str = "macOS did not let purlis replace its key, so nothing was \
-     accepted. Press again to be asked again, or delete every keychain item named purlis-seal \
-     yourself, in Keychain Access or with `security delete-generic-password -s purlis-seal` once \
-     for each, then press Accept again";
+/// (#7714): the person denied its prompt, gave a wrong password, the keychain is locked, or
+/// macOS refused without asking, which purlis cannot tell apart. So it never promises a prompt.
+/// Nothing was accepted, and the manual step is named.
+pub const RENEW_REFUSED: &str = "macOS did not let purlis replace its old key, so nothing was \
+     accepted. If macOS asked you and you said no, press again. Otherwise open Keychain Access, \
+     delete every item named purlis-seal, then press Accept again";
 
-#[cfg(test)]
-thread_local! {
-    /// A test's stand-in for macOS refusing to delete the old build's items.
-    static TEST_RENEW_REFUSED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-#[cfg(test)]
-thread_local! {
-    /// What a test does while macOS's prompt is open, once.
-    static TEST_DURING_PROMPT: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
-        std::cell::RefCell::new(None);
-}
-
-/// **What a test does while the press's prompt is open**: a project's file edited meanwhile,
-/// say.
-#[cfg(test)]
-pub(crate) fn set_during_prompt_for_this_test(meanwhile: Box<dyn FnOnce()>) {
-    TEST_DURING_PROMPT.with(|held| *held.borrow_mut() = Some(meanwhile));
-}
-
-/// **A test's macOS refuses to delete another program's key items** (or allows it again).
-#[cfg(test)]
-pub(crate) fn set_renew_refused_for_this_test(refused: bool) {
-    TEST_RENEW_REFUSED.with(|held| held.set(refused));
-}
-
-/// The account, under [`SERVICE`], of the list of planes whose acceptance was sealed with a key
-/// purlis has replaced since ([`replaced`], #7714).
-const REPLACED: &str = "seal-key-replaced";
+/// The accounts, under [`SERVICE`], of the list of the planes whose answers a key purlis has
+/// replaced since had anchored ([`replaced`], #7714). **Two**, so a list is always written
+/// beside the one before and that one deleted only after ([`write_list`]): no write of it
+/// leaves a moment where neither is there.
+const REPLACED: [&str; 2] = ["seal-key-replaced", "seal-key-replaced-next"];
 
 /// The kind the list of [`REPLACED`] is sealed as.
 const REPLACED_KIND: &str = "seal-key-replaced";
 
-/// **The list of [`REPLACED`] as the keyring keeps it**: the seal of its text, then each anchor,
-/// one a line, sorted.
-fn replaced_value(seal: &str, anchors: &[String]) -> String {
-    format!("{seal}\n{}", anchors.join("\n"))
+/// What marks an entry of the list that purlis cannot vouch for ([`Replaced::vouches`]).
+const UNVOUCHED: char = '?';
+
+/// A list's entries: each anchor's account (`<kind>:<anchor>`), and whether purlis vouches for
+/// it.
+type Entries = std::collections::BTreeMap<String, bool>;
+
+/// The text a list's seal covers: each entry, one a line, sorted, [`UNVOUCHED`] before one
+/// purlis does not vouch for.
+fn list_text(entries: &Entries) -> String {
+    entries
+        .iter()
+        .map(|(account, vouched)| {
+            if *vouched {
+                account.clone()
+            } else {
+                format!("{UNVOUCHED}{account}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-/// The seal and the anchors of a value of [`REPLACED`], and the text the seal covers.
-fn replaced_parts(value: &str) -> (&str, &str, Vec<String>) {
+/// A list as the keyring keeps it, sealed with `key`: the seal, then [`list_text`].
+fn list_value(key: &[u8], entries: &Entries) -> Option<String> {
+    let text = list_text(entries);
+    let seal = mac(key, REPLACED_KIND, "", &text)?;
+    Some(format!(
+        "{}\n{text}",
+        crate::extension::hex(&seal.finalize().into_bytes())
+    ))
+}
+
+/// **A list's entries as kept, and whether its seal holds under one of `keys`.** An entry of a
+/// list that holds under none is never vouched for: it can only keep a plane broken.
+fn list_read(value: &str, keys: &[&[u8]]) -> (Entries, bool) {
     let (seal, text) = value.split_once('\n').unwrap_or((value, ""));
-    let anchors = text
+    let holds = keys
+        .iter()
+        .any(|key| verifies(key, seal, REPLACED_KIND, "", text));
+    let entries = text
         .lines()
         .filter(|line| !line.is_empty())
-        .map(str::to_owned)
+        .map(|line| match line.strip_prefix(UNVOUCHED) {
+            Some(account) => (account.to_owned(), false),
+            None => (line.to_owned(), holds),
+        })
         .collect();
-    (seal, text, anchors)
+    (entries, holds)
 }
 
-/// `listed` with `more` added, each once, sorted.
-fn merged(listed: Vec<String>, more: &[String]) -> Vec<String> {
-    let mut all: Vec<String> = listed.into_iter().chain(more.iter().cloned()).collect();
-    all.sort();
-    all.dedup();
-    all
+/// `more` added to `into`: an entry either vouches for is vouched for.
+fn merge(into: &mut Entries, more: Entries) {
+    for (account, vouched) in more {
+        *into.entry(account).or_insert(false) |= vouched;
+    }
 }
 
 /// A new random key, or none where the system's randomness failed.
@@ -306,156 +319,246 @@ fn new_key() -> Option<zeroize::Zeroizing<Vec<u8>>> {
     Some(made)
 }
 
-/// **The old items under [`SERVICE`] replaced and a new key made** (#7714): the spares, every
-/// plane's anchor and the old list of [`REPLACED`] deleted, then `replaced` kept as that list,
-/// sealed with the new key before the key is kept, and the old key deleted last and the new one
-/// kept. A press cut short leaves the old key, still another program's, and nothing reads
-/// otherwise than before; the next press finishes it. Every anchor goes: one left behind is
-/// another program's item, which the new key's own write of it would find in the way.
-///
-/// Deleting another program's item is macOS's to allow, and it may ask the person: that prompt
-/// is their consent. A delete it refuses makes no new key ([`RENEW_REFUSED`]).
-pub(crate) fn renew(items: &dyn KeyItems, replaced: &[String]) -> Result<Found, &'static str> {
-    let key = new_key().ok_or(KEY_UNREAD)?;
-    let text = replaced.join("\n");
-    let seal = mac(&key, REPLACED_KIND, "", &text).ok_or(KEY_UNREAD)?;
-    let listed = replaced_value(
-        &crate::extension::hex(&seal.finalize().into_bytes()),
-        replaced,
-    );
-    let [spare, commands_spare] = super::keyhold::spares_of(SERVICE);
-    let gone = |service: &str, account: &str| match items.delete(service, account) {
+/// What a renewal says where a delete was not allowed or failed.
+fn gone(items: &dyn KeyItems, service: &str, account: &str) -> Result<(), &'static str> {
+    match items.delete(service, account) {
         Ok(()) => Ok(()),
         Err(Removal::Refused) => Err(RENEW_REFUSED),
         Err(Removal::Failed(why)) => {
             tracing::warn!("purlis: an old seal item could not be deleted ({why})");
             Err(KEY_UNREAD)
         }
+    }
+}
+
+/// What a renewal says where an item of the app's own could not be made.
+fn made(
+    items: &dyn KeyItems,
+    service: &str,
+    account: &str,
+    value: &str,
+) -> Result<(), &'static str> {
+    items.make_own(service, account, value).map_err(|why| {
+        tracing::warn!("purlis: a new seal item could not be made ({why})");
+        KEY_UNREAD
+    })
+}
+
+/// **`entries` sealed with `key` and kept as the list**, at a slot of [`REPLACED`] nothing holds,
+/// so the list before stays until this one is there; the slot written is answered, and the
+/// caller deletes the other. Where both hold one (a write cut short before it deleted the one
+/// before), the one that does not hold under `key` is deleted first: the other holds under the
+/// key the caller seals with, so it already names every entry the deleted one did.
+fn write_list(
+    items: &dyn KeyItems,
+    key: &[u8],
+    entries: &Entries,
+) -> Result<&'static str, &'static str> {
+    let value = list_value(key, entries).ok_or(KEY_UNREAD)?;
+    let mut free = None;
+    let mut stale = None;
+    for slot in REPLACED {
+        match items.read(SERVICE, slot) {
+            Ok(None) => free = free.or(Some(slot)),
+            Ok(Some(there)) if !list_read(&there, &[key]).1 => stale = Some(slot),
+            Ok(Some(_)) => {}
+            Err(why) => {
+                tracing::warn!("purlis: the list of replaced planes could not be read ({why})");
+                return Err(KEY_UNREAD);
+            }
+        }
+    }
+    let slot = match (free, stale) {
+        (Some(slot), _) => slot,
+        (None, Some(slot)) => {
+            gone(items, SERVICE, slot)?;
+            slot
+        }
+        (None, None) => {
+            gone(items, SERVICE, REPLACED[1])?;
+            REPLACED[1]
+        }
     };
-    let made = |account: &str, value: &str| {
-        items.make_own(SERVICE, account, value).map_err(|why| {
-            tracing::warn!("purlis: a new seal item could not be made ({why})");
+    made(items, SERVICE, slot, &value)?;
+    Ok(slot)
+}
+
+/// Whether `account` is the anchor of an answer of one of `kinds` (`<kind>:<anchor>`).
+fn of_kinds(account: &str, kinds: &[&str]) -> bool {
+    kinds.iter().any(|kind| {
+        account
+            .strip_prefix(kind)
+            .is_some_and(|rest| rest.starts_with(':'))
+    })
+}
+
+/// **The new key a press cut short left at rest in the app's own spare** (F6 of #7734's
+/// review), to be used again, so a list it sealed still holds.
+fn pending(items: &dyn KeyItems, spare: &str) -> Option<zeroize::Zeroizing<Vec<u8>>> {
+    let hex = items.read(spare, ACCOUNT).ok()??;
+    let key = decode(&hex).filter(|key| key.len() == KEY_BYTES)?;
+    matches!(items.owned_here(spare, ACCOUNT, &hex), Ok(true)).then_some(key)
+}
+
+/// **The old items under [`SERVICE`] replaced and a new key made** (#7714). In this order, so a
+/// press refused or cut short at any step is safe to press again, and no plane reads as never
+/// accepted at any step (#7734's review, F2 and F6):
+///
+/// 1. **The new key, at rest first** in the app's own spare item, where [`read_or_make`] makes
+///    it the key again if the old one goes and the new one is not kept. A key a press cut short
+///    left there is used again.
+/// 2. **The list written before any anchor goes**: every anchor of `kinds` the keyring holds
+///    (vouched for), and every entry of a list before, vouched for only where its seal holds
+///    under the old key or the new one ([`list_read`]), sealed with the new key ([`write_list`]).
+/// 3. **Every other old item deleted**: the spares, every anchor (one left behind is another
+///    program's item, which the new key's own write of it would find in the way) and the list
+///    before.
+/// 4. **The old key last**, then the new one kept from its spare.
+///
+/// Deleting another program's item is macOS's to allow, and it may ask the person: that prompt
+/// is their consent. A delete it refuses stops the press there ([`RENEW_REFUSED`]).
+pub(crate) fn renew(items: &dyn KeyItems, kinds: &[&str]) -> Result<Found, &'static str> {
+    let [spare, commands_spare] = super::keyhold::spares_of(SERVICE);
+    let key = match pending(items, &spare) {
+        Some(key) => key,
+        None => {
+            gone(items, &spare, ACCOUNT)?;
+            let key = new_key().ok_or(KEY_UNREAD)?;
+            made(
+                items,
+                &spare,
+                ACCOUNT,
+                &zeroize::Zeroizing::new(crate::extension::hex(&key)),
+            )?;
+            key
+        }
+    };
+    let listing = |service: &str| {
+        items.accounts(service).map_err(|why| {
+            tracing::warn!("purlis: the old seal items could not be listed ({why})");
             KEY_UNREAD
         })
     };
-    for service in [spare.as_str(), commands_spare.as_str(), SERVICE] {
-        let accounts = items.accounts(service).map_err(|why| {
-            tracing::warn!("purlis: the old seal items could not be listed ({why})");
+    let read = |service: &str, account: &str| {
+        items.read(service, account).map_err(|why| {
+            tracing::warn!("purlis: an old seal item could not be read ({why})");
             KEY_UNREAD
-        })?;
-        for account in accounts.iter().filter(|account| *account != ACCOUNT) {
-            gone(service, account)?;
-        }
-        if service != SERVICE {
-            gone(service, ACCOUNT)?;
+        })
+    };
+    let old = read(SERVICE, ACCOUNT)?.and_then(|hex| decode(&hex));
+    let keys: Vec<&[u8]> = [Some(&key[..]), old.as_deref().map(|old| &old[..])]
+        .into_iter()
+        .flatten()
+        .collect();
+    let mut entries = Entries::new();
+    let mut every = Vec::new();
+    for service in [SERVICE, spare.as_str(), commands_spare.as_str()] {
+        for account in listing(service)? {
+            if of_kinds(&account, kinds) {
+                entries.insert(account.clone(), true);
+            }
+            every.push((service, account));
         }
     }
-    if !replaced.is_empty() {
-        made(REPLACED, &listed)?;
+    for slot in REPLACED {
+        if let Some(value) = read(SERVICE, slot)? {
+            merge(&mut entries, list_read(&value, &keys).0);
+        }
     }
-    gone(SERVICE, ACCOUNT)?;
+    let written = if entries.is_empty() {
+        None
+    } else {
+        Some(write_list(items, &key, &entries)?)
+    };
+    for (service, account) in &every {
+        let kept = (*service == SERVICE
+            && (account == ACCOUNT || Some(account.as_str()) == written))
+            || (*service == spare && account == ACCOUNT);
+        if !kept {
+            gone(items, service, account)?;
+        }
+    }
+    // A slot written over a stale list was listed above: it is the list now, and stays.
+    gone(items, SERVICE, ACCOUNT)?;
     made(
+        items,
+        SERVICE,
         ACCOUNT,
         &zeroize::Zeroizing::new(crate::extension::hex(&key)),
     )?;
+    if let Err(Removal::Failed(why)) = items.delete(&spare, ACCOUNT) {
+        tracing::warn!("purlis: the new seal key's spare was not deleted ({why})");
+    }
     Ok(Found::Held(key))
 }
 
-/// **The anchor of every answer of `kind` the keyring keeps a seal for** (#7714): the accounts
-/// under [`SERVICE`] (and its spares) named `<kind>:<anchor>`, read before [`renew_key`] deletes
-/// them. Names only: the Keychain gives them without asking, and no value is read.
-pub fn anchored(kind: &str) -> Result<Vec<String>, &'static str> {
-    let prefix = format!("{kind}:");
-    let of = |accounts: Vec<String>| -> Vec<String> {
-        accounts
-            .into_iter()
-            .filter_map(|account| account.strip_prefix(&prefix).map(str::to_owned))
-            .collect()
-    };
-    #[cfg(test)]
-    {
-        Ok(merged(
-            of(TEST_KEPT.with(|kept| kept.borrow().keys().cloned().collect())),
-            &[],
-        ))
+/// **The press's body, around the keyring it reaches** (#7714): `found` reads what the keyring
+/// holds of the key again each time it is called. Where it is the app's own, nothing is
+/// replaced; where it is another program's, [`renew`] replaces it; then the keyring is read again
+/// once macOS's prompt returned, and that read alone says whether a new key is held (F7 of
+/// #7734's review: the key's cache is never held across the prompt).
+fn renew_key_with(
+    items: &dyn KeyItems,
+    kinds: &[&str],
+    found: &mut dyn FnMut() -> Found,
+) -> Result<bool, &'static str> {
+    match found() {
+        Found::Held(_) => return Ok(false),
+        Found::Foreign => {}
+        other => return said(&other).map(|()| false),
     }
-    #[cfg(not(test))]
-    {
-        let mut anchors = Vec::new();
-        let [spare, commands_spare] = super::keyhold::spares_of(SERVICE);
-        for service in [SERVICE, spare.as_str(), commands_spare.as_str()] {
-            let accounts = super::keyhold::accounts_of(service).map_err(|why| {
-                tracing::warn!("purlis: the seal's anchors could not be listed ({why})");
-                KEY_UNREAD
-            })?;
-            anchors.extend(of(accounts));
-        }
-        Ok(merged(anchors, &[]))
+    let renewed = renew(items, kinds);
+    match (renewed, found()) {
+        (Err(why), _) => Err(why),
+        (Ok(_), Found::Held(_)) => Ok(true),
+        (Ok(_), other) => said(&other).and(Err(KEY_UNREAD)),
     }
 }
 
+/// One press to make a new key at a time: held across macOS's prompt, where the key's cache is
+/// not, so no seal waits on the person.
+#[cfg(not(test))]
+static RENEWING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// **The person's press to make a new seal key** (#7714), the window's alone: where the key item
 /// is another program's, whoever made it, every item under [`SERVICE`] is replaced ([`renew`]),
-/// and the planes `anchors` names (each whose acceptance the old key sealed) are kept in the list
-/// of [`REPLACED`], added to the planes a replacement before listed. The new key is the app's own
-/// from now on. `Ok(true)` where a new key was made, `Ok(false)` where the key was the app's own
+/// and every plane whose answer of one of `kinds` the old key anchored is kept on the list of
+/// [`REPLACED`], added to what a replacement before listed. The new key is the app's own from
+/// now on. `Ok(true)` where a new key was made, `Ok(false)` where the key was the app's own
 /// already, so nothing was replaced and no plane's seal broken. Every seal made with the old key
 /// counts as none after it.
-pub fn renew_key(anchors: &[String]) -> Result<bool, &'static str> {
+pub fn renew_key(kinds: &[&str]) -> Result<bool, &'static str> {
     #[cfg(test)]
     {
-        if !TEST_FOREIGN.with(std::cell::Cell::get) {
-            return ready_to_seal().map(|()| false);
+        if TEST_NO_KEYRING.with(std::cell::Cell::get) {
+            return Err(NO_KEYRING);
         }
-        if TEST_RENEW_REFUSED.with(std::cell::Cell::get) {
-            return Err(RENEW_REFUSED);
+        if TEST_KEY.with(|held| held.borrow().is_none()) && !TEST_FOREIGN.with(std::cell::Cell::get)
+        {
+            return Err(NOT_THE_APP);
         }
-        let listed = merged(replaced_listed(), anchors);
-        let next = TEST_KEY.with(|held| held.borrow().as_ref().map_or(1, |key| key[0]));
-        TEST_FOREIGN.with(|held| held.set(false));
-        TEST_KEY.with(|held| *held.borrow_mut() = Some(vec![next.wrapping_add(1); KEY_BYTES]));
-        forget_kept_for_this_test();
-        if !listed.is_empty() {
-            let text = listed.join("\n");
-            let seal = sealed(REPLACED_KIND, "", &text).ok_or(KEY_UNREAD)?;
-            TEST_KEPT.with(|kept| {
-                kept.borrow_mut()
-                    .insert(REPLACED.to_owned(), replaced_value(&seal, &listed))
-            });
-        }
-        if let Some(meanwhile) = TEST_DURING_PROMPT.with(|held| held.borrow_mut().take()) {
-            meanwhile();
-        }
-        Ok(true)
+        renew_key_with(&TestKeychain, kinds, &mut || {
+            let found = read_or_make(&TestKeychain);
+            match &found {
+                Found::Held(key) => {
+                    TEST_KEY.with(|held| *held.borrow_mut() = Some(key.to_vec()));
+                    TEST_FOREIGN.with(|held| held.set(false));
+                }
+                Found::Foreign => TEST_FOREIGN.with(|held| held.set(true)),
+                Found::Unread | Found::NoKeyring => {}
+            }
+            found
+        })
     }
     #[cfg(not(test))]
     {
         if !super::keyhold::is_the_app() || crate::fence::FENCED {
             return Err(NOT_THE_APP);
         }
-        // Held for the whole press, so no seal is made or read with a key half replaced.
-        let mut cache = FOUND
+        let _one = RENEWING
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        match cache.found(true, &OsKeyItems) {
-            Found::Held(_) => return Ok(false),
-            Found::Foreign => {}
-            other => return said(&other).map(|()| false),
-        }
-        // What a replacement before listed is added to: unverified, since the key that sealed
-        // it is the one being replaced, so it can only keep more planes broken, never fewer.
-        let listed = merged(replaced_listed(), anchors);
-        match renew(&OsKeyItems, &listed) {
-            Ok(made) => {
-                cache.0 = Some(made);
-                Ok(true)
-            }
-            Err(why) => {
-                // What is left is read again at the next read.
-                cache.0 = None;
-                Err(why)
-            }
-        }
+        renew_key_with(&OsKeyItems, kinds, &mut || found(true))
     }
 }
 
@@ -477,92 +580,315 @@ fn kept_value(account: &str) -> Option<String> {
     }
 }
 
-/// The planes the list of [`REPLACED`] names, its seal not checked.
-fn replaced_listed() -> Vec<String> {
-    kept_value(REPLACED).map_or_else(Vec::new, |value| replaced_parts(&value).2)
-}
-
-/// **What the keyring keeps of the planes whose acceptance was sealed with a key purlis has
-/// replaced since** (#7714; Keyring, device-bound).
+/// **What the keyring keeps of the planes whose answers were anchored by a key purlis has
+/// replaced since** (#7714; Keyring, device-bound): each by its anchor's account,
+/// `<kind>:<anchor>`.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Replaced {
-    /// Every plane the list names, by its anchor, whether or not its seal holds: only ever a
-    /// reason to keep a plane broken rather than never accepted, so a list put there by another
-    /// program can make no plane looser.
-    pub listed: Vec<String>,
-    /// Whether the list's seal holds under the key of now, which only the app's own write of it
-    /// can make: only then does a plane on it read as broken because of the new key, never as
-    /// edited. A list another program made, or one edited, holds for nothing.
-    pub holds: bool,
+    /// Every entry of either slot, whether or not its seal holds, and whether purlis vouches for
+    /// it: only where the slot's seal holds under the key of now, which only the app's own write
+    /// can make, and the entry is not marked [`UNVOUCHED`].
+    entries: Entries,
 }
 
 impl Replaced {
-    /// Whether the plane anchored by `anchor` is on the list and the list holds.
-    pub fn holds_for(&self, anchor: &str) -> bool {
-        self.holds && self.lists(anchor)
+    /// Whether the plane anchored by `anchor` is on the list for an answer of one of `kinds`,
+    /// vouched for or not: only ever a reason to keep it broken rather than never answered, so
+    /// a list put there by another program can make no plane looser.
+    pub fn lists(&self, kinds: &[&str], anchor: &str) -> bool {
+        kinds
+            .iter()
+            .any(|kind| self.entries.contains_key(&format!("{kind}:{anchor}")))
     }
 
-    /// Whether the plane anchored by `anchor` is on the list, held or not.
-    pub fn lists(&self, anchor: &str) -> bool {
-        self.listed.iter().any(|listed| listed == anchor)
+    /// Whether purlis vouches that the plane's answer of one of `kinds` broke because it
+    /// replaced its key, never because something edited it: what the window's words rest on.
+    pub fn vouches(&self, kinds: &[&str], anchor: &str) -> bool {
+        kinds.iter().any(|kind| {
+            self.entries
+                .get(&format!("{kind}:{anchor}"))
+                .copied()
+                .unwrap_or(false)
+        })
+    }
+
+    /// Whether nothing is listed.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 }
 
-/// [`Replaced`] as the keyring keeps it now.
+/// [`Replaced`] as the keyring keeps it now, both slots read.
 pub fn replaced() -> Replaced {
-    let Some(value) = kept_value(REPLACED) else {
-        return Replaced::default();
-    };
-    let (seal, text, listed) = replaced_parts(&value);
-    Replaced {
-        holds: holds(seal, REPLACED_KIND, "", text),
-        listed,
+    let key = key();
+    let keys: Vec<&[u8]> = key.as_deref().map(|key| &key[..]).into_iter().collect();
+    let mut entries = Entries::new();
+    for slot in REPLACED {
+        if let Some(value) = kept_value(slot) {
+            merge(&mut entries, list_read(&value, &keys).0);
+        }
     }
+    Replaced { entries }
 }
 
-/// **The plane anchored by `anchor` taken off the list of [`REPLACED`]** (#7714), once its
-/// acceptance is sealed with the key of now; the item deleted with its last entry. Only a list
-/// that holds is written again, so one another program made is never sealed by the app. `false`
-/// where it was on a list that holds and could not be taken off.
-pub fn unlist_replaced(anchor: &str) -> bool {
-    let now = replaced();
-    if !now.holds_for(anchor) {
-        return true;
-    }
-    let left: Vec<String> = now.listed.into_iter().filter(|one| one != anchor).collect();
-    let value = if left.is_empty() {
-        None
-    } else {
-        let Some(seal) = sealed(REPLACED_KIND, "", &left.join("\n")) else {
-            return false;
-        };
-        Some(replaced_value(&seal, &left))
-    };
+/// **The plane anchored by `anchor` taken off the list for its answers of `kinds`** (#7714),
+/// once they are sealed with the key of now. The list left is sealed with the key of now
+/// beside the one before ([`write_list`]), which then goes, and the item goes with its last
+/// entry. A slot whose seal does not hold is cleaned up the same way (F6 of #7734's review): its
+/// other entries are kept, never vouched for, so a list another program made gives no plane the
+/// new key's words by the app's write of it. `false` where it was listed and could not be taken
+/// off.
+pub fn unlist_replaced(kinds: &[&str], anchor: &str) -> bool {
     #[cfg(test)]
     {
-        TEST_KEPT.with(|kept| match value {
-            Some(value) => kept.borrow_mut().insert(REPLACED.to_owned(), value),
-            None => kept.borrow_mut().remove(REPLACED),
-        });
-        true
+        unlist(&TestKeychain, kinds, anchor)
     }
     #[cfg(not(test))]
     {
-        match value {
-            Some(value) => super::keyhold::make_own(SERVICE, REPLACED, &value).is_ok(),
-            None => super::keyhold::delete_item(SERVICE, REPLACED).is_ok(),
+        if !super::keyhold::is_the_app() || crate::fence::FENCED {
+            return true;
+        }
+        unlist(&OsKeyItems, kinds, anchor)
+    }
+}
+
+/// [`unlist_replaced`] on `items`.
+fn unlist(items: &dyn KeyItems, kinds: &[&str], anchor: &str) -> bool {
+    let mut entries = Entries::new();
+    let mut there = Vec::new();
+    let key = key();
+    let keys: Vec<&[u8]> = key.as_deref().map(|key| &key[..]).into_iter().collect();
+    for slot in REPLACED {
+        match items.read(SERVICE, slot) {
+            Ok(Some(value)) => {
+                merge(&mut entries, list_read(&value, &keys).0);
+                there.push(slot);
+            }
+            Ok(None) => {}
+            Err(_) => return false,
+        }
+    }
+    let before = entries.len();
+    entries.retain(|account, _| {
+        !kinds
+            .iter()
+            .any(|kind| *account == format!("{kind}:{anchor}"))
+    });
+    if entries.len() == before {
+        return true;
+    }
+    let written = if entries.is_empty() {
+        None
+    } else {
+        let Some(key) = key.as_deref() else {
+            return false;
+        };
+        match write_list(items, key, &entries) {
+            Ok(slot) => Some(slot),
+            Err(_) => return false,
+        }
+    };
+    there
+        .into_iter()
+        .filter(|slot| Some(*slot) != written)
+        .all(|slot| items.delete(SERVICE, slot).is_ok())
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A test's keyring: whether the key item is gone (deleted, and not made again yet).
+    static TEST_KEY_GONE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// A test's keyring: the accounts under [`SERVICE`] another program made.
+    static TEST_THEIRS: std::cell::RefCell<std::collections::BTreeSet<String>> =
+        const { std::cell::RefCell::new(std::collections::BTreeSet::new()) };
+    /// A test's keyring: the items under the spares' services, each with whether it is the
+    /// app's own.
+    static TEST_ELSEWHERE: std::cell::RefCell<
+        std::collections::BTreeMap<(String, String), (String, bool)>,
+    > = const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
+    /// A test's macOS: every delete of another program's item refused, or one account's only.
+    static TEST_REFUSED: std::cell::RefCell<Option<Option<String>>> =
+        const { std::cell::RefCell::new(None) };
+    /// What a test does while macOS's prompt is open, once.
+    static TEST_DURING_PROMPT: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        std::cell::RefCell::new(None);
+}
+
+/// **What a test does while the press's prompt is open**: a project's file edited meanwhile,
+/// say. It runs at the first delete of another program's item.
+#[cfg(test)]
+pub(crate) fn set_during_prompt_for_this_test(meanwhile: Box<dyn FnOnce()>) {
+    TEST_DURING_PROMPT.with(|held| *held.borrow_mut() = Some(meanwhile));
+}
+
+/// **A test's macOS refuses to delete another program's items** (or allows it again).
+#[cfg(test)]
+pub(crate) fn set_renew_refused_for_this_test(refused: bool) {
+    TEST_REFUSED.with(|held| *held.borrow_mut() = refused.then_some(None));
+}
+
+/// **A test's macOS refuses to delete one item another program made**, under [`SERVICE`] at
+/// `account`, and allows every other: a refusal part way.
+#[cfg(test)]
+pub(crate) fn set_delete_refused_for_this_test(account: &str) {
+    TEST_REFUSED.with(|held| *held.borrow_mut() = Some(Some(account.to_owned())));
+}
+
+/// **A test's update that macOS treats as a different app**: the key and every item the
+/// keyring keeps under [`SERVICE`] are another program's now.
+#[cfg(test)]
+pub(crate) fn an_update_for_this_test() {
+    TEST_FOREIGN.with(|held| held.set(true));
+    let accounts: Vec<String> = TEST_KEPT.with(|kept| kept.borrow().keys().cloned().collect());
+    TEST_THEIRS.with(|theirs| theirs.borrow_mut().extend(accounts));
+}
+
+/// **A test's keyring keeps `value` at the first slot of the list of [`REPLACED`]**, as another
+/// program made it, and nothing at the other.
+#[cfg(test)]
+pub(crate) fn set_replaced_for_this_test(value: &str) {
+    TEST_KEPT.with(|kept| {
+        let mut kept = kept.borrow_mut();
+        kept.remove(REPLACED[1]);
+        kept.insert(REPLACED[0].to_owned(), value.to_owned());
+    });
+    TEST_THEIRS.with(|theirs| theirs.borrow_mut().insert(REPLACED[0].to_owned()));
+}
+
+/// **The value of a list of [`REPLACED`] made by another program than the app**, naming
+/// `accounts` with a seal that holds under no key of the app's.
+#[cfg(test)]
+pub(crate) fn a_foreign_list_for_this_test(accounts: &[String]) -> String {
+    format!("{}\n{}", "00".repeat(32), accounts.join("\n"))
+}
+
+/// **The keyring a test's press reaches** (F4 of #7734's review): the thread's own key, kept
+/// seals and spares, so [`renew_key`]'s whole body runs in a test, and only the Keychain is
+/// stood in for.
+#[cfg(test)]
+struct TestKeychain;
+
+#[cfg(test)]
+impl TestKeychain {
+    /// Whether the item is there and another program's.
+    fn theirs(service: &str, account: &str) -> bool {
+        if service == SERVICE && account == ACCOUNT {
+            !TEST_KEY_GONE.with(std::cell::Cell::get) && TEST_FOREIGN.with(std::cell::Cell::get)
+        } else if service == SERVICE {
+            TEST_KEPT.with(|kept| kept.borrow().contains_key(account))
+                && TEST_THEIRS.with(|theirs| theirs.borrow().contains(account))
+        } else {
+            TEST_ELSEWHERE.with(|items| {
+                items
+                    .borrow()
+                    .get(&(service.to_owned(), account.to_owned()))
+                    .is_some_and(|(_, ours)| !ours)
+            })
         }
     }
 }
 
-/// **A test's keyring keeps `value` as the list of [`REPLACED`]**: one another program wrote,
-/// say.
 #[cfg(test)]
-pub(crate) fn set_replaced_for_this_test(value: &str) {
-    TEST_KEPT.with(|kept| {
-        kept.borrow_mut()
-            .insert(REPLACED.to_owned(), value.to_owned())
-    });
+impl KeyItems for TestKeychain {
+    fn read(&self, service: &str, account: &str) -> Result<Option<String>, Unreadable> {
+        if TEST_NO_KEYRING.with(std::cell::Cell::get) {
+            return Err(Unreadable::NoKeyring);
+        }
+        Ok(if service == SERVICE && account == ACCOUNT {
+            if TEST_KEY_GONE.with(std::cell::Cell::get) {
+                None
+            } else {
+                TEST_KEY.with(|held| held.borrow().as_deref().map(crate::extension::hex))
+            }
+        } else if service == SERVICE {
+            kept_value(account)
+        } else {
+            TEST_ELSEWHERE.with(|items| {
+                items
+                    .borrow()
+                    .get(&(service.to_owned(), account.to_owned()))
+                    .map(|(value, _)| value.clone())
+            })
+        })
+    }
+
+    fn owned_here(&self, service: &str, account: &str, _: &str) -> Result<bool, String> {
+        Ok(!Self::theirs(service, account))
+    }
+
+    fn make_own(&self, service: &str, account: &str, value: &str) -> Result<(), String> {
+        if Self::theirs(service, account) {
+            return Err("another program's item".to_owned());
+        }
+        if service == SERVICE && account == ACCOUNT {
+            let key = decode(value).ok_or("not a key")?;
+            TEST_KEY.with(|held| *held.borrow_mut() = Some(key.to_vec()));
+            TEST_FOREIGN.with(|held| held.set(false));
+            TEST_KEY_GONE.with(|held| held.set(false));
+        } else if service == SERVICE {
+            TEST_KEPT.with(|kept| {
+                kept.borrow_mut()
+                    .insert(account.to_owned(), value.to_owned())
+            });
+        } else {
+            TEST_ELSEWHERE.with(|items| {
+                items.borrow_mut().insert(
+                    (service.to_owned(), account.to_owned()),
+                    (value.to_owned(), true),
+                )
+            });
+        }
+        Ok(())
+    }
+
+    fn accounts(&self, service: &str) -> Result<Vec<String>, String> {
+        if service == SERVICE {
+            let key = (!TEST_KEY_GONE.with(std::cell::Cell::get)
+                && TEST_KEY.with(|held| held.borrow().is_some()))
+            .then(|| ACCOUNT.to_owned());
+            let kept: Vec<String> = TEST_KEPT.with(|kept| kept.borrow().keys().cloned().collect());
+            Ok(key.into_iter().chain(kept).collect())
+        } else {
+            Ok(TEST_ELSEWHERE.with(|items| {
+                items
+                    .borrow()
+                    .keys()
+                    .filter(|(at, _)| at == service)
+                    .map(|(_, account)| account.clone())
+                    .collect()
+            }))
+        }
+    }
+
+    fn delete(&self, service: &str, account: &str) -> Result<(), Removal> {
+        if Self::theirs(service, account) {
+            let refused = TEST_REFUSED.with(|held| match &*held.borrow() {
+                None => false,
+                Some(None) => true,
+                Some(Some(one)) => service == SERVICE && one == account,
+            });
+            if refused {
+                return Err(Removal::Refused);
+            }
+            if let Some(meanwhile) = TEST_DURING_PROMPT.with(|held| held.borrow_mut().take()) {
+                meanwhile();
+            }
+        }
+        if service == SERVICE && account == ACCOUNT {
+            TEST_KEY_GONE.with(|held| held.set(true));
+            TEST_FOREIGN.with(|held| held.set(false));
+        } else if service == SERVICE {
+            TEST_KEPT.with(|kept| kept.borrow_mut().remove(account));
+            TEST_THEIRS.with(|theirs| theirs.borrow_mut().remove(account));
+        } else {
+            TEST_ELSEWHERE.with(|items| {
+                items
+                    .borrow_mut()
+                    .remove(&(service.to_owned(), account.to_owned()))
+            });
+        }
+        Ok(())
+    }
 }
 
 /// What the press says where the keyring could not be read or the key made.
@@ -746,10 +1072,12 @@ pub fn sealed(kind: &str, clone: &str, text: &str) -> Option<String> {
 /// **Whether `seal` is the seal of `text`** for `kind` and `clone`, compared in constant time.
 /// Never where this process cannot verify: an answer it cannot verify counts as none.
 pub fn holds(seal: &str, kind: &str, clone: &str, text: &str) -> bool {
-    let Some(key) = key() else {
-        return false;
-    };
-    let Some(mac) = mac(&key, kind, clone, text) else {
+    key().is_some_and(|key| verifies(&key, seal, kind, clone, text))
+}
+
+/// [`holds`] under `key`.
+fn verifies(key: &[u8], seal: &str, kind: &str, clone: &str, text: &str) -> bool {
+    let Some(mac) = mac(key, kind, clone, text) else {
         return false;
     };
     let given: Option<Vec<u8>> = (0..seal.len())
@@ -770,6 +1098,7 @@ thread_local! {
 #[cfg(test)]
 pub(crate) fn forget_kept_for_this_test() {
     TEST_KEPT.with(|kept| kept.borrow_mut().clear());
+    TEST_THEIRS.with(|theirs| theirs.borrow_mut().clear());
 }
 
 /// The keyring account a kept seal of `kind` for the clone keyed `clone` is under.
@@ -787,6 +1116,10 @@ pub fn keep(kind: &str, clone: &str, text: &str) -> bool {
     let account = kept_account(kind, clone);
     #[cfg(test)]
     {
+        // Another program's item is in the way of the app's write, as on macOS.
+        if TEST_THEIRS.with(|theirs| theirs.borrow().contains(&account)) {
+            return false;
+        }
         TEST_KEPT.with(|kept| kept.borrow_mut().insert(account, seal));
         true
     }
@@ -940,8 +1273,12 @@ mod tests {
     }
 
     impl KeyItems for Items {
-        fn read(&self, service: &str, _account: &str) -> Result<Option<String>, Unreadable> {
-            Ok(self.value(service))
+        fn read(&self, service: &str, account: &str) -> Result<Option<String>, Unreadable> {
+            Ok(self
+                .0
+                .borrow()
+                .get(&(service.to_owned(), account.to_owned()))
+                .map(|(value, _)| value.clone()))
         }
 
         fn owned_here(&self, service: &str, account: &str, value: &str) -> Result<bool, String> {
@@ -1015,6 +1352,10 @@ mod tests {
         }
     }
 
+    /// The kinds of answer a test's press keeps on the list: a policy's acceptance and the
+    /// nevers' two anchors.
+    const KINDS: &[&str] = &["policy-accepted", "dispatch-nevers-live", "dispatch-nevers"];
+
     #[test]
     fn a_new_key_replaces_every_item_of_the_old_builds_and_is_the_apps_own() {
         // #7714: the old build's key, its spare and every plane's anchor are deleted, so none is
@@ -1062,63 +1403,109 @@ mod tests {
         }
     }
 
+    /// The list a test's keyring keeps, read under `key`: its entries, and whether it holds.
+    fn the_list(items: &Items, key: &[u8]) -> (Entries, bool) {
+        let mut entries = Entries::new();
+        let mut holds = true;
+        let mut any = false;
+        for slot in REPLACED {
+            if let Some((value, ours)) =
+                items.0.borrow().get(&(SERVICE.to_owned(), slot.to_owned()))
+            {
+                assert!(ours, "the list is the app's own item");
+                let (more, held) = list_read(value, &[key]);
+                merge(&mut entries, more);
+                holds &= held;
+                any = true;
+            }
+        }
+        (entries, any && holds)
+    }
+
     #[test]
-    fn a_new_key_keeps_the_planes_it_broke_sealed_with_itself_and_before_itself() {
-        // #7714: the list of planes the old key sealed is kept as an item of the app's own,
-        // sealed with the new key, and made before the key, so no press leaves a key with no
-        // list. An old list is replaced, never written into.
+    fn a_new_key_keeps_the_planes_it_broke_sealed_with_itself_and_vouches_only_for_what_holds() {
+        // #7714: the list of planes the old key anchored is kept as an item of the app's own,
+        // sealed with the new key. F5 of #7734's review: a list before that holds under no key
+        // of the app's (another program's, or edited) is carried, so its planes stay broken,
+        // and never vouched for, so none gets the new key's words.
         let old = "ab".repeat(KEY_BYTES);
-        let items = Items::default().with(SERVICE, &old, false).with_at(
-            SERVICE,
-            REPLACED,
-            "an old list\nzzzz",
-            false,
+        let items = Items::default()
+            .with(SERVICE, &old, false)
+            .with_at(SERVICE, "policy-accepted:aaaa", "00", false)
+            .with_at(SERVICE, "dispatch-nevers-live:bbbb", "00", false)
+            .with_at(
+                SERVICE,
+                REPLACED[0],
+                &a_foreign_list_for_this_test(&["policy-accepted:zzzz".to_owned()]),
+                false,
+            );
+        let made = held(renew(&items, KINDS).expect("a new key"));
+        let (entries, holds) = the_list(&items, &made);
+        assert!(holds, "sealed with the new key");
+        assert_eq!(
+            entries,
+            Entries::from([
+                ("dispatch-nevers-live:bbbb".to_owned(), true),
+                ("policy-accepted:aaaa".to_owned(), true),
+                ("policy-accepted:zzzz".to_owned(), false),
+            ])
         );
-        let listed = ["aaaa".to_owned(), "bbbb".to_owned()];
-        let made = held(renew(&items, &listed).expect("a new key"));
-        let value = items
-            .0
-            .borrow()
-            .get(&(SERVICE.to_owned(), REPLACED.to_owned()))
-            .map(|(value, ours)| (value.clone(), *ours))
-            .expect("the list kept");
-        assert!(value.1, "the app's own item");
-        let (seal, text, anchors) = replaced_parts(&value.0);
-        assert_eq!(anchors, listed);
-        let given: Vec<u8> = (0..seal.len())
-            .step_by(2)
-            .map(|at| u8::from_str_radix(&seal[at..at + 2], 16).expect("hex"))
-            .collect();
-        assert!(
-            mac(&made, REPLACED_KIND, "", text)
-                .expect("a mac")
-                .verify_slice(&given)
-                .is_ok(),
-            "sealed with the new key"
+    }
+
+    #[test]
+    fn a_list_the_old_key_sealed_is_carried_and_vouched_for() {
+        // #7714: a second update after a first new key. The list the first kept holds under the
+        // key being replaced, so its planes keep the new key's words.
+        let old = vec![0xab; KEY_BYTES];
+        let before = list_value(
+            &old,
+            &Entries::from([("policy-accepted:cccc".to_owned(), true)]),
+        )
+        .expect("a list");
+        let items = Items::default()
+            .with(SERVICE, &crate::extension::hex(&old), false)
+            .with_at(SERVICE, REPLACED[1], &before, false);
+        let made = held(renew(&items, KINDS).expect("a new key"));
+        assert_eq!(
+            the_list(&items, &made),
+            (
+                Entries::from([("policy-accepted:cccc".to_owned(), true)]),
+                true
+            )
         );
     }
 
     #[test]
     fn a_new_key_whose_old_items_fail_to_delete_is_unread_and_makes_none() {
         let items = FailingDeletes(Items::default().with(SERVICE, &"ab".repeat(KEY_BYTES), false));
-        assert_eq!(renew(&items, &[]).err(), Some(KEY_UNREAD));
+        assert_eq!(renew(&items, KINDS).err(), Some(KEY_UNREAD));
     }
 
     #[test]
-    fn a_new_key_macos_refuses_leaves_the_key_and_names_the_manual_step() {
+    fn a_new_key_macos_refuses_leaves_the_key_and_names_keychain_access() {
         // #7714: a delete macOS refuses (the person said no at its prompt, or it would not ask)
-        // makes no new key: the old one stays foreign, and the press says what to do by hand.
+        // makes no new key: the old one stays foreign, and the press says what to do by hand,
+        // in Keychain Access, which can delete any item of the person's (F1 of #7734's review).
         let old = "ab".repeat(KEY_BYTES);
         let items = Refusing(Items::default().with(SERVICE, &old, false));
-        assert_eq!(renew(&items, &[]).err(), Some(RENEW_REFUSED));
+        assert_eq!(renew(&items, KINDS).err(), Some(RENEW_REFUSED));
         assert!(matches!(read_or_make(&items), Found::Foreign));
-        assert!(RENEW_REFUSED.contains("security delete-generic-password -s purlis-seal"));
+        for said in [RENEW_REFUSED, FOREIGN_KEY] {
+            assert!(said.contains("Keychain Access"), "{said}");
+            assert!(!said.contains("security "), "{said}");
+            assert!(
+                !said.contains("to be asked again"),
+                "never promises a prompt: {said}"
+            );
+        }
     }
 
     #[test]
-    fn a_new_key_cut_short_after_some_items_went_is_made_whole_by_pressing_again() {
+    fn a_new_key_cut_short_after_some_items_went_is_made_whole_with_the_same_key() {
         // #7714, ruling 5: a partial replacement is safe to retry. The old key goes last, so a
-        // press refused after the anchors went leaves it foreign, and the next press finishes.
+        // press refused after the anchors went leaves it foreign, the anchor is listed, and the
+        // new key waits in the app's own spare (F6 of #7734's review): the next press uses it,
+        // so the list it sealed still holds.
         let old = "ab".repeat(KEY_BYTES);
         let items = Refusing(Items::default().with(SERVICE, &old, false).with_at(
             SERVICE,
@@ -1126,15 +1513,48 @@ mod tests {
             "00",
             true,
         ));
-        assert_eq!(renew(&items, &[]).err(), Some(RENEW_REFUSED));
+        assert_eq!(renew(&items, KINDS).err(), Some(RENEW_REFUSED));
         assert_eq!(
             items.0.services_and_accounts(),
-            [(SERVICE.to_owned(), ACCOUNT.to_owned())],
-            "the anchor went, the old key stayed"
+            [
+                (SERVICE.to_owned(), ACCOUNT.to_owned()),
+                (SERVICE.to_owned(), REPLACED[0].to_owned()),
+                (spare(), ACCOUNT.to_owned()),
+            ],
+            "the anchor went and is listed, the old key stayed, the new one waits"
         );
         assert!(matches!(read_or_make(&items), Found::Foreign));
-        let made = held(renew(&items.0, &[]).expect("pressed again"));
+        let waiting = items.0.value(&spare()).expect("the new key at rest");
+        let made = held(renew(&items.0, KINDS).expect("pressed again"));
+        assert_eq!(crate::extension::hex(&made), waiting, "the same new key");
         assert_eq!(held(read_or_make(&items.0)), made);
+        assert_eq!(
+            the_list(&items.0, &made),
+            (
+                Entries::from([("policy-accepted:aaaa".to_owned(), true)]),
+                true
+            )
+        );
+    }
+
+    #[test]
+    fn the_old_key_deleted_and_the_new_one_not_kept_is_the_new_one_at_the_next_read() {
+        // F6 of #7734's review: the new key is at rest in the app's own spare before the old one
+        // goes, so a press cut short between the two never leaves the next read to make a
+        // different key, under which every listed plane would read as edited.
+        let old = "ab".repeat(KEY_BYTES);
+        let items = FailingAt::new(
+            Items::default().with(SERVICE, &old, false).with_at(
+                SERVICE,
+                "policy-accepted:aaaa",
+                "00",
+                false,
+            ),
+            |what, service, account| what == "make" && service == SERVICE && account == ACCOUNT,
+        );
+        assert!(renew(&items, KINDS).is_err());
+        let made = held(read_or_make(&items.items));
+        assert!(the_list(&items.items, &made).1, "the list still holds");
     }
 
     /// Whether the project anchored `anchor` is anchored still under any service, or named by a
@@ -1148,8 +1568,169 @@ mod tests {
                     && value
                         .lines()
                         .skip(1)
-                        .any(|line| line == anchor || line.trim_start_matches('?') == account))
+                        .any(|line| line.trim_start_matches(UNVOUCHED) == account))
         })
+    }
+
+    /// A keyring that records every write and delete, and fails the one `fails` names: a delete
+    /// macOS refuses, or a write cut short.
+    /// Whether a write or delete, by what it is, its service and its account, fails.
+    type Fails = Box<dyn Fn(&str, &str, &str) -> bool>;
+
+    struct FailingAt {
+        items: Items,
+        fails: Fails,
+        done: std::cell::RefCell<Vec<(&'static str, String, String)>>,
+    }
+
+    impl FailingAt {
+        fn new(items: Items, fails: impl Fn(&str, &str, &str) -> bool + 'static) -> Self {
+            Self {
+                items,
+                fails: Box::new(fails),
+                done: std::cell::RefCell::default(),
+            }
+        }
+
+        /// The `n`th write or delete fails, and no other.
+        fn at(items: Items, n: usize) -> Self {
+            let count = std::cell::Cell::new(0);
+            Self::new(items, move |_, _, _| {
+                let now = count.get();
+                count.set(now + 1);
+                now == n
+            })
+        }
+
+        fn failed(&self, what: &'static str, service: &str, account: &str) -> bool {
+            self.done
+                .borrow_mut()
+                .push((what, service.to_owned(), account.to_owned()));
+            (self.fails)(what, service, account)
+        }
+
+        /// Where in what was done the first `what` of `account` under `service` is.
+        fn when(&self, what: &str, service: &str, account: &str) -> usize {
+            self.done
+                .borrow()
+                .iter()
+                .position(|(w, s, a)| *w == what && s == service && a == account)
+                .unwrap_or_else(|| panic!("no {what} of {service} {account}"))
+        }
+    }
+
+    impl KeyItems for FailingAt {
+        fn read(&self, service: &str, account: &str) -> Result<Option<String>, Unreadable> {
+            self.items.read(service, account)
+        }
+
+        fn owned_here(&self, service: &str, account: &str, value: &str) -> Result<bool, String> {
+            self.items.owned_here(service, account, value)
+        }
+
+        fn make_own(&self, service: &str, account: &str, value: &str) -> Result<(), String> {
+            if self.failed("make", service, account) {
+                return Err("cut short".to_owned());
+            }
+            self.items.make_own(service, account, value)
+        }
+
+        fn accounts(&self, service: &str) -> Result<Vec<String>, String> {
+            self.items.accounts(service)
+        }
+
+        fn delete(&self, service: &str, account: &str) -> Result<(), Removal> {
+            if self.failed("delete", service, account) {
+                return Err(Removal::Refused);
+            }
+            self.items.delete(service, account)
+        }
+    }
+
+    /// The real update case (F4 of #7734's review): every item is the old build's, two
+    /// projects are anchored for their policy and one for its nevers, and a list a first new
+    /// key kept, sealed with the key being replaced, names a third.
+    fn after_an_update() -> (Items, Vec<(&'static str, &'static str)>) {
+        let old = vec![0xab; KEY_BYTES];
+        let before = list_value(
+            &old,
+            &Entries::from([("policy-accepted:cccc".to_owned(), true)]),
+        )
+        .expect("a list");
+        let items = Items::default()
+            .with(SERVICE, &crate::extension::hex(&old), false)
+            .with_at(SERVICE, "policy-accepted:aaaa", "00", false)
+            .with_at(SERVICE, "policy-accepted:bbbb", "00", false)
+            .with_at(SERVICE, "dispatch-nevers-live:aaaa", "00", false)
+            .with_at(SERVICE, REPLACED[0], &before, false);
+        let projects = vec![
+            ("policy-accepted", "aaaa"),
+            ("policy-accepted", "bbbb"),
+            ("policy-accepted", "cccc"),
+            ("dispatch-nevers-live", "aaaa"),
+        ];
+        (items, projects)
+    }
+
+    #[test]
+    fn the_list_is_written_before_any_anchor_goes_and_the_old_key_goes_last() {
+        // F2 and F4 of #7734's review: the order, as the keyring saw it.
+        let (items, _) = after_an_update();
+        let items = FailingAt::new(items, |_, _, _| false);
+        renew(&items, KINDS).expect("a new key");
+        let listed = items.when("make", SERVICE, REPLACED[1]);
+        let spare_made = items.when("make", &spare(), ACCOUNT);
+        let old_key = items.when("delete", SERVICE, ACCOUNT);
+        let new_key = items.when("make", SERVICE, ACCOUNT);
+        assert!(spare_made < listed, "the new key at rest before the list");
+        for (n, (what, service, account)) in items.done.borrow().iter().enumerate() {
+            let old_item = *what == "delete" && !(*service == spare() && account == ACCOUNT);
+            if old_item && account.contains(':') {
+                assert!(listed < n, "the list before {account} went");
+            }
+            if old_item && n != old_key {
+                assert!(n < old_key, "{service} {account} before the old key");
+            }
+        }
+        assert!(old_key < new_key, "the old key last, then the new one");
+    }
+
+    #[test]
+    fn a_new_key_cut_short_at_any_step_and_pressed_again_lists_every_project() {
+        // F2 and F4 of #7734's review: at every write or delete a press can stop at, refused by
+        // macOS or cut short, no project reads as never accepted (each is anchored still or
+        // listed), and the next press lists every one, vouched for, under the key it keeps.
+        let (items, projects) = after_an_update();
+        let clean = FailingAt::new(items, |_, _, _| false);
+        renew(&clean, KINDS).expect("a new key");
+        let steps = clean.done.borrow().len();
+        for n in 0..steps {
+            let (items, _) = after_an_update();
+            let cut = FailingAt::at(items, n);
+            // The last step, the new key's spare deleted, is best effort: the press is done.
+            if renew(&cut, KINDS).is_ok() {
+                assert_eq!(n, steps - 1, "step {n} stops the press");
+                continue;
+            }
+            for (kind, anchor) in &projects {
+                assert!(
+                    anchored_or_listed(&cut.items, kind, anchor),
+                    "step {n}: {kind}:{anchor} would read as never accepted: {:?}",
+                    cut.items.services_and_accounts()
+                );
+            }
+            let made = held(renew(&cut.items, KINDS).expect("pressed again"));
+            assert_eq!(held(read_or_make(&cut.items)), made, "step {n}");
+            let (entries, holds) = the_list(&cut.items, &made);
+            assert!(holds, "step {n}");
+            for (kind, anchor) in &projects {
+                assert_eq!(
+                    entries.get(&format!("{kind}:{anchor}")),
+                    Some(&true),
+                    "step {n}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -1164,9 +1745,8 @@ mod tests {
                 .with_at(SERVICE, "policy-accepted:aaaa", "00", true)
                 .with_at(SERVICE, "policy-accepted:zzzz", "00", false),
         );
-        let anchors = ["aaaa".to_owned(), "zzzz".to_owned()];
-        assert!(renew(&items, &anchors).is_err());
-        for anchor in &anchors {
+        assert!(renew(&items, KINDS).is_err());
+        for anchor in ["aaaa", "zzzz"] {
             assert!(
                 anchored_or_listed(&items.0, "policy-accepted", anchor),
                 "{anchor}: {:?}",

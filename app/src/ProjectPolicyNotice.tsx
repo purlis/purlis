@@ -22,6 +22,13 @@ export const POLICY_ACCEPT_MEANS =
 export const POLICY_UNSEALED_SAID =
   "The policy this machine kept as accepted does not hold, so every family is enforced and no chat dispatches to another persona until you accept the project's policy again.";
 
+/**
+ * What the window says where a new seal key left the project's never-dispatch list unread
+ * (#7714): Accept keeps every pair the list holds.
+ */
+export const NEVERS_NEW_KEY_SAID =
+  "purlis made a new seal key on this machine, so it cannot vouch for your never-dispatch list, and no chat dispatches to another persona until you review it. Check .charter/app/dispatch-never.json in this project, then accept: purlis keeps every pair it holds.";
+
 /** Whether an answer is a policy state to draw: one of any other shape says nothing. */
 const drawable = (data: PolicyState | null | undefined): data is PolicyState =>
   Array.isArray(data?.waiting);

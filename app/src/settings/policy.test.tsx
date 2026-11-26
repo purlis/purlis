@@ -106,6 +106,17 @@ describe("the project's policy in Settings", () => {
     );
   });
 
+  it("where a new seal key left the never-dispatch list unread, says to review it and offers Accept", async () => {
+    // #7714: Accept on this project keeps every pair the list holds, sealed with the new key.
+    const sent = core({ ...WATCH, nevers_new_key: true });
+    render(<PolicyStanding plane={PLANE} ids={IDS} canAccept />);
+    expect(await screen.findByText(/cannot vouch for your never-dispatch list/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    await waitFor(() =>
+      expect(sent("accept_project_policy")).toEqual([{ plane: PLANE, shown: "d1" }]),
+    );
+  });
+
   it("offers no Accept where the page is not the window", async () => {
     core({
       ...WATCH,

@@ -4861,15 +4861,21 @@ write into this folder cannot make its own text arrive as the person's.
 - **Format:** generic passwords under the service `purlis-seal`: the key at account `answers`,
   32 random bytes as 64 hex digits; each anchor at account `<kind>:<anchor>`, the seal in hex.
   The sets' kinds are `dispatch-answers` and `dispatch-nevers-live`.
-  **The planes a replaced key sealed** (#7714) are at account `seal-key-replaced`: the seal, in
-  hex, of the anchors that follow (kind `seal-key-replaced`, no clone), then each plane's anchor,
-  one a line, sorted. Kept by Make a new key and accept, sealed with the new key before the key
-  is kept, and added to by a later replacement: every plane whose acceptance the old key's
-  anchors spoke for. A plane on it reads as **broken, never as never accepted**, so no accepted
-  deny drops to the shipped default, whether or not the seal holds; only a list whose seal holds
-  says it broke because purlis replaced its key (`sandbox::local::broken_by_a_new_key`,
-  `PolicyState.new_key`), so a list edited or made by another program gives no plane those words.
-  A plane leaves it when it is accepted again, and the item goes with its last plane.
+  **The planes a replaced key anchored** (#7714) are at the accounts `seal-key-replaced` and
+  `seal-key-replaced-next`: each the seal, in hex, of the lines that follow (kind
+  `seal-key-replaced`, no clone), then one entry a line, sorted: the account an anchor was kept
+  at, `<kind>:<anchor>` (kind `policy-accepted`, `dispatch-nevers-live` or `dispatch-nevers`),
+  with `?` before it where purlis does not vouch for it. A list is always written at the account
+  that holds none, and the other deleted after, so there is always one; a reader takes both.
+  Kept by Make a new key and accept, sealed with the new key **before any anchor is deleted**,
+  and added to by a later replacement. A plane on it reads as **broken, never as never
+  accepted**, and its nevers as unread, whether or not the seal holds; only an entry without `?`
+  in a list whose seal holds says it broke because purlis replaced its key
+  (`sandbox::local::broken_by_a_new_key`, `PolicyState.new_key`,
+  `PolicyState.nevers_new_key`). A plane leaves it when it is accepted again, and the item goes
+  with its last plane. While the press runs, the new key is at rest in the spare
+  (`purlis-seal/spare`, account `answers`), which the next read makes the key where the press
+  stopped between the old key's delete and the new one's write.
 - **Status:** **internal** — **purlis only**.
 - **Tier:** Keyring — device-bound; never synced, never backed up. Lost, every sealed answer
   counts as none, and the shipped default stands until the person accepts again.
@@ -4882,11 +4888,12 @@ write into this folder cannot make its own text arrive as the person's.
   only the item's owner do. An item another program owns (after an update macOS treats as a
   different app) makes every sealed answer read as broken. **Make a new key and accept** (#7714,
   the window's alone) then lists the accounts under `purlis-seal`, deletes the spares, every
-  anchor and the old list of replaced planes (below), keeps the new list, deletes the key last
-  (macOS asks the person to allow it), keeps a new key and seals this plane's acceptance. Where macOS refuses, nothing is accepted, and the manual step
-  stays: delete every keychain item named `purlis-seal` (in Keychain Access, or `security
-  delete-generic-password -s purlis-seal` once for each), and the next Accept reads the keychain
-  again and makes a new key, with no restart
+  anchor and the old list of replaced planes (below), after keeping the new key in its spare and
+  the new list, deletes the key last
+  (macOS asks the person to allow it), keeps a new key and seals this plane's acceptance. Where
+  macOS refuses, nothing is accepted, and the manual step stays: delete every keychain item named
+  `purlis-seal` in Keychain Access, and the next Accept reads the keychain again and makes a new
+  key, with no restart
   (#7073). An item made to let every program in (`-A`) is not caught yet
   (#7007). **A write of the key cut short** between its delete and its add leaves the key at
   rest in its spare item (`purlis-seal/spare`, account `answers`): with no key item and the

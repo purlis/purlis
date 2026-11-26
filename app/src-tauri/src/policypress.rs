@@ -42,6 +42,10 @@ pub struct PolicyState {
     /// Whether the acceptance does not hold because purlis made a new seal key on this machine
     /// since it was sealed (#7714), never because something edited it: the window says so.
     pub new_key: bool,
+    /// Whether this project's never-dispatch list was anchored by a seal key purlis has replaced
+    /// since (#7714): it reads as unread until the person reviews it and presses Accept, which
+    /// keeps every pair it holds.
+    pub nevers_new_key: bool,
     /// The digest of the committed text this was read from: what Accept names, so a press on a
     /// file that changed since it was shown accepts nothing.
     pub digest: String,
@@ -155,6 +159,7 @@ fn state_of(root: &std::path::Path) -> PolicyState {
         unsealed: standing.unsealed,
         key_foreign: standing.key_foreign,
         new_key: standing.new_key,
+        nevers_new_key: standing.nevers_new_key,
         digest: standing.digest,
         template: standing.said.template.word().to_owned(),
         template_default: !standing.said.template_said,

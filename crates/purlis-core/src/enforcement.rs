@@ -1341,6 +1341,12 @@ pub fn press(root: &Path, shown: &str) -> std::io::Result<()> {
         return Err(changed_since_shown());
     }
     crate::sandbox::local::accept_policy(root, now.as_kept())?;
+    // The person's press on a project whose nevers a replaced key anchored seals them as they
+    // stand (F3 of #7734's review): they only tighten. Best effort, as the acceptance is kept
+    // already; they read as unread, with Accept offered, until it holds.
+    if let Err(why) = crate::dispatchnever::keep_after_a_new_key(root) {
+        tracing::warn!("purlis: the nevers were not sealed with the new key ({why})");
+    }
     // One press for the level (the follow-up's item 1): where it accepts the team's off, the
     // team's own ask is answered with it, so nobody is asked twice.
     if now.level() == SandboxLevel::Off
@@ -1457,7 +1463,7 @@ pub fn standing(root: &Path) -> Standing {
         unsealed: crate::sandbox::local::policy_unsealed(root),
         key_foreign: crate::secrets::seal::key_is_foreign(),
         new_key: crate::sandbox::local::broken_by_a_new_key(root),
-        nevers_new_key: false,
+        nevers_new_key: crate::dispatchnever::listed_for_a_new_key(root),
         digest: digest(&now),
         runs: now.stricter(&accepted),
         locked: Family::ALL

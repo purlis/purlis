@@ -499,3 +499,16 @@ fn an_older_nevers_file_put_back_reads_as_unread() {
     std::fs::write(path(root), older).unwrap();
     assert_eq!(read(root), Nevers::Unread);
 }
+
+#[test]
+fn the_kinds_a_new_seal_key_lists_are_the_kinds_the_nevers_are_anchored_as() {
+    // F3 of #7734's review: a new key keeps a plane on its list by these names, so they are the
+    // names the anchors are kept under.
+    assert_eq!(
+        ANCHOR_KINDS,
+        [
+            crate::secrets::sealed_set::anchor_kind(STORE).as_str(),
+            WHOLE_KIND
+        ]
+    );
+}

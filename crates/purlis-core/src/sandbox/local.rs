@@ -1323,7 +1323,7 @@ pub fn policy_accepted_record(root: &Path) -> PolicyAccepted {
         // read as never accepted (#7714): its anchor went with the old key. The list counts
         // here whether or not it holds, since it can only keep a plane broken.
         (None, None, None)
-            if !crate::secrets::seal::replaced().lists(&clone)
+            if !crate::secrets::seal::replaced().lists(&[POLICY_KIND], &clone)
                 && (crate::secrets::seal::can_seal()
                     || no_keyring_at(root)
                     || !crate::secrets::seal::kept_exists(POLICY_KIND, &clone)) =>
@@ -1409,23 +1409,21 @@ pub(crate) fn mark_sealed(anchor: &str) -> io::Result<()> {
 /// no key here can tell from one sealed with the old key, which is gone.
 pub fn broken_by_a_new_key(root: &Path) -> bool {
     !crate::secrets::seal::key_is_foreign()
-        && crate::secrets::seal::replaced().holds_for(&anchor_key(root))
+        && crate::secrets::seal::replaced().vouches(&[POLICY_KIND], &anchor_key(root))
         && policy_accepted_record(root) == PolicyAccepted::Broken
 }
 
 /// **The seal's key replaced where it is another program's** (#7714): the window's press, before
-/// it accepts. Every plane whose acceptance the keyring anchors is kept on the list of planes the
-/// old key sealed, so each reads as broken because of the new key, and none as never accepted;
-/// then every item under the seal's service is replaced and a new key made
+/// it accepts. Every plane whose acceptance or nevers the keyring anchors is kept on the list of
+/// planes the old key anchored before any anchor goes, so each reads as broken because of the
+/// new key, and none as never accepted or as no nevers (#7734's review, F2 and F3); then every
+/// item under the seal's service is replaced and a new key made
 /// ([`crate::secrets::seal::renew_key`]), which macOS may ask the person to allow. `Ok(false)`
 /// where the key is the app's own, and nothing is replaced. A press refused or cut short is safe
 /// to press again: the old key goes last.
 pub fn renew_seal_key() -> io::Result<bool> {
-    if !crate::secrets::seal::key_is_foreign() {
-        return Ok(false);
-    }
-    let anchors = crate::secrets::seal::anchored(POLICY_KIND).map_err(io::Error::other)?;
-    crate::secrets::seal::renew_key(&anchors).map_err(io::Error::other)
+    let [live, whole] = crate::dispatchnever::ANCHOR_KINDS;
+    crate::secrets::seal::renew_key(&[POLICY_KIND, live, whole]).map_err(io::Error::other)
 }
 
 /// [`mark_sealed`] where a seal has just been read and verified with the key, so a plane sealed
@@ -1503,7 +1501,7 @@ pub fn accept_policy(
     })?;
     // Sealed with the key of now: a record that does not hold from here on is said as edited
     // (#7714). Best effort, as the acceptance is kept already.
-    if !crate::secrets::seal::unlist_replaced(&clone) {
+    if !crate::secrets::seal::unlist_replaced(&[POLICY_KIND], &clone) {
         tracing::warn!("purlis: the plane was not taken off the list of the old seal key");
     }
     Ok(())
