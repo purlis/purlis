@@ -11,8 +11,13 @@
  * - **It opens only when the window is quiet**: no IME composition in progress, no key down, and
  *   no dialog (the palette among them) or menu (a select's list among them) up
  *   (`ui/layers.ts`). It waits, and opens when that ends. A keyup that ends the wait is heard
- *   before the press it ends (a Space let go on a button that opens a dialog), so the alert opens
- *   a task later, once that press has drawn what it opens, and only if the window is still quiet.
+ *   before the press it ends (a Space let go on a button that opens a dialog), and a layer that
+ *   closes is uncounted before a dialog drawn in the same commit counts itself (React runs a
+ *   commit's effect cleanups before its new effects). So after either, and after a raise, the
+ *   alert opens a task later, once what that commit drew has counted itself, and only if the
+ *   window is still quiet.
+ * - **An alert whose project goes behind leaves its turn, unanswered**: it is not counted among
+ *   those shown, and as its project comes back it takes its place again by when it was raised.
  *
  * A key counts as down from its keydown to its keyup, or until {@link KEY_HELD_MS} pass with no
  * keydown of it (a key held repeats; a keyup macOS drops while ⌘ is down never comes). The window
@@ -35,6 +40,12 @@ let composing = false;
 let composingIn: MutationObserver | undefined;
 let forgetting: ReturnType<typeof setTimeout> | undefined;
 let promoting: ReturnType<typeof setTimeout> | undefined;
+
+/** Looks again a task later: once what the commit or press in progress draws has counted itself. */
+function promoteLater() {
+  clearTimeout(promoting);
+  promoting = setTimeout(promote, 0);
+}
 
 const keyName = (event: KeyboardEvent) => event.code || event.key;
 
@@ -77,9 +88,12 @@ function composingStarted(event: Event) {
 const quiet = () =>
   !composing && !aKeyIsDown() && layersUp("dialog") === 0 && layersUp("menu") === 0;
 
-/** The alerts raised, in order; the first is shown once the window is quiet. */
+/** The alerts raised and drawable, in the order raised; the first is shown once the window is quiet. */
 const queue: string[] = [];
 let shown: string | null = null;
+/** When each alert still raised was raised, whether its project is in front or not. */
+const raisedAt = new Map<string, number>();
+let raisedSoFar = 0;
 /** How many were shown and left since the queue was last empty. */
 let answered = 0;
 /** Alerts let go in this commit, kept until a microtask says they did not come back. */
@@ -91,7 +105,6 @@ const tell = () => {
 };
 
 function promote() {
-  clearTimeout(promoting);
   if (shown !== null || queue.length === 0 || !quiet()) return;
   shown = queue[0];
   tell();
@@ -103,24 +116,40 @@ function leave(id: string) {
   queue.splice(at, 1);
   if (shown === id) {
     shown = null;
-    answered += 1;
+    // One still raised went behind with its project: it was not answered.
+    if (!raisedAt.has(id)) answered += 1;
   }
   if (queue.length === 0) answered = 0;
   tell();
   promote();
 }
 
+/** Holds alert `id`'s place in the order raised while it is raised; gives it up by what this returns. */
+function hold(id: string): () => void {
+  if (!raisedAt.has(id)) raisedAt.set(id, (raisedSoFar += 1));
+  return () => void raisedAt.delete(id);
+}
+
+/** Puts `id` in the queue by when it was raised, behind the one shown, which stays first. */
+function join(id: string) {
+  const when = raisedAt.get(id) ?? Infinity;
+  let at = shown === null ? 0 : 1;
+  while (at < queue.length && (raisedAt.get(queue[at]) ?? Infinity) < when) at += 1;
+  queue.splice(at, 0, id);
+}
+
 /**
- * Raises alert `id`: it joins the queue, and leaves it by what this returns. A leave waits a
- * microtask, so React's strict mode taking an effect down and putting it back is no leave.
+ * Draws alert `id` in its turn: it joins the queue, and leaves it by what this returns. A leave
+ * waits a microtask, so React's strict mode taking an effect down and putting it back is no leave.
  */
 function raise(id: string): () => void {
   letGo.delete(id);
   if (!queue.includes(id)) {
-    queue.push(id);
+    join(id);
     tell();
   }
-  promote();
+  // A task later: every alert this commit raises or brings back has joined first.
+  promoteLater();
   return () => {
     letGo.add(id);
     queueMicrotask(() => {
@@ -141,14 +170,18 @@ function hear(heard: () => void) {
 export type Turn = { at: number; of: number } | null;
 
 /**
- * **Raises an alert while `raised`**, and says when its turn has come. The caller raises it only
- * while it can be drawn (its project in front): one that cannot takes no turn.
+ * **Raises an alert while `raised`**, and says when its turn has come. It takes a turn only while
+ * it can be drawn (`inFront`, its project in front); one behind keeps when it was raised, and
+ * leaving as its project goes behind is no answer.
  */
-export function useRaisedTurn(raised: boolean): Turn {
+export function useRaisedTurn(raised: boolean, inFront: boolean): Turn {
   const id = useId();
-  useEffect(() => (raised ? raise(id) : undefined), [raised, id]);
+  // Before the turn's own effect: an alert no longer raised has given up its place as it leaves.
+  useEffect(() => (raised ? hold(id) : undefined), [raised, id]);
+  const drawable = raised && inFront;
+  useEffect(() => (drawable ? raise(id) : undefined), [drawable, id]);
   const turn = useSyncExternalStore(hear, () => turnOf(id));
-  if (!raised || turn === "") return null;
+  if (!drawable || turn === "") return null;
   const [at, of] = turn.split("/").map(Number);
   return { at, of };
 }
@@ -169,8 +202,7 @@ if (typeof window !== "undefined") {
       // macOS sends no keyup for a key let go while ⌘ was down.
       if (event.key === "Meta") down.clear();
       // A task later: this keyup's own press (React Aria's, on the same keyup) comes first.
-      clearTimeout(promoting);
-      promoting = setTimeout(promote, 0);
+      promoteLater();
     },
     true,
   );
@@ -188,5 +220,6 @@ if (typeof window !== "undefined") {
     composed();
     promote();
   });
-  hearLayers(promote);
+  // A task later: a dialog opened in the commit that closed a layer has not counted itself yet.
+  hearLayers(promoteLater);
 }

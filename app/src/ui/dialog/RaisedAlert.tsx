@@ -42,10 +42,24 @@ export const RAISED_ALERT_CHANGED = "This question changed while it was open. Re
 /** The keys that answer: Return and Space press the answer they are on, Esc chooses `cancel`. */
 const ANSWER_KEYS = new Set(["Enter", " ", "Escape"]);
 
-/** A control a held key types into: its repeat is the person's text, not an answer. */
+/** A control that takes a line break: Return held there types, as Space does in any field. */
+const MULTILINE = 'textarea, [contenteditable]:not([contenteditable="false"])';
+
+/** A control a held Space types into: its repeat is the person's text, not an answer. */
 const EDITABLE =
-  'textarea, [contenteditable]:not([contenteditable="false"]), ' +
+  `${MULTILINE}, ` +
   'input:not([type="button"], [type="checkbox"], [type="radio"], [type="reset"], [type="submit"])';
+
+/**
+ * Whether key `key`, held down in `target`, types there rather than answering: Space in any field,
+ * Return only where it makes a new line, and Esc never (it chooses `cancel` from anywhere).
+ */
+function typesHeld(key: string, target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  if (key === " ") return target.matches(EDITABLE);
+  if (key === "Enter") return target.matches(MULTILINE);
+  return false;
+}
 
 type Pressed<A> = A extends unknown
   ? Omit<A, "onPress"> & {
@@ -142,8 +156,8 @@ function useSettledPresses(open: boolean, shows: string) {
       if (event.repeat) {
         const target = event.target;
         const alert = saying.current?.closest('[role="alertdialog"]');
-        const typing = target instanceof Element && target.matches(EDITABLE);
-        if (settledNow && typing && alert?.contains(target)) return;
+        const typing = typesHeld(event.key, target);
+        if (settledNow && typing && target instanceof Node && alert?.contains(target)) return;
       } else if (settledNow) return;
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -192,7 +206,7 @@ export function RaisedAlert({
   // Only an alert that can be drawn takes the window's turn: one in a project behind waits, and
   // its settle guard arms as it is drawn.
   const inFront = useProjectShown();
-  const turn = useRaisedTurn(raised && inFront);
+  const turn = useRaisedTurn(raised, inFront);
   const open = turn !== null;
   const { said, busy, saying, press } = useSettledPresses(open, shows);
   const answerOf = (answer: RaisedAnswer | undefined) =>
