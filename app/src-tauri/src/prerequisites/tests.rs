@@ -388,3 +388,86 @@ fn a_commit_at_the_plane_root_evaluates_again() {
     commit("open");
     until("the commit", || evaluated.load(Ordering::SeqCst) > before);
 }
+
+#[test]
+fn the_answer_that_grants_nothing_marks_the_entry_deferred_releases_a_held_start_and_is_told() {
+    // ADR 0130 §5, §6: the core holds the person's start; the window's answer that grants
+    // nothing releases it, and every window hears the entry deferred. Waiting here: a test is
+    // not the app, which alone seals an acceptance, so Broken cannot be made.
+    let root = plane(OPEN);
+    let heard: Arc<Mutex<Vec<Prerequisites>>> = Arc::default();
+    let planes = Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None)
+        .telling_prerequisites({
+            let heard = Arc::clone(&heard);
+            Arc::new(move |told| heard.lock().expect("heard").push(told))
+        });
+    let id = planes.open(root.path());
+    let held = planes.held(&id).expect("held");
+    until("the open's list", || {
+        !heard.lock().expect("heard").is_empty()
+    });
+    let shown = heard.lock().expect("heard").remove(0);
+    let [Prerequisite::Policy(policy)] = shown.list.as_slice() else {
+        panic!("the policy prerequisite alone: {shown:?}");
+    };
+    assert_eq!(policy.state, PrerequisiteState::Open);
+
+    let start = {
+        let held = Arc::clone(&held);
+        std::thread::spawn(move || {
+            hold_start(
+                &held,
+                &purlis_core::sandbox::Made::Window,
+                &std::sync::atomic::AtomicBool::new(false),
+            )
+        })
+    };
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!start.is_finished(), "the person's start waits");
+
+    let answered = deferred(
+        id.clone(),
+        root.path(),
+        &held.prerequisites(),
+        ShownPrerequisite::Policy {
+            digest: policy.digest.clone(),
+            reasons: policy.reasons.clone(),
+        },
+    );
+    let [Prerequisite::Policy(after)] = answered.list.as_slice() else {
+        panic!("the policy prerequisite alone: {answered:?}");
+    };
+    assert_eq!(after.state, PrerequisiteState::Deferred);
+    until("the held start released", || start.is_finished());
+    assert_eq!(start.join().expect("the hold ends"), Ok(()));
+    until("the event after the answer", || {
+        heard.lock().expect("heard").iter().any(|told| {
+            matches!(
+                told.list.as_slice(),
+                [Prerequisite::Policy(PolicyPrerequisite {
+                    state: PrerequisiteState::Deferred,
+                    ..
+                })]
+            )
+        })
+    });
+}
+
+#[test]
+fn the_persons_cancel_ends_a_held_start_saying_what_is_still_open() {
+    let root = plane(OPEN);
+    let planes = Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None);
+    let id = planes.open(root.path());
+    let held = planes.held(&id).expect("held");
+    let why = hold_start(
+        &held,
+        &purlis_core::sandbox::Made::Window,
+        &std::sync::atomic::AtomicBool::new(true),
+    )
+    .expect_err("cancelled");
+    assert!(
+        why.starts_with("purlis did not start the chat: ")
+            && why.contains("'s policy needs your answer in the purlis window on this machine"),
+        "{why}"
+    );
+}

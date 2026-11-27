@@ -544,6 +544,8 @@ pub fn start_typed_where_it_can_be(
     ) -> Result<Option<ReadyToType>, String>,
     not_drawn: impl FnOnce(String) -> String,
 ) -> Result<StartedTyped, String> {
+    // The person's chat, from the window: it waits while a prerequisite is open (ADR 0130 §5).
+    crate::prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)?;
     let root = held.root().to_path_buf();
     let number = held.chats().sessions().deal();
     let name = number.to_string();
@@ -739,6 +741,8 @@ fn sent(
     if let Some(bad) = purlis_core::handoff::bad_message(&chat.prompt) {
         return Err(bad.say());
     }
+    // The person's chat, from the window: it waits while a prerequisite is open (ADR 0130 §5).
+    crate::prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)?;
     let root = held.root().to_path_buf();
     let number = held.chats().sessions().deal();
     let name = number.to_string();

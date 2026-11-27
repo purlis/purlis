@@ -4604,6 +4604,9 @@ pub fn ask_persona(
         long: false,
         runs_on: None,
     };
+    // The person's ask from a tab starts a chat of theirs: it waits while a prerequisite of the
+    // project is open (ADR 0130 §5). A chat's own dispatch or handoff never does.
+    crate::prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)?;
     match dispatch_it(held, plane, &wanted, size)? {
         Dispatched::Started { it, .. } => Ok(*it),
         // The decision never asks the person for a grant of their own dispatch.

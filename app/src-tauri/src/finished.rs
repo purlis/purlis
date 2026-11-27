@@ -743,6 +743,9 @@ pub(crate) fn reopening(
     // default persona's grants where this persona's reach past them, until the person allows
     // its own on its tab.
     let held_grants = purlis_core::sessionresume::resumed_holds(root, record.persona.as_deref());
+    // The person's Reopen is a chat they start: it waits while a prerequisite is open, and is
+    // readied once they answer (ADR 0130 §5).
+    crate::prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)?;
     let ready = purlis_core::start::ready(
         &purlis_core::start::Start {
             profile: Some(profile.clone()),

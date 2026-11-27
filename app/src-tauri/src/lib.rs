@@ -1316,6 +1316,9 @@ async fn resume_session(
 ) -> Result<OpenChat, String> {
     let held = planes.held(&plane)?;
     off_the_window(STARTING_A_CHAT, move || {
+        // A session the person resumes is a chat they start: it waits while a prerequisite is
+        // open (ADR 0130 §5).
+        prerequisites::hold_a_start(&held, &purlis_core::sandbox::Made::Resume)?;
         let resumed =
             purlis_core::sessionresume::ready(held.root(), &path, &name, instead_of.is_some())?;
         // A new chat, as having resumed the chat the record is of (ADR 0066, #871).
@@ -2063,6 +2066,10 @@ async fn start_chat(
     let config = planes.config().map(std::path::Path::to_path_buf);
     let cancel = hostedsessions::a_cancellable_start(held.root());
     tauri::async_runtime::spawn_blocking(move || {
+        // The person's new chat, a pool's or a runner's too, waits while a prerequisite of the
+        // project is open, until they answer or press Cancel (ADR 0130 §5): before a branch is
+        // cut for it or it is readied, so an Accept that releases it is what it is readied under.
+        prerequisites::hold_start(&held, &purlis_core::sandbox::Made::Window, &cancel)?;
         // Timed by phase, and written to the slow log where it took a second or more (H12).
         let hot = held.chats().open_count();
         purlis_core::opening::recording(hot, move || {

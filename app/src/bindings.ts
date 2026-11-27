@@ -804,6 +804,14 @@ export const commands = {
 	 */
 	projectPrerequisites: (plane: PlaneId) => typedError<Prerequisites, string>(__TAURI_INVOKE("project_prerequisites", { plane })),
 	/**
+	 *  **The answer that grants nothing**: "Work in strict mode" under Broken, "Keep my current
+	 *  rules" under Waiting (ADR 0130 §6). Kept in the app's memory for this run, against what was
+	 *  `shown`, and never written anywhere; the entry then reads deferred, a start the person made
+	 *  in the project and held on it starts, under the policy in force, and every window is told the
+	 *  new list. It grants nothing, so a linked page may give it too; Accept stays the window's.
+	 */
+	deferProjectPrerequisite: (plane: PlaneId, shown: ShownPrerequisite) => typedError<Prerequisites, string>(__TAURI_INVOKE("defer_project_prerequisite", { plane, shown })),
+	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
 	 *  (#1362): `null` for a chat that holds its own.
 	 * 
@@ -19094,6 +19102,15 @@ export type ShownPage = {
 	 */
 	downloads: DownloadListed[],
 };
+
+/**
+ *  **What the window showed when the person gave the answer that grants nothing**: the entry as
+ *  it was drawn, so the answer is kept against what the person saw, never against what is there
+ *  by the time it lands.
+ */
+export type ShownPrerequisite = 
+/**  The policy prerequisite, with the digest and the reasons it was shown with. */
+{ kind: "policy"; digest: string; reasons: PolicyReason[] };
 
 /**
  *  **What attaching would send**, shown to the person before anything goes, and handed back

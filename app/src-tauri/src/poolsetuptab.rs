@@ -2248,6 +2248,12 @@ fn try_on(
             None,
         ));
     };
+    // A runner chat the person starts waits as a local one does while a prerequisite of the
+    // project is open (ADR 0130 §5); its failure says what is still open.
+    if let Err(why) = crate::prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)
+    {
+        return Ok(failed(why, None));
+    }
     let number = held.chats().sessions().deal();
     let name = number.to_string();
     let start = purlis_core::start::Start {
