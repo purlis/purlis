@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+// Pictures: drawn by the update-baselines bot (#7733 merged these stories without them).
 /**
  * **An alert the app raises** (#7728, ADR 0104 as amended 2026-11-26): opened with no press, it
  * starts on the answer that grants nothing, answers nothing until it has settled, and says so
