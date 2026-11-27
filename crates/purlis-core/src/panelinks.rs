@@ -73,6 +73,12 @@ pub struct Candidate {
     pub kind: Kind,
     pub text: String,
     pub target: Option<String>,
+    /// Whether the pane read the words across a line break the program wrote at the pane's
+    /// edge (#7819, ADR 0132): pieces of more than one row read as one. A web address read so
+    /// asks before it opens ([`Resolver::open`]), as the person ruled: the join is a guess about
+    /// what the program meant, and the ask shows the address whole. A line the terminal wrapped
+    /// is one line, and is not joined.
+    pub joined: bool,
 }
 
 impl Candidate {
@@ -306,6 +312,7 @@ impl Resolver {
                 kind: Kind::File,
                 text: words.to_owned(),
                 target: None,
+                joined: candidate.joined,
             }),
             None => Cow::Borrowed(candidate),
         }
@@ -338,10 +345,11 @@ impl Resolver {
     }
 
     /// **What opening `target`, read from `candidate`, does**, by its kind; a marked link
-    /// whose words read as another target asks first ([`osc8::reconsidered`]).
+    /// whose words read as another target asks first ([`osc8::reconsidered`]), and so does a
+    /// web address the pane read across rows the program broke ([`joined_asks`]).
     fn opening(kind: &dyn LinkKind, target: Target, candidate: &Candidate, pane: &Pane) -> Opening {
         if candidate.kind != Kind::Osc8 {
-            return kind.opening(target, &candidate.text, pane);
+            return joined_asks(kind.opening(target, &candidate.text, pane), candidate);
         }
         let opening = kind.opening(target.clone(), &candidate.text, pane);
         osc8::reconsidered(opening, candidate, target, pane)
@@ -414,6 +422,24 @@ impl Resolver {
     }
 }
 
+/// **`opening` for `candidate`, asking first where it would open a web address the pane read
+/// across rows the program broke at its edge** (#7930, ADR 0132): the join is a guess, which can
+/// change the address's host, so the person sees the address whole, as it was read, before it opens. A refusal,
+/// or an ask the kind already makes, stands as it is.
+fn joined_asks(opening: Opening, candidate: &Candidate) -> Opening {
+    match opening {
+        Opening::Open(target @ Target::Url(_)) if candidate.joined => Opening::Ask {
+            reason: "purlis read this address across rows the program broke at the pane's edge"
+                .into(),
+            shown: candidate.text.clone(),
+            target,
+            token: None,
+            about: Asking::Link,
+        },
+        other => other,
+    }
+}
+
 /// What opening a link that asks first answers where no token can be issued for its ask.
 pub const UNASKABLE: &str = "purlis could not ask about that link, so it is not opened";
 
@@ -474,6 +500,7 @@ mod tests {
             kind: Kind::Url,
             text: text.to_owned(),
             target: None,
+            joined: false,
         }
     }
 
@@ -580,6 +607,61 @@ mod tests {
             let why = refused(links.open(&url(text), &here(), &Asks::default(), None));
             assert!(why.contains("name or a password"), "{text}: {why}");
         }
+    }
+
+    /// A web address the pane read across a line break the program wrote at its edge.
+    fn joined(text: &str) -> Candidate {
+        Candidate {
+            joined: true,
+            ..url(text)
+        }
+    }
+
+    #[test]
+    fn a_web_address_read_across_rows_asks_first_showing_it_whole() {
+        let links = Resolver::default();
+        let address = "https://github.com/purlis/purlis/pull/6148";
+        let asks = Asks::default();
+
+        let Opening::Ask {
+            shown,
+            target,
+            token,
+            about,
+            ..
+        } = links.open(&joined(address), &here(), &asks, None)
+        else {
+            panic!("expected an ask");
+        };
+        assert_eq!(shown, address);
+        assert_eq!(target, web(address));
+        assert_eq!(about, Asking::Link);
+        let token = token.expect("an ask is answered with a token");
+
+        assert_eq!(
+            links.open(&joined(address), &here(), &asks, Some(&token)),
+            Opening::Open(web(address))
+        );
+    }
+
+    #[test]
+    fn a_web_address_read_across_rows_says_on_its_hover_that_it_asks() {
+        let hover = Resolver::default().hover(&joined("https://purlis.dev/a"), &here());
+
+        let Hover::Link { opening, .. } = hover else {
+            panic!("expected a link, got {hover:?}");
+        };
+        assert!(matches!(*opening, Opening::Ask { .. }), "{opening:?}");
+    }
+
+    #[test]
+    fn a_web_address_read_across_rows_that_carries_a_name_is_still_refused() {
+        let text = ["https://", "me", "@purlis.dev/"].concat();
+
+        let why =
+            refused(Resolver::default().open(&joined(&text), &here(), &Asks::default(), None));
+
+        assert!(why.contains("name or a password"), "{why}");
     }
 
     /// A kind that always asks first: the seam's other answers, which later kinds give.

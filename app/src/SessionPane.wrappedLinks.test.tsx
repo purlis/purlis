@@ -246,7 +246,7 @@ describe("a link the program broke over rows at the pane's width", () => {
     await write(term, `see ${head}\r\ntail now`);
 
     hover(drawn, 1, 1);
-    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: url }]));
+    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: url, joined: true }]));
     await waitFor(() =>
       expect(painted).toEqual([
         { y: 0, x: "see ".length, width: COLS - "see ".length },
@@ -255,7 +255,7 @@ describe("a link the program broke over rows at the pane's width", () => {
     );
     click(drawn, 40, 0, { ctrlKey: true });
 
-    await waitFor(() => expect(openedLast()).toEqual({ kind: "url", text: url }));
+    await waitFor(() => expect(openedLast()).toEqual({ kind: "url", text: url, joined: true }));
   });
 
   it("is one link over three rows broken by the program", async () => {
@@ -266,7 +266,7 @@ describe("a link the program broke over rows at the pane's width", () => {
     const url = `${one}${two}zz`;
 
     hover(drawn, 30, 1);
-    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: url }]));
+    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: url, joined: true }]));
     await waitFor(() =>
       expect(painted).toEqual([
         { y: 0, x: 0, width: COLS },
@@ -276,7 +276,7 @@ describe("a link the program broke over rows at the pane's width", () => {
     );
     click(drawn, 1, 2, { ctrlKey: true });
 
-    await waitFor(() => expect(openedLast()).toEqual({ kind: "url", text: url }));
+    await waitFor(() => expect(openedLast()).toEqual({ kind: "url", text: url, joined: true }));
   });
 
   it("is one link over three rows from its last row, hovered first", async () => {
@@ -287,7 +287,9 @@ describe("a link the program broke over rows at the pane's width", () => {
 
     hover(drawn, 1, 2);
 
-    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: `${one}${two}zz` }]));
+    await waitFor(() =>
+      expect(resolved()).toEqual([{ kind: "url", text: `${one}${two}zz`, joined: true }]),
+    );
   });
 
   it.each([
@@ -314,10 +316,12 @@ describe("a link the program broke over rows at the pane's width", () => {
     await write(term, `at ${head}\r\nin.rs:42 next`);
 
     hover(drawn, 2, 1);
-    await waitFor(() => expect(resolved()).toContainEqual({ kind: "file", text: path }));
+    await waitFor(() =>
+      expect(resolved()).toContainEqual({ kind: "file", text: path, joined: true }),
+    );
     click(drawn, 2, 1, { ctrlKey: true });
 
-    await waitFor(() => expect(openedLast()).toEqual({ kind: "file", text: path }));
+    await waitFor(() => expect(openedLast()).toEqual({ kind: "file", text: path, joined: true }));
   });
 
   it.each([
@@ -375,7 +379,7 @@ describe("a link the program broke over rows at the pane's width", () => {
     await write(term, `${indent}${head}\r\n${indent}tail now`);
 
     hover(drawn, 3, 1);
-    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: url }]));
+    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: url, joined: true }]));
     await waitFor(() =>
       expect(painted).toEqual([
         { y: 0, x: indent.length, width: COLS - indent.length },
@@ -384,7 +388,7 @@ describe("a link the program broke over rows at the pane's width", () => {
     );
     click(drawn, 40, 0, { ctrlKey: true });
 
-    await waitFor(() => expect(openedLast()).toEqual({ kind: "url", text: url }));
+    await waitFor(() => expect(openedLast()).toEqual({ kind: "url", text: url, joined: true }));
   });
 
   it("is one link over three indented rows, from its last", async () => {
@@ -396,7 +400,9 @@ describe("a link the program broke over rows at the pane's width", () => {
 
     hover(drawn, 3, 2);
 
-    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: `${one}${two}zz` }]));
+    await waitFor(() =>
+      expect(resolved()).toEqual([{ kind: "url", text: `${one}${two}zz`, joined: true }]),
+    );
   });
 
   it.each([
@@ -424,7 +430,7 @@ describe("a link the program broke over rows at the pane's width", () => {
     await write(term, `⏺ ${head}\r\n  tail now`);
 
     hover(drawn, 3, 1);
-    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: url }]));
+    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: url, joined: true }]));
     await waitFor(() =>
       expect(painted).toEqual([
         { y: 0, x: 2, width: COLS - 2 },
@@ -433,7 +439,7 @@ describe("a link the program broke over rows at the pane's width", () => {
     );
     click(drawn, 40, 0, { ctrlKey: true });
 
-    await waitFor(() => expect(openedLast()).toEqual({ kind: "url", text: url }));
+    await waitFor(() => expect(openedLast()).toEqual({ kind: "url", text: url, joined: true }));
   });
 
   it("is one link over three rows hung under a marker, from its last", async () => {
@@ -444,7 +450,9 @@ describe("a link the program broke over rows at the pane's width", () => {
 
     hover(drawn, 3, 2);
 
-    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: `${one}${two}zz` }]));
+    await waitFor(() =>
+      expect(resolved()).toEqual([{ kind: "url", text: `${one}${two}zz`, joined: true }]),
+    );
   });
 
   it.each([
@@ -459,7 +467,9 @@ describe("a link the program broke over rows at the pane's width", () => {
 
     hover(drawn, opening.length + 1, 1);
 
-    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: `${head}tail` }]));
+    await waitFor(() =>
+      expect(resolved()).toEqual([{ kind: "url", text: `${head}tail`, joined: true }]),
+    );
   });
 
   it.each([
@@ -524,7 +534,7 @@ describe("a link the program broke over rows at the pane's width", () => {
     await write(term, `${head}\r\ntail now`);
 
     hover(drawn, 1, 1);
-    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: url }]));
+    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: url, joined: true }]));
     await waitFor(() =>
       expect(painted).toEqual([
         { y: 0, x: 0, width: COLS },
@@ -533,7 +543,7 @@ describe("a link the program broke over rows at the pane's width", () => {
     );
     click(drawn, 1, 1, { ctrlKey: true });
 
-    await waitFor(() => expect(openedLast()).toEqual({ kind: "url", text: url }));
+    await waitFor(() => expect(openedLast()).toEqual({ kind: "url", text: url, joined: true }));
   });
 
   it("is hovered from the second cell of the wide character it ends on", async () => {
@@ -577,7 +587,9 @@ describe("a link the program broke over rows at the pane's width", () => {
     expect(term.buffer.active.viewportY).toBe(1);
 
     hover(drawn, 1, 0);
-    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: `${head}tail` }]));
+    await waitFor(() =>
+      expect(resolved()).toEqual([{ kind: "url", text: `${head}tail`, joined: true }]),
+    );
     await screen.findByRole("tooltip", {}, { timeout: 2000 });
 
     const at = document.querySelector<HTMLElement>(".pane-link-anchor");
@@ -593,7 +605,9 @@ describe("a link the program broke over rows at the pane's width", () => {
     const head = `https://purlis.dev/${"a".repeat(COLS - "https://purlis.dev/".length)}`;
     await write(term, `${head}\r\ntail now`);
     hover(drawn, 1, 1);
-    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: `${head}tail` }]));
+    await waitFor(() =>
+      expect(resolved()).toEqual([{ kind: "url", text: `${head}tail`, joined: true }]),
+    );
 
     term.resize(50, 24);
     invoked = [];

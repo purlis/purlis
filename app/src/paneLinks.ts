@@ -213,16 +213,21 @@ function held(kept: Kept, key: string): Promise<LinkSeen | null> | undefined {
   return undefined;
 }
 
-/** **What a link is kept and listed by**: its kind, its text and, for one a program marked, the
- *  target it named. */
-export const linkKey = (link: Pick<LinkCandidate, "kind" | "text" | "target">) =>
-  `${link.kind}\u0000${link.text}\u0000${link.target ?? ""}`;
+/** **What a link is kept and listed by**: its kind, its text, for one a program marked the
+ *  target it named, and whether it was read across rows the program broke (#7819), which the
+ *  core answers apart. */
+export const linkKey = (link: Pick<LinkCandidate, "kind" | "text" | "target" | "joined">) =>
+  `${link.kind}\u0000${link.text}\u0000${link.target ?? ""}${link.joined === true ? "\u0000joined" : ""}`;
 
-/** **`link` as the core is handed it**: its kind and text, and a marked link's target. */
-export const candidateOf = (link: LinkCandidate): LinkCandidate =>
-  link.target === undefined || link.target === null
-    ? { kind: link.kind, text: link.text }
-    : { kind: link.kind, text: link.text, target: link.target };
+/** **`link` as the core is handed it**: its kind and text, a marked link's target, and whether
+ *  it was read across rows the program broke at the pane's edge (#7819): a web address read so
+ *  asks before it opens. */
+export const candidateOf = (link: LinkCandidate): LinkCandidate => ({
+  kind: link.kind,
+  text: link.text,
+  ...(link.target === undefined || link.target === null ? {} : { target: link.target }),
+  ...(link.joined === true ? { joined: true } : {}),
+});
 
 /**
  * **Keeps the core's answer for `link`**, the oldest let go of once a pane keeps
@@ -532,7 +537,7 @@ function candidatesAcross(line: Wrapped): Found[] {
         found.pop();
         const pieces = [...(last.pieces ?? [last]), ...here.filter((one) => one.start < end)];
         found.push(
-          { kind: whole.kind, text: whole.text, start: last.start, end, pieces },
+          { kind: whole.kind, text: whole.text, start: last.start, end, pieces, joined: true },
           ...here.filter((one) => one.start >= end),
         );
         continue;
@@ -1273,7 +1278,7 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
                 rows.set(cell.y, { x: cell.x, y: cell.y, width: past - cell.x });
               else row.width = past - row.x;
             }
-            const candidate: LinkCandidate = { kind: found.kind, text: found.text };
+            const candidate = candidateOf(found);
             // What purlis will not open says why on its hover, and is drawn as no link.
             const opens = seen.does.does !== "refused";
             links.push({
@@ -1361,7 +1366,7 @@ function onScreenNewestFirst(pane: Terminal, marked: Marked[], nothing: DrawsNot
       const end = onItsRow[onItsRow.length - 1];
       const width = end.x + widthAt(pane, end) - first.x;
       return {
-        candidate: { kind: one.kind, text: one.text },
+        candidate: candidateOf(one),
         y: cells[0].y,
         x: cells[0].x,
         place: placeOf(pane, first.x, first.y, width),

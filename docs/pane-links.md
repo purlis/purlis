@@ -35,7 +35,7 @@ reads it again when it is opened, so a pane never chooses what opens (spec #6208
   it or the program broke the line itself at the pane's edge: hovering any row draws all of it,
   and ⌘-click on any row opens the whole. A break the program wrote is read across only on the
   normal screen (never in an editor, pager or multiplexer on the alternate screen), where the
-  row fills the pane to its edge and the next row goes straight on at the indent of the
+  row fills the pane to its edge with cells that draw and the next row goes straight on at the indent of the
   line's first row's words (so a paragraph a harness indents two blanks on every row joins,
   and so does a reply or list item whose first row opens with a marker such as `⏺ `, `• ` or
   `- ` and whose next rows are indented to its words), not with a frame's border, a link of
@@ -47,6 +47,10 @@ reads it again when it is opened, so a pane never chooses what opens (spec #6208
 
 ## What asks first
 
+- **A web address read across rows the program broke at the pane's edge.** purlis joins the
+  rows only where they plainly go on, but the join is still a guess about what the program
+  meant, so the ask shows the whole address as it was read. One on a single row, or one the
+  terminal wrapped, opens without asking (ADR 0132).
 - **A file outside the chat's workspace** (the project, for a chat at its root). The ask names
   the file, the workspace and the chat whose output named it. Opening one only shows it, so the
   ask starts on _Open file_.
