@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **A file a chat on this host printed, read for the window** (#6387, session protocol 1.93's
-//! `read_file`): the runner's half of a runner chat's file link. The desktop sends the path as
+//! `read_file`): the runner's half of a runner chat's file link, whose desktop's half is
+//! `panelinks::ondesktop` ([`super::RunnerFile`]). The desktop sends the path as
 //! the chat printed it, as data; this reads it here, on the machine whose file it names, and
 //! never builds a shell line or starts a program from it.
 //!

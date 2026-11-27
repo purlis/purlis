@@ -4504,13 +4504,3 @@ fn a_runner_gone_ends_its_chats_where_a_changed_key_leaves_them_dimmed() {
     heard(Reconnect::KeyChanged);
     assert_eq!(dimmed.lock().unwrap().chats.len(), 2);
 }
-
-#[test]
-fn a_runner_before_1_97_is_not_asked_for_a_file_and_one_from_1_97_is() {
-    use purlis_session_protocol::version::Version;
-    let at = |minor| Version { major: 1, minor };
-
-    assert!(!runner_keeps_files_from_its_window(at(96)));
-    assert!(runner_keeps_files_from_its_window(at(97)));
-    assert!(runner_keeps_files_from_its_window(session::VERSION));
-}

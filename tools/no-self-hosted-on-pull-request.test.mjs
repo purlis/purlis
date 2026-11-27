@@ -8,7 +8,8 @@
 // afterwards; on a self-hosted Mac it is the operator's own machine, persistent, with a keychain.
 // `release.yml` may name one (through `vars.MACOS_RELEASE_RUNNER`, docs/updating.md) because only a
 // push to `main`, a tag, the schedule or a run by hand starts it, and `outcome-bars.yml` (through
-// `vars.OUTCOME_BARS_RUNNER`) because only a push to `main` and the schedule do; a workflow that a
+// `vars.OUTCOME_BARS_RUNNER`) and `budget-run.yml` (through `vars.BUDGET_RUN_RUNNER`, #7737) because
+// only a push to `main` and the schedule do; a workflow that a
 // pull request starts may not, and that is held here by what its text says, so a later edit cannot
 // add one.
 //
@@ -140,6 +141,16 @@ test("outcome-bars.yml, which may name a self-hosted runner, cannot be started b
   // the queue or another workflow's run could start it.
   assert.deepEqual(refusals(text), []);
   for (const trigger of ["pull_request", "pull_request_target", "merge_group", "workflow_run"]) {
+    const reachable = text.replace(/\non:\n/, `\non:\n  ${trigger}:\n`);
+    assert.ok(refusals(reachable).length > 0, `with ${trigger}`);
+  }
+});
+
+test("budget-run.yml, which runs only on a self-hosted runner, cannot be started by a pull request", () => {
+  const text = readFileSync(new URL("budget-run.yml", dir), "utf8");
+  assert.deepEqual(triggers(text).sort(), ["push", "schedule"]);
+  assert.deepEqual(refusals(text), []);
+  for (const trigger of ["pull_request", "pull_request_target", "merge_group", "workflow_run", "workflow_call"]) {
     const reachable = text.replace(/\non:\n/, `\non:\n  ${trigger}:\n`);
     assert.ok(refusals(reachable).length > 0, `with ${trigger}`);
   }
