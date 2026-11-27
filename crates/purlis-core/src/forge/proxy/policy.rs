@@ -122,6 +122,11 @@ impl Refusal {
                 "set labels through the API's labels field, not a /label, /unlabel or /relabel line, and leave other quick actions out of the text",
             ),
             Self::LabelById => Some("name labels in the API's labels field, not by id"),
+            // A chat put back after a restart keeps the credential of a route that went with the
+            // old app (ADR 0128 D3a); the app's own git has one for it (#7694, #7878).
+            Self::UnknownChat | Self::WrongSentinel | Self::Locked => Some(
+                "this chat's forge route no longer takes its credential (purlis restarted, or the chat ended or was locked out); push with `purlis worktree push`, or start a new chat",
+            ),
             Self::GraphqlPullRequestOtherRepo => Some(
                 "if the repo is this chat's own, the REST route for the same act is answered: `gh api repos/OWNER/REPO/pulls -X POST -f title=... -f head=BRANCH -f base=main` for gh pr create, `gh api -X PUT repos/OWNER/REPO/pulls/N/update-branch` for gh pr update-branch",
             ),
@@ -1170,6 +1175,10 @@ impl ChatPolicy {
     /// are **returned, not recorded**: they are the chat's once the forge confirms the whole push
     /// ([`Self::confirm_created`]).
     fn check_push(&self, repo: &AllowedRepo, body: &[u8]) -> Result<Vec<CreatedBranch>, Refusal> {
+        // git's probe moves nothing; refused, git never sends the push it announces (#7878).
+        if git::is_probe(body) {
+            return Ok(Vec::new());
+        }
         let pushed = git::pushed_commands(body).map_err(|e| match e {
             PushError::Unreadable | PushError::PushCert => Refusal::BodyUnreadable,
         })?;
