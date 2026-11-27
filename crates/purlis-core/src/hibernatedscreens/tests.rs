@@ -184,14 +184,51 @@ fn the_sweep_leaves_a_file_purlis_never_writes() {
 }
 
 #[test]
-fn a_project_s_open_takes_every_screen_while_no_hibernation_outlives_a_restart() {
-    // SC-4e (#7634) makes the hibernated state durable and the open's sweep read it.
+fn a_project_s_open_keeps_the_screen_of_a_chat_the_record_holds_hibernated_and_takes_the_rest_7634()
+{
+    use crate::reopen::{Chat, HibernatedBy, Hibernation, Identity, Record};
     let (_dir, root) = project();
     keep(&root, CHAT, "a").unwrap();
     keep(&root, OTHER, "b").unwrap();
+    let chat = |id: &str, hibernated: Option<Hibernation>| Chat {
+        program: "claude".to_owned(),
+        name: "c".to_owned(),
+        identity: Identity {
+            id: Some(id.to_owned()),
+            ..Identity::default()
+        },
+        hibernated,
+        ..Chat::default()
+    };
+    crate::reopen::write(
+        &root,
+        &Record {
+            chats: vec![
+                chat(
+                    CHAT,
+                    Some(Hibernation {
+                        by: HibernatedBy::Operator,
+                        at: 1,
+                    }),
+                ),
+                // Open, and hot: its screen is an earlier hibernation's, no longer needed.
+                chat(OTHER, None),
+            ],
+            ..Record::default()
+        },
+    )
+    .unwrap();
+    crate::retention::on_open(&root, SystemTime::now());
+    assert_eq!(kept(&root, CHAT).as_deref(), Some("a"));
+    assert_eq!(kept(&root, OTHER), None);
+}
+
+#[test]
+fn a_project_s_open_takes_every_screen_where_no_record_says_which_chat_is_hibernated_7634() {
+    let (_dir, root) = project();
+    keep(&root, CHAT, "a").unwrap();
     crate::retention::on_open(&root, SystemTime::now());
     assert_eq!(kept(&root, CHAT), None);
-    assert_eq!(kept(&root, OTHER), None);
 }
 
 /// A snapshot as the engine takes it with `history` lines above a screen of `rows`, each line

@@ -363,6 +363,38 @@ pub struct Chat {
     /// run ends, or it is closed for good. `None` for a chat that kept none, and every record
     /// written before this field, for [`Self::pinned`]'s reason.
     pub kept_tmp: Option<String>,
+    /// **Whether the chat is hibernated, by what and since when** (SC-4e, #7634; ADR 0076 as
+    /// amended 2026-11-25): the durable carrier of the state, written with the hibernate act's
+    /// intent, before its program ends, and removed where the act aborts or the chat wakes. A
+    /// launch gives a chat that holds it no `reopen`, visible or not, unless its program is
+    /// still alive under a session host that survived: then the mark is stale and the chat is
+    /// hot. `None` is every hot chat, and every record written before this field — not a
+    /// format change, for [`Self::pinned`]'s reason.
+    pub hibernated: Option<Hibernation>,
+}
+
+/// **A chat's hibernation as the record keeps it** ([`Chat::hibernated`]): its cause and when.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Hibernation {
+    /// What hibernated it: the run's cause (ADR 0076 §2).
+    #[serde(rename = "cause")]
+    pub by: HibernatedBy,
+    /// When, in seconds since 1970 on the app's clock.
+    pub at: u64,
+}
+
+/// **What hibernated a chat whose hibernation outlives a restart** (SC-4e, #7634): the causes
+/// of ADR 0076 §2 a relaunch keeps hibernated. A chat that quit hibernated (`quit`, `grace`)
+/// is not marked: it follows SC-20 as it is (spec #1391, ruling 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HibernatedBy {
+    /// The app, by itself, for a rested chat over the hot target.
+    Idle,
+    /// The person, from its row.
+    Operator,
+    /// Its session host ended while it rested at a turn's end (#2278): it has no kept screen.
+    HostCrash,
 }
 
 /// The most earlier numbers a chat keeps, the oldest going first: a month of restarts.
@@ -1917,6 +1949,16 @@ struct ChatOnDisk {
     /// Its own temporary folder, kept across the quit — see [`Chat::kept_tmp`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     kept_tmp: Option<String>,
+    /// Whether it is hibernated, by what and since when, or absent — see
+    /// [`Chat::hibernated`]. Absent for a hot chat, so a project with none hibernated writes the
+    /// record it always wrote. A value that does not read whole, or names another cause, reads
+    /// as absent: the chat is hot.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    hibernated: Option<Hibernation>,
 }
 
 /// The pieces of own work a record holds, each that reads whole and is of its shape, the latest
@@ -2229,6 +2271,7 @@ impl From<&Chat> for ChatOnDisk {
             own_pieces: chat.own_pieces.clone(),
             mid_turn: chat.mid_turn,
             kept_tmp: chat.kept_tmp.clone(),
+            hibernated: chat.hibernated,
         }
     }
 }
@@ -2320,6 +2363,7 @@ impl From<ChatOnDisk> for Chat {
             own_pieces: chat.own_pieces,
             mid_turn: chat.mid_turn,
             kept_tmp: chat.kept_tmp,
+            hibernated: chat.hibernated,
         }
     }
 }
