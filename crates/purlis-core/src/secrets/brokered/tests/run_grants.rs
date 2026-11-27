@@ -3045,7 +3045,9 @@ fn a_link_to_an_init_script_is_offered_no_run_grant_whatever_its_name() {
 
 /// A link that reaches an init script's place and points on out of it (#6321), as Ubuntu's
 /// Upstart jobs were laid out (`/etc/init.d/<job> -> /lib/init/upstart-job`): what runs sits
-/// outside `init.d`, under a name no row reads, but the link in `init.d` is the service's script.
+/// outside `init.d`, but the link in `init.d` is the service's script. `upstart-job` itself is now
+/// refused by its first part (#6557), so the file here is named for no row, `job-runner`, and only
+/// the link through `init.d` can refuse it.
 #[cfg(unix)]
 #[test]
 fn a_link_through_an_init_script_that_points_on_out_of_init_d_is_offered_no_run_grant() {
@@ -3062,7 +3064,7 @@ fn a_link_through_an_init_script_that_points_on_out_of_init_d_is_offered_no_run_
     for folder in [&scripts, &lib, &sbin] {
         std::fs::create_dir_all(folder).unwrap();
     }
-    let job = lib.join("upstart-job");
+    let job = lib.join("job-runner");
     std::fs::write(&job, "#!/bin/sh\nexit 0\n").unwrap();
     std::fs::set_permissions(&job, std::fs::Permissions::from_mode(0o755)).unwrap();
     std::os::unix::fs::symlink(&job, scripts.join("database")).unwrap();
@@ -3343,4 +3345,344 @@ fn the_client_with_the_server_embedded_loads_what_it_is_told_so_it_is_offered_no
 #[test]
 fn gh_ost_runs_the_hooks_of_a_folder_it_names_so_it_is_offered_no_run_grant() {
     refused_as_running_others("gh-ost");
+}
+
+/// daemontools (#6559): `supervise <folder>` runs the folder's `./run`, and `svscan <folder>`
+/// starts a `supervise` on each folder in the one it is named, as runit's `runsv` and
+/// `runsvdir` and s6's `s6-supervise` and `s6-svscan` do; `multilog`'s `!processor` has a shell
+/// run the processor; and its chain loaders `setuidgid`, `envuidgid`, `softlimit`, `setlock`,
+/// `pgrphack` and `fghack` run the program after them, as its `envdir` does. Their source
+/// (cr.yp.to) was out of reach, so each is refused on what the tool is for, the side that only
+/// takes away an Allow.
+#[test]
+fn daemontools_supervisors_multilog_and_chain_loaders_are_offered_no_run_grant() {
+    for name in [
+        "svscan",
+        "supervise",
+        "multilog",
+        "setuidgid",
+        "envuidgid",
+        "softlimit",
+        "setlock",
+        "pgrphack",
+        "fghack",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The leads round 2 of #6556's review left (#6564): `aptitude` takes any setting with `-o`, and
+/// `Dir::Bin::Methods::<scheme>` names the program a download runs, as `apt-get`'s does;
+/// `run-parts <folder>` runs every program in the folder; `capsh -- -c <cmd>` hands the words
+/// after `--` to a shell; `cpanm ./<folder>`, and every install, runs the distribution's
+/// `Makefile.PL` or `Build.PL`, as `cpan` and `cpm` do, and `carton exec` runs the command it is
+/// handed; and `dnf` and `yum` load the Python plugins of the `pluginpath` a `--setopt` or `-c`
+/// file names. Their source was out of reach, so each is refused on what the tool is for, the
+/// side that only takes away an Allow.
+#[test]
+fn aptitude_run_parts_capsh_the_perl_installers_and_dnf_are_offered_no_run_grant() {
+    for name in [
+        "aptitude",
+        "run-parts",
+        "capsh",
+        "cpanm",
+        "cpan",
+        "cpm",
+        "carton",
+        "dnf",
+        "dnf5",
+        "yum",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// Upstart's `initctl` (#6557): `initctl set-env` copies a value into the init daemon's job
+/// environment, for every job started after it, as the refused `systemctl import-environment`
+/// does, and `initctl start` and `emit` start jobs, of a session's init too with `--session` or
+/// `--user`. Its `start`, `stop`, `restart`, `reload` and `status` are links to it, judged by its
+/// name. Upstart's `init --user --confdir <folder>` runs the jobs of a folder it is named, and
+/// `init` is as often a link to `systemd`, the service manager itself, refused with it.
+/// Upstart's source (git.launchpad.net/upstart) was out of reach, so each is refused on what it
+/// is for, the side that only takes away an Allow.
+#[test]
+fn upstarts_initctl_and_the_init_daemons_are_offered_no_run_grant() {
+    for name in ["initctl", "init", "upstart", "systemd"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The kin round 1 of #7828's review found, refused on what each is for: the programs that run
+/// the command after them, as `setuidgid` and `capsh` do (`runuser`, `gosu`, `prlimit`, `chrt`,
+/// `runcon`, `setarch`, `numactl`, `bwrap`, `proot`, `unbuffer`, `sg`, `run-one` and its kin);
+/// the loggers that run a `!processor` they are handed, on the command line or in a log folder's
+/// `config`, as `multilog` does (`svlogd`, `s6-log`); `anacron`, which runs an anacrontab it is
+/// named; the Perl installers and runners beside `cpanm` (`cpanp`, `carmel`, `plenv`, `prove`,
+/// `dzil`); and the package managers beside `dnf` (`zypper`, `makepkg`, `port`, `microdnf`,
+/// `tdnf`).
+#[test]
+fn the_kin_of_the_chain_loaders_loggers_and_installers_are_offered_no_run_grant() {
+    for name in [
+        "runuser",
+        "gosu",
+        "prlimit",
+        "chrt",
+        "runcon",
+        "setarch",
+        "numactl",
+        "bwrap",
+        "proot",
+        "unbuffer",
+        "sg",
+        "run-one",
+        "run-this-one",
+        "keep-one-running",
+        "svlogd",
+        "s6-log",
+        "anacron",
+        "cpanp",
+        "carmel",
+        "plenv",
+        "prove",
+        "dzil",
+        "zypper",
+        "makepkg",
+        "port",
+        "microdnf",
+        "tdnf",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The other names the refused programs go by reach their rows through `name_forms`:
+/// `aptitude-curses` by its first part, `dnf-3` without its version, and Upstart's
+/// `upstart-local-bridge` and `upstart-event-bridge` by their first part (round 1 of #7828's
+/// review).
+#[test]
+fn the_other_names_of_aptitude_dnf_and_upstart_are_offered_no_run_grant() {
+    for name in [
+        "aptitude-curses",
+        "dnf-3",
+        "upstart-local-bridge",
+        "upstart-event-bridge",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// Upstart's `start` is a link to `initctl` (#6557): the name it is found by is on no row, so it
+/// is refused by the name of the program its links lead to (round 1 of #7828's review).
+#[cfg(unix)]
+#[test]
+fn upstarts_start_a_link_to_initctl_is_offered_no_run_grant() {
+    use std::os::unix::fs::PermissionsExt;
+    let project = project();
+    let asks = Asks::new(project.path());
+    let system = tempfile::tempdir().unwrap();
+    let system = system.path().canonicalize().unwrap();
+    let sbin = system.join("sbin");
+    std::fs::create_dir_all(&sbin).unwrap();
+    let initctl = sbin.join("initctl");
+    std::fs::write(&initctl, "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::set_permissions(&initctl, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::os::unix::fs::symlink(&initctl, sbin.join("start")).unwrap();
+    let mut want = printenv(project.path(), &["."]);
+    want.command = vec!["start".to_owned(), "database".to_owned()];
+    // Judged as a system folder is, outside the temporary folders.
+    crate::sandbox::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = Some(Vec::new()));
+    let frames = run_searching(
+        &the_chat(project.path()),
+        want,
+        &asks,
+        Duration::ZERO,
+        vec![sbin],
+    );
+    crate::sandbox::tools::TEMPS_HERE.with(|temps| *temps.borrow_mut() = None);
+    assert!(asks.open_runs().is_empty(), "{frames:?}");
+    assert!(
+        refusal(&frames).0.contains("runs other programs"),
+        "{frames:?}"
+    );
+}
+
+/// The programs beside the refused `systemd` and `initctl` that run a command they are handed
+/// (round 2 of #7828's review), refused on what each is for: `machinectl shell`, `homectl with
+/// <user> -- <cmd>`, `userdbctl ssh-authorized-keys --chain`, `varlinkctl call exec:<path>` and
+/// `portablectl attach --now` an image the chat wrote; and Upstart's `telinit -e`, which puts a
+/// value into the environment of the jobs its runlevel starts, as `initctl set-env` does.
+#[test]
+fn systemds_command_runners_and_upstarts_telinit_are_offered_no_run_grant() {
+    for name in [
+        "machinectl",
+        "homectl",
+        "userdbctl",
+        "varlinkctl",
+        "portablectl",
+        "telinit",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// s6's programs that run the program after them, which no row reached by a form of their name
+/// (round 2 of #7828's review): `s6-svlisten`, `s6-notifyoncheck`, `s6-ftrig-listen`, the
+/// `s6-ipcserver` family, `s6-ipcclient`, `s6-fdholder-retrieve` and `s6-sudod`, and
+/// `s6-svlisten1` and `s6-ftrig-listen1`, which reach `s6-svlisten`'s and `s6-ftrig-listen`'s
+/// rows without their version.
+#[test]
+fn s6s_programs_that_run_the_program_after_them_are_offered_no_run_grant() {
+    for name in [
+        "s6-svlisten1",
+        "s6-svlisten",
+        "s6-notifyoncheck",
+        "s6-ftrig-listen1",
+        "s6-ftrig-listen",
+        "s6-ipcserver",
+        "s6-ipcserverd",
+        "s6-ipcserver-socketbinder",
+        "s6-ipcclient",
+        "s6-fdholder-retrieve",
+        "s6-sudod",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The kin round 3 of #7828's review found, refused on what each is for: s6's
+/// `s6-ipcserver-access`, `s6-connlimit`, `s6-fdholder-getdump` and `s6-permafailon` run the
+/// program after them; OpenRC's `supervise-daemon` runs the program it is named (its own row is
+/// pinned by a unit test in `sandbox::tools`, since its first part reaches `supervise` too);
+/// `fakeroot`, `fakechroot` and `eatmydata` run the command after them; `debuild`, `dh`,
+/// `pbuilder`, `sbuild` and `gbp` run a package's `debian/rules`, as `dpkg-buildpackage` does;
+/// `yath`, `cover`, `milla`, `minil` and `plackup` run a distribution's tests, hooks or the Perl
+/// they are handed, as `prove` and `dzil` do; `mock` runs its configuration as Python, `portindex`
+/// evaluates every `Portfile`, and `spectool` and `rpmlint` parse a spec whose `%(…)` a shell runs,
+/// as `rpmspec` does; and systemd's `kernel-install`, `ukify` and `mkosi` run the plugins, tools or
+/// scripts of a folder they are named.
+#[test]
+fn s6s_runners_the_debian_perl_and_rpm_builders_and_systemds_image_tools_are_offered_no_run_grant()
+{
+    for name in [
+        "s6-ipcserver-access",
+        "s6-connlimit",
+        "s6-fdholder-getdump",
+        "s6-permafailon",
+        "supervise-daemon",
+        "fakeroot",
+        "fakechroot",
+        "eatmydata",
+        "debuild",
+        "dh",
+        "pbuilder",
+        "sbuild",
+        "gbp",
+        "yath",
+        "cover",
+        "milla",
+        "minil",
+        "plackup",
+        "mock",
+        "portindex",
+        "spectool",
+        "rpmlint",
+        "kernel-install",
+        "ukify",
+        "mkosi",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// More of the same families (round 4 of #7828's review), refused on what each is for: programs
+/// that run the command after them (macOS's `taskpolicy`, util-linux's `choom` and `uclampset`,
+/// moreutils' `chronic`, `ifne`, `lckdo` and `zrun`, `cpulimit`, `nocache`, `schedtool`,
+/// `dbus-run-session`, `xvfb-run`, `faketime`, `torsocks`, `proxychains` (and `proxychains4`, which
+/// reaches it without its version), `trickle`, and s6's `s6-maximumtime`; and s6-networking's
+/// `s6-tcpserver` and the rest, twins of the `s6-ipc*` programs); `rotatelogs -p`, which runs a
+/// program on each new log; Debian's and Fedora's package builders beside `debuild` (`pdebuild`,
+/// `cowbuilder`, `qemubuilder`, `dgit`, `fedpkg`, `centpkg`, `rhpkg`, `tito`), `debconf` and
+/// `deb-systemd-invoke`, which run the command or the unit they are handed (the second by a row of
+/// its own, pinned by a unit test in `sandbox::tools`, as its last part reaches Python's `invoke`
+/// row by chance), and MacPorts' `daemondo --start-cmd`; Perl's servers and runners beside
+/// `plackup` (`starman`, `starlet`, `morbo`, `hypnotoad`, `mojo`, `start_server`, `mbtiny`); and
+/// `s6-svlink` and `s6-rc-update`, which hand a running s6 a service folder or a database a chat
+/// may have written.
+#[test]
+fn more_chain_loaders_loggers_builders_perl_servers_and_s6s_linkers_are_offered_no_run_grant() {
+    for name in [
+        "taskpolicy",
+        "choom",
+        "uclampset",
+        "chronic",
+        "ifne",
+        "lckdo",
+        "zrun",
+        "cpulimit",
+        "nocache",
+        "schedtool",
+        "dbus-run-session",
+        "xvfb-run",
+        "faketime",
+        "torsocks",
+        "proxychains",
+        "proxychains4",
+        "trickle",
+        "s6-maximumtime",
+        "s6-tcpserver",
+        "s6-tcpserver-socketbinder",
+        "s6-tcpserver-access",
+        "s6-tcpclient",
+        "s6-tlsserver",
+        "s6-tlsclient",
+        "s6-tlsd",
+        "s6-tlsc",
+        "rotatelogs",
+        "pdebuild",
+        "cowbuilder",
+        "qemubuilder",
+        "dgit",
+        "debconf",
+        "deb-systemd-invoke",
+        "fedpkg",
+        "centpkg",
+        "rhpkg",
+        "tito",
+        "daemondo",
+        "starman",
+        "starlet",
+        "morbo",
+        "hypnotoad",
+        "mojo",
+        "start_server",
+        "mbtiny",
+        "s6-svlink",
+        "s6-rc-update",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The utilities that ship beside `dnf` and `yum` (dnf-plugins-core, yum-utils) take `-c` and
+/// `--setopt` and load plugins as `dnf` and `yum` do, and no form of their names reaches either;
+/// daemontools' `svscanboot` runs `svscan` (rounds 5 and 6 of #7828's review).
+#[test]
+fn the_dnf_and_yum_utilities_and_svscanboot_are_offered_no_run_grant() {
+    for name in [
+        "yumdownloader",
+        "repoquery",
+        "reposync",
+        "repotrack",
+        "repoclosure",
+        "debuginfo-install",
+        "needs-restarting",
+        "package-cleanup",
+        "repodiff",
+        "repomanage",
+        "repo-graph",
+        "find-repos-of-install",
+        "svscanboot",
+    ] {
+        refused_as_running_others(name);
+    }
 }
