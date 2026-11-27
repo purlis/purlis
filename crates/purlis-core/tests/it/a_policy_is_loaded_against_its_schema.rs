@@ -316,7 +316,165 @@ fn every_action_belongs_to_exactly_one_family_group() {
             "the family {family} is declared"
         );
     }
-    assert_eq!(verbs, 51, "spec §3.3's 51 actions");
+    assert_eq!(
+        verbs, 62,
+        "spec §3.3's 51 actions, with `call` gone and today's 12 forge operations in its place (#7776)"
+    );
+}
+
+/// Today's forge operations, each an action of `guards.forge` (ADR 0128, amended 2026-11-27, §1;
+/// #7039). The ones ADR 0128 §5 puts in the permit-required class come with that class (#7805,
+/// #7806), never before it.
+const FORGE_OPERATIONS: [&str; 12] = [
+    "ci.rerun",
+    "comment.create",
+    "comment.update",
+    "issue.create",
+    "issue.label",
+    "issue.milestone",
+    "issue.update",
+    "pull.create",
+    "pull.milestone",
+    "pull.request_reviewers",
+    "pull.update",
+    "upload.create",
+];
+
+#[test]
+fn the_v1_schema_has_no_forge_verb_string() {
+    purlis_core::unsteered!();
+    let forge: BTreeSet<&str> = policy::actions()
+        .into_iter()
+        .filter(|(_, family)| *family == "guards.forge")
+        .map(|(action, _)| action)
+        .collect();
+    let mut expected: BTreeSet<&str> = FORGE_OPERATIONS.into_iter().collect();
+    expected.insert("mint");
+    assert_eq!(forge, expected, "the action is the verb: no `call`");
+    for (action, _) in policy::actions() {
+        assert!(
+            !policy::context_fields(action).iter().any(|f| f == "verb"),
+            "`{action}`'s context has a string verb"
+        );
+    }
+    assert!(
+        !policy::SCHEMA.contains("verb: String"),
+        "no context type declares a verb"
+    );
+}
+
+#[test]
+fn the_v1_schema_declares_context_made_by_as_optional() {
+    purlis_core::unsteered!();
+    let schema = schema_json();
+    let common = &schema["commonTypes"];
+    for operation in FORGE_OPERATIONS {
+        let context = &schema["actions"][operation]["appliesTo"]["context"];
+        let record = match context["type"].as_str() {
+            Some("Record") | None => context,
+            Some(named) => &common[named],
+        };
+        let made_by = &record["attributes"]["made_by"];
+        assert_eq!(made_by["name"], "String", "{operation}: {made_by}");
+        assert_eq!(
+            made_by["required"], false,
+            "{operation}: `made_by` is optional, filled in M81 (#7793)"
+        );
+    }
+    assert!(
+        !policy::context_fields("mint")
+            .iter()
+            .any(|f| f == "made_by"),
+        "`mint` makes no forge object"
+    );
+
+    // A rule may read it only behind `has`, as for any optional field.
+    let guarded = "// purlis-policy 1\n\
+                   @id(\"guards-forge-own-comments\")\n\
+                   permit (principal, action == Action::\"comment.update\", resource)\n\
+                   when { context has made_by && context.made_by == \"self\" };\n";
+    with_project(guarded).expect("a guarded read of `made_by` validates");
+    let unguarded = guarded.replace("context has made_by && ", "");
+    assert!(!refused(with_project(&unguarded)).is_empty());
+}
+
+#[test]
+fn a_dotted_action_name_outside_guards_forge_fails_the_schema_lint() {
+    purlis_core::unsteered!();
+    assert_eq!(
+        policy::check_schema(policy::SCHEMA),
+        Vec::<String>::new(),
+        "the embedded schema, whose forge actions are dotted"
+    );
+
+    let dotted_exec = policy::SCHEMA.replacen(
+        "action exec in [\"processes\"]",
+        "action \"process.exec\" in [\"processes\"]",
+        1,
+    );
+    assert_ne!(dotted_exec, policy::SCHEMA, "the test's edit applied");
+    let problems = policy::check_schema(&dotted_exec);
+    assert!(
+        problems
+            .iter()
+            .any(|p| p.contains("\"process.exec\"") && p.contains("guards.forge")),
+        "{problems:#?}"
+    );
+
+    let shouting_forge = policy::SCHEMA.replacen("\"ci.rerun\"", "\"CI.Rerun\"", 1);
+    assert_ne!(shouting_forge, policy::SCHEMA, "the test's edit applied");
+    let problems = policy::check_schema(&shouting_forge);
+    assert!(
+        problems.iter().any(|p| p.contains("\"CI.Rerun\"")),
+        "a forge action is still lowercase: {problems:#?}"
+    );
+}
+
+#[test]
+fn a_rule_naming_call_or_context_verb_fails_validation_and_names_the_action() {
+    purlis_core::unsteered!();
+    let written_for_the_verb = "// purlis-policy 1\n\
+        @id(\"guards-forge-issues\")\n\
+        permit (principal, action == Action::\"call\", resource)\n\
+        when { context.verb == \"issue.create\" };\n";
+    let problems = refused(with_project(written_for_the_verb));
+    assert_eq!(
+        (problems[0].line, problems[0].rule.as_deref()),
+        (3, Some("guards-forge-issues")),
+        "the line naming `call`: {problems:#?}"
+    );
+    assert!(
+        problems
+            .iter()
+            .any(|p| p.what.contains("Action::\"issue.create\"")),
+        "the verb it named is the action to use: {problems:#?}"
+    );
+
+    // `call` alone: every forge operation is named, for the author to pick one.
+    let bare_call = "// purlis-policy 1\n\
+        @id(\"guards-forge-anything\")\n\
+        permit (principal, action == Action::\"call\", resource);\n";
+    let problems = refused(with_project(bare_call));
+    assert!(
+        problems.iter().any(|p| FORGE_OPERATIONS
+            .iter()
+            .all(|operation| p.what.contains(operation))),
+        "{problems:#?}"
+    );
+
+    // `context.verb` on a forge action that is already right.
+    let verb_alone = "// purlis-policy 1\n\
+        @id(\"guards-forge-comments\")\n\
+        permit (principal, action == Action::\"comment.create\", resource)\n\
+        when { context.verb == \"comment.create\" };\n";
+    let problems = refused(with_project(verb_alone));
+    assert!(
+        problems
+            .iter()
+            .any(|p| p.what.contains("context.verb")
+                && p.what.contains("Action::\"comment.create\"")),
+        "{problems:#?}"
+    );
 }
 
 #[test]
