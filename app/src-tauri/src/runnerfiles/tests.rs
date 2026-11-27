@@ -661,17 +661,17 @@ fn every_kind_of_runner_kept(config: &std::path::Path) -> String {
 #[cfg(unix)]
 #[test]
 fn a_docker_pools_runner_a_cluster_pools_runner_and_a_fresh_runner_are_read_and_no_other() {
-    use purlis_session_protocol::session::KNOWS_READ_FILE;
+    use purlis_session_protocol::session::KNOWS_KEPT_FILES;
     let config = tempfile::tempdir().unwrap();
     let fresh = every_kind_of_runner_kept(config.path());
 
-    assert!(super::reading_files_needs(config.path(), "builds") == Some(KNOWS_READ_FILE));
+    assert!(super::reading_files_needs(config.path(), "builds") == Some(KNOWS_KEPT_FILES));
     assert!(
-        super::reading_files_needs(config.path(), "builds/builds") == Some(KNOWS_READ_FILE),
+        super::reading_files_needs(config.path(), "builds/builds") == Some(KNOWS_KEPT_FILES),
         "a Docker pool's runner draining beside its new one"
     );
-    assert!(super::reading_files_needs(config.path(), "team") == Some(KNOWS_READ_FILE));
-    assert!(super::reading_files_needs(config.path(), &fresh) == Some(KNOWS_READ_FILE));
+    assert!(super::reading_files_needs(config.path(), "team") == Some(KNOWS_KEPT_FILES));
+    assert!(super::reading_files_needs(config.path(), &fresh) == Some(KNOWS_KEPT_FILES));
     for none in [
         "empty",
         "builds/builds-01234567",
@@ -682,6 +682,28 @@ fn a_docker_pools_runner_a_cluster_pools_runner_and_a_fresh_runner_are_read_and_
         assert!(
             super::reading_files_needs(config.path(), none).is_none(),
             "{none} reads no file"
+        );
+    }
+}
+
+/// **A runner before 1.97 is not asked for a file, and one from 1.97 is** (#6387, #7064): what
+/// reading files needs, on every kind, is the version that keeps a runner's own folders and
+/// sign-ins from the window.
+#[cfg(unix)]
+#[test]
+fn a_runner_before_1_97_is_not_asked_for_a_file_and_one_from_1_97_is() {
+    use purlis_session_protocol::version::Version;
+    let at = |minor| Version { major: 1, minor };
+    let config = tempfile::tempdir().unwrap();
+    let fresh = every_kind_of_runner_kept(config.path());
+
+    for named in ["builds", "team", fresh.as_str()] {
+        let needs = super::reading_files_needs(config.path(), named).unwrap();
+        assert!(at(96) < needs, "{named}");
+        assert!(at(97) >= needs, "{named}");
+        assert!(
+            purlis_session_protocol::session::VERSION >= needs,
+            "{named}"
         );
     }
 }

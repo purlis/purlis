@@ -4,8 +4,8 @@
 //! **A pool's runner, as a pane's file link reads its chat's files** (#6387, #6949): the adapter
 //! of the core's neutral [`purlis_core::panelinks::RunnerFiles`] for every kind of runner purlis
 //! pairs ([`reading_files_needs`]: a Docker pool's, a cluster pool's own, and a chat's fresh runner on
-//! a cluster pool), over the session protocol's `read_file` (1.93) on the window's link to that
-//! runner. The path the chat printed is sent as data; the runner resolves and reads it. Nothing
+//! a cluster pool), over the session protocol's `read_file` on the window's link to that runner, asked
+//! only of one that keeps its own folders and sign-ins from the window (1.97). The path the chat printed is sent as data; the runner resolves and reads it. Nothing
 //! here runs `docker exec` or builds a command line.
 //!
 //! - A hover only looks ([`ReadsOnRunner::look`]), for at most [`LOOK_WITHIN`]: a runner that is
@@ -37,6 +37,10 @@ pub const PIECE_WITHIN: Duration = Duration::from_secs(10);
 /// there. `named` is as a link to a pool's runner names it: `<pool>`, or `<pool>/<runner>` for a
 /// Docker pool's draining runner and a chat's fresh runner.
 ///
+/// Every kind needs [`session::KNOWS_KEPT_FILES`] (1.97, #7064): a runner before it would read
+/// its own folders and sign-ins for the window, so it is never asked and its chat's paths stay
+/// no link.
+///
 /// Files are read on every kind of runner purlis pairs, and only as a chat's own link reaches
 /// it: a Docker pool's runner as `runners::reachable` says (its pool kept with a runner of its
 /// image, or that very runner kept draining), and a cluster pool's own runner or a chat's fresh
@@ -48,16 +52,9 @@ pub const PIECE_WITHIN: Duration = Duration::from_secs(10);
 /// first, and one opened on that answer is read only while it is the file it was
 /// ([`ReadsOnRunner::read`]).
 pub(crate) fn reading_files_needs(config: &std::path::Path, named: &str) -> Option<Version> {
-    if purlis_core::runners::reachable(config, named).is_ok() {
-        return Some(session::KNOWS_READ_FILE);
-    }
-    if purlis_core::runners::cluster_runner_for(config, named).is_ok_and(|kept| kept.is_some()) {
-        // TODO(#6949): `session::KNOWS_KEPT_FILES` (1.94), which #7078 adds in #1112 and is not
-        // on main yet: a cluster pool's runner, or a chat's fresh runner there, is read only
-        // where it keeps purlis's own files from the window, which no 1.93 runner does.
-        return Some(session::KNOWS_READ_FILE);
-    }
-    None
+    let reached = purlis_core::runners::reachable(config, named).is_ok()
+        || purlis_core::runners::cluster_runner_for(config, named).is_ok_and(|kept| kept.is_some());
+    reached.then_some(session::KNOWS_KEPT_FILES)
 }
 
 /// **One answer of a runner to `read_file`**, as the window asks it: on a link, for one chat.
