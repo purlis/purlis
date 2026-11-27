@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795781596099,
+  "lastUpdate": 1795783080919,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57666,6 +57666,48 @@ window.BENCHMARK_DATA = {
             "value": 101.94448750000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.593, 101.860, 101.944, 102.118, 102.534 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7a54a906578c330e501eb34bd5231f2022e7eedd",
+          "message": "A large push is read, and every refused push says why (#7878) (#7887)\n\n* A large push is read, and every refused push says why (#7878)\n\ngit sends a probe (a lone flush packet) ahead of a push larger than\nhttp.postBuffer. The route refused it as BodyUnreadable with a plain 403,\nso git printed 'the remote end hung up unexpectedly' and 'Everything\nup-to-date', never sent the push, and the CI-file check never raised its\nAsk. The probe is now let through without the gate; a refused push whose\nrefs cannot be repeated answers 'unpack <reason>' in git's words; and a\nchat whose route no longer takes its credential is told to use\npurlis worktree push or start a new chat.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8DW9GETH8Y0TJ8N463YMMVN\nPurlis-Persona: steward\n\n* The held explicit-sha push test's chat owns ci-pr at the tip it pushes from\n\nThe push was refused as a branch the chat did not make before the gate\ncould hold it. The chat's creation of ci-pr at its base is recorded, as\nthe app records a confirmed push, so the push reaches the CI-file hold;\nthe forge's ci-pr is asserted still at that base.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8E0Y0DDNKXWMGJFABKSWMYS\nPurlis-Persona: steward\n\n* Test: the held-push test's record carries fast_forward_only (field from #7845)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T11:51:04Z",
+          "tree_id": "546de506d3b1024e953afdb20430d040b4d4477b",
+          "url": "https://github.com/purlis/purlis/commit/7a54a906578c330e501eb34bd5231f2022e7eedd"
+        },
+        "date": 1795783075077,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3995605,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.389, 0.391, 0.400, 0.402, 0.429 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.486418999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.442, 16.461, 16.486, 16.515, 16.538 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.146341,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.957, 101.032, 101.146, 101.731, 102.296 ms"
           }
         ]
       }
