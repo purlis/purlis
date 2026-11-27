@@ -30,13 +30,11 @@
 // a record holding a studio chat brings it back with the chip on its pane foot that names its
 // skill and its job, and the record the app writes again still holds the link and its start.
 //
-// **And the upgrade to chats in the session host** (#2004): the first launch runs its chats in
-// the window's own process, as every build before #2004 did (`PURLIS_CHATS_IN_THE_HOST=0`), and
-// every launch after it runs them in the session host, this build's default, so the second
-// launch is an upgrade that has to bring the chat back on its conversation. Ending the app with
-// a signal is not a quit: its host keeps the chats for the grace period, for a window that comes
-// back to reattach to (ADR 0068 §2, #2006). Each launch here stands for a quit, so the host that
-// launch started is ended with it, by its pid.
+// **And every launch runs its chats in the session host** (#2004, #2005): there is no other place
+// a chat runs, so the second launch has to bring the chat the first ran back on its conversation.
+// Ending the app with a signal is not a quit: its host keeps the chats for the grace period, for
+// a window that comes back to reattach to (ADR 0068 §2, #2006). Each launch here stands for a
+// quit, so the host that launch started is ended with it, by its pid.
 
 import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:net";
@@ -467,13 +465,11 @@ writeFileSync(
 
 console.log(`a plane at ${plane}`);
 
-// The build before the upgrade: chats in the window's own process.
 const first = await theAppRuns(
   "the first launch",
   plane,
   () => argvSeen(argvFile).length >= 1,
   pressing("Reopen all sessions", argvFile),
-  { PURLIS_CHATS_IN_THE_HOST: "0" },
 );
 check(
   "an ordinary relaunch does not say it followed an update",
@@ -540,12 +536,12 @@ const second = await theAppRuns(
   pressing("Reopen all sessions", argvFile, 0),
 );
 check(
-  "a second launch, chats now in the session host, brings the chat back again",
+  "a second launch brings the chat back again",
   second.ok,
   second.ok ? "" : `the app said:\n${second.output}`,
 );
 check(
-  "and runs it in the session host, the default after the upgrade",
+  "and runs it in the session host, the one place a chat runs",
   second.output.includes("chats run in the session host on this launch"),
   second.ok ? "the launch never said where its chats run" : "",
 );

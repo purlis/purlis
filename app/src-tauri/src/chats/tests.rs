@@ -2115,6 +2115,57 @@ fn chats_of(plane: &std::path::Path) -> Chats {
     )
 }
 
+/// **No chat starts outside the session host** (#2005, ADR 0068, Ruled 3): on what a plane's
+/// chats run on before the launch hands it the host, and on a platform with none, a start and a
+/// put back both start nothing, open no tab, and say why. A real program, so only the host can
+/// keep it from running.
+#[test]
+fn with_no_session_host_no_chat_starts_and_the_start_says_why() {
+    let plane = tempfile::tempdir().expect("a plane");
+    std::fs::write(plane.path().join(purlis_core::plane::MANIFEST), "").expect("a manifest");
+    let chats = Chats::on_host(
+        Box::new(|_| {}),
+        Box::new(crate::host::NoHost::default()),
+        plane.path().to_path_buf(),
+    );
+    let sleeper = a_chat_in(plane.path(), "/bin/sleep");
+
+    let refused = chats.start(&sleeper, SIZE).expect_err("not started");
+    let put_back = chats.put_back(
+        &Record {
+            chats: vec![sleeper.clone()],
+            ..Default::default()
+        },
+        SIZE,
+    );
+
+    assert!(refused.contains(crate::host::NO_SESSION_HOST), "{refused}");
+    assert!(put_back.is_empty(), "a chat was put back");
+    assert!(chats.in_order().is_empty(), "a chat was opened");
+}
+
+/// **The window's own way of running a chat is in no build that ships** (#2005): the in-process
+/// stand-in is compiled into test builds alone, and a shipped plane's chats run on
+/// [`crate::host::NoHost`] until the launch hands it the session host. The compiler holds the
+/// first: no shipped code can name a module a test build alone has.
+#[test]
+fn the_in_process_stand_in_is_compiled_only_into_a_test_build() {
+    let sessions = include_str!("../sessions.rs");
+    assert!(
+        sessions.contains(
+            "#[cfg(test)]\nmod in_this_process;\n#[cfg(test)]\npub use in_this_process::Sessions;"
+        ),
+        "the in-process stand-in is no longer test-only"
+    );
+    let planes = include_str!("../planes.rs");
+    assert!(
+        planes.contains(
+            "#[cfg(not(test))]\nfn no_host_yet() -> Hosting {\n    Arc::new(|_, _: &Path| Box::new(crate::host::NoHost::default()))\n}"
+        ),
+        "a shipped plane's chats run on something but the refusing host"
+    );
+}
+
 /// A chat on no profile whose program is `program`, standing in `plane`.
 fn a_chat_in(plane: &std::path::Path, program: &str) -> Chat {
     Chat {

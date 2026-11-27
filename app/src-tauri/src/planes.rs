@@ -35,7 +35,9 @@ use purlis_core::reopen::Choice;
 use crate::chats::Chats;
 use crate::hooks::{self, Hooks, Moved};
 use crate::host::{ChatBoard, SessionHost};
-use crate::sessions::{Reporting, Sessions};
+use crate::sessions::Reporting;
+#[cfg(test)]
+use crate::sessions::Sessions;
 
 /// Which plane something is acting for.
 ///
@@ -578,8 +580,6 @@ enum PutBack {
     NotAsked,
     /// Its chats are being started: it says how it came out when that is over.
     Going,
-    /// The launch's gate refused (#2004): its chats are registered, and these start them.
-    Refused(Box<Reopening>),
     /// Its record could not be read, so nothing was registered: it is read again.
     Unread,
     /// Every chat was tried, of this many its record held.
@@ -3135,8 +3135,8 @@ pub struct Planes {
     /// The kill switch (OV-1): one for every plane this process holds, so a plane opened after
     /// a stop starts nothing either.
     kill_switch: Arc<crate::killswitch::KillSwitch>,
-    /// Makes each plane's session host (FD-3): [`Sessions`] in the app, told where its chats
-    /// report.
+    /// Makes each plane's session host (FD-3): the session host the launch hands it
+    /// (`crate::hostedsessions::chats_in_the_host`), else one that refuses every start (#2005).
     hosting: Hosting,
     /// Whether the session host owns each plane's hook channel, where the window would bind
     /// it (#2000): the window then hears what the host hands on.
@@ -3167,8 +3167,6 @@ pub struct Planes {
     /// This machine's config home, where its pools are kept (#2679): `None` in a test, where
     /// no workspace runs on a pool.
     pools_in: Option<PathBuf>,
-    /// What putting back a project's chats waits on, if anything (#2004).
-    gate: Option<Gate>,
 }
 
 /// The projects an open or a close is under way for, one at a time each ([`OpenTurn`]).
@@ -3308,9 +3306,6 @@ pub struct PlaneClosed {
 /// Makes a plane's session host, given where its chats are to report and where the plane is.
 pub type Hosting = Arc<dyn Fn(Option<Reporting>, &Path) -> Box<dyn SessionHost> + Send + Sync>;
 
-/// What putting back a project's chats waits on (#2004): `Ok` to start them, or why not.
-pub type Gate = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
-
 /// Where the launch's question stands (charter-app#250): what it holds back until the
 /// operator answers, and what the answer was.
 ///
@@ -3355,6 +3350,21 @@ pub struct Waiting {
     pub root: PathBuf,
     pub chats: usize,
     pub views: usize,
+}
+
+/// **What a plane's chats run on until the launch hands it the session host** (#2005): nothing,
+/// every start refused with why ([`crate::host::NoHost`]). No chat runs in the window's own
+/// process (ADR 0068, Ruled 3); `crate::hostedsessions::chats_in_the_host` hands the host.
+#[cfg(not(test))]
+fn no_host_yet() -> Hosting {
+    Arc::new(|_, _: &Path| Box::new(crate::host::NoHost::default()))
+}
+
+/// In a test, a plane's chats run on the in-process stand-in the tests are written against
+/// ([`crate::sessions::Sessions`]), which only a test build has (#2005).
+#[cfg(test)]
+fn no_host_yet() -> Hosting {
+    Arc::new(|reporting, _: &Path| Box::new(Sessions::reporting_to(reporting)))
 }
 
 impl Planes {
@@ -3411,7 +3421,7 @@ impl Planes {
             question_updates: Arc::new(|_, _| {}),
             asks: Arc::new(|_| {}),
             relaunching: Mutex::new(Relaunching::default()),
-            hosting: Arc::new(|reporting, _: &Path| Box::new(Sessions::reporting_to(reporting))),
+            hosting: no_host_yet(),
             hooks_in_the_host: false,
             events: None,
             sweep: Arc::new(|root| {
@@ -3424,17 +3434,7 @@ impl Planes {
             quit_waits: QUIT_WAITS_FOR_TURNS,
             network: None,
             pools_in: None,
-            gate: None,
         }
-    }
-
-    /// Puts back no project's chats before `gate` lets it (#2004): what a window whose chats run
-    /// in its own process waits on, so a session host a crashed window left ends the chats it
-    /// kept first ([`crate::sessionhost::SessionHost::before_chats_are_put_back`]). A gate that
-    /// refuses puts nothing back and leaves the record as it is, for the next launch.
-    pub fn putting_back_chats_after(mut self, gate: Gate) -> Self {
-        self.gate = Some(gate);
-        self
     }
 
     /// Starts each project's chats behind the window (`crate::restoring`): an open answers
@@ -3522,7 +3522,7 @@ impl Planes {
     }
 
     /// Runs every plane's sessions on the hosts `hosting` makes, rather than in this process:
-    /// the session host, behind the start-time switch (`crate::hostedsessions`, #1998).
+    /// the session host (`crate::hostedsessions`, #1998, #2005).
     pub fn running_sessions_on(mut self, hosting: Hosting) -> Self {
         self.hosting = hosting;
         self
@@ -4748,9 +4748,6 @@ impl Planes {
         // asked answers at once, with every chat's tab to draw, and the programs start on a
         // thread of their own. Where no thread can be had, or a test asked for it, in turn.
         //
-        // **Nothing starts before the gate lets it** (#2004), on whichever thread starts them: a
-        // gate that refuses leaves each chat registered and unstarted, and its record as it was.
-        //
         // **And the window is told how it came out, once** (#5322): ready, with how many of its
         // chats came back, or failed, with why none was put back.
         *lock_put_back(&held) = PutBack::Going;
@@ -4758,31 +4755,17 @@ impl Planes {
         self.put_back(&held, begun);
     }
 
-    /// Starts the chats `begun` registered once the gate lets it, behind the window where the
-    /// registry says so, and tells the window how that came out.
+    /// Starts the chats `begun` registered, behind the window where the registry says so, and
+    /// tells the window how that came out.
     fn put_back(&self, held: &Arc<Held>, begun: Reopening) {
-        let gate = self.gate.clone();
         let ready = Arc::clone(&self.ready);
         let put_back = move |held: &Held, begun: Reopening| {
-            let outcome = match gate.as_ref().map_or(Ok(()), |gate| gate()) {
-                Ok(()) => {
-                    let outcome = held.finish_reopen(begun, STARTING);
-                    *lock_put_back(held) = match &outcome {
-                        crate::projectready::ProjectOutcome::Ready { wanted, .. } => {
-                            PutBack::Done { wanted: *wanted }
-                        }
-                        crate::projectready::ProjectOutcome::Failed { .. } => PutBack::Unread,
-                    };
-                    outcome
+            let outcome = held.finish_reopen(begun, STARTING);
+            *lock_put_back(held) = match &outcome {
+                crate::projectready::ProjectOutcome::Ready { wanted, .. } => {
+                    PutBack::Done { wanted: *wanted }
                 }
-                Err(why) => {
-                    tracing::warn!(
-                        "purlis: plane {}: its chats are not put back: {why}",
-                        held.root().display()
-                    );
-                    *lock_put_back(held) = PutBack::Refused(Box::new(begun));
-                    crate::projectready::ProjectOutcome::Failed { error: why }
-                }
+                crate::projectready::ProjectOutcome::Failed { .. } => PutBack::Unread,
             };
             ready(crate::projectready::ProjectReady {
                 plane: held.id.clone(),
@@ -4823,7 +4806,6 @@ impl Planes {
     ///
     /// - **Its chats are still starting**: nothing more. That put back says how it came out, and
     ///   no chat starts twice.
-    /// - **The gate refused**: the chats it registered start, if it lets them now.
     /// - **Its record could not be read**: it is read again, through the trust gate an open goes
     ///   through: what it now says to run is asked about before it runs, and Retry after the
     ///   yes puts it back. The chats opened since stay, so no task is ended for not being in it.
@@ -4841,10 +4823,6 @@ impl Planes {
         let was = std::mem::replace(&mut *lock_put_back(&held), PutBack::Going);
         match was {
             PutBack::Going => Ok(nothing()),
-            PutBack::Refused(begun) => {
-                self.put_back(&held, *begun);
-                Ok(nothing())
-            }
             PutBack::Unread => {
                 let reading = machine::Contribution::read(held.root());
                 if let Some(asking) = self.asking(held.root(), reading.contributes) {
