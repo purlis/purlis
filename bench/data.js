@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795802920395,
+  "lastUpdate": 1795805825081,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57960,6 +57960,48 @@ window.BENCHMARK_DATA = {
             "value": 100.93990649999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.270, 100.862, 100.940, 101.099, 101.872 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "39d11db844c62ce1dd541297e36eed5dfcbca02c",
+          "message": "worktree commit: commit only the named paths, leave the rest staged (#7928) (#7933)\n\n* worktree commit: commit only the named paths, leave the rest staged (#7928)\n\nIn a chat with no sandbox or a terminal, purlis worktree commit staged the\nnamed paths and then ran a bare git commit, so everything already staged in\nthe folder went into a commit whose message described one path. Named paths\nare now committed as git commit -- <paths> does; --all keeps committing the\nwhole index. The brokered commit already refused an index it did not stage.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8E9YD8GT735CX479EZXQ7GE\nPurlis-Persona: steward\n\n* worktree commit: named paths refuse a merge in progress, restage after a hook, and reach git on stdin (#7928)\n\nA commit of named paths in the middle of a merge, cherry-pick or revert is refused before\nanything is staged, naming --all, where git said only \"cannot do a partial commit during a\nmerge\". After the commit the named paths are reset to HEAD, so a pre-commit hook that\nrestages a file no longer leaves the folder MM. The names go to add, the dry-run check, commit\nand reset through --pathspec-from-file=- with NULs, so their number meets no argument limit;\nthe message is read from a file of its own.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8EE793VQBB2AYHKCZ8D83X6\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T16:44:57Z",
+          "tree_id": "f97cf1bb2a55af4f0a305572379dc33cef488af6",
+          "url": "https://github.com/purlis/purlis/commit/39d11db844c62ce1dd541297e36eed5dfcbca02c"
+        },
+        "date": 1795805817537,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6702779999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.659, 0.666, 0.670, 0.686, 0.688 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5322085,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.479, 16.518, 16.532, 16.602, 16.654 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.418282,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.937, 101.287, 101.418, 101.700, 102.336 ms"
           }
         ]
       }
