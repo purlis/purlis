@@ -3551,14 +3551,15 @@ fn s6s_programs_that_run_the_program_after_them_are_offered_no_run_grant() {
 
 /// The kin round 3 of #7828's review found, refused on what each is for: s6's
 /// `s6-ipcserver-access`, `s6-connlimit`, `s6-fdholder-getdump` and `s6-permafailon` run the
-/// program after them; OpenRC's `supervise-daemon` runs the program it is named, on a row of its
-/// own rather than by its first part; `fakeroot`, `fakechroot` and `eatmydata` run the command
-/// after them; `debuild`, `dh`, `pbuilder`, `sbuild` and `gbp` run a package's `debian/rules`, as
-/// `dpkg-buildpackage` does; `yath`, `cover`, `milla`, `minil` and `plackup` run a distribution's
-/// tests, hooks or the Perl they are handed, as `prove` and `dzil` do; `mock` runs its
-/// configuration as Python, `portindex` evaluates every `Portfile`, and `spectool` and `rpmlint`
-/// parse a spec whose `%(…)` a shell runs, as `rpmspec` does; and systemd's `kernel-install`,
-/// `ukify` and `mkosi` run the plugins, tools or scripts of a folder they are named.
+/// program after them; OpenRC's `supervise-daemon` runs the program it is named (its own row is
+/// pinned by a unit test in `sandbox::tools`, since its first part reaches `supervise` too);
+/// `fakeroot`, `fakechroot` and `eatmydata` run the command after them; `debuild`, `dh`,
+/// `pbuilder`, `sbuild` and `gbp` run a package's `debian/rules`, as `dpkg-buildpackage` does;
+/// `yath`, `cover`, `milla`, `minil` and `plackup` run a distribution's tests, hooks or the Perl
+/// they are handed, as `prove` and `dzil` do; `mock` runs its configuration as Python, `portindex`
+/// evaluates every `Portfile`, and `spectool` and `rpmlint` parse a spec whose `%(…)` a shell runs,
+/// as `rpmspec` does; and systemd's `kernel-install`, `ukify` and `mkosi` run the plugins, tools or
+/// scripts of a folder they are named.
 #[test]
 fn s6s_runners_the_debian_perl_and_rpm_builders_and_systemds_image_tools_are_offered_no_run_grant()
 {
@@ -3594,16 +3595,17 @@ fn s6s_runners_the_debian_perl_and_rpm_builders_and_systemds_image_tools_are_off
 }
 
 /// More of the same families (round 4 of #7828's review), refused on what each is for: programs
-/// that run the command after them (macOS's `taskpolicy`, `choom`, `uclampset`, moreutils'
-/// `chronic`, `ifne`, `lckdo` and `zrun`, `cpulimit`, `nocache`, `schedtool`,
+/// that run the command after them (macOS's `taskpolicy`, util-linux's `choom` and `uclampset`,
+/// moreutils' `chronic`, `ifne`, `lckdo` and `zrun`, `cpulimit`, `nocache`, `schedtool`,
 /// `dbus-run-session`, `xvfb-run`, `faketime`, `torsocks`, `proxychains`, `trickle`, and s6's
 /// `s6-maximumtime` and its networking twins of the `s6-ipc*` programs); `rotatelogs -p`, which
 /// runs a program on each new log; Debian's and Fedora's package builders beside `debuild`
 /// (`pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`, `fedpkg`, `centpkg`, `rhpkg`, `tito`),
-/// `debconf` and `deb-systemd-invoke`, which run the command or the unit they are handed, and
-/// MacPorts' `daemondo --start-cmd`; Perl's servers and runners beside `plackup` (`starman`,
-/// `starlet`, `morbo`, `hypnotoad`, `mojo`, `start_server`, `mbtiny`); and `s6-svlink` and
-/// `s6-rc-update`, which hand a running s6 a service folder or a database a chat may have written.
+/// `debconf` and `deb-systemd-invoke`, which run the command or the unit they are handed (the
+/// second, like `proxychains4`, reaching another row by a form of its name), and MacPorts'
+/// `daemondo --start-cmd`; Perl's servers and runners beside `plackup` (`starman`, `starlet`,
+/// `morbo`, `hypnotoad`, `mojo`, `start_server`, `mbtiny`); and `s6-svlink` and `s6-rc-update`,
+/// which hand a running s6 a service folder or a database a chat may have written.
 #[test]
 fn more_chain_loaders_loggers_builders_perl_servers_and_s6s_linkers_are_offered_no_run_grant() {
     for name in [
@@ -3654,6 +3656,26 @@ fn more_chain_loaders_loggers_builders_perl_servers_and_s6s_linkers_are_offered_
         "mbtiny",
         "s6-svlink",
         "s6-rc-update",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The utilities that ship beside `dnf` and `yum` (dnf-plugins-core, yum-utils) take `-c` and
+/// `--setopt` and load plugins as `dnf` and `yum` do, and no form of their names reaches either;
+/// daemontools' `svscanboot` runs `svscan` (round 5 of #7828's review).
+#[test]
+fn the_dnf_and_yum_utilities_and_svscanboot_are_offered_no_run_grant() {
+    for name in [
+        "yumdownloader",
+        "repoquery",
+        "reposync",
+        "repotrack",
+        "repoclosure",
+        "debuginfo-install",
+        "needs-restarting",
+        "package-cleanup",
+        "svscanboot",
     ] {
         refused_as_running_others(name);
     }

@@ -8,7 +8,8 @@
   the rest run the program after them. A persona can still declare any of them as a tool
   (#6559).
 - **A run's notice offers no Allow for `aptitude`, `run-parts`, `capsh`, `cpanm`, `cpan`, `cpm`,
-  `carton`, `dnf` or `yum`**. `aptitude` runs the download program a setting names, as
+  `carton`, `dnf` or `yum`, or for the utilities beside `dnf` and `yum` (`repoquery`,
+  `yumdownloader` and the rest)**. `aptitude` runs the download program a setting names, as
   `apt-get` does; `run-parts` runs every program in a folder; `capsh` hands a shell the command
   after `--`; the Perl installers run a package's build script, and `carton exec` the command
   it is handed; and `dnf` and `yum` load plugins from a folder a setting names. A persona can
@@ -36,5 +37,5 @@
 - **Programs named after these lose their Allow with them**, for example every
   `systemd-<name>`, `<name>-init` and `init-<name>`, `yum-<name>`, `dnf-<name>`,
   `zypper-<name>`, `cpan-<name>`, `dh-<name>` and `port-<name>`, and ast-grep's `sg`, which is
-  still offered as `ast-grep`. Some of them are harmless (`systemd-escape`, `cpan-upload`), and
+  still offered as `ast-grep`. Some of them may be harmless (`systemd-escape`, `cpan-upload`), and
   giving those back is its own change (#6557, #6559, #6564).

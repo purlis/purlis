@@ -144,6 +144,40 @@ footing:
 - **systemd's `kernel-install`, `ukify` and `mkosi`**, which run the plugins, tools or build
   scripts of a folder they are named.
 
+The fourth review of #7828 found more of the same families, each refused on the same footing:
+
+- **Programs that run the command after them**: macOS's `taskpolicy`, util-linux's `choom` and
+  `uclampset`,
+  moreutils' `chronic`, `ifne`, `lckdo` and `zrun`, `cpulimit`, `nocache`, `schedtool`,
+  `dbus-run-session`, `xvfb-run`, `faketime`, `torsocks`, `proxychains` (and `proxychains4`, by
+  the name without its version),
+  `trickle`, and s6's `s6-maximumtime`. Also s6-networking's `s6-tcpserver`, `s6-tcpserver-access`,
+  `s6-tcpserver-socketbinder`, `s6-tcpclient`, `s6-tlsserver`, `s6-tlsclient`, `s6-tlsd` and
+  `s6-tlsc`, which are twins of the `s6-ipc*` programs.
+- **`rotatelogs`**, whose `-p` runs a program on each new log file.
+- **The package builders beside `debuild`**: `pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`,
+  `fedpkg`, `centpkg`, `rhpkg` and `tito`. Also `debconf`, which runs the command after it, and
+  MacPorts' `daemondo`, which runs its `--start-cmd`. `deb-systemd-invoke`, which has
+  `systemctl` act on a unit, reaches the `invoke` row by its last part.
+- **Perl's servers and runners beside `plackup`**: `starman`, `starlet`, `morbo`, `hypnotoad`,
+  `mojo` (whose `eval` runs Perl), `start_server` and `mbtiny`.
+- **`s6-svlink` and `s6-rc-update`**, which hand a running s6 a service folder or a compiled
+  database that a chat may have written.
+
+A unit test now pins `supervise-daemon`'s own row, which the earlier test could not tell from
+the `supervise` row.
+
+The fifth review of #7828 found that the utilities beside `dnf` and `yum` (dnf-plugins-core and
+yum-utils: `yumdownloader`, `repoquery`, `reposync`, `repotrack`, `repoclosure`,
+`debuginfo-install`, `needs-restarting` and `package-cleanup`) take `-c` and `--setopt` and load
+plugins as `dnf` and `yum` do, and that no form of their names reaches either. They are refused.
+So is daemontools' `svscanboot`, which runs `svscan`.
+
+Other families the reviews found still offered are outside these issues: `tini`, `catatonit`,
+`daemonize`, `pm2`, `supervisord`, ucspi-tcp's `tcpserver`, `tcpclient`, `recordio` and `argv0`,
+`execlineb`, `logrotate`, `pacman`, `apk`, macOS's `installer` and sysvinit's `startpar`. They
+are filed as #7833.
+
 ## What the name forms cost
 
 A name is judged by its forms as well: its first part, its last part, and itself without a
@@ -158,38 +192,13 @@ These are examples, not a complete list:
   `bootcmd` and `runcmd` of the file it is handed.
 - every `yum-<name>`, `dnf-<name>` and `zypper-<name>`. `yum-config-manager` stays refused
   rightly, since it loads plugins through `-c` and `--setopt` as `yum` does.
-- every `cpan-<name>`. `cpan-upload` runs nothing, though a chat may be handed a PAUSE password
-  for it, and `cpan-outdated` only reads.
-- every `dh-<name>`, and every `port-<name>` and `<name>-port`, along with the other first and
-  last parts of the names refused here.
+- every `cpan-<name>`. `cpan-upload` is thought to run nothing, though a chat may be handed a
+  PAUSE password for it, and `cpan-outdated` to only read.
+- every `dh-<name>`, `gbp-<name>`, `mock-<name>` and `debconf-<name>` (`debconf-show`), and
+  every `port-<name>` and `<name>-port`, along with the other first and last parts of the names
+  refused here.
 - ast-grep's `sg`, a different program with the same name as shadow's `sg`. It is still offered
-  under the name `ast-grep`.
+  under the name `ast-grep`. Modular's `mojo` has the same clash with Mojolicious's `mojo`.
 
 Which to give back, and how to do it without giving back the ones that run code, is part of
 #7825.
-
-The fourth review of #7828 found more of the same families, each refused on the same footing:
-
-- **Programs that run the command after them**: macOS's `taskpolicy`, `choom`, `uclampset`,
-  moreutils' `chronic`, `ifne`, `lckdo` and `zrun`, `cpulimit`, `nocache`, `schedtool`,
-  `dbus-run-session`, `xvfb-run`, `faketime`, `torsocks`, `proxychains` and `proxychains4`,
-  `trickle`, and s6's `s6-maximumtime`. Also s6-networking's `s6-tcpserver`, `s6-tcpserver-access`,
-  `s6-tcpserver-socketbinder`, `s6-tcpclient`, `s6-tlsserver`, `s6-tlsclient`, `s6-tlsd` and
-  `s6-tlsc`, which are twins of the `s6-ipc*` programs.
-- **`rotatelogs`**, whose `-p` runs a program on each new log file.
-- **The package builders beside `debuild`**: `pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`,
-  `fedpkg`, `centpkg`, `rhpkg` and `tito`. Also `debconf`, which runs the command after it,
-  `deb-systemd-invoke`, which has `systemctl` act on a unit, and MacPorts' `daemondo`, which
-  runs its `--start-cmd`.
-- **Perl's servers and runners beside `plackup`**: `starman`, `starlet`, `morbo`, `hypnotoad`,
-  `mojo` (whose `eval` runs Perl), `start_server` and `mbtiny`.
-- **`s6-svlink` and `s6-rc-update`**, which hand a running s6 a service folder or a compiled
-  database that a chat may have written.
-
-A unit test now pins `supervise-daemon`'s own row, which the earlier test could not tell from
-the `supervise` row.
-
-Other families the review found still offered are outside these issues: `tini`, `catatonit`,
-`daemonize`, `pm2`, `supervisord`, ucspi-tcp's `tcpserver`, `tcpclient`, `recordio` and `argv0`,
-`execlineb`, `logrotate`, `pacman`, `apk`, macOS's `installer` and sysvinit's `startpar`. They
-are filed as #7833.

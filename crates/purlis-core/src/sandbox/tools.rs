@@ -2295,6 +2295,7 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // processor; and `setuidgid`, `envuidgid`, `softlimit`, `setlock`, `pgrphack` and `fghack`
     // run the program after them, as `envdir` does.
     "svscan",
+    "svscanboot",
     "supervise",
     "multilog",
     "setuidgid",
@@ -2346,14 +2347,25 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "carton",
     "dnf",
     "yum",
-    // and their kin (round 1 of #7828's review), refused on what each is for: programs that run
-    // the command after them, as `setuidgid` and `capsh` do; the loggers that run a `!processor`
-    // they are handed, on the command line or in a log folder's `config`, as `multilog` does;
-    // `anacron`, which runs an anacrontab it is named; the Perl installers and runners beside `cpanm` (`cpanp`'s `!` evaluates Perl,
-    // `plenv exec` and `carmel exec` run a command, `prove` and `dzil` a distribution's code); and
-    // the package managers beside `dnf`: `zypper <name>` runs the `zypper-<name>` its search path
-    // finds, `makepkg` a `PKGBUILD`, MacPorts' `port` a `Portfile`, and `microdnf` and `tdnf` take
-    // settings as `dnf` does.
+    // and the utilities beside them (dnf-plugins-core, yum-utils), which take `-c` and `--setopt`
+    // and load plugins as they do, and reach neither by a form of their names (round 5 of
+    // #7828's review)
+    "yumdownloader",
+    "repoquery",
+    "reposync",
+    "repotrack",
+    "repoclosure",
+    "debuginfo-install",
+    "needs-restarting",
+    "package-cleanup",
+    // and their kin (round 1 of #7828's review), refused on what each is for: programs that run the
+    // command after them, as `setuidgid` and `capsh` do; the loggers that run a `!processor` they
+    // are handed, on the command line or in a log folder's `config`, as `multilog` does; `anacron`,
+    // which runs an anacrontab it is named; the Perl installers and runners beside `cpanm`
+    // (`cpanp`'s `!` evaluates Perl, `plenv exec` and `carmel exec` run a command, `prove` and
+    // `dzil` a distribution's code); and the package managers beside `dnf`: `zypper <name>` runs
+    // the `zypper-<name>` its search path finds, `makepkg` a `PKGBUILD`, MacPorts' `port` a
+    // `Portfile`, and `microdnf` and `tdnf` take settings as `dnf` does.
     "runuser",
     "gosu",
     "prlimit",
@@ -2408,14 +2420,15 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "kernel-install",
     "ukify",
     "mkosi",
-    // and round 4's: more programs that run the command after them (`taskpolicy`, `choom`,
-    // `uclampset`, moreutils' `chronic`, `ifne`, `lckdo` and `zrun`, `cpulimit`, `nocache`,
-    // `schedtool`, `dbus-run-session`, `xvfb-run`, `faketime`, `torsocks`, `proxychains`,
-    // `trickle`, and s6's `s6-maximumtime` and its networking twins of the `s6-ipc*` programs);
-    // `rotatelogs -p`, which runs a program on each new log; the package builders beside
+    // and round 4's: more programs that run the command after them (macOS's `taskpolicy`,
+    // util-linux's `choom` and `uclampset`, moreutils' `chronic`, `ifne`, `lckdo` and `zrun`,
+    // `cpulimit`, `nocache`, `schedtool`, `dbus-run-session`, `xvfb-run`, `faketime`, `torsocks`,
+    // `proxychains`, `trickle`, and s6's `s6-maximumtime` and its networking twins of the `s6-ipc*`
+    // programs); `rotatelogs -p`, which runs a program on each new log; the package builders beside
     // `debuild` (`pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`, `fedpkg`, `centpkg`, `rhpkg`,
-    // `tito`), `debconf` and `deb-systemd-invoke`, which run the command or unit they are handed,
-    // and MacPorts' `daemondo --start-cmd`; Perl's servers and runners beside `plackup`; and
+    // `tito`), and `debconf`, which runs the command it is handed (`deb-systemd-invoke` reaches the
+    // `invoke` row by its last part, and `proxychains4` `proxychains` without its version), and
+    // MacPorts' `daemondo --start-cmd`; Perl's servers and runners beside `plackup`; and
     // `s6-svlink` and `s6-rc-update`, which hand a running s6 a folder or a database a chat may
     // have written.
     "taskpolicy",
@@ -2433,7 +2446,6 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "faketime",
     "torsocks",
     "proxychains",
-    "proxychains4",
     "trickle",
     "s6-maximumtime",
     "s6-tcpserver",
@@ -2450,7 +2462,6 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "qemubuilder",
     "dgit",
     "debconf",
-    "deb-systemd-invoke",
     "fedpkg",
     "centpkg",
     "rhpkg",
