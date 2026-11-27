@@ -584,6 +584,7 @@ import { RunnerLinkDownNotice } from "./RunnerLinkDownNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
 import { ProjectPolicyNotice } from "./ProjectPolicyNotice";
+import { PrerequisiteDialog } from "./PrerequisiteDialog";
 import { PolicyWatchAnnounced } from "./PolicyWatchAnnounced";
 import { ProjectPresetsNotice } from "./ProjectPresetsNotice";
 import { PersonaHostsNotice } from "./PersonaHostsNotice";
@@ -12159,6 +12160,12 @@ export const PlaneView = memo(function PlaneView({
       {/* **A loosening of the project's `[policy]`** (Q308a): reaches each person only on their
           one Accept; a value it could not read is said beside it, enforced meanwhile. */}
       <ProjectPolicyNotice plane={plane} />
+      {/* **What the project needs from you before its chats can work** (ADR 0130 §4): each open
+          prerequisite raised as an alert of the dialog family, one at a time. */}
+      <PrerequisiteDialog
+        plane={plane}
+        onOpenPolicy={() => openSettingsAt({ group: "project.policy" })}
+      />
       {/* **Blocks are off by default** (Q308a): the upgrade to `watch`, said once on this
           machine, in a project that names no policy. */}
       <PolicyWatchAnnounced plane={plane} />

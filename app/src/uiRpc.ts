@@ -11370,6 +11370,11 @@ export type PolicyPrerequisite = {
 	 *  (#7714), never because something edited it.
 	 */
 	after_new_key: boolean,
+	/**
+	 *  Whether nothing was ever kept on this machine for the project: under Waiting, the chats
+	 *  keep the shipped `watch` until the press, and the window says so.
+	 */
+	nothing_kept: boolean,
 	/**  The project's policy as it stands, from the same read: the waiting rows among it. */
 	policy: PolicyState,
 };

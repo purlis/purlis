@@ -587,6 +587,8 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "Pool setup's progress, said politely as it goes (#4480): reading what this machine has " +
       "and rechecking by itself. Nothing to do about either, so no way out.",
   },
+  // The prerequisite modal's refusal of Accept (#7719): the Keychain's, or a digest that moved.
+  "PrerequisiteDialog.tsx": { count: 1, why: ACTION },
   "poolsetup/GetHelp.tsx": {
     count: 1,
     why:
