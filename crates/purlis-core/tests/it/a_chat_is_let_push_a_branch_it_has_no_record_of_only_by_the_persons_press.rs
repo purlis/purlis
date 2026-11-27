@@ -254,10 +254,10 @@ fn handled(w: &World, branch: &str, old: &str, new: &str) -> purlis_core::forge:
 
 #[test]
 fn a_not_your_branch_push_stays_refused_without_the_press_under_consents_off_and_log() {
+    purlis_core::unsteered!();
     // ADR 0125, amended 2026-11-27, §10 (#7749): turned down, `consents` still raises the ask,
     // and nothing loosens. The push is refused until the person presses Allow.
     use purlis_core::forge::proxy::{Outcome, Refusal};
-    purlis_core::unsteered!();
     for consents in ["off", "log"] {
         let _here = ConsentsHere::at(consents);
         let config = tempfile::tempdir().unwrap();
