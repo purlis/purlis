@@ -8,7 +8,8 @@
 //! shipped default ([`DEFAULT`]). This module owns Cedar: nothing else in purlis names it.
 //!
 //! - **The schema** ([`SCHEMA`], spec §3) is compiled in and parsed once ([`schema`]). There is
-//!   no namespace; entity types are PascalCase and singular, actions lowercase verbs (Q311.7).
+//!   no namespace; entity types are PascalCase and singular, actions lowercase verbs (Q311.7),
+//!   bar `guards.forge`'s, which are quoted `object.act` names (ADR 0128, amended 2026-11-27).
 //!   Every family of `[policy]` is a Cedar action group of the same name ([`FAMILIES`]), every
 //!   action is in exactly one of them, and no action is named like a family ([`check_schema`];
 //!   Q311.4, Q311.8, Q318.3). Every attribute a rule can read says where purlis takes it from,
@@ -502,9 +503,88 @@ pub fn check_schema(text: &str) -> Vec<String> {
                     "the action \"{name}\" is in {groups:?}, not in exactly one family"
                 )),
             }
+            let forge = groups.as_slice() == [FORGE];
+            if !action_name_fits(name, forge) {
+                problems.push(if name.contains('.') && !forge {
+                    format!(
+                        "the action \"{name}\" has a dotted name, which only {FORGE}'s actions \
+                         take (`object.act`): every other action is a lowercase verb"
+                    )
+                } else {
+                    format!(
+                        "the action \"{name}\" is not a lowercase verb (or, in {FORGE}, a \
+                         lowercase `object.act`)"
+                    )
+                });
+            }
         }
     }
     problems
+}
+
+/// The family whose actions are forge operations, named `object.act` (ADR 0128, amended
+/// 2026-11-27, §1).
+const FORGE: &str = "guards.forge";
+
+/// Whether `name` is an action name the schema allows (Q311.7): lowercase words joined by
+/// hyphens, or, in [`FORGE`] alone, an `object.act` pair of lowercase words joined by
+/// underscores (`pull.request_reviewers`).
+fn action_name_fits(name: &str, forge: bool) -> bool {
+    let words = |text: &str, joint: char| {
+        text.split(joint)
+            .all(|word| !word.is_empty() && word.bytes().all(|b| b.is_ascii_lowercase()))
+    };
+    match name.split_once('.') {
+        None => words(name, '-'),
+        Some((object, act)) => forge && words(object, '_') && words(act, '_'),
+    }
+}
+
+/// **What a rule written for the forge's old string verb names in its place** (#7776): the
+/// action `call` and `context.verb` are gone from version 1, and each forge operation is an
+/// action of its own (ADR 0128, amended 2026-11-27, §1). The operation the rule's text quotes is
+/// the one to use; with none quoted, every one is named. `None` for a rule that names neither.
+fn forge_verb_hint(policy: &CedarPolicy) -> Option<String> {
+    let calls = |uid: &EntityUid| uid.id().unescaped() == "call";
+    let names_call = match policy.action_constraint() {
+        ActionConstraint::Any => false,
+        ActionConstraint::Eq(uid) => calls(&uid),
+        ActionConstraint::In(uids) => uids.iter().any(calls),
+    };
+    let text = policy.to_string();
+    let names_verb = ["context.verb", "context[\"verb\"]", "has verb"]
+        .iter()
+        .any(|form| text.contains(form));
+    let gone = match (names_call, names_verb) {
+        (false, false) => return None,
+        (true, true) => "`call` and `context.verb` are",
+        (true, false) => "`call` is",
+        (false, true) => "`context.verb` is",
+    };
+    let operations: Vec<&str> = actions()
+        .into_iter()
+        .filter(|(action, family)| *family == FORGE && action.contains('.'))
+        .map(|(action, _)| action)
+        .collect();
+    let quoted: Vec<&str> = operations
+        .iter()
+        .copied()
+        .filter(|operation| text.contains(&format!("\"{operation}\"")))
+        .collect();
+    let named = |list: &[&str]| {
+        list.iter()
+            .map(|operation| format!("`Action::\"{operation}\"`"))
+            .collect::<Vec<_>>()
+    };
+    let to_use = if quoted.is_empty() {
+        format!("one of {}", named(&operations).join(", "))
+    } else {
+        named(&quoted).join(" or ")
+    };
+    Some(format!(
+        "{gone} no longer in the schema: each forge operation is an action of its own in \
+         {FORGE}, so name the operation as the action, {to_use}"
+    ))
 }
 
 /// The line `offset` of `text` is on, from 1.
@@ -805,6 +885,7 @@ fn read_file(file: &File<'_>) -> Result<Vec<Rule>, Vec<Problem>> {
     // Strict validation against the schema: a rule naming what the vocabulary doesn't hold
     // fails here (Q311.7).
     let validated = validator().validate(&set, ValidationMode::Strict);
+    let mut hinted = std::collections::BTreeSet::new();
     for error in validated.validation_errors() {
         let rule = written
             .iter()
@@ -812,11 +893,15 @@ fn read_file(file: &File<'_>) -> Result<Vec<Rule>, Vec<Problem>> {
             .map(|(_, p)| *p);
         let line = labelled_line(error, file.text)
             .unwrap_or_else(|| lines.get(error.policy_id()).copied().unwrap_or(1));
-        problems.push(problem(
-            line,
-            rule.and_then(|p| p.annotation("id")),
-            error.to_string(),
-        ));
+        // A rule written for the forge's old string verb is told the action to name, once.
+        let what = match rule
+            .filter(|p| hinted.insert(p.id().clone()))
+            .and_then(forge_verb_hint)
+        {
+            Some(hint) => format!("{error}. {hint}"),
+            None => error.to_string(),
+        };
+        problems.push(problem(line, rule.and_then(|p| p.annotation("id")), what));
     }
 
     if problems.is_empty() {

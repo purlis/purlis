@@ -99,24 +99,28 @@ pub fn cover(action: &str, facts: &Facts) -> Option<Cover> {
         Some(Harness::ClaudeCode | Harness::Codex) => Gap(HOOK_FAILS_OPEN),
         None => Gap(UNADAPTED_HARNESS),
     };
-    let cover =
-        match action {
-            // #7222 (an asks-only floor) closes before these have a point of the policy's own.
-            "read" | "write" | "connect" | "dial" => Gap(POLICY_POINT_NOT_WIRED),
-            "reach" | "listen" | "exec" | "install" | "rewrite" | "create" | "remove" => {
-                Closed(Sandbox)
-            }
-            // A hook alone: git's own hooks run locally and `--no-verify` skips them; the scan of a
-            // credential and the shape of a call are the tool gate's.
-            "commit" | "update" | "cut" | "discard" | "sign" | "expose" | "interpolate"
-            | "chain" => hook_only,
-            "push" | "clone" | "merge" | "land" | "release" | "tag" | "save" | "authenticate"
-            | "call" | "mint" | "record" | "propose" | "dispatch-to" | "use" | "request"
-            | "store" | "reveal" | "inherit" | "browse" | "fill" | "log-in" | "upload"
-            | "download" | "load" | "enter" | "run" | "mount" | "start" | "offload" | "forward"
-            | "report" | "promote" => Closed(Host),
-            _ => return None,
-        };
+    let cover = match action {
+        // #7222 (an asks-only floor) closes before these have a point of the policy's own.
+        "read" | "write" | "connect" | "dial" => Gap(POLICY_POINT_NOT_WIRED),
+        "reach" | "listen" | "exec" | "install" | "rewrite" | "create" | "remove" => {
+            Closed(Sandbox)
+        }
+        // A hook alone: git's own hooks run locally and `--no-verify` skips them; the scan of a
+        // credential and the shape of a call are the tool gate's.
+        "commit" | "update" | "cut" | "discard" | "sign" | "expose" | "interpolate" | "chain" => {
+            hook_only
+        }
+        "push" | "clone" | "merge" | "land" | "release" | "tag" | "save" | "authenticate"
+        | "mint" | "record" | "propose" | "dispatch-to" | "use" | "request" | "store"
+        | "reveal" | "inherit" | "browse" | "fill" | "log-in" | "upload" | "download" | "load"
+        | "enter" | "run" | "mount" | "start" | "offload" | "forward" | "report" | "promote" => {
+            Closed(Host)
+        }
+        // Every forge operation is the forge route's, which alone holds the person's sign-in
+        // (ADR 0128, D3).
+        operation if crate::policy::family_of(operation) == Some("guards.forge") => Closed(Host),
+        _ => return None,
+    };
     // Where purlis has no sandbox backend, what only the sandbox held is not held; nor where the
     // chat starts with its sandbox lifted, which also leaves an OpenCode shim's files unheld.
     Some(match cover {
