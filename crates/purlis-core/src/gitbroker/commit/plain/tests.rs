@@ -1,6 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+use std::os::unix::fs::PermissionsExt;
+
 use super::*;
 
 /// A repository with one commit, its identity its own, and git run in it for the test.
@@ -107,4 +109,72 @@ fn a_named_path_with_nothing_to_commit_is_refused_though_another_is_staged() {
     assert!(why.contains("nothing to commit"), "{why}");
     assert_eq!(t.git(&["rev-parse", "HEAD"]), before);
     assert_eq!(t.staged(), "other.txt");
+}
+
+#[test]
+fn a_named_path_during_a_merge_is_refused_before_anything_is_staged_naming_all() {
+    let t = repo();
+    t.git(&["checkout", "-q", "-b", "other"]);
+    t.write("theirs.txt");
+    t.git(&["add", "theirs.txt"]);
+    t.git(&["commit", "-q", "-m", "theirs"]);
+    t.git(&["checkout", "-q", "piece"]);
+    t.git(&["merge", "-q", "--no-commit", "--no-ff", "other"]);
+    t.write("tracked.txt");
+    let before = t.git(&["rev-parse", "HEAD"]);
+
+    let why = made(&t.top, &named(&["tracked.txt"]), "named").expect_err("refused");
+
+    assert!(why.contains("in the middle of a merge"), "{why}");
+    assert!(why.contains("--all"), "{why}");
+    assert_eq!(t.git(&["rev-parse", "HEAD"]), before);
+    assert_eq!(t.staged(), "theirs.txt");
+}
+
+#[test]
+fn a_pre_commit_hook_that_restages_a_named_file_leaves_the_folder_clean() {
+    let t = repo();
+    let hooks = t.top.join(".hooks");
+    std::fs::create_dir(&hooks).expect("a hooks dir");
+    let hook = hooks.join("pre-commit");
+    std::fs::write(
+        &hook,
+        "#!/bin/sh\nprintf 'hooked\\n' >> tracked.txt && git add tracked.txt\n",
+    )
+    .expect("a hook");
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).expect("executable");
+    t.git(&["config", "core.hooksPath", ".hooks"]);
+    std::fs::create_dir_all(t.top.join(".git/info")).expect("an info dir");
+    std::fs::write(t.top.join(".git/info/exclude"), ".hooks/\n").expect("excluded");
+    t.write("tracked.txt");
+
+    made(&t.top, &named(&["tracked.txt"]), "hooked").expect("committed");
+
+    assert_eq!(t.git(&["show", "HEAD:tracked.txt"]), "changed\nhooked");
+    assert_eq!(t.git(&["status", "--porcelain"]), "");
+}
+
+#[test]
+fn names_that_read_as_pathspec_magic_or_options_are_taken_literally() {
+    let t = repo();
+    for name in [":(top)x", "-dash", "st*r", "stXr", "x"] {
+        t.write(name);
+    }
+    t.git(&["add", "--all"]);
+
+    made(&t.top, &named(&[":(top)x", "-dash", "st*r"]), "literal").expect("committed");
+
+    assert_eq!(t.committed(), "-dash\n:(top)x\nst*r");
+    assert_eq!(t.staged(), "stXr\nx");
+}
+
+#[test]
+fn a_new_untracked_file_named_is_committed_without_being_staged_first() {
+    let t = repo();
+    t.write("new.txt");
+
+    made(&t.top, &named(&["new.txt"]), "new").expect("committed");
+
+    assert_eq!(t.committed(), "new.txt");
+    assert_eq!(t.git(&["status", "--porcelain"]), "");
 }

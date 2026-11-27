@@ -350,6 +350,10 @@ trailers. It names no repository or branch: the app uses the folder it started t
   and purlis's (the scan, the trailers), signing and filters, as `git add` and
   `git commit -- <paths>` would: the commit holds exactly the paths named, and anything else
   already staged stays staged and is not committed (#7928). `--all` commits the whole index.
+  The names reach git on its standard input, so there is no limit on how many. A hook that
+  restages a named file has its content committed, and the folder is left as committed. In the
+  middle of a merge, a cherry-pick or a revert, named paths are refused before anything is
+  staged, because git commits only the whole index then: `--all` concludes it.
   None of the refusals above applies but a detached HEAD, another live chat's claim on the
   folder and a message claiming purlis's trailers. `purlis worktree push` works the same in any
   chat. To send such a chat to plain git instead, set `[plane] refuse_unsandboxed_commit = true`
