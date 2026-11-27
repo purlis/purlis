@@ -133,6 +133,13 @@ fn base(attended: bool) -> serde_json::Value {
     })
 }
 
+/// `base` with `context.owner`, which a `read` or `write` (Q339.7) and an owned action carry: the
+/// host reads "none" where it holds no record.
+fn owned(mut context: serde_json::Value) -> serde_json::Value {
+    context["owner"] = "none".into();
+    context
+}
+
 fn request<'a>(
     action: &'a str,
     resource: (&'a str, &'a str),
@@ -172,7 +179,7 @@ fn store(vault: &'static str) -> Request<'static> {
 }
 
 fn read(path: &'static str) -> Request<'static> {
-    request("read", ("Path", path), base(true))
+    request("read", ("Path", path), owned(base(true)))
 }
 
 /// What the host does for one request: the policy in force over the store as it stands, then what
@@ -355,7 +362,10 @@ fn the_hook_and_the_sandbox_compile_agree_on_paths_under_a_forbidden_folder_and_
         held("workspaces/web/vault/key.txt"),
         "/outside/store/deep/file".to_owned(),
     ] {
-        let hook = host(&root, &request("read", ("Path", &folder), base(true)));
+        let hook = host(
+            &root,
+            &request("read", ("Path", &folder), owned(base(true))),
+        );
         let resolved = resolve(&layout, &sets, &folder).expect("an absolute path");
         assert_eq!(
             hook.after_mode,
@@ -375,7 +385,7 @@ fn the_hook_and_the_sandbox_compile_agree_on_paths_under_a_forbidden_folder_and_
         held("workspaces/web/README.md"),
         held("workspaces/web/ledger-old/x"),
     ] {
-        let hook = host(&root, &request("read", ("Path", &free), base(true)));
+        let hook = host(&root, &request("read", ("Path", &free), owned(base(true))));
         let resolved = resolve(&layout, &sets, &free).expect("an absolute path");
         assert_ne!(
             hook.after_mode,
@@ -390,7 +400,11 @@ fn the_hook_and_the_sandbox_compile_agree_on_paths_under_a_forbidden_folder_and_
     // A path spelt with dots reaches the same answer as the one it folds to.
     let dotted = held("workspaces/web/other/../ledger/./2026.csv");
     assert_eq!(
-        host(&root, &request("read", ("Path", &dotted), base(true))).after_mode,
+        host(
+            &root,
+            &request("read", ("Path", &dotted), owned(base(true)))
+        )
+        .after_mode,
         Outcome::Deny
     );
 }

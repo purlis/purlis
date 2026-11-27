@@ -5101,13 +5101,20 @@ write into this folder cannot make its own text arrive as the person's.
   (`policy::owner::let_this_chat`) gives one to the chat named. The person's press of an answer
   (`Draft::add`, `Draft::remove`) refuses the kind. **An owner record that is missing or fails its
   seal is no record**: its resource's owner reads `none`, never `self`, and the plane is not put in
-  the deny state for it. No owner is read from a file a chat can write: not the piece log (the
-  one-writer mutex's), not `app/dispatches/`, not `forge-created-branches.jsonl`. A port's server
-  and a browser are owned by the chat that opened them, by the app's registry in memory, which is
-  no store. Same store, same tier. **Written by:** the app alone, with no press for a record it
-  saw made or a hand-over (`policy::owner::record_owner`, `record_dispatch`, `hand_over`), and on
-  the person's press for `let_this_chat`. **Read by:** `policy::owner::Records`, in the app alone;
-  any other process verifies none, and every owner reads `none`.
+  the deny state for it. **But it blocks every new owner record** (Q339.8): while the manifest lists
+  an `owner` entry that does not load, `record_owner` and `record_dispatch` refuse (the key a lost
+  record named can't be told, so no key is free), every commit keeps that listing as it was (its
+  digest and seal, never dropped), and the window shows a Notice (`answers-owner-records-lost`). A
+  hand-over and the person's press of "Let this chat push it" still move a record that loads. Only
+  the person's press that starts the store again (`recommit`) leaves the listing out. A rule reads
+  the value as `context.owner != "self"`, so `none` is held to what `other` is. No owner is read
+  from a file a chat can write: not the piece log (the one-writer mutex's), not `app/dispatches/`,
+  not `forge-created-branches.jsonl`. A port's server and a browser are owned by the chat that
+  opened them, by the app's registry in memory, which is no store. Same store, same tier. **Written
+  by:** the app alone, with no press for a record it saw made or a hand-over
+  (`policy::owner::record_owner`, `record_dispatch`, `hand_over`), and on the person's press for
+  `let_this_chat`. **Read by:** `policy::owner::Records`, in the app alone; any other process
+  verifies none, and every owner reads `none`.
 - **The accepted copy and the accepted floor** (M75 slice 14, #7023; spec §9.1): the `accepted`
   entry's text and each `floor` entry's is **one JSON object, a version of the project as it was
   held**: `settings_file` and `settings` (the project file's name and text as `HEAD` held them),

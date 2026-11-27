@@ -1822,3 +1822,8 @@ liveness), and the held-act quarantine (app-owned, rebuildable).
     `forgewire::compose` (B): it needs `gh`, `glab`, `openssl` and a loopback bind, which the slice's
     sandbox could not run. The shape is a `wire` op on the Rust bridge that returns `compose`'s
     environment, pairs and `bin`.
+
+## Amendments
+
+An amendment to this decision is a file of its own in [`0128/`](0128/), named
+`<yyyy-mm-dd>-<slug>.md`, never a section added to this record (#1982).

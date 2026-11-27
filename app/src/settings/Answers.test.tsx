@@ -7,7 +7,14 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Answers, AnswersView, deviceSaid, stateSaid } from "./Answers";
 import { AnswersNotices } from "../AnswersNotices";
 import { SETTINGS_LINK, type SettingsLinkAsk } from "./links";
-import { DENIED, HOLDS, IMPORTED, IMPORT_FAILED, WAITING_FOR_CONFIRM } from "./answersFixture";
+import {
+  DENIED,
+  HOLDS,
+  IMPORTED,
+  IMPORT_FAILED,
+  OWNER_RECORDS_LOST,
+  WAITING_FOR_CONFIRM,
+} from "./answersFixture";
 
 afterEach(() => {
   cleanup();
@@ -128,6 +135,34 @@ describe("the sealed answers' Notices", () => {
       expect(document.querySelector('[data-cause="answers-import-failed"]')).not.toBeNull(),
     );
     expect(document.querySelector('[data-cause^="answers-deny"]')).not.toBeNull();
+  });
+
+  it("a_lost_owner_record_is_a_notice_that_links_to_the_sealed_answers", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "answers_shown") return OWNER_RECORDS_LOST;
+      throw new Error(`unexpected ${cmd}`);
+    });
+    const links: SettingsLinkAsk[] = [];
+    const hear = (event: Event) => links.push((event as CustomEvent<SettingsLinkAsk>).detail);
+    window.addEventListener(SETTINGS_LINK, hear);
+    render(<AnswersNotices plane={PLANE} />);
+    const notice = await waitFor(() => {
+      const found = document.querySelector('[data-cause="answers-owner-records-lost"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect(notice).toHaveTextContent("missing or was changed");
+    expect(notice).toHaveTextContent("records no new owner");
+    fireEvent.click(screen.getByRole("button", { name: "Show sealed answers" }));
+    window.removeEventListener(SETTINGS_LINK, hear);
+    expect(links[0]?.link).toEqual({
+      group: "project.sandbox",
+      setting: "project.sandbox.sealedAnswers",
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Dismiss/ }));
+    await waitFor(() =>
+      expect(document.querySelector('[data-cause="answers-owner-records-lost"]')).toBeNull(),
+    );
   });
 
   it("answers_that_hold_say_nothing", async () => {

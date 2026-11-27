@@ -722,7 +722,7 @@ impl Asker<'_> {
     /// The context of `action` as the host makes it: each field the action's context declares
     /// that the host knows. A field it does not know is left out, so the request does not fit
     /// the schema and is denied, never guessed (§6.3).
-    /// `owner` is what [`super::owner::of_request`] computed for the request, once.
+    /// `owner` is what [`Sealed::owner`] computed for the request, once, before the decision.
     pub(super) fn context(
         &self,
         action: &str,
@@ -793,6 +793,14 @@ pub struct Sealed {
 }
 
 impl Sealed {
+    /// **`context.owner` for the request this seals** (#7748): computed once, from the asking chat
+    /// ([`Sealed::chat`]) and what it touches ([`Sealed::touched`]), by each entry point before
+    /// the decision and handed to [`judged_then`] as a value. Nothing inside a decision computes
+    /// it again, so an evaluation for an asker up the chain (#7042) reads the actor's.
+    pub fn owner(&self) -> super::owner::Owner {
+        super::owner::of_request(&self.standing, self.chat.as_deref(), self.touched.as_ref())
+    }
+
     /// The time a decision is made at: the one set, or now ([`grants::clock_now`], which reads a
     /// clock that fails as the end of time, so a timed grant is then ended, never served).
     pub fn at(&self) -> u64 {
@@ -925,6 +933,7 @@ fn judged_in_plane(
         action,
         resource,
         sealed,
+        sealed.owner(),
         floor,
         How::Host,
         settle,
@@ -947,13 +956,14 @@ pub(super) enum How {
 /// **One decision, then the person's answers applied to it**: [`judged_then`] with the answers
 /// of M75-20 as its finish. Explaining records nothing: a Once grant is shown as serving, and stays
 /// unspent.
-#[allow(clippy::too_many_arguments, reason = "one decision, its eight inputs")]
+#[allow(clippy::too_many_arguments, reason = "one decision, its nine inputs")]
 fn judged(
     root: &std::path::Path,
     asker: &Asker<'_>,
     action: &str,
     resource: (&str, &str),
     sealed: &Sealed,
+    owner: super::owner::Owner,
     floor: Option<&crate::enforcement::Resolved>,
     how: How,
     settle: impl FnOnce(Decision, &Request<'_>) -> Decision,
@@ -965,6 +975,7 @@ fn judged(
         action,
         resource,
         sealed,
+        owner,
         floor,
         how,
         settle,
@@ -987,14 +998,15 @@ fn judged(
 /// The decision the policy in force makes and `settle` settles, handed to `finish` with the request
 /// it was made for, **before any answer of the person's is applied**: what [`judged`] applies them
 /// to, and what a grant is given for ([`timed_for_chat`]). `refused` takes the deny state's
-/// refusal, which is never judged further.
-#[allow(clippy::too_many_arguments, reason = "one decision, its nine inputs")]
+/// refusal, which is never judged further. `owner` is [`Sealed::owner`], computed by the caller.
+#[allow(clippy::too_many_arguments, reason = "one decision, its ten inputs")]
 fn judged_then<T>(
     root: &std::path::Path,
     asker: &Asker<'_>,
     action: &str,
     resource: (&str, &str),
     sealed: &Sealed,
+    owner: super::owner::Owner,
     floor: Option<&crate::enforcement::Resolved>,
     how: How,
     settle: impl FnOnce(Decision, &Request<'_>) -> Decision,
@@ -1011,15 +1023,7 @@ fn judged_then<T>(
             of: asker.of,
             action,
             resource,
-            context: asker.context(
-                action,
-                sealed.machine.as_deref(),
-                super::owner::of_request(
-                    &sealed.standing,
-                    sealed.chat.as_deref(),
-                    sealed.touched.as_ref(),
-                ),
-            ),
+            context: asker.context(action, sealed.machine.as_deref(), owner),
         };
         // The policy in force: the project as committed now and what the person accepted, the
         // stricter winning, and what the app saw tighten sealed into the accepted floor (M75-14).
@@ -1137,6 +1141,7 @@ pub fn timed_for_chat(
         action,
         resource,
         sealed,
+        sealed.owner(),
         Some(floor),
         How::Host,
         |decision, request| settled_by_the_floor(decision, request, floor),
@@ -1176,6 +1181,7 @@ pub fn unanswered_for_chat(
         action,
         resource,
         sealed,
+        sealed.owner(),
         Some(floor),
         How::Host,
         |decision, request| settled_by_the_floor(decision, request, floor),
@@ -1200,6 +1206,7 @@ pub(super) fn explained(
         action,
         resource,
         sealed,
+        sealed.owner(),
         floor,
         how,
         |decision, request| match floor {

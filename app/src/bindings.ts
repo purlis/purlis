@@ -6791,6 +6791,11 @@ export type AnswersShown = {
 	import_failed: string | null,
 	/**  What purlis ignored or cannot do, one sentence each. */
 	notices: string[],
+	/**
+	 *  Whether the store lists an owner record that is missing or fails its seal (Q339.8, #7748):
+	 *  it reads as no one's, and no new owner record is made while it is listed.
+	 */
+	owner_records_lost: boolean,
 	/**  The device id. */
 	device: DeviceShown,
 };

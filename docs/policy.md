@@ -176,6 +176,30 @@ bound what an agent does with your authority, never what you do.
   as `strict` plus every lock under the full sandbox, not as that one set left out. Check the
   window's Notice after editing it.
 
+## Whose a branch, port or browser is: `context.owner`
+
+On `read`, `write`, `commit`, `push`, `update`, `discard`, `merge`, `reach`, `listen`, `browse`,
+a browser's `close` and every forge operation, `context.owner` says whose the thing acted on is,
+to the chat that acts: `"self"`, `"task"` (a chat down its own dispatch line), `"asker"` (one up
+it), `"other"` or `"none"`. It is always there, so a rule reads it with no `has`. purlis computes
+it from records only the app seals, so a chat can't make itself an owner by editing a file. A
+record that is missing or was changed reads as `"none"`, and the window says so.
+
+**Write `context.owner != "self"`, never `context.owner == "other"`.** `"none"` is what a rule
+sees wherever purlis holds no record, which today is nearly everywhere, and wherever a record was
+lost. A forbid on `== "other"` never fires on `"none"`, so it lets through exactly the act whose
+owner purlis can't vouch for:
+
+```cedar
+@id("guards-git-push-only-its-own")
+forbid (principal, action == Action::"push", resource)
+  when { context.owner != "self" };
+```
+
+`context.made_by` on a forge operation reads the same words, `"none"` until purlis keeps a record
+of what a chat made. A rule on `read` or `write` can't name `owner`: the sandbox is a fixed
+profile that can't tell whose a path is, so purlis refuses the rule when it loads the policy.
+
 ## Known gaps: what a harness cannot enforce
 
 A rule in force (a family whose mode is not `off`) that a harness cannot enforce on this system is a

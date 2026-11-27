@@ -93,6 +93,7 @@ fn authorizer_says(policy: &Policy, chat: &Chat<'_>, action: &str, path: &Resolv
         "sandbox": chat.sandbox,
         "attended": false,
         "harness_mode": "default",
+        "owner": "none",
         "depth": chat.depth,
     });
     if let Some(machine) = chat.machine {
@@ -587,6 +588,25 @@ fn a_sandbox_rule_naming_harness_mode_is_refused_at_load() {
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].rule.as_deref(), Some("sandbox-by-mode"));
     assert!(found[0].what.contains("harness_mode"), "{}", found[0].what);
+}
+
+#[test]
+fn a_sandbox_rule_naming_owner_is_refused_at_load() {
+    // Q339.7: `read` and `write` carry `context.owner`, always "none" today, and a fixed profile
+    // cannot follow whose a path is: a rule that names it is refused, never compiled as if it
+    // read "none".
+    for (action, when) in [
+        ("read", "context.owner != \"self\""),
+        ("write", "context has owner && context.owner == \"other\""),
+    ] {
+        let found = refused_at_load(&format!(
+            "@id(\"sandbox-only-its-own\") @level(\"project\")\n\
+             forbid (principal, action == Action::\"{action}\", resource) when {{ {when} }};\n"
+        ));
+        assert_eq!(found.len(), 1, "{action}: {found:?}");
+        assert_eq!(found[0].rule.as_deref(), Some("sandbox-only-its-own"));
+        assert!(found[0].what.contains("`owner`"), "{}", found[0].what);
+    }
 }
 
 #[test]

@@ -365,9 +365,11 @@ fn the_v1_schema_has_no_forge_verb_string() {
 }
 
 /// The actions whose context carries `context.owner` (#7748; ADR 0125, amended 2026-11-27): the
-/// nine the amendment names, and every forge operation (ADR 0128, amended 2026-11-27, §2).
-const OWNED: [&str; 9] = [
-    "commit", "push", "update", "discard", "merge", "reach", "listen", "browse", "close",
+/// nine the amendment names, `read` and `write` (Q339.7), and every forge operation (ADR 0128,
+/// amended 2026-11-27, §2).
+const OWNED: [&str; 11] = [
+    "read", "write", "commit", "push", "update", "discard", "merge", "reach", "listen", "browse",
+    "close",
 ];
 
 /// The record an action's context is, its named type's where it names one.

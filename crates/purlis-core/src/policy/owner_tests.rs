@@ -184,6 +184,8 @@ fn the_host_computes_context_owner_from_what_the_act_touches() {
         start: None,
     };
     for action in [
+        "read",
+        "write",
         "push",
         "merge",
         "reach",
@@ -211,12 +213,14 @@ fn a_record_a_chat_edited_never_makes_it_an_owner() {
     let m = machine();
     let root = plane(&m);
     assert!(record_owner(&root, &branch("work"), STRANGER).expect("recorded"));
-    let folder = root.join("piece");
+    // The branch folder the piece log below claims: `workspaces/web/.worktrees/app/piece`.
+    let folder = root.join("workspaces/web/.worktrees/app/piece");
     assert!(record_owner(&root, &Owned::Folder(&folder), STRANGER).expect("recorded"));
     assert_eq!(owner_of(&root, TASK, &branch("work")), Owner::Other);
 
     // The files a chat can reach, and that once said who owns a branch or a folder, name it:
-    // the forge route's own list and the piece log. Neither is read.
+    // the forge route's own list and the piece log. Each is written as its own writer writes it,
+    // and read back by its own reader, so the check is of a claim purlis does read elsewhere.
     let config = m.dir.path().join("config");
     crate::forge::createdbranches::record(
         &config,
@@ -224,12 +228,41 @@ fn a_record_a_chat_edited_never_makes_it_an_owner() {
         &[("github.com".into(), "acme/app".into(), "work".into())],
     )
     .expect("written");
-    std::fs::write(
-        root.join("pieces.jsonl"),
-        format!("{{\"event\":\"claimed\",\"chat\":\"{TASK}\"}}\n"),
+    assert_eq!(
+        crate::forge::createdbranches::created_by(&config, TASK, "github.com", "acme/app"),
+        ["work"],
+        "the forge route's list names TASK as the branch's maker"
+    );
+    std::fs::create_dir_all(root.join("workspaces/web")).expect("a workspace");
+    let who = crate::pieces::Who {
+        session: None,
+        persona: None,
+        chat: Some(TASK.to_owned()),
+        host: "here".to_owned(),
+        log: "device".to_owned(),
+    };
+    crate::pieces::record(
+        &root,
+        "web",
+        crate::pieces::Event::Claimed,
+        "app",
+        "piece",
+        None,
+        &who,
+        jiff::Timestamp::now(),
     )
-    .expect("written");
+    .expect("a claim in the piece log");
+    let claims = crate::pieces::claims(&root, "web");
+    assert_eq!(
+        claims
+            .get(&("app".to_owned(), "piece".to_owned()))
+            .and_then(|claim| claim.get("chat"))
+            .and_then(serde_json::Value::as_str),
+        Some(TASK),
+        "the piece log names TASK as the folder's claimant: {claims:?}"
+    );
     assert_eq!(owner_of(&root, TASK, &branch("work")), Owner::Other);
+    assert_eq!(owner_of(&root, TASK, &Owned::Folder(&folder)), Owner::Other);
 
     // An unsandboxed chat edits the sealed records to name itself: they fail their seal and are
     // no record, so the owner is "none", never "self".
@@ -308,4 +341,219 @@ fn an_owner_record_moves_only_by_hand_over_or_the_persons_press() {
     let_this_chat(&press(), &root, &branch("work"), SIBLING).expect("let");
     assert_eq!(owner_of(&root, SIBLING, &branch("work")), Owner::Actor);
     assert_eq!(owner_of(&root, TASK, &branch("work")), Owner::Other);
+}
+
+// ---- review round 2: a record taken away or put back (F1, F4; Q339.8) -----------------------
+
+/// The sealed store's folder: where the manifest and each kind's folder are.
+fn store_dir() -> PathBuf {
+    let files = owner_files();
+    files
+        .first()
+        .and_then(|file| file.parent())
+        .and_then(Path::parent)
+        .expect("a store with an owner record")
+        .to_path_buf()
+}
+
+/// Whether the store lists an owner record that does not load (Q339.8).
+fn lists_a_lost_owner_record(root: &Path) -> bool {
+    answers::standing(root)
+        .no_answer
+        .iter()
+        .any(|lost| lost.starts_with("owner "))
+}
+
+/// A copy of the store's folder, to put back later as an older one.
+fn copy_dir(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).expect("a folder");
+    for item in std::fs::read_dir(from).expect("a folder").flatten() {
+        let path = item.path();
+        if path.is_dir() {
+            copy_dir(&path, &to.join(item.file_name()));
+        } else {
+            std::fs::copy(&path, to.join(item.file_name())).expect("copied");
+        }
+    }
+}
+
+#[test]
+fn a_deleted_owner_record_is_not_replaced_by_a_second_claim() {
+    let m = machine();
+    let root = plane(&m);
+    dispatched(&root);
+    assert!(record_owner(&root, &branch("work"), STRANGER).expect("recorded"));
+    let files = owner_files();
+    let record = files
+        .iter()
+        .find(|file| std::fs::read_to_string(file).is_ok_and(|text| text.contains("acme/app#work")))
+        .expect("the branch's record");
+    std::fs::remove_file(record).expect("deleted");
+
+    // The decision reads "none", and the plane is not in the deny state for it.
+    let standing = answers::standing(&root);
+    assert!(!standing.is_deny(), "{:?}", standing.state);
+    assert_eq!(owner_of(&root, TASK, &branch("work")), Owner::Nobody);
+    assert!(lists_a_lost_owner_record(&root));
+
+    // A second chat's claim does not become the owner in its place, nor does any new record.
+    let refused = record_owner(&root, &branch("work"), TASK).expect_err("refused");
+    assert!(refused.to_string().contains("owner record"), "{refused}");
+    assert!(record_owner(&root, &branch("another"), TASK).is_err());
+    assert!(record_dispatch(&root, STRANGER, TASK).is_err());
+    assert_eq!(owner_of(&root, TASK, &branch("work")), Owner::Nobody);
+    assert_eq!(owner_of(&root, TASK, &branch("another")), Owner::Nobody);
+
+    // A commit that goes through keeps the listing: the tamper leaves its trace.
+    assert_eq!(hand_over(&root, GRANDCHILD).expect("a commit"), 0);
+    let_this_chat(&press(), &root, &branch("theirs"), SIBLING).expect("let");
+    assert!(lists_a_lost_owner_record(&root), "the listing was dropped");
+    assert!(record_owner(&root, &branch("work"), TASK).is_err());
+    assert_eq!(owner_of(&root, TASK, &branch("work")), Owner::Nobody);
+}
+
+#[test]
+fn an_edited_owner_record_is_not_replaced_by_a_second_claim() {
+    let m = machine();
+    let root = plane(&m);
+    assert!(record_owner(&root, &branch("work"), STRANGER).expect("recorded"));
+    for file in owner_files() {
+        let text = std::fs::read_to_string(&file).expect("a record");
+        std::fs::write(&file, text.replace(STRANGER, SIBLING)).expect("edited");
+    }
+    assert!(!answers::standing(&root).is_deny());
+    assert_eq!(owner_of(&root, SIBLING, &branch("work")), Owner::Nobody);
+    assert!(lists_a_lost_owner_record(&root));
+
+    assert!(record_owner(&root, &branch("work"), TASK).is_err());
+    assert!(record_owner(&root, &branch("work"), SIBLING).is_err());
+    let_this_chat(&press(), &root, &branch("theirs"), SIBLING).expect("let");
+    assert!(lists_a_lost_owner_record(&root), "the listing was dropped");
+    assert_eq!(owner_of(&root, TASK, &branch("work")), Owner::Nobody);
+    assert_eq!(owner_of(&root, SIBLING, &branch("work")), Owner::Nobody);
+}
+
+#[test]
+fn an_old_record_put_back_after_a_hand_over_counts_for_nothing() {
+    let m = machine();
+    let root = plane(&m);
+    dispatched(&root);
+    assert!(record_owner(&root, &branch("work"), GRANDCHILD).expect("recorded"));
+    let old = owner_files();
+    let kept: Vec<(PathBuf, Vec<u8>)> = old
+        .iter()
+        .map(|file| (file.clone(), std::fs::read(file).expect("a record")))
+        .collect();
+    assert_eq!(hand_over(&root, GRANDCHILD).expect("handed over"), 1);
+    assert_eq!(owner_of(&root, TASK, &branch("work")), Owner::Actor);
+
+    // The grandchild's own record, put back: the manifest does not list it, so it is ignored.
+    for (file, bytes) in &kept {
+        std::fs::write(file, bytes).expect("put back");
+    }
+    let standing = answers::standing(&root);
+    assert!(!standing.is_deny(), "{:?}", standing.state);
+    assert_eq!(owner_of(&root, GRANDCHILD, &branch("work")), Owner::Asker);
+    assert_eq!(owner_of(&root, TASK, &branch("work")), Owner::Actor);
+}
+
+#[test]
+fn an_older_store_put_back_is_the_deny_state_and_names_no_owner() {
+    let m = machine();
+    let root = plane(&m);
+    dispatched(&root);
+    assert!(record_owner(&root, &branch("work"), GRANDCHILD).expect("recorded"));
+    let store = store_dir();
+    let older = m.dir.path().join("older-store");
+    copy_dir(&store, &older);
+    assert_eq!(hand_over(&root, GRANDCHILD).expect("handed over"), 1);
+
+    // The whole store as it was before the hand-over, its manifest with it: the keyring's
+    // counter is past it, so it is the deny state, and nothing in it is an owner.
+    std::fs::remove_dir_all(&store).expect("taken away");
+    copy_dir(&older, &store);
+    let standing = answers::standing(&root);
+    assert!(
+        standing
+            .causes()
+            .iter()
+            .any(|cause| matches!(cause, answers::Deny::ManifestOlder(_))),
+        "{:?}",
+        standing.state
+    );
+    assert_eq!(owner_of(&root, GRANDCHILD, &branch("work")), Owner::Nobody);
+    assert_eq!(owner_of(&root, TASK, &branch("work")), Owner::Nobody);
+    assert!(record_owner(&root, &branch("work"), GRANDCHILD).is_err());
+}
+
+// ---- review round 2: the owner reaches the decision (F4, F5) --------------------------------
+
+#[test]
+fn the_decision_reads_the_owner_of_what_the_sealed_request_touches() {
+    use crate::policy::decide::{self, ChatFacts, Outcome, Sealed};
+    use crate::policy::force::tests::{HEADER, STRICT, plane as plane_with};
+    let m = machine();
+    let rule = format!(
+        "{HEADER}@id(\"ports-only-its-own\")\n\
+         forbid (principal, action == Action::\"reach\", resource) \
+         when {{ context.owner != \"self\" }};\n"
+    );
+    let root = plane_with(&m, &[("purlis.toml", STRICT), ("policy.cedar", &rule)]);
+    answers::register(&root).expect("registered");
+    let facts = ChatFacts {
+        workspace: None,
+        persona: None,
+        sandboxed: false,
+        level: None,
+        attended: true,
+        harness_mode: None,
+    };
+    let floor = crate::enforcement::Resolved::parse("ports=enforce");
+    let reach = |chat: &str, touched: Option<Touched>| {
+        let sealed = Sealed {
+            chat: Some(chat.to_owned()),
+            touched,
+            ..Sealed::of(&root)
+        };
+        decide::for_chat(
+            &root,
+            4,
+            Some(&facts),
+            &floor,
+            &sealed,
+            "reach",
+            ("Port", "8080"),
+        )
+        .expect("a chat that is open")
+    };
+    let forbidden = |said: &decide::Decision| {
+        said.after_mode == Outcome::Deny && said.ids().contains(&"ports-only-its-own")
+    };
+
+    // The server TASK opened, reached by TASK: "self", so the rule does not forbid it.
+    let own = reach(TASK, Some(Touched::OpenedBy(TASK.to_owned())));
+    assert!(!forbidden(&own), "{own:?}");
+    // By another chat, or with nothing named: "other" and "none", forbidden.
+    let theirs = reach(STRANGER, Some(Touched::OpenedBy(TASK.to_owned())));
+    assert!(forbidden(&theirs), "{theirs:?}");
+    let unnamed = reach(TASK, None);
+    assert!(forbidden(&unnamed), "{unnamed:?}");
+}
+
+#[test]
+fn the_persons_press_that_starts_the_store_again_keeps_the_owner_records_it_is_handed() {
+    // Self-review of round 2: the Accept press past the floor's cap mends the store with what it
+    // kept, owner records included. They go in as the app's own records, not through `add`,
+    // which refuses the kind and would fail the whole press.
+    let m = machine();
+    let root = plane(&m);
+    assert!(record_owner(&root, &branch("work"), TASK).expect("recorded"));
+    let kept: Vec<answers::Entry> = answers::standing(&root)
+        .entries
+        .into_iter()
+        .filter(|entry| entry.kind == answers::OWNER)
+        .collect();
+    assert_eq!(kept.len(), 1, "{kept:?}");
+    answers::recommit(&root, &press(), &kept).expect("the press mends the store");
+    assert_eq!(owner_of(&root, TASK, &branch("work")), Owner::Actor);
 }

@@ -28,10 +28,11 @@
 //! records** ([`answers::OWNER`]) in the sealed answer store. Only the app can seal a record, and
 //! the store's manifest and counter are anchored in the keyring, so a line put back counts for
 //! nothing. A record that is missing, edited or forged fails its seal and is no record: its
-//! resource's owner reads `"none"`, never `"self"`. No record is read from a file a chat can
-//! write: not the piece log, which is the one-writer mutex's (protocol, §7), not the dispatch
-//! records, and not `forge-created-branches.jsonl`. In any process but the app nothing is
-//! verified, and every owner reads `"none"`.
+//! resource's owner reads `"none"`, never `"self"`. While the store lists such a record, no new
+//! record is made at all, and every commit lists it again (Q339.8). No record is read from a
+//! file a chat can write: not the piece log, which is the one-writer mutex's (protocol, §7),
+//! not the dispatch records, and not `forge-created-branches.jsonl`. In any process but the app
+//! nothing is verified, and every owner reads `"none"`.
 //!
 //! A port's server and a browser are owned by the chat that opened them, by the host's own
 //! registry. That registry is held in the app's memory, and its caller hands [`owner`] the holder.
@@ -268,7 +269,9 @@ pub fn of_request(standing: &Standing, actor: Option<&str>, touched: Option<&Tou
 /// create, or of the first claim on a branch folder. **The first record stands.** Where one is
 /// already sealed, this changes nothing, whoever asks: a record moves only by [`hand_over`] or
 /// [`let_this_chat`]. Returns whether a record was made. Refused where this process cannot seal
-/// (it is not the app) or the plane is in the deny state.
+/// (it is not the app), where the plane is in the deny state, and **while the store lists an owner
+/// record that does not load** (Q339.8): the key a lost record named can't be read, so a second
+/// chat could otherwise be recorded as the owner in its place.
 pub fn record_owner(root: &Path, owned: &Owned<'_>, chat: &str) -> io::Result<bool> {
     let key = owned.key();
     record_once(
@@ -283,7 +286,8 @@ pub fn record_owner(root: &Path, owned: &Owned<'_>, chat: &str) -> io::Result<bo
 }
 
 /// **Records that `asker` dispatched `task`**, from the app's own dispatch. The first record
-/// stands, as in [`record_owner`]: a chat is dispatched once.
+/// stands, and it is refused while an owner record is lost, as in [`record_owner`]: a chat is
+/// dispatched once.
 pub fn record_dispatch(root: &Path, task: &str, asker: &str) -> io::Result<bool> {
     if asker.is_empty() || task == asker {
         return Ok(false);
@@ -299,6 +303,11 @@ pub fn record_dispatch(root: &Path, task: &str, asker: &str) -> io::Result<bool>
     )
 }
 
+/// Why a new owner record is refused while one is lost (Q339.8).
+const LOST: &str = "an owner record in this project's sealed answers is missing or was changed \
+                    outside purlis, so purlis records no new owner of a branch, folder or task \
+                    here: nothing was recorded";
+
 fn record_once(
     root: &Path,
     chat: &str,
@@ -310,6 +319,12 @@ fn record_once(
     }
     let mut made = false;
     answers::commit(root, |draft| {
+        // A record deleted or edited by hand names a key no one can read now, so no key is known
+        // to be free: no new record is made while one is lost (Q339.8).
+        if draft.owner_records_lost() {
+            draft.refuse(LOST);
+            return;
+        }
         if held(&records_in(draft)) {
             return;
         }

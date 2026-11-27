@@ -1033,6 +1033,16 @@ impl Standing {
         Self::of(State::Fresh)
     }
 
+    /// **Whether the store lists an owner record that does not load** (Q339.8, #7748): missing or
+    /// failing its seal. Its resource reads `"none"`, and no new owner record is made while it is
+    /// listed ([`crate::policy::owner::record_owner`]).
+    pub fn owner_records_lost(&self) -> bool {
+        self.no_answer.iter().any(|lost| {
+            lost.strip_prefix(OWNER)
+                .is_some_and(|digest| digest.starts_with(' '))
+        })
+    }
+
     /// Whether the plane is in the deny state.
     pub fn is_deny(&self) -> bool {
         matches!(self.state, State::Deny(_))
@@ -1508,6 +1518,10 @@ pub struct Draft {
     /// Why the commit is refused: a kind that is not one of [`KINDS`], or a removal that is not
     /// narrowing and came without a press.
     refused: Option<String>,
+    /// **The owner records the manifest lists that do not load** (Q339.8, #7748), each as the
+    /// manifest lists it. A commit lists them again as they were, so a record deleted or edited
+    /// by hand leaves its trace and keeps every new owner record refused.
+    lost_owner_records: Vec<Listed>,
 }
 
 impl Draft {
@@ -1591,6 +1605,17 @@ impl Draft {
         self.take_out(OWNER, text);
     }
 
+    /// **Whether the store lists an owner record that does not load** (Q339.8): while it does, no
+    /// new owner record is made ([`crate::policy::owner::record_owner`]).
+    pub(crate) fn owner_records_lost(&self) -> bool {
+        !self.lost_owner_records.is_empty()
+    }
+
+    /// **Refuses the commit**, with nothing written, saying `why`.
+    pub(crate) fn refuse(&mut self, why: &str) {
+        self.refused = Some(why.to_owned());
+    }
+
     /// **An acceptance only ever widens**, so its withdrawal narrows and needs no press. If an
     /// acceptance of something restrictive (a project's nevers, a tighter mode) is ever stored,
     /// its withdrawal widens and must take a press: take it out of the list below then.
@@ -1618,6 +1643,24 @@ impl Draft {
     pub fn mark_nevers_imported(&mut self) {
         self.imported_nevers = true;
     }
+}
+
+/// The owner records `found`'s manifest lists that did not load: missing, or failing their seal.
+fn lost_owner_records(found: &Found) -> Vec<Listed> {
+    let Some(manifest) = manifest_of(found) else {
+        return Vec::new();
+    };
+    manifest
+        .entries
+        .iter()
+        .filter(|listed| listed.kind == OWNER)
+        .filter(|listed| {
+            !found.entries.iter().any(|entry| {
+                entry.kind == OWNER && entry_digest(OWNER, &entry.text) == listed.digest
+            })
+        })
+        .cloned()
+        .collect()
 }
 
 fn manifest_of(found: &Found) -> Option<&Manifest> {
@@ -1648,6 +1691,7 @@ pub fn commit(root: &Path, change: impl FnOnce(&mut Draft)) -> io::Result<u64> {
     };
     let found = read_place(&place, None);
     let mut draft = Draft {
+        lost_owner_records: lost_owner_records(&found),
         entries: here.entries,
         imported_nevers: manifest_of(&found).is_some_and(|m| m.imported_nevers),
         ..Draft::default()
@@ -1799,7 +1843,13 @@ pub fn recommit(root: &Path, press: &Press, entries: &[Entry]) -> io::Result<u64
         crate::dispatchnever::Left::Unread => {}
     }
     for entry in entries {
-        draft.add(press, &entry.kind, &entry.text);
+        // An owner record the press keeps is the app's own record, kept as it was: `add` refuses
+        // the kind, which would fail the whole mend.
+        if entry.kind == OWNER {
+            draft.add_owner_record(&entry.text);
+        } else {
+            draft.add(press, &entry.kind, &entry.text);
+        }
     }
     write(&place, Some((root, &id)), draft, None, counter)
 }
@@ -1821,6 +1871,7 @@ pub fn commit_everywhere(change: impl FnOnce(&mut Draft)) -> io::Result<u64> {
     }
     let found = read_place(&place, None);
     let mut draft = Draft {
+        lost_owner_records: lost_owner_records(&found),
         entries: here.entries,
         imported_nevers: manifest_of(&found).is_some_and(|m| m.imported_nevers),
         ..Draft::default()
@@ -1985,6 +2036,16 @@ fn write_sealed(
             digest,
             mac,
         });
+    }
+    // An owner record that did not load is listed again as it was (Q339.8): never dropped by a
+    // commit, so its loss stays seen. One the draft holds again whole needs no second line.
+    for lost in draft.lost_owner_records {
+        if !listed
+            .iter()
+            .any(|l| l.kind == lost.kind && l.digest == lost.digest)
+        {
+            listed.push(lost);
+        }
     }
     listed.sort_by(|a, b| (&a.kind, &a.digest).cmp(&(&b.kind, &b.digest)));
     let mut manifest = Manifest {

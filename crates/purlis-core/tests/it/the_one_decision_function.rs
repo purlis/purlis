@@ -84,6 +84,13 @@ fn context(via: bool) -> serde_json::Value {
     context
 }
 
+/// `context` with `context.owner`, which a `merge` and a `write` carry (#7748, Q339.7): "none"
+/// where the host holds no record.
+fn owned(mut context: serde_json::Value) -> serde_json::Value {
+    context["owner"] = "none".into();
+    context
+}
+
 fn chat() -> Chat<'static> {
     Chat {
         workspace: Some("web"),
@@ -97,7 +104,7 @@ fn merge() -> Request<'static> {
         of: chat(),
         action: "merge",
         resource: ("Branch", "acme/web#main"),
-        context: context(true),
+        context: owned(context(true)),
     }
 }
 
@@ -148,6 +155,7 @@ fn a_land_under_strict_asks_and_names_guards_merge_hold() {
     let land = Request {
         action: "land",
         resource: ("Repo", "unknown"),
+        context: context(true),
         ..merge()
     };
     let decision = decide::decide(&loaded(STRICT, None), &land, &empty_world());
@@ -355,6 +363,7 @@ fn a_process_outside_any_plane_runs_the_shipped_strict_locally() {
     let release = Request {
         action: "release",
         resource: ("Repo", "acme/web"),
+        context: context(true),
         ..merge()
     };
     let decision = decide::decide_locally(&release);
@@ -839,7 +848,7 @@ fn an_ask_on_a_path_write_takes_the_asks_mode() {
     let loaded = loaded(ASKS_LOG, Some(ASKS_AND_A_FORBID));
     let ask = decide::decide(
         &loaded,
-        &request("write", ("Path", "/srv/x"), context(false)),
+        &request("write", ("Path", "/srv/x"), owned(context(false))),
         &empty_world(),
     );
     assert_eq!(ids(&ask), ["sandbox-ask-write"]);
@@ -854,7 +863,7 @@ fn an_ask_on_a_path_write_takes_the_asks_mode() {
     // A plain forbid on a write takes the `sandbox` family's, which a template gives.
     let plain = decide::decide(
         &loaded,
-        &request("write", ("Path", "/srv/y"), context(false)),
+        &request("write", ("Path", "/srv/y"), owned(context(false))),
         &empty_world(),
     );
     assert_eq!(plain.mode_family, "sandbox");

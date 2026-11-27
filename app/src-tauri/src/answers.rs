@@ -43,6 +43,9 @@ pub struct AnswersShown {
     pub import_failed: Option<String>,
     /// What purlis ignored or cannot do, one sentence each.
     pub notices: Vec<String>,
+    /// Whether the store lists an owner record that is missing or fails its seal (Q339.8, #7748):
+    /// it reads as no one's, and no new owner record is made while it is listed.
+    pub owner_records_lost: bool,
     /// The device id.
     pub device: DeviceShown,
 }
@@ -102,6 +105,7 @@ fn read(root: &std::path::Path) -> AnswersShown {
         old_files,
         import_failed,
         notices: standing.notices.clone(),
+        owner_records_lost: standing.owner_records_lost(),
         device: device_shown(),
     }
 }

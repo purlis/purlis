@@ -262,8 +262,10 @@ action "sandbox", "network", "ports", "processes",
 
 // ── actions (§3.3): 63, each in exactly one family ─────────────────────────────────────────
 
+// `owner` is "none" on both today, and a rule on either cannot name it: the sandbox is a fixed
+// profile, which cannot tell whose a path is (Q339.7; `policy::sandbox_rules`).
 action read, write in ["sandbox"]
-  appliesTo { principal: Chat, resource: Path, context: Ctx };
+  appliesTo { principal: Chat, resource: Path, context: OwnedCtx };
 
 action connect in ["network"]
   appliesTo { principal: Chat, resource: Host, context: NetworkCtx };

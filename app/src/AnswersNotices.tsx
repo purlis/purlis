@@ -18,6 +18,10 @@ export function denySays(deny: readonly string[]): string {
   return `Your answers for this project are in the deny state, so nothing they allow holds: ${deny.join("; ")}. Accepting again in the window mends it.`;
 }
 
+/** What the Notice says where an owner record in the store is missing or was changed (Q339.8). */
+export const OWNER_RECORDS_LOST_SAYS =
+  "A record of which chat owns a branch or folder in this project is missing or was changed outside purlis. purlis treats what it named as no chat's, and records no new owner here while it's gone.";
+
 /** Whether `data` is the shape the core answers: a window under test may answer anything. */
 function readable(data: unknown): data is AnswersShown {
   const shown = data as Partial<AnswersShown> | null | undefined;
@@ -32,11 +36,12 @@ function readable(data: unknown): data is AnswersShown {
 }
 
 /**
- * **What the sealed answers say at a project's window** (M75-07a, #7015): the nevers imported
- * from the old files (once, listed), the deny state and why, and what purlis can't do (no
- * keyring). Each is a standing line with Dismiss, and the deny state's way out is Settings'
- * Sealed answers, where the cause is told in full and the device id confirmed. Reading the state
- * registers the project and imports the nevers, so it is the first thing the window asks.
+ * **What the sealed answers say at a project's window** (M75-07a, #7015): the nevers imported from
+ * the old files (once, listed), the deny state and why, an owner record that is missing or was
+ * changed (Q339.8, #7748), and what purlis can't do (no keyring). Each is a standing line with
+ * Dismiss, and the deny state's way out is Settings' Sealed answers, where the cause is told in
+ * full and the device id confirmed. Reading the state registers the project and imports the nevers,
+ * so it is the first thing the window asks.
  */
 export function AnswersNotices({ plane }: { plane: PlaneId }) {
   const [shown, setShown] = useState<AnswersShown>();
@@ -81,6 +86,15 @@ export function AnswersNotices({ plane }: { plane: PlaneId }) {
       tone: "trouble",
       label: "Answers in the deny state",
       text: denySays(shown.deny),
+      link,
+    });
+  }
+  if (shown.owner_records_lost === true) {
+    lines.push({
+      cause: "answers-owner-records-lost",
+      tone: "trouble",
+      label: "Owner records lost",
+      text: OWNER_RECORDS_LOST_SAYS,
       link,
     });
   }
