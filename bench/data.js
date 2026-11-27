@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795746236236,
+  "lastUpdate": 1795748648487,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56910,6 +56910,48 @@ window.BENCHMARK_DATA = {
             "value": 100.8639555,
             "unit": "ms",
             "extra": "median of 5 runs: 100.294, 100.561, 100.864, 100.991, 101.109 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1bfca543b4e3d6fcd82890d8db9852872f915b46",
+          "message": "Story baselines for RaisedAlert and HibernatedNotice (fixes main) (#7846)\n\n* Story baselines for RaisedAlert and HibernatedNotice: say where they are drawn\n\nTouches the two stories so this pull request's stories run draws the baselines main lacks\n(RaisedAlert's Raised By The App from #7733, HibernatedNotice in WebKit from #7711).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8D9YXZGZY3JAX5XZ9YNPJ4N\nPurlis-Persona: steward\n\n* Story baselines: RaisedAlert's Raised By The App in WebKit, drawn by #7846's stories run\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T02:25:16Z",
+          "tree_id": "911f417165b77d4273d6a7d4c36724815726d6a5",
+          "url": "https://github.com/purlis/purlis/commit/1bfca543b4e3d6fcd82890d8db9852872f915b46"
+        },
+        "date": 1795748639030,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3338865,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.315, 0.332, 0.334, 0.338, 0.343 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7402875,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.180, 16.478, 16.740, 16.741, 16.745 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.920856,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.963, 100.826, 100.921, 101.781, 102.238 ms"
           }
         ]
       }
