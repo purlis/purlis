@@ -709,7 +709,7 @@ function ConfirmCa({
         main={merged ? "Trust and create the pool" : "Trust this machine"}
         reserve={["Trust this machine", "Trust and create the pool", "Continue"]}
         icon={<KeyRound aria-hidden size={16} />}
-        busy={busy}
+        pressing={busy}
         onMain={() =>
           merged && onTrustAndCreate ? onTrustAndCreate(ca.fingerprint) : onTrust(ca.fingerprint)
         }
@@ -774,7 +774,7 @@ function Confirm({
         main={merged ? "Trust and create the pool" : "Trust this machine"}
         reserve={["Trust this machine", "Trust and create the pool", "Continue"]}
         icon={<KeyRound aria-hidden size={16} />}
-        busy={busy}
+        pressing={busy}
         onMain={() =>
           merged && onTrustAndCreate ? onTrustAndCreate(key.fingerprint) : onTrust(key.fingerprint)
         }
