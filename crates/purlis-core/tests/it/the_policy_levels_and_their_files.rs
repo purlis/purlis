@@ -135,6 +135,7 @@ fn install(loaded: &Loaded, chat: &str) -> Decision {
 fn merge(loaded: &Loaded) -> Decision {
     let mut context = context();
     context["via"] = "".into();
+    context["owner"] = "none".into();
     loaded.policy.decide(
         &Question {
             chat: "web/builder",
