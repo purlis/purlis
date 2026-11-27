@@ -2743,6 +2743,55 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "rex",
     "needrestart",
     "etckeeper",
+    // The build, test and packaging tools #7833 names (the `dh_<name>` helpers go by their stem,
+    // in `not_for_a_run_grant`), each of which runs a package's build system, tests, maintainer
+    // scripts, hooks or the code it is pointed at: `debootstrap` and `mmdebstrap` (their scripts
+    // and `--customize-hook`), `autopkgtest`, `piuparts`, `mk-build-deps`, `equivs-build`,
+    // `quilt shell`, `debspawn`, `uscan` (a `debian/watch` file's action), `cvs-buildpackage` and
+    // `svn-buildpackage` (`debian/rules`), `dput` and `dupload` (their hook commands); `rpkg`,
+    // `mockchain` (`mock`), openSUSE's `osc build`, obs-build's `build`, `kiwi` and `kiwi-ng` (an
+    // image description's `config.sh`), and `koji`, which loads the plugins of the path its
+    // settings name; MacPorts' `portmirror`, which evaluates Portfiles as `portindex` does;
+    // the Perl builders `cpan2dist`, `cpan2deb`, `cpanspec`, `cpan2rpm` and `pinto`, which run a
+    // distribution's `Makefile.PL`; PAR's `pp`, whose `-x` runs the script it packs (read in
+    // macOS's copy: PAR/Packer.pm 1.050:760-774 hands it to Module::ScanDeps, which runs it,
+    // ScanDeps.pm:114-118); `plx`, and the PSGI servers `twiggy` and `corona`, which run an
+    // `app.psgi`; and `meson`, `scons`, `ctest` and `buck2`, which run a project's build files
+    // or tests.
+    "debootstrap",
+    "mmdebstrap",
+    "autopkgtest",
+    "piuparts",
+    "mk-build-deps",
+    "equivs-build",
+    "quilt",
+    "debspawn",
+    "uscan",
+    "cvs-buildpackage",
+    "svn-buildpackage",
+    "dput",
+    "dupload",
+    "rpkg",
+    "mockchain",
+    "osc",
+    "build",
+    "kiwi",
+    "kiwi-ng",
+    "koji",
+    "portmirror",
+    "cpan2dist",
+    "cpan2deb",
+    "cpanspec",
+    "cpan2rpm",
+    "pinto",
+    "pp",
+    "plx",
+    "twiggy",
+    "corona",
+    "meson",
+    "scons",
+    "ctest",
+    "buck2",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
@@ -2968,8 +3017,8 @@ const MOST_VARIABLE_SHOWN: usize = 64;
 /// as itself or by a form its builds are named by (#5424): `vim.basic`, a version (`gcc-13`,
 /// `clang-17`, `gcc13`), a GNU build (`gm4`, `genv`, `gnumake`), a target's
 /// (`x86_64-linux-gnu-gcc`), a flavour (`emacs-nox`, `sudo-rs`), and by its prefix one of git's
-/// own programs (`git-shell`), a state transfer script (`wsrep_sst_rsync`) or a Percona Toolkit
-/// tool (`pt-kill`). Each form only takes away an Allow, so a name it catches by chance loses a
+/// own programs (`git-shell`), a state transfer script (`wsrep_sst_rsync`), a Percona Toolkit
+/// tool (`pt-kill`) or a debhelper helper (`dh_auto_build`). Each form only takes away an Allow, so a name it catches by chance loses a
 /// notice and nothing more.
 fn not_for_a_run_grant(name: &str) -> bool {
     let refused = |one: &str| {
@@ -2980,7 +3029,13 @@ fn not_for_a_run_grant(name: &str) -> bool {
     // (#5931), and so do Percona Toolkit's tools, each release adding some (#5994).
     let lower = name.to_ascii_lowercase();
     let stem = lower.split('.').next().unwrap_or_default();
-    if stem.starts_with("git-") || stem.starts_with("wsrep_sst_") || stem.starts_with("pt-") {
+    // Debian's `dh_<name>` helpers run a package's build system or `debian/rules`, as `dh` does
+    // (#7833), and no form reaches them, as `name_forms` splits on `-` and not on `_`.
+    if stem.starts_with("git-")
+        || stem.starts_with("wsrep_sst_")
+        || stem.starts_with("pt-")
+        || stem.starts_with("dh_")
+    {
         return true;
     }
     name_forms(name).iter().any(|one| refused(one))

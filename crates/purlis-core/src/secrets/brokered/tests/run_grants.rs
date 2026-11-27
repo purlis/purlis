@@ -3938,3 +3938,62 @@ fn the_package_managers_and_installers_of_7833_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The build, test and packaging tools #7833 names, each of which runs a package's build system,
+/// tests, maintainer scripts, hooks or the code it is pointed at: Debian's `dh_<name>` helpers,
+/// by their stem, as `dh` is refused; `debootstrap`, `mmdebstrap`, `autopkgtest`, `piuparts`,
+/// `mk-build-deps`, `equivs-build`, `quilt shell`, `debspawn`, `uscan`, `cvs-buildpackage`,
+/// `svn-buildpackage`, `dput` and `dupload` (their hook commands); `rpkg`, `mockchain`,
+/// openSUSE's `osc` and obs-build's `build`, `kiwi` and `kiwi-ng` (an image's `config.sh`) and
+/// `koji` (plugins from the path its settings name); MacPorts' `portmirror`; the Perl builders
+/// `cpan2dist`, `cpan2deb`, `cpanspec`, `cpan2rpm` and `pinto`, PAR's `pp`, whose `-x` runs the
+/// script, `plx`, and the PSGI servers `twiggy` and `corona`; and `meson`, `scons`, `ctest` and
+/// `buck2`, which run a project's build files or tests. `pbuilder-dist` and `cowbuilder-dist`
+/// are refused by `pbuilder`'s and `cowbuilder`'s rows, their own family's, and stay so.
+#[test]
+fn the_build_test_and_packaging_tools_of_7833_are_offered_no_run_grant() {
+    for name in [
+        "dh_auto_build",
+        "dh_auto_test",
+        "dh_install",
+        "dh_strip_nondeterminism",
+        "debootstrap",
+        "mmdebstrap",
+        "autopkgtest",
+        "piuparts",
+        "mk-build-deps",
+        "equivs-build",
+        "quilt",
+        "debspawn",
+        "uscan",
+        "cvs-buildpackage",
+        "svn-buildpackage",
+        "dput",
+        "dupload",
+        "rpkg",
+        "mockchain",
+        "osc",
+        "build",
+        "kiwi",
+        "kiwi-ng",
+        "koji",
+        "portmirror",
+        "cpan2dist",
+        "cpan2deb",
+        "cpanspec",
+        "cpan2rpm",
+        "pinto",
+        "pp",
+        "plx",
+        "twiggy",
+        "corona",
+        "meson",
+        "scons",
+        "ctest",
+        "buck2",
+        "pbuilder-dist",
+        "cowbuilder-dist",
+    ] {
+        refused_as_running_others(name);
+    }
+}
