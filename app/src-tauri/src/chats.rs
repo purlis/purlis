@@ -9934,9 +9934,7 @@ impl Own {
     /// Whether every piece of it is among `named`, by its id: what an ask that named them
     /// covers (SC-4d, #7633).
     pub(crate) fn all_named(&self, named: &[String]) -> bool {
-        self.pieces
-            .iter()
-            .all(|piece| named.contains(&piece.id))
+        self.pieces.iter().all(|piece| named.contains(&piece.id))
     }
 }
 

@@ -4231,7 +4231,8 @@ on_every_target!(
     a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,
     an_ask_raised_by_a_chats_proxy_is_answered_from_the_window,
     a_hibernated_chats_kept_screen_is_its_newest_lines_within_a_mebibyte,
-    a_hibernated_chats_kept_screen_is_an_open_alternate_screen_alone,
+    a_hibernated_chats_kept_screen_is_an_open_alternate_screen_alone;
+    not yet through a link ("a runner refuses `hibernate` from a `remote-link` link, which lacks `Power::Reattach`"):
     a_hibernated_program_that_ignores_its_signals_is_killed_and_the_act_completes;
     not yet through a link ("an opt-out is asked again on the device a chat moves to, ADR 0078 §4"):
     an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts;
@@ -4365,10 +4366,13 @@ fn a_hibernated_program_that_ignores_its_signals_is_killed_and_the_act_completes
         )
         .expect("it starts");
     Pane::on(target, id).shows("IGNORES.");
+    let pid = target.sessions.process_id(id).expect("it runs");
     if !hibernates_here(target, id, "a program that ignores its signals") {
+        // Closed, it is hung up and then killed on a thread of its own; waited for, so the
+        // test's process does not end first and leave it running.
+        until("its program is gone", || !target.alive(pid));
         return;
     }
-    let pid = target.sessions.process_id(id).expect("it runs");
     let asked = Instant::now();
 
     target.sessions.hibernate(id).expect("the act completes");
