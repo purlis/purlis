@@ -2147,7 +2147,7 @@ impl Chats {
         ) else {
             return why;
         };
-        match on_pools.ready(&self.project, &pool, profile) {
+        match on_pools.ready_again(&self.project, &pool, profile) {
             Err(words) => words,
             Ok(_) => purlis_core::profilestore::onrunner::signed_out_on_the_runner(&pool, profile),
         }

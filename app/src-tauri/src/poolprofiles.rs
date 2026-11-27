@@ -53,6 +53,8 @@ use purlis_core::profilestore::{self, onrunner};
 
 use crate::runnerlinks::{Machine, ToARunner};
 
+mod kept_until_restart;
+
 /// **Readies a chat's profile on the pool's runner it starts on** (#2049): what a start on a
 /// pool asks before it is sent there.
 pub trait ProfilesOnPools: Send + Sync {
@@ -69,6 +71,12 @@ pub trait ProfilesOnPools: Send + Sync {
         _runner: &str,
         profile: &str,
     ) -> Result<(), String> {
+        self.ready(root, pool, profile)
+    }
+
+    /// [`Self::ready`], **asked again after the runner refused the start as signed out** (#4233):
+    /// what was remembered of its keep there is not trusted, so the keep is made again (#7863).
+    fn ready_again(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
         self.ready(root, pool, profile)
     }
 
@@ -101,10 +109,16 @@ impl ProfilesOnPools for Linked {
         let yours = yours(&self.config, pool);
         chosen_by_a_chat(&yours, &self.config, root, pool, profile);
         tidy_once(&yours, &self.config, root, pool);
-        // A chat's start is what wakes a suspended runner (#2051), so its keep does too.
+        // A chat's start is what wakes a suspended runner (#2051), so its keep does too. A runner
+        // that holds the profile as it is since it last started is not linked to (#7863).
         onrunner::ready_on(&self.config, root, pool, profile, &|kept| {
-            keep_on_as(yours.clone(), &self.config, pool, kept, Waking::Yes)
+            keep_unless_held(&yours, &self.config, pool, kept)
         })
+    }
+
+    fn ready_again(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+        kept_until_restart::forget(pool, profile);
+        self.ready(root, pool, profile)
     }
 
     fn ready_on_its_own_runner(
@@ -138,7 +152,7 @@ impl ProfilesOnPools for Linked {
         chosen_by_a_chat(&yours, &self.config, root, pool, profile);
         tidy_once(&yours, &self.config, root, pool);
         onrunner::ready_to_move_on(&self.config, pool, profile, &|kept| {
-            keep_on_as(yours.clone(), &self.config, pool, kept, Waking::Yes)
+            keep_unless_held(&yours, &self.config, pool, kept)
         })
     }
 }
@@ -323,6 +337,8 @@ static APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
 /// **Every project's wait for profile `name` on pool `pool` goes, and each is told** (#4228), so
 /// no other open project keeps drawing its Ask.
 fn let_go_everywhere(pool: &str, name: &str) {
+    // Forgotten on the runner, or off the pool: its next start there keeps it again (#7863).
+    kept_until_restart::forget(pool, name);
     let_go_telling(pool, name, |went| {
         if let Some(app) = APP.get().cloned() {
             // On a thread of its own: a tidy runs inside a chat's start, and telling takes the
@@ -885,6 +901,40 @@ fn keep_on_as(
         .unwrap_or_else(|| Err("the runner did not answer".into()))
         .map(|kept| Some(onrunner::standing_on_the_wire(kept.standing)))
         .map_err(|why| late_said(pool, &kept.limits, why))
+}
+
+/// **Has pool `pool`'s runner keep `kept`, waking it, unless it holds it as it is since it last
+/// started** ([`kept_until_restart::kept_or_linked`], #7863): what a chat's start and move there
+/// keep it by.
+fn keep_unless_held(
+    yours: &Result<Yours, String>,
+    config: &Path,
+    pool: &str,
+    kept: &onrunner::Kept,
+) -> Result<Option<Standing>, String> {
+    kept_until_restart::kept_or_linked(&|| runner_now(yours, config, pool), pool, kept, |kept| {
+        keep_on_as(yours.clone(), config, pool, kept, Waking::Yes)
+    })
+}
+
+/// **Pool `pool`'s runner as Docker says it is now** ([`kept_until_restart::RunnerNow`]), where
+/// `yours` showed it a Docker pool's and it runs: what a remembered keep there is held to
+/// (#7863). `None` for a cluster pool's, which is linked to at each start, and wherever Docker
+/// could not say, so the keep is made.
+fn runner_now(
+    yours: &Result<Yours, String>,
+    config: &Path,
+    pool: &str,
+) -> Option<kept_until_restart::RunnerNow> {
+    let Ok(Yours::Docker(_)) = yours else {
+        return None;
+    };
+    let runner = purlis_core::runners::runner_for(config, pool).ok()?;
+    let ran = Machine::here(config).ok()?.ran(&runner).ok()?;
+    ran.running.then(|| kept_until_restart::RunnerNow {
+        device: runner.pinned.device.clone(),
+        started: ran.started,
+    })
 }
 
 /// `why` a runner kept no profile, with the limits of pool `pool` it was kept off by, its settings'
@@ -2252,6 +2302,8 @@ pub async fn pool_sign_out(pool: String, name: String) -> Result<Option<String>,
         let kept = onrunner::Kept::of(&record)?;
         // A watcher of a sign-in in a shell ends: the profile is being signed out.
         crate::signinwatch::signing_out(&pool, &name, || ());
+        // Its next start there asks the runner again how it stands (#7863).
+        kept_until_restart::forget(&pool, &name);
         let mut draining = Vec::new();
         match &yours {
             Yours::Docker(_) => {
