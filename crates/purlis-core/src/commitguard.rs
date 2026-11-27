@@ -166,12 +166,6 @@ fn skips_verify(arg: &str) -> bool {
 /// running the `rename-plane` fix ([`runs_the_rename_plane_fix`]), which commits the project's
 /// files for everyone in it (#1288).
 pub fn hook_skip_hit(cmd: &str, cwd: &str) -> Option<(&'static str, String)> {
-    // Read twice where a `${…}` held a blank ([`shellseg::on_either_reading`], #7709, round 4).
-    shellseg::on_either_reading(|| hook_skip_hit_once(cmd, cwd))
-}
-
-/// [`hook_skip_hit`], on one reading of the line.
-fn hook_skip_hit_once(cmd: &str, cwd: &str) -> Option<(&'static str, String)> {
     if runs_the_rename_plane_fix(cmd) {
         return Some((
             RENAME_PLANE,

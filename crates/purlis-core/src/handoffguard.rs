@@ -224,17 +224,10 @@ pub fn runs_handoff(prog: &str, argv: &[String]) -> bool {
 /// it is read on its own; A7 skips heredoc bodies before it judges anything
 /// ([`crate::heredoc::strip_reader_heredocs`], through [`handoff_line`]).
 pub fn is_handoff(cmd: &str) -> bool {
-    // Read twice where a `${…}` held a blank ([`shellseg::on_either_reading`], #7709, round 4).
-    shellseg::on_either_reading(|| {
-        shellseg::segment_argv(cmd)
-            .iter()
-            .any(|toks| {
-                let (prog, _env, argv) = shellwrap::split_env(toks);
-                runs_handoff(&prog, &argv)
-            })
-            .then_some(())
+    shellseg::segment_argv(cmd).iter().any(|toks| {
+        let (prog, _env, argv) = shellwrap::split_env(toks);
+        runs_handoff(&prog, &argv)
     })
-    .is_some()
 }
 
 // ----------------------------------------------------------------------------------------

@@ -606,22 +606,14 @@ fn judged_in_its_directory(
     // an arm that met one nested too deep to read whole decided nothing, so the call is refused
     // as too big to check, whatever the arms said (#1355). Where the caps let it through, an arm
     // that refused on what it did read still refuses.
-    // Every arm reads the line twice where a `${…}` held a blank
-    // ([`shellseg::on_either_reading`], #7709, round 4); an arm that only logs may log the same
-    // refusal on both readings, and it is logged once.
-    let refused = match shellseg::too_deep_within(|| {
-        shellseg::on_either_reading(|| arms(call, plane, &gate))
-    }) {
+    let refused = match shellseg::too_deep_within(|| arms(call, plane, &gate)) {
         (verdict, true) => caps_refuse(too_deep()).or(verdict),
         (verdict, false) => verdict,
     };
-    let mut logged: Vec<Verdict> = Vec::new();
-    for verdict in gate.logged.into_inner() {
-        if !logged.contains(&verdict) {
-            logged.push(verdict);
-        }
+    Judged {
+        refused,
+        logged: gate.logged.into_inner(),
     }
-    Judged { refused, logged }
 }
 
 /// How the arms of one call are run (Q308): each by its family's mode.

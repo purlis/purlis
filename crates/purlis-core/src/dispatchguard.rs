@@ -87,15 +87,10 @@ pub fn runs_a_tasks_branch_folder_work(cmd: &str) -> bool {
 /// words (after the program) `is` matches. `name` is a word every such command line holds, for
 /// the prefilter of the deeper walk.
 fn runs(cmd: &str, name: &str, is: fn(&[String]) -> bool) -> bool {
-    // Read twice where a `${…}` held a blank ([`shellseg::on_either_reading`], #7709, round 4).
-    shellseg::on_either_reading(|| {
-        (a_segment_runs(cmd, is)
-            || a_shell_string_runs(cmd, is)
-            // Past the cap the text is not read, and a helper is refused all the same.
-            || further_in(cmd, name, |text| a_segment_runs(text, is).then_some(())).is_some())
-        .then_some(())
-    })
-    .is_some()
+    a_segment_runs(cmd, is)
+        || a_shell_string_runs(cmd, is)
+        // Past the cap the text is not read, and a helper is refused all the same.
+        || further_in(cmd, name, |text| a_segment_runs(text, is).then_some(())).is_some()
 }
 
 /// Whether purlis's own words are a dispatch.

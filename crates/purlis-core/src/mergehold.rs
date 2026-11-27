@@ -251,24 +251,6 @@ pub enum Held {
 ///
 /// **A help is no merge** (#6960): a line that [`asks_for_help`] is not held in any mode.
 pub fn held(cmd: &str) -> Option<Held> {
-    // Read twice where a `${…}` held a blank or an operator, and what both readings hold put
-    // together ([`crate::shellseg::on_both_readings`], #7709, rounds 4 and 6).
-    crate::shellseg::on_both_readings(|| held_once(cmd), held_on_both)
-}
-
-/// What a line read both ways holds: a request one reading names and the other does not hold
-/// is that request, but two that differ are not one request purlis can name, and a refusal
-/// either reading gives stands over an ask.
-fn held_on_both(first: Option<Held>, old: Option<Held>) -> Option<Held> {
-    match (first, old) {
-        (Some(Held::Request(a)), Some(Held::Request(b))) if a != b => Some(Held::Unreadable),
-        (Some(Held::Request(_)), Some(refused)) => Some(refused),
-        (first, old) => first.or(old),
-    }
-}
-
-/// [`held`], on one reading of the line.
-fn held_once(cmd: &str) -> Option<Held> {
     crate::floorguard::merge_reason(cmd)?;
     if asks_for_help(cmd) {
         return None;

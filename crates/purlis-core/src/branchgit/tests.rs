@@ -509,32 +509,6 @@ fn a_wrappers_own_move_to_a_literal_folder_places_that_one_command() {
     assert!(l.ask(&cmd, &l.clone).is_some(), "{cmd}");
 }
 
-/// #7709, round 6: a line read both ways, where a `${…}` holds a blank or an operator, names
-/// every write either reading finds, each with its own folder, not only the first reading's.
-#[test]
-fn a_line_read_both_ways_names_the_writes_of_both_readings() {
-    use crate::piececlaim::Act;
-    let l = Layout::new();
-    let (a, b) = (l.folder.display(), l.second.display());
-    let both = vec![
-        ("commit".to_owned(), Act::Commit, l.folder.clone()),
-        ("commit".to_owned(), Act::Commit, l.second.clone()),
-    ];
-    for cmd in [
-        format!("git -C {a} commit -m x; eval true ${{y:-; git -C {b} commit -m y}}"),
-        format!("git -C {a} commit -m x; env ${{y:-A=1 git -C {b} commit -m y}}"),
-        format!("git -C {a} commit -m x; timeout ${{y:-5 git -C {b} commit -m y}}"),
-        format!("git -C {a} commit -m x; eval ${{y:-:;git -C {b} commit -m y}}"),
-    ] {
-        assert_eq!(l.writes(&cmd, &l.clone), both, "{cmd}");
-    }
-    // A write only the old reading finds that cannot be placed is named unplaced as well.
-    let cmd = format!("git -C {a} commit -m x; eval true ${{y:-; cd $U && git commit -m y}}");
-    let read = l.read_where(&cmd, &l.clone, false);
-    assert_eq!(read.found.len(), 1, "{cmd}: {read:?}");
-    assert!(read.unplaced.is_some(), "{cmd}: {read:?}");
-}
-
 /// #3931: what an unsandboxed chat's guard holds to the folder's one live writer.
 #[test]
 fn plain_git_that_commits_updates_or_pushes_in_a_branch_folder_is_named_with_its_folder() {
