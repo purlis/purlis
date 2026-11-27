@@ -66,7 +66,10 @@ mod the_version_is_negotiated_and_an_unknown_major_is_refused;
 mod the_version_is_negotiated_over_a_socket_a_pipe_and_a_childs_stdio;
 
 /// The `.rs` files straight under `tests/` that are binaries of their own on purpose.
-const OWN_BINARIES: [&str; 2] = [
+const OWN_BINARIES: [&str; 3] = [
+    // #7864: it reads `purlis::step` through its thread's subscriber, and tracing caches whether
+    // a callsite is listened to across the process, so a test beside it could silence its lines.
+    "a_kept_link_names_the_start_it_was_made_for.rs",
     "a_peer_that_opens_thousands_of_streams_cannot_grow_the_hosts_memory.rs",
     "fifty_chats_share_one_shaped_link_fairly_with_bounded_memory.rs",
 ];

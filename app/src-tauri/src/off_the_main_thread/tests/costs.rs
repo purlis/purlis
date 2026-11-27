@@ -431,6 +431,10 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             // Copy diagnostics' facts (#4774): the chats held in memory, one uname(2), and the
             // device's class as last read, never waiting on a read (SC-4f).
             "diagnostics_here",
+            // The detailed remote log's switch (#7864): an hour held under a lock, the log's
+            // filter reloaded in memory, and at most one watcher thread spawned, never joined.
+            "detailed_remote_log",
+            "set_detailed_remote_log",
             "activity_chat",
             "pending_asks",
             "forget_sandbox_block",
