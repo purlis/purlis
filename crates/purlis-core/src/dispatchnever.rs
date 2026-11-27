@@ -276,15 +276,14 @@ pub fn unread_said(root: &Path) -> String {
              now: keep them there, and purlis seals exactly those."
         );
     }
-    // A list that names the plane but that purlis cannot vouch for (L2 of #7734's round 4):
-    // only deleting its items lets the file be read again, so the words name them.
+    // A list that names the plane but that purlis cannot vouch for (L2 of #7734's round 4, as
+    // M1 of its round 5 corrects it): the words never ask for purlis's own list to go.
     if replaced.lists(&ANCHOR_KINDS, &anchor) {
         return format!(
             "purlis cannot read the list of pairs you said never to ({shown} in this project): \
-             {}, so no dispatch grant counts. Delete {} in Keychain Access, then, if the list \
-             still does not read, restore that file as purlis last wrote it.",
-            UNVOUCHED_LISTED,
-            crate::secrets::seal::list_items_said(),
+             {UNVOUCHED_LISTED}, so no dispatch grant counts, and purlis asks you before each \
+             dispatch across personas here. {}",
+            unvouched_way_out(),
         );
     }
     format!(
@@ -296,8 +295,28 @@ pub fn unread_said(root: &Path) -> String {
 }
 
 /// Why a plane on a list purlis cannot vouch for keeps its nevers unread (L2 of #7734's round 4).
-const UNVOUCHED_LISTED: &str = "a keychain item purlis cannot vouch for lists this project as one \
-     whose seal key was replaced";
+const UNVOUCHED_LISTED: &str = "a list purlis cannot vouch for names this project as one whose \
+     seal key was replaced";
+
+/// **What a person can do where a list purlis cannot vouch for names the plane** (M1 of #7734's
+/// round 5). Only a slot whose seal does not hold is named to delete, by account; purlis's own
+/// list is never, since deleting it would make every plane it keeps read as never accepted, or
+/// its nevers as none. Where purlis's own list carries the entry, marked `?`, no delete helps:
+/// the nevers stay unread, which only ever asks the person.
+fn unvouched_way_out() -> String {
+    match crate::secrets::seal::unvouched_list_items_said() {
+        Some(items) => format!(
+            "Delete only {items} in Keychain Access, which purlis did not seal, and keep every \
+             other item named purlis-seal: purlis's own list keeps other projects from reading \
+             as never accepted. Then, if the list still does not read, restore that file as \
+             purlis last wrote it."
+        ),
+        None => "The entry is on purlis's own list of projects whose seal key it replaced, \
+             which keeps other projects from reading as never accepted, so delete no keychain \
+             item named purlis-seal."
+            .to_owned(),
+    }
+}
 
 /// Reads the file, changes its pairs with `how` and writes it back, under purlis's lock on its
 /// directory. **Refuses a file that does not read**, and leaves it as it is.
@@ -452,8 +471,8 @@ pub fn keep_shown_after_a_new_key(root: &Path, shown: &str) -> io::Result<()> {
     if !vouched_for_a_new_key(root) {
         if listed_for_a_new_key(root) {
             return Err(io::Error::other(format!(
-                "{UNVOUCHED_LISTED}, so purlis kept nothing; delete {} in Keychain Access",
-                crate::secrets::seal::list_items_said(),
+                "{UNVOUCHED_LISTED}, so purlis kept nothing. {}",
+                unvouched_way_out(),
             )));
         }
         return Err(io::Error::other(

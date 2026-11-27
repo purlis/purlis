@@ -2163,12 +2163,15 @@ fn a_list_item_planted_under_a_healthy_key_offers_no_new_key_words_and_no_reseal
     assert_eq!(read(root.path()), Nevers::Unread);
     let said = unread_said(root.path());
     assert!(!said.contains("new seal key"), "{said}");
-    // L2 of #7734's round 4: the words name the way out, the items to delete.
+    // L2 of #7734's round 4, as M1 of its round 5 corrects it: the words name the way out, the
+    // one item purlis did not seal, by account.
     assert!(
-        said.contains(&crate::secrets::seal::list_items_said()),
+        said.contains(
+            "Delete only the keychain item named purlis-seal with the account seal-key-replaced \
+             in Keychain Access"
+        ),
         "{said}"
     );
-    assert!(said.contains("Keychain Access"), "{said}");
     assert!(!said.contains("unlock"), "{said}");
     let now = standing(root.path());
     assert!(!now.nevers_new_key, "{now:?}");
@@ -2187,6 +2190,145 @@ fn a_list_item_planted_under_a_healthy_key_offers_no_new_key_words_and_no_reseal
         Nevers::Unread,
         "the tampered file is never sealed"
     );
+}
+
+#[test]
+fn a_nevers_list_with_one_name_no_persona_can_have_among_valid_ones_offers_no_press() {
+    // L3 of #7734's round 5: one name purlis cannot show faithfully among names it can is
+    // enough to offer no pair, and a press naming the pairs keeps nothing.
+    use crate::dispatchnever::{
+        Nevers, digest_of_pairs, holds_a_name_it_cannot_show, keep_shown_after_a_new_key, read,
+    };
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(here.path());
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    let mixed = [
+        ("steward", "devops"),
+        ("st\u{0435}ward", "ops"),
+        ("devops", "steward"),
+    ];
+    let never: Vec<serde_json::Value> = mixed
+        .iter()
+        .map(|(asking, target)| serde_json::json!({"asking": asking, "target": target}))
+        .collect();
+    std::fs::write(
+        crate::dispatchnever::path(here.path()),
+        serde_json::json!({ "never": never }).to_string(),
+    )
+    .expect("written");
+    let root = here.path();
+    assert!(standing(root).nevers_new_key);
+    assert_eq!(crate::dispatchnever::to_keep_after_a_new_key(root), None);
+    assert!(holds_a_name_it_cannot_show(root));
+    for shown in [pairs(&mixed), pairs(&[mixed[0], mixed[2]])] {
+        let why = keep_shown_after_a_new_key(root, &digest_of_pairs(&shown))
+            .expect_err("nothing kept")
+            .to_string();
+        assert!(why.contains("no persona can have"), "{why}");
+    }
+    assert_eq!(read(root), Nevers::Unread);
+}
+
+#[test]
+fn deleting_the_item_the_words_name_turns_no_project_into_never_accepted_or_no_nevers() {
+    // M1 of #7734's round 5: after a new key, another program plants a list in the free slot.
+    // The words name that item alone, never purlis's own list; once the person deletes it as
+    // told, no project the new key listed reads as never accepted, and no nevers as none, a
+    // file wiped since included.
+    use crate::dispatchnever::{Nevers, read, unread_said};
+    use crate::sandbox::local::{PolicyAccepted, anchor_key, policy_accepted_record};
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let other = accepted_plane("[policy]\ntemplate = \"strict\"\n");
+    let nevers = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(nevers.path());
+    let wiped = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(wiped.path());
+    let ghost = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::an_update_for_this_test();
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    std::fs::remove_file(crate::dispatchnever::path(wiped.path())).expect("wiped");
+    let planted = crate::secrets::seal::plant_in_the_free_slot_for_this_test(
+        &crate::secrets::seal::a_foreign_list_for_this_test(&[format!(
+            "dispatch-nevers-live:{}",
+            anchor_key(ghost.path())
+        )]),
+    );
+    let [first, second] = crate::secrets::seal::LIST_ACCOUNTS_FOR_TESTS;
+    let own = if planted == first { second } else { first };
+    let said = unread_said(ghost.path());
+    assert!(
+        said.contains(&format!(
+            "Delete only the keychain item named purlis-seal with the account {planted} in"
+        )),
+        "{said}"
+    );
+    assert!(!said.contains(&format!("account {own} ")), "{said}");
+    assert!(!said.contains(&format!("account {own}.")), "{said}");
+    for root in [&nevers, &wiped] {
+        let said = unread_said(root.path());
+        assert!(said.contains("purlis made a new seal key"), "{said}");
+    }
+    crate::secrets::seal::delete_in_keychain_access_for_this_test(planted);
+    assert_eq!(policy_accepted_record(other.path()), PolicyAccepted::Broken);
+    assert!(standing(other.path()).new_key);
+    for root in [&nevers, &wiped] {
+        assert_eq!(read(root.path()), Nevers::Unread);
+        assert!(standing(root.path()).nevers_new_key);
+    }
+    press(other.path(), &digest_of(other.path())).expect("accepted again");
+    for root in [&nevers, &wiped] {
+        assert_eq!(
+            read(root.path()),
+            Nevers::Unread,
+            "still listed after a write"
+        );
+        assert!(standing(root.path()).nevers_new_key);
+    }
+}
+
+#[test]
+fn a_project_purlis_own_list_carries_unvouched_stays_unread_and_no_delete_is_asked() {
+    // M1 of #7734's round 5: a plane only a list another program made named is carried onto
+    // purlis's own list by a new key, marked `?`. Its nevers stay unread, the words ask for no
+    // keychain item to go, and nothing is kept for it.
+    use crate::dispatchnever::{Nevers, digest_of_pairs, keep_shown_after_a_new_key, read};
+    use crate::sandbox::local::anchor_key;
+    let _home = OwnConfigHome::new();
+    let ghost = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(ghost.path());
+    crate::secrets::seal::forget_kept_for_this_test();
+    crate::secrets::seal::set_replaced_for_this_test(
+        &crate::secrets::seal::a_foreign_list_for_this_test(&[format!(
+            "dispatch-nevers-live:{}",
+            anchor_key(ghost.path())
+        )]),
+    );
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::an_update_for_this_test();
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    let root = ghost.path();
+    assert_eq!(read(root), Nevers::Unread);
+    assert!(crate::dispatchnever::listed_for_a_new_key(root));
+    assert!(!standing(root).nevers_new_key);
+    assert_eq!(crate::secrets::seal::unvouched_list_items_said(), None);
+    let said = crate::dispatchnever::unread_said(root);
+    assert!(
+        said.contains("delete no keychain item named purlis-seal"),
+        "{said}"
+    );
+    assert!(!said.contains("Delete only"), "{said}");
+    assert!(!said.contains("new seal key on this machine"), "{said}");
+    for account in crate::secrets::seal::LIST_ACCOUNTS_FOR_TESTS {
+        assert!(!said.contains(account), "{account}: {said}");
+    }
+    let why = keep_shown_after_a_new_key(root, &digest_of_pairs(&pairs(&[("steward", "devops")])))
+        .expect_err("nothing kept")
+        .to_string();
+    assert!(why.contains("delete no keychain item"), "{why}");
+    assert_eq!(read(root), Nevers::Unread);
 }
 
 #[test]

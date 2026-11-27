@@ -35,9 +35,13 @@ personas refused), and Accept refuses with the manual step. Pressing Accept neve
   (`purlis-seal/spare-of-the-probe`), never the one the new key waits in (M3 of its round 3).
   Where both list accounts hold one, only a list the other covers is deleted to make room (M4);
   where neither covers the other, which no write of the app's leaves, the press says another
-  program's item is in the way and names the two accounts (L2 of its round 4). The press's check
-  of the new key's spare keeps its own spare too (`purlis-seal/spare/spare-of-the-probe`), and
-  the key's read and the next press take a key left there (L2). A key read again at a press
+  program's item is in the way and names only the account whose seal does not hold, keeping the
+  other, purlis's own list; where it cannot tell them apart, it asks for neither to go (L2 of its
+  round 4, M1 of its round 5). The press's check of the new key's spare keeps its own spare too
+  (`purlis-seal/spare/spare-of-the-probe`), and the key's read and the next press take a key left
+  there (L2). A probe spare's own probe takes the other spare of a pair
+  (`…/spare-of-the-probe-again`), never one more segment, so every depth is covered (L2 of its
+  round 5). A key read again at a press
   holds the press's lock across the read, never only tests it (L3).
 - **The digest is checked before, and again after the prompt returns.** A view already stale
   asks nothing of macOS; a file that changed while the prompt was open accepts nothing (the new
@@ -77,9 +81,13 @@ personas refused), and Accept refuses with the manual step. Pressing Accept neve
   names but purlis does not vouch for (a list that holds under no key of the app's, or an entry
   marked `?`) only keeps the nevers unread: no new key's words, no pairs to keep, and nothing
   seals the file as it stands. So a list another program put there under a healthy key cannot
-  launder a nevers file edited meanwhile. Its words name the way out: delete the keychain items
-  named `purlis-seal` with the accounts `seal-key-replaced` and `seal-key-replaced-next` in
-  Keychain Access (L2 of #7734's round 4).
+  launder a nevers file edited meanwhile. Its words name the way out (L2 of #7734's round 4),
+  **never purlis's own list** (M1 of its round 5): where one list account's seal does not hold
+  under the key of now, they ask the person to delete that item alone, by account, and to keep
+  every other item named `purlis-seal`. Where purlis's own list carries the entry, marked `?`,
+  they ask for no delete: deleting it would make every plane it keeps read as never accepted,
+  or its nevers as none. Such a plane's nevers stay unread, so each dispatch across personas
+  there asks the person.
 - **An anchor is vouched for by its name alone** (L5 of #7734's round 3, accepted). While the key
   is foreign, no seal of the old key's can say more of an anchor than that it is there. That is
   enough because a vouch never seals anything: it only offers a press that shows what it seals,

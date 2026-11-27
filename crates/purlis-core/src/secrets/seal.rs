@@ -287,22 +287,53 @@ pub const RENEW_REFUSED: &str = "macOS did not let purlis replace its old key, s
 /// leaves a moment where neither is there.
 const REPLACED: [&str; 2] = ["seal-key-replaced", "seal-key-replaced-next"];
 
-/// **The keychain items the list of [`REPLACED`] is kept in, as the window names them** (L2 of
-/// #7734's round 4), so a person can find and delete one purlis cannot vouch for.
-pub fn list_items_said() -> String {
-    format!(
-        "the keychain items named {SERVICE} with the accounts {} and {}",
-        REPLACED[0], REPLACED[1]
-    )
+/// **The slots of the list of [`REPLACED`] purlis does not vouch for, as the window names them**
+/// (M1 of #7734's round 5): each kept whose seal does not hold under the key of now, so another
+/// program wrote it or edited it. **Never a slot whose seal holds**: that is purlis's own list,
+/// which keeps every plane a replaced key anchored from reading as never accepted, or its
+/// nevers as none, and deleting it would. `None` where every slot kept holds, or where the key of
+/// now is not the app's own, so no slot can be told to be purlis's.
+pub fn unvouched_list_items_said() -> Option<String> {
+    let key = key()?;
+    let slots: Vec<&str> = REPLACED
+        .into_iter()
+        .filter(|slot| kept_value(slot).is_some_and(|value| !list_read(&value, &[&key]).1))
+        .collect();
+    match slots.as_slice() {
+        [] => None,
+        [one] => Some(format!(
+            "the keychain item named {SERVICE} with the account {one}"
+        )),
+        [one, other, ..] => Some(format!(
+            "the keychain items named {SERVICE} with the accounts {one} and {other}"
+        )),
+    }
 }
 
-/// What [`write_list`] says where both slots hold lists and neither names every plane the other
-/// does (L2 of #7734's round 4), which no write of the app's leaves: another program put one
-/// there, and it is in the way.
-const LISTS_IN_THE_WAY: &str = "a keychain item purlis did not write is in the way: the items \
-     named purlis-seal with the accounts seal-key-replaced and seal-key-replaced-next each list \
-     projects the other does not, so purlis replaced neither. Delete the one purlis did not make \
-     in Keychain Access (its Access Control does not name purlis), then press again";
+/// What [`write_list`] says where both slots hold lists, neither names every plane the other
+/// does, and the seal of the slot at the same index does not hold while the other's does (M1 of
+/// #7734's round 5): no write of the app's leaves that, so another program put it there. It
+/// names only that slot, and keeps the other, purlis's own list.
+const LISTS_IN_THE_WAY: [&str; 2] = [
+    "a keychain item purlis did not write is in the way: the item named purlis-seal with the \
+     account seal-key-replaced lists projects purlis's own list does not, and purlis cannot vouch \
+     for it, so it changed neither. Delete only that item in Keychain Access, then press again. \
+     Keep the item with the account seal-key-replaced-next: it is purlis's own list, which keeps \
+     other projects from reading as never accepted",
+    "a keychain item purlis did not write is in the way: the item named purlis-seal with the \
+     account seal-key-replaced-next lists projects purlis's own list does not, and purlis cannot \
+     vouch for it, so it changed neither. Delete only that item in Keychain Access, then press \
+     again. Keep the item with the account seal-key-replaced: it is purlis's own list, which \
+     keeps other projects from reading as never accepted",
+];
+
+/// What [`write_list`] says where neither list names every plane the other does and purlis
+/// cannot tell which one it wrote (M1 of #7734's round 5): both seals hold, or neither does. It
+/// asks for no delete, since either may be purlis's own list.
+const LISTS_NOT_TOLD_APART: &str = "two keychain items named purlis-seal, with the accounts \
+     seal-key-replaced and seal-key-replaced-next, each list projects the other does not, and \
+     purlis cannot tell which one it wrote, so it changed neither. Delete neither: either may be \
+     purlis's own list, which keeps other projects from reading as never accepted";
 
 /// The kind the list of [`REPLACED`] is sealed as.
 const REPLACED_KIND: &str = "seal-key-replaced";
@@ -410,19 +441,26 @@ fn covers(wide: &Entries, narrow: &Entries) -> bool {
 /// one before, or lists another program put there), **only a slot the other covers is deleted
 /// first** (M4 of #7734's round 3): the other names every entry it did, so a write cut short
 /// right after the delete leaves no plane unlisted. Where neither covers the other, which no
-/// write of the app's leaves, nothing is deleted and nothing written.
+/// write of the app's leaves, nothing is deleted and nothing written, and the words name only a
+/// slot whose seal holds under none of `keys` beside one whose seal does (M1 of its round 5).
+/// The list is sealed with the first of `keys`; each is a key a list of the app's own may hold
+/// under.
 fn write_list(
     items: &dyn KeyItems,
-    key: &[u8],
+    keys: &[&[u8]],
     entries: &Entries,
 ) -> Result<&'static str, &'static str> {
+    let key = keys.first().ok_or(KEY_UNREAD)?;
     let value = list_value(key, entries).ok_or(KEY_UNREAD)?;
     let mut free = None;
     let mut there = Vec::new();
     for slot in REPLACED {
         match items.read(SERVICE, slot) {
             Ok(None) => free = free.or(Some(slot)),
-            Ok(Some(value)) => there.push((slot, list_read(&value, &[key]).0)),
+            Ok(Some(value)) => {
+                let (entries, holds) = list_read(&value, keys);
+                there.push((slot, entries, holds));
+            }
             Err(why) => {
                 tracing::warn!("purlis: the list of replaced planes could not be read ({why})");
                 return Err(KEY_UNREAD);
@@ -431,7 +469,7 @@ fn write_list(
     }
     let slot = match (free, there.as_slice()) {
         (Some(slot), _) => slot,
-        (None, [(one, of_one), (other, of_other)]) => {
+        (None, [(one, of_one, one_holds), (other, of_other, other_holds)]) => {
             let slot = if covers(of_other, of_one) {
                 *one
             } else if covers(of_one, of_other) {
@@ -441,7 +479,11 @@ fn write_list(
                     "purlis: neither list of replaced planes names every plane the other does, \
                      so neither was replaced"
                 );
-                return Err(LISTS_IN_THE_WAY);
+                return Err(match (one_holds, other_holds) {
+                    (false, true) => LISTS_IN_THE_WAY[0],
+                    (true, false) => LISTS_IN_THE_WAY[1],
+                    _ => LISTS_NOT_TOLD_APART,
+                });
             };
             gone(items, SERVICE, slot)?;
             slot
@@ -487,15 +529,16 @@ fn pending(items: &dyn KeyItems, spare: &str) -> Option<zeroize::Zeroizing<Vec<u
 /// Deleting another program's item is macOS's to allow, and it may ask the person: that prompt
 /// is their consent. A delete it refuses stops the press there ([`RENEW_REFUSED`]).
 pub(crate) fn renew(items: &dyn KeyItems, kinds: &[&str]) -> Result<Found, &'static str> {
-    let [spare, commands_spare, probe_spare] = super::keyhold::spares_of(SERVICE);
+    let [spare, commands_spare, _] = super::keyhold::spares_of(SERVICE);
     // Where [`pending`]'s own probe of the spare was cut short, the new key is at rest in that
-    // probe's spare (L2 of #7734's round 4): it is used again, never stranded.
-    let spares_probe = super::keyhold::probe_spare_of(&spare);
+    // probe's spare, or in that spare's own probe's (L2 of #7734's rounds 4 and 5): it is used
+    // again, never stranded.
+    let spares_probes = super::keyhold::probe_spares_of(&spare);
     let key = match pending(items, &spare) {
         Some(key) => key,
         None => {
             gone(items, &spare, ACCOUNT)?;
-            let key = match pending(items, &spares_probe) {
+            let key = match spares_probes.iter().find_map(|probe| pending(items, probe)) {
                 Some(key) => key,
                 None => new_key().ok_or(KEY_UNREAD)?,
             };
@@ -532,12 +575,15 @@ pub(crate) fn renew(items: &dyn KeyItems, kinds: &[&str]) -> Result<Found, &'sta
     // ([`crate::dispatchnever::keep_shown_after_a_new_key`]). Nothing is sealed by a vouch.
     let mut entries = Entries::new();
     let mut every = Vec::new();
+    let [probe_spare, probes_probe] = super::keyhold::probe_spares_of(SERVICE);
     for service in [
         SERVICE,
         spare.as_str(),
         commands_spare.as_str(),
         probe_spare.as_str(),
-        spares_probe.as_str(),
+        probes_probe.as_str(),
+        spares_probes[0].as_str(),
+        spares_probes[1].as_str(),
     ] {
         for account in listing(service)? {
             if of_kinds(&account, kinds) {
@@ -554,7 +600,7 @@ pub(crate) fn renew(items: &dyn KeyItems, kinds: &[&str]) -> Result<Found, &'sta
     let written = if entries.is_empty() {
         None
     } else {
-        Some(write_list(items, &key, &entries)?)
+        Some(write_list(items, &keys, &entries)?)
     };
     for (service, account) in &every {
         let kept = (*service == SERVICE
@@ -769,7 +815,7 @@ fn unlist(items: &dyn KeyItems, kinds: &[&str], anchor: &str) -> bool {
         let Some(key) = key.as_deref() else {
             return false;
         };
-        match write_list(items, key, &entries) {
+        match write_list(items, &[key], &entries) {
             Ok(slot) => Some(slot),
             Err(_) => return false,
         }
@@ -840,6 +886,30 @@ pub(crate) fn set_replaced_for_this_test(value: &str) {
     });
     TEST_THEIRS.with(|theirs| theirs.borrow_mut().insert(REPLACED[0].to_owned()));
 }
+
+/// **A test's keyring keeps `value` at the slot of the list of [`REPLACED`] that holds none**, as
+/// another program made it, beside the app's own list; the slot's account is answered.
+#[cfg(test)]
+pub(crate) fn plant_in_the_free_slot_for_this_test(value: &str) -> &'static str {
+    let slot = REPLACED
+        .into_iter()
+        .find(|slot| kept_value(slot).is_none())
+        .expect("a free slot");
+    TEST_KEPT.with(|kept| kept.borrow_mut().insert(slot.to_owned(), value.to_owned()));
+    TEST_THEIRS.with(|theirs| theirs.borrow_mut().insert(slot.to_owned()));
+    slot
+}
+
+/// **A test's person deletes the item under [`SERVICE`] at `account`** in Keychain Access.
+#[cfg(test)]
+pub(crate) fn delete_in_keychain_access_for_this_test(account: &str) {
+    TEST_KEPT.with(|kept| kept.borrow_mut().remove(account));
+    TEST_THEIRS.with(|theirs| theirs.borrow_mut().remove(account));
+}
+
+/// The accounts of the list of [`REPLACED`], for a test.
+#[cfg(test)]
+pub(crate) const LIST_ACCOUNTS_FOR_TESTS: [&str; 2] = REPLACED;
 
 /// **The value of a list of [`REPLACED`] made by another program than the app**, naming
 /// `accounts` with a seal that holds under no key of the app's.
@@ -1045,16 +1115,24 @@ fn said(found: &Found) -> Result<(), &'static str> {
 /// **No item, and a spare one** ([`super::keyhold::spares_of`]): a write of the key that was cut
 /// short between its delete and its add left the key at rest there (#7073), or an ownership
 /// probe cut short left it in the probe's own spare (M3 of #7734's round 3), or a press's probe
-/// of the app's own spare ([`pending`]) left a new key in that probe's spare (L2 of its round 4).
+/// of the app's own spare ([`pending`]) left a new key in that probe's spare (L2 of its round 4),
+/// or a probe of a probe's spare in the other spare of the pair (L2 of its round 5).
 /// The app's own spare is made the key again, so every seal made with it still holds; a spare
 /// another program made is [`Found::Foreign`], never a key.
 pub(crate) fn read_or_make(items: &dyn KeyItems) -> Found {
     match items.read(SERVICE, ACCOUNT) {
         Ok(Some(hex)) => checked(items, SERVICE, &hex),
         Ok(None) => {
-            let [spare, _, probe_spare] = super::keyhold::spares_of(SERVICE);
-            let spares_probe = super::keyhold::probe_spare_of(&spare);
-            for spare in [spare, probe_spare, spares_probe] {
+            let [spare, _, _] = super::keyhold::spares_of(SERVICE);
+            let [probe_spare, probes_probe] = super::keyhold::probe_spares_of(SERVICE);
+            let [spares_probe, spares_probes_probe] = super::keyhold::probe_spares_of(&spare);
+            for spare in [
+                spare,
+                probe_spare,
+                probes_probe,
+                spares_probe,
+                spares_probes_probe,
+            ] {
                 match items.read(&spare, ACCOUNT) {
                     Ok(Some(hex)) => {
                         return match checked(items, &spare, &hex) {
@@ -1364,6 +1442,13 @@ mod tests {
                 (value.to_owned(), ours),
             );
             self
+        }
+
+        fn value_at(&self, service: &str, account: &str) -> Option<String> {
+            self.0
+                .borrow()
+                .get(&(service.to_owned(), account.to_owned()))
+                .map(|(value, _)| value.clone())
         }
 
         fn services_and_accounts(&self) -> Vec<(String, String)> {
@@ -1990,7 +2075,7 @@ mod tests {
             let mut merged = Entries::new();
             merge(&mut merged, list_read(&stale(&first), &[&key]).0);
             merge(&mut merged, list_read(&stale(&second), &[&key]).0);
-            let _ = write_list(&cut, &key, &merged);
+            let _ = write_list(&cut, &[&key], &merged);
             for anchor in ["aaaa", "bbbb"] {
                 assert!(
                     anchored_or_listed(&cut.items, "policy-accepted", anchor),
@@ -2260,10 +2345,10 @@ mod tests {
     }
 
     #[test]
-    fn two_lists_where_neither_covers_the_other_are_refused_as_an_item_in_the_way_by_name() {
-        // L2 of #7734's round 4: no write of the app's leaves two lists where neither names every
-        // plane the other does, so the refusal says another program's item is in the way and
-        // names it, never that the keychain is locked.
+    fn two_lists_purlis_cannot_tell_apart_are_refused_and_no_delete_is_asked() {
+        // L2 of #7734's round 4, as M1 of its round 5 corrects it: no write of the app's leaves
+        // two lists where neither names every plane the other does. Where neither seal holds,
+        // purlis cannot tell which it wrote, so the refusal asks the person to delete neither.
         let key = vec![0xcd; KEY_BYTES];
         let items = Items::default()
             .with(SERVICE, &crate::extension::hex(&key), true)
@@ -2281,21 +2366,141 @@ mod tests {
             );
         let mut merged = Entries::new();
         merged.insert("policy-accepted:cccc".to_owned(), true);
-        let why = write_list(&items, &key, &merged).expect_err("neither replaced");
-        assert_eq!(why, LISTS_IN_THE_WAY);
+        let why = write_list(&items, &[&key], &merged).expect_err("neither replaced");
+        assert_eq!(why, LISTS_NOT_TOLD_APART);
         assert_ne!(why, KEY_UNREAD);
-        for name in [SERVICE, REPLACED[0], REPLACED[1]] {
-            assert!(why.contains(name), "{name}: {why}");
+        assert!(why.contains("Delete neither"), "{why}");
+        assert!(!why.contains("Delete only"), "{why}");
+        for slot in REPLACED {
+            assert!(items.value_at(SERVICE, slot).is_some(), "{slot} kept");
         }
-        assert!(why.contains("in the way"), "{why}");
+    }
+
+    /// The value of the app's own list naming `accounts`, each vouched for, sealed with `key`.
+    fn own_list(key: &[u8], accounts: &[&str]) -> String {
+        let entries: Entries = accounts
+            .iter()
+            .map(|one| ((*one).to_owned(), true))
+            .collect();
+        list_value(key, &entries).expect("sealed")
     }
 
     #[test]
-    fn the_list_items_are_named_as_the_keychain_keeps_them() {
-        // L2 of #7734's round 4: the words a person reads name the items to delete exactly.
-        let said = list_items_said();
-        for name in [SERVICE, REPLACED[0], REPLACED[1]] {
-            assert!(said.contains(name), "{name}: {said}");
+    fn a_list_planted_in_the_free_slot_never_leads_to_the_vouched_slots_removal() {
+        // M1 of #7734's round 5: whichever slot purlis's own list is at, and whatever another
+        // program plants in the other, no write deletes the vouched slot, and a refusal names
+        // only the planted one, by account, and keeps the other.
+        let key = vec![0xcd; KEY_BYTES];
+        for own in [0, 1] {
+            let planted = 1 - own;
+            for names in [
+                vec!["policy-accepted:zzzz"],
+                vec!["policy-accepted:aaaa", "policy-accepted:zzzz"],
+            ] {
+                let vouched = own_list(&key, &["policy-accepted:aaaa"]);
+                let items = Items::default()
+                    .with(SERVICE, &crate::extension::hex(&key), true)
+                    .with_at(SERVICE, REPLACED[own], &vouched, true)
+                    .with_at(SERVICE, REPLACED[planted], &stale(&names), false);
+                let mut merged = Entries::new();
+                merged.insert("policy-accepted:aaaa".to_owned(), true);
+                let why = write_list(&items, &[&key], &merged).expect_err("in the way");
+                assert_eq!(why, LISTS_IN_THE_WAY[planted], "{own} {names:?}");
+                let (named, kept) = (REPLACED[planted], REPLACED[own]);
+                assert!(why.contains(&format!("the account {named} lists")), "{why}");
+                assert!(
+                    why.contains(&format!("Keep the item with the account {kept}:")),
+                    "{why}"
+                );
+                assert_eq!(
+                    items.value_at(SERVICE, kept),
+                    Some(vouched.clone()),
+                    "the vouched slot stays as it was"
+                );
+                // As the words say: the planted item deleted, the next write keeps every
+                // vouched entry vouched for.
+                let _ = KeyItems::delete(&items, SERVICE, named);
+                let slot = write_list(&items, &[&key], &merged).expect("written");
+                let (entries, holds) =
+                    list_read(&items.value_at(SERVICE, slot).expect("there"), &[&key]);
+                assert!(holds);
+                assert_eq!(entries.get("policy-accepted:aaaa"), Some(&true));
+            }
         }
+    }
+
+    #[test]
+    fn the_unvouched_list_items_are_named_by_account_and_never_the_vouched_one() {
+        // M1 of #7734's round 5: the window's words name a slot whose seal does not hold under
+        // the key of now, and never one whose seal does, which is purlis's own list.
+        let key = vec![7; KEY_BYTES];
+        set_for_this_test(Some(key.clone()));
+        let keep = |slot: &str, value: String| {
+            TEST_KEPT.with(|kept| kept.borrow_mut().insert(slot.to_owned(), value));
+        };
+        forget_kept_for_this_test();
+        keep(REPLACED[0], own_list(&key, &["policy-accepted:aaaa"]));
+        keep(REPLACED[1], stale(&["policy-accepted:zzzz"]));
+        let said = unvouched_list_items_said().expect("one does not hold");
+        assert_eq!(
+            said,
+            format!(
+                "the keychain item named {SERVICE} with the account {}",
+                REPLACED[1]
+            )
+        );
+        forget_kept_for_this_test();
+        keep(REPLACED[1], own_list(&key, &["policy-accepted:aaaa"]));
+        keep(REPLACED[0], stale(&["policy-accepted:zzzz"]));
+        let said = unvouched_list_items_said().expect("one does not hold");
+        assert!(
+            said.ends_with(&format!("account {}", REPLACED[0])),
+            "{said}"
+        );
+        assert!(!said.contains(REPLACED[1]), "{said}");
+        forget_kept_for_this_test();
+        keep(REPLACED[0], own_list(&key, &["policy-accepted:aaaa"]));
+        assert_eq!(unvouched_list_items_said(), None, "purlis's own list alone");
+        keep(REPLACED[1], stale(&["policy-accepted:zzzz"]));
+        set_foreign_for_this_test(true);
+        assert_eq!(
+            unvouched_list_items_said(),
+            None,
+            "no slot is named while the key of now is not the app's own"
+        );
+        set_foreign_for_this_test(false);
+        forget_kept_for_this_test();
+    }
+
+    #[test]
+    fn a_probe_spares_own_probe_takes_the_other_of_the_pair_and_never_nests() {
+        // L2 of #7734's round 5: a probe of a probe's spare parks its value in the other spare
+        // of the pair, never one segment deeper, so a read and a sweep cover every depth.
+        for service in [SERVICE.to_owned(), spare()] {
+            let [first, second] = super::super::keyhold::probe_spares_of(&service);
+            assert_eq!(super::super::keyhold::probe_spare_of(&second), first);
+            assert_eq!(super::super::keyhold::probe_spare_of(&first), second);
+            assert!(!second.starts_with(&format!("{first}/")), "{second}");
+        }
+    }
+
+    #[test]
+    fn a_new_key_left_in_the_probe_of_its_spares_probe_is_the_key_again_and_used_by_the_next_press()
+    {
+        // L2 of #7734's round 5: the press's probe of its spare's probe spare cut short leaves
+        // the new key in the other spare of the pair alone. Neither the key's read nor the next
+        // press strands it, and the sweep takes it.
+        let [_, again] = super::super::keyhold::probe_spares_of(&spare());
+        let items = Items::default().with(&again, &"ef".repeat(KEY_BYTES), true);
+        assert_eq!(held(read_or_make(&items)), vec![0xef; KEY_BYTES]);
+        let after_an_update = Items::default()
+            .with(SERVICE, &"ab".repeat(KEY_BYTES), false)
+            .with(&again, &"ef".repeat(KEY_BYTES), true);
+        let made = held(renew(&after_an_update, KINDS).expect("a new key"));
+        assert_eq!(made, vec![0xef; KEY_BYTES], "the key at rest is used again");
+        assert_eq!(after_an_update.value(&again), None, "and its spare goes");
+        let [_, probes_probe] = super::super::keyhold::probe_spares_of(SERVICE);
+        let left = Items::default().with(&probes_probe, &"ef".repeat(KEY_BYTES), true);
+        assert_eq!(held(read_or_make(&left)), vec![0xef; KEY_BYTES]);
     }
 }

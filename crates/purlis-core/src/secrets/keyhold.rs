@@ -233,9 +233,36 @@ fn spare_of(service: &str) -> String {
 /// to make a new seal key parks the new key in. A probe of the old key's item that took that
 /// spare would delete the new key, so a press refused or cut short would make another, under
 /// which the list it sealed no longer holds.
+///
+/// **A probe spare's own probe takes the other of the pair** (L2 of #7734's round 5), never one
+/// more segment: the two spares of [`probe_spares_of`] are each the other's, so a probe of a
+/// probe's spare leaves a value at rest only where a read and a sweep look. Each only ever holds
+/// a copy of the other's value, so neither's probe deletes anything the other does not hold.
 pub(super) fn probe_spare_of(service: &str) -> String {
-    format!("{service}/{SPARE}-of-the-probe")
+    let probe = format!("/{SPARE}{PROBE}");
+    let again = format!("/{SPARE}{PROBE_AGAIN}");
+    if let Some(base) = service.strip_suffix(&probe) {
+        format!("{base}{again}")
+    } else if let Some(base) = service.strip_suffix(&again) {
+        format!("{base}{probe}")
+    } else {
+        format!("{service}{probe}")
+    }
 }
+
+/// **Both spares a probe of `service`'s item, or of its probe's spare, may leave a value at
+/// rest in** ([`probe_spare_of`]), the first being the probe's own.
+pub(super) fn probe_spares_of(service: &str) -> [String; 2] {
+    let first = probe_spare_of(service);
+    let second = probe_spare_of(&first);
+    [first, second]
+}
+
+/// What a probe spare's last segment adds to [`SPARE`].
+const PROBE: &str = "-of-the-probe";
+
+/// What the probe spare of a probe spare's last segment adds to [`SPARE`].
+const PROBE_AGAIN: &str = "-of-the-probe-again";
 
 /// The last segment of [`spare_of`]'s spare item.
 const SPARE: &str = "spare";
