@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795744039216,
+  "lastUpdate": 1795746236236,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56868,6 +56868,48 @@ window.BENCHMARK_DATA = {
             "value": 101.687355,
             "unit": "ms",
             "extra": "median of 5 runs: 101.032, 101.045, 101.687, 101.852, 102.404 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "69a58ead93e52dcf4aa45bde3afcda348b9cfebf",
+          "message": "A push to another chat's branch raises its ask in every consents mode (#7749) (#7840)\n\n* A push to another chat's branch raises its ask in every consents mode (#7749)\n\nPushAsks no longer reads windowonly::asks: wherever the forge route's\nNotYourBranch refusal stands, Let this chat push it is raised under\nconsents off, log and enforce alike (ADR 0125, amended 2026-11-27, §10).\nNothing loosens: the push stays refused until the person's press, and\nthe per-push and waiting caps and Keep blocked still apply. The other\nwindow-only refusals (Trust this clone) still follow consents.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8D38YQWYK0TMD0GZRP3AA5B\nPurlis-Persona: steward\n\n* The consents off/log push test opens with unsteered!() (fixes CI on #7840)\n\nThe rule test reads the first non-blank line of a test's body, and the\nADR comment came before the guard.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8D8BHZ7DHAP095AV5J00WZ0\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T01:43:22Z",
+          "tree_id": "3070917ef4eaff524503085af39c2fd220950b82",
+          "url": "https://github.com/purlis/purlis/commit/69a58ead93e52dcf4aa45bde3afcda348b9cfebf"
+        },
+        "date": 1795746228077,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7083269999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.687, 0.694, 0.708, 0.716, 0.718 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5476035,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.285, 16.540, 16.548, 16.589, 16.705 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.8639555,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.294, 100.561, 100.864, 100.991, 101.109 ms"
           }
         ]
       }
