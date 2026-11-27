@@ -52,6 +52,7 @@ export function Action({
   main,
   onMain,
   busy,
+  pressing,
   icon,
   reserve,
   children,
@@ -61,7 +62,13 @@ export function Action({
   /** Every word the main button can say, so changing them moves nothing beside it. */
   reserve?: readonly string[];
   onMain?: () => void;
+  /** Unavailable: natively disabled, out of the tab sequence. */
   busy?: boolean;
+  /**
+   * Its own press is running: unavailable by hand (`aria-disabled`), so the button keeps the
+   * focus it was pressed with (#3522). WebKit takes the focus from a natively disabled one.
+   */
+  pressing?: boolean;
   icon?: ReactNode;
   /** What stands beside it: Skip for now. */
   children?: ReactNode;
@@ -76,7 +83,8 @@ export function Action({
               variant="primary"
               onPress={onMain}
               isDisabled={busy}
-              aria-busy={busy}
+              aria-disabled={pressing || undefined}
+              aria-busy={busy || pressing}
               icon={icon}
             >
               {reserve ? <Reserved texts={reserve}>{main}</Reserved> : main}
