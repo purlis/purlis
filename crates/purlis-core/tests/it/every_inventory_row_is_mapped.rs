@@ -15,13 +15,26 @@
 //!   (`crates/purlis-core/src/policy/limits.toml`);
 //! - `fixed:<thing>`, one of spec §2.5's three things outside the policy;
 //! - `sandbox-level-step`, the escape denies (spec §3.5);
-//! - `not-a-chat-decision`, how the engine and its enforcement points work.
+//! - `not-a-chat-decision`, how the engine and its enforcement points work;
+//! - `later:<issue>`, a decision an issue of M80, "Chats as resources", owns (#7746; ADR 0125,
+//!   amended 2026-11-27). Until that issue lands, the row stays hard-coded as it is today.
 //!
 //! **A pending mark** says the row's family has not moved into the policy yet (review round 1,
 //! C-B1). Its migration slice (11, 24 to 36) adds the family's rules to the shipped default,
 //! clears the marks and names each row's target. A pending row may have no target, or one
 //! proposed that the default does not hold yet; a limits key and a fixed thing are checked
 //! even then, since the key table and spec §2.5 are already whole.
+//!
+//! **A `later:` row is mapped, not pending, and never passes silently.** Its issue is in the
+//! committed M80 issue list (`docs/research/policy-later-issues.txt`), and its mark is
+//! `approved:<name>`, matching a line of `docs/research/policy-later-approvals.md` that names
+//! the row, the issue, the person who approved it and the date. Both files are read here,
+//! never the live forge, so the check gives the same answer offline and on every machine. The
+//! M75 gate (#7056) counts `later:` rows apart from pending ones ([`tally`]).
+//!
+//! **A row with two targets is split into sub-rows**, one target each (spec §15.5): the
+//! inventory's cite with one small letter after (`Dispatch #82a`), the row's own part of the
+//! decision, and the inventory row's `file:line`. A row split so is mapped by its sub-rows.
 //!
 //! The action-to-kind table (`docs/research/policy-ask-kinds.tsv`, spec §8.2, Q314 point 13)
 //! lists every `@ask` rule of the shipped default with the actions it names and the kind of ask
@@ -136,11 +149,63 @@ fn inventory(text: &str) -> Vec<Row> {
     rows
 }
 
-/// What a mapped target may name: the shipped default's rules and sets, and the limits keys.
+/// What a mapped target may name: the shipped default's rules and sets, the limits keys, the
+/// M80 issues a `later:` row may name, and the person's approvals of those rows.
 struct Known {
     rules: BTreeSet<String>,
     sets: BTreeSet<String>,
     limits: BTreeSet<String>,
+    later_issues: BTreeSet<u32>,
+    approvals: Vec<Approval>,
+}
+
+/// One line of the approvals file: the row, the issue it waits for, who approved it and when.
+#[derive(Debug, Clone, PartialEq)]
+struct Approval {
+    row: String,
+    issue: u32,
+    by: String,
+    date: String,
+}
+
+/// The issues of the committed M80 issue list: the number that starts each line.
+fn later_issues(text: &str) -> BTreeSet<u32> {
+    text.lines()
+        .filter(|line| !line.starts_with('#'))
+        .filter_map(|line| line.split('\t').next()?.trim().parse().ok())
+        .collect()
+}
+
+/// Whether `cell` is a date written `yyyy-mm-dd`.
+fn is_date(cell: &str) -> bool {
+    let parts: Vec<&str> = cell.split('-').collect();
+    matches!(parts[..], [y, m, d] if y.len() == 4 && m.len() == 2 && d.len() == 2)
+        && parts.iter().all(|p| p.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// The approvals file's table rows: `| <row> | later:<issue> | <who> | <date> |`. A line with no
+/// date, or with a target that is no `later:<issue>`, approves nothing.
+fn approvals(text: &str) -> Vec<Approval> {
+    text.lines()
+        .filter(|line| line.starts_with('|'))
+        .filter_map(|line| {
+            let cells = cells(line);
+            let [row, target, by, date, ..] = &cells[..] else {
+                return None;
+            };
+            let issue = target
+                .trim_matches('`')
+                .strip_prefix("later:")?
+                .parse()
+                .ok()?;
+            (is_date(date) && !by.is_empty()).then(|| Approval {
+                row: row.clone(),
+                issue,
+                by: by.clone(),
+                date: date.clone(),
+            })
+        })
+        .collect()
 }
 
 /// The named sets a policy text reads: every `<Kind>Set::"<name>"`.
@@ -187,8 +252,37 @@ impl Known {
             rules: default.rules().into_iter().collect(),
             sets: sets_in(policy::DEFAULT),
             limits: limits_table().limit.into_iter().map(|l| l.key).collect(),
+            later_issues: later_issues(&read("docs/research/policy-later-issues.txt")),
+            approvals: approvals(&read("docs/research/policy-later-approvals.md")),
         }
     }
+}
+
+/// How the mapping's rows stand, as the M75 gate (#7056) counts them: the rows still pending,
+/// and apart from them the `later:` rows with the issue each waits for.
+#[derive(Debug, Default, PartialEq)]
+struct Tally {
+    pending: Vec<String>,
+    later: Vec<(String, u32)>,
+}
+
+fn tally(map: &str) -> Tally {
+    let mut tally = Tally::default();
+    for line in map.lines() {
+        if line.starts_with('#') || line.starts_with("row\t") {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        let [cite, _family, target, mark, ..] = fields[..] else {
+            continue;
+        };
+        if mark == "pending" {
+            tally.pending.push(cite.to_owned());
+        } else if let Some(issue) = target.strip_prefix("later:").and_then(|n| n.parse().ok()) {
+            tally.later.push((cite.to_owned(), issue));
+        }
+    }
+    tally
 }
 
 /// What is wrong with `map` as the mapping of `inventory`, one sentence each; nothing when the
@@ -203,13 +297,15 @@ fn check(inventory_text: &str, map: &str, known: &Known) -> Vec<String> {
         }
     }
     let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+    // How many sub-rows each split inventory row has.
+    let mut split: BTreeMap<&str, usize> = BTreeMap::new();
     for (index, line) in map.lines().enumerate() {
         let at = index + 1;
         if line.is_empty() || line.starts_with('#') || line.starts_with("row\t") {
             continue;
         }
         let fields: Vec<&str> = line.split('\t').collect();
-        let [cite, family, target, pending, decision, place] = fields[..] else {
+        let [cite, family, target, mark, decision, place] = fields[..] else {
             problems.push(format!("line {at}: {} fields, not 6", fields.len()));
             continue;
         };
@@ -217,45 +313,97 @@ fn check(inventory_text: &str, map: &str, known: &Known) -> Vec<String> {
             problems.push(format!("{cite}: mapped twice, on lines {first} and {at}"));
             continue;
         }
-        let Some(row) = by_cite.get(cite) else {
+        if let Some(row) = by_cite.get(cite) {
+            if decision != row.decision || place != row.place {
+                problems.push(format!(
+                    "{cite}: its decision or file:line differs from the inventory's"
+                ));
+            }
+        } else if let Some((parent, row)) = parent_of(cite, &by_cite) {
+            *split.entry(parent).or_default() += 1;
+            if decision.is_empty() {
+                problems.push(format!("{cite}: a sub-row names its part of the decision"));
+            }
+            if place != row.place {
+                problems.push(format!(
+                    "{cite}: its file:line differs from {parent}'s in the inventory"
+                ));
+            }
+        } else {
             problems.push(format!("line {at}: {cite} is no row of the inventory"));
             continue;
-        };
-        if decision != row.decision || place != row.place {
-            problems.push(format!(
-                "{cite}: its decision or file:line differs from the inventory's"
-            ));
         }
         if !policy::FAMILIES.contains(&family) {
             problems.push(format!("{cite}: {family:?} is no family"));
         }
-        let pending = match pending {
-            "pending" => true,
-            "" => false,
-            other => {
-                problems.push(format!("{cite}: {other:?} is no pending mark"));
-                false
-            }
+        let mark = match mark {
+            "pending" => Mark::Pending,
+            "" => Mark::None,
+            other => match other.strip_prefix("approved:") {
+                Some(name) if !name.is_empty() => Mark::Approved(name),
+                _ => {
+                    problems.push(format!("{cite}: {other:?} is no mark"));
+                    Mark::None
+                }
+            },
         };
-        if let Some(problem) = target_problem(target, pending, known) {
+        if let Some(problem) = target_problem(cite, target, &mark, known) {
             problems.push(format!("{cite}: {problem}"));
         }
     }
     for row in &rows {
-        if !seen.contains_key(&row.cite) {
-            problems.push(format!("{}: not mapped", row.cite));
+        let whole = seen.contains_key(&row.cite);
+        match split.get(row.cite.as_str()) {
+            None if !whole => problems.push(format!("{}: not mapped", row.cite)),
+            Some(_) if whole => problems.push(format!(
+                "{}: mapped whole and split into sub-rows",
+                row.cite
+            )),
+            Some(1) => problems.push(format!(
+                "{}: split into one sub-row; a split has two or more",
+                row.cite
+            )),
+            _ => {}
         }
     }
     problems
 }
 
-/// What is wrong with one row's target, if anything.
-fn target_problem(target: &str, pending: bool, known: &Known) -> Option<String> {
-    if target.is_empty() {
-        return (!pending).then(|| "no target, and not pending".to_owned());
+/// The inventory row a sub-row's cite splits, with its cite: the cite less its one small
+/// letter, when that is a row of the inventory that has no letter of its own.
+fn parent_of<'a>(cite: &str, by_cite: &BTreeMap<&'a str, &'a Row>) -> Option<(&'a str, &'a Row)> {
+    let parent = cite.strip_suffix(|c: char| c.is_ascii_lowercase())?;
+    if parent.ends_with(|c: char| c.is_ascii_lowercase()) {
+        return None;
     }
+    by_cite
+        .get_key_value(parent)
+        .map(|(cite, row)| (*cite, *row))
+}
+
+/// A mapping line's mark: none, pending, or the person's approval of a `later:` row by name.
+enum Mark<'a> {
+    None,
+    Pending,
+    Approved(&'a str),
+}
+
+/// What is wrong with one row's target and mark, if anything.
+fn target_problem(cite: &str, target: &str, mark: &Mark, known: &Known) -> Option<String> {
+    let pending = matches!(mark, Mark::Pending);
     if target.contains(|c: char| c.is_whitespace() || [',', ';', '|'].contains(&c)) {
         return Some(format!("{target:?} names more than one target"));
+    }
+    if let Some(issue) = target.strip_prefix("later:") {
+        return later_problem(cite, issue, mark, known);
+    }
+    if let Mark::Approved(name) = mark {
+        return Some(format!(
+            "\"approved:{name}\" is a mark only a later: row carries"
+        ));
+    }
+    if target.is_empty() {
+        return (!pending).then(|| "no target, and not pending".to_owned());
     }
     let (kind, name) = target.split_once(':').unwrap_or((target, ""));
     match (kind, name) {
@@ -270,6 +418,37 @@ fn target_problem(target: &str, pending: bool, known: &Known) -> Option<String> 
             .then(|| format!("set {name:?} is not in the shipped default")),
         _ => Some(format!("{target:?} is no kind of target")),
     }
+}
+
+/// What is wrong with a `later:<issue>` row, if anything: its issue is in the committed M80
+/// list, and its mark is an approval by name that the approvals file records for this row and
+/// issue. It is never pending, and never passes without that approval.
+fn later_problem(cite: &str, issue: &str, mark: &Mark, known: &Known) -> Option<String> {
+    let Ok(issue) = issue.parse::<u32>() else {
+        return Some(format!("\"later:{issue}\" names no issue number"));
+    };
+    if !known.later_issues.contains(&issue) {
+        return Some(format!(
+            "issue #{issue} is not in the committed M80 issue list \
+             (docs/research/policy-later-issues.txt)"
+        ));
+    }
+    let Mark::Approved(name) = mark else {
+        return Some(format!(
+            "later:{issue} has no approval by name: its mark is not approved:<name>, as \
+             docs/research/policy-later-approvals.md records it"
+        ));
+    };
+    let approved = known
+        .approvals
+        .iter()
+        .any(|a| a.row == cite && a.issue == issue && a.by == *name);
+    (!approved).then(|| {
+        format!(
+            "no line of docs/research/policy-later-approvals.md approves later:{issue} for it \
+             by {name:?}"
+        )
+    })
 }
 
 /// A small inventory of two rows, and a mapping line for one of its rows.
@@ -454,6 +633,158 @@ fn a_row_mapped_to_a_fourth_fixed_thing_fails_the_check() {
             )]
         );
     }
+}
+
+/// The shipped default, with an M80 issue list of one issue and one approval of Ports #P2 for it.
+fn known_with_one_approval() -> Known {
+    let mut known = Known::shipped();
+    known.later_issues = later_issues("# M80\n7760\tChats as resources: browsers and ports\n");
+    known.approvals = approvals(
+        "| Row | Target | Approved by | Date |\n\
+         |---|---|---|---|\n\
+         | Ports #P2 | `later:7760` | The person | 2026-11-27 |\n",
+    );
+    known
+}
+
+#[test]
+fn an_approved_later_row_is_mapped_and_not_pending() {
+    purlis_core::unsteered!();
+    let known = known_with_one_approval();
+    let map = line("Ports #P1", "not-a-chat-decision", "")
+        + &line("Ports #P2", "later:7760", "approved:The person");
+    assert_eq!(check(SMALL, &map, &known), Vec::<String>::new());
+    assert_eq!(
+        tally(&map),
+        Tally {
+            pending: vec![],
+            later: vec![("Ports #P2".to_owned(), 7760)],
+        },
+        "a later: row is counted apart from the pending ones"
+    );
+
+    // The committed files: every approval line is read, with its date.
+    let shipped = Known::shipped();
+    assert!(
+        shipped.later_issues.contains(&7760),
+        "{:?}",
+        shipped.later_issues
+    );
+    assert!(
+        shipped.approvals.contains(&Approval {
+            row: "Ports #P13".to_owned(),
+            issue: 7760,
+            by: "The person (the project owner)".to_owned(),
+            date: "2026-11-27".to_owned(),
+        }),
+        "{:?}",
+        shipped.approvals
+    );
+}
+
+#[test]
+fn a_later_row_without_the_persons_approval_by_name_fails_the_mapping_check() {
+    purlis_core::unsteered!();
+    let known = known_with_one_approval();
+    let head = line("Ports #P1", "not-a-chat-decision", "");
+    let unapproved = "Ports #P2: later:7760 has no approval by name: its mark is not \
+                      approved:<name>, as docs/research/policy-later-approvals.md records it";
+    for mark in ["", "pending"] {
+        let map = head.clone() + &line("Ports #P2", "later:7760", mark);
+        assert_eq!(check(SMALL, &map, &known), [unapproved], "{mark:?}");
+    }
+    // A name the approvals file does not record for this row and issue.
+    let other = head.clone() + &line("Ports #P2", "later:7760", "approved:Someone else");
+    assert_eq!(
+        check(SMALL, &other, &known),
+        [
+            "Ports #P2: no line of docs/research/policy-later-approvals.md approves later:7760 \
+             for it by \"Someone else\""
+        ]
+    );
+    // The approval of another row approves nothing here.
+    let mut moved = known_with_one_approval();
+    moved.approvals[0].row = "Ports #P1".to_owned();
+    let named = head.clone() + &line("Ports #P2", "later:7760", "approved:The person");
+    assert_eq!(
+        check(SMALL, &named, &moved),
+        [
+            "Ports #P2: no line of docs/research/policy-later-approvals.md approves later:7760 \
+             for it by \"The person\""
+        ]
+    );
+    // A line with no date approves nothing.
+    let undated = approvals("| Ports #P2 | `later:7760` | The person | soon |\n");
+    assert!(undated.is_empty(), "{undated:?}");
+    // An approval mark belongs to a later: row only.
+    let stray = head + &line("Ports #P2", "not-a-chat-decision", "approved:The person");
+    assert_eq!(
+        check(SMALL, &stray, &known),
+        ["Ports #P2: \"approved:The person\" is a mark only a later: row carries"]
+    );
+}
+
+#[test]
+fn a_later_row_naming_an_issue_outside_the_committed_m80_list_fails_the_mapping_check() {
+    purlis_core::unsteered!();
+    let mut known = known_with_one_approval();
+    known.approvals[0].issue = 7017;
+    let head = line("Ports #P1", "not-a-chat-decision", "");
+    let outside = head.clone() + &line("Ports #P2", "later:7017", "approved:The person");
+    assert_eq!(
+        check(SMALL, &outside, &known),
+        [
+            "Ports #P2: issue #7017 is not in the committed M80 issue list \
+             (docs/research/policy-later-issues.txt)"
+        ]
+    );
+    let no_number = head + &line("Ports #P2", "later:soon", "approved:The person");
+    assert_eq!(
+        check(SMALL, &no_number, &known),
+        ["Ports #P2: \"later:soon\" names no issue number"]
+    );
+}
+
+#[test]
+fn a_row_with_two_targets_is_mapped_by_its_sub_rows() {
+    purlis_core::unsteered!();
+    let known = known_with_one_approval();
+    let head = line("Ports #P1", "not-a-chat-decision", "");
+    let sub = |cite: &str, target: &str, mark: &str, place: &str| {
+        format!("{cite}\tports\t{target}\t{mark}\tits part\t{place}\n")
+    };
+    let split = head.clone()
+        + &sub("Ports #P2a", "not-a-chat-decision", "", "`a.rs:2`")
+        + &sub("Ports #P2b", "", "pending", "`a.rs:2`");
+    assert_eq!(check(SMALL, &split, &known), Vec::<String>::new());
+
+    let elsewhere = head.clone()
+        + &sub("Ports #P2a", "not-a-chat-decision", "", "`a.rs:2`")
+        + &sub("Ports #P2b", "", "pending", "`b.rs:9`");
+    assert_eq!(
+        check(SMALL, &elsewhere, &known),
+        ["Ports #P2b: its file:line differs from Ports #P2's in the inventory"]
+    );
+    let alone = head.clone() + &sub("Ports #P2a", "not-a-chat-decision", "", "`a.rs:2`");
+    assert_eq!(
+        check(SMALL, &alone, &known),
+        ["Ports #P2: split into one sub-row; a split has two or more"]
+    );
+    let both = head.clone()
+        + &line("Ports #P2", "not-a-chat-decision", "")
+        + &sub("Ports #P2a", "not-a-chat-decision", "", "`a.rs:2`")
+        + &sub("Ports #P2b", "", "pending", "`a.rs:2`");
+    assert_eq!(
+        check(SMALL, &both, &known),
+        ["Ports #P2: mapped whole and split into sub-rows"]
+    );
+    let orphan = head
+        + &line("Ports #P2", "not-a-chat-decision", "")
+        + &sub("Ports #P3a", "not-a-chat-decision", "", "`a.rs:3`");
+    assert_eq!(
+        check(SMALL, &orphan, &known),
+        ["line 3: Ports #P3a is no row of the inventory"]
+    );
 }
 
 /// The keys spec §5.1's table names one by one (its two wildcards are expanded in the file).
