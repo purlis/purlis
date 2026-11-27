@@ -333,37 +333,65 @@ const endsInALink = (line: Wrapped) =>
   candidatesAcross(line).some((one) => one.end === line.text.length);
 
 /**
- * **Buffer line `y` as it reads, across the rows it wraps over** (#7819): the rows the terminal
- * wrapped (`isWrapped`), and, where a link's words reach the pane's edge and the program broke
- * the line there itself, the line it goes on with ({@link brokenAtTheEdge}), unless that line
- * starts a link of its own. At most {@link MOST_ROWS} rows; a line that goes on past them is cut.
+ * **`line` read on across the line breaks the program wrote after it** while a link's words
+ * reach the pane's edge ({@link brokenAtTheEdge}) and the next line does not start a link of its
+ * own, to at most {@link MOST_ROWS} rows; a line that goes on past them is cut.
  */
-function lineAt(pane: Terminal, y: number): Wrapped | undefined {
-  let line = wrappedAt(pane, y);
-  if (line === undefined) return undefined;
+function readOn(pane: Terminal, from: Wrapped): Wrapped {
+  let line = from;
   const rows = (one: Wrapped) => one.last - one.first + 1;
-  while (!line.cutBefore && line.first > 0 && brokenAtTheEdge(pane, line.first - 1)) {
-    if (STARTS_A_LINK.test(line.text)) break;
-    const before = wrappedAt(pane, line.first - 1);
-    if (before === undefined || !endsInALink(before)) break;
-    if (rows(before) + rows(line) > MOST_ROWS) {
-      line = { ...line, cutBefore: true };
-      break;
-    }
-    line = joined(before, line);
-  }
   while (!line.cutAfter && brokenAtTheEdge(pane, line.last)) {
     if (!endsInALink(line)) break;
     const after = wrappedAt(pane, line.last + 1);
     if (after === undefined || STARTS_A_LINK.test(after.text)) break;
-    if (rows(line) + rows(after) > MOST_ROWS) {
-      line = { ...line, cutAfter: true };
-      break;
-    }
+    if (rows(line) + rows(after) > MOST_ROWS) return { ...line, cutAfter: true };
     line = joined(line, after);
   }
   return line;
 }
+
+/**
+ * **Buffer line `y` as it reads, across the rows it wraps over** (#7819): the rows the terminal
+ * wrapped (`isWrapped`), and the lines a link's words go on with past a line break the program
+ * wrote at the pane's edge ({@link readOn}). It is read from the first row of the run of such
+ * breaks `y` is in, so every row of a link reads the same line whichever the pointer is on.
+ */
+function lineAt(pane: Terminal, y: number): Wrapped | undefined {
+  let start = wrappedAt(pane, y);
+  if (start === undefined) return undefined;
+  let rows = start.last - start.first + 1;
+  let cut = false;
+  while (
+    !start.cutBefore &&
+    start.first > 0 &&
+    brokenAtTheEdge(pane, start.first - 1) &&
+    !STARTS_A_LINK.test(start.text)
+  ) {
+    const before = wrappedAt(pane, start.first - 1);
+    if (before === undefined) break;
+    rows += before.last - before.first + 1;
+    if (rows > MOST_ROWS) {
+      cut = true;
+      break;
+    }
+    start = before;
+  }
+  let line = readOn(pane, cut ? { ...start, cutBefore: true } : start);
+  while (line.last < y) {
+    const next = wrappedAt(pane, line.last + 1);
+    if (next === undefined) return undefined;
+    // After a line cut at its end, the next goes on from words not read.
+    line = readOn(pane, line.cutAfter ? { ...next, cutBefore: true } : next);
+  }
+  return line;
+}
+
+/**
+ * A number at a line's edge, an issue's or a chat's, or a path's line and column: digits on the
+ * next row are as likely a word of their own, and taken on they name another target (#7819).
+ */
+const ENDS_IN_ITS_NUMBER = (one: Found) =>
+  one.kind === "issue" || one.kind === "chat" || (one.kind === "file" && /:\d+$/u.test(one.text));
 
 /**
  * **The candidates of `line`, read across its joints** (#7819): each part between them is read
@@ -387,7 +415,13 @@ function candidatesAcross(line: Wrapped): Found[] {
     if (last !== undefined && last.end === from) {
       const [whole] = candidatesIn(line.text.slice(last.start, to));
       const end = whole === undefined ? 0 : last.start + whole.end;
-      if (whole !== undefined && whole.start === 0 && whole.kind === last.kind && end > from) {
+      if (
+        whole !== undefined &&
+        whole.start === 0 &&
+        whole.kind === last.kind &&
+        end > from &&
+        !(ENDS_IN_ITS_NUMBER(last) && /^\d/u.test(line.text.slice(from)))
+      ) {
         found.pop();
         const pieces = [...(last.pieces ?? [last]), ...here.filter((one) => one.start < end)];
         found.push(
@@ -499,6 +533,20 @@ export function openLink(
       hands.answered({ answer: "refused", reason: UNASKED }, candidate, place);
     },
   );
+}
+
+/** The first of `rows` on screen, which a link's tooltip and card stand beside: a link whose
+ *  first rows have scrolled off is placed where it shows (#7819). */
+function shownFirst(pane: Terminal, rows: CellRun[]): CellRun | undefined {
+  const top = pane.buffer.active.viewportY;
+  return rows.find((row) => row.y >= top && row.y < top + pane.rows) ?? rows[0];
+}
+
+/** The column just past the last cell of `line` a program wrote, or 0. */
+function writtenTo(line: IBufferLine | undefined): number {
+  if (line === undefined) return 0;
+  for (let x = line.length - 1; x >= 0; x -= 1) if (line.getCell(x)?.getChars()) return x + 1;
+  return 0;
 }
 
 /** Where cells `x`..`x + width` of buffer row `y` are drawn in the window's viewport. */
@@ -943,7 +991,7 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
       leave();
     }
     on = here;
-    const top = rows[0];
+    const top = shownFirst(pane, rows) ?? rows[0];
     const place = placeOf(pane, top.x, top.y, top.width);
     current = { candidate: candidateOf(candidate), seen: link.seen, place };
     if (link.seen.does.does !== "refused") draw(rows);
@@ -999,9 +1047,12 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
     if (one === undefined || one.moved)
       return { rows: rowsOf(range, pane.cols), at: `${range.start.x},${range.start.y}` };
     const rows: CellRun[] = [];
-    for (let y = one.start.y; y <= one.end.y; y += 1) {
+    // As its words are read (wordsOf): at most MOST_ROWS rows, and on a row it goes on from,
+    // only the cells written.
+    const last = Math.min(one.end.y, one.start.y + MOST_ROWS - 1);
+    for (let y = one.start.y; y <= last; y += 1) {
       const from = y === one.start.y ? one.start.x : 0;
-      const to = y === one.end.y ? one.end.x : pane.cols;
+      const to = y === one.end.y ? one.end.x : writtenTo(pane.buffer.active.getLine(y));
       if (to > from) rows.push({ x: from, y, width: to - from });
     }
     return { rows, at: `${one.start.x + 1},${one.start.y + 1}` };
@@ -1016,7 +1067,7 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
       if (!opensALink(event, hands.mac())) return;
       event.preventDefault();
       // The core resolves it again, and a refusal is shown: xterm drew it as a link.
-      const top = drawnOver(target, range).rows[0];
+      const top = shownFirst(pane, drawnOver(target, range).rows);
       if (top === undefined) return;
       void openLink(markedCandidate(target, range), hands, placeOf(pane, top.x, top.y, top.width));
     },
@@ -1085,7 +1136,8 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
                 // A plain click is the selection's, as in any terminal.
                 if (!opens || !opensALink(event, hands.mac())) return;
                 event.preventDefault();
-                const top = [...rows.values()][0];
+                const top = shownFirst(pane, [...rows.values()]);
+                if (top === undefined) return;
                 void openLink(candidate, hands, placeOf(pane, top.x, top.y, top.width));
               },
               hover() {

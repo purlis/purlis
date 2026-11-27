@@ -27,7 +27,10 @@ the link colour.
    - a candidate on the row before reaches its very end (after the punctuation a sentence puts
      after a link is taken off, so `…/setup.` at the edge ends there).
 2. **The words joined must read as one candidate of the same kind from the same start**
-   (`candidatesAcross`). Anything else is read as each row reads it alone.
+   (`candidatesAcross`). Anything else is read as each row reads it alone. A number at the edge
+   (an issue's `#12`, `chat 6`, a path's `:4`) never takes digits from the next row: `3 tests
+pass` after `#12` is a word of its own, and `#123` would open another issue. A line is read
+   from the first row of its run of breaks, so each row of a link reads the same words.
 3. **The joined words go to the core like any other candidate.** Nothing about what a link may
    open changes: the same resolver decides, with its asks, its file-or-issue rule for
    `owner/repo#N`, its refusals and its confinement. The pane only finds text, as before.

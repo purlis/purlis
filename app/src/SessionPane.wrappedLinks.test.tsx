@@ -275,6 +275,33 @@ describe("a link the program broke over rows at the pane's width", () => {
     await waitFor(() => expect(openedLast()).toEqual({ kind: "url", text: url }));
   });
 
+  it("is one link over three rows from its last row, hovered first", async () => {
+    const { term, drawn } = await opened();
+    const one = `https://purlis.dev/${"x".repeat(COLS - 19)}`;
+    const two = "y".repeat(COLS);
+    await write(term, `${one}\r\n${two}\r\nzz now`);
+
+    hover(drawn, 1, 2);
+
+    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: `${one}${two}zz` }]));
+  });
+
+  it.each([
+    ["an issue's number", "fixed in #12", "3 tests pass", "#12"],
+    ["a chat's number", "see chat 6", "41 more", "chat 6"],
+    ["a path's line", "at src/main.rs:4", "2 more", "src/main.rs:4"],
+  ])("does not take the next row's digits onto %s at the edge", async (_, end, next, alone) => {
+    const { term, drawn } = await opened();
+    const row = `${"-".repeat(COLS - end.length)}${end}`;
+    await write(term, `${row}\r\n${next}`);
+
+    hover(drawn, COLS - 2, 0);
+    await waitFor(() => expect(resolved().length).toBeGreaterThan(0));
+    await settle();
+
+    expect(resolved().map((one) => one.text)).toEqual([alone]);
+  });
+
   it("is a path and line whole where the program broke it", async () => {
     const head = `src/${"e".repeat(COLS - 3 - 4 - 3)}/ma`;
     const path = `${head}in.rs:42`;
