@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795809266024,
+  "lastUpdate": 1795809626825,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58044,6 +58044,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9150265,
             "unit": "ms",
             "extra": "median of 5 runs: 101.592, 101.808, 101.915, 102.342, 102.544 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ac259c1104045541080de432b8dc07ae859b64e3",
+          "message": "FS-M2: the window's slow log tells a stall's causes apart (#7891) (#7924)\n\n* FS-M2: the window's slow log tells a stall's causes apart (#7891)\n\nEach stall now carries render_ms against its gap, each React region by its own\ntime, its whole and its commits (PlaneView's body apart from the side views),\nthe core's events counted once apart from their listener calls, and marks for\npane mounts and tab switches. Visibility changes, which WebKit also reports for\nan occluded window, are logged. The scripts attribution, empty on WebKit, is\ndropped.\n\nThe log gets a threshold and a cap per kind (Kind::keeping), including the\nanswer_span and answer_summary rows FS-M1a (#7893) will write, so stall and\nanswer rows each keep the 1,000 rows (2.3 h on 2026-11-27) they shared before.\nmainwatch and opening take their thresholds from the table. Bindings\nregenerated.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8DZWGPGKMWQA8260C5WB551\nPurlis-Persona: steward\n\n* FS-M2: changelog fragment (#7891)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8DZWGPGKMWQA8260C5WB551\nPurlis-Persona: steward\n\n* FS-M2: stall and visibility rows name their window; one occlusion wording (#7891)\n\nReview round on #7924:\n- Stall and Visibility carry the window's label (thisWindow()), so a split\n  window's rows can be matched; lines written before read back with \"\".\n- One wording everywhere on what WebKit reports: macOS fires visibilitychange\n  for a minimised or hidden window and, by its occlusion handling, for one\n  covered whole (unverified until checked by hand); WebKitGTK not known.\n- A Visibility row is written as the window starts watching.\n- Rendered.commits doc says what is counted.\n- Tests: an update-only commit still carries self_ms; each Kind's name is\n  its serialized tag; old Visibility lines read back.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8EK9GZF5XRTZNP6AAP026PG\nPurlis-Persona: steward\n\n* FS-M2: the plane format's slow.jsonl row names the window and says what WebKit is known to report (#7891)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M6C6C5TP048KRJ0GFF03FF20\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T18:09:08Z",
+          "tree_id": "5c93e688cc45e94c089c645ca78ada6ba482a205",
+          "url": "https://github.com/purlis/purlis/commit/ac259c1104045541080de432b8dc07ae859b64e3"
+        },
+        "date": 1795809619770,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6926355,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.679, 0.682, 0.693, 0.694, 0.712 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.494350999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.443, 16.478, 16.494, 16.614, 16.690 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.85958600000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.034, 101.792, 101.860, 101.948, 102.337 ms"
           }
         ]
       }
