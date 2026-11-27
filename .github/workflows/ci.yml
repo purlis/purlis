@@ -1334,13 +1334,18 @@ jobs:
       # this Ubuntu restricts user namespaces to the programs a profile names, unconfined ones
       # included (`purlis_core::browsers::sandboxing`). A real machine's Docker runs it under
       # `docker-default`, which the restriction leaves alone, so the engine sandboxes there. The
-      # rule is lifted here for the other machine to be that machine: what a runner there sees is
-      # printed first, so a refusal still to come names its cause.
+      # rule is lifted here, for the rest of the job, for the other machine to be that machine: what
+      # a runner there sees is printed first, so a refusal still to come names its cause.
       - name: The behaviour suite on its remote Docker pool target
         if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
         run: |
-          docker exec dind docker run --rm --entrypoint sh "$DOCKER_POOL_TEST_IMAGE" -c \
-            'echo "a runner there: label $(cat /proc/self/attr/apparmor/current 2>/dev/null || cat /proc/self/attr/current), userns rule $(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)"' || true
+          label=$(docker exec dind docker run --rm --entrypoint sh "$DOCKER_POOL_TEST_IMAGE" -c \
+            'cat /proc/self/attr/apparmor/current 2>/dev/null || cat /proc/self/attr/current' | tr -d '\0') || label="not read"
+          echo "a runner there: label ${label}, userns rule $(sysctl -n kernel.apparmor_restrict_unprivileged_userns)"
+          case "$label" in
+            unconfined*) ;;
+            *) echo "::warning::a runner on the other machine is not unconfined (${label}): lifting the userns rule is not why its browser sandboxes" ;;
+          esac
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           tools/no-orphans.sh --reap -- \
             cargo nextest run --locked -p purlis-app --lib --profile ci --retries 0 --no-tests fail \
