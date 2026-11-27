@@ -582,7 +582,8 @@ fn found<T: Clone>(
     // Whether the line's own words were read for a shell fed on its standard input: once is
     // enough, however many such shells the line has.
     let mut line_read = false;
-    let exported = shellwrap::exported_env(&argvs);
+    // Shared, not copied per segment: a long run of exports would cost its square.
+    let exported = shellwrap::exported_env_shared(&argvs);
     // A relative `cd` is looked for along `CDPATH` first, where the shell has one: one the
     // line sets, or one `cdpath` says the shell may have. Asked once, and only of a bare `cd`.
     let cdpath_here = std::cell::OnceCell::new();
@@ -617,7 +618,8 @@ fn found<T: Clone>(
             too_many_if_a_move_failed = false;
         }};
     }
-    for (segment, before) in segments.iter().zip(exported.iter()) {
+    for (i, segment) in segments.iter().enumerate() {
+        let before = exported.before(i);
         if segment.before.as_deref().is_some_and(|op| op != "&&") {
             if too_many_if_a_move_failed {
                 out_of_sight!();
@@ -704,7 +706,7 @@ fn found<T: Clone>(
         let Some((sub, post)) = rest.split_first() else {
             continue;
         };
-        let mut env = before.clone();
+        let mut env = before.to_vec();
         env.extend(call.env.iter().cloned());
         let direct = wanted(sub, post);
         // git runs its own command by its name whatever an alias says; any other name is an

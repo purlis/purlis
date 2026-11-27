@@ -116,8 +116,10 @@ pub fn refusal(cmd: &str, cwd: &str, root: &str, chat_dir: &Path) -> Option<(Str
     // expands run (#6293).
     let segments = shellseg::joined_argv(&crate::heredoc::commands_a_shell_runs(cmd))?;
     let argvs: Vec<Vec<String>> = segments.iter().map(|s| s.argv.clone()).collect();
-    let exported = shellwrap::exported_env(&argvs);
-    for (segment, before) in segments.iter().zip(exported.iter()) {
+    // Shared, not copied per segment: a long run of exports would cost its square.
+    let exported = shellwrap::exported_env_shared(&argvs);
+    for (i, segment) in segments.iter().enumerate() {
+        let before = exported.before(i);
         let call = shellwrap::split_env_chdir(&segment.argv);
         let program = base_lower(&call.prog);
         // Where the rest of the line runs is no longer `cwd`: fail open.
@@ -135,7 +137,7 @@ pub fn refusal(cmd: &str, cwd: &str, root: &str, chat_dir: &Path) -> Option<(Str
             continue;
         }
         // Earlier exports first, then this invocation's own assignments, which override them.
-        let mut env = before.clone();
+        let mut env = before.to_vec();
         env.extend(call.env.iter().cloned());
         if repository(Path::new(cwd), &pre, &env).as_ref() == Some(&project_git) {
             return Some((sub.clone(), said(sub)));
