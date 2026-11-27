@@ -813,7 +813,8 @@ impl ForgeRoutes {
         );
         let mut proxy = ForgeProxy::new(Box::new(objects::Shared(credentials)), Box::new(objects))
             .with_pin(pin.clone())
-            .with_merge_stance((self.seams.merges)(project, chain));
+            .with_merge_stance((self.seams.merges)(project, chain))
+            .with_refusals(refusals_counted_in(project.to_owned()));
         // Each branch the forge confirms this chat's push made is recorded by the app, under this
         // chat's id: the brokered `purlis worktree push` goes through this same route.
         {
@@ -1449,6 +1450,24 @@ impl RouteRow {
             hint,
         }
     }
+}
+
+/// **Where the forge refusals of a route in the project at `project` are counted** (#7779): each
+/// is one line in the chat's enforcement log, which Settings › Project › Policy counts under
+/// "Would have blocked": its kind and act, and the `host:port`, never a path, a body or a number.
+/// The proxy tells it a refusal once a minute for each chat, rule and `host:port`. This is the
+/// app, so the line is written here ([`purlis_core::enforcement::write_line`], what `record` does
+/// in the app).
+fn refusals_counted_in(project: PathBuf) -> purlis_core::forge::proxy::RefusalSink {
+    Box::new(move |chat, refused| {
+        purlis_core::enforcement::write_line(
+            &project,
+            chat.as_str(),
+            purlis_core::enforcement::Family::GuardsForge,
+            refused.rule,
+            Some(&refused.host),
+        );
+    })
 }
 
 fn sign_in_words(host: &str, state: SignInState) -> String {
