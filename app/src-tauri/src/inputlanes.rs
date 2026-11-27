@@ -68,6 +68,9 @@ enum Job {
     Send {
         work: Box<dyn FnOnce() -> Result<(), String> + Send>,
         droppable: bool,
+        /// What the person typed: a key, a paste. Not the terminal's own answer to its program
+        /// ([`Lanes::send_answer`]), a resize or a view's close.
+        typing: bool,
     },
     /// A caller waits for its turn ([`Lanes::in_turn`]): the worker hands it the lane, and
     /// waits until it hands it back.
@@ -109,7 +112,19 @@ impl Lanes {
     /// Sends `work` to chat `session` after everything sent to it before, and returns at once:
     /// what the person typed, dropped if a send before it in the lane failed.
     pub fn send(&self, session: u32, work: impl FnOnce() -> Result<(), String> + Send + 'static) {
-        self.enqueue(session, Box::new(work), true);
+        self.enqueue(session, Box::new(work), true, true);
+    }
+
+    /// [`Self::send`] for the terminal's own answer to its program (a focus report, a cursor or
+    /// device reply, a mouse report: [`crate::curation::only_the_terminal_answering`]): dropped
+    /// behind a send that failed as a key is, but nothing the person typed
+    /// ([`Self::typed_waiting`], SC-4d, #7633).
+    pub fn send_answer(
+        &self,
+        session: u32,
+        work: impl FnOnce() -> Result<(), String> + Send + 'static,
+    ) {
+        self.enqueue(session, Box::new(work), true, false);
     }
 
     /// [`Self::send`] for what must reach the host even behind a send that failed: a resize, a
@@ -119,7 +134,7 @@ impl Lanes {
         session: u32,
         work: impl FnOnce() -> Result<(), String> + Send + 'static,
     ) {
-        self.enqueue(session, Box::new(work), false);
+        self.enqueue(session, Box::new(work), false, false);
     }
 
     fn enqueue(
@@ -127,6 +142,7 @@ impl Lanes {
         session: u32,
         work: Box<dyn FnOnce() -> Result<(), String> + Send>,
         droppable: bool,
+        typing: bool,
     ) {
         if self.holds(session) {
             if let Err(why) = work() {
@@ -136,7 +152,11 @@ impl Lanes {
         }
         let mut lanes = self.lock();
         let lane = lanes.entry(session).or_default();
-        lane.jobs.push_back(Job::Send { work, droppable });
+        lane.jobs.push_back(Job::Send {
+            work,
+            droppable,
+            typing,
+        });
         if lane.busy {
             return;
         }
@@ -145,20 +165,14 @@ impl Lanes {
         self.drain(session);
     }
 
-    /// **Whether what a pane typed waits in chat `session`'s lane** (SC-4d, #7633): a key, a
-    /// paste or a mouse report not yet sent, behind a turn that has the lane. A resize or a
-    /// view's close is not typing.
+    /// **Whether what the person typed waits in chat `session`'s lane** (SC-4d, #7633): a key
+    /// or a paste not yet sent, behind a turn that has the lane. The terminal's own answer to
+    /// its program ([`Self::send_answer`]), a resize or a view's close is not typing.
     pub fn typed_waiting(&self, session: u32) -> bool {
         self.lock().get(&session).is_some_and(|lane| {
-            lane.jobs.iter().any(|job| {
-                matches!(
-                    job,
-                    Job::Send {
-                        droppable: true,
-                        ..
-                    }
-                )
-            })
+            lane.jobs
+                .iter()
+                .any(|job| matches!(job, Job::Send { typing: true, .. }))
         })
     }
 

@@ -4216,8 +4216,9 @@ impl Chats {
     /// a new run under a new number whose beginning is ADR 0066's `wake`. The caller has read
     /// that the chat is hibernated; this refuses a chat with no conversation to pick up. The old
     /// one stays open until the new one has started, as [`Self::restart`]'s does; ending it is
-    /// the caller's next step. Nothing is told it yet: the wake line (ADR 0068) is SC-4j's.
-    pub fn wake(&self, session: u32, size: Size) -> Result<u32, String> {
+    /// the caller's next step. It is told `ended`, what its hibernation ended of its own, as its
+    /// wake line (SC-4d, #7633), where that is anything.
+    pub fn wake(&self, session: u32, size: Size, ended: &Own) -> Result<u32, String> {
         self.claim(session)?;
         let started = self.again_on_its_conversation(session).and_then(|again| {
             if again.resume.is_none() {
@@ -4230,7 +4231,7 @@ impl Chats {
             // **Told what the hibernation ended** (SC-4d, #7633; ADR 0068 amended 2026-11-08):
             // the own work the person was asked about, each piece by name. None for a chat
             // whose hibernation ended nothing of its own, and then nothing is typed.
-            let first = self.told_woken(session);
+            let first = self.told_woken(session, ended);
             self.start_recorded_told(&again, size, Why::Wake, first.as_deref(), None)
         });
         match started {
@@ -4382,14 +4383,19 @@ impl Chats {
         (!first.is_empty()).then(|| first.join("\n\n"))
     }
 
-    /// **What hibernated chat `session` is told as it wakes** (SC-4d, #7633): the wake line of
-    /// what its hibernation ended of its own ([`purlis_core::wakeline::of_the_chat_woken`]), from
-    /// its record as [`Self::told_with_its_wake_line`] reads it, or none.
-    fn told_woken(&self, session: u32) -> Option<String> {
-        let own = lock(&self.own_work)
+    /// **What chat `session` owns of its own now** (#5747, #5750): what its record holds, which
+    /// a hibernation's intent keeps for its wake line (SC-4d, #7633).
+    pub(crate) fn own_now(&self, session: u32) -> Own {
+        lock(&self.own_work)
             .get(&session)
             .cloned()
-            .unwrap_or_default();
+            .unwrap_or_default()
+    }
+
+    /// **What hibernated chat `session` is told as it wakes** (SC-4d, #7633): the wake line of
+    /// `own`, what its hibernation ended of its own ([`purlis_core::wakeline::of_the_chat_woken`]),
+    /// or none.
+    fn told_woken(&self, session: u32, own: &Own) -> Option<String> {
         let conversation = lock(&self.open)
             .get(&session)
             .and_then(|one| one.chat.resume.as_ref().map(ToString::to_string))
@@ -4404,12 +4410,6 @@ impl Chats {
             now: jiff::Timestamp::now().as_second(),
             last: &last,
         })
-    }
-
-    /// [`Self::told_woken`], for a test: what hibernated chat `session` would be told as it wakes.
-    #[cfg(test)]
-    pub(crate) fn told_as_it_wakes(&self, session: u32) -> Option<String> {
-        self.told_woken(session)
     }
 
     /// Marks chat `session` as restarting, or refuses: one restart at a time, whichever asked.
@@ -9924,10 +9924,20 @@ fn its_own_model<'a>(
 /// end said it left running, each piece by name, and whether a turn was under way. What the
 /// record of open chats keeps of it, so a chat brought back is told what the restart ended.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct Own {
+pub(crate) struct Own {
     work: Option<purlis_core::ownwork::OwnWork>,
     pieces: Vec<purlis_core::ownwork::pieces::Piece>,
     mid_turn: bool,
+}
+
+impl Own {
+    /// Whether every piece of it is among `named`, by its id: what an ask that named them
+    /// covers (SC-4d, #7633).
+    pub(crate) fn all_named(&self, named: &[String]) -> bool {
+        self.pieces
+            .iter()
+            .all(|piece| named.contains(&piece.id))
+    }
 }
 
 /// What a report of the chat's own harness says of its own work and its turn (#5747, #5750).

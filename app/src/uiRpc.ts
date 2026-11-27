@@ -5151,6 +5151,12 @@ export type ChatRestart = {
 	 */
 	notices: string[],
 	not_yet: string | null,
+	/**
+	 *  **What its pane typed while it was hibernated, which no program read** (SC-4d, #7633):
+	 *  handed back with the woken run, for its pane to show unsent. Never typed into it: its
+	 *  delivery is SC-4j's (#7639). None where nothing was typed, or the chat was not woken.
+	 */
+	unsent: string | null,
 };
 
 /**  **What the chat a `chat 641` link names is**, for its hover's second line. */

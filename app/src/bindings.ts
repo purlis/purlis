@@ -1289,11 +1289,12 @@ export const commands = {
 	 *  Hibernate on a chat's row (SC-4a, #7630): the person's act. Where the chat may not be
 	 *  hibernated now it is answered why, as a typed reason the window words (SC-4c, #7632);
 	 *  where the act cannot be done, in a sentence. Otherwise its program ends and the window is
-	 *  told. `own_work_asked` is the window's word that the person was asked about the chat's own
-	 *  work, each piece named, and said yes: only then is a chat with own work hibernated (SC-4d,
-	 *  #7633). The window's alone (`WINDOW_ONLY`).
+	 *  told. `own_work_named` is the window's word that the person was asked about the chat's own
+	 *  work and said yes, with the id of each piece the ask named: only then is a chat with own
+	 *  work hibernated, and only where it has no piece the ask did not name (SC-4d, #7633). The
+	 *  window's alone (`WINDOW_ONLY`).
 	 */
-	hibernateChat: (plane: PlaneId, session: number, ownWorkAsked: boolean) => typedError<Hibernation, string>(__TAURI_INVOKE("hibernate_chat", { plane, session, ownWorkAsked })),
+	hibernateChat: (plane: PlaneId, session: number, ownWorkNamed: string[] | null) => typedError<Hibernation, string>(__TAURI_INVOKE("hibernate_chat", { plane, session, ownWorkNamed })),
 	/**
 	 *  Chat `session`, where its program ended with its session host and the person has not put
 	 *  it away.
@@ -8599,6 +8600,12 @@ export type ChatRestart = {
 	 */
 	notices: string[],
 	not_yet: string | null,
+	/**
+	 *  **What its pane typed while it was hibernated, which no program read** (SC-4d, #7633):
+	 *  handed back with the woken run, for its pane to show unsent. Never typed into it: its
+	 *  delivery is SC-4j's (#7639). None where nothing was typed, or the chat was not woken.
+	 */
+	unsent: string | null,
 };
 
 /**  **What the chat a `chat 641` link names is**, for its hover's second line. */
