@@ -16026,7 +16026,10 @@ fn the_socket_answers_a_chats_ask_for_its_prerequisites_with_the_list_the_window
     // The socket checked the line's token before this: the chat is the app's own.
     let asking = 1;
     let held_list = held.prerequisites().current(&plane.root);
-    assert!(!held_list.is_empty(), "nothing kept, looser than watch: Waiting");
+    assert!(
+        !held_list.is_empty(),
+        "nothing kept, looser than watch: Waiting"
+    );
     let answered = answer(
         &held,
         &id,
@@ -16041,7 +16044,11 @@ fn the_socket_answers_a_chats_ask_for_its_prerequisites_with_the_list_the_window
     let window = crate::prerequisites::Prerequisites::of(id.clone(), &held_list);
     assert_eq!(data, serde_json::to_value(&window).expect("JSON"));
     assert_eq!(data["list"][0]["kind"], "policy", "{data}");
-    assert_eq!(data["list"][0]["reasons"], serde_json::json!(["waiting"]), "{data}");
+    assert_eq!(
+        data["list"][0]["reasons"],
+        serde_json::json!(["waiting"]),
+        "{data}"
+    );
 }
 
 /// #7073: the socket's [`Ask::PolicyLog`] reaches the checks: a line for the asking chat is kept

@@ -81,7 +81,11 @@ fn a_broken_acceptance_holds_the_policy_entry_and_accept_empties_it_with_one_eve
         .accept(root.path(), &digest_of(root.path()))
         .expect("accepted");
     assert!(after.is_empty(), "{after:?}");
-    assert_eq!(heard.taken(), vec![List::default()], "one event, the whole list");
+    assert_eq!(
+        heard.taken(),
+        vec![List::default()],
+        "one event, the whole list"
+    );
     assert_eq!(kept.current(root.path()), List::default());
 }
 
@@ -108,7 +112,10 @@ fn never_alone_raises_none_and_nothing_kept_with_a_policy_looser_than_watch_is_w
         assert!(evaluate(root.path()).is_empty(), "{said:?}");
     }
     let root = plane(OPEN);
-    assert_eq!(the_policy(&evaluate(root.path())).reasons, vec![Reason::Waiting]);
+    assert_eq!(
+        the_policy(&evaluate(root.path())).reasons,
+        vec![Reason::Waiting]
+    );
 }
 
 #[test]
@@ -229,7 +236,11 @@ fn a_commit_that_moves_the_plane_roots_head_is_heard_and_raises_it() {
     // Not committed yet: the project's policy is what `HEAD` says.
     assert!(kept.evaluate(root.path()).is_empty());
     commit(root.path(), "open");
-    assert_ne!(watched_now(root.path()), before, "a file the list watches moved");
+    assert_ne!(
+        watched_now(root.path()),
+        before,
+        "a file the list watches moved"
+    );
     let list = kept.evaluate(root.path());
     assert_eq!(the_policy(&list).reasons, vec![Reason::Waiting]);
     assert_eq!(heard.taken(), vec![list]);
@@ -250,7 +261,11 @@ fn a_change_to_the_local_settings_file_is_heard_and_evaluated() {
     heard.taken();
     let before = watched_now(root.path());
     std::fs::write(root.path().join("charter.local.toml"), WATCH).expect("the local file");
-    assert_ne!(watched_now(root.path()), before, "a file the list watches moved");
+    assert_ne!(
+        watched_now(root.path()),
+        before,
+        "a file the list watches moved"
+    );
     let after = kept.evaluate(root.path());
     assert!(after.is_empty(), "the local file tightened it: {after:#?}");
     assert_eq!(heard.taken(), vec![List::default()]);
@@ -315,7 +330,11 @@ fn a_change_to_the_acceptance_record_is_heard_and_raises_it() {
     heard.taken();
     let before = watched_now(root.path());
     unseal(root.path());
-    assert_ne!(watched_now(root.path()), before, "a file the list watches moved");
+    assert_ne!(
+        watched_now(root.path()),
+        before,
+        "a file the list watches moved"
+    );
     let list = kept.evaluate(root.path());
     assert_eq!(the_policy(&list).reasons, vec![Reason::Broken]);
     assert_eq!(heard.taken(), vec![list]);

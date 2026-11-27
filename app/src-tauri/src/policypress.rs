@@ -404,7 +404,10 @@ pub async fn accept_project_policy_with_new_key(
 fn every_other_list(
     planes: &Planes,
     plane: &PlaneId,
-) -> Vec<(std::path::PathBuf, std::sync::Arc<purlis_core::prerequisites::Kept>)> {
+) -> Vec<(
+    std::path::PathBuf,
+    std::sync::Arc<purlis_core::prerequisites::Kept>,
+)> {
     planes
         .open_now()
         .into_iter()
@@ -421,7 +424,10 @@ fn new_key_pressed(
     root: &std::path::Path,
     kept: &purlis_core::prerequisites::Kept,
     shown: &str,
-    others: &[(std::path::PathBuf, std::sync::Arc<purlis_core::prerequisites::Kept>)],
+    others: &[(
+        std::path::PathBuf,
+        std::sync::Arc<purlis_core::prerequisites::Kept>,
+    )],
 ) -> Result<PolicyState, String> {
     let pressed = kept.accept_with_new_key(root, shown);
     for (other, list) in others {

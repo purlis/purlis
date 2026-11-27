@@ -185,10 +185,7 @@ pub struct Watch<W: notify::Watcher = Platform> {
 impl Watch {
     /// Watches what the list of the project at `root` is evaluated from, and calls
     /// `evaluate` after each change, and once at the start: the project's open.
-    pub fn start(
-        root: &Path,
-        evaluate: impl Fn() + Send + 'static,
-    ) -> notify::Result<Self> {
+    pub fn start(root: &Path, evaluate: impl Fn() + Send + 'static) -> notify::Result<Self> {
         let root = root.to_path_buf();
         Self::start_on(
             move || core::watched(&root),
@@ -232,7 +229,8 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
                     named = files();
                     let mut watcher = watcher.lock().unwrap_or_else(PoisonError::into_inner);
                     // A folder the platform would not watch now is tried at the next burst.
-                    let _ = crate::watchset::follow(&mut *watcher, &mut watched, folders_of(&named));
+                    let _ =
+                        crate::watchset::follow(&mut *watcher, &mut watched, folders_of(&named));
                 }
             })
             .map_err(notify::Error::io)?;

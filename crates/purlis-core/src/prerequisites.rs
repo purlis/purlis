@@ -190,13 +190,20 @@ pub fn policy(root: &Path) -> Option<Policy> {
 pub fn watched(root: &Path) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = [crate::names::PLANE_MANIFEST, crate::names::LOCAL_SETTINGS]
         .iter()
-        .flat_map(|name| name.spellings().map(|file| root.join(file)).collect::<Vec<_>>())
+        .flat_map(|name| {
+            name.spellings()
+                .map(|file| root.join(file))
+                .collect::<Vec<_>>()
+        })
         .collect();
     let git = git_dir(root);
     files.extend(["HEAD", "packed-refs", "logs/HEAD"].map(|file| git.join(file)));
     if let Some(branch) = std::fs::read_to_string(git.join("HEAD"))
         .ok()
-        .and_then(|head| head.strip_prefix("ref: ").map(|named| named.trim().to_owned()))
+        .and_then(|head| {
+            head.strip_prefix("ref: ")
+                .map(|named| named.trim().to_owned())
+        })
         .filter(|named| named.starts_with("refs/") && !named.contains(".."))
     {
         files.push(git.join(branch));

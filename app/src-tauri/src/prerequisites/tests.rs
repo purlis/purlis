@@ -73,12 +73,14 @@ fn every_window_hears_a_projects_list_whichever_project_it_shows() {
         plane: ours,
         list: Vec::new(),
     });
-    assert_eq!(counts.each_ref().map(|count| count.load(Ordering::SeqCst)), [1, 1]);
+    assert_eq!(
+        counts.each_ref().map(|count| count.load(Ordering::SeqCst)),
+        [1, 1]
+    );
 }
 
 #[test]
-fn an_answer_from_one_windows_context_is_followed_by_the_event_and_the_read_returns_the_new_list()
-{
+fn an_answer_from_one_windows_context_is_followed_by_the_event_and_the_read_returns_the_new_list() {
     // ADR 0130 §2: every answer is made through the held list, which is evaluated again after
     // it and told whole. A test is not the app, which alone seals an Accept, so the answer here
     // is one refused because the file changed since it was shown: the list changed with it.
@@ -91,7 +93,9 @@ fn an_answer_from_one_windows_context_is_followed_by_the_event_and_the_read_retu
         });
     let id = planes.open(root.path());
     let held = planes.held(&id).expect("held");
-    until("the open's list", || !heard.lock().expect("heard").is_empty());
+    until("the open's list", || {
+        !heard.lock().expect("heard").is_empty()
+    });
     let shown = heard.lock().expect("heard").remove(0);
     assert_eq!(shown.plane, id);
     let [Prerequisite::Policy(policy)] = shown.list.as_slice() else {
@@ -148,14 +152,22 @@ fn a_change_to_a_watched_file_evaluates_again_and_one_beside_it_does_not() {
 
     std::fs::write(dir.path().join("notes.md"), "beside it").expect("written");
     settled();
-    assert_eq!(evaluated.load(Ordering::SeqCst), 1, "a file nothing is read from");
+    assert_eq!(
+        evaluated.load(Ordering::SeqCst),
+        1,
+        "a file nothing is read from"
+    );
 
     std::fs::write(&file, OPEN).expect("written");
-    until("the settings file", || evaluated.load(Ordering::SeqCst) == 2);
+    until("the settings file", || {
+        evaluated.load(Ordering::SeqCst) == 2
+    });
     settled();
 
     std::fs::create_dir_all(deeper.parent().expect("a folder")).expect("made");
-    until("its folder's coming", || evaluated.load(Ordering::SeqCst) >= 3);
+    until("its folder's coming", || {
+        evaluated.load(Ordering::SeqCst) >= 3
+    });
     settled();
     let before = evaluated.load(Ordering::SeqCst);
     std::fs::write(&deeper, "{}").expect("written");
@@ -168,13 +180,12 @@ fn a_change_to_a_watched_file_evaluates_again_and_one_beside_it_does_not() {
 fn a_commit_at_the_plane_root_evaluates_again() {
     let root = plane(WATCH);
     let git = |args: &[&str]| {
-        let ran = std::process::Command::new("git")
-            .args(args)
+        let mut git = std::process::Command::new("git");
+        git.args(args)
             .current_dir(root.path())
             .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .output()
-            .expect("git runs");
+            .env("GIT_CONFIG_GLOBAL", "/dev/null");
+        let ran = purlis_core::forklock::output(&mut git).expect("git runs");
         assert!(ran.status.success(), "{args:?}: {ran:?}");
     };
     let commit = |message: &str| {

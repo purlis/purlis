@@ -1800,11 +1800,18 @@ fn policy_answer(held: &Held, chat: u32) -> Answer {
 /// payload the window's event carries.
 fn prerequisites_answer(held: &Held, plane: &PlaneId) -> Answer {
     let list = held.prerequisites().current(held.root());
-    serde_json::to_value(crate::prerequisites::Prerequisites::of(plane.clone(), &list))
-        .map_or_else(
-            |why| no(format!("purlis could not say what this project needs: {why}")),
-            |data| Answer::Prerequisites { data },
-        )
+    serde_json::to_value(crate::prerequisites::Prerequisites::of(
+        plane.clone(),
+        &list,
+    ))
+    .map_or_else(
+        |why| {
+            no(format!(
+                "purlis could not say what this project needs: {why}"
+            ))
+        },
+        |data| Answer::Prerequisites { data },
+    )
 }
 
 /// **Writes one log line a chat's process handed over** ([`Ask::PolicyLog`]), or says why not.
