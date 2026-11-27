@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795737971741,
+  "lastUpdate": 1795738794777,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56574,6 +56574,48 @@ window.BENCHMARK_DATA = {
             "value": 100.0352235,
             "unit": "ms",
             "extra": "median of 5 runs: 99.662, 99.799, 100.035, 100.212, 102.758 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "15c164f5e7496f8e4956f3584537c9df609c12f3",
+          "message": "Remote start baseline: the step tables of the first remote-parity run (#7182) (#7835)\n\nThe cold, warm and runner-stopped tables from run 45902462569, job\n140191838563, with their totals and a reading: the per-link container\ncheck's 6-7 serial docker calls dominate, and warm is only 980 ms\ncheaper than cold. The heading's 'round trip 0 ms' is the probe timing\ndocker-proxy on loopback, not the sshd's netem, which was applied (#7832).\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8D1FD2TDW3WEVBBVQSQ1R99\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T23:31:52Z",
+          "tree_id": "932c92fb02721936eded84c950551e5888911fa6",
+          "url": "https://github.com/purlis/purlis/commit/15c164f5e7496f8e4956f3584537c9df609c12f3"
+        },
+        "date": 1795738787389,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6898915,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.676, 0.686, 0.690, 0.697, 0.720 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.564728000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.414, 16.415, 16.565, 16.688, 16.729 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.55308000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.760, 101.372, 101.553, 101.692, 101.776 ms"
           }
         ]
       }
