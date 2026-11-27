@@ -271,29 +271,64 @@ fn no_more_than_three_asks_wait_for_a_chat_and_one_is_raised_for_a_push() {
     project_ended(root.path());
 }
 
-#[test]
-fn a_project_whose_consents_are_logged_or_off_raises_no_push_ask() {
+/// A [`PushAsks`] for chat `chat-1`, session 5, in a project whose `[policy]` runs `consents` as
+/// `consents`.
+fn push_asks_under(root: &Path, consents: &str) -> PushAsks {
+    std::fs::write(
+        crate::names::manifest(root),
+        format!("[policy]\ntemplate = \"strict\"\nconsents = \"{consents}\"\n"),
+    )
+    .expect("the manifest");
+    PushAsks {
+        root: root.to_path_buf(),
+        chat: "chat-1".to_owned(),
+        session: Box::new(|| Some(5)),
+        owner_of: Box::new(|_, _, _| None),
+    }
+}
+
+/// **A NotYourBranch refusal raises Let this chat push it whatever `consents` runs as** (ADR
+/// 0125, amended 2026-11-27, §10; #7749): a family turned down never makes purlis stricter.
+fn a_not_your_branch_push_raises_its_ask_under(consents: &str) {
     use crate::forge::proxy::{BranchAsk, ChatId};
-    for consents in ["log", "off"] {
+    let root = tempfile::tempdir().unwrap();
+    let asks = push_asks_under(root.path(), consents);
+    let said = asks
+        .ask(&ChatId::new("chat-1"), &[unowned("theirs")])
+        .unwrap_or_else(|| panic!("an ask is raised under consents = {consents}"));
+    assert!(
+        said.contains("is waiting in the window"),
+        "{consents}: {said}"
+    );
+    let raised = every(root.path());
+    assert_eq!(raised.len(), 1, "{consents}: {raised:?}");
+    assert_eq!(raised[0].control.label(), "Allow", "{consents}");
+    project_ended(root.path());
+}
+
+#[test]
+fn a_not_your_branch_push_raises_its_ask_under_consents_off() {
+    a_not_your_branch_push_raises_its_ask_under("off");
+}
+
+#[test]
+fn a_not_your_branch_push_raises_its_ask_under_consents_log() {
+    a_not_your_branch_push_raises_its_ask_under("log");
+}
+
+#[test]
+fn a_not_your_branch_push_raises_its_ask_under_consents_enforce() {
+    a_not_your_branch_push_raises_its_ask_under("enforce");
+}
+
+#[test]
+fn the_other_window_only_refusals_still_follow_consents() {
+    // Every other window-only refusal (today, the forge's Trust this clone) is raised only where
+    // `[policy] consents` enforces, as before #7749.
+    for (consents, asked) in [("enforce", true), ("log", false), ("off", false)] {
         let root = tempfile::tempdir().unwrap();
-        std::fs::write(
-            crate::names::manifest(root.path()),
-            format!("[policy]\ntemplate = \"strict\"\nconsents = \"{consents}\"\n"),
-        )
-        .unwrap();
-        // The helper writes its own manifest, so build the ask by hand.
-        let asks = PushAsks {
-            root: root.path().to_path_buf(),
-            chat: "chat-1".to_owned(),
-            session: Box::new(|| Some(5)),
-            owner_of: Box::new(|_, _, _| None),
-        };
-        assert_eq!(
-            asks.ask(&ChatId::new("chat-1"), &[unowned("theirs")]),
-            None,
-            "{consents}"
-        );
-        assert!(every(root.path()).is_empty(), "{consents}");
+        push_asks_under(root.path(), consents);
+        assert_eq!(asks(root.path()), asked, "consents = {consents}");
     }
 }
 
