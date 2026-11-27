@@ -85,7 +85,10 @@ fn a_chat_on_screen_in_a_focused_window_is_looked_at_and_rests_once_it_leaves() 
     assert_eq!(clock.rests_since(3, start + DAY), None, "on screen");
     assert!(clock.looked_at_within(3, start + DAY, AFTER));
     assert!(clock.on_screen(start + DAY, []));
-    assert_eq!(clock.rests_since(3, start + DAY + MINUTE), Some(start + DAY));
+    assert_eq!(
+        clock.rests_since(3, start + DAY + MINUTE),
+        Some(start + DAY)
+    );
 }
 
 #[test]
@@ -95,7 +98,10 @@ fn a_look_between_two_reads_leaves_the_chat_resting_from_the_look() {
     assert_eq!(clock.rests_since(3, start), Some(start));
     clock.on_screen(start + 20 * MINUTE, [(3, 0)]);
     clock.on_screen(start + 21 * MINUTE, []);
-    assert_eq!(clock.rests_since(3, start + 40 * MINUTE), Some(start + 21 * MINUTE));
+    assert_eq!(
+        clock.rests_since(3, start + 40 * MINUTE),
+        Some(start + 21 * MINUTE)
+    );
     assert!(clock.looked_at_within(3, start + 40 * MINUTE, AFTER));
 }
 
@@ -104,7 +110,10 @@ fn closing_one_of_two_panes_showing_a_chat_keeps_its_look() {
     let clock = LookedAt::default();
     let start = Instant::now();
     clock.on_screen(start, [(3, 0), (3, 0)]);
-    assert!(!clock.on_screen(start + MINUTE, [(3, 0)]), "nothing changed");
+    assert!(
+        !clock.on_screen(start + MINUTE, [(3, 0)]),
+        "nothing changed"
+    );
     assert_eq!(clock.rests_since(3, start + DAY), None);
 }
 
@@ -116,10 +125,18 @@ fn a_window_that_loses_the_focus_starts_the_clocks_of_the_chats_it_shows() {
     clock.focused(0, false);
     clock.on_screen(start + MINUTE, [(3, 0), (4, 2)]);
     assert_eq!(clock.rests_since(3, start + DAY), Some(start + MINUTE));
-    assert_eq!(clock.rests_since(4, start + DAY), None, "its own window has the focus");
+    assert_eq!(
+        clock.rests_since(4, start + DAY),
+        None,
+        "its own window has the focus"
+    );
     clock.focused(0, true);
     clock.on_screen(start + DAY, [(3, 0), (4, 2)]);
-    assert_eq!(clock.rests_since(3, start + DAY), None, "back in front of the person");
+    assert_eq!(
+        clock.rests_since(3, start + DAY),
+        None,
+        "back in front of the person"
+    );
 }
 
 #[test]

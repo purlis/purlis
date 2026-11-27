@@ -221,6 +221,9 @@ pub fn choose<K: Clone>(
 /// A chat, by its project and number.
 pub type Chat = (PlaneId, u32);
 
+/// The projects the app holds: the registry's own map ([`crate::planes::Planes`]).
+pub type Projects = Mutex<HashMap<PlaneId, Arc<Held>>>;
+
 /// What reads the device's hot target, or `None` while its class is not known.
 pub type Target = Arc<dyn Fn() -> Option<u32> + Send + Sync>;
 
@@ -238,7 +241,7 @@ pub enum Read {
 pub struct Gate {
     clock: Arc<dyn Clock>,
     target: Mutex<Option<Target>>,
-    projects: Mutex<Weak<Mutex<HashMap<PlaneId, Arc<Held>>>>>,
+    projects: Mutex<Weak<Projects>>,
     /// The one deadline, where one is armed.
     deadline: Mutex<Option<Instant>>,
     /// Something it reads changed since it last read.
@@ -282,7 +285,7 @@ impl Gate {
     }
 
     /// The projects it reads: the registry's own.
-    pub fn reads_projects(&self, projects: Weak<Mutex<HashMap<PlaneId, Arc<Held>>>>) {
+    pub fn reads_projects(&self, projects: Weak<Projects>) {
         *lock(&self.projects) = projects;
     }
 
@@ -293,6 +296,7 @@ impl Gate {
     }
 
     /// The deadline armed, where one is.
+    #[cfg(test)]
     pub fn armed(&self) -> Option<Instant> {
         *lock(&self.deadline)
     }
@@ -400,9 +404,9 @@ impl Gate {
         }
         // Only the facts of chats still open are kept: a closed one cannot come back.
         lock(&self.refused).retain(|chat, _| {
-            projects
-                .iter()
-                .any(|held| held.plane_id() == &chat.0 && held.chats().sessions_open().contains(&chat.1))
+            projects.iter().any(|held| {
+                held.plane_id() == &chat.0 && held.chats().sessions_open().contains(&chat.1)
+            })
         });
         match choose(hot, target, &candidates, now, AFTER) {
             Choice::Nothing => {

@@ -9650,14 +9650,16 @@ fn a_claude_chat_resting(held: &Held, dir: &Path, name: &str) -> u32 {
         .conversation(session)
         .expect("purlis chose its conversation");
     for event in [SessionStart, UserPromptSubmit, Stop] {
-        held.hooks().board().reported(&purlis_core::hookwire::Report {
-            chat: session,
-            event,
-            conversation: purlis_core::hookwire::Conversation::Named(conversation.clone()),
-            pid: Some(5000 + session),
-            agent: None,
-            detail: purlis_core::state::Detail::default(),
-        });
+        held.hooks()
+            .board()
+            .reported(&purlis_core::hookwire::Report {
+                chat: session,
+                event,
+                conversation: purlis_core::hookwire::Conversation::Named(conversation.clone()),
+                pid: Some(5000 + session),
+                agent: None,
+                detail: purlis_core::state::Detail::default(),
+            });
     }
     assert_eq!(
         purlis_core::rested::rested(&crate::hibernation::facts_of(held, session, false)),
@@ -9730,12 +9732,25 @@ fn over_the_target_the_longest_rested_chat_goes_first_for_idle_one_at_a_time_to_
     clock.advance(AFTER + 5 * MINUTE);
 
     let plane = held.plane_id().clone();
-    assert_eq!(planes.gate().read(), Read::Hibernated((plane.clone(), third)));
+    assert_eq!(
+        planes.gate().read(),
+        Read::Hibernated((plane.clone(), third))
+    );
     assert_eq!(planes.gate().read(), Read::Hibernated((plane, first)));
-    assert_eq!(planes.gate().read(), Read::Nothing, "it stops at the target");
+    assert_eq!(
+        planes.gate().read(),
+        Read::Nothing,
+        "it stops at the target"
+    );
 
-    assert_eq!(held.hibernated().of(third), Some(crate::hibernation::By::Idle));
-    assert_eq!(held.hibernated().of(first), Some(crate::hibernation::By::Idle));
+    assert_eq!(
+        held.hibernated().of(third),
+        Some(crate::hibernation::By::Idle)
+    );
+    assert_eq!(
+        held.hibernated().of(first),
+        Some(crate::hibernation::By::Idle)
+    );
     assert_eq!(held.hibernated().of(second), None);
     assert_eq!(host.hibernated(), [third, first]);
     assert_eq!(planes.gate().armed(), None);
@@ -9795,7 +9810,8 @@ fn a_task_is_skipped_and_the_next_longest_rested_chat_goes() {
     nothing_on_screen(&held);
     // The task has rested longest; the asker has a task open, and is not rested.
     assert!(matches!(planes.gate().read(), Read::Armed(_)));
-    held.looked().typed(plain, clock.now() + std::time::Duration::from_secs(60));
+    held.looked()
+        .typed(plain, clock.now() + std::time::Duration::from_secs(60));
     clock.advance(std::time::Duration::from_secs(24 * 60 * 60));
 
     assert_eq!(

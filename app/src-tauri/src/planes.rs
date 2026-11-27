@@ -1072,9 +1072,11 @@ impl Held {
     /// **What is on screen may have changed** (SC-4g, #7636): the looked-at clock is told the
     /// chats on screen now, each with the window showing it, and the gate is poked.
     pub fn look_again(&self, now: std::time::Instant) {
-        let on_screen = self.chats.looked_at().into_iter().map(|chat| {
-            (chat, self.chats.window_showing(chat).unwrap_or(0))
-        });
+        let on_screen = self
+            .chats
+            .looked_at()
+            .into_iter()
+            .map(|chat| (chat, self.chats.window_showing(chat).unwrap_or(0)));
         let on_screen: Vec<_> = on_screen.collect();
         if self.looked.on_screen(now, on_screen) {
             self.gate.poke();
@@ -2190,11 +2192,9 @@ impl Held {
         session: u32,
         over: &dyn Fn() -> bool,
     ) -> Result<(), crate::hibernation::Refused> {
-        let looked_at = self.looked.looked_at_within(
-            session,
-            self.gate.now(),
-            crate::autohibernate::AFTER,
-        );
+        let looked_at =
+            self.looked
+                .looked_at_within(session, self.gate.now(), crate::autohibernate::AFTER);
         let facts = crate::hibernation::facts_of(self, session, looked_at);
         purlis_core::rested::rested(&facts)
             .and_then(|()| purlis_core::rested::by_hand(&facts))
@@ -6351,11 +6351,7 @@ impl Planes {
     /// A gate reading `clock` and a hot target of `target`, in place of the app's: a test's,
     /// set before a project is opened, and never started on a thread of its own.
     #[cfg(test)]
-    pub fn gating_on(
-        mut self,
-        clock: Arc<dyn crate::autohibernate::Clock>,
-        target: u32,
-    ) -> Self {
+    pub fn gating_on(mut self, clock: Arc<dyn crate::autohibernate::Clock>, target: u32) -> Self {
         let gate = crate::autohibernate::Gate::on(clock);
         gate.reads_projects(Arc::downgrade(&self.open));
         gate.reads_its_target(Arc::new(move || Some(target)));

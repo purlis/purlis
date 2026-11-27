@@ -4549,7 +4549,12 @@ export type BusyChat = {
 /**  How a chat that is hibernated was put to rest. */
 export type By = 
 /**  The person did, from its row. */
-"operator";
+"operator" | 
+/**
+ *  The app did, by itself, for a rested chat while the device was over its hot target
+ *  (SC-4g, #7636).
+ */
+"idle";
 
 /**
  *  A harness the operator started by hand in a shell tab, as the window draws its banner.
