@@ -594,11 +594,11 @@ impl RefusesFastForwardOnly {
 
 #[test]
 fn after_allow_a_push_that_is_not_a_fast_forward_is_refused_and_nothing_is_sent() {
+    purlis_core::unsteered!();
     // Floor item 6 of ADR 0125's 2026-11-27 amendment: no force push onto another chat's
     // branch. The core cannot tell a force push from a fast-forward (old and new ids only), so
     // every update of a branch the chat holds by Allow reaches the gate marked, and the gate's
     // refusal sends nothing.
-    purlis_core::unsteered!();
     let config = tempfile::tempdir().unwrap();
     let (_p, root) = project(PROJECT_ID);
     let mut w = World::asking_in(config.path().to_owned(), root.clone());
@@ -639,9 +639,9 @@ fn after_allow_a_push_that_is_not_a_fast_forward_is_refused_and_nothing_is_sent(
 
 #[test]
 fn after_allow_every_later_update_stays_marked_and_a_branch_the_chat_made_is_not() {
+    purlis_core::unsteered!();
     // A fast-forward the gate lets through is sent and recorded, and the record keeps the Allow:
     // the next update is marked again, so a later force push is no more allowed than the first.
-    purlis_core::unsteered!();
     let config = tempfile::tempdir().unwrap();
     let (_p, root) = project(PROJECT_ID);
     let mut w = World::asking_in(config.path().to_owned(), root.clone());
