@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795800509221,
+  "lastUpdate": 1795802920395,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57918,6 +57918,48 @@ window.BENCHMARK_DATA = {
             "value": 102.1257935,
             "unit": "ms",
             "extra": "median of 5 runs: 101.203, 101.761, 102.126, 102.154, 102.880 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "69fa942ef3377d26e2d177a863371f6460c29cd1",
+          "message": "A profile keep on a pool's runner restores the per-project MCP settings in Claude's state file it was missing (#7946)\n\n* A profile keep on a pool's runner restores the per-project MCP settings in Claude's state file it was missing\n\nEvery keep already took each project's own MCP servers out of the runner's\nClaude Code state file. It now also takes out each project's choice of which\nservers are on or off (enabledMcpServers, disabledMcpServers) and the older\n.mcp.json approvals (enableAllProjectMcpServers, enabledMcpjsonServers,\ndisabledMcpjsonServers), so each is Claude Code's default again. Everything\nelse in the file stays as it was. ADR 0095 amended 2026-11-27.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8EMJ5405HSXTV1QQR8939A3\nPurlis-Persona: steward\n\n* ADR 0095 amendment and changelog fragment for the per-project MCP settings a keep restores\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8EMJ5405HSXTV1QQR8939A3\nPurlis-Persona: steward\n\n* The keep's docs name the moved approvals' screening and each ruling\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8EMJ5405HSXTV1QQR8939A3\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T16:42:34Z",
+          "tree_id": "11a1534978298d4c3d4c50ebddf2eb4e725f635a",
+          "url": "https://github.com/purlis/purlis/commit/69fa942ef3377d26e2d177a863371f6460c29cd1"
+        },
+        "date": 1795802912460,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5720419999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.557, 0.569, 0.572, 0.572, 0.574 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.332336499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.277, 16.331, 16.332, 16.340, 16.378 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.93990649999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.270, 100.862, 100.940, 101.099, 101.872 ms"
           }
         ]
       }
