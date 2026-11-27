@@ -194,7 +194,9 @@ pub trait Recorded: Send + Sync {
     /// project and the chat's id are the key, so a chat with another id, or of another project,
     /// owns none of them. **One exception**: a branch recorded to a chat `chat` dispatched
     /// (directly, or up the chain, by the app's dispatch records) is `chat`'s to update from the
-    /// recorded tip, and its confirmed push is then recorded under `chat`.
+    /// recorded tip, and its confirmed push is then recorded under `chat`. A branch `chat` holds
+    /// by the person's Allow moves only forward
+    /// ([`purlis_core::forge::createdbranches::OwnedTip::fast_forward_only`]; #7841).
     fn own_tip(
         &self,
         _project: &Path,
@@ -202,7 +204,7 @@ pub trait Recorded: Send + Sync {
         _host: &str,
         _repo_id: u64,
         _branch: &str,
-    ) -> Option<String> {
+    ) -> Option<purlis_core::forge::createdbranches::OwnedTip> {
         None
     }
     /// The branches of the repo with forge id `repo_id` on `host` whose record is `chat`'s now,

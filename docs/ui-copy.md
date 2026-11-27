@@ -145,6 +145,17 @@ something to do:
 | A sub-agent's run                         | _Not hibernated: this is a sub-agent of a chat, not a chat of its own._                                                     |
 | Looked at recently                        | _Not hibernated: someone looked at this chat or typed in it recently._                                                      |
 
+### What was typed into a hibernated chat
+
+What the person types into a chat once its program is ending is kept, never sent to a program
+that is gone (SC-4d). The words are shown as typed, each control character a space:
+
+| Where                        | Words                                                                                                                                   |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| On the band, after its words | _What you typed since was not sent, and is kept until you resume it: {typed}_                                                           |
+| On the woken chat's pane     | _This chat was hibernated when you typed this, so it was not sent: {typed} Type it again if you still want it._                         |
+| Past what it holds           | _purlis could not send this chat what you typed, or anything after it: it is hibernated, and already holds 64 KiB of what you typed. …_ |
+
 ## Words
 
 - **The nouns are ADR 0072's.** Five concepts (Project, Workspace, Chat, Persona, Memory), and

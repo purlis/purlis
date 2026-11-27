@@ -4127,6 +4127,8 @@ on_every_target!(
     an_ask_raised_by_a_chats_proxy_is_answered_from_the_window,
     a_hibernated_chats_kept_screen_is_its_newest_lines_within_a_mebibyte,
     a_hibernated_chats_kept_screen_is_an_open_alternate_screen_alone;
+    not yet through a link ("a runner refuses `hibernate` from a `remote-link` link, which lacks `Power::Reattach`"):
+    a_hibernated_program_that_ignores_its_signals_is_killed_and_the_act_completes;
     not yet through a link ("an opt-out is asked again on the device a chat moves to, ADR 0078 §4"):
     an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts;
     not yet through a link ("the window's re-arm and its shell while stopped cross a link in #2220"):
@@ -4136,7 +4138,7 @@ on_every_target!(
 
 /// Whether chat `id` of `target` can be hibernated: only a host that can is offered Hibernate
 /// (#7630), and only it pages a view's history; the window's own process does neither. Where it
-/// cannot, the chat is closed and the skip of the kept screen's `case` is said, so a target that
+/// cannot, the chat is closed and the skip of `case` is said, so a target that
 /// stopped hibernating is seen rather than passing silently.
 fn hibernates_here(target: &Target, id: u32, case: &str) -> bool {
     if target.sessions.can_hibernate(id) {
@@ -4145,10 +4147,7 @@ fn hibernates_here(target: &Target, id: u32, case: &str) -> bool {
     // Written to stderr by name, past the test harness's capture, so the skip shows in a run.
     let _ = std::io::Write::write_fmt(
         &mut std::io::stderr(),
-        format_args!(
-            "skipped: this target cannot hibernate a chat, so its kept screen ({case}) is not \
-             taken\n"
-        ),
+        format_args!("skipped: this target cannot hibernate a chat, so {case} is not tried\n"),
     );
     target.sessions.close(id).expect("it closes");
     false
@@ -4172,7 +4171,11 @@ fn a_hibernated_chats_kept_screen_is_its_newest_lines_within_a_mebibyte(target: 
         )
         .expect("it starts");
     Pane::on(target, id).shows("PRINTED.");
-    if !hibernates_here(target, id, "its newest lines within a mebibyte") {
+    if !hibernates_here(
+        target,
+        id,
+        "its kept screen (its newest lines within a mebibyte)",
+    ) {
         return;
     }
     let whole = crate::skillgrade::screen_of(target.sessions.as_ref(), id).expect("its screen");
@@ -4220,7 +4223,11 @@ fn a_hibernated_chats_kept_screen_is_an_open_alternate_screen_alone(target: &Tar
         )
         .expect("it starts");
     Pane::on(target, id).shows("THE EDITOR.");
-    if !hibernates_here(target, id, "an open alternate screen alone") {
+    if !hibernates_here(
+        target,
+        id,
+        "its kept screen (an open alternate screen alone)",
+    ) {
         return;
     }
 
@@ -4237,6 +4244,44 @@ fn a_hibernated_chats_kept_screen_is_an_open_alternate_screen_alone(target: &Tar
     );
     assert!(!kept.contains("behind "), "none of what is behind it");
     target.sessions.close(id).expect("it closes");
+}
+
+/// **A hibernated program that ignores its signals is killed after the bound, and the act
+/// completes** (SC-4d, #7633; spec #1391, *The act, and its latch*, step 4): a shell that ignores
+/// an interrupt, a hangup and a terminate, as a harness that will not leave does, is ended as a
+/// hibernation; the host answers within the bound, its program is gone, and the host has let go
+/// of the chat, its engine dropped.
+fn a_hibernated_program_that_ignores_its_signals_is_killed_and_the_act_completes(target: &Target) {
+    let id = target
+        .sessions
+        .open(
+            None,
+            &a_shell(r#"trap '' INT HUP TERM; printf 'IGNORES.\r\n'; while :; do sleep 1; done"#),
+            &|_| {},
+        )
+        .expect("it starts");
+    Pane::on(target, id).shows("IGNORES.");
+    let pid = target.sessions.process_id(id).expect("it runs");
+    if !hibernates_here(target, id, "a program that ignores its signals") {
+        // Closed, it is hung up and then killed on a thread of its own; waited for, so the
+        // test's process does not end first and leave it running.
+        until("its program is gone", || !target.alive(pid));
+        return;
+    }
+    let asked = Instant::now();
+
+    target.sessions.hibernate(id).expect("the act completes");
+
+    assert!(
+        asked.elapsed() < Duration::from_secs(10),
+        "answered after {:?}",
+        asked.elapsed()
+    );
+    until("its program is gone", || !target.alive(pid));
+    assert!(
+        !target.sessions.running().contains(&id),
+        "the host let go of it"
+    );
 }
 
 /// **A sandboxed runner chat reaches neither its runner's browser engine nor its host** (#3338,
