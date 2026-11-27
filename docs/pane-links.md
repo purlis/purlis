@@ -31,6 +31,12 @@ reads it again when it is opened, so a pane never chooses what opens (spec #6208
   not ignore, which is all the editor opens. A file git ignores says so on its hover. Where
   purlis could not read the branch's list of files, the file still links, and its hover says
   the editor checks it as it opens.
+- **A link too long for one row is one link over all its rows**, whether the terminal wrapped
+  it or the program broke the line itself at the pane's edge: hovering any row draws all of it,
+  and ⌘-click on any row opens the whole. A break the program wrote is read across only where
+  the row fills the pane to its edge and the next row goes straight on, not with a blank or a
+  link of its own. Where the joined words name no file, each row's piece links on its own
+  (ADR 0132).
 - **A chat's number is looked up in the pane's own project.** A number no chat there had is no
   link. A title never links, and `#641` alone is an issue's number, not a chat.
 
