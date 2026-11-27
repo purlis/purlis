@@ -4526,3 +4526,13 @@ fn a_start_outside_any_start_names_none() {
     ));
     assert_eq!(asked.start, None);
 }
+
+#[test]
+fn a_runner_before_1_97_is_not_asked_for_a_file_and_one_from_1_97_is() {
+    use purlis_session_protocol::version::Version;
+    let at = |minor| Version { major: 1, minor };
+
+    assert!(!runner_keeps_files_from_its_window(at(96)));
+    assert!(runner_keeps_files_from_its_window(at(97)));
+    assert!(runner_keeps_files_from_its_window(session::VERSION));
+}
