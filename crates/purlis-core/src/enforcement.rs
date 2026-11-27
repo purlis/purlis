@@ -1160,6 +1160,17 @@ impl Resolved {
         self.protected.iter().cloned().collect()
     }
 
+    /// **Whether `self` is looser than `accepted` anywhere**: a family's mode, the merge
+    /// opt-in, the sandbox's level, a deny lifted, lineage allowed or a protected branch lifted.
+    /// What a loosening press would accept; a tightening alone is none.
+    pub fn loosens(&self, accepted: &Self) -> bool {
+        !self.looser_than(accepted).is_empty()
+            || self.level_looser_than(accepted).is_some()
+            || !self.lifts(accepted).is_empty()
+            || self.lineage_looser_than(accepted)
+            || !self.protection_lifted(accepted).is_empty()
+    }
+
     /// The protected branches `accepted` holds and `self` does not: what a press would lift.
     pub fn protection_lifted(&self, accepted: &Self) -> Vec<String> {
         accepted
@@ -1391,12 +1402,22 @@ pub(crate) fn in_force_for_test(committed: &Resolved, accepted: &Resolved) -> Re
 /// committed and still says, and Keep it on for me never below the floor. A broken acceptance is
 /// never loosened by it, and runs the full sandbox.
 pub fn accepted(root: &Path) -> Resolved {
+    accepted_of(root, crate::sandbox::local::policy_accepted_record(root))
+}
+
+/// **What the shipped default accepts** ([`accepted`] where nothing was ever kept): `watch`,
+/// with no lock of this machine's. What a committed policy is weighed against where nothing
+/// was kept, and where what was kept is broken (ADR 0130 §3).
+pub fn shipped() -> Resolved {
+    Resolved::of(&Settings::default(), &crate::sandbox::policy::Locks::none())
+}
+
+/// [`accepted`] for the project at `root`, of the acceptance `record` read for it once.
+fn accepted_of(root: &Path, record: crate::sandbox::local::PolicyAccepted) -> Resolved {
     use crate::sandbox::local::PolicyAccepted;
-    let kept = match crate::sandbox::local::policy_accepted_record(root) {
+    let kept = match record {
         PolicyAccepted::Held(kept) => Resolved::of_kept(&kept),
-        PolicyAccepted::Never => {
-            Resolved::of(&Settings::default(), &crate::sandbox::policy::Locks::none())
-        }
+        PolicyAccepted::Never => shipped(),
         // Every family enforced, and the full sandbox: never the floor, which would loosen a
         // full sandbox that was kept (the review of #7105).
         PolicyAccepted::Broken => return broken_accepted(),
@@ -1612,6 +1633,15 @@ pub struct Standing {
     pub refused: Vec<String>,
     /// Whether an acceptance is kept here whose seal does not hold: it counts as none.
     pub unsealed: bool,
+    /// **Whether this machine's acceptance is Broken** ([`crate::sandbox::local::PolicyAccepted`]),
+    /// of the same read of the record as everything else here: then [`Self::runs`] is strict
+    /// mode, and what waits is weighed against it.
+    pub broken: bool,
+    /// **Whether the committed policy is looser than the shipped `watch`** anywhere
+    /// ([`Resolved::loosens`] against [`shipped`]), from the same read of `HEAD`: under Broken,
+    /// what alone says the policy is Waiting too, with no read of the record that does not hold
+    /// (ADR 0130 §3).
+    pub loosens_the_shipped: bool,
     /// Whether the seal's key on this machine is another program's (#7714), whoever made it:
     /// what happens after an update macOS treats as a different app. Then nothing holds, and
     /// the press is [`press_with_new_key`].
@@ -1644,6 +1674,18 @@ pub struct Standing {
     pub locked: Vec<Family>,
 }
 
+impl Standing {
+    /// **Whether anything waits for the press**: a family, the sandbox's level, a deny, lineage
+    /// or a protected branch the project now runs looser than this person accepted.
+    pub fn waits(&self) -> bool {
+        !self.waiting.is_empty()
+            || self.level.is_some()
+            || !self.lifted.is_empty()
+            || self.lineage_waiting
+            || !self.protection_lifted.is_empty()
+    }
+}
+
 /// The families that mean nothing at `level` ([`Standing::not_in_force`]): `network`, `ports`
 /// and `processes` where it is no sandbox, and none otherwise.
 pub fn not_in_force_at(level: SandboxLevel) -> Vec<Family> {
@@ -1661,8 +1703,12 @@ pub fn standing(root: &Path) -> Standing {
     let settings = Settings::read(root);
     let locks = crate::sandbox::policy::Locks::of(root);
     let now = Resolved::of(&settings, &locks);
-    let accepted = accepted(root);
+    let record = crate::sandbox::local::policy_accepted_record(root);
+    let broken = record == crate::sandbox::local::PolicyAccepted::Broken;
+    let accepted = accepted_of(root, record);
     Standing {
+        broken,
+        loosens_the_shipped: now.loosens(&shipped()),
         waiting: now.looser_than(&accepted),
         level: now.level_looser_than(&accepted),
         not_in_force: not_in_force_at(now.level()),
@@ -1670,7 +1716,8 @@ pub fn standing(root: &Path) -> Standing {
         lineage_waiting: now.lineage_looser_than(&accepted),
         protection_lifted: now.protection_lifted(&accepted),
         refused: settings.refused.clone(),
-        unsealed: crate::sandbox::local::policy_unsealed(root),
+        // Of the same read of the record: `policy_unsealed` is whether it is Broken.
+        unsealed: broken,
         key_foreign: crate::secrets::seal::key_is_foreign(),
         new_key: crate::sandbox::local::broken_by_a_new_key(root),
         nevers_new_key: crate::dispatchnever::vouched_for_a_new_key(root),

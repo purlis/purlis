@@ -771,7 +771,8 @@ export const commands = {
 	 *  **Your press: accept the project's `[policy]` as its committed file said it when it was
 	 *  shown** (`shown`, the state's digest), looser where it is looser, at once. Sealed on this
 	 *  machine by the app; refused where it cannot be sealed, or where the file changed since it was
-	 *  shown. The window's alone.
+	 *  shown. The window's alone. Made through the project's prerequisite list, which is evaluated
+	 *  again after it and tells every window (ADR 0130 §2).
 	 */
 	acceptProjectPolicy: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("accept_project_policy", { plane, shown })),
 	/**
@@ -780,7 +781,8 @@ export const commands = {
 	 *  front when it lands. The old `purlis-seal` items are replaced, which macOS may ask you to
 	 *  allow; the digest is checked again once its prompt returns; then a new key seals this
 	 *  project's acceptance. Every other project accepted on this machine then needs accepting
-	 *  again. The window's alone. The window draws it in the prerequisite modal (#7719).
+	 *  again, and each one's list is evaluated again. The window's alone. The window draws it in the
+	 *  prerequisite modal (#7719).
 	 */
 	acceptProjectPolicyWithNewKey: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("accept_project_policy_with_new_key", { plane, shown })),
 	/**
@@ -796,6 +798,11 @@ export const commands = {
 	 *  thread.
 	 */
 	policyLog: (plane: PlaneId) => typedError<PolicyLog, string>(__TAURI_INVOKE("policy_log", { plane })),
+	/**
+	 *  **The project's prerequisites now**: what a window that opens, or one that missed an event,
+	 *  asks. Evaluated first where it never was. Off the window's thread.
+	 */
+	projectPrerequisites: (plane: PlaneId) => typedError<Prerequisites, string>(__TAURI_INVOKE("project_prerequisites", { plane })),
 	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
 	 *  (#1362): `null` for a chat that holds its own.
@@ -6304,6 +6311,8 @@ export const PERSONA_SCOPE_KEY = "persona/" as const;
 export const POOL_MINTS_WITHOUT_ASKING = "pool-mints-without-asking" as const;
 
 export const POOL_PIN_CHANGED = "pool-pin-changed" as const;
+
+export const PREREQUISITES_CHANGED = "prerequisites-changed" as const;
 
 export const PROJECT_READY = "project-ready" as const;
 
@@ -14827,6 +14836,44 @@ export type PolicyOverride = {
 };
 
 /**
+ *  **The policy prerequisite**: one read of the project's policy, so the reasons, the rows and
+ *  the digest the window presses are all of the same file.
+ */
+export type PolicyPrerequisite = {
+	/**  Open, or deferred for this run. */
+	state: PrerequisiteState,
+	/**  Broken, Waiting, or both, Broken first. */
+	reasons: PolicyReason[],
+	/**  The digest an Accept must name. */
+	digest: string,
+	/**
+	 *  Whether Accept must first replace a seal key another program made (#7714): the press is
+	 *  Make a new key and accept.
+	 */
+	needs_new_key: boolean,
+	/**
+	 *  Whether the acceptance broke because purlis replaced its seal key on this machine
+	 *  (#7714), never because something edited it.
+	 */
+	after_new_key: boolean,
+	/**  The project's policy as it stands, from the same read: the waiting rows among it. */
+	policy: PolicyState,
+};
+
+/**  Why the policy prerequisite is open. */
+export type PolicyReason = 
+/**
+ *  An acceptance was kept on this machine, and what is here now is not it: the project's
+ *  chats work in strict mode until the person answers.
+ */
+"broken" | 
+/**
+ *  The committed policy loosens what this machine accepted, or the shipped `watch` where
+ *  nothing holds.
+ */
+"waiting";
+
+/**
  *  **What the controls would refuse, said before a review** (#6031): the core's sentence, and
  *  when it can be taken where it is refused for its age alone.
  */
@@ -15775,6 +15822,35 @@ export type PossibleDuplicate = {
 	/**  `open` or `closed`. */
 	state: string,
 	url: string,
+};
+
+/**  **One prerequisite**, by its kind. */
+export type Prerequisite = 
+/**  The project's `[policy]` is not accepted on this machine (ADR 0130 §3). */
+{
+	kind: "policy",
+} & PolicyPrerequisite;
+
+/**  Where a prerequisite stands this run. */
+export type PrerequisiteState = 
+/**  Unanswered: it waits for the person. */
+"open" | 
+/**  Answered for this run with the answer that grants nothing. */
+"deferred";
+
+/**
+ *  **A project's whole list of prerequisites, in the core's order**: what [`EVENT`] carries,
+ *  what [`project_prerequisites`] answers, and what the hook socket hands a chat's `purlis`.
+ *  Never a delta.
+ */
+export type Prerequisites = {
+	/**  The project it is of. */
+	plane: PlaneId,
+	/**
+	 *  Each prerequisite, open or deferred, in the core's order: none where the project needs
+	 *  nothing of the person.
+	 */
+	list: Prerequisite[],
 };
 
 /**
