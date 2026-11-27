@@ -146,7 +146,9 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
     // project's `[policy]`, made stricter by what the project says now.
     let policy = purlis_core::enforcement::in_force(&root);
     let chat = purlis_core::enforcement::this_chat();
-    let judged = toolgate::judged(&call, plane.as_ref(), &|family| policy.mode(family));
+    // A refusal an unaccepted policy causes names it, and this machine's window (ADR 0130 §7).
+    let on = purlis_core::enforcement::AcceptedOn::ThisMachine;
+    let judged = toolgate::judged_under(&call, plane.as_ref(), &policy, on);
     for logged in &judged.logged {
         if let Some(family) = logged.arm.and_then(toolgate::Arm::family) {
             log_verdict(&root, chat.as_deref(), family, logged);
@@ -164,7 +166,11 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
         && let Some(verdict) = held_merge(&command, &cwd, merges == Mode::Enforce)
     {
         if merges == Mode::Enforce {
-            return crate::hooks::Answered::of(Answer::Deny(verdict));
+            return crate::hooks::Answered::of(Answer::Deny(verdict.caused_by(
+                &policy,
+                Family::GuardsMerge,
+                on,
+            )));
         }
         log_verdict(&root, chat.as_deref(), Family::GuardsMerge, &verdict);
     }
@@ -178,7 +184,11 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
         && let Some(verdict) = held_branch_folder(Path::new(&found.root), &command, &cwd)
     {
         if git == Mode::Enforce {
-            return crate::hooks::Answered::of(Answer::Deny(verdict));
+            return crate::hooks::Answered::of(Answer::Deny(verdict.caused_by(
+                &policy,
+                Family::GuardsGit,
+                on,
+            )));
         }
         log_verdict(&root, chat.as_deref(), Family::GuardsGit, &verdict);
     }
@@ -321,6 +331,7 @@ fn held_merge(command: &str, cwd: &str, asks_the_app: bool) -> Option<toolgate::
         denial: purlis_core::floorguard::in_directory(cwd, || {
             mergehold::refusal_for(command, &held, &app)
         }),
+        unaccepted: None,
     })
 }
 
@@ -381,6 +392,7 @@ fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate:
             reason: purlis_core::piececlaim::REASON.to_owned(),
             denial: purlis_core::branchgit::unplaced_said(&sub),
             shape: Some(sub),
+            unaccepted: None,
         });
     }
     for write in writes.found {
@@ -416,6 +428,7 @@ fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate:
                 reason: purlis_core::piececlaim::REASON.to_owned(),
                 shape: Some(write.sub),
                 denial: why.clone(),
+                unaccepted: None,
             });
         }
         if let crate::gitask::Forwarded::Said { code, lines } = forwarded
@@ -436,6 +449,7 @@ fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate:
                 reason: purlis_core::piececlaim::REASON.to_owned(),
                 shape: Some(write.sub),
                 denial: why.join(" "),
+                unaccepted: None,
             });
         }
     }

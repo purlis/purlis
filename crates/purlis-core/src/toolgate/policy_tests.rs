@@ -174,6 +174,7 @@ fn the_arms_that_exist_because_of_the_wrap_hold_under_every_template() {
             modes: &modes,
             logged: std::cell::RefCell::default(),
             sandboxed: true,
+            cause: None,
         };
         for arm in [
             Arm::RootUpdate,

@@ -372,7 +372,12 @@ pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) 
     if vaults_off(ctx) {
         return None;
     }
-    refused_where(ctx, vault, reader, &|| super::setup::sandboxed_chat(ctx))
+    let refused = refused_where(ctx, vault, reader, &|| super::setup::sandboxed_chat(ctx))?;
+    // Named as its cause where only an unaccepted policy runs the check (ADR 0130 §7).
+    Some(match vaults_unaccepted(ctx) {
+        Some(cause) => Markup::lines([refused, Markup::from(format!("  {cause}"))]),
+        None => refused,
+    })
 }
 
 /// **Whether the project's `[policy]` turns the `vaults` family off** (Q308, Q308a; item 4 of
@@ -2006,14 +2011,53 @@ pub fn authorise(ctx: &Ctx, persona: Option<&str>, vault: &str) -> Result<(), St
             .map(|_| ())
             .map_err(|e| e.message.to_string());
     }
+    // The check's own refusals name an unaccepted policy where that alone runs it (ADR 0130 §7);
+    // a vault the project does not register is refused whatever the policy.
+    match authorise_tagged(ctx, persona, vault) {
+        Err(Refused::ByTheCheck(why)) => Err(match vaults_unaccepted(ctx) {
+            Some(cause) => format!("{why} {cause}"),
+            None => why,
+        }),
+        Err(Refused::Unregistered(why)) => Err(why),
+        Ok(()) => Ok(()),
+    }
+}
+
+/// Why [`authorise_tagged`] refused: the `vaults` family's check, or a vault the project does not
+/// register, which no policy opens.
+enum Refused {
+    ByTheCheck(String),
+    Unregistered(String),
+}
+
+/// **Why the `vaults` family's check runs, where an unaccepted policy is the cause** (ADR 0130 §7):
+/// the family is enforced only because this machine's acceptance of the project's policy is
+/// Broken or Waiting, and no administrator's lock holds the vault to its persona. Its sentence.
+pub fn vaults_unaccepted(ctx: &Ctx) -> Option<String> {
+    use crate::enforcement::{self, Family, Mode};
+    if crate::sandbox::policy::Locks::of(&ctx.root).forbids_vault_grants() {
+        return None;
+    }
+    let policy = enforcement::in_force(&ctx.root).for_chat(ctx.policy.as_deref());
+    (policy.mode(Family::Vaults) == Mode::Enforce && policy.unaccepted(Family::Vaults)).then(|| {
+        format!(
+            "Refused because {}",
+            enforcement::unaccepted_said(enforcement::AcceptedOn::ThisMachine)
+        )
+    })
+}
+
+/// [`authorise`]'s check of a vault the project registers, with the `vaults` family enforced.
+fn authorise_tagged(ctx: &Ctx, persona: Option<&str>, vault: &str) -> Result<(), Refused> {
     let Some(persona) = persona.filter(|p| !p.is_empty()) else {
-        return Err(format!(
+        return Err(Refused::ByTheCheck(format!(
             "this chat runs as no persona, so purlis hands it no vault. Start the chat as the \
              persona that vault '{vault}' is tagged with."
-        ));
+        )));
     };
-    let doc = registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
-    let registered = registry::vault_in(&doc, vault).map_err(|e| e.message.to_string())?;
+    let unregistered = |e: super::VaultError| Refused::Unregistered(e.message.to_string());
+    let doc = registry::load_registry(ctx).map_err(unregistered)?;
+    let registered = registry::vault_in(&doc, vault).map_err(unregistered)?;
     let tagged = registry::vaults_for_persona(&doc, persona);
     if tagged.iter().any(|t| t == vault) || allowed_here(ctx, persona, vault) {
         return Ok(());
@@ -2025,10 +2069,10 @@ pub fn authorise(ctx: &Ctx, persona: Option<&str>, vault: &str) -> Result<(), St
     };
     let routes = routes(ctx, &not);
     if cmd::persona_vault(ctx, persona).is_ok_and(|declared| declared == vault) {
-        return Err(format!(
+        return Err(Refused::ByTheCheck(format!(
             "persona '{persona}' names vault '{vault}' in its own file, and a chat can edit that \
              file, so purlis does not open the vault for a chat on that alone. {routes}"
-        ));
+        )));
     }
     let theirs = if tagged.is_empty() {
         "none is tagged with it".to_owned()
@@ -2042,10 +2086,10 @@ pub fn authorise(ctx: &Ctx, persona: Option<&str>, vault: &str) -> Result<(), St
                 .join(", ")
         )
     };
-    Err(format!(
+    Err(Refused::ByTheCheck(format!(
         "vault '{vault}' is not one persona '{persona}' may use, so purlis did not open it \
          ({theirs}). {routes}"
-    ))
+    )))
 }
 
 /// One vault as `purlis vault list` shows it to a sandboxed chat (#1430): its name, the
