@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795764046475,
+  "lastUpdate": 1795764321521,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57162,6 +57162,48 @@ window.BENCHMARK_DATA = {
             "value": 101.08762150000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.368, 100.873, 101.088, 101.110, 101.860 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e190cb7abb2573fd4c93c6e3e5129a3611e01aab",
+          "message": "SC-4: propose ADR amendments for hibernation (0076, 0082, 0121) and the Rested chat term (#1391) (#7732)\n\nDocumentation only, recorded ahead of the behaviour: the app and the operator hibernate a rested chat, the hot target gates automatic hibernation and SC-4 keeps a masked snapshot, and Hibernated is a ninth chat state with Hibernate as a row action.\n\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M893979D7WHT3E0YKZ0Q60NH\nPurlis-Persona: steward\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T06:15:01Z",
+          "tree_id": "ff08509395f133422f081fa95b401397c56c6cb6",
+          "url": "https://github.com/purlis/purlis/commit/e190cb7abb2573fd4c93c6e3e5129a3611e01aab"
+        },
+        "date": 1795764313444,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5583005,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.549, 0.557, 0.558, 0.566, 0.568 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.309013999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.267, 16.284, 16.309, 16.328, 16.525 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9204575,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.072, 101.848, 101.920, 102.210, 102.859 ms"
           }
         ]
       }
