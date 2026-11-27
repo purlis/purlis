@@ -397,7 +397,8 @@ const FOLLOWED: [&Words; 4] = [&CLAUDE, &OPENCODE_COPILOT, &CODEX, &OPENCODE_CHA
 const LEAST_STATE: usize = 16;
 const MOST_STATE: usize = 512;
 
-/// Whether a line read is all of it, or was cut at [`MOST_PARTIAL`] with no line break.
+/// Whether a line read is all of it, or a part of one cut at [`MOST_PARTIAL`]: up to the cut,
+/// or what follows it up to its line break.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Whole {
     Yes,
@@ -448,6 +449,9 @@ pub struct Driven {
     /// Whether the last line it printed on each output ended with the words before a page on
     /// the next ([`Words::page_below`]).
     page_next: [bool; 2],
+    /// Whether the line now printed on each output was cut at [`MOST_PARTIAL`]: until its line
+    /// break, no part of it is whole.
+    cut: [bool; 2],
     /// Whether it said it signed in ([`Words::signed_in`]).
     said_signed_in: bool,
     /// Whether its one question ([`Words::chosen`]) was answered, and what to pass it now.
@@ -485,6 +489,7 @@ impl Driven {
             failed: None,
             device_page: None,
             page_next: [false; 2],
+            cut: [false; 2],
             said_signed_in: false,
             answered: false,
             reply: None,
@@ -517,11 +522,17 @@ impl Driven {
             }
             if n > 0 {
                 let line = std::mem::take(&mut self.partial[at]);
-                self.take(&line, stream, Whole::Yes, &mut said);
+                let whole = if std::mem::take(&mut self.cut[at]) {
+                    Whole::No
+                } else {
+                    Whole::Yes
+                };
+                self.take(&line, stream, whole, &mut said);
             }
             self.partial[at].push_str(piece);
             if self.partial[at].len() > MOST_PARTIAL {
                 let line = std::mem::take(&mut self.partial[at]);
+                self.cut[at] = true;
                 self.take(&line, stream, Whole::No, &mut said);
             }
         }
@@ -576,10 +587,10 @@ impl Driven {
                 // [`MOST_PARTIAL`] is no page: what is left of it may be one cut short.
                 let next = &mut self.page_next[stream as usize];
                 let alone = !line.is_empty() && std::mem::take(next);
-                if words.page_below.iter().any(|end| line.ends_with(end)) {
+                let whole = whole == Whole::Yes;
+                if whole && words.page_below.iter().any(|end| line.ends_with(end)) {
                     *next = true;
                 }
-                let whole = whole == Whole::Yes;
                 if whole && alone && line.starts_with("https://") {
                     // Where its page goes: one that is not its page cannot be followed, said at
                     // once. An address alone anywhere else is passed over, and ends nothing.

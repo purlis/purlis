@@ -235,6 +235,43 @@ fn a_page_on_a_line_too_long_to_be_whole_is_never_opened() {
     }
 }
 
+/// **No part of a line cut at [`MOST_PARTIAL`] is read for a page** (#7942's review): what
+/// follows the cut, up to its line break, is the same line, so neither a page on it nor the words
+/// before one on the next line are taken.
+#[test]
+fn what_follows_a_cut_up_to_its_line_break_is_never_read_for_a_page() {
+    let past = "x".repeat(MOST_PARTIAL + 10);
+    for printed in [
+        format!("{past} If the browser didn't open, visit: {PAGE_2_1_332}\n"),
+        format!("{past} If the browser didn't open, visit:\n{PAGE_2_1_332}\n"),
+    ] {
+        for pieces in [printed.len(), 64] {
+            let mut driven = claude();
+            let mut said = Vec::new();
+            for piece in in_pieces(&printed, pieces) {
+                said.extend(driven.read(piece));
+            }
+
+            assert!(
+                !said.iter().any(|event| matches!(event, Event::Open { .. })),
+                "in pieces of {pieces}: {said:?}"
+            );
+        }
+    }
+    // The next whole line is read as ever.
+    let mut driven = claude();
+    driven.read(&format!("{past}\n"));
+    assert_eq!(
+        driven.read(RECORDED_2_1_332.trim_end_matches('\n')),
+        [
+            Event::Open {
+                url: PAGE_2_1_332.to_owned()
+            },
+            Event::AskCode
+        ]
+    );
+}
+
 /// `text` in pieces of about `most` bytes, each cut between characters, as a reader of a pipe
 /// decodes it.
 fn in_pieces(text: &str, most: usize) -> Vec<&str> {
