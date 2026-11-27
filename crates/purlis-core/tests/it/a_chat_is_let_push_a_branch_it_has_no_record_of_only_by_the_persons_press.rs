@@ -196,6 +196,114 @@ fn keep_blocked_leaves_it_refused_and_the_chat_is_not_asked_again() {
     windowonly::project_ended(&root);
 }
 
+/// How every family runs where the project's `[policy]` sets `consents` to `consents`, as the
+/// app would answer it, for this test's thread alone (#7153): put away when dropped.
+struct ConsentsHere;
+
+impl ConsentsHere {
+    fn at(consents: &str) -> Self {
+        use purlis_core::enforcement::{self, Family, Mode, Resolved, Settings};
+        let resolved = Resolved::of(
+            &Settings::from_text(Some(&format!("[policy]\nconsents = \"{consents}\"\n"))),
+            &purlis_core::sandbox::policy::Locks::none(),
+        );
+        assert_eq!(
+            resolved.mode(Family::Consents).word(),
+            Mode::parse(consents).unwrap().word()
+        );
+        enforcement::answered_on_this_thread(Some(resolved));
+        Self
+    }
+}
+
+impl Drop for ConsentsHere {
+    fn drop(&mut self) {
+        purlis_core::enforcement::answered_on_this_thread(None);
+    }
+}
+
+/// A push of `branch` from `old` to `new`, handed to the route on this thread, so the policy
+/// this thread was answered is the one it reads.
+fn handled(w: &World, branch: &str, old: &str, new: &str) -> purlis_core::forge::proxy::Outcome {
+    use purlis_core::forge::proxy::{Inbound, RequestHead};
+    let mut body = pkt(&format!(
+        "{old} {new} refs/heads/{branch}\0 report-status side-band-64k agent=git/2"
+    ));
+    body.push_str("0000PACK....");
+    let head = RequestHead::new("POST", HOST, 443, "/acme/app.git/git-receive-pack")
+        .with_content_type(Some("application/x-git-receive-pack-request"));
+    let headers = vec![
+        (
+            "Authorization".to_owned(),
+            basic("x-access-token", w.sentinel.expose()),
+        ),
+        (
+            "Content-Type".to_owned(),
+            "application/x-git-receive-pack-request".to_owned(),
+        ),
+    ];
+    w.proxy.handle(
+        &w.chat,
+        &Inbound {
+            head: &head,
+            headers: &headers,
+            body: body.as_bytes(),
+        },
+    )
+}
+
+#[test]
+fn a_not_your_branch_push_stays_refused_without_the_press_under_consents_off_and_log() {
+    // ADR 0125, amended 2026-11-27, §10 (#7749): turned down, `consents` still raises the ask,
+    // and nothing loosens. The push is refused until the person presses Allow.
+    use purlis_core::forge::proxy::{Outcome, Refusal};
+    purlis_core::unsteered!();
+    for consents in ["off", "log"] {
+        let _here = ConsentsHere::at(consents);
+        let config = tempfile::tempdir().unwrap();
+        let (_p, root) = project(PROJECT_ID);
+        let w = World::asking_in(config.path().to_owned(), root.clone());
+        let (old, new) = ("3".repeat(40), "5".repeat(40));
+
+        for attempt in 0..2 {
+            match handled(&w, "theirs", &old, &new) {
+                Outcome::Held(held) => {
+                    assert_eq!(held.refusal, Refusal::NotYourBranch, "{consents}");
+                    assert!(
+                        held.said
+                            .contains("Let this chat push it is waiting in the window"),
+                        "{consents}, attempt {attempt}: {}",
+                        held.said
+                    );
+                }
+                other => panic!("{consents}, attempt {attempt}: no ask was raised: {other:?}"),
+            }
+        }
+        let waiting = windowonly::every(&root);
+        assert_eq!(waiting.len(), 1, "{consents}: {waiting:?}");
+        assert_eq!(waiting[0].control, control("theirs"), "{consents}");
+        // Until the press nothing is recorded or sent.
+        assert_eq!(tip_of(config.path(), CHAT, "theirs"), None, "{consents}");
+        assert!(w.fake.requests().is_empty(), "{consents}: never sent");
+
+        // The press is still the one way through.
+        windowonly::let_chat_push(
+            &HostScope::for_a_test(),
+            config.path(),
+            &root,
+            SESSION,
+            &control("theirs"),
+            &forge_at(&old),
+        )
+        .unwrap();
+        assert!(
+            matches!(handled(&w, "theirs", &old, &new), Outcome::Forward(_)),
+            "{consents}: let through after the press"
+        );
+        windowonly::project_ended(&root);
+    }
+}
+
 #[test]
 fn a_protected_default_deploy_or_pages_branch_raises_no_ask() {
     purlis_core::unsteered!();
