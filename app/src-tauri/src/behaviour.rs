@@ -795,14 +795,36 @@ struct RemovesThePool {
     volume: String,
 }
 
+/// Whether pool `name` is known to be forgotten: the pools `listed` under its config were read
+/// and it is not one of them. A list that could not be read says nothing, so it is not.
+fn known_forgotten<E>(listed: Result<Vec<String>, E>, name: &str) -> bool {
+    listed.is_ok_and(|names| !names.iter().any(|listed| listed == name))
+}
+
+#[test]
+fn a_pool_is_taken_as_forgotten_only_when_its_list_was_read_without_it() {
+    let read = |names: &[&str]| Ok::<_, ()>(names.iter().map(|&n| n.to_owned()).collect());
+    assert!(known_forgotten(read(&["other"]), "pool"));
+    assert!(!known_forgotten(read(&["other", "pool"]), "pool"));
+    assert!(!known_forgotten(
+        Err::<Vec<String>, _>("unreadable"),
+        "pool"
+    ));
+}
+
 impl RemovesThePool {
     /// **A pool the test forgot here leaves its runner on its machine** (#7187): its container
     /// and home volume are removed there by name, through the engine the pool was reached on.
-    /// `false` where the pool is still kept, for [`purlis_core::pools::remove_discarding`].
+    /// `false` where the pool is still kept, for [`purlis_core::pools::remove_discarding`], and
+    /// where its config could not be read, so the normal removal and its diagnostics still run.
     fn removed_as_forgotten(&self) -> bool {
-        let kept = purlis_core::runners::pools(&self.config)
-            .is_ok_and(|pools| pools.iter().any(|pool| pool.name() == self.name));
-        if kept {
+        let listed = purlis_core::runners::pools(&self.config).map(|pools| {
+            pools
+                .iter()
+                .map(|pool| pool.name().to_owned())
+                .collect::<Vec<_>>()
+        });
+        if !known_forgotten(listed, &self.name) {
             return false;
         }
         let (container, volume) = (self.container.as_str(), self.volume.as_str());
