@@ -281,7 +281,7 @@ impl World {
             }));
             let tips = config.clone();
             proxy = proxy.with_tips(std::sync::Arc::new(move |host, repo_id, branch| {
-                purlis_core::forge::createdbranches::tip_for(
+                purlis_core::forge::createdbranches::owned_tip_for(
                     &tips,
                     PROJECT_ID,
                     "chat-listener",
