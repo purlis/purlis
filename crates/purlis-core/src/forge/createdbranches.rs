@@ -310,15 +310,55 @@ pub fn tip_for(
     branch: &str,
     lineage: &dyn Fn(&str) -> bool,
 ) -> Option<String> {
-    if let Some(tip) = tip_of(config_root, project_id, chat, host, repo_id, branch) {
-        return Some(tip);
-    }
+    owned_tip_for(
+        config_root,
+        project_id,
+        chat,
+        host,
+        repo_id,
+        branch,
+        lineage,
+    )
+    .map(|t| t.tip)
+}
+
+/// The tip a chat may move a branch from, and whether it may move it only forward.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnedTip {
+    /// Lower-case.
+    pub tip: String,
+    /// **The chat owns the branch by the person's Allow** ([`Via::Allow`], which a later push
+    /// keeps): the branch was made by someone else, and floor item 6 of ADR 0125's 2026-11-27
+    /// amendment holds, so its new tip must descend from the forge's (#7841).
+    pub fast_forward_only: bool,
+}
+
+/// [`tip_for`], from **one read of the file**, with whether the update must be a fast-forward
+/// ([`OwnedTip::fast_forward_only`]): the last line for the branch says both, so a line written
+/// between two reads can never pair one line's tip with another's marker.
+pub fn owned_tip_for(
+    config_root: &Path,
+    project_id: &str,
+    chat: &str,
+    host: &str,
+    repo_id: u64,
+    branch: &str,
+    lineage: &dyn Fn(&str) -> bool,
+) -> Option<OwnedTip> {
     let owner = owner_line(config_root, host, repo_id, branch)?;
-    (owner.project == project_id
-        && owner.chat != chat
-        && owner.via == Some(Via::Route)
-        && lineage(&owner.chat))
-    .then_some(owner.tip)
+    if owner.project != project_id {
+        return None;
+    }
+    if owner.chat == chat {
+        return Some(OwnedTip {
+            fast_forward_only: owner.via == Some(Via::Allow),
+            tip: owner.tip,
+        });
+    }
+    (owner.via == Some(Via::Route) && lineage(&owner.chat)).then_some(OwnedTip {
+        tip: owner.tip,
+        fast_forward_only: false,
+    })
 }
 
 /// The tip `chat` of the project `project_id` last put on `branch` of the repo with forge id

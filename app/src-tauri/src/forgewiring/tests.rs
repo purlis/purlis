@@ -151,6 +151,7 @@ fn push_of(host: &str, repo: &str) -> PushRead {
             old: "0".repeat(40),
             new: "1".repeat(40),
             name: "refs/heads/work".to_owned(),
+            fast_forward_only: false,
         }],
         pack: Vec::new(),
     }
@@ -407,6 +408,30 @@ impl Rebase {
 
     /// [`Self::read`], and whether a quarantine of the push is kept after it.
     fn read_keeping(&self, tip: &HeadSha, pack: &[u8]) -> (Result<(), PushVerdict>, bool) {
+        self.read_as(tip, pack, false)
+    }
+
+    /// [`Self::read`] of a branch the chat holds by the person's Allow, whose update must be a
+    /// fast-forward.
+    fn read_allowed(&self, tip: &HeadSha, pack: &[u8]) -> Result<(), PushVerdict> {
+        self.read_as(tip, pack, true).0
+    }
+
+    /// The chat's commit on the branch's old tip, with `ci` as the CI file: a fast-forward.
+    fn added(&self, ci: &[u8]) -> (HeadSha, Vec<u8>) {
+        git_in(&self.forge, &["checkout", "-q", "-B", "added", "task"]).unwrap();
+        let tip = commit_with(&self.forge, &[(CI, ci), ("b.txt", b"b\n")], "t1");
+        git_in(&self.forge, &["checkout", "-q", "main"]).unwrap();
+        let pack = thin_pack(&self.forge, &tip, &[&self.old_tip, &self.default_tip]);
+        (tip, pack)
+    }
+
+    fn read_as(
+        &self,
+        tip: &HeadSha,
+        pack: &[u8],
+        fast_forward_only: bool,
+    ) -> (Result<(), PushVerdict>, bool) {
         let home = tempfile::tempdir().unwrap();
         let parent = tempfile::tempdir().unwrap();
         let gate = CiPushGate {
@@ -428,6 +453,7 @@ impl Rebase {
                 tip: tip.clone(),
                 old: self.old_tip.as_str(),
                 created: false,
+                fast_forward_only,
                 pack,
             },
         );
@@ -476,6 +502,47 @@ fn a_held_ci_push_nobody_waits_on_keeps_no_quarantine() {
 
     assert!(matches!(read, Err(PushVerdict::Refuse(_))), "{read:?}");
     assert!(!kept, "the quarantine of a push nobody waits on is let go");
+}
+
+// ---- a branch the chat holds by the person's Allow moves only forward (#7841) ----
+
+#[test]
+fn a_force_push_onto_a_branch_the_chat_holds_by_allow_is_refused_and_nothing_is_sent() {
+    // Floor item 6 of ADR 0125's 2026-11-27 amendment: the branch was someone else's, so a push
+    // that replaces its history is refused, with no ask. The same rebase is let through on a
+    // branch the chat made (above): only the Allow makes it a refusal.
+    let scene = rebase_scene();
+    let (tip, pack) = scene.rebased(b"v2\n");
+    assert!(scene.read(&tip, &pack).is_ok(), "the chat's own branch");
+
+    let why = match scene.read_allowed(&tip, &pack) {
+        Err(PushVerdict::Refuse(why)) => why,
+        other => panic!("not refused: {other:?}"),
+    };
+
+    assert!(why.contains("task was not this chat's"), "{why}");
+    assert!(why.contains("replaces it"), "{why}");
+}
+
+#[test]
+fn a_fast_forward_of_a_branch_the_chat_holds_by_allow_is_sent() {
+    let scene = rebase_scene();
+    let (tip, pack) = scene.added(b"bin\0\n");
+
+    let read = scene.read_allowed(&tip, &pack);
+
+    assert!(read.is_ok(), "{read:?}");
+}
+
+#[test]
+fn pushing_the_branch_s_own_tip_again_to_a_branch_the_chat_holds_by_allow_is_sent() {
+    // An update to the tip it is at already is no change of history.
+    let scene = rebase_scene();
+    let pack = thin_pack(&scene.forge, &scene.old_tip, &[&scene.old_tip]);
+
+    let read = scene.read_allowed(&scene.old_tip.clone(), &pack);
+
+    assert!(read.is_ok(), "{read:?}");
 }
 
 // ---- a push that sends no new objects: its tip must be in a branch of this repo ----

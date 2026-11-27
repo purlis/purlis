@@ -464,6 +464,15 @@ mod through_the_policy {
     /// The chat made `fix` (tip [`TIP`]); the person's `develop` and the default `main` are not
     /// the chat's.
     fn decide(number: u64, heads: Vec<(u64, &'static str, &'static str)>) -> Decision {
+        decide_held(number, heads, false)
+    }
+
+    /// [`decide`], where the chat holds `fix` by the person's Allow when `by_allow`.
+    fn decide_held(
+        number: u64,
+        heads: Vec<(u64, &'static str, &'static str)>,
+        by_allow: bool,
+    ) -> Decision {
         let repo = AllowedRepo::new(Kind::GitHub, "github.com", 443, "Acme/Widgets", "main")
             .unwrap()
             .with_forge_id(purlis_core::forge::proxy::ForgeRepoId::for_a_test(7));
@@ -472,8 +481,12 @@ mod through_the_policy {
             vec![repo.clone()],
             Arc::new(Heads(heads)),
         );
-        let tips: purlis_core::forge::proxy::TipSource =
-            Arc::new(|_host, _repo_id, branch| (branch == "fix").then(|| TIP.to_owned()));
+        let tips: purlis_core::forge::proxy::TipSource = Arc::new(move |_host, _repo_id, branch| {
+            (branch == "fix").then(|| purlis_core::forge::createdbranches::OwnedTip {
+                tip: TIP.to_owned(),
+                fast_forward_only: by_allow,
+            })
+        });
         let policy = ChatPolicy::new(vec![repo]).with_tips(tips);
         let head = RequestHead::new(
             "PUT",
@@ -512,5 +525,22 @@ mod through_the_policy {
                 "{why}"
             );
         }
+    }
+
+    #[test]
+    fn update_branch_does_not_write_a_head_the_chat_holds_by_the_persons_allow() {
+        // A rebase through the forge would replace the branch's history, and the route cannot
+        // read the commits the forge would write (#7841): the chat updates it locally and pushes.
+        assert!(
+            matches!(
+                decide_held(1, vec![(1, "fix", TIP)], true),
+                Decision::Refuse(Refusal::ProtectedPullHead)
+            ),
+            "held by Allow"
+        );
+        assert!(matches!(
+            decide_held(1, vec![(1, "fix", TIP)], false),
+            Decision::Allow(_)
+        ));
     }
 }

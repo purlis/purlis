@@ -219,7 +219,7 @@ fn a_chat_that_has_ended_is_asked_nothing_and_asks_nothing() {
 }
 
 #[test]
-fn an_ask_says_who_owns_the_branch_where_and_that_history_can_be_replaced() {
+fn an_ask_says_who_owns_the_branch_where_and_that_allow_only_adds_to_its_history() {
     use crate::forge::proxy::{BranchAsk, ChatId};
     let root = tempfile::tempdir().unwrap();
     let asks = push_asks(root.path(), Some(5));
@@ -235,11 +235,11 @@ fn an_ask_says_who_owns_the_branch_where_and_that_history_can_be_replaced() {
     );
     assert!(said[0].contains("Chat chat-2 owns it"), "{}", said[0]);
     assert!(said[1].contains("Nobody owns it"), "{}", said[1]);
+    // Allow never lets the chat replace the branch's history (floor item 6 of ADR 0125's
+    // 2026-11-27 amendment; #7841), and the ask does not say it does.
     for one in &said {
-        assert!(
-            one.contains("replace the branch's history, not only add to it"),
-            "{one}"
-        );
+        assert!(one.contains("it can add to the branch's history"), "{one}");
+        assert!(!one.contains("replace"), "{one}");
     }
     project_ended(root.path());
 }

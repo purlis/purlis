@@ -615,6 +615,7 @@ impl PushGate for CiPushGate {
                 tip,
                 old: &update.old,
                 created,
+                fast_forward_only: update.fast_forward_only,
                 pack: &push.pack,
             };
             if let Err(verdict) =
@@ -634,6 +635,9 @@ struct Update<'a> {
     /// The tip the push says the branch starts from (all zeros where it makes the branch).
     old: &'a str,
     created: bool,
+    /// The chat holds the branch by the person's Allow, so the push must be a fast-forward of the
+    /// branch's tip on the forge (floor item 6 of ADR 0125's 2026-11-27 amendment; #7841).
+    fast_forward_only: bool,
     pack: &'a [u8],
 }
 
@@ -658,6 +662,7 @@ impl CiPushGate {
             tip,
             old,
             created,
+            fast_forward_only,
             pack,
         } = update;
         let created = *created;
@@ -723,6 +728,30 @@ impl CiPushGate {
         // resolves by id (a fork's commit, a dangling one).
         if let Err(why) = quarantine.take_in_known(pack, tip, &base, from) {
             return refuse(format!("git did not take its objects in ({why})."));
+        }
+        // **No force push onto a branch that was someone else's** (floor item 6 of ADR 0125's
+        // 2026-11-27 amendment; #7841): a branch the chat holds by the person's Allow moves only
+        // forward. The new tip must descend from the branch's tip on the forge, read as the
+        // person just now, by git over the forge's objects and the push's own. Refused with no
+        // ask: no level or press reaches the floor.
+        if *fast_forward_only && !created {
+            match quarantine.descends(&base, tip) {
+                Ok(true) => {}
+                Ok(false) => {
+                    return refuse(format!(
+                        "{} was not this chat's before the person let it push it, so it may only \
+                         add to the branch's history, and this push replaces it. Fetch the \
+                         branch, put your commits on top of it, and push again.",
+                        branch.as_str()
+                    ));
+                }
+                Err(why) => {
+                    return refuse(format!(
+                        "it could not tell whether it only adds to {} ({why}).",
+                        branch.as_str()
+                    ));
+                }
+            }
         }
         let trees = quarantine.trees();
         let already = (!created).then_some(&base);

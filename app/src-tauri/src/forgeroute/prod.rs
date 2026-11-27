@@ -209,13 +209,13 @@ impl Recorded for ConfirmedRecorded {
         host: &str,
         repo_id: u64,
         branch: &str,
-    ) -> Option<String> {
+    ) -> Option<purlis_core::forge::createdbranches::OwnedTip> {
         let project_id = purlis_core::scaffold::planefile::id_to_hold_by(project).ok()?;
         // The branch purlis cut for an ended direct child of the same workspace and persona is its
         // parent's to follow up too (ADR 0128, amended 2026-11-24), from the app's own dispatch
         // records and `[policy] lineage` (an allowance, denied by `deny`, a lock or a value that
         // does not read; read only when the branch is another chat's), never a file a chat writes.
-        purlis_core::forge::createdbranches::tip_for(
+        purlis_core::forge::createdbranches::owned_tip_for(
             &self.config_root,
             &project_id,
             chat,
@@ -335,8 +335,11 @@ mod tests {
             }],
         );
 
-        let own =
-            |chat: &str, project: &Path| recorded.own_tip(project, chat, "github.com", 7, "mine");
+        let own = |chat: &str, project: &Path| {
+            recorded
+                .own_tip(project, chat, "github.com", 7, "mine")
+                .map(|owned| owned.tip)
+        };
         assert_eq!(own("chat-1", project.path()), Some(tip));
         assert_eq!(
             recorded.own_branches(project.path(), "chat-1", "github.com", 7),
@@ -409,8 +412,11 @@ mod tests {
         };
         // The child's confirmed pushes, as `record_created` writes them (the route's).
         recorded.record_created(&project, "child", &[made("task/work"), made("task/other")]);
-        let tip =
-            |chat: &str, branch: &str| recorded.own_tip(&project, chat, "github.com", 7, branch);
+        let tip = |chat: &str, branch: &str| {
+            recorded
+                .own_tip(&project, chat, "github.com", 7, branch)
+                .map(|owned| owned.tip)
+        };
 
         // A running child: nothing.
         assert_eq!(tip("parent", "task/work"), None);
