@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795750612351,
+  "lastUpdate": 1795751407446,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56994,6 +56994,48 @@ window.BENCHMARK_DATA = {
             "value": 101.950698,
             "unit": "ms",
             "extra": "median of 5 runs: 101.039, 101.588, 101.951, 102.069, 102.149 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ea229c989c28ab29ca6e384b6f7a3b3253a54d4a",
+          "message": "Forge refusals say what was blocked and why (#7779) (#7844)\n\n* Forge refusals say what was blocked and why (#7779)\n\nA refusal of the forge route is one of two kinds, and says which (ADR 0128,\namended 2026-11-27, section 10): a request purlis doesn't carry, shown as its\nroute pattern on the recorded repo, which no setting can allow (a floor act\nalso says what it is and that it's the person's to do on the forge); or a\nknown act (a merge, a release or tag, a fork) that isn't allowed, with the\nrepo and why. A merge held only because this machine hasn't accepted the\nproject's policy says so and names no family. Numbers read {n}, segments\noutside the route vocabulary {…}, the query is dropped and the text is capped.\nEach such refusal is a guards.forge line in the chat's enforcement log, so it\ncounts under Would have blocked. No decision changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8D527K2FWM6AAQ75EVYBM91\nPurlis-Persona: steward\n\n* Forge refusals: say nobody was asked, read acts from their own route, gate on the sentinel (#7779, round 2)\n\n- A refusal said here raised no ask (an exact act is held first), so it says\n  \"Nobody was asked, so it will not happen\" and names the exact form purlis\n  can hold, never \"held for the person's press\".\n- A known act, and its forge.not-allowed.<act> count, is claimed only on the\n  act's own route pattern (rest::act_route), never a segment's name such as a\n  label named merge. No decision changes.\n- The unaccepted-policy sentence, and guards.merge's, are said only on a route\n  log or off would open (rest::opens_a_merge).\n- A caller that did not prove itself is told the generic sentence alone\n  (SentinelRegistry::proves, which counts no miss).\n- One count line per chat, rule and host:port a minute.\n- The unaccepted merge reads #7803's Resolved::unaccepted(GuardsMerge) with\n  merges_opted_in, and says enforcement::unaccepted_said(ThisMachine).\n- The app's refusal sink is a named function, tested against the log.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8DA2018M7AERSN6FSJ5XGW2\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T03:09:46Z",
+          "tree_id": "22dd427f9e89a1a68cb32aca79fbaa6bd2784ad9",
+          "url": "https://github.com/purlis/purlis/commit/ea229c989c28ab29ca6e384b6f7a3b3253a54d4a"
+        },
+        "date": 1795751402323,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.38114950000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.373, 0.375, 0.381, 0.391, 0.413 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.450853000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.298, 16.309, 16.451, 16.488, 16.505 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5138245,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.710, 100.949, 101.514, 101.918, 102.109 ms"
           }
         ]
       }
