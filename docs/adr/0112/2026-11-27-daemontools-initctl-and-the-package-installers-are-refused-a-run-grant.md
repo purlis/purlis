@@ -203,5 +203,11 @@ These are examples, not a complete list:
 - ast-grep's `sg`, a different program with the same name as shadow's `sg`. It is still offered
   under the name `ast-grep`. Modular's `mojo` has the same clash with Mojolicious's `mojo`.
 
+The forms also reach rows that were there before: `systemd` reaches `systemd-run`, `systemd-cat`,
+`garb-systemd` and the other `systemd-` and `-systemd` rows, and `supervise`, `svscan`,
+`setuidgid` and `softlimit` reach their `s6-` twins. Their tests pass through either row, so a
+unit test pins each as a row of its own, as it does `supervise-daemon` and
+`find-repos-of-install`.
+
 Which to give back, and how to do it without giving back the ones that run code, is part of
 #7825.

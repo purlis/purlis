@@ -2011,3 +2011,28 @@ fn supervise_daemon_is_refused_by_a_row_of_its_own_and_not_only_by_its_first_par
 fn find_repos_of_install_is_refused_by_a_row_of_its_own_and_not_only_by_its_first_part() {
     assert!(super::NOT_FOR_A_RUN_GRANT.contains(&"find-repos-of-install"));
 }
+
+/// Rows that were there before #7828 and that a row it added now reaches by a form of their name
+/// as well (round 8 of its review): `systemd` reaches the `systemd-<name>` and `<name>-systemd`
+/// programs, and `supervise`, `svscan`, `setuidgid` and `softlimit` reach their `s6-` twins. Their
+/// `run_grants` tests pass through either row, so a give-back of the forms (#7825) must not take
+/// them with it: each keeps a row of its own.
+#[test]
+fn the_rows_a_new_rows_form_also_reaches_are_each_kept_as_a_row_of_their_own() {
+    for name in [
+        "systemd-run",
+        "systemd-cat",
+        "systemd-inhibit",
+        "systemd-socket-activate",
+        "systemd-notify",
+        "systemd-dissect",
+        "garb-systemd",
+        "mysql-systemd",
+        "s6-supervise",
+        "s6-svscan",
+        "s6-setuidgid",
+        "s6-softlimit",
+    ] {
+        assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
+    }
+}

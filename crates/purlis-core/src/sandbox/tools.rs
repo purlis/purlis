@@ -2249,6 +2249,8 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "init",
     "upstart",
     "systemd",
+    // (`systemd` reaches the `systemd-<name>` and `<name>-systemd` rows below and elsewhere by
+    // their forms too, which keep their own rows all the same: a unit test pins them.)
     // and their kin (round 2 of #7828's review): Upstart's `telinit -e` puts a value into the
     // environment of the jobs its runlevel starts; systemd's `machinectl shell`, `homectl with`,
     // `userdbctl --chain`, `varlinkctl call exec:` and `portablectl attach --now` run a command
@@ -2292,8 +2294,10 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // daemontools (#6559), whose source (cr.yp.to) was out of reach, refused on what each is
     // for: `supervise` runs a folder's `./run` and `svscan` starts one on each folder in the one
     // it is named, as `runsv` and `runsvdir` do; `multilog`'s `!processor` has a shell run the
-    // processor; and `setuidgid`, `envuidgid`, `softlimit`, `setlock`, `pgrphack` and `fghack`
-    // run the program after them, as `envdir` does.
+    // processor; `setuidgid`, `envuidgid`, `softlimit`, `setlock`, `pgrphack` and `fghack` run
+    // the program after them, as `envdir` does; and `svscanboot` runs `svscan` (round 5 of
+    // #7828's review). `supervise`, `svscan`, `setuidgid` and `softlimit` reach the `s6-` rows
+    // by their forms too, which keep their own rows all the same (a unit test pins them).
     "svscan",
     "svscanboot",
     "supervise",
