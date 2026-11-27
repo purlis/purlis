@@ -687,24 +687,43 @@ fn a_docker_pools_runner_a_cluster_pools_runner_and_a_fresh_runner_are_read_and_
     }
 }
 
-/// **A runner before 1.97 is not asked for a file, and one from 1.97 is** (#6387, #7064): what
-/// reading files needs, on every kind, is the version that keeps a runner's own folders and
-/// sign-ins from the window.
+/// **A link of 1.96 to a runner of any kind is not read over, and one of 1.97 is** (#6387,
+/// #7064): `reads_files_over` is the check `HostedSessions::runner_files_of` makes, so a runner
+/// before the version that keeps its own folders and sign-ins from the window is never asked.
 #[cfg(unix)]
 #[test]
-fn a_runner_before_1_97_is_not_asked_for_a_file_and_one_from_1_97_is() {
+fn a_link_of_1_96_to_any_kind_of_runner_is_not_read_over_and_one_of_1_97_is() {
     use purlis_session_protocol::version::Version;
     let at = |minor| Version { major: 1, minor };
     let config = tempfile::tempdir().unwrap();
     let fresh = every_kind_of_runner_kept(config.path());
 
-    for named in ["builds", "team", fresh.as_str()] {
-        let needs = super::reading_files_needs(config.path(), named).unwrap();
-        assert!(at(96) < needs, "{named}");
-        assert!(at(97) >= needs, "{named}");
+    for named in ["builds", "builds/builds", "team", fresh.as_str()] {
         assert!(
-            purlis_session_protocol::session::VERSION >= needs,
-            "{named}"
+            !super::reads_files_over(config.path(), named, at(96)),
+            "{named} at 1.96"
+        );
+        assert!(
+            super::reads_files_over(config.path(), named, at(97)),
+            "{named} at 1.97"
+        );
+        assert!(
+            super::reads_files_over(
+                config.path(),
+                named,
+                purlis_session_protocol::session::VERSION
+            ),
+            "{named} now"
+        );
+    }
+    for none in ["empty", "team/fresh-0000", "nowhere"] {
+        assert!(
+            !super::reads_files_over(
+                config.path(),
+                none,
+                purlis_session_protocol::session::VERSION
+            ),
+            "{none} reads no file"
         );
     }
 }

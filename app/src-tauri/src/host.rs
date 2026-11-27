@@ -430,8 +430,8 @@ pub trait SessionHost: Send + Sync {
     }
 
     /// **Chat `id`'s files on its runner, as a pane's file links read them** (#6387,
-    /// #6949): a runner the window reads files on, of the session protocol version that needs
-    /// (`runnerfiles::reading_files_needs`), on a link open now. None for a chat here.
+    /// #6949): a runner the window reads files on, over a link open now of a session protocol
+    /// version that reads them there (`runnerfiles::reads_files_over`). None for a chat here.
     fn runner_files_of(&self, id: u32) -> Option<crate::runnerfiles::ReadsOnRunner> {
         let _ = id;
         None

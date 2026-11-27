@@ -4906,13 +4906,20 @@ impl HostedSessions {
         })
     }
 
-    /// **What reading this project's chats' files on the runner they run on needs of its link**
-    /// (#6387, #6949): [`crate::runnerfiles::reading_files_needs`] of the runner this
-    /// connection's links reach, `None` where the window reads none there.
-    fn reading_its_runners_files_needs(&self) -> Option<purlis_session_protocol::version::Version> {
-        let named = self.connection.link_name()?;
-        let config = self.connection.runners_config()?;
-        crate::runnerfiles::reading_files_needs(&config, named)
+    /// **Whether this project's chats' files are read over a link of `version` to the runner
+    /// its connection's links reach** (#6387, #6949): [`crate::runnerfiles::reads_files_over`]
+    /// of that runner, false where the window reads none there.
+    fn reads_its_runners_files_over(
+        &self,
+        version: purlis_session_protocol::version::Version,
+    ) -> bool {
+        let (Some(named), Some(config)) = (
+            self.connection.link_name(),
+            self.connection.runners_config(),
+        ) else {
+            return false;
+        };
+        crate::runnerfiles::reads_files_over(&config, named, version)
     }
 
     /// **The runner `link` reached, as a chat's tab names it** (#2977): [`runner_shown`], none
@@ -5634,16 +5641,15 @@ impl SessionHost for HostedSessions {
         self.connection.fresh_runner_went();
     }
 
-    /// Only of a link already open, to a runner of a kind the window reads files on, of the
-    /// version that needs ([`session::KNOWS_KEPT_FILES`], 1.97, on every kind; #6387, #6949,
-    /// #7064): a hover never opens one to the runner.
+    /// Only of a link already open, to a runner of a kind the window reads files on, of a
+    /// version that reads them there ([`session::KNOWS_KEPT_FILES`], 1.97, on every kind;
+    /// #6387, #6949, #7064): a hover never opens one to the runner.
     fn runner_files_of(&self, id: u32) -> Option<crate::runnerfiles::ReadsOnRunner> {
         if !self.kept_on_the_runner {
             return None;
         }
-        let needs = self.reading_its_runners_files_needs()?;
         let link = self.own_link(Duration::ZERO).ok()?;
-        if link.version() < needs {
+        if !self.reads_its_runners_files_over(link.version()) {
             return None;
         }
         let program = lock(&self.running).get(&id)?.id.clone();

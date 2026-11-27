@@ -485,7 +485,9 @@ pub(super) enum Written<'a> {
 /// the one reading every file link kind shares, on this machine ([`LocalFile`]) and on a
 /// runner ([`super::RunnerFile`]). Text with a space or a control character is no path. A
 /// `file:` address, in any case, is read as the file it names on this machine, or says why it
-/// is no link.
+/// is no link. A leading `~` is not read here: each side still handles it on its own, this
+/// machine from its home folder ([`LocalFile`]) and a runner's link by never asking for it
+/// ([`super::RunnerFile`]).
 pub(super) fn written(text: &str) -> Result<(Written<'_>, Option<u32>, Option<u32>), Resolved> {
     if text.is_empty() || text.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return Err(Resolved::Quiet);
