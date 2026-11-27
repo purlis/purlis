@@ -2234,6 +2234,9 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "supervisorctl",
     "openrc",
     "openrc-run",
+    // OpenRC's `supervise-daemon` runs the program it is named; its first part reaches the
+    // `supervise` row too, but it is refused on a row of its own (round 3 of #7828's review).
+    "supervise-daemon",
     "chkconfig",
     "deb-systemd-helper",
     // and their kin the review of #6556 found: systemd's `systemd-cat`, `systemd-inhibit`,
@@ -2250,6 +2253,62 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "s6-supervise",
     "s6-svscan",
     "runsvdir",
+    // Upstart's `initctl` (#6557), whose source was out of reach, refused on what it is for:
+    // `set-env` copies a value into the init daemon's job environment, as `import-environment`
+    // does, and `start` and `emit` start jobs (its `start`, `stop` and the rest are links to it,
+    // judged by its name). Upstart's `init --user --confdir <folder>` runs a folder's jobs, and
+    // `init` is as often a link to `systemd`, the service manager itself, refused with it on the
+    // conservative side (every `systemd-<name>` goes with it, by its first part).
+    "initctl",
+    "init",
+    "upstart",
+    "systemd",
+    // (`systemd` reaches the `systemd-<name>` and `<name>-systemd` rows above and elsewhere by
+    // their forms too, which keep their own rows all the same: a unit test pins them.)
+    // and the kin of `initctl` and `systemd` round 2 of #7828's review found: Upstart's `telinit
+    // -e` puts a value into the environment of the jobs its runlevel starts; systemd's `machinectl
+    // shell`, `homectl with`, `userdbctl --chain`, `varlinkctl call exec:` and `portablectl attach
+    // --now` run a command or an image they are handed, and are no `systemd-<name>`.
+    "telinit",
+    "machinectl",
+    "homectl",
+    "userdbctl",
+    "varlinkctl",
+    "portablectl",
+    // s6's programs that run the program after them and reach no row by a form of their name
+    // (rounds 2 and 3 of #7828's review): `s6-svlisten1` and `s6-ftrig-listen1` reach these
+    // rows without their version. `s6-svc`, `s6-svok` and `s6-svstat` run nothing.
+    "s6-svlisten",
+    "s6-notifyoncheck",
+    "s6-ftrig-listen",
+    "s6-ipcserver",
+    "s6-ipcserverd",
+    "s6-ipcserver-socketbinder",
+    "s6-ipcclient",
+    "s6-fdholder-retrieve",
+    "s6-sudod",
+    "s6-ipcserver-access",
+    "s6-connlimit",
+    "s6-fdholder-getdump",
+    "s6-permafailon",
+    // daemontools (#6559), whose source (cr.yp.to) was out of reach, refused on what each is for:
+    // `supervise` runs a folder's `./run` and `svscan` starts one on each folder in the one it is
+    // named, as `runsv` and `runsvdir` do; `multilog`'s `!processor` has a shell run the processor;
+    // `setuidgid`, `envuidgid`, `softlimit`, `setlock`, `pgrphack` and `fghack` run the program
+    // after them, as `envdir` does; and `svscanboot` runs `svscan` (round 5 of #7828's review).
+    // `supervise`, `svscan`, `setuidgid` and `softlimit` reach the `s6-` rows that were there
+    // before by their forms too, and `envuidgid`, `fghack` and `setlock` reach the `s6-` rows
+    // below; each keeps a row of its own all the same (unit tests pin them).
+    "svscan",
+    "svscanboot",
+    "supervise",
+    "multilog",
+    "setuidgid",
+    "envuidgid",
+    "softlimit",
+    "setlock",
+    "pgrphack",
+    "fghack",
     // Homebrew (#6325): `brew ruby -e` runs the Ruby it is handed, `brew sh --cmd` a shell
     // command, and `brew <name>` the `brew-<name>` its search path finds.
     "brew",
@@ -2278,6 +2337,183 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "s6-softlimit",
     "s6-applyuidgid",
     "coredumpctl",
+    // and the leads round 2 of #6556's review left (#6564), whose source was out of reach, refused
+    // on what each is for: `aptitude -o Dir::Bin::Methods::<scheme>=` names the program a download
+    // runs, as `apt-get`'s does; `run-parts` runs every program in the folder it is named; `capsh
+    // --` hands what follows to a shell; `cpanm`, `cpan` and `cpm` run a distribution's
+    // `Makefile.PL` or `Build.PL`, and `carton exec` the command it is handed; and `dnf` and `yum`
+    // load the Python plugins of the `pluginpath` a `--setopt` or a `-c` file names.
+    "aptitude",
+    "run-parts",
+    "capsh",
+    "cpanm",
+    "cpan",
+    "cpm",
+    "carton",
+    "dnf",
+    "yum",
+    // and the utilities beside them (dnf-plugins-core, yum-utils), which take `-c` and `--setopt`
+    // and load plugins as they do, and reach neither by a form of their names (rounds 5 and 6
+    // of #7828's review)
+    "yumdownloader",
+    "repoquery",
+    "reposync",
+    "repotrack",
+    "repoclosure",
+    "debuginfo-install",
+    "needs-restarting",
+    "package-cleanup",
+    "repodiff",
+    "repomanage",
+    "repo-graph",
+    // reached by its first part, `find`, too, but by chance
+    "find-repos-of-install",
+    // The kin of the #6559 and #6564 tools above that round 1 of #7828's review found, refused on
+    // what each is for: programs that run the command after them, as `setuidgid` and `capsh` do;
+    // the loggers that run a `!processor` they are handed, on the command line or in a log folder's
+    // `config`, as `multilog` does; `anacron`, which runs an anacrontab it is named; the Perl
+    // installers and runners beside `cpanm` (`cpanp`'s `!` evaluates Perl, `plenv exec` and `carmel
+    // exec` run a command, `prove` and `dzil` a distribution's code); and the package managers
+    // beside `dnf`: `zypper <name>` runs the `zypper-<name>` its search path finds, `makepkg` a
+    // `PKGBUILD`, MacPorts' `port` a `Portfile`, and `microdnf` and `tdnf` take settings as `dnf`
+    // does.
+    "runuser",
+    "gosu",
+    "prlimit",
+    "chrt",
+    "runcon",
+    "setarch",
+    "numactl",
+    "bwrap",
+    "proot",
+    "unbuffer",
+    "sg",
+    "run-one",
+    "run-this-one",
+    "keep-one-running",
+    "svlogd",
+    "s6-log",
+    "anacron",
+    "cpanp",
+    "carmel",
+    "plenv",
+    "prove",
+    "dzil",
+    "zypper",
+    "makepkg",
+    "port",
+    "microdnf",
+    "tdnf",
+    // and the kin round 3 of that review found: `fakeroot`, `fakechroot` and `eatmydata` run the
+    // command after them; `debuild`, `dh`, `pbuilder`, `sbuild` and `gbp` run a package's
+    // `debian/rules`, as `dpkg-buildpackage` does; `yath`, `cover`, `milla`, `minil` and
+    // `plackup` run a distribution's tests or hooks, or the Perl they are handed; `mock` runs its
+    // configuration as Python, `portindex` evaluates every `Portfile`, and `spectool` and
+    // `rpmlint` parse a spec whose `%(…)` a shell runs; and systemd's `kernel-install`, `ukify`
+    // and `mkosi` run the plugins, tools or scripts of a folder they are named.
+    "fakeroot",
+    "fakechroot",
+    "eatmydata",
+    "debuild",
+    "dh",
+    "pbuilder",
+    "sbuild",
+    "gbp",
+    "yath",
+    "cover",
+    "milla",
+    "minil",
+    "plackup",
+    "mock",
+    "portindex",
+    "spectool",
+    "rpmlint",
+    "kernel-install",
+    "ukify",
+    "mkosi",
+    // and round 4's: more programs that run the command after them (macOS's `taskpolicy`,
+    // util-linux's `choom` and `uclampset`, moreutils' `chronic`, `ifne`, `lckdo` and `zrun`,
+    // `cpulimit`, `nocache`, `schedtool`, `dbus-run-session`, `xvfb-run`, `faketime`, `torsocks`,
+    // `proxychains` (and `proxychains4`, which reaches it without its version), `trickle`, and s6's
+    // `s6-maximumtime`; and s6-networking's `s6-tcpserver` and the rest, twins of the `s6-ipc*`
+    // programs); `rotatelogs -p`, which runs a program on each new log; the package builders beside
+    // `debuild` (`pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`, `fedpkg`, `centpkg`, `rhpkg`,
+    // `tito`), `debconf`, which runs the command it is handed, `deb-systemd-invoke`, which has
+    // `systemctl` act on a unit (its last part reaches Python's `invoke` row only by chance, so it
+    // has a row of its own), and MacPorts' `daemondo --start-cmd`; Perl's servers and runners
+    // beside `plackup`; and `s6-svlink` and `s6-rc-update`, which hand a running s6 a folder or a
+    // database a chat may have written.
+    "taskpolicy",
+    "choom",
+    "uclampset",
+    "chronic",
+    "ifne",
+    "lckdo",
+    "zrun",
+    "cpulimit",
+    "nocache",
+    "schedtool",
+    "dbus-run-session",
+    "xvfb-run",
+    "faketime",
+    "torsocks",
+    "proxychains",
+    "trickle",
+    "s6-maximumtime",
+    "s6-tcpserver",
+    "s6-tcpserver-socketbinder",
+    "s6-tcpserver-access",
+    "s6-tcpclient",
+    "s6-tlsserver",
+    "s6-tlsclient",
+    "s6-tlsd",
+    "s6-tlsc",
+    "rotatelogs",
+    "pdebuild",
+    "cowbuilder",
+    "qemubuilder",
+    "dgit",
+    "debconf",
+    "deb-systemd-invoke",
+    "fedpkg",
+    "centpkg",
+    "rhpkg",
+    "tito",
+    "daemondo",
+    "starman",
+    "starlet",
+    "morbo",
+    "hypnotoad",
+    "mojo",
+    "start_server",
+    "mbtiny",
+    "s6-svlink",
+    "s6-rc-update",
+    // Programs of other families that the rows #7828 added above reach by their last part, but only
+    // by chance, so each has a row of its own (a unit test pins them): s6's `s6-envuidgid`,
+    // `s6-fghack` and `s6-setlock`, which run the program after them, and `s6-rc-init`, which hands
+    // a running s6 the service folders of a compiled database a chat may have written, as
+    // `s6-rc-update` does (round 13 of its review); and `cloud-init`, which runs the `bootcmd` and
+    // `runcmd` of the file it is handed, Yelp's `dumb-init` and LXC's `lxc-init`, which run the
+    // command after them, and s6's `s6-linux-init`, its stage 1, which runs the `rc.init` of the
+    // folder its `-c` names, and `s6-linux-init-telinit`, its `telinit`, kept on the conservative
+    // side, which the `init` and `telinit` rows reach (round 14).
+    "s6-envuidgid",
+    "s6-fghack",
+    "s6-setlock",
+    "s6-rc-init",
+    "cloud-init",
+    "dumb-init",
+    "lxc-init",
+    "s6-linux-init",
+    "s6-linux-init-telinit",
+    // and, from round 20, Raku's `prove6`, which runs the test files it is pointed at and reaches
+    // `prove` without its version, `fakeroot-ng`, a project of its own that runs the command
+    // after it and reaches `fakeroot` by its first part, and `grunt-init`, which runs a
+    // template's code and reaches `init` by its last part.
+    "prove6",
+    "fakeroot-ng",
+    "grunt-init",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
