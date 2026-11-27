@@ -55,6 +55,12 @@ impl Chat {
     /// A chat whose app is of another build than its purlis, where `of_this_build` is false: it
     /// cannot read the merge's hand-over, and answers with `hookwire::UNKNOWN_LINE` (#6960).
     fn answering(of_this_build: bool) -> Self {
+        Self::answering_with(of_this_build, None)
+    }
+
+    /// [`Chat::answering`], with the app answering its hook's ask for the chat's policy with
+    /// `policy` where there is one: otherwise it answers no, and every family is enforced.
+    fn answering_with(of_this_build: bool, policy: Option<Answer>) -> Self {
         let tmp = tempfile::tempdir().expect("a directory");
         let base = tmp.path().canonicalize().expect("a real path");
         let root = base.join("plane");
@@ -98,6 +104,9 @@ impl Chat {
             permission: Box::new(|_| None),
             answer: Box::new(move |_, ask| {
                 was_asked.lock().unwrap().push(ask.clone());
+                if let (Ask::Policy(_), Some(policy)) = (&ask, &policy) {
+                    return policy.clone();
+                }
                 let Ask::Merge(merge) = ask else {
                     return Answer::No {
                         why: "not asked here".to_owned(),
@@ -447,11 +456,9 @@ fn an_unknown_build_merge_answer_names_restart_or_update_and_no_refused_form() {
     assert!(reason.contains("update the purlis plugin"), "{reason}");
     assert!(!reason.contains("start a new chat"), "{reason}");
     assert!(!reason.contains(hookwire::UNKNOWN_LINE), "{reason}");
-    // The refusal's own words, before the note every guard's refusal ends with.
-    let own = reason
-        .split(purlis_core::toolgate::OVERRIDE_NOTE)
-        .next()
-        .unwrap_or(&reason);
+    // The refusal's own words, before the note every guard's refusal ends with: the override
+    // note, or the cause an unaccepted policy gives it (ADR 0130 §7).
+    let own = purlis_core::toolgate::own_words(&reason);
     assert!(!own.contains('`'), "names a command: {own}");
     assert!(
         reason.contains("A yes in this chat merges nothing"),
@@ -459,6 +466,31 @@ fn an_unknown_build_merge_answer_names_restart_or_update_and_no_refused_form() {
     );
     assert_eq!(chat.rule().as_deref(), Some(mergehold::REASON_NOT_ASKED));
     assert!(chat.holds.every().is_empty());
+}
+
+/// ADR 0130 §7 (#7717): where the app says the chat's merges are held only because this machine
+/// has not accepted the project's policy, the refusal names that and purlis's window, and does
+/// not tell the person to set the family to `log`. An app that says nothing of it (the tests
+/// above) leaves the refusal its own words.
+#[test]
+fn a_merge_held_only_because_the_policy_is_not_accepted_names_that_and_not_the_log_switch() {
+    use purlis_core::enforcement::{AcceptedOn, Mode, Resolved, unaccepted_said};
+    let chat = Chat::answering_with(
+        true,
+        Some(Answer::Policy {
+            spelled: Resolved::all(Mode::Enforce).spelled(),
+            unaccepted: vec!["guards.merge".to_owned()],
+        }),
+    );
+    let reason = chat.denial("gh pr merge 12", "default").expect("refused");
+    assert!(
+        reason.contains(&unaccepted_said(AcceptedOn::ThisMachine)),
+        "{reason}"
+    );
+    assert!(
+        !reason.contains(purlis_core::toolgate::OVERRIDE_NOTE),
+        "{reason}"
+    );
 }
 
 /// #7177: where the hook is the app's own binary (`CHARTER_HOOK_BINARY` names it) and the app

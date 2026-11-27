@@ -194,20 +194,30 @@ trait Items {
 /// refused add in between leaves the value at rest in the spare, never lost. Where the spare
 /// cannot be made, the item is left as it was and nothing is deleted.
 fn remake(items: &dyn Items, service: &str, account: &str, value: &str) -> Result<(), Refused> {
-    let spare = spare_of(service);
+    remake_with(items, service, account, value, &spare_of(service))
+}
+
+/// [`remake`] with `spare` for its spare item.
+fn remake_with(
+    items: &dyn Items,
+    service: &str,
+    account: &str,
+    value: &str,
+    spare: &str,
+) -> Result<(), Refused> {
     // One left by an earlier write that did not finish is this program's, and holds an older
     // value than this one.
     items
-        .delete(&spare, account)
-        .and_then(|()| items.add(&spare, account, value))
+        .delete(spare, account)
+        .and_then(|()| items.add(spare, account, value))
         .map_err(|e| no_spare(service, e))?;
     if let Err(e) = items.delete(service, account) {
-        let _ = items.delete(&spare, account);
+        let _ = items.delete(spare, account);
         return Err(e);
     }
     // A refused add keeps the spare: the value stays at rest there.
     items.add(service, account, value)?;
-    let _ = items.delete(&spare, account);
+    let _ = items.delete(spare, account);
     Ok(())
 }
 
@@ -217,6 +227,42 @@ fn remake(items: &dyn Items, service: &str, account: &str, value: &str) -> Resul
 fn spare_of(service: &str) -> String {
     format!("{service}/{SPARE}")
 }
+
+/// **The spare the ownership probe ([`owned_here`]) keeps `service`'s value in** while it makes
+/// the item again (M3 of #7734's round 3): one of its own, never [`spare_of`]'s, which a press
+/// to make a new seal key parks the new key in. A probe of the old key's item that took that
+/// spare would delete the new key, so a press refused or cut short would make another, under
+/// which the list it sealed no longer holds.
+///
+/// **A probe spare's own probe takes the other of the pair** (L2 of #7734's round 5), never one
+/// more segment: the two spares of [`probe_spares_of`] are each the other's, so a probe of a
+/// probe's spare leaves a value at rest only where a read and a sweep look. Each only ever holds
+/// a copy of the other's value, so neither's probe deletes anything the other does not hold.
+pub(super) fn probe_spare_of(service: &str) -> String {
+    let probe = format!("/{SPARE}{PROBE}");
+    let again = format!("/{SPARE}{PROBE_AGAIN}");
+    if let Some(base) = service.strip_suffix(&probe) {
+        format!("{base}{again}")
+    } else if let Some(base) = service.strip_suffix(&again) {
+        format!("{base}{probe}")
+    } else {
+        format!("{service}{probe}")
+    }
+}
+
+/// **Both spares a probe of `service`'s item, or of its probe's spare, may leave a value at
+/// rest in** ([`probe_spare_of`]), the first being the probe's own.
+pub(super) fn probe_spares_of(service: &str) -> [String; 2] {
+    let first = probe_spare_of(service);
+    let second = probe_spare_of(&first);
+    [first, second]
+}
+
+/// What a probe spare's last segment adds to [`SPARE`].
+const PROBE: &str = "-of-the-probe";
+
+/// What the probe spare of a probe spare's last segment adds to [`SPARE`].
+const PROBE_AGAIN: &str = "-of-the-probe-again";
 
 /// The last segment of [`spare_of`]'s spare item.
 const SPARE: &str = "spare";
@@ -229,10 +275,14 @@ fn commands_spare_of(service: &str) -> String {
 }
 
 /// Every spare item a write of `service` may leave behind when it is cut short ([`spare_of`],
-/// [`commands_spare_of`]): a delete of the item deletes these with it, so a value the person
-/// deleted is not kept at rest in a spare.
-pub(super) fn spares_of(service: &str) -> [String; 2] {
-    [spare_of(service), commands_spare_of(service)]
+/// [`commands_spare_of`], [`probe_spare_of`]): a delete of the item deletes these with it, so a
+/// value the person deleted is not kept at rest in a spare.
+pub(super) fn spares_of(service: &str) -> [String; 3] {
+    [
+        spare_of(service),
+        commands_spare_of(service),
+        probe_spare_of(service),
+    ]
 }
 
 /// Why nothing was written: the spare could not be made, so the item was left as it was.
@@ -450,18 +500,80 @@ pub fn make_own(service: &str, account: &str, value: &str) -> Result<Held, Vault
 }
 
 /// **Whether this program owns the item** (the re-review of #6992, S4): it is made again in place
-/// with `value`, a spare holding it meanwhile ([`remake`]), which the Keychain lets only the
-/// item's owner do. `false` where another program owns it; nothing is changed then.
+/// with `value`, a spare of the probe's own holding it meanwhile ([`remake`],
+/// [`probe_spare_of`]), which the Keychain lets only the item's owner do. `false` where another
+/// program owns it; nothing is changed then.
 pub fn owned_here(service: &str, account: &str, value: &str) -> Result<bool, VaultError> {
     if crate::fence::FENCED {
         return Err(fenced(service));
     }
-    match make_here(service, account, value) {
+    match remake_with(&OsItems, service, account, value, &probe_spare_of(service)) {
         Ok(()) => Ok(true),
         Err(Refused::Owned) => Ok(false),
         Err(Refused::Failed(e)) => Err(e),
     }
 }
+
+/// Why an item was not deleted ([`delete_item`]).
+pub enum NotDeleted {
+    /// macOS refused: another program owns the item, and the person did not allow the delete
+    /// (or the Keychain would not ask them).
+    Owned,
+    /// The store failed.
+    Failed(String),
+}
+
+/// **The item deleted**, whoever made it (#7714): `Ok` where there was none. Deleting another
+/// program's item is macOS's to allow, and it may ask the person first; that prompt is their
+/// consent. Only the app's press to make a new seal key calls it.
+pub fn delete_item(service: &str, account: &str) -> Result<(), NotDeleted> {
+    if crate::fence::FENCED {
+        return Err(NotDeleted::Failed(fenced(service).to_string()));
+    }
+    match OsItems.delete(service, account) {
+        Ok(()) => Ok(()),
+        Err(Refused::Owned) => Err(NotDeleted::Owned),
+        Err(Refused::Failed(e)) => Err(NotDeleted::Failed(e.to_string())),
+    }
+}
+
+/// **Every account the keyring holds an item under `service` for** (#7714): the names alone,
+/// never a value, which the Keychain gives any program without asking. None off macOS, where
+/// no item is another program's (a keyring there lets every program of the person's in).
+pub fn accounts_of(service: &str) -> Result<Vec<String>, String> {
+    if crate::fence::FENCED {
+        return Err(fenced(service).to_string());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        use security_framework::item::{ItemClass, ItemSearchOptions, Limit};
+        let found = ItemSearchOptions::new()
+            .class(ItemClass::generic_password())
+            .service(service)
+            .load_attributes(true)
+            .limit(Limit::All)
+            .search();
+        match found {
+            Ok(items) => Ok(items
+                .iter()
+                .filter_map(|item| item.simplify_dict()?.remove("acct"))
+                .collect()),
+            Err(e) if e.code() == NOT_FOUND => Ok(Vec::new()),
+            Err(e) => Err(format!(
+                "purlis could not list the items named '{service}' in {}: {e}",
+                super::keyring::STORE_NAME
+            )),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(Vec::new())
+    }
+}
+
+/// `errSecItemNotFound`: a search found nothing.
+#[cfg(target_os = "macos")]
+const NOT_FOUND: i32 = -25300;
 
 /// What a fenced build says instead of reaching the operating system's store.
 fn fenced(service: &str) -> VaultError {

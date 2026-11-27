@@ -70,6 +70,7 @@ import { useProjectShown } from "../../projectShown";
 import { Button, ButtonRow, type ButtonProps, type ButtonVariant } from "../button/Button";
 import { Form } from "../field/Field";
 import { submits as chordSends } from "../field/submitKey";
+import { hearLayers, layersUp, useLayerUp } from "../layers";
 import { Reserved } from "./Reserved";
 import { entryOf, nextStop, stopsIn } from "./tabOrder";
 
@@ -174,9 +175,6 @@ export interface DialogProps extends Surface {
 /** What React Aria asks before it hands the keyboard back as a modal goes: it gives up when told
  *  to (`preventDefault`). */
 const RESTORE_EVENT = "react-aria-focus-scope-restore";
-
-/** How many of the family's dialogs are up, to say when one opens over another. */
-let up = 0;
 
 /** The words of an answer, kept as wide as the widest it can say. */
 function words(action: Pick<DialogAction, "children" | "reserve">): ReactNode {
@@ -381,39 +379,25 @@ function useTabbing(
   }, [open, root, own]);
 }
 
-/** Says when a dialog opens while another is up, and counts it while it is. */
+/** Says when a dialog opens while another is up, and counts it while it is (`ui/layers.ts`). */
 function useOneAtATime(open: boolean) {
+  // Asked before this one is counted: the two effects run in this order.
   useEffect(() => {
-    if (!open) return;
-    if (up > 0)
+    if (open && layersUp("dialog") > 0)
       console.error(
         "purlis: a dialog was opened while another is up, and no dialog opens another " +
           "(spec #2897): close the first, or answer it in place.",
       );
-    up += 1;
-    for (const tell of watching) tell();
-    return () => {
-      up -= 1;
-      for (const tell of watching) tell();
-    };
   }, [open]);
+  useLayerUp("dialog", open);
 }
-
-/** Who hears when the count of dialogs up changes. */
-const watching = new Set<() => void>();
 
 /**
  * **Whether a dialog is up in this window**: for a question that arrives by itself, which holds
  * until it can open, as no dialog opens over another (#4504).
  */
 export function useADialogIsUp(): boolean {
-  return useSyncExternalStore(
-    (tell) => {
-      watching.add(tell);
-      return () => watching.delete(tell);
-    },
-    () => up > 0,
-  );
+  return useSyncExternalStore(hearLayers, () => layersUp("dialog") > 0);
 }
 
 /**
@@ -439,6 +423,7 @@ function DialogModal({
   returnFocus,
   own = false,
   modal = true,
+  busy = false,
   children,
 }: Omit<Surface, "aria-describedby" | "data-testid"> & {
   /** Whether what is inside lays itself out (`DialogSurface`). */
@@ -448,6 +433,8 @@ function DialogModal({
    * (`DialogSurface`).
    */
   modal?: boolean;
+  /** Whether an answer pressed in it has yet to land (`RaisedAlert`): said as `aria-busy`. */
+  busy?: boolean;
   role: "dialog" | "alertdialog";
   label?: string;
   labelledBy?: string;
@@ -470,6 +457,14 @@ function DialogModal({
   // reads it as it goes, so what it reads is the last render's.
   useLayoutEffect(() => {
     Object.assign(closing.current, { gone: shown, afterClose, returnFocus });
+  });
+  // **Busy, said on the dialog itself**: React Aria's dialog passes on no `aria-busy`, so it is
+  // written on the element it draws, in the commit that changes it.
+  useLayoutEffect(() => {
+    const dialog = root.current;
+    if (!dialog) return;
+    if (busy) dialog.setAttribute("aria-busy", "true");
+    else dialog.removeAttribute("aria-busy");
   });
   if (!shown) return null;
   const style =
@@ -751,8 +746,40 @@ function useNames({
   return { titled, subtitled, described, describedByAll };
 }
 
+/**
+ * **Whether `box` scrolls now**, read while `watch` holds: as it is drawn, whenever what it holds
+ * changes, and whenever its size does (the window's height).
+ */
+function useScrolls(box: RefObject<HTMLElement | null>, watch: boolean): boolean {
+  const [scrolls, setScrolls] = useState(false);
+  useLayoutEffect(() => {
+    const element = box.current;
+    if (!watch || !element) return;
+    const read = () => setScrolls(element.scrollHeight > element.clientHeight);
+    read();
+    const held = new MutationObserver(read);
+    held.observe(element, { childList: true, subtree: true, characterData: true });
+    const sized = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(read);
+    sized?.observe(element);
+    return () => {
+      held.disconnect();
+      sized?.disconnect();
+    };
+  }, [box, watch]);
+  return scrolls;
+}
+
 /** **The three rows**: the header, the body and the footer, with the form that is both. */
-function DialogRows({ props, names }: { props: DialogProps; names: ReturnType<typeof useNames> }) {
+function DialogRows({
+  props,
+  names,
+  reachableBody = false,
+}: {
+  props: DialogProps;
+  names: ReturnType<typeof useNames>;
+  /** Whether a body that scrolls is a stop of the keyboard's, so it can scroll it (`RaisedAlert`). */
+  reachableBody?: boolean;
+}) {
   const { title, subtitle, description, summary, cancel, main, alternative, children, onClose } =
     props;
   const { titled, subtitled, described } = names;
@@ -773,6 +800,8 @@ function DialogRows({ props, names }: { props: DialogProps; names: ReturnType<ty
     [actions, summaryAt, onClose],
   );
   const inside = claimed > 0;
+  const body = useRef<HTMLDivElement>(null);
+  const scrolls = useScrolls(body, reachableBody);
   const submit = (event: FormEvent) => {
     // Only the dialog's own form: a submit from anything inside it is that thing's.
     if (event.target !== event.currentTarget) return;
@@ -810,7 +839,12 @@ function DialogRows({ props, names }: { props: DialogProps; names: ReturnType<ty
           ⌘⏎ sends its main action from anywhere in it, as Return does from a field. */}
       <Form data-scope="dialog" data-part="form" onSubmit={submit} onKeyDown={chord}>
         <FooterPlace.Provider value={place}>
-          <div data-scope="dialog" data-part="body">
+          <div
+            ref={body}
+            data-scope="dialog"
+            data-part="body"
+            {...(scrolls ? { tabIndex: 0, role: "group", "aria-labelledby": titled } : {})}
+          >
             {description !== undefined && (
               <div
                 id={described}
@@ -856,7 +890,17 @@ function surfaceOf(props: DialogProps): Omit<Surface, "aria-describedby" | "data
   return { isOpen, onClose, size, height, initialFocus, afterClose, returnFocus, className };
 }
 
-function DialogFrame({ alert, props }: { alert: boolean; props: DialogProps }) {
+function DialogFrame({
+  alert,
+  props,
+  raised = false,
+  busy = false,
+}: {
+  alert: boolean;
+  props: DialogProps;
+  raised?: boolean;
+  busy?: boolean;
+}) {
   const names = useNames(props);
   const surface = surfaceOf(props);
   return (
@@ -866,8 +910,9 @@ function DialogFrame({ alert, props }: { alert: boolean; props: DialogProps }) {
       labelledBy={names.titled}
       describedBy={names.describedByAll}
       testId={props["data-testid"]}
+      busy={busy}
     >
-      <DialogRows props={props} names={names} />
+      <DialogRows props={props} names={names} reachableBody={raised} />
     </DialogModal>
   );
 }
@@ -913,4 +958,13 @@ export function Dialog(props: DialogProps) {
  */
 export function AlertDialog(props: DialogProps) {
   return <DialogFrame alert props={props} />;
+}
+
+/**
+ * **The frame of an alert the app raises** (`RaisedAlert.tsx`, #7728): an alert dialog whose body
+ * the keyboard can reach while it scrolls, and which is `aria-busy` while an answer is in flight.
+ * The family's own: a screen draws `RaisedAlert`, which holds the rest of its rules.
+ */
+export function RaisedAlertFrame({ busy, ...props }: DialogProps & { busy: boolean }) {
+  return <DialogFrame alert raised busy={busy} props={props} />;
 }

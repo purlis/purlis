@@ -601,6 +601,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The person's press accepting a loosening of the project's `[policy]` (Q308a): theirs
     // alone, so no chat loosens its own enforcement through a link.
     "accept_project_policy",
+    // Make a new key and accept (#7714): it replaces the seal key every project's acceptance on
+    // this machine rests on, so it is the person's press alone, as Accept is (drawn by #7719).
+    "accept_project_policy_with_new_key",
+    // Keep these nevers (#7714, H1 of #7734's round 3): it seals the never-dispatch pairs the
+    // window showed with the new seal key, so it is the person's press alone, as Accept is.
+    "keep_project_nevers",
     // Remove on the Allowed list (#1927): the person's standing answers are taken back in
     // their own window.
     "revoke_sandbox_grant",

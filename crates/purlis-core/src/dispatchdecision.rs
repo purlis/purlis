@@ -743,6 +743,11 @@ pub fn decide(request: &Request<'_>) -> Decision {
         (Some(to), Covers::Denied(deny)) => refused(Refused::Denied(
             crate::dispatchgrant::denied_said(to, *deny),
         )),
+        // The nevers do not read only while the policy isn't accepted: refused in every mode,
+        // as the unaccepted policy's, and nobody is asked (ADR 0130 §7).
+        (Some(to), Covers::NeversUnaccepted) => refused(Refused::Denied(
+            crate::dispatchgrant::unread_unaccepted_said(to),
+        )),
         // No grant, or none that counts while the record of nevers does not read: the person
         // is asked. Policy was answered at step 4.
         (Some(to), Covers::NeedsGrant | Covers::Unread | Covers::Locked(_)) => {

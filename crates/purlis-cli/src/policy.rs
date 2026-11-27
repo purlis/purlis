@@ -20,7 +20,11 @@ const ANSWERED_WITHIN: Duration = Duration::from_millis(500);
 /// The app's answer about this chat's policy, or none: then every family is enforced.
 fn asked() -> Option<Resolved> {
     match crate::brokered::asked(|chat| Ask::Policy(PolicyAsk { chat }), ANSWERED_WITHIN) {
-        Ok(Ok(Answer::Policy { spelled })) => Some(Resolved::parse(&spelled)),
+        // The cause of an enforced family (ADR 0130 §7) changes only the words of its refusal.
+        Ok(Ok(Answer::Policy {
+            spelled,
+            unaccepted,
+        })) => Some(Resolved::parse(&spelled).with_unaccepted(&unaccepted)),
         _ => None,
     }
 }
