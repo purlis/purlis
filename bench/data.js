@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795768517798,
+  "lastUpdate": 1795769067561,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57372,6 +57372,48 @@ window.BENCHMARK_DATA = {
             "value": 101.027841,
             "unit": "ms",
             "extra": "median of 5 runs: 100.149, 100.338, 101.028, 101.270, 101.854 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a88fedb2efe49741b12206a8b4998697c148f878",
+          "message": "A force push onto another chat's branch stays refused after Allow (#7841) (#7845)\n\n* A push to another chat's branch raises its ask in every consents mode (#7749)\n\nPushAsks no longer reads windowonly::asks: wherever the forge route's\nNotYourBranch refusal stands, Let this chat push it is raised under\nconsents off, log and enforce alike (ADR 0125, amended 2026-11-27, §10).\nNothing loosens: the push stays refused until the person's press, and\nthe per-push and waiting caps and Keep blocked still apply. The other\nwindow-only refusals (Trust this clone) still follow consents.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8D38YQWYK0TMD0GZRP3AA5B\nPurlis-Persona: steward\n\n* A force push onto another chat's branch stays refused after Allow (#7841)\n\nFloor item 6 of ADR 0125's 2026-11-27 amendment: a branch a chat holds by\nthe person's Allow moves only forward. The record's tip read carries the\nallow marker (owned_tip_for), the policy marks the update, and the push\ngate refuses one whose new tip does not descend from the forge's tip, read\nin its quarantine with git merge-base --is-ancestor. The forge's compare\nAPI cannot see a tip that is not pushed yet. update-branch and a GitLab\nrebase no longer write a head held by Allow. The ask no longer says Allow\ncan replace the branch's history.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8D735XE277G34SJDJ2ASSZS\nPurlis-Persona: steward\n\n* Keep the Allow's fast-forward marker from check to confirm (#7841)\n\nA push the route checked as fast-forward only is recorded via allow from\nthat check, not from the file re-read at confirm, where another chat's line\nmay stand by then. A line with no via (an Allow of #7415's time) is treated\nas fast-forward only too: only a route line may be rewound.\n\nTests: the marker survives a line written between check and confirm; an\nunmarked line moves only forward; through the real gate, a reset to an older\ncommit with an empty pack is refused, a two-branch push mixing a marked and\nan unmarked branch, and the gate's reading of the core's mark (check's loop,\nsplit out as read_push); a GitLab rebase on an Allow-held head is refused.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8DADDQ3A7HQVNFKFV6HBGSZ\nPurlis-Persona: steward\n\n* Tests: the two Allow tests open with unsteered!() (the shells-steering rule)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T08:01:44Z",
+          "tree_id": "e37bfe9c4bbfb547e85a8a4a980041664d4f6418",
+          "url": "https://github.com/purlis/purlis/commit/a88fedb2efe49741b12206a8b4998697c148f878"
+        },
+        "date": 1795769057377,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5620065,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.550, 0.558, 0.562, 0.569, 0.575 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.29583,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.169, 16.223, 16.296, 16.333, 16.364 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.14052649999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.734, 100.707, 101.141, 102.351, 103.027 ms"
           }
         ]
       }
