@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795793362977,
+  "lastUpdate": 1795795189433,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57792,6 +57792,48 @@ window.BENCHMARK_DATA = {
             "value": 102.5851185,
             "unit": "ms",
             "extra": "median of 5 runs: 102.044, 102.156, 102.585, 102.671, 103.237 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "fa662908a18514b0659c39cd1f7aa6b08b706d41",
+          "message": "Budget run: L2 measured on the benchmark Mac, recorded as macos-max points (#7737) (#7943)\n\n* Budget run: L2 measured on the benchmark Mac and recorded as a macos-max series (#7737)\n\nA new budget-run.yml, on main's push and nightly only, runs on the benchmark Mac through the\nnew repository variable BUDGET_RUN_RUNNER with no fallback, and measures L2 (tab switch) with\nthe window bench on the stand-in harness in both renderer arms. tools/budget-series.mjs turns\nthe results into macos-max points carrying the commit, model, OS and screen mode; a run off\nthe pinned screen is evidence only. A hosted job records them on the benchmarks branch.\n\nAdds bench.mjs --specs, --grep and --target-dir; the CONTEXT.md terms (benchmark Mac, budget\nrun, gating row, and the four kinds); ADR 0086's amendment of 2026-11-27; the operator's setup\nin docs/updating.md; L2's Measured-by cell.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8EKAC713MYJ51GBEZVTZQ2A\nPurlis-Persona: steward\n\n* Budget run: sccache writes only on main (#5858)\n\nThe guard no_workflow_or_action_saves_a_cache_on_any_ref_but_main (#7881) refused the\nsccache step copied from before it. Same MODE as outcome-bars.yml; budget-run runs only on\nmain, so it still writes there.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T14:48:44Z",
+          "tree_id": "41c001862e2de7b97b9aec9730e2a51611b2b9f1",
+          "url": "https://github.com/purlis/purlis/commit/fa662908a18514b0659c39cd1f7aa6b08b706d41"
+        },
+        "date": 1795795179082,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.572546,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.564, 0.572, 0.573, 0.575, 0.580 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2810255,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.157, 16.231, 16.281, 16.335, 16.380 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 99.76280549999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 98.976, 99.052, 99.763, 100.913, 101.905 ms"
           }
         ]
       }
