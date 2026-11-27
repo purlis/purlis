@@ -176,9 +176,14 @@ fn pretooluse_read(hook: &Hook) -> Answer {
     if verdict.arm != Some(purlis_core::toolgate::Arm::Leak) {
         return answer;
     }
-    let mode = enforcement::mode(hook.root, Family::Secrets);
-    match mode {
-        Mode::Enforce => answer,
+    let policy = enforcement::in_force(hook.root);
+    match policy.mode(Family::Secrets) {
+        // Named as its cause where only an unaccepted policy enforces it (ADR 0130 §7).
+        Mode::Enforce => Answer::Deny(verdict.clone().caused_by(
+            &policy,
+            Family::Secrets,
+            enforcement::AcceptedOn::ThisMachine,
+        )),
         Mode::Log => {
             let chat = (hook.env)(purlis_core::hookwire::CHAT_ID_ENV);
             let chat = chat.as_deref().unwrap_or(enforcement::UNKNOWN_CHAT);
