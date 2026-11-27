@@ -2687,6 +2687,62 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "distcc",
     "pump",
     "icecc",
+    // The package managers and installers #7833 names, each of which runs a package's install
+    // scripts, a build script or plugins: `pacman -U`, `apk add`, macOS's `installer -pkg`
+    // (compiled, so judged by its manual), Gentoo's `emerge` and `ebuild`, `xbps-install`,
+    // `opkg`, FreeBSD's `pkg`, `slackpkg`, `installpkg`, `yay` and `paru` (which run
+    // `makepkg`), `urpmi`, `pkgin`, `pkg_add`, `pkcon install` (refused whole, as `update` and
+    // `install-local` install too), the apt front-ends `nala`, `gdebi`, `wajig`, `aptdcon` and
+    // `tasksel`, `fink`, Raku's `zef` and `rakubrew`, `unattended-upgrade`, `debi` and `debpkg`
+    // (`dpkg -i`), `checkinstall` (the install command it is handed), `alien --scripts`, and
+    // `installkernel`, which hands over to `kernel-install` or `run-parts`; dnf5's
+    // `dnf5daemon-server` and `-client` (no form of theirs is `dnf`) and yum-utils' `yumdb`,
+    // `repo-rss`, `verifytree`, `show-installed` and `show-changed-rco`, which load plugins as
+    // `yum` does; `salt-call`, `puppet apply` and `rex`, which run a state or a manifest; and
+    // `needrestart`, whose `-c` file is Perl it evaluates, and `etckeeper`, which runs its hook
+    // folders and the `vcs` command it is handed.
+    "pacman",
+    "apk",
+    "installer",
+    "emerge",
+    "ebuild",
+    "xbps-install",
+    "opkg",
+    "pkg",
+    "slackpkg",
+    "installpkg",
+    "yay",
+    "paru",
+    "urpmi",
+    "pkgin",
+    "pkg_add",
+    "pkcon",
+    "nala",
+    "gdebi",
+    "wajig",
+    "aptdcon",
+    "tasksel",
+    "fink",
+    "zef",
+    "rakubrew",
+    "unattended-upgrade",
+    "debi",
+    "debpkg",
+    "checkinstall",
+    "alien",
+    "installkernel",
+    "dnf5daemon-server",
+    "dnf5daemon-client",
+    "yumdb",
+    "repo-rss",
+    "verifytree",
+    "show-installed",
+    "show-changed-rco",
+    "salt-call",
+    "puppet",
+    "rex",
+    "needrestart",
+    "etckeeper",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

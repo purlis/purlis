@@ -3874,3 +3874,67 @@ fn the_chain_loaders_and_command_runners_of_7833_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The package managers and installers #7833 names, each of which runs a package's install
+/// scripts, a build script or plugins: `pacman -U`, `apk add`, macOS's `installer -pkg`,
+/// Gentoo's `emerge` and `ebuild`, `xbps-install`, `opkg`, FreeBSD's `pkg`, `slackpkg`,
+/// `installpkg`, `yay` and `paru` (`makepkg`), `urpmi`, `pkgin`, `pkg_add`, `pkcon install`,
+/// the apt front-ends `nala`, `gdebi`, `wajig`, `aptdcon` and `tasksel`, `fink`, Raku's `zef`
+/// and `rakubrew`, `unattended-upgrade`, `debi` and `debpkg` (`dpkg -i`), `checkinstall` (the
+/// install command it is handed), `alien --scripts` and `installkernel`; dnf5's
+/// `dnf5daemon-server` and `dnf5daemon-client` and yum-utils' `yumdb`, `repo-rss`,
+/// `verifytree`, `show-installed` and `show-changed-rco`, which load plugins as `dnf` and `yum`
+/// do; the configuration managers `salt-call`, `puppet` and `rex`, which run a state or a
+/// manifest; `needrestart`, whose `-c` file is Perl it evaluates, and `etckeeper`, which runs
+/// its hook folders and `vcs` commands. `debconf-apt-progress` is refused by `debconf`'s row,
+/// its own family's, and stays so.
+#[test]
+fn the_package_managers_and_installers_of_7833_are_offered_no_run_grant() {
+    for name in [
+        "pacman",
+        "apk",
+        "installer",
+        "emerge",
+        "ebuild",
+        "xbps-install",
+        "opkg",
+        "pkg",
+        "slackpkg",
+        "installpkg",
+        "yay",
+        "paru",
+        "urpmi",
+        "pkgin",
+        "pkg_add",
+        "pkcon",
+        "nala",
+        "gdebi",
+        "wajig",
+        "aptdcon",
+        "tasksel",
+        "fink",
+        "zef",
+        "rakubrew",
+        "unattended-upgrade",
+        "debi",
+        "debpkg",
+        "checkinstall",
+        "alien",
+        "installkernel",
+        "dnf5daemon-server",
+        "dnf5daemon-client",
+        "yumdb",
+        "repo-rss",
+        "verifytree",
+        "show-installed",
+        "show-changed-rco",
+        "salt-call",
+        "puppet",
+        "rex",
+        "needrestart",
+        "etckeeper",
+        "debconf-apt-progress",
+    ] {
+        refused_as_running_others(name);
+    }
+}
