@@ -223,6 +223,7 @@ pub mod poollogins;
 pub mod pools;
 #[cfg(unix)]
 pub mod poolsetup;
+pub mod prerequisites;
 pub mod process;
 pub mod profiles;
 pub mod profilesignin;

@@ -172,6 +172,12 @@ pub struct PushUpdate {
     pub old: String,
     pub new: String,
     pub name: String,
+    /// **The update must be a fast-forward of the forge's tip**: the chat holds the branch by the
+    /// person's Allow, so it was someone else's, and floor item 6 of ADR 0125's 2026-11-27
+    /// amendment allows no force push onto it (#7841). The core sees old and new ids, never
+    /// history; the gate reads the push's objects, and sends nothing whose new tip does not
+    /// descend from the branch's tip on the forge.
+    pub fast_forward_only: bool,
 }
 
 /// A push as the listener read it, before any of it goes to the forge: the repo, the refs it moves

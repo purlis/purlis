@@ -103,6 +103,10 @@ pub enum Refused {
     },
     /// The worktree was not cut, and why, in the words of what refused it.
     Cut(String),
+    /// The clone has a remote, and neither it nor what the clone last fetched of it says which
+    /// branch is its default, so no branch was cut (#7870): a task is never started from the
+    /// commit the clone happens to be on. `why` is what stopped each.
+    NoRemoteDefault { repo: String, why: String },
     /// A chat nobody is at asked to start a chat in another workspace, and no grant that
     /// already stands covers the pair (D-1453-16).
     NobodyToAsk {
@@ -187,6 +191,14 @@ impl Refused {
                     .collect::<Vec<_>>()
                     .join(" ")
                     .trim_end_matches('.')
+            ),
+            Self::NoRemoteDefault { repo, why } => format!(
+                "purlis could not tell which branch {}'s remote names its default ({}), so it \
+                 cut no branch for this task: it never starts one from the commit the clone is \
+                 on. Check that the remote answers (`purlis sync` fetches it), then dispatch the \
+                 task again.",
+                crate::shown::short(repo),
+                why.trim_end_matches('.')
             ),
             Self::NobodyToAsk {
                 workspace,
@@ -276,6 +288,12 @@ impl Refused {
                     .collect::<Vec<_>>()
                     .join(" ")
                     .trim_end_matches('.')
+            ),
+            Self::NoRemoteDefault { repo, why } => format!(
+                "purlis could not tell which branch {}'s remote names its default ({}), so no \
+                 branch was cut. Check that the remote answers, then try again.",
+                crate::shown::short(repo),
+                why.trim_end_matches('.')
             ),
             // The person at a chat's tab is at it: this is never theirs to read.
             Self::NobodyToAsk { .. } => self.say(),
@@ -392,7 +410,8 @@ pub struct Repo {
     /// a chat standing in the clone itself.
     pub piece: Option<String>,
     /// Whether it is cut as `purlis worktree add` cuts one (#3903): from the branch the remote
-    /// names its default, moved up to the clone's last sync of it, else from its HEAD. Set where
+    /// names its default, moved up to the clone's last sync of it; from its HEAD only where the
+    /// clone has no remote, and refused where its remote does not say (#7870). Set where
     /// the asking chat does not stand in this clone: in its workspace's own folder, or in
     /// another clone of it. A chat that stands in the clone is cut from where it stands.
     pub from_default: bool,
@@ -677,31 +696,72 @@ pub fn cut(
     } else {
         None
     };
+    let refused = |refusal: worktree::Refusal| Refused::Cut(refusal.in_window());
     crate::gitbroker::in_a_checked_clone(root, &repo.workspace, &repo.repo, isolation, || {
         let (ws, name) = (&repo.workspace, &repo.repo);
         if !repo.from_default {
             let from = start_of(root, repo);
-            return chatpiece::cut_vetted(root, ws, name, &piece, from.as_ref(), &judged);
+            return chatpiece::cut_vetted(root, ws, name, &piece, from.as_ref(), &judged)
+                .map_err(refused);
         }
-        // **As `purlis worktree add` cuts** (#3903): the same base, the same call.
-        match crate::piececmd::default_base(root, ws, name, hosts.as_deref()) {
-            Some(base) => chatpiece::cut_based(root, ws, name, &piece, &base, &judged).map(
-                |(mut cut, fresh)| {
+        // **As `purlis worktree add` cuts** (#3903): the same base, the same call. The remote is
+        // asked before the clone's cut lock is taken, so a slow answer holds up no other cut.
+        let clone = worktree::clone_dir(root, ws, name).map_err(refused)?;
+        let has_origin = has_origin(&clone).map_err(|why| {
+            Refused::Cut(format!(
+                "purlis could not read whether {name} has a remote ({why}), so it cut no branch \
+                 for this task"
+            ))
+        })?;
+        if !has_origin {
+            // A clone with no remote has no default to read: its own commit is all there is,
+            // and that is said, never silent.
+            return chatpiece::cut_vetted(root, ws, name, &piece, None, &judged)
+                .map(|mut cut| {
                     cut.notes
-                        .extend(fresh.notes.into_iter().map(worktree::Note::Fresh));
+                        .push(worktree::Note::FromHead { repo: name.clone() });
                     cut
-                },
-            ),
-            // Said, never silent: the task does not start where the asking chat may expect.
-            None => chatpiece::cut_vetted(root, ws, name, &piece, None, &judged).map(|mut cut| {
-                cut.notes
-                    .push(worktree::Note::FromHead { repo: name.clone() });
-                cut
-            }),
+                })
+                .map_err(refused);
         }
+        // **Never the clone's HEAD where it has a remote** (#7870): a clone left on someone's
+        // branch, or weeks behind, is not where a task starts. The remote's default, fetched
+        // now, or as last fetched, saying how long ago; refused, saying why, where neither is.
+        let base = worktree::fresh::dispatch_base(root, &clone, "origin", hosts.as_deref())
+            .map_err(|why| Refused::NoRemoteDefault {
+                repo: name.clone(),
+                why,
+            })?;
+        chatpiece::cut_based(root, ws, name, &piece, &base.branch, &judged)
+            .map(|(mut cut, fresh)| {
+                cut.notes.extend(
+                    base.notes
+                        .into_iter()
+                        .chain(fresh.notes)
+                        .map(worktree::Note::Fresh),
+                );
+                cut
+            })
+            .map_err(refused)
     })
     .map_err(Refused::Cut)?
-    .map_err(|refusal| Refused::Cut(refusal.in_window()))
+}
+
+/// Whether the clone at `clone` names a remote `origin`, the one a dispatch asks for its
+/// default branch (#7870). **Fails closed**: git that cannot read the clone's config is not "no
+/// remote", which would cut the task from the clone's HEAD, but the reason the cut is refused.
+fn has_origin(clone: &Path) -> Result<bool, String> {
+    let read = git::run(clone, &["config", "--get", "remote.origin.url"], git::READ)
+        .map_err(|why| why.to_string())?;
+    match read.code {
+        Some(0) => Ok(!read.line().trim().is_empty()),
+        // `git config --get` says a key it does not have with 1, and nothing else.
+        Some(1) if read.err.trim().is_empty() => Ok(false),
+        _ => Err(format!(
+            "git could not read its config: {}",
+            read.err.lines().next().unwrap_or("").trim()
+        )),
+    }
 }
 
 /// **Where a task's worktree is cut from** (#1472): the branch the asking chat's own worktree

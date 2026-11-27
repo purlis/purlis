@@ -246,9 +246,40 @@ pub fn said(
     })
 }
 
+/// The variable that names the runner image a new pool is offered, as the `e2e` build reads it:
+/// the remote Docker pool's scenario run names the image it pushed into its fixture
+/// (`tests/remote-docker/up.sh`), so the one press of **Trust and create the pool** can be walked
+/// in a build whose release names no image (#7780).
+#[cfg(all(unix, feature = "e2e"))]
+pub const SCENARIO_IMAGE_VARIABLE: &str = "PURLIS_E2E_REMOTE_POOL_IMAGE";
+
+/// **The image the scenario run names for a new pool** (#7780): in the `e2e` build alone, the
+/// one `PURLIS_E2E_REMOTE_POOL_IMAGE` names (`var` reads the environment), where it names an
+/// image by digest; a value that is not one is passed over, as no image named.
+/// **Every other build reads nothing**: the variable is never looked up, so a build anyone is
+/// given offers only its own release's image whatever its environment holds.
+#[cfg(unix)]
+pub fn scenario_image(var: impl FnOnce(&str) -> Option<String>) -> Option<RunnerImageOffered> {
+    #[cfg(feature = "e2e")]
+    {
+        var(SCENARIO_IMAGE_VARIABLE)
+            .and_then(|image| Image::pinned(image.trim()).ok())
+            .map(|image| RunnerImageOffered::Ours {
+                image: image.as_str().to_owned(),
+            })
+    }
+    #[cfg(not(feature = "e2e"))]
+    {
+        let _ = var;
+        None
+    }
+}
+
 /// **The runner image a new pool is offered** (the person's ruling of 2026-10-30): what the Add
 /// a pool dialog's Image box shows as its default.
 ///
+/// - The `e2e` build alone is offered the image its scenario run names, where it names one
+///   ([`scenario_image`], #7780).
 /// - A build that never looks for updates, a local build with no update channel, is offered
 ///   none, and nothing is read.
 /// - The image a look found named for this version is not read again.
@@ -267,6 +298,9 @@ pub fn said(
 pub async fn image_offered<R: Runtime>(
     app: &tauri::AppHandle<R>,
 ) -> Result<RunnerImageOffered, String> {
+    if let Some(image) = scenario_image(purlis_core::envvar::var) {
+        return Ok(image);
+    }
     if !purlis_core::updates::checks_on_its_own(purlis_core::fence::FENCED, cfg!(debug_assertions))
     {
         return Ok(RunnerImageOffered::LocalBuild);

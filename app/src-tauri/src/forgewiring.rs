@@ -579,6 +579,39 @@ impl PushGate for CiPushGate {
                 "purlis did not send this push: it is reading other pushes now, so try again in a moment.",
             );
         };
+        let url = format!("https://{}/{}.git", served.repo.host, served.repo.path);
+        let sources = |budget: std::time::Duration| -> Result<Sources, String> {
+            let (forge, _) = self.context.forge_of(&served, None)?;
+            // Each push fetches what changed since the last into the repo's own cache, all its
+            // fetches within one deadline (inside the listener's connection total).
+            let from = purlis_core::heldact::FromForge {
+                cache: self.cache_of(&served).map(|cache| cache.for_a_push(budget)),
+                ..self.context.fetch_source(&served, &url)?
+            };
+            Ok((forge, Box::new(from)))
+        };
+        self.read_push(chat, session, &repo, push, &sources)
+    }
+}
+
+/// The forge as the person, and where a quarantine fetches the push's base from, for one update.
+type Sources = (
+    Box<dyn purlis_core::heldact::HeldForge>,
+    Box<dyn purlis_core::heldact::BaseObjects>,
+);
+
+impl CiPushGate {
+    /// **Every branch update of `push`, each read by [`Self::read_update`]** against the forge
+    /// `sources` gives for it, as [`PushGate::check`] reads them once the push's repo is known:
+    /// the first refusal answers for the whole push.
+    fn read_push(
+        &self,
+        chat: &ChatId,
+        session: u32,
+        repo: &Repo,
+        push: &PushRead,
+        sources: &dyn Fn(std::time::Duration) -> Result<Sources, String>,
+    ) -> PushVerdict {
         // One deadline for every fetch of this push, whatever the number of branches it updates.
         let started = std::time::Instant::now();
         for update in &push.updates {
@@ -596,18 +629,8 @@ impl PushGate for CiPushGate {
             else {
                 return Self::refuse("purlis did not send this push: a name it cannot read.");
             };
-            let (forge, _) = match self.context.forge_of(&served, None) {
+            let (forge, from) = match sources(budget) {
                 Ok(made) => made,
-                Err(why) => return Self::refuse(format!("purlis did not send this push: {why}.")),
-            };
-            let url = format!("https://{}/{}.git", served.repo.host, served.repo.path);
-            let from = match self.context.fetch_source(&served, &url) {
-                // Each push fetches what changed since the last into the repo's own cache, all
-                // its fetches within one deadline (inside the listener's connection total).
-                Ok(from) => purlis_core::heldact::FromForge {
-                    cache: self.cache_of(&served).map(|cache| cache.for_a_push(budget)),
-                    ..from
-                },
                 Err(why) => return Self::refuse(format!("purlis did not send this push: {why}.")),
             };
             let one = Update {
@@ -615,10 +638,11 @@ impl PushGate for CiPushGate {
                 tip,
                 old: &update.old,
                 created,
+                fast_forward_only: update.fast_forward_only,
                 pack: &push.pack,
             };
             if let Err(verdict) =
-                self.read_update(chat, session, forge.as_ref(), &from, &repo, &one)
+                self.read_update(chat, session, forge.as_ref(), from.as_ref(), repo, &one)
             {
                 return verdict;
             }
@@ -634,6 +658,9 @@ struct Update<'a> {
     /// The tip the push says the branch starts from (all zeros where it makes the branch).
     old: &'a str,
     created: bool,
+    /// The chat holds the branch by the person's Allow, so the push must be a fast-forward of the
+    /// branch's tip on the forge (floor item 6 of ADR 0125's 2026-11-27 amendment; #7841).
+    fast_forward_only: bool,
     pack: &'a [u8],
 }
 
@@ -658,6 +685,7 @@ impl CiPushGate {
             tip,
             old,
             created,
+            fast_forward_only,
             pack,
         } = update;
         let created = *created;
@@ -723,6 +751,30 @@ impl CiPushGate {
         // resolves by id (a fork's commit, a dangling one).
         if let Err(why) = quarantine.take_in_known(pack, tip, &base, from) {
             return refuse(format!("git did not take its objects in ({why})."));
+        }
+        // **No force push onto a branch that was someone else's** (floor item 6 of ADR 0125's
+        // 2026-11-27 amendment; #7841): a branch the chat holds by the person's Allow moves only
+        // forward. The new tip must descend from the branch's tip on the forge, read as the
+        // person just now, by git over the forge's objects and the push's own. Refused with no
+        // ask: no level or press reaches the floor.
+        if *fast_forward_only && !created {
+            match quarantine.descends(&base, tip) {
+                Ok(true) => {}
+                Ok(false) => {
+                    return refuse(format!(
+                        "{} was not this chat's before the person let it push it, so it may only \
+                         add to the branch's history, and this push replaces it. Fetch the \
+                         branch, put your commits on top of it, and push again.",
+                        branch.as_str()
+                    ));
+                }
+                Err(why) => {
+                    return refuse(format!(
+                        "it could not tell whether it only adds to {} ({why}).",
+                        branch.as_str()
+                    ));
+                }
+            }
         }
         let trees = quarantine.trees();
         let already = (!created).then_some(&base);

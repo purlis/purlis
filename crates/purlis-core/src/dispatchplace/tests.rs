@@ -1885,3 +1885,36 @@ fn an_entry_that_vanishes_while_it_is_read_is_told_from_one_that_cannot_be_read(
         Err(NotSealed::Unread)
     );
 }
+
+#[test]
+fn a_clone_whose_config_git_cannot_read_is_not_read_as_one_with_no_remote() {
+    // #7870: "no remote" cuts the task from the clone's HEAD, so a git error must never read
+    // as it.
+    let dir = tempfile::tempdir().unwrap();
+    let clone = dir.path();
+    let init = crate::forklock::status(
+        std::process::Command::new("git")
+            .args(["init", "-q"])
+            .arg(clone)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null"),
+    )
+    .unwrap();
+    assert!(init.success());
+    assert_eq!(
+        has_origin(clone),
+        Ok(false),
+        "a clone with no remote has none"
+    );
+
+    let config = clone.join(".git/config");
+    let mut text = std::fs::read_to_string(&config).unwrap();
+    text.push_str("\n[remote \"origin\"]\n\turl = /somewhere\n");
+    std::fs::write(&config, &text).unwrap();
+    assert_eq!(has_origin(clone), Ok(true));
+
+    text.push_str("[broken\n");
+    std::fs::write(&config, text).unwrap();
+    let why = has_origin(clone).expect_err("an unreadable config is no answer");
+    assert!(why.starts_with("git could not read its config: "), "{why}");
+}

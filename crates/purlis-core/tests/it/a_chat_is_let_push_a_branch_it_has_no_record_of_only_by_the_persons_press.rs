@@ -552,3 +552,247 @@ fn a_delete_a_tag_or_a_protected_ref_beside_an_unowned_branch_raises_no_ask() {
     assert!(w.fake.requests().is_empty(), "never sent");
     windowonly::project_ended(&root);
 }
+
+// ---- after Allow, the branch moves only forward (#7841) ----
+
+/// A push gate that sends on only what the core does not mark as fast-forward only, and keeps
+/// every update it was handed. The app's gate reads the push's objects for the mark
+/// (`forgewiring`'s tests); this one shows what the core hands it.
+#[derive(Default)]
+struct RefusesFastForwardOnly(
+    std::sync::Mutex<Vec<purlis_core::forge::proxy::listener::PushUpdate>>,
+);
+
+impl purlis_core::forge::proxy::listener::PushGate for RefusesFastForwardOnly {
+    fn check(
+        &self,
+        _: &purlis_core::forge::proxy::ChatId,
+        push: &purlis_core::forge::proxy::listener::PushRead,
+    ) -> purlis_core::forge::proxy::listener::PushVerdict {
+        use purlis_core::forge::proxy::listener::PushVerdict;
+        self.0.lock().unwrap().extend(push.updates.iter().cloned());
+        if push.updates.iter().any(|u| u.fast_forward_only) {
+            PushVerdict::Refuse("this push replaces the branch's history".to_owned())
+        } else {
+            PushVerdict::Forward
+        }
+    }
+}
+
+impl RefusesFastForwardOnly {
+    /// Whether the last update it was handed for `branch` was marked fast-forward only.
+    fn marked(&self, branch: &str) -> Option<bool> {
+        self.0
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|u| u.name == format!("refs/heads/{branch}"))
+            .map(|u| u.fast_forward_only)
+    }
+}
+
+#[test]
+fn after_allow_a_push_that_is_not_a_fast_forward_is_refused_and_nothing_is_sent() {
+    purlis_core::unsteered!();
+    // Floor item 6 of ADR 0125's 2026-11-27 amendment: no force push onto another chat's
+    // branch. The core cannot tell a force push from a fast-forward (old and new ids only), so
+    // every update of a branch the chat holds by Allow reaches the gate marked, and the gate's
+    // refusal sends nothing.
+    let config = tempfile::tempdir().unwrap();
+    let (_p, root) = project(PROJECT_ID);
+    let mut w = World::asking_in(config.path().to_owned(), root.clone());
+    let gate = std::sync::Arc::new(RefusesFastForwardOnly::default());
+    w.wiring.push = gate.clone();
+    let (on_forge, forced) = ("4".repeat(40), "6".repeat(40));
+    refused(&w, "theirs", &on_forge, &forced).expect("an unowned branch is refused");
+    windowonly::let_chat_push(
+        &HostScope::for_a_test(),
+        config.path(),
+        &root,
+        SESSION,
+        &control("theirs"),
+        &forge_at(&on_forge),
+    )
+    .unwrap();
+
+    let reply = reply(&w, "theirs", &on_forge, &forced);
+
+    assert_eq!(
+        gate.marked("theirs"),
+        Some(true),
+        "handed to the gate marked"
+    );
+    assert!(
+        reply.text().contains("replaces the branch's history"),
+        "{}",
+        reply.text()
+    );
+    assert!(w.fake.requests().is_empty(), "nothing is sent upstream");
+    assert_eq!(
+        tip_of(config.path(), CHAT, "theirs"),
+        Some(on_forge),
+        "the record does not move"
+    );
+    windowonly::project_ended(&root);
+}
+
+#[test]
+fn after_allow_every_later_update_stays_marked_and_a_branch_the_chat_made_is_not() {
+    purlis_core::unsteered!();
+    // A fast-forward the gate lets through is sent and recorded, and the record keeps the Allow:
+    // the next update is marked again, so a later force push is no more allowed than the first.
+    let config = tempfile::tempdir().unwrap();
+    let (_p, root) = project(PROJECT_ID);
+    let mut w = World::asking_in(config.path().to_owned(), root.clone());
+    let (on_forge, next, after) = ("4".repeat(40), "5".repeat(40), "6".repeat(40));
+    refused(&w, "theirs", &on_forge, &next).expect("refused");
+    windowonly::let_chat_push(
+        &HostScope::for_a_test(),
+        config.path(),
+        &root,
+        SESSION,
+        &control("theirs"),
+        &forge_at(&on_forge),
+    )
+    .unwrap();
+    // The app's gate would read this one as a fast-forward and send it on.
+    assert!(
+        refused(&w, "theirs", &on_forge, &next).is_none(),
+        "a fast-forward is sent"
+    );
+    assert_eq!(w.fake.requests().len(), 1);
+    assert_eq!(tip_of(config.path(), CHAT, "theirs"), Some(next.clone()));
+
+    let gate = std::sync::Arc::new(RefusesFastForwardOnly::default());
+    w.wiring.push = gate.clone();
+    reply(&w, "theirs", &next, &after);
+    assert_eq!(gate.marked("theirs"), Some(true), "still the Allow's");
+    assert_eq!(w.fake.requests().len(), 1, "not sent");
+
+    // A branch the chat makes through the route is its own, and is never marked.
+    let zero = "0".repeat(40);
+    reply(&w, "fresh", &zero, &next);
+    assert_eq!(gate.marked("fresh"), Some(false));
+    reply(&w, "fresh", &next, &after);
+    assert_eq!(
+        gate.marked("fresh"),
+        Some(false),
+        "its own branch moves freely"
+    );
+    assert_eq!(w.fake.requests().len(), 3);
+    windowonly::project_ended(&root);
+}
+
+// ---- the caps and Keep blocked hold whatever `consents` runs as (#7841, review of #7840) ----
+
+/// A push of `commands`, `(old, new, branch)` each, handed to the route on this thread.
+fn handled_all(w: &World, commands: &[(&str, &str, &str)]) -> purlis_core::forge::proxy::Outcome {
+    use purlis_core::forge::proxy::{Inbound, RequestHead};
+    let mut body = String::new();
+    for (i, (old, new, branch)) in commands.iter().enumerate() {
+        let caps = if i == 0 {
+            "\0 report-status side-band-64k agent=git/2"
+        } else {
+            ""
+        };
+        body.push_str(&pkt(&format!("{old} {new} refs/heads/{branch}{caps}")));
+    }
+    body.push_str("0000PACK....");
+    let head = RequestHead::new("POST", HOST, 443, "/acme/app.git/git-receive-pack")
+        .with_content_type(Some("application/x-git-receive-pack-request"));
+    let headers = vec![
+        (
+            "Authorization".to_owned(),
+            basic("x-access-token", w.sentinel.expose()),
+        ),
+        (
+            "Content-Type".to_owned(),
+            "application/x-git-receive-pack-request".to_owned(),
+        ),
+    ];
+    w.proxy.handle(
+        &w.chat,
+        &Inbound {
+            head: &head,
+            headers: &headers,
+            body: body.as_bytes(),
+        },
+    )
+}
+
+/// What the chat is told for a push the route held with an ask's sentence.
+fn said_of(outcome: purlis_core::forge::proxy::Outcome, consents: &str) -> String {
+    match outcome {
+        purlis_core::forge::proxy::Outcome::Held(held) => held.said,
+        other => panic!("{consents}: not refused with a sentence: {other:?}"),
+    }
+}
+
+#[test]
+fn one_ask_a_push_and_three_waiting_hold_under_consents_off_and_log() {
+    purlis_core::unsteered!();
+    for consents in ["off", "log"] {
+        let _here = ConsentsHere::at(consents);
+        let config = tempfile::tempdir().unwrap();
+        let (_p, root) = project(PROJECT_ID);
+        let w = World::asking_in(config.path().to_owned(), root.clone());
+        let (old, new) = ("3".repeat(40), "5".repeat(40));
+        let three = [
+            (old.as_str(), new.as_str(), "b1"),
+            (old.as_str(), new.as_str(), "b2"),
+            (old.as_str(), new.as_str(), "b3"),
+        ];
+
+        // One push of three branches raises one ask; each push after it one more, to three.
+        let said = said_of(handled_all(&w, &three), consents);
+        assert!(said.contains("b1 in acme/app"), "{consents}: {said}");
+        assert_eq!(ask_count(&root), 1, "{consents}");
+        handled_all(&w, &three);
+        handled_all(&w, &three);
+        assert_eq!(ask_count(&root), 3, "{consents}");
+        let said = said_of(
+            handled_all(&w, &[(old.as_str(), new.as_str(), "b4")]),
+            consents,
+        );
+        assert_eq!(ask_count(&root), 3, "{consents}: past the cap no ask");
+        assert!(said.contains("already waiting"), "{consents}: {said}");
+        assert!(w.fake.requests().is_empty(), "{consents}: never sent");
+        windowonly::project_ended(&root);
+    }
+}
+
+#[test]
+fn keep_blocked_holds_under_consents_off_and_log() {
+    purlis_core::unsteered!();
+    for consents in ["off", "log"] {
+        let _here = ConsentsHere::at(consents);
+        let config = tempfile::tempdir().unwrap();
+        let (_p, root) = project(PROJECT_ID);
+        let w = World::asking_in(config.path().to_owned(), root.clone());
+        let (old, new) = ("3".repeat(40), "5".repeat(40));
+        said_of(handled(&w, "theirs", &old, &new), consents);
+        assert_eq!(ask_count(&root), 1, "{consents}");
+
+        windowonly::keep_push_blocked(&root, SESSION, &control("theirs")).unwrap();
+
+        let said = said_of(handled(&w, "theirs", &old, &new), consents);
+        assert!(said.contains("kept"), "{consents}: {said}");
+        assert_eq!(ask_count(&root), 0, "{consents}: no second ask");
+        assert!(
+            windowonly::let_chat_push(
+                &HostScope::for_a_test(),
+                config.path(),
+                &root,
+                SESSION,
+                &control("theirs"),
+                &forge_at(&old),
+            )
+            .is_err(),
+            "{consents}: Allow can no longer be pressed"
+        );
+        assert_eq!(tip_of(config.path(), CHAT, "theirs"), None, "{consents}");
+        assert!(w.fake.requests().is_empty(), "{consents}: never sent");
+        windowonly::project_ended(&root);
+    }
+}
