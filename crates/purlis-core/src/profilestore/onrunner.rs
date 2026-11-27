@@ -1143,8 +1143,8 @@ fn mcp_servers_in(files: &[(String, Vec<u8>)]) -> Option<serde_json::Value> {
 }
 
 /// Puts the MCP servers among `files`, kept for `record`, into its state file, where only purlis
-/// writes it (#3846), and takes out every project's own (ruled 2026-11-08). None sent leaves the
-/// user-scope ones as they are.
+/// writes it (#3846), and takes out every project's own (ruled 2026-11-08) and every project's
+/// [`PROJECT_MCP_CHOICES`](crate::sandbox::claude_wrap::PROJECT_MCP_CHOICES) (ruled 2026-11-27). None sent leaves the user-scope ones as they are.
 fn keep_mcp_servers_of(record: &MachineProfile, files: &[(String, Vec<u8>)]) {
     if record.harness != "claude" {
         return;
