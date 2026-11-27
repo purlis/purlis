@@ -195,7 +195,9 @@ async function onAChat(text: string, pressed?: (offer: Offer) => void) {
 
 describe("a chat's number in a pane's text", () => {
   it("is the word chat and a number, and never a bare #641 or a title", () => {
-    expect(candidatesIn("  chat 641 · Signed commits #5607")).toEqual([
+    // A bare number is an issue's (#6223), never a chat's.
+    const chats = (line: string) => candidatesIn(line).filter((one) => one.kind === "chat");
+    expect(chats("  chat 641 · Signed commits #5607")).toEqual([
       { kind: "chat", text: "chat 641", start: 2, end: 10 },
     ]);
     expect(candidatesIn("Chat 641 ended")).toEqual([
@@ -211,7 +213,7 @@ describe("a chat's number in a pane's text", () => {
       "chat 641x",
       "#chat 641",
     ])
-      expect(candidatesIn(line), line).toEqual([]);
+      expect(chats(line), line).toEqual([]);
     // Words inside an address are the address's.
     expect(candidatesIn("https://x.example/chat 641").map((one) => one.kind)).toEqual(["url"]);
   });
@@ -281,7 +283,7 @@ describe("a chat link in a chat's pane", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("leaves #641 and a chat's title as plain text: the core is asked nothing", async () => {
+  it("never reads #641 or a chat's title as a chat: a bare number is asked as an issue's", async () => {
     const { term, drawn } = await opened();
     await write(term, "  #641 · Signed commits #5607");
 
@@ -290,8 +292,15 @@ describe("a chat link in a chat's pane", () => {
     click(drawn, 3, 0, { ctrlKey: true });
     await new Promise((settle) => setTimeout(settle, 50));
 
-    expect(asked("pane_link_resolve")).toHaveLength(0);
-    expect(asked("pane_link_open")).toHaveLength(0);
+    // #6223: the numbers are issues' numbers, and the title between them is nothing.
+    const kinds = [
+      ...asked("pane_link_resolve").flatMap(
+        (one) => (one.args.candidates as { kind: string }[]) ?? [],
+      ),
+      ...asked("pane_link_open").map((one) => one.args.candidate as { kind: string }),
+    ].map((one) => one.kind);
+    expect(kinds.length).toBeGreaterThan(0);
+    expect(new Set(kinds)).toEqual(new Set(["issue"]));
   });
 });
 

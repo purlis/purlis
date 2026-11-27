@@ -1,0 +1,898 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+use std::path::{Path, PathBuf};
+
+use super::super::{
+    Asking, Asks, Candidate, Hover, Kind, Opening, Pane, Resolved, Resolver, Runs, Target,
+};
+use super::IssueRef;
+
+/// A project with a clone `app` in workspace `smart-ide`, and a folder outside it.
+struct Fixture {
+    _held: tempfile::TempDir,
+    project: PathBuf,
+    outside: PathBuf,
+}
+
+fn fixture() -> Fixture {
+    let held = tempfile::tempdir().expect("a temporary folder");
+    let top = std::fs::canonicalize(held.path()).expect("resolved");
+    let project = top.join("project");
+    std::fs::create_dir_all(project.join("workspaces/smart-ide/repos/app")).expect("a clone");
+    let outside = top.join("elsewhere");
+    std::fs::create_dir_all(&outside).expect("a folder");
+    Fixture {
+        _held: held,
+        project,
+        outside,
+    }
+}
+
+impl Fixture {
+    fn app(&self) -> PathBuf {
+        self.project.join("workspaces/smart-ide/repos/app")
+    }
+
+    fn pane_in(&self, folder: &Path) -> Pane {
+        Pane {
+            project: Some(self.project.clone()),
+            session: Some(7),
+            folder: Some(folder.to_path_buf()),
+            runs: Runs::Here,
+            now_in: None,
+        }
+    }
+}
+
+/// A resolver whose every folder has `remotes`.
+fn links(remotes: &[(&str, &str)]) -> Resolver {
+    let remotes: Vec<(String, String)> = remotes
+        .iter()
+        .map(|(name, url)| ((*name).to_owned(), (*url).to_owned()))
+        .collect();
+    Resolver::with(vec![Box::new(IssueRef::with(move |_, _| remotes.clone()))])
+}
+
+fn issue(text: &str) -> Candidate {
+    Candidate {
+        kind: Kind::Issue,
+        text: text.to_owned(),
+        target: None,
+    }
+}
+
+fn page(text: &str) -> Resolved {
+    Resolved::Link(Target::Url(url::Url::parse(text).expect("an address")))
+}
+
+const ORIGIN: (&str, &str) = ("origin", "git@github.com:purlis/purlis.git");
+
+#[test]
+fn a_bare_number_is_the_folder_s_origin_s_issue_or_pull_request() {
+    let here = fixture();
+    let pane = here.pane_in(&here.app());
+    for origin in [
+        "git@github.com:purlis/purlis.git",
+        "https://github.com/purlis/purlis.git",
+        "https://github.com/purlis/purlis",
+        "ssh://git@github.com/purlis/purlis.git",
+    ] {
+        assert_eq!(
+            links(&[("origin", origin)]).resolve(&issue("#6223"), &pane),
+            page("https://github.com/purlis/purlis/issues/6223"),
+            "{origin}"
+        );
+    }
+}
+
+#[test]
+fn an_owner_s_repo_and_number_is_that_repo_s_on_the_same_forge() {
+    let here = fixture();
+    let pane = here.pane_in(&here.app());
+    assert_eq!(
+        links(&[ORIGIN]).resolve(&issue("purlis/purlis-plane#12"), &pane),
+        page("https://github.com/purlis/purlis-plane/issues/12")
+    );
+}
+
+#[test]
+fn a_gitlab_number_is_its_issue() {
+    let here = fixture();
+    let pane = here.pane_in(&here.app());
+    let links = links(&[("origin", "git@gitlab.com:team/sub/app.git")]);
+    assert_eq!(
+        links.resolve(&issue("#5"), &pane),
+        page("https://gitlab.com/team/sub/app/-/issues/5")
+    );
+    assert_eq!(
+        links.resolve(&issue("team/other#7"), &pane),
+        page("https://gitlab.com/team/other/-/issues/7")
+    );
+}
+
+#[test]
+fn it_opens_as_a_web_address_does_without_asking() {
+    let here = fixture();
+    let pane = here.pane_in(&here.app());
+    let links = links(&[ORIGIN]);
+    let target =
+        Target::Url(url::Url::parse("https://github.com/purlis/purlis/issues/6223").unwrap());
+    assert_eq!(
+        links.open(&issue("#6223"), &pane, &Asks::default(), None),
+        Opening::Open(target.clone())
+    );
+    assert_eq!(
+        links.hover(&issue("#6223"), &pane),
+        Hover::Link {
+            opening: Box::new(Opening::Open(target.clone())),
+            target,
+        }
+    );
+}
+
+#[test]
+fn a_repo_that_is_a_remote_of_the_folder_opens_without_asking_and_any_other_asks() {
+    let here = fixture();
+    let pane = here.pane_in(&here.app());
+    let links = links(&[ORIGIN, ("upstream", "git@github.com:someone/fork.git")]);
+    let opens = |text: &str, to: &str| {
+        let target = Target::Url(url::Url::parse(to).unwrap());
+        assert_eq!(
+            links.open(&issue(text), &pane, &Asks::default(), None),
+            Opening::Open(target),
+            "{text}"
+        );
+    };
+    opens(
+        "purlis/purlis#6223",
+        "https://github.com/purlis/purlis/issues/6223",
+    );
+    opens(
+        "Purlis/Purlis#6223",
+        "https://github.com/Purlis/Purlis/issues/6223",
+    );
+    opens("someone/fork#4", "https://github.com/someone/fork/issues/4");
+
+    let Opening::Ask {
+        shown,
+        target,
+        about,
+        ..
+    } = links.open(
+        &issue("purlis/purlis-plane#12"),
+        &pane,
+        &Asks::default(),
+        None,
+    )
+    else {
+        panic!("a repo that is no remote of the folder asks first");
+    };
+    assert_eq!(shown, "purlis/purlis-plane#12");
+    assert_eq!(
+        target,
+        Target::Url(url::Url::parse("https://github.com/purlis/purlis-plane/issues/12").unwrap())
+    );
+    assert_eq!(about, Asking::Link);
+}
+
+#[test]
+fn with_no_single_forge_remote_a_number_is_no_link_and_says_nothing() {
+    let here = fixture();
+    let pane = here.pane_in(&here.app());
+    let fork = ("fork", "https://gitlab.com/me/app.git");
+    for remotes in [
+        vec![],
+        vec![("origin", "https://git.example.org/purlis/purlis.git")],
+        vec![("origin", "/srv/git/purlis.git")],
+        vec![("upstream", "git@github.com:purlis/purlis.git"), fork],
+    ] {
+        assert_eq!(
+            links(&remotes).resolve(&issue("#6223"), &pane),
+            Resolved::Quiet,
+            "{remotes:?}"
+        );
+    }
+    // Origin elsewhere, and one remote on a forge: that one's.
+    assert_eq!(
+        links(&[("origin", "https://git.example.org/x/y.git"), fork]).resolve(&issue("#3"), &pane),
+        page("https://gitlab.com/me/app/-/issues/3")
+    );
+    // Origin on a forge, among others: origin's.
+    assert_eq!(
+        links(&[fork, ORIGIN]).resolve(&issue("#3"), &pane),
+        page("https://github.com/purlis/purlis/issues/3")
+    );
+}
+
+#[test]
+fn a_folder_outside_the_project_has_no_remote_purlis_reads() {
+    // #6367: a chat that said (OSC 7) it moved outside its project.
+    let here = fixture();
+    let pane = Pane {
+        now_in: Some(here.outside.clone()),
+        ..here.pane_in(&here.app())
+    };
+    assert_eq!(
+        links(&[ORIGIN]).resolve(&issue("#6223"), &pane),
+        Resolved::Quiet
+    );
+    let no_project = Pane {
+        project: None,
+        ..here.pane_in(&here.app())
+    };
+    assert_eq!(
+        links(&[ORIGIN]).resolve(&issue("#6223"), &no_project),
+        Resolved::Quiet
+    );
+}
+
+#[test]
+fn the_remotes_are_those_of_the_folder_the_chat_is_in_now() {
+    let here = fixture();
+    let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::<PathBuf>::new()));
+    let seen = asked.clone();
+    let links = Resolver::with(vec![Box::new(IssueRef::with(move |folder, _| {
+        seen.lock().unwrap().push(folder.to_path_buf());
+        vec![(
+            "origin".to_owned(),
+            "git@github.com:purlis/purlis.git".to_owned(),
+        )]
+    }))]);
+    let ws = here.project.join("workspaces/smart-ide");
+    let pane = Pane {
+        now_in: Some(here.app()),
+        ..here.pane_in(&ws)
+    };
+    links.resolve(&issue("#1"), &pane);
+    assert_eq!(*asked.lock().unwrap(), vec![here.app()]);
+}
+
+#[test]
+fn text_that_is_no_number_or_no_repo_is_no_link() {
+    let here = fixture();
+    let pane = here.pane_in(&here.app());
+    let links = links(&[ORIGIN]);
+    for text in [
+        "#",
+        "#0",
+        "#012",
+        "#1234567890",
+        "#12a",
+        "purlis#12",
+        "/purlis#12",
+        "purlis/#12",
+        "-x/y#12",
+        "x/y.git#12",
+        "x/y z#12",
+        "x/y#12#13",
+        "https://github.com/purlis/purlis#12",
+    ] {
+        assert_eq!(
+            links.resolve(&issue(text), &pane),
+            Resolved::Quiet,
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn a_repo_s_remotes_are_read_from_its_own_config() {
+    // gitoxide, isolated: a real repository's origin, and a folder in it.
+    let here = fixture();
+    let app = here.app();
+    // A repository as git lays one out, made by hand: no git runs in a test.
+    for folder in [".git/objects", ".git/refs/heads"] {
+        std::fs::create_dir_all(app.join(folder)).expect("a folder");
+    }
+    std::fs::write(app.join(".git/HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+    std::fs::write(
+        app.join(".git/config"),
+        "[core]\n\trepositoryformatversion = 0\n\tbare = false\n\
+         [remote \"origin\"]\n\turl = git@github.com:purlis/purlis.git\n\
+         \tfetch = +refs/heads/*:refs/remotes/origin/*\n",
+    )
+    .expect("config");
+    std::fs::create_dir_all(app.join("src")).expect("a folder");
+
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&app.join("src"))),
+        page("https://github.com/purlis/purlis/issues/9")
+    );
+}
+
+#[test]
+fn a_resolver_offering_a_branch_s_files_still_links_an_issue_number() {
+    // The app's resolver asks a branch which files it offers (`Resolver::offering`, #6489); an
+    // issue number in the same pane is still its folder's origin's issue.
+    let here = fixture();
+    let app = here.app();
+    git_folder(&app.join(".git"), "git@github.com:purlis/purlis.git");
+
+    let links = Resolver::offering(|_: &Path, _: crate::files::Branch<'_>, _: &str| Some(true));
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&app)),
+        page("https://github.com/purlis/purlis/issues/9")
+    );
+}
+
+#[test]
+fn a_repository_above_the_project_is_never_read() {
+    // The project is in no repository of its own, and one holds it: its origin is not the chat's.
+    let here = fixture();
+    let above = here.project.parent().expect("a parent").to_path_buf();
+    for folder in [".git/objects", ".git/refs/heads"] {
+        std::fs::create_dir_all(above.join(folder)).expect("a folder");
+    }
+    std::fs::write(above.join(".git/HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+    std::fs::write(
+        above.join(".git/config"),
+        "[core]\n\trepositoryformatversion = 0\n\tbare = false\n\
+         [remote \"origin\"]\n\turl = git@github.com:someone/else.git\n",
+    )
+    .expect("config");
+
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&here.app())),
+        Resolved::Quiet
+    );
+}
+
+/// A repository's git folder at `git`, as git lays one out, whose origin is `origin`.
+fn git_folder(git: &Path, origin: &str) {
+    for folder in ["objects", "refs/heads"] {
+        std::fs::create_dir_all(git.join(folder)).expect("a folder");
+    }
+    std::fs::write(git.join("HEAD"), "ref: refs/heads/main\n").expect("HEAD");
+    std::fs::write(
+        git.join("config"),
+        format!(
+            "[core]\n\trepositoryformatversion = 0\n\tbare = false\n\
+             [remote \"origin\"]\n\turl = {origin}\n"
+        ),
+    )
+    .expect("config");
+}
+
+#[test]
+fn a_git_file_pointing_outside_the_project_is_never_followed() {
+    // A `.git` file an agent wrote can name any folder: purlis reads no git folder outside the
+    // project, so a guarded one is never looked in.
+    let here = fixture();
+    let elsewhere = here.outside.join("repo.git");
+    git_folder(&elsewhere, "git@github.com:someone/else.git");
+    std::fs::write(
+        here.app().join(".git"),
+        format!("gitdir: {}\n", elsewhere.display()),
+    )
+    .expect("a git file");
+
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&here.app())),
+        Resolved::Quiet
+    );
+}
+
+#[test]
+fn a_branch_folder_reads_its_clone_s_remotes() {
+    // A branch folder's `.git` file names its clone's `.git/worktrees/<name>`, whose
+    // `commondir` names the clone's git folder: both in the project.
+    let here = fixture();
+    let clone_git = here.app().join(".git");
+    git_folder(&clone_git, "git@github.com:purlis/purlis.git");
+    let named = clone_git.join("worktrees/feature");
+    std::fs::create_dir_all(&named).expect("a folder");
+    std::fs::write(named.join("HEAD"), "ref: refs/heads/feature\n").expect("HEAD");
+    std::fs::write(named.join("commondir"), "../..\n").expect("commondir");
+    let branch = here
+        .project
+        .join("workspaces/smart-ide/.worktrees/app/feature");
+    std::fs::create_dir_all(&branch).expect("a branch folder");
+    std::fs::write(
+        named.join("gitdir"),
+        format!("{}\n", branch.join(".git").display()),
+    )
+    .expect("gitdir");
+    std::fs::write(
+        branch.join(".git"),
+        format!("gitdir: {}\n", named.display()),
+    )
+    .expect("a git file");
+
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&branch)),
+        page("https://github.com/purlis/purlis/issues/9")
+    );
+}
+
+/// A folder `link` in `project` that is a link to `target`, a folder outside it.
+#[cfg(unix)]
+fn link_to(link: &Path, target: &Path) {
+    std::fs::create_dir_all(target).expect("a folder");
+    std::os::unix::fs::symlink(target, link).expect("a link");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_git_file_through_a_link_and_a_parent_step_is_read_where_the_kernel_goes() {
+    // `<project>/hop/../repo.git`: read as written it is `<project>/repo.git`, but the system
+    // follows `hop` first, so it is the folder outside the project. Only that one counts.
+    let here = fixture();
+    let deep = here.outside.join("deep/x");
+    link_to(&here.project.join("hop"), &deep);
+    git_folder(
+        &here.project.join("repo.git"),
+        "git@github.com:purlis/purlis.git",
+    );
+    git_folder(
+        &here.outside.join("deep/repo.git"),
+        "git@github.com:someone/else.git",
+    );
+    std::fs::write(
+        here.app().join(".git"),
+        format!("gitdir: {}/hop/../repo.git\n", here.project.display()),
+    )
+    .expect("a git file");
+
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&here.app())),
+        Resolved::Quiet
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_commondir_through_a_link_and_a_parent_step_is_read_where_the_kernel_goes() {
+    let here = fixture();
+    let git = here.app().join(".git");
+    git_folder(&git, "git@github.com:purlis/purlis.git");
+    link_to(&git.join("hop"), &here.outside.join("deep/x"));
+    git_folder(&git.join("common"), "git@github.com:purlis/purlis.git");
+    git_folder(
+        &here.outside.join("deep/common"),
+        "git@github.com:someone/else.git",
+    );
+    std::fs::write(git.join("commondir"), "hop/../common\n").expect("commondir");
+
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&here.app())),
+        Resolved::Quiet
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_git_file_through_a_link_that_stays_in_the_project_is_followed() {
+    let here = fixture();
+    git_folder(
+        &here.project.join("real.git"),
+        "git@github.com:purlis/purlis.git",
+    );
+    std::os::unix::fs::symlink(
+        here.project.join("real.git"),
+        here.project.join("alias.git"),
+    )
+    .expect("a link");
+    std::fs::write(
+        here.app().join(".git"),
+        format!("gitdir: {}/alias.git\n", here.project.display()),
+    )
+    .expect("a git file");
+
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&here.app())),
+        page("https://github.com/purlis/purlis/issues/9")
+    );
+}
+
+/// A folder `here` whose `.git` is a file naming `decoy`, a folder of the project that is no git
+/// folder (no `HEAD`), whose own `.git` is `inner`, naming a repository outside the project.
+#[cfg(unix)]
+fn decoy_for(here: &Fixture, inner: impl FnOnce(&Path, &Path)) {
+    let outside_git = here.outside.join("repo/.git");
+    git_folder(&outside_git, "git@github.com:someone/else.git");
+    let decoy = here.project.join("decoy");
+    std::fs::create_dir_all(&decoy).expect("a folder");
+    inner(&decoy.join(".git"), &outside_git);
+    std::fs::write(
+        here.app().join(".git"),
+        format!("gitdir: {}\n", decoy.display()),
+    )
+    .expect("a git file");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_git_folder_with_no_head_whose_own_dot_git_is_a_link_out_reads_nothing() {
+    let here = fixture();
+    decoy_for(&here, |dot_git, outside_git| {
+        std::os::unix::fs::symlink(outside_git, dot_git).expect("a link");
+    });
+
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&here.app())),
+        Resolved::Quiet
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_git_folder_with_no_head_whose_own_dot_git_is_a_git_file_out_reads_nothing() {
+    let here = fixture();
+    decoy_for(&here, |dot_git, outside_git| {
+        std::fs::write(dot_git, format!("gitdir: {}\n", outside_git.display())).expect("a file");
+    });
+
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&here.app())),
+        Resolved::Quiet
+    );
+}
+
+/// The kinds the window's candidates meet: issue numbers (`origin` is purlis/purlis) and files.
+fn issues_and_files() -> Resolver {
+    Resolver::with(vec![
+        Box::new(IssueRef::with(|_, _| {
+            vec![("origin".to_owned(), ORIGIN.1.to_owned())]
+        })),
+        Box::new(super::super::LocalFile::with(None, Vec::new())),
+    ])
+}
+
+fn touch(path: &Path) {
+    std::fs::create_dir_all(path.parent().expect("a parent")).expect("folders");
+    std::fs::write(path, "x\n").expect("a file");
+}
+
+#[test]
+fn an_owner_repo_and_number_word_that_is_a_file_in_the_folder_is_a_file_link() {
+    let here = fixture();
+    for path in ["docs/guide.md", "lib/x.rs", "src/Makefile"] {
+        touch(&here.app().join(path));
+    }
+    let pane = here.pane_in(&here.app());
+    let links = issues_and_files();
+    for (word, file) in [
+        ("docs/guide.md#12", "docs/guide.md"),
+        ("lib/x.rs#7", "lib/x.rs"),
+        ("src/Makefile#3", "src/Makefile"),
+    ] {
+        let Resolved::Link(Target::File(at)) = links.resolve(&issue(word), &pane) else {
+            panic!("{word} is a file in the folder, so a file link");
+        };
+        assert!(at.shown().ends_with(file), "{word}: {}", at.shown());
+        assert!(
+            matches!(
+                links.open(&issue(word), &pane, &Asks::default(), None),
+                Opening::Open(Target::File(_))
+            ),
+            "{word} opens as the file, inside the chat's home"
+        );
+    }
+}
+
+#[test]
+fn an_owner_repo_and_number_word_that_is_no_file_stays_an_issue_that_asks_unless_a_remote() {
+    let here = fixture();
+    let pane = here.pane_in(&here.app());
+    let links = issues_and_files();
+    // `vercel/next.js#123` names a repo whose name ends like a file's: no such file, so an issue.
+    let Opening::Ask { target, about, .. } =
+        links.open(&issue("vercel/next.js#123"), &pane, &Asks::default(), None)
+    else {
+        panic!("a repo that is no remote asks first");
+    };
+    assert_eq!(
+        target,
+        Target::Url(url::Url::parse("https://github.com/vercel/next.js/issues/123").unwrap())
+    );
+    assert_eq!(about, Asking::Link);
+    assert_eq!(
+        links.open(&issue("purlis/purlis#5"), &pane, &Asks::default(), None),
+        Opening::Open(Target::Url(
+            url::Url::parse("https://github.com/purlis/purlis/issues/5").unwrap()
+        ))
+    );
+}
+
+#[test]
+fn a_file_that_shares_a_repo_s_name_wins_only_where_it_exists() {
+    // The file is found on the disk, never guessed from its name: the same words are an issue
+    // where no file is there, and a file where one is.
+    let here = fixture();
+    let pane = here.pane_in(&here.app());
+    let links = issues_and_files();
+    assert!(matches!(
+        links.resolve(&issue("vercel/next.js#123"), &pane),
+        Resolved::Link(Target::Url(_))
+    ));
+    touch(&here.app().join("vercel/next.js"));
+    assert!(matches!(
+        links.resolve(&issue("vercel/next.js#123"), &pane),
+        Resolved::Link(Target::File(_))
+    ));
+}
+
+/// The origin of `#9` where the config at `<app>/.git` is the one `write` leaves.
+#[cfg(unix)]
+fn read_with_config(here: &Fixture, write: impl FnOnce(&Path)) -> Resolved {
+    let git = here.app().join(".git");
+    git_folder(&git, "git@github.com:purlis/purlis.git");
+    write(&git);
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    links.resolve(&issue("#9"), &here.pane_in(&here.app()))
+}
+
+#[cfg(unix)]
+#[test]
+fn a_config_that_is_a_link_out_of_the_project_reads_nothing() {
+    let here = fixture();
+    let outside = here.outside.join("config");
+    std::fs::write(
+        &outside,
+        "[remote \"origin\"]\n\turl = git@github.com:someone/else.git\n",
+    )
+    .expect("a config");
+    let read = read_with_config(&here, |git| {
+        std::fs::remove_file(git.join("config")).expect("removed");
+        std::os::unix::fs::symlink(&outside, git.join("config")).expect("a link");
+    });
+    assert_eq!(read, Resolved::Quiet);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_config_that_is_a_link_to_a_file_in_the_project_is_read() {
+    let here = fixture();
+    let real = here.project.join("real-config");
+    let read = read_with_config(&here, |git| {
+        std::fs::rename(git.join("config"), &real).expect("moved");
+        std::os::unix::fs::symlink(&real, git.join("config")).expect("a link");
+    });
+    assert_eq!(read, page("https://github.com/purlis/purlis/issues/9"));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_commondir_whose_config_is_a_link_out_of_the_project_reads_nothing() {
+    let here = fixture();
+    let common = here.app().join(".git");
+    git_folder(&common, "git@github.com:purlis/purlis.git");
+    let outside = here.outside.join("config");
+    std::fs::write(
+        &outside,
+        "[remote \"origin\"]\n\turl = git@github.com:someone/else.git\n",
+    )
+    .expect("a config");
+    std::fs::remove_file(common.join("config")).expect("removed");
+    std::os::unix::fs::symlink(&outside, common.join("config")).expect("a link");
+    let named = common.join("worktrees/feature");
+    std::fs::create_dir_all(&named).expect("a folder");
+    std::fs::write(named.join("HEAD"), "ref: refs/heads/feature\n").expect("HEAD");
+    std::fs::write(named.join("commondir"), "../..\n").expect("commondir");
+    let branch = here
+        .project
+        .join("workspaces/smart-ide/.worktrees/app/feature");
+    std::fs::create_dir_all(&branch).expect("a branch folder");
+    std::fs::write(
+        branch.join(".git"),
+        format!("gitdir: {}\n", named.display()),
+    )
+    .expect("a git file");
+
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&branch)),
+        Resolved::Quiet
+    );
+}
+
+#[test]
+fn an_include_in_the_config_is_never_read() {
+    // `include.path` names a file outside the project: its remote is not the folder's.
+    let here = fixture();
+    let outside = here.outside.join("extra");
+    std::fs::write(
+        &outside,
+        "[remote \"origin\"]\n\turl = git@github.com:someone/else.git\n",
+    )
+    .expect("an include");
+    let git = here.app().join(".git");
+    git_folder(&git, "git@github.com:purlis/purlis.git");
+    std::fs::write(
+        git.join("config"),
+        format!(
+            "[remote \"origin\"]\n\turl = git@github.com:purlis/purlis.git\n[include]\n\tpath = {}\n",
+            outside.display()
+        ),
+    )
+    .expect("config");
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    // Read with includes, the outside file would be the last word and `origin` someone else's.
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&here.app())),
+        page("https://github.com/purlis/purlis/issues/9")
+    );
+
+    // A remote only an include names is none.
+    std::fs::write(
+        git.join("config"),
+        format!("[include]\n\tpath = {}\n", outside.display()),
+    )
+    .expect("config");
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&here.app())),
+        Resolved::Quiet
+    );
+}
+
+/// What `resolve` answers for `#9` in `folder`, or a failure if it has not answered in ten
+/// seconds: a resolver that opens a pipe waits for ever.
+#[cfg(unix)]
+fn resolved_within_ten_seconds(here: &Fixture, folder: &Path) -> Resolved {
+    let pane = here.pane_in(folder);
+    let (send, receive) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+        let _ = send.send(links.resolve(&issue("#9"), &pane));
+    });
+    receive
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the resolver answered without waiting on a file")
+}
+
+#[cfg(unix)]
+fn fifo(path: &Path) {
+    let made = crate::forklock::status(std::process::Command::new("mkfifo").arg(path))
+        .expect("mkfifo runs");
+    assert!(made.success(), "a named pipe");
+}
+
+/// A linked worktree `branch` of the clone, its git folder `named` naming `commondir`'s content.
+#[cfg(unix)]
+fn linked_worktree(here: &Fixture, commondir: impl FnOnce(&Path)) -> PathBuf {
+    let common = here.app().join(".git");
+    git_folder(&common, "git@github.com:purlis/purlis.git");
+    let named = common.join("worktrees/feature");
+    std::fs::create_dir_all(&named).expect("a folder");
+    std::fs::write(named.join("HEAD"), "ref: refs/heads/feature\n").expect("HEAD");
+    commondir(&named.join("commondir"));
+    let branch = here
+        .project
+        .join("workspaces/smart-ide/.worktrees/app/feature");
+    std::fs::create_dir_all(&branch).expect("a branch folder");
+    std::fs::write(
+        branch.join(".git"),
+        format!("gitdir: {}\n", named.display()),
+    )
+    .expect("a git file");
+    branch
+}
+
+#[cfg(unix)]
+#[test]
+fn a_git_file_that_is_a_named_pipe_reads_nothing_and_never_waits() {
+    let here = fixture();
+    fifo(&here.app().join(".git"));
+    assert_eq!(
+        resolved_within_ten_seconds(&here, &here.app()),
+        Resolved::Quiet
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_commondir_that_is_a_named_pipe_reads_nothing_and_never_waits() {
+    let here = fixture();
+    let branch = linked_worktree(&here, fifo);
+    assert_eq!(resolved_within_ten_seconds(&here, &branch), Resolved::Quiet);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_config_that_is_a_named_pipe_reads_nothing_and_never_waits() {
+    let here = fixture();
+    let git = here.app().join(".git");
+    git_folder(&git, "git@github.com:purlis/purlis.git");
+    std::fs::remove_file(git.join("config")).expect("removed");
+    fifo(&git.join("config"));
+    assert_eq!(
+        resolved_within_ten_seconds(&here, &here.app()),
+        Resolved::Quiet
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_commondir_that_is_a_link_to_a_file_outside_the_project_reads_nothing() {
+    // The file outside the project says where the common folder is: its bytes choose what is read.
+    let here = fixture();
+    let outside = here.outside.join("commondir");
+    std::fs::write(&outside, "../..\n").expect("a file");
+    let branch = linked_worktree(&here, |commondir| {
+        std::os::unix::fs::symlink(&outside, commondir).expect("a link");
+    });
+    assert_eq!(resolved_within_ten_seconds(&here, &branch), Resolved::Quiet);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_commondir_that_is_a_hard_link_to_a_file_outside_the_project_reads_nothing() {
+    let here = fixture();
+    let outside = here.outside.join("commondir");
+    std::fs::write(&outside, "../..\n").expect("a file");
+    let branch = linked_worktree(&here, |commondir| {
+        std::fs::hard_link(&outside, commondir).expect("a hard link");
+    });
+    assert_eq!(resolved_within_ten_seconds(&here, &branch), Resolved::Quiet);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_config_that_is_a_hard_link_to_a_file_outside_the_project_reads_nothing() {
+    // A hard link resolves to a path in the project, so no resolving can tell it from a file of its own.
+    let here = fixture();
+    let outside = here.outside.join("config");
+    std::fs::write(
+        &outside,
+        "[remote \"origin\"]\n\turl = git@github.com:someone/else.git\n",
+    )
+    .expect("a config");
+    let read = read_with_config(&here, |git| {
+        std::fs::remove_file(git.join("config")).expect("removed");
+        std::fs::hard_link(&outside, git.join("config")).expect("a hard link");
+    });
+    assert_eq!(read, Resolved::Quiet);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_git_file_that_is_a_hard_link_to_a_file_outside_the_project_reads_nothing() {
+    let here = fixture();
+    let git = here.project.join("real.git");
+    git_folder(&git, "git@github.com:purlis/purlis.git");
+    let outside = here.outside.join("gitfile");
+    std::fs::write(&outside, format!("gitdir: {}\n", git.display())).expect("a file");
+    std::fs::hard_link(&outside, here.app().join(".git")).expect("a hard link");
+    assert_eq!(
+        resolved_within_ten_seconds(&here, &here.app()),
+        Resolved::Quiet
+    );
+}
+
+#[test]
+fn a_config_over_a_mebibyte_reads_nothing() {
+    let here = fixture();
+    let read = read_with_config(&here, |git| {
+        let mut config = std::fs::read_to_string(git.join("config")).expect("config");
+        config.push_str(&format!("# {}\n", "x".repeat(1024 * 1024)));
+        std::fs::write(git.join("config"), config).expect("config");
+    });
+    assert_eq!(read, Resolved::Quiet);
+}
+
+#[test]
+fn a_git_file_over_sixty_four_kibibytes_reads_nothing() {
+    let here = fixture();
+    let git = here.project.join("real.git");
+    git_folder(&git, "git@github.com:purlis/purlis.git");
+    std::fs::write(
+        here.app().join(".git"),
+        format!("gitdir: {}\n# {}\n", git.display(), "x".repeat(64 * 1024)),
+    )
+    .expect("a git file");
+    let links = Resolver::with(vec![Box::new(IssueRef::here())]);
+    assert_eq!(
+        links.resolve(&issue("#9"), &here.pane_in(&here.app())),
+        Resolved::Quiet
+    );
+}
