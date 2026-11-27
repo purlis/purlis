@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795736335838,
+  "lastUpdate": 1795737971741,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56532,6 +56532,48 @@ window.BENCHMARK_DATA = {
             "value": 101.2429015,
             "unit": "ms",
             "extra": "median of 5 runs: 101.010, 101.133, 101.243, 101.823, 102.244 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c5e15835d5dc87f6671f0d4263f2e21e9c5f5240",
+          "message": "A chat's save --pull refusal points at Update in the window in pull-request mode (#7268)\n\n* Point a chat's save --pull in PR mode at Update in the window; prefer a git that can merge (#6846)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7T47YGQVE654NKQ87FA539N\nPurlis-Persona: steward\n\n* Add changelog fragment\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7T47YGQVE654NKQ87FA539N\nPurlis-Persona: steward\n\n* Chat save --pull points at Update in the window; purlis picks a git that can merge (#6846)\n\nOnly a merge-tree given its merge base asks a git its version, so the guard and every\nother call start no process to choose their git; the window-controls test names the new\nUpdate refusal a chat reads.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7GCG6QAFEDBGQ6GAM9YDCPC\nPurlis-Persona: steward\n\n* Keep only the chat save --pull advice; drop the git 2.40 pick, which #7651 made obsolete\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CXG1S6JXZYYQNFVWNJ2A6X\nPurlis-Persona: steward\n\n* Changelog fragment for the chat save --pull advice alone\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CXG1S6JXZYYQNFVWNJ2A6X\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T23:11:20Z",
+          "tree_id": "14eeb4291e1fbf6123869a63a164bb9868d78b4e",
+          "url": "https://github.com/purlis/purlis/commit/c5e15835d5dc87f6671f0d4263f2e21e9c5f5240"
+        },
+        "date": 1795737966456,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.56629,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.566, 0.566, 0.566, 0.577, 0.584 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3494825,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.266, 16.338, 16.349, 16.362, 16.403 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.0352235,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.662, 99.799, 100.035, 100.212, 102.758 ms"
           }
         ]
       }
