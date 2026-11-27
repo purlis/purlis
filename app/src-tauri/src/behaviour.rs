@@ -394,6 +394,7 @@ const DOCKER_POOL_IMAGE: &str = "DOCKER_POOL_TEST_IMAGE";
 /// so an image that went missing never passes as nothing run.
 const PARITY: &str = "PURLIS_PARITY";
 
+mod fault_suite;
 #[path = "behaviour/tests/fresh_runner.rs"]
 mod fresh_runner;
 #[path = "behaviour/tests/on_a_cluster_pool.rs"]
@@ -741,10 +742,15 @@ fn a_pool_of(
     .expect("a pool")
     .on(remote);
     crate::dockerpools::add_on(machine, &pool).expect("the pool is added and its runner paired");
+    let made = purlis_core::runners::runner_for(&machine.config, &name)
+        .expect("its runner is kept")
+        .made;
     let removes = RemovesThePool {
         config: machine.config.clone(),
         docker: machine.for_pool(&name).expect("the pool's engine").docker,
         name: name.clone(),
+        container: made.container.as_str().to_owned(),
+        volume: made.runner.volume(),
     };
     (name, removes)
 }
@@ -783,10 +789,81 @@ struct RemovesThePool {
     config: PathBuf,
     docker: purlis_core::dockerpool::Docker,
     name: String,
+    /// Its runner's container and home volume, as it was made: what a pool the test forgot
+    /// leaves on its machine (#7187), removed there by name.
+    container: String,
+    volume: String,
+}
+
+/// Whether pool `name` is known to be forgotten: the pools `listed` under its config were read
+/// and it is not one of them. A list that could not be read says nothing, so it is not.
+fn known_forgotten<E>(listed: Result<Vec<String>, E>, name: &str) -> bool {
+    listed.is_ok_and(|names| !names.iter().any(|listed| listed == name))
+}
+
+#[test]
+fn a_pool_is_taken_as_forgotten_only_when_its_list_was_read_without_it() {
+    let read = |names: &[&str]| Ok::<_, ()>(names.iter().map(|&n| n.to_owned()).collect());
+    assert!(known_forgotten(read(&["other"]), "pool"));
+    assert!(!known_forgotten(read(&["other", "pool"]), "pool"));
+    assert!(!known_forgotten(
+        Err::<Vec<String>, _>("unreadable"),
+        "pool"
+    ));
+}
+
+impl RemovesThePool {
+    /// **A pool the test forgot here leaves its runner on its machine** (#7187): its container
+    /// and home volume are removed there by name, through the engine the pool was reached on.
+    /// `false` where the pool is still kept, for [`purlis_core::pools::remove_discarding`], and
+    /// where its config could not be read, so the normal removal and its diagnostics still run.
+    fn removed_as_forgotten(&self) -> bool {
+        let listed = purlis_core::runners::pools(&self.config).map(|pools| {
+            pools
+                .iter()
+                .map(|pool| pool.name().to_owned())
+                .collect::<Vec<_>>()
+        });
+        if !known_forgotten(listed, &self.name) {
+            return false;
+        }
+        let (container, volume) = (self.container.as_str(), self.volume.as_str());
+        for args in [
+            &["rm", "--force", container][..],
+            &["volume", "rm", "--force", volume][..],
+        ] {
+            let ran = self
+                .docker
+                .command()
+                .map_err(|why| why.to_string())
+                .and_then(|mut command| {
+                    purlis_core::forklock::output(command.args(args)).map_err(|why| why.to_string())
+                });
+            let said = match ran {
+                Ok(out) if out.status.success() => continue,
+                Ok(out) => String::from_utf8_lossy(&out.stderr).into_owned(),
+                Err(why) => why,
+            };
+            let said = format!(
+                "forgotten pool {}'s runner was not removed from its machine ({}): {said}",
+                self.name,
+                args.join(" ")
+            );
+            if std::thread::panicking() {
+                tracing::warn!("{said}");
+            } else {
+                panic!("{said}");
+            }
+        }
+        true
+    }
 }
 
 impl Drop for RemovesThePool {
     fn drop(&mut self) {
+        if self.removed_as_forgotten() {
+            return;
+        }
         // A behaviour that failed on the runner is read with what its host said.
         if std::thread::panicking()
             && let Ok(kept) = purlis_core::runners::runner_for(&self.config, &self.name)
@@ -1180,6 +1257,26 @@ impl OnTheRunner {
         HostStopped { runner: self, pid }
     }
 
+    /// The runner's data home: the first of its name's spellings, newest first, that is a folder
+    /// under its user's data directory, as the data home's ladder picks it (`datahome::in_base`).
+    /// Its host begins it as it starts (`datahome::begin_a_runners`), so it is there before any
+    /// browser has run on the runner, whose `browsers/` folder is made only by the first.
+    fn data_home(&self) -> PathBuf {
+        let spellings: Vec<&str> = purlis_core::names::DATA_HOME.spellings().collect();
+        let found = self.prints(&format!(
+            "for name in {}; do [ -d \"$HOME/.local/share/$name\" ] && \
+             {{ printf %s \"$HOME/.local/share/$name\"; break; }}; done; true",
+            spellings.join(" ")
+        ));
+        let found = found.trim();
+        assert!(
+            !found.is_empty(),
+            "the runner's host has begun its data home, as one of {spellings:?} under \
+             ~/.local/share"
+        );
+        PathBuf::from(found)
+    }
+
     /// Whether the process `pid` of the runner's container is there.
     fn has(&self, pid: u32) -> bool {
         let proc = format!("/proc/{pid}");
@@ -1198,20 +1295,13 @@ impl OnTheRunner {
     /// in with no key, its harness the program `program` is on this machine. A Codex profile is
     /// one for sandboxed chats only, its folder where purlis makes such a profile's (#2037), and
     /// an opencode profile one purlis made there, with its data folder beside its config folder:
-    /// under the runner's data home, in use once its first browser has started.
+    /// under the runner's data home, which its host begins as it starts, before any browser.
     fn signs_in_as(&self, harness: &str, name: &str, program: &Path) {
         use purlis_core::profilestore::{Folders, MachineProfile};
         let made_here = matches!(harness, "codex" | "opencode");
         let folder = if made_here {
-            let browsers = self.prints(&format!(
-                "ls -d \"$HOME\"/.local/share/*/{} | head -n 1",
-                purlis_core::datahome::BROWSERS
-            ));
-            let data = Path::new(browsers.trim())
-                .parent()
-                .expect("the runner's data home, where its browsers are")
-                .to_path_buf();
-            data.join(purlis_core::profilestore::DIR)
+            self.data_home()
+                .join(purlis_core::profilestore::DIR)
                 .join(name)
                 .join(purlis_core::profilestore::CONFIG)
         } else {
@@ -2324,13 +2414,11 @@ fn a_file_a_runner_chat_printed_is_read_on_its_runner(target: &Target) {
     Pane::on(target, id).shows("wrote the file");
 
     if target.runner.is_none() {
-        assert!(!target.sessions.reads_files_on_runner(id));
         assert!(target.sessions.runner_files_of(id).is_none());
         target.sessions.close(id).expect("it closes");
         std::fs::remove_file(&printed).expect("the file the chat wrote here");
         return;
     }
-    assert!(target.sessions.reads_files_on_runner(id));
     let reads = target
         .sessions
         .runner_files_of(id)

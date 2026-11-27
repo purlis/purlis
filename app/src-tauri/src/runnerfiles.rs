@@ -1,11 +1,13 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **A Docker pool's runner, as a pane's file link reads its chat's files** (#6387): the first
-//! adapter of the core's neutral [`purlis_core::panelinks::RunnerFiles`], over the session
-//! protocol's `read_file` (1.93) on the window's link to that runner. The path the chat printed
-//! is sent as data; the runner resolves and reads it. Nothing here runs `docker exec` or builds
-//! a command line.
+//! **A pool's runner, as a pane's file link reads its chat's files** (#6387, #6949): the adapter
+//! of the core's neutral [`purlis_core::panelinks::RunnerFiles`] for every kind of runner purlis
+//! pairs ([`reading_files_needs`]: a Docker pool's, a cluster pool's own, and a chat's fresh
+//! runner on a cluster pool), over the session protocol's `read_file` on the window's link to
+//! that runner, asked only of one that keeps its own folders and sign-ins from the window
+//! (1.97). The path the chat printed is sent as data; the runner resolves and reads it. Nothing
+//! here runs `docker exec` or builds a command line.
 //!
 //! - A hover only looks ([`ReadsOnRunner::look`]), for at most [`LOOK_WITHIN`]: a runner that is
 //!   slow to answer leaves the text no link, and never holds the pane up.
@@ -19,8 +21,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use purlis_session_protocol::session::{
-    Answer, Command, FileReach, FileRead, MOST_FILE_PIECE, MOST_FILE_READ,
+    self, Answer, Command, FileReach, FileRead, MOST_FILE_PIECE, MOST_FILE_READ,
 };
+use purlis_session_protocol::version::Version;
 
 use crate::hostedsessions::HostLink;
 
@@ -29,6 +32,39 @@ pub const LOOK_WITHIN: Duration = Duration::from_millis(1500);
 
 /// The longest one piece of a tab's read is waited for.
 pub const PIECE_WITHIN: Duration = Duration::from_secs(10);
+
+/// **What reading a chat's files on the runner `named` reaches needs of its link** (#6387,
+/// #6949): the session protocol version it must speak, or `None` where the window reads no file
+/// there. `named` is as a link to a pool's runner names it: `<pool>`, or `<pool>/<runner>` for a
+/// Docker pool's draining runner and a chat's fresh runner.
+///
+/// Every kind needs [`session::KNOWS_KEPT_FILES`] (1.97, #7064): a runner before it would read
+/// its own folders and sign-ins for the window, so it is never asked and its chat's paths stay
+/// no link.
+///
+/// Files are read on every kind of runner purlis pairs, and only as a chat's own link reaches
+/// it: a Docker pool's runner as `runners::reachable` says (its pool kept with a runner of its
+/// image, or that very runner kept draining), and a cluster pool's own runner or a chat's fresh
+/// runner there as `runners::cluster_runner_for` says (its pool kept with its cluster's pin, and
+/// the runner kept under that very name).
+///
+/// Every kind runs the same host, so one adapter ([`OnLink`] over `read_file`) asks them all,
+/// and on every kind the path is held to the chat's workspace there, a file outside it asks
+/// first, and one opened on that answer is read only while it is the file it was
+/// ([`ReadsOnRunner::read`]).
+pub(crate) fn reading_files_needs(config: &std::path::Path, named: &str) -> Option<Version> {
+    let reached = purlis_core::runners::reachable(config, named).is_ok()
+        || purlis_core::runners::cluster_runner_for(config, named).is_ok_and(|kept| kept.is_some());
+    reached.then_some(session::KNOWS_KEPT_FILES)
+}
+
+/// **Whether the window reads files over a link of session protocol `version` to the runner
+/// `named`** (#6387, #6949, #7064): the one check a chat's runner files pass
+/// (`HostedSessions::runner_files_of`), so a runner of a kind read nowhere, or of a version
+/// before what [`reading_files_needs`] says, is never asked and its chat's paths stay no link.
+pub(crate) fn reads_files_over(config: &std::path::Path, named: &str, version: Version) -> bool {
+    reading_files_needs(config, named).is_some_and(|needs| version >= needs)
+}
 
 /// **One answer of a runner to `read_file`**, as the window asks it: on a link, for one chat.
 pub(crate) trait AsksRunner: Send + Sync {
