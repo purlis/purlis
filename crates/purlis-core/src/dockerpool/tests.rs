@@ -3014,6 +3014,7 @@ fn a_running_runners_check_reads_its_daemon_container_and_home_once_each() {
 /// **A started runner's check reads its daemon once and its container again** (#7862): the start
 /// changed the container, so it is inspected again after it; the daemon and the volume did not
 /// change, and are not read again.
+/// Seen red: two `info` runs, the daemon read again by the whole check after the start.
 #[test]
 fn a_started_runners_check_reads_its_container_again_and_nothing_else() {
     let mut stopped = inspected();
@@ -3093,6 +3094,8 @@ fn a_cold_links_container_check_takes_the_daemon_from_the_pins_docker_info() {
 
 /// **A daemon the pin's `docker info` says gives no built-in seccomp profile is refused as it
 /// always was** (#7862): nothing is checked differently for where the options were read.
+/// Seen red: "docker info did not say which security options its daemon has", the pin's info
+/// not taken and the stand-in's whole info read as the options.
 #[test]
 fn a_daemon_the_pins_docker_info_finds_without_the_builtin_profile_is_refused() {
     let fake = FakeDocker::new(&inspected());
@@ -3114,7 +3117,8 @@ fn a_daemon_the_pins_docker_info_finds_without_the_builtin_profile_is_refused() 
 }
 
 /// **A `docker` that was never a pool's pin keeps nothing of what `docker info` said** (#7862):
-/// only the check of a pool's own link hands on what its pin read.
+/// only the check of a pool's own link hands on what its pin read. A guard: it passed before the
+/// hand-off, and fails if every `docker` kept what its info said.
 #[test]
 fn a_docker_not_pointed_at_a_pool_keeps_nothing_its_info_said() {
     let fake = FakeDocker::new(&inspected());

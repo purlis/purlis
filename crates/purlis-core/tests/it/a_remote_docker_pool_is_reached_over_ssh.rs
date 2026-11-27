@@ -1098,6 +1098,8 @@ fn a_start_on_a_remote_pool_times_each_of_its_steps() {
             .map(|line| line.ms)
             .sum()
     };
+    // Cold, warm, stopped, as the table runs them: #7185's gates, 1.5 × the baseline's 3021, 2041
+    // and 2439 ms in all, rounded as that resolution states them.
     let budgets = [4500, 3000, 3700];
     out += "| scenario | link (rows with no parent, ms) | budget (ms) |\n|---|---|---|\n";
     for ((label, _, steps), budget) in table.iter().zip(budgets) {
