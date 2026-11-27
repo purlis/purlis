@@ -7,7 +7,8 @@
  * starts on the answer that grants nothing, answers nothing until it has settled, and says so
  * when what it shows changes. Each is drawn, held to axe, walked by the keyboard, and compared
  * with its baseline in Chromium and WebKit (`docs/component-stories.md`). Those baselines are
- * drawn by a pull request's `stories` run, in the pinned image.
+ * drawn by a pull request's `stories` run, in the pinned image, and cover both browsers, one
+ * picture per appearance in each.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useEffect, useState } from "react";

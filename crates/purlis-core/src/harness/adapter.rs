@@ -123,6 +123,16 @@ pub trait HarnessAdapter: Sync {
         None
     }
 
+    /// **The folder this harness's hook payload says the chat works in now** (#6367), from the
+    /// payload's `cwd`: where a relative path in its pane starts
+    /// ([`crate::panelinks::folder`]). `None` by default: a harness whose `cwd` is not read
+    /// leaves its chat's relative paths starting where it started, or where its program last
+    /// said by OSC 7.
+    fn reported_folder(&self, cwd: Option<&str>) -> Option<std::path::PathBuf> {
+        let _ = cwd;
+        None
+    }
+
     /// **The permission mode this harness's hook payload names, as attendance reads it**
     /// (T1-17, [`crate::attendance::Fact`]), from the payload's `permission_mode`. `None` by
     /// default: a harness whose word is not read is attended or not only by how purlis started

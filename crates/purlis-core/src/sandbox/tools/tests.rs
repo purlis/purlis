@@ -1995,3 +1995,95 @@ fn without_guard_takes_out_the_one_guard_and_names_the_folder_by_what_is_left() 
     let _ = std::fs::remove_dir_all(root);
     let _ = std::fs::remove_dir_all(system);
 }
+
+/// OpenRC's `supervise-daemon` runs the program it is named (round 3 of #7828's review). Its first
+/// part reaches the `supervise` row as well, but a give-back of the forms (#7825) must not give it
+/// back, so it is refused by a row of its own.
+#[test]
+fn supervise_daemon_is_refused_by_a_row_of_its_own_and_not_only_by_its_first_part() {
+    assert!(super::NOT_FOR_A_RUN_GRANT.contains(&"supervise-daemon"));
+}
+
+/// `find-repos-of-install`, of dnf-plugins-core, loads plugins as `dnf` does (round 6 of #7828's
+/// review). Its first part reaches the `find` row as well, but by chance, so it is refused by a
+/// row of its own, which a give-back of the forms (#7825) must not take with it.
+#[test]
+fn find_repos_of_install_is_refused_by_a_row_of_its_own_and_not_only_by_its_first_part() {
+    assert!(super::NOT_FOR_A_RUN_GRANT.contains(&"find-repos-of-install"));
+}
+
+/// `deb-systemd-invoke` has `systemctl` act on the unit it is named (round 4 of #7828's review).
+/// Its last part reaches the `invoke` row, Python's task runner's, but by chance, so it is
+/// refused by a row of its own (round 12).
+#[test]
+fn deb_systemd_invoke_is_refused_by_a_row_of_its_own_and_not_only_by_its_last_part() {
+    assert!(super::NOT_FOR_A_RUN_GRANT.contains(&"deb-systemd-invoke"));
+}
+
+/// Rows that were there before #7828 and that a row it added now reaches by a form of their name
+/// as well (round 8 of its review): `systemd` reaches the `systemd-<name>` and `<name>-systemd`
+/// programs, and `supervise`, `svscan`, `setuidgid` and `softlimit` reach their `s6-` twins. Their
+/// `run_grants` tests pass through either row, so a give-back of the forms (#7825) must not take
+/// them with it: each keeps a row of its own.
+#[test]
+fn the_rows_a_new_rows_form_also_reaches_are_each_kept_as_a_row_of_their_own() {
+    for name in [
+        "systemd-run",
+        "systemd-cat",
+        "systemd-inhibit",
+        "systemd-socket-activate",
+        "systemd-notify",
+        "systemd-dissect",
+        "garb-systemd",
+        "mysql-systemd",
+        "s6-supervise",
+        "s6-svscan",
+        "s6-setuidgid",
+        "s6-softlimit",
+    ] {
+        assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
+    }
+}
+
+/// s6's `s6-envuidgid`, `s6-fghack` and `s6-setlock` run the program after them, and `s6-rc-init`
+/// hands a running s6 the service folders of a compiled database a chat may have written, as
+/// `s6-rc-update` does (round 13 of #7828's review). Daemontools' `envuidgid`, `fghack` and
+/// `setlock` rows and the `init` row reach them by their last part, but only by chance, from
+/// another family, so each is refused by a row of its own.
+#[test]
+fn the_s6_programs_other_families_rows_reach_by_chance_each_have_a_row_of_their_own() {
+    for name in ["s6-envuidgid", "s6-fghack", "s6-setlock", "s6-rc-init"] {
+        assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
+    }
+}
+
+/// The programs of other families that the new `init` and `telinit` rows reach by their last part,
+/// only by chance (round 14 of #7828's review): `cloud-init` runs the `bootcmd` and `runcmd` of the
+/// file it is handed, Yelp's `dumb-init` and LXC's `lxc-init` run the command after them, and s6's
+/// `s6-linux-init`, its stage 1, runs the `rc.init` of the folder its `-c` names; its
+/// `s6-linux-init-telinit` is kept with it on the conservative side. Each is refused by a row of
+/// its own.
+#[test]
+fn the_programs_the_init_rows_reach_by_chance_each_have_a_row_of_their_own() {
+    for name in [
+        "cloud-init",
+        "dumb-init",
+        "lxc-init",
+        "s6-linux-init",
+        "s6-linux-init-telinit",
+    ] {
+        assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
+    }
+}
+
+/// Programs of other families that a new row reaches by a form only by chance (round 20 of
+/// #7828's review): Raku's `prove6` runs the test files it is pointed at and reaches `prove`
+/// without its version; `fakeroot-ng`, a project of its own, runs the command after it and
+/// reaches `fakeroot` by its first part; and `grunt-init` runs a template's code and reaches
+/// `init` by its last part. Each is refused by a row of its own.
+#[test]
+fn the_programs_the_prove_fakeroot_and_init_rows_reach_by_chance_each_have_a_row_of_their_own() {
+    for name in ["prove6", "fakeroot-ng", "grunt-init"] {
+        assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
+    }
+}
