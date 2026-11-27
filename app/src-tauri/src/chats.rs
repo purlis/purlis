@@ -5445,12 +5445,27 @@ impl Chats {
                 .and_then(|(chat_id, run)| {
                     // The merge stance is never looser than the chain that dispatched this chat.
                     let chain = chat.from.as_ref().and_then(|from| from.policy.as_deref());
-                    if reattaching {
-                        crate::forgeroute::guard_reattached(chat_id, run, &self.project, chain)
-                    } else {
-                        crate::forgeroute::guard(chat_id, run, &self.project, chain)
+                    let project = &self.project;
+                    match &chat.from {
+                        _ if reattaching => {
+                            crate::forgeroute::guard_reattached(chat_id, run, project, chain)
+                                .map(Ok)
+                        }
+                        // A chat another chat started has a route wherever that chat has one, or
+                        // is not started (#7870).
+                        Some(from) => {
+                            let handed = crate::forgeroute::Handed {
+                                parent: from.id.clone(),
+                                lane: chat.cwd.as_deref().and_then(crate::forgeroute::lane_of),
+                                // No id until this start minted one: never started before.
+                                first_start: chat.identity.id.is_none(),
+                            };
+                            crate::forgeroute::guard_handed(chat_id, run, project, chain, &handed)
+                        }
+                        None => crate::forgeroute::guard(chat_id, run, project, chain).map(Ok),
                     }
                 })
+                .transpose()?
         };
         // A grade's chat is armed here, with its limits, or not at all (SK-16): a runner
         // composes its own line, and would start it with none of them.
