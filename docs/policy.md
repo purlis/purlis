@@ -90,7 +90,9 @@ unapproved, and then its chat's tab says so as it starts.
   **Would have blocked** count is every chat's enforcement log, and opens it: the newest lines,
   by rule, family, chat and the `host:port` a rule was about. A line that is not as purlis
   writes it (an unknown rule, a host that is no `host:port`, another chat's) is left out and
-  counted apart.
+  counted apart. A forge route refusal (#7779) is a line of `guards.forge` too, whatever the
+  family's mode: its rule names its kind and act (`forge.no-action`, `forge.no-action.<floor
+  act>`, `forge.not-allowed.<act>`), never its path, body or a number.
 - **Where this machine's acceptance does not hold**, every family is enforced: the pane head says
   `strict`, Settings says why and offers the Accept that seals it again, and nothing says
   `watch` is the default.

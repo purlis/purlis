@@ -1696,6 +1696,32 @@ pub const RULE_MERGE_HOLD: &str = "merge-hold";
 pub const RULE_BRANCH_FOLDER: &str = "branch-folder";
 /// The rule id of `forge_milestones`' bound to the chat's own workspace (`guards.forge`).
 pub const RULE_FORGE_WORKSPACE: &str = "forge.milestones.workspace";
+/// The rule ids of a forge route refusal (#7779; ADR 0128, amended 2026-11-27, §10), by its kind
+/// and act: a request purlis doesn't carry, a floor act (also no action), and a known act the
+/// policy doesn't allow. Each is counted under "Would have blocked".
+pub const RULE_FORGE_REFUSALS: &[&str] = &[
+    RULE_FORGE_NO_ACTION,
+    RULE_FORGE_ADMINISTRATION,
+    RULE_FORGE_RULE,
+    RULE_FORGE_APPROVAL,
+    RULE_FORGE_MERGE,
+    RULE_FORGE_RELEASE_OR_TAG,
+    RULE_FORGE_FORK,
+];
+/// A forge request purlis doesn't carry.
+pub const RULE_FORGE_NO_ACTION: &str = "forge.no-action";
+/// A floor act: the repo's administration.
+pub const RULE_FORGE_ADMINISTRATION: &str = "forge.no-action.administration";
+/// A floor act: a rule over the repo (a ruleset or a branch protection).
+pub const RULE_FORGE_RULE: &str = "forge.no-action.rule";
+/// A floor act: an approval or a review.
+pub const RULE_FORGE_APPROVAL: &str = "forge.no-action.approval";
+/// A known act the policy doesn't allow: a merge.
+pub const RULE_FORGE_MERGE: &str = "forge.not-allowed.merge";
+/// A known act the policy doesn't allow: a release or a tag.
+pub const RULE_FORGE_RELEASE_OR_TAG: &str = "forge.not-allowed.release-or-tag";
+/// A known act the policy doesn't allow: a fork.
+pub const RULE_FORGE_FORK: &str = "forge.not-allowed.fork";
 /// The rule id of a dispatched chat on a profile that switches the prompts off (`mode`).
 pub const RULE_ASKS_NOBODY: &str = "dispatch.prompts-off";
 /// The rule id of a persona's deny-list its harness cannot carry (`tools`).
@@ -1730,6 +1756,7 @@ pub fn known_rule(family: Family, rule: &str) -> bool {
         RULE_MERGE_HOLD => Some(Family::GuardsMerge),
         RULE_BRANCH_FOLDER => Some(Family::GuardsGit),
         RULE_FORGE_WORKSPACE => Some(Family::GuardsForge),
+        _ if RULE_FORGE_REFUSALS.contains(&rule) => Some(Family::GuardsForge),
         RULE_ASKS_NOBODY => Some(Family::HarnessMode),
         RULE_DENY_LIST => Some(Family::Tools),
         RULE_PROFILE_APPROVAL | RULE_DECLARATION_APPROVAL => Some(Family::Trust),

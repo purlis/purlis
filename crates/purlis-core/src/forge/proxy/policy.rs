@@ -103,7 +103,8 @@ pub enum Refusal {
     /// Git LFS, whose answers carry credentials for another host.
     Lfs,
     /// A route that is not on the list of what a chat may write, or a request of a kind the proxy
-    /// does not carry.
+    /// does not carry. The word is the audit's: the chat is told the request's route pattern and
+    /// repo, and that no setting can allow it ([`super::ForgeProxy::refused_said`], #7779).
     NotOnList,
     /// The request was allowed, and the person's credential could not be had.
     NoCredential,
@@ -777,6 +778,63 @@ impl ChatPolicy {
             Ok(allowed) => Decision::Allow(allowed),
             Err(refusal) => Decision::Refuse(refusal),
         }
+    }
+
+    /// **Where a refused request was going** (#7779), for what it is told and how it is counted:
+    /// its method, host and port, the recorded repo it named, and its path as words a refusal may
+    /// show ([`super::said`]). `None` for a request whose host or target does not read, or that
+    /// is on none of the chat's hosts. Read the way [`Self::decide`] reads it, and decides nothing.
+    pub(super) fn place(&self, head: &RequestHead) -> Option<super::said::Place> {
+        let host = request::host(head).ok()?;
+        let target = request::parse_target(&head.target).ok()?;
+        let first = self.repos.iter().find(|r| r.serves(&host, head.port))?;
+        let kind = first.kind;
+        let on_api_host = host == first.api_host() && host != first.host;
+        let segments = &target.segments;
+        let named = rest_path(kind, on_api_host, &host, segments)
+            .ok()
+            .flatten()
+            .and_then(|(named, rel)| {
+                self.repos
+                    .iter()
+                    .filter(|r| r.kind == kind && r.serves(&host, head.port))
+                    .find(|r| repo_matches(r, &named))
+                    .map(|repo| (repo, rel))
+            });
+        let (repo, shown, rel) = match named {
+            Some((repo, rel)) => {
+                // The words before the repo, and the repo as placeholders: the recorded repo is
+                // named apart, never the chat's spelling of it.
+                let before = segments.len() - rel.len();
+                let (words, placeholders): (usize, &[&str]) = match kind {
+                    Kind::GitHub => (before.saturating_sub(2), &["{owner}", "{repo}"]),
+                    Kind::GitLab => (before.saturating_sub(1), &["{project}"]),
+                };
+                let shown = segments[..words]
+                    .iter()
+                    .map(|s| super::said::word(s))
+                    .chain(placeholders.iter().map(|p| (*p).to_owned()))
+                    .collect();
+                (
+                    Some(format!("{}/{}", repo.host, repo.path)),
+                    shown,
+                    Some(rel),
+                )
+            }
+            None => (
+                None,
+                segments.iter().map(|s| super::said::word(s)).collect(),
+                None,
+            ),
+        };
+        Some(super::said::Place {
+            method: request::method(head),
+            host,
+            port: head.port,
+            repo,
+            shown,
+            rel,
+        })
     }
 
     fn try_decide(

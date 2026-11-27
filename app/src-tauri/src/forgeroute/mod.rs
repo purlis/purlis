@@ -811,9 +811,22 @@ impl ForgeRoutes {
             repos.clone(),
             Arc::new(objects::ForgeLookup::new(credentials.clone())),
         );
+        // Each forge refusal of the two kinds (#7779) is one line in the chat's enforcement log,
+        // which Settings › Project › Policy counts under "Would have blocked": its kind and act,
+        // and the `host:port`, never a path, a body or a number.
+        let counted_in = project.to_owned();
         let mut proxy = ForgeProxy::new(Box::new(objects::Shared(credentials)), Box::new(objects))
             .with_pin(pin.clone())
-            .with_merge_stance((self.seams.merges)(project, chain));
+            .with_merge_stance((self.seams.merges)(project, chain))
+            .with_refusals(Box::new(move |chat, refused| {
+                purlis_core::enforcement::record(
+                    &counted_in,
+                    chat.as_str(),
+                    purlis_core::enforcement::Family::GuardsForge,
+                    refused.rule,
+                    Some(&refused.host),
+                );
+            }));
         // Each branch the forge confirms this chat's push made is recorded by the app, under this
         // chat's id: the brokered `purlis worktree push` goes through this same route.
         {

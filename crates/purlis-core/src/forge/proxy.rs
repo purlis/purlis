@@ -72,6 +72,7 @@ mod policy;
 mod repo;
 mod request;
 mod rest;
+mod said;
 mod schema;
 mod sentinel;
 
@@ -90,6 +91,7 @@ pub use policy::{
 pub use repo::{AddressError, AllowedRepo, ForgeRepoId, Kind};
 pub use request::RequestHead;
 use request::host as policy_host;
+pub use said::Refused;
 pub use sentinel::{ChatId, Sentinel, SentinelRegistry};
 
 use std::collections::HashMap;
@@ -351,7 +353,13 @@ pub struct ForgeProxy {
     /// Where each chat's policy lists the branches the record holds for it, when an advertisement
     /// is noted.
     recorded: Option<RecordedBranches>,
+    /// Told each refusal of a chat that proved itself, of the two kinds a forge refusal is
+    /// ([`Refused`]): what Settings › Project › Policy counts under "Would have blocked".
+    refusals: Option<RefusalSink>,
 }
+
+/// What is told each forge refusal, by its kind and act ([`ForgeProxy::with_refusals`]).
+pub type RefusalSink = Box<dyn Fn(&ChatId, &Refused) + Send + Sync>;
 
 /// What is told the branches, and the tips, a confirmed push made or moved.
 pub type CreatedSink = Box<dyn Fn(&[CreatedBranch]) + Send + Sync>;
@@ -376,6 +384,51 @@ impl ForgeProxy {
             gone: None,
             tips: None,
             recorded: None,
+            refusals: None,
+        }
+    }
+
+    /// Tell `sink` each refusal of a chat that proved itself, when it is a request purlis doesn't
+    /// carry or a known act the policy doesn't allow (#7779): its kind and act, and the
+    /// `host:port`, never a path, a body or a number. The app writes it to the chat's enforcement
+    /// log, which "Would have blocked" counts.
+    #[must_use]
+    pub fn with_refusals(mut self, sink: RefusalSink) -> Self {
+        self.refusals = Some(sink);
+        self
+    }
+
+    /// **What chat `chat` is told for `refusal` of the request `head`** (#7779; ADR 0128, amended
+    /// 2026-11-27, §10): a request purlis doesn't carry, or a known act the policy doesn't allow,
+    /// with the act, the repo and why. `None` for any other refusal, which says what it always did.
+    pub fn refused_said(
+        &self,
+        chat: &ChatId,
+        head: &RequestHead,
+        refusal: Refusal,
+    ) -> Option<String> {
+        let policy = self
+            .policies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(chat)
+            .cloned()?;
+        let place = policy.place(head)?;
+        let merge = match self.merges.mode() {
+            Mode::Enforce if self.merges.unaccepted() => said::MergeHeld::Unaccepted,
+            Mode::Enforce => said::MergeHeld::ByTheFamily,
+            _ => said::MergeHeld::Otherwise,
+        };
+        said::said(refusal, &place, merge)
+    }
+
+    /// Tell [`Self::with_refusals`]' sink of `refusal`, where it is one of the two kinds.
+    fn count(&self, chat: &ChatId, policy: &ChatPolicy, head: &RequestHead, refusal: Refusal) {
+        if let Some(sink) = &self.refusals
+            && let Some(place) = policy.place(head)
+            && let Some(refused) = said::counted(refusal, &place)
+        {
+            sink(chat, &refused);
         }
     }
 
@@ -762,6 +815,9 @@ impl ForgeProxy {
                             .record(chat, inbound.head, None, Verdict::Refused(refusal));
                         return Outcome::Held(Held { refusal, said });
                     }
+                }
+                if sentinel.is_ok() {
+                    self.count(chat, &policy, inbound.head, refusal);
                 }
                 return self.refuse(chat, inbound, None, refusal);
             }
