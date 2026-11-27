@@ -15,11 +15,13 @@
 //!
 //! **It is evaluated again** ([`Kept::evaluate`]) on a project's open, on a change to any file
 //! [`watched`] names (the plane root's `HEAD`, the settings file, the local settings file, this
-//! machine's policy file and the acceptance record), on a new seal key, and after every answer
-//! ([`Kept::accept`], [`Kept::accept_with_new_key`]).
+//! machine's policy file, the acceptance record and the never-dispatch list), on a new seal key,
+//! and after every answer ([`Kept::accept`], [`Kept::accept_with_new_key`]). Where its watch
+//! misses a file, at each read too ([`Kept::lapsed`]).
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use crate::enforcement::{self, Standing};
 
@@ -184,7 +186,7 @@ pub fn policy(root: &Path) -> Option<Policy> {
 /// **The files whose change evaluates the list again**, for the project at `root`: the plane
 /// root's `HEAD` (the file itself, its reflog, the branch it names and the packed refs), the
 /// settings file and the local settings file under every name purlis reads them by, this
-/// machine's policy file and the acceptance record. A seal key is no file: the press that
+/// machine's policy file, the acceptance record and the never-dispatch list. A seal key is no file: the press that
 /// makes one evaluates every project again. Where a file is not there, its change is its
 /// coming.
 pub fn watched(root: &Path) -> Vec<PathBuf> {
@@ -209,6 +211,9 @@ pub fn watched(root: &Path) -> Vec<PathBuf> {
         files.push(git.join(branch));
     }
     files.push(PathBuf::from(crate::sandbox::policy::MACHINE_FILE));
+    // What the policy prerequisite carries of the never-dispatch list, which its own press
+    // writes outside the list.
+    files.push(crate::dispatchnever::path(root));
     let record = crate::sandbox::local::path(root);
     if !record.as_os_str().is_empty() {
         files.push(record);
@@ -238,6 +243,8 @@ pub struct Kept {
     /// Held across an evaluation, its keeping and its telling, so two evaluations at once are
     /// told in the order they were kept, and the last one told is the one kept.
     evaluating: Mutex<()>,
+    /// Whether its watch misses a file ([`Self::lapsed`]).
+    lapsed: AtomicBool,
     told: Told,
 }
 
@@ -248,6 +255,7 @@ impl Kept {
         Self {
             list: Mutex::new(None),
             evaluating: Mutex::new(()),
+            lapsed: AtomicBool::new(false),
             told,
         }
     }
@@ -255,10 +263,15 @@ impl Kept {
     /// **Evaluates the list for the project at `root` again**, keeps it, and then, where it
     /// differs from the list kept before (or none was), tells it whole.
     pub fn evaluate(&self, root: &Path) -> List {
-        let _evaluating = self
+        let evaluating = self
             .evaluating
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
+        self.evaluate_holding(evaluating, root)
+    }
+
+    /// [`Self::evaluate`], with its lock `_evaluating` taken.
+    fn evaluate_holding(&self, _evaluating: MutexGuard<'_, ()>, root: &Path) -> List {
         let now = evaluate(root);
         let changed = {
             let mut kept = self.list.lock().unwrap_or_else(PoisonError::into_inner);
@@ -273,14 +286,34 @@ impl Kept {
         now
     }
 
-    /// **The list as kept**, evaluated first where it never was.
+    /// **The list as kept**, evaluated first where it never was, and again at each read where
+    /// its watch lapsed ([`Self::lapsed`]). A read while an evaluation is under way (one in the
+    /// handler it tells, or on another thread) gets the list kept: that evaluation tells what
+    /// it finds.
     pub fn current(&self, root: &Path) -> List {
         let kept = self
             .list
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        kept.unwrap_or_else(|| self.evaluate(root))
+        match kept {
+            None => self.evaluate(root),
+            Some(kept) if !self.lapsed.load(Ordering::SeqCst) => kept,
+            Some(kept) => match self.evaluating.try_lock() {
+                Ok(evaluating) => self.evaluate_holding(evaluating, root),
+                Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                    self.evaluate_holding(poisoned.into_inner(), root)
+                }
+                Err(std::sync::TryLockError::WouldBlock) => kept,
+            },
+        }
+    }
+
+    /// **Whether the watch that evaluates this list again misses a file it is evaluated from**
+    /// (a folder the platform would not watch, or no watch at all): then the list kept is no
+    /// answer, and each read ([`Self::current`]) evaluates it again, until the watch is whole.
+    pub fn lapsed(&self, lapsed: bool) {
+        self.lapsed.store(lapsed, Ordering::SeqCst);
     }
 
     /// **The person's Accept** ([`enforcement::press`]), then the list evaluated again, whatever

@@ -12,8 +12,9 @@
 //! filters on the plane, as it does `plane-changed`.
 //!
 //! **What evaluates it again** ([`Watch`]): the project's open, a change to any file the core
-//! names ([`purlis_core::prerequisites::watched`]), a new seal key and every answer, which the
-//! policy commands make through the held list (`policypress`).
+//! names ([`purlis_core::prerequisites::watched`]), every answer, which the policy commands make
+//! through the held list (`policypress`), and, for every other project held, any Accept, which
+//! may make or replace the seal key. Where a folder is not watched, each ask too.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -176,20 +177,28 @@ pub type Platform = notify::PollWatcher;
 /// **The watch on what a project's list is evaluated from** ([`core::watched`]). Each folder
 /// holding one of the files is watched, non-recursively; where a folder is not there, the
 /// nearest one above it is, so its coming is heard. After every burst that names one of the
-/// files, or a folder on the way to one, or that is everything, the list is evaluated again and
-/// the folders are listed again: a checkout names another branch's file. Dropping it stops it.
+/// files, or a folder on the way to one, or that is everything, the folders are listed and
+/// followed again (a checkout names another branch's file) and then the list is evaluated again.
+/// A folder the platform would not watch is said (`lapsed`), so the list is read at each ask
+/// until it is watched. Dropping it stops it.
 pub struct Watch<W: notify::Watcher = Platform> {
     _watcher: Arc<Mutex<W>>,
 }
 
 impl Watch {
     /// Watches what the list of the project at `root` is evaluated from, and calls
-    /// `evaluate` after each change, and once at the start: the project's open.
-    pub fn start(root: &Path, evaluate: impl Fn() + Send + 'static) -> notify::Result<Self> {
+    /// `evaluate` after each change, and once at the start: the project's open. Tells `lapsed`,
+    /// at the start and before each evaluation, whether a folder it needs is not watched.
+    pub fn start(
+        root: &Path,
+        evaluate: impl Fn() + Send + 'static,
+        lapsed: impl Fn(bool) + Send + 'static,
+    ) -> notify::Result<Self> {
         let root = root.to_path_buf();
         Self::start_on(
             move || core::watched(&root),
             evaluate,
+            lapsed,
             notify::Config::default(),
         )
     }
@@ -201,14 +210,16 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
     fn start_on(
         files: impl Fn() -> Vec<PathBuf> + Send + 'static,
         evaluate: impl Fn() + Send + 'static,
+        lapsed: impl Fn(bool) + Send + 'static,
         config: notify::Config,
     ) -> notify::Result<Self> {
         let (sent, events) = mpsc::channel();
         let mut watcher = W::new(crate::watchset::sender(sent), config)?;
         let mut watched = HashSet::new();
         let mut named = files();
-        // A folder the platform would not watch now is tried again after the next burst.
-        let _ = crate::watchset::follow(&mut watcher, &mut watched, folders_of(&named));
+        // A folder the platform would not watch is said, so the list is read at each ask,
+        // and tried again after the next burst.
+        lapsed(!crate::watchset::follow(&mut watcher, &mut watched, folders_of(&named)).is_empty());
         let watcher = Arc::new(Mutex::new(watcher));
         let following = Arc::downgrade(&watcher);
         std::thread::Builder::new()
@@ -222,15 +233,19 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
                     {
                         continue;
                     }
-                    evaluate();
                     let Some(watcher) = following.upgrade() else {
                         return;
                     };
+                    // Followed again before it is evaluated: a file the change brought (a
+                    // checkout names another branch's) is watched before it is read, so a write
+                    // to it after the read is heard.
                     named = files();
-                    let mut watcher = watcher.lock().unwrap_or_else(PoisonError::into_inner);
-                    // A folder the platform would not watch now is tried at the next burst.
-                    let _ =
-                        crate::watchset::follow(&mut *watcher, &mut watched, folders_of(&named));
+                    let unwatched = {
+                        let mut watcher = watcher.lock().unwrap_or_else(PoisonError::into_inner);
+                        crate::watchset::follow(&mut *watcher, &mut watched, folders_of(&named))
+                    };
+                    lapsed(!unwatched.is_empty());
+                    evaluate();
                 }
             })
             .map_err(notify::Error::io)?;

@@ -85,6 +85,9 @@ fn an_answer_from_one_windows_context_is_followed_by_the_event_and_the_read_retu
     // it and told whole. A test is not the app, which alone seals an Accept, so the answer here
     // is one refused because the file changed since it was shown: the list changed with it.
     let root = plane(OPEN);
+    // Its folder is not watched, so the change below is heard by nothing but the answer.
+    let real = std::fs::canonicalize(root.path()).expect("real");
+    crate::watchset::refuse::refuse(&real);
     let heard: Arc<Mutex<Vec<Prerequisites>>> = Arc::default();
     let planes = Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None)
         .telling_prerequisites({
@@ -106,8 +109,9 @@ fn an_answer_from_one_windows_context_is_followed_by_the_event_and_the_read_retu
     assert!(!policy.policy.waiting.is_empty(), "the rows: {policy:?}");
 
     std::fs::write(root.path().join("charter.toml"), WATCH).expect("tightened");
-    let why = crate::policypress::pressed(root.path(), &held.prerequisites(), &policy.digest)
-        .expect_err("not what was shown");
+    let why =
+        crate::policypress::pressed(root.path(), &held.prerequisites(), &policy.digest, Vec::new)
+            .expect_err("not what was shown");
     assert!(why.contains("changed since it was shown"), "{why}");
     until("the event after the answer", || {
         !heard.lock().expect("heard").is_empty()
@@ -123,7 +127,75 @@ fn an_answer_from_one_windows_context_is_followed_by_the_event_and_the_read_retu
         "one event, the whole list"
     );
     let read = Prerequisites::of(id.clone(), &held.prerequisites().current(root.path()));
+    crate::watchset::refuse::allow(&real);
     assert!(read.list.is_empty(), "{read:?}");
+}
+
+/// What a watch did, in order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Did {
+    /// Said whether a folder it needs is not watched.
+    Lapsed(bool),
+    /// Evaluated the list.
+    Evaluated,
+}
+
+#[test]
+fn a_folder_the_platform_would_not_watch_is_reported_and_followed_again_before_evaluating() {
+    // #7885's review, F6 and F8: a folder refused is said, so the list is read at each ask, and
+    // every burst follows the folders again before it evaluates, so what it evaluates from is
+    // what is watched.
+    let (refused, beside) = (
+        tempfile::tempdir().expect("a folder"),
+        tempfile::tempdir().expect("a folder"),
+    );
+    let real = std::fs::canonicalize(refused.path()).expect("real");
+    crate::watchset::refuse::refuse(&real);
+    let did: Arc<Mutex<Vec<Did>>> = Arc::default();
+    let doing = |what: Did| {
+        let did = Arc::clone(&did);
+        move || did.lock().expect("did").push(what)
+    };
+    let _watch = Watch::<Platform>::start_on(
+        {
+            let files = vec![
+                refused.path().join("charter.toml"),
+                beside.path().join("charter.toml"),
+            ];
+            move || files.clone()
+        },
+        doing(Did::Evaluated),
+        {
+            let did = Arc::clone(&did);
+            move |lapsed| did.lock().expect("did").push(Did::Lapsed(lapsed))
+        },
+        looking_often(),
+    )
+    .expect("watched");
+    until("the open", || {
+        did.lock().expect("did").contains(&Did::Evaluated)
+    });
+    crate::watchset::refuse::allow(&real);
+    std::fs::write(beside.path().join("charter.toml"), OPEN).expect("written");
+    until("the burst", || {
+        did.lock()
+            .expect("did")
+            .iter()
+            .filter(|what| **what == Did::Evaluated)
+            .count()
+            >= 2
+    });
+    let did = did.lock().expect("did").clone();
+    assert_eq!(
+        did[..4],
+        [
+            Did::Lapsed(true),
+            Did::Evaluated,
+            Did::Lapsed(false),
+            Did::Evaluated
+        ],
+        "{did:?}"
+    );
 }
 
 #[test]
@@ -144,6 +216,7 @@ fn a_change_to_a_watched_file_evaluates_again_and_one_beside_it_does_not() {
                 evaluated.fetch_add(1, Ordering::SeqCst);
             }
         },
+        |_| {},
         looking_often(),
     )
     .expect("watched");
@@ -213,6 +286,7 @@ fn a_commit_at_the_plane_root_evaluates_again() {
                 evaluated.fetch_add(1, Ordering::SeqCst);
             }
         },
+        |_| {},
         looking_often(),
     )
     .expect("watched");

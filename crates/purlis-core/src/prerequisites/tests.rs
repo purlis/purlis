@@ -272,6 +272,45 @@ fn a_change_to_the_local_settings_file_is_heard_and_evaluated() {
 }
 
 #[test]
+fn the_never_dispatch_list_is_watched() {
+    // What the policy prerequisite carries reads it (`nevers_to_keep`), and a press that keeps
+    // the nevers writes it outside the list: a change to it is heard.
+    let _home = OwnConfigHome::new();
+    let root = plane(OPEN);
+    assert!(
+        watched(root.path()).contains(&crate::dispatchnever::path(root.path())),
+        "{:?}",
+        watched(root.path())
+    );
+}
+
+#[test]
+fn a_list_whose_watch_lapsed_is_evaluated_again_at_each_read() {
+    // A folder the platform would not watch is one whose change nothing hears: the list kept
+    // is then no answer, and each read evaluates it again (#7885's review, F6).
+    let _home = OwnConfigHome::new();
+    let root = plane(OPEN);
+    let heard = Heard::default();
+    let kept = Kept::new(heard.told());
+    assert!(!kept.current(root.path()).is_empty());
+    std::fs::write(root.path().join("charter.toml"), WATCH).expect("tightened");
+    assert!(
+        !kept.current(root.path()).is_empty(),
+        "a whole watch is trusted to tell"
+    );
+    kept.lapsed(true);
+    assert!(kept.current(root.path()).is_empty(), "read again");
+    assert_eq!(
+        heard.taken().len(),
+        2,
+        "the open, and the read that changed it"
+    );
+    kept.lapsed(false);
+    std::fs::write(root.path().join("charter.toml"), OPEN).expect("loosened");
+    assert!(kept.current(root.path()).is_empty(), "whole again");
+}
+
+#[test]
 fn a_change_to_this_machines_policy_file_is_heard_and_evaluated() {
     let _home = OwnConfigHome::new();
     let root = plane(OPEN);
@@ -376,6 +415,31 @@ fn the_event_is_pushed_after_the_list_is_kept_so_a_read_in_its_handler_gets_the_
     for (told, current) in read {
         assert_eq!(told, current);
     }
+}
+
+#[test]
+fn a_read_in_the_handler_of_a_lapsed_watch_gets_the_list_just_kept() {
+    // The handler runs inside the evaluation: a read there evaluating again would wait on it.
+    let _home = OwnConfigHome::new();
+    let root = plane(OPEN);
+    let me: Arc<OnceLock<Weak<Kept>>> = Arc::default();
+    let read: Arc<Mutex<Vec<(List, List)>>> = Arc::default();
+    let kept = Arc::new(Kept::new({
+        let (me, read) = (Arc::clone(&me), Arc::clone(&read));
+        let root = root.path().to_path_buf();
+        Arc::new(move |told: &List| {
+            let kept = me.get().and_then(Weak::upgrade).expect("the list");
+            read.lock()
+                .expect("read")
+                .push((told.clone(), kept.current(&root)));
+        })
+    }));
+    me.set(Arc::downgrade(&kept)).expect("set once");
+    kept.lapsed(true);
+    kept.evaluate(root.path());
+    let read = read.lock().expect("read").clone();
+    assert_eq!(read.len(), 1);
+    assert_eq!(read[0].0, read[0].1);
 }
 
 #[test]

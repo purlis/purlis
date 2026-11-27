@@ -1709,7 +1709,8 @@ pub fn standing(root: &Path) -> Standing {
         lineage_waiting: now.lineage_looser_than(&accepted),
         protection_lifted: now.protection_lifted(&accepted),
         refused: settings.refused.clone(),
-        unsealed: crate::sandbox::local::policy_unsealed(root),
+        // Of the same read of the record: `policy_unsealed` is whether it is Broken.
+        unsealed: broken,
         key_foreign: crate::secrets::seal::key_is_foreign(),
         new_key: crate::sandbox::local::broken_by_a_new_key(root),
         nevers_new_key: crate::dispatchnever::vouched_for_a_new_key(root),

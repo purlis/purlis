@@ -459,8 +459,8 @@ pub struct Held {
     /// Its prerequisites, as the core last evaluated them (ADR 0130 §2). In memory only.
     prerequisites: Arc<purlis_core::prerequisites::Kept>,
     /// What evaluates them again when a file they are evaluated from changes; dropped with the
-    /// plane. None where the platform would not watch: they are then evaluated on its open and
-    /// after every answer.
+    /// plane. None where the platform would not watch: they are then evaluated on its open, at
+    /// each ask and after every answer.
     _prerequisites_watch: Option<crate::prerequisites::Watch>,
     /// This plane, once it is in its `Arc`: what a program's end writes the record through.
     me: Arc<std::sync::OnceLock<std::sync::Weak<Held>>>,
@@ -5920,17 +5920,26 @@ impl Planes {
             let evaluate = Arc::new(move || {
                 kept.evaluate(&at);
             });
-            crate::prerequisites::Watch::start(&root, {
-                let evaluate = Arc::clone(&evaluate);
-                move || evaluate()
-            })
+            crate::prerequisites::Watch::start(
+                &root,
+                {
+                    let evaluate = Arc::clone(&evaluate);
+                    move || evaluate()
+                },
+                {
+                    let kept = Arc::clone(&prerequisites);
+                    move |lapsed| kept.lapsed(lapsed)
+                },
+            )
             .map_err(|why| {
                 tracing::warn!(
                     "purlis: what {} needs from you is not watched ({why}); it is read on its \
-                     open and after every answer",
+                     open, at each ask and after every answer",
                     root.display()
                 );
-                // Still evaluated on its open, off this thread.
+                // Nothing hears a change, so each read evaluates it again; and it is still
+                // evaluated on its open, off this thread.
+                prerequisites.lapsed(true);
                 let _ = std::thread::Builder::new()
                     .name("purlis-prerequisites-open".into())
                     .spawn(move || evaluate());
