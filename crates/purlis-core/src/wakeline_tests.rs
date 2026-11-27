@@ -511,3 +511,44 @@ fn a_full_wake_line_with_the_news_of_many_tasks_stays_within_its_bound_5754() {
         assert!(line.contains("chat 200000 reported"), "{line}");
     }
 }
+
+#[test]
+fn a_woken_chat_is_told_each_piece_its_hibernation_ended_by_name() {
+    // SC-4d (#7633; ADR 0068 amended 2026-11-08, ADR 0076 amended 2026-11-25): after the
+    // operator's Hibernate ended own work on purpose, the wake line names each piece.
+    let pieces = [shell("b1", "npm test")];
+    let line = super::of_the_chat_woken(&Ended {
+        own_work: Some(&one_shell()),
+        pieces: &pieces,
+        last: &|_| Last::Lines {
+            lines: vec!["test result: ok".to_owned()],
+            path: "/tmp/b1.output".to_owned(),
+        },
+        ..Ended::default()
+    })
+    .expect("a wake line");
+    assert!(
+        line.starts_with("purlis: this chat was hibernated, and is woken on its conversation."),
+        "{line}"
+    );
+    assert!(
+        line.contains("The hibernation ended what this chat had left running"),
+        "{line}"
+    );
+    assert!(line.contains("a background shell \"npm test\""), "{line}");
+    assert!(line.contains("test result: ok"), "{line}");
+    assert!(!line.contains("restart"), "{line}");
+}
+
+#[test]
+fn a_woken_chat_whose_hibernation_ended_nothing_is_told_nothing() {
+    // An idle hibernation ends no own work, so its wake line is empty and not typed.
+    assert_eq!(super::of_the_chat_woken(&Ended::default()), None);
+    assert_eq!(
+        super::of_the_chat_woken(&Ended {
+            own_work: Some(&OwnWork::default()),
+            ..Ended::default()
+        }),
+        None
+    );
+}

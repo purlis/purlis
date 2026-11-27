@@ -540,3 +540,68 @@ fn the_operators_act_says_wait_for_its_report_only_while_the_report_is_owed() {
         );
     }
 }
+
+#[test]
+fn the_operators_act_ends_its_own_work_only_once_its_caller_has_asked() {
+    // SC-4d (#7633, ruling 2): own work is refused unless the caller says it has asked the
+    // person, naming each piece; once it has, own work alone no longer refuses the act.
+    for own_work in [
+        OwnWorkSeen::InFlight(a_lapsed_shell()),
+        OwnWorkSeen::OutAfterItsWait,
+    ] {
+        let facts = Facts {
+            own_work,
+            ..at_rest()
+        };
+        assert_eq!(by_hand(&facts), Err(NotRested::OwnWork), "{facts:?}");
+        assert_eq!(
+            by_hand_ending_its_own_work(&facts),
+            Ok(()),
+            "asked first: {facts:?}"
+        );
+    }
+}
+
+#[test]
+fn asking_about_its_own_work_lifts_no_other_refusal() {
+    // What the person was asked about is own work alone: every other refusal stands.
+    for facts in [
+        Facts {
+            run: RunState::Working,
+            ..at_rest()
+        },
+        Facts {
+            run: RunState::InputRequired(Reason::Asked),
+            ..at_rest()
+        },
+        Facts {
+            resumes_by_id: false,
+            ..at_rest()
+        },
+        Facts {
+            line_coming: true,
+            ..at_rest()
+        },
+        Facts {
+            tasks: vec![task(TaskState::Running)],
+            ..at_rest()
+        },
+        Facts {
+            as_a_task: Some(AsATask {
+                owes_its_report: false,
+            }),
+            ..at_rest()
+        },
+    ] {
+        let with_own_work = Facts {
+            own_work: OwnWorkSeen::OutAfterItsWait,
+            ..facts.clone()
+        };
+        assert_eq!(
+            by_hand_ending_its_own_work(&with_own_work),
+            by_hand(&facts),
+            "{facts:?}"
+        );
+        assert!(by_hand(&facts).is_err(), "{facts:?}");
+    }
+}
