@@ -167,11 +167,14 @@ The fourth review of #7828 found more of the same families, each refused on the 
 A unit test now pins `supervise-daemon`'s own row, which the earlier test could not tell from
 the `supervise` row.
 
-The fifth review of #7828 found that the utilities beside `dnf` and `yum` (dnf-plugins-core and
-yum-utils: `yumdownloader`, `repoquery`, `reposync`, `repotrack`, `repoclosure`,
-`debuginfo-install`, `needs-restarting` and `package-cleanup`) take `-c` and `--setopt` and load
-plugins as `dnf` and `yum` do, and that no form of their names reaches either. They are refused.
-So is daemontools' `svscanboot`, which runs `svscan`.
+The fifth and sixth reviews of #7828 found the utilities beside `dnf` and `yum`
+(dnf-plugins-core and yum-utils): `yumdownloader`, `repoquery`, `reposync`, `repotrack`,
+`repoclosure`, `debuginfo-install`, `needs-restarting`, `package-cleanup`, `repodiff`,
+`repomanage`, `repo-graph` and `find-repos-of-install`. They take `-c` and `--setopt` and load
+plugins as `dnf` and `yum` do, and no form of their names reaches either row. Only
+`find-repos-of-install` was refused before, and that by chance, through its first part, `find`.
+All are refused, each by a row of its own. So is daemontools' `svscanboot`, which runs
+`svscan`.
 
 Other families the reviews found still offered are outside these issues: `tini`, `catatonit`,
 `daemonize`, `pm2`, `supervisord`, ucspi-tcp's `tcpserver`, `tcpclient`, `recordio` and `argv0`,

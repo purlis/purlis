@@ -3528,8 +3528,8 @@ fn systemds_command_runners_and_upstarts_telinit_are_offered_no_run_grant() {
 /// s6's programs that run the program after them, which no row reached by a form of their name
 /// (round 2 of #7828's review): `s6-svlisten`, `s6-notifyoncheck`, `s6-ftrig-listen`, the
 /// `s6-ipcserver` family, `s6-ipcclient`, `s6-fdholder-retrieve` and `s6-sudod`, and
-/// `s6-svlisten1` and `s6-ftrig-listen1`, which reach the rows of the first two without their
-/// version.
+/// `s6-svlisten1` and `s6-ftrig-listen1`, which reach `s6-svlisten`'s and `s6-ftrig-listen`'s
+/// rows without their version.
 #[test]
 fn s6s_programs_that_run_the_program_after_them_are_offered_no_run_grant() {
     for name in [
@@ -3675,6 +3675,10 @@ fn the_dnf_and_yum_utilities_and_svscanboot_are_offered_no_run_grant() {
         "debuginfo-install",
         "needs-restarting",
         "package-cleanup",
+        "repodiff",
+        "repomanage",
+        "repo-graph",
+        "find-repos-of-install",
         "svscanboot",
     ] {
         refused_as_running_others(name);

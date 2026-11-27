@@ -2358,6 +2358,11 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "debuginfo-install",
     "needs-restarting",
     "package-cleanup",
+    "repodiff",
+    "repomanage",
+    "repo-graph",
+    // reached by its first part, `find`, too, but by chance
+    "find-repos-of-install",
     // and their kin (round 1 of #7828's review), refused on what each is for: programs that run the
     // command after them, as `setuidgid` and `capsh` do; the loggers that run a `!processor` they
     // are handed, on the command line or in a log folder's `config`, as `multilog` does; `anacron`,
