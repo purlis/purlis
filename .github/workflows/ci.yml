@@ -1329,12 +1329,22 @@ jobs:
           cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
           --no-fail-fast --test-threads 1 --test it
           -E 'test(/^(a_live_remote_chat_survives_the_faults_that_define_trust|a_missing_real_infra_fixture_fails_in_ci)::/)'
+      # **A runner's browser on the other machine makes its sandbox** (#7816): the runner runs in
+      # dind, whose engine confines nothing with AppArmor, so the runner's host is unconfined; and
+      # this Ubuntu restricts user namespaces to the programs a profile names, unconfined ones
+      # included (`purlis_core::browsers::sandboxing`). A real machine's Docker runs it under
+      # `docker-default`, which the restriction leaves alone, so the engine sandboxes there. The
+      # rule is lifted here for the other machine to be that machine: what a runner there sees is
+      # printed first, so a refusal still to come names its cause.
       - name: The behaviour suite on its remote Docker pool target
         if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
-        run: >-
-          tools/no-orphans.sh --reap --
-          cargo nextest run --locked -p purlis-app --lib --profile ci --retries 0 --no-tests fail
-          -E 'test(/::in_a_remote_docker_pool$/)'
+        run: |
+          docker exec dind docker run --rm --entrypoint sh "$DOCKER_POOL_TEST_IMAGE" -c \
+            'echo "a runner there: label $(cat /proc/self/attr/apparmor/current 2>/dev/null || cat /proc/self/attr/current), userns rule $(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)"' || true
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          tools/no-orphans.sh --reap -- \
+            cargo nextest run --locked -p purlis-app --lib --profile ci --retries 0 --no-tests fail \
+            -E 'test(/::in_a_remote_docker_pool$/)'
       - name: What the other machine ran and said, if a test failed
         if: failure() && steps.scope.outputs.run == 'true'
         run: |
