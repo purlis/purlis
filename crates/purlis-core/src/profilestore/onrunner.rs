@@ -623,6 +623,58 @@ pub fn held_for_the_desktop(
     Ok(wire::settings_held_page(held, after))
 }
 
+/// **[`wire::whole_settings_digest`] of what this runner holds now of the profile `name` it keeps
+/// for the desktop `desktop`** (1.97, #7863): read off its disk at that moment, never remembered,
+/// since a chat may be able to write there (ADR 0095 as amended 2026-10-31). `None` where it keeps
+/// no such profile, or holds more of it than it tells ([`held_for_the_desktop`]), which no digest a
+/// start names can be.
+pub fn held_whole_for_the_desktop(
+    homes: &Homes,
+    desktop: &str,
+    name: &str,
+) -> Result<Option<String>, String> {
+    let Some(record) = kept_record(homes, desktop, name)? else {
+        return Ok(None);
+    };
+    let read = held_files(&record)?;
+    if !read.left_behind.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(whole_of_files(
+        read.files
+            .iter()
+            .map(|(path, bytes)| (path.as_str(), bytes.as_slice())),
+    )))
+}
+
+/// **[`wire::whole_settings_digest`] of the settings `to_keep` has a runner hold** (#7863): what a
+/// runner that kept it holds, as [`held_whole_for_the_desktop`] reads it, until something there
+/// changes. A keep of what changed is refused unless it comes to this (ADR 0095 as amended
+/// 2026-10-31, item 3).
+#[must_use]
+pub fn whole_kept(to_keep: &ToKeep) -> String {
+    let mut files = BTreeMap::<&str, Vec<u8>>::new();
+    for piece in to_keep.batches.iter().flat_map(|batch| &batch.pieces) {
+        files
+            .entry(piece.path.as_str())
+            .or_default()
+            .extend_from_slice(&piece.bytes);
+    }
+    whole_of_files(files.iter().map(|(path, bytes)| (*path, bytes.as_slice())))
+}
+
+/// [`wire::whole_settings_digest`] of `files`, each by its path and bytes.
+fn whole_of_files<'a>(files: impl Iterator<Item = (&'a str, &'a [u8])>) -> String {
+    let digests: Vec<(&str, String)> = files
+        .map(|(path, bytes)| (path, wire::settings_digest(bytes)))
+        .collect();
+    wire::whole_settings_digest(
+        digests
+            .iter()
+            .map(|(path, digest)| (*path, digest.as_str())),
+    )
+}
+
 /// The record of the profile `name` this runner keeps for `desktop`, with settings of its own.
 fn kept_record(homes: &Homes, desktop: &str, name: &str) -> Result<Option<MachineProfile>, String> {
     Ok(super::list(homes.config_root())?

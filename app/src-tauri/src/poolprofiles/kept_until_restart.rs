@@ -19,6 +19,16 @@
 //! - **its harness did not say signed in** (or that it cannot tell): a signed-out profile is
 //!   never remembered, so a sign-in on the runner is seen at the next start.
 //!
+//! **A skipped keep is never trusted on its own** (the person's ruling of 2026-11-27 on #7863):
+//! a keep is what puts the profile's settings on the runner back as this machine has them, since a
+//! chat may be able to write there (ADR 0095 as amended 2026-10-31). So only a keep that left the
+//! runner holding a digest it can be held to is remembered (session protocol 1.97,
+//! [`KeptThere::held`]), and the chat's start names that digest ([`held_for_a_start`]): the runner
+//! reads what it holds off its disk then and starts the chat only where it comes to it. Any drift,
+//! a settings file planted, changed or gone, refuses the start, and the profile is kept again
+//! before the chat starts. A runner before 1.97, which could not be held to it, is never
+//! remembered, so every start there keeps the profile as before.
+//!
 //! **What is remembered is this run's, in this process only**: never the plane, never a file
 //! (the way [`super::TIDIED`] is kept), so no store has a tier to name (ADR 0069), and the first
 //! start on each runner after the app starts makes the link as before. A profile forgotten on a
@@ -45,6 +55,14 @@ pub(super) struct RunnerNow {
     pub started: Option<u64>,
 }
 
+/// **What a keep on a runner came to**: how its harness stood with the profile, and the digest of
+/// the settings the runner holds since, where it can be held to it at a start (1.97).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct KeptThere {
+    pub standing: Standing,
+    pub held: Option<String>,
+}
+
 /// One keep remembered.
 #[derive(Debug, Clone)]
 struct Remembered {
@@ -54,6 +72,8 @@ struct Remembered {
     digest: Vec<u8>,
     started: u64,
     standing: Standing,
+    /// What the runner holds of the profile's settings since the keep, which a start names.
+    held: String,
 }
 
 static REMEMBERED: Mutex<Vec<Remembered>> = Mutex::new(Vec::new());
@@ -67,7 +87,7 @@ pub(super) fn kept_or_linked(
     now: &dyn Fn() -> Option<RunnerNow>,
     pool: &str,
     kept: &onrunner::Kept,
-    link: impl FnOnce(&onrunner::Kept) -> Result<Option<Standing>, String>,
+    link: impl FnOnce(&onrunner::Kept) -> Result<Option<KeptThere>, String>,
 ) -> Result<Option<Standing>, String> {
     let digest = digest_of(kept);
     if let (Some(digest), Some(before)) = (&digest, now())
@@ -78,30 +98,44 @@ pub(super) fn kept_or_linked(
     let said = link(kept);
     forget(pool, &kept.name);
     let kept_as = match &said {
-        Ok(Some(standing @ (Standing::SignedIn | Standing::CannotTell))) => Some(*standing),
+        Ok(Some(KeptThere {
+            standing: standing @ (Standing::SignedIn | Standing::CannotTell),
+            held: Some(held),
+        })) => Some((*standing, held.clone())),
         _ => None,
     };
-    if let (Some(standing), Some(digest)) = (kept_as, digest)
+    if let (Some((standing, held)), Some(digest)) = (kept_as, digest)
         && let Some(RunnerNow {
             device,
             started: Some(started),
         }) = now()
     {
-        held().push(Remembered {
+        memo().push(Remembered {
             device,
             pool: pool.to_owned(),
             profile: kept.name.clone(),
             digest,
             started,
             standing,
+            held,
         });
     }
-    said
+    said.map(|there| there.map(|there| there.standing))
+}
+
+/// **What a chat's start on pool `pool` on profile `profile` names its runner must still hold**
+/// (1.97): the digest of the settings the last keep there left, where it is remembered. `None`
+/// where nothing is, which is where that start's own readying made the keep.
+pub(super) fn held_for_a_start(pool: &str, profile: &str) -> Option<String> {
+    memo()
+        .iter()
+        .find(|one| one.pool == pool && one.profile == profile)
+        .map(|one| one.held.clone())
 }
 
 /// What is remembered, whoever asks: a poisoned lock still holds a list that is whole, since
 /// each change to it is one push or one retain.
-fn held() -> std::sync::MutexGuard<'static, Vec<Remembered>> {
+fn memo() -> std::sync::MutexGuard<'static, Vec<Remembered>> {
     REMEMBERED.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
@@ -109,7 +143,7 @@ fn held() -> std::sync::MutexGuard<'static, Vec<Remembered>> {
 /// kept `digest` there, since the same start.
 fn remembered(now: &RunnerNow, pool: &str, profile: &str, digest: &[u8]) -> Option<Standing> {
     let started = now.started?;
-    held()
+    memo()
         .iter()
         .find(|one| {
             one.pool == pool
@@ -124,7 +158,7 @@ fn remembered(now: &RunnerNow, pool: &str, profile: &str, digest: &[u8]) -> Opti
 /// **Forgets what profile `name` was kept as on pool `pool`'s runner**: its next start there
 /// makes the link again.
 pub(super) fn forget(pool: &str, name: &str) {
-    held().retain(|one| one.pool != pool || one.profile != name);
+    memo().retain(|one| one.pool != pool || one.profile != name);
 }
 
 /// The digest of `kept` as a runner of 1.56 or later is sent it ([`onrunner::in_batches`]),

@@ -4754,7 +4754,7 @@ impl HostedSessions {
         operator_shell: bool,
         announce: &dyn Fn(u32),
         asked_to_run: &crate::host::AskedToRun,
-    ) -> Result<Begun, String> {
+    ) -> Result<Begun, NotBegun> {
         // Before the program exists, so its very first hook lands somewhere.
         announce(id);
         let kind = start.kind;
@@ -4770,7 +4770,7 @@ impl HostedSessions {
             why
         };
         if was_cancelled() {
-            return Err(START_CANCELLED.to_owned());
+            return Err(START_CANCELLED.to_owned().into());
         }
         // What a chat that comes up after the person cancelled comes to: closed, and on a pool's
         // runner counted as it ran. One whose start is lost counts as one that may have run.
@@ -4823,11 +4823,11 @@ impl HostedSessions {
                 {
                     tracing::warn!("purlis: {kept}");
                 }
-                return Err(format!(
+                return Err(NotBegun::from(format!(
                     "the session host started this chat as number {}, not {id}, so it was \
                      closed; start it again",
                     number.map_or_else(|| "none".to_owned(), |number| number.to_string())
-                ));
+                )));
             }
             Ok(Answer::ProgramStarted {
                 program,
@@ -4848,9 +4848,17 @@ impl HostedSessions {
                 skills_not_there.and_then(|not| not.bounded()),
             ),
             Ok(other) => {
-                return Err(unclear(format!(
+                return Err(NotBegun::from(unclear(format!(
                     "the session host answered a start with {other:?}"
-                )));
+                ))));
+            }
+            // A runner that no longer holds the profile as it was kept started nothing (#7863).
+            Err(refused) if refused.code == session::PROFILE_CHANGED => {
+                asked_to_run.unmark();
+                return Err(NotBegun {
+                    why: refused.why,
+                    profile_changed: true,
+                });
             }
             // Only a refusal whose code says nothing started is taken at its word (#3702).
             Err(refused)
@@ -4862,9 +4870,9 @@ impl HostedSessions {
                 if refused.code != CANCELLED {
                     asked_to_run.unmark();
                 }
-                return Err(refused.why);
+                return Err(refused.why.into());
             }
-            Err(refused) => return Err(unclear(refused.why)),
+            Err(refused) => return Err(unclear(refused.why).into()),
         };
         let (program, pid, confined, ran, prompt_key, armed_skills, skills_not_there) = started;
         // A chat that runs on a pool's runner with nothing holding its files leaves that runner
@@ -4876,10 +4884,10 @@ impl HostedSessions {
             && let Err(why) = self.connection.ran_unsandboxed()
         {
             link.send(Command::Close { program });
-            return Err(format!(
+            return Err(NotBegun::from(format!(
                 "this chat runs without the sandbox on pool {pool}'s runner, and {why}, so it \
                  was closed"
-            ));
+            )));
         }
         self.runs(link, id, &program, pid);
         lock(&self.lost).remove(&id);
@@ -4944,7 +4952,65 @@ const NOTHING_STARTED: &[&str] = &[
     session::NOT_STARTED,
     session::STOPPED,
     session::KEY_CHANGED,
+    session::PROFILE_CHANGED,
 ];
+
+/// **Why a start did not begin** ([`HostedSessions::started`]), in words, and whether its runner
+/// refused it as no longer holding its profile as it was kept (1.97, #7863), which a keep made
+/// again answers.
+#[derive(Debug)]
+struct NotBegun {
+    why: String,
+    profile_changed: bool,
+}
+
+impl From<String> for NotBegun {
+    fn from(why: String) -> Self {
+        NotBegun {
+            why,
+            profile_changed: false,
+        }
+    }
+}
+
+impl From<NotBegun> for String {
+    fn from(not: NotBegun) -> Self {
+        not.why
+    }
+}
+
+/// **A start that names what its runner must still hold of its profile, begun** (#7863, ADR 0078
+/// as amended 2026-11-27): where the runner refuses it as not holding that, the profile is kept
+/// again, its settings put back, and the chat started once more, naming nothing then. A keep that
+/// fails is why the chat did not start. No start ever goes on over settings the runner was not
+/// shown to hold, or was not just made to.
+fn begun_as_kept<T>(
+    start: StartProgram,
+    held: Option<&crate::host::ProfileHeld>,
+    mut begin: impl FnMut(StartProgram, bool) -> Result<T, NotBegun>,
+) -> Result<T, NotBegun> {
+    let start = StartProgram {
+        profile_held: held.map(|held| held.digest.clone()),
+        ..start
+    };
+    match begin(start.clone(), true) {
+        Err(not) if not.profile_changed => {
+            let Some(held) = held else {
+                return Err(not);
+            };
+            tracing::info!("purlis: a runner no longer held a profile as kept: kept again");
+            held.keep_again()?;
+            begin(
+                StartProgram {
+                    profile_held: None,
+                    ..start
+                },
+                false,
+            )
+        }
+        begun => begun,
+    }
+}
 
 /// What [`HostedSessions::started`] heard of a start: its number, the confinement the host named
 /// to this link where it named one, and how the host applied the sandbox to its run (1.29).
@@ -5092,6 +5158,7 @@ impl SessionHost for HostedSessions {
             lock(&self.keys_started).insert(begun.id, begun.prompt_key);
             begun.id
         })
+        .map_err(String::from)
     }
 
     fn open_named(
@@ -5164,9 +5231,12 @@ impl SessionHost for HostedSessions {
             armed_skills,
             skills_not_there,
             runner,
-        } = self
-            .started(&link, id, start, false, announce, &named.asked_to_run)
-            .inspect_err(|_| unheard(&confinement))?;
+        } = begun_as_kept(start, named.profile_held.as_ref(), |start, first| {
+            // Announced once, before the first: a start made again is the same chat.
+            let announce: &dyn Fn(u32) = if first { announce } else { &|_| {} };
+            self.started(&link, id, start, false, announce, &named.asked_to_run)
+        })
+        .inspect_err(|_| unheard(&confinement))?;
         // Held from here, where the host named it to this window: dropping it, on any path, lets
         // the host end it. A host that named none tells this window nothing of it.
         let named_here =

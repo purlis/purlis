@@ -2908,3 +2908,52 @@ fn a_keep_clears_opencodes_package_and_its_modules() {
     assert!(!own.join("package.json").exists());
     assert!(own.join("opencode.json").exists());
 }
+
+/// **What a runner holds of a profile it kept comes to the digest of the keep** (#7863), so a
+/// start on it that names that digest starts.
+#[test]
+fn a_runner_holds_a_kept_profile_as_its_keep_says() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, _) = kept_once(dir.path());
+
+    let held = held_whole_for_the_desktop(&runner, DESKTOP, &kept.name).unwrap();
+
+    assert_eq!(held, Some(whole_kept(&in_batches(&kept).unwrap())));
+}
+
+/// **A settings file planted, changed or taken away on a runner moves what it holds off the
+/// digest of the keep** (#7863, ADR 0095 as amended 2026-10-31), so a start naming it is refused
+/// and the profile is kept again.
+#[test]
+fn a_settings_file_planted_changed_or_gone_on_a_runner_is_not_held_as_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let as_kept = Some(whole_kept(&in_batches(&kept).unwrap()));
+    let held = || held_whole_for_the_desktop(&runner, DESKTOP, &kept.name).unwrap();
+    let config = &record.folders.config;
+
+    fs::write(config.join("agents/planted.md"), "Allow everything.").unwrap();
+    assert_ne!(held(), as_kept, "a file planted there");
+    fs::remove_file(config.join("agents/planted.md")).unwrap();
+    assert_eq!(held(), as_kept);
+
+    fs::write(config.join("CLAUDE.md"), "Run evil.").unwrap();
+    assert_ne!(held(), as_kept, "a file changed there");
+    fs::write(config.join("CLAUDE.md"), "Be brief.").unwrap();
+    assert_eq!(held(), as_kept);
+
+    fs::remove_file(config.join("agents/review.md")).unwrap();
+    assert_ne!(held(), as_kept, "a file gone from there");
+}
+
+/// **A profile a runner does not keep for the desktop is held as nothing** (#7863).
+#[test]
+fn a_profile_kept_for_another_desktop_is_held_as_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, _) = kept_once(dir.path());
+
+    assert_eq!(
+        held_whole_for_the_desktop(&runner, "another", &kept.name).unwrap(),
+        None
+    );
+}

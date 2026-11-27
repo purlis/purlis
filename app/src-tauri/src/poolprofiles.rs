@@ -80,6 +80,19 @@ pub trait ProfilesOnPools: Send + Sync {
         self.ready(root, pool, profile)
     }
 
+    /// **What a chat's start on pool `pool` on `profile` names of the settings its runner was
+    /// last made to keep** (1.97, #7863): where [`Self::ready`] skipped the keep, or made one the
+    /// runner can be held to, the digest its runner must still hold, and how to keep it again
+    /// where the runner says it does not. `None` where the start is held to nothing more.
+    fn held_for_a_start(
+        &self,
+        _root: &Path,
+        _pool: &str,
+        _profile: &str,
+    ) -> Option<crate::host::ProfileHeld> {
+        None
+    }
+
     /// [`Self::ready`], for a chat that moves to pool `pool`'s runner (#2048): said of the move,
     /// and a profile signed out there is the sign-in the move waits on (#3477).
     fn ready_to_move(
@@ -121,6 +134,24 @@ impl ProfilesOnPools for Linked {
         self.ready(root, pool, profile)
     }
 
+    fn held_for_a_start(
+        &self,
+        root: &Path,
+        pool: &str,
+        profile: &str,
+    ) -> Option<crate::host::ProfileHeld> {
+        let digest = kept_until_restart::held_for_a_start(pool, profile)?;
+        let (linked, root, pool, profile) = (
+            Linked::at(self.config.clone()),
+            root.to_path_buf(),
+            pool.to_owned(),
+            profile.to_owned(),
+        );
+        Some(crate::host::ProfileHeld::new(digest, move || {
+            linked.ready_again(&root, &pool, &profile)
+        }))
+    }
+
     fn ready_on_its_own_runner(
         &self,
         root: &Path,
@@ -151,8 +182,9 @@ impl ProfilesOnPools for Linked {
         let yours = yours(&self.config, pool);
         chosen_by_a_chat(&yours, &self.config, root, pool, profile);
         tidy_once(&yours, &self.config, root, pool);
+        // A move's start names no settings for its runner to hold, so its keep is always made.
         onrunner::ready_to_move_on(&self.config, pool, profile, &|kept| {
-            keep_unless_held(&yours, &self.config, pool, kept)
+            keep_on_as(yours.clone(), &self.config, pool, kept, Waking::Yes)
         })
     }
 }
@@ -887,6 +919,18 @@ fn keep_on_as(
     kept: &onrunner::Kept,
     waking: Waking,
 ) -> Result<Option<Standing>, String> {
+    keep_on_as_told(yours, config, pool, kept, waking).map(|told| told.map(|there| there.standing))
+}
+
+/// [`keep_on_as`], with what the runner holds of the profile's settings since, where it can be
+/// held to it at a start (#7863).
+fn keep_on_as_told(
+    yours: Result<Yours, String>,
+    config: &Path,
+    pool: &str,
+    kept: &onrunner::Kept,
+    waking: Waking,
+) -> Result<Option<kept_until_restart::KeptThere>, String> {
     let Ok(yours) = yours else {
         return Ok(None);
     };
@@ -899,13 +943,19 @@ fn keep_on_as(
     said.into_iter()
         .next()
         .unwrap_or_else(|| Err("the runner did not answer".into()))
-        .map(|kept| Some(onrunner::standing_on_the_wire(kept.standing)))
+        .map(|kept| {
+            Some(kept_until_restart::KeptThere {
+                standing: onrunner::standing_on_the_wire(kept.standing),
+                held: kept.held,
+            })
+        })
         .map_err(|why| late_said(pool, &kept.limits, why))
 }
 
 /// **Has pool `pool`'s runner keep `kept`, waking it, unless it holds it as it is since it last
-/// started** ([`kept_until_restart::kept_or_linked`], #7863): what a chat's start and move there
-/// keep it by.
+/// started** ([`kept_until_restart::kept_or_linked`], #7863): what a chat's start there keeps it
+/// by. A start after a skipped keep names what the runner must still hold
+/// ([`ProfilesOnPools::held_for_a_start`]).
 fn keep_unless_held(
     yours: &Result<Yours, String>,
     config: &Path,
@@ -913,7 +963,7 @@ fn keep_unless_held(
     kept: &onrunner::Kept,
 ) -> Result<Option<Standing>, String> {
     kept_until_restart::kept_or_linked(&|| runner_now(yours, config, pool), pool, kept, |kept| {
-        keep_on_as(yours.clone(), config, pool, kept, Waking::Yes)
+        keep_on_as_told(yours.clone(), config, pool, kept, Waking::Yes)
     })
 }
 

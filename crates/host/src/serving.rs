@@ -91,6 +91,11 @@ pub type Holding = Arc<
         + Sync,
 >;
 
+/// [`session::whole_settings_digest`] of what the runner holds now of the profile named, for the
+/// desktop a link proved, read off its disk then; `None` where it keeps no such profile for it
+/// (a start's `profile_held`, 1.97, #7863).
+pub type Matching = Arc<dyn Fn(&Pinned, &str) -> Result<Option<String>, String> + Send + Sync>;
+
 /// Hands a sign-in's redirect to the login waiting on the runner's loopback, and says whether it
 /// took it (`sign_in_redirect`, 1.59, #4044).
 pub type Delivering = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
@@ -98,7 +103,8 @@ pub type Delivering = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
 /// A runner's pairing, as its host serves it: who it is and whom it admits ([`Answering`]),
 /// how the desktop it admits is taken out of its peers ([`Unpairing`]), how it keeps that
 /// desktop's profiles ([`Keeping`]), forgets them ([`Forgetting`]) and names them ([`Listing`]),
-/// says what it holds of one ([`Holding`]), how it hands a login that desktop's browser's answer ([`Delivering`]),
+/// says what it holds of one ([`Holding`]) and whether that is still as a start names it
+/// ([`Matching`]), how it hands a login that desktop's browser's answer ([`Delivering`]),
 /// and how it runs its own sign-in of one of that desktop's profiles ([`SigningIn`], 1.79).
 #[derive(Clone)]
 pub struct Pairing {
@@ -109,6 +115,7 @@ pub struct Pairing {
     pub deleting_own_folders: DeletingOwnFolders,
     pub listing: Listing,
     pub holding: Holding,
+    pub matching: Matching,
     pub delivering: Delivering,
     pub signing_in: SigningIn,
 }
@@ -257,6 +264,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
         let deleting_own_folders = Arc::clone(&pairing.deleting_own_folders);
         let listing = Arc::clone(&pairing.listing);
         let holding = Arc::clone(&pairing.holding);
+        let matching = Arc::clone(&pairing.matching);
         let delivering = Arc::clone(&pairing.delivering);
         let signing_in = Arc::clone(&pairing.signing_in);
         tokio::spawn(async move {
@@ -283,6 +291,7 @@ async fn answer_links(listener: Listener, pairing: Pairing, hosting: Hosting) {
                         staged: std::sync::Mutex::default(),
                         listing,
                         holding,
+                        matching,
                         delivering,
                         signing_in,
                         sign_ins: SignIns::default(),
@@ -325,6 +334,7 @@ struct PairedLink {
     staged: std::sync::Mutex<session::StagedSettings>,
     listing: Listing,
     holding: Holding,
+    matching: Matching,
     delivering: Delivering,
     signing_in: SigningIn,
     /// The sign-ins this link runs: they end with it.
@@ -494,6 +504,41 @@ impl PairedLink {
             })
     }
 
+    /// **A chat's start that names the settings its profile was last kept with** (1.97, #7863):
+    /// started only where what this runner holds of that profile for the desktop the link proved,
+    /// read off its disk now, comes to them; else refused [`session::PROFILE_CHANGED`], with
+    /// nothing started, so the desktop keeps the profile again (ADR 0078 as amended 2026-11-27).
+    async fn start_if_held(
+        &self,
+        start: Box<session::StartProgram>,
+        peer: &session::Peer,
+    ) -> Result<session::Answer, session::Refusal> {
+        let changed = |why: String| session::Refusal {
+            code: session::PROFILE_CHANGED.into(),
+            why,
+        };
+        let (Some(profile), Some(named)) = (start.profile.clone(), start.profile_held.clone())
+        else {
+            return Err(changed(
+                "the start names the settings of no profile it runs on, so nothing was started"
+                    .into(),
+            ));
+        };
+        let (matching, desktop) = (Arc::clone(&self.matching), self.desktop.clone());
+        let held = tokio::task::spawn_blocking(move || matching(&desktop, &profile))
+            .await
+            .unwrap_or_else(|why| Err(format!("the settings here were not read: {why}")))
+            .map_err(changed)?;
+        if held.as_deref() != Some(named.as_str()) {
+            return Err(changed(
+                "the profile's settings on this runner are not the ones it was last kept with, \
+                 so nothing was started"
+                    .into(),
+            ));
+        }
+        session::Host::call(&self.hosting, session::Command::StartProgram(start), peer).await
+    }
+
     /// `sign_in_redirect` (1.59, #4044): the desktop's browser's answer handed to the login
     /// waiting here, off the runtime, since the login signs in with its vendor before it answers.
     async fn deliver(&self, target: String) -> Result<session::Answer, session::Refusal> {
@@ -543,6 +588,9 @@ impl session::Host for PairedLink {
             session::Command::StageProfileSettings(batch) => self.stage(batch),
             session::Command::SettingsHeld { profile, after } => self.held(profile, after).await,
             session::Command::KeptProfiles => self.list().await,
+            session::Command::StartProgram(start) if start.profile_held.is_some() => {
+                self.start_if_held(start, peer).await
+            }
             session::Command::SignInRedirect { target } => self.deliver(target.0).await,
             session::Command::StartSignIn(start) => {
                 self.sign_ins

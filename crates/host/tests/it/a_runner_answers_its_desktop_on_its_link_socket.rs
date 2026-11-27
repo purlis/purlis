@@ -199,6 +199,8 @@ async fn hosting_keeping(
                     after,
                 ))
             }),
+            // What it holds of `work` comes to `as-kept`; it keeps no other profile.
+            matching: Arc::new(|_, profile| Ok((profile == "work").then(|| "as-kept".to_owned()))),
             delivering: Arc::new(|target| match target {
                 "/auth/callback?code=c&state=s" => Ok(()),
                 _ => Err("no sign-in is waiting on the runner".to_owned()),
@@ -616,5 +618,48 @@ async fn the_paired_desktop_has_the_runner_forget_its_profile() {
     assert!(
         refused.to_string().contains("could not be read"),
         "{refused}"
+    );
+}
+
+/// **A chat's start naming the settings its profile was last kept with starts only where the
+/// runner still holds them** (1.97, #7863): another digest, or a profile it does not keep, is
+/// refused `profile_changed` with nothing started, so the desktop keeps the profile again. One that
+/// matches goes on to the host as any start does.
+#[tokio::test]
+async fn a_start_naming_settings_the_runner_no_longer_holds_is_refused_as_changed() {
+    use purlis_session_protocol::session::{PROFILE_CHANGED, ProgramKind, StartProgram};
+    let dir = tempfile::tempdir().unwrap();
+    let place = place_in(dir.path());
+    let (runner, desktop) = (identity(RUNNER), identity(DESKTOP));
+    let runner_pinned = pinned_of(&runner);
+    let paired: Paired = Arc::new(Mutex::new(Ok(Some((runner, pinned_of(&desktop))))));
+    let kept = KeptHere::default();
+    let (_stop, _host) = hosting_keeping(&place, &paired, &kept).await;
+    let linked = link(&place, &desktop, &runner_pinned)
+        .await
+        .expect("the paired desktop is linked");
+    let client = purlis_session_protocol::session::Client::new(linked).0;
+    let start = |profile: &str, held: &str| StartProgram {
+        profile: Some(profile.to_owned()),
+        profile_held: Some(held.to_owned()),
+        ..StartProgram::of("a-project", ProgramKind::Harness)
+    };
+    let code = async |start| {
+        let refused = client.start_program(start).await.unwrap_err();
+        refused.refusal().map(|refusal| refusal.code.clone())
+    };
+
+    assert_eq!(
+        code(start("work", "planted")).await.as_deref(),
+        Some(PROFILE_CHANGED)
+    );
+    assert_eq!(
+        code(start("other", "as-kept")).await.as_deref(),
+        Some(PROFILE_CHANGED)
+    );
+    // Held as kept, it reaches the host, which composes nothing here.
+    assert_ne!(
+        code(start("work", "as-kept")).await.as_deref(),
+        Some(PROFILE_CHANGED)
     );
 }

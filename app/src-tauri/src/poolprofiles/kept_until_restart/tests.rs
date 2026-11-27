@@ -38,8 +38,16 @@ fn start(
 ) -> Result<Option<Standing>, String> {
     kept_or_linked(&|| now.clone(), pool, kept, |_| {
         links.set(links.get() + 1);
-        said
+        said.map(|standing| standing.map(on_a_runner_that_can_be_held_to_it))
     })
+}
+
+/// What a runner of 1.97 or later answers a keep that put its settings in place.
+fn on_a_runner_that_can_be_held_to_it(standing: Standing) -> KeptThere {
+    KeptThere {
+        standing,
+        held: Some("as-kept".to_owned()),
+    }
 }
 
 const SIGNED_IN: Result<Option<Standing>, String> = Ok(Some(Standing::SignedIn));
@@ -201,9 +209,42 @@ fn what_is_remembered_is_the_runner_as_it_is_after_the_link() {
     };
     kept_or_linked(&now, pool, &work(), |_| {
         links.set(links.get() + 1);
-        SIGNED_IN
+        Ok(Some(on_a_runner_that_can_be_held_to_it(Standing::SignedIn)))
     })
     .unwrap();
     start(&links, running("d1", 300), pool, &work(), SIGNED_IN).unwrap();
     assert_eq!(links.get(), 1);
+}
+
+#[test]
+fn a_runner_older_than_a_start_can_be_held_to_is_kept_on_at_every_start() {
+    let links = Cell::new(0);
+    let pool = "older-runner";
+    let older = || {
+        kept_or_linked(&|| running("d1", 100), pool, &work(), |_| {
+            links.set(links.get() + 1);
+            Ok(Some(KeptThere {
+                standing: Standing::SignedIn,
+                held: None,
+            }))
+        })
+    };
+    assert_eq!(older(), SIGNED_IN);
+    assert_eq!(older(), SIGNED_IN);
+    assert_eq!(links.get(), 2, "nothing it holds can be checked at a start");
+    assert_eq!(held_for_a_start(pool, "work"), None);
+}
+
+#[test]
+fn a_start_after_a_skipped_keep_names_what_the_runner_must_still_hold() {
+    let links = Cell::new(0);
+    let pool = "named-at-start";
+    assert_eq!(held_for_a_start(pool, "work"), None, "nothing kept yet");
+    start(&links, running("d1", 100), pool, &work(), SIGNED_IN).unwrap();
+    start(&links, running("d1", 100), pool, &work(), SIGNED_IN).unwrap();
+    assert_eq!(links.get(), 1);
+    assert_eq!(held_for_a_start(pool, "work").as_deref(), Some("as-kept"));
+    assert_eq!(held_for_a_start(pool, "other"), None);
+    forget(pool, "work");
+    assert_eq!(held_for_a_start(pool, "work"), None);
 }
