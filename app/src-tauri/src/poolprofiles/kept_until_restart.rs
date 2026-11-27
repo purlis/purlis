@@ -23,11 +23,17 @@
 //! a keep is what puts the profile's settings on the runner back as this machine has them, since a
 //! chat may be able to write there (ADR 0095 as amended 2026-10-31). So only a keep that left the
 //! runner holding a digest it can be held to is remembered (session protocol 1.99,
-//! [`KeptThere::held`]), and the chat's start names that digest ([`held_for_a_start`]): the runner
+//! [`KeptThere::held`]), and the chat's start names that digest, carried from the very decision that
+//! skipped its keep ([`Readied::held`]), never read again from what is remembered: the runner
 //! reads what it holds off its disk then and starts the chat only where it comes to it. Any drift,
 //! a settings file planted, changed or gone, refuses the start, and the profile is kept again
 //! before the chat starts. A runner before 1.99, which could not be held to it, is never
 //! remembered, so every start there keeps the profile as before.
+//!
+//! **Some profiles are never remembered**: one whose harness makes again, as it starts, what a
+//! keep clears ([`onrunner::a_skip_can_be_proven`]: Codex, opencode), which no runner could show
+//! it holds as kept, and one whose runner refused a start as changed in this run
+//! ([`refused_as_changed`]), so a difference no keep puts right costs one refused start.
 //!
 //! **What is remembered is this run's, in this process only**: never the plane, never a file
 //! (the way [`super::TIDIED`] is kept), so no store has a tier to name (ADR 0069), and the first
@@ -63,6 +69,15 @@ pub(super) struct KeptThere {
     pub held: Option<String>,
 }
 
+/// **What readying a profile on a runner came to for the start it was for**: how its harness
+/// stands with it, and the digest that start names its runner must still hold, taken from the
+/// very decision that skipped the keep, or from the keep that can be held to it (1.99, #7863).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Readied {
+    pub standing: Option<Standing>,
+    pub held: Option<String>,
+}
+
 /// One keep remembered.
 #[derive(Debug, Clone)]
 struct Remembered {
@@ -78,6 +93,10 @@ struct Remembered {
 
 static REMEMBERED: Mutex<Vec<Remembered>> = Mutex::new(Vec::new());
 
+/// Each pool and profile whose runner refused a start as not holding the profile as kept, in
+/// this run ([`refused_as_changed`]): never remembered again until the app restarts.
+static REFUSED: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
+
 /// **Has pool `pool`'s runner keep `kept` through `link`, unless it is known to hold it as it is**:
 /// the standing remembered, with no link made, where `now` (asked before) says the same runner
 /// runs since the same start as when it kept the same digest. Otherwise `link` is made, and what
@@ -88,12 +107,15 @@ pub(super) fn kept_or_linked(
     pool: &str,
     kept: &onrunner::Kept,
     link: impl FnOnce(&onrunner::Kept) -> Result<Option<KeptThere>, String>,
-) -> Result<Option<Standing>, String> {
+) -> Result<Readied, String> {
     let digest = digest_of(kept);
     if let (Some(digest), Some(before)) = (&digest, now())
-        && let Some(standing) = remembered(&before, pool, &kept.name, digest)
+        && let Some((standing, held)) = remembered(&before, pool, &kept.name, digest)
     {
-        return Ok(Some(standing));
+        return Ok(Readied {
+            standing: Some(standing),
+            held: Some(held),
+        });
     }
     let said = link(kept);
     forget(pool, &kept.name);
@@ -104,12 +126,16 @@ pub(super) fn kept_or_linked(
         })) => Some((*standing, held.clone())),
         _ => None,
     };
+    let mut held_at_start = None;
     if let (Some((standing, held)), Some(digest)) = (kept_as, digest)
+        && onrunner::a_skip_can_be_proven(&kept.harness)
+        && !refused_before(pool, &kept.name)
         && let Some(RunnerNow {
             device,
             started: Some(started),
         }) = now()
     {
+        held_at_start = Some(held.clone());
         memo().push(Remembered {
             device,
             pool: pool.to_owned(),
@@ -120,17 +146,10 @@ pub(super) fn kept_or_linked(
             held,
         });
     }
-    said.map(|there| there.map(|there| there.standing))
-}
-
-/// **What a chat's start on pool `pool` on profile `profile` names its runner must still hold**
-/// (1.99): the digest of the settings the last keep there left, where it is remembered. `None`
-/// where nothing is, which is where that start's own readying made the keep.
-pub(super) fn held_for_a_start(pool: &str, profile: &str) -> Option<String> {
-    memo()
-        .iter()
-        .find(|one| one.pool == pool && one.profile == profile)
-        .map(|one| one.held.clone())
+    said.map(|there| Readied {
+        standing: there.map(|there| there.standing),
+        held: held_at_start,
+    })
 }
 
 /// What is remembered, whoever asks: a poisoned lock still holds a list that is whole, since
@@ -139,9 +158,14 @@ fn memo() -> std::sync::MutexGuard<'static, Vec<Remembered>> {
     REMEMBERED.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The standing remembered of profile `profile` on pool `pool`, where `now` is the runner that
-/// kept `digest` there, since the same start.
-fn remembered(now: &RunnerNow, pool: &str, profile: &str, digest: &[u8]) -> Option<Standing> {
+/// The standing remembered of profile `profile` on pool `pool`, with the digest its runner was
+/// left holding, where `now` is the runner that kept `digest` there, since the same start.
+fn remembered(
+    now: &RunnerNow,
+    pool: &str,
+    profile: &str,
+    digest: &[u8],
+) -> Option<(Standing, String)> {
     let started = now.started?;
     memo()
         .iter()
@@ -152,7 +176,26 @@ fn remembered(now: &RunnerNow, pool: &str, profile: &str, digest: &[u8]) -> Opti
                 && one.started == started
                 && one.digest == digest
         })
-        .map(|one| one.standing)
+        .map(|one| (one.standing, one.held.clone()))
+}
+
+/// **Profile `name` on pool `pool`'s runner did not hold as kept at a start**: forgotten, as
+/// [`forget`] does, and never remembered again there until the app restarts.
+pub(super) fn refused_as_changed(pool: &str, name: &str) {
+    forget(pool, name);
+    let mut refused = REFUSED.lock().unwrap_or_else(PoisonError::into_inner);
+    if !refused.iter().any(|(p, n)| p == pool && n == name) {
+        refused.push((pool.to_owned(), name.to_owned()));
+    }
+}
+
+/// Whether profile `name` on pool `pool`'s runner refused a start as changed in this run.
+fn refused_before(pool: &str, name: &str) -> bool {
+    REFUSED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .any(|(p, n)| p == pool && n == name)
 }
 
 /// **Forgets what profile `name` was kept as on pool `pool`'s runner**: its next start there

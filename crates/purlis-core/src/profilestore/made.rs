@@ -189,6 +189,10 @@ pub struct Allowed {
     /// What else it loads from its settings folder, by name, which is never sent: a runner keeps
     /// none ([`loaded_unsent_cleared`]).
     pub loaded_unsent: &'static [&'static str],
+    /// Whether the harness makes some of [`Self::loaded_unsent`] again itself as it starts, so a
+    /// runner that ran a chat of it never holds the profile as a keep leaves it, and a start there
+    /// always keeps it ([`a_skip_can_be_proven`], #7863).
+    pub remakes_loaded_unsent: bool,
     /// The files a desktop sends a runner that no import copies: read to send and kept there.
     pub sent_only: &'static [&'static str],
 }
@@ -203,6 +207,8 @@ pub const ALLOWED: [Allowed; 3] = [
         folders: &["agents", "commands", "output-styles", "skills"],
         // `hooks`: never loaded by itself, but where a sent setting's hook commonly points.
         loaded_unsent: &["hooks", "rules"],
+        // Claude Code makes neither `hooks` nor `rules` itself.
+        remakes_loaded_unsent: false,
         sent_only: &[super::sent::MCP_SERVERS_FILE],
     },
     Allowed {
@@ -217,6 +223,8 @@ pub const ALLOWED: [Allowed; 3] = [
             "rules",
             "skills",
         ],
+        // Codex installs its own system skills under `skills` as it starts.
+        remakes_loaded_unsent: true,
         sent_only: &[],
     },
     Allowed {
@@ -238,6 +246,8 @@ pub const ALLOWED: [Allowed; 3] = [
             "package.json",
             "node_modules",
         ],
+        // opencode makes `package.json` and `node_modules` again as it starts.
+        remakes_loaded_unsent: true,
         sent_only: &[],
     },
 ];
@@ -1614,17 +1624,7 @@ pub fn loaded_unsent_cleared(record: &MachineProfile) -> Result<(), String> {
     };
     let config = &record.folders.config;
     let dest = settings_dest(allowed, config);
-    // Neither the settings folder nor one between it and the profile's config folder, that folder
-    // itself among them, is a link: what it names, elsewhere, stays, and the keep is refused,
-    // naming the link and what to do (ruled 2026-11-08).
-    let linked = [config.as_path()]
-        .into_iter()
-        .chain(
-            dest.ancestors()
-                .take_while(|above| above.starts_with(config)),
-        )
-        .find(|at| std::fs::symlink_metadata(at).is_ok_and(|found| found.file_type().is_symlink()));
-    if let Some(linked) = linked {
+    if let Some(linked) = linked_on_the_way(config, &dest) {
         return Err(format!(
             "this runner did not keep the profile '{}': {} is a link to another folder, and \
              purlis clears a profile's settings only in a folder of its own, so what the link \
@@ -1647,6 +1647,43 @@ pub fn loaded_unsent_cleared(record: &MachineProfile) -> Result<(), String> {
                 crate::rewrite::os_words(&e)
             )
         })
+}
+
+/// **Whether a runner can ever show it holds a profile of harness `kind` as a keep leaves it**
+/// (#7863): not where the harness makes again, as it starts, something a keep clears
+/// ([`Allowed::remakes_loaded_unsent`]), nor for a harness purlis does not ship.
+#[must_use]
+pub fn a_skip_can_be_proven(kind: &str) -> bool {
+    harness_of(kind).is_ok_and(|(_, allowed)| !allowed.remakes_loaded_unsent)
+}
+
+/// **Whether a keep would find anything of `record`'s to clear** ([`loaded_unsent_cleared`], #7863):
+/// an entry it removes is there, or a link on the way to its settings folder refuses the keep. A
+/// harness purlis does not ship has nothing to clear.
+pub fn loaded_unsent_found(record: &MachineProfile) -> bool {
+    let Ok((_, allowed)) = harness_of(&record.harness) else {
+        return false;
+    };
+    let config = &record.folders.config;
+    let dest = settings_dest(allowed, config);
+    linked_on_the_way(config, &dest).is_some()
+        || allowed
+            .loaded_unsent
+            .iter()
+            .any(|name| std::fs::symlink_metadata(dest.join(name)).is_ok())
+}
+
+/// The settings folder `dest`, or a folder between it and the profile's config folder `config`,
+/// that folder itself among them, that is a link: what it names, elsewhere, stays, and a keep is
+/// refused, naming the link and what to do (ruled 2026-11-08).
+fn linked_on_the_way<'a>(config: &'a Path, dest: &'a Path) -> Option<&'a Path> {
+    [config]
+        .into_iter()
+        .chain(
+            dest.ancestors()
+                .take_while(|above| above.starts_with(config)),
+        )
+        .find(|at| std::fs::symlink_metadata(at).is_ok_and(|found| found.file_type().is_symlink()))
 }
 
 /// A file name that may hold a sign-in, which an import never copies from a settings folder.

@@ -43,19 +43,39 @@ changes is when the profile link is made.
 7. **A skipped keep is held to what the runner holds** (the person's ruling of 2026-11-27, option
    2). The keep remembered carries the digest of the profile's settings it left on the runner
    (`settings_changed.whole`, or the whole of what it sent). The chat's start names it
-   (`StartProgram.profile_held`, session protocol 1.99), and only the window or its host's relay
-   may name it, as with `tools_allowed`. The runner, on the desktop's paired link, hashes the
-   profile's settings as it holds them on disk, the way the desktop does, and starts the chat only
-   where the two are the same. A settings file planted, changed or gone, a keep left unfinished,
-   or a profile kept for another desktop refuses the start as `profile_changed`, and nothing
-   starts. The desktop then forgets what it remembered, keeps the profile in full, and starts the
-   chat once more, naming nothing. A keep that fails there is why the chat did not start.
+   (`StartProgram.profile_held`, session protocol 1.99), carried from the very decision that
+   skipped the keep, never read again from what this machine remembers, which another chat's
+   sign-out or forget may empty meanwhile. Only the window or its host's relay may name it, as
+   with `tools_allowed`. The runner, on the paired link the chat's start arrives on, reads the
+   profile as it holds it on disk then and answers with its digest only where a keep would leave
+   it exactly as it is: its settings files, hashed the way the desktop hashes them, and nothing
+   else a keep removes or rewrites. That is, no file past a read's limits, no entry a read leaves
+   out inside a listed folder (a link, a hidden or credential-shaped name, a skill's
+   `node_modules`, `__pycache__` or `venv`), none of what a keep clears that no desktop sends (each
+   harness's list: Claude Code's `hooks` and `rules`, Codex's `.env`, `AGENTS.override.md`,
+   `hooks.json`, `rules` and `skills`, opencode's plugins, skills, tools, `package.json` and
+   `node_modules`), no link on the way to the settings folder, and, for Claude Code, a state file
+   whose user-scope MCP servers are those its kept `mcp-servers.json` names, where it keeps one,
+   and in which no project has servers of its own (an empty list, which starts nothing, counts as
+   none). Anything else, a settings file planted, changed or gone among them, and a keep left
+   unfinished or a profile kept for another desktop, refuses the start as `profile_changed`, and
+   nothing starts. The desktop then forgets what it remembered, keeps the profile in full, and
+   starts the chat once more, naming nothing. A keep that fails there is why the chat did not
+   start. That profile is then never remembered on that runner again until the app restarts, so a
+   difference no keep puts right (a state file no keep can read) costs one refused start, never
+   one at every start. A profile whose harness makes again, as it starts, something a keep clears
+   (Codex's own skills, opencode's `package.json` and `node_modules`) is never remembered at all:
+   no runner that ran a chat of it could prove the profile as a keep leaves it, so every start
+   there keeps it, as before.
 
 ## What stays of ADR 0095 as amended 2026-10-31
 
 Its guarantee holds: **no chat starts over a profile's settings on a runner other than what this
 machine kept there.** A chat may be able to write in a settings folder, so nothing is taken on
 trust (item 1): what is remembered on this machine is only what to ask the runner, and the runner's
-answer is read off its disk at each start. A file changed or planted since the last keep ends at a
-keep (item 3), which writes what it checked (item 5): the skip only spares the link where the
-check finds nothing to write.
+answer is read off its disk at each start. What is proven there is exactly what item 7 lists: that
+a keep made then would write, remove and rewrite nothing. Anything a keep would change, a settings
+file changed or planted since the last keep, something it clears that no desktop sends, or an MCP
+server it would take out, ends at a keep (item 3), which writes what it checked and clears what no
+desktop sent (item 5): the skip only spares the link where the check finds nothing a keep would
+do.

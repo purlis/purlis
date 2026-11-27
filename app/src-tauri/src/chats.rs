@@ -2159,19 +2159,6 @@ impl Chats {
         }
     }
 
-    /// **What a chat's start on its pool's runner names of its profile's settings** (#7863): the
-    /// digest its runner must still hold, where [`crate::poolprofiles::ProfilesOnPools::ready`] skipped its keep there.
-    fn profile_held_at_start(
-        &self,
-        chat: &Chat,
-        workspace: Option<&str>,
-    ) -> Option<crate::host::ProfileHeld> {
-        let on_pools = self.profiles_on_pools.as_ref()?;
-        let profile = chat.profile.as_deref()?;
-        let pool = self.sessions.pool_for(workspace, chat.runs_on.as_ref())?;
-        on_pools.held_for_a_start(&self.project, &pool, profile)
-    }
-
     /// The fresh runner the chat `id` keeps, by the name a link reaches it by, with the workspace
     /// its work goes back to (#4569).
     #[cfg(unix)]
@@ -5519,6 +5506,9 @@ impl Chats {
         if let Some(profile) = chat.profile.as_deref().filter(|_| on_the_runner) {
             purlis_core::profilestore::onrunner::forget_left_out(profile);
         }
+        // What its pool's runner must still hold of its profile, as its readying decided it
+        // (#7863). A chat's own fresh runner is kept on every time, and is held to nothing more.
+        let mut profile_held = None;
         if on_the_runner
             && let (Some(on_pools), Some(profile)) = (&self.profiles_on_pools, &chat.profile)
             // A chat's own runner's pool, wherever its workspace runs since (#4569).
@@ -5534,11 +5524,11 @@ impl Chats {
             // The whole check and keep of the profile on the pool: a link of its own (#7182).
             let step = purlis_session_protocol::steps::begin_in("profile_ready", &pool);
             // Inside the step: the link it makes is a `first_link` under it.
-            step.inside(|| match &own_runner {
-                Some(runner) => {
-                    on_pools.ready_on_its_own_runner(&self.project, &pool, runner, profile)
-                }
-                None => on_pools.ready(&self.project, &pool, profile),
+            profile_held = step.inside(|| match &own_runner {
+                Some(runner) => on_pools
+                    .ready_on_its_own_runner(&self.project, &pool, runner, profile)
+                    .map(|()| None),
+                None => on_pools.ready_for_a_start(&self.project, &pool, profile),
             })?;
             step.done();
         }
@@ -6483,12 +6473,8 @@ impl Chats {
                         // The Skill studio's flag this start read (#3445): a runner arms it by
                         // this, not by its own machine's (SK-20b, #3084).
                         plane_skills,
-                        // What its pool's runner must still hold of its profile, where its keep
-                        // was skipped (#7863). A chat's own fresh runner is kept on every time.
-                        profile_held: own_runner
-                            .is_none()
-                            .then(|| self.profile_held_at_start(chat, workspace.as_deref()))
-                            .flatten(),
+                        // What its pool's runner must still hold of its profile (#7863).
+                        profile_held: profile_held.clone(),
                         alone,
                         size,
                     },

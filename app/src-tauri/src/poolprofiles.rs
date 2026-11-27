@@ -80,17 +80,18 @@ pub trait ProfilesOnPools: Send + Sync {
         self.ready(root, pool, profile)
     }
 
-    /// **What a chat's start on pool `pool` on `profile` names of the settings its runner was
-    /// last made to keep** (1.99, #7863): where [`Self::ready`] skipped the keep, or made one the
-    /// runner can be held to, the digest its runner must still hold, and how to keep it again
-    /// where the runner says it does not. `None` where the start is held to nothing more.
-    fn held_for_a_start(
+    /// [`Self::ready`], **for a chat's start on pool `pool`, with what that start names of the
+    /// settings its runner was made to keep** (1.99, #7863): where the keep was skipped, or made
+    /// so the runner can be held to it, the digest its runner must still hold, carried from that
+    /// very decision, and how to keep it again where the runner says it does not. `None` where
+    /// the start is held to nothing more.
+    fn ready_for_a_start(
         &self,
-        _root: &Path,
-        _pool: &str,
-        _profile: &str,
-    ) -> Option<crate::host::ProfileHeld> {
-        None
+        root: &Path,
+        pool: &str,
+        profile: &str,
+    ) -> Result<Option<crate::host::ProfileHeld>, String> {
+        self.ready(root, pool, profile).map(|()| None)
     }
 
     /// [`Self::ready`], for a chat that moves to pool `pool`'s runner (#2048): said of the move,
@@ -116,17 +117,30 @@ impl Linked {
     }
 }
 
-impl ProfilesOnPools for Linked {
-    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+impl Linked {
+    /// **Readies `profile` on pool `pool`'s runner** ([`ProfilesOnPools::ready`]), with the
+    /// digest a start names its runner must still hold, as the skip, or the keep, decided it
+    /// (#7863): never read again from what is remembered, which another chat may forget meanwhile.
+    fn readied(&self, root: &Path, pool: &str, profile: &str) -> Result<Option<String>, String> {
         let _readying = Readying::of(pool, profile);
         let yours = yours(&self.config, pool);
         chosen_by_a_chat(&yours, &self.config, root, pool, profile);
         tidy_once(&yours, &self.config, root, pool);
+        let held = std::cell::RefCell::new(None);
         // A chat's start is what wakes a suspended runner (#2051), so its keep does too. A runner
         // that holds the profile as it is since it last started is not linked to (#7863).
         onrunner::ready_on(&self.config, root, pool, profile, &|kept| {
-            keep_unless_held(&yours, &self.config, pool, kept)
-        })
+            let readied = keep_unless_held(&yours, &self.config, pool, kept)?;
+            *held.borrow_mut() = readied.held;
+            Ok(readied.standing)
+        })?;
+        Ok(held.into_inner())
+    }
+}
+
+impl ProfilesOnPools for Linked {
+    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+        self.readied(root, pool, profile).map(drop)
     }
 
     fn ready_again(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
@@ -134,22 +148,26 @@ impl ProfilesOnPools for Linked {
         self.ready(root, pool, profile)
     }
 
-    fn held_for_a_start(
+    fn ready_for_a_start(
         &self,
         root: &Path,
         pool: &str,
         profile: &str,
-    ) -> Option<crate::host::ProfileHeld> {
-        let digest = kept_until_restart::held_for_a_start(pool, profile)?;
+    ) -> Result<Option<crate::host::ProfileHeld>, String> {
+        let Some(digest) = self.readied(root, pool, profile)? else {
+            return Ok(None);
+        };
         let (linked, root, pool, profile) = (
             Linked::at(self.config.clone()),
             root.to_path_buf(),
             pool.to_owned(),
             profile.to_owned(),
         );
-        Some(crate::host::ProfileHeld::new(digest, move || {
-            linked.ready_again(&root, &pool, &profile)
-        }))
+        Ok(Some(crate::host::ProfileHeld::new(digest, move || {
+            // A runner that did not hold it as kept is kept on at every start from now on.
+            kept_until_restart::refused_as_changed(&pool, &profile);
+            linked.ready(&root, &pool, &profile)
+        })))
     }
 
     fn ready_on_its_own_runner(
@@ -955,13 +973,13 @@ fn keep_on_as_told(
 /// **Has pool `pool`'s runner keep `kept`, waking it, unless it holds it as it is since it last
 /// started** ([`kept_until_restart::kept_or_linked`], #7863): what a chat's start there keeps it
 /// by. A start after a skipped keep names what the runner must still hold
-/// ([`ProfilesOnPools::held_for_a_start`]).
+/// ([`ProfilesOnPools::ready_for_a_start`]).
 fn keep_unless_held(
     yours: &Result<Yours, String>,
     config: &Path,
     pool: &str,
     kept: &onrunner::Kept,
-) -> Result<Option<Standing>, String> {
+) -> Result<kept_until_restart::Readied, String> {
     kept_until_restart::kept_or_linked(&|| runner_now(yours, config, pool), pool, kept, |kept| {
         keep_on_as_told(yours.clone(), config, pool, kept, Waking::Yes)
     })

@@ -40,6 +40,7 @@ fn start(
         links.set(links.get() + 1);
         said.map(|standing| standing.map(on_a_runner_that_can_be_held_to_it))
     })
+    .map(|readied| readied.standing)
 }
 
 /// What a runner of 1.99 or later answers a keep that put its settings in place.
@@ -229,22 +230,74 @@ fn a_runner_older_than_a_start_can_be_held_to_is_kept_on_at_every_start() {
             }))
         })
     };
-    assert_eq!(older(), SIGNED_IN);
-    assert_eq!(older(), SIGNED_IN);
+    let first = older().unwrap();
+    assert_eq!(older().unwrap(), first);
+    assert_eq!(first.standing, Some(Standing::SignedIn));
     assert_eq!(links.get(), 2, "nothing it holds can be checked at a start");
-    assert_eq!(held_for_a_start(pool, "work"), None);
+    assert_eq!(first.held, None);
+}
+
+/// The readying of a start on `pool` of `work`, on a runner that runs since one start.
+fn readied(links: &Cell<u32>, pool: &str) -> Readied {
+    kept_or_linked(&|| running("d1", 100), pool, &work(), |_| {
+        links.set(links.get() + 1);
+        Ok(Some(on_a_runner_that_can_be_held_to_it(Standing::SignedIn)))
+    })
+    .unwrap()
 }
 
 #[test]
 fn a_start_after_a_skipped_keep_names_what_the_runner_must_still_hold() {
     let links = Cell::new(0);
     let pool = "named-at-start";
-    assert_eq!(held_for_a_start(pool, "work"), None, "nothing kept yet");
+    let kept = readied(&links, pool);
+    let skipped = readied(&links, pool);
+    assert_eq!(links.get(), 1);
+    assert_eq!(kept.held.as_deref(), Some("as-kept"), "the keep it made");
+    assert_eq!(
+        skipped.held.as_deref(),
+        Some("as-kept"),
+        "the keep it skipped"
+    );
+}
+
+/// **A profile whose harness makes again, as it starts, what a keep clears is kept at every
+/// start** (#7863): opencode's `package.json` and `node_modules` are there after its first chat,
+/// so no runner could show it holds the profile as a keep leaves it, and a skip would only be
+/// refused.
+#[test]
+fn a_profile_whose_harness_remakes_what_a_keep_clears_is_kept_at_every_start() {
+    let links = Cell::new(0);
+    let pool = "remade-by-its-harness";
+    let opencode = onrunner::Kept {
+        harness: "opencode".to_owned(),
+        ..work()
+    };
+    let first = start(&links, running("d1", 100), pool, &opencode, SIGNED_IN);
+    let second = kept_or_linked(&|| running("d1", 100), pool, &opencode, |_| {
+        links.set(links.get() + 1);
+        Ok(Some(on_a_runner_that_can_be_held_to_it(Standing::SignedIn)))
+    })
+    .unwrap();
+    assert_eq!(first, SIGNED_IN);
+    assert_eq!(links.get(), 2);
+    assert_eq!(second.held, None, "nothing for the start to name");
+}
+
+/// **A runner that once did not hold a profile as kept is kept on at every start after** (#7863):
+/// whatever it found, a rule a chat left or a state file no keep can read, the next skip would
+/// most likely be refused the same way, so it costs no refused start again until the app
+/// restarts.
+#[test]
+fn a_runner_that_once_refused_a_start_as_changed_is_kept_on_at_every_start() {
+    let links = Cell::new(0);
+    let pool = "refused-once";
     start(&links, running("d1", 100), pool, &work(), SIGNED_IN).unwrap();
     start(&links, running("d1", 100), pool, &work(), SIGNED_IN).unwrap();
     assert_eq!(links.get(), 1);
-    assert_eq!(held_for_a_start(pool, "work").as_deref(), Some("as-kept"));
-    assert_eq!(held_for_a_start(pool, "other"), None);
-    forget(pool, "work");
-    assert_eq!(held_for_a_start(pool, "work"), None);
+
+    refused_as_changed(pool, "work");
+    start(&links, running("d1", 100), pool, &work(), SIGNED_IN).unwrap();
+    start(&links, running("d1", 100), pool, &work(), SIGNED_IN).unwrap();
+    assert_eq!(links.get(), 3);
 }

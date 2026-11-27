@@ -623,6 +623,8 @@ pub fn held_for_the_desktop(
     Ok(wire::settings_held_page(held, after))
 }
 
+pub use super::made::a_skip_can_be_proven;
+
 /// **[`wire::whole_settings_digest`] of what this runner holds now of the profile `name` it keeps
 /// for the desktop `desktop`** (1.99, #7863): read off its disk at that moment, never remembered,
 /// since a chat may be able to write there (ADR 0095 as amended 2026-10-31). `None` where it keeps
@@ -636,8 +638,25 @@ pub fn held_whole_for_the_desktop(
     let Some(record) = kept_record(homes, desktop, name)? else {
         return Ok(None);
     };
-    let read = held_files(&record)?;
-    if !read.left_behind.is_empty() {
+    held_whole(&record)
+}
+
+/// [`held_whole_for_the_desktop`] of the record `record`. **Held only where a keep would leave
+/// it exactly as it is** (the person's ruling of 2026-11-27 on #7863): `None`, so the profile is
+/// kept again, wherever anything a keep removes or rewrites is there or differs. That is a file
+/// past a read's limits, an entry a read leaves out inside a listed folder (a link, a hidden or
+/// credential-shaped name, a skill's `node_modules`, `__pycache__` or `venv`), anything a keep
+/// clears that no desktop sends ([`super::made::loaded_unsent_found`]), and, for Claude Code, a
+/// state file whose MCP servers are not those a keep writes there
+/// ([`crate::sandbox::claude_wrap::mcp_servers_as_kept`]).
+fn held_whole(record: &MachineProfile) -> Result<Option<String>, String> {
+    let read = held_files(record)?;
+    if !read.left_behind.is_empty()
+        || !read.skipped.is_empty()
+        || !read.unread_listed.is_empty()
+        || super::made::loaded_unsent_found(record)
+        || !mcp_servers_as_kept(record, &read.files)
+    {
         return Ok(None);
     }
     Ok(Some(whole_of_files(
@@ -1038,6 +1057,27 @@ pub fn kept_for_the_desktop(
     Ok(standing_for_the_wire(standing(&record, look)))
 }
 
+/// Whether `record`'s state file holds the MCP servers a keep of `files` would leave there
+/// ([`keep_mcp_servers_of`]): always, for a harness other than Claude Code.
+fn mcp_servers_as_kept(record: &MachineProfile, files: &[(String, Vec<u8>)]) -> bool {
+    if record.harness != "claude" {
+        return true;
+    }
+    let servers = mcp_servers_in(files);
+    crate::sandbox::claude_wrap::mcp_servers_as_kept(
+        &super::sent::claude_state_file(record),
+        servers.as_ref().and_then(|doc| doc.get("mcpServers")),
+    )
+}
+
+/// The document of the MCP servers among `files`, as a keep reads it.
+fn mcp_servers_in(files: &[(String, Vec<u8>)]) -> Option<serde_json::Value> {
+    files
+        .iter()
+        .find(|(path, _)| path == super::sent::MCP_SERVERS_FILE)
+        .and_then(|(_, bytes)| serde_json::from_slice::<serde_json::Value>(bytes).ok())
+}
+
 /// Puts the MCP servers among `files`, kept for `record`, into its state file, where only purlis
 /// writes it (#3846), and takes out every project's own (ruled 2026-11-08). None sent leaves the
 /// user-scope ones as they are.
@@ -1045,10 +1085,7 @@ fn keep_mcp_servers_of(record: &MachineProfile, files: &[(String, Vec<u8>)]) {
     if record.harness != "claude" {
         return;
     }
-    let servers = files
-        .iter()
-        .find(|(path, _)| path == super::sent::MCP_SERVERS_FILE)
-        .and_then(|(_, bytes)| serde_json::from_slice::<serde_json::Value>(bytes).ok());
+    let servers = mcp_servers_in(files);
     crate::sandbox::claude_wrap::keep_mcp_servers(
         &super::sent::claude_state_file(record),
         servers.as_ref().and_then(|doc| doc.get("mcpServers")),
