@@ -1430,12 +1430,6 @@ impl SessionHost for RoutedSessions {
     }
 
     /// Asked of the host of the pool it runs on, where there is one already: never made for it.
-    fn reads_files_on_runner(&self, id: u32) -> bool {
-        self.host_of(id)
-            .is_some_and(|host| host.reads_files_on_runner(id))
-    }
-
-    /// As [`Self::reads_files_on_runner`].
     fn runner_files_of(&self, id: u32) -> Option<crate::runnerfiles::ReadsOnRunner> {
         self.host_of(id)?.runner_files_of(id)
     }

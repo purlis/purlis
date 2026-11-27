@@ -592,3 +592,138 @@ mod in_a_pane {
         drop(taken);
     }
 }
+
+/// `runners.json` under `config`: the Docker pool `builds` with its runner `builds-01234567` and
+/// the runner it replaced, `builds`, draining; the Docker pool `empty` with no runner; and the
+/// cluster pool `team` with its own runner and one chat's fresh runner. The fresh runner's link
+/// name.
+#[cfg(unix)]
+fn every_kind_of_runner_kept(config: &std::path::Path) -> String {
+    use std::os::unix::fs::PermissionsExt as _;
+    const IMAGE: &str = "ghcr.io/purlis/purlis-runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    let cluster_row = |device: &str, key: &str, claim: &str| {
+        serde_json::json!({
+            "name": "team", "pool": "cluster", "namespace": "ada", "claim": claim,
+            "claimUid": "6f1c2b8e-0f43-4c2e-9d7a-1b2c3d4e5f60", "requester": "ada@example.com",
+            "pod": claim, "device": device, "key": key.repeat(32), "paired": 1_800_000_000_u64,
+        })
+    };
+    let mut fresh = cluster_row("01JB0RUNNER0000000000000002", "5e", "team-2");
+    fresh["chat"] = "01M7HNDAQDBEJFC36Z3NYPRGR4".into();
+    fresh["plane"] = "p-1".into();
+    fresh["workspace"] = "app".into();
+    let file = serde_json::json!({
+        "version": 1,
+        "pools": [
+            { "name": "builds", "kind": "docker", "image": IMAGE },
+            { "name": "empty", "kind": "docker", "image": IMAGE },
+            {
+                "name": "team", "kind": "cluster", "kubeconfig": "/home/ada/.kube/config",
+                "context": "team", "pool": "default", "namespace": "ada",
+                "operatorKey": format!("ed25519:{}", "ab".repeat(32)),
+                "cluster": "3e9a4b2c-7d10-4f5e-8a6b-9c0d1e2f3a4b",
+                "holds": ["/opt/homebrew/bin/kubectl"],
+            },
+        ],
+        "runners": [
+            {
+                "name": "builds", "pool": "docker", "container": "a".repeat(64), "image": IMAGE,
+                "user": "10001:10001", "home": "/home/purlis",
+                "device": "01JB0RUNNER0000000000000000", "key": "12".repeat(32), "paired": 1,
+                "draining": true,
+            },
+            {
+                "name": "builds-01234567", "pool": "docker", "container": "b".repeat(64),
+                "image": IMAGE, "user": "10001:10001", "home": "/home/purlis",
+                "device": "01JB0RUNNER0000000000000003", "key": "13".repeat(32), "paired": 2,
+                "of": "builds",
+            },
+            cluster_row("01JB0RUNNER0000000000000001", "4d", "team-1"),
+            fresh,
+        ],
+    });
+    let folder = purlis_core::machine::dir(config);
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let path = folder.join(purlis_core::machine::RUNNERS_FILE);
+    std::fs::write(&path, file.to_string()).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let fresh = purlis_core::runners::fresh_runners(config).expect("the runners are read");
+    assert_eq!(fresh.len(), 1, "the fresh runner is kept");
+    fresh[0].link_name()
+}
+
+/// **The window reads a runner chat's files on every kind of runner purlis pairs, and only on
+/// one a chat reaches** (#6949): a Docker pool's runner, and its draining runner by its exact
+/// name; a cluster pool's own runner; and a chat's fresh runner on a cluster pool. A Docker pool
+/// with no runner kept, a runner of a pool that is not draining, a runner name this machine does
+/// not keep, an unkept fresh runner and an unknown name read none: on every kind, the reach is the
+/// one a chat's link has (`runners::reachable`, `runners::cluster_runner_for`).
+#[cfg(unix)]
+#[test]
+fn a_docker_pools_runner_a_cluster_pools_runner_and_a_fresh_runner_are_read_and_no_other() {
+    use purlis_session_protocol::session::KNOWS_KEPT_FILES;
+    let config = tempfile::tempdir().unwrap();
+    let fresh = every_kind_of_runner_kept(config.path());
+
+    assert!(super::reading_files_needs(config.path(), "builds") == Some(KNOWS_KEPT_FILES));
+    assert!(
+        super::reading_files_needs(config.path(), "builds/builds") == Some(KNOWS_KEPT_FILES),
+        "a Docker pool's runner draining beside its new one"
+    );
+    assert!(super::reading_files_needs(config.path(), "team") == Some(KNOWS_KEPT_FILES));
+    assert!(super::reading_files_needs(config.path(), &fresh) == Some(KNOWS_KEPT_FILES));
+    for none in [
+        "empty",
+        "builds/builds-01234567",
+        "builds/gone",
+        "team/fresh-0000",
+        "nowhere",
+    ] {
+        assert!(
+            super::reading_files_needs(config.path(), none).is_none(),
+            "{none} reads no file"
+        );
+    }
+}
+
+/// **A link of 1.96 to a runner of any kind is not read over, and one of 1.97 is** (#6387,
+/// #7064): `reads_files_over` is the check `HostedSessions::runner_files_of` makes, so a runner
+/// before the version that keeps its own folders and sign-ins from the window is never asked.
+#[cfg(unix)]
+#[test]
+fn a_link_of_1_96_to_any_kind_of_runner_is_not_read_over_and_one_of_1_97_is() {
+    use purlis_session_protocol::version::Version;
+    let at = |minor| Version { major: 1, minor };
+    let config = tempfile::tempdir().unwrap();
+    let fresh = every_kind_of_runner_kept(config.path());
+
+    for named in ["builds", "builds/builds", "team", fresh.as_str()] {
+        assert!(
+            !super::reads_files_over(config.path(), named, at(96)),
+            "{named} at 1.96"
+        );
+        assert!(
+            super::reads_files_over(config.path(), named, at(97)),
+            "{named} at 1.97"
+        );
+        assert!(
+            super::reads_files_over(
+                config.path(),
+                named,
+                purlis_session_protocol::session::VERSION
+            ),
+            "{named} now"
+        );
+    }
+    for none in ["empty", "team/fresh-0000", "nowhere"] {
+        assert!(
+            !super::reads_files_over(
+                config.path(),
+                none,
+                purlis_session_protocol::session::VERSION
+            ),
+            "{none} reads no file"
+        );
+    }
+}
