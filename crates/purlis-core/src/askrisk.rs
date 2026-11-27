@@ -154,13 +154,15 @@ impl Facts {
     /// **The risk of running `line`**: a push to a protected branch, then a production host
     /// any URL in it reaches.
     pub fn of_command(&self, line: &str) -> Option<Risk> {
-        self.of_line(line, 0, None)
+        // Read twice where a `${…}` held a blank or an operator
+        // ([`shellseg::on_either_reading`], #7709, round 5).
+        shellseg::on_either_reading(|| self.of_line(line, 0, None))
     }
 
     /// **The risk of running `line` in a chat's folder** (#6178): as [`Self::of_command`], and a
     /// push that names no branch is read by the branch `pushes` says it would push.
     pub fn of_command_in(&self, line: &str, pushes: PushesIn<'_>) -> Option<Risk> {
-        self.of_line(line, 0, Some(pushes))
+        shellseg::on_either_reading(|| self.of_line(line, 0, Some(pushes)))
     }
 
     /// **The risk of a tool's call**, from its input: a production host any URL in it reaches.

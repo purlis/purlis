@@ -370,7 +370,12 @@ fn asking(action: Action, options: Vec<Choice>) -> Ask {
 /// here.
 pub fn risk_of(action: &Action) -> Risk {
     match action {
-        Action::Command { line } => risk::of_line(line, 0),
+        // Read twice where a `${…}` held a blank or an operator
+        // ([`crate::shellseg::on_either_reading`], #7709, round 5).
+        Action::Command { line } => crate::shellseg::on_either_reading(|| {
+            Some(risk::of_line(line, 0)).filter(|risk| *risk != Risk::Normal)
+        })
+        .unwrap_or(Risk::Normal),
         Action::Tool { name, .. } => risk::of_tool(name),
         Action::Unsaid | Action::Edit { .. } | Action::Elicit { .. } | Action::Question { .. } => {
             Risk::Normal
@@ -1492,6 +1497,12 @@ mod tests {
             ("bash -c 'op read op://a/b/c > /tmp/x'", Risk::SecretUse),
             // Both: the secret use is the graver.
             ("purlis secret get ops A; rm -rf build", Risk::SecretUse),
+            // The shell splits what a `${…}` holding a blank gives into words and runs them
+            // (#7709, round 5).
+            ("env ${y:-A=1 rm -rf build}", Risk::Delete),
+            ("timeout ${y:-5 rm -rf build}", Risk::Delete),
+            ("eval true ${y:-; rm -rf build}", Risk::Delete),
+            ("eval ${y:-:;rm -rf build;}", Risk::Delete),
         ];
         for (line, risk) in classed {
             assert_eq!(bash(line).risk, risk, "{line}");

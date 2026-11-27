@@ -448,6 +448,42 @@ struct Lexer {
     braces_read_to: usize,
     /// Whether the word held an unquoted blank inside its `${…}` ([`Tok::split_in_braces`]).
     split_in_braces: bool,
+    /// Whether the word held an unquoted `;`, `&`, `|`, `<` or `>` inside its `${…}`, outside a
+    /// trim pattern: the shell does not split a value there, but `eval`, `sh -c` or a pipe to a
+    /// shell reads one as a line, so the line is read the old way too ([`on_either_reading`],
+    /// #7709, round 5).
+    operator_in_braces: bool,
+    /// Where each `${…}` the word is inside has got to, outermost first.
+    in_braces: Vec<InBrace>,
+}
+
+/// How far into a `${…}` the lexer has read: an operator character in its trim pattern gives no
+/// text, so `f=${t%%|*}` (#7709) is read once, and one anywhere else may be run (round 5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InBrace {
+    /// Its parameter's name; `first` before any character of it.
+    Name { first: bool },
+    /// A `%`, `%%`, `#` or `##` pattern, which only trims the value.
+    Trim,
+    /// Anything else: a default, an alternative, a substitution, a subscript.
+    Rest,
+}
+
+impl InBrace {
+    /// Where `c`, read here, leaves the `${…}`.
+    fn after(self, c: char) -> Self {
+        match self {
+            Self::Name { .. } if c.is_ascii_alphanumeric() || c == '_' => {
+                Self::Name { first: false }
+            }
+            Self::Name { first: true } if matches!(c, '#' | '?' | '@' | '*' | '!' | '$' | '-') => {
+                Self::Name { first: false }
+            }
+            Self::Name { .. } if matches!(c, '%' | '#') => Self::Trim,
+            Self::Name { .. } => Self::Rest,
+            other => other,
+        }
+    }
 }
 
 /// Where a word's outermost `${` opened ([`Lexer::brace_mark`]).
@@ -459,6 +495,7 @@ struct BraceMark {
     start: isize,
     quoted: bool,
     split_in_braces: bool,
+    operator_in_braces: bool,
 }
 
 impl Lexer {
@@ -483,6 +520,8 @@ impl Lexer {
             braces_off: false,
             braces_read_to: 0,
             split_in_braces: false,
+            operator_in_braces: false,
+            in_braces: Vec::new(),
         }
     }
 
@@ -562,6 +601,8 @@ impl Lexer {
         self.brace_mark = None;
         self.braces_off = false;
         self.split_in_braces = false;
+        self.operator_in_braces = false;
+        self.in_braces.clear();
         let mut quoted = false;
         let mut escapedstate = St::Space;
         loop {
@@ -697,8 +738,10 @@ impl Lexer {
                         self.token.truncate(mark.len);
                         (self.bare, self.start, quoted) = (mark.bare, mark.start, mark.quoted);
                         self.braces = 0;
+                        self.in_braces.clear();
                         self.braces_off = true;
                         self.split_in_braces = mark.split_in_braces;
+                        self.operator_in_braces = mark.operator_in_braces;
                         self.dollars = 0;
                         continue;
                     }
@@ -715,11 +758,27 @@ impl Lexer {
                         // operator characters. bash and dash count only a nested `${` on the way:
                         // a bare `{` opens nothing, so `${s#{}` ends at its first `}`. zsh counts
                         // every `{`, so it reads such a line as fewer commands, never more.
+                        let here = self.in_braces.last().copied();
                         match c {
-                            '{' if self.dollars % 2 == 1 => self.braces += 1,
-                            '}' => self.braces -= 1,
+                            '{' if self.dollars % 2 == 1 => {
+                                self.braces += 1;
+                                self.in_braces.push(InBrace::Name { first: true });
+                            }
+                            '}' => {
+                                self.braces -= 1;
+                                self.in_braces.pop();
+                            }
                             ' ' | '\t' => self.split_in_braces = true,
+                            ';' | '&' | '|' | '<' | '>' if here != Some(InBrace::Trim) => {
+                                self.operator_in_braces = true;
+                            }
                             _ => {}
+                        }
+                        if c != '{'
+                            && c != '}'
+                            && let Some(top) = self.in_braces.last_mut()
+                        {
+                            *top = top.after(c);
                         }
                         self.dollars = if c == '$' { self.dollars + 1 } else { 0 };
                         self.token.push(c);
@@ -777,6 +836,7 @@ impl Lexer {
                         self.token.push(c);
                         if opens {
                             self.braces = 1;
+                            self.in_braces = vec![InBrace::Name { first: true }];
                             self.brace_mark = Some(BraceMark {
                                 at: self.instream.i,
                                 pushed: self.pushback_chars.clone(),
@@ -785,6 +845,7 @@ impl Lexer {
                                 start: self.start,
                                 quoted,
                                 split_in_braces: self.split_in_braces,
+                                operator_in_braces: self.operator_in_braces,
                             });
                         }
                     } else {
@@ -798,7 +859,7 @@ impl Lexer {
                 }
             }
         }
-        if self.split_in_braces {
+        if self.split_in_braces || self.operator_in_braces {
             // For [`on_either_reading`]: a word of any reading that holds a `${`.
             SPLIT_IN_BRACES.set(true);
         }
@@ -1190,20 +1251,24 @@ std::thread_local! {
     /// the second reading of [`on_either_reading`].
     static BRACES_OFF: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Whether [`lex`] has made a word in whose `${…}` an unquoted blank stood
-    /// ([`Tok::split_in_braces`]) since the innermost [`on_either_reading`] began.
+    /// ([`Tok::split_in_braces`]), or an operator character outside a trim pattern, since the
+    /// innermost [`on_either_reading`] began.
     static SPLIT_IN_BRACES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// **`judge`, and, when a `${…}` it read held an unquoted blank, `judge` again with every `${`
-/// read as it always was** (#7709, round 4): split at its blanks and its operators. What the
+/// **`judge`, and, when a `${…}` it read held an unquoted blank or operator character, `judge`
+/// again with every `${` read as it always was** (#7709, rounds 4 and 5): split at its blanks
+/// and its operators. What the
 /// first reading finds stands; where it finds nothing, the second's answer is the answer.
 ///
 /// The shell splits what such an expansion gives into words, and a program or a script handed
 /// them may run them, wherever the word stands: after a redirection, behind `env`, `timeout`,
 /// `find -exec` or `ssh`, or handed to `eval`. No guard is to see fewer commands than bash
 /// runs, so a line the `${` reading would show a guard as fewer words is read the old way too.
-/// A line whose `${…}` holds no blank (`f=${t%%|*}`, the line #7709 was filed for) is read
-/// once. Nests: inside a second reading, `judge` is read once, already the old way.
+/// And `eval`, `sh -c` or a pipe to a shell reads a value as a line, so a `;`, `&`, `|`, `<`
+/// or `>` in one counts as a blank does (`eval ${x:-cat<f}`, round 5). A line whose `${…}`
+/// holds neither, or holds an operator only in a `%` or `#` trim pattern, which gives no text
+/// (`f=${t%%|*}`, the line #7709 was filed for), is read once. Nests: inside a second reading, `judge` is read once, already the old way.
 pub fn on_either_reading<T>(mut judge: impl FnMut() -> Option<T>) -> Option<T> {
     if BRACES_OFF.get() {
         return judge();

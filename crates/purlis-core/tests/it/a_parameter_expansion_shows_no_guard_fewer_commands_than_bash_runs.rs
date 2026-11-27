@@ -12,7 +12,7 @@ use std::path::Path;
 
 use purlis_core::floorguard::release_floor_reason;
 use purlis_core::{
-    commitguard, credguard, dispatchguard, forge, handoffguard, leakguard, mergehold,
+    commitguard, credguard, dispatchguard, forge, handoffguard, leakguard, mergehold, shellseg,
 };
 
 /// Each is held, and refused unattended.
@@ -164,5 +164,114 @@ fn a_parameter_expansion_that_holds_a_blank_is_read_the_old_way_too_wherever_it_
         "2>&1 ${x:-gh api -X PUT repos/o/r/pulls/1/merge}",
     ] {
         held(cmd);
+    }
+}
+
+/// What [`toolgate::verdict`] answers `cmd`, run in a project at `root` whose state is in
+/// `.charter`, as `purlis guard` asks it.
+fn gate(cmd: &str, root: &Path) -> Option<String> {
+    use purlis_core::handoffguard::Caller;
+    use purlis_core::toolgate::{self, Call};
+    let cwd = root.to_string_lossy().into_owned();
+    let state = root.join(".charter");
+    toolgate::verdict(
+        &Call {
+            command: cmd,
+            cwd: &cwd,
+            state_dir: &state,
+            caller: Caller {
+                agent_id: None,
+                harness: Some("claude-code"),
+                permission_mode: Some("default"),
+            },
+        },
+        None,
+    )
+    .map(|v| v.reason)
+}
+
+#[test]
+fn a_parameter_expansion_that_holds_an_operator_is_read_the_old_way_too() {
+    purlis_core::unsteered!();
+    let root = tempfile::tempdir().expect("a temporary directory");
+    for cmd in [
+        "cat<.charter/vaults/f.json",
+        "eval ${x:-cat<.charter/vaults/f.json}",
+        "eval ${x:-:;cat<.charter/vaults/f.json}",
+        "eval ${x:-:;cat<.charter/vaults/f.json;}",
+        "eval ${x:-:|cat<.charter/vaults/f.json;}",
+        "eval ${x:-:&&cat<.charter/vaults/f.json;}",
+        "eval ${x:-:;cat<.charter/vaults/f.json|base64}",
+        "eval ${x:-:;base64<.charter/vaults/f.json>/tmp/o;}",
+        "eval ${x:-cat<.charter/vaults/f.json} # aaaa",
+        "bash -c ${x:-cat<.charter/vaults/f.json}",
+        "sh -c ${x:-:;cat<.charter/vaults/f.json;}",
+        "sh <<< ${x:-cat<.charter/vaults/f.json}",
+        "echo ${x:-cat<.charter/vaults/f.json} | sh",
+        "x=${x:-cat<.charter/vaults/f.json}; eval $x",
+        "true ${x:-<.charter/vaults/f.json}",
+    ] {
+        assert!(gate(cmd, root.path()).is_some(), "not refused: {cmd:?}");
+    }
+    for cmd in [
+        "eval ${x:-:;{gh,pr,merge,1}}",
+        "eval ${x:-:|{gh,pr,merge,1}}",
+        "eval ${x:-:&&{gh,pr,merge,1}}",
+        "eval ${x:-:;{gh,pr,merge,1\\}}",
+        "bash -c ${x:-:;{gh,pr,merge,1}}",
+    ] {
+        held(cmd);
+    }
+}
+
+#[test]
+fn an_operator_in_a_trim_pattern_is_read_once_and_anywhere_else_twice() {
+    purlis_core::unsteered!();
+    // How many times [`shellseg::on_either_reading`] reads `line`.
+    let readings = |line: &str| {
+        let mut n = 0;
+        let _: Option<()> = shellseg::on_either_reading(|| {
+            n += 1;
+            let _ = shellseg::segment_readings(line);
+            None
+        });
+        n
+    };
+    for line in [
+        "f=${t%%|*}",
+        "f=${t#*;}",
+        "f=${t##*&}",
+        "f=${t%<*}",
+        "f=${t%%${u}>*}",
+        "f=${#t}; g=${@%|*}",
+    ] {
+        assert_eq!(readings(line), 1, "{line:?}");
+    }
+    for line in [
+        "f=${t:-a|b}",
+        "f=${t/;/x}",
+        "f=${t:+<}",
+        "f=${t%%${u:-;}}",
+        "f=${t%%*}${u:->}",
+    ] {
+        assert_eq!(readings(line), 2, "{line:?}");
+    }
+}
+
+#[test]
+fn a_git_in_a_parameter_expansion_that_holds_a_blank_is_held_to_its_branch_folder() {
+    purlis_core::unsteered!();
+    for cmd in [
+        "cd $U && env ${y:-A=1 git commit -m x}",
+        "cd $U && timeout ${y:-5 git commit -m x}",
+        "cd $U && eval true ${y:-; git commit -m x}",
+        "cd $U && git status ${y:-; git commit -m x}",
+        "cd $U && true ${y:-&& git commit -m x}",
+    ] {
+        let writes = purlis_core::branchgit::branch_write(cmd, "/nonexistent", "/nonexistent");
+        assert!(
+            writes.unplaced.is_some() || !writes.found.is_empty(),
+            "not held: {cmd:?}"
+        );
     }
 }
