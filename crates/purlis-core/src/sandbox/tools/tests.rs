@@ -2075,3 +2075,15 @@ fn the_programs_the_init_rows_reach_by_chance_each_have_a_row_of_their_own() {
         assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
     }
 }
+
+/// Programs of other families that a new row reaches by a form only by chance (round 20 of
+/// #7828's review): Raku's `prove6` runs the test files it is pointed at and reaches `prove`
+/// without its version; `fakeroot-ng`, a project of its own, runs the command after it and
+/// reaches `fakeroot` by its first part; and `grunt-init` runs a template's code and reaches
+/// `init` by its last part. Each is refused by a row of its own.
+#[test]
+fn the_programs_the_prove_fakeroot_and_init_rows_reach_by_chance_each_have_a_row_of_their_own() {
+    for name in ["prove6", "fakeroot-ng", "grunt-init"] {
+        assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
+    }
+}

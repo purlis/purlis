@@ -11,8 +11,9 @@ The 2026-11-13 amendment checked each tool in its own source and refused none un
 could not: from the sandbox that did it, `gh` reaches only `purlis/purlis` (a chat's forge token
 is for its own repo), and a plain fetch of any other host, GitHub's raw files, Launchpad, Debian's
 sources and cr.yp.to among them, was refused. Of the tools refused here, only macOS's own copies
-of `cpan`, `prove` and `taskpolicy` are on the machine. The first two are Perl, and they were
-read where macOS keeps them (below); `taskpolicy` is a compiled program, judged by its manual.
+of `cpan`, `prove`, `taskpolicy` and Apache's `rotatelogs` are on the machine. The first two are
+Perl, and they were read where macOS keeps them (below); the other two are compiled programs,
+judged by their manuals.
 
 As the nineteenth review found, macOS ships CPAN.pm and App::Prove under
 `/System/Library/Perl/5.34`, and both were read there:
@@ -213,10 +214,11 @@ rightly stay refused, and some may be harmless. These are examples, not a comple
 - every `systemd-<name>`. Some run code (`systemd-analyze unit-shell` runs a shell in a unit's
   namespace) and others are thought harmless (`systemd-escape`, `systemd-path`,
   `systemd-creds`).
-- every `init-<name>` and `<name>-init`. The ones of other families that run what they are
-  handed, or hand a running supervisor what a chat may have written (`cloud-init`, `dumb-init`,
-  `lxc-init`, `s6-rc-init`, `s6-linux-init`), each have a row of their own, as the paragraph on a
-  chance reach below says.
+- every `init-<name>` and `<name>-init`. The ones of other families that only the `init` row
+  reaches, and that run what they are handed or hand a running supervisor what a chat may have
+  written (`cloud-init`, `dumb-init`, `lxc-init`, `s6-rc-init`, `s6-linux-init`, `grunt-init`),
+  each have a row of their own, as the paragraph on a chance reach below says. Docker's
+  `docker-init` is refused by its own family's `docker` row.
 - every `yum-<name>`, `dnf-<name>` and `zypper-<name>`. `yum-config-manager` stays refused
   rightly, since it loads plugins through `-c` and `--setopt` as `yum` does.
 - every `cpan-<name>`. `cpan-upload` is thought to run nothing, though a chat may be handed a
@@ -238,10 +240,11 @@ daemontools' `supervise`, `find-repos-of-install` meeting `find`, `deb-systemd-i
 Python's `invoke`, and, as the thirteenth review found, s6's `s6-envuidgid`, `s6-fghack` and
 `s6-setlock` meeting daemontools' rows and `s6-rc-init` meeting `init`, and, as the fourteenth
 found, `cloud-init`, `dumb-init`, `lxc-init`, `s6-linux-init` and `s6-linux-init-telinit` meeting
-`init` and `telinit`) is not what keeps that program refused: each has a row of its own and a unit
-test. A form within one family, such as `yum-config-manager` and the other `yum-<name>` programs
-reaching `yum`, or `aptitude-curses` reaching `aptitude`, is what refuses them, and a give-back
-under #7825 keeps it for the ones that run code.
+`init` and `telinit`, and, as the twentieth found, Raku's `prove6` meeting `prove`, `fakeroot-ng`
+meeting `fakeroot` and `grunt-init` meeting `init`) is not what keeps that program refused: each has
+a row of its own and a unit test. A form within one family, such as `yum-config-manager` and the
+other `yum-<name>` programs reaching `yum`, or `aptitude-curses` reaching `aptitude`, is what
+refuses them, and a give-back under #7825 keeps it for the ones that run code.
 
 Which to give back, and how to do it without giving back the ones that run code, is part of
 #7825.

@@ -2507,6 +2507,13 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "lxc-init",
     "s6-linux-init",
     "s6-linux-init-telinit",
+    // and, from round 20, Raku's `prove6`, which runs the test files it is pointed at and reaches
+    // `prove` without its version, `fakeroot-ng`, a project of its own that runs the command
+    // after it and reaches `fakeroot` by its first part, and `grunt-init`, which runs a
+    // template's code and reaches `init` by its last part.
+    "prove6",
+    "fakeroot-ng",
+    "grunt-init",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
