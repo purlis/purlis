@@ -749,6 +749,40 @@ describe("a link the program broke over rows at the pane's width", () => {
     expect(resolved().some((one) => readsBoth(one.text))).toBe(false);
   });
 
+  it.each([
+    ["a palette colour on itself", "\u001b[30;40m"],
+    ["a true colour on itself", "\u001b[38;2;1;2;3;48;2;1;2;3m"],
+    ["a palette colour on itself, inverted", "\u001b[7;31;41m"],
+  ])(
+    "is not joined where its row reaches the edge only with cells drawn in %s",
+    async (_, colours) => {
+      const { term, drawn } = await opened();
+      const address = "see https://a.example";
+      const unseen = `${colours}${"x".repeat(COLS - address.length)}\u001b[0m`;
+      await write(term, `${address}${unseen}\r\n.b.example/login`);
+
+      hover(drawn, 10, 0);
+      await waitFor(() => expect(resolved().length).toBeGreaterThan(0));
+      hover(drawn, 2, 1);
+      await settle();
+
+      expect(resolved().some((one) => readsBoth(one.text))).toBe(false);
+    },
+  );
+
+  it("is one link where its row reaches the edge with cells in the default colours, inverted", async () => {
+    const { term, drawn } = await opened();
+    const head = "https://a.example/";
+    const shown = "x".repeat(COLS - head.length);
+    await write(term, `${head}\u001b[7m${shown}\u001b[0m\r\nmore words`);
+
+    hover(drawn, 2, 1);
+
+    await waitFor(() =>
+      expect(resolved()).toContainEqual({ kind: "url", text: `${head}${shown}more`, joined: true }),
+    );
+  });
+
   it("is not joined where its row stops short of the pane's edge", async () => {
     const { term, drawn } = await opened();
     const url = upTo(COLS - 12, "https://a.example/", "p");
@@ -851,6 +885,23 @@ describe("a link a program marked (OSC 8) over more rows, or broken by the progr
         { y: 1, x: 0, width: COLS },
         { y: 2, x: 0, width: 40 },
       ]),
+    );
+  });
+
+  it("reads cells that draw nothing inside its words as blanks, as the pane reads every row", async () => {
+    const { term, drawn } = await opened();
+    const middle = "w".repeat(COLS - "docs\u2800\u2800".length);
+    await write(term, osc8("https://purlis.dev/long", `docs\u2800\u2800${middle}rapped`));
+
+    hover(drawn, 2, 1);
+
+    await waitFor(() =>
+      expect(resolved()).toContainEqual(
+        expect.objectContaining({
+          kind: "osc8",
+          text: expect.stringContaining(`docs  ${middle}rapped`),
+        }),
+      ),
     );
   });
 

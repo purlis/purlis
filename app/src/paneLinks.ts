@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type {
+  IBufferCell,
   IBufferLine,
   IBufferRange,
   IDisposable,
@@ -298,8 +299,30 @@ function wrappedAt(pane: Terminal, y: number): Wrapped | undefined {
 const LOOKS_BLANK = /^[\s\u115F\u1160\u2800\u3164\uFFA0]$/u;
 
 /**
+ * A cell's colour as it was written: the default foreground and the default background are
+ * colours of their own, each the theme's, and never one another.
+ */
+function colourOf(cell: IBufferCell, ground: "fg" | "bg"): string {
+  if (ground === "fg") {
+    if (cell.isFgDefault()) return "fg";
+    return `${cell.isFgRGB() ? "rgb" : "palette"} ${cell.getFgColor()}`;
+  }
+  if (cell.isBgDefault()) return "bg";
+  return `${cell.isBgRGB() ? "rgb" : "palette"} ${cell.getBgColor()}`;
+}
+
+/**
+ * Whether `cell`'s characters are drawn in the colour they are drawn on: they show nothing.
+ * Inverting them (SGR 7) swaps the two and changes nothing, and the default colours inverted
+ * still differ. Bold drawn in a bright colour is taken as the colour written, so such a cell is
+ * read as drawing nothing, which only ever keeps a row from joining.
+ */
+const inItsBackground = (cell: IBufferCell) => colourOf(cell, "fg") === colourOf(cell, "bg");
+
+/**
  * **What cell `x` of `line` draws** (#7819): its characters, or `""` where it draws nothing. A
- * cell no program wrote draws nothing, as do one the program concealed (SGR 8) and one whose
+ * cell no program wrote draws nothing, as do one the program concealed (SGR 8), one drawn in
+ * its own background colour ({@link inItsBackground}) and one whose
  * characters are each a blank ({@link LOOKS_BLANK}) or draw nothing by the core's rule
  * (`nothing`, {@link LinkCore.drawsNothing}). The one rule the pane reads a row's ink by: its
  * indent, whether it reaches the edge, and where its written cells end.
@@ -308,7 +331,7 @@ function drawnAt(line: IBufferLine | undefined, x: number, nothing: DrawsNothing
   const cell = line?.getCell(x);
   // A wide character's second half is drawn by its first.
   const own = cell?.getWidth() === 0 ? line?.getCell(x - 1) : cell;
-  if (own === undefined || own.isInvisible()) return "";
+  if (own === undefined || own.isInvisible() || inItsBackground(own)) return "";
   const chars = own.getChars();
   return [...chars].every((ch) => LOOKS_BLANK.test(ch) || nothing(ch)) ? "" : chars;
 }
@@ -944,7 +967,8 @@ function wordsOf(pane: Terminal, marked: Marked, nothing: DrawsNothing): string 
     for (let x = from; x < to; x += 1) {
       const cell = line.getCell(x);
       if (cell === undefined || cell.getWidth() === 0) continue;
-      const chars = cell.getChars();
+      // A cell that draws nothing ({@link drawnAt}) is a blank, as the pane reads every row.
+      const chars = drawnAt(line, x, nothing);
       if (chars === "") {
         blank += " ";
         continue;
@@ -952,8 +976,8 @@ function wordsOf(pane: Terminal, marked: Marked, nothing: DrawsNothing): string 
       row += blank + chars;
       blank = "";
     }
-    // A row's cells no program wrote, to its end, are no space inside one link: its words go on
-    // on the next row, where a hard line break put them.
+    // A row's cells that draw nothing, to its end, are no space inside one link: its words go
+    // on on the next row, where a hard line break put them.
     text += marked.moved || y === last ? row + blank : row;
   }
   if (marked.moved) return text.trim();
