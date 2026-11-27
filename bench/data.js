@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795786666168,
+  "lastUpdate": 1795793362977,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57750,6 +57750,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8601875,
             "unit": "ms",
             "extra": "median of 5 runs: 101.371, 101.653, 101.860, 101.995, 102.575 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1abefc42e45b4ef6d2d2f38b5e54ed74b46b3b1b",
+          "message": "Runner file links: named by side, no middle man, one path reading, and cluster and fresh runners read too (#7079, #7080, #7081, #6949) (#7254)\n\n* Runner file links: the two modules are named by the side they run on, ondesktop and onrunner (#7079)\n\npanelinks/runner.rs, the link kind the window runs, is panelinks/ondesktop.rs, beside\npanelinks/onrunner.rs, which reads the file on the runner. Each one's docs name the other half.\nA move alone: no code changed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7PN6J411GV42YVEC82HCDEB\nPurlis-Persona: steward\n\n* Runner file links: the window asks the session host for a runner chat's file adapter itself (#7080)\n\nChats::runner_files_of and Chats::reads_files_on_runner only passed the question on to the\nsession host, and reads_files_on_runner, on the host trait and each of its kinds, was only\nrunner_files_of(..).is_some(). Both are gone: pane_links asks Chats::sessions() for the adapter,\nand whether there is one. Nothing a chat or a pane does changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7PN6J411GV42YVEC82HCDEB\nPurlis-Persona: steward\n\n* Runner file links: a runner chat's path is read by the host file link's own reading (#7081)\n\npanelinks::file::written is the one reading of a file link's text, which LocalFile and RunnerFile\nboth call: no path with a space or a control character, its :line[:col], and a file: address,\nin any case, read as the file it names on this machine or saying why it is no link. The runner's\nlink read only a lowercase file: before, so FILE:///etc/hosts was sent to the runner as a path\nnamed FILE:; it is now read as /etc/hosts, as it is here.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7PN6J411GV42YVEC82HCDEB\nPurlis-Persona: steward\n\n* Runner file links: a chat's file opens read-only on a cluster pool's runner and on its fresh runner too (#6949)\n\nrunnerfiles::RunnerKind names the kinds of runner the window reads a chat's files on: a Docker\npool's runner, a cluster pool's own runner, and a chat's fresh runner on a cluster pool.\nkind_reached says which one a link's name reaches, and HostedSessions gives a chat the adapter\nonly on one of them. A cluster runner is reached only as a chat's start reaches it\n(runners::cluster_runner_for): its pool kept with its cluster's pin, and the runner kept under\nthat very name.\n\nEvery kind is asked through its own runner's host with read_file, so the rule is the one #6387\nset on a Docker pool's runner: the path held to the chat's workspace there, an ask outside it,\nand a file opened on that answer read only while it is the file (device and number) it was.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7PN6J411GV42YVEC82HCDEB\nPurlis-Persona: steward\n\n* Runner file links: one adapter reads every kind of runner, said as a yes or no (#6949 review)\n\nFrom the self-review of this branch. RunnerKind's three variants were told apart only by its\ntest; every kind is asked through the same OnLink over read_file, so runnerfiles::reads_files_on\nanswers whether the window reads a chat's files on the runner a link names, and the test says\nwhich runners it does. Connection::reaches is link_name, by what it returns. ondesktop's docs no\nlonger say a Docker pool's runner is the only one, nor that each kind has its own adapter.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7PN6J411GV42YVEC82HCDEB\nPurlis-Persona: steward\n\n* Runner file links: panelinks.rs's modules in rustfmt's order, ondesktop before onrunner (#7079 review)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7PN6J411GV42YVEC82HCDEB\nPurlis-Persona: steward\n\n* Runner file links: a changelog fragment for a runner chat's file: address now linking (#7081 review)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7PN6J411GV42YVEC82HCDEB\nPurlis-Persona: steward\n\n* Runner file links: a Docker pool's runner is read only as a chat's link reaches it, its draining runner by exact name (#6949 review)\n\nreads_files_on's Docker branch was the pool's name alone, looser than the cluster branch: a\npool kept with no runner, or any <pool>/<name>, read files. It is now runners::reachable, the\nreach a chat's own link has, which also drops runnerfiles' copy of hostedsessions::pool_named.\nThe test now keeps a draining runner and a runnerless pool, and was red first on them.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7PN6J411GV42YVEC82HCDEB\nPurlis-Persona: steward\n\n* Runner file links: each kind of runner says what protocol reading its files needs; a TODO names 1.94 for cluster and fresh runners (#6949 review)\n\nreading_files_needs replaces the reads_files_on bool and returns the session protocol version a\nrunner's link must speak for the window to read files there, so runner_files_of gates on it per\nkind. A Docker pool's runner needs KNOWS_READ_FILE (1.93), as before. A cluster pool's runner\nor a chat's fresh runner should need KNOWS_KEPT_FILES (1.94), which #7078 adds in #1112; it is\nnot on main yet, so that branch keeps 1.93 under TODO(#6949) naming it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7PN6J411GV42YVEC82HCDEB\nPurlis-Persona: steward\n\n* Runner file links: every kind of runner is read only from protocol 1.97, which keeps its own files from the window (#6949 review)\n\nThe merge of main left two rules for one question. Main gated every runner on\nKNOWS_KEPT_FILES (1.97, #7064) through runner_keeps_files_from_its_window; this\nbranch let each kind say what it needs, with a TODO for 1.94. Every kind now\nsays KNOWS_KEPT_FILES, so the helper goes, its 1.96/1.97 test moves to\nrunnerfiles over every kind, and KNOWS_READ_FILE, which nothing reads any\nmore, leaves session.rs. The docs that still named 1.93 name 1.97.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7PN6J411GV42YVEC82HCDEB\nPurlis-Persona: steward\n\n* Runner file links: ondesktop's tests move to ondesktop/tests.rs, a move alone (#7079 review)\n\nCONTRIBUTING.md's rule for where a module's tests live: a <module>_tests.rs file moves to\n<module>/tests.rs when its module is next changed, with no test's name or body changed.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7PN6J411GV42YVEC82HCDEB\nPurlis-Persona: steward\n\n* Runner file links: one check decides whether a link reads its runner's files, tested at 1.96 and 1.97 (#6949 review)\n\nrunner_files_of's only condition on a link is now runnerfiles::reads_files_over, and\nits test refuses a 1.96 link and reads over a 1.97 one on every kind, so a gate\nmoved off by one fails it. The changelog fragment says only an uppercase FILE:\nfailed before; file::written says each side still handles ~ on its own; the\nrunnerfiles header wraps at 100, and the docs that said \"the version that\nneeds\" say what they mean.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7PN6J411GV42YVEC82HCDEB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T14:42:24Z",
+          "tree_id": "dc31c4306b94c8dd79dfac54bf90752bdfea070a",
+          "url": "https://github.com/purlis/purlis/commit/1abefc42e45b4ef6d2d2f38b5e54ed74b46b3b1b"
+        },
+        "date": 1795793355812,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.730761,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.724, 0.726, 0.731, 0.738, 0.749 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6091585,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.361, 16.607, 16.609, 16.951, 17.013 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.5851185,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.044, 102.156, 102.585, 102.671, 103.237 ms"
           }
         ]
       }
