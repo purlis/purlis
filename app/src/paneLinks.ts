@@ -728,6 +728,11 @@ export const withFolder = (from: LinkFrom, folder: string | null | undefined): L
  */
 type Marked = {
   target: string;
+  /**
+   * Which link it is ({@link linkOf}): the cells of two links with the same identity are one
+   * link, whichever was written last.
+   */
+  link: string;
   /** Which buffer it was written to: the normal one, or the alternate screen. */
   buffer: "normal" | "alternate";
   /** Its first cell. */
@@ -815,9 +820,37 @@ const MOST_MARKED = 256;
 /** The cell `[x, y]` comes before cell `[x2, y2]`, read as text is. */
 const precedes = (y: number, x: number, y2: number, x2: number) => y < y2 || (y === y2 && x < x2);
 
+/**
+ * **A marked link's identity** (OSC 8): its target, with the `id` the program gave it where it
+ * gave one. Two links with the same target and id are the same link, as the terminal reads them.
+ */
+function linkOf(params: string, target: string): string {
+  const id = params
+    .split(":")
+    .find((one) => one.startsWith("id="))
+    ?.slice("id=".length);
+  return id === undefined || id === "" ? target : `${id}\u0000${target}`;
+}
+
 /** Whether buffer cell (`x`, `y`) is one of `marked`'s. */
 const covers = (marked: Marked, x: number, y: number) =>
   !precedes(y, x, marked.start.y, marked.start.x) && precedes(y, x, marked.end.y, marked.end.x);
+
+/** Whether the program wrote cell (`x`, `y`) while `marked` was open, as its record tells: a
+ *  cell of its span, or of its rows where it moved the cursor inside it. */
+function wroteTo(marked: Marked, x: number, y: number): boolean {
+  if (!marked.moved) return covers(marked, x, y);
+  const first = Math.min(marked.start.y, marked.end.y);
+  return y >= first && y <= Math.max(marked.start.y, marked.end.y);
+}
+
+/** **Which link cell (`x`, `y`) holds now** ({@link Marked.link}): the last one of `marked`
+ *  written over it, or none. */
+function linkAtCell(marked: Marked[], x: number, y: number): string | undefined {
+  for (let at = marked.length - 1; at >= 0; at -= 1)
+    if (wroteTo(marked[at], x, y)) return marked[at].link;
+  return undefined;
+}
 
 /**
  * **Records each link a program marks on `pane`** (OSC 8): `ESC ] 8 ; params ; target ST`
@@ -844,6 +877,7 @@ function marking(pane: Terminal, marked: Marked[]): IDisposable {
   const handler = pane.parser.registerOscHandler(8, (data) => {
     const split = data.indexOf(";");
     const target = split < 0 ? "" : data.slice(split + 1);
+    const params = split < 0 ? "" : data.slice(0, split);
     const buffer = pane.buffer.active.type;
     if (open !== undefined) {
       const end = pane.registerMarker(0);
@@ -871,6 +905,7 @@ function marking(pane: Terminal, marked: Marked[]): IDisposable {
       if (start !== undefined)
         open = {
           target: cutTarget(target),
+          link: linkOf(params, cutTarget(target)),
           buffer,
           start: markedCell(start, at()),
           moved: false,
@@ -1196,20 +1231,23 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
    * of a link whose words wrap, so the whole of it, as it was recorded, is drawn in the link
    * colour from any of its rows. One the program moved the cursor inside is only the part
    * xterm hands, as is one whose cells were written over after it closed, whose other rows may
-   * now hold another link. `at` says which link it is, the same from each of its rows.
+   * now hold another link: other words, or a later link of another identity
+   * ({@link Marked.link}) over any of its cells, whatever words it draws. `at` says which link
+   * it is, the same from each of its rows.
    */
   const drawnOver = (target: string, range: IBufferRange): { rows: CellRun[]; at: string } => {
     const one = markedAt(range, cutTarget(target));
     // As its words are read (wordsOf): at most MOST_ROWS rows. Hovered past them, it is the
     // part xterm hands, as is one the program moved the cursor inside.
     const last = one === undefined ? 0 : Math.min(one.end.y, one.start.y + MOST_ROWS - 1);
+    const xterms = { rows: rowsOf(range, pane.cols), at: `${range.start.x},${range.start.y}` };
     if (
       one === undefined ||
       one.moved ||
       range.start.y - 1 > last ||
       spanOf(pane, one) !== one.drew
     )
-      return { rows: rowsOf(range, pane.cols), at: `${range.start.x},${range.start.y}` };
+      return xterms;
     const rows: CellRun[] = [];
     // On a row it goes on from, only the cells written.
     for (let y = one.start.y; y <= last; y += 1) {
@@ -1220,7 +1258,14 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
           : writtenTo(pane.buffer.active.getLine(y), hands.core.drawsNothing);
       if (to > from) rows.push({ x: from, y, width: to - from });
     }
-    return { rows, at: `${one.start.x + 1},${one.start.y + 1}` };
+    // A cell a later link was written over, even with the same words, is that link's.
+    const now = markedNow(pane, marked);
+    const another = rows.some((run) =>
+      Array.from({ length: run.width }, (_, at) => run.x + at).some(
+        (x) => linkAtCell(now, x, run.y) !== one.link,
+      ),
+    );
+    return another ? xterms : { rows, at: `${one.start.x + 1},${one.start.y + 1}` };
   };
   /** Which hover of a marked link the core's answer is for: one that came after it wins. */
   let markedHovers = 0;

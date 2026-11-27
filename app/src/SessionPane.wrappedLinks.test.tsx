@@ -816,6 +816,44 @@ describe("a link a program marked (OSC 8) over more rows, or broken by the progr
     await waitFor(() => expect(painted).toEqual([{ y: 0, x: 0, width: COLS }]));
   });
 
+  it("is drawn only over its own row where a later link to another target was written with the same words over the rows after it", async () => {
+    const { term, drawn } = await opened();
+    await write(term, osc8("https://a.example/long", "a".repeat(2 * COLS + 40)));
+    await write(term, `\u001b[2;1H${osc8("https://b.example/other", "a".repeat(COLS))}`);
+
+    hover(drawn, 2, 0);
+
+    await waitFor(() => expect(painted).toEqual([{ y: 0, x: 0, width: COLS }]));
+  });
+
+  it("is drawn only over its own row where a later link to the same target under another id was written over the rows after it", async () => {
+    const { term, drawn } = await opened();
+    const marked = (id: string, words: string) =>
+      `\u001b]8;id=${id};https://a.example/long\u001b\\${words}\u001b]8;;\u001b\\`;
+    await write(term, marked("one", "a".repeat(2 * COLS + 40)));
+    await write(term, `\u001b[2;1H${marked("two", "a".repeat(COLS))}`);
+
+    hover(drawn, 2, 0);
+
+    await waitFor(() => expect(painted).toEqual([{ y: 0, x: 0, width: COLS }]));
+  });
+
+  it("is drawn over all its rows where the program wrote the same link again over one of them", async () => {
+    const { term, drawn } = await opened();
+    await write(term, osc8("https://a.example/long", "a".repeat(2 * COLS + 40)));
+    await write(term, `\u001b[2;1H${osc8("https://a.example/long", "a".repeat(COLS))}`);
+
+    hover(drawn, 2, 0);
+
+    await waitFor(() =>
+      expect(painted).toEqual([
+        { y: 0, x: 0, width: COLS },
+        { y: 1, x: 0, width: COLS },
+        { y: 2, x: 0, width: 40 },
+      ]),
+    );
+  });
+
   it("is drawn only over the written cells of a row the program broke it on, not the blanks after them", async () => {
     const { term, drawn } = await opened();
     await write(term, osc8("https://purlis.dev/long", "first words   \r\nsecond"));
