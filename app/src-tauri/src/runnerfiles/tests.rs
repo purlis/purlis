@@ -431,6 +431,7 @@ mod in_a_pane {
             kind: Kind::File,
             text: text.to_owned(),
             target: None,
+            joined: false,
         }
     }
 

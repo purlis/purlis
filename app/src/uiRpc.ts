@@ -8895,6 +8895,11 @@ export type LinkCandidate = {
 	kind: KindHint,
 	text: string,
 	target?: string | null,
+	/**
+	 *  Whether the pane read the words across a line break the program wrote at its edge
+	 *  (#7819): a web address read so asks before it opens. Left out, it is not.
+	 */
+	joined?: boolean | null,
 };
 
 /**  **What ⌘-click on a link would do**, said on its hover. */
