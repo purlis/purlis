@@ -20371,17 +20371,19 @@ export type SlowMoment =
 /**  An answer to `command` that took `ms`, asked at `at`, while `hot` chats were working. */
 { kind: "answer"; command: string; ms: number; at: number | null; hot: number } | 
 /**
- *  A gap of `ms` between two of the window's frames, seen at `at`, while `hot` chats were
- *  working, with the tab in front (`front`) and whether a view of a chat was opening, and
- *  what the window's thread did in that frame (felt speed round 4, H9; #7891): `render_ms`,
- *  what React's renders of the measured regions took of the gap, and the top five of each,
- *  the regions whose renders took longest by their own time (`react`), the core's events
- *  handled, each once (`events`), the calls of their listeners (`listeners`), the answers
- *  handled (`answers`) and what happened that costs a frame (`marks`), by name and count.
+ *  A gap of `ms` between two of the frames of the window labelled `window`, seen at `at`,
+ *  while `hot` chats were working, with the tab in front (`front`) and whether a view of a
+ *  chat was opening, and what the window's thread did in that frame (felt speed round 4,
+ *  H9; #7891): `render_ms`, what React's renders of the measured regions took of the gap,
+ *  and the top five of each, the regions whose renders took longest by their own time
+ *  (`react`), the core's events handled, each once (`events`), the calls of their listeners
+ *  (`listeners`), the answers handled (`answers`) and what happened that costs a frame
+ *  (`marks`), by name and count.
  *  `dark`: the thread answered all through the gap, so the webview withheld its frames (a
- *  locked screen, a display asleep, a window covered).
+ *  locked screen, a display asleep, or a window covered whole that WebKit did not report as
+ *  hidden).
  */
-{ kind: "stall"; ms: number; at: number | null; hot: number; front: string | null; opening: boolean; dark: boolean; render_ms: number; react: StallRendered[]; events: StallCounted[]; listeners: StallCounted[]; answers: StallCounted[]; marks: StallCounted[] } | 
+{ kind: "stall"; ms: number; at: number | null; window: string; hot: number; front: string | null; opening: boolean; dark: boolean; render_ms: number; react: StallRendered[]; events: StallCounted[]; listeners: StallCounted[]; answers: StallCounted[]; marks: StallCounted[] } | 
 /**
  *  The core's main thread ran a ping `ms` after it was asked to at `at`, busy with the
  *  command `running` when the wait was noticed (`crate::mainwatch`). The core writes it; the
@@ -20400,10 +20402,12 @@ export type SlowMoment =
  */
 { kind: "opening"; ms: number; at: number | null; hot: number; phases: StallTook[] } | 
 /**
- *  The window became visible (`visible`) or stopped being visible at `at`: hidden,
- *  minimised, on another Space or covered whole, as WebKit reports it (#7891).
+ *  The window labelled `window` was visible (`visible`) or not at `at`: once as it starts
+ *  watching, then at each `visibilitychange` (#7891). On macOS WebKit fires one for a window
+ *  minimised or hidden, and, by its occlusion handling, for one covered whole, which is
+ *  unverified until checked by hand; what WebKitGTK on Linux reports is not known.
  */
-{ kind: "visibility"; at: number | null; visible: boolean } | 
+{ kind: "visibility"; at: number | null; window: string; visible: boolean } | 
 /**
  *  The core's answer to `command` of class `class`, asked at `at`: `queued_ms` waiting for
  *  a thread, then `work_ms` doing it (#7893). The core writes it; the window only reads it
@@ -20588,7 +20592,8 @@ export type StallCounted = {
 
 /**
  *  A region of the window React rendered in a stalled frame, by name: `ms` with the regions
- *  inside it, `self_ms` its own body's, and how many `commits` rendered it.
+ *  inside it, `self_ms` its own body's, and `commits`, how many of React's commits in the frame
+ *  rendered anything inside it.
  */
 export type StallRendered = {
 	name: string,

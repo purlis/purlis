@@ -13,6 +13,7 @@ import {
   type ReactNode,
 } from "react";
 import { commands, type SlowMoment } from "./bindings";
+import { thisWindow } from "./here";
 
 /**
  * **A slow moment the person felt is written down, so it can be read afterwards** (#4725).
@@ -36,8 +37,11 @@ import { commands, type SlowMoment } from "./bindings";
  *   and its commits; `events`, the core's events handled, each once, and `listeners`, the calls
  *   of the window's listeners they made ({@link listenerCalled}); `answers`, the commands whose
  *   answers were handled; and `marks`, what happened that costs a frame ({@link marked}).
- * - **A change of the window's visibility**: hidden or shown, which WebKit also says when the
- *   window is covered whole, with when ({@link watchForStalls}).
+ * - **The window's visibility**: whether it is visible as it starts watching, then each change
+ *   to hidden or shown, with when ({@link watchForStalls}).
+ *
+ * Each stall and visibility row names its window by label ({@link thisWindow}), so with the
+ * window split a stall can be read beside the visibility of its own window.
  *
  * Only written: nothing in the window reads it back or says it. Writing it is the one command
  * that is not timed (`answerWatch.ts`), so a slow write is not a slow answer to write.
@@ -273,8 +277,8 @@ export const PROBE_MS = 100;
  * **What says how long the thread last went without answering**: the longest gap, since it was
  * last asked, between runs of a timer asked to run every {@link PROBE_MS}. A gap in the frames
  * the thread answered all through was not the thread's: the webview withheld its frames, as it
- * does while the screen is locked, the display asleep or the window covered (felt speed round
- * 4, H9). Ten timer runs a second, and nothing else.
+ * does while the screen is locked or the display asleep, and for a window covered whole that
+ * WebKit does not report as hidden (felt speed round 4, H9). Ten timer runs a second, and nothing else.
  */
 function threadProbe(): { longestUnanswered: () => number; stop: () => void } {
   let alive = performance.now();
@@ -310,9 +314,11 @@ let watching: (() => void) | undefined;
  * window is sent. A stall the thread was free all through ({@link threadProbe}) is still
  * written, marked `dark`: a webview that sends no frames while the screen is locked says it is
  * visible all the same, and time away is not a stall the person felt. Each change of visibility
- * is written too (#7891): WebKit says a window covered whole, minimised or on another Space is
- * hidden, so a stall can be read beside whether the person could see it. Answers how to stop
- * watching (a test's).
+ * is written too, and the visibility the window starts with (#7891), so a log begins with the
+ * window's state and a stall can be read beside whether the person could see it. On macOS
+ * WebKit fires `visibilitychange` for a window minimised or hidden, and, by its occlusion
+ * handling, for one covered whole by other windows, which is unverified until checked by hand;
+ * what WebKitGTK on Linux reports is not known. Answers how to stop watching (a test's).
  */
 export function watchForStalls(
   frames: Frames = (next) => requestAnimationFrame(next),
@@ -322,7 +328,9 @@ export function watchForStalls(
   const thread = threadProbe();
   let last: number | undefined;
   let stopped = false;
+  const label = thisWindow();
   let visible = page.visibilityState === "visible";
+  write({ kind: "visibility", at: Date.now(), window: label, visible });
   // No frame comes while the window is hidden, so the frame before a hide cannot be what the
   // first frame after it is measured from: the change itself starts the clock again.
   const startAgain = () => {
@@ -330,7 +338,7 @@ export function watchForStalls(
     const now = page.visibilityState === "visible";
     if (now === visible) return;
     visible = now;
-    write({ kind: "visibility", at: Date.now(), visible });
+    write({ kind: "visibility", at: Date.now(), window: label, visible });
   };
   page.addEventListener("visibilitychange", startAgain);
   const onFrame = (time: number) => {
@@ -343,6 +351,7 @@ export function watchForStalls(
           kind: "stall",
           ms: Math.round(time - last),
           at: Date.now(),
+          window: label,
           hot: hotChats(),
           front: front?.name ?? null,
           opening: opening > 0,

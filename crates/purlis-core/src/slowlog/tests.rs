@@ -38,6 +38,7 @@ fn a_stall_is_written_with_the_hot_chats_the_tab_in_front_whether_a_view_was_ope
     let stall = Slow::Stall {
         ms: 340,
         at: 1_793_000_000_000,
+        window: "plane-2".into(),
         hot: 12,
         front: Some("steward 3".into()),
         opening: true,
@@ -67,8 +68,8 @@ fn a_stall_is_written_with_the_hot_chats_the_tab_in_front_whether_a_view_was_ope
 
     assert_eq!(
         std::fs::read_to_string(&file).unwrap(),
-        "{\"kind\":\"stall\",\"ms\":340,\"at\":1793000000000,\"hot\":12,\
-         \"front\":\"steward 3\",\"opening\":true,\"dark\":false,\"render_ms\":230,\
+        "{\"kind\":\"stall\",\"ms\":340,\"at\":1793000000000,\"window\":\"plane-2\",\
+         \"hot\":12,\"front\":\"steward 3\",\"opening\":true,\"dark\":false,\"render_ms\":230,\
          \"react\":[{\"name\":\"PlaneView\",\"ms\":230,\"self_ms\":20,\"commits\":3},\
          {\"name\":\"changes\",\"ms\":210,\"self_ms\":210,\"commits\":2}],\
          \"events\":[{\"name\":\"plane-changed\",\"n\":1}],\
@@ -94,6 +95,7 @@ fn a_stall_written_before_its_culprits_were_kept_reads_back_naming_none() {
         vec![Slow::Stall {
             ms: 340,
             at: 1,
+            window: String::new(),
             hot: 12,
             front: None,
             opening: false,
@@ -240,6 +242,7 @@ fn stall_at(at: u64) -> Slow {
     Slow::Stall {
         ms: 340,
         at,
+        window: "main".into(),
         hot: 12,
         front: None,
         opening: false,
@@ -290,6 +293,7 @@ fn a_moment_under_its_kinds_threshold_is_not_written_and_one_at_it_is() {
     let stall = |ms| match stall_at(1) {
         Slow::Stall {
             at,
+            window,
             hot,
             front,
             opening,
@@ -304,6 +308,7 @@ fn a_moment_under_its_kinds_threshold_is_not_written_and_one_at_it_is() {
         } => Slow::Stall {
             ms,
             at,
+            window,
             hot,
             front,
             opening,
@@ -358,6 +363,7 @@ fn a_moment_under_its_kinds_threshold_is_not_written_and_one_at_it_is() {
         span(from(Kind::AnswerSpan) - 100),
         Slow::Visibility {
             at: 1,
+            window: "main".into(),
             visible: true,
         },
         Slow::AnswerSummary {
@@ -425,6 +431,7 @@ fn stall_and_answer_rows_keep_the_hours_they_covered_however_many_rows_of_other_
         }));
         lines.push(line(&Slow::Visibility {
             at,
+            window: "main".into(),
             visible: n % 2 == 0,
         }));
         lines.push(line(&Slow::CoreStall {
@@ -494,6 +501,7 @@ fn a_stall_written_with_the_scripts_webkit_never_named_reads_back_without_them()
         vec![Slow::Stall {
             ms: 340,
             at: 1,
+            window: String::new(),
             hot: 12,
             front: None,
             opening: false,
@@ -514,11 +522,12 @@ fn a_stall_written_with_the_scripts_webkit_never_named_reads_back_without_them()
 }
 
 #[test]
-fn a_visibility_change_is_one_json_line_with_when_and_whether_the_window_can_be_seen() {
+fn a_visibility_change_is_one_json_line_with_when_which_window_and_whether_it_can_be_seen() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join(FILE);
     let hidden = Slow::Visibility {
         at: 1_793_000_000_000,
+        window: "plane-2".into(),
         visible: false,
     };
 
@@ -526,7 +535,7 @@ fn a_visibility_change_is_one_json_line_with_when_and_whether_the_window_can_be_
 
     assert_eq!(
         std::fs::read_to_string(&file).unwrap(),
-        "{\"kind\":\"visibility\",\"at\":1793000000000,\"visible\":false}\n"
+        "{\"kind\":\"visibility\",\"at\":1793000000000,\"window\":\"plane-2\",\"visible\":false}\n"
     );
     assert_eq!(recent_in(&file), vec![hidden]);
 }
@@ -578,4 +587,67 @@ fn an_answer_summary_is_one_json_line_with_each_commands_count_median_and_99th_p
          \"p50_ms\":872,\"p99_ms\":2400}]}\n"
     );
     assert_eq!(recent_in(&file), vec![summary]);
+}
+
+#[test]
+fn a_visibility_line_written_before_it_named_its_window_reads_back_with_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join(FILE);
+    std::fs::write(
+        &file,
+        "{\"kind\":\"visibility\",\"at\":1,\"visible\":true}\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        recent_in(&file),
+        vec![Slow::Visibility {
+            at: 1,
+            window: String::new(),
+            visible: true,
+        }]
+    );
+}
+
+#[test]
+fn each_kinds_name_is_the_tag_its_line_is_written_with() {
+    let one_of_each = [
+        answer(1),
+        stall_at(1),
+        Slow::CoreStall {
+            ms: 200,
+            at: 1,
+            running: None,
+        },
+        Slow::CoreCommand {
+            command: "send_input".into(),
+            ms: 100,
+            at: 1,
+        },
+        opening(1),
+        Slow::Visibility {
+            at: 1,
+            window: "main".into(),
+            visible: true,
+        },
+        Slow::AnswerSpan {
+            command: "sandbox_state".into(),
+            class: "git".into(),
+            queued_ms: 0,
+            work_ms: 200,
+            at: 1,
+        },
+        Slow::AnswerSummary {
+            at: 1,
+            since: 0,
+            commands: vec![],
+        },
+    ];
+    let mut seen = std::collections::HashSet::new();
+    for slow in &one_of_each {
+        assert_eq!(kind_of(&line(slow)), Some(slow.kind()), "{}", line(slow));
+        seen.insert(slow.kind());
+    }
+    // Each of the eight kinds, once.
+    assert_eq!(seen.len(), one_of_each.len());
 }

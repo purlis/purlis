@@ -56,9 +56,11 @@ function frames() {
   return { at: (time: number) => next?.(time), stop };
 }
 
+/** The one stall written, without the visibility the window starts watching with. */
 function stall(): Extract<SlowMoment, { kind: "stall" }> {
-  expect(written.map((one) => one.kind)).toEqual(["stall"]);
-  return written[0] as Extract<SlowMoment, { kind: "stall" }>;
+  const stalls = written.filter((one) => one.kind === "stall");
+  expect(stalls).toHaveLength(1);
+  return stalls[0] as Extract<SlowMoment, { kind: "stall" }>;
 }
 
 function Again({ ms, children }: { ms: number; children?: React.ReactNode }) {
@@ -111,6 +113,27 @@ describe("a stall's React renders", () => {
     expect(plane.ms).toBeGreaterThanOrEqual(changes.ms + 20);
     expect(plane.self_ms).toBeGreaterThanOrEqual(20);
     expect(plane.self_ms).toBeLessThan(changes.ms);
+  });
+
+  it("carry a region's own time when it was only updated in that frame, not mounted", () => {
+    const drawn = render(
+      <Measured id="PlaneView">
+        <Slow ms={1} />
+      </Measured>,
+    );
+    const window = frames();
+    window.at(1_000);
+    drawn.rerender(
+      <Measured id="PlaneView">
+        <Slow ms={30} />
+      </Measured>,
+    );
+    window.at(1_400);
+    window.stop();
+
+    const [plane] = stall().react;
+    expect(plane).toMatchObject({ name: "PlaneView", commits: 1 });
+    expect(plane.self_ms).toBeGreaterThanOrEqual(30);
   });
 
   it("count each region's commits in that frame", () => {

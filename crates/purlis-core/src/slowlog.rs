@@ -111,9 +111,10 @@ pub enum Slow {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         phases: Vec<Took>,
     },
-    /// A gap of `ms` milliseconds between two of the window's frames, seen at `at`, while `hot`
-    /// chats were in their turn, `front` the name of the tab in front (if any), and `opening`
-    /// whether a view of a chat was being opened.
+    /// A gap of `ms` milliseconds between two of the frames of the window labelled `window`, seen
+    /// at `at`, while `hot` chats were in their turn, `front` the name of the tab in front (if
+    /// any), and `opening` whether a view of a chat was being opened. `window` is empty in a line
+    /// written before it was kept.
     ///
     /// And what the window's thread did in that frame (felt speed round 4, H9; #7891), so a
     /// stall's causes can be told apart: `render_ms`, the milliseconds React spent rendering the
@@ -126,14 +127,17 @@ pub enum Slow {
     /// `render_ms` 0, in a line written before they were kept.
     ///
     /// `dark`: the window's thread answered all through the gap, so its frames were withheld (a
-    /// locked screen, a display asleep, a window covered), not held up. Time away, not a stall
-    /// the person felt; `false` in a line written before it was kept.
+    /// locked screen, a display asleep, or a window covered whole that WebKit did not report as
+    /// hidden), not held up. Time away, not a stall the person felt; `false` in a line written
+    /// before it was kept.
     ///
     /// The scripts the webview said made the frame long were kept until #7891: WebKit names
     /// none, so the field was always empty here, and a line that has it reads back without it.
     Stall {
         ms: u32,
         at: u64,
+        #[serde(default)]
+        window: String,
         hot: u32,
         front: Option<String>,
         opening: bool,
@@ -173,10 +177,18 @@ pub enum Slow {
         hot: u32,
         phases: Vec<Took>,
     },
-    /// The window became visible (`visible`) or stopped being visible at `at`: hidden,
-    /// minimised, on another Space, or covered whole by other windows, which WebKit reports as
-    /// not visible (#7891). Read beside a stall, it says whether the person could see it.
-    Visibility { at: u64, visible: bool },
+    /// The window labelled `window` was visible (`visible`) or not at `at`: once as it starts
+    /// watching, then at each change WebKit reports as a `visibilitychange` (#7891). On macOS it
+    /// fires one for a window minimised or hidden, and, by WebKit's occlusion handling, for one
+    /// covered whole by other windows, which is unverified until checked by hand; what WebKitGTK
+    /// on Linux reports is not known. Read beside a stall of the same window, it says whether
+    /// the person could see it. `window` is empty in a line written before it was kept.
+    Visibility {
+        at: u64,
+        #[serde(default)]
+        window: String,
+        visible: bool,
+    },
     /// The core's answer to the window command `command` of class `class` (the name the app's
     /// `answer_class` gives it, #7892), asked at `at`: `queued_ms` milliseconds waiting for a
     /// thread to do it on, then `work_ms` doing it (FS-M1a, #7893). Never its arguments
@@ -251,9 +263,10 @@ impl Slow {
 
 /// A region of the window React rendered in a stalled frame, by its name (#7891): `ms`, the
 /// milliseconds its renders took there, the regions inside it included; `self_ms`, those of
-/// its own body, without them; and `commits`, how many of React's commits rendered it. A
-/// region's name, never what it showed. `self_ms` and `commits` are 0 in a line written
-/// before they were kept.
+/// its own body, without them; and `commits`, how many of React's commits in the frame rendered
+/// anything inside it, its own body or a region within it, each commit counted once. A region's
+/// name, never what it showed. `self_ms` and `commits` are 0 in a line written before they were
+/// kept.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rendered {
     pub name: String,

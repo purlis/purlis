@@ -311,6 +311,7 @@ describe("Copy diagnostics (#4774)", () => {
         kind: "stall",
         ms: 412,
         at: 1_762_000_001_000,
+        window: "main",
         hot: 9,
         front: "steward 3",
         opening: true,
@@ -328,7 +329,7 @@ describe("Copy diagnostics (#4774)", () => {
     expect(report.slice(5)).toEqual([
       "Slow answers and stalls, most recent last:",
       '  {"kind":"answer","command":"opened_chats","ms":1840,"at":1762000000000,"hot":3}',
-      '  {"kind":"stall","ms":412,"at":1762000001000,"hot":9,"front":"steward 3","opening":true,"dark":false,"render_ms":180,"react":[{"name":"ChatView","ms":180,"self_ms":180,"commits":1}],"events":[],"listeners":[],"answers":[{"name":"opened_chats","n":2}],"marks":[{"name":"pane-mount","n":1}]}',
+      '  {"kind":"stall","ms":412,"at":1762000001000,"window":"main","hot":9,"front":"steward 3","opening":true,"dark":false,"render_ms":180,"react":[{"name":"ChatView","ms":180,"self_ms":180,"commits":1}],"events":[],"listeners":[],"answers":[{"name":"opened_chats","n":2}],"marks":[{"name":"pane-mount","n":1}]}',
     ]);
   });
 

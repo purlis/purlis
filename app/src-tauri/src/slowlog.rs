@@ -20,18 +20,21 @@ pub enum SlowMoment {
         at: f64,
         hot: u32,
     },
-    /// A gap of `ms` between two of the window's frames, seen at `at`, while `hot` chats were
-    /// working, with the tab in front (`front`) and whether a view of a chat was opening, and
-    /// what the window's thread did in that frame (felt speed round 4, H9; #7891): `render_ms`,
-    /// what React's renders of the measured regions took of the gap, and the top five of each,
-    /// the regions whose renders took longest by their own time (`react`), the core's events
-    /// handled, each once (`events`), the calls of their listeners (`listeners`), the answers
-    /// handled (`answers`) and what happened that costs a frame (`marks`), by name and count.
+    /// A gap of `ms` between two of the frames of the window labelled `window`, seen at `at`,
+    /// while `hot` chats were working, with the tab in front (`front`) and whether a view of a
+    /// chat was opening, and what the window's thread did in that frame (felt speed round 4,
+    /// H9; #7891): `render_ms`, what React's renders of the measured regions took of the gap,
+    /// and the top five of each, the regions whose renders took longest by their own time
+    /// (`react`), the core's events handled, each once (`events`), the calls of their listeners
+    /// (`listeners`), the answers handled (`answers`) and what happened that costs a frame
+    /// (`marks`), by name and count.
     /// `dark`: the thread answered all through the gap, so the webview withheld its frames (a
-    /// locked screen, a display asleep, a window covered).
+    /// locked screen, a display asleep, or a window covered whole that WebKit did not report as
+    /// hidden).
     Stall {
         ms: u32,
         at: f64,
+        window: String,
         hot: u32,
         front: Option<String>,
         opening: bool,
@@ -63,9 +66,15 @@ pub enum SlowMoment {
         hot: u32,
         phases: Vec<StallTook>,
     },
-    /// The window became visible (`visible`) or stopped being visible at `at`: hidden,
-    /// minimised, on another Space or covered whole, as WebKit reports it (#7891).
-    Visibility { at: f64, visible: bool },
+    /// The window labelled `window` was visible (`visible`) or not at `at`: once as it starts
+    /// watching, then at each `visibilitychange` (#7891). On macOS WebKit fires one for a window
+    /// minimised or hidden, and, by its occlusion handling, for one covered whole, which is
+    /// unverified until checked by hand; what WebKitGTK on Linux reports is not known.
+    Visibility {
+        at: f64,
+        window: String,
+        visible: bool,
+    },
     /// The core's answer to `command` of class `class`, asked at `at`: `queued_ms` waiting for
     /// a thread, then `work_ms` doing it (#7893). The core writes it; the window only reads it
     /// back.
@@ -86,7 +95,8 @@ pub enum SlowMoment {
 }
 
 /// A region of the window React rendered in a stalled frame, by name: `ms` with the regions
-/// inside it, `self_ms` its own body's, and how many `commits` rendered it.
+/// inside it, `self_ms` its own body's, and `commits`, how many of React's commits in the frame
+/// rendered anything inside it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct StallRendered {
     pub name: String,
@@ -252,6 +262,7 @@ impl From<SlowMoment> for Slow {
             SlowMoment::Stall {
                 ms,
                 at: when,
+                window,
                 hot,
                 front,
                 opening,
@@ -265,6 +276,7 @@ impl From<SlowMoment> for Slow {
             } => Slow::Stall {
                 ms,
                 at: at(when),
+                window,
                 hot,
                 front,
                 opening,
@@ -305,8 +317,13 @@ impl From<SlowMoment> for Slow {
                 hot,
                 phases: each(phases),
             },
-            SlowMoment::Visibility { at: when, visible } => Slow::Visibility {
+            SlowMoment::Visibility {
+                at: when,
+                window,
+                visible,
+            } => Slow::Visibility {
                 at: at(when),
+                window,
                 visible,
             },
             SlowMoment::AnswerSpan {
@@ -355,6 +372,7 @@ impl From<Slow> for SlowMoment {
             Slow::Stall {
                 ms,
                 at,
+                window,
                 hot,
                 front,
                 opening,
@@ -368,6 +386,7 @@ impl From<Slow> for SlowMoment {
             } => SlowMoment::Stall {
                 ms,
                 at: ms_of(at),
+                window,
                 hot,
                 front,
                 opening,
@@ -400,8 +419,13 @@ impl From<Slow> for SlowMoment {
                 hot,
                 phases: each(phases),
             },
-            Slow::Visibility { at, visible } => SlowMoment::Visibility {
+            Slow::Visibility {
+                at,
+                window,
+                visible,
+            } => SlowMoment::Visibility {
                 at: ms_of(at),
+                window,
                 visible,
             },
             Slow::AnswerSpan {
@@ -471,6 +495,7 @@ mod tests {
             SlowMoment::Stall {
                 ms: 340,
                 at: 1_793_000_000_456.0,
+                window: "plane-2".into(),
                 hot: 12,
                 front: Some("steward 3".into()),
                 opening: true,
@@ -520,6 +545,7 @@ mod tests {
             },
             SlowMoment::Visibility {
                 at: 1_793_000_001_111.0,
+                window: "plane-2".into(),
                 visible: false,
             },
             SlowMoment::AnswerSpan {
