@@ -3040,8 +3040,8 @@ const MOST_VARIABLE_SHOWN: usize = 64;
 /// `clang-17`, `gcc13`), a GNU build (`gm4`, `genv`, `gnumake`), a target's
 /// (`x86_64-linux-gnu-gcc`), a flavour (`emacs-nox`, `sudo-rs`), and by its prefix one of git's
 /// own programs (`git-shell`), a state transfer script (`wsrep_sst_rsync`), a Percona Toolkit
-/// tool (`pt-kill`) or a debhelper helper (`dh_auto_build`). Each form only takes away an Allow, so a name it catches by chance loses a
-/// notice and nothing more.
+/// tool (`pt-kill`) or a debhelper helper (`dh_auto_build`). Each form only takes away an Allow,
+/// so a name it catches by chance loses a notice and nothing more.
 fn not_for_a_run_grant(name: &str) -> bool {
     let refused = |one: &str| {
         !one.is_empty() && (NOT_FOR_A_RUN_GRANT.contains(&one) || runs_what_it_is_told(one))

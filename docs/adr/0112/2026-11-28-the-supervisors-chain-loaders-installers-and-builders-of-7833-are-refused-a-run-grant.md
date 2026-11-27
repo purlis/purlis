@@ -136,6 +136,9 @@ These are examples, not a complete list:
   `herd` and `pump` reach every `<word>-<name>` and `<name>-<word>`. For example,
   `podman-compose` and `docker-compose` reach `compose`, and `docker-compose` is refused by its
   own family's `docker` row as well.
+- the GNU `g` the forms strip reaches every `g<name>` of these rows: `gperf`, a build-time
+  generator that runs nothing it is handed, by `perf`, and `gedit`, `grex`, `gpp` and `gip` by
+  `edit`, `rex`, `pp` and `ip`.
 - `runit` reaches `runit-init`, and `kiwi` reaches every `kiwi-<name>`.
 - the `dh_` stem refuses every debhelper helper, and some of them run nothing
   (`dh_installdocs`, `dh_link`).
