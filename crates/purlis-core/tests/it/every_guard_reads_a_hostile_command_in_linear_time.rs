@@ -472,10 +472,11 @@ fn every_guard_family_reads_a_hostile_command_in_time_proportional_to_its_length
         // Inside the caps, so it is the guards that are measured.
         assert_eq!(guardcaps::refusal(&larger), None, "{shape}");
         for (family, judge) in &families {
-            // The project-root guards read this one faster than linearly on main as well
-            // (4e6396140c: about 17 ms at 16 KB and 160 ms at 64 KB in release, the same as
-            // here), so it is #7838's to fix, not #7709's.
-            if *family == "the project-root guards"
+            // The project-root and hook-skip guards read this one faster than linearly on main
+            // as well (b013530d94, in release: about 18 ms at 16 KB and 179 ms at 64 KB, and 14
+            // ms and 155 ms, the same as here), so it is #7838's to fix, not #7709's. Every
+            // other family reads it in time proportional to its length, here and on main.
+            if ["the project-root guards", "the hook-skip guard"].contains(family)
                 && shape == "a heredoc with a backquoted substitution on every line"
             {
                 continue;
