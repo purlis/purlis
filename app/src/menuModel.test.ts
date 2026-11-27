@@ -596,6 +596,18 @@ describe("a chat's list (#4753)", () => {
     );
   });
 
+  it("keeps Hibernate a row after Restart on a task, which has no Stop ▸ to hold it (#7877)", () => {
+    const menu = menuOf({ on: "chat", session: 11 }, world({ hibernatable: () => true }).offers);
+    const top = menu.groups.flatMap((group) => group.entries);
+
+    expect(top.some((entry) => entry.kind === "sub" && entry.key === "stop")).toBe(false);
+    const run = menu.groups.find((group) =>
+      group.entries.some((entry) => entry.kind === "row" && entry.said === SAID.restart),
+    );
+    const said = run?.entries.map((entry) => (entry.kind === "row" ? entry.said : entry.key));
+    expect(said?.indexOf(SAID.hibernate)).toBeGreaterThan(said?.indexOf(SAID.restart) ?? -1);
+  });
+
   it("greys Start fresh with its reason until the instructions change, then colours it", () => {
     const quiet = rowsOf(menuOf({ on: "chat", session: 7 }, offers)).find(
       (row) => row.said === SAID.startFresh,

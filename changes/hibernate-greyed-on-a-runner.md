@@ -2,7 +2,8 @@
 
 - **Hibernate is in a chat's menu.** A chat's menu, on its sidebar row, on a right-click and
   under its pane's ⋯, now has Hibernate as the first row under Stop, above the ways to stop that
-  end the conversation. Before, Hibernate was only in the command palette (SC-4, #7877, #1391).
+  end the conversation; a task's menu, which has no Stop, has it after Restart. Before,
+  Hibernate was only in the command palette (SC-4, #7877, #1391).
 
 ### Fixed
 

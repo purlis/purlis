@@ -425,6 +425,25 @@ describe("a menu on screen", () => {
         now({
           tabs,
           hibernateGreyed: (session) => (session === 7 ? NOT_HIBERNATED.on_a_runner : undefined),
+          // Listed, so it has the ways to stop it that Hibernate leads.
+          listed: [
+            {
+              session: 7,
+              name: NAME,
+              persona: null,
+              workspace: "beta",
+              shell: false,
+              parent: null,
+              mode: null,
+              from: null,
+              tab: true,
+              branch: null,
+              report: null,
+              outcome: null,
+              asking: null,
+              harness: "claude",
+            },
+          ],
         }),
       ),
     );

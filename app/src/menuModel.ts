@@ -129,6 +129,9 @@ type Dress = {
   slot: Slot | ((offer: Offer, on: MenuOn) => Slot);
   /** The submenu it is folded into. */
   under?: SubKey;
+  /** Where it is drawn instead when it would be its submenu's only row: a submenu that opens to
+   *  one row is that row behind an extra press. */
+  alone?: Slot;
   /** Whether it cannot be undone. */
   danger?: boolean | ((offer: Offer) => boolean);
   warns?: string | ((offer: Offer) => string | undefined);
@@ -258,7 +261,9 @@ const DRESS: Readonly<Record<string, Dress>> = {
   // **The first way to stop it** (#7877): it ends the program at a turn boundary and keeps the
   // conversation, which Restart chat picks up again, so it is under Stop ▸ and, as rule 4 has it
   // for a row that loses nothing, in no danger colour. The list stays ten rows at most.
-  "chat.hibernate": { said: SAID.hibernate, slot: "end", under: "stop" },
+  // A task has no Stop ▸ of its own (it has Stop and get its report), so there it stays a row
+  // after Restart chat, where it was.
+  "chat.hibernate": { said: SAID.hibernate, slot: "end", under: "stop", alone: "run" },
   // It ends the program, so it is with what ends, as the menus' rule 4 keeps the danger colour.
   "chat.fresh": { said: SAID.startFresh, slot: "end", danger: true, warns: WARNS.fresh },
   "chat.stop": stopped(WARNS.stops),
@@ -683,6 +688,20 @@ export function menuOf(what: MenuOn, offers: Catalogued): MenuDrawn {
           plain(offer, offer.does.verb === "moveMemory" ? storeLabel(offer.does.to) : offer.title),
         ),
       );
+  }
+
+  // **No submenu of one row** where that row has a place of its own: it is drawn there instead.
+  for (const [key, sub] of subs) {
+    const entries = sub.groups[0].entries;
+    const only = entries.length === 1 ? entries[0] : undefined;
+    const alone = only?.kind === "row" ? DRESS[stemOf(only.offer.id)]?.alone : undefined;
+    if (only === undefined || alone === undefined) continue;
+    for (const slot of SLOTS) {
+      const at = slots[slot].indexOf(sub);
+      if (at !== -1) slots[slot].splice(at, 1);
+    }
+    slots[alone].push(only);
+    subs.delete(key);
   }
 
   // **The last group ends with the row that ends the thing itself**: a submenu of the ways to
