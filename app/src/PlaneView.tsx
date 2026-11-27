@@ -238,7 +238,7 @@ import { usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
 import { useEditorTabs, type EditorTabOpened } from "./editorTab";
 import { Notice, NoticeInCentre, NoticeOf, type NoticesDot } from "./Notice";
-import { hibernateRefused } from "./HibernatedNotice";
+import { hibernateRefused, unsentHandedBack } from "./HibernatedNotice";
 import { NOT_HIBERNATED } from "./hibernationWords";
 import { useAskedControl } from "./windowControls";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
@@ -7795,6 +7795,11 @@ export const PlaneView = memo(function PlaneView({
             setRestartTrouble((was) => withoutKey(was, session));
             setRestartNotYet((was) => withoutKey(was, session));
             chatRestarted(session, chat);
+            // A hibernated chat woken: what its pane typed while it was hibernated is shown on
+            // the woken pane, unsent (SC-4d, #7633). `?? null`: it is absent where nothing was
+            // typed.
+            const unsent = done.data.unsent ?? null;
+            if (unsent !== null) unsentHandedBack(plane, chat.session, unsent);
             // What the new run's start found to say: that a chat which ran without the
             // sandbox runs in it again. `?? []`, as a start's notices are read.
             const notes = done.data.notices ?? [];
@@ -8207,7 +8212,8 @@ export const PlaneView = memo(function PlaneView({
   const hibernateChat = useCallback(
     (session: number) => {
       void commands
-        .hibernateChat(plane, session)
+        // Own work is not asked about yet (SC-4i, #7638): a chat with some is refused.
+        .hibernateChat(plane, session, null)
         .then((done) => {
           if (done.status === "error") hibernateRefused(plane, session, done.error);
           else if (done.data.outcome === "refused")

@@ -557,6 +557,11 @@ export const commands = {
 	/**  Chat `session`, where it is hibernated. */
 	chatHibernated: (plane: PlaneId, session: number) => typedError<{
 	by: By,
+	/**
+	 *  What the pane typed into it once its program was ending, which no program read: its
+	 *  unsent text, held in memory, never lost (SC-4d, #7633). Absent where it typed nothing.
+	 */
+	unsent?: string | null,
 } | null, string>(__TAURI_INVOKE("chat_hibernated", { plane, session })),
 	hibernatedChatScreen: __WINDOW_ONLY_RESULT,
 	/**  The chats of `plane` that are hibernated: what the window reads its rows by as it opens. */
@@ -4917,8 +4922,26 @@ export type ChatHeld = {
 };
 
 /**  Chat `session` as the window reads its hibernation. */
-export type ChatHibernation = {
+export type ChatHibernation = ChatHibernation_Serialize | ChatHibernation_Deserialize;
+
+/**  Chat `session` as the window reads its hibernation. */
+export type ChatHibernation_Deserialize = {
 	by: By,
+	/**
+	 *  What the pane typed into it once its program was ending, which no program read: its
+	 *  unsent text, held in memory, never lost (SC-4d, #7633). Absent where it typed nothing.
+	 */
+	unsent?: string | null,
+};
+
+/**  Chat `session` as the window reads its hibernation. */
+export type ChatHibernation_Serialize = {
+	by: By,
+	/**
+	 *  What the pane typed into it once its program was ending, which no program read: its
+	 *  unsent text, held in memory, never lost (SC-4d, #7633). Absent where it typed nothing.
+	 */
+	unsent?: string | null,
 };
 
 /**  A chat's Chat log: whether purlis knows the chat, and its rows. */
@@ -5130,6 +5153,12 @@ export type ChatRestart = {
 	 */
 	notices: string[],
 	not_yet: string | null,
+	/**
+	 *  **What its pane typed while it was hibernated, which no program read** (SC-4d, #7633):
+	 *  handed back with the woken run, for its pane to show unsent. Never typed into it: its
+	 *  delivery is SC-4j's (#7639). None where nothing was typed, or the chat was not woken.
+	 */
+	unsent: string | null,
 };
 
 /**  **What the chat a `chat 641` link names is**, for its hover's second line. */
