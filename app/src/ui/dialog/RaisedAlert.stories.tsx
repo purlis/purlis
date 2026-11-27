@@ -5,7 +5,8 @@
  * **An alert the app raises** (#7728, ADR 0104 as amended 2026-11-26): opened with no press, it
  * starts on the answer that grants nothing, answers nothing until it has settled, and says so
  * when what it shows changes. Each is drawn, held to axe, walked by the keyboard, and compared
- * with its baseline in Chromium and WebKit (`docs/component-stories.md`).
+ * with its baseline in Chromium and WebKit (`docs/component-stories.md`). Its baselines cover both
+ * browsers, one picture per appearance in each.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useEffect, useState } from "react";
