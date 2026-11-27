@@ -186,7 +186,9 @@ impl Engine {
         keeper: &Keeper,
         first_answer: Duration,
     ) -> Result<Self, StartError> {
-        let step = purlis_session_protocol::steps::begin("browser_engine_start");
+        let step = purlis_session_protocol::steps::begin(
+            purlis_session_protocol::steps::Name::BrowserEngineStart,
+        );
         launch.prepare_data_dir().map_err(StartError::DataFolder)?;
         let group = EngineGroup::start(keeper).map_err(StartError::Spawn)?;
         let (engine_reads, host_writes) = io::pipe().map_err(StartError::Spawn)?;

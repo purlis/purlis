@@ -770,7 +770,8 @@ pub fn engine_holds(
     route: &Route,
     pin: &Pin,
 ) -> Result<(), Finding> {
-    let step = purlis_session_protocol::steps::begin("engine_pin_check");
+    let step =
+        purlis_session_protocol::steps::begin(purlis_session_protocol::steps::Name::EnginePinCheck);
     let silent = |why: crate::dockerpool::Refused| Finding::EngineSilent {
         host: route.host().to_owned(),
         said: why.0,

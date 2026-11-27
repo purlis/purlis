@@ -292,6 +292,11 @@ fn hosted() -> Hosted {
         .enable_all()
         .build()
         .unwrap();
+    hosted_on(runtime)
+}
+
+/// [`hosted`], its link run on `runtime`.
+fn hosted_on(runtime: tokio::runtime::Runtime) -> Hosted {
     let runs = StandIns::default();
     let savers = Savers::default();
     let hosting = Hosting::running_with(
@@ -4503,6 +4508,78 @@ fn a_runner_gone_ends_its_chats_where_a_changed_key_leaves_them_dimmed() {
     heard(Reconnect::Started("again".into()));
     heard(Reconnect::KeyChanged);
     assert_eq!(dimmed.lock().unwrap().chats.len(), 2);
+}
+
+#[test]
+fn a_start_asked_of_a_host_names_the_start_this_window_made() {
+    // #7864: the runner's `harness_spawn` names the window's Start, so the logs join up.
+    use purlis_session_protocol::steps::{StartId, starting};
+    let id = StartId::parse("01JD3Q4M0R8W2ZK7A6F1B9CXYE").unwrap();
+    let _held = starting(id);
+    let asked = with_this_threads_start(StartProgram::of(
+        "01J9PRJCT00000000000000000",
+        session::ProgramKind::Harness,
+    ));
+    assert_eq!(asked.start.as_deref(), Some("01JD3Q4M0R8W2ZK7A6F1B9CXYE"));
+}
+
+#[test]
+fn a_view_drawn_after_its_start_has_returned_names_that_start() {
+    // #7864: a pane attaches once the start that made its chat has returned, so its
+    // `view_first_frame` is told the Start by the link, not by the thread.
+    use purlis_session_protocol::steps::{StartId, starting};
+    let logged = Logged::default();
+    let runtime = {
+        let logged = logged.clone();
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .on_thread_start(move || {
+                // Held for the thread's life: the runtime's threads log to this test alone.
+                std::mem::forget(tracing::subscriber::set_default(logged.clone()));
+            })
+            .build()
+            .unwrap()
+    };
+    let _logs_here = tracing::subscriber::set_default(logged.clone());
+    let hosted = hosted_on(runtime);
+    let start = StartId::mint();
+    let id = {
+        let _held = starting(start.clone());
+        hosted
+            .sessions
+            .open(None, &a_shell("true"), &|_| {})
+            .unwrap()
+    };
+    hosted.runs.last().writes(b"ready> ");
+    let (sink, seen) = a_pane();
+
+    hosted.sessions.watch(id, sink).expect("a view opens");
+
+    until("the screen is drawn", || {
+        seen.lock().unwrap().contains("ready> ")
+    });
+    let first_frame = || {
+        logged
+            .0
+            .lock()
+            .unwrap()
+            .lines()
+            .find(|line| line.contains("step view_first_frame"))
+            .map(str::to_owned)
+    };
+    until("the first frame is logged", || first_frame().is_some());
+    let line = first_frame().unwrap();
+    assert!(line.contains(&format!("start: {start}")), "{line}");
+}
+
+#[test]
+fn a_start_outside_any_start_names_none() {
+    let asked = with_this_threads_start(StartProgram::of(
+        "01J9PRJCT00000000000000000",
+        session::ProgramKind::Harness,
+    ));
+    assert_eq!(asked.start, None);
 }
 
 #[test]
