@@ -11383,6 +11383,11 @@ export type PolicyState = {
 	/**  The pairs Keep these nevers keeps, where `nevers_new_key` and the list's file reads. */
 	nevers_to_keep: NeversToKeep | null,
 	/**
+	 *  Whether that list holds a name purlis cannot show faithfully (#7734's round 4): no pair
+	 *  is offered to keep, and the window says so.
+	 */
+	nevers_unshowable: boolean,
+	/**
 	 *  The digest of the committed text this was read from: what Accept names, so a press on a
 	 *  file that changed since it was shown accepts nothing.
 	 */

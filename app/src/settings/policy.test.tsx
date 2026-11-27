@@ -33,7 +33,8 @@ function core(
     asked.push({ cmd, args });
     if (cmd === "project_policy_state") return state;
     if (cmd === "accept_project_policy") return accept();
-    if (cmd === "keep_project_nevers") return { ...state, nevers_new_key: false, nevers_to_keep: null };
+    if (cmd === "keep_project_nevers")
+      return { ...state, nevers_new_key: false, nevers_to_keep: null };
     if (cmd === "policy_log") return log;
     return null;
   });
@@ -135,6 +136,14 @@ describe("the project's policy in Settings", () => {
     core({ ...WATCH, nevers_new_key: true, nevers_to_keep: null });
     render(<PolicyStanding plane={PLANE} ids={IDS} canAccept />);
     expect(await screen.findByText(/there is nothing to keep yet/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Keep these nevers" })).toBeNull();
+  });
+
+  it("where the list holds a name purlis cannot show, says so and offers no press", async () => {
+    // #7734's round 4, M1.
+    core({ ...WATCH, nevers_new_key: true, nevers_to_keep: null, nevers_unshowable: true });
+    render(<PolicyStanding plane={PLANE} ids={IDS} canAccept />);
+    expect(await screen.findByText(/It holds a name no persona can have/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Keep these nevers" })).toBeNull();
   });
 

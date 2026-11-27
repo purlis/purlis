@@ -180,12 +180,34 @@ static FOUND: std::sync::Mutex<KeyCache> = std::sync::Mutex::new(KeyCache(None))
 /// its writes.
 #[cfg(not(test))]
 fn found(again: bool) -> Found {
-    let again = again
-        && !matches!(
-            RENEWING.try_lock(),
-            Err(std::sync::TryLockError::WouldBlock)
-        );
-    found_by_the_press(again)
+    found_unless_renewing(&RENEWING, &FOUND, again, &OsKeyItems)
+}
+
+/// **What `cache` found, read again where `again` only while this read holds `renewing`** (L3 of
+/// #7734's round 4): the lock is taken, never only tested, and held across the read, so no press
+/// can start making a new key between the check and the read. Where a press holds it, what was
+/// found stands. The order is `renewing`, then `cache`, as the press takes them.
+fn found_unless_renewing(
+    renewing: &std::sync::Mutex<()>,
+    cache: &std::sync::Mutex<KeyCache>,
+    again: bool,
+    items: &dyn KeyItems,
+) -> Found {
+    let held = if again {
+        match renewing.try_lock() {
+            Ok(held) => Some(held),
+            Err(std::sync::TryLockError::Poisoned(held)) => Some(held.into_inner()),
+            Err(std::sync::TryLockError::WouldBlock) => None,
+        }
+    } else {
+        None
+    };
+    let found = cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .found(held.is_some(), items);
+    drop(held);
+    found
 }
 
 /// [`found`] for the press that holds [`RENEWING`].
@@ -264,6 +286,23 @@ pub const RENEW_REFUSED: &str = "macOS did not let purlis replace its old key, s
 /// beside the one before and that one deleted only after ([`write_list`]): no write of it
 /// leaves a moment where neither is there.
 const REPLACED: [&str; 2] = ["seal-key-replaced", "seal-key-replaced-next"];
+
+/// **The keychain items the list of [`REPLACED`] is kept in, as the window names them** (L2 of
+/// #7734's round 4), so a person can find and delete one purlis cannot vouch for.
+pub fn list_items_said() -> String {
+    format!(
+        "the keychain items named {SERVICE} with the accounts {} and {}",
+        REPLACED[0], REPLACED[1]
+    )
+}
+
+/// What [`write_list`] says where both slots hold lists and neither names every plane the other
+/// does (L2 of #7734's round 4), which no write of the app's leaves: another program put one
+/// there, and it is in the way.
+const LISTS_IN_THE_WAY: &str = "a keychain item purlis did not write is in the way: the items \
+     named purlis-seal with the accounts seal-key-replaced and seal-key-replaced-next each list \
+     projects the other does not, so purlis replaced neither. Delete the one purlis did not make \
+     in Keychain Access (its Access Control does not name purlis), then press again";
 
 /// The kind the list of [`REPLACED`] is sealed as.
 const REPLACED_KIND: &str = "seal-key-replaced";
@@ -402,7 +441,7 @@ fn write_list(
                     "purlis: neither list of replaced planes names every plane the other does, \
                      so neither was replaced"
                 );
-                return Err(KEY_UNREAD);
+                return Err(LISTS_IN_THE_WAY);
             };
             gone(items, SERVICE, slot)?;
             slot
@@ -449,11 +488,17 @@ fn pending(items: &dyn KeyItems, spare: &str) -> Option<zeroize::Zeroizing<Vec<u
 /// is their consent. A delete it refuses stops the press there ([`RENEW_REFUSED`]).
 pub(crate) fn renew(items: &dyn KeyItems, kinds: &[&str]) -> Result<Found, &'static str> {
     let [spare, commands_spare, probe_spare] = super::keyhold::spares_of(SERVICE);
+    // Where [`pending`]'s own probe of the spare was cut short, the new key is at rest in that
+    // probe's spare (L2 of #7734's round 4): it is used again, never stranded.
+    let spares_probe = super::keyhold::probe_spare_of(&spare);
     let key = match pending(items, &spare) {
         Some(key) => key,
         None => {
             gone(items, &spare, ACCOUNT)?;
-            let key = new_key().ok_or(KEY_UNREAD)?;
+            let key = match pending(items, &spares_probe) {
+                Some(key) => key,
+                None => new_key().ok_or(KEY_UNREAD)?,
+            };
             made(
                 items,
                 &spare,
@@ -492,6 +537,7 @@ pub(crate) fn renew(items: &dyn KeyItems, kinds: &[&str]) -> Result<Found, &'sta
         spare.as_str(),
         commands_spare.as_str(),
         probe_spare.as_str(),
+        spares_probe.as_str(),
     ] {
         for account in listing(service)? {
             if of_kinds(&account, kinds) {
@@ -998,15 +1044,17 @@ fn said(found: &Found) -> Result<(), &'static str> {
 ///
 /// **No item, and a spare one** ([`super::keyhold::spares_of`]): a write of the key that was cut
 /// short between its delete and its add left the key at rest there (#7073), or an ownership
-/// probe cut short left it in the probe's own spare (M3 of #7734's round 3). The app's own spare
-/// is made the key again, so every seal made with it still holds; a spare another program made
-/// is [`Found::Foreign`], never a key.
+/// probe cut short left it in the probe's own spare (M3 of #7734's round 3), or a press's probe
+/// of the app's own spare ([`pending`]) left a new key in that probe's spare (L2 of its round 4).
+/// The app's own spare is made the key again, so every seal made with it still holds; a spare
+/// another program made is [`Found::Foreign`], never a key.
 pub(crate) fn read_or_make(items: &dyn KeyItems) -> Found {
     match items.read(SERVICE, ACCOUNT) {
         Ok(Some(hex)) => checked(items, SERVICE, &hex),
         Ok(None) => {
             let [spare, _, probe_spare] = super::keyhold::spares_of(SERVICE);
-            for spare in [spare, probe_spare] {
+            let spares_probe = super::keyhold::probe_spare_of(&spare);
+            for spare in [spare, probe_spare, spares_probe] {
                 match items.read(&spare, ACCOUNT) {
                     Ok(Some(hex)) => {
                         return match checked(items, &spare, &hex) {
@@ -2120,5 +2168,134 @@ mod tests {
             Unreadable::Failed("locked".to_owned()).to_string(),
             "locked"
         );
+    }
+
+    /// [`Items`] that notes each read, and whether `renewing` was held across it.
+    struct Watched<'a> {
+        items: Items,
+        renewing: &'a std::sync::Mutex<()>,
+        reads: std::cell::RefCell<Vec<bool>>,
+    }
+
+    impl KeyItems for Watched<'_> {
+        fn read(&self, service: &str, account: &str) -> Result<Option<String>, Unreadable> {
+            let held = matches!(
+                self.renewing.try_lock(),
+                Err(std::sync::TryLockError::WouldBlock)
+            );
+            self.reads.borrow_mut().push(held);
+            self.items.read(service, account)
+        }
+
+        fn owned_here(&self, service: &str, account: &str, value: &str) -> Result<bool, String> {
+            self.items.owned_here(service, account, value)
+        }
+
+        fn make_own(&self, service: &str, account: &str, value: &str) -> Result<(), String> {
+            self.items.make_own(service, account, value)
+        }
+
+        fn accounts(&self, service: &str) -> Result<Vec<String>, String> {
+            self.items.accounts(service)
+        }
+
+        fn delete(&self, service: &str, account: &str) -> Result<(), Removal> {
+            self.items.delete(service, account)
+        }
+    }
+
+    #[test]
+    fn the_key_is_read_again_only_under_the_renewing_lock_and_never_while_a_press_holds_it() {
+        // L3 of #7734's round 4: the read again holds the press's lock across it, so no press
+        // starts between the check and the read; while a press holds it, what was found stands.
+        let renewing = std::sync::Mutex::new(());
+        let cache = std::sync::Mutex::new(KeyCache::default());
+        let watched = Watched {
+            items: Items::default().with(SERVICE, &"ab".repeat(KEY_BYTES), false),
+            renewing: &renewing,
+            reads: std::cell::RefCell::new(Vec::new()),
+        };
+        let first = found_unless_renewing(&renewing, &cache, false, &watched);
+        assert!(matches!(first, Found::Foreign));
+        let before = watched.reads.borrow().len();
+        assert!(before > 0, "the first ask reads");
+        {
+            let _press = renewing.lock().expect("the press");
+            let during = found_unless_renewing(&renewing, &cache, true, &watched);
+            assert!(matches!(during, Found::Foreign));
+            assert_eq!(
+                watched.reads.borrow().len(),
+                before,
+                "nothing read during a press"
+            );
+        }
+        found_unless_renewing(&renewing, &cache, true, &watched);
+        let reads = watched.reads.borrow();
+        assert!(reads.len() > before, "read again once no press holds it");
+        assert!(
+            reads[before..].iter().all(|held| *held),
+            "every read again holds the lock: {reads:?}"
+        );
+    }
+
+    #[test]
+    fn a_new_key_left_in_the_probe_of_its_spare_is_the_key_again_and_used_by_the_next_press() {
+        // L2 of #7734's round 4: a press's probe of its own spare ([`pending`]) cut short leaves
+        // the new key at rest in that probe's spare alone. Neither the key's read nor the next
+        // press strands it, so a list sealed with it still holds.
+        let spares_probe = super::super::keyhold::probe_spare_of(&spare());
+        let items = Items::default().with(&spares_probe, &"ef".repeat(KEY_BYTES), true);
+        assert_eq!(held(read_or_make(&items)), vec![0xef; KEY_BYTES]);
+        let after_an_update = Items::default()
+            .with(SERVICE, &"ab".repeat(KEY_BYTES), false)
+            .with(&spares_probe, &"ef".repeat(KEY_BYTES), true);
+        let made = held(renew(&after_an_update, KINDS).expect("a new key"));
+        assert_eq!(made, vec![0xef; KEY_BYTES], "the key at rest is used again");
+        assert_eq!(after_an_update.value(SERVICE), Some("ef".repeat(KEY_BYTES)));
+        assert_eq!(
+            after_an_update.value(&spares_probe),
+            None,
+            "and its probe's spare goes"
+        );
+    }
+
+    #[test]
+    fn two_lists_where_neither_covers_the_other_are_refused_as_an_item_in_the_way_by_name() {
+        // L2 of #7734's round 4: no write of the app's leaves two lists where neither names every
+        // plane the other does, so the refusal says another program's item is in the way and
+        // names it, never that the keychain is locked.
+        let key = vec![0xcd; KEY_BYTES];
+        let items = Items::default()
+            .with(SERVICE, &crate::extension::hex(&key), true)
+            .with_at(
+                SERVICE,
+                REPLACED[0],
+                &stale(&["policy-accepted:aaaa"]),
+                false,
+            )
+            .with_at(
+                SERVICE,
+                REPLACED[1],
+                &stale(&["policy-accepted:bbbb"]),
+                false,
+            );
+        let mut merged = Entries::new();
+        merged.insert("policy-accepted:cccc".to_owned(), true);
+        let why = write_list(&items, &key, &merged).expect_err("neither replaced");
+        assert_eq!(why, LISTS_IN_THE_WAY);
+        assert_ne!(why, KEY_UNREAD);
+        for name in [SERVICE, REPLACED[0], REPLACED[1]] {
+            assert!(why.contains(name), "{name}: {why}");
+        }
+        assert!(why.contains("in the way"), "{why}");
+    }
+
+    #[test]
+    fn the_list_items_are_named_as_the_keychain_keeps_them() {
+        // L2 of #7734's round 4: the words a person reads name the items to delete exactly.
+        let said = list_items_said();
+        for name in [SERVICE, REPLACED[0], REPLACED[1]] {
+            assert!(said.contains(name), "{name}: {said}");
+        }
     }
 }

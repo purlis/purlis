@@ -68,6 +68,9 @@ pub struct PolicyState {
     pub nevers_new_key: bool,
     /// The pairs Keep these nevers keeps, where `nevers_new_key` and the list's file reads.
     pub nevers_to_keep: Option<NeversToKeep>,
+    /// Whether that list holds a name purlis cannot show faithfully (#7734's round 4): no pair
+    /// is offered to keep, and the window says so.
+    pub nevers_unshowable: bool,
     /// The digest of the committed text this was read from: what Accept names, so a press on a
     /// file that changed since it was shown accepts nothing.
     pub digest: String,
@@ -190,6 +193,7 @@ fn state_of(root: &std::path::Path) -> PolicyState {
                 .collect(),
             digest: kept.digest,
         }),
+        nevers_unshowable: standing.nevers_unshowable,
         digest: standing.digest,
         template: standing.said.template.word().to_owned(),
         template_default: !standing.said.template_said,

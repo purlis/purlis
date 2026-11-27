@@ -33,7 +33,12 @@ personas refused), and Accept refuses with the manual step. Pressing Accept neve
   prompt; the keychain is read again once it returns (F7), and not by any other press meanwhile.
   The check that the app owns the key's item makes it again with a spare of its own
   (`purlis-seal/spare-of-the-probe`), never the one the new key waits in (M3 of its round 3).
-  Where both list accounts hold one, only a list the other covers is deleted to make room (M4).
+  Where both list accounts hold one, only a list the other covers is deleted to make room (M4);
+  where neither covers the other, which no write of the app's leaves, the press says another
+  program's item is in the way and names the two accounts (L2 of its round 4). The press's check
+  of the new key's spare keeps its own spare too (`purlis-seal/spare/spare-of-the-probe`), and
+  the key's read and the next press take a key left there (L2). A key read again at a press
+  holds the press's lock across the read, never only tests it (L3).
 - **The digest is checked before, and again after the prompt returns.** A view already stale
   asks nothing of macOS; a file that changed while the prompt was open accepts nothing (the new
   key is kept). Then this plane's acceptance is sealed from exactly what the person was shown.
@@ -61,12 +66,20 @@ personas refused), and Accept refuses with the manual step. Pressing Accept neve
   `keep_project_nevers`, on `WINDOW_ONLY`; `dispatchnever::keep_shown_after_a_new_key`;
   `PolicyState.nevers_new_key` and `nevers_to_keep`). It names the pairs shown by their digest,
   checked under purlis's lock on the file, and seals exactly those with the new key; a file that
-  changed since keeps nothing. Then the plane leaves the list for its nevers.
+  changed since keeps nothing. Then the plane leaves the list for its nevers. **Each pair is
+  drawn as an item of its own**, each name as code, never joined into a sentence, and **only a
+  list whose every name a persona can have** (`personas::valid_name`) is shown or kept, at the
+  window and again under the lock: a zero-width character, a homoglyph, a space, a comma or
+  " to " inside a name could make one pair read as another, or as several. Such a list offers no
+  press, and the window says it holds a name purlis cannot show as it is
+  (`PolicyState.nevers_unshowable`; M1 of #7734's round 4).
 - **Only a vouched entry gets the words or the press** (H2 of #7734's round 3). An entry the list
   names but purlis does not vouch for (a list that holds under no key of the app's, or an entry
   marked `?`) only keeps the nevers unread: no new key's words, no pairs to keep, and nothing
   seals the file as it stands. So a list another program put there under a healthy key cannot
-  launder a nevers file edited meanwhile.
+  launder a nevers file edited meanwhile. Its words name the way out: delete the keychain items
+  named `purlis-seal` with the accounts `seal-key-replaced` and `seal-key-replaced-next` in
+  Keychain Access (L2 of #7734's round 4).
 - **An anchor is vouched for by its name alone** (L5 of #7734's round 3, accepted). While the key
   is foreign, no seal of the old key's can say more of an anchor than that it is there. That is
   enough because a vouch never seals anything: it only offers a press that shows what it seals,

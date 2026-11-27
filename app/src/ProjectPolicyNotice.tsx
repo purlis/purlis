@@ -31,17 +31,35 @@ export const NEVERS_NEW_KEY_SAID =
   "purlis made a new seal key on this machine, so it cannot vouch for your never-dispatch list, and no chat dispatches to another persona until you keep the pairs it holds now.";
 
 /**
- * The pairs Keep these nevers seals, said: "It holds steward to devops. Keep these nevers seals
- * exactly that.", or that it holds none, or that its file does not read, so nothing is offered.
+ * What the window says of the pairs Keep these nevers seals: that it holds none, that its file
+ * does not read, or that it holds a name purlis cannot show as it is (#7734's round 4), each with
+ * nothing offered where nothing can be kept. The pairs themselves are drawn apart
+ * ({@link NeverPairs}), never joined into a sentence, so no name can read as several pairs.
  */
-export const neversToKeepSaid = (kept: NeversToKeep | null): string => {
+export const neversToKeepSaid = (kept: NeversToKeep | null, unshowable: boolean): string => {
   if (kept === null)
-    return "Its file does not read, so there is nothing to keep yet. Fix the file, and its pairs show here.";
+    return unshowable
+      ? "It holds a name no persona can have, which purlis cannot show as it is, so there is nothing to keep. Fix the file, and its pairs show here."
+      : "Its file does not read, so there is nothing to keep yet. Fix the file, and its pairs show here.";
   if (kept.pairs.length === 0)
     return "It holds no pair now. Keep these nevers keeps it empty, so no pair is refused.";
-  const listed = kept.pairs.map((one) => `${one.asking} to ${one.target}`).join(", ");
-  return `It holds ${listed}. Keep these nevers seals exactly ${kept.pairs.length === 1 ? "that pair" : "these pairs"}.`;
+  return `Keep these nevers seals exactly ${kept.pairs.length === 1 ? "the pair" : "the pairs"} below.`;
 };
+
+/** The pairs Keep these nevers seals, each an item of its own with each name as code. */
+export function NeverPairs({ kept }: { kept: NeversToKeep | null }) {
+  if (kept === null || kept.pairs.length === 0) return null;
+  return (
+    <ul className="granted-list" aria-label="The pairs Keep these nevers seals">
+      {kept.pairs.map((one, at) => (
+        // The list is drawn once per answer, and two pairs may be alike: the place is the key.
+        <li key={at}>
+          <code>{one.asking}</code> never dispatches to <code>{one.target}</code>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /** Keep these nevers: the pairs shown, by their digest, on the project `plane` names. */
 export const keepNevers = (plane: PlaneId, kept: NeversToKeep) =>
@@ -177,11 +195,14 @@ export function ProjectPolicyNotice({
   };
 
   const neversBody = (
-    <p>
-      {`${NEVERS_NEW_KEY_SAID} ${neversToKeepSaid(state.nevers_to_keep)}`}
-      {!canAccept && " Keep them from purlis's own window on this machine."}
-      {neversSaid !== undefined && ` ${neversSaid}`}
-    </p>
+    <>
+      <p>
+        {`${NEVERS_NEW_KEY_SAID} ${neversToKeepSaid(state.nevers_to_keep, state.nevers_unshowable)}`}
+        {!canAccept && " Keep them from purlis's own window on this machine."}
+        {neversSaid !== undefined && ` ${neversSaid}`}
+      </p>
+      <NeverPairs kept={state.nevers_to_keep} />
+    </>
   );
   const nevers =
     !state.nevers_new_key || neversHidden ? null : canAccept && state.nevers_to_keep !== null ? (

@@ -276,6 +276,17 @@ pub fn unread_said(root: &Path) -> String {
              now: keep them there, and purlis seals exactly those."
         );
     }
+    // A list that names the plane but that purlis cannot vouch for (L2 of #7734's round 4):
+    // only deleting its items lets the file be read again, so the words name them.
+    if replaced.lists(&ANCHOR_KINDS, &anchor) {
+        return format!(
+            "purlis cannot read the list of pairs you said never to ({shown} in this project): \
+             {}, so no dispatch grant counts. Delete {} in Keychain Access, then, if the list \
+             still does not read, restore that file as purlis last wrote it.",
+            UNVOUCHED_LISTED,
+            crate::secrets::seal::list_items_said(),
+        );
+    }
     format!(
         "purlis could not read the list of pairs you said never to ({shown} in this project), \
          or it was changed or removed by something other than purlis's app, so it changed \
@@ -283,6 +294,10 @@ pub fn unread_said(root: &Path) -> String {
          purlis last wrote it."
     )
 }
+
+/// Why a plane on a list purlis cannot vouch for keeps its nevers unread (L2 of #7734's round 4).
+const UNVOUCHED_LISTED: &str = "a keychain item purlis cannot vouch for lists this project as one \
+     whose seal key was replaced";
 
 /// Reads the file, changes its pairs with `how` and writes it back, under purlis's lock on its
 /// directory. **Refuses a file that does not read**, and leaves it as it is.
@@ -379,24 +394,52 @@ pub fn digest_of_pairs(pairs: &[(String, String)]) -> String {
     ))
 }
 
+/// **Whether every name in `pairs` shows as itself** (M1 of #7734's round 4): each is a name a
+/// persona can have ([`crate::personas::valid_name`]), so no zero-width character, homoglyph,
+/// space or comma makes one pair read as another, or as several.
+fn shows_faithfully(pairs: &[(String, String)]) -> bool {
+    pairs.iter().all(|(asking, target)| {
+        crate::personas::valid_name(asking) && crate::personas::valid_name(target)
+    })
+}
+
+/// The pairs the file at `root` holds now, a file that is not there holding none; `None` where
+/// it does not read.
+fn pairs_on_disk(root: &Path) -> Option<Vec<(String, String)>> {
+    let (_, entries) = whole_on_disk(root)?;
+    Some(entries.iter().map(Entry::pair).collect())
+}
+
 /// **The pairs the window offers to keep after a new seal key** (H1 of #7734's round 3): those
 /// the file holds now, a file wiped since holding none, where purlis vouches the plane was
-/// listed ([`vouched_for_a_new_key`]). None anywhere else, or where the file does not read.
+/// listed ([`vouched_for_a_new_key`]). None anywhere else, where the file does not read, or
+/// where it holds a name purlis cannot show faithfully ([`holds_a_name_it_cannot_show`]).
 pub fn to_keep_after_a_new_key(root: &Path) -> Option<ToKeep> {
     if !vouched_for_a_new_key(root) {
         return None;
     }
-    let (_, entries) = whole_on_disk(root)?;
-    let pairs: Vec<(String, String)> = entries.iter().map(Entry::pair).collect();
+    let pairs = pairs_on_disk(root).filter(|pairs| shows_faithfully(pairs))?;
     Some(ToKeep {
         digest: digest_of_pairs(&pairs),
         pairs,
     })
 }
 
+/// **Whether the list a new seal key left unread holds a name purlis cannot show faithfully**
+/// (M1 of #7734's round 4): one no persona can have, which could read as another name or as
+/// several pairs. Then no pair is offered to keep, and the window says why.
+pub fn holds_a_name_it_cannot_show(root: &Path) -> bool {
+    vouched_for_a_new_key(root)
+        && pairs_on_disk(root).is_some_and(|pairs| !shows_faithfully(&pairs))
+}
+
 /// What the nevers' press says where the file changed since the window showed its pairs.
 const CHANGED_SINCE_SHOWN: &str = "the list of pairs you said never to changed since it was \
      shown, so purlis kept nothing; look at it again";
+
+/// What the nevers' press says where the file holds a name purlis cannot show faithfully.
+const CANNOT_SHOW: &str = "the list of pairs you said never to holds a name no persona can \
+     have, which purlis cannot show as it is, so it kept nothing; fix the file";
 
 /// **The person's press keeping the pairs the window showed, sealed with the key of now**, after
 /// a new seal key (H1 of #7734's round 3): the window's alone, and its own press, never a side
@@ -407,6 +450,12 @@ const CHANGED_SINCE_SHOWN: &str = "the list of pairs you said never to changed s
 /// ([`vouched_for_a_new_key`]), so a list another program put there seals nothing.
 pub fn keep_shown_after_a_new_key(root: &Path, shown: &str) -> io::Result<()> {
     if !vouched_for_a_new_key(root) {
+        if listed_for_a_new_key(root) {
+            return Err(io::Error::other(format!(
+                "{UNVOUCHED_LISTED}, so purlis kept nothing; delete {} in Keychain Access",
+                crate::secrets::seal::list_items_said(),
+            )));
+        }
         return Err(io::Error::other(
             "purlis has no list of pairs you said never to in this project to keep after a new \
              seal key, so it kept nothing",
@@ -586,7 +635,8 @@ fn import(root: &Path) -> io::Result<()> {
 
 /// The file's entries sealed as they stand, under purlis's lock on it. Where `shown`, only if
 /// they are exactly the pairs it digests ([`digest_of_pairs`]), a file that is not there being
-/// none, and it does not read is refused.
+/// none, and only if each name shows faithfully ([`shows_faithfully`]); a file that does not
+/// read is refused.
 fn seal_as_they_stand(root: &Path, shown: Option<&str>) -> io::Result<()> {
     let path = path(root);
     let anchor = crate::sandbox::local::anchor_key(root);
@@ -597,6 +647,12 @@ fn seal_as_they_stand(root: &Path, shown: Option<&str>) -> io::Result<()> {
                 Some(text) => parsed(text).map(|(_, entries)| entries),
             };
             let pairs = read.map(|entries| entries.iter().map(Entry::pair).collect::<Vec<_>>());
+            if pairs
+                .as_deref()
+                .is_some_and(|pairs| !shows_faithfully(pairs))
+            {
+                return Err(io::Error::other(CANNOT_SHOW));
+            }
             if pairs.as_deref().map(digest_of_pairs).as_deref() != Some(shown) {
                 return Err(io::Error::other(CHANGED_SINCE_SHOWN));
             }

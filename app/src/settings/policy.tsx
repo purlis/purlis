@@ -10,6 +10,7 @@ import {
   keepNevers,
   mayAcceptPolicy,
   NEVERS_NEW_KEY_SAID,
+  NeverPairs,
   neversToKeepSaid,
   POLICY_ACCEPT_MEANS,
   POLICY_UNSEALED_SAID,
@@ -158,18 +159,10 @@ export function PolicyStanding({
           {state.nevers_new_key && (
             <>
               <p>
-                {`${NEVERS_NEW_KEY_SAID} ${neversToKeepSaid(state.nevers_to_keep)}`}
+                {`${NEVERS_NEW_KEY_SAID} ${neversToKeepSaid(state.nevers_to_keep, state.nevers_unshowable)}`}
                 {!canAccept && " Keep them from purlis's own window on this machine."}
               </p>
-              {state.nevers_to_keep !== null && state.nevers_to_keep.pairs.length > 0 && (
-                <ul className="granted-list" aria-label="The pairs Keep these nevers seals">
-                  {state.nevers_to_keep.pairs.map((one) => (
-                    <li key={`${one.asking}\u0000${one.target}`}>
-                      <code>{one.asking}</code> never dispatches to <code>{one.target}</code>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <NeverPairs kept={state.nevers_to_keep} />
               {canAccept && state.nevers_to_keep !== null && (
                 <ButtonRow>
                   {/* It seals the pairs shown: an answer that refuses, never one that grants. */}

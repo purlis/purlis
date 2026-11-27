@@ -4904,7 +4904,9 @@ write into this folder cannot make its own text arrive as the person's.
   key's item** makes it again in place with a spare of its own (`purlis-seal/spare-of-the-probe`,
   account `answers`), never `purlis-seal/spare`, where Make a new key and accept keeps the new
   key while it runs; a check cut short leaves the key at rest there, and the app makes it the key
-  again the same way.
+  again the same way. The press's own check of that spare keeps the new key in the spare's probe
+  spare (`purlis-seal/spare/spare-of-the-probe`, account `answers`), which the key's read and the
+  next press take it from the same way, so no new key is stranded there (#7734's round 4).
 - **Read by:** the same, in the app alone. No other process seals or verifies, and an answer it
   cannot verify counts as none. On Linux and Windows a keyring lets any of the person's programs
   read an item, so there the seal stops a hand edit and a sandboxed chat only; with no keyring,

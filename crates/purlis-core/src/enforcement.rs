@@ -1420,6 +1420,10 @@ pub struct Standing {
     /// The pairs that press keeps, and the digest it names (H1 of #7734's round 3): where
     /// `nevers_new_key` and the file reads.
     pub nevers_to_keep: Option<crate::dispatchnever::ToKeep>,
+    /// Whether that list holds a name purlis cannot show faithfully (M1 of #7734's round 4):
+    /// then no pair is offered to keep, and the window says why
+    /// ([`crate::dispatchnever::holds_a_name_it_cannot_show`]).
+    pub nevers_unshowable: bool,
     /// The digest of the committed text this was read from, which the press must name.
     pub digest: String,
     /// What the project's `[policy]` says, from the same read: its template and the families
@@ -1463,6 +1467,7 @@ pub fn standing(root: &Path) -> Standing {
         new_key: crate::sandbox::local::broken_by_a_new_key(root),
         nevers_new_key: crate::dispatchnever::vouched_for_a_new_key(root),
         nevers_to_keep: crate::dispatchnever::to_keep_after_a_new_key(root),
+        nevers_unshowable: crate::dispatchnever::holds_a_name_it_cannot_show(root),
         digest: digest(&now),
         runs: now.stricter(&accepted),
         locked: Family::ALL

@@ -2101,6 +2101,49 @@ fn a_nevers_file_changed_after_it_was_shown_keeps_nothing() {
 }
 
 #[test]
+fn a_nevers_list_with_a_name_no_persona_can_have_offers_no_press_shown_or_pressed() {
+    // M1 of #7734's round 4: a name that renders as another (a zero-width character, a
+    // homoglyph, a trailing space) or as several pairs (a comma, " to ") is never shown as
+    // pairs to keep, and a press naming its digest keeps nothing, checked under the lock.
+    use crate::dispatchnever::{
+        Nevers, digest_of_pairs, holds_a_name_it_cannot_show, keep_shown_after_a_new_key, read,
+    };
+    for (asking, target) in [
+        ("ste\u{200b}ward", "devops"),
+        ("st\u{0435}ward", "devops"),
+        ("steward ", "devops"),
+        ("steward, ops", "devops"),
+        ("steward", "ops to devops"),
+    ] {
+        let _home = OwnConfigHome::new();
+        let here = plane("[policy]\ntemplate = \"open\"\n", None);
+        a_never(here.path());
+        crate::secrets::seal::set_foreign_for_this_test(true);
+        press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+        std::fs::write(
+            crate::dispatchnever::path(here.path()),
+            serde_json::json!({"never": [{"asking": asking, "target": target}]}).to_string(),
+        )
+        .expect("written");
+        let root = here.path();
+        assert!(standing(root).nevers_new_key, "{asking:?}");
+        assert_eq!(
+            crate::dispatchnever::to_keep_after_a_new_key(root),
+            None,
+            "{asking:?} {target:?}"
+        );
+        assert!(holds_a_name_it_cannot_show(root), "{asking:?} {target:?}");
+        assert!(standing(root).nevers_unshowable, "{asking:?} {target:?}");
+        let shown = digest_of_pairs(&pairs(&[(asking, target)]));
+        let why = keep_shown_after_a_new_key(root, &shown)
+            .expect_err("nothing kept")
+            .to_string();
+        assert!(why.contains("no persona can have"), "{why}");
+        assert_eq!(read(root), Nevers::Unread);
+    }
+}
+
+#[test]
 fn a_list_item_planted_under_a_healthy_key_offers_no_new_key_words_and_no_reseal() {
     // H2 of #7734's round 3: a list that does not hold under the key of now only keeps the
     // nevers unread. It says nothing of a new key, shows no pairs to keep, and no press, Accept
@@ -2120,6 +2163,13 @@ fn a_list_item_planted_under_a_healthy_key_offers_no_new_key_words_and_no_reseal
     assert_eq!(read(root.path()), Nevers::Unread);
     let said = unread_said(root.path());
     assert!(!said.contains("new seal key"), "{said}");
+    // L2 of #7734's round 4: the words name the way out, the items to delete.
+    assert!(
+        said.contains(&crate::secrets::seal::list_items_said()),
+        "{said}"
+    );
+    assert!(said.contains("Keychain Access"), "{said}");
+    assert!(!said.contains("unlock"), "{said}");
     let now = standing(root.path());
     assert!(!now.nevers_new_key, "{now:?}");
     assert_eq!(
@@ -2128,7 +2178,10 @@ fn a_list_item_planted_under_a_healthy_key_offers_no_new_key_words_and_no_reseal
     );
     press(root.path(), &digest_of(root.path())).expect("accepted");
     let none = crate::dispatchnever::digest_of_pairs(&[]);
-    assert!(keep_shown_after_a_new_key(root.path(), &none).is_err());
+    let why = keep_shown_after_a_new_key(root.path(), &none)
+        .expect_err("nothing kept")
+        .to_string();
+    assert!(why.contains("Keychain Access"), "{why}");
     assert_eq!(
         read(root.path()),
         Nevers::Unread,
