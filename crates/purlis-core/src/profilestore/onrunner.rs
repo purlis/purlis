@@ -987,8 +987,10 @@ pub fn kept_for_the_desktop(
 }
 
 /// Puts the MCP servers among `files`, kept for `record`, into its state file, where only purlis
-/// writes it (#3846), and takes out every project's own (ruled 2026-11-08) and every project's
-/// [`PROJECT_MCP_CHOICES`](crate::sandbox::claude_wrap::PROJECT_MCP_CHOICES) (ruled 2026-11-27). None sent leaves the user-scope ones as they are.
+/// writes it (#3846), and takes out every project's own (ruled 2026-11-08), every project's
+/// [`PROJECT_MCP_CHOICES`](crate::sandbox::claude_wrap::PROJECT_MCP_CHOICES) and the
+/// [`ACCOUNT_CHOICES`](crate::sandbox::claude_wrap::ACCOUNT_CHOICES) (both ruled 2026-11-27). None
+/// sent leaves the user-scope ones as they are.
 fn keep_mcp_servers_of(record: &MachineProfile, files: &[(String, Vec<u8>)]) {
     if record.harness != "claude" {
         return;
