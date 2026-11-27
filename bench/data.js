@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795740900394,
+  "lastUpdate": 1795741261234,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56700,6 +56700,48 @@ window.BENCHMARK_DATA = {
             "value": 101.0089665,
             "unit": "ms",
             "extra": "median of 5 runs: 100.382, 100.885, 101.009, 101.240, 101.787 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f0f5842ce8173b26ae54d9f38c20d328cf50ca87",
+          "message": "ADR 0128: forge operations under policy, the fixed forge floor (#7775)\n\n* ADR 0128: forge operations under policy, the fixed forge floor\n\nRecords the person's rulings of 2026-11-27: one Cedar action per forge\noperation from one mapping table, a permit-required class, a fixed forge\nfloor with no action, tracker writes as Ask, reviews (D3d amended to match\nthe code), the refusal text, and M75/M81 phasing.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CSDR1DME8ZA79E6C39G0YV\nPurlis-Persona: steward\n\n* ADR 0128 amendment: a new tag's API creation is guards.release's and held, not floor\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CSDR1DME8ZA79E6C39G0YV\nPurlis-Persona: steward\n\n* ADR 0128 amendment, round 2: the person's four rulings and the plan review's findings\n\nAuto-merge enable on the floor; assignee changes an Ask on both forges;\na branch deleted by push only; each body field decided as its own\noperation. Folds in review round 1: branch update is guards.git update\n(H3), floor additions (M1), fixed-key rows (M2), GraphQL field by field\n(M3), the class's Ask (M4), rule offer after two answers (M5),\ncontext.made_by (M6), comment actions (M7), release.edit_draft in\nguards.release (M8), the release hold (M9), the fork's held target\n(M10), refusal wording (M12), M81's new scope (M13), and L2, L3, L5.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CTWT07S81KKNNNWNF7VPXM\nPurlis-Persona: steward\n\n* ADR 0128 amendment: review reads stay allowed; strict and the offer per the person's gap rulings\n\nThe person's rulings of 2026-11-27 on the coverage check's gaps:\n- reading a pull request's reviews and its approval state stays allowed;\n  only review and approval writes are on the floor (§6);\n- under strict, a named permit for a tracker write stops the asking (§8);\n- the M81 offer after two identical answers is for tracker-write Asks\n  only, and offers the person's standing answer at the You level on this\n  machine, never a proposed project rule (§8).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CWS5JZ078BMBB23Z24HQ4S\nPurlis-Persona: steward\n\n* ADR 0128 amendment: final wording fixes (assignees join the class, branch_owner for update, inert refusal text, context.owner as relation, repo settings, git/tags)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8D3ZSD22NHFM64EG1KKJ0MW\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T00:21:34Z",
+          "tree_id": "d24e131397880d924a32f691a0899a29f0bb8063",
+          "url": "https://github.com/purlis/purlis/commit/f0f5842ce8173b26ae54d9f38c20d328cf50ca87"
+        },
+        "date": 1795741251428,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.58874,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.557, 0.580, 0.589, 0.597, 0.598 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.438785,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.267, 16.275, 16.439, 16.473, 16.477 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.09866300000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.672, 100.302, 101.099, 101.374, 103.702 ms"
           }
         ]
       }
