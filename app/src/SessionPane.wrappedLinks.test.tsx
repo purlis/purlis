@@ -878,6 +878,65 @@ describe("a link a program marked (OSC 8) over more rows, or broken by the progr
     await waitFor(() => expect(painted).toEqual([{ y: 0, x: 0, width: COLS }]));
   });
 
+  it("is drawn over all its rows where a later link the program moved the cursor inside lies past its cells", async () => {
+    const { term, drawn } = await opened();
+    await write(term, osc8("https://a.example/long", "a".repeat(COLS + 40)));
+    await write(term, `\u001b[2;51H${osc8("https://b.example/other", "b\u001b[Cbbb")}`);
+
+    hover(drawn, 2, 0);
+
+    await waitFor(() =>
+      expect(painted).toEqual([
+        { y: 0, x: 0, width: COLS },
+        { y: 1, x: 0, width: 40 },
+      ]),
+    );
+  });
+
+  it("is drawn over all its rows where the program wrote it again under an id of its own", async () => {
+    const { term, drawn } = await opened();
+    const words = "a".repeat(COLS + 40);
+    await write(term, osc8("https://a.example/long", words));
+    await write(
+      term,
+      `\u001b[1;1H\u001b]8;id=two;https://a.example/long\u001b\\${words}\u001b]8;;\u001b\\`,
+    );
+
+    hover(drawn, 2, 0);
+
+    await waitFor(() =>
+      expect(painted).toEqual([
+        { y: 0, x: 0, width: COLS },
+        { y: 1, x: 0, width: 40 },
+      ]),
+    );
+  });
+
+  it("is drawn only over its own row where a later link to a long target that differs only past the most kept was written over the rows after it", async () => {
+    const { term, drawn } = await opened();
+    const long = `https://a.example/${"x".repeat(3000)}`;
+    await write(term, osc8(`${long}a`, "a".repeat(2 * COLS + 40)));
+    await write(term, `\u001b[2;1H${osc8(`${long}b`, "a".repeat(COLS))}`);
+
+    hover(drawn, 2, 0);
+
+    await waitFor(() => expect(painted).toEqual([{ y: 0, x: 0, width: COLS }]));
+  });
+
+  it("keeps the blank its words wrap at", async () => {
+    const { term, drawn } = await opened();
+    const before = "x".repeat(COLS - "read ".length);
+    await write(term, `${before}${osc8("https://purlis.dev/long", "read more")} after`);
+
+    hover(drawn, 1, 1);
+
+    await waitFor(() =>
+      expect(resolved()).toContainEqual(
+        expect.objectContaining({ kind: "osc8", text: expect.stringContaining("read more") }),
+      ),
+    );
+  });
+
   it("is drawn over all its rows where the program wrote the same link again over one of them", async () => {
     const { term, drawn } = await opened();
     await write(term, osc8("https://a.example/long", "a".repeat(2 * COLS + 40)));

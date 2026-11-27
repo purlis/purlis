@@ -314,8 +314,8 @@ function colourOf(cell: IBufferCell, ground: "fg" | "bg"): string {
 /**
  * Whether `cell`'s characters are drawn in the colour they are drawn on: they show nothing.
  * Inverting them (SGR 7) swaps the two and changes nothing, and the default colours inverted
- * still differ. Bold drawn in a bright colour is taken as the colour written, so such a cell is
- * read as drawing nothing, which only ever keeps a row from joining.
+ * still differ. Bold drawn in a bright colour is taken as the colour written, so a bold cell
+ * in a dark palette colour on itself reads as drawing nothing, where the theme brightens it.
  */
 const inItsBackground = (cell: IBufferCell) => colourOf(cell, "fg") === colourOf(cell, "bg");
 
@@ -452,11 +452,7 @@ const STARTS_A_LINK = new RegExp(String.raw`^(?:${SCHEME}|~\/|\.{1,2}\/)`, "u");
  */
 function unindented(line: Wrapped, indent: number): Wrapped {
   let cut = 0;
-  while (
-    cut < line.cells.length &&
-    line.cells[cut].y === line.first &&
-    line.cells[cut].x < indent
-  )
+  while (cut < line.cells.length && line.cells[cut].y === line.first && line.cells[cut].x < indent)
     cut += 1;
   return { ...line, text: line.text.slice(cut), cells: line.cells.slice(cut) };
 }
@@ -886,19 +882,11 @@ function linkOf(params: string, target: string): string {
 const covers = (marked: Marked, x: number, y: number) =>
   !precedes(y, x, marked.start.y, marked.start.x) && precedes(y, x, marked.end.y, marked.end.x);
 
-/** Whether the program wrote cell (`x`, `y`) while `marked` was open, as its record tells: a
- *  cell of its span, or of its rows where it moved the cursor inside it. */
-function wroteTo(marked: Marked, x: number, y: number): boolean {
-  if (!marked.moved) return covers(marked, x, y);
-  const first = Math.min(marked.start.y, marked.end.y);
-  return y >= first && y <= Math.max(marked.start.y, marked.end.y);
-}
-
 /** **Which link cell (`x`, `y`) holds now** ({@link Marked.link}): the last one of `marked`
- *  written over it, or none. */
+ *  whose span, from where it opened to where it closed, holds the cell, or none. */
 function linkAtCell(marked: Marked[], x: number, y: number): string | undefined {
   for (let at = marked.length - 1; at >= 0; at -= 1)
-    if (wroteTo(marked[at], x, y)) return marked[at].link;
+    if (covers(marked[at], x, y)) return marked[at].link;
   return undefined;
 }
 
@@ -955,7 +943,7 @@ function marking(pane: Terminal, marked: Marked[]): IDisposable {
       if (start !== undefined)
         open = {
           target: cutTarget(target),
-          link: linkOf(params, cutTarget(target)),
+          link: linkOf(params, target),
           buffer,
           start: markedCell(start, at()),
           moved: false,
@@ -991,6 +979,8 @@ function wordsOf(pane: Terminal, marked: Marked, nothing: DrawsNothing): string 
     const to = !marked.moved && y === marked.end.y ? marked.end.x : line.length;
     let row = "";
     let blank = "";
+    // Whether a program wrote one of the blanks: a space it wrote is one, if it ends a row.
+    let wrote = false;
     for (let x = from; x < to; x += 1) {
       const cell = line.getCell(x);
       if (cell === undefined || cell.getWidth() === 0) continue;
@@ -998,14 +988,16 @@ function wordsOf(pane: Terminal, marked: Marked, nothing: DrawsNothing): string 
       const chars = drawnAt(line, x, nothing);
       if (chars === "") {
         blank += " ";
+        wrote ||= cell.getChars() !== "";
         continue;
       }
       row += blank + chars;
       blank = "";
+      wrote = false;
     }
-    // A row's cells that draw nothing, to its end, are no space inside one link: its words go
-    // on on the next row, where a hard line break put them.
-    text += marked.moved || y === last ? row + blank : row;
+    // A row's cells no program wrote, to its end, are no space inside one link: its words go on
+    // on the next row, where a hard line break put them.
+    text += marked.moved || y === last || wrote ? row + blank : row;
   }
   if (marked.moved) return text.trim();
   return withBeside(pane, nothing, text, marked.start, marked.end);
@@ -1241,9 +1233,10 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
 
   /** The marked link a range xterm hands the link handler is part of, with its target. */
   const markedAt = (range: IBufferRange, target: string): Marked | undefined =>
-    markedNow(pane, marked).find(
-      (one) => one.target === target && covers(one, range.start.x - 1, range.start.y - 1),
-    );
+    // The newest: the one the cells hold now.
+    markedNow(pane, marked)
+      .reverse()
+      .find((one) => one.target === target && covers(one, range.start.x - 1, range.start.y - 1));
   /**
    * **What a marked link is, as the core is handed it**: the target the program named, as xterm
    * hands it (cut past {@link MOST_TARGET}), and its words: the cells xterm links under the
@@ -1309,8 +1302,11 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
           : writtenTo(pane.buffer.active.getLine(y), hands.core.drawsNothing);
       if (to > from) rows.push({ x: from, y, width: to - from });
     }
-    // A cell a later link was written over, even with the same words, is that link's.
-    const now = markedNow(pane, marked);
+    // A cell a later link was written over, even with the same words, is that link's. Only a
+    // link over its rows can be.
+    const now = markedNow(pane, marked).filter(
+      (other) => other.start.y <= last && other.end.y >= one.start.y,
+    );
     const another = rows.some((run) =>
       Array.from({ length: run.width }, (_, at) => run.x + at).some(
         (x) => linkAtCell(now, x, run.y) !== one.link,
