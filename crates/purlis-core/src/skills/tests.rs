@@ -3395,16 +3395,19 @@ fn a_studio_read_asks_git_nothing_about_a_local_file_with_none_of_its_tables() {
     let root = dir.path();
     std::fs::write(root.join("charter.toml"), "[plane]\nname = \"p\"\n").expect("written");
     std::fs::write(root.join("charter.local.toml"), "[profile.mine]\n").expect("written");
-    let asks = crate::profiles::GIT_ASKS.with(std::cell::Cell::get);
 
-    let list = studio_list(None, root, None, None, &crate::harness_plugin::Env::of(&[]));
-    let extensions = crate::extension::project::Choices::read(root);
-    let old = crate::harness_plugin::old::found(root);
+    let ((list, extensions, old), tally) = crate::forklock::counting::counted(|| {
+        (
+            studio_list(None, root, None, None, &crate::harness_plugin::Env::of(&[])),
+            crate::extension::project::Choices::read(root),
+            crate::harness_plugin::old::found(root),
+        )
+    });
 
     assert!(list.rows.is_empty());
     assert_eq!(extensions.plane(), Some(root));
     assert!(old.is_empty());
-    assert_eq!(crate::profiles::GIT_ASKS.with(std::cell::Cell::get), asks);
+    assert_eq!(tally.started, 0, "each start is a `git status`");
 }
 
 /// A Local file that does hold what a studio reads is still asked about, and once in one read:
@@ -3418,16 +3421,22 @@ fn a_studio_read_asks_git_once_about_a_local_file_with_its_tables() {
         "[harness_skills.claude]\n\n[extensions.one]\nenabled = true\n",
     )
     .expect("written");
-    let asks = crate::profiles::GIT_ASKS.with(std::cell::Cell::get);
 
-    crate::profiles::git_asked_once(|| {
-        crate::harness_plugin::Choices::read(root);
-        crate::extension::project::Choices::read(root);
+    // What one ask costs, in programs started: the hardened runner's own reads and the status.
+    crate::worktree::git::Tuning::here();
+    let (_, one_ask) = crate::forklock::counting::counted(|| crate::profiles::ignore_check(root));
+    assert!(one_ask.started > 0, "the ask starts git");
+
+    let ((), tally) = crate::forklock::counting::counted(|| {
+        crate::profiles::git_asked_once(|| {
+            crate::harness_plugin::Choices::read(root);
+            crate::extension::project::Choices::read(root);
+        });
     });
 
     assert_eq!(
-        crate::profiles::GIT_ASKS.with(std::cell::Cell::get),
-        asks + 1
+        tally.started, one_ask.started,
+        "git asked once for the read"
     );
 }
 

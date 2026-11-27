@@ -196,12 +196,14 @@ pub(super) fn profile_rows(d: &Doctor) -> Vec<Row> {
     } else {
         IgnoreCheck::default()
     };
+    // What each probe starts counts where this thread's does (#7892).
+    let counting = &crate::forklock::counting::carried();
     std::thread::scope(|scope| {
         let pending: Vec<_> = rows
             .iter()
             .map(|p| match not_probed(&d.root, p, &ignored) {
                 Some(held) => Err(held),
-                None => Ok(scope.spawn(move || wiring::detect(p, &d.root))),
+                None => Ok(scope.spawn(move || counting.within(|| wiring::detect(p, &d.root)))),
             })
             .collect();
         rows.iter()

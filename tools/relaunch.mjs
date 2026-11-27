@@ -26,6 +26,9 @@
 // `restarted-to-update` word beside the machine store — and that the launch reading them says
 // so, with Reopen all as the answer in front, and spends the word.
 //
+// **And a hibernated chat stays hibernated across a relaunch** (SC-4e, #7634): a record holding
+// one, in front, beside a hot chat, reopens the hot chat alone, and keeps the mark.
+//
 // **And a chat the Skill studio started stays linked to its skill across a relaunch** (#5248):
 // a record holding a studio chat brings it back with the chip on its pane foot that names its
 // skill and its job, and the record the app writes again still holds the link and its start.
@@ -712,6 +715,83 @@ check(
     studioKept?.at === STUDIO.at &&
     studioKept?.started === STUDIO.started,
   `the record holds ${JSON.stringify(studioKept)}`,
+);
+
+
+// A chat the person hibernated, in front as they quit, beside a hot chat whose background shell
+// the quit ended (SC-4e, #7634): the relaunch gives the hibernated one no reopen, visible or not,
+// and keeps its mark for the launch after; the hot one reopens on its conversation, told what
+// the restart ended (its wake line, ADR 0068 as amended 2026-11-08).
+const ASLEEP = "11111111-2222-4333-8444-555555555509";
+const HOT = "11111111-2222-4333-8444-555555555510";
+/** How many times the stand-in was started on `conversation`. */
+const startsOn = (conversation) =>
+  argvSeen(argvFile).filter((line) => line.includes(`--resume ${conversation}`)).length;
+const aChatOf = (name, conversation, more) => ({
+  program: claude,
+  args: [],
+  cwd: plane,
+  ...(ON_A_SANDBOX_ONLY_PROFILE ? { profile: "scenario" } : {}),
+  name,
+  resume: conversation,
+  ...more,
+});
+writeFileSync(
+  record,
+  JSON.stringify(
+    {
+      version: 1,
+      at: STAMPED,
+      chats: [
+        aChatOf("ide.9", ASLEEP, {
+          active: true,
+          hibernated: { cause: "operator", at: STAMPED },
+        }),
+        aChatOf("ide.10", HOT, { own_work: { shells: 1 } }),
+      ],
+    },
+    null,
+    2,
+  ),
+);
+const sixth = await theAppRuns(
+  "the sixth launch, with a hibernated chat beside a hot one",
+  plane,
+  // Held three seconds once the hot chat is back, so a start of the hibernated one is seen.
+  (() => {
+    let back;
+    return () => {
+      if (startsOn(HOT) < 1) return false;
+      back ??= Date.now();
+      return Date.now() - back >= 3_000;
+    };
+  })(),
+  pressing("Reopen all sessions", argvFile, 0),
+);
+check(
+  "the hot chat reopens on its conversation beside a hibernated one",
+  sixth.ok && startsOn(HOT) === 1,
+  sixth.ok ? `it was started ${startsOn(HOT)} time(s)` : sixth.output,
+);
+// A first message reaches a chat on a profile alone, which this record's chats are on Linux.
+if (ON_A_SANDBOX_ONLY_PROFILE) {
+  check(
+    "told that the restart ended its background shell",
+    readFileSync(argvFile, "utf8").includes("1 background shell"),
+    `it was given: ${JSON.stringify(argvSeen(argvFile).at(-1) ?? "")}`,
+  );
+}
+check(
+  "and the hibernated chat, in front, is given no reopen",
+  startsOn(ASLEEP) === 0,
+  `it was started ${startsOn(ASLEEP)} time(s)`,
+);
+const asleepKept = JSON.parse(readFileSync(record, "utf8")).chats ?? [];
+check(
+  "and the record the app wrote again still holds it hibernated, and the hot one not",
+  asleepKept.find((chat) => chat.resume === ASLEEP)?.hibernated?.cause === "operator" &&
+    asleepKept.find((chat) => chat.resume === HOT)?.hibernated === undefined,
+  `the record holds ${JSON.stringify(asleepKept.map((chat) => [chat.name, chat.hibernated]))}`,
 );
 
 

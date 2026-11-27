@@ -3065,14 +3065,19 @@ struct ReadForCheck {
 }
 
 /// **`read`, on a thread of its own in `scope`**, inside the steps and the log of the thread that
-/// asks: each `docker` run it makes is a line where that thread's would be.
+/// asks: each `docker` run it makes is a line where that thread's would be, and counts where
+/// that thread's does ([`crate::forklock::counting`]).
 fn alongside<'scope, T: Send + 'scope>(
     scope: &'scope std::thread::Scope<'scope, '_>,
     read: impl FnOnce() -> T + Send + 'scope,
 ) -> std::thread::ScopedJoinHandle<'scope, T> {
     let steps = purlis_session_protocol::steps::current();
     let log = tracing::dispatcher::get_default(Clone::clone);
-    scope.spawn(move || tracing::dispatcher::with_default(&log, || steps.run(read)))
+    // And what it starts counts where that thread's does (#7892).
+    let counting = crate::forklock::counting::carried();
+    scope.spawn(move || {
+        tracing::dispatcher::with_default(&log, || counting.within(|| steps.run(read)))
+    })
 }
 
 /// What a read on a thread of its own answered; a read that panicked panics here too.
