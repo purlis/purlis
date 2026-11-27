@@ -13,4 +13,4 @@
   `done`, `cancelled` and `gave_up` stay at info. Each line's elapsed time is the `ms` field
   (was `elapsed_ms`), and a line may also carry `cause`, `attempt` and `start`, the id of the
   Start the person pressed, which the runner's `harness_spawn` line carries too (session
-  protocol 1.97). A pool is named only by its alias, never by a host, user or path.
+  protocol 1.98). A pool is named only by its alias, never by a host, user or path.

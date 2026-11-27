@@ -217,7 +217,7 @@ impl Cause {
 
 /// **The id of one Start the person pressed** (#7864): made by the window as the start begins,
 /// carried on every step of it, and over the link in the start it asks for
-/// (`StartProgram::start`, session protocol 1.97), so the runner's `harness_spawn` line names it
+/// (`StartProgram::start`, session protocol 1.98), so the runner's `harness_spawn` line names it
 /// too and the two logs join up. Letters and digits alone: [`StartId::parse`] takes nothing else,
 /// whoever sent it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

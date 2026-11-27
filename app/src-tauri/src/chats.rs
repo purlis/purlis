@@ -5297,7 +5297,7 @@ impl Chats {
         let _starting = self.going.starting_in(chat.cwd.as_deref())?;
         // **The id of this Start** (#7864): every step it makes on this thread, or hands on in
         // a step's context, names it, and so does the runner's `harness_spawn`, told it in the
-        // start (session protocol 1.97), so the two diagnostic logs' lines join up.
+        // start (session protocol 1.98), so the two diagnostic logs' lines join up.
         let _start_named = purlis_session_protocol::steps::starting(
             purlis_session_protocol::steps::StartId::mint(),
         );

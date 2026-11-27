@@ -51,7 +51,7 @@ the calls inside the steps.
 with a changelog line. `refused` lines are `warn`; the rest `info`. Each line has `step`,
 `outcome` and `ms`, and where known `pool`, `parent`, a typed `cause`, `attempt` and `start`: the
 id of the Start the person pressed, carried to the runner in the start it asks for (session
-protocol 1.97), so its `harness_spawn` line joins the window's. The `docker_*` call lines stay
+protocol 1.98), so its `harness_spawn` line joins the window's. The `docker_*` call lines stay
 `debug` and outside the contract; Settings › Diagnostics' *Detailed remote log for one hour* lets
 them through.
 

@@ -4490,9 +4490,9 @@ fn waits_off_the_lock(holding: &Holding, link: &HostLink) -> Result<(), String> 
 
 /// **A start's hold that was not answered with yes** (#4536): what this window found itself, or
 /// the host's refusal as it came.
-/// `start`, naming the Start this thread works for (1.97, #7864), where it names none: so the
+/// `start`, naming the Start this thread works for (1.98, #7864), where it names none: so the
 /// host's `harness_spawn` line names it too, and a runner's log joins this one. A host before
-/// 1.97 ignores it.
+/// 1.98 ignores it.
 fn named_by_its_start(mut start: StartProgram) -> StartProgram {
     if start.start.is_none() {
         start.start = purlis_session_protocol::steps::start_id().map(|id| id.to_string());

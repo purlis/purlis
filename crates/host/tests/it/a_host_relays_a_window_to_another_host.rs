@@ -752,7 +752,7 @@ async fn the_spawn_line_of_a_start_naming(start: &str) -> String {
 #[tokio::test]
 async fn the_runners_harness_spawn_names_the_start_the_window_made() {
     // #7864: the window's lines and the runner's join up by the Start's id, carried over the
-    // link in the start (1.97).
+    // link in the start (1.98).
     let line = the_spawn_line_of_a_start_naming("01JD3Q4M0R8W2ZK7A6F1B9CXYE").await;
     assert!(line.contains("start: 01JD3Q4M0R8W2ZK7A6F1B9CXYE"), "{line}");
 }
