@@ -111,9 +111,9 @@ what it is for, on the same footing as the rest, and is in #7825 too:
   finds, as `brew <name>` does; `makepkg` runs a `PKGBUILD`; MacPorts' `port` runs a `Portfile`;
   and `microdnf` and `tdnf` take settings the way `dnf` does.
 
-Tests now pin the names the amendment says reach a row by their forms (`aptitude-curses`,
-`dnf-3`, `upstart-local-bridge`, `upstart-event-bridge`), and a link named `start` that points
-to `initctl`. Each was seen to fail with its entry taken off the row.
+Tests now pin the names that, the first review said, reach a row by their forms (`aptitude-curses`,
+`dnf-3`, `upstart-local-bridge`, `upstart-event-bridge`), and a link named `start` that points to
+`initctl`. Each was seen to fail with its entry taken off the row.
 
 The second review of #7828 found more, each refused on the same footing:
 
@@ -192,10 +192,10 @@ Each round's leads are filed on #7833, its body and its comments.
 
 ## What the name forms cost
 
-A name is judged by its forms as well: its first part, its last part, and itself without a
-version (`name_forms`). So these entries refuse more than they name. The extra cost is an Allow
-and nothing else. Some of the programs caught rightly stay refused, and some may be harmless.
-These are examples, not a complete list:
+A name is judged by its forms as well (`name_forms`): its first part, its last part, its stem before
+a `.`, itself without a version, and each of those without a GNU `g` or `gnu`. So these entries
+refuse more than they name. The extra cost is an Allow and nothing else. Some of the programs caught
+rightly stay refused, and some may be harmless. These are examples, not a complete list:
 
 - every `systemd-<name>`. Some run code (`systemd-analyze unit-shell` runs a shell in a unit's
   namespace) and others are thought harmless (`systemd-escape`, `systemd-path`,
