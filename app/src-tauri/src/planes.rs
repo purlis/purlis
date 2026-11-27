@@ -1489,6 +1489,19 @@ impl Held {
         // are now**: a conversion of those records (#1519) runs when the project is opened
         // (`Planes::open`), before this, and must stay there.
         let begun = crate::restored::begin(self, &record);
+        // **A chat its record marks hibernated comes back hibernated** (SC-4e, #7634): put back
+        // with no program by the first half, it is hibernated as the act would have left it,
+        // with what its hibernation ended of its own work for its wake line, and the window is
+        // told.
+        for (session, by) in self.chats.marked_hibernated() {
+            self.hibernated
+                .asleep(session, by.into(), self.chats.own_now(session));
+            (self.hibernation_told)(crate::hibernation::Changed {
+                plane: self.id.clone(),
+                session,
+                hibernated: true,
+            });
+        }
         Reopening {
             begun,
             arrived,
@@ -2049,6 +2062,17 @@ impl Held {
             act.back_out();
             return Err(crate::hibernation::ENDED_ANOTHER_WAY.to_owned().into());
         }
+        // **With the intent, the mark, on disk before the program ends** (SC-4e, #7634): the
+        // durable carrier, which a restart reads. A crash from here finds it: with the program
+        // still running under the surviving host it is stale and the chat hot, and with the
+        // program gone the chat hibernated. Backing out takes it back.
+        self.chats.mark_hibernated(
+            session,
+            Some(crate::hibernation::mark_of(
+                crate::hibernation::By::Operator,
+            )),
+        );
+        self.recorded.flush();
         // **What arrived before the intent aborts the act** (SC-4d, #7633): read once more now
         // that it is recorded, so nothing slips between. A key the pane typed waits in its
         // lane and is sent to the program still there (the terminal's own answers are no
@@ -5772,6 +5796,17 @@ impl Planes {
                             crate::hostlost::after_the_host(state, asking, resumes_by_id, resumable)
                         {
                             let resumable = resumable && !with_the_runner && !pool_forgotten;
+                            // **Hibernated by its host's end, and marked so** (SC-4e, #7634;
+                            // #2278): not failed, and a restart keeps it hibernated, with its
+                            // Resume and no kept screen.
+                            if left_in == crate::hostlost::LeftIn::Hibernated && resumable {
+                                held.chats.mark_hibernated(
+                                    session,
+                                    Some(crate::hibernation::mark_of(
+                                        crate::hibernation::By::HostCrash,
+                                    )),
+                                );
+                            }
                             lost.note(
                                 session,
                                 crate::hostlost::LostRun {
@@ -7124,6 +7159,8 @@ impl Latched<'_> {
         if self.held.hibernated.failed(self.session) {
             return true;
         }
+        // Hot after all: its mark goes, so a restart does not read it hibernated (SC-4e).
+        self.held.chats.mark_hibernated(self.session, None);
         if let Some(id) = self.id {
             purlis_core::hibernatedscreens::forget(self.held.root(), id);
         }

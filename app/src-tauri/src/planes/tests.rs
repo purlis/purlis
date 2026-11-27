@@ -9618,3 +9618,294 @@ fn a_woken_chat_whose_hibernation_ended_nothing_is_started_with_no_wake_line() {
     let started = started_with_last(&host);
     assert!(!started.contains("purlis: this chat was"), "{started:?}");
 }
+
+// ----- a hibernated chat across a restart (SC-4e, #7634) -----
+
+/// A Codex chat as a quit recorded it, numbered `number`, with its id and a conversation to
+/// resume, hibernated as `hibernated` says: what a restart puts back. Codex, as
+/// [`a_chat_at_rest`]'s is: a harness that resumes by id. Its stand-in program is kept as long
+/// as the test runs.
+fn a_codex_chat_recorded(
+    dir: &Path,
+    number: u32,
+    hibernated: Option<purlis_core::reopen::HibernatedBy>,
+) -> purlis_core::reopen::Chat {
+    let beside = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/hibernate-stand-ins");
+    std::fs::create_dir_all(&beside).expect("a folder for the stand-in");
+    let beside = tempfile::tempdir_in(&beside).expect("a folder of its own");
+    let codex = stand_in::program(beside.path(), "codex", "#!/bin/sh\nexit 0\n");
+    std::mem::forget(beside);
+    let here = dir.join("plane/workspaces/alpha");
+    std::fs::create_dir_all(&here).expect("a folder of the project");
+    purlis_core::reopen::Chat {
+        program: codex.display().to_string(),
+        name: format!("codex {number}"),
+        cwd: Some(here),
+        number: Some(number),
+        resume: Some(
+            purlis_core::harness::SessionId::new(format!(
+                "11111111-2222-4333-8444-5555555555{number:02}"
+            ))
+            .expect("a conversation"),
+        ),
+        identity: purlis_core::reopen::Identity {
+            id: Some(purlis_core::reopen::mint()),
+            ..Default::default()
+        },
+        hibernated: hibernated.map(|by| purlis_core::reopen::Hibernation {
+            by,
+            at: 1_700_000_000,
+        }),
+        ..Default::default()
+    }
+}
+
+/// The marks the record on disk holds, by chat number.
+fn marks_on_disk(root: &Path) -> Vec<(u32, Option<purlis_core::reopen::HibernatedBy>)> {
+    let mut marks: Vec<_> = reopen::read_or_refusal(root)
+        .expect("the record reads")
+        .chats
+        .into_iter()
+        .filter_map(|chat| Some((chat.number?, chat.hibernated.map(|mark| mark.by))))
+        .collect();
+    marks.sort_unstable_by_key(|(number, _)| *number);
+    marks
+}
+
+#[test]
+fn a_restart_keeps_hibernated_chats_hibernated_visible_or_not_and_reopens_the_hot_one_beside_them()
+{
+    use crate::hibernation::By;
+    use purlis_core::reopen::HibernatedBy;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let root = held.root().to_path_buf();
+    // In front as the person quit, and hibernated by them.
+    let visible = purlis_core::reopen::Chat {
+        active: true,
+        ..a_codex_chat_recorded(dir.path(), 1, Some(HibernatedBy::Operator))
+    };
+    // Hibernated by its host's end: no kept screen, and not reopened by itself (#2278).
+    let crashed = a_codex_chat_recorded(dir.path(), 2, Some(HibernatedBy::HostCrash));
+    // Hot, with a background shell the restart ends: it reopens told so.
+    let own = purlis_core::ownwork::OwnWork {
+        shells: 1,
+        ..purlis_core::ownwork::OwnWork::default()
+    };
+    let hot = purlis_core::reopen::Chat {
+        own_work: Some(own),
+        ..a_codex_chat_recorded(dir.path(), 3, None)
+    };
+    let record = reopen::Record {
+        chats: vec![visible.clone(), crashed.clone(), hot.clone()],
+        dealt: 3,
+        ..Default::default()
+    };
+    reopen::write(&root, &record).expect("the record is written");
+
+    held.reopen(STARTING, Ok(record), Choice::ReopenAll);
+
+    assert_eq!(
+        host.asked()
+            .into_iter()
+            .map(|(number, _)| number)
+            .collect::<Vec<_>>(),
+        [3],
+        "only the hot chat is given a reopen"
+    );
+    assert_eq!(held.hibernated().of(1), Some(By::Operator));
+    assert_eq!(held.hibernated().of(2), Some(By::HostCrash));
+    assert_eq!(held.hibernated().of(3), None);
+    assert_eq!(held.hibernated().now(), [1, 2]);
+    assert!(
+        is_open(&held, 1) && is_open(&held, 2) && is_open(&held, 3),
+        "open {:?}, not started {:?}",
+        held.chats()
+            .open_now()
+            .iter()
+            .map(|open| open.session)
+            .collect::<Vec<_>>(),
+        held.chats().would_not_start()
+    );
+    assert_eq!(
+        held.chats().front(),
+        Some(1),
+        "the one in front is still in front"
+    );
+    assert_eq!(
+        crate::hibernation::screen_of(&held, 2),
+        None,
+        "a host crash kept no screen"
+    );
+    // Its wake line is the launch's as before (#5747), told where it starts on a profile, which
+    // `tools/relaunch.mjs` checks on Linux.
+    assert_eq!(
+        marks_on_disk(&root),
+        [
+            (1, Some(HibernatedBy::Operator)),
+            (2, Some(HibernatedBy::HostCrash)),
+            (3, None)
+        ],
+        "the next restart would not read them so"
+    );
+}
+
+#[test]
+fn a_chat_put_back_hibernated_is_woken_by_resume_on_its_conversation_and_its_mark_goes() {
+    use purlis_core::reopen::HibernatedBy;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let root = held.root().to_path_buf();
+    let asleep = a_codex_chat_recorded(dir.path(), 4, Some(HibernatedBy::Operator));
+    let record = reopen::Record {
+        chats: vec![asleep.clone()],
+        dealt: 4,
+        ..Default::default()
+    };
+    reopen::write(&root, &record).expect("the record is written");
+    held.reopen(STARTING, Ok(record), Choice::ReopenAll);
+    assert!(host.asked().is_empty(), "it was reopened");
+
+    let Restarted::Started(woken) = held
+        .restart_chat(4, STARTING, When::Now)
+        .expect("Resume wakes it")
+    else {
+        panic!("Resume did not wake it at once");
+    };
+
+    assert_eq!(
+        host.asked()
+            .into_iter()
+            .map(|(number, _)| number)
+            .collect::<Vec<_>>(),
+        [woken]
+    );
+    assert_eq!(
+        held.chats()
+            .recorded_chat(woken)
+            .and_then(|chat| chat.resume),
+        asleep.resume,
+        "it resumes the same conversation"
+    );
+    assert!(is_open(&held, woken) && !is_open(&held, 4));
+    assert_eq!(held.hibernated().of(4), None);
+    assert_eq!(marks_on_disk(&root), [(woken, None)]);
+}
+
+#[test]
+fn a_mark_whose_program_still_runs_under_the_surviving_host_is_stale_and_the_chat_comes_back_hot() {
+    // A crash between the mark and the program's end: the host that survived still runs it.
+    use purlis_core::reopen::HibernatedBy;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let root = held.root().to_path_buf();
+    let marked = a_codex_chat_recorded(dir.path(), 5, Some(HibernatedBy::Operator));
+    host.leaves_running(5, None);
+    let record = reopen::Record {
+        chats: vec![marked],
+        dealt: 5,
+        ..Default::default()
+    };
+    reopen::write(&root, &record).expect("the record is written");
+
+    held.reopen(STARTING, Ok(record), Choice::ReopenAll);
+
+    assert_eq!(host.reattached(), [5], "its program was not taken back");
+    assert_eq!(held.hibernated().of(5), None);
+    assert!(is_open(&held, 5));
+    assert_eq!(marks_on_disk(&root), [(5, None)], "the stale mark stayed");
+}
+
+#[test]
+fn hibernating_writes_its_mark_to_disk_before_the_program_ends_and_keeps_it_once_hibernated() {
+    use purlis_core::reopen::HibernatedBy;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let root = held.root().to_path_buf();
+    let session = a_chat_at_rest(&held, dir.path());
+    assert_eq!(
+        marks_on_disk(&root),
+        [(session, None)],
+        "marked before the act"
+    );
+    let as_it_ends = Arc::new(Mutex::new(Vec::new()));
+    host.as_it_hibernates({
+        let as_it_ends = Arc::clone(&as_it_ends);
+        let root = root.clone();
+        move || *as_it_ends.lock().unwrap() = marks_on_disk(&root)
+    });
+
+    held.hibernate_chat(session).expect("it hibernates");
+
+    assert_eq!(
+        *as_it_ends.lock().unwrap(),
+        [(session, Some(HibernatedBy::Operator))],
+        "the program ended before its mark was on disk"
+    );
+    assert_eq!(
+        marks_on_disk(&root),
+        [(session, Some(HibernatedBy::Operator))]
+    );
+}
+
+#[test]
+fn an_act_that_aborts_after_its_mark_takes_the_mark_back() {
+    use purlis_core::reopen::HibernatedBy;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let root = held.root().to_path_buf();
+    let session = a_chat_at_rest(&held, dir.path());
+    let as_it_ends = Arc::new(Mutex::new(Vec::new()));
+    host.as_it_hibernates({
+        let as_it_ends = Arc::clone(&as_it_ends);
+        let root = root.clone();
+        move || *as_it_ends.lock().unwrap() = marks_on_disk(&root)
+    });
+    host.hibernates_none(Some("the host said no"));
+
+    assert!(held.hibernate_chat(session).is_err(), "it hibernated");
+
+    assert_eq!(
+        *as_it_ends.lock().unwrap(),
+        [(session, Some(HibernatedBy::Operator))]
+    );
+    assert_eq!(held.hibernated().of(session), None);
+    assert_eq!(
+        marks_on_disk(&root),
+        [(session, None)],
+        "a hot chat would come back hibernated"
+    );
+}
+
+#[test]
+fn a_chat_its_host_s_end_left_at_rest_is_marked_hibernated_by_the_host_crash_and_not_failed() {
+    use purlis_core::reopen::HibernatedBy;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let root = held.root().to_path_buf();
+    let session = a_chat_at_rest(&held, dir.path());
+
+    host.program_ends_with_its_host(session);
+
+    assert!(
+        becomes(|| held.lost_with_the_host().of(session).is_some()),
+        "its host's end was never heard"
+    );
+    assert_eq!(
+        held.lost_with_the_host()
+            .of(session)
+            .map(|lost| lost.left_in),
+        Some(crate::hostlost::LeftIn::Hibernated)
+    );
+    assert_eq!(
+        marks_on_disk(&root),
+        [(session, Some(HibernatedBy::HostCrash))],
+        "the next restart would reopen it"
+    );
+}

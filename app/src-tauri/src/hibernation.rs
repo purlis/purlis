@@ -11,8 +11,10 @@
 //! abilities and the app's own records ([`facts_of`]), and answered by the core's
 //! [`purlis_core::rested::by_hand`], whose reasons the automatic path reads too (SC-4c, #7632).
 //!
-//! This is the tracer: one chat, by hand, in memory. **Nothing is automatic, and the flag does
-//! not survive a restart** (SC-4e, #7634). What a ruling on the spec could change sits in two
+//! This is the tracer: one chat, by hand. **Nothing is automatic.** The flag survives a restart
+//! as its chat's mark in the record of open chats (SC-4e, #7634): written with the act's intent,
+//! before the program ends, taken back where the act aborts, and read at the next launch, which
+//! gives a chat it marks no reopen ([`Hibernated::asleep`]). What a ruling on the spec could change sits in two
 //! places: the core's [`purlis_core::rested`], the one pure answer to *may it be hibernated*,
 //! and [`Hibernated`], the one place that says which chats are.
 //!
@@ -130,6 +132,44 @@ pub enum Hibernation {
 pub enum By {
     /// The person did, from its row.
     Operator,
+    /// The app did, by itself, for a rested chat: read back from the record at a restart
+    /// (SC-4e, #7634).
+    Idle,
+    /// Its session host ended while it rested at a turn's end (#2278), read back from the
+    /// record at a restart (SC-4e, #7634): it has no kept screen.
+    HostCrash,
+}
+
+impl From<purlis_core::reopen::HibernatedBy> for By {
+    fn from(by: purlis_core::reopen::HibernatedBy) -> Self {
+        use purlis_core::reopen::HibernatedBy;
+        match by {
+            HibernatedBy::Idle => Self::Idle,
+            HibernatedBy::Operator => Self::Operator,
+            HibernatedBy::HostCrash => Self::HostCrash,
+        }
+    }
+}
+
+impl From<By> for purlis_core::reopen::HibernatedBy {
+    fn from(by: By) -> Self {
+        match by {
+            By::Idle => Self::Idle,
+            By::Operator => Self::Operator,
+            By::HostCrash => Self::HostCrash,
+        }
+    }
+}
+
+/// **The mark the record of open chats keeps for a chat hibernated by `by` now** (SC-4e,
+/// #7634): what a restart reads it back hibernated by.
+pub fn mark_of(by: By) -> purlis_core::reopen::Hibernation {
+    purlis_core::reopen::Hibernation {
+        by: by.into(),
+        at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs()),
+    }
 }
 
 /// One chat's hibernation, from the person's press until it is woken or ended another way.
@@ -179,8 +219,8 @@ pub enum Typed {
     Full,
 }
 
-/// **The chats of a project that are hibernated, or being hibernated, by session**, in memory
-/// (SC-4e makes it durable). The one answer to *is it hibernated*: the program-end path, the
+/// **The chats of a project that are hibernated, or being hibernated, by session**, in memory;
+/// the record of open chats carries each one's mark across a restart (SC-4e, #7634). The one answer to *is it hibernated*: the program-end path, the
 /// pane, the row and the wake read it here.
 #[derive(Debug, Default)]
 pub struct Hibernated {
@@ -268,6 +308,25 @@ impl Hibernated {
             .filter(|held| held.settled)
             .map(|held| held.own.clone())
             .unwrap_or_default()
+    }
+
+    /// **Chat `session` comes back hibernated by `by`** (SC-4e, #7634): a restart read its
+    /// record's mark and found no program of it running, so it is hibernated as one the act
+    /// settled, its program gone, and `own` what its hibernation ended of its own work, as its
+    /// record held it: what its wake tells it.
+    pub fn asleep(&self, session: u32, by: By, own: crate::chats::Own) {
+        self.held().insert(
+            session,
+            Held {
+                by,
+                intended: true,
+                settled: true,
+                ended: true,
+                exited: false,
+                unsent: Vec::new(),
+                own,
+            },
+        );
     }
 
     /// [`Self::latch`] then [`Self::intend`]: a test's chat whose hibernation is in flight.

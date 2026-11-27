@@ -681,6 +681,14 @@ pub trait SessionHost: Send + Sync {
         ))
     }
 
+    /// **Holds chat `id` as hibernated with no program** (SC-4e, #7634): a restart put it back
+    /// hibernated, and started nothing, so its wake or its End closes it here as one the host
+    /// let go of as it hibernated ([`Self::hibernate`]), and asks nothing of the host. Nothing
+    /// for a host that never hibernates.
+    fn asleep(&self, id: u32) {
+        let _ = id;
+    }
+
     /// Calls `tell` as each session's program ends, with the id and how it ended.
     ///
     /// No hook reports a program dying, and none can — the process is gone. This is the
@@ -1994,6 +2002,9 @@ pub(crate) mod pretend {
                 Some((why, _)) => Err(why),
                 None => Ok(()),
             }
+        }
+        fn asleep(&self, id: u32) {
+            lock(&self.seen.hibernated).push(id);
         }
         fn stopped_by(&mut self, switch: Arc<crate::killswitch::KillSwitch>) {
             *lock(&self.seen.switch) = Some(switch);

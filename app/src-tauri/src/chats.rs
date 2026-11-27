@@ -6640,6 +6640,10 @@ impl Chats {
         // What its harness named since its program began, which is newer than what it started
         // under. A shell tab keeps none, as `follow_conversation` keeps none for one that is open.
         let mut under = under;
+        // **A chat whose program runs is hot** (SC-4e, #7634): a wake, a restart, and a reattach
+        // of a chat whose mark is stale (its program outlived a crash after the mark) all start
+        // with none, and the record says so from here.
+        under.hibernated = None;
         // A studio job whose program ended runs again with it, unless its draft came (#5248).
         if let Some(job) = under.studio.as_mut() {
             job.runs_again();
@@ -8201,7 +8205,7 @@ impl Chats {
     /// **The one answer to "in what order"**, for both the record and a reloaded window, so the
     /// two cannot disagree about which tab comes first.
     fn in_order(&self) -> Vec<u32> {
-        let running = self.sessions.running();
+        let running = self.held_open();
         let placed = lock(&self.order).clone();
         let mut ordered: Vec<u32> = placed
             .iter()
@@ -8216,10 +8220,28 @@ impl Chats {
         ordered
     }
 
+    /// **The sessions held open**: every one the session host runs, and every chat open here
+    /// that its mark holds hibernated (SC-4e, #7634), whose program the host let go of as it
+    /// hibernated, or never started at a launch. Without the second a hibernated chat would
+    /// leave the strip at the window's next read, and the record at its next write. Asked
+    /// before `open` is held by the caller.
+    fn held_open(&self) -> Vec<u32> {
+        let mut held = self.sessions.running();
+        let mut asleep: Vec<u32> = lock(&self.open)
+            .iter()
+            .filter(|(_, running)| running.chat.hibernated.is_some())
+            .map(|(number, _)| *number)
+            .filter(|number| !held.contains(number))
+            .collect();
+        asleep.sort_unstable();
+        held.extend(asleep);
+        held
+    }
+
     /// [`Self::in_order`], with the chats a launch has still to start where the strip has
     /// them: the order a record is written in while they come back.
     fn in_order_with(&self, coming: &[Coming]) -> Vec<u32> {
-        let running = self.sessions.running();
+        let running = self.held_open();
         let placed = lock(&self.order).clone();
         let is_coming = |session: &u32| coming.iter().any(|one| one.number == *session);
         let mut ordered: Vec<u32> = placed
@@ -9129,7 +9151,93 @@ impl Chats {
             };
             (own != Own::default()).then_some((one.number, own))
         }));
+        // **A chat its record marks hibernated is given no start, visible or not** (SC-4e,
+        // #7634): it comes back open, hibernated, with no program, as the act left it. Unless
+        // the session host that survived still runs its program (a crash between the mark and
+        // the program's end): the mark is stale, and the chat is reattached hot.
+        let (asleep, coming): (Vec<Coming>, Vec<Coming>) = coming
+            .into_iter()
+            .partition(|one| one.chat.hibernated.is_some() && !self.left_running(&one.chat));
+        for one in asleep {
+            self.put_back_asleep(one);
+        }
         lock(&self.coming).extend(coming);
+    }
+
+    /// **Chat `one` comes back hibernated** (SC-4e, #7634): open under its number with no
+    /// program, as a chat the act hibernated is, its record as it was, mark and all. Its
+    /// session host is told so, so its wake or End closes it there and asks nothing. What its
+    /// start would read (its sandbox, its skills, its line) is read as it wakes.
+    fn put_back_asleep(&self, one: Coming) {
+        let Coming {
+            chat,
+            number,
+            workspace,
+            ..
+        } = one;
+        self.sessions.asleep(number);
+        let how = match &chat.resume {
+            Some(id) => Reopened::Resumed(id.clone()),
+            None => Reopened::Fresh(purlis_core::reopen::Fresh::NoConversationRecorded),
+        };
+        let running = Running {
+            how,
+            harness: chat.harness(),
+            declared: None,
+            workspace,
+            confinement: None,
+            confines: None,
+            started_with: StartedWith {
+                held: chat.held.clone(),
+                grants: self.grants_of(&chat),
+            },
+            ran: None,
+            composed_by_its_host: false,
+            pools_unknown: false,
+            grants_as: grants_persona_of(&chat, &self.project),
+            skills: None,
+            skills_read: purlis_core::hoststart::ChatSkills::default(),
+            last_prompt: None,
+            plane_skills: chat.plane_skills.unwrap_or(false),
+            clones_at_start: None,
+            prompt_key: None,
+            runs_as: chat.persona.clone(),
+            runners_word: None,
+            reports_verified: false,
+            chat: Chat { pid: None, ..chat },
+        };
+        lock(&self.open).insert(number, running);
+    }
+
+    /// **The chats open hibernated by the mark their record holds**, by number (SC-4e, #7634):
+    /// the ones a launch put back hibernated ([`Self::put_back_asleep`]), and any the act marked
+    /// in this window.
+    pub(crate) fn marked_hibernated(&self) -> Vec<(u32, purlis_core::reopen::HibernatedBy)> {
+        let mut marked: Vec<_> = lock(&self.open)
+            .iter()
+            .filter_map(|(number, running)| Some((*number, running.chat.hibernated?.by)))
+            .collect();
+        marked.sort_unstable_by_key(|(number, _)| *number);
+        marked
+    }
+
+    /// **Marks open chat `session` hibernated, or takes its mark back** (SC-4e, #7634), in the
+    /// record of open chats, which is handed to its writer now: the durable carrier of the
+    /// state, which a restart reads. Its caller makes sure it is on disk where that matters.
+    /// Nothing for a chat not open.
+    pub(crate) fn mark_hibernated(
+        &self,
+        session: u32,
+        mark: Option<purlis_core::reopen::Hibernation>,
+    ) {
+        let changed = lock(&self.open).get_mut(&session).is_some_and(|running| {
+            let changed = running.chat.hibernated != mark;
+            running.chat.hibernated = mark;
+            changed
+        });
+        if changed {
+            self.write_it_down();
+        }
     }
 
     /// Every chat of this project the session host still runs from before this window that no
