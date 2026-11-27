@@ -189,16 +189,25 @@ pub fn branch_write(cmd: &str, cwd: &str, root: &str) -> BranchWrites {
 /// [`branch_write`], with `cdpath` saying whether the chat's shell may have a `CDPATH`: asked
 /// only of a bare relative `cd`, and once a line.
 fn branch_write_where(cmd: &str, cwd: &str, root: &str, cdpath: &dyn Fn() -> bool) -> BranchWrites {
-    // Read twice where a `${…}` held a blank or an operator ([`shellseg::on_either_reading`],
-    // #7709, round 5).
-    crate::shellseg::on_either_reading(|| {
-        let (found, unplaced) = found(cmd, cwd, root, Unplaced::Name, cdpath, writes_the_branch);
-        (!found.is_empty() || unplaced.is_some()).then_some(BranchWrites { found, unplaced })
-    })
-    .unwrap_or(BranchWrites {
-        found: Vec::new(),
-        unplaced: None,
-    })
+    // Read twice where a `${…}` held a blank or an operator, and every write either reading
+    // finds named, each checked against its own folder's claim
+    // ([`crate::shellseg::on_both_readings`], #7709, rounds 5 and 6).
+    crate::shellseg::on_both_readings(
+        || {
+            let (found, unplaced) =
+                found(cmd, cwd, root, Unplaced::Name, cdpath, writes_the_branch);
+            BranchWrites { found, unplaced }
+        },
+        |mut first, old| {
+            for write in old.found {
+                if !first.found.contains(&write) {
+                    first.found.push(write);
+                }
+            }
+            first.unplaced = first.unplaced.or(old.unplaced);
+            first
+        },
+    )
 }
 
 /// The start files a chat's shell may read before it runs a line, each in a folder of

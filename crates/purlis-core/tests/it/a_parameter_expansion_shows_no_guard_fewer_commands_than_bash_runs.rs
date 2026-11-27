@@ -275,3 +275,128 @@ fn a_git_in_a_parameter_expansion_that_holds_a_blank_is_held_to_its_branch_folde
         );
     }
 }
+
+#[test]
+fn a_hash_or_percent_trims_only_after_a_name_or_one_special_parameter() {
+    purlis_core::unsteered!();
+    // `${!#}` is the last positional parameter, so what follows its `#` is an alternative or a
+    // default, which gives text (#7709, round 6). `${##}` and `${#%}` may be a length, and
+    // `${!x#…}` an indirection: none is read as a trim.
+    let root = tempfile::tempdir().expect("a temporary directory");
+    for cmd in [
+        "eval ${!#:+cat<.charter/vaults/f.json}",
+        "eval ${!#:+:;cat<.charter/vaults/f.json}",
+        "bash -c ${!#:+cat<.charter/vaults/f.json}",
+        "set -- ''; eval ${!#:-cat<.charter/vaults/f.json}",
+        "eval ${!#:+:|cat<.charter/vaults/f.json}",
+        "true ${!#:+<.charter/vaults/f.json}",
+    ] {
+        assert!(gate(cmd, root.path()).is_some(), "not refused: {cmd:?}");
+    }
+    for cmd in [
+        "eval ${!#:+:;{gh,pr,merge,1}}",
+        "eval ${!#+:;{gh,pr,merge,1}}",
+        "eval ${!#:+:&&{gh,pr,merge,1}}",
+        "eval ${##:+:;{gh,pr,merge,1}}",
+        "eval ${#%:+:;{gh,pr,merge,1}}",
+        "eval ${!x#:+:;{gh,pr,merge,1}}",
+        "eval ${x%$${y:+;{gh,pr,merge,1}}}",
+        "eval ${x%a}:${x%$\\\n${y:+;{gh,pr,merge,1}}}",
+    ] {
+        held(cmd);
+    }
+}
+
+#[test]
+fn a_trim_after_a_name_a_positional_or_one_special_parameter_is_read_once() {
+    purlis_core::unsteered!();
+    // How many times [`shellseg::on_either_reading`] reads `line`.
+    let readings = |line: &str| {
+        let mut n = 0;
+        let _: Option<()> = shellseg::on_either_reading(|| {
+            n += 1;
+            let _ = shellseg::segment_readings(line);
+            None
+        });
+        n
+    };
+    // Each of these trims the value, as bash reads it.
+    for line in [
+        "f=${x%%;*}",
+        "f=${x_1#*|}",
+        "f=${1#*;}",
+        "f=${10%|*}",
+        "f=${_%|*}",
+        "f=${?#;}",
+        "f=${$#;}",
+        "f=${-%;}",
+        "f=${@#;}",
+        "f=${*%;}",
+    ] {
+        assert_eq!(readings(line), 1, "{line:?}");
+    }
+    // Nothing here is certainly a trim.
+    for line in [
+        "f=${!#:+;}",
+        "f=${!#;}",
+        "f=${##;}",
+        "f=${#%;}",
+        "f=${!x#;}",
+        "f=${!%;}",
+        "f=${1a#;}",
+        "f=${x%$${y;}}",
+    ] {
+        assert_eq!(readings(line), 2, "{line:?}");
+    }
+}
+
+#[test]
+fn a_carriage_return_in_a_parameter_expansion_is_a_blank() {
+    purlis_core::unsteered!();
+    for cmd in [
+        "IFS=$'\\r'; eval ${x:-gh\rpr\rmerge\r1}",
+        "IFS=$'\\r'; ${x:-gh\rpr\rmerge\r1}",
+        "IFS=$'\\r'; env ${x:-gh\rpr\rmerge\r1}",
+        "IFS=$'\\r'; env ${x:-A=1\rgh\rpr\rmerge\r1}",
+        "IFS=$'\\r'; timeout ${x:-5\rgh\rpr\rmerge\r1}",
+    ] {
+        held(cmd);
+    }
+}
+
+#[test]
+fn each_reading_of_a_line_adds_what_it_finds() {
+    use purlis_core::harness::{asked, model};
+    purlis_core::unsteered!();
+    // The gravest risk of either reading.
+    let risk = |line: &str| {
+        asked::risk_of(&model::Action::Command {
+            line: line.to_owned(),
+        })
+    };
+    assert_eq!(
+        risk("rm -rf build; eval true ${y:-; purlis secret get ops A}"),
+        model::Risk::SecretUse
+    );
+    assert_eq!(
+        risk("rm -rf build; purlis secret get ops A"),
+        model::Risk::SecretUse
+    );
+    // An ask's class is the old reading's, in the line's order, where that reading has one.
+    let facts = purlis_core::askrisk::Facts::new(
+        Path::new("/nonexistent-root"),
+        None,
+        ["main".to_owned()],
+        ["prod.example.com".to_owned()],
+    );
+    let class = |line: &str| facts.of_command(line).map(|it| it.class);
+    assert_eq!(
+        class("eval true ${y:-; rm -rf build}; curl https://prod.example.com/x"),
+        class("rm -rf build; curl https://prod.example.com/x"),
+    );
+    // Two merges, one on each reading, are two merges: no one request can be named.
+    assert_eq!(
+        mergehold::held("gh pr merge 1; eval true ${y:-; gh pr merge 2}"),
+        mergehold::held("gh pr merge 1; gh pr merge 2"),
+    );
+}

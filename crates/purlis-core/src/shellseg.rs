@@ -459,29 +459,41 @@ struct Lexer {
 
 /// How far into a `${…}` the lexer has read: an operator character in its trim pattern gives no
 /// text, so `f=${t%%|*}` (#7709) is read once, and one anywhere else may be run (round 5).
+///
+/// **Only a pattern that is certainly a trim is one** (round 6): a `%` or `#` right after a
+/// NAME, a positional parameter's digits, or one of the special parameters `@*?-$`. After a
+/// `!` it never is, since `${!#}` is the last positional parameter and `${!#:+…}` gives text,
+/// and after a leading `#` neither, since `${##}` is a length. Whatever is not certain is
+/// [`InBrace::Rest`], and the line is read the old way too.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum InBrace {
-    /// Its parameter's name; `first` before any character of it.
-    Name { first: bool },
+    /// Before any character of its parameter.
+    Start,
+    /// A NAME so far.
+    Name,
+    /// A positional parameter's digits so far.
+    Digits,
+    /// One special parameter, `@`, `*`, `?`, `-` or `$`.
+    Special,
     /// A `%`, `%%`, `#` or `##` pattern, which only trims the value.
     Trim,
-    /// Anything else: a default, an alternative, a substitution, a subscript.
+    /// Anything else: a default, an alternative, a substitution, a subscript, a length, an
+    /// indirection.
     Rest,
 }
 
 impl InBrace {
     /// Where `c`, read here, leaves the `${…}`.
     fn after(self, c: char) -> Self {
-        match self {
-            Self::Name { .. } if c.is_ascii_alphanumeric() || c == '_' => {
-                Self::Name { first: false }
-            }
-            Self::Name { first: true } if matches!(c, '#' | '?' | '@' | '*' | '!' | '$' | '-') => {
-                Self::Name { first: false }
-            }
-            Self::Name { .. } if matches!(c, '%' | '#') => Self::Trim,
-            Self::Name { .. } => Self::Rest,
-            other => other,
+        match (self, c) {
+            (Self::Start, c) if c.is_ascii_alphabetic() || c == '_' => Self::Name,
+            (Self::Start, c) if c.is_ascii_digit() => Self::Digits,
+            (Self::Start, '@' | '*' | '?' | '-' | '$') => Self::Special,
+            (Self::Name, c) if c.is_ascii_alphanumeric() || c == '_' => Self::Name,
+            (Self::Digits, c) if c.is_ascii_digit() => Self::Digits,
+            (Self::Name | Self::Digits | Self::Special, '%' | '#') => Self::Trim,
+            (Self::Trim, _) => Self::Trim,
+            _ => Self::Rest,
         }
     }
 }
@@ -762,13 +774,21 @@ impl Lexer {
                         match c {
                             '{' if self.dollars % 2 == 1 => {
                                 self.braces += 1;
-                                self.in_braces.push(InBrace::Name { first: true });
+                                self.in_braces.push(InBrace::Start);
+                            }
+                            '{' if self.dollars > 0 => {
+                                // `$${`: bash reads the PID and a plain `{`, but a shell that
+                                // counted it as a nested `${` would end the word elsewhere, so
+                                // nothing after it is certainly a trim (round 6).
+                                if let Some(top) = self.in_braces.last_mut() {
+                                    *top = InBrace::Rest;
+                                }
                             }
                             '}' => {
                                 self.braces -= 1;
                                 self.in_braces.pop();
                             }
-                            ' ' | '\t' => self.split_in_braces = true,
+                            c if WHITESPACE.contains(c) => self.split_in_braces = true,
                             ';' | '&' | '|' | '<' | '>' if here != Some(InBrace::Trim) => {
                                 self.operator_in_braces = true;
                             }
@@ -836,7 +856,7 @@ impl Lexer {
                         self.token.push(c);
                         if opens {
                             self.braces = 1;
-                            self.in_braces = vec![InBrace::Name { first: true }];
+                            self.in_braces = vec![InBrace::Start];
                             self.brace_mark = Some(BraceMark {
                                 at: self.instream.i,
                                 pushed: self.pushback_chars.clone(),
@@ -1269,7 +1289,25 @@ std::thread_local! {
 /// or `>` in one counts as a blank does (`eval ${x:-cat<f}`, round 5). A line whose `${…}`
 /// holds neither, or holds an operator only in a `%` or `#` trim pattern, which gives no text
 /// (`f=${t%%|*}`, the line #7709 was filed for), is read once. Nests: inside a second reading, `judge` is read once, already the old way.
-pub fn on_either_reading<T>(mut judge: impl FnMut() -> Option<T>) -> Option<T> {
+pub fn on_either_reading<T>(judge: impl FnMut() -> Option<T>) -> Option<T> {
+    read_twice(judge, Option::is_some, Option::or)
+}
+
+/// **`judge` on both readings of [`on_either_reading`], and `both` of the two answers** (#7709,
+/// round 6): for an answer that is a list or a grade, where the first reading's answer is not
+/// the whole of it. `both` gets the first reading's answer, then the old reading's. A line
+/// whose `${…}` holds no blank or operator outside a trim pattern is read once.
+pub fn on_both_readings<T>(judge: impl FnMut() -> T, both: impl FnOnce(T, T) -> T) -> T {
+    read_twice(judge, |_| false, both)
+}
+
+/// `judge`, and again the old way where a `${…}` it read asked for that and the first answer is
+/// not `settled`, the two answers put together by `both`.
+fn read_twice<T>(
+    mut judge: impl FnMut() -> T,
+    settled: impl FnOnce(&T) -> bool,
+    both: impl FnOnce(T, T) -> T,
+) -> T {
     if BRACES_OFF.get() {
         return judge();
     }
@@ -1277,11 +1315,14 @@ pub fn on_either_reading<T>(mut judge: impl FnMut() -> Option<T>) -> Option<T> {
     let first = judge();
     let split = SPLIT_IN_BRACES.get();
     SPLIT_IN_BRACES.set(outer || split);
-    if first.is_some() || !split {
+    if !split || settled(&first) {
         return first;
     }
-    let _old_way = BracesOff::on();
-    judge()
+    let second = {
+        let _old_way = BracesOff::on();
+        judge()
+    };
+    both(first, second)
 }
 
 /// Whether [`lex`] reads every `${` the old way now ([`on_either_reading`]'s second reading).

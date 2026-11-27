@@ -370,12 +370,11 @@ fn asking(action: Action, options: Vec<Choice>) -> Ask {
 /// here.
 pub fn risk_of(action: &Action) -> Risk {
     match action {
-        // Read twice where a `${…}` held a blank or an operator
-        // ([`crate::shellseg::on_either_reading`], #7709, round 5).
-        Action::Command { line } => crate::shellseg::on_either_reading(|| {
-            Some(risk::of_line(line, 0)).filter(|risk| *risk != Risk::Normal)
-        })
-        .unwrap_or(Risk::Normal),
+        // Read twice where a `${…}` held a blank or an operator, the graver of the two
+        // ([`crate::shellseg::on_both_readings`], #7709, rounds 5 and 6).
+        Action::Command { line } => {
+            crate::shellseg::on_both_readings(|| risk::of_line(line, 0), risk::graver)
+        }
         Action::Tool { name, .. } => risk::of_tool(name),
         Action::Unsaid | Action::Edit { .. } | Action::Elicit { .. } | Action::Question { .. } => {
             Risk::Normal
