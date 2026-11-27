@@ -34,8 +34,8 @@ use std::time::{Duration, Instant};
 use purlis_core::files::{Answer, Ask, Branch, Reader};
 use purlis_core::panelinks::{
     Asking, Asks, Candidate, ChatAt, ChatNumber, FileAt, Goes, Home, HomeIs, Hover, Kind,
-    LocalFile, NOT_A_LINK, Opening, Pane, ReadFrom, Resolver, RunnerFile, Runs, Target, UNASKABLE,
-    WebAddress,
+    NOT_A_LINK, Opening, Pane, ReadFrom, Resolver, RunnerFile, Runs, Target, UNASKABLE, UNCHECKED,
+    WebAddress, folder,
 };
 use serde::{Deserialize, Serialize};
 
@@ -53,6 +53,8 @@ pub enum KindHint {
     Chat,
     // A link a program marked itself (OSC 8, #6218): its words, and the target it named.
     Osc8,
+    // An issue or pull request's number, `#6223` or `owner/repo#6223` (#6223).
+    Issue,
 }
 
 impl From<KindHint> for Kind {
@@ -62,6 +64,7 @@ impl From<KindHint> for Kind {
             KindHint::File => Kind::File,
             KindHint::Chat => Kind::Chat,
             KindHint::Osc8 => Kind::Osc8,
+            KindHint::Issue => Kind::Issue,
         }
     }
 }
@@ -73,6 +76,7 @@ impl From<Kind> for KindHint {
             Kind::File => KindHint::File,
             Kind::Chat => KindHint::Chat,
             Kind::Osc8 => KindHint::Osc8,
+            Kind::Issue => KindHint::Issue,
         }
     }
 }
@@ -84,7 +88,7 @@ impl From<Kind> for KindHint {
 pub struct LinkCandidate {
     pub kind: KindHint,
     pub text: String,
-    #[serde(default)]
+    // Left out, it is `None`: serde reads a missing `Option` so with no `default`.
     #[specta(optional)]
     pub target: Option<String>,
 }
@@ -105,6 +109,12 @@ impl From<LinkCandidate> for Candidate {
 pub struct LinkFrom {
     pub plane: Option<PlaneId>,
     pub session: Option<u32>,
+    /// What the pane's program last said its folder is by OSC 7 (#6367), as it said it
+    /// (`file://host/path`): untrusted, read by the core ([`folder::said_by_osc7`]), and only
+    /// ever where a relative path starts.
+    #[serde(default)]
+    #[specta(optional)]
+    pub folder: Option<String>,
 }
 
 /// **The pane `from` names, as the core resolves against it**: its project's folder, and the
@@ -113,7 +123,8 @@ pub struct LinkFrom {
 /// no project open) names files purlis cannot place, so they are [`Runs::Elsewhere`]. A
 /// project the window does not hold is no project: nothing of it is read. Handed back with the
 /// pane, the project the window holds, which a chat's number is looked up in.
-// The folder is the one the chat started in: no hook reports the folder a chat has moved to.
+// A relative path starts where the chat is now ([`folder::now_in`], #6367): its own harness's
+// last report, else its program's last OSC 7, else where it started. Its home stays the start's.
 fn pane_of(planes: &Planes, from: LinkFrom) -> (Pane, Option<Arc<Held>>) {
     let held = from
         .plane
@@ -125,6 +136,7 @@ fn pane_of(planes: &Planes, from: LinkFrom) -> (Pane, Option<Arc<Held>>) {
             session: from.session,
             folder: None,
             runs: Runs::Elsewhere,
+            now_in: None,
         };
         return (pane, None);
     };
@@ -148,6 +160,14 @@ fn pane_of(planes: &Planes, from: LinkFrom) -> (Pane, Option<Arc<Held>>) {
         } else {
             Runs::Elsewhere
         },
+        now_in: here.as_ref().and_then(|_| {
+            let reported = from.session.and_then(|session| chats.folder_now(session));
+            let said = from
+                .folder
+                .as_deref()
+                .and_then(|said| folder::said_by_osc7(said, &folder::this_host()));
+            folder::now_in(reported, said)
+        }),
         folder: here.and_then(|at| at.cwd),
     };
     (pane, Some(held))
@@ -200,6 +220,10 @@ pub struct LinkSeen {
     /// The words of a link a program marked, where they name another target than it goes to.
     #[specta(optional)]
     pub its_text: Option<String>,
+    /// Why the editor checks this file only as it opens (#6489): its branch could not say
+    /// whether it offers it. None for every other link.
+    #[specta(optional)]
+    pub unchecked: Option<String>,
     /// What the chat a chat link names is: none for every other kind.
     pub chat: Option<ChatSeen>,
 }
@@ -440,6 +464,7 @@ pub(crate) fn seen_in(
                 },
                 chat: Some(chat),
                 its_text: None,
+                unchecked: None,
             }
         }
         Hover::Link { target, opening } => LinkSeen {
@@ -451,7 +476,16 @@ pub(crate) fn seen_in(
                 } => Some(shown.clone()),
                 _ => None,
             },
-            kind: target.kind().into(),
+            unchecked: match &target {
+                Target::File(file) if file.unchecked => Some(UNCHECKED.to_owned()),
+                _ => None,
+            },
+            // An issue's number goes to a web address, and is still an issue's (#6223).
+            kind: if candidate.kind == Kind::Issue {
+                KindHint::Issue
+            } else {
+                target.kind().into()
+            },
             target: target.shown().to_owned(),
             shown: match &target {
                 Target::File(file) => file.short().to_owned(),
@@ -476,6 +510,7 @@ pub(crate) fn seen_in(
                 shown: named.clone(),
                 does: LinkDoes::Refused { reason },
                 its_text: None,
+                unchecked: None,
                 chat: None,
             }
         }
@@ -589,7 +624,12 @@ pub(crate) fn answer_in(
         },
         Opening::Open(Target::Url(url)) => match open_url(url.as_str()) {
             Ok(()) => LinkOpened::Opened {
-                kind: KindHint::Url,
+                // An issue's number opens a web address, and is still an issue's (#6223).
+                kind: if candidate.kind == Kind::Issue {
+                    KindHint::Issue
+                } else {
+                    KindHint::Url
+                },
                 target: url.as_str().to_owned(),
             },
             Err(reason) => LinkOpened::Refused { reason },
@@ -663,29 +703,40 @@ pub(crate) fn looked<T: Send + 'static>(
 pub(crate) fn resolver() -> Resolver {
     let reader = crate::reader();
     let lists = std::sync::Mutex::new(Lists::new());
-    Resolver::with(vec![
-        Box::new(WebAddress),
-        Box::new(LocalFile::here().offered_by(move |project, branch, path| {
-            let key = (
-                branch.ws.to_owned(),
-                branch.repo.to_owned(),
-                branch.piece.map(str::to_owned),
-            );
-            let mut lists = lists.lock().ok()?;
-            let list = lists
-                .entry(key)
-                .or_insert_with(|| offered_list(&reader, project, branch));
-            Some(
-                list.as_ref()?
-                    .binary_search_by(|one| one.as_str().cmp(path))
-                    .is_ok(),
-            )
-        })),
-    ])
+    Resolver::offering(move |project, branch, path| {
+        let mut lists = lists.lock().ok()?;
+        let list = lists
+            .entry(BranchKey::of(branch))
+            .or_insert_with(|| offered_list(&reader, project, branch));
+        Some(
+            list.as_ref()?
+                .binary_search_by(|one| one.as_str().cmp(path))
+                .is_ok(),
+        )
+    })
 }
 
-/// Each branch's offered list a resolver read, by workspace, repo and piece.
-type Lists = std::collections::HashMap<(String, String, Option<String>), Option<Vec<String>>>;
+/// **A branch, as a resolver keeps the list it read of it** (#6489): its workspace, repo and
+/// piece, owned.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct BranchKey {
+    workspace: String,
+    repo: String,
+    piece: Option<String>,
+}
+
+impl BranchKey {
+    fn of(branch: Branch<'_>) -> Self {
+        Self {
+            workspace: branch.ws.to_owned(),
+            repo: branch.repo.to_owned(),
+            piece: branch.piece.map(str::to_owned),
+        }
+    }
+}
+
+/// Each branch's offered list a resolver read.
+type Lists = std::collections::HashMap<BranchKey, Option<Vec<String>>>;
 
 /// **What `branch` offers**: the list the light editor's open checks a path against (what git
 /// tracks there, or doesn't ignore), sorted. `None` where the reader could not say (an index
@@ -873,12 +924,13 @@ pub async fn pane_link_open(
     let session = from.session;
     let (pane, held) = pane_of(&app.state::<Planes>(), from);
     let candidate: Candidate = candidate.into();
-    // A web address opens here, in the browser; a file, or a marked link purlis refuses, is
+    // A web address opens here, in the browser, read by the web kind alone: no branch's file list
+    // is asked, so no reader is made (#6489). A file, or a marked link purlis refuses, is
     // answered on a thread of its own.
     if candidate.read_by() == Some(Kind::Url) {
         let asks = app.state::<PaneLinkAsks>();
         return answer(
-            &resolver(),
+            &Resolver::with(vec![Box::new(WebAddress)]),
             &pane,
             &asks.0,
             &candidate,
@@ -887,7 +939,9 @@ pub async fn pane_link_open(
         );
     }
     // A file, or a chat's number, is looked at on a thread of its own; it opens nothing there,
-    // only answers. A chat link never asks, so it is never answered by a token.
+    // only answers. A chat link never asks, so it is never answered by a token. An issue's
+    // number reads its folder's git config there, and opens its forge's page in the browser.
+    let issue = candidate.kind == Kind::Issue;
     let handle = app.clone();
     let look = move || {
         let asks = handle.state::<PaneLinkAsks>();
@@ -898,7 +952,13 @@ pub async fn pane_link_open(
             &asks.0,
             &candidate,
             token.as_deref(),
-            |_| Err("purlis opens a file only in an editor tab".to_owned()),
+            |url| {
+                if issue {
+                    open_in_browser(&handle, url)
+                } else {
+                    Err("purlis opens a file only in an editor tab".to_owned())
+                }
+            },
             &chats,
         )
     };

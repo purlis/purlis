@@ -97,8 +97,8 @@ impl Control {
                 format!(
                     "{branch} in {repo} on {host} is not a branch this chat made through purlis. \
                      {whose}. Allow records this chat as its owner at the commit the forge has \
-                     on it when you press, and then it can replace the branch's history, not \
-                     only add to it. Keep blocked leaves the push refused."
+                     on it when you press, and then it can add to the branch's history. Keep \
+                     blocked leaves the push refused."
                 )
             }
         }
@@ -175,6 +175,11 @@ fn tell(root: &Path) {
 /// not, and one line says it would have been; under `off` it is not. The control stays the
 /// window's in every mode: a press here releases a credential or makes a change only the
 /// person makes, and which of them a chat may make needs a ruling of its own.
+///
+/// **The forge route's NotYourBranch refusal is not asked here: its Let this chat push it is
+/// raised in every `consents` mode** ([`PushAsks`]; ADR 0125, amended 2026-11-27, §10; #7749).
+/// The push stays refused in every mode until the person's press, so turning the family down
+/// would only leave it with no way out.
 pub fn asks(root: &Path) -> bool {
     crate::enforcement::judged(
         root,
@@ -456,6 +461,7 @@ pub fn let_chat_push(
             repo_id: Some(*repo_id),
             branch: branch.clone(),
             tip: tip.clone(),
+            fast_forward_only: false,
         }],
         Some(crate::forge::createdbranches::Via::Allow),
     )
@@ -477,7 +483,8 @@ pub type OwnerOf = Box<dyn Fn(&str, u64, &str) -> Option<String> + Send + Sync>;
 /// **The route's ask to let a chat push a branch it has no record of**
 /// ([`crate::forge::proxy::BranchAsk`]) for one chat of one project: raises an ask for a branch
 /// ([`Control::LetChatPush`], one per chat and branch however often it is refused), and says
-/// in git's output that it is waiting in the window. **At most [`MAX_PUSH_ASKS_PER_PUSH`] new ask
+/// in git's output that it is waiting in the window, **in every `[policy] consents` mode** (ADR
+/// 0125, amended 2026-11-27, §10). **At most [`MAX_PUSH_ASKS_PER_PUSH`] new ask
 /// for a push and [`MAX_PUSH_ASKS_WAITING`] waiting for the chat**: past either, nothing new is
 /// raised and the chat is told asks are already waiting. **Nothing here answers it**: only the
 /// person's press does ([`let_chat_push`], [`keep_push_blocked`]).
@@ -499,10 +506,8 @@ impl crate::forge::proxy::BranchAsk for PushAsks {
         _: &crate::forge::proxy::ChatId,
         branches: &[crate::forge::proxy::NotYours],
     ) -> Option<String> {
-        // `[policy] consents` decides whether a window-only refusal is raised (Q308b).
-        if !asks(&self.root) {
-            return None;
-        }
+        // Raised in every `[policy] consents` mode, unlike the other window-only refusals
+        // ([`asks`]): the refusal stands whatever the mode, and the press is its only way out.
         let session = (self.session)()?;
         let mut waiting: Vec<&crate::forge::proxy::NotYours> = Vec::new();
         let mut kept: Vec<&crate::forge::proxy::NotYours> = Vec::new();

@@ -16,6 +16,8 @@
 //!   folder, a device or a pipe, says nothing; a binary file or one past the largest read
 //!   (`MOST_FILE_READ`) is no link and says why. A runner that does not answer in time says nothing either: the window waits on
 //!   no runner to draw a pane.
+//! - **What the runner keeps is no link and says why** ([`RUNNER_KEPT`], #7064): its own
+//!   folders, a harness's sign-in and what no chat there reads, never asked for and never opened.
 //! - **`~` is never asked**: on a runner it is the runner's home, which holds its sign-ins.
 
 use std::path::{Path, PathBuf};
@@ -40,6 +42,17 @@ pub trait RunnerFiles: Send + Sync {
 /// What a hover over a runner's binary file says.
 pub const RUNNER_BINARY: &str =
     "purlis opens a runner's file only as text, and this one is not text";
+
+/// What a hover over a file a runner keeps from the window says (#7064): its own folders, a
+/// harness's sign-in, and what no chat there reads. The runner chat's tab says it too.
+pub const RUNNER_KEPT: &str = "purlis never opens its own folders on a runner, a harness's \
+                               sign-in files, or what no chat there reads";
+
+/// What a hover over a runner's file says where the runner could not tell whether it keeps it
+/// (#7064, #7077): its list of what it keeps could not be read whole, or the file has several
+/// names and more places to look for them than the runner looks in. The tab says it too.
+pub const RUNNER_UNSURE: &str = "purlis could not tell whether this runner keeps this file from \
+                                 its window, so it does not open it";
 
 /// What a hover over a runner's file past the largest read ([`MOST_FILE_READ`]) says.
 pub fn runner_too_large() -> String {
@@ -104,6 +117,8 @@ impl LinkKind for RunnerFile {
             Some(FileRead::TooLarge { .. }) => {
                 return Resolved::NotALink(runner_too_large());
             }
+            Some(FileRead::Kept { .. }) => return Resolved::NotALink(RUNNER_KEPT.into()),
+            Some(FileRead::Unsure { .. }) => return Resolved::NotALink(RUNNER_UNSURE.into()),
             Some(FileRead::NotThere | FileRead::NotPlain { .. } | FileRead::Outside { .. })
             | None => return Resolved::Quiet,
         };
@@ -126,6 +141,8 @@ impl LinkKind for RunnerFile {
                 identity: super::onrunner::identity_of(&version).map(str::to_owned),
             },
             in_home: from_workspace.is_some(),
+            // The runner answered whether the file is there, so nothing is left to check (#6489).
+            unchecked: false,
             shown,
             short,
         })))

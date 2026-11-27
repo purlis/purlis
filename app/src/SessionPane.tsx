@@ -180,6 +180,8 @@ export function SessionPane({
     colour: () => linkColour(inForce()),
     // *Links in this pane…* (#6220) reads the screen of the terminal this pane draws now.
     onScreen: () => shownLive.current?.links.onScreen() ?? Promise.resolve([]),
+    // Where its program says it is now (OSC 7, #6367), which its relative paths start from.
+    folder: () => shownLive.current?.links.folder() ?? null,
     onChat,
   });
   /** Says something in the pane, in the terminal's own hand, while it is up. */
@@ -247,7 +249,7 @@ export function SessionPane({
       if (link === undefined) return;
       if (id === "terminal.openLink") {
         // A chat's card stands at the link: the menu has gone with its row (#6442).
-        if (linkHands !== undefined) void openLink(link.candidate, linkHands, null, link.place);
+        if (linkHands !== undefined) void openLink(link.candidate, linkHands, link.place);
         return;
       }
       const out = navigator.clipboard as ClipboardOut | undefined;

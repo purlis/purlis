@@ -32,6 +32,11 @@ import type { LinkCandidate, LinkFrom, LinkOpened, LinkSeen } from "./bindings";
  * - **A link a program marked itself (OSC 8, #6218) reaches the same core**, through xterm's
  *   `linkHandler`: its words and the target the program named, as the pane was handed them.
  *   The core reads the target again and asks first where the words read as another address.
+ *   **This is the one part that runs while output streams** ({@link marking}): it notes where
+ *   each marked link opens and closes, and whether a cursor move or erase came between, through
+ *   30 CSI and 6 ESC handlers that each return at once. Measured on 2026-11-18 (#6601), with
+ *   xterm's parser alone and nothing drawn: 8 MB of a busy TUI's output, five such sequences a
+ *   line, parsed about 4% slower; nothing but cursor moves, about 11% (10 ns a sequence).
  *   xterm draws it as a link under the pointer whatever it is, so ⌘-click on one the core
  *   refuses says why. Where a program marks links is the program's: purlis changes no
  *   harness's environment to coax them out of it.
@@ -53,6 +58,16 @@ const WEB = /(?<![\p{L}\p{N}+.-])\p{L}[\p{L}\p{N}+.-]*:\/\/[^\s<>"'`\p{Cc}]+/giu
  * zero, as the core reads one (`panelinks/chat.rs`, `MOST_DIGITS`).
  */
 const CHAT = /(?<![\p{L}\p{N}_#/.-])[Cc]hat [1-9]\d{0,8}(?![\p{L}\p{N}_])/gu;
+
+/**
+ * **An issue or pull request's number** (#6223): `#6223`, or `owner/repo#6223` (a GitLab group may
+ * have subgroups), as a word of its own. Not after a letter, a digit, `&` (an HTML entity), `/`,
+ * `#` or a word's own characters, and at most nine digits with no leading zero, as the core reads
+ * one (`panelinks/issue.rs`). The core finds the forge from the chat's folder's remote; with none,
+ * it is no link and says nothing.
+ */
+const ISSUE =
+  /(?<![\p{L}\p{N}_.&#/-])(?:[A-Za-z0-9][\w.-]*(?:\/[A-Za-z0-9][\w.-]*)+)?#[1-9]\d{0,8}(?![\p{L}\p{N}_#])/gu;
 
 /** What a sentence, or Markdown's emphasis, puts after an address, which is not the address's. */
 const TRAILING = /[.,;:!?*_]+$/u;
@@ -103,8 +118,9 @@ const FILE_ADDRESS = /^file:/iu;
 
 /**
  * **The candidates in `line`**, left to right: addresses (`scheme://…`, a `file://` one a file),
- * then file paths outside them, with the punctuation a sentence puts after one left out, then
- * chats' numbers (`chat 641`, #6217) outside both.
+ * then issue and pull request numbers outside them (`#6223`, `owner/repo#6223`, #6223), then file
+ * paths outside both, with the punctuation a sentence puts after one left out, then chats'
+ * numbers (`chat 641`, #6217) outside all of them.
  */
 export function candidatesIn(line: string): Found[] {
   const found: Found[] = [];
@@ -114,6 +130,14 @@ export function candidatesIn(line: string): Found[] {
     // A `file:` address names a file, under a file's rules (#6216, spec Q2).
     const kind = FILE_ADDRESS.test(text) ? "file" : "url";
     found.push({ kind, text, start: match.index, end: match.index + text.length });
+  }
+  for (const match of line.matchAll(ISSUE)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (found.some((one) => start < one.end && end > one.start)) continue;
+    // `owner/repo#N` may be a file's words too (`docs/guide.md#12`): both readings are offered
+    // and the core decides on the disk, a file where one is there, else an issue.
+    found.push({ kind: "issue", text: match[0], start, end });
   }
   const addresses = [...found];
   let paths = 0;
@@ -165,9 +189,12 @@ type Kept = Map<string, Promise<LinkSeen | null>>;
 const lives = new WeakMap<Promise<LinkSeen | null>, number>();
 
 /** Whether `link`'s answer looks at the disk, and so is kept only {@link FILE_ANSWER_LIFE}: a
- *  path, or a link a program marked whose target is a `file:` address. */
+ *  path, a link a program marked whose target is a `file:` address, or an issue's number, read
+ *  from the git remote of the folder the chat is in now (#6223). */
 const namesAFile = (link: LinkCandidate) =>
-  link.kind === "file" || (link.kind === "osc8" && FILE_ADDRESS.test(link.target ?? ""));
+  link.kind === "file" ||
+  link.kind === "issue" ||
+  (link.kind === "osc8" && FILE_ADDRESS.test(link.target ?? ""));
 
 /** **The answer kept for `key`**, while it still counts: a file's for {@link FILE_ANSWER_LIFE}. */
 function held(kept: Kept, key: string): Promise<LinkSeen | null> | undefined {
@@ -288,9 +315,9 @@ export type LinkHands = {
   from: () => LinkFrom;
   /** The pointer is on a link, or has left it (`null`). */
   hovered: (link: HoveredLink | null) => void;
-  /** What the open command answered for the link ⌘-clicked, drawn at `place` where it is on
-   *  screen: a chat's card stands beside it. */
-  answered: (answer: LinkOpened, candidate: LinkCandidate, place?: LinkPlace) => void;
+  /** What the open command answered for the link ⌘-clicked, drawn at `place`: a chat's card
+   *  stands beside it, and an ask answered there opens it from there again. */
+  answered: (answer: LinkOpened, candidate: LinkCandidate, place: LinkPlace) => void;
   /** The colour a link is drawn in under the pointer, as `#rrggbb`. */
   colour: () => string;
   /** Whether this is a Mac, where ⌘ opens a link, and not Ctrl. */
@@ -330,12 +357,13 @@ export function relayed(to: () => LinkHands | undefined): LinkHands {
 }
 
 /** **Opens `candidate`**, drawn at `place`, resolved again by the core, and hands on its answer.
- *  `token` is the token of the ask the person accepted. */
+ *  `token` is the token of the ask the person accepted. A link is always opened from where it
+ *  is drawn, so a chat's card stands at it (#6488). */
 export function openLink(
   candidate: LinkCandidate,
   hands: Pick<LinkHands, "core" | "from" | "answered">,
+  place: LinkPlace,
   token: string | null = null,
-  place?: LinkPlace,
 ): Promise<void> {
   return hands.core.open(hands.from(), candidateOf(candidate), token).then(
     (answer) => hands.answered(answer, candidate, place),
@@ -365,7 +393,7 @@ function placeOf(pane: Terminal, x: number, y: number, width: number): LinkPlace
  *  offers the one under the pointer (#6219): its candidate and the core's answer for it, and
  *  where it was drawn as it was read, which a chat's card opened from either stands beside
  *  (#6442): both close on the press, so the row it was picked on is gone. */
-export type ScreenLink = { candidate: LinkCandidate; seen: LinkSeen; place?: LinkPlace };
+export type ScreenLink = { candidate: LinkCandidate; seen: LinkSeen; place: LinkPlace };
 
 /** **A pane with its link hook registered**: let go of by `dispose`. */
 export type LinkedPane = IDisposable & {
@@ -379,7 +407,16 @@ export type LinkedPane = IDisposable & {
   /** **The link the pointer is on now**, which the terminal's menu offers to open and copy
    *  (#6219): xterm keeps a link hovered only while the pointer is in its range. */
   under: () => ScreenLink | undefined;
+  /** **The folder the pane's program last said it is in** (OSC 7, #6367), as it said it, or
+   *  `null`: handed to the core with each ask ({@link withFolder}), which reads it as
+   *  untrusted and only ever as where a relative path starts. */
+  folder: () => string | null;
 };
+
+/** **`from` with the folder a pane's program said it is in** (OSC 7, #6367), where it said one:
+ *  a pane whose program said none is handed on as it was. */
+export const withFolder = (from: LinkFrom, folder: string | null | undefined): LinkFrom =>
+  folder === null || folder === undefined ? from : { ...from, folder };
 
 /**
  * **A link a program marked on the screen** (OSC 8): the target it named, and the cells from
@@ -391,16 +428,42 @@ type Marked = {
   target: string;
   /** Which buffer it was written to: the normal one, or the alternate screen. */
   buffer: "normal" | "alternate";
-  start: IMarker;
-  startX: number;
-  end: IMarker;
-  endX: number;
+  /** Its first cell. */
+  start: MarkedCell;
+  /** The cell just past its last. */
+  end: MarkedCell;
   /**
    * Whether the program moved the cursor or changed the screen while the link was open (a
    * CSI or ESC sequence): what the link's cells show may then lie outside the span from its
    * start to its end, so its whole rows are read.
    */
   moved: boolean;
+};
+
+/** **A cell held by a marker**: its row moves with the buffer as lines scroll off, so it is
+ *  read from the marker each time, and the cell is a {@link Cell} wherever it is read. */
+type MarkedCell = Cell & { readonly marker: IMarker };
+
+/** The cell at column `x` of `marker`'s row, as the marker moves. */
+const markedCell = (marker: IMarker, x: number): MarkedCell => ({
+  marker,
+  x,
+  get y() {
+    return marker.line;
+  },
+});
+
+/** Whether `marked`'s markers are still held, and on the buffer. */
+const stillHeld = (marked: Marked) =>
+  !marked.start.marker.isDisposed &&
+  !marked.end.marker.isDisposed &&
+  marked.start.y >= 0 &&
+  marked.end.y >= 0;
+
+/** Lets go of `marked`'s markers. */
+const letGo = (marked: Pick<Marked, "start"> & Partial<Pick<Marked, "end">>) => {
+  marked.start.marker.dispose();
+  marked.end?.marker.dispose();
 };
 
 /** The longest target a marked link is handed on with: one longer is cut one past it, and the
@@ -427,7 +490,7 @@ const precedes = (y: number, x: number, y2: number, x2: number) => y < y2 || (y 
 
 /** Whether buffer cell (`x`, `y`) is one of `marked`'s. */
 const covers = (marked: Marked, x: number, y: number) =>
-  !precedes(y, x, marked.start.line, marked.startX) && precedes(y, x, marked.end.line, marked.endX);
+  !precedes(y, x, marked.start.y, marked.start.x) && precedes(y, x, marked.end.y, marked.end.x);
 
 /**
  * **Records each link a program marks on `pane`** (OSC 8): `ESC ] 8 ; params ; target ST`
@@ -435,7 +498,7 @@ const covers = (marked: Marked, x: number, y: number) =>
  * it draws the link and hands it to the pane's `linkHandler`.
  */
 function marking(pane: Terminal, marked: Marked[]): IDisposable {
-  let open: Omit<Marked, "end" | "endX"> | undefined;
+  let open: Omit<Marked, "end"> | undefined;
   /** A sequence that moves the cursor or changes the screen marks the open link moved. */
   const moves = () => {
     if (open !== undefined) open.moved = true;
@@ -460,20 +523,18 @@ function marking(pane: Terminal, marked: Marked[]): IDisposable {
       const was = open;
       open = undefined;
       if (end !== undefined && was.buffer === buffer) {
-        const one = { ...was, end, endX: at() };
-        if (one.moved || precedes(one.start.line, one.startX, end.line, one.endX)) {
+        const one: Marked = { ...was, end: markedCell(end, at()) };
+        if (one.moved || precedes(one.start.y, one.start.x, one.end.y, one.end.x)) {
           marked.push(one);
           while (marked.length > MOST_MARKED) {
             const oldest = marked.shift();
-            oldest?.start.dispose();
-            oldest?.end.dispose();
+            if (oldest !== undefined) letGo(oldest);
           }
         } else {
-          was.start.dispose();
-          end.dispose();
+          letGo(one);
         }
       } else {
-        was.start.dispose();
+        letGo(was);
         end?.dispose();
       }
     }
@@ -483,8 +544,7 @@ function marking(pane: Terminal, marked: Marked[]): IDisposable {
         open = {
           target: cutTarget(target),
           buffer,
-          start,
-          startX: at(),
+          start: markedCell(start, at()),
           moved: false,
         };
     }
@@ -495,11 +555,8 @@ function marking(pane: Terminal, marked: Marked[]): IDisposable {
     dispose() {
       handler.dispose();
       for (const one of watched) one.dispose();
-      open?.start.dispose();
-      for (const one of marked.splice(0)) {
-        one.start.dispose();
-        one.end.dispose();
-      }
+      if (open !== undefined) letGo(open);
+      for (const one of marked.splice(0)) letGo(one);
     },
   };
 }
@@ -511,14 +568,14 @@ function marking(pane: Terminal, marked: Marked[]): IDisposable {
  */
 function wordsOf(pane: Terminal, marked: Marked, nothing: DrawsNothing): string {
   const buffer = pane.buffer.active;
-  const first = Math.min(marked.start.line, marked.end.line);
-  const last = Math.min(Math.max(marked.start.line, marked.end.line), first + MOST_ROWS - 1);
+  const first = Math.min(marked.start.y, marked.end.y);
+  const last = Math.min(Math.max(marked.start.y, marked.end.y), first + MOST_ROWS - 1);
   let text = "";
   for (let y = first; y <= last; y += 1) {
     const line = buffer.getLine(y);
     if (line === undefined) break;
-    const from = !marked.moved && y === marked.start.line ? marked.startX : 0;
-    const to = !marked.moved && y === marked.end.line ? marked.endX : line.length;
+    const from = !marked.moved && y === marked.start.y ? marked.start.x : 0;
+    const to = !marked.moved && y === marked.end.y ? marked.end.x : line.length;
     let row = "";
     let blank = "";
     for (let x = from; x < to; x += 1) {
@@ -537,13 +594,7 @@ function wordsOf(pane: Terminal, marked: Marked, nothing: DrawsNothing): string 
     text += marked.moved || y === last ? row + blank : row;
   }
   if (marked.moved) return text.trim();
-  return withBeside(
-    pane,
-    nothing,
-    text,
-    { y: marked.start.line, x: marked.startX },
-    { y: marked.end.line, x: marked.endX },
-  );
+  return withBeside(pane, nothing, text, marked.start, marked.end);
 }
 
 /** Where a cell is on the buffer, zero-based. */
@@ -632,14 +683,7 @@ function besideOf(
 /** The marked links still on `pane`'s buffer now, of the buffer it shows. */
 function markedNow(pane: Terminal, marked: Marked[]): Marked[] {
   const buffer = pane.buffer.active.type;
-  return marked.filter(
-    (one) =>
-      one.buffer === buffer &&
-      !one.start.isDisposed &&
-      !one.end.isDisposed &&
-      one.start.line >= 0 &&
-      one.end.line >= 0,
-  );
+  return marked.filter((one) => one.buffer === buffer && stillHeld(one));
 }
 
 /** The cells of xterm's `range` (one-based, its end taken in) on the rows they are on. */
@@ -675,6 +719,20 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
   /** The links the program marked on the screen (OSC 8), as it wrote them. */
   const marked: Marked[] = [];
   const markings = marking(pane, marked);
+
+  /** **The folder the program last said it is in** (OSC 7, `file://host/path`), cut as a
+   *  marked link's target is: the core reads it, never the window. A line's answers may name
+   *  files from the folder before, so they are let go of when it moves. */
+  let folder: string | null = null;
+  const saidFolder = pane.parser.registerOscHandler(7, (data) => {
+    const said = cutTarget(data);
+    if (said !== folder) {
+      folder = said;
+      kept.clear();
+    }
+    // Nothing else of the terminal's reads it.
+    return false;
+  });
 
   /** The colour drawn over the link under the pointer, let go of as it leaves. */
   let drawn: IDisposable[] = [];
@@ -797,7 +855,9 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
       if (!opensALink(event, hands.mac())) return;
       event.preventDefault();
       // The core resolves it again, and a refusal is shown: xterm drew it as a link.
-      void openLink(markedCandidate(target, range), hands);
+      const top = rowsOf(range, pane.cols)[0];
+      if (top === undefined) return;
+      void openLink(markedCandidate(target, range), hands, placeOf(pane, top.x, top.y, top.width));
     },
     hover(_event, target, range) {
       const candidate = markedCandidate(target, range);
@@ -864,7 +924,7 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
               if (!opens || !opensALink(event, hands.mac())) return;
               event.preventDefault();
               const top = [...rows.values()][0];
-              void openLink(candidate, hands, null, placeOf(pane, top.x, top.y, top.width));
+              void openLink(candidate, hands, placeOf(pane, top.x, top.y, top.width));
             },
             hover() {
               hoverOn(`${first.x},${first.y}\u0000${found.text}`, [...rows.values()], candidate, {
@@ -881,11 +941,13 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
   });
   return {
     under: () => current,
+    folder: () => folder,
     dispose() {
       clearTimeout(leaving);
       undraw();
       provider.dispose();
       markings.dispose();
+      saidFolder.dispose();
       if (pane.options.linkHandler === handler) pane.options.linkHandler = INERT_LINKS;
       kept.clear();
     },
@@ -935,16 +997,17 @@ function onScreenNewestFirst(pane: Terminal, marked: Marked[], nothing: DrawsNot
     y = last + 1;
   }
   for (const link of marked) {
-    if (link.end.line < top || link.start.line > bottom) continue;
+    const { start, end } = link;
+    if (end.y < top || start.y > bottom) continue;
     const text = wordsOf(pane, link, nothing);
     // Where it is drawn: its first row on screen, from its first cell there.
-    const y = Math.max(link.start.line, top);
-    const x = y === link.start.line ? link.startX : 0;
-    const width = (y === link.end.line ? link.endX : pane.cols) - x;
+    const y = Math.max(start.y, top);
+    const x = y === start.y ? start.x : 0;
+    const width = (y === end.y ? end.x : pane.cols) - x;
     found.push({
       candidate: { kind: "osc8", text, target: link.target },
-      y: link.start.line,
-      x: link.startX,
+      y: start.y,
+      x: start.x,
       place: placeOf(pane, x, y, Math.max(width, 1)),
     });
   }

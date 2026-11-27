@@ -2764,6 +2764,71 @@ pub struct Docker {
     /// **The engine of a pool on another machine reached over Docker's TLS API** (#6267), where
     /// this `docker` is that pool's: each run's engine, with the files it is handed checked first.
     tls: Option<Box<crate::tlsroute::Through>>,
+    /// **What the pin's own `docker info` said of the engine**, kept for the container check
+    /// that comes after it on the same link (#7862, T6 Q2).
+    pin_said: PinSaid,
+}
+
+/// **What a pool's pin check read of its engine, handed on once** (#7862, T6 Q2): the engine's
+/// check before a link reads all of `docker info` (ADR 0123 §3), the daemon's security options
+/// with it, and the container's check that follows on the same link takes those from it rather
+/// than asking the engine again. It is not a cache: only the first check after the pin check
+/// takes it, only within [`PIN_SAID_FOR`], and every check after that reads the daemon again. Held
+/// only by a `docker` pointed at a pool's SSH forward ([`Docker::keeping_what_its_pin_said`]);
+/// its clones share it, so one check takes it whichever of them makes it.
+///
+/// It is not part of what a `docker` is: two that differ only in it are equal.
+#[derive(Clone, Default)]
+struct PinSaid(Option<std::sync::Arc<std::sync::Mutex<Option<Said>>>>);
+
+/// What a pin check read, and when.
+type Said = (std::time::Instant, serde_json::Value);
+
+/// How long what a pin check read is handed on for: the time its engine is taken as the pinned
+/// one over the same forward ([`crate::sshroute::pool::ENGINE_CHECKED_FOR`]).
+const PIN_SAID_FOR: std::time::Duration = std::time::Duration::from_secs(30);
+
+impl PinSaid {
+    fn slot(&self) -> Option<std::sync::MutexGuard<'_, Option<Said>>> {
+        self.0.as_ref().map(|slot| {
+            slot.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        })
+    }
+
+    /// Keeps `info`, what `docker info --format '{{json .}}'` printed, where this is kept at all.
+    fn keep(&self, info: serde_json::Value) {
+        if let Some(mut slot) = self.slot() {
+            *slot = Some((std::time::Instant::now(), info));
+        }
+    }
+
+    /// **The daemon's security options the pin's `docker info` printed**, taken: `None` where
+    /// none was kept, it is older than [`PIN_SAID_FOR`], or it prints no list of them (a
+    /// Podman's), and the check reads the daemon as it always did.
+    fn take_security_options(&self) -> Option<serde_json::Value> {
+        let (at, info) = self.slot()?.take()?;
+        if at.elapsed() > PIN_SAID_FOR {
+            return None;
+        }
+        info.get("SecurityOptions")
+            .filter(|options| options.is_array())
+            .cloned()
+    }
+}
+
+impl PartialEq for PinSaid {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for PinSaid {}
+
+impl std::fmt::Debug for PinSaid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PinSaid")
+    }
 }
 
 /// Where the verb of a `docker` run's arguments is, past the global flags that come before it: `-H`,
@@ -2988,6 +3053,34 @@ fn check_by_login(
 /// A runner container: its whole id, its name, and its desktop and device tag labels.
 type RunnerContainer = (String, String, Option<String>, Option<String>);
 
+/// **What a container's check read of the engine** ([`Docker::read_for_check`]), each answer
+/// as it came.
+struct ReadForCheck {
+    /// The daemon, held to [`check_daemon`] or [`check_podman`].
+    engine: Result<Engine, Refused>,
+    /// What `docker container inspect` printed of the container.
+    container: Result<serde_json::Value, Refused>,
+    /// What `docker volume inspect` printed of its home volume.
+    volume: Result<serde_json::Value, Refused>,
+}
+
+/// **`read`, on a thread of its own in `scope`**, inside the steps and the log of the thread that
+/// asks: each `docker` run it makes is a line where that thread's would be.
+fn alongside<'scope, T: Send + 'scope>(
+    scope: &'scope std::thread::Scope<'scope, '_>,
+    read: impl FnOnce() -> T + Send + 'scope,
+) -> std::thread::ScopedJoinHandle<'scope, T> {
+    let steps = purlis_session_protocol::steps::current();
+    let log = tracing::dispatcher::get_default(Clone::clone);
+    scope.spawn(move || tracing::dispatcher::with_default(&log, || steps.run(read)))
+}
+
+/// What a read on a thread of its own answered; a read that panicked panics here too.
+fn joined<T>(read: std::thread::ScopedJoinHandle<'_, T>) -> T {
+    read.join()
+        .unwrap_or_else(|panicked| std::panic::resume_unwind(panicked))
+}
+
 impl Docker {
     /// The `docker` command at `program`.
     pub fn at(program: impl Into<std::path::PathBuf>) -> Docker {
@@ -2998,6 +3091,7 @@ impl Docker {
             forwarded: None,
             reach: None,
             tls: None,
+            pin_said: PinSaid::default(),
         }
     }
 
@@ -3030,6 +3124,15 @@ impl Docker {
     #[must_use]
     pub fn with_settings_in(mut self, folder: impl Into<std::path::PathBuf>) -> Docker {
         self.settings_in = Some(folder.into());
+        self
+    }
+
+    /// **This `docker`, keeping what its pin check reads of the engine for the container check
+    /// after it** (#7862, [`PinSaid`]): a pool's on another machine, pointed at its forward, whose
+    /// link checks the pin and then the container.
+    #[must_use]
+    pub(crate) fn keeping_what_its_pin_said(mut self) -> Docker {
+        self.pin_said = PinSaid(Some(std::sync::Arc::default()));
         self
     }
 
@@ -3422,7 +3525,13 @@ impl Docker {
 
     /// The daemon's security options, held to [`check_daemon`]; or, for a Podman, which has no
     /// such field, its host's security, held to [`check_podman`] (#2680).
+    ///
+    /// **On a cold link, the options are the pin's own `docker info`'s** (#7862, [`PinSaid`]),
+    /// held to the same [`check_daemon`].
     fn check_daemon(&self) -> Result<Engine, Refused> {
+        if let Some(options) = self.pin_said.take_security_options() {
+            return check_daemon(&options).map(|()| Engine::default());
+        }
         let docker = self.json_or_late(
             &["info", "--format", "{{json .SecurityOptions}}"],
             "docker info",
@@ -4089,11 +4198,57 @@ impl Docker {
 
     /// [`Docker::check`]: the seccomp profile the container runs, where it passes.
     fn checked(&self, made: &Made) -> Result<Seccomp, Refused> {
-        let engine = self.check_daemon()?;
-        let inspected = self.json(
-            &["container", "inspect", made.container.as_str()],
-            "docker container inspect",
-        )?;
+        let read = self.read_for_check(made, None, None);
+        self.checked_from(made, read)
+    }
+
+    /// **What a container's check reads of the engine, read at once** (#7862, T6 Q2): the
+    /// daemon's options, the container and its home volume, each one `docker` run on a thread of
+    /// its own. A daemon already checked (`engine`) or a volume already read (`volume`) on the
+    /// same link is not read again. Each answer is held to the check in the order it always was
+    /// ([`Docker::checked_from`]), so a refusal is the one it always was.
+    fn read_for_check(
+        &self,
+        made: &Made,
+        engine: Option<Engine>,
+        volume: Option<Result<serde_json::Value, Refused>>,
+    ) -> ReadForCheck {
+        let name = made.runner.volume();
+        std::thread::scope(|scope| {
+            let daemon = engine
+                .is_none()
+                .then(|| alongside(scope, || self.check_daemon()));
+            let home = volume.is_none().then(|| {
+                alongside(scope, || {
+                    self.json(&["volume", "inspect", &name], "docker volume inspect")
+                })
+            });
+            let container = self.json(
+                &["container", "inspect", made.container.as_str()],
+                "docker container inspect",
+            );
+            ReadForCheck {
+                engine: match (engine, daemon) {
+                    (Some(engine), _) => Ok(engine),
+                    (None, Some(daemon)) => joined(daemon),
+                    (None, None) => unreachable!("the daemon is read where it was not given"),
+                },
+                container,
+                volume: match (volume, home) {
+                    (Some(volume), _) => volume,
+                    (None, Some(home)) => joined(home),
+                    (None, None) => unreachable!("the volume is read where it was not given"),
+                },
+            }
+        })
+    }
+
+    /// [`Docker::checked`], from what [`Docker::read_for_check`] read, each answer held to the
+    /// check in the order it always was: the daemon, the container, a rootless Podman's runtime
+    /// config, the volume, and the runner's own `purlis`.
+    fn checked_from(&self, made: &Made, read: ReadForCheck) -> Result<Seccomp, Refused> {
+        let engine = read.engine?;
+        let inspected = read.container?;
         let seccomp = check_on(&inspected, made, engine)?;
         // Rootless Podman writes some of what it was asked for only in what it asked its
         // runtime for (#2895), which this user can read.
@@ -4126,9 +4281,7 @@ impl Docker {
                 )?,
             }
         }
-        let volume = made.runner.volume();
-        let inspected = self.json(&["volume", "inspect", &volume], "docker volume inspect")?;
-        check_volume(&inspected, made)?;
+        check_volume(&read.volume?, made)?;
         // A runner whose profile lets the browser engine make namespaces runs a `purlis` that
         // holds everything else it starts from them (D-2050-26), or it is not linked.
         if seccomp == Seccomp::Runners
@@ -4414,7 +4567,11 @@ impl Docker {
             &["info".into(), "--format".into(), "{{json .}}".into()],
             MOST_INSPECTED,
         )?;
-        engine_id_in(&printed)
+        let id = engine_id_in(&printed)?;
+        if let Ok(info) = serde_json::from_str(printed.trim()) {
+            self.pin_said.keep(info);
+        }
+        Ok(id)
     }
 
     /// **Which engine this `docker` reaches, for a pin** (#6269, ADR 0123 §3): a Podman (this
@@ -4444,6 +4601,7 @@ impl Docker {
         if is_podman_engine(&components) {
             return Ok(EngineSaid::PodmanOverDocker);
         }
+        self.pin_said.keep(info);
         Ok(EngineSaid::Pin(crate::sshroute::EnginePin::Docker(id)))
     }
 
@@ -4493,21 +4651,29 @@ impl Docker {
     ///
     /// It answers what it read of the container before anything was started ([`Ran`]), and
     /// whether it started it, so the runner hours record has both (#3492).
+    ///
+    /// **Each fact is read once** (#7862, T6 Q2): what this reads before anything is started is
+    /// the check's own, the daemon, the container and its home volume read at once. A container
+    /// started here is inspected again once it runs; the daemon and the volume are not read again.
+    /// Nothing is checked differently, and the check runs whole on every link.
     pub fn resumed(&self, made: &Made) -> Result<Resumed, Refused> {
         let step = purlis_session_protocol::steps::begin("container_check");
-        let engine = self.check_daemon()?;
-        let inspected = self.json(
-            &["container", "inspect", made.container.as_str()],
-            "docker container inspect",
-        )?;
-        let before = ran(&inspected);
+        let read = self.read_for_check(made, None, None);
+        let inspected = match &read.container {
+            Ok(inspected) => inspected,
+            // The daemon's refusal comes first, as it always did.
+            Err(why) => return Err(read.engine.err().unwrap_or_else(|| why.clone())),
+        };
+        let before = ran(inspected);
         if before.running {
-            return step.ended(self.check(made).map(|()| Resumed {
+            return step.ended(self.checked_from(made, read).map(|_| Resumed {
                 before,
                 started: false,
             }));
         }
-        checked_on(&inspected, made, engine, false)?;
+        let engine = read.engine?;
+        checked_on(inspected, made, engine, false)?;
+        let volume = read.volume;
         let id = made.container.as_str().to_owned();
         {
             let started =
@@ -4515,7 +4681,8 @@ impl Docker {
             started.ended(self.run(&["start".to_owned(), id.clone()], None, MOST_INSPECTED))?;
         }
         // Started here and not as it was made once it runs: it is stopped again, and not linked.
-        step.ended(self.check(made).map(|()| Resumed {
+        let after = self.read_for_check(made, Some(engine), Some(volume));
+        step.ended(self.checked_from(made, after).map(|_| Resumed {
             before,
             started: true,
         }))

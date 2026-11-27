@@ -58,8 +58,11 @@ runner's own log, another sum.
 `remote-parity` job, against `tests/remote-docker/up.sh`: `docker:dind` behind a dockerised sshd,
 with `netem delay 40ms 10ms loss 1%` on the sshd's side. It reads the spans back, **asserts each
 step of the link path emitted one** in the scenario it belongs to, prints the table and writes it
-to the job's summary. The round trip is the median of five TCP connects to the sshd (the delay is
-on the sshd's egress, so a connect is one round trip).
+to the job's summary. The round trip is the median of five `GET /_ping`s to the engine over one
+connection to the pool's forward, once a first ping has opened its ssh channel (#7832): each
+crosses the sshd and its answer leaves through the sshd's `eth0`, where the delay is. (The
+baseline below was measured with a TCP connect to the route's address instead, which reads 0 ms:
+see *The round trip the run did not see*.)
 
 Scenarios: **cold** (forward not held), **warm** (forward held, engine checked < 30 s ago),
 **runner stopped** (`docker start` first). Each is a link made as a start makes it, through the
@@ -73,9 +76,215 @@ the numbers below are from CI.
 
 ## Baseline
 
-**Pending.** The numbers come from the first `remote-parity` run of
-`a_start_on_a_remote_pool_times_each_of_its_steps`, which writes its table to the job's summary;
-paste it here from that run. Nothing below is measured yet.
+From `a_start_on_a_remote_pool_times_each_of_its_steps` in the `remote-parity` job
+(*parity against Docker on another machine, over SSH and TLS*) of PR #7815: run
+[45902462569](https://github.com/purlis/purlis/actions/runs/45902462569), job
+[140191838563](https://github.com/purlis/purlis/actions/runs/45902462569/job/140191838563), head
+`6c4be6f708` merged as `e6134eaf` into `main` at `b37d426c29`, 2026-11-26 22:34 UTC. The tables
+are as the test printed them; only the scenario headings are made headings here.
+
+> **The heading's *round trip 0 ms* is wrong.** The netem delay (40 ms ± 10 ms, 1% loss on the
+> sshd's egress) was applied, and everything through the forward passed it. Only the test's
+> round-trip probe did not, so this run states no measured round trip (below).
+
+### Cold: first start after launch
+
+3021 ms in all. A step with a parent, or a call, is inside another: leave it out of a sum.
+
+| step | inside | runs | ms (each) |
+|---|---|---|---|
+| ssh_forward_open |  | 1 | 473 |
+| docker_info | (a call) | 3 | 182, 484, 222 |
+| engine_pin_check |  | 1 | 184 |
+| docker_container_inspect | (a call) | 2 | 242, 222 |
+| docker_volume | (a call) | 1 | 162 |
+| docker_exec | (a call) | 1 | 393 |
+| container_check | link_check | 1 | 1744 |
+| link_check |  | 1 | 1745 |
+| link_prepare |  | 1 | 1 |
+| link_exec_spawn |  | 1 | 1 |
+| link_handshake |  | 1 | 566 |
+
+### Warm: a link straight after
+
+2041 ms in all. A step with a parent, or a call, is inside another: leave it out of a sum.
+
+| step | inside | runs | ms (each) |
+|---|---|---|---|
+| docker_info | (a call) | 2 | 202, 182 |
+| docker_container_inspect | (a call) | 2 | 202, 182 |
+| docker_volume | (a call) | 1 | 162 |
+| docker_exec | (a call) | 1 | 446 |
+| container_check | link_check | 1 | 1396 |
+| link_check |  | 1 | 1396 |
+| link_prepare |  | 1 | 1 |
+| link_exec_spawn |  | 1 | 1 |
+| link_handshake |  | 1 | 593 |
+
+### Runner stopped: its container is started
+
+2439 ms in all. A step with a parent, or a call, is inside another: leave it out of a sum.
+
+| step | inside | runs | ms (each) |
+|---|---|---|---|
+| docker_info | (a call) | 2 | 262, 222 |
+| docker_container_inspect | (a call) | 2 | 242, 222 |
+| docker_start | (a call) | 1 | 225 |
+| runner_start | container_check | 1 | 228 |
+| docker_volume | (a call) | 1 | 162 |
+| docker_exec | (a call) | 1 | 457 |
+| container_check | link_check | 1 | 1817 |
+| link_check |  | 1 | 1818 |
+| link_prepare |  | 1 | 2 |
+| link_exec_spawn |  | 1 | 1 |
+| link_handshake |  | 1 | 570 |
+
+### Totals
+
+| scenario | in all (ms) | rows with no parent (ms) |
+|---|---|---|
+| cold | 3021 | 2970 (473 + 184 + 1745 + 1 + 1 + 566) |
+| warm | 2041 | 1991 (1396 + 1 + 1 + 593) |
+| runner stopped | 2439 | 2391 (1818 + 2 + 1 + 570) |
+
+In each scenario the steps leave about 50 ms of the whole unaccounted for (51, 50 and 48 ms):
+time between steps that no span covers.
+
+### Reading
+
+- **What dominates is the container check.** `container_check` takes 1396 to 1817 ms inside
+  `link_check`. It is 6 or 7 serial `docker` calls (`docker_info` twice, `docker_container_inspect`
+  twice, `docker_volume`, `docker_exec`, and `docker_start` when the runner was stopped), each
+  162 to 484 ms through the forward. `link_handshake` is 566 to 593 ms. `ssh_forward_open` is
+  473 ms cold. `link_prepare` and `link_exec_spawn` are 1 or 2 ms.
+- **Warm is only 980 ms cheaper than cold** (3021 against 2041). Holding the forward and the
+  engine's pin saves `ssh_forward_open` and `engine_pin_check` (473 + 184 ms; the cold run's third
+  `docker_info`, its first at 182 ms, is the pin check's own). The rest of the difference is
+  `container_check` itself, 348 ms longer cold (1744 against 1396), most of it one 484 ms
+  `docker_info`. The per-link container check stays on every link, so it, not the forward, is the
+  main cost. A stopped runner adds 398 ms to a warm link (2439 against 2041), of which
+  `runner_start` is 228 ms.
+
+### The round trip the run did not see
+
+The test's heading reads *round trip 0 ms*. `tests/remote-docker/up.sh` does apply the netem:
+`tc qdisc add dev eth0 root netem delay 40ms 10ms loss 1%` runs in the sshd's container, the
+script runs under `set -euo pipefail`, and this job's log shows the script going on past that
+line (the registry run, the images pushed, the agent started), so `tc` succeeded.
+
+The probe is what misses it. `round_trip_ms` times `TcpStream::connect` to the route's address,
+`127.0.0.1:2222`, which is Docker's port published on the CI runner's loopback. On loopback, Docker's userland
+proxy (`docker-proxy`) accepts that connection on the runner and opens its
+own to the container, so the connect returns before anything reaches the sshd's `eth0`, where
+the delay is. The 0 ms is itself the evidence: a SYN-ACK leaving through that qdisc would be at
+least about 30 ms late. The ssh session behind the forward is not affected: its packets do
+reach the sshd, and its replies leave through `eth0`, delayed. Fixing the probe so it measures
+a round trip that passes the sshd's `eth0` is #7832.
+
+So the step times above were made at about 40 ms ± 10 ms with 1% loss, as the rig intends, but
+this run does not show the round trip it ran at. Until the probe is fixed, read the steps
+against the rig's configured 40 ms, not against the heading's 0 ms. A link of another RTT moves
+each step by about (its serial round trips × the difference in RTT): each serial `docker` call
+through the forward is at least one round trip, and the forward's open and the handshake are
+several.
+
+## After #7862 and #7832
+
+From `a_start_on_a_remote_pool_times_each_of_its_steps` in the `remote-parity` job of PR #7884:
+run [45954820797](https://github.com/purlis/purlis/actions/runs/45954820797), job
+[140359149184](https://github.com/purlis/purlis/actions/runs/45954820797/job/140359149184), head
+`4bdb9916f9`, 2026-11-27 07:35 UTC. The tables are as the test printed them; only the scenario
+headings are made headings here.
+
+**The round trip was measured: 34 ms**, a ping through the forward, median of 5 (#7832), inside
+the rig's 40 ms ± 10 ms and the 30 to 60 ms the budget is stated at.
+
+### Cold: first start after launch
+
+1766 ms in all. A step with a parent, or a call, is inside another: leave it out of a sum.
+
+| step | inside | runs | ms (each) |
+|---|---|---|---|
+| ssh_forward_open |  | 1 | 472 |
+| docker_info | (a call) | 1 | 222 |
+| engine_pin_check |  | 1 | 224 |
+| docker_volume | (a call) | 1 | 142 |
+| docker_container_inspect | (a call) | 1 | 181 |
+| docker_exec | (a call) | 1 | 348 |
+| container_check | link_check | 1 | 536 |
+| link_check |  | 1 | 536 |
+| link_prepare |  | 1 | 1 |
+| link_exec_spawn |  | 1 | 1 |
+| link_handshake |  | 1 | 498 |
+
+### Warm: a link straight after
+
+1232 ms in all. A step with a parent, or a call, is inside another: leave it out of a sum.
+
+| step | inside | runs | ms (each) |
+|---|---|---|---|
+| docker_volume | (a call) | 1 | 142 |
+| docker_container_inspect | (a call) | 1 | 182 |
+| docker_info | (a call) | 1 | 204 |
+| docker_exec | (a call) | 1 | 425 |
+| container_check | link_check | 1 | 635 |
+| link_check |  | 1 | 635 |
+| link_prepare |  | 1 | 1 |
+| link_exec_spawn |  | 1 | 1 |
+| link_handshake |  | 1 | 561 |
+
+### Runner stopped: its container is started
+
+2038 ms in all. A step with a parent, or a call, is inside another: leave it out of a sum.
+
+| step | inside | runs | ms (each) |
+|---|---|---|---|
+| docker_volume | (a call) | 1 | 222 |
+| docker_container_inspect | (a call) | 2 | 223, 181 |
+| docker_info | (a call) | 1 | 283 |
+| docker_start | (a call) | 1 | 210 |
+| runner_start | container_check | 1 | 212 |
+| docker_exec | (a call) | 1 | 689 |
+| container_check | link_check | 1 | 1375 |
+| link_check |  | 1 | 1375 |
+| link_prepare |  | 1 | 1 |
+| link_exec_spawn |  | 1 | 1 |
+| link_handshake |  | 1 | 627 |
+
+### Budget
+
+The test's own table: the link, the rows with no parent, against #7185's gate (1.5 × the
+baseline).
+
+| scenario | link (rows with no parent, ms) | budget (ms) |
+|---|---|---|
+| cold: first start after launch | 1732 | 4500 |
+| warm: a link straight after | 1198 | 3000 |
+| runner stopped: its container is started | 2004 | 3700 |
+
+### Before and after
+
+| scenario | `container_check` before → after (ms) | link, rows with no parent, before → after (ms) | in all, before → after (ms) |
+|---|---|---|---|
+| cold | 1744 → 536 | 2970 → 1732 | 3021 → 1766 |
+| warm | 1396 → 635 | 1991 → 1198 | 2041 → 1232 |
+| runner stopped | 1817 → 1375 | 2391 → 2004 | 2439 → 2038 |
+
+### Reading
+
+- **The container check reads each fact once, the three reads at once.** Warm, it is one
+  `docker_info`, one `docker_container_inspect` and one `docker_volume` in parallel, then the
+  `docker_exec` for the runner's own `purlis`: 635 ms, where #7186 expected about 0.7 s. The exec
+  (425 ms) is now most of it.
+- **Cold is now cheaper than warm inside the check** (536 against 635 ms): its daemon options are
+  the pin check's own `docker info`, so the check makes no `docker_info` of its own. The cold run's
+  one `docker_info` is the pin check's. Holding the forward still saves `ssh_forward_open` (472 ms)
+  and `engine_pin_check` (224 ms).
+- **A stopped runner** still inspects its container again once it is started, as it must, and
+  reads its daemon and volume once: 1375 ms, of which `runner_start` is 212 ms and the exec 689 ms.
+- **What is left** for #7185's targets (warm ≤ 1.5 s, cold ≤ 2.3 s, stopped ≤ 2.1 s) holds in this
+  run: 1198, 1732 and 2004 ms. `link_handshake` (498 to 627 ms) and the namespaces exec are now the
+  largest steps.
 
 ## Not measured by that test
 

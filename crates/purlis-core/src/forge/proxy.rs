@@ -72,6 +72,7 @@ mod policy;
 mod repo;
 mod request;
 mod rest;
+mod said;
 mod schema;
 mod sentinel;
 
@@ -90,10 +91,12 @@ pub use policy::{
 pub use repo::{AddressError, AllowedRepo, ForgeRepoId, Kind};
 pub use request::RequestHead;
 use request::host as policy_host;
+pub use said::Refused;
 pub use sentinel::{ChatId, Sentinel, SentinelRegistry};
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use crate::enforcement::Mode;
 use crate::forge::createdbranches::CreatedBranch;
@@ -255,6 +258,9 @@ pub struct Forwarded {
     pub body: Option<Vec<u8>>,
     /// Branches a push makes or moves, for [`ForgeProxy::confirm_push`].
     pub(crate) created: Vec<CreatedBranch>,
+    /// The branches of a push whose update must be a fast-forward (the chat holds them by the
+    /// person's Allow), which the listener hands its push gate to read in the push's objects.
+    pub(crate) fast_forward_only: Vec<String>,
     /// What the answer must never hold: the real credential, as it is sent and in the other forms
     /// a forge or a proxy may give it back. The listener reads the answer for these; memory only,
     /// and zeroed with the request.
@@ -280,6 +286,7 @@ impl Forwarded {
             credentialed: false,
             body: None,
             created: Vec::new(),
+            fast_forward_only: Vec::new(),
             needles: Vec::new(),
             host: host.to_string(),
             repo: String::new(),
@@ -298,6 +305,7 @@ impl Forwarded {
             credentialed: false,
             body: None,
             created: Vec::new(),
+            fast_forward_only: Vec::new(),
             needles: self
                 .needles
                 .iter()
@@ -351,7 +359,20 @@ pub struct ForgeProxy {
     /// Where each chat's policy lists the branches the record holds for it, when an advertisement
     /// is noted.
     recorded: Option<RecordedBranches>,
+    /// Told each refusal of a chat that proved itself, of the two kinds a forge refusal is
+    /// ([`Refused`]): what Settings › Project › Policy counts under "Would have blocked".
+    refusals: Option<RefusalSink>,
+    /// When each (chat, rule, `host:port`) was last told to [`Self::refusals`]: a refusal is
+    /// counted once in [`COUNT_WINDOW`], so a chat retrying in a loop writes one line, not the
+    /// enforcement log's cap.
+    counted: Mutex<HashMap<(ChatId, &'static str, String), Instant>>,
 }
+
+/// How long one refusal, by its chat, rule and `host:port`, is counted once (#7779).
+const COUNT_WINDOW: Duration = Duration::from_secs(60);
+
+/// What is told each forge refusal, by its kind and act ([`ForgeProxy::with_refusals`]).
+pub type RefusalSink = Box<dyn Fn(&ChatId, &Refused) + Send + Sync>;
 
 /// What is told the branches, and the tips, a confirmed push made or moved.
 pub type CreatedSink = Box<dyn Fn(&[CreatedBranch]) + Send + Sync>;
@@ -376,7 +397,78 @@ impl ForgeProxy {
             gone: None,
             tips: None,
             recorded: None,
+            refusals: None,
+            counted: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Tell `sink` each refusal of a chat that proved itself, when it is a request purlis doesn't
+    /// carry or a known act the policy doesn't allow (#7779): its kind and act, and the
+    /// `host:port`, never a path, a body or a number. The app writes it to the chat's enforcement
+    /// log, which "Would have blocked" counts.
+    #[must_use]
+    pub fn with_refusals(mut self, sink: RefusalSink) -> Self {
+        self.refusals = Some(sink);
+        self
+    }
+
+    /// **What chat `chat` is told for `refusal` of the request `head`** (#7779; ADR 0128, amended
+    /// 2026-11-27, §10): a request purlis doesn't carry, or a known act the policy doesn't allow,
+    /// with the act, the repo and why. `None` for any other refusal, which says what it always did.
+    ///
+    /// **Only a caller whose `headers` prove it is `chat` is told where the request went** and how
+    /// `guards.merge` stands: any other is told [`said::UNPROVEN`] alone.
+    pub fn refused_said(
+        &self,
+        chat: &ChatId,
+        head: &RequestHead,
+        headers: &[(String, String)],
+        refusal: Refusal,
+    ) -> Option<String> {
+        if !said::is_said(refusal) {
+            return None;
+        }
+        if !self.sentinels.proves(chat, headers) {
+            return Some(said::UNPROVEN.to_owned());
+        }
+        let policy = self
+            .policies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(chat)
+            .cloned()?;
+        let place = policy.place(head)?;
+        let merge = match self.merges.mode() {
+            Mode::Enforce if self.merges.unaccepted() => said::MergeHeld::Unaccepted,
+            Mode::Enforce => said::MergeHeld::ByTheFamily,
+            _ => said::MergeHeld::Otherwise,
+        };
+        said::said(refusal, &place, merge)
+    }
+
+    /// Tell [`Self::with_refusals`]' sink of `refusal`, where it is one of the two kinds, once in
+    /// [`COUNT_WINDOW`] for its chat, rule and `host:port`.
+    fn count(&self, chat: &ChatId, policy: &ChatPolicy, head: &RequestHead, refusal: Refusal) {
+        let Some(sink) = &self.refusals else {
+            return;
+        };
+        let Some(refused) = policy
+            .place(head)
+            .and_then(|place| said::counted(refusal, &place))
+        else {
+            return;
+        };
+        {
+            let mut counted = self.counted.lock().unwrap_or_else(PoisonError::into_inner);
+            let now = Instant::now();
+            counted.retain(|_, at| now.duration_since(*at) < COUNT_WINDOW);
+            let key = (chat.clone(), refused.rule, refused.host.clone());
+            if counted.contains_key(&key) {
+                return;
+            }
+            counted.insert(key, now);
+        }
+        sink(chat, &refused);
     }
 
     /// Let a merge through where `merges` says `guards.merge` is `log` (and record it) or `off`,
@@ -763,6 +855,9 @@ impl ForgeProxy {
                         return Outcome::Held(Held { refusal, said });
                     }
                 }
+                if sentinel.is_ok() {
+                    self.count(chat, &policy, inbound.head, refusal);
+                }
                 return self.refuse(chat, inbound, None, refusal);
             }
         };
@@ -793,6 +888,7 @@ impl ForgeProxy {
                 credentialed: false,
                 body: allowed.canonical_body,
                 created: Vec::new(),
+                fast_forward_only: Vec::new(),
                 needles: Vec::new(),
                 host: allowed.host,
                 repo: allowed.repo,
@@ -855,6 +951,7 @@ impl ForgeProxy {
             credentialed: true,
             body: allowed.canonical_body,
             created: allowed.created,
+            fast_forward_only: allowed.fast_forward_only,
             needles,
             host: allowed.host,
             repo: allowed.repo,

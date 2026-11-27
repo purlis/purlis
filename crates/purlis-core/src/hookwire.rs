@@ -313,15 +313,24 @@ impl Report {
                 // Which kind of error ended the turn, by the harness's own category (#5718).
                 failed: (event == Event::StopFailure)
                     .then(|| crate::state::Failed::of(field("error").as_deref())),
+                // The folder it works in now (#6367), read by its own harness's adapter alone:
+                // where a relative path in its pane starts, and nothing more.
+                folder: chat_harness(env)
+                    .as_deref()
+                    .and_then(crate::harness::Harness::of_registry_or_kind)
+                    .and_then(|harness| harness.adapter().reported_folder(field("cwd").as_deref())),
             },
         })
     }
 
     /// The report as it may be kept on disk: the same report without its prompt's marks, which
-    /// are digests of what the person typed and matter only to a host that hears it live.
+    /// are digests of what the person typed and matter only to a host that hears it live, and
+    /// without the folder the chat works in (#6367), which matters only live too.
     pub(crate) fn at_rest(&self) -> Report {
         let mut kept = self.clone();
         kept.detail.prompt_marks = crate::skillspan::PromptMarks::default();
+        // Where the chat is now matters only live, and a folder's name is the person's.
+        kept.detail.folder = None;
         kept
     }
 }
@@ -1705,6 +1714,20 @@ pub enum Ask {
     /// cannot. No ticket: the line can only name the chat whose token it carries, and what it
     /// hands over is what the forge says the repository's branches and tags are at.
     RemoteRefs(RemoteRefsAsk),
+    /// **What the asking chat's project needs from the person** (ADR 0130 §2): its whole list
+    /// of prerequisites, as the app holds it, which `purlis` in a chat says and never computes.
+    /// The app answers [`Answer::Prerequisites`] with the list of the project it holds the chat
+    /// in, never one a line names. It waits on nothing. No ticket, for a record's reason: it
+    /// reads.
+    Prerequisites(PrerequisitesAsk),
+}
+
+/// **A chat's ask for its project's prerequisites** ([`Ask::Prerequisites`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PrerequisitesAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
 }
 
 /// **A hook's ask for a remote's ref tips** ([`Ask::RemoteRefs`]).
@@ -2575,8 +2598,16 @@ pub enum Answer {
     /// would stand once it heard the asking line. `false` for a chat the app holds no fact for.
     Attended { attended: bool },
     /// **How each family runs for the asking chat** ([`Ask::Policy`], Q308): `family=mode` pairs,
-    /// as [`crate::enforcement::Resolved::spelled`] writes them.
-    Policy { spelled: String },
+    /// as [`crate::enforcement::Resolved::spelled`] writes them, and **the families of those
+    /// enforced only because this machine's acceptance of the project's policy is Broken or
+    /// Waiting** ([`crate::enforcement::Resolved::unaccepted`], ADR 0130 §7), by their keys: a
+    /// refusal by one names the unaccepted policy as its cause. Absent from an older app, which
+    /// leaves every refusal its own words.
+    Policy {
+        spelled: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        unaccepted: Vec<String>,
+    },
     /// **The commits a remote's branches and tags are at** ([`Ask::RemoteRefs`], #7302), full
     /// object ids as `ls-remote` names them.
     RemoteRefs { tips: Vec<String> },
@@ -2650,6 +2681,9 @@ pub enum Answer {
     /// The chats of the asking chat's workspace ([`Ask::Chats`], #6235): the `purlis.chats`
     /// answer's data, names, states and times only.
     Chats { data: serde_json::Value },
+    /// The asking chat's project's whole list of prerequisites ([`Ask::Prerequisites`]): the
+    /// app's `Prerequisites`, the same payload its window's event carries.
+    Prerequisites { data: serde_json::Value },
     /// What a chat's router points its prompt at (SK-15c): the text its hook adds to the turn's
     /// context, in purlis's own words, or none.
     Pointed {
@@ -2921,6 +2955,7 @@ impl Ask {
             Self::Policy(asked) => asked.chat,
             Self::PolicyLog(line) => line.chat,
             Self::RemoteRefs(asked) => asked.chat,
+            Self::Prerequisites(asked) => asked.chat,
         }
     }
 }

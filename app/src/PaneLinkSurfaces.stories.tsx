@@ -171,13 +171,16 @@ const meta = {
                       chat: null,
                     }
                   : null
-                : {
-                    kind: "url",
-                    target: one.text,
-                    shown: one.text,
-                    does: { does: "opens", into: "browser" },
-                    chat: null,
-                  },
+                : // A saved chat's screen is in no project, so an issue's number is none (#6223).
+                  one.kind === "issue"
+                  ? null
+                  : {
+                      kind: "url",
+                      target: one.text,
+                      shown: one.text,
+                      does: { does: "opens", into: "browser" },
+                      chat: null,
+                    },
         );
       }
       if (cmd === "pane_link_open") {
@@ -378,7 +381,7 @@ function Answer({
   if (!up) return <p>Closed.</p>;
   return (
     <LinkAnswer
-      answering={{ answer, candidate }}
+      answering={{ answer, candidate, place: { left: 0, top: 0, width: 0, height: 0 } }}
       chat={chat}
       onClose={() => setUp(false)}
       onConfirm={() => setUp(false)}

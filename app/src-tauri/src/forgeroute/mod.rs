@@ -194,7 +194,9 @@ pub trait Recorded: Send + Sync {
     /// project and the chat's id are the key, so a chat with another id, or of another project,
     /// owns none of them. **One exception**: a branch recorded to a chat `chat` dispatched
     /// (directly, or up the chain, by the app's dispatch records) is `chat`'s to update from the
-    /// recorded tip, and its confirmed push is then recorded under `chat`.
+    /// recorded tip, and its confirmed push is then recorded under `chat`. A branch `chat` holds
+    /// by the person's Allow moves only forward
+    /// ([`purlis_core::forge::createdbranches::OwnedTip::fast_forward_only`]; #7841).
     fn own_tip(
         &self,
         _project: &Path,
@@ -202,7 +204,7 @@ pub trait Recorded: Send + Sync {
         _host: &str,
         _repo_id: u64,
         _branch: &str,
-    ) -> Option<String> {
+    ) -> Option<purlis_core::forge::createdbranches::OwnedTip> {
         None
     }
     /// The branches of the repo with forge id `repo_id` on `host` whose record is `chat`'s now,
@@ -673,6 +675,9 @@ struct Live {
     /// (the git cannot prove it itself). `None` where it could not start, and then the app's git
     /// has no route for this chat.
     relay: Option<purlis_core::sandbox::egress::relay::DoorRelay>,
+    /// `(host, path)` of each repo the route covers: what a chat this one starts is held to
+    /// ([`ForgeRoutes::guard_handed`], #7870).
+    repos: Vec<(String, String)>,
 }
 
 /// Which session each committed run is, and the sessions whose program ended while a start was
@@ -813,7 +818,8 @@ impl ForgeRoutes {
         );
         let mut proxy = ForgeProxy::new(Box::new(objects::Shared(credentials)), Box::new(objects))
             .with_pin(pin.clone())
-            .with_merge_stance((self.seams.merges)(project, chain));
+            .with_merge_stance((self.seams.merges)(project, chain))
+            .with_refusals(refusals_counted_in(project.to_owned()));
         // Each branch the forge confirms this chat's push made is recorded by the app, under this
         // chat's id: the brokered `purlis worktree push` goes through this same route.
         {
@@ -922,7 +928,7 @@ impl ForgeRoutes {
             ca: bound.ca.clone(),
             sentinel: sentinel.expose().to_owned(),
             helper_exe: self.helper_exe.clone(),
-            repos: repo_view,
+            repos: repo_view.clone(),
             inputs: Box::new(purlis_core::forgewire::Inputs {
                 gh_socket: bound.socket.clone(),
                 ca_cert: bound.ca.clone(),
@@ -964,6 +970,7 @@ impl ForgeRoutes {
                 bound: Some(bound),
                 inputs,
                 relay,
+                repos: repo_view,
             },
         );
         Ok(Started::Route(Some(params)))
@@ -989,6 +996,64 @@ impl ForgeRoutes {
             run: run.to_owned(),
             params,
             armed: true,
+        }
+    }
+
+    /// **A chat another chat started** (a dispatch or a hand-off, #7870): its route, as
+    /// [`Self::guard`] starts one, held to the route of the chat that started it. That chat is
+    /// found by its stable id ([`Handed::parent`]), never by its number, which is dealt again
+    /// once it closes. Where its route covers the repo this chat works in ([`Handed::lane`]; any
+    /// route at all where that repo is not known) and this start's does not (a sign-in read that
+    /// failed while several starts asked at once, a listener that did not bind), it is started
+    /// once more after [`ROUTE_RETRY_AFTER`], outside the start lock, so no other start waits on
+    /// it. If it still falls short, a first start is refused with the reason before the chat is
+    /// started: a lane with no route can neither fetch, update nor push, and nothing it can do
+    /// by itself gets one. A later start (the chat started again) is warned of and started as
+    /// it is, as every start was before. Where the parent has no route either, or none that
+    /// covers the lane's repo, this chat is started as it is.
+    pub fn guard_handed(
+        &self,
+        chat: &str,
+        run: &str,
+        project: &Path,
+        chain: Option<&str>,
+        handed: &Handed,
+    ) -> Result<RouteGuard<'_>, String> {
+        let first = self.guard(chat, run, project, chain);
+        let Some(wanted) = self.wanted_of(handed) else {
+            return Ok(first);
+        };
+        if wanted.met_by(first.params.as_ref()) {
+            return Ok(first);
+        }
+        drop(first);
+        std::thread::sleep(ROUTE_RETRY_AFTER);
+        let again = self.guard(chat, run, project, chain);
+        if wanted.met_by(again.params.as_ref()) {
+            return Ok(again);
+        }
+        if handed.first_start {
+            return Err(NO_ROUTE_LIKE_ITS_PARENT.to_owned());
+        }
+        tracing::warn!(
+            "purlis: a chat started again has no forge route to its repo, though the chat that \
+             started it has one"
+        );
+        Ok(again)
+    }
+
+    /// What a chat `handed` names as its parent holds it to: `None` where the parent has no
+    /// live route, or none that covers the lane's repo.
+    fn wanted_of(&self, handed: &Handed) -> Option<Wanted> {
+        let parent = handed.parent.as_deref()?;
+        let live = self.live();
+        let mut routes = live.values().filter(|live| live.chat == parent).peekable();
+        routes.peek()?;
+        match &handed.lane {
+            None => Some(Wanted::AnyRoute),
+            Some(lane) => routes
+                .any(|live| live.repos.iter().any(|repo| same_repo(repo, lane)))
+                .then(|| Wanted::Repo(lane.clone())),
         }
     }
 
@@ -1451,6 +1516,24 @@ impl RouteRow {
     }
 }
 
+/// **Where the forge refusals of a route in the project at `project` are counted** (#7779): each
+/// is one line in the chat's enforcement log, which Settings › Project › Policy counts under
+/// "Would have blocked": its kind and act, and the `host:port`, never a path, a body or a number.
+/// The proxy tells it a refusal once a minute for each chat, rule and `host:port`. This is the
+/// app, so the line is written here ([`purlis_core::enforcement::write_line`], what `record` does
+/// in the app).
+fn refusals_counted_in(project: PathBuf) -> purlis_core::forge::proxy::RefusalSink {
+    Box::new(move |chat, refused| {
+        purlis_core::enforcement::write_line(
+            &project,
+            chat.as_str(),
+            purlis_core::enforcement::Family::GuardsForge,
+            refused.rule,
+            Some(&refused.host),
+        );
+    })
+}
+
 fn sign_in_words(host: &str, state: SignInState) -> String {
     match state {
         SignInState::Missing => format!(
@@ -1847,6 +1930,84 @@ pub fn guard(
 ) -> Option<RouteGuard<'static>> {
     Some(routes()?.guard(chat, run, project, chain))
 }
+
+/// **Who started a chat, as its route is held to** ([`ForgeRoutes::guard_handed`], #7870).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Handed {
+    /// The stable id of the chat that started it ([`purlis_core::reopen::HandedFrom::id`]).
+    /// `None`, a record with no id: its parent cannot be told apart from a chat that has its
+    /// old number, so nothing holds the route to it.
+    pub parent: Option<String>,
+    /// `(host, path)` of the repo the chat works in, read from its folder's `origin`, where it
+    /// names one.
+    pub lane: Option<(String, String)>,
+    /// Whether this is the chat's first start: only then is a start refused.
+    pub first_start: bool,
+}
+
+/// What a lane's route has to have.
+enum Wanted {
+    /// A route, of any repo: the lane's own is not known.
+    AnyRoute,
+    /// A route that covers this repo.
+    Repo((String, String)),
+}
+
+impl Wanted {
+    fn met_by(&self, params: Option<&RouteParams>) -> bool {
+        match (self, params) {
+            (_, None) => false,
+            (Self::AnyRoute, Some(_)) => true,
+            (Self::Repo(lane), Some(params)) => {
+                params.repos.iter().any(|repo| same_repo(repo, lane))
+            }
+        }
+    }
+}
+
+/// Whether two `(host, path)` name one repo: a host and a forge path are both read without
+/// regard to case.
+fn same_repo(a: &(String, String), b: &(String, String)) -> bool {
+    a.0.eq_ignore_ascii_case(&b.0) && a.1.eq_ignore_ascii_case(&b.1)
+}
+
+/// `(host, path)` of the repo the git folder `folder` names as `origin`, as a route's repos
+/// are named ([`Handed::lane`]); `None` where it names none, or git cannot say.
+pub fn lane_of(folder: &Path) -> Option<(String, String)> {
+    use purlis_core::worktree::git;
+    let url = git::run(folder, &["config", "--get", "remote.origin.url"], git::READ)
+        .ok()
+        .filter(git::Run::ok)?
+        .line()
+        .trim()
+        .to_owned();
+    let host = purlis_core::forge::host_of(&url);
+    let path = purlis_core::forge::namespace_of(&url)?;
+    (!host.is_empty()).then_some((host, path))
+}
+
+/// How long a lane's route waits before it is started once more (#7870): long enough for a
+/// sign-in read or a listener that several starts asked of at once to settle.
+pub const ROUTE_RETRY_AFTER: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// A chat another chat started (`chats.rs`): a route of its own wherever its parent has one
+/// ([`ForgeRoutes::guard_handed`]), or the reason it is not started.
+pub fn guard_handed(
+    chat: &str,
+    run: &str,
+    project: &Path,
+    chain: Option<&str>,
+    handed: &Handed,
+) -> Option<Result<RouteGuard<'static>, String>> {
+    Some(routes()?.guard_handed(chat, run, project, chain, handed))
+}
+
+/// What a chat is told when the chat that started it has a forge route and its own could not be
+/// made (#7870).
+pub const NO_ROUTE_LIKE_ITS_PARENT: &str = "purlis could not make this chat a forge route, \
+    though the chat that started it has one, so it was not started: without one it could not \
+    fetch, update or push. Start it again; if it is refused again, check your sign-in under \
+    Settings › You › Accounts.";
 
 /// A chat put back from the session host (`chats.rs`): the route the app's own git takes for it
 /// ([`ForgeRoutes::guard_reattached`]), with nothing handed to its program.

@@ -454,7 +454,19 @@ fn isolated_answer(root: &Path, asker: &Asker, ask: &GitAsk, now: jiff::Timestam
             // A save for a chat brings nothing of the remote's in: the chat's update does, as
             // judged for that chat. So `--pull` is refused before anything is staged.
             if *pull {
-                say(Say::Fail(SAVE_PULL_FOR_A_CHAT.into()));
+                // In a mode that saves through a pull request the update is the person's
+                // (#3831), so the refusal also reaches their Inbox, as the update's does.
+                let by_request = crate::planesave::Settings::read(root)
+                    .plane
+                    .mode
+                    .value
+                    .is_some_and(crate::planesave::Mode::opens_a_pr);
+                if by_request {
+                    needs = Some(crate::state::Need::RootUpdateRefused);
+                    say(Say::Fail(SAVE_PULL_FOR_A_CHAT_BY_REQUEST.into()));
+                } else {
+                    say(Say::Fail(SAVE_PULL_FOR_A_CHAT.into()));
+                }
                 1
             } else {
                 // The chat's own trailers, from the app's record of the chat that asked.
@@ -815,6 +827,13 @@ pub fn without_trailers(message: &str) -> String {
 pub const SAVE_PULL_FOR_A_CHAT: &str = "Not saved: a save the app makes for a chat brings \
      nothing of the remote's in. Run `purlis worktree update` first, then `purlis save` without \
      --pull.";
+
+/// [`SAVE_PULL_FOR_A_CHAT`] where the project saves through a pull request: a chat's own update
+/// is refused there (#3831), so the way on is the person's Update in the window.
+pub const SAVE_PULL_FOR_A_CHAT_BY_REQUEST: &str = "Not saved: a save the app makes for a chat \
+     brings nothing of the remote's in, and this project saves through a pull request, so the \
+     person brings it up to date. Ask them to use Update in the window, then run `purlis save` \
+     without --pull.";
 
 /// The paths below `root` of `unreadable`, relative to it with `/` between their parts: what a
 /// save the app makes for a chat leaves unstaged. Each is held whole, whatever its reach.

@@ -445,6 +445,26 @@ folder and stops sccache at the end, `always()`). Unlike that build it restores 
 saves its rust-cache and sccache entries, as on a hosted runner. It never turns Spotlight off,
 which on GitHub's runners it does with `sudo`. The runner user is the dedicated non-admin user above.
 
+**The window has to paint** (#7738). The bars drive the real window, and WebKit runs no
+`requestAnimationFrame` for a window behind the lock screen, on a display that is asleep, or on a
+Mac with no display. Its DOM still answers every query, so the failures read as the app's: the
+Library draws its first screen and never the rest, and an opening is never timed. That is what the
+first run on the benchmark Mac (45897228656) did on all three harnesses. So the Mac needs:
+
+- **the runner user logged in on the console**, by automatic login, and its runner a LaunchAgent in
+  that session (not a LaunchDaemon, which has no window server);
+- **no screen lock**: as that user, `sysadminctl -screenLock off -password -` (asks for the
+  user's password), and no screen saver (`defaults -currentHost write com.apple.screensaver
+  idleTime -int 0`);
+- **a display that does not sleep**, as an admin: `sudo pmset -a displaysleep 0 sleep 0`, and on a
+  Mac with no monitor, an HDMI dummy plug, so that the window server has a display to paint on.
+
+The job checks what it can before the build (`A self-hosted Mac's window can be painted`): it
+fails when the runner user has no session on the console or its screen is locked, warns when no
+display is listed, and keeps the display awake with `caffeinate -d -i -u` while the bars run.
+Every scenario run also checks, before its first spec, that the window paints two frames within
+5 s (`theWindowPaintsFrames` in `app/e2e/drawn.ts`), and fails with that cause when it does not.
+
 The bars' limits were set on `macos-latest` (`app/e2e/outcomeBars.ts`), so a faster Mac passes
 them more easily. Re-set them from its runs before reading a green run there as the same claim.
 

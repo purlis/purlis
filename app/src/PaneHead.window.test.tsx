@@ -16,6 +16,7 @@ import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
 import App from "./App";
+import { LINKS_UNLISTED } from "./paneLinksOpen";
 import type { Moved } from "./bindings";
 import { onTheWire } from "./chatEvents.testkit";
 import { aTabForEachChat } from "./laidOut.testkit";
@@ -39,6 +40,9 @@ import { findRow, findTree } from "./ui/tree/tree.testkit";
 
 /** What the stand-in terminal was asked to do from its pane's head (#4760). */
 const ran: string[] = [];
+/** Whether the stand-in terminal says how to open its links list (#6332): one that has not yet
+ *  says nothing (#6488). */
+let saysItsLinks = true;
 
 vi.mock("./SessionPane", async () => {
   const { useContext, useEffect } = await import("react");
@@ -50,7 +54,8 @@ vi.mock("./SessionPane", async () => {
       const at = useContext(PaneTerminalAt);
       // Its Links in this pane… (#6332), which the window's rows open.
       useEffect(
-        () => listsLinks(plane, session, () => ran.push(`links:${session}`)),
+        () =>
+          saysItsLinks ? listsLinks(plane, session, () => ran.push(`links:${session}`)) : undefined,
         [plane, session],
       );
       useEffect(() => {
@@ -69,6 +74,7 @@ const render = (ui: React.ReactElement) => renderBare(<StrictMode>{ui}</StrictMo
 
 afterEach(() => {
   usage = null;
+  saysItsLinks = true;
   cleanup();
   clearMocks();
   vi.unstubAllGlobals();
@@ -334,6 +340,18 @@ describe("Links in this pane… from the pane's head, its ⋯ and the palette (#
     fireEvent.contextMenu(head().querySelector(".pane-chips") as HTMLElement);
     fireEvent.click(await linksRow(await screen.findByRole("menu")));
     await waitFor(() => expect(ran).toEqual(["links:4"]));
+  });
+
+  it("says it could not where no pane has said how to open its list yet (#6488)", async () => {
+    saysItsLinks = false;
+    await aPane();
+    await waitFor(() => expect(controls()[1]).toMatch(/^More for /));
+    ran.length = 0;
+    fireEvent.click(within(head()).getByRole("button", { name: `More for ${NAME}` }));
+    fireEvent.click(await linksRow(await screen.findByRole("menu")));
+
+    expect(await screen.findByText(LINKS_UNLISTED)).toBeInTheDocument();
+    expect(ran).not.toContain("links:4");
   });
 
   it("is a palette row, named for the pane's chat", async () => {

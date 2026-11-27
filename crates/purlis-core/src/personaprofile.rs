@@ -825,6 +825,35 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_picker_resolves_the_projects_policy_once_for_its_answer_not_once_per_persona() {
+        // At 38 personas each resolution (two git runs, the locks, the sealed acceptance) made
+        // the picker's first answer take 44 s on a loaded Mac (H20).
+        let plane = tempfile::tempdir().expect("a plane");
+        let personas = plane.path().join("personas");
+        std::fs::create_dir_all(&personas).expect("personas");
+        let who: Vec<String> = (0..5).map(|n| format!("p{n}")).collect();
+        for name in &who {
+            std::fs::write(
+                personas.join(format!("{name}.md")),
+                "---\ndisallowed-tools: Write\n---\nCharter.\n",
+            )
+            .expect("written");
+        }
+
+        let before = crate::enforcement::RESOLUTIONS.with(std::cell::Cell::get);
+        for_the_picker(plane.path(), &who, &project());
+        let resolved = crate::enforcement::RESOLUTIONS.with(std::cell::Cell::get) - before;
+
+        assert_eq!(resolved, 1, "five personas, one policy resolution");
+        // The next answer resolves it again: the project's policy and the acceptance change.
+        for_the_picker(plane.path(), &who, &project());
+        assert_eq!(
+            crate::enforcement::RESOLUTIONS.with(std::cell::Cell::get) - before,
+            2
+        );
+    }
+
     // ----- the profiles the project lists for a persona (#1509, V100-60) --------------------
 
     #[test]

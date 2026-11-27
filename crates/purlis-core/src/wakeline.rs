@@ -72,6 +72,10 @@ const MISSED: &str = "These came due while purlis was down, and were missed:";
 /// How the wake-ups missed are introduced to a chat restarted while purlis ran on (#5753).
 const MISSED_BEFORE_THE_RESTART: &str = "These came due before the restart, and were missed:";
 
+/// How the wake-ups missed are introduced to a chat woken from its hibernation (SC-4d, #7633).
+const MISSED_WHILE_HIBERNATED: &str = "These came due while this chat was hibernated, and were \
+    missed:";
+
 /// What the chat is told to do of what it missed.
 const DO_WHAT_WAS_MISSED: &str = "Do now what each was for, if it is still wanted.";
 
@@ -152,7 +156,15 @@ fn of_within(ended: &Ended<'_>, carry_on: bool, most: usize) -> Option<String> {
         return None;
     }
     let opening = if carry_on { CARRY_ON } else { RESTARTED };
-    Some(told(opening, ended, &parts, carry_on, MISSED, most))
+    Some(told(
+        opening,
+        "The restart",
+        ended,
+        &parts,
+        carry_on,
+        MISSED,
+        most,
+    ))
 }
 
 /// **The wake line for a chat restarted on its own while purlis runs on** (#5753): Restart
@@ -169,6 +181,7 @@ pub fn of_the_chat_restarted(ended: &Ended<'_>) -> Option<String> {
     }
     Some(told(
         "purlis: this chat was restarted on its conversation.",
+        "The restart",
         ended,
         &parts,
         false,
@@ -177,11 +190,33 @@ pub fn of_the_chat_restarted(ended: &Ended<'_>) -> Option<String> {
     ))
 }
 
+/// **The wake line of a chat woken after the operator's Hibernate** (SC-4d, #7633; ADR 0076
+/// as amended 2026-11-25): what [`of_the_chat_restarted`] says, said of the hibernation that
+/// ended it. None where it ended nothing of the chat's own, which an idle hibernation never
+/// does.
+pub fn of_the_chat_woken(ended: &Ended<'_>) -> Option<String> {
+    let parts = Parts::of(ended);
+    if !ended.mid_turn && parts.ran.is_empty() && parts.missed.is_empty() {
+        return None;
+    }
+    Some(told(
+        "purlis: this chat was hibernated, and is woken on its conversation.",
+        "The hibernation",
+        ended,
+        &parts,
+        false,
+        MISSED_WHILE_HIBERNATED,
+        MOST_BYTES,
+    ))
+}
+
 /// The line that opens with `opening` and says `parts` of `ended`: the turn cut mid-way, what
-/// ended, what was missed (introduced by `missed`) and what the harness sets again. `also` where
-/// the opening already told the chat something else of the restart. Held to `most` bytes.
+/// `ender` ended, what was missed (introduced by `missed`) and what the harness sets again.
+/// `also` where the opening already told the chat something else of the restart. Held to
+/// `most` bytes.
 fn told(
     opening: &str,
+    ender: &str,
     ended: &Ended<'_>,
     parts: &Parts,
     also: bool,
@@ -197,7 +232,7 @@ fn told(
     if !parts.ran.is_empty() {
         let also = if also { " also" } else { "" };
         line.push_str(&format!(
-            " The restart{also} ended what this chat had left running in the background: "
+            " {ender}{also} ended what this chat had left running in the background: "
         ));
         let listed = fitted(&parts.ran, room(&line));
         line.push_str(&format!("{listed}. {NONE_OF_IT_RUNS}"));

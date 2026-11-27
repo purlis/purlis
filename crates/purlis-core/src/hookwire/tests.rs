@@ -2890,7 +2890,8 @@ fn an_app_at(path: &std::path::Path, within: &std::path::Path) -> (Reading, Chat
                 | Ask::Attendance(_)
                 | Ask::Policy(_)
                 | Ask::PolicyLog(_)
-                | Ask::RemoteRefs(_) => Answer::No {
+                | Ask::RemoteRefs(_)
+                | Ask::Prerequisites(_) => Answer::No {
                     why: "not here".to_owned(),
                 },
             }
@@ -5658,4 +5659,43 @@ fn a_remote_refs_ask_and_its_answer_cross_the_wire_unchanged() {
     };
     let line = serde_json::to_string(&answer).unwrap();
     assert_eq!(serde_json::from_str::<Answer>(&line).unwrap(), answer);
+}
+
+#[test]
+fn the_folder_a_claude_code_chat_works_in_rides_its_reports_and_is_never_kept() {
+    // #6367: where a relative path in its pane starts. Read by its own harness's adapter only.
+    let payload = |cwd: &str| {
+        serde_json::json!({
+            "session_id": "11111111-2222-4333-8444-555555555555",
+            "cwd": cwd,
+        })
+        .to_string()
+    };
+    let on = |harness: &str| {
+        env_of(&[
+            (SOCKET_ENV, "/tmp/s.sock"),
+            (CHAT_ENV, "7"),
+            (HARNESS_ENV, harness),
+        ])
+    };
+    let report = Report::read(Event::Stop, &payload("/work/app"), &on("claude-code")).expect("one");
+    assert_eq!(
+        report.detail.folder,
+        Some(std::path::PathBuf::from("/work/app"))
+    );
+    let back: Report =
+        serde_json::from_str(&serde_json::to_string(&report).expect("json")).expect("reads");
+    assert_eq!(back.detail.folder, report.detail.folder);
+    assert_eq!(report.at_rest().detail.folder, None);
+    // A relative or odd cwd is none, and so is one a harness whose word is not read names.
+    let relative = Report::read(Event::Stop, &payload("app"), &on("claude-code")).expect("one");
+    assert_eq!(relative.detail.folder, None);
+    for other in ["codex", "opencode"] {
+        let report = Report::read(Event::Stop, &payload("/work/app"), &on(other)).expect("one");
+        assert_eq!(report.detail.folder, None, "{other}");
+    }
+    assert!(
+        !serde_json::to_string(&relative).unwrap().contains("folder"),
+        "a report that names no folder writes the line it always wrote"
+    );
 }

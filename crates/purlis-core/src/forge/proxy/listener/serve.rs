@@ -184,7 +184,12 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
     let outcome = w.proxy.handle(&w.chat, &inbound);
     match outcome {
         Outcome::Refused(refusal) => {
-            let said = (refusal == Refusal::Pinned).then(|| w.proxy.pin_said(&rh.host, rh.port));
+            // The pin's own sentence, or what was blocked and why (#7779).
+            let said = if refusal == Refusal::Pinned {
+                Some(w.proxy.pin_said(&rh.host, rh.port))
+            } else {
+                w.proxy.refused_said(&w.chat, &rh, &headers, refusal)
+            };
             if git_refused(
                 &mut framed.stream,
                 &rh.method,
@@ -286,10 +291,14 @@ fn read_push(forwarded: &Forwarded, port: u16, body: &[u8]) -> Option<PushRead> 
         if !is_object_id(old) || !is_object_id(new) {
             return None;
         }
+        let fast_forward_only = name
+            .strip_prefix("refs/heads/")
+            .is_some_and(|branch| forwarded.fast_forward_only.iter().any(|b| b == branch));
         updates.push(PushUpdate {
             old: old.to_owned(),
             new: new.to_owned(),
             name: name.to_owned(),
+            fast_forward_only,
         });
     }
     if updates.is_empty() {
@@ -350,10 +359,11 @@ fn refused<W: Write>(out: &mut W, refusal: Refusal) -> io::Result<()> {
     refused_saying(out, refusal, None)
 }
 
-/// [`refused`], with the pin's own sentence where the refusal is the pin's (who set it, and that
-/// signing in does not change it): `said` is [`ForgeProxy::pin_said`]'s.
+/// [`refused`], with the refusal's own sentence where it has one: the pin's (who set it, and that
+/// signing in does not change it, [`ForgeProxy::pin_said`]), the check a malformed request
+/// failed, or what was blocked and why ([`ForgeProxy::refused_said`]).
 fn refused_saying<W: Write>(out: &mut W, refusal: Refusal, said: Option<String>) -> io::Result<()> {
-    if let (Refusal::Pinned | Refusal::MalformedRequest, Some(said)) = (refusal, &said) {
+    if let (false, Some(said)) = (refusal == Refusal::NoSentinel, &said) {
         return write_answer(out, 403, &message(said));
     }
     // A request with no credential at all is **challenged**, not refused outright: `git` sends its
@@ -869,6 +879,20 @@ mod tests {
         assert_eq!(push.updates.len(), 1);
         assert_eq!(push.updates[0].new, TIP);
         assert_eq!(push.pack, b"PACK");
+    }
+
+    #[test]
+    fn an_update_of_a_branch_the_core_marked_reaches_the_gate_as_one_that_must_fast_forward() {
+        let mut forwarded = Forwarded::for_storage("gitlab.com", "https://gitlab.com/x");
+        forwarded.fast_forward_only = vec!["theirs".to_owned()];
+        let theirs = format!("{TIP} {TIP} refs/heads/theirs\0 report-status");
+        let mine = format!("{TIP} {TIP} refs/heads/mine");
+        let tag = format!("{TIP} {TIP} refs/tags/theirs");
+
+        let push = read_push(&forwarded, 443, &push_of(&[&theirs, &mine, &tag])).expect("a push");
+
+        let marked: Vec<bool> = push.updates.iter().map(|u| u.fast_forward_only).collect();
+        assert_eq!(marked, [true, false, false]);
     }
 
     #[test]

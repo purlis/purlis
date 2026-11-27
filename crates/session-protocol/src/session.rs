@@ -630,9 +630,17 @@ use crate::view::{Limits, Views};
 /// entry forgotten, and its end is kept as the host's own lowest act ([`Command::Hibernate`]), so a
 /// close, a quit, a stop or the kill switch racing it wins. The window's alone. An older host
 /// refuses it `unknown_command`, so the window does not offer Hibernate on a chat it runs.
+///
+/// 1.97 has a host say which file it keeps from its window ([`FileRead::Kept`], #7064): its
+/// own purlis folders, a harness's sign-in and what no chat on it reads are never read, whatever
+/// the reach, and says [`FileRead::Unsure`] where it could not tell; a file with several names is kept where one of its other names is in such a
+/// folder (#7077). It reads only what is asked (#7078): a look reads a file's first 8 KiB to
+/// tell text, and a piece its own bytes alone. A window before 1.97 is answered
+/// [`FileRead::NotThere`] for a kept file, and a window asks a host to read a file
+/// only from this version ([`KNOWS_KEPT_FILES`]).
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 96,
+    minor: 97,
 };
 
 /// The version that first hibernates a chat's program ([`Command::Hibernate`], #7630): none is
@@ -640,6 +648,13 @@ pub const VERSION: Version = Version {
 pub const KNOWS_HIBERNATE: Version = Version {
     major: 1,
     minor: 96,
+};
+
+/// The version that first hears [`FileRead::Kept`] (#7064): a window before it hears
+/// [`FileRead::NotThere`] for such a file.
+pub const KNOWS_KEPT_FILES: Version = Version {
+    major: 1,
+    minor: 97,
 };
 
 /// The version that first lists a browser's pages and downloads to its views and takes the
@@ -2668,7 +2683,9 @@ pub enum FileRead {
     /// A plain file of text, `size` bytes long. `from_workspace` is its path from the chat's
     /// workspace, `/` between its parts, for one in it, and `home` that workspace, for an ask
     /// to name; `version` names it as it is now, so a read in pieces is of one file. With an
-    /// `at`, the piece from there.
+    /// `at`, the piece from there. From 1.97 a look (no `at`) reads only the file's first 8 KiB
+    /// to tell it is text, and a piece only its own bytes, judged as text but for a character
+    /// cut at its edges.
     Plain {
         path: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2685,12 +2702,22 @@ pub enum FileRead {
     /// Something is there that is not a plain file: a folder, a device, a pipe, a socket, or a
     /// file of the host's own system (`/proc`, `/sys`, `/dev`).
     NotPlain { path: String },
-    /// A file that is not text, `size` bytes long.
+    /// A file that is not text, `size` bytes long: from 1.97, one whose first 8 KiB (a look)
+    /// or whose piece holds a NUL byte or is not UTF-8 but for a character cut at its edges. A
+    /// file with a NUL byte only later is linked, and its pieces joined are said to be binary.
     Binary { path: String, size: u64 },
     /// A file past [`MOST_FILE_READ`], `size` bytes long.
     TooLarge { path: String, size: u64 },
     /// A file outside the chat's workspace, asked with [`FileReach::Workspace`]: not read.
     Outside { path: String },
+    /// A file the host keeps from its window (1.97, #7064), whatever the reach and whatever
+    /// the person answered: in one of purlis's own folders there, a harness's sign-in, or one
+    /// no chat there reads. Not read.
+    Kept { path: String },
+    /// A file the host could not tell whether it keeps from its window (1.97, #7064, #7077):
+    /// the list of what it keeps could not be read whole, or a file with several names has
+    /// more places to look through than it looks in. Not read, as a kept file is not.
+    Unsure { path: String },
 }
 
 /// **What a chat counts as its own on the host** (1.93, [`FileRead::Plain`]): its workspace,

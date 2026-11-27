@@ -15,9 +15,18 @@
 //!   letter; UTS #39). Every other word is plain, in any script: "Click here", "v1.2.3",
 //!   "#6384", "café", an emoji. `github.com/purlis` over `https://github.com/purlis/purlis`
 //!   opens; `github.com/someone-else` over it asks, showing both.
+//! - **A relative word is read from where the chat started**, never where it says it is now
+//!   (#6367, ADR 0131): after a `cd`, a relative path as a marked link's words, which leads to the
+//!   target only from the new folder, asks first. That is the safe side.
+//! - **An issue's words name a target** (`owner/repo#6223`): over any page but that issue's or
+//!   pull request's (over https, a trailing `.git` on the repo read as the repo), the link asks.
+//!   The words are read by their UTS #39 skeleton, as a domain is, and any character outside
+//!   ASCII in words of that shape (a look-alike slash, hyphen or digit, a letter) asks over any
+//!   page. A bare `#6223` names none.
 
 use std::path::{Component, Path, PathBuf};
 
+use purlis_unicode::lookalike;
 use unicode_normalization::UnicodeNormalization as _;
 use unicode_properties::{GeneralCategory, GeneralCategoryGroup, UnicodeGeneralCategory as _};
 use unicode_security::{RestrictionLevel, RestrictionLevelDetection as _};
@@ -58,16 +67,16 @@ pub fn not_there() -> Resolved {
     Resolved::NotALink("purlis found no file at the address this link names".into())
 }
 
-/// **What opening `candidate`'s `target` does, once its words are read**: a marked link whose
-/// words read as another target asks first, unless its kind refused it. Any other candidate's
-/// `opening` stands.
+/// **What opening a marked link's `target` does, once its words are read**: one whose words
+/// read as another target asks first, unless its kind refused it. Asked only of a marked link
+/// ([`Kind::Osc8`]): no other candidate's words are read again.
 pub(super) fn reconsidered(
     opening: Opening,
     candidate: &Candidate,
     target: Target,
     pane: &Pane,
 ) -> Opening {
-    if candidate.kind != Kind::Osc8 || matches!(opening, Opening::Refused(_)) {
+    if matches!(opening, Opening::Refused(_)) {
         return opening;
     }
     match misleading(&candidate.text, &target, pane) {
@@ -130,11 +139,49 @@ fn said_by(original: &str, target: &Target, pane: &Pane) -> Option<String> {
     // letter it looks like (`lоcalhost`, `evil.cоm`); a host in its own script stays as written
     // (`βόλος.gr`), and [`reads_as_written`] judges its letters.
     let looks = (!word.is_ascii()).then(|| [seen(trimmed), seen(&word)]);
-    let read = [trimmed.to_owned(), word.clone()]
+    let Some(read) = [trimmed.to_owned(), word.clone()]
         .into_iter()
         .chain(looks.into_iter().flatten())
-        .find(|read| names(read))?;
+        .find(|read| names(read))
+    else {
+        return names_another_issue(trimmed, target, pane);
+    };
     differs(&read).or_else(|| (!reads_as_written(original)).then_some(read))
+}
+
+/// What `word` says when it reads as an issue or pull request of a repo (`owner/repo#6223`) that
+/// is not the page `target` is: the word itself. It names a place on a forge, as a domain does.
+/// A bare `#6223` names none.
+fn names_another_issue(word: &str, target: &Target, pane: &Pane) -> Option<String> {
+    // The words as they look, the same way a domain's are: a look-alike slash, hyphen or digit is
+    // the character it looks like, so words that read as `owner/repo#N` only so are caught.
+    // A digit of another script is a digit (not the letter UTS #39 says `١` resembles); only that
+    // it is one matters, as any such word asks.
+    let digits: String = word
+        .chars()
+        .map(|c| {
+            if !c.is_ascii() && c.is_numeric() {
+                '1'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let looked = seen(&digits);
+    let (repo, number) = super::issue::issue_words(&looked)?;
+    // A character outside ASCII anywhere in them may only look like the repo the page is: they
+    // name a target whatever page it is.
+    if !word.is_ascii() {
+        return Some(word.to_owned());
+    }
+    match target {
+        Target::Url(url)
+            if super::issue::is_page_of(url, repo, number, pane.project.as_deref()) =>
+        {
+            None
+        }
+        _ => Some(word.to_owned()),
+    }
 }
 
 /// **`word` as it looks**: each character outside ASCII replaced by its UTS #39 skeleton (a
@@ -224,24 +271,21 @@ fn ipv6(text: &str) -> bool {
     address.contains(':') && address.parse::<std::net::Ipv6Addr>().is_ok()
 }
 
-/// The punctuation a sentence puts around a word, which [`trimmed`] takes off.
-const WRAPPERS: &str = "()[]{}<>\"'`*_,;:!?.«»“”‘’「」";
-
-/// `word` without the punctuation a sentence puts around it ([`WRAPPERS`]): never a path's
+/// `word` without the punctuation a sentence puts around it ([`purlis_unicode::lookalike::wraps_a_word`]): never a path's
 /// leading `./` or `../`, nor the brackets of an IPv6 address (`[::1]:8080`).
 fn trimmed(word: &str) -> &str {
     let start =
         if word.starts_with("./") || word.starts_with("../") || bracketed_ip(word) || ipv6(word) {
             word
         } else {
-            word.trim_start_matches(|c| WRAPPERS.contains(c))
+            word.trim_start_matches(lookalike::wraps_a_word)
         };
     let ip = bracketed_ip(start)
         || ipv6(start)
         || start
             .rfind('[')
             .is_some_and(|at| bracketed_ip(&start[at..]));
-    start.trim_end_matches(|c| WRAPPERS.contains(c) && !(ip && c == ']'))
+    start.trim_end_matches(|c| lookalike::wraps_a_word(c) && !(ip && c == ']'))
 }
 
 /// Whether `text` starts with an IPv6 address in brackets.
@@ -251,13 +295,10 @@ fn bracketed_ip(text: &str) -> bool {
         .is_some_and(|(inner, _)| inner.parse::<std::net::Ipv6Addr>().is_ok())
 }
 
-/// Characters a reader may take for a dot that UTS #39's skeleton maps to something else.
-const DOTS: &str =
-    "\u{0589}\u{3002}\u{FF61}\u{06D4}\u{00B7}\u{2027}\u{02F3}\u{0387}\u{30FB}\u{FF65}";
-
 /// **The shape of `word`, which decides whether it names a target**: ASCII as written, in lower
 /// case; a character whose UTS #39 skeleton is ASCII punctuation as that punctuation (a
-/// look-alike of `.`, `:` or `/`), and one more look-alike of a dot ([`DOTS`]) as `.`; a dash as
+/// look-alike of `.`, `:` or `/`), and one more look-alike of a dot
+/// ([`purlis_unicode::lookalike::reads_as_a_dot`]) as `.`; a dash as
 /// the end of a name; any other letter or digit as written without its marks, so a host in
 /// another script keeps its suffix (`.рф`); any other punctuation as `.`; and marks, Hangul
 /// vowels and finals on their own (U+1160..U+11FF), symbols, emoji and private-use characters,
@@ -265,10 +306,12 @@ const DOTS: &str =
 fn shape(word: &str) -> String {
     let mut shape = String::with_capacity(word.len());
     for c in word.chars() {
-        let skeleton: String = unicode_security::skeleton(c.encode_utf8(&mut [0; 4])).collect();
         if c.is_ascii() {
             shape.push(c.to_ascii_lowercase());
-        } else if DOTS.contains(c) {
+            continue;
+        }
+        let skeleton: String = unicode_security::skeleton(c.encode_utf8(&mut [0; 4])).collect();
+        if lookalike::reads_as_a_dot(c) {
             shape.push('.');
         } else if !skeleton.is_empty() && skeleton.chars().all(|c| c.is_ascii_punctuation()) {
             shape.push_str(&skeleton);
@@ -286,7 +329,9 @@ fn shape(word: &str) -> String {
                     .flat_map(char::to_lowercase),
             );
         } else if c.general_category_group() == GeneralCategoryGroup::Punctuation
-            || skeleton.chars().any(|c| DOTS.contains(c) || c == '.')
+            || skeleton
+                .chars()
+                .any(|c| lookalike::reads_as_a_dot(c) || c == '.')
         {
             shape.push('.');
         }
@@ -561,7 +606,9 @@ fn same_file(words: &str, file: &Path, pane: &Pane) -> bool {
     } else if Path::new(words).is_absolute() {
         PathBuf::from(words)
     } else {
-        let Some(base) = pane.folder.as_ref().or(pane.project.as_ref()) else {
+        // From where the chat started, never where it says it is now (#6367): a program that
+        // marks a link could say it moved, and quiet the ask its words raise (ADR 0131).
+        let Some(base) = pane.folder.as_deref().or(pane.project.as_deref()) else {
             return false;
         };
         base.join(words)

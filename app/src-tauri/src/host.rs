@@ -1213,6 +1213,11 @@ pub(crate) mod pretend {
         /// Why a hibernation fails, while a test says one does, and whether its program has
         /// ended by then ([`Pretend::hibernates_none`], [`Pretend::hibernates_unanswered`]).
         hibernate_fails: Mutex<Option<(String, bool)>>,
+        /// What happens while a hibernation takes its chat's screen, once ([`Pretend::at_the_screen`]).
+        at_the_screen: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+        /// What happens once a hibernation is asked of the host, before its program ends, once
+        /// ([`Pretend::as_it_hibernates`]).
+        as_it_hibernates: Mutex<Option<Box<dyn FnOnce() + Send>>>,
         /// The chats left running that nothing reattached, closed.
         closed_left: Mutex<Vec<u32>>,
         /// The browsers left from before this window ([`Pretend::leaves_a_browser`], #2025).
@@ -1520,6 +1525,19 @@ pub(crate) mod pretend {
             *lock(&self.seen.hibernate_fails) = Some((why.to_owned(), true));
         }
 
+        /// **`then` happens while the next view of a chat is drawn**, once (SC-4d, #7633): what
+        /// arrives while a hibernation takes the chat's screen, its step 3, as a harness slow to
+        /// be ready gives it time to.
+        pub fn at_the_screen(&self, then: impl FnOnce() + Send + 'static) {
+            *lock(&self.seen.at_the_screen) = Some(Box::new(then));
+        }
+
+        /// **`then` happens as the next hibernation reaches the host**, before its program ends,
+        /// once (SC-4d, #7633): what arrives after the act's intent, its step 4.
+        pub fn as_it_hibernates(&self, then: impl FnOnce() + Send + 'static) {
+            *lock(&self.seen.as_it_hibernates) = Some(Box::new(then));
+        }
+
         /// The chats it let go of as hibernated and has not closed (#7630).
         pub fn hibernated(&self) -> Vec<u32> {
             lock(&self.seen.hibernated).clone()
@@ -1593,6 +1611,13 @@ pub(crate) mod pretend {
         /// Says its sessions report on `socket`.
         pub fn reporting_on(&self, socket: std::path::PathBuf) {
             *lock(&self.seen.socket) = Some(socket);
+        }
+
+        /// Session `id`'s program exits by itself with `exit`: it is no longer running, and
+        /// whoever asked is told (SC-4d, #7633).
+        pub fn program_exits(&self, id: u32, exit: Exit) {
+            lock(&self.seen.running).retain(|running| *running != id);
+            self.program_ends(id, exit);
         }
 
         /// Session `id`'s program ends with `exit`, and whoever asked is told.
@@ -1894,6 +1919,10 @@ pub(crate) mod pretend {
             whole: Whole,
         ) -> Result<Watching, String> {
             let watching = self.watch(id, sink)?;
+            let then = lock(&self.seen.at_the_screen).take();
+            if let Some(then) = then {
+                then();
+            }
             whole();
             Ok(watching)
         }
@@ -1945,6 +1974,10 @@ pub(crate) mod pretend {
         }
         /// As a real host: its program ends, and its end is heard, before the host answers.
         fn hibernate(&self, id: u32) -> Result<(), String> {
+            let then = lock(&self.seen.as_it_hibernates).take();
+            if let Some(then) = then {
+                then();
+            }
             self.here(id)?;
             let fails = lock(&self.seen.hibernate_fails).clone();
             if let Some((why, false)) = fails {

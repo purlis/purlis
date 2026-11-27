@@ -112,8 +112,16 @@ afterEach(() => {
 
 const write = (term: Terminal, text: string) => new Promise<void>((done) => term.write(text, done));
 
-async function opened() {
-  render(<SessionPane plane="/planes/one" session={1} focused={false} onFocus={() => {}} />);
+async function opened(title?: string) {
+  render(
+    <SessionPane
+      plane="/planes/one"
+      session={1}
+      title={title}
+      focused={false}
+      onFocus={() => {}}
+    />,
+  );
   const term = made[0];
   await waitFor(() => expect(term.cols).toBe(80));
   const drawn = term.element?.querySelector(".xterm-screen");
@@ -141,8 +149,8 @@ function click(on: Element, col: number, row: number, init: MouseEventInit = {})
 const asked = (cmd: string) => invoked.filter((one) => one.cmd === cmd);
 
 /** The pane written "see <marked words> now", the pointer on the words. */
-async function hovered(target = TARGET, words = WORDS) {
-  const pane = await opened();
+async function hovered(target = TARGET, words = WORDS, title?: string) {
+  const pane = await opened(title);
   await write(pane.term, `see ${osc8(target, words)} now`);
   hover(pane.drawn, 8, 0);
   await waitFor(() => expect(asked("pane_link_resolve").length).toBeGreaterThan(0));
@@ -210,6 +218,86 @@ describe("a link a program marked (OSC 8)", () => {
     fireEvent.keyDown(dont, { key: "Enter", code: "Enter" });
     await new Promise((settle) => setTimeout(settle, 30));
     expect(asked("pane_link_open")).toHaveLength(1);
+  });
+
+  it("on ⌘-click on a Mac is handed to the core, as Ctrl+click is elsewhere", async () => {
+    Object.defineProperty(navigator, "platform", { configurable: true, get: () => "MacIntel" });
+    opens = { answer: "opened", kind: "url", target: "https://purlis.dev/" };
+    const { drawn } = await hovered("https://purlis.dev/", "Click here");
+
+    // Ctrl on a Mac is no open: it is the menu's click there.
+    click(drawn, 8, 0, { ctrlKey: true });
+    await new Promise((settle) => setTimeout(settle, 30));
+    expect(asked("pane_link_open")).toHaveLength(0);
+    click(drawn, 8, 0, { metaKey: true });
+
+    await waitFor(() => expect(asked("pane_link_open")).toHaveLength(1));
+    expect(asked("pane_link_open")[0].args).toEqual({
+      from: { plane: "/planes/one", session: 1 },
+      candidate: { kind: "osc8", text: "Click here", target: "https://purlis.dev/" },
+      token: null,
+    });
+  });
+
+  it("copies the target the program named on Copy link, not its words, and opens nothing", async () => {
+    const copied: string[] = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: (text: string) => {
+          copied.push(text);
+          return Promise.resolve();
+        },
+      },
+    });
+    const { drawn } = await hovered();
+    await screen.findByRole("tooltip", {}, { timeout: 2000 });
+    drawn.dispatchEvent(new MouseEvent("mousedown", over(8, 0, { button: 2 })));
+    drawn.dispatchEvent(new MouseEvent("contextmenu", over(8, 0, { button: 2 })));
+    drawn.dispatchEvent(new MouseEvent("mouseup", over(8, 0, { button: 2 })));
+    const menu = await screen.findByRole("menu", { name: "Terminal" });
+
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Copy link" }));
+
+    await waitFor(() => expect(copied).toEqual([TARGET]));
+    expect(asked("pane_link_open")).toHaveLength(0);
+  });
+
+  it("names the chat it came from under the ask's title, as a file's ask does (#6601)", async () => {
+    opens = {
+      answer: "ask",
+      reason: SAYS,
+      shown: WORDS,
+      target: TARGET,
+      token: "a-one-use-token",
+      about: { about: "misleading", kind: "url", host: "evil.example" },
+    };
+    const { drawn } = await hovered(TARGET, WORDS, "Fix the login form");
+    click(drawn, 8, 0, { ctrlKey: true });
+
+    const ask = await screen.findByRole("dialog", {
+      name: "This link goes somewhere its text doesn't say",
+    });
+    const subtitle = within(ask).getByText("From chat #1 · Fix the login form");
+    expect(ask.getAttribute("aria-describedby") ?? "").toContain(subtitle.id);
+  });
+
+  it("names no chat under the ask's title in a shell's pane, which has no title", async () => {
+    opens = {
+      answer: "ask",
+      reason: SAYS,
+      shown: WORDS,
+      target: TARGET,
+      token: "a-one-use-token",
+      about: { about: "misleading", kind: "url", host: "evil.example" },
+    };
+    const { drawn } = await hovered();
+    click(drawn, 8, 0, { ctrlKey: true });
+
+    const ask = await screen.findByRole("dialog", {
+      name: "This link goes somewhere its text doesn't say",
+    });
+    expect(ask).not.toHaveTextContent("From chat");
   });
 
   it("opens on the ask's answer with its one-use token", async () => {
