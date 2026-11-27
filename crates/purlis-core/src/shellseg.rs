@@ -434,10 +434,11 @@ struct Lexer {
     /// the word, as the shell reads it (#7709).
     braces: usize,
     /// Where the outermost `${` of the word was opened: the stream's cursor, the characters
-    /// pushed back, the token's length and its `bare`, `start` and quoting just past the `{`.
-    /// A `${` that does not close, or that holds a substitution, is read again from there the
-    /// way it always was.
-    brace_mark: Option<(usize, Vec<char>, usize, bool, isize, bool)>,
+    /// pushed back, the token's length, its `bare`, `start` and quoting just past the `{`, and
+    /// whether a `${…}` the word closed before this one held a blank. A `${` that does not
+    /// close on its line, or that holds a substitution, is read again from there the way it
+    /// always was, and keeps what the closed one said (#7709, round 4).
+    brace_mark: Option<BraceMark>,
     /// Whether this word's `${` was read again that way, so that no `${` in it is one word.
     braces_off: bool,
     /// How far into the stream a `${` that was read again had been read: no `${` opened before
@@ -446,6 +447,17 @@ struct Lexer {
     /// costs its length, not its square (#7709, round 2).
     braces_read_to: usize,
     /// Whether the word held an unquoted blank inside its `${…}` ([`Tok::split_in_braces`]).
+    split_in_braces: bool,
+}
+
+/// Where a word's outermost `${` opened ([`Lexer::brace_mark`]).
+struct BraceMark {
+    at: usize,
+    pushed: Vec<char>,
+    len: usize,
+    bare: bool,
+    start: isize,
+    quoted: bool,
     split_in_braces: bool,
 }
 
@@ -507,6 +519,7 @@ impl Lexer {
     fn opens_a_parameter_expansion(&self) -> bool {
         if !self.cfg.bash_quoting
             || self.braces_off
+            || BRACES_OFF.get()
             || self.dollars.is_multiple_of(2)
             || self.instream.i < self.braces_read_to
         {
@@ -664,26 +677,28 @@ impl Lexer {
                     // `{` on as it always was: split at its operators, so that the commands a
                     // `$(…)`, a `` `…` ``, a `<(…)` or a zsh `=(…)` in it runs stay segments
                     // of their own, and an unclosed one reads as the recorded answers read it.
-                    // A nested bash 5.3 funsub (`${ …; }`, `${| …; }`) runs commands too.
+                    // A nested bash 5.3 funsub (`${ …; }`, `${| …; }`) runs commands too. And
+                    // one is never read past its line: a heredoc's body is its own input, so a
+                    // `${` in it that its line leaves open hides nothing after the delimiter
+                    // (`bash <<'EOF'`, #7709, round 4).
                     if self.state == St::Word
                         && self.braces > 0
                         && nextchar.is_none_or(|c| {
-                            matches!(c, '(' | '`')
+                            matches!(c, '(' | '`' | '\n')
                                 || (c == '{'
                                     && self.dollars % 2 == 1
                                     && !self.next_begins_a_parameter())
                         })
-                        && let Some((at, pushed, len, bare, start, was_quoted)) =
-                            self.brace_mark.take()
+                        && let Some(mark) = self.brace_mark.take()
                     {
                         self.braces_read_to = self.braces_read_to.max(self.instream.i);
-                        self.instream.i = at;
-                        self.pushback_chars = pushed;
-                        self.token.truncate(len);
-                        (self.bare, self.start, quoted) = (bare, start, was_quoted);
+                        self.instream.i = mark.at;
+                        self.pushback_chars = mark.pushed;
+                        self.token.truncate(mark.len);
+                        (self.bare, self.start, quoted) = (mark.bare, mark.start, mark.quoted);
                         self.braces = 0;
                         self.braces_off = true;
-                        self.split_in_braces = false;
+                        self.split_in_braces = mark.split_in_braces;
                         self.dollars = 0;
                         continue;
                     }
@@ -703,7 +718,7 @@ impl Lexer {
                         match c {
                             '{' if self.dollars % 2 == 1 => self.braces += 1,
                             '}' => self.braces -= 1,
-                            ' ' | '\t' | '\n' => self.split_in_braces = true,
+                            ' ' | '\t' => self.split_in_braces = true,
                             _ => {}
                         }
                         self.dollars = if c == '$' { self.dollars + 1 } else { 0 };
@@ -762,14 +777,15 @@ impl Lexer {
                         self.token.push(c);
                         if opens {
                             self.braces = 1;
-                            self.brace_mark = Some((
-                                self.instream.i,
-                                self.pushback_chars.clone(),
-                                self.token.len(),
-                                self.bare,
-                                self.start,
+                            self.brace_mark = Some(BraceMark {
+                                at: self.instream.i,
+                                pushed: self.pushback_chars.clone(),
+                                len: self.token.len(),
+                                bare: self.bare,
+                                start: self.start,
                                 quoted,
-                            ));
+                                split_in_braces: self.split_in_braces,
+                            });
                         }
                     } else {
                         self.pushback_chars.push(c);
@@ -781,6 +797,10 @@ impl Lexer {
                     }
                 }
             }
+        }
+        if self.split_in_braces {
+            // For [`on_either_reading`]: a word of any reading that holds a `${`.
+            SPLIT_IN_BRACES.set(true);
         }
         let result: String = std::mem::take(&mut self.token).into_iter().collect();
         // posix: an empty token that was never quoted is end of input, and `''` is a real token.
@@ -1166,6 +1186,63 @@ pub fn joined_segments(toks: Vec<Tok>) -> Vec<JoinedSegment> {
 }
 
 std::thread_local! {
+    /// Whether [`lex`] reads every `${` as it always did, split at its blanks and operators:
+    /// the second reading of [`on_either_reading`].
+    static BRACES_OFF: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Whether [`lex`] has made a word in whose `${…}` an unquoted blank stood
+    /// ([`Tok::split_in_braces`]) since the innermost [`on_either_reading`] began.
+    static SPLIT_IN_BRACES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// **`judge`, and, when a `${…}` it read held an unquoted blank, `judge` again with every `${`
+/// read as it always was** (#7709, round 4): split at its blanks and its operators. What the
+/// first reading finds stands; where it finds nothing, the second's answer is the answer.
+///
+/// The shell splits what such an expansion gives into words, and a program or a script handed
+/// them may run them, wherever the word stands: after a redirection, behind `env`, `timeout`,
+/// `find -exec` or `ssh`, or handed to `eval`. No guard is to see fewer commands than bash
+/// runs, so a line the `${` reading would show a guard as fewer words is read the old way too.
+/// A line whose `${…}` holds no blank (`f=${t%%|*}`, the line #7709 was filed for) is read
+/// once. Nests: inside a second reading, `judge` is read once, already the old way.
+pub fn on_either_reading<T>(mut judge: impl FnMut() -> Option<T>) -> Option<T> {
+    if BRACES_OFF.get() {
+        return judge();
+    }
+    let outer = SPLIT_IN_BRACES.replace(false);
+    let first = judge();
+    let split = SPLIT_IN_BRACES.get();
+    SPLIT_IN_BRACES.set(outer || split);
+    if first.is_some() || !split {
+        return first;
+    }
+    let _old_way = BracesOff::on();
+    judge()
+}
+
+/// Whether [`lex`] reads every `${` the old way now ([`on_either_reading`]'s second reading).
+/// A cache of what a text reads as keys on it, since the text alone no longer says.
+pub(crate) fn braces_off() -> bool {
+    BRACES_OFF.get()
+}
+
+/// **Every `${` is read the old way while this lives** ([`on_either_reading`]), and as before
+/// once it is dropped, a panic's unwinding included.
+struct BracesOff;
+
+impl BracesOff {
+    fn on() -> Self {
+        BRACES_OFF.set(true);
+        Self
+    }
+}
+
+impl Drop for BracesOff {
+    fn drop(&mut self) {
+        BRACES_OFF.set(false);
+    }
+}
+
+std::thread_local! {
     /// Whether a walk on this thread has met a string nested past [`MAX_NESTING`] since the
     /// innermost [`too_deep_within`] began: [`walk_segments`] sets it, and only that reads it.
     static TOO_DEEP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -1255,11 +1332,12 @@ pub fn segment_readings(cmd: &str) -> Vec<Reading> {
     // each walk the same text, and the walk is the cost of it (#7245). A reading is a pure
     // function of the text, so the last few large ones are kept; the one effect it has, the
     // report of a reading nested too deep, is made again on a hit.
+    let old_way = braces_off();
     if let Some((too_deep, readings)) = LARGE_READINGS.with(|kept| {
         kept.borrow()
             .iter()
-            .find(|(text, ..)| text == cmd)
-            .map(|(_, too_deep, readings)| (*too_deep, readings.clone()))
+            .find(|(text, braces, ..)| text == cmd && *braces == old_way)
+            .map(|(.., too_deep, readings)| (*too_deep, readings.clone()))
     }) {
         if too_deep {
             TOO_DEEP.with(|flag| flag.set(true));
@@ -1274,7 +1352,7 @@ pub fn segment_readings(cmd: &str) -> Vec<Reading> {
         if kept.len() >= LARGE_READINGS_KEPT {
             kept.remove(0);
         }
-        kept.push((cmd.to_owned(), too_deep, readings.clone()));
+        kept.push((cmd.to_owned(), old_way, too_deep, readings.clone()));
     });
     readings
 }
@@ -1285,10 +1363,15 @@ const LARGE_READING: usize = 4096;
 /// body, with room for the merge reading's.
 const LARGE_READINGS_KEPT: usize = 4;
 
+/// A large text [`segment_readings`] kept: the text, whether every `${` in it was read the old
+/// way ([`braces_off`]), whether its walk met a nesting past [`MAX_NESTING`], and its readings.
+type KeptReading = (String, bool, bool, Vec<Reading>);
+
 std::thread_local! {
-    /// The large texts [`segment_readings`] has read on this thread, each with whether its walk
-    /// met a nesting past [`MAX_NESTING`].
-    static LARGE_READINGS: std::cell::RefCell<Vec<(String, bool, Vec<Reading>)>> =
+    /// The large texts [`segment_readings`] has read on this thread, each with whether it was
+    /// read with every `${` the old way ([`braces_off`]) and whether its walk met a nesting
+    /// past [`MAX_NESTING`].
+    static LARGE_READINGS: std::cell::RefCell<Vec<KeptReading>> =
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -1476,6 +1559,7 @@ fn walk_segments(toks: Vec<Tok>) -> (Vec<Walked>, usize) {
                 if let Some(word) = seg.own.last_mut() {
                     word.text.push_str(&t.text);
                     word.bare = word.bare && t.bare;
+                    word.split_in_braces |= t.split_in_braces;
                     word.end = t.end;
                 }
             }

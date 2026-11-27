@@ -87,10 +87,15 @@ pub fn runs_a_tasks_branch_folder_work(cmd: &str) -> bool {
 /// words (after the program) `is` matches. `name` is a word every such command line holds, for
 /// the prefilter of the deeper walk.
 fn runs(cmd: &str, name: &str, is: fn(&[String]) -> bool) -> bool {
-    a_segment_runs(cmd, is)
-        || a_shell_string_runs(cmd, is)
-        // Past the cap the text is not read, and a helper is refused all the same.
-        || further_in(cmd, name, |text| a_segment_runs(text, is).then_some(())).is_some()
+    // Read twice where a `${…}` held a blank ([`shellseg::on_either_reading`], #7709, round 4).
+    shellseg::on_either_reading(|| {
+        (a_segment_runs(cmd, is)
+            || a_shell_string_runs(cmd, is)
+            // Past the cap the text is not read, and a helper is refused all the same.
+            || further_in(cmd, name, |text| a_segment_runs(text, is).then_some(())).is_some())
+        .then_some(())
+    })
+    .is_some()
 }
 
 /// Whether purlis's own words are a dispatch.
@@ -145,14 +150,9 @@ fn purlis_words(toks: &[String]) -> Option<Vec<String>> {
 }
 
 fn a_segment_runs(cmd: &str, is: fn(&[String]) -> bool) -> bool {
-    // Every line, a heredoc body's too, and then the commands a shell runs: there a body is
-    // data, so a `${` in it opens nothing that hides the commands after it (#7709, round 3).
-    let runs = |text: &str| {
-        shellseg::segment_argv(text)
-            .iter()
-            .any(|toks| purlis_words(toks).is_some_and(|words| is(&words)))
-    };
-    runs(cmd) || (cmd.contains("<<") && runs(&crate::heredoc::commands_a_shell_runs(cmd)))
+    shellseg::segment_argv(cmd)
+        .iter()
+        .any(|toks| purlis_words(toks).is_some_and(|words| is(&words)))
 }
 
 /// Whether a program word is the variable the app names purlis's binary in: `$NAME` or

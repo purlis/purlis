@@ -251,6 +251,13 @@ pub enum Held {
 ///
 /// **A help is no merge** (#6960): a line that [`asks_for_help`] is not held in any mode.
 pub fn held(cmd: &str) -> Option<Held> {
+    // Read twice where a `${…}` held a blank ([`crate::shellseg::on_either_reading`], #7709,
+    // round 4).
+    crate::shellseg::on_either_reading(|| held_once(cmd))
+}
+
+/// [`held`], on one reading of the line.
+fn held_once(cmd: &str) -> Option<Held> {
     crate::floorguard::merge_reason(cmd)?;
     if asks_for_help(cmd) {
         return None;

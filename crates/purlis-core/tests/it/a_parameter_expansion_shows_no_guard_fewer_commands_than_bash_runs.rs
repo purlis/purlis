@@ -11,7 +11,9 @@
 use std::path::Path;
 
 use purlis_core::floorguard::release_floor_reason;
-use purlis_core::{commitguard, credguard, dispatchguard, forge, handoffguard, leakguard, mergehold};
+use purlis_core::{
+    commitguard, credguard, dispatchguard, forge, handoffguard, leakguard, mergehold,
+};
 
 /// Each is held, and refused unattended.
 fn held(cmd: &str) {

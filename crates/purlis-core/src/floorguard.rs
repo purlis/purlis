@@ -161,7 +161,8 @@ fn version_tag_re() -> &'static Regex {
 /// `unattended` is the host's answer, passed in rather than read: the Python takes the whole hook
 /// payload and asks [`unattended`] of its `permission_mode`, and the core holds no globals.
 pub fn release_floor_reason(cmd: &str, unattended: bool) -> Option<String> {
-    metered(cmd, unattended).0
+    // Read twice where a `${…}` held a blank ([`shellseg::on_either_reading`], #7709, round 4).
+    shellseg::on_either_reading(|| metered(cmd, unattended).0)
 }
 
 /// **The floor's merge half alone** (R-115): the refusal [`release_floor_reason`] gives
@@ -171,7 +172,7 @@ pub fn release_floor_reason(cmd: &str, unattended: bool) -> Option<String> {
 /// ([`crate::mergehold`]), in any mode: every route the floor knows is the same act to it.
 pub fn merge_reason(cmd: &str) -> Option<String> {
     let _only = OnlyMerges::on();
-    metered(cmd, true).0
+    shellseg::on_either_reading(|| metered(cmd, true).0)
 }
 
 /// **The floor reads for merges alone while this lives** ([`merge_reason`]), and as it did before

@@ -1518,15 +1518,18 @@ pub fn walks_into_guarded_state(
 /// a body that is defined and never called too, the refusing direction. A heredoc body a reader
 /// takes as data, such as a script written to a file, defines nothing.
 pub fn leak_reason(cmd: &str, cwd: &str, state_dir: &Path) -> Option<String> {
-    let budget = crate::shellsubst::read_budget(cmd.len());
-    let mut at = Inward {
-        cwd,
-        state_dir,
-        budget,
-        functions: Vec::new(),
-        functions_read_from: Vec::new(),
-    };
-    at.reason_from(cmd, &[String::new()], 0)
+    // Read twice where a `${…}` held a blank ([`shellseg::on_either_reading`], #7709, round 4).
+    crate::shellseg::on_either_reading(|| {
+        let budget = crate::shellsubst::read_budget(cmd.len());
+        let mut at = Inward {
+            cwd,
+            state_dir,
+            budget,
+            functions: Vec::new(),
+            functions_read_from: Vec::new(),
+        };
+        at.reason_from(cmd, &[String::new()], 0)
+    })
 }
 
 /// How many directories [`leak_reason`] reads a substitution's command from.

@@ -365,6 +365,12 @@ pub fn is_sshcommand_config_write(args: &[String]) -> bool {
 ///
 /// `forges` is the ordered host list; see the module docs for why the order is a contract.
 pub fn single_credential_hit(cmd: &str, forges: &[Forge]) -> Option<(String, String)> {
+    // Read twice where a `${…}` held a blank ([`shellseg::on_either_reading`], #7709, round 4).
+    shellseg::on_either_reading(|| credential_hit_once(cmd, forges))
+}
+
+/// [`single_credential_hit`], on one reading of the line.
+fn credential_hit_once(cmd: &str, forges: &[Forge]) -> Option<(String, String)> {
     let ssh_prefix_hosts = ssh_prefix_hosts(forges);
     // git treats hostnames case-insensitively (`GITHUB.COM` == `github.com` on the wire), so the
     // guard must match that way too — matching only the canonical lowercase form is worse than no
@@ -378,9 +384,7 @@ pub fn single_credential_hit(cmd: &str, forges: &[Forge]) -> Option<(String, Str
         }
     }
 
-    // A heredoc body nothing runs is data, so a `${` in it opens nothing that could hide the
-    // commands after it (#7709, round 3).
-    let segments = shellseg::segment_argv(&crate::heredoc::commands_a_shell_runs(cmd));
+    let segments = shellseg::segment_argv(cmd);
     let before_each = shellwrap::exported_env_shared(&segments);
     for (i, toks) in segments.iter().enumerate() {
         let (prog, seg_env, argv) = shellwrap::split_env(toks);
