@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795767329196,
+  "lastUpdate": 1795768517798,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57330,6 +57330,48 @@ window.BENCHMARK_DATA = {
             "value": 101.2228365,
             "unit": "ms",
             "extra": "median of 5 runs: 100.239, 100.932, 101.223, 102.073, 102.419 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "5beaec1c31d928a9730bfbb97a6820dda7d69007",
+          "message": "SC-4d: the hibernate act holds its latch, holds input and survives its failures (#7633) (#7858)\n\n* SC-4d: the hibernate act holds its latch, holds input and survives its failures (#7633)\n\nThe operator's Hibernate runs under a per-chat hibernating latch: latch, keep the\nscreen, record the intent, then read once more what arrived before it. A key the\npane typed, a turn or an ask that began, a quit, or the program ending by itself\naborts the act and removes its kept screen. Past the intent, what the pane types is\nheld as the chat's unsent text and never sent to the program that is going.\n\nOwn work: rested::by_hand_ending_its_own_work and hibernate_chat's ownWorkAsked\nlift SC-4a's refusal once the caller has asked; the wake types\nwakeline::of_the_chat_woken naming what the hibernation ended.\n\nTests, each seen red first (two-callers by mutation): core rested and wakeline,\napp acts on the Pretend host with events at each step (no socket), and a\nbehaviour-suite target for a program that ignores its signals.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CX50V4CQTKHFMKGSME9NXD\nPurlis-Persona: steward\n\n* SC-4d (#7633): held input shown and handed back, terminal answers not typing, unwind guard, named own work\n\n- What the pane types after the intent is held (bounded at 64 KiB), shown on the\n  hibernated band, and handed back to the woken pane unsent on Resume; never typed\n  into a harness (delivery is SC-4j's).\n- The terminal's own answers neither abort the act nor are held.\n- The act's latch is let go by a Drop guard, so a panic frees it.\n- Own-work confirmation names its pieces; the wake line uses the set as it stood\n  at the intent.\n- Evidence: positive controls, profiled-chat wake lines, contending callers, and\n  each new test seen red by mutation.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8D8F098JH50ZVYX78PYR5NV\nPurlis-Persona: steward\n\n* SC-4d (#7633): a woken chat with nothing unsent is restarted whole; the signal test waits for its program and stays off links\n\n- PlaneView: a restart's `unsent` is absent where nothing was typed, so it is read `?? null`;\n  undefined passed the `!== null` check and broke the restart's notices (RestartChat.window.test).\n- behaviour: a runner refuses `hibernate` from a `remote-link` link (no Power::Reattach), so the\n  ignores-its-signals case is not yet run through a link or in a Docker pool; where a target\n  cannot hibernate, it waits for the closed program to be killed so no-orphans finds none.\n- cargo fmt (chats.rs).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8DSZB1G4M3795TSQ15BHH60\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T07:40:42Z",
+          "tree_id": "38e567ab71e81fffe1532c0872677226486a2955",
+          "url": "https://github.com/purlis/purlis/commit/5beaec1c31d928a9730bfbb97a6820dda7d69007"
+        },
+        "date": 1795768510817,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5692075,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.560, 0.565, 0.569, 0.570, 0.579 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.318101,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.258, 16.289, 16.318, 16.338, 16.391 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.027841,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.149, 100.338, 101.028, 101.270, 101.854 ms"
           }
         ]
       }
