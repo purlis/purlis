@@ -16,9 +16,13 @@ Each tool below is refused whole, on `NOT_FOR_A_RUN_GRANT`, on what the tool is 
 manual describes it, and not on a line of its source. That is the conservative side: a refusal
 only takes away an Allow on a run's notice, and a persona can still declare any of them as a tool
 in a reviewed line. No tool these issues name is found harmless, since that would need the
-reading this could not do. The six left offered beside them, daemontools' `svc`, `svok` and
-`svstat` and s6's `s6-svc`, `s6-svok` and `s6-svstat`, are left so on their manuals too. Reading
-each tool in source, to cite its lines or to give an Allow back, is filed as #7825.
+reading this could not do. The programs of these packages left offered beside them are left so
+on their manuals too, as running nothing they are handed: daemontools' `svc`, `svok` and `svstat`
+(and s6's `s6-svc`, `s6-svok` and `s6-svstat`), which talk to a supervisor already running, and
+its filters `readproctitle`, `tai64n` and `tai64nlocal`; and Upstart's `shutdown`, `reboot`,
+`halt` and `poweroff` (the last three run its fixed `/sbin/shutdown`), `runlevel`, which reads,
+and `initctl2dot`, which draws a graph. Reading each tool in source, to cite its lines or to give
+an Allow back, is filed as #7825.
 
 ## daemontools (#6559)
 
@@ -34,6 +38,7 @@ each tool in source, to cite its lines or to give an Allow back, is filed as #78
 
 `svc`, `svok` and `svstat` are left offered: they talk to a `supervise` already running, over
 the files in its `supervise` folder (`control`, `ok`, `status`), and run nothing themselves.
+`readproctitle`, `tai64n` and `tai64nlocal` only read and filter.
 
 ## aptitude, run-parts, capsh, cpanm and dnf (#6564)
 
@@ -67,7 +72,8 @@ Upstart). As #6557 asked, `initctl` is therefore refused whole on the conservati
   they talk to a session's own init instead of the system's.
 - Upstart's **`start`**, **`stop`**, **`restart`**, **`reload`** and **`status`** are links to
   `initctl`. A program's name is judged again once its links resolve, so they are refused by
-  `initctl`'s name and need no entry of their own.
+  `initctl`'s name and need no entry of their own. Its `shutdown`, `reboot`, `halt`, `poweroff`,
+  `runlevel` and `initctl2dot` stay offered, as running nothing they are handed.
 
 Its kin, refused with it:
 
@@ -176,10 +182,9 @@ plugins as `dnf` and `yum` do, and no form of their names reaches either row. On
 All are refused, each by a row of its own. So is daemontools' `svscanboot`, which runs
 `svscan`.
 
-Other families the reviews found still offered are outside these issues: `tini`, `catatonit`,
-`daemonize`, `pm2`, `supervisord`, ucspi-tcp's `tcpserver`, `tcpclient`, `recordio` and `argv0`,
-`execlineb`, `logrotate`, `pacman`, `apk`, macOS's `installer` and sysvinit's `startpar`. They
-are filed as #7833.
+Other families the reviews found still offered are outside these issues, among them `tini`,
+`pm2`, `supervisord`, ucspi-tcp, execline, `logrotate`, `pacman`, `apk` and macOS's `installer`.
+Each round's leads are filed on #7833, its body and its comments.
 
 ## What the name forms cost
 
