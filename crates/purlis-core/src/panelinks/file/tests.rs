@@ -56,6 +56,15 @@ impl Fixture {
             session: Some(7),
             folder: Some(self.project.join(folder)),
             runs: Runs::Here,
+            now_in: None,
+        }
+    }
+
+    /// The pane of a chat that started in `folder` and is in `now` (absolute) now (#6367).
+    fn moved(&self, folder: &str, now: &Path) -> Pane {
+        Pane {
+            now_in: Some(now.to_path_buf()),
+            ..self.pane_in(folder)
         }
     }
 
@@ -638,4 +647,70 @@ fn a_file_its_branch_could_not_say_about_links_marked_unchecked() {
     assert!(!unchecked(
         &here.project.join("README.md").display().to_string()
     ));
+}
+
+#[test]
+fn a_relative_path_follows_the_folder_the_chat_is_in_now() {
+    // #6367: a chat that started at its workspace's root and moved into a clone.
+    let here = fixture();
+    let links = here.links();
+    let ws = here.project.join("workspaces/smart-ide");
+    let pane = here.moved("workspaces/smart-ide", &ws.join("repos/app"));
+
+    let at = resolved(&links, "src/main.rs:3", &pane);
+    assert_eq!(at.path, ws.join("repos/app/src/main.rs"));
+    assert!(at.in_home);
+    assert!(matches!(
+        links.open(&file("src/main.rs:3"), &pane, &Asks::default(), None),
+        Opening::Open(_)
+    ));
+    // Where nothing said it moved, the folder it started in, as before.
+    assert!(matches!(
+        links.resolve(&file("src/main.rs"), &here.pane_in("workspaces/smart-ide")),
+        Resolved::Quiet
+    ));
+}
+
+#[test]
+fn a_folder_moved_to_outside_the_workspace_asks_as_the_path_typed_in_full_does() {
+    // A chat of smart-ide said (OSC 7) it is in another workspace, then outside the project:
+    // its home stays smart-ide, so a relative path there asks first, as the full path does.
+    let here = fixture();
+    let links = here.links();
+    let asks = Asks::default();
+    let docs = here.project.join("workspaces/docs");
+    for (now, text) in [
+        (docs.clone(), "guide.md"),
+        (here.outside.parent().expect("etc").to_path_buf(), "hosts"),
+    ] {
+        let pane = here.moved("workspaces/smart-ide", &now);
+        let full = now.join(text).display().to_string();
+        assert!(!resolved(&links, text, &pane).in_home, "{text}");
+        assert_eq!(
+            home_of(&pane).map(|home| home.is),
+            Some(HomeIs::Workspace("smart-ide".into()))
+        );
+        for typed in [text, full.as_str()] {
+            match links.open(&file(typed), &pane, &asks, None) {
+                Opening::Ask { reason, .. } => assert_eq!(reason, "outside smart-ide", "{typed}"),
+                other => panic!("{typed}: expected an ask, got {other:?}"),
+            }
+        }
+    }
+}
+
+#[test]
+fn a_folder_moved_into_a_guarded_folder_is_never_looked_in() {
+    // The folder a chat moved to is not one of its own: a guarded folder stays unread, as the
+    // same path typed in full is.
+    let here = fixture();
+    let links = Resolver::with(vec![Box::new(LocalFile::with(
+        Some(here.home.clone()),
+        vec![here.home.clone()],
+    ))]);
+    let pane = here.moved("workspaces/smart-ide", &here.home);
+    let full = here.home.join("notes.md").display().to_string();
+    for text in ["notes.md", full.as_str()] {
+        assert_eq!(links.resolve(&file(text), &pane), Resolved::Quiet, "{text}");
+    }
 }
