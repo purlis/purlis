@@ -61,6 +61,7 @@ import {
   type MovedFrom,
   type Ran,
   RESTART_NOTE,
+  HIBERNATE_NOTE,
   MOVE_HERE_NOTE,
   MOVE_TO_RUNNER_NOTE,
   MOVE_ONCE_SET_UP_NOTE,
@@ -3906,12 +3907,41 @@ describe("Restart chat on a chat (#1428)", () => {
     expect(row({})).toBeUndefined();
   });
 
-  it("is below the line in the chat's list, first, above Start fresh and End…", () => {
-    expect(menuOn({ on: "chat", session: 7 }).below.slice(0, 2)).toEqual([
+  it("is below the line in the chat's list, first, above Hibernate, Start fresh and End…", () => {
+    expect(menuOn({ on: "chat", session: 7 }).below.slice(0, 3)).toEqual([
       "chat.restart:7",
+      "chat.hibernate:7",
       "chat.fresh:7",
     ]);
     expect(menuOn({ on: "chat", session: 7 }).below).toContain("chat.end:7");
+  });
+});
+
+describe("Hibernate chat on a chat (#7630, #7877)", () => {
+  const tabs = openTab(noTabs(), 7, "one");
+  const row = (over: Partial<Now>) =>
+    catalogued(catalogue(now({ tabs, ...over }))).get("chat.hibernate:7");
+  const ON_A_RUNNER = "Not hibernated: this chat runs on a runner, not on this machine.";
+
+  it("hibernates a chat the core offers it for", () => {
+    expect(row({ hibernatable: () => true })).toMatchObject({
+      title: "Hibernate chat one",
+      available: true,
+      note: HIBERNATE_NOTE,
+    });
+  });
+
+  it("is greyed with the core's reason on a chat that may never be hibernated where it runs", () => {
+    expect(row({ hibernateGreyed: () => ON_A_RUNNER })).toMatchObject({
+      title: "Hibernate chat one",
+      available: false,
+      reason: ON_A_RUNNER,
+      does: { verb: "nothing" },
+    });
+  });
+
+  it("has no row for a chat offered neither", () => {
+    expect(row({})).toBeUndefined();
   });
 });
 

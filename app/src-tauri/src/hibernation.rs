@@ -547,22 +547,53 @@ pub fn facts_of(held: &crate::planes::Held, session: u32, looked_at: bool) -> Fa
         tasks,
         as_a_task,
         observed: false,
-        on_a_runner: held.chats().runner_of(session).is_some()
-            || held.chats().pool_of(session).is_some(),
+        on_a_runner: on_a_runner(held, session),
         child_run: false,
         looked_at,
     }
 }
 
+/// Whether chat `session` runs on a runner: its own fresh one, or a pool's (local or remote).
+/// Such a chat's host is reached through a `remote-link` link, which a runner refuses
+/// `hibernate` from (it lacks `Power::Reattach`, #7877).
+fn on_a_runner(held: &crate::planes::Held, session: u32) -> bool {
+    held.chats().runner_of(session).is_some() || held.chats().pool_of(session).is_some()
+}
+
+/// **What chat `session`'s row offers of Hibernate** ([`offered`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Offer {
+    /// No row: its harness cannot pick a conversation up by its id, or its session host cannot
+    /// hibernate it (one before protocol 1.96, or the in-process host).
+    None,
+    /// A Hibernate row the person may press.
+    Hibernate,
+    /// A Hibernate row greyed, with the core's reason it may never be hibernated where it runs
+    /// (#7877): a runner's chat, whose link refuses the act.
+    Greyed(NotRested),
+}
+
 /// **Whether chat `session`'s row offers Hibernate** (#7630): its harness picks a conversation
 /// up by its id, and its session host can hibernate it (protocol 1.96; never the in-process
-/// host). Whether it may be hibernated now is [`purlis_core::rested::by_hand`]'s answer, said when it
-/// is pressed.
-pub fn offered(held: &crate::planes::Held, session: u32) -> bool {
-    held.chats()
+/// host). A chat on a runner is offered it greyed, with [`NotRested::OnARunner`] (#7877): no
+/// grant of a runner's link is widened for it. Whether it may be hibernated now is
+/// [`purlis_core::rested::by_hand`]'s answer, said when it is pressed.
+pub fn offered(held: &crate::planes::Held, session: u32) -> Offer {
+    if !held
+        .chats()
         .harness(session)
         .is_some_and(purlis_core::harness::Harness::resumes_by_id)
-        && held.chats().sessions().can_hibernate(session)
+    {
+        return Offer::None;
+    }
+    if on_a_runner(held, session) {
+        return Offer::Greyed(NotRested::OnARunner);
+    }
+    if held.chats().sessions().can_hibernate(session) {
+        Offer::Hibernate
+    } else {
+        Offer::None
+    }
 }
 
 /// The chats of `plane` that are hibernated: what the window reads its rows by as it opens.

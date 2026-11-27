@@ -3117,6 +3117,25 @@ fn on_a_runner() -> (
     (sessions, confines, runs, dir, runtime)
 }
 
+/// **A chat in the window's own host can be hibernated; one on a runner cannot** (#7877): a
+/// runner refuses `hibernate` from the `remote-link` link it is reached by, which lacks
+/// `Power::Reattach`, so its chat is never offered the act.
+#[test]
+fn a_chat_here_can_be_hibernated_and_one_on_a_runner_cannot() {
+    let here = hosted();
+    let id = here
+        .sessions
+        .open(None, &a_shell("read line"), &|_| {})
+        .expect("it starts here");
+    assert!(here.sessions.can_hibernate(id));
+
+    let (sessions, _confines, _runs, _dir, _runtime) = on_a_runner();
+    let id = sessions
+        .open(None, &a_shell("read line"), &|_| {})
+        .expect("it starts on the runner");
+    assert!(!sessions.can_hibernate(id));
+}
+
 /// **A harness chat on a runner is started there by its names, and its proxy's asks reach the
 /// window** (#2446): the runner composes it and names its confinement to the window, through
 /// the link its host relays; the window's answer and a port withdrawn reach it there, and

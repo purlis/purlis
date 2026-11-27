@@ -5377,9 +5377,12 @@ impl SessionHost for HostedSessions {
         }
     }
 
-    /// Only of a link already open, as a tab is drawn: a host before 1.96 refuses `hibernate`.
+    /// Only of a link already open, as a tab is drawn: a host before 1.96 refuses `hibernate`,
+    /// and so does a runner, from the `remote-link` link a chat on it is reached by, which lacks
+    /// `Power::Reattach` (#7877).
     fn can_hibernate(&self, id: u32) -> bool {
-        lock(&self.running).contains_key(&id)
+        !self.on_a_runner
+            && lock(&self.running).contains_key(&id)
             && self
                 .own_link(Duration::ZERO)
                 .is_ok_and(|link| link.version() >= session::KNOWS_HIBERNATE)

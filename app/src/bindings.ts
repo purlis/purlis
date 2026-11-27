@@ -13656,6 +13656,12 @@ export type OpenChat = {
 	 *  a shell, a harness that cannot, or a host that would refuse it.
 	 */
 	hibernates?: boolean | null,
+	/**
+	 *  Why its row's Hibernate is greyed, where it is (#7877): one of the core's reasons it may
+	 *  not be hibernated (SC-4c, #7632), today `on_a_runner` alone, whose link refuses the act.
+	 *  `null` for a chat offered Hibernate, and for one offered none.
+	 */
+	hibernate_greyed?: Why | null,
 	/**  The persona it adopted. */
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */

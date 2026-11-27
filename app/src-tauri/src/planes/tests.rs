@@ -7432,6 +7432,14 @@ fn a_named_report(
 /// window test's stand-in is, because the board adopts its first report; a Claude Code report
 /// must carry its program's pid (ADR 0024), which a pretend program has none of.
 fn a_chat_at_rest(held: &Held, dir: &Path) -> u32 {
+    let session = a_codex_chat(held, dir);
+    comes_to_rest(held, session);
+    session
+}
+
+/// A Codex chat started on the pretend host, a harness that resumes by its id, before any of its
+/// hooks has reported: one whose row may offer Hibernate.
+fn a_codex_chat(held: &Held, dir: &Path) -> u32 {
     // A program that is there, outside the project and outside every temp folder, as a start
     // sandboxed at full asks (`sandbox::program::temp_roots`): under the build's own `target`.
     // The pretend host never runs it. The chat works in a folder of the project, to be confined
@@ -7455,7 +7463,6 @@ fn a_chat_at_rest(held: &Held, dir: &Path) -> u32 {
         Some(purlis_core::harness::Harness::Codex),
         "not a harness that resumes by id, so nothing below is evidence"
     );
-    comes_to_rest(held, session);
     session
 }
 
@@ -7808,6 +7815,44 @@ fn a_dispatched_task_is_refused_by_hand_with_its_typed_reason() {
         crate::hibernation::Refused::Not(purlis_core::rested::NotRested::ReportOwed)
     );
     assert_eq!(held.hibernated().of(session), None);
+}
+
+#[test]
+fn a_chat_here_whose_host_can_hibernate_it_is_offered_hibernate() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_codex_chat(&held, dir.path());
+
+    assert_eq!(
+        crate::hibernation::offered(&held, session),
+        crate::hibernation::Offer::Hibernate
+    );
+}
+
+#[test]
+fn a_chat_on_a_pools_runner_is_offered_hibernate_greyed_as_on_a_runner_and_refused_so() {
+    // #7877: its host would be asked through a `remote-link` link, which lacks
+    // `Power::Reattach`; no grant is widened, so the row says why it is greyed.
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_codex_chat(&held, dir.path());
+    host.runs_on_pool(session, "builds");
+
+    assert_eq!(
+        crate::hibernation::offered(&held, session),
+        crate::hibernation::Offer::Greyed(purlis_core::rested::NotRested::OnARunner)
+    );
+    assert_eq!(
+        held.hibernate_chat(session).unwrap_err(),
+        crate::hibernation::Refused::Not(purlis_core::rested::NotRested::OnARunner)
+    );
+    assert_eq!(
+        host.hibernated(),
+        Vec::<u32>::new(),
+        "the host was asked nothing"
+    );
 }
 
 #[test]

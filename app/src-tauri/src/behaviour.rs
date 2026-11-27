@@ -4319,8 +4319,7 @@ on_every_target!(
     a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,
     an_ask_raised_by_a_chats_proxy_is_answered_from_the_window,
     a_hibernated_chats_kept_screen_is_its_newest_lines_within_a_mebibyte,
-    a_hibernated_chats_kept_screen_is_an_open_alternate_screen_alone;
-    not yet through a link ("a runner refuses `hibernate` from a `remote-link` link, which lacks `Power::Reattach`"):
+    a_hibernated_chats_kept_screen_is_an_open_alternate_screen_alone,
     a_hibernated_program_that_ignores_its_signals_is_killed_and_the_act_completes;
     not yet through a link ("an opt-out is asked again on the device a chat moves to, ADR 0078 §4"):
     an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts;
@@ -4330,7 +4329,8 @@ on_every_target!(
 );
 
 /// Whether chat `id` of `target` can be hibernated: only a host that can is offered Hibernate
-/// (#7630), and only it pages a view's history; the window's own process does neither. Where it
+/// (#7630), and only it pages a view's history; the window's own process does neither, and a
+/// runner, through a link or in a Docker pool, refuses the act from its link (#7877). Where it
 /// cannot, the chat is closed and the skip of `case` is said, so a target that
 /// stopped hibernating is seen rather than passing silently.
 fn hibernates_here(target: &Target, id: u32, case: &str) -> bool {

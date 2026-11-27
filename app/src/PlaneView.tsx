@@ -8198,13 +8198,26 @@ export const PlaneView = memo(function PlaneView({
    *  `session.rs`'s `KNOWS_HIBERNATE` does: a harness that resumes by id, on a host that can
    *  hibernate it. Never a shell, a chat in this process, or one on an older host. A chat the
    *  picker started is in the sidebar's rows only, so those are read too, as `glances` does. */
-  const hibernatable = useCallback(
+  const rowOf = useCallback(
     (session: number) =>
       [
         ...(sidebar ? [...sidebar.workspaces.flatMap((ws) => ws.chats), ...sidebar.unfiled] : []),
         ...reopened,
-      ].find((one) => one.session === session)?.hibernates === true,
+      ].find((one) => one.session === session),
     [reopened, sidebar],
+  );
+  const hibernatable = useCallback(
+    (session: number) => rowOf(session)?.hibernates === true,
+    [rowOf],
+  );
+  /** Why a chat's Hibernate row is greyed (#7877): the core's typed reason, today a runner's
+   *  chat, whose link refuses the act, in the words a refusal says. */
+  const hibernateGreyed = useCallback(
+    (session: number) => {
+      const why = rowOf(session)?.hibernate_greyed;
+      return why == null ? undefined : NOT_HIBERNATED[why];
+    },
+    [rowOf],
   );
   /** Hibernates chat `session` by hand (#7630): where it may not be, the core says why as a
    *  typed reason (#7632), and its words are said on the chat's pane; where the act could not be
@@ -10116,6 +10129,7 @@ export const PlaneView = memo(function PlaneView({
             planeUpdated: planeUpdates,
             restartable,
             hibernatable,
+            hibernateGreyed,
             movesTo,
             movesOnceAPoolIsSetUp: movesOnceSetUp,
             movesWith: movesWithChat,
@@ -10195,6 +10209,7 @@ export const PlaneView = memo(function PlaneView({
       planeUpdates,
       restartable,
       hibernatable,
+      hibernateGreyed,
       movesTo,
       movesOnceSetUp,
       movesWithChat,

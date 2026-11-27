@@ -900,6 +900,11 @@ struct OpenChat {
     /// a shell, a harness that cannot, or a host that would refuse it.
     #[specta(optional)]
     hibernates: Option<bool>,
+    /// Why its row's Hibernate is greyed, where it is (#7877): one of the core's reasons it may
+    /// not be hibernated (SC-4c, #7632), today `on_a_runner` alone, whose link refuses the act.
+    /// `null` for a chat offered Hibernate, and for one offered none.
+    #[specta(optional)]
+    hibernate_greyed: Option<crate::hibernation::Why>,
     /// The persona it adopted.
     persona: Option<String>,
     /// What its harness cannot tell charter, said on the chat — none where it tells all.
@@ -1023,13 +1028,18 @@ fn drawn_of(held: &planes::Held, open: chats::Open) -> OpenChat {
     let browser_sites = browser_sites_of(held, open.session);
     let pool = held.chats().pool_of(open.session);
     let clones_come_back = held.chats().clones_come_back(open.session).then_some(true);
-    let hibernates = crate::hibernation::offered(held, open.session).then_some(true);
+    let (hibernates, hibernate_greyed) = match crate::hibernation::offered(held, open.session) {
+        crate::hibernation::Offer::None => (None, None),
+        crate::hibernation::Offer::Hibernate => (Some(true), None),
+        crate::hibernation::Offer::Greyed(why) => (None, Some(why.into())),
+    };
     OpenChat {
         id,
         browser_sites,
         pool,
         clones_come_back,
         hibernates,
+        hibernate_greyed,
         ..OpenChat::from(open)
     }
 }
@@ -3227,6 +3237,7 @@ impl From<chats::Open> for OpenChat {
             pool: None,
             clones_come_back: None,
             hibernates: None,
+            hibernate_greyed: None,
             workspace: open.workspace,
             persona: open.persona,
             in_front: open.in_front,
