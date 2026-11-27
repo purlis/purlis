@@ -46,11 +46,43 @@ export const neversToKeepSaid = (kept: NeversToKeep | null, unshowable: boolean)
   return `Keep these nevers seals exactly ${kept.pairs.length === 1 ? "the pair" : "the pairs"} below.`;
 };
 
-/** The pairs Keep these nevers seals, each an item of its own with each name as code. */
-export function NeverPairs({ kept }: { kept: NeversToKeep | null }) {
+/**
+ * What the window says where a list purlis cannot vouch for keeps the project's never-dispatch
+ * list unread, and no delete helps (#7852). Seal these nevers is the way out: it seals exactly the
+ * pairs shown and clears the project's dispatch grants, so every dispatch asks again.
+ */
+export const NEVERS_UNVOUCHED_SAID =
+  "purlis cannot vouch that your never-dispatch list is whole, and something other than purlis may have changed it, so no chat dispatches to another persona until you seal the pairs it holds now.";
+
+/** What Seal these nevers does beyond sealing the pairs: the grants it clears. */
+const SEAL_CLEARS =
+  "and clears this project's dispatch grants on this machine, so every dispatch to another persona asks you again until you grant it.";
+
+/**
+ * What the window says of the pairs Seal these nevers seals (#7852), as {@link neversToKeepSaid}
+ * says those Keep these nevers keeps, with the grants it clears.
+ */
+export const neversToSealSaid = (kept: NeversToKeep | null, unshowable: boolean): string => {
+  if (kept === null)
+    return unshowable
+      ? "It holds a name no persona can have, which purlis cannot show as it is, so there is nothing to seal. Fix the file, and its pairs show here."
+      : "Its file does not read, so there is nothing to seal yet. Fix the file, and its pairs show here.";
+  if (kept.pairs.length === 0)
+    return `It holds no pair now. Seal these nevers keeps it empty ${SEAL_CLEARS}`;
+  return `Seal these nevers seals exactly ${kept.pairs.length === 1 ? "the pair" : "the pairs"} below ${SEAL_CLEARS}`;
+};
+
+/** The pairs a nevers press seals, each an item of its own with each name as code. */
+export function NeverPairs({
+  kept,
+  label = "The pairs Keep these nevers seals",
+}: {
+  kept: NeversToKeep | null;
+  label?: string;
+}) {
   if (kept === null || kept.pairs.length === 0) return null;
   return (
-    <ul className="granted-list" aria-label="The pairs Keep these nevers seals">
+    <ul className="granted-list" aria-label={label}>
       {kept.pairs.map((one, at) => (
         // The list is drawn once per answer, and two pairs may be alike: the place is the key.
         <li key={at}>
@@ -64,6 +96,10 @@ export function NeverPairs({ kept }: { kept: NeversToKeep | null }) {
 /** Keep these nevers: the pairs shown, by their digest, on the project `plane` names. */
 export const keepNevers = (plane: PlaneId, kept: NeversToKeep) =>
   commands.keepProjectNevers(plane, kept.digest);
+
+/** Seal these nevers: the pairs shown, by their digest, on the project `plane` names (#7852). */
+export const sealNevers = (plane: PlaneId, kept: NeversToKeep) =>
+  commands.sealUnvouchedProjectNevers(plane, kept.digest);
 
 /** Whether an answer is a policy state to draw: one of any other shape says nothing. */
 const drawable = (data: PolicyState | null | undefined): data is PolicyState =>
@@ -170,12 +206,11 @@ export function ProjectPolicyNotice({
       </Notice>
     ) : null;
 
-  const keep = () => {
-    const kept = state.nevers_to_keep;
+  const pressNevers = (kept: NeversToKeep | null, press: typeof keepNevers) => {
     if (busy || kept === null) return;
     setBusy(true);
     setNeversSaid(undefined);
-    void keepNevers(plane, kept)
+    void press(plane, kept)
       .then((done) => {
         if (done.status !== "ok") {
           setNeversSaid(done.error);
@@ -193,6 +228,8 @@ export function ProjectPolicyNotice({
       )
       .finally(() => setBusy(false));
   };
+  const keep = () => pressNevers(state.nevers_to_keep, keepNevers);
+  const seal = () => pressNevers(state.nevers_to_seal, sealNevers);
 
   const neversBody = (
     <>
@@ -204,8 +241,18 @@ export function ProjectPolicyNotice({
       <NeverPairs kept={state.nevers_to_keep} />
     </>
   );
-  const nevers =
-    !state.nevers_new_key || neversHidden ? null : canAccept && state.nevers_to_keep !== null ? (
+  const unvouchedBody = (
+    <>
+      <p>
+        {`${NEVERS_UNVOUCHED_SAID} ${neversToSealSaid(state.nevers_to_seal, state.nevers_unshowable)}`}
+        {!canAccept && " Seal them from purlis's own window on this machine."}
+        {neversSaid !== undefined && ` ${neversSaid}`}
+      </p>
+      <NeverPairs kept={state.nevers_to_seal} label="The pairs Seal these nevers seals" />
+    </>
+  );
+  const nevers = neversHidden ? null : state.nevers_new_key ? (
+    canAccept && state.nevers_to_keep !== null ? (
       <Notice
         cause="nevers-new-key"
         label="Your never-dispatch list"
@@ -221,7 +268,26 @@ export function ProjectPolicyNotice({
       >
         {neversBody}
       </Notice>
-    );
+    )
+  ) : state.nevers_unvouched ? (
+    canAccept && state.nevers_to_seal !== null ? (
+      <Notice
+        cause="nevers-unvouched"
+        label="Your never-dispatch list"
+        fixes={[{ label: "Seal these nevers", onPress: seal, busy }]}
+      >
+        {unvouchedBody}
+      </Notice>
+    ) : (
+      <Notice
+        cause="nevers-unvouched"
+        label="Your never-dispatch list"
+        onDismiss={() => setNeversHidden(true)}
+      >
+        {unvouchedBody}
+      </Notice>
+    )
+  ) : null;
 
   const waits = state.waiting.length > 0 || state.unsealed;
   if (!waits || hidden)

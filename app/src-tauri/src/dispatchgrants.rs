@@ -753,6 +753,16 @@ impl Store {
         lock(&self.once).retain(|one| one.id != id);
     }
 
+    /// **Every grant made for one chat of this project, and every one start the person allowed,
+    /// cleared** (#7852): Seal these nevers' share of clearing the project's dispatch grants on
+    /// this machine, beside those its file keeps
+    /// ([`purlis_core::sandbox::local::clear_dispatch_grants`]). What a chat's tab kept blocked
+    /// stays, as it only refuses, and so do the dispatches waiting on the person, who are asked.
+    pub fn clear_grants(&self) {
+        lock(&self.chat).clear();
+        lock(&self.once).clear();
+    }
+
     /// **The person took something back for `asking` to `target`** (`None`: every target, for
     /// "any persona"): a revoke, a never, or a change of a grant's workspace. Every one start
     /// still kept for the pair goes with it.

@@ -1501,8 +1501,8 @@ pub fn accept_policy(
     })?;
     // Sealed with the key of now: a record that does not hold from here on is said as edited
     // (#7714). Best effort, as the acceptance is kept already.
-    if !crate::secrets::seal::unlist_replaced(&[POLICY_KIND], &clone) {
-        tracing::warn!("purlis: the plane was not taken off the list of the old seal key");
+    if let Err(why) = crate::secrets::seal::unlist_replaced(&[POLICY_KIND], &clone) {
+        tracing::warn!("purlis: the plane was not taken off the list of the old seal key ({why})");
     }
     Ok(())
 }
@@ -2629,6 +2629,25 @@ pub fn revoke_dispatch(root: &Path, asking: &str, target: &str) -> io::Result<bo
         was = held.dispatch_mine.len() != before;
     })?;
     Ok(was)
+}
+
+/// **Every dispatch grant this machine holds for the project at `root`, cleared** (#7852): your
+/// grants, a pair, "any persona" or one limited to a workspace; this machine's yes to each of the
+/// project's grants; and what was set aside to give back. Then every dispatch across personas asks
+/// the person until they grant it again. The project's committed file is never touched, so a
+/// teammate keeps its grants and this machine is told of them as new; what you declined and said
+/// never to stays, since each only refuses. Their seals go with them.
+pub fn clear_dispatch_grants(root: &Path) -> io::Result<()> {
+    change(root, |held| {
+        held.dispatch_mine.clear();
+        held.dispatch_any.clear();
+        held.dispatch_mine_in.clear();
+        held.dispatch_seen = Some(Vec::new());
+        held.dispatch_any_seen.clear();
+        held.dispatch_seen_in.clear();
+        held.dispatch_dormant.clear();
+        held.dispatch_accepted_aside.clear();
+    })
 }
 
 /// The project's dispatch grants as this machine last told the person of them; `None` before

@@ -266,20 +266,24 @@ pub fn key_is_foreign() -> bool {
 /// claims who made it: an ad-hoc signature's origin cannot be proven. It names Keychain Access,
 /// which can delete any item of the person's, never `security` in a terminal, which macOS may
 /// refuse as it refuses the app. The manual step stays until the window draws the press that
-/// replaces it ([`renew_key`], #7719).
+/// replaces it ([`renew_key`], #7719), and it keeps the two items of the list of [`REPLACED`]
+/// (#7852): deleting them would make every plane they keep read as never accepted, or its
+/// nevers as none.
 pub const FOREIGN_KEY: &str = "purlis cannot trust its seal key on this machine, because another \
      program made the keychain item it is kept in (purlis-seal), so it accepted nothing. This \
      happens after an update that macOS treats as a different app. Open Keychain Access, delete \
-     every item named purlis-seal, then press Accept again: purlis makes a new key, and every \
-     project on this machine needs accepting again";
+     every item named purlis-seal except the ones with the accounts seal-key-replaced and \
+     seal-key-replaced-next, then press Accept again: purlis makes a new key, and every project \
+     on this machine needs accepting again";
 
 /// What the press to make a new key says where macOS did not let purlis delete the old items
 /// (#7714): the person denied its prompt, gave a wrong password, the keychain is locked, or
 /// macOS refused without asking, which purlis cannot tell apart. So it never promises a prompt.
-/// Nothing was accepted, and the manual step is named.
+/// Nothing was accepted, and the manual step is named, keeping the list as [`FOREIGN_KEY`] does.
 pub const RENEW_REFUSED: &str = "macOS did not let purlis replace its old key, so nothing was \
      accepted. If macOS asked you and you said no, press again. Otherwise open Keychain Access, \
-     delete every item named purlis-seal, then press Accept again";
+     delete every item named purlis-seal except the ones with the accounts seal-key-replaced \
+     and seal-key-replaced-next, then press Accept again";
 
 /// The accounts, under [`SERVICE`], of the list of the planes whose answers a key purlis has
 /// replaced since had anchored ([`replaced`], #7714). **Two**, so a list is always written
@@ -327,13 +331,29 @@ const LISTS_IN_THE_WAY: [&str; 2] = [
      keeps other projects from reading as never accepted",
 ];
 
-/// What [`write_list`] says where neither list names every plane the other does and purlis
-/// cannot tell which one it wrote (M1 of #7734's round 5): both seals hold, or neither does. It
-/// asks for no delete, since either may be purlis's own list.
+/// What [`write_list`] says where neither list names every plane the other does and both seals
+/// hold (M1 of #7734's round 5): purlis cannot tell which one it wrote, so it asks for no delete,
+/// since either may be purlis's own list.
 const LISTS_NOT_TOLD_APART: &str = "two keychain items named purlis-seal, with the accounts \
      seal-key-replaced and seal-key-replaced-next, each list projects the other does not, and \
      purlis cannot tell which one it wrote, so it changed neither. Delete neither: either may be \
      purlis's own list, which keeps other projects from reading as never accepted";
+
+/// What [`write_list`] says where neither list names every plane the other does and **neither
+/// seal holds under any key purlis has** (#7852, item 2): neither is purlis's own list, so the
+/// words name one to delete, at the same index, the one that lists fewer projects. Never a press
+/// that goes ahead: deleting a slot the other does not cover first loses what it lists if the
+/// write is cut short (M4 of #7734's round 3).
+const LISTS_NEITHER_ITS_OWN: [&str; 2] = [
+    "two keychain items named purlis-seal, with the accounts seal-key-replaced and \
+     seal-key-replaced-next, each list projects the other does not, and purlis wrote neither, so \
+     it changed neither. Delete only the item with the account seal-key-replaced in Keychain \
+     Access, then press again",
+    "two keychain items named purlis-seal, with the accounts seal-key-replaced and \
+     seal-key-replaced-next, each list projects the other does not, and purlis wrote neither, so \
+     it changed neither. Delete only the item with the account seal-key-replaced-next in \
+     Keychain Access, then press again",
+];
 
 /// The kind the list of [`REPLACED`] is sealed as.
 const REPLACED_KIND: &str = "seal-key-replaced";
@@ -482,7 +502,10 @@ fn write_list(
                 return Err(match (one_holds, other_holds) {
                     (false, true) => LISTS_IN_THE_WAY[0],
                     (true, false) => LISTS_IN_THE_WAY[1],
-                    _ => LISTS_NOT_TOLD_APART,
+                    (true, true) => LISTS_NOT_TOLD_APART,
+                    // Neither is purlis's own (#7852): the one that lists fewer goes.
+                    (false, false) if of_other.len() < of_one.len() => LISTS_NEITHER_ITS_OWN[1],
+                    (false, false) => LISTS_NEITHER_ITS_OWN[0],
                 });
             };
             gone(items, SERVICE, slot)?;
@@ -768,9 +791,11 @@ pub fn replaced() -> Replaced {
 /// beside the one before ([`write_list`]), which then goes, and the item goes with its last
 /// entry. A slot whose seal does not hold is cleaned up the same way (F6 of #7734's review): its
 /// other entries are kept, never vouched for, so a list another program made gives no plane the
-/// new key's words by the app's write of it. `false` where it was listed and could not be taken
-/// off.
-pub fn unlist_replaced(kinds: &[&str], anchor: &str) -> bool {
+/// new key's words by the app's write of it. Refused where it was listed and could not be taken
+/// off, with what the person can do: [`write_list`]'s words where it refused (#7852, item 3),
+/// so a press that cannot get past a list in the way says which item, never "press again" for
+/// ever.
+pub fn unlist_replaced(kinds: &[&str], anchor: &str) -> Result<(), &'static str> {
     #[cfg(test)]
     {
         unlist(&TestKeychain, kinds, anchor)
@@ -778,14 +803,19 @@ pub fn unlist_replaced(kinds: &[&str], anchor: &str) -> bool {
     #[cfg(not(test))]
     {
         if !super::keyhold::is_the_app() || crate::fence::FENCED {
-            return true;
+            return Ok(());
         }
         unlist(&OsKeyItems, kinds, anchor)
     }
 }
 
+/// What [`unlist_replaced`] says where the keyring did not let it read or rewrite the list, for
+/// no reason [`write_list`] names: a later press may pass.
+pub const UNLIST_CUT_SHORT: &str = "purlis could not take the project off the list of its old \
+     seal key in the keychain; press again";
+
 /// [`unlist_replaced`] on `items`.
-fn unlist(items: &dyn KeyItems, kinds: &[&str], anchor: &str) -> bool {
+fn unlist(items: &dyn KeyItems, kinds: &[&str], anchor: &str) -> Result<(), &'static str> {
     let mut entries = Entries::new();
     let mut there = Vec::new();
     let key = key();
@@ -797,7 +827,7 @@ fn unlist(items: &dyn KeyItems, kinds: &[&str], anchor: &str) -> bool {
                 there.push(slot);
             }
             Ok(None) => {}
-            Err(_) => return false,
+            Err(_) => return Err(UNLIST_CUT_SHORT),
         }
     }
     let before = entries.len();
@@ -807,23 +837,20 @@ fn unlist(items: &dyn KeyItems, kinds: &[&str], anchor: &str) -> bool {
             .any(|kind| *account == format!("{kind}:{anchor}"))
     });
     if entries.len() == before {
-        return true;
+        return Ok(());
     }
     let written = if entries.is_empty() {
         None
     } else {
-        let Some(key) = key.as_deref() else {
-            return false;
-        };
-        match write_list(items, &[key], &entries) {
-            Ok(slot) => Some(slot),
-            Err(_) => return false,
-        }
+        let key = key.as_deref().ok_or(UNLIST_CUT_SHORT)?;
+        Some(write_list(items, &[key], &entries)?)
     };
     there
         .into_iter()
         .filter(|slot| Some(*slot) != written)
         .all(|slot| items.delete(SERVICE, slot).is_ok())
+        .then_some(())
+        .ok_or(UNLIST_CUT_SHORT)
 }
 
 #[cfg(test)]
@@ -2347,7 +2374,7 @@ mod tests {
     #[test]
     fn two_lists_purlis_cannot_tell_apart_are_refused_and_no_delete_is_asked() {
         // L2 of #7734's round 4, as M1 of its round 5 corrects it: no write of the app's leaves
-        // two lists where neither names every plane the other does. Where neither seal holds,
+        // two lists where neither names every plane the other does. Where both seals hold,
         // purlis cannot tell which it wrote, so the refusal asks the person to delete neither.
         let key = vec![0xcd; KEY_BYTES];
         let items = Items::default()
@@ -2355,14 +2382,14 @@ mod tests {
             .with_at(
                 SERVICE,
                 REPLACED[0],
-                &stale(&["policy-accepted:aaaa"]),
-                false,
+                &own_list(&key, &["policy-accepted:aaaa"]),
+                true,
             )
             .with_at(
                 SERVICE,
                 REPLACED[1],
-                &stale(&["policy-accepted:bbbb"]),
-                false,
+                &own_list(&key, &["policy-accepted:bbbb"]),
+                true,
             );
         let mut merged = Entries::new();
         merged.insert("policy-accepted:cccc".to_owned(), true);
@@ -2373,6 +2400,76 @@ mod tests {
         assert!(!why.contains("Delete only"), "{why}");
         for slot in REPLACED {
             assert!(items.value_at(SERVICE, slot).is_some(), "{slot} kept");
+        }
+    }
+
+    #[test]
+    fn two_lists_neither_of_purlis_own_name_the_one_to_delete_and_the_press_then_passes() {
+        // #7852, item 2: with no list of purlis's own yet, two planted lists that each name a
+        // project the other does not refused the press for ever ("Delete neither"). Neither
+        // seal holds under any key purlis has, so neither is its own: the words name one to
+        // delete, the one that lists fewer, and nothing is deleted by the press itself (M4 of
+        // #7734's round 3). Once it is gone, the press passes.
+        let old = "ab".repeat(KEY_BYTES);
+        for (fewer, first, second) in [
+            (
+                0,
+                vec!["policy-accepted:aaaa"],
+                vec!["policy-accepted:bbbb", "policy-accepted:cccc"],
+            ),
+            (
+                1,
+                vec!["policy-accepted:aaaa", "policy-accepted:cccc"],
+                vec!["policy-accepted:bbbb"],
+            ),
+        ] {
+            let items = Items::default()
+                .with(SERVICE, &old, false)
+                .with_at(SERVICE, REPLACED[0], &stale(&first), false)
+                .with_at(SERVICE, REPLACED[1], &stale(&second), false);
+            let why = renew(&items, KINDS).err().expect("refused");
+            assert_eq!(why, LISTS_NEITHER_ITS_OWN[fewer]);
+            assert!(!why.contains("Delete neither"), "{why}");
+            assert!(
+                why.contains(&format!(
+                    "Delete only the item with the account {} in",
+                    REPLACED[fewer]
+                )),
+                "{why}"
+            );
+            for slot in REPLACED {
+                assert!(items.value_at(SERVICE, slot).is_some(), "{slot} kept");
+            }
+            let _ = KeyItems::delete(&items, SERVICE, REPLACED[fewer]);
+            let key = held(renew(&items, KINDS).expect("passes once it is gone"));
+            let kept = if fewer == 0 { &second } else { &first };
+            let listed: Vec<String> = REPLACED
+                .into_iter()
+                .filter_map(|slot| items.value_at(SERVICE, slot))
+                .flat_map(|value| list_read(&value, &[&key]).0.into_keys())
+                .collect();
+            for account in kept {
+                assert!(
+                    listed.iter().any(|one| one == account),
+                    "{account}: {listed:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_manual_steps_never_ask_for_the_list_of_replaced_projects_to_go() {
+        // #7852, item 4: #7734 keeps the list, which keeps every project it names from reading
+        // as never accepted, so neither manual step deletes "every item named purlis-seal".
+        for said in [FOREIGN_KEY, RENEW_REFUSED] {
+            assert!(
+                !said.contains("delete every item named purlis-seal,"),
+                "{said}"
+            );
+            for account in REPLACED {
+                assert!(said.contains(account), "{account}: {said}");
+            }
+            assert!(said.contains("except the ones with the accounts"), "{said}");
         }
     }
 

@@ -1659,9 +1659,17 @@ pub struct Standing {
     /// `nevers_new_key` and the file reads.
     pub nevers_to_keep: Option<crate::dispatchnever::ToKeep>,
     /// Whether that list holds a name purlis cannot show faithfully (M1 of #7734's round 4):
-    /// then no pair is offered to keep, and the window says why
+    /// then no pair is offered to keep or to seal, and the window says why
     /// ([`crate::dispatchnever::holds_a_name_it_cannot_show`]).
     pub nevers_unshowable: bool,
+    /// Whether this plane's nevers stay unread on a list of a replaced seal key that purlis
+    /// cannot vouch for, and no keychain item can be named to delete (#7852): the window offers
+    /// Seal these nevers ([`crate::dispatchnever::seal_shown_unvouched`]), which also clears the
+    /// project's dispatch grants on this machine.
+    pub nevers_unvouched: bool,
+    /// The pairs Seal these nevers seals, and the digest it names: where `nevers_unvouched` and
+    /// the file reads.
+    pub nevers_to_seal: Option<crate::dispatchnever::ToKeep>,
     /// The digest of the committed text this was read from, which the press must name.
     pub digest: String,
     /// What the project's `[policy]` says, from the same read: its template and the families
@@ -1723,6 +1731,8 @@ pub fn standing(root: &Path) -> Standing {
         nevers_new_key: crate::dispatchnever::vouched_for_a_new_key(root),
         nevers_to_keep: crate::dispatchnever::to_keep_after_a_new_key(root),
         nevers_unshowable: crate::dispatchnever::holds_a_name_it_cannot_show(root),
+        nevers_unvouched: crate::dispatchnever::unvouched_for_a_new_key(root),
+        nevers_to_seal: crate::dispatchnever::to_seal_unvouched(root),
         digest: digest(&now),
         runs: now.stricter(&accepted),
         locked: Family::ALL
