@@ -1654,13 +1654,20 @@ impl crate::heldact::Recorded for RecordedRepos {
             crate::forge::Kind::GitLab => Kind::GitLab,
         };
         let wanted = id.to_ascii_lowercase();
+        // A GitHub id in the one spelling its REST path is read in ([`github_id`]).
+        let github_id = match github_id(id) {
+            Ok(RestRepo::Id(n)) => Some(n),
+            _ => None,
+        };
         self.0
             .iter()
             .find(|r| {
                 r.kind == kind
                     && (r.path == wanted
                         || (kind == Kind::GitLab
-                            && id.parse::<u64>().is_ok_and(|n| r.project_id == Some(n))))
+                            && id.parse::<u64>().is_ok_and(|n| r.project_id == Some(n)))
+                        || (kind == Kind::GitHub
+                            && github_id.is_some_and(|n| r.project_id == Some(n))))
             })
             .and_then(|r| crate::mergehold::Repo::try_from(r.path.clone()).ok())
     }

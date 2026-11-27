@@ -45,6 +45,9 @@ use Ty::{Conn, Obj};
 /// The type a repo reached from another object has.
 pub(crate) const REPO_REF: &str = "RepoRef";
 
+/// The type a pull request's head ref has: it may be a fork's.
+pub(crate) const HEAD_REF: &str = "HeadRef";
+
 type Table = &'static [(
     &'static str,
     &'static [&'static str],
@@ -149,6 +152,10 @@ pub(crate) fn narrow(kind: Kind, parent: &Ty, cond: &str) -> Option<Ty> {
     // what the parent's own table has: it narrows to that table, never to the whole repository.
     if *parent == "RepoParent" && cond == "Repository" {
         return Some(Obj("RepoParent"));
+    }
+    // So does a fragment on `Ref` spread on a pull request's head: never a `compare` there.
+    if *parent == HEAD_REF && cond == "Ref" {
+        return Some(Obj(HEAD_REF));
     }
     let cond = type_named(kind, cond)?;
     let same = *parent == cond;
@@ -340,6 +347,12 @@ const GITHUB: Table = &[
         // counts and the status alone, never the commits or either side's target.
         ("compare", Obj("Comparison")),
     ]),
+    // A pull request's head, which may be a ref in a fork: a Ref's table without `compare`, so
+    // nothing compares in a repo that is not the chat's (ADR 0128 D3d).
+    (HEAD_REF, &["id", "name", "prefix"], &[
+        ("target", Obj("GitObject")),
+        ("associatedPullRequests", Conn("PullRequestRef")),
+    ]),
     ("Comparison", &["aheadBy", "behindBy", "status"], &[]),
     ("GitObject", &["id", "oid", "abbreviatedOid"], &[]),
     ("Commit", &[
@@ -404,7 +417,7 @@ const GITHUB: Table = &[
         ("repository", Obj("RepoRef")),
         ("mergeCommit", Obj("Commit")),
         ("potentialMergeCommit", Obj("Commit")),
-        ("headRef", Obj("Ref")),
+        ("headRef", Obj(HEAD_REF)),
         ("baseRef", Obj("Ref")),
         ("autoMergeRequest", Obj("AutoMergeRequest")),
         ("projectCards", Conn("ProjectCard")),
