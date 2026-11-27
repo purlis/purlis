@@ -11,10 +11,9 @@
 //! **The outage rules** (#7188), as that suite states them: nothing silent for more than
 //! [`QUIET_LIMIT`] after a fault, and nothing waits past [`START_LIMIT`] to come back.
 //!
-//! **B4 asserts #2022's ruling**, not the case as #7188 first wrote it: "Quit ends every
-//! browser", a runner's too, and the next start offers each address once. A runner's browser
-//! outliving a quit would be a new ruling against #2022; what survives is a crash of the window
-//! (#2025, `hostedsessions/tests/browsers_back.rs`).
+//! **B4 asserts the M79 ruling** (#7187 decision 7, #7190 decision 3, 2026-11-18): a runner's
+//! browser outlives an app quit, as its chats do. #2022 ("Quit ends every browser") holds for
+//! this machine alone.
 //!
 //! **B5** (two runners starting browsers at once, each on a machine of its own) is not here: the
 //! rig has one other machine (#7836).
@@ -50,6 +49,36 @@ fn a_chat(target: &Target) -> u32 {
         .expect("it starts");
     Pane::on(target, id).shows("HARNESS-READY");
     id
+}
+
+/// **A chat on the pool's runner, sandboxed, open and drawn**: Codex as the runner's own host
+/// composes it by its names, under purlis's Linux sandbox as every sandboxed runner chat is, so
+/// its runner is still trusted with a browser (#3298). Its program is a stand-in that says it is
+/// ready and waits; held while the folder its program is in is.
+fn a_sandboxed_chat(target: &Target) -> (u32, tempfile::TempDir) {
+    let bin = tempfile::tempdir().expect("a folder for the harness");
+    let program = stand_in::program(
+        bin.path(),
+        "codex",
+        "#!/bin/sh\n\
+         [ \"$1\" = login ] && [ \"$2\" = status ] && exit 0\n\
+         for word in \"$@\"; do [ \"$word\" = --version ] && { echo 'codex-cli 0.147.0'; exit 0; }; done\n\
+         printf 'HARNESS-READY\\n'\n\
+         read line\n",
+    );
+    a_profile_of(target, "codex", "work", &program);
+    let id = target
+        .sessions
+        .open_named(
+            None,
+            &named("wait beside a browser", false),
+            purlis_core::sandbox::plan::Hearing::default(),
+            &|_| {},
+        )
+        .expect("the sandboxed chat starts on the runner")
+        .number;
+    Pane::on(target, id).shows("HARNESS-READY");
+    (id, bin)
 }
 
 /// The window's browsers, on the target's link to its host, and every line they say for the
@@ -167,7 +196,9 @@ fn a_view_of(browsers: &WindowBrowsers, program: &str) -> Viewed {
 /// **Case 7: a pool forgotten during a chat ends it as Pool forgotten, and Forget lists what is
 /// left on the machine** (#7187, CONTEXT.md *Pool forgotten*): the chat ends within the quiet
 /// limit, as Pool forgotten and not with its runner, and Forget's answer names the runner's
-/// container and home volume that stay on the pool's machine.
+/// container and home volume that stay on the pool's machine, and the machine. Asserted on the
+/// core's words before the window cuts them: the window's are cut at 200 characters, before the
+/// machine's name (#7873).
 mod a_pool_forgotten_during_a_chat_ends_it_as_pool_forgotten_and_lists_what_is_left_on_the_machine {
     use super::*;
 
@@ -188,15 +219,19 @@ mod a_pool_forgotten_during_a_chat_ends_it_as_pool_forgotten_and_lists_what_is_l
             .expect("the pool is on another machine");
 
         let began = Instant::now();
-        let left = crate::dockerpools::forget_on(
+        let forgotten = crate::dockerpools::forget_on(
             &machine.config,
             &pool,
             &[],
             Err(&"no browser in this case".to_owned()),
             target.host.as_deref(),
         )
-        .expect("Forget works on a pool in any state")
-        .expect("what stays on the machine is listed");
+        .expect("Forget works on a pool in any state");
+        assert!(
+            forgotten.said.is_some(),
+            "the window says what stays on the machine"
+        );
+        let left = forgotten.left;
 
         let forgot = began.elapsed();
         assert!(forgot <= QUIET_LIMIT, "Forget took {forgot:?}");
@@ -311,7 +346,8 @@ mod b2_a_takeover_during_a_drop_keeps_control_or_the_view_says_why {
 /// **B3: a pool forgotten with a browser open ends it on its machine** (#7187 item 6, CONTEXT.md
 /// *Pool forgotten*): Forget stops the browser where its machine answers, so nothing of it is
 /// listed as left there; it is said closed by the person, never crashed; and its engine no longer
-/// runs on the runner. The chat beside it ends as Pool forgotten.
+/// runs on the runner. The chat beside it, started sandboxed as a chat must be on a runner
+/// trusted with a browser (#3298), ends as Pool forgotten.
 mod b3_a_pool_forgotten_with_a_browser_open_ends_it_as_pool_forgotten {
     use super::*;
 
@@ -320,7 +356,7 @@ mod b3_a_pool_forgotten_with_a_browser_open_ends_it_as_pool_forgotten {
         let Some((target, machine, pool, _again)) = super::super::a_remote_docker_pool() else {
             return;
         };
-        let id = a_chat(&target);
+        let (id, _program) = a_sandboxed_chat(&target);
         let (browsers, said) = the_windows_browsers(&target);
         let program = a_browser_on_the_runner(&target, &browsers);
         let runner = target.runner.as_ref().expect("a pool's runner");
@@ -334,7 +370,8 @@ mod b3_a_pool_forgotten_with_a_browser_open_ends_it_as_pool_forgotten {
             Ok(&browsers),
             target.host.as_deref(),
         )
-        .expect("Forget works on a pool in any state");
+        .expect("Forget works on a pool in any state")
+        .said;
 
         let one_left = crate::browsers::left_on_the_machine(1).expect("said of one");
         assert!(
@@ -375,14 +412,14 @@ mod b3_a_pool_forgotten_with_a_browser_open_ends_it_as_pool_forgotten {
     }
 }
 
-/// **B4: a quit ends a runner's browser too** (#2022, ruled 2026-10-18: "Quit ends every
-/// browser"): the quit lets go of each project, and every browser the window started in it ends
-/// ([`WindowBrowsers::let_go`], what `planes` runs for each project at quit), a runner's on its
-/// runner: said closed by the person, and its engine runs there no more. That the next start
-/// offers its address once is the window's record of this machine
-/// (`chatbrowsers/tests.rs`, `purlis_core::browsersatquit`), the same for a runner's browser.
-/// #7188 first wrote B4 as a browser outliving the quit; that would be a ruling against #2022.
-mod b4_an_app_quit_with_a_runner_browser_open_ends_it_on_its_runner {
+/// **B4: an app quit leaves a runner's browser running on its runner** (#7187 decision 7, #7190
+/// decision 3, ruled 2026-11-18; ADR 0068 as amended 2026-11-19): a runner is its own device, so
+/// its browsers outlive a quit as its chats do, and the window takes them back by their notes
+/// when it opens. The quit is what the app sends this machine's host at its quit
+/// ([`crate::sessionhost`]'s end), and the runner's host is told nothing: the runner's engine runs
+/// on past it, and the browser is never said closed. #2022 ("Quit ends every browser") holds for
+/// this machine alone (`browsers/hosted/tests.rs`).
+mod b4_an_app_quit_with_a_runner_browser_open_leaves_it_running_on_its_runner {
     use super::*;
 
     #[test]
@@ -395,18 +432,32 @@ mod b4_an_app_quit_with_a_runner_browser_open_ends_it_on_its_runner {
         let runner = target.runner.as_ref().expect("a pool's runner");
         assert!(engines_on(runner) > 0, "its engine runs on the runner");
 
-        assert_eq!(browsers.let_go(&target.root), 1, "the quit ends it");
+        // What the app does at its quit to this machine's host.
+        browsers
+            .link()
+            .expect("this machine's link")
+            .quit_within(START_LIMIT)
+            .expect("the host answers the quit");
 
-        until(ENDED_WITHIN, "its engine ends on the runner", || {
-            engines_on(runner) == 0
-        });
-        assert!(!browsers.started_in(&target.root, &program));
+        // Given as long as a browser ended there has to be gone, it is still there.
+        let quit = Instant::now();
+        while quit.elapsed() < ENDED_WITHIN {
+            assert!(
+                engines_on(runner) > 0,
+                "the runner's browser runs on past the quit"
+            );
+            std::thread::sleep(Duration::from_secs(1));
+        }
         assert!(
-            said.lock().expect("what was said").contains(&Said::Closed {
-                browser: program,
-                by: Closer::Person
-            }),
-            "said closed by the person, never crashed"
+            !said
+                .lock()
+                .expect("what was said")
+                .iter()
+                .any(|one| matches!(
+                    one,
+                    Said::Closed { browser, .. } if *browser == program
+                )),
+            "the runner's browser is not said closed by the quit"
         );
     }
 }

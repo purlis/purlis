@@ -677,6 +677,7 @@ pub async fn forget_docker_pool(
                 crate::browsers::browsers(&app).as_deref(),
                 host.as_deref(),
             )
+            .map(|forgotten| forgotten.said)
         })
         .await
     }
@@ -687,10 +688,22 @@ pub async fn forget_docker_pool(
     }
 }
 
+/// **What [`forget_on`] answers**: what stays on the pool's machine as the core says it, uncut,
+/// and as the window says it.
+#[cfg(unix)]
+pub(crate) struct Forgotten {
+    /// The core's words for what stays on the pool's machine, before the window cuts them
+    /// ([`crate::devices::shown_safely`]); empty where nothing does.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) left: String,
+    /// What stays, said as the window says it; `None` where nothing does.
+    pub(crate) said: Option<String>,
+}
+
 /// **[`forget_docker_pool`] under `config`, as the window does it**: pool `name` forgotten here,
 /// and let go of by the window, its `browsers` first and then `connection`'s links to it. What
-/// stays, said as the window says it; `None` where nothing does. The behaviour suite forgets a
-/// pool through here (#7816).
+/// stays, as the core and the window say it. The behaviour suite forgets a pool through here
+/// (#7816).
 #[cfg(unix)]
 pub(crate) fn forget_on(
     config: &std::path::Path,
@@ -698,9 +711,10 @@ pub(crate) fn forget_on(
     held: &[std::sync::Arc<crate::planes::Held>],
     browsers: Result<&crate::browsers::WindowBrowsers, &String>,
     connection: Option<&crate::hostedsessions::Connection>,
-) -> Result<Option<String>, String> {
+) -> Result<Forgotten, String> {
     let left = forgotten_here(config, name)?;
-    Ok(let_go_here(held, browsers, connection, config, name, &left))
+    let said = let_go_here(held, browsers, connection, config, name, &left);
+    Ok(Forgotten { left, said })
 }
 
 /// [`forget_docker_pool`] under `config`, before the window lets go of the pool: forgotten, and
