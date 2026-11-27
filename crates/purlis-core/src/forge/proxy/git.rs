@@ -127,6 +127,13 @@ pub(crate) struct PushCommands {
     pub(crate) push_options: bool,
 }
 
+/// **git's probe** (#7878): the body git sends ahead of a push larger than its `http.postBuffer`,
+/// one flush packet and nothing else, to learn the push will be taken before it streams it. It
+/// names no ref and holds no object, so it moves nothing.
+pub(crate) fn is_probe(body: &[u8]) -> bool {
+    body == b"0000"
+}
+
 /// The ref commands a `git-receive-pack` request asks for, from the pkt-lines of its command list
 /// (everything up to the first flush packet; push options and the pack follow it and are not read:
 /// the capability that announces them is what is refused).

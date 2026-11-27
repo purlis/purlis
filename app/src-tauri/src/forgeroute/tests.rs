@@ -24,6 +24,8 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 #[derive(Default)]
 struct FakeListener {
     fail: AtomicBool,
+    /// How many binds from now fail before they bind again.
+    fail_next: AtomicUsize,
     alive: Arc<AtomicUsize>,
     proxies: Mutex<HashMap<String, Arc<ForgeProxy>>>,
 }
@@ -51,6 +53,13 @@ impl Listener for FakeListener {
     ) -> io::Result<Bound> {
         if self.fail.load(Ordering::SeqCst) {
             return Err(io::Error::other("cannot bind"));
+        }
+        if self
+            .fail_next
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+            .is_ok()
+        {
+            return Err(io::Error::other("cannot bind, this once"));
         }
         let hosts = proxy.terminable_hosts(&ChatId::new(run));
         assert!(
@@ -157,8 +166,13 @@ impl Recorded for FakeRecorded {
         _host: &str,
         _repo_id: u64,
         branch: &str,
-    ) -> Option<String> {
-        self.tip_of(project, chat, branch)
+    ) -> Option<purlis_core::forge::createdbranches::OwnedTip> {
+        self.tip_of(project, chat, branch).map(|tip| {
+            purlis_core::forge::createdbranches::OwnedTip {
+                tip,
+                fast_forward_only: false,
+            }
+        })
     }
     fn own_branches(&self, project: &Path, chat: &str, _host: &str, _repo_id: u64) -> Vec<String> {
         self.own_of(chat)
@@ -2723,4 +2737,167 @@ fn a_forge_refusal_the_route_counts_is_one_line_of_guards_forge_in_the_chats_enf
     // It is a line the window puts on the page: a known rule of its family, about a `host:port`.
     assert!(enforcement::known_rule(Family::GuardsForge, &line.rule));
     assert!(enforcement::is_host_and_port(line.host.as_deref().unwrap()));
+}
+
+/// A chat the chat with stable id `parent` started, working in `lane`, on its first start.
+fn handed(parent: &str, lane: Option<(&str, &str)>) -> Handed {
+    Handed {
+        parent: Some(parent.to_owned()),
+        lane: lane.map(|(host, path)| (host.to_owned(), path.to_owned())),
+        first_start: true,
+    }
+}
+
+#[test]
+fn a_chat_started_by_a_chat_with_a_route_gets_one_too_or_is_refused_before_it_starts() {
+    // #7870: of two lanes one turn dispatched, one started with no forge route, so it could not
+    // fetch, update or push, and nothing it could do gave it one.
+    let scene = Scene::new();
+    let parent = scene.open("parent", "run-p", "/p/one", 1);
+    let project = Path::new("/p/one");
+
+    let lane = scene
+        .routes
+        .guard_handed("lane-1", "run-1", project, None, &handed("parent", None))
+        .expect("a lane of a routed parent starts");
+    assert!(lane.params().is_some(), "it has a route as its parent does");
+
+    scene.listener.fail.store(true, Ordering::SeqCst);
+    let refused = scene
+        .routes
+        .guard_handed("lane-2", "run-2", project, None, &handed("parent", None))
+        .err()
+        .expect("a lane whose route could not be made is not started");
+    assert_eq!(refused, NO_ROUTE_LIKE_ITS_PARENT);
+    assert!(!scene.routes.is_live("run-2"), "nothing of it is left");
+    assert!(
+        scene.routes.is_live("run-p") && parent.socket.exists(),
+        "the parent's route is untouched"
+    );
+
+    // Started again later, it is warned of and started as it is, as before.
+    let again = Handed {
+        first_start: false,
+        ..handed("parent", None)
+    };
+    let restarted = scene
+        .routes
+        .guard_handed("lane-2", "run-2b", project, None, &again)
+        .expect("a later start is never refused");
+    assert!(restarted.params().is_none());
+}
+
+#[test]
+fn a_lane_whose_route_fails_once_is_started_again_and_gets_one() {
+    // #7870: several starts at once meet a listener or a sign-in read that is busy for a moment.
+    let scene = Scene::new();
+    scene.open("parent", "run-p", "/p/one", 1);
+    scene.listener.fail_next.store(1, Ordering::SeqCst);
+
+    let started = std::time::Instant::now();
+    let lane = scene
+        .routes
+        .guard_handed(
+            "lane",
+            "run-1",
+            Path::new("/p/one"),
+            None,
+            &handed("parent", None),
+        )
+        .expect("the second start makes the route");
+    assert!(lane.params().is_some());
+    assert!(
+        started.elapsed() >= ROUTE_RETRY_AFTER,
+        "the second start waits its backoff first"
+    );
+    assert_eq!(scene.listener.fail_next.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn a_lane_is_held_to_its_parent_by_id_never_by_a_number_dealt_again() {
+    // #7870: a chat's number is dealt again once it closes, so a lane whose parent closed must
+    // not be held to whichever chat has that number now.
+    let scene = Scene::new();
+    scene.open("someone-else", "run-other", "/p/one", 1);
+    scene.listener.fail.store(true, Ordering::SeqCst);
+
+    let lane = scene
+        .routes
+        .guard_handed(
+            "lane",
+            "run-1",
+            Path::new("/p/one"),
+            None,
+            &handed("closed-parent", None),
+        )
+        .expect("a lane whose own parent has no route is started");
+    assert!(lane.params().is_none());
+
+    // And a parent found by id, whatever session it is open as.
+    scene.listener.fail.store(false, Ordering::SeqCst);
+    scene.open("parent", "run-p", "/p/one", 7);
+    scene.listener.fail.store(true, Ordering::SeqCst);
+    assert!(
+        scene
+            .routes
+            .guard_handed(
+                "lane",
+                "run-2",
+                Path::new("/p/one"),
+                None,
+                &handed("parent", None)
+            )
+            .is_err(),
+        "held to the parent it names"
+    );
+}
+
+#[test]
+fn a_lane_whose_route_leaves_out_its_own_repo_is_refused_where_its_parent_has_it() {
+    // #7870: a route is live yet without the lane's repo, as the recorded repos are read one by
+    // one at each start and one can drop out.
+    let scene = Scene::new();
+    scene.open("parent", "run-p", "/p/one", 1);
+    scene
+        .recorded
+        .record("/p/one", vec![(Kind::GitLab, "gitlab.com", "group/proj")]);
+    let project = Path::new("/p/one");
+
+    let refused = scene
+        .routes
+        .guard_handed(
+            "lane",
+            "run-1",
+            project,
+            None,
+            &handed("parent", Some(("GitHub.com", "acme/app"))),
+        )
+        .err()
+        .expect("a route without the lane's repo is no route for it");
+    assert_eq!(refused, NO_ROUTE_LIKE_ITS_PARENT);
+
+    let other = scene
+        .routes
+        .guard_handed(
+            "lane",
+            "run-2",
+            project,
+            None,
+            &handed("parent", Some(("gitlab.com", "group/proj"))),
+        )
+        .expect("a lane in a repo its route covers starts");
+    assert!(other.params().is_some());
+
+    // A repo the parent's route does not cover holds the lane to nothing.
+    let unheld = scene
+        .routes
+        .guard_handed(
+            "lane",
+            "run-3",
+            project,
+            None,
+            &handed("parent", Some(("github.com", "acme/elsewhere"))),
+        )
+        .expect("nothing to be held to");
+    assert!(unheld.params().is_some());
 }

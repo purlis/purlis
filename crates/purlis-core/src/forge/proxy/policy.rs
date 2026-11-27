@@ -14,7 +14,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use crate::forge::createdbranches::CreatedBranch;
+use crate::forge::createdbranches::{CreatedBranch, OwnedTip};
 
 use super::commands;
 use super::git::{self, GitOp, PushError};
@@ -122,6 +122,11 @@ impl Refusal {
                 "set labels through the API's labels field, not a /label, /unlabel or /relabel line, and leave other quick actions out of the text",
             ),
             Self::LabelById => Some("name labels in the API's labels field, not by id"),
+            // A chat put back after a restart keeps the credential of a route that went with the
+            // old app (ADR 0128 D3a); the app's own git has one for it (#7694, #7878).
+            Self::UnknownChat | Self::WrongSentinel | Self::Locked => Some(
+                "this chat's forge route no longer takes its credential (purlis restarted, or the chat ended or was locked out); push with `purlis worktree push`, or start a new chat",
+            ),
             Self::GraphqlPullRequestOtherRepo => Some(
                 "if the repo is this chat's own, the REST route for the same act is answered: `gh api repos/OWNER/REPO/pulls -X POST -f title=... -f head=BRANCH -f base=main` for gh pr create, `gh api -X PUT repos/OWNER/REPO/pulls/N/update-branch` for gh pr update-branch",
             ),
@@ -196,6 +201,11 @@ pub struct Allowed {
     /// the tip moves, only when
     /// [`ForgeProxy::confirm_push`](super::ForgeProxy::confirm_push) is told the forge took the push.
     pub(crate) created: Vec<CreatedBranch>,
+    /// The branches of this push whose update must be a fast-forward of the forge's tip: the
+    /// chat owns them by the person's Allow ([`OwnedTip::fast_forward_only`]). The proxy sees
+    /// old and new ids, never history, so the push's own objects are read for it before it is
+    /// sent ([`super::listener::PushUpdate::fast_forward_only`]; #7841).
+    pub(crate) fast_forward_only: Vec<String>,
     pub(crate) surface: Surface,
     /// Every repo a GraphQL document named (empty for any other request): the credential is asked
     /// for each, and the request is served only if one account serves them all.
@@ -435,8 +445,9 @@ pub struct ChatPolicy {
 
 /// The tip the chat last put on a branch, `(host, forge repo id, branch)`: asked at **every update**
 /// and never kept, so another chat's push, a branch made again, or a record that ended is seen at
-/// once. `None` is not this chat's, or no tip that reads: the update is refused.
-pub type TipSource = Arc<dyn Fn(&str, u64, &str) -> Option<String> + Send + Sync>;
+/// once. `None` is not this chat's, or no tip that reads: the update is refused. A tip the chat
+/// holds by the person's Allow moves only forward ([`OwnedTip::fast_forward_only`]).
+pub type TipSource = Arc<dyn Fn(&str, u64, &str) -> Option<OwnedTip> + Send + Sync>;
 
 /// The branches of a repo the chat's record holds, `(host, forge repo id)`: asked each time an
 /// advertisement is noted, never kept.
@@ -556,6 +567,7 @@ impl ChatPolicy {
                             repo_id: repo.project_id,
                             branch: branch.clone(),
                             tip: String::new(),
+                            fast_forward_only: false,
                         });
                         return false;
                     }
@@ -582,6 +594,7 @@ impl ChatPolicy {
                         repo_id: Some(repo_id),
                         branch,
                         tip: String::new(),
+                        fast_forward_only: false,
                     });
                 }
             }
@@ -921,6 +934,7 @@ impl ChatPolicy {
                     canonical_body: None,
                     canonical_media: None,
                     created: Vec::new(),
+                    fast_forward_only: Vec::new(),
                     surface: Surface::Api,
                     touched: Vec::new(),
                 });
@@ -1021,6 +1035,7 @@ impl ChatPolicy {
                 canonical_media: Some(document.media),
                 canonical_body: Some(document.canonical),
                 created: Vec::new(),
+                fast_forward_only: Vec::new(),
                 surface: Surface::Api,
                 touched,
             });
@@ -1098,7 +1113,9 @@ impl ChatPolicy {
                     };
                     let mut answer = allowed(repo, class, Surface::Git, segments, &target);
                     if op == GitOp::ReceivePack {
-                        answer.created = self.check_push(repo, body)?;
+                        let checked = self.check_push(repo, body)?;
+                        answer.created = checked.created;
+                        answer.fast_forward_only = checked.fast_forward_only;
                     }
                     Ok(answer)
                 }
@@ -1166,10 +1183,17 @@ impl ChatPolicy {
     /// old id is refused: a branch someone else made or moved, or one made again after it was
     /// gone. The forge refuses the old id if the ref is no longer there, so together the two
     /// refuse a force-push and a non-fast-forward on anyone else's branch: the proxy sees old and
-    /// new ids, never history. Push options are refused. The branches this push makes and moves
+    /// new ids, never history. **A branch the chat holds by the person's Allow was someone
+    /// else's**, so its update is returned as one that must be a fast-forward, which the push's
+    /// own objects decide before it is sent (floor item 6 of ADR 0125's 2026-11-27 amendment;
+    /// #7841). Push options are refused. The branches this push makes and moves
     /// are **returned, not recorded**: they are the chat's once the forge confirms the whole push
     /// ([`Self::confirm_created`]).
-    fn check_push(&self, repo: &AllowedRepo, body: &[u8]) -> Result<Vec<CreatedBranch>, Refusal> {
+    fn check_push(&self, repo: &AllowedRepo, body: &[u8]) -> Result<CheckedPush, Refusal> {
+        // git's probe moves nothing; refused, git never sends the push it announces (#7878).
+        if git::is_probe(body) {
+            return Ok(CheckedPush::default());
+        }
         let pushed = git::pushed_commands(body).map_err(|e| match e {
             PushError::Unreadable | PushError::PushCert => Refusal::BodyUnreadable,
         })?;
@@ -1185,14 +1209,19 @@ impl ChatPolicy {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         let known = advertised.get(&(repo.host.clone(), repo.path.clone()));
-        let mut created: Vec<CreatedBranch> = Vec::new();
+        let mut checked = CheckedPush::default();
         // Every command is examined before the push is classified: a push is refused as the most
         // severe class among its commands, never as the first one met, so a tag beside a delete
         // of `main` is a protected ref and not a "release or tag" that could be held and allowed.
         let mut worst: Option<Refusal> = None;
         for command in &pushed.commands {
             match self.check_command(repo, command, known, &own) {
-                Ok(Some(key)) => created.push(key),
+                Ok(Some((key, fast_forward_only))) => {
+                    if fast_forward_only {
+                        checked.fast_forward_only.push(key.branch.clone());
+                    }
+                    checked.created.push(key);
+                }
                 Ok(None) => {}
                 Err(refusal) => {
                     if worst.is_none_or(|w| push_severity(refusal) > push_severity(w)) {
@@ -1204,18 +1233,18 @@ impl ChatPolicy {
         if let Some(refusal) = worst {
             return Err(refusal);
         }
-        Ok(created)
+        Ok(checked)
     }
 
-    /// One push command against the repo: the branch it makes (if it makes one), or why it is
-    /// refused.
+    /// One push command against the repo: the branch it makes or moves (if it does), with
+    /// whether its update must be a fast-forward, or why it is refused.
     fn check_command(
         &self,
         repo: &AllowedRepo,
         command: &git::RefCommand,
         known: Option<&HashSet<String>>,
         own: &HashMap<(String, String, String), String>,
-    ) -> Result<Option<CreatedBranch>, Refusal> {
+    ) -> Result<Option<(CreatedBranch, bool)>, Refusal> {
         let name = &command.name;
         if name.starts_with("refs/tags/") {
             return Err(Refusal::ReleaseOrTag);
@@ -1232,13 +1261,17 @@ impl ChatPolicy {
             if known.iter().any(|b| b.eq_ignore_ascii_case(branch)) {
                 return Err(Refusal::ProtectedRef);
             }
-            Ok(Some(CreatedBranch {
-                host: repo.host.clone(),
-                repo: repo.path.clone(),
-                repo_id: repo.project_id,
-                branch: branch.to_string(),
-                tip: command.new_id.clone(),
-            }))
+            Ok(Some((
+                CreatedBranch {
+                    host: repo.host.clone(),
+                    repo: repo.path.clone(),
+                    repo_id: repo.project_id,
+                    branch: branch.to_string(),
+                    tip: command.new_id.clone(),
+                    fast_forward_only: false,
+                },
+                false,
+            )))
         } else {
             // **An update is let through only from the tip this chat last put on the branch**, read
             // now: a branch deleted and made again, pushed to by anyone else (another chat
@@ -1246,13 +1279,18 @@ impl ChatPolicy {
             // Nothing here depends on an advertisement having been read.
             let tip = self.tip_in(own, repo, branch);
             match tip {
-                Some(tip) if tip.eq_ignore_ascii_case(&command.old_id) => Ok(Some(CreatedBranch {
-                    host: repo.host.clone(),
-                    repo: repo.path.clone(),
-                    repo_id: repo.project_id,
-                    branch: branch.to_string(),
-                    tip: command.new_id.clone(),
-                })),
+                Some(tip) if tip.tip.eq_ignore_ascii_case(&command.old_id) => Ok(Some((
+                    CreatedBranch {
+                        host: repo.host.clone(),
+                        repo: repo.path.clone(),
+                        repo_id: repo.project_id,
+                        branch: branch.to_string(),
+                        tip: command.new_id.clone(),
+                        fast_forward_only: tip.fast_forward_only,
+                    },
+                    // Owned by the person's Allow: it was another's, so only forward (#7841).
+                    tip.fast_forward_only,
+                ))),
                 // The chat owns it, but not at this tip: someone moved it since. Not the person's
                 // to answer here; the chat fetches, or the person pushes.
                 Some(_) => Err(Refusal::ProtectedRef),
@@ -1270,19 +1308,22 @@ impl ChatPolicy {
 
 impl ChatPolicy {
     /// The tip this chat last put on `branch`, from the record the push rule reads
-    /// (`tips`, else the policy's own).
+    /// (`tips`, else the policy's own, which holds only branches the chat made).
     fn tip_in(
         &self,
         own: &HashMap<(String, String, String), String>,
         repo: &AllowedRepo,
         branch: &str,
-    ) -> Option<String> {
+    ) -> Option<OwnedTip> {
         match (&self.tips, repo.project_id) {
             (Some(tips), Some(repo_id)) => tips(&repo.host, repo_id, branch),
             (Some(_), None) => None,
             (None, _) => own
                 .get(&(repo.host.clone(), repo.path.clone(), branch.to_string()))
-                .cloned(),
+                .map(|tip| OwnedTip {
+                    tip: tip.clone(),
+                    fast_forward_only: false,
+                }),
         }
     }
 
@@ -1291,6 +1332,8 @@ impl ChatPolicy {
     /// fork's), it is not protected, the chat has a tip of its own on it, and that tip is the one
     /// the forge reports as the head now. Any other branch is somebody else's, whatever the pull
     /// request's base says, and the head moving since the chat pushed is refused as the push is.
+    /// **A head the chat holds by the person's Allow is not written to here**: a rebase replaces
+    /// its history, and only a push's own objects show a fast-forward (#7841).
     fn owns_head(&self, repo: &AllowedRepo, head: &PullHead) -> bool {
         if !head.repo.eq_ignore_ascii_case(&repo.path) || repo.protects(&head.branch) {
             return false;
@@ -1299,9 +1342,21 @@ impl ChatPolicy {
             .own_branches
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        self.tip_in(&own, repo, &head.branch)
-            .is_some_and(|tip| !head.oid.is_empty() && tip.eq_ignore_ascii_case(&head.oid))
+        self.tip_in(&own, repo, &head.branch).is_some_and(|tip| {
+            !tip.fast_forward_only
+                && !head.oid.is_empty()
+                && tip.tip.eq_ignore_ascii_case(&head.oid)
+        })
     }
+}
+
+/// What [`ChatPolicy::check_push`] answers for a push it lets through.
+#[derive(Debug, Default)]
+struct CheckedPush {
+    /// The branches it makes and moves.
+    created: Vec<CreatedBranch>,
+    /// Those of them whose update must be a fast-forward of the forge's tip.
+    fast_forward_only: Vec<String>,
 }
 
 /// One branch of a push whose update the chat is refused for having no tip of its own on it
@@ -1433,6 +1488,7 @@ fn allowed(
         canonical_body: None,
         canonical_media: None,
         created: Vec::new(),
+        fast_forward_only: Vec::new(),
         surface,
         touched: Vec::new(),
     }
@@ -1451,6 +1507,7 @@ fn public(host_of: &AllowedRepo, class: Class, segments: &[String], target: &Tar
         canonical_body: None,
         canonical_media: None,
         created: Vec::new(),
+        fast_forward_only: Vec::new(),
         surface: Surface::Anonymous,
         touched: Vec::new(),
     }

@@ -258,6 +258,9 @@ pub struct Forwarded {
     pub body: Option<Vec<u8>>,
     /// Branches a push makes or moves, for [`ForgeProxy::confirm_push`].
     pub(crate) created: Vec<CreatedBranch>,
+    /// The branches of a push whose update must be a fast-forward (the chat holds them by the
+    /// person's Allow), which the listener hands its push gate to read in the push's objects.
+    pub(crate) fast_forward_only: Vec<String>,
     /// What the answer must never hold: the real credential, as it is sent and in the other forms
     /// a forge or a proxy may give it back. The listener reads the answer for these; memory only,
     /// and zeroed with the request.
@@ -283,6 +286,7 @@ impl Forwarded {
             credentialed: false,
             body: None,
             created: Vec::new(),
+            fast_forward_only: Vec::new(),
             needles: Vec::new(),
             host: host.to_string(),
             repo: String::new(),
@@ -301,6 +305,7 @@ impl Forwarded {
             credentialed: false,
             body: None,
             created: Vec::new(),
+            fast_forward_only: Vec::new(),
             needles: self
                 .needles
                 .iter()
@@ -883,6 +888,7 @@ impl ForgeProxy {
                 credentialed: false,
                 body: allowed.canonical_body,
                 created: Vec::new(),
+                fast_forward_only: Vec::new(),
                 needles: Vec::new(),
                 host: allowed.host,
                 repo: allowed.repo,
@@ -945,6 +951,7 @@ impl ForgeProxy {
             credentialed: true,
             body: allowed.canonical_body,
             created: allowed.created,
+            fast_forward_only: allowed.fast_forward_only,
             needles,
             host: allowed.host,
             repo: allowed.repo,

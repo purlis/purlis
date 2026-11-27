@@ -1554,6 +1554,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     // The runners a re-arm re-arms with this machine (#2051): a read, as whether it is stopped.
     // The project's `[policy]` as it stands for you (Q308): a read; Accept stays the window's.
     "project_policy_state",
+    // What the project needs from you before its chats can work (ADR 0130 §8): a read, so a
+    // linked page shows the modal; its Accepts stay the window's.
+    "project_prerequisites",
     // What the project's `[policy]` let through and logged (Q308a): a read of rule ids,
     // families, chat numbers and the host:port a rule was about, never a command, a path or a
     // value.

@@ -325,6 +325,12 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "crates/purlis-core/src/dockerpool.rs",
+        "PIN_SAID_FOR",
+        Security,
+        "how long the pin check's docker info stands for the daemon in the container check (#7862)",
+    ),
+    (
+        "crates/purlis-core/src/dockerpool.rs",
         "CONVERSATIONS_WITHIN",
         Internal,
         "how purlis waits or looks",

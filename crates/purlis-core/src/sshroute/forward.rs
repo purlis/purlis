@@ -302,7 +302,8 @@ enum Taken {
 }
 
 /// How long a lock held over a socket nothing answers is waited out: a holder whose ssh ended lets
-/// go within [`WATCHED_EVERY`]. Short, since the wait holds this process's table of forwards.
+/// go within [`WATCHED_EVERY`]. Short, since the wait holds the pool's forward, which its other
+/// links wait on.
 const LET_GO_WITHIN: Duration = Duration::from_secs(2);
 
 /// **Takes the pool's lock, or answers that another process's forward is to be used**. A holder
@@ -354,8 +355,40 @@ fn shared_alive(socket: &Path) -> bool {
     another_holds(socket) && answers(socket)
 }
 
-/// The forwards this process holds, by pool.
-static HELD_HERE: Mutex<BTreeMap<String, Held>> = Mutex::new(BTreeMap::new());
+/// One pool's forward, where this process holds one: locked alone while it is looked at or
+/// opened, so a forward slow to open holds up no other pool's (#7862, T6 Q7).
+type Slot = Arc<Mutex<Option<Held>>>;
+
+/// The forwards this process holds, by pool, each behind a lock of its own. The table's own lock
+/// is held only to find a pool's: never while a forward is opened. A pool's entry is kept once
+/// made, emptied as its forward is let go of, so a forward opened while another thread lets go of
+/// every one is never held where no look finds it.
+static HELD_HERE: Mutex<BTreeMap<String, Slot>> = Mutex::new(BTreeMap::new());
+
+/// Pool `pool`'s slot, made where it has none.
+fn slot_of(pool: &str) -> Slot {
+    Arc::clone(
+        HELD_HERE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(pool.to_owned())
+            .or_default(),
+    )
+}
+
+/// Pool `pool`'s slot, where it has one.
+fn slot_held(pool: &str) -> Option<Slot> {
+    HELD_HERE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(pool)
+        .cloned()
+}
+
+fn locked(slot: &Slot) -> std::sync::MutexGuard<'_, Option<Held>> {
+    slot.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 /// **Pool `pool`'s forward, opened where it isn't, or opened again where it dropped**: the
 /// socket each run of `docker` for the pool is pointed at.
@@ -365,10 +398,9 @@ pub fn hold(from: &Opening<'_>) -> Result<PathBuf, String> {
 
 /// [`hold`], and whether it opened the forward now (it was not held, or it had dropped).
 pub fn hold_noting(from: &Opening<'_>) -> Result<(PathBuf, bool), String> {
-    let mut held = HELD_HERE
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if let Some(kept) = held.get_mut(from.pool) {
+    let slot = slot_of(from.pool);
+    let mut held = locked(&slot);
+    if let Some(kept) = held.as_mut() {
         let alive = match kept {
             Held::Own(forward) => forward.alive(),
             // Another process's: still holding while it holds the lock and its socket answers.
@@ -377,11 +409,11 @@ pub fn hold_noting(from: &Opening<'_>) -> Result<(PathBuf, bool), String> {
         if alive {
             return Ok((kept.socket().to_path_buf(), false));
         }
-        held.remove(from.pool);
+        *held = None;
     }
     let opened = open(from)?;
     let socket = opened.socket().to_path_buf();
-    held.insert(from.pool.to_owned(), opened);
+    *held = Some(opened);
     Ok((socket, true))
 }
 
@@ -399,10 +431,11 @@ fn another_holds(socket: &Path) -> bool {
 /// **Whether pool `pool`'s forward, held by this process, has dropped** since it was opened: what
 /// a link's liveness reads before it relinks (ADR 0123 §8).
 pub fn dropped(pool: &str) -> bool {
-    let mut held = HELD_HERE
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    match held.get_mut(pool) {
+    let Some(slot) = slot_held(pool) else {
+        return false;
+    };
+    let mut held = locked(&slot);
+    match held.as_mut() {
         Some(Held::Own(forward)) => !forward.alive(),
         Some(Held::Shared(socket)) => !shared_alive(socket),
         None => false,
@@ -412,19 +445,18 @@ pub fn dropped(pool: &str) -> bool {
 /// **Ends pool `pool`'s forward, where this process holds it**: as the pool is removed, or its
 /// pin changes.
 pub fn let_go(pool: &str) {
-    let mut held = HELD_HERE
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    held.remove(pool);
+    if let Some(slot) = slot_held(pool) {
+        let gone = locked(&slot).take();
+        drop(gone);
+    }
 }
 
 /// **The process id of the ssh holding pool `pool`'s forward**, where this process holds it.
 #[must_use]
 pub fn ssh_of(pool: &str) -> Option<u32> {
-    let held = HELD_HERE
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    match held.get(pool) {
+    let slot = slot_held(pool)?;
+    let held = locked(&slot);
+    match held.as_ref() {
         // Not one whose ssh has ended and that has let go: its id may be another process's now.
         Some(Held::Own(forward)) if forward.lease().held.is_some() => Some(forward.ssh()),
         _ => None,
@@ -435,12 +467,16 @@ pub fn ssh_of(pool: &str) -> Option<u32> {
 /// is left to its session's own ending ([`super::HELD_BY`]). Held in a static, a forward is
 /// otherwise never dropped.
 pub fn let_go_of_all() {
-    let all = std::mem::take(
-        &mut *HELD_HERE
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner),
-    );
-    drop(all);
+    let all: Vec<Slot> = HELD_HERE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .values()
+        .cloned()
+        .collect();
+    for slot in all {
+        let gone = locked(&slot).take();
+        drop(gone);
+    }
 }
 
 #[cfg(test)]

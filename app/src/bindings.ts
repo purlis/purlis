@@ -771,7 +771,8 @@ export const commands = {
 	 *  **Your press: accept the project's `[policy]` as its committed file said it when it was
 	 *  shown** (`shown`, the state's digest), looser where it is looser, at once. Sealed on this
 	 *  machine by the app; refused where it cannot be sealed, or where the file changed since it was
-	 *  shown. The window's alone.
+	 *  shown. The window's alone. Made through the project's prerequisite list, which is evaluated
+	 *  again after it and tells every window (ADR 0130 §2).
 	 */
 	acceptProjectPolicy: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("accept_project_policy", { plane, shown })),
 	/**
@@ -780,7 +781,8 @@ export const commands = {
 	 *  front when it lands. The old `purlis-seal` items are replaced, which macOS may ask you to
 	 *  allow; the digest is checked again once its prompt returns; then a new key seals this
 	 *  project's acceptance. Every other project accepted on this machine then needs accepting
-	 *  again. The window's alone. The window draws it in the prerequisite modal (#7719).
+	 *  again, and each one's list is evaluated again. The window's alone. The window draws it in the
+	 *  prerequisite modal (#7719).
 	 */
 	acceptProjectPolicyWithNewKey: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("accept_project_policy_with_new_key", { plane, shown })),
 	/**
@@ -796,6 +798,11 @@ export const commands = {
 	 *  thread.
 	 */
 	policyLog: (plane: PlaneId) => typedError<PolicyLog, string>(__TAURI_INVOKE("policy_log", { plane })),
+	/**
+	 *  **The project's prerequisites now**: what a window that opens, or one that missed an event,
+	 *  asks. Evaluated first where it never was. Off the window's thread.
+	 */
+	projectPrerequisites: (plane: PlaneId) => typedError<Prerequisites, string>(__TAURI_INVOKE("project_prerequisites", { plane })),
 	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
 	 *  (#1362): `null` for a chat that holds its own.
@@ -1271,6 +1278,11 @@ export const commands = {
 	/**  Chat `session`, where it is hibernated. */
 	chatHibernated: (plane: PlaneId, session: number) => typedError<{
 	by: By,
+	/**
+	 *  What the pane typed into it once its program was ending, which no program read: its
+	 *  unsent text, held in memory, never lost (SC-4d, #7633). Absent where it typed nothing.
+	 */
+	unsent?: string | null,
 } | null, string>(__TAURI_INVOKE("chat_hibernated", { plane, session })),
 	/**
 	 *  **What hibernated chat `session` showed as it was hibernated** (SC-4b, #7631): what its pane
@@ -1284,9 +1296,12 @@ export const commands = {
 	 *  Hibernate on a chat's row (SC-4a, #7630): the person's act. Where the chat may not be
 	 *  hibernated now it is answered why, as a typed reason the window words (SC-4c, #7632);
 	 *  where the act cannot be done, in a sentence. Otherwise its program ends and the window is
-	 *  told. The window's alone (`WINDOW_ONLY`).
+	 *  told. `own_work_named` is the window's word that the person was asked about the chat's own
+	 *  work and said yes, with the id of each piece the ask named: only then is a chat with own
+	 *  work hibernated, and only where it has no piece the ask did not name (SC-4d, #7633). The
+	 *  window's alone (`WINDOW_ONLY`).
 	 */
-	hibernateChat: (plane: PlaneId, session: number) => typedError<Hibernation, string>(__TAURI_INVOKE("hibernate_chat", { plane, session })),
+	hibernateChat: (plane: PlaneId, session: number, ownWorkNamed: string[] | null) => typedError<Hibernation, string>(__TAURI_INVOKE("hibernate_chat", { plane, session, ownWorkNamed })),
 	/**
 	 *  Chat `session`, where its program ended with its session host and the person has not put
 	 *  it away.
@@ -6297,6 +6312,8 @@ export const POOL_MINTS_WITHOUT_ASKING = "pool-mints-without-asking" as const;
 
 export const POOL_PIN_CHANGED = "pool-pin-changed" as const;
 
+export const PREREQUISITES_CHANGED = "prerequisites-changed" as const;
+
 export const PROJECT_READY = "project-ready" as const;
 
 export const REPORT_DRAFTS_CHANGED = "report-drafts-changed" as const;
@@ -8361,8 +8378,26 @@ export type ChatHeld = {
 };
 
 /**  Chat `session` as the window reads its hibernation. */
-export type ChatHibernation = {
+export type ChatHibernation = ChatHibernation_Serialize | ChatHibernation_Deserialize;
+
+/**  Chat `session` as the window reads its hibernation. */
+export type ChatHibernation_Deserialize = {
 	by: By,
+	/**
+	 *  What the pane typed into it once its program was ending, which no program read: its
+	 *  unsent text, held in memory, never lost (SC-4d, #7633). Absent where it typed nothing.
+	 */
+	unsent?: string | null,
+};
+
+/**  Chat `session` as the window reads its hibernation. */
+export type ChatHibernation_Serialize = {
+	by: By,
+	/**
+	 *  What the pane typed into it once its program was ending, which no program read: its
+	 *  unsent text, held in memory, never lost (SC-4d, #7633). Absent where it typed nothing.
+	 */
+	unsent?: string | null,
 };
 
 /**  A chat's Chat log: whether purlis knows the chat, and its rows. */
@@ -8574,6 +8609,12 @@ export type ChatRestart = {
 	 */
 	notices: string[],
 	not_yet: string | null,
+	/**
+	 *  **What its pane typed while it was hibernated, which no program read** (SC-4d, #7633):
+	 *  handed back with the woken run, for its pane to show unsent. Never typed into it: its
+	 *  delivery is SC-4j's (#7639). None where nothing was typed, or the chat was not woken.
+	 */
+	unsent: string | null,
 };
 
 /**  **What the chat a `chat 641` link names is**, for its hover's second line. */
@@ -14795,6 +14836,44 @@ export type PolicyOverride = {
 };
 
 /**
+ *  **The policy prerequisite**: one read of the project's policy, so the reasons, the rows and
+ *  the digest the window presses are all of the same file.
+ */
+export type PolicyPrerequisite = {
+	/**  Open, or deferred for this run. */
+	state: PrerequisiteState,
+	/**  Broken, Waiting, or both, Broken first. */
+	reasons: PolicyReason[],
+	/**  The digest an Accept must name. */
+	digest: string,
+	/**
+	 *  Whether Accept must first replace a seal key another program made (#7714): the press is
+	 *  Make a new key and accept.
+	 */
+	needs_new_key: boolean,
+	/**
+	 *  Whether the acceptance broke because purlis replaced its seal key on this machine
+	 *  (#7714), never because something edited it.
+	 */
+	after_new_key: boolean,
+	/**  The project's policy as it stands, from the same read: the waiting rows among it. */
+	policy: PolicyState,
+};
+
+/**  Why the policy prerequisite is open. */
+export type PolicyReason = 
+/**
+ *  An acceptance was kept on this machine, and what is here now is not it: the project's
+ *  chats work in strict mode until the person answers.
+ */
+"broken" | 
+/**
+ *  The committed policy loosens what this machine accepted, or the shipped `watch` where
+ *  nothing holds.
+ */
+"waiting";
+
+/**
  *  **What the controls would refuse, said before a review** (#6031): the core's sentence, and
  *  when it can be taken where it is refused for its age alone.
  */
@@ -15743,6 +15822,35 @@ export type PossibleDuplicate = {
 	/**  `open` or `closed`. */
 	state: string,
 	url: string,
+};
+
+/**  **One prerequisite**, by its kind. */
+export type Prerequisite = 
+/**  The project's `[policy]` is not accepted on this machine (ADR 0130 §3). */
+{
+	kind: "policy",
+} & PolicyPrerequisite;
+
+/**  Where a prerequisite stands this run. */
+export type PrerequisiteState = 
+/**  Unanswered: it waits for the person. */
+"open" | 
+/**  Answered for this run with the answer that grants nothing. */
+"deferred";
+
+/**
+ *  **A project's whole list of prerequisites, in the core's order**: what [`EVENT`] carries,
+ *  what [`project_prerequisites`] answers, and what the hook socket hands a chat's `purlis`.
+ *  Never a delta.
+ */
+export type Prerequisites = {
+	/**  The project it is of. */
+	plane: PlaneId,
+	/**
+	 *  Each prerequisite, open or deferred, in the core's order: none where the project needs
+	 *  nothing of the person.
+	 */
+	list: Prerequisite[],
 };
 
 /**

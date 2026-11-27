@@ -212,6 +212,7 @@ mod poolsignin_confirm;
 mod pooltools;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod portal;
+mod prerequisites;
 mod projectready;
 mod projectsettings;
 mod proposals;
@@ -2718,6 +2719,10 @@ struct ChatRestart {
     /// runs in it again.
     notices: Vec<String>,
     not_yet: Option<String>,
+    /// **What its pane typed while it was hibernated, which no program read** (SC-4d, #7633):
+    /// handed back with the woken run, for its pane to show unsent. Never typed into it: its
+    /// delivery is SC-4j's (#7639). None where nothing was typed, or the chat was not woken.
+    unsent: Option<String>,
 }
 
 /// **Restarts chat `session`**: the same chat on its conversation, started again with the
@@ -2754,11 +2759,13 @@ async fn restart_chat(
                 chat: Some(drawn(&held, started)?),
                 notices: held.chats().start_notes(started),
                 not_yet: None,
+                unsent: held.hibernated().handed_back(started),
             }),
             planes::Restarted::NotYet(why) => Ok(ChatRestart {
                 chat: None,
                 notices: Vec::new(),
                 not_yet: Some(why.to_owned()),
+                unsent: None,
             }),
         }
     })
@@ -3548,6 +3555,10 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<reconnecting::ChatsReconnecting>()
         // What `fresh-runners-kept` carries (#4569).
         .typ::<freshkept::FreshRunnersKept>()
+        // What `prerequisites-changed` carries, `project_prerequisites` answers and the hook socket
+        // hands a chat's `purlis`, and the event's name (ADR 0130 §2).
+        .typ::<prerequisites::Prerequisites>()
+        .constant("PREREQUISITES_CHANGED", prerequisites::EVENT)
         // What `project-ready` carries, and the event's name (#5322).
         .typ::<projectready::ProjectReady>()
         .constant("PROJECT_READY", projectready::EVENT)
@@ -5018,6 +5029,19 @@ pub fn run() {
                         );
                     })
                 })
+                // A hibernated chat whose unsent text changed: its pane reads it again (SC-4d,
+                // #7633).
+                .telling_hibernation_changes({
+                    let window = app.handle().clone();
+                    std::sync::Arc::new(move |told: hibernation::Changed| {
+                        windows::emit_for_plane(
+                            &window,
+                            &told.plane.clone(),
+                            hibernation::CHANGED,
+                            &told,
+                        );
+                    })
+                })
                 // A chat whose program ended with its session host: the window says so on its
                 // pane, with Resume (#2007).
                 .telling_lost_chats({
@@ -5044,6 +5068,10 @@ pub fn run() {
                         );
                     })
                 })
+                // Each project's whole list of prerequisites, to every window: a project not in
+                // front shows a dot on its tab, and an answer in one window closes the modal in
+                // each (ADR 0130 §2, §8).
+                .telling_prerequisites(prerequisites::to_every_window(app.handle().clone()))
                 // A task's fresh runner kept since its work is not all here: the window's Notice
                 // offers Fetch again and Discard (#4569).
                 .telling_fresh_kept({

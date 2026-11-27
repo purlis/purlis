@@ -26,6 +26,7 @@
 //! Every git call goes through the hardened runner, under whatever isolation the caller holds.
 
 use std::path::Path;
+use std::time::Duration;
 
 use super::{Refusal, git, name, porcelain};
 
@@ -303,6 +304,12 @@ pub(super) fn upstream_of(
     Ok(there.ok().then_some(origins))
 }
 
+/// The remote-tracking branch (`refs/remotes/origin/main`) that branch `branch` of the clone at
+/// `clone` follows: its upstream, or `origin`'s of the same name. `None` where it follows none.
+pub fn followed(clone: &Path, branch: &str) -> Result<Option<String>, Refusal> {
+    upstream_of(clone, branch, &name::as_ref(branch))
+}
+
 /// The worktree of the clone that has `branch` checked out, if one does.
 pub fn checked_out_in(clone: &Path, branch: &str) -> Result<Option<std::path::PathBuf>, Refusal> {
     let listed = git::run(clone, &["worktree", "list", "--porcelain"], git::READ)?;
@@ -318,39 +325,343 @@ pub fn checked_out_in(clone: &Path, branch: &str) -> Result<Option<std::path::Pa
         .map(|row| row.path))
 }
 
+/// How long one ask of a remote for its default branch may take ([`asked_default`]): a single
+/// line over the network, so far less than a fetch's deadline.
+pub const DEFAULT_ASKED: Duration = Duration::from_secs(20);
+
+/// How long an ask of a remote that failed waits before it is made once more (#7870): long
+/// enough for a credential helper or proxy that several cuts asked at once to settle.
+pub const ASK_AGAIN_AFTER: Duration = Duration::from_millis(500);
+
+/// How long the fetch of a remote's default branch before a dispatch cuts from it may take
+/// ([`dispatch_base`]): one branch, so less than a whole fetch's [`git::NETWORK`].
+pub const DEFAULT_FETCHED: Duration = Duration::from_secs(60);
+
 /// The branch the remote `remote` of the clone at `clone` names its default, asked of the
 /// remote itself (`git ls-remote --symref <remote> HEAD`), reached as a fetch is
 /// ([`crate::repocmd::sync::reach`], `hosts` the chat's internet access where it has one).
 /// Never read from the clone, whose refs a chat may write. `None` where the remote does not
-/// answer or names none.
+/// answer or names none: [`asked_default`] says why.
 pub fn remote_default(
     root: &Path,
     clone: &Path,
     remote: &str,
     hosts: Option<&[String]>,
 ) -> Option<String> {
-    let (_, helper) = crate::repocmd::sync::reach(root, clone, remote, hosts, false).ok()?;
-    let asked = git::run_network(
+    asked_default(root, clone, remote, hosts).ok()
+}
+
+/// [`remote_default`], or why there is none, in words that finish "purlis could not tell
+/// which branch is the default:".
+///
+/// **Bounded, and asked twice at most** (#7870): each ask has [`DEFAULT_ASKED`], not a whole
+/// fetch's [`git::NETWORK`], since it carries one line; an ask that fails is made once more
+/// after [`ASK_AGAIN_AFTER`], as several cuts in one turn ask the same remote at once and one
+/// of them may meet a busy credential helper or proxy. A remote purlis may not reach at all (an
+/// SSH address on a host the project does not manage, a host outside the chat's egress) is not
+/// asked, and the reason is [`crate::repocmd::sync::reach`]'s.
+pub fn asked_default(
+    root: &Path,
+    clone: &Path,
+    remote: &str,
+    hosts: Option<&[String]>,
+) -> Result<String, String> {
+    asked_default_within(root, clone, remote, hosts, DEFAULT_ASKED, ASK_AGAIN_AFTER)
+}
+
+/// [`asked_default`], each ask bounded by `within` and the second made after `backoff`.
+pub fn asked_default_within(
+    root: &Path,
+    clone: &Path,
+    remote: &str,
+    hosts: Option<&[String]>,
+    within: Duration,
+    backoff: Duration,
+) -> Result<String, String> {
+    let (_, helper) = crate::repocmd::sync::reach(root, clone, remote, hosts, false)?;
+    let asked = twice(
+        || {
+            let run = git::run_network_within(
+                clone,
+                helper.as_deref(),
+                &["ls-remote", "--symref", remote, "HEAD"],
+                within,
+            )
+            .map_err(|why| format!("'{remote}' did not answer: {why}"))?;
+            if run.ok() {
+                Ok(run)
+            } else {
+                Err(format!(
+                    "'{remote}' did not answer (access or network): {}",
+                    run.err.lines().next().unwrap_or("").trim()
+                ))
+            }
+        },
+        backoff,
+    )?;
+    let branch = asked
+        .out
+        .lines()
+        .find_map(|line| {
+            let (named, at) = line.strip_prefix("ref: ")?.split_once('\t')?;
+            (at.trim() == "HEAD")
+                .then(|| named.strip_prefix("refs/heads/"))
+                .flatten()
+                .map(str::to_owned)
+        })
+        .ok_or_else(|| format!("'{remote}' answered, and named no branch its default"))?;
+    name::branch_name_ok(&branch)
+        .map_err(|_| format!("'{remote}' named a default branch purlis does not take"))?;
+    Ok(branch)
+}
+
+/// `ask`, made once more after `backoff` where it failed: the second answer, whatever it is.
+pub fn twice<T>(
+    mut ask: impl FnMut() -> Result<T, String>,
+    backoff: Duration,
+) -> Result<T, String> {
+    ask().or_else(|_| {
+        std::thread::sleep(backoff);
+        ask()
+    })
+}
+
+/// Where a dispatch's worktree is cut from, in a clone that has a remote ([`dispatch_base`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DispatchBase {
+    /// The clone's branch of the remote's default: what the piece is cut from, brought up to
+    /// the remote-tracking branch first ([`bring_up`]), and recorded as cut from.
+    pub branch: String,
+    /// What the asking chat should know: the default as last fetched, and how old, where it
+    /// could not be fetched now; a branch made in the clone to follow it.
+    pub notes: Vec<String>,
+}
+
+/// **A dispatch's base where the clone has remote `remote`** (#7870): never the commit the
+/// clone happens to be on.
+///
+/// The remote is asked which branch is its default ([`asked_default`]), and that branch is
+/// fetched (bounded by [`DEFAULT_FETCHED`]) into its remote-tracking branch, so the task starts
+/// from the remote as it is now. Where the fetch fails, it starts from the branch as last
+/// fetched, and a note says how long ago that was. Where the remote cannot be asked, the
+/// default the clone last fetched (`refs/remotes/<remote>/HEAD`) is used, and said so with its
+/// age. Refused, with the reason, only where there is neither. A clone with no branch of the
+/// default's name gets one that follows the remote-tracking branch, as `git checkout` makes
+/// one, since a piece is recorded as cut from a branch of the clone.
+pub fn dispatch_base(
+    root: &Path,
+    clone: &Path,
+    remote: &str,
+    hosts: Option<&[String]>,
+) -> Result<DispatchBase, String> {
+    let tracking = |branch: &str| format!("refs/remotes/{remote}/{branch}");
+    let mut notes = Vec::new();
+    let asked = asked_default(root, clone, remote, hosts);
+    // The ask is made by each cut at once; the fetch and the branch it may make, one at a time.
+    let lock = fetch_lock(clone);
+    let _one_at_a_time = lock
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let branch = match asked {
+        Ok(branch) => {
+            if let Err(why) = fetch_branch(root, clone, remote, &branch, hosts) {
+                let Some(when) = last_fetched(clone, &tracking(&branch)) else {
+                    return Err(format!(
+                        "'{remote}' names {branch} its default, purlis could not fetch it \
+                         ({why}), and the clone has never fetched it"
+                    ));
+                };
+                notes.push(format!(
+                    "purlis could not fetch {remote}/{branch} ({why}), so the new branch \
+                     starts from it as the clone last fetched it ({when})"
+                ));
+            }
+            branch
+        }
+        Err(why) => {
+            let fetched = tracked_head(clone, remote).and_then(|branch| {
+                last_fetched(clone, &tracking(&branch)).map(|when| (branch, when))
+            });
+            let Some((branch, when)) = fetched else {
+                return Err(format!(
+                    "{why}, and the clone has fetched no default branch of '{remote}'"
+                ));
+            };
+            notes.push(format!(
+                "purlis could not ask '{remote}' which branch is its default ({why}), so the \
+                 new branch starts from {remote}/{branch} as the clone last fetched it ({when})"
+            ));
+            branch
+        }
+    };
+    let local = name::as_ref(&branch);
+    if commit_of(clone, &local)
+        .map_err(|why| why.in_window())?
+        .is_none()
+    {
+        let made = git::run(
+            clone,
+            &["branch", "--quiet", "--track", &branch, &tracking(&branch)],
+            git::READ,
+        )
+        .map_err(|why| why.to_string())?;
+        if !made.ok() {
+            return Err(format!(
+                "the clone has no branch {branch}, and git did not make one following \
+                 {remote}/{branch}: {}",
+                made.err.trim()
+            ));
+        }
+        notes.push(format!(
+            "the clone had no branch {branch}, so purlis made one following {remote}/{branch}"
+        ));
+    }
+    Ok(DispatchBase { branch, notes })
+}
+
+/// Fetches branch `branch` of remote `remote` into its remote-tracking branch, bounded by
+/// [`DEFAULT_FETCHED`], reached as [`crate::repocmd::sync::reach`] reaches it.
+fn fetch_branch(
+    root: &Path,
+    clone: &Path,
+    remote: &str,
+    branch: &str,
+    hosts: Option<&[String]>,
+) -> Result<(), String> {
+    let (_, helper) = crate::repocmd::sync::reach(root, clone, remote, hosts, false)?;
+    let refspec = format!("+refs/heads/{branch}:refs/remotes/{remote}/{branch}");
+    let fetched = git::run_network_within(
         clone,
         helper.as_deref(),
-        &["ls-remote", "--symref", remote, "HEAD"],
+        &[
+            "fetch",
+            "--no-tags",
+            "--no-recurse-submodules",
+            "--no-write-fetch-head",
+            "--no-auto-maintenance",
+            remote,
+            &refspec,
+        ],
+        DEFAULT_FETCHED,
+    )
+    .map_err(|why| why.to_string())?;
+    if fetched.ok() {
+        Ok(())
+    } else {
+        Err(format!(
+            "access or network: {}",
+            fetched.err.lines().next().unwrap_or("").trim()
+        ))
+    }
+}
+
+/// The branch `refs/remotes/<remote>/HEAD` names in the clone: the default the clone last
+/// fetched, where it recorded one.
+fn tracked_head(clone: &Path, remote: &str) -> Option<String> {
+    let head = format!("refs/remotes/{remote}/HEAD");
+    let read = git::run(clone, &["symbolic-ref", "--quiet", &head], git::READ).ok()?;
+    let prefix = format!("refs/remotes/{remote}/");
+    let branch = read
+        .ok()
+        .then(|| read.line().trim().strip_prefix(&prefix))??;
+    name::branch_name_ok(branch).ok()?;
+    Some(branch.to_owned())
+}
+
+/// How long ago the clone last moved remote-tracking branch `tracking`, as a person reads it,
+/// where it has that branch: from its reflog, or said unknown where git kept none.
+fn last_fetched(clone: &Path, tracking: &str) -> Option<String> {
+    commit_of(clone, tracking).ok()??;
+    let logged = git::run(
+        clone,
+        &[
+            "log",
+            "--walk-reflogs",
+            "-1",
+            "--date=unix",
+            "--format=%gd",
+            tracking,
+        ],
+        git::READ,
     )
     .ok()
-    .filter(git::Run::ok)?;
-    let branch = asked.out.lines().find_map(|line| {
-        let (named, at) = line.strip_prefix("ref: ")?.split_once('\t')?;
-        (at.trim() == "HEAD")
-            .then(|| named.strip_prefix("refs/heads/"))
-            .flatten()
-            .map(str::to_owned)
-    })?;
-    name::branch_name_ok(&branch).ok()?;
-    Some(branch)
+    .filter(git::Run::ok)
+    // `refs/remotes/origin/main@{1764240000}`: the time of its last move, in seconds.
+    .and_then(|run| {
+        let line = run.line().trim().to_owned();
+        let (_, at) = line.strip_suffix('}')?.rsplit_once("@{")?;
+        at.parse::<u64>().ok()
+    });
+    Some(match logged {
+        Some(at) => {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |since| since.as_secs());
+            crate::cistate::ago(now.saturating_sub(at))
+        }
+        None => "git did not record when".to_owned(),
+    })
+}
+
+/// One fetch of a dispatch's base at a time in each clone, in this process: three cuts in one
+/// turn would otherwise race git for the same ref lock, and two of them fail.
+fn fetch_lock(clone: &Path) -> std::sync::Arc<std::sync::Mutex<()>> {
+    use std::collections::HashMap;
+    use std::sync::{Arc, LazyLock, Mutex, PoisonError};
+    static LOCKS: LazyLock<Mutex<HashMap<std::path::PathBuf, Arc<Mutex<()>>>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+    let mut held = LOCKS.lock().unwrap_or_else(PoisonError::into_inner);
+    Arc::clone(held.entry(clone.to_path_buf()).or_default())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::split_remote;
+    use super::{split_remote, twice};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn an_ask_that_fails_is_made_once_more_after_its_backoff_and_no_more() {
+        // #7870: several cuts in one turn ask one remote at once, and one may meet a busy
+        // credential helper or proxy.
+        let backoff = Duration::from_millis(50);
+        let mut asked = 0;
+        let started = Instant::now();
+        let answer = twice(
+            || {
+                asked += 1;
+                if asked == 1 {
+                    Err("busy".to_owned())
+                } else {
+                    Ok("main")
+                }
+            },
+            backoff,
+        );
+        assert_eq!(answer, Ok("main"));
+        assert_eq!(asked, 2);
+        assert!(started.elapsed() >= backoff, "the second ask waits first");
+
+        let mut asked = 0;
+        let answer: Result<(), String> = twice(
+            || {
+                asked += 1;
+                Err(format!("no answer {asked}"))
+            },
+            Duration::ZERO,
+        );
+        assert_eq!(answer, Err("no answer 2".to_owned()), "the second's reason");
+        assert_eq!(asked, 2, "twice at most");
+
+        let mut asked = 0;
+        let answer = twice(
+            || {
+                asked += 1;
+                Ok::<_, String>(asked)
+            },
+            Duration::from_secs(60),
+        );
+        assert_eq!(answer, Ok(1), "an answer is never asked for again");
+    }
 
     #[test]
     fn a_base_is_read_as_a_remote_and_its_branch_by_the_longest_remote_that_fits() {

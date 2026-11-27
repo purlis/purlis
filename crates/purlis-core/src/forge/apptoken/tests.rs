@@ -881,6 +881,51 @@ fn a_token_mint_refused_for_an_unrecorded_clone_raises_trust_this_clone() {
     let _ = taken_at_end(root, None);
 }
 
+/// **Trust this clone still follows `[policy] consents`** (Q308b), unlike a push to another
+/// chat's branch, which asks in every mode since #7749 (review of #7840): under `off` and `log`
+/// a mint refused for an unrecorded clone raises no ask, and the chat is told the person trusts
+/// it in the window.
+#[test]
+fn a_token_mint_refused_for_an_unrecorded_clone_raises_no_ask_under_consents_off_and_log() {
+    for consents in ["off", "log"] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(
+            crate::names::manifest(root),
+            format!("[policy]\nconsents = \"{consents}\"\n"),
+        )
+        .unwrap();
+        a_clone(root, "api", "https://github.com/acme/api.git");
+        let config = tempfile::tempdir().unwrap();
+        let ws = root.join("workspaces/ws");
+        let chat = For {
+            root,
+            chat: 7,
+            folder: Some(&ws),
+            here: None,
+            writes: &[],
+            started: None,
+            on_a_runner: false,
+            config_root: Some(config.path()),
+            ends_seen: None,
+        };
+
+        let said = token_for(&chat, &minted_gh(), &|| {
+            Err("the key is read only to mint".to_owned())
+        })
+        .unwrap_err();
+
+        assert_eq!(crate::windowonly::every(root), [], "{consents}");
+        assert!(
+            said.contains("the person trusts it in the window"),
+            "{consents}: {said}"
+        );
+        assert!(!said.contains("Asks"), "{consents}: {said}");
+        assert!(said.contains("Trust this clone"), "{consents}: {said}");
+        let _ = taken_at_end(root, None);
+    }
+}
+
 #[test]
 fn a_dismissed_notice_that_later_stops_a_chat_is_raised_again_as_an_ask() {
     let dir = tempfile::tempdir().unwrap();

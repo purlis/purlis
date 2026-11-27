@@ -486,7 +486,9 @@ pub enum Note {
     /// base was behind it and left where it is, or had moved on from it (#3903).
     Fresh(String),
     /// No default branch of the remote could be read, or the clone has none of that name, so
-    /// the branch was cut from the clone's HEAD, as `purlis worktree add` does then (#3903).
+    /// the branch was cut from the clone's HEAD, as `purlis worktree add` does then (#3903). A
+    /// dispatch says it only of a clone with no remote: where it has one that does not answer,
+    /// its cut is refused instead (#7870).
     FromHead { repo: String },
 }
 

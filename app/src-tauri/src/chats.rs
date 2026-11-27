@@ -4222,8 +4222,9 @@ impl Chats {
     /// a new run under a new number whose beginning is ADR 0066's `wake`. The caller has read
     /// that the chat is hibernated; this refuses a chat with no conversation to pick up. The old
     /// one stays open until the new one has started, as [`Self::restart`]'s does; ending it is
-    /// the caller's next step. Nothing is told it yet: the wake line (ADR 0068) is SC-4j's.
-    pub fn wake(&self, session: u32, size: Size) -> Result<u32, String> {
+    /// the caller's next step. It is told `ended`, what its hibernation ended of its own, as its
+    /// wake line (SC-4d, #7633), where that is anything.
+    pub fn wake(&self, session: u32, size: Size, ended: &Own) -> Result<u32, String> {
         self.claim(session)?;
         let started = self.again_on_its_conversation(session).and_then(|again| {
             if again.resume.is_none() {
@@ -4233,10 +4234,18 @@ impl Chats {
             // as amended 2026-11-25): said before the `wake` run starts, so the log reads in the
             // order it happened. Its program is gone, so no end of it is heard to say so.
             self.superseded(session);
-            self.start_recorded_told(&again, size, Why::Wake, None, None)
+            // **Told what the hibernation ended** (SC-4d, #7633; ADR 0068 amended 2026-11-08):
+            // the own work the person was asked about, each piece by name. None for a chat
+            // whose hibernation ended nothing of its own, and then nothing is typed.
+            let first = self.told_woken(session, ended);
+            self.start_recorded_told(&again, size, Why::Wake, first.as_deref(), None)
         });
         match started {
-            Ok(started) => self.restarted(session, started, true),
+            Ok(started) => {
+                // Told once: the work it was told of is the old program's, gone with it.
+                lock(&self.own_work).remove(&session);
+                self.restarted(session, started, true)
+            }
             Err(why) => {
                 self.unclaim(session);
                 Err(why)
@@ -4378,6 +4387,35 @@ impl Chats {
             .chain(wake.as_deref())
             .collect();
         (!first.is_empty()).then(|| first.join("\n\n"))
+    }
+
+    /// **What chat `session` owns of its own now** (#5747, #5750): what its record holds, which
+    /// a hibernation's intent keeps for its wake line (SC-4d, #7633).
+    pub(crate) fn own_now(&self, session: u32) -> Own {
+        lock(&self.own_work)
+            .get(&session)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// **What hibernated chat `session` is told as it wakes** (SC-4d, #7633): the wake line of
+    /// `own`, what its hibernation ended of its own ([`purlis_core::wakeline::of_the_chat_woken`]),
+    /// or none.
+    fn told_woken(&self, session: u32, own: &Own) -> Option<String> {
+        let conversation = lock(&self.open)
+            .get(&session)
+            .and_then(|one| one.chat.resume.as_ref().map(ToString::to_string))
+            .unwrap_or_default();
+        let last = |piece: &purlis_core::ownwork::pieces::Piece| {
+            purlis_core::ownwork::last::of(piece, &conversation)
+        };
+        purlis_core::wakeline::of_the_chat_woken(&purlis_core::wakeline::Ended {
+            own_work: own.work.as_ref(),
+            pieces: &own.pieces,
+            mid_turn: own.mid_turn,
+            now: jiff::Timestamp::now().as_second(),
+            last: &last,
+        })
     }
 
     /// Marks chat `session` as restarting, or refuses: one restart at a time, whichever asked.
@@ -5394,12 +5432,27 @@ impl Chats {
                 .and_then(|(chat_id, run)| {
                     // The merge stance is never looser than the chain that dispatched this chat.
                     let chain = chat.from.as_ref().and_then(|from| from.policy.as_deref());
-                    if reattaching {
-                        crate::forgeroute::guard_reattached(chat_id, run, &self.project, chain)
-                    } else {
-                        crate::forgeroute::guard(chat_id, run, &self.project, chain)
+                    let project = &self.project;
+                    match &chat.from {
+                        _ if reattaching => {
+                            crate::forgeroute::guard_reattached(chat_id, run, project, chain)
+                                .map(Ok)
+                        }
+                        // A chat another chat started has a route wherever that chat has one, or
+                        // is not started (#7870).
+                        Some(from) => {
+                            let handed = crate::forgeroute::Handed {
+                                parent: from.id.clone(),
+                                lane: chat.cwd.as_deref().and_then(crate::forgeroute::lane_of),
+                                // No id until this start minted one: never started before.
+                                first_start: chat.identity.id.is_none(),
+                            };
+                            crate::forgeroute::guard_handed(chat_id, run, project, chain, &handed)
+                        }
+                        None => crate::forgeroute::guard(chat_id, run, project, chain).map(Ok),
                     }
                 })
+                .transpose()?
         };
         // A grade's chat is armed here, with its limits, or not at all (SK-16): a runner
         // composes its own line, and would start it with none of them.
@@ -9910,10 +9963,18 @@ fn its_own_model<'a>(
 /// end said it left running, each piece by name, and whether a turn was under way. What the
 /// record of open chats keeps of it, so a chat brought back is told what the restart ended.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct Own {
+pub(crate) struct Own {
     work: Option<purlis_core::ownwork::OwnWork>,
     pieces: Vec<purlis_core::ownwork::pieces::Piece>,
     mid_turn: bool,
+}
+
+impl Own {
+    /// Whether every piece of it is among `named`, by its id: what an ask that named them
+    /// covers (SC-4d, #7633).
+    pub(crate) fn all_named(&self, named: &[String]) -> bool {
+        self.pieces.iter().all(|piece| named.contains(&piece.id))
+    }
 }
 
 /// What a report of the chat's own harness says of its own work and its turn (#5747, #5750).
