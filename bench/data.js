@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795741261234,
+  "lastUpdate": 1795741632141,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56742,6 +56742,48 @@ window.BENCHMARK_DATA = {
             "value": 101.09866300000002,
             "unit": "ms",
             "extra": "median of 5 runs: 99.672, 100.302, 101.099, 101.374, 103.702 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "db4d6b4b50d7911fd09d90baaa1ccc18ab97527e",
+          "message": "Dialog family: an app-raised alert (#7728) (#7733)\n\n* Dialog family: an app-raised alert (#7728)\n\nRaisedAlert, the dialog family's alert the app raises with no press\n(ADR 0104 as amended 2026-11-26, ADR 0130): cancel leads and is Esc's,\na grants main Return never finds, the Notices' settle guard (SETTLE_MS,\n#1695) after it is drawn and after its content changes, no silent swap,\nnever opening during an IME composition, with a key down, or over a\ndialog, the palette, a menu or a select's list, one per window queued\nwith its count, aria-busy while a press is in flight, described by its\ncount and why-line, a scrolling body the keyboard reaches, and focus\nhanded back.\n\nui/layers.ts counts open dialogs and menus; Popover's Surface counts a\nmenu only outside React Aria's hidden collection copy.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8C5VG9712J0ZFBJMYKZHSNB\nPurlis-Persona: steward\n\n* RaisedAlert: red tests for the review's round-2 findings (#7728)\n\nAn alert in a project behind, a keyup that opens a dialog, a repeated\nchange, a disabled Keep, a key repeating in a field inside, an early\nkey-forgotten timer, a composition's field removed, a listener that\nthrows; and the strengthened tests the review asked for.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8CN3Q28P2ZD8H8AWJZS58Y7\nPurlis-Persona: steward\n\n* RaisedAlert: round-2 fixes from the Fable review (#7728)\n\n- An alert takes the window's turn only while raised and its project is\n  in front: one behind no longer stalls the queue, runs the key guard\n  unseen, or comes in front with its settle guard already spent.\n- A keyup that ends the wait promotes a task later, after React Aria's\n  press on that keyup, so a dialog it opens is up first.\n- Each change and each too-soon press is a new announcement.\n- A change moves the keyboard to an enabled Keep, or the alert itself.\n- A key held in a field inside the alert repeats there once settled.\n- The key-forgotten timer has slack and re-arms if it runs early.\n- A composition is forgotten when its field leaves the document.\n- layers.ts tells every listener even when one throws, so its count\n  cannot leak.\n\nThe keyup test now drives the Space with fireEvent: userEvent's held key\nleft React Aria's press unfinished, so it proved nothing either way.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8CN3Q28P2ZD8H8AWJZS58Y7\nPurlis-Persona: steward\n\n* RaisedAlert: red tests for round 3 of the Fable review (#7728)\n\nA layer closing in the commit a dialog opens (palette row, menu item, Space on a menu item),\nan alert that goes behind counted as answered, raise order on a project's return, and Esc or\nReturn held in a one-line field answering.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CQK8Q7G02T7YRHB9FNK1KE\nPurlis-Persona: steward\n\n* RaisedAlert: round-3 fixes from the Fable review (#7728)\n\n- raised.ts: a layer change and a raise promote a task later, so a dialog opened in the\n  commit that closed the palette or a menu has counted itself first (F1).\n- An alert that leaves because its project went behind is not counted as answered (F2), and\n  keeps when it was raised, rejoining behind the one shown in raise order (F4).\n- RaisedAlert.tsx: a held key types in a field only as Space (any field) or Return (a text\n  area or contenteditable); Esc held never passes (F3).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CQK8Q7G02T7YRHB9FNK1KE\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T00:22:31Z",
+          "tree_id": "52b6aa8b52e64fec2073c2ebe1b069fcac7a6c6b",
+          "url": "https://github.com/purlis/purlis/commit/db4d6b4b50d7911fd09d90baaa1ccc18ab97527e"
+        },
+        "date": 1795741626630,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5010365,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.492, 0.493, 0.501, 0.510, 0.524 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2862965,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.082, 16.174, 16.286, 16.460, 16.531 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1909615,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.939, 100.980, 102.191, 102.678, 102.798 ms"
           }
         ]
       }
