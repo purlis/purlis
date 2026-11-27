@@ -181,7 +181,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
       act(() => vi.advanceTimersByTime(1_000));
       expect(
         await within(opened).findByText(
-          "builds's runner has not answered for 30 s. It may still be fetching Claude Code; you can wait, or try again.",
+          "builds's runner has not shown the sign-in page for 30 s. It may still be fetching Claude Code. At 3 minutes purlis stops waiting and shows what the runner printed, or try again now.",
         ),
       ).toBeVisible();
 

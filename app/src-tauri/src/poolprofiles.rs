@@ -2054,22 +2054,14 @@ pub async fn pool_sign_in_next(
     .map_err(|why| format!("the sign-in did not answer: {why}"))??;
     let mut said_over = None;
     let mut stopped = false;
-    if let Some(event) = event.as_ref().filter(|event| !event.is_last()) {
+    // Each step heard is timed (#7939); after the last, the sign-in is let go.
+    let over = event.as_ref().and_then(|event| {
         let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(one) = held.iter_mut().find(|one| one.flow == flow) {
-            one.timed.heard(event);
-        }
-    }
+        let at = held.iter().position(|one| one.flow == flow)?;
+        held[at].timed.heard(event);
+        event.is_last().then(|| held.remove(at))
+    });
     if let Some(event) = event.as_ref().filter(|event| event.is_last()) {
-        let mut over = {
-            let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
-            held.iter()
-                .position(|one| one.flow == flow)
-                .map(|at| held.remove(at))
-        };
-        if let Some(over) = over.as_mut() {
-            over.timed.heard(event);
-        }
         // Every stop lets a sign-in go before it ends it.
         stopped = over.is_none();
         if let Some(over) = over.as_ref()

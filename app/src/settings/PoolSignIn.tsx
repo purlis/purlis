@@ -50,6 +50,7 @@ export const drivenPlan = (kind: string, plan: string) =>
  * each wait at its own limit, and says why.
  */
 const QUIET_AFTER_MS = 30_000;
+const QUIET_FOR = `${QUIET_AFTER_MS / 1000} s`;
 
 /** The steps where purlis waits on the runner, not on the person. */
 const WAITS_ON_THE_RUNNER: ReadonlyArray<StripStep["at"]> = ["starting", "open", "checking"];
@@ -476,7 +477,8 @@ export function SignInStrip(props: SignInStripProps) {
           </>
         ) : (
           <>
-            {props.quiet === true && (
+            {/* Trying again at the check would end a check that may yet say signed in. */}
+            {props.quiet === true && step.at !== "checking" && (
               <Button size="sm" variant="primary" onPress={props.onTryAgain}>
                 Try again
               </Button>
@@ -556,8 +558,8 @@ function Body(props: SignInStripProps & { who: string }) {
       {props.quiet === true && (
         <p className="ui-setting-help ui-text-secondary" role="status">
           {props.step.at === "checking"
-            ? `${props.pool}'s runner has not said for 30 s whether ${props.who} is signed in. You can wait, or try again.`
-            : `${props.pool}'s runner has not answered for 30 s. It may still be fetching ${props.harness}; you can wait, or try again.`}
+            ? `${props.pool}'s runner has not said for ${QUIET_FOR} whether ${props.who} is signed in. purlis says when it answers.`
+            : `${props.pool}'s runner has not shown the sign-in page for ${QUIET_FOR}. It may still be fetching ${props.harness}. At 3 minutes purlis stops waiting and shows what the runner printed, or try again now.`}
         </p>
       )}
       <StepBody {...props} />
