@@ -359,13 +359,9 @@ fn root_of(planes: &Planes, plane: &PlaneId) -> Result<String, String> {
     Ok(planes.held(plane)?.root().display().to_string())
 }
 
-/// Runs `work` off the window's thread, through the app's one door ([`crate::off_the_window`]),
-/// and says so where it did not finish.
-async fn off_the_window<T: Send + 'static>(
-    work: impl FnOnce() -> Result<T, String> + Send + 'static,
-) -> Result<T, String> {
-    crate::off_the_window("The report draft", work).await
-}
+/// What this file's work through the app's one door is called where it did not finish
+/// ([`crate::off_the_window`]).
+const REPORT_DRAFT: &str = "The report draft";
 
 /// **The project's report drafts**, oldest first: what its chats drafted and the person has not
 /// filed or dismissed. None on a machine with no config home.
@@ -376,7 +372,7 @@ pub async fn report_drafts(
     plane: PlaneId,
 ) -> Result<Vec<ReportDraft>, String> {
     let root = root_of(&planes, &plane)?;
-    off_the_window(move || {
+    crate::off_the_window(REPORT_DRAFT, move || {
         Ok(Reports::here(None)
             .held()
             .into_iter()
@@ -396,7 +392,7 @@ pub async fn edit_report_draft(
     title: String,
     body: String,
 ) -> Result<ReportDraft, String> {
-    let edited = off_the_window(move || {
+    let edited = crate::off_the_window(REPORT_DRAFT, move || {
         Reports::here(None)
             .edit_held(&id, &title, &body)
             .map(ReportDraft::from)
@@ -424,7 +420,7 @@ pub async fn file_report_draft(
         FileHow::AddTo(number) => How::AddTo(u64::from(number)),
     };
     let title = id.clone();
-    let filed = off_the_window(move || {
+    let filed = crate::off_the_window(REPORT_DRAFT, move || {
         let reports = Reports::here(None);
         let title = reports
             .held()
@@ -471,7 +467,7 @@ pub async fn file_report_draft(
 #[tauri::command]
 #[specta::specta]
 pub async fn dismiss_report_draft(id: String) -> Result<(), String> {
-    off_the_window(move || {
+    crate::off_the_window(REPORT_DRAFT, move || {
         Reports::here(None).dismiss_held(&id);
         Ok(())
     })
@@ -485,7 +481,7 @@ pub async fn dismiss_report_draft(id: String) -> Result<(), String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn always_send_report_draft(id: String) -> Result<ReportDraft, String> {
-    let held = off_the_window(move || {
+    let held = crate::off_the_window(REPORT_DRAFT, move || {
         Reports::here(None)
             .always_send_held(&id)
             .map(ReportDraft::from)
@@ -501,7 +497,7 @@ pub async fn always_send_report_draft(id: String) -> Result<ReportDraft, String>
 #[tauri::command]
 #[specta::specta]
 pub async fn undo_report_draft(id: String) -> Result<ReportDraft, String> {
-    let undone = off_the_window(move || {
+    let undone = crate::off_the_window(REPORT_DRAFT, move || {
         Reports::here(None)
             .undo_held(&id)
             .map(ReportDraft::from)
@@ -576,7 +572,10 @@ pub async fn members_may_always_send(
     plane: PlaneId,
 ) -> Result<bool, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
-    off_the_window(move || Ok(purlis_core::report::members_may_always_send(&root))).await
+    crate::off_the_window(REPORT_DRAFT, move || {
+        Ok(purlis_core::report::members_may_always_send(&root))
+    })
+    .await
 }
 
 #[cfg(test)]

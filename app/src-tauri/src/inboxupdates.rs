@@ -211,13 +211,9 @@ fn root_of(planes: &Planes, plane: &PlaneId) -> Result<PathBuf, String> {
     Ok(planes.held(plane)?.root().to_path_buf())
 }
 
-/// Runs `work` off the window's thread, through the app's one door ([`crate::off_the_window`]),
-/// and says so where it did not finish.
-async fn off_the_window<T: Send + 'static>(
-    work: impl FnOnce() -> Result<T, String> + Send + 'static,
-) -> Result<T, String> {
-    crate::off_the_window("reading the Inbox's updates", work).await
-}
+/// What this file's work through the app's one door is called where it did not finish
+/// ([`crate::off_the_window`]).
+const INBOX_UPDATES: &str = "reading the Inbox's updates";
 
 /// [`Store::read`] as the window draws it.
 pub fn read_in(store: Option<&Store>, root: &std::path::Path, now: u64) -> Vec<InboxUpdate> {
@@ -267,7 +263,7 @@ pub async fn inbox_updates(
     plane: PlaneId,
 ) -> Result<Vec<InboxUpdate>, String> {
     let root = root_of(&planes, &plane)?;
-    off_the_window(move || {
+    crate::off_the_window(INBOX_UPDATES, move || {
         Ok(read_in(
             Store::here().as_ref(),
             &root,
@@ -288,7 +284,7 @@ pub async fn note_inbox_updates(
     noted: Vec<UpdateNoted>,
 ) -> Result<Vec<InboxUpdate>, String> {
     let root = root_of(&planes, &plane)?;
-    off_the_window(move || {
+    crate::off_the_window(INBOX_UPDATES, move || {
         note_in(
             Store::here().as_ref(),
             &root,
@@ -311,7 +307,7 @@ pub async fn settle_inbox_updates(
     how: UpdateSettled,
 ) -> Result<Vec<InboxUpdate>, String> {
     let root = root_of(&planes, &plane)?;
-    off_the_window(move || {
+    crate::off_the_window(INBOX_UPDATES, move || {
         settle_in(
             Store::here().as_ref(),
             &root,
@@ -344,7 +340,7 @@ pub async fn snooze_inbox_asks(
     until: Option<u32>,
 ) -> Result<(), String> {
     let root = root_of(&planes, &plane)?;
-    off_the_window(move || {
+    crate::off_the_window(INBOX_UPDATES, move || {
         let store = Store::here().ok_or_else(|| NOWHERE.to_owned())?;
         store
             .snooze(
@@ -371,7 +367,7 @@ pub async fn wake_inbox_asks(
     sessions: Option<Vec<u32>>,
 ) -> Result<(), String> {
     let root = root_of(&planes, &plane)?;
-    off_the_window(move || {
+    crate::off_the_window(INBOX_UPDATES, move || {
         let store = Store::here().ok_or_else(|| NOWHERE.to_owned())?;
         store
             .wake(&root, sessions.as_deref())
@@ -391,7 +387,10 @@ pub async fn inbox_seen(
     plane: PlaneId,
 ) -> Result<Vec<String>, String> {
     let root = root_of(&planes, &plane)?;
-    off_the_window(move || Ok(seen_in(Store::here().as_ref(), &root))).await
+    crate::off_the_window(INBOX_UPDATES, move || {
+        Ok(seen_in(Store::here().as_ref(), &root))
+    })
+    .await
 }
 
 /// **Notes `keys` seen** (#6002): each row visible in an open view for about a second, or
@@ -407,7 +406,7 @@ pub async fn see_inbox(
     asks: Option<Vec<String>>,
 ) -> Result<Vec<String>, String> {
     let root = root_of(&planes, &plane)?;
-    off_the_window(move || {
+    crate::off_the_window(INBOX_UPDATES, move || {
         see_in(
             Store::here().as_ref(),
             &root,
@@ -495,7 +494,7 @@ pub async fn inbox_first_open(
     plane: PlaneId,
 ) -> Result<InboxBaseline, String> {
     let root = root_of(&planes, &plane)?;
-    off_the_window(move || {
+    crate::off_the_window(INBOX_UPDATES, move || {
         first_open_in(Store::here().as_ref(), &root, crate::sandboxing::now_secs())
     })
     .await
@@ -512,7 +511,7 @@ pub async fn set_aside_inbox_findings(
     keys: Vec<String>,
 ) -> Result<Vec<InboxUpdate>, String> {
     let root = root_of(&planes, &plane)?;
-    off_the_window(move || {
+    crate::off_the_window(INBOX_UPDATES, move || {
         let store = Store::here().ok_or_else(|| NOWHERE.to_owned())?;
         store
             .set_aside_findings(&root, &keys, crate::sandboxing::now_secs())

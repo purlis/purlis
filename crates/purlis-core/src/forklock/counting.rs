@@ -26,7 +26,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// What a scope counted, once its work is done.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Tally {
     /// Programs started ([`super::spawn`], and so [`super::output`] and [`super::status`]).
     pub started: usize,
@@ -37,6 +37,9 @@ pub struct Tally {
     /// Times the work entered a door that carries the scope to its blocking thread
     /// ([`note_a_door`]): none means the work ran somewhere the scope never reached.
     pub doors: usize,
+    /// What each program started was asked to run, its program and arguments, in the order the
+    /// starts were noted: for a test to print what a count is made of.
+    pub programs: Vec<String>,
 }
 
 /// One scope's counts, shared by every thread it is carried to.
@@ -47,16 +50,24 @@ struct Counts {
     plane_reads: AtomicUsize,
     locks_reads: AtomicUsize,
     doors: AtomicUsize,
+    programs: std::sync::Mutex<Vec<String>>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
 impl Counts {
+    /// Read once the work is done: every thread that counted into it was joined first, and the
+    /// join orders their adds before these loads, so `Relaxed` reads them all.
     fn tally(&self) -> Tally {
         Tally {
-            started: self.started.load(Ordering::SeqCst),
-            plane_reads: self.plane_reads.load(Ordering::SeqCst),
-            locks_reads: self.locks_reads.load(Ordering::SeqCst),
-            doors: self.doors.load(Ordering::SeqCst),
+            started: self.started.load(Ordering::Relaxed),
+            plane_reads: self.plane_reads.load(Ordering::Relaxed),
+            locks_reads: self.locks_reads.load(Ordering::Relaxed),
+            doors: self.doors.load(Ordering::Relaxed),
+            programs: self
+                .programs
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone(),
         }
     }
 }
@@ -122,15 +133,41 @@ impl Carried {
 fn note(field: impl FnOnce(&Counts) -> &AtomicUsize) {
     HELD.with_borrow(|held| {
         if let Some(counts) = held {
-            field(counts).fetch_add(1, Ordering::SeqCst);
+            field(counts).fetch_add(1, Ordering::Relaxed);
         }
     });
 }
 
-/// A program is being started.
-pub(crate) fn note_a_start() {
+/// `command`'s program is being started.
+pub(crate) fn note_a_start(command: &std::process::Command) {
     #[cfg(any(test, feature = "test-support"))]
-    note(|counts| &counts.started);
+    HELD.with_borrow(|held| {
+        if let Some(counts) = held {
+            counts.started.fetch_add(1, Ordering::Relaxed);
+            let argv = std::iter::once(command.get_program())
+                .chain(command.get_args())
+                .map(|part| part.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(" ");
+            counts
+                .programs
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(argv);
+        }
+    });
+    #[cfg(not(any(test, feature = "test-support")))]
+    let _ = command;
+}
+
+/// Whether this thread counts in a scope now: for a cache whose keeping turns on the clock, so
+/// it keeps nothing where a count is taken, and the count does not depend on how long the test
+/// ran. Outside a test build, never.
+pub(crate) fn is_counting() -> bool {
+    #[cfg(any(test, feature = "test-support"))]
+    return HELD.with_borrow(Option::is_some);
+    #[cfg(not(any(test, feature = "test-support")))]
+    false
 }
 
 /// The project's sandbox manifest is being read.
@@ -169,6 +206,7 @@ mod tests {
             start_one();
         });
         assert_eq!(tally.started, 2);
+        assert_eq!(tally.programs, ["true", "true"]);
     }
 
     #[test]

@@ -225,8 +225,9 @@ const MEASURED: &[(&str, Ask)] = &[
 ];
 
 /// **Each Git-class read's ceiling**: the programs it starts, cold and warm, on each fixture
-/// (`[sandbox on, team off committed]`). Recorded on 2026-11-27 (#7892). A change that lowers
-/// one lowers it here; one that raises one says why in its pull request.
+/// (`[sandbox on, team off committed]`). Recorded on 2026-11-27 (#7892). **Each is an exact
+/// count, not a bound**: the gate fails on fewer as on more, so a change that lowers one lowers
+/// it here, and one that raises one says why in its pull request.
 const CEILINGS: &[(&str, [Starts; 2])] = &[
     // The sandbox's state: the local file's `git status` and the hardened runner's reads of the
     // folder before it; a committed off reads the manifest's history too.
@@ -287,6 +288,7 @@ fn every_measured_read_starts_no_more_programs_than_its_class_allows() {
         let class = answer_class(command);
         let counts: Vec<(Tally, Tally)> = FIXTURES.iter().map(|f| measured(*ask, *f)).collect();
         let column = |(cold, warm): &(Tally, Tally)| format!("{}/{}", cold.started, warm.started);
+        let mut started_what = Vec::new();
         table.push(format!(
             "{command:<30} {:<10} {:>18} {:>18}   doors {}/{} {}/{}   manifest, locks read cold {}, {} and {}, {}",
             format!("{class:?}"),
@@ -306,6 +308,11 @@ fn every_measured_read_starts_no_more_programs_than_its_class_allows() {
             .all(|(cold, warm)| cold.doors > 0 && warm.doors > 0);
         let ceiling = CEILINGS.iter().find(|(name, _)| name == command);
         for (fixture, (cold, warm)) in FIXTURES.iter().zip(&counts) {
+            for (when, tally) in [("cold", cold), ("warm", warm)] {
+                for program in &tally.programs {
+                    started_what.push(format!("    {fixture:?} {when}: {program}"));
+                }
+            }
             let started = Starts {
                 cold: cold.started,
                 warm: warm.started,
@@ -345,6 +352,7 @@ fn every_measured_read_starts_no_more_programs_than_its_class_allows() {
             )),
             _ => {}
         }
+        table.extend(started_what);
     }
     println!("{}", table.join("\n"));
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
@@ -377,7 +385,7 @@ fn a_class_held_to_a_count_is_measured_and_only_git_has_ceilings() {
 }
 
 #[test]
-fn a_burst_of_sandbox_state_asks_reads_the_project_at_most_twice() {
+fn a_burst_of_sandbox_state_asks_reads_the_project_once_after_the_read_running() {
     // The window asks the sandbox's state on every plane change, and a start sends several
     // (H15): every ask that comes while a read runs shares the one read after it.
     let project = Fixture::SandboxOn.made();
@@ -424,11 +432,41 @@ fn a_burst_of_sandbox_state_asks_reads_the_project_at_most_twice() {
         });
     });
 
+    // The read already running is held and reads nothing, so every manifest read counted is
+    // the one read the asks waited for.
     assert!(read_once.plane_reads > 0, "{read_once:?}");
-    assert!(
-        tally.plane_reads <= 2 * read_once.plane_reads,
+    assert_eq!(
+        tally.plane_reads, read_once.plane_reads,
         "{ASKS} asks read the manifest {} times; one read reads it {}",
-        tally.plane_reads,
-        read_once.plane_reads
+        tally.plane_reads, read_once.plane_reads
     );
+}
+
+#[test]
+fn a_team_off_projects_counts_do_not_move_once_its_git_files_are_old_enough_to_keep() {
+    // #7892: git's config listing is kept only once its files are some seconds old
+    // (`worktree::git::listing`'s SETTLED, 2 s), which a slow run passes between `git init`
+    // and the ask. Where a count is taken nothing is kept, so a count is the same either way.
+    primed();
+    let asks: Vec<(&str, Ask)> = MEASURED
+        .iter()
+        .filter(|(name, _)| CEILINGS.iter().any(|(ceiled, _)| ceiled == name))
+        .copied()
+        .collect();
+    let starts = |ask: Ask, wait: std::time::Duration| {
+        let project = Fixture::TeamOffCommitted.made();
+        std::thread::sleep(wait);
+        let (app, plane) = app_holding(project.path());
+        let cold = ask(app.handle(), &plane);
+        let warm = ask(app.handle(), &plane);
+        (cold.started, warm.started)
+    };
+    for (name, ask) in asks {
+        let fresh = starts(ask, std::time::Duration::ZERO);
+        let settled = starts(ask, std::time::Duration::from_millis(2_500));
+        assert_eq!(
+            fresh, settled,
+            "{name}: fresh, then with its git files settled"
+        );
+    }
 }

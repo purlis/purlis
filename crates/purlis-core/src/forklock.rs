@@ -36,7 +36,7 @@ pub mod counting;
 /// [`purlis_terminal::forklock::spawn`]). [`output`] and [`status`] start their programs here,
 /// so they take both steps too.
 pub fn spawn(command: &mut Command) -> io::Result<Child> {
-    counting::note_a_start();
+    counting::note_a_start(command);
     on_the_apps_session_bus(command);
     purlis_terminal::forklock::spawn(command)
 }
