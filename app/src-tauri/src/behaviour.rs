@@ -815,8 +815,7 @@ impl RemovesThePool {
                 .command()
                 .map_err(|why| why.to_string())
                 .and_then(|mut command| {
-                    purlis_core::forklock::output(command.args(args))
-                        .map_err(|why| why.to_string())
+                    purlis_core::forklock::output(command.args(args)).map_err(|why| why.to_string())
                 });
             let said = match ran {
                 Ok(out) if out.status.success() => continue,
