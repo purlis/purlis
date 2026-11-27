@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795772653903,
+  "lastUpdate": 1795777160526,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57582,6 +57582,48 @@ window.BENCHMARK_DATA = {
             "value": 101.798903,
             "unit": "ms",
             "extra": "median of 5 runs: 99.974, 100.822, 101.799, 101.934, 103.523 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b013530d94220d676cbde6db1de611e6ef54ebff",
+          "message": "Core: the prerequisite list and its event, with the policy prerequisite (#7718) (#7885)\n\n* Tests: the prerequisite list and its event, with the policy prerequisite (#7718), red\n\nThe core's evaluation, its watched files and the held list's keeping and\ntelling are stubs here, so each test fails for the reason it tests: no\nentry for Broken or Waiting, no event, no file watched.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8DH69TQ20X34GN58PVZ8RW7\nPurlis-Persona: steward\n\n* The prerequisite list and its event, with the policy prerequisite (#7718)\n\n- purlis_core::prerequisites: the list in the core's fixed order; the\n  policy prerequisite (Broken, Waiting, both; under Broken Waiting is\n  weighed against the shipped watch, never the record that does not\n  hold); Kept, which keeps the list, then tells it whole when it\n  changed, and evaluates it again after every answer; watched(), the\n  files whose change evaluates it again.\n- enforcement::Standing gains broken and loosens_the_shipped from one\n  read of the record and of HEAD.\n- hookwire: Ask::Prerequisites, answered Answer::Prerequisites with the\n  app's payload.\n- App: one payload type (Prerequisites) for the prerequisites-changed\n  event (every window), project_prerequisites and the hook answer; each\n  held plane keeps its list and a watch of the files the core names;\n  Accept and Make a new key and accept press through the held list.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8DH69TQ20X34GN58PVZ8RW7\nPurlis-Persona: steward\n\n* The prerequisites' bindings, regenerated; formatted (#7718)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8DH69TQ20X34GN58PVZ8RW7\nPurlis-Persona: steward\n\n* Prerequisites round 2: served on a link, every Accept re-evaluates the others, a lapsed watch is said (#7885)\n\nF1: project_prerequisites is served on a link, beside project_policy_state\n(ADR 0130 §8); the Accepts stay the window's.\nF2: the app answer test refuses the plane's folder to its watch, so only the\npress can tell the new list.\nF3/F4/F5: every Accept, not only the new-key press, evaluates every other\nheld project again, listed after the press and any Keychain prompt.\nF6: a folder the platform would not watch is said to the held list, whose\nread then evaluates it again at each ask (and where there is no watch at all).\nF8: each burst follows the folders again before it evaluates.\nF9: the never-dispatch list is among the watched files.\nF10: standing() reads the acceptance record once (unsealed: broken).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8DY6PYGMY5H09DZYR2QRPRN\nPurlis-Persona: steward\n\n* Prerequisites watch: a followed folder still there concerns nothing; a lapsed read waits and is rate-limited (#7885 round 3)\n\nA poller sees a followed folder's mtime move with a write beside the watched\nfile; concerns counted that folder as an ancestor and evaluated again, so\na_change_to_a_watched_file_evaluates_again_and_one_beside_it_does_not failed\n4 in 5 on macOS. A followed folder that is still a directory now concerns\nnothing; one a removal names, or that is no longer a directory, concerns and\nis forgotten, so a re-made folder is followed again (F7).\n\nKept::current, while lapsed, no longer returns the kept list when another\nthread is evaluating: it waits on the lock and returns what that evaluation\nkept. A read in the told handler is known by the evaluating thread's id. A\nlapsed read reuses a list evaluated under a second ago.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8E38MTDNAYSATKA67ETY19P\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T10:19:05Z",
+          "tree_id": "e996ccb5e98feda877b535f9d9ef51991ead0140",
+          "url": "https://github.com/purlis/purlis/commit/b013530d94220d676cbde6db1de611e6ef54ebff"
+        },
+        "date": 1795777152173,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5881425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.570, 0.581, 0.588, 0.592, 0.598 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.378595500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.295, 16.327, 16.379, 16.409, 16.413 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.0183765,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.810, 100.935, 102.018, 102.380, 103.528 ms"
           }
         ]
       }
