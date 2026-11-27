@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795772116786,
+  "lastUpdate": 1795772653903,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57540,6 +57540,48 @@ window.BENCHMARK_DATA = {
             "value": 101.848398,
             "unit": "ms",
             "extra": "median of 5 runs: 100.932, 101.464, 101.848, 102.293, 102.663 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c85e5d42468fb661319f3539d734d924f37364af",
+          "message": "A worktree dispatch never cuts from a stale clone HEAD, and a lane gets its parent's forge route (#7870) (#7882)\n\n* A worktree dispatch never cuts from a stale clone HEAD, and a lane gets its parent's forge route (#7870)\n\n- A dispatch from a workspace folder whose clone has a remote asks that remote for its\n  default branch, bounded to 20 s per ask and asked once more on failure. If it still\n  does not answer, the cut is refused with the reason (Refused::NoRemoteDefault) and is\n  never made from the clone's checked-out commit. A clone with no remote is still cut\n  from HEAD, and the cut says so.\n- The remote is asked before the clone's cut lock is taken, so a slow answer holds up\n  no other cut.\n- A chat another chat started gets a forge route whenever that chat has one: the start\n  is tried once more, then refused before the chat starts (ForgeRoutes::guard_handed).\n\nCloses #7870\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8DSEBW2ZPJK3MDR62XBQMAF\nPurlis-Persona: steward\n\n* Round 2 (#7870): cut from the remote's default fetched first, else as last fetched; lane route by parent id and repo\n\n- A dispatch's worktree starts from the remote's default, fetched (bounded) just before.\n  A failed fetch falls back to the default as last fetched, with its age; a remote that\n  cannot be asked falls back to refs/remotes/origin/HEAD. Refused, with reach's or git's\n  reason, only where neither exists. A clone with no branch of the default's name gets one\n  following origin/<default>.\n- Asking the remote is bounded and retried once after a 500 ms backoff.\n- has_origin fails closed: a git error refuses the cut instead of cutting from HEAD.\n- A lane's route is held to its parent by from.id, never the reused chat number; it must\n  cover the lane's repo where the parent's does; retried once after 250 ms outside the\n  start lock; refused only on the chat's first start, warned of on later ones.\n- Tests: retry, timeout, route retry, reused parent number, partial repo set, reach\n  refusal, missing local default branch, stale clone, last-fetched fallback, has_origin.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8DWGZQXEMQ7VJ37JYDM8EY6\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T09:03:06Z",
+          "tree_id": "a3c1cb595353d635463975caa41e2fe306f5f7b0",
+          "url": "https://github.com/purlis/purlis/commit/c85e5d42468fb661319f3539d734d924f37364af"
+        },
+        "date": 1795772646689,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.526009,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.518, 0.520, 0.526, 0.527, 0.532 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.316468999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.233, 16.235, 16.316, 16.319, 16.327 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.798903,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.974, 100.822, 101.799, 101.934, 103.523 ms"
           }
         ]
       }
