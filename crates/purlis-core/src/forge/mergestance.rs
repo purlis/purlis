@@ -99,16 +99,25 @@ fn merge_mode(
     run.mode(Family::GuardsMerge)
 }
 
-/// Whether the `committed` `[policy]` lets merges through the route for a chat of `chain` and
-/// what this person `accepted` does not: merges wait for the press, or the acceptance is broken
-/// ([`enforcement::broken_accepted`] is `strict`).
+/// **Whether merges are held for a chat of `chain` only because this machine has not accepted the
+/// project's policy** (ADR 0130 §7), with `now` the policy in force ([`enforcement::in_force`])
+/// and `committed` what the project's file says ([`enforcement::committed`]):
+///
+/// - where merges are opted in and accepted, `guards.merge` is enforced only by the acceptance
+///   ([`enforcement::Resolved::unaccepted`]), never by the chain, the file or a lock;
+/// - where they are not ([`enforcement::Resolved::merges_opted_in`]), the committed file opts in
+///   and lets them through, and the acceptance of it is what is missing.
 fn merges_unaccepted(
+    now: &enforcement::Resolved,
     committed: &enforcement::Resolved,
-    accepted: &enforcement::Resolved,
     chain: Option<&str>,
 ) -> bool {
-    merge_mode(committed, chain, committed) != Mode::Enforce
-        && merge_mode(accepted, chain, accepted) == Mode::Enforce
+    let run = now.clone().for_chat(chain);
+    if run.merges_opted_in() {
+        run.mode(Family::GuardsMerge) == Mode::Enforce && run.unaccepted(Family::GuardsMerge)
+    } else {
+        merge_mode(committed, chain, committed) != Mode::Enforce
+    }
 }
 
 impl PolicyMergeStance {
@@ -148,8 +157,8 @@ impl PolicyMergeStance {
             }),
             unaccepted: Box::new(move || {
                 merges_unaccepted(
+                    &enforcement::in_force(&for_unaccepted),
                     &enforcement::committed(&for_unaccepted),
-                    &enforcement::accepted(&for_unaccepted),
                     unaccepted_chain.as_deref(),
                 )
             }),
@@ -452,24 +461,25 @@ template = \"watch\"\n",
     #[test]
     fn merges_are_unaccepted_where_the_committed_file_lets_them_through_and_the_acceptance_does_not()
      {
-        let log = enforcement::committed_for_test("[policy]\nguards.merge = \"log\"\n");
+        let text = |mode: &str| format!("[policy]\nguards.merge = \"{mode}\"\n");
+        let log = enforcement::committed_for_test(&text("log"));
+        let enforce = enforcement::committed_for_test(&text("enforce"));
         let watch = enforcement::committed_for_test("");
+        let now = enforcement::in_force_for_test;
         // Waiting: the file opts in, this machine accepted nothing of it.
-        assert!(merges_unaccepted(&log, &watch, None));
+        assert!(merges_unaccepted(&now(&log, &watch), &log, None));
         // Broken: what a broken acceptance counts as lets nothing through.
-        assert!(merges_unaccepted(
-            &log,
-            &enforcement::broken_accepted(),
-            None
-        ));
+        let broken = enforcement::broken_accepted();
+        assert!(merges_unaccepted(&now(&log, &broken), &log, None));
+        // Waiting, opted in on both sides: the file loosened `guards.merge` and the acceptance
+        // still enforces it, which `Resolved::unaccepted` says.
+        assert!(merges_unaccepted(&now(&log, &enforce), &log, None));
         // Accepted, the acceptance is not the cause.
-        assert!(!merges_unaccepted(&log, &log, None));
-        // A file that never opted in holds merges whatever was accepted.
-        assert!(!merges_unaccepted(&watch, &watch, None));
-        assert!(!merges_unaccepted(
-            &watch,
-            &enforcement::broken_accepted(),
-            None
-        ));
+        assert!(!merges_unaccepted(&now(&log, &log), &log, None));
+        // A file that enforces merges on its own merits, or never opted in, holds them whatever
+        // was accepted.
+        assert!(!merges_unaccepted(&now(&enforce, &enforce), &enforce, None));
+        assert!(!merges_unaccepted(&now(&watch, &watch), &watch, None));
+        assert!(!merges_unaccepted(&now(&watch, &broken), &watch, None));
     }
 }

@@ -1373,6 +1373,13 @@ pub(crate) fn committed_for_test(text: &str) -> Resolved {
     )
 }
 
+/// The policy in force where the project says `committed` and this person `accepted` what they
+/// did, each family the acceptance alone enforces marked as unaccepted, as a test names it.
+#[cfg(test)]
+pub(crate) fn in_force_for_test(committed: &Resolved, accepted: &Resolved) -> Resolved {
+    Resolved::accepting(committed, accepted)
+}
+
 /// **What this person last accepted** for the project at `root`: the shipped default, `watch`,
 /// where nothing was ever kept (the upgrade announces it once); **`strict`** where one was kept
 /// and what is here now is not it (the review of #6992): removed, edited, an older copy put back,

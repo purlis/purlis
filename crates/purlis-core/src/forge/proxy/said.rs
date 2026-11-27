@@ -7,22 +7,36 @@
 //! - **No action**: a request purlis doesn't carry, which no setting can allow. A floor act (one
 //!   of the deny-by-name lists: administration, a rule over the repo, an approval) also says what
 //!   it is, and that it's the person's to do on the forge.
-//! - **A known act the policy doesn't allow**: a merge, a release or tag, a fork, with the repo
-//!   and why. A merge held only because this machine has not accepted the project's policy says
-//!   so, and names no family to loosen (ADR 0130 §7).
+//! - **A known act the policy doesn't allow**: a merge, a release or tag, a fork, read from the
+//!   act's own route, with the repo and why. A merge held only because this machine has not
+//!   accepted the project's policy says so, and names no family to loosen (ADR 0130 §7), on a
+//!   route accepting would open.
+//!
+//! **Nothing said here was held.** An exact merge, release, tag or fork is held for the person's
+//! press before it is refused (ADR 0128 D8), so a refusal said here raised no ask, and says so.
 //!
 //! **The text is inert.** The request is shown as its route's pattern: a number is `{n}`, a
 //! segment outside the route vocabulary ([`super::rest`]) is `{…}`, the query is dropped, and it
 //! is capped. Nothing the chat chose is shown, so nothing in it can be read as a link or markup.
-//! The repo is the recorded one, never the chat's spelling of it.
+//! The repo is the recorded one, never the chat's spelling of it. A caller that did not prove
+//! itself is told [`UNPROVEN`] alone.
 //!
 //! **Nothing here decides**: the refusal is the policy's, and this only says it.
 
+use super::Kind;
 use super::policy::Refusal;
+use super::rest::ActRoute;
 use crate::enforcement;
 
 /// The most characters the request (`METHOD /path`) takes in a refusal's text.
 const MOST_SHOWN: usize = 120;
+
+/// What a refused request is told when nobody was asked about it.
+const NOBODY_ASKED: &str = "Nobody was asked, so it will not happen.";
+
+/// **What a caller that did not prove itself is told** (#7779): nothing of where the request
+/// went, nor how any family stands.
+pub(super) const UNPROVEN: &str = "purlis doesn't carry this request, so it was refused.";
 
 /// A forge refusal as it is counted under "Would have blocked": its rule, which names its kind and
 /// act, and the `host:port` it was about. Never a path, a body or a number of the request.
@@ -37,6 +51,8 @@ pub struct Refused {
 /// Where a refused request was going, as the policy read it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Place {
+    /// The forge the request's host is.
+    pub kind: Kind,
     /// The method, where it is one the proxy knows.
     pub method: Option<&'static str>,
     /// The request's host, normalised, and its port.
@@ -51,6 +67,21 @@ pub(super) struct Place {
     pub rel: Option<Vec<String>>,
 }
 
+impl Place {
+    /// The act the request is by its own route, if it is one.
+    fn act_route(&self) -> Option<ActRoute> {
+        let (method, rel) = self.method.zip(self.rel.as_deref())?;
+        super::rest::act_route(self.kind, method, rel)
+    }
+
+    /// Whether `guards.merge` = `log` or `off` would let the request through.
+    fn opens_a_merge(&self) -> bool {
+        self.method
+            .zip(self.rel.as_deref())
+            .is_some_and(|(method, rel)| super::rest::opens_a_merge(self.kind, method, rel))
+    }
+}
+
 /// What a refusal is, of the two kinds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Act {
@@ -58,24 +89,22 @@ enum Act {
     Unknown,
     /// No action, and a floor act: what it is.
     Floor(&'static str, &'static str),
-    /// A known act the policy doesn't allow: what it is.
-    Known(KnownAct),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum KnownAct {
-    Merge,
-    ReleaseOrTag,
-    Fork,
+    /// A known act the policy doesn't allow, read from its own route.
+    Known(ActRoute),
 }
 
 impl Act {
     /// The act `refusal` of a request at `place` is, if it is one of the two kinds. Any other
     /// refusal (a credential, a request that doesn't read, another repo) says what it always did.
+    ///
+    /// **A known act is claimed only on the act's own route** ([`super::rest::act_route`]): a
+    /// request refused as a merge or a release by a segment's name (a label named `merge`), or by
+    /// a flag in its query, is a request purlis doesn't carry. The refusal itself is unchanged.
     fn of(refusal: Refusal, place: &Place) -> Option<Self> {
         Some(match refusal {
-            Refusal::NotOnList if is_fork(place) => Self::Known(KnownAct::Fork),
-            Refusal::NotOnList => Self::Unknown,
+            Refusal::NotOnList | Refusal::Merge | Refusal::ReleaseOrTag => {
+                place.act_route().map_or(Self::Unknown, Self::Known)
+            }
             Refusal::Admin => Self::Floor(
                 "the repo's administration",
                 enforcement::RULE_FORGE_ADMINISTRATION,
@@ -84,8 +113,6 @@ impl Act {
             Refusal::Approval => {
                 Self::Floor("an approval or a review", enforcement::RULE_FORGE_APPROVAL)
             }
-            Refusal::Merge => Self::Known(KnownAct::Merge),
-            Refusal::ReleaseOrTag => Self::Known(KnownAct::ReleaseOrTag),
             _ => return None,
         })
     }
@@ -94,21 +121,24 @@ impl Act {
         match self {
             Self::Unknown => enforcement::RULE_FORGE_NO_ACTION,
             Self::Floor(_, rule) => rule,
-            Self::Known(KnownAct::Merge) => enforcement::RULE_FORGE_MERGE,
-            Self::Known(KnownAct::ReleaseOrTag) => enforcement::RULE_FORGE_RELEASE_OR_TAG,
-            Self::Known(KnownAct::Fork) => enforcement::RULE_FORGE_FORK,
+            Self::Known(ActRoute::Merge { .. }) => enforcement::RULE_FORGE_MERGE,
+            Self::Known(ActRoute::ReleaseOrTag { .. }) => enforcement::RULE_FORGE_RELEASE_OR_TAG,
+            Self::Known(ActRoute::Fork) => enforcement::RULE_FORGE_FORK,
         }
     }
 }
 
-/// A fork of the repo: GitHub's `POST …/forks`, GitLab's `POST …/fork`.
-fn is_fork(place: &Place) -> bool {
-    let fork = |one: &String| {
-        ["forks", "fork"]
-            .iter()
-            .any(|w| one.eq_ignore_ascii_case(w))
-    };
-    place.method == Some("POST") && matches!(place.rel.as_deref(), Some([one]) if fork(one))
+/// Whether `refusal` is one of the two kinds a forge refusal says, wherever it was going.
+pub(super) fn is_said(refusal: Refusal) -> bool {
+    matches!(
+        refusal,
+        Refusal::NotOnList
+            | Refusal::Merge
+            | Refusal::ReleaseOrTag
+            | Refusal::Admin
+            | Refusal::Ruleset
+            | Refusal::Approval
+    )
 }
 
 /// How `refusal`, of a request at `place`, is counted; `None` for a refusal of neither kind.
@@ -135,10 +165,17 @@ pub(super) enum MergeHeld {
 pub(super) fn said(refusal: Refusal, place: &Place, merge: MergeHeld) -> Option<String> {
     let act = Act::of(refusal, place)?;
     let on = place.repo.clone().unwrap_or_else(|| place.host.clone());
-    let held = |what: &str| {
+    // The exact form the person's press can hold, where the act's route has one.
+    let exact = |holdable: bool, form: &str| {
+        if holdable {
+            format!(" {form}")
+        } else {
+            String::new()
+        }
+    };
+    let refused = |what: &str, exact: String| {
         format!(
-            "{what} on `{on}` isn't allowed from a chat, so it was refused. It's held for the \
-             person's press in purlis's window."
+            "{what} on `{on}` isn't allowed from a chat, so it was refused. {NOBODY_ASKED}{exact}"
         )
     };
     Some(match act {
@@ -152,19 +189,40 @@ pub(super) fn said(refusal: Refusal, place: &Place, merge: MergeHeld) -> Option<
              which is the person's to do on the forge. No setting can allow it.",
             request(place)
         ),
-        Act::Known(KnownAct::Merge) => match merge {
-            MergeHeld::Unaccepted => format!(
-                "A merge on `{on}` was refused because this project's policy isn't accepted on \
-                 this machine. Accept it in purlis's window."
+        Act::Known(ActRoute::Merge { holdable }) => {
+            let exact = exact(
+                holdable,
+                "A merge purlis can hold for the person's press names the head `sha`, with no \
+                 query.",
+            );
+            // The family, or its acceptance, is said only on a route `log` or `off` opens.
+            match merge {
+                MergeHeld::Unaccepted if place.opens_a_merge() => format!(
+                    "A merge on `{on}` was refused because {} {NOBODY_ASKED}",
+                    enforcement::unaccepted_said(enforcement::AcceptedOn::ThisMachine)
+                ),
+                MergeHeld::ByTheFamily if place.opens_a_merge() => format!(
+                    "A merge on `{on}` isn't allowed by `guards.merge`, so it was refused. \
+                     {NOBODY_ASKED}{exact}"
+                ),
+                _ => refused("A merge", exact),
+            }
+        }
+        Act::Known(ActRoute::ReleaseOrTag { holdable }) => refused(
+            "A release or tag",
+            exact(
+                holdable,
+                "A release or tag purlis can hold for the person's press has no query and no \
+                 bot command in its body.",
             ),
-            MergeHeld::ByTheFamily => format!(
-                "A merge on `{on}` isn't allowed by `guards.merge`, so it was refused. It waits \
-                 for the person's press in purlis's window."
+        ),
+        Act::Known(ActRoute::Fork) => refused(
+            "A fork",
+            exact(
+                true,
+                "A fork purlis can hold for the person's press has no query.",
             ),
-            MergeHeld::Otherwise => held("A merge"),
-        },
-        Act::Known(KnownAct::ReleaseOrTag) => held("A release or tag"),
-        Act::Known(KnownAct::Fork) => held("A fork"),
+        ),
     })
 }
 

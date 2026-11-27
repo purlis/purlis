@@ -188,7 +188,7 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
             let said = if refusal == Refusal::Pinned {
                 Some(w.proxy.pin_said(&rh.host, rh.port))
             } else {
-                w.proxy.refused_said(&w.chat, &rh, refusal)
+                w.proxy.refused_said(&w.chat, &rh, &headers, refusal)
             };
             if git_refused(
                 &mut framed.stream,

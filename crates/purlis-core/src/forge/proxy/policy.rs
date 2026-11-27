@@ -828,6 +828,7 @@ impl ChatPolicy {
             ),
         };
         Some(super::said::Place {
+            kind,
             method: request::method(head),
             host,
             port: head.port,
