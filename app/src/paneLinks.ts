@@ -50,11 +50,14 @@ import type { LinkCandidate, LinkFrom, LinkOpened, LinkSeen } from "./bindings";
  */
 export type Found = LinkCandidate & { start: number; end: number; pieces?: Found[] };
 
+/** An address's scheme and the `://` after it, as {@link WEB} reads one. */
+const SCHEME = String.raw`\p{L}[\p{L}\p{N}+.-]*:\/\/`;
+
 /**
  * An address as a pane prints it, `scheme://` and up to the first space, quote or angle bracket:
  * http(s), which opens, and any other scheme, which the core says it will not open.
  */
-const WEB = /(?<![\p{L}\p{N}+.-])\p{L}[\p{L}\p{N}+.-]*:\/\/[^\s<>"'`\p{Cc}]+/giu;
+const WEB = new RegExp(String.raw`(?<![\p{L}\p{N}+.-])${SCHEME}[^\s<>"'${"`"}\p{Cc}]+`, "giu");
 
 /**
  * **A chat's number** (#6217): the word `chat` and a number, as a word of its own. A bare `#641`
@@ -293,22 +296,49 @@ function drawnAt(line: IBufferLine | undefined, x: number): string {
   return /^\s*$/u.test(chars) ? "" : chars;
 }
 
+/** How many cells row `line` starts with that draw nothing: the indent a program put on it. */
+function indentOf(line: IBufferLine): number {
+  let x = 0;
+  while (x < line.length && drawnAt(line, x) === "") x += 1;
+  return x;
+}
+
+/** A box-drawing or block character (U+2500 to U+259F): a frame's or a bar's, never a link's. */
+const BOX = /[\u2500-\u259F]/u;
+
 /**
- * **Where a row's words may go on onto the next row the program wrote** (#7819): `row` fills the
- * pane to its last column, and the row after it is a line of its own (no soft wrap) whose first
- * cell is written. Only then may a link's words that reach the edge be read on there.
+ * **Where a row's words may go on onto the next row the program wrote** (#7819), and the indent
+ * they go on after: `row` fills the pane to its last column, and the row after it is a line of
+ * its own (no soft wrap) that starts with as many blank cells as the first row of `row`'s line,
+ * then a written cell that is no box-drawing or block character. Only then may a link's words
+ * that reach the edge be read on there. On the alternate screen (a full-screen program such as
+ * an editor, a pager or a multiplexer) a row is never read on: its rows are a picture the
+ * program drew, which may be cut at the edge, not text it broke there.
  */
-function brokenAtTheEdge(pane: Terminal, row: number): boolean {
+function goesOnAfter(pane: Terminal, row: number): number | undefined {
   const buffer = pane.buffer.active;
+  if (buffer.type === "alternate") return undefined;
   const line = buffer.getLine(row);
   const next = buffer.getLine(row + 1);
-  if (line === undefined || next === undefined || next.isWrapped) return false;
-  return drawnAt(line, line.length - 1) !== "" && drawnAt(next, 0) !== "";
+  if (line === undefined || next === undefined || next.isWrapped) return undefined;
+  if (drawnAt(line, line.length - 1) === "") return undefined;
+  let first = row;
+  while (first > 0 && row - first < MOST_ROWS && buffer.getLine(first)?.isWrapped) first -= 1;
+  const start = buffer.getLine(first);
+  const indent = start === undefined ? 0 : indentOf(start);
+  if (indentOf(next) !== indent) return undefined;
+  const opens = drawnAt(next, indent);
+  return opens === "" || BOX.test(opens) ? undefined : indent;
 }
 
 /** A row that starts a link of its own, an address or a path from `~` or `.`: never the end of
  *  the link on the row before. */
-const STARTS_A_LINK = /^(?:\p{L}[\p{L}\p{N}+.-]*:\/\/|~\/|\.{1,2}\/)/u;
+const STARTS_A_LINK = new RegExp(String.raw`^(?:${SCHEME}|~\/|\.{1,2}\/)`, "u");
+
+/** `line` with its first `indent` characters, the blank cells it starts with, left out. */
+function unindented(line: Wrapped, indent: number): Wrapped {
+  return { ...line, text: line.text.slice(indent), cells: line.cells.slice(indent) };
+}
 
 /** `before` and `after`, the lines either side of a line break the program wrote at the pane's
  *  edge, read as one, the break a joint. */
@@ -332,19 +362,25 @@ function joined(before: Wrapped, after: Wrapped): Wrapped {
 const endsInALink = (line: Wrapped) =>
   candidatesAcross(line).some((one) => one.end === line.text.length);
 
+/** How many rows `line` is drawn over. */
+const rowsIn = (line: Wrapped) => line.last - line.first + 1;
+
 /**
  * **`line` read on across the line breaks the program wrote after it** while a link's words
- * reach the pane's edge ({@link brokenAtTheEdge}) and the next line does not start a link of its
- * own, to at most {@link MOST_ROWS} rows; a line that goes on past them is cut.
+ * reach the pane's edge ({@link goesOnAfter}) and the next line, past its indent, does not
+ * start a link of its own, to at most {@link MOST_ROWS} rows; a line that goes on past them is
+ * cut.
  */
 function readOn(pane: Terminal, from: Wrapped): Wrapped {
   let line = from;
-  const rows = (one: Wrapped) => one.last - one.first + 1;
-  while (!line.cutAfter && brokenAtTheEdge(pane, line.last)) {
-    if (!endsInALink(line)) break;
-    const after = wrappedAt(pane, line.last + 1);
-    if (after === undefined || STARTS_A_LINK.test(after.text)) break;
-    if (rows(line) + rows(after) > MOST_ROWS) return { ...line, cutAfter: true };
+  for (;;) {
+    const indent = line.cutAfter ? undefined : goesOnAfter(pane, line.last);
+    if (indent === undefined || !endsInALink(line)) break;
+    const next = wrappedAt(pane, line.last + 1);
+    if (next === undefined) break;
+    const after = unindented(next, indent);
+    if (STARTS_A_LINK.test(after.text)) break;
+    if (rowsIn(line) + rowsIn(after) > MOST_ROWS) return { ...line, cutAfter: true };
     line = joined(line, after);
   }
   return line;
@@ -359,17 +395,15 @@ function readOn(pane: Terminal, from: Wrapped): Wrapped {
 function lineAt(pane: Terminal, y: number): Wrapped | undefined {
   let start = wrappedAt(pane, y);
   if (start === undefined) return undefined;
-  let rows = start.last - start.first + 1;
+  let rows = rowsIn(start);
   let cut = false;
-  while (
-    !start.cutBefore &&
-    start.first > 0 &&
-    brokenAtTheEdge(pane, start.first - 1) &&
-    !STARTS_A_LINK.test(start.text)
-  ) {
+  for (;;) {
+    const indent =
+      start.cutBefore || start.first === 0 ? undefined : goesOnAfter(pane, start.first - 1);
+    if (indent === undefined || STARTS_A_LINK.test(start.text.slice(indent))) break;
     const before = wrappedAt(pane, start.first - 1);
     if (before === undefined) break;
-    rows += before.last - before.first + 1;
+    rows += rowsIn(before);
     if (rows > MOST_ROWS) {
       cut = true;
       break;
@@ -390,8 +424,26 @@ function lineAt(pane: Terminal, y: number): Wrapped | undefined {
  * A number at a line's edge, an issue's or a chat's, or a path's line and column: digits on the
  * next row are as likely a word of their own, and taken on they name another target (#7819).
  */
-const ENDS_IN_ITS_NUMBER = (one: Found) =>
+const endsInItsNumber = (one: Found) =>
   one.kind === "issue" || one.kind === "chat" || (one.kind === "file" && /:\d+$/u.test(one.text));
+
+/** An issue's number as a word of its own at a row's start, `#12` then a blank or the end. */
+const OPENS_WITH_A_NUMBER = /^#\d+(?![\p{L}\p{N}_-])/u;
+
+/**
+ * **Whether `last`, a candidate that reaches a joint, goes on as `whole` into `next`**, the words
+ * past the joint: `whole` is read from the same start, is of the same kind and reaches past the
+ * joint, and the join takes in nothing that reads as words of their own. No box-drawing or block
+ * character (a frame's border is no link's), no digits onto a number ({@link endsInItsNumber}),
+ * no issue's number (`#12`) onto an address as its fragment, and no second `/` after one.
+ */
+function goesOn(last: Found, whole: Found, at: number, next: string): boolean {
+  if (whole.start !== 0 || whole.kind !== last.kind) return false;
+  if (last.start + whole.end <= at || BOX.test(whole.text)) return false;
+  if (endsInItsNumber(last) && /^\d/u.test(next)) return false;
+  if (OPENS_WITH_A_NUMBER.test(next)) return false;
+  return !(last.text.endsWith("/") && next.startsWith("/"));
+}
 
 /**
  * **The candidates of `line`, read across its joints** (#7819): each part between them is read
@@ -414,14 +466,8 @@ function candidatesAcross(line: Wrapped): Found[] {
     const last = found.at(-1);
     if (last !== undefined && last.end === from) {
       const [whole] = candidatesIn(line.text.slice(last.start, to));
-      const end = whole === undefined ? 0 : last.start + whole.end;
-      if (
-        whole !== undefined &&
-        whole.start === 0 &&
-        whole.kind === last.kind &&
-        end > from &&
-        !(ENDS_IN_ITS_NUMBER(last) && /^\d/u.test(line.text.slice(from)))
-      ) {
+      if (whole !== undefined && goesOn(last, whole, from, line.text.slice(from))) {
+        const end = last.start + whole.end;
         found.pop();
         const pieces = [...(last.pieces ?? [last]), ...here.filter((one) => one.start < end)];
         found.push(
@@ -542,10 +588,15 @@ function shownFirst(pane: Terminal, rows: CellRun[]): CellRun | undefined {
   return rows.find((row) => row.y >= top && row.y < top + pane.rows) ?? rows[0];
 }
 
-/** The column just past the last cell of `line` a program wrote, or 0. */
+/** How many columns the character at `cell` takes: two for a wide one, else one. */
+const widthAt = (pane: Terminal, cell: Cell) =>
+  Math.max(1, pane.buffer.active.getLine(cell.y)?.getCell(cell.x)?.getWidth() ?? 1);
+
+/** The column just past the last cell of `line` that draws ({@link drawnAt}), or 0: blanks
+ *  after a row's words are no part of them. */
 function writtenTo(line: IBufferLine | undefined): number {
   if (line === undefined) return 0;
-  for (let x = line.length - 1; x >= 0; x -= 1) if (line.getCell(x)?.getChars()) return x + 1;
+  for (let x = line.length - 1; x >= 0; x -= 1) if (drawnAt(line, x) !== "") return x + 1;
   return 0;
 }
 
@@ -984,6 +1035,8 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
     candidate: LinkCandidate,
     link: Omit<HoveredLink, "place">,
   ) => {
+    const top = shownFirst(pane, rows);
+    if (top === undefined) return;
     if (leaving !== undefined) {
       clearTimeout(leaving);
       leaving = undefined;
@@ -991,7 +1044,6 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
       leave();
     }
     on = here;
-    const top = shownFirst(pane, rows) ?? rows[0];
     const place = placeOf(pane, top.x, top.y, top.width);
     current = { candidate: candidateOf(candidate), seen: link.seen, place };
     if (link.seen.does.does !== "refused") draw(rows);
@@ -1044,12 +1096,13 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
    */
   const drawnOver = (target: string, range: IBufferRange): { rows: CellRun[]; at: string } => {
     const one = markedAt(range, cutTarget(target));
-    if (one === undefined || one.moved)
+    // As its words are read (wordsOf): at most MOST_ROWS rows. Hovered past them, it is the
+    // part xterm hands, as is one the program moved the cursor inside.
+    const last = one === undefined ? 0 : Math.min(one.end.y, one.start.y + MOST_ROWS - 1);
+    if (one === undefined || one.moved || range.start.y - 1 > last)
       return { rows: rowsOf(range, pane.cols), at: `${range.start.x},${range.start.y}` };
     const rows: CellRun[] = [];
-    // As its words are read (wordsOf): at most MOST_ROWS rows, and on a row it goes on from,
-    // only the cells written.
-    const last = Math.min(one.end.y, one.start.y + MOST_ROWS - 1);
+    // On a row it goes on from, only the cells written.
     for (let y = one.start.y; y <= last; y += 1) {
       const from = y === one.start.y ? one.start.x : 0;
       const to = y === one.end.y ? one.end.x : writtenTo(pane.buffer.active.getLine(y));
@@ -1119,8 +1172,10 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
             const rows = new Map<number, CellRun>();
             for (const cell of cells) {
               const row = rows.get(cell.y);
-              if (row === undefined) rows.set(cell.y, { x: cell.x, y: cell.y, width: 1 });
-              else row.width = cell.x - row.x + 1;
+              const past = cell.x + widthAt(pane, cell);
+              if (row === undefined)
+                rows.set(cell.y, { x: cell.x, y: cell.y, width: past - cell.x });
+              else row.width = past - row.x;
             }
             const candidate: LinkCandidate = { kind: found.kind, text: found.text };
             // What purlis will not open says why on its hover, and is drawn as no link.
@@ -1207,7 +1262,8 @@ function onScreenNewestFirst(pane: Terminal, marked: Marked[], nothing: DrawsNot
       const first = shown[0];
       if (under || first === undefined) return undefined;
       const onItsRow = shown.filter((cell) => cell.y === first.y);
-      const width = onItsRow[onItsRow.length - 1].x - first.x + 1;
+      const end = onItsRow[onItsRow.length - 1];
+      const width = end.x + widthAt(pane, end) - first.x;
       return {
         candidate: { kind: one.kind, text: one.text },
         y: cells[0].y,
@@ -1256,52 +1312,55 @@ async function screenLinks(
   marked: Marked[],
 ): Promise<ScreenLink[]> {
   const found = onScreenNewestFirst(pane, marked, hands.core.drawsNothing);
-  const answers = await answersFrom(hands, kept, found);
-  // A joined link the core says is none lists the pieces its rows read alone (#7819).
-  const listed = found.flatMap((one, at) =>
-    answers[at] === null && one.pieces !== undefined ? one.pieces : [],
+  const answers = await answersFrom(
+    hands,
+    kept,
+    found.map((one) => one.candidate),
   );
-  const pieceAnswers = await answersFrom(hands, kept, listed);
+  const answerOf = (one: OnScreen) => answers.get(linkKey(one.candidate)) ?? null;
+  // A joined link the core says is none lists the pieces its rows read alone (#7819).
+  const listed = found.flatMap((one) => (answerOf(one) === null ? (one.pieces ?? []) : []));
+  const pieceAnswers = await answersFrom(
+    hands,
+    kept,
+    listed.map((one) => one.candidate),
+  );
+  const whole = new Set(found.map((one) => linkKey(one.candidate)));
   const once = new Set<string>();
-  let piece = 0;
-  return found.flatMap((one, at): ScreenLink[] => {
-    const seen = answers[at];
+  return found.flatMap((one): ScreenLink[] => {
+    const seen = answerOf(one);
     if (seen !== null) return [{ candidate: candidateOf(one.candidate), seen, place: one.place }];
-    if (one.pieces === undefined) return [];
-    return one.pieces.flatMap((each) => {
-      const its = pieceAnswers[piece];
-      piece += 1;
+    return (one.pieces ?? []).flatMap((each) => {
       const key = linkKey(each.candidate);
-      if (its === null || once.has(key) || found.some((other) => linkKey(other.candidate) === key))
-        return [];
+      const its = pieceAnswers.get(key) ?? null;
+      if (its === null || once.has(key) || whole.has(key)) return [];
       once.add(key);
       return [{ candidate: candidateOf(each.candidate), seen: its, place: each.place }];
     });
   });
 }
 
-/** The core's answers for `found`, from `kept` or asked in one call and kept there. */
+/** The core's answer for each of `candidates`, by its {@link linkKey}: from `kept`, or asked in
+ *  one call and kept there. The same words twice are asked once. */
 async function answersFrom(
   hands: Pick<LinkHands, "core" | "from">,
   kept: Kept,
-  found: OnScreen[],
-): Promise<(LinkSeen | null)[]> {
+  candidates: LinkCandidate[],
+): Promise<Map<string, LinkSeen | null>> {
   /** Each candidate's answer, held here too: one the pane lets go of still counts now. */
   const answerOf = new Map<string, Promise<LinkSeen | null>>();
-  const unasked: LinkCandidate[] = [];
-  for (const { candidate } of found) {
+  const unasked = new Map<string, LinkCandidate>();
+  for (const candidate of candidates) {
     const key = linkKey(candidate);
-    if (answerOf.has(key)) continue;
+    if (answerOf.has(key) || unasked.has(key)) continue;
     const had = held(kept, key);
-    if (had === undefined) {
-      unasked.push(candidate);
-      // Held at once, so the same words twice are asked once.
-      answerOf.set(key, Promise.resolve(null));
-    } else answerOf.set(key, had);
+    if (had === undefined) unasked.set(key, candidate);
+    else answerOf.set(key, had);
   }
-  if (unasked.length > 0) {
-    const asked = hands.core.resolve(hands.from(), unasked.map(candidateOf));
-    unasked.forEach((one, at) => {
+  if (unasked.size > 0) {
+    const ones = [...unasked.values()];
+    const asked = hands.core.resolve(hands.from(), ones.map(candidateOf));
+    ones.forEach((one, at) => {
       answerOf.set(
         linkKey(one),
         keep(
@@ -1312,5 +1371,7 @@ async function answersFrom(
       );
     });
   }
-  return Promise.all(found.map((one) => answerOf.get(linkKey(one.candidate)) ?? null));
+  const keys = [...answerOf.keys()];
+  const answers = await Promise.all(answerOf.values());
+  return new Map(keys.map((key, at) => [key, answers[at]]));
 }
