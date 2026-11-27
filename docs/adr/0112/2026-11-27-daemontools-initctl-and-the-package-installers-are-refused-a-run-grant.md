@@ -5,15 +5,28 @@ Decided under the operator's standing order to take the recommended path (#6557,
 managers, a link that passes through init.d … are refused a Run grant* (2026-11-13), which filed
 these leads.
 
-## Not read in source, and why each is refused all the same
+## Not read in source, but for two, and why each is refused all the same
 
 The 2026-11-13 amendment checked each tool in its own source and refused none unread. This one
 could not: from the sandbox that did it, `gh` reaches only `purlis/purlis` (a chat's forge token
 is for its own repo), and a plain fetch of any other host, GitHub's raw files, Launchpad, Debian's
-sources and cr.yp.to among them, was refused. No copy of any of these tools is on the machine.
+sources and cr.yp.to among them, was refused. Of the tools refused here, only macOS's own copies
+of `cpan`, `prove` and `taskpolicy` are on the machine. The first two are Perl, and they were
+read where macOS keeps them (below); `taskpolicy` is a compiled program, judged by its manual.
 
-Each tool below is refused whole, on `NOT_FOR_A_RUN_GRANT`, on what the tool is for, as its
-manual describes it, and not on a line of its source. That is the conservative side: a refusal
+As the nineteenth review found, macOS ships CPAN.pm and App::Prove under
+`/System/Library/Perl/5.34`, and both were read there:
+
+- **`cpan`** is `App::Cpan` over CPAN.pm. `CPAN::Distribution` 2.27's `prepare` makes the command
+  `perl Makefile.PL`, or `perl Build.PL` for a Module::Build distribution
+  (`CPAN/Distribution.pm:1923-1941`), and runs it with `system($system)` (`:2036`). So every
+  install runs the distribution's own build script.
+- **`prove`** (App::Prove 3.43) runs the test files of the distribution it is in, and its
+  `-e`/`--exec` (`App/Prove.pm:227`) is split into the program each test is run with
+  (`:361-363`).
+
+Every other tool below is refused whole, on `NOT_FOR_A_RUN_GRANT`, on what the tool is for, as
+its manual describes it, and not on a line of its source. That is the conservative side: a refusal
 only takes away an Allow on a run's notice, and a persona can still declare any of them as a tool
 in a reviewed line. No tool these issues name is found harmless, since that would need the
 reading this could not do. The programs of these packages left offered beside them are left so
