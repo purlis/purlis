@@ -1275,10 +1275,40 @@ fn a_held_push_of_an_explicit_sha_to_a_branch_says_why_whatever_its_size() {
     if !tool("git") {
         return;
     }
+    use crate::support::forge_listener::{ACME_APP_ID, PROJECT_ID};
+    use purlis_core::forge::createdbranches::{self, CreatedBranch};
     use purlis_core::worktree::git::{Isolated, isolated, run_network};
-    let s = setup_with(Some(Arc::new(RefusesAndHolds)));
-    // The pull request's branch is on the forge already, so `<sha>:ci-pr` names it.
+    let config = tempfile::tempdir().unwrap();
+    let s = setup_in(
+        Some(Arc::new(RefusesAndHolds)),
+        World::recording_to(config.path().to_owned()),
+    );
+    // The pull request's branch is on the forge already, so `<sha>:ci-pr` names it, and the chat
+    // made it: its record has the tip the push starts from, so the push reaches the gate's hold
+    // and not the refusal of a branch the chat does not own.
     git_ok(&s.forge.bare, &["branch", "ci-pr", "main"]);
+    let base = {
+        let out = purlis_core::forklock::output(
+            Command::new("git")
+                .args(["rev-parse", "refs/heads/ci-pr"])
+                .current_dir(&s.forge.bare),
+        )
+        .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+    createdbranches::record(
+        config.path(),
+        PROJECT_ID,
+        "chat-listener",
+        &[CreatedBranch {
+            host: "github.com".to_owned(),
+            repo: "acme/app".to_owned(),
+            repo_id: Some(ACME_APP_ID),
+            branch: "ci-pr".to_owned(),
+            tip: base.clone(),
+        }],
+    )
+    .unwrap();
     let work = s.dir.path().join("clone");
     let (ok, text) = s.git(
         s.dir.path(),
@@ -1344,9 +1374,9 @@ fn a_held_push_of_an_explicit_sha_to_a_branch_says_why_whatever_its_size() {
             .current_dir(&s.forge.bare),
     )
     .unwrap();
-    assert_ne!(
+    assert_eq!(
         String::from_utf8_lossy(&tip.stdout).trim(),
-        sha,
+        base,
         "the held push reached the forge"
     );
 }
