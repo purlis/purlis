@@ -2239,28 +2239,6 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "supervise-daemon",
     "chkconfig",
     "deb-systemd-helper",
-    // Upstart's `initctl` (#6557), whose source was out of reach, refused on what it is for:
-    // `set-env` copies a value into the init daemon's job environment, as `import-environment`
-    // does, and `start` and `emit` start jobs (its `start`, `stop` and the rest are links to it,
-    // judged by its name). Upstart's `init --user --confdir <folder>` runs a folder's jobs, and
-    // `init` is as often a link to `systemd`, the service manager itself, refused with it on the
-    // conservative side (every `systemd-<name>` goes with it, by its first part).
-    "initctl",
-    "init",
-    "upstart",
-    "systemd",
-    // (`systemd` reaches the `systemd-<name>` and `<name>-systemd` rows below and elsewhere by
-    // their forms too, which keep their own rows all the same: a unit test pins them.)
-    // and their kin (round 2 of #7828's review): Upstart's `telinit -e` puts a value into the
-    // environment of the jobs its runlevel starts; systemd's `machinectl shell`, `homectl with`,
-    // `userdbctl --chain`, `varlinkctl call exec:` and `portablectl attach --now` run a command
-    // or an image they are handed, and are no `systemd-<name>`.
-    "telinit",
-    "machinectl",
-    "homectl",
-    "userdbctl",
-    "varlinkctl",
-    "portablectl",
     // and their kin the review of #6556 found: systemd's `systemd-cat`, `systemd-inhibit`,
     // `systemd-socket-activate`, `systemd-notify --exec` and `systemd-dissect --with` run the
     // command after them, and `busctl call` reaches the manager's `StartTransientUnit`, as
@@ -2274,6 +2252,29 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "busctl",
     "s6-supervise",
     "s6-svscan",
+    "runsvdir",
+    // Upstart's `initctl` (#6557), whose source was out of reach, refused on what it is for:
+    // `set-env` copies a value into the init daemon's job environment, as `import-environment`
+    // does, and `start` and `emit` start jobs (its `start`, `stop` and the rest are links to it,
+    // judged by its name). Upstart's `init --user --confdir <folder>` runs a folder's jobs, and
+    // `init` is as often a link to `systemd`, the service manager itself, refused with it on the
+    // conservative side (every `systemd-<name>` goes with it, by its first part).
+    "initctl",
+    "init",
+    "upstart",
+    "systemd",
+    // (`systemd` reaches the `systemd-<name>` and `<name>-systemd` rows above and elsewhere by
+    // their forms too, which keep their own rows all the same: a unit test pins them.)
+    // and the kin of `initctl` and `systemd` round 2 of #7828's review found: Upstart's `telinit
+    // -e` puts a value into the environment of the jobs its runlevel starts; systemd's `machinectl
+    // shell`, `homectl with`, `userdbctl --chain`, `varlinkctl call exec:` and `portablectl attach
+    // --now` run a command or an image they are handed, and are no `systemd-<name>`.
+    "telinit",
+    "machinectl",
+    "homectl",
+    "userdbctl",
+    "varlinkctl",
+    "portablectl",
     // s6's programs that run the program after them and reach no row by a form of their name
     // (rounds 2 and 3 of #7828's review): `s6-svlisten1` and `s6-ftrig-listen1` reach these
     // rows without their version. `s6-svc`, `s6-svok` and `s6-svstat` run nothing.
@@ -2290,7 +2291,6 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "s6-connlimit",
     "s6-fdholder-getdump",
     "s6-permafailon",
-    "runsvdir",
     // daemontools (#6559), whose source (cr.yp.to) was out of reach, refused on what each is
     // for: `supervise` runs a folder's `./run` and `svscan` starts one on each folder in the one
     // it is named, as `runsv` and `runsvdir` do; `multilog`'s `!processor` has a shell run the
@@ -2336,22 +2336,6 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "s6-softlimit",
     "s6-applyuidgid",
     "coredumpctl",
-    // Programs of other families that rows #7828 added reach by their last part, but only by
-    // chance, so each has a row of its own (a unit test pins them): s6's `s6-envuidgid`,
-    // `s6-fghack` and `s6-setlock`, which run the program after them, and `s6-rc-init`, which
-    // starts s6-rc's services (round 13 of its review); and `cloud-init`, which runs the
-    // `bootcmd` and `runcmd` of the file it is handed, Yelp's `dumb-init` and LXC's `lxc-init`,
-    // which run the command after them, and s6's `s6-linux-init` and `s6-linux-init-telinit`,
-    // which the `init` and `telinit` rows reach (round 14).
-    "s6-envuidgid",
-    "s6-fghack",
-    "s6-setlock",
-    "s6-rc-init",
-    "cloud-init",
-    "dumb-init",
-    "lxc-init",
-    "s6-linux-init",
-    "s6-linux-init-telinit",
     // and the leads round 2 of #6556's review left (#6564), whose source was out of reach, refused
     // on what each is for: `aptitude -o Dir::Bin::Methods::<scheme>=` names the program a download
     // runs, as `apt-get`'s does; `run-parts` runs every program in the folder it is named; `capsh
@@ -2383,14 +2367,15 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "repo-graph",
     // reached by its first part, `find`, too, but by chance
     "find-repos-of-install",
-    // and their kin (round 1 of #7828's review), refused on what each is for: programs that run the
-    // command after them, as `setuidgid` and `capsh` do; the loggers that run a `!processor` they
-    // are handed, on the command line or in a log folder's `config`, as `multilog` does; `anacron`,
-    // which runs an anacrontab it is named; the Perl installers and runners beside `cpanm`
-    // (`cpanp`'s `!` evaluates Perl, `plenv exec` and `carmel exec` run a command, `prove` and
-    // `dzil` a distribution's code); and the package managers beside `dnf`: `zypper <name>` runs
-    // the `zypper-<name>` its search path finds, `makepkg` a `PKGBUILD`, MacPorts' `port` a
-    // `Portfile`, and `microdnf` and `tdnf` take settings as `dnf` does.
+    // The kin of the #6559 and #6564 tools above that round 1 of #7828's review found, refused on
+    // what each is for: programs that run the command after them, as `setuidgid` and `capsh` do;
+    // the loggers that run a `!processor` they are handed, on the command line or in a log folder's
+    // `config`, as `multilog` does; `anacron`, which runs an anacrontab it is named; the Perl
+    // installers and runners beside `cpanm` (`cpanp`'s `!` evaluates Perl, `plenv exec` and `carmel
+    // exec` run a command, `prove` and `dzil` a distribution's code); and the package managers
+    // beside `dnf`: `zypper <name>` runs the `zypper-<name>` its search path finds, `makepkg` a
+    // `PKGBUILD`, MacPorts' `port` a `Portfile`, and `microdnf` and `tdnf` take settings as `dnf`
+    // does.
     "runuser",
     "gosu",
     "prlimit",
@@ -2503,6 +2488,22 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "mbtiny",
     "s6-svlink",
     "s6-rc-update",
+    // Programs of other families that the rows #7828 added above reach by their last part, but only
+    // by chance, so each has a row of its own (a unit test pins them): s6's `s6-envuidgid`,
+    // `s6-fghack` and `s6-setlock`, which run the program after them, and `s6-rc-init`, which
+    // starts s6-rc's services (round 13 of its review); and `cloud-init`, which runs the `bootcmd`
+    // and `runcmd` of the file it is handed, Yelp's `dumb-init` and LXC's `lxc-init`, which run the
+    // command after them, and s6's `s6-linux-init` and `s6-linux-init-telinit`, which the `init`
+    // and `telinit` rows reach (round 14).
+    "s6-envuidgid",
+    "s6-fghack",
+    "s6-setlock",
+    "s6-rc-init",
+    "cloud-init",
+    "dumb-init",
+    "lxc-init",
+    "s6-linux-init",
+    "s6-linux-init-telinit",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

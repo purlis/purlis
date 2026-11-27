@@ -217,8 +217,8 @@ rightly stay refused, and some may be harmless. These are examples, not a comple
 The forms also reach rows that were there before: `systemd` reaches `systemd-run`, `systemd-cat`,
 `garb-systemd` and the other `systemd-` and `-systemd` rows, and `supervise`, `svscan`,
 `setuidgid` and `softlimit` reach their `s6-` twins. Their tests pass through either row, so a
-unit test pins each as a row of its own, as it does `supervise-daemon` and
-`find-repos-of-install`.
+unit test pins each as a row of its own, as other unit tests pin the chance reaches the next
+paragraph lists.
 
 A form that reaches a program of another family only by chance (OpenRC's `supervise-daemon` meeting
 daemontools' `supervise`, `find-repos-of-install` meeting `find`, `deb-systemd-invoke` meeting
