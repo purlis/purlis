@@ -842,13 +842,52 @@ impl StepLines {
     }
 }
 
-/// The median of five TCP connects to the sshd: one round trip, as the fixture delays it.
-fn round_trip_ms(route: &str) -> u64 {
-    let at = route.rsplit('@').next().expect("an address");
+/// **One round trip through the sshd, as the fixture delays it** (#7832): the median of five
+/// `GET /_ping`s to the engine over one connection to the pool's forward at `socket`, after one
+/// untimed ping has opened its ssh channel. Each timed ping is a request ssh carries to the sshd
+/// and the engine's answer back, which leaves through the sshd's `eth0`, where the netem is. A TCP
+/// connect to the route's `127.0.0.1:2222` would not do: Docker's userland proxy accepts it on
+/// this machine's loopback, so it never crosses that qdisc and reads 0 ms.
+fn round_trip_ms(socket: &std::path::Path) -> u64 {
+    use std::io::{Read as _, Write as _};
+    let mut stream = std::os::unix::net::UnixStream::connect(socket).expect("the forward answers");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .expect("a timeout");
+    let mut ping = || {
+        stream
+            .write_all(b"GET /_ping HTTP/1.1\r\nHost: docker\r\n\r\n")
+            .expect("the ping is sent");
+        let mut got = Vec::new();
+        let mut buffer = [0u8; 1024];
+        loop {
+            let read = stream
+                .read(&mut buffer)
+                .expect("the engine answers its ping");
+            assert!(read > 0, "the forward closed during a ping");
+            got.extend_from_slice(&buffer[..read]);
+            let text = String::from_utf8_lossy(&got);
+            if let Some((head, body)) = text.split_once("\r\n\r\n") {
+                assert!(head.starts_with("HTTP/1.1 200"), "the ping answered {head}");
+                let length = head
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse::<usize>().ok())?
+                    })
+                    .expect("the ping's answer says its length");
+                if body.len() >= length {
+                    return;
+                }
+            }
+        }
+    };
+    ping();
     let mut times: Vec<u64> = (0..5)
         .map(|_| {
             let began = Instant::now();
-            drop(std::net::TcpStream::connect(at).expect("the sshd answers"));
+            ping();
             u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX)
         })
         .collect();
@@ -930,12 +969,16 @@ fn a_start_on_a_remote_pool_times_each_of_its_steps() {
             const { std::cell::RefCell::new(None) };
     }
     let _scoped = tracing::dispatcher::set_default(&dispatch);
-    let rtt = round_trip_ms(&std::env::var("REMOTE_DOCKER_TEST_ROUTE").unwrap());
 
     let pool = "timed";
     let remote = trusted(&fixture, pool);
     forward::let_go_of_all();
     let docker = through(&fixture, pool, &remote).expect("the forward opens");
+    let rtt = round_trip_ms(
+        docker
+            .forwarded()
+            .expect("a pool on another machine's forward"),
+    );
     let image = Image::pinned(&image).expect("the image is named by digest");
     let (user, home) = docker
         .declared(&image)
@@ -1008,7 +1051,7 @@ fn a_start_on_a_remote_pool_times_each_of_its_steps() {
     });
 
     let mut out = format!(
-        "### Start on a remote Docker pool over SSH (round trip {rtt} ms, TCP connect, median of 5)\n\n"
+        "### Start on a remote Docker pool over SSH (round trip {rtt} ms, a ping through the forward, median of 5)\n\n"
     );
     for (label, total, steps) in &table {
         out += &format!(
@@ -1046,6 +1089,23 @@ fn a_start_on_a_remote_pool_times_each_of_its_steps() {
         }
         out += "\n";
     }
+    // **The link's budget** (#7185, T5 Q4): the rows with no parent, the calls left out, held to
+    // 1.5 × the baseline of `docs/research/2026-11-remote-start-baseline.md`, at the rig's 40 ms.
+    let link_ms = |steps: &[StepLine]| -> u64 {
+        steps
+            .iter()
+            .filter(|line| line.parent.is_none() && !line.name.starts_with("docker_"))
+            .map(|line| line.ms)
+            .sum()
+    };
+    // Cold, warm, stopped, as the table runs them: #7185's gates, 1.5 × the baseline's 3021, 2041
+    // and 2439 ms in all, rounded as that resolution states them.
+    let budgets = [4500, 3000, 3700];
+    out += "| scenario | link (rows with no parent, ms) | budget (ms) |\n|---|---|---|\n";
+    for ((label, _, steps), budget) in table.iter().zip(budgets) {
+        out += &format!("| {label} | {} | {budget} |\n", link_ms(steps));
+    }
+    out += "\n";
     let _ = std::io::Write::write_all(&mut std::io::stderr(), out.as_bytes());
     if let Some(summary) = std::env::var_os("GITHUB_STEP_SUMMARY")
         && let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(summary)
@@ -1053,6 +1113,20 @@ fn a_start_on_a_remote_pool_times_each_of_its_steps() {
         let _ = std::io::Write::write_all(&mut file, out.as_bytes());
     }
 
+    // The budget holds only at the round trip it is stated at (#7185, T5 Q3): a rig that lost its
+    // netem, or one far slower, says nothing about it.
+    assert!(
+        (30..=60).contains(&rtt),
+        "the round trip measured {rtt} ms, outside the 30 to 60 ms the link's budget is stated \
+         at (the rig's netem is 40 ms ± 10 ms): {out}"
+    );
+    for ((label, _, steps), budget) in table.iter().zip(budgets) {
+        let link = link_ms(steps);
+        assert!(
+            link <= budget,
+            "{label}: the link took {link} ms, over its budget of {budget} ms: {out}"
+        );
+    }
     // Every step of the link path was timed, in the scenario it belongs to.
     let said = |at: usize, step: &str| table[at].2.iter().any(|line| line.name == step);
     for step in ["ssh_forward_open", "engine_pin_check", "docker_info"] {

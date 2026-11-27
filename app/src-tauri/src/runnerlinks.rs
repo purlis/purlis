@@ -211,13 +211,22 @@ impl ToARunner {
             // The container is checked as it was made before every connection (ADR 0078 as
             // amended 2026-10-17, item 2): anything else refuses the link and runs nothing.
             Arc::new(move || {
-                if let Some((local, pool)) = &forwarding {
-                    // A machine that answers and refuses is not dialled again on a timer
-                    // (#7187): the link says why once, and Check pool says what changed.
-                    purlis_core::sshroute::pool::docker_of_named_in_state(&config, local, pool)
+                // The `docker` the engine's check went through checks the container too: on a
+                // cold link it hands on the daemon's options its `docker info` read (#7862).
+                let through;
+                let checking = match &forwarding {
+                    Some((local, pool)) => {
+                        // A machine that answers and refuses is not dialled again on a timer
+                        // (#7187): the link says why once, and Check pool says what changed.
+                        through = purlis_core::sshroute::pool::docker_of_named_in_state(
+                            &config, local, pool,
+                        )
                         .map_err(|(why, state)| not_checked_as(why, state))?;
-                }
-                let checked = checked_or_woken(&checking, &config, &of, resumes);
+                        &through
+                    }
+                    None => &checking,
+                };
+                let checked = checked_or_woken(checking, &config, &of, resumes);
                 // A refusal of a container Docker no longer lists is a runner removed outside
                 // purlis, never linked to again on its own (#4149).
                 // On another engine it may be there still: the link keeps trying, so it comes
