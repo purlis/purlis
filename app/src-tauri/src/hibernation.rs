@@ -133,14 +133,24 @@ pub enum By {
 }
 
 /// One chat's hibernation, from the person's press until it is woken or ended another way.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct Held {
     by: By,
+    /// The act's intent is recorded (spec #1391, *The act, and its latch*, step 4): its
+    /// program's end from now on is the hibernation. Before it, the chat is only latched: a
+    /// second caller does nothing, and an end of its program is its own.
+    intended: bool,
     /// The host has answered that its program ended as a hibernation. Until then it is in
     /// flight: neither Resume nor a second Hibernate is taken.
     settled: bool,
-    /// Its program's end was heard while it was in flight, and read as the hibernation.
+    /// Its program's end was heard after the intent, and read as the hibernation.
     ended: bool,
+    /// Its program ended by itself before the intent: the act aborts, and its run takes its own
+    /// cause.
+    exited: bool,
+    /// What the pane typed into it once it was hibernated, kept, never sent to a program that is
+    /// gone: the chat's unsent text (SC-4d, #7633). Delivered after the wake by SC-4j (#7639).
+    unsent: Vec<u8>,
 }
 
 /// **The chats of a project that are hibernated, or being hibernated, by session**, in memory
@@ -178,10 +188,11 @@ impl Hibernated {
         woken.remove(&session)
     }
 
-    /// The host is about to end chat `session`'s program as a hibernation, by `by`: written
-    /// first, in flight, so the exit that follows is read as one. False, with nothing changed,
-    /// where it is already hibernated or being hibernated: the first press is the one that acts.
-    pub fn intend(&self, session: u32, by: By) -> bool {
+    /// **Takes chat `session`'s hibernating latch** for `by` (spec #1391, step 1). False, with
+    /// nothing changed, where it is already hibernated or being hibernated: the first caller is
+    /// the one that acts, and a second does nothing. Until [`Self::intend`] an end of its
+    /// program is its own, and nothing is held.
+    pub fn latch(&self, session: u32, by: By) -> bool {
         let mut held = self.held();
         if held.contains_key(&session) {
             return false;
@@ -193,11 +204,65 @@ impl Hibernated {
             session,
             Held {
                 by,
+                intended: false,
                 settled: false,
                 ended: false,
+                exited: false,
+                unsent: Vec::new(),
             },
         );
         true
+    }
+
+    /// **The host is about to end latched chat `session`'s program as a hibernation**: the
+    /// intent, written first, so the exit that follows is read as one (spec #1391, step 4).
+    /// False where the chat is not latched, or its program already ended by itself: the act
+    /// aborts.
+    pub fn intend(&self, session: u32) -> bool {
+        self.held().get_mut(&session).is_some_and(|held| {
+            if held.exited || held.intended {
+                return false;
+            }
+            held.intended = true;
+            true
+        })
+    }
+
+    /// The act on latched chat `session` aborts before its intent: the latch is let go. Nothing
+    /// where the intent was recorded, which [`Self::failed`] backs out of.
+    pub fn unlatch(&self, session: u32) {
+        let mut held = self.held();
+        if held.get(&session).is_some_and(|held| !held.intended) {
+            held.remove(&session);
+        }
+    }
+
+    /// [`Self::latch`] then [`Self::intend`]: a test's chat whose hibernation is in flight.
+    #[cfg(test)]
+    pub fn latch_and_intend(&self, session: u32, by: By) -> bool {
+        self.latch(session, by) && self.intend(session)
+    }
+
+    /// **What the pane typed into chat `session` is kept here** where it is hibernated, or its
+    /// intent is recorded (SC-4d, #7633): true, and `bytes` join its unsent text. False for
+    /// every other chat, whose input is sent.
+    pub fn holds_input(&self, session: u32, bytes: &[u8]) -> bool {
+        self.held().get_mut(&session).is_some_and(|held| {
+            if !held.intended {
+                return false;
+            }
+            held.unsent.extend_from_slice(bytes);
+            true
+        })
+    }
+
+    /// What the pane typed into hibernated chat `session` that its program never read, where
+    /// it typed anything.
+    pub fn unsent(&self, session: u32) -> Option<String> {
+        self.held()
+            .get(&session)
+            .filter(|held| held.settled && !held.unsent.is_empty())
+            .map(|held| String::from_utf8_lossy(&held.unsent).into_owned())
     }
 
     /// The host answered that chat `session`'s program ended as a hibernation: it is
@@ -227,10 +292,15 @@ impl Hibernated {
         }
     }
 
-    /// Chat `session`'s program ended. True where that end is a hibernation, in flight or
-    /// already answered: the end the program-end path reads as no end of the chat.
+    /// Chat `session`'s program ended. True where that end is a hibernation, its intent
+    /// recorded or already answered: the end the program-end path reads as no end of the chat.
+    /// Before the intent, its program ended by itself: not a hibernation, and the act aborts.
     pub fn ends_as_one(&self, session: u32) -> bool {
         self.held().get_mut(&session).is_some_and(|held| {
+            if !held.intended {
+                held.exited = true;
+                return false;
+            }
             held.ended = true;
             true
         })
@@ -430,9 +500,14 @@ pub fn hibernated_chats(
 }
 
 /// Chat `session` as the window reads its hibernation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct ChatHibernation {
     pub by: By,
+    /// What the pane typed into it once its program was ending, which no program read: its
+    /// unsent text, held in memory, never lost (SC-4d, #7633). Absent where it typed nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub unsent: Option<String>,
 }
 
 /// Chat `session`, where it is hibernated.
@@ -444,10 +519,11 @@ pub fn chat_hibernated(
     session: u32,
 ) -> Result<Option<ChatHibernation>, String> {
     let held = planes.held(&plane)?;
-    Ok(held
-        .hibernated()
-        .of(session)
-        .map(|by| ChatHibernation { by }))
+    let hibernated = held.hibernated();
+    Ok(hibernated.of(session).map(|by| ChatHibernation {
+        by,
+        unsent: hibernated.unsent(session),
+    }))
 }
 
 /// **What hibernated chat `session` showed as it was hibernated** (SC-4b, #7631): what its pane
@@ -477,7 +553,9 @@ pub(crate) fn screen_of(held: &crate::planes::Held, session: u32) -> Option<Stri
 /// Hibernate on a chat's row (SC-4a, #7630): the person's act. Where the chat may not be
 /// hibernated now it is answered why, as a typed reason the window words (SC-4c, #7632);
 /// where the act cannot be done, in a sentence. Otherwise its program ends and the window is
-/// told. The window's alone (`WINDOW_ONLY`).
+/// told. `own_work_asked` is the window's word that the person was asked about the chat's own
+/// work, each piece named, and said yes: only then is a chat with own work hibernated (SC-4d,
+/// #7633). The window's alone (`WINDOW_ONLY`).
 #[tauri::command]
 #[specta::specta]
 pub async fn hibernate_chat(
@@ -485,12 +563,19 @@ pub async fn hibernate_chat(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
     session: u32,
+    own_work_asked: bool,
 ) -> Result<Hibernation, String> {
     use tauri::Emitter;
     let held = planes.held(&plane)?;
-    let done = tauri::async_runtime::spawn_blocking(move || held.hibernate_chat(session))
-        .await
-        .map_err(|err| format!("purlis could not hibernate the chat: {err}"))?;
+    let done = tauri::async_runtime::spawn_blocking(move || {
+        if own_work_asked {
+            held.hibernate_chat_ending_its_own_work(session)
+        } else {
+            held.hibernate_chat(session)
+        }
+    })
+    .await
+    .map_err(|err| format!("purlis could not hibernate the chat: {err}"))?;
     match done {
         Ok(()) => {}
         Err(Refused::Not(why)) => return Ok(Hibernation::Refused { why: why.into() }),
@@ -523,7 +608,7 @@ mod tests {
     #[test]
     fn a_hibernated_chat_is_kept_until_it_is_forgotten() {
         let hibernated = Hibernated::default();
-        assert!(hibernated.intend(3, By::Operator));
+        assert!(hibernated.latch_and_intend(3, By::Operator));
         assert!(hibernated.settle(3));
         assert_eq!(hibernated.of(3), Some(By::Operator));
         assert_eq!(hibernated.of(4), None);
@@ -535,7 +620,7 @@ mod tests {
     #[test]
     fn a_chat_is_hibernated_only_once_the_host_has_answered() {
         let hibernated = Hibernated::default();
-        assert!(hibernated.intend(3, By::Operator));
+        assert!(hibernated.latch_and_intend(3, By::Operator));
         assert!(hibernated.in_flight(3));
         assert_eq!(hibernated.of(3), None, "no Resume while it is in flight");
         assert_eq!(hibernated.now(), Vec::<u32>::new());
@@ -551,20 +636,23 @@ mod tests {
     #[test]
     fn a_second_intent_leaves_the_first_in_flight() {
         let hibernated = Hibernated::default();
-        assert!(hibernated.intend(3, By::Operator));
-        assert!(!hibernated.intend(3, By::Operator), "the first press acts");
+        assert!(hibernated.latch_and_intend(3, By::Operator));
+        assert!(
+            !hibernated.latch_and_intend(3, By::Operator),
+            "the first press acts"
+        );
         assert!(hibernated.in_flight(3));
     }
 
     #[test]
     fn a_failed_act_is_forgotten_unless_its_program_already_ended_as_one() {
         let hibernated = Hibernated::default();
-        assert!(hibernated.intend(3, By::Operator));
+        assert!(hibernated.latch_and_intend(3, By::Operator));
         assert!(!hibernated.failed(3));
         assert!(!hibernated.in_flight(3));
         assert_eq!(hibernated.of(3), None);
 
-        assert!(hibernated.intend(4, By::Operator));
+        assert!(hibernated.latch_and_intend(4, By::Operator));
         assert!(hibernated.ends_as_one(4));
         assert!(hibernated.failed(4), "its program ended as a hibernation");
         assert_eq!(hibernated.of(4), Some(By::Operator));
@@ -658,7 +746,7 @@ mod tests {
     fn a_woken_chat_hibernated_again_before_it_drew_has_no_earlier_screen_to_let_go_of() {
         let hibernated = Hibernated::default();
         hibernated.woke(9, CHAT.to_owned());
-        assert!(hibernated.intend(9, By::Operator));
+        assert!(hibernated.latch_and_intend(9, By::Operator));
         assert!(hibernated.settle(9));
         assert_eq!(hibernated.drawn(9), None, "the screen kept now is its own");
     }
@@ -715,7 +803,7 @@ mod tests {
     #[test]
     fn an_end_that_won_leaves_nothing_to_settle() {
         let hibernated = Hibernated::default();
-        assert!(hibernated.intend(3, By::Operator));
+        assert!(hibernated.latch_and_intend(3, By::Operator));
         hibernated.forget(3);
         assert!(!hibernated.settle(3));
         assert_eq!(hibernated.of(3), None);
