@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795738794777,
+  "lastUpdate": 1795739752729,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56616,6 +56616,48 @@ window.BENCHMARK_DATA = {
             "value": 101.55308000000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.760, 101.372, 101.553, 101.692, 101.776 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6f5a1280e7d646f6ff598573025222a91220f53f",
+          "message": "H20: the new-chat picker reads the project's policy once, not per persona (#7831)\n\npersonaprofile::named_by asked enforcement::mode for every persona, and in the app each\nasked resolved the project's policy afresh: git rev-parse and git show of HEAD, the locks\nand the sealed acceptance. personas::read_once now opens enforcement::resolved_once, so one\nanswer resolves each plane's policy once. A press inside an answer drops what was kept.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CYMR4XP3XQVVQS10RGARZH\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-26T23:40:11Z",
+          "tree_id": "d80307285e9634c81784bb56731b2f66d247df10",
+          "url": "https://github.com/purlis/purlis/commit/6f5a1280e7d646f6ff598573025222a91220f53f"
+        },
+        "date": 1795739744354,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.337631,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.315, 0.337, 0.338, 0.344, 0.348 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4827345,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.187, 16.283, 16.483, 16.787, 16.809 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.29319100000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.517, 101.199, 101.293, 101.657, 102.344 ms"
           }
         ]
       }
