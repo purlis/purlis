@@ -445,7 +445,9 @@ pub fn prepare(wrap: &Wrap, cwd: &Path) {
 /// **What a project's entry in Claude Code's state file says about MCP servers**, beside its own
 /// servers: which it turned on or off (`enabledMcpServers`, `disabledMcpServers`, read for the
 /// folder as a chat starts), and the older `.mcp.json` approvals, which Claude Code 2.1.332 moves
-/// into the folder's `.claude/settings.local.json` as it starts. Each is absent by default.
+/// into the folder's `.claude/settings.local.json` as it starts. Each is absent by default. An
+/// approval already moved is not loaded by a sandboxed chat, the only kind a runner starts: a
+/// project's settings file holding it is screened out ([`crate::harness::claude::project::KEPT`]).
 pub const PROJECT_MCP_CHOICES: [&str; 5] = [
     "enabledMcpServers",
     "disabledMcpServers",

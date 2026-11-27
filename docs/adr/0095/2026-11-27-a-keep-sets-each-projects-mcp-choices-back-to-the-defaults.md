@@ -14,6 +14,11 @@ keep restore what a chat may have changed in the profile's settings on a runner.
    `enabledMcpjsonServers` and `disabledMcpjsonServers`, which it moves into the folder's
    `.claude/settings.local.json` as it starts. The desktop sends none of them, since its
    projects' entries name its own folders, so each is absent again: Claude Code's default.
-   `PROJECT_MCP_CHOICES` in `crates/purlis-core/src/sandbox/claude_wrap.rs` lists them.
-2. **What else the state file holds stays as it is**: every other key of a project's entry and
+   `PROJECT_MCP_CHOICES` in `crates/purlis-core/src/sandbox/claude_wrap.rs` lists them. A
+   turned-off server comes back on too, since the default turns none off.
+2. **An approval Claude Code has already moved into a folder's settings is not loaded**: every
+   Claude Code chat on a runner is sandboxed, and a sandboxed chat does not load a project
+   settings file that holds a key outside `harness::claude::project::KEPT` (ADR 0067 as amended
+   2026-10-15). The keep does not edit the folder's files.
+3. **What else the state file holds stays as it is**: every other key of a project's entry and
    every key beside `projects`.

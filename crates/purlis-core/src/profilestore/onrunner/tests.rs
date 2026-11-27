@@ -2800,7 +2800,7 @@ fn a_kept_state_file(dir: &Path) -> (PathBuf, impl Fn()) {
 }
 
 /// **A keep sets each project's MCP choices in the runner's state file back to Claude Code's
-/// defaults** (ADR 0095, amended 2026-10-31): the servers a chat turned on or off for its folder
+/// defaults** (ADR 0095, amended 2026-10-31 and 2026-11-27): the servers a chat turned on or off for its folder
 /// (`enabledMcpServers`, `disabledMcpServers`), and the older `.mcp.json` approvals
 /// (`enableAllProjectMcpServers`, `enabledMcpjsonServers`, `disabledMcpjsonServers`) that Claude
 /// Code 2.1.332 moves into a folder's settings as it starts. The desktop sends no choices for a
