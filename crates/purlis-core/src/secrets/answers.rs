@@ -42,7 +42,7 @@
 //! # Which state a plane is in
 //!
 //! [`standing`]: **deny** (a [`Deny`] cause each), **fresh** (no anchor, no store), or **holds**,
-//! where only a grant that is missing or fails its seal reads as "no answer"
+//! where only a grant or an owner record that is missing or fails its seal reads as "no answer"
 //! ([`Standing::no_answer`]) and any other entry that does is the deny state.
 //!
 //! # Where it is weaker
@@ -75,9 +75,15 @@ pub const FLOOR: &str = "floor";
 /// **A commit went past the accepted floor's cap** (M75-14): present until the person's press
 /// ([`recommit`]), which is the deny state's cause [`Deny::PastTheFloorCap`] while it is.
 pub const PAST_THE_CAP: &str = "past-the-cap";
+/// **A host-held owner fact** (#7748): which chat owns a forge branch or a branch folder, or which
+/// chat a task was dispatched by. Not the person's answer but the app's own record, kept here
+/// because this is the store only the app can seal ([`crate::policy::owner`]). The second kind,
+/// after [`GRANT`], that reads as "no answer" where it fails: an owner record that is missing or
+/// fails its seal is no record, so its resource's owner reads `"none"`, never the deny state.
+pub const OWNER: &str = "owner";
 
 /// The kinds a store holds.
-pub const KINDS: [&str; 8] = [
+pub const KINDS: [&str; 9] = [
     ACCEPTED,
     ACCEPTANCE,
     GRANT,
@@ -86,6 +92,7 @@ pub const KINDS: [&str; 8] = [
     PASS,
     FLOOR,
     PAST_THE_CAP,
+    OWNER,
 ];
 
 /// What `bind` an Everywhere entry is sealed to: neither a plane nor a clone.
@@ -998,7 +1005,8 @@ pub struct Standing {
     /// seal): [`Standing::everywhere`] is then empty, which must not read as "no nevers" (M75-20
     /// review round 2, F6).
     pub everywhere_unreadable: bool,
-    /// Grants that are missing or fail their seal: "no answer", each as kind and digest.
+    /// Grants and owner records that are missing or fail their seal: "no answer", each as kind
+    /// and digest.
     pub no_answer: Vec<String>,
     /// What the window says: sealed files the manifest does not list, ignored.
     pub notices: Vec<String>,
@@ -1254,8 +1262,10 @@ fn read_place(place: &Place, plane: Option<&Registered>) -> Found {
             for listed in &manifest.entries {
                 match load_entry(place, listed) {
                     Ok(entry) => found.entries.push(entry),
-                    Err(missing) if listed.kind == GRANT => {
-                        found.no_answer.push(format!("grant {}", listed.digest));
+                    Err(missing) if listed.kind == GRANT || listed.kind == OWNER => {
+                        found
+                            .no_answer
+                            .push(format!("{} {}", listed.kind, listed.digest));
                         let _ = missing;
                     }
                     Err(true) => found.denies.push(Deny::EntryMissing {
@@ -1508,8 +1518,11 @@ impl Draft {
 
     /// Adds an answer the person gave just now (their [`Press`]). A `kind` that is not one of
     /// [`KINDS`] (it names a file in the store's folder) adds nothing, and the commit is refused.
+    ///
+    /// An owner record ([`OWNER`]) is not added here: it moves only through
+    /// [`crate::policy::owner`], by a hand-over or the person's press of "Let this chat push it".
     pub fn add(&mut self, _press: &Press, kind: &str, text: &str) {
-        if !KINDS.contains(&kind) {
+        if !KINDS.contains(&kind) || kind == OWNER {
             self.refused = Some(format!(
                 "{kind:?} is not a kind of answer the store keeps, so nothing was changed"
             ));
@@ -1545,9 +1558,37 @@ impl Draft {
     }
 
     /// Takes any answer out, **the person's press** ([`Press`]): a never's or a floor's removal
-    /// widens what a chat may do.
+    /// widens what a chat may do. An owner record ([`OWNER`]) is not taken out here (see
+    /// [`Draft::add`]).
     pub fn remove(&mut self, _press: &Press, kind: &str, text: &str) {
+        if kind == OWNER {
+            self.refused = Some(
+                "an owner record moves only by a hand-over or the person's press of \
+                 \"Let this chat push it\", so nothing was changed"
+                    .to_owned(),
+            );
+            return;
+        }
         self.take_out(kind, text);
+    }
+
+    /// **Records a host-held owner fact** ([`OWNER`]), with no press: the app's own record of what
+    /// it saw (a branch the forge route made, a folder's first claim, a dispatch). Called by
+    /// [`crate::policy::owner`] alone, which holds the rule that a record, once made, moves only
+    /// by a hand-over or the person's press.
+    pub(crate) fn add_owner_record(&mut self, text: &str) {
+        if !self
+            .entries
+            .iter()
+            .any(|e| e.kind == OWNER && e.text == text)
+        {
+            self.entries.push(Entry::new(OWNER, text));
+        }
+    }
+
+    /// **Takes an owner record out**, as a hand-over or a press moves it ([`crate::policy::owner`]).
+    pub(crate) fn take_out_owner_record(&mut self, text: &str) {
+        self.take_out(OWNER, text);
     }
 
     /// **An acceptance only ever widens**, so its withdrawal narrows and needs no press. If an
