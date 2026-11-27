@@ -291,7 +291,8 @@ fn a_push_whose_commands_cannot_be_read_is_refused() {
     let gzip = [0x1f, 0x8b, 8, 0, 0, 0, 0, 0];
     for (name, body) in [
         ("no body", Vec::new()),
-        ("a flush alone", b"0000".to_vec()),
+        // A flush alone is git's probe ahead of a large push, which is let through (#7878).
+        ("two flushes", b"00000000".to_vec()),
         ("gzip", gzip.to_vec()),
         ("not a command", b"0008abcd0000".to_vec()),
         ("a length past the body", b"00ffxx".to_vec()),

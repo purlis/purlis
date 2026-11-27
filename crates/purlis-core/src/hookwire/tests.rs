@@ -2890,7 +2890,8 @@ fn an_app_at(path: &std::path::Path, within: &std::path::Path) -> (Reading, Chat
                 | Ask::Attendance(_)
                 | Ask::Policy(_)
                 | Ask::PolicyLog(_)
-                | Ask::RemoteRefs(_) => Answer::No {
+                | Ask::RemoteRefs(_)
+                | Ask::Prerequisites(_) => Answer::No {
                     why: "not here".to_owned(),
                 },
             }

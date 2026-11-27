@@ -118,7 +118,8 @@ struct Shared {
     /// The chats that stayed on a draining runner, and how they are found in `left`.
     stayed: Mutex<HashMap<u32, u64>>,
     /// Held while a pool's host is replaced for a start: two starts make one host between them.
-    replacing: Mutex<()>,
+    /// One lock per pool (#7862, T6 Q7), so a start on one pool never waits on another's.
+    replacing: Mutex<BTreeMap<String, Arc<Mutex<()>>>>,
     /// How many hosts were made, which names each one.
     made: AtomicU64,
     /// Which made host each pool's now is.
@@ -361,7 +362,8 @@ impl RoutedSessions {
     /// **The host a new chat on `pool` starts on** (#4248): one whose runner drains now stays with
     /// its chats, and a host of its own is made for the pool's runner now.
     fn pool_for_a_start(&self, pool: &str) -> Result<Arc<dyn SessionHost>, String> {
-        let _one_at_a_time = lock(&self.shared.replacing);
+        let replacing = replacing_of(&self.shared, pool);
+        let _one_at_a_time = lock(&replacing);
         let host = self.pool(pool)?;
         if !host.stays_on_a_draining_runner() {
             return Ok(host);
@@ -390,7 +392,8 @@ impl RoutedSessions {
     /// the first time. `None` where this window moved the project off a draining runner itself: a
     /// link of its own to that runner holds what it started, and a second would be refused its name.
     fn asking(&self, pool: &str, runner: &str) -> Option<NumberedHost> {
-        let _one_at_a_time = lock(&self.shared.replacing);
+        let replacing = replacing_of(&self.shared, pool);
+        let _one_at_a_time = lock(&replacing);
         if let Some((made, host)) = lock(&self.shared.asked).get(runner) {
             return Some((*made, Arc::clone(host)));
         }
@@ -554,6 +557,11 @@ fn host_of(shared: &Shared, id: u32) -> Option<Arc<dyn SessionHost>> {
     }
     let pool = lock(&shared.chats).get(&id).cloned()?;
     lock(&shared.pools).get(&pool).cloned()
+}
+
+/// **Pool `pool`'s replacing lock** ([`Shared::replacing`]), made the first time.
+fn replacing_of(shared: &Shared, pool: &str) -> Arc<Mutex<()>> {
+    Arc::clone(lock(&shared.replacing).entry(pool.to_owned()).or_default())
 }
 
 fn pool_of(
@@ -804,7 +812,8 @@ fn fetch_back_pool(
             continue;
         }
         let asked = {
-            let _one_at_a_time = lock(&shared.replacing);
+            let replacing = replacing_of(shared, pool);
+            let _one_at_a_time = lock(&replacing);
             asked_through(shared, to_a_pool, pool, &named)
         };
         match asked {
