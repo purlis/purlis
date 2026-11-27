@@ -8,12 +8,13 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { commands, type SlowMoment } from "./bindings";
 import { timed } from "./answerWatch";
 import { listen } from "./here";
-import { Measured, watchForStalls } from "./slowLog";
+import { Measured, marked, useMarkedOnChange, useMarkedOnMount, watchForStalls } from "./slowLog";
 
 /**
- * **A stall names what the window's thread was doing in it** (felt speed round 4, H9): the
- * React commits of that frame by the region that drew them, the core's events and answers the
- * window handled in it, and the scripts the webview says ran long, the top five of each.
+ * **A stall names what the window's thread was doing in it** (felt speed round 4, H9; #7891), so
+ * its causes can be told apart: how much of the gap React's renders took, the regions that
+ * rendered by their own time and commits, the core's events apart from their listeners' calls,
+ * the answers handled, and the marks of what costs a frame, the top five of each.
  */
 
 let written: SlowMoment[];
@@ -55,13 +56,20 @@ function frames() {
   return { at: (time: number) => next?.(time), stop };
 }
 
+/** The one stall written, without the visibility the window starts watching with. */
 function stall(): Extract<SlowMoment, { kind: "stall" }> {
-  expect(written.map((one) => one.kind)).toEqual(["stall"]);
-  return written[0] as Extract<SlowMoment, { kind: "stall" }>;
+  const stalls = written.filter((one) => one.kind === "stall");
+  expect(stalls).toHaveLength(1);
+  return stalls[0] as Extract<SlowMoment, { kind: "stall" }>;
 }
 
-describe("a stall's React commits", () => {
-  it("name the regions whose commits took longest in that frame, longest first", () => {
+function Again({ ms, children }: { ms: number; children?: React.ReactNode }) {
+  busy(ms);
+  return children;
+}
+
+describe("a stall's React renders", () => {
+  it("name the regions whose own renders took longest in that frame, longest first", () => {
     const window = frames();
     window.at(1_000);
     render(
@@ -82,15 +90,174 @@ describe("a stall's React commits", () => {
     expect(react[0].ms).toBeGreaterThanOrEqual(60);
     expect(react[1].ms).toBeGreaterThanOrEqual(2);
   });
+
+  it("tell a region's own body apart from the regions inside it, so PlaneView's is its own", () => {
+    const window = frames();
+    window.at(1_000);
+    render(
+      <Measured id="PlaneView">
+        <Again ms={20}>
+          <Measured id="changes">
+            <Slow ms={80} />
+          </Measured>
+        </Again>
+      </Measured>,
+    );
+    window.at(1_400);
+    window.stop();
+
+    const { react } = stall();
+    const [changes, plane] = react;
+    expect(react.map((one) => one.name)).toEqual(["changes", "PlaneView"]);
+    expect(changes.self_ms).toBe(changes.ms);
+    expect(plane.ms).toBeGreaterThanOrEqual(changes.ms + 20);
+    expect(plane.self_ms).toBeGreaterThanOrEqual(20);
+    expect(plane.self_ms).toBeLessThan(changes.ms);
+  });
+
+  it("carry a region's own time when it was only updated in that frame, not mounted", () => {
+    const drawn = render(
+      <Measured id="PlaneView">
+        <Slow ms={1} />
+      </Measured>,
+    );
+    const window = frames();
+    window.at(1_000);
+    drawn.rerender(
+      <Measured id="PlaneView">
+        <Slow ms={30} />
+      </Measured>,
+    );
+    window.at(1_400);
+    window.stop();
+
+    const [plane] = stall().react;
+    expect(plane).toMatchObject({ name: "PlaneView", commits: 1 });
+    expect(plane.self_ms).toBeGreaterThanOrEqual(30);
+  });
+
+  it("count each region's commits in that frame", () => {
+    const window = frames();
+    window.at(1_000);
+    const drawn = render(
+      <Measured id="PlaneView">
+        <Slow ms={1} />
+      </Measured>,
+    );
+    drawn.rerender(
+      <Measured id="PlaneView">
+        <Slow ms={2} />
+      </Measured>,
+    );
+    drawn.rerender(
+      <Measured id="PlaneView">
+        <Slow ms={3} />
+      </Measured>,
+    );
+    window.at(1_400);
+    window.stop();
+
+    expect(stall().react).toMatchObject([{ name: "PlaneView", commits: 3 }]);
+  });
+
+  it("say how much of the gap React's renders took: every region's own time, each counted once", () => {
+    const window = frames();
+    window.at(1_000);
+    render(
+      <>
+        <Measured id="PlaneView">
+          <Again ms={20}>
+            <Measured id="changes">
+              <Slow ms={60} />
+            </Measured>
+          </Again>
+        </Measured>
+        <Measured id="ChatView">
+          <Slow ms={30} />
+        </Measured>
+      </>,
+    );
+    window.at(1_400);
+    window.stop();
+
+    const { react, render_ms, ms } = stall();
+    const own = react.reduce((sum, one) => sum + one.self_ms, 0);
+    expect(render_ms).toBeGreaterThanOrEqual(110);
+    expect(Math.abs(render_ms - own)).toBeLessThanOrEqual(react.length);
+    expect(render_ms).toBeLessThan(react.reduce((sum, one) => sum + one.ms, 0));
+    expect(render_ms).toBeLessThanOrEqual(ms);
+  });
+});
+
+describe("a stall's marks", () => {
+  it("count what happened in that frame that costs one, by name, most first", () => {
+    const window = frames();
+    window.at(1_000);
+    marked("tab-switch");
+    marked("pane-mount");
+    marked("pane-mount");
+    window.at(1_300);
+    window.stop();
+
+    expect(stall().marks).toEqual([
+      { name: "pane-mount", n: 2 },
+      { name: "tab-switch", n: 1 },
+    ]);
+  });
+
+  it("mark each mount of a component, and nothing as it is drawn again", () => {
+    function Pane() {
+      useMarkedOnMount("pane-mount");
+      return null;
+    }
+    const window = frames();
+    window.at(1_000);
+    const drawn = render(
+      <>
+        <Pane />
+        <Pane />
+      </>,
+    );
+    drawn.rerender(
+      <>
+        <Pane />
+        <Pane />
+      </>,
+    );
+    window.at(1_300);
+    window.stop();
+
+    expect(stall().marks).toEqual([{ name: "pane-mount", n: 2 }]);
+  });
+
+  it("mark a change of what a component watches, never the first value it is drawn with", () => {
+    function Front({ tab }: { tab: number | undefined }) {
+      useMarkedOnChange("tab-switch", tab);
+      return null;
+    }
+    const window = frames();
+    window.at(1_000);
+    const drawn = render(<Front tab={1} />);
+    drawn.rerender(<Front tab={1} />);
+    drawn.rerender(<Front tab={2} />);
+    drawn.rerender(<Front tab={undefined} />);
+    drawn.rerender(<Front tab={3} />);
+    window.at(1_300);
+    window.stop();
+
+    expect(stall().marks).toEqual([{ name: "tab-switch", n: 2 }]);
+  });
 });
 
 describe("a stall's events and answers", () => {
   afterEach(() => clearMocks());
 
-  it("count the core's events the window handled in that frame, by name, most first", async () => {
+  it("count the core's events the window handled in that frame, each once, by name, most first", async () => {
     mockIPC(() => null, { shouldMockEvents: true });
     const stops = await Promise.all([
       listen("chat-events", () => {}),
+      listen("plane-changed", () => {}),
+      listen("plane-changed", () => {}),
       listen("plane-changed", () => {}),
     ]);
     const window = frames();
@@ -105,6 +272,29 @@ describe("a stall's events and answers", () => {
     expect(stall().events).toEqual([
       { name: "chat-events", n: 2 },
       { name: "plane-changed", n: 1 },
+    ]);
+  });
+
+  it("count the calls of the window's listeners those events made apart, most first", async () => {
+    mockIPC(() => null, { shouldMockEvents: true });
+    const stops = await Promise.all([
+      listen("chat-events", () => {}),
+      listen("plane-changed", () => {}),
+      listen("plane-changed", () => {}),
+      listen("plane-changed", () => {}),
+    ]);
+    const window = frames();
+    window.at(1_000);
+    await emit("chat-events", {});
+    await emit("plane-changed", {});
+    await emit("chat-events", {});
+    window.at(1_300);
+    window.stop();
+    for (const stop of stops) stop();
+
+    expect(stall().listeners).toEqual([
+      { name: "plane-changed", n: 3 },
+      { name: "chat-events", n: 2 },
     ]);
   });
 
@@ -147,50 +337,13 @@ describe("a stall's events and answers", () => {
 });
 
 describe("a stall's scripts", () => {
-  it("are the scripts the webview said made the stalled frame long, by time, where it says", () => {
-    let next: ((time: number) => void) | undefined;
-    const page = Object.assign(new EventTarget(), {
-      visibilityState: "visible" as DocumentVisibilityState,
-    });
-    const script = (startTime: number, duration: number, fn: string, invoker = "") => ({
-      startTime,
-      duration,
-      invoker,
-      sourceFunctionName: fn,
-      sourceURL: "tauri://localhost/assets/index-abc123.js",
-    });
-    let pending: { startTime: number; duration: number; scripts: ReturnType<typeof script>[] }[] =
-      [];
-    const stop = watchForStalls(
-      (callback) => {
-        next = callback;
-      },
-      page,
-      () => pending.splice(0),
-    );
-    next?.(1_000);
-    pending = [
-      // A frame before the stall's: not in it.
-      { startTime: 900, duration: 60, scripts: [script(900, 60, "earlier")] },
-      {
-        startTime: 1_010,
-        duration: 600,
-        scripts: [
-          script(1_010, 120, "flushBatch"),
-          script(1_140, 400, "commitRoot"),
-          script(1_550, 30, "", "TimerHandler:setTimeout"),
-          script(1_590, 10, "flushBatch"),
-        ],
-      },
-    ];
-    next?.(1_620);
-    stop();
+  it("are no longer named: WebKit, the webview the window runs in, never says them", () => {
+    const window = frames();
+    window.at(1_000);
+    window.at(1_400);
+    window.stop();
 
-    expect(stall().scripts).toEqual([
-      { name: "commitRoot (index-abc123.js)", ms: 400 },
-      { name: "flushBatch (index-abc123.js)", ms: 130 },
-      { name: "TimerHandler:setTimeout", ms: 30 },
-    ]);
+    expect(stall()).not.toHaveProperty("scripts");
   });
 });
 

@@ -1988,7 +1988,8 @@ pub struct LayoutLine {
 /// A verdict asks every guard for the layout of the same command, each reading it afresh: the
 /// layout is a function of the text alone, so the last few are kept, with whether the walk met a
 /// string nested too deep, which a hit reports again as a fresh walk would.
-type Recent = std::collections::VecDeque<(String, Vec<LayoutLine>, bool)>;
+/// Each is kept with whether every `${` was read the old way ([`shellseg::braces_off`]).
+type Recent = std::collections::VecDeque<(String, bool, Vec<LayoutLine>, bool)>;
 
 std::thread_local! {
     static RECENT: std::cell::RefCell<Recent> = const { std::cell::RefCell::new(Recent::new()) };
@@ -2032,12 +2033,13 @@ pub fn heredoc_layout(cmd: &str) -> Vec<LayoutLine> {
     if cmd.len() < 1024 {
         return layout_of(cmd);
     }
+    let old_way = shellseg::braces_off();
     let hit = RECENT.with(|recent| {
         recent
             .borrow()
             .iter()
-            .find(|(text, ..)| text == cmd)
-            .map(|(_, layout, too_deep)| (layout.clone(), *too_deep))
+            .find(|(text, braces, ..)| text == cmd && *braces == old_way)
+            .map(|(_, _, layout, too_deep)| (layout.clone(), *too_deep))
     });
     if let Some((layout, too_deep)) = hit {
         if too_deep {
@@ -2054,7 +2056,7 @@ pub fn heredoc_layout(cmd: &str) -> Vec<LayoutLine> {
         if recent.len() == KEPT {
             recent.pop_back();
         }
-        recent.push_front((cmd.to_owned(), layout.clone(), too_deep));
+        recent.push_front((cmd.to_owned(), old_way, layout.clone(), too_deep));
     });
     layout
 }
@@ -2749,7 +2751,7 @@ mod tests {
             RECENT.with(|recent| {
                 recent
                     .borrow_mut()
-                    .push_front((text.clone(), layout_of(&text), true));
+                    .push_front((text.clone(), false, layout_of(&text), true));
             });
             let (layout, too_deep) = through_the_memo(&text);
             assert_eq!(layout, layout_of(&text));

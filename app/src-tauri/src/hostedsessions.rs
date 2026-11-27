@@ -5410,6 +5410,10 @@ impl SessionHost for HostedSessions {
         Ok(())
     }
 
+    fn asleep(&self, id: u32) {
+        lock(&self.hibernated).insert(id);
+    }
+
     fn when_one_ends(&self, tell: Ends) {
         *lock(&self.ended) = Some(tell);
     }

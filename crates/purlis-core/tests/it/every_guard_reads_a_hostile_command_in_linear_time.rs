@@ -183,6 +183,44 @@ fn shapes(deep: usize) -> Vec<Shape> {
             Box::new(move |b| fill(&format!("{}ls\n", "echo \"$(".repeat(deep)), b)),
         ),
         (
+            // An unclosed `${` is read again from its `{` once, not once per `${` after it
+            // (#7709, round 2).
+            "unclosed parameter expansions, repeated",
+            Box::new(|b| fill("${a ", b)),
+        ),
+        (
+            "unclosed parameter expansions before a substitution",
+            Box::new(|b| format!("{}$(ls)", fill("${a ", b))),
+        ),
+        (
+            // A funsub in a `${…}` reads the word again from its `{`, as a `(` does (#7709,
+            // round 3).
+            "unclosed parameter expansions around funsubs, repeated",
+            Box::new(|b| fill("${a:-${ ls; } ", b)),
+        ),
+        (
+            "quoted braces in nested parameter expansions, repeated",
+            Box::new(|b| fill("${a:-${b+\"}\"} ", b)),
+        ),
+        (
+            // The commands after a heredoc whose data opens a `${`, which a reader of the raw
+            // line would take for one word (#7709, round 3).
+            "commands after a heredoc whose data opens a parameter expansion",
+            Box::new(|b| format!("cat <<'EOF'\n${{x\nEOF\n{}", fill("ls; ", b - 16))),
+        ),
+        (
+            // Each line of a heredoc a substitution on every line of its body: the dispatch,
+            // handoff and credential guards once read it in the square of its length (#7709,
+            // round 4).
+            "a heredoc with a backquoted substitution on every line",
+            Box::new(|b| format!("cat <<EOF\n{}EOF", fill("`a`\n", b - 16))),
+        ),
+        (
+            // A `${…}` that holds a blank has the line read twice (#7709, round 4).
+            "parameter expansions that hold a blank, repeated",
+            Box::new(|b| fill("${a:-b c} ", b)),
+        ),
+        (
             "substitutions nested around a long body",
             Box::new(move |b| {
                 format!(
@@ -428,10 +466,21 @@ fn every_guard_family_reads_a_hostile_command_in_time_proportional_to_its_length
     let families = families(root);
     // At the nesting cap: the deepest a command any guard reads may go.
     for (shape, line) in shapes(MAX_NESTING) {
-        let (small, large) = (line(4 * 1024), line(16 * 1024));
+        // Two pairs of sizes: the square of a line read in a fraction of a millisecond at 16 KB
+        // hides under the allowance, and shows at four times that (#7709, round 4).
+        let (small, large, larger) = (line(4 * 1024), line(16 * 1024), line(64 * 1024));
         // Inside the caps, so it is the guards that are measured.
-        assert_eq!(guardcaps::refusal(&large), None, "{shape}");
+        assert_eq!(guardcaps::refusal(&larger), None, "{shape}");
         for (family, judge) in &families {
+            // The project-root and hook-skip guards read this one faster than linearly on main
+            // as well (b013530d94, in release: about 18 ms at 16 KB and 179 ms at 64 KB, and 14
+            // ms and 155 ms, the same as here), so it is #7838's to fix, not #7709's. Every
+            // other family reads it in time proportional to its length, here and on main.
+            if ["the project-root guards", "the hook-skip guard"].contains(family)
+                && shape == "a heredoc with a backquoted substitution on every line"
+            {
+                continue;
+            }
             // The faster of two runs each, so a moment of load on the machine is not the measure.
             let time = |cmd: &str| {
                 (0..2)
@@ -443,10 +492,14 @@ fn every_guard_family_reads_a_hostile_command_in_time_proportional_to_its_length
                     .min()
                     .unwrap_or_default()
             };
-            let (t_small, t_large) = (time(&small), time(&large));
+            let (t_small, t_large, t_larger) = (time(&small), time(&large), time(&larger));
             assert!(
                 t_large < t_small * 10 + Duration::from_millis(100),
                 "{family} on {shape}: 4 KB took {t_small:?}, 16 KB took {t_large:?}"
+            );
+            assert!(
+                t_larger < t_large * 10 + Duration::from_millis(100),
+                "{family} on {shape}: 16 KB took {t_large:?}, 64 KB took {t_larger:?}"
             );
         }
     }
@@ -509,6 +562,12 @@ fn the_whole_verdict_at_the_largest_and_deepest_command_stays_well_inside_the_bu
     );
     for deep in [MAX_NESTING, MAX_NESTING + 1] {
         for (shape, line) in shapes(deep) {
+            // The release floor reads this one in about 3.5 s at the cap, on main as well
+            // (4e6396140c), so its whole verdict is over the budget for a reason of the floor's
+            // own, not #7709's. The family test above holds it to its length.
+            if shape == "a heredoc with a backquoted substitution on every line" {
+                continue;
+            }
             let cmd = line(size);
             assert!(cmd.len() <= guardcaps::MAX_COMMAND_BYTES, "{shape}");
             if deep > MAX_NESTING && at_the_cap.get(shape) == Some(&cmd) {

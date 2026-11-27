@@ -211,23 +211,27 @@ fn build_batch(
     let next = AtomicUsize::new(0);
     let backend = forge.backend();
     let backend = backend.as_ref();
+    // What each probe starts counts where this thread's does (#7892).
+    let counting = &crate::forklock::counting::carried();
     std::thread::scope(|scope| {
         for _ in 0..PROBES.min(repos.len()) {
             scope.spawn(|| {
-                loop {
-                    let i = next.fetch_add(1, Ordering::SeqCst);
-                    let Some(repo) = repos.get(i) else {
-                        break;
-                    };
-                    let git_ref = repo.default_branch.as_deref();
-                    let found = backend
-                        .top_level(caller, repo, git_ref)
-                        .map(|files| inventory::classify_stack(&files))
-                        .map_err(|_| ());
-                    if let Ok(mut slots) = stacks.lock() {
-                        slots[i] = Some(found);
+                counting.within(|| {
+                    loop {
+                        let i = next.fetch_add(1, Ordering::SeqCst);
+                        let Some(repo) = repos.get(i) else {
+                            break;
+                        };
+                        let git_ref = repo.default_branch.as_deref();
+                        let found = backend
+                            .top_level(caller, repo, git_ref)
+                            .map(|files| inventory::classify_stack(&files))
+                            .map_err(|_| ());
+                        if let Ok(mut slots) = stacks.lock() {
+                            slots[i] = Some(found);
+                        }
                     }
-                }
+                });
             });
         }
     });

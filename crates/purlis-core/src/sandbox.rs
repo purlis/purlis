@@ -439,6 +439,7 @@ impl Plane {
     /// The plane at `root`. No file says nothing. A file that cannot be read, or is not TOML,
     /// is [`Self::unreadable`]: it may say `[sandbox]`, so it never reads as saying nothing.
     pub fn read(root: &Path) -> Self {
+        crate::forklock::counting::note_a_plane_read();
         match read_plane_file(&crate::names::manifest(root)) {
             Ok(text) => Self::of(text.as_deref()),
             Err(()) => Self {

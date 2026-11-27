@@ -1440,8 +1440,10 @@ fn uncommitted(
     gone: &mut BTreeSet<String>,
 ) -> Result<(), String> {
     let walker = repo.clone();
+    // What the walk starts counts where this thread's does (#7892).
+    let counting = crate::forklock::counting::carried();
     std::thread::scope(|scope| {
-        let walk = scope.spawn(move || untracked_files(&walker));
+        let walk = scope.spawn(move || counting.within(|| untracked_files(&walker)));
         let tracked = tracked_changes(repo, loose, gone);
         let walked = walk
             .join()

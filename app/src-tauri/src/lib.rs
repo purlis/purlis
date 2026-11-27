@@ -1145,19 +1145,28 @@ async fn plane_sidebar(
 /// Runs `read` on a blocking thread, so a command that walks the plane's files never holds the
 /// thread that draws the window (SC-2). `what` names it in the one failure this adds: the
 /// thread ending without an answer.
+///
+/// **The app's one door for a blocking answer**: every other way a command hands work off the
+/// window's thread comes through here, and what a command's work costs is counted through it
+/// (#7892): the scope the asking thread counts in is carried to the blocking thread
+/// ([`purlis_core::forklock::counting`]), which holds nothing outside a test build.
 async fn off_the_window<T: Send + 'static>(
     what: &str,
     read: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
     #[cfg(test)]
     let gate = off_the_main_thread::gate::of(what);
+    let counting = purlis_core::forklock::counting::carried();
     tauri::async_runtime::spawn_blocking(move || {
-        // A test holds the work here to see what the window can do while it runs (#1949).
-        #[cfg(test)]
-        if let Some(gate) = gate {
-            gate.wait();
-        }
-        read()
+        counting.within(|| {
+            purlis_core::forklock::counting::note_a_door();
+            // A test holds the work here to see what the window can do while it runs (#1949).
+            #[cfg(test)]
+            if let Some(gate) = gate {
+                gate.wait();
+            }
+            read()
+        })
     })
     .await
     .map_err(|err| format!("{what} did not finish: {err}"))?
