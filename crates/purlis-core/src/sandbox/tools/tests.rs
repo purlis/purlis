@@ -2012,6 +2012,14 @@ fn find_repos_of_install_is_refused_by_a_row_of_its_own_and_not_only_by_its_firs
     assert!(super::NOT_FOR_A_RUN_GRANT.contains(&"find-repos-of-install"));
 }
 
+/// `deb-systemd-invoke` has `systemctl` act on the unit it is named (round 4 of #7828's review).
+/// Its last part reaches the `invoke` row, Python's task runner's, but by chance, so it is
+/// refused by a row of its own (round 12).
+#[test]
+fn deb_systemd_invoke_is_refused_by_a_row_of_its_own_and_not_only_by_its_last_part() {
+    assert!(super::NOT_FOR_A_RUN_GRANT.contains(&"deb-systemd-invoke"));
+}
+
 /// Rows that were there before #7828 and that a row it added now reaches by a form of their name
 /// as well (round 8 of its review): `systemd` reaches the `systemd-<name>` and `<name>-systemd`
 /// programs, and `supervise`, `svscan`, `setuidgid` and `softlimit` reach their `s6-` twins. Their

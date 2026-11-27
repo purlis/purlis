@@ -2436,8 +2436,9 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // the rest, twins of the `s6-ipc*` programs); `rotatelogs -p`, which runs a program on each new
     // log; the package builders beside `debuild` (`pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`,
     // `fedpkg`, `centpkg`, `rhpkg`, `tito`), and `debconf`, which runs the command it is handed
-    // (`deb-systemd-invoke` reaches the `invoke` row by its last part, and `proxychains4`
-    // `proxychains` without its version), and MacPorts' `daemondo --start-cmd`; Perl's servers and
+    // (`proxychains4` reaches `proxychains` without its version), `deb-systemd-invoke`, which has
+    // `systemctl` act on a unit (its last part reaches Python's `invoke` row only by chance, so it
+    // has a row of its own), and MacPorts' `daemondo --start-cmd`; Perl's servers and
     // runners beside `plackup`; and `s6-svlink` and `s6-rc-update`, which hand a running s6 a
     // folder or a database a chat may have written.
     "taskpolicy",
@@ -2471,6 +2472,7 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "qemubuilder",
     "dgit",
     "debconf",
+    "deb-systemd-invoke",
     "fedpkg",
     "centpkg",
     "rhpkg",

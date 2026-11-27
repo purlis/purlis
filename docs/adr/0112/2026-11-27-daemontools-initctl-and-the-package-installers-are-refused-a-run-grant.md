@@ -139,9 +139,9 @@ footing:
 
 - **s6's `s6-ipcserver-access`, `s6-connlimit`, `s6-fdholder-getdump` and `s6-permafailon`**,
   which run the program after them.
-- **OpenRC's `supervise-daemon`**, which runs the program it is named. It reached the
-  `supervise` row by its first part, the kind of form #7825 may give back, so it has a row of
-  its own.
+- **OpenRC's `supervise-daemon`**, which runs the program it is named. It reached daemontools'
+  `supervise` row by its first part, but only by chance, since the two are of different
+  families, so it has a row of its own.
 - **`fakeroot`, `fakechroot` and `eatmydata`**, which run the command after them.
 - **Debian's package builders**: `debuild`, `dh`, `pbuilder`, `sbuild` and `gbp` run a package's
   `debian/rules`, as `dpkg-buildpackage` does. The `dh_<name>` helpers have no form that reaches
@@ -168,7 +168,8 @@ The fourth review of #7828 found more of the same families, each refused on the 
 - **The package builders beside `debuild`**: `pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`,
   `fedpkg`, `centpkg`, `rhpkg` and `tito`. Also `debconf`, which runs the command after it, and
   MacPorts' `daemondo`, which runs its `--start-cmd`. `deb-systemd-invoke`, which has
-  `systemctl` act on a unit, reaches the `invoke` row by its last part.
+  `systemctl` act on a unit, reaches Python's `invoke` row by its last part, but only by chance,
+  so it has a row of its own (round 12), pinned by a unit test.
 - **Perl's servers and runners beside `plackup`**: `starman`, `starlet`, `morbo`, `hypnotoad`,
   `mojo` (whose `eval` runs Perl), `start_server` and `mbtiny`.
 - **`s6-svlink` and `s6-rc-update`**, which hand a running s6 a service folder or a compiled
@@ -217,6 +218,13 @@ The forms also reach rows that were there before: `systemd` reaches `systemd-run
 `setuidgid` and `softlimit` reach their `s6-` twins. Their tests pass through either row, so a
 unit test pins each as a row of its own, as it does `supervise-daemon` and
 `find-repos-of-install`.
+
+A form that reaches a program of another family only by chance (OpenRC's `supervise-daemon`
+meeting daemontools' `supervise`, `find-repos-of-install` meeting `find`, `deb-systemd-invoke`
+meeting Python's `invoke`) is not what keeps that program refused: each has a row of its own and
+a unit test. A form within one family, such as `yum-config-manager` and the other `yum-<name>`
+programs reaching `yum`, or `aptitude-curses` reaching `aptitude`, is what refuses them, and a
+give-back under #7825 keeps it for the ones that run code.
 
 Which to give back, and how to do it without giving back the ones that run code, is part of
 #7825.
