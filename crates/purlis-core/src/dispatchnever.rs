@@ -370,6 +370,12 @@ const SEAL_UNVOUCHED_MEANS: &str = "Seal these nevers there seals exactly those,
      clears this project's dispatch grants on this machine, so every dispatch to another persona \
      asks you again until you grant it.";
 
+/// What Seal these nevers says in a process that is not the app (#7852): the press is the
+/// window's alone.
+const ONLY_THE_WINDOW_SEALS: &str = "only purlis's window can seal a list of pairs you said never \
+     to, so nothing was sealed and no grant was cleared; press Seal these nevers in Settings › \
+     Project › Policy";
+
 /// Reads the file, changes its pairs with `how` and writes it back, under purlis's lock on its
 /// directory. **Refuses a file that does not read**, and leaves it as it is.
 fn change(root: &Path, how: impl FnOnce(&mut Vec<Entry>)) -> io::Result<()> {
@@ -539,11 +545,17 @@ pub fn to_seal_unvouched(root: &Path) -> Option<ToKeep> {
 /// pairs `shown` digests, each shown faithfully, checked again under purlis's lock on the file;
 /// then the plane's nevers leave the list, and nothing else does. **And it clears this project's
 /// dispatch grants on this machine first** ([`crate::sandbox::local::clear_dispatch_grants`]),
-/// so no grant made while the list could not be vouched for counts once it reads: every dispatch
-/// across personas asks until the person grants it again. A press refused before the seal clears
-/// nothing; one cut short after the clear leaves the grants cleared and the nevers unread, which
+/// then `clear_also`, the grants the app holds in memory, so no grant made while the list could
+/// not be vouched for counts once it reads: every dispatch across personas asks until the person
+/// grants it again. A press refused before the clear clears nothing. One refused or cut short
+/// after it says the grants were cleared, and leaves them cleared and the nevers unread, which
 /// only asks more.
-pub fn seal_shown_unvouched(root: &Path, shown: &str) -> io::Result<()> {
+pub fn seal_shown_unvouched(root: &Path, shown: &str, clear_also: &dyn Fn()) -> io::Result<()> {
+    // The press's own gate: in a process that is not the app (a chat's, the CLI's), nothing is
+    // sealed and nothing cleared, whatever else would let it through.
+    if !crate::secrets::sealed_set::decides() {
+        return Err(io::Error::other(ONLY_THE_WINDOW_SEALS));
+    }
     if !unvouched_for_a_new_key(root) {
         return Err(io::Error::other(if vouched_for_a_new_key(root) {
             "purlis vouches for this list of pairs you said never to, so Keep these nevers keeps \
@@ -571,7 +583,13 @@ pub fn seal_shown_unvouched(root: &Path, shown: &str) -> io::Result<()> {
             "purlis could not clear this project's dispatch grants, so it sealed nothing ({why})"
         ))
     })?;
-    seal_as_they_stand(root, Some(shown))?;
+    clear_also();
+    seal_as_they_stand(root, Some(shown)).map_err(|why| {
+        io::Error::other(format!(
+            "purlis cleared this project's dispatch grants on this machine, but sealed nothing: \
+             {why}"
+        ))
+    })?;
     let anchor = crate::sandbox::local::anchor_key(root);
     crate::secrets::seal::unlist_replaced(&ANCHOR_KINDS, &anchor).map_err(|why| {
         io::Error::other(format!(

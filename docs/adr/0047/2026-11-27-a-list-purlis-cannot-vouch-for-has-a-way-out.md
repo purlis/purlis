@@ -18,15 +18,21 @@ as never accepted, or its nevers as none.
   other than purlis may have changed it**.
 - **It reuses Keep these nevers' machinery**: the digest of the pairs shown, only names a
   persona can have (`shows_faithfully`), the check again under purlis's lock on the file, then
-  `seal::unlist_replaced` for the nevers' anchor kinds alone. A list that changed since it was
-  shown seals nothing and clears nothing. No other plane, and not this plane's acceptance,
+  `seal::unlist_replaced` for the nevers' anchor kinds alone. A list found changed since it was
+  shown before the clear seals nothing and clears nothing; one found changed by the check under
+  the lock, after the clear, seals nothing and says the grants were cleared. In a process that
+  is not the app the press is refused first. No other plane, and not this plane's acceptance,
   leaves the list.
 - **It clears the project's dispatch grants on this machine, first**
   (`sandbox::local::clear_dispatch_grants`, and the app's grants made for one chat and its
-  one-start passes): yours, "any persona", those limited to a workspace, this machine's yes to
-  each of the project's grants, and what was set aside. So no grant made while the list could
-  not be vouched for counts once it reads, and every dispatch across personas asks until the
-  person grants it again. The committed file is never touched; declines and nevers stay, as each
+  one-start passes, in that order, once the checks pass and before the seal): yours, "any
+  persona", those limited to a workspace, this machine's yes to each of the project's grants,
+  and what was set aside. **The sealed set of those grants is always written again**, empty
+  and anchored at a counter one past the last, so a seal hidden before the press (its entry
+  taken out, the live list left) never counts once put back. A read of the grants in force
+  reads the nevers first, then every grant, the app's held in memory last. So no grant made
+  while the list could not be vouched for counts once it reads, and every dispatch across
+  personas asks until the person grants it again. The committed file is never touched; declines and nevers stay, as each
   only refuses. A press cut short after the clear leaves the nevers unread, which only asks more.
 - **The press's dead end** (item 2). Where both list accounts hold lists that each name a plane
   the other does not and **neither seal holds under any key purlis has**, neither is purlis's own:

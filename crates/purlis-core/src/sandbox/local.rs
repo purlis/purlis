@@ -2636,9 +2636,26 @@ pub fn revoke_dispatch(root: &Path, asking: &str, target: &str) -> io::Result<bo
 /// project's grants; and what was set aside to give back. Then every dispatch across personas asks
 /// the person until they grant it again. The project's committed file is never touched, so a
 /// teammate keeps its grants and this machine is told of them as new; what you declined and said
-/// never to stays, since each only refuses. Their seals go with them.
+/// never to stays, since each only refuses.
+///
+/// **Their seals go with them, whatever the file holds** (#7952's round 2): in the app the sealed
+/// set is always written again, empty, at a counter one past the last and anchored so. A seal a
+/// program hid before the press (its entry taken out, the live list and counter left) is never
+/// one that counts once put back: the live list it was on is gone. Refused, with nothing
+/// written, where the app cannot seal.
 pub fn clear_dispatch_grants(root: &Path) -> io::Result<()> {
-    change(root, |held| {
+    let file = path(root);
+    if file.as_os_str().is_empty() {
+        return Err(io::Error::other(
+            "this machine has no config home to keep it in",
+        ));
+    }
+    let anchor = anchor_key(root);
+    let seals = crate::secrets::sealed_set::decides();
+    if seals && crate::secrets::seal::can_seal() {
+        mark_sealed(&anchor)?;
+    }
+    write_new(&file, |held| {
         held.dispatch_mine.clear();
         held.dispatch_any.clear();
         held.dispatch_mine_in.clear();
@@ -2647,6 +2664,11 @@ pub fn clear_dispatch_grants(root: &Path) -> io::Result<()> {
         held.dispatch_seen_in.clear();
         held.dispatch_dormant.clear();
         held.dispatch_accepted_aside.clear();
+        if seals {
+            held.dispatch_sealed
+                .rewrite(DISPATCH_STORE, &anchor, |_, _| false, &[])?;
+        }
+        Ok(())
     })
 }
 

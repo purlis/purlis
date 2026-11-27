@@ -511,16 +511,34 @@ pub async fn seal_unvouched_project_nevers(
 }
 
 /// [`seal_unvouched_project_nevers`] on the project at `root`, whose grants made for one chat
-/// `store` holds, off the window's thread. Those go once the core sealed the pairs: until then
-/// the nevers read as unread, and no grant counts.
+/// `store` holds, off the window's thread. Those go once the core's checks pass, with its
+/// file's grants and **before the seal** (#7952's round 2): no moment has the nevers read while
+/// a grant made for one chat still counts.
 fn nevers_sealed(
     root: &std::path::Path,
     shown: &str,
     store: &crate::dispatchgrants::Store,
 ) -> Result<PolicyState, String> {
-    purlis_core::dispatchnever::seal_shown_unvouched(root, shown)
+    nevers_sealed_by(
+        root,
+        shown,
+        store,
+        purlis_core::dispatchnever::seal_shown_unvouched,
+    )
+}
+
+/// The core's sealing press, with what it clears beside its file's grants.
+type Sealer = fn(&std::path::Path, &str, &dyn Fn()) -> std::io::Result<()>;
+
+/// [`nevers_sealed`], by `seal`: the core's press, or a test's.
+fn nevers_sealed_by(
+    root: &std::path::Path,
+    shown: &str,
+    store: &crate::dispatchgrants::Store,
+    seal: Sealer,
+) -> Result<PolicyState, String> {
+    seal(root, shown, &|| store.clear_grants())
         .map_err(|why| format!("purlis could not seal your never-dispatch list: {why}"))?;
-    store.clear_grants();
     Ok(state_of(root))
 }
 
@@ -848,6 +866,51 @@ mod tests {
         });
         let sessions: Vec<Option<u32>> = log.lines.iter().map(|line| line.session).collect();
         assert_eq!(sessions, [Some(12), None]);
+    }
+
+    #[test]
+    fn seal_these_nevers_clears_the_grants_made_for_one_chat_before_the_seal() {
+        // #7952's round 2, L1: the core hands the press the grants the app holds in memory to
+        // clear once its checks pass, before it seals, so no moment has the nevers read while a
+        // grant made for one chat still counts.
+        fn sealer(_: &std::path::Path, _: &str, clear_also: &dyn Fn()) -> std::io::Result<()> {
+            clear_also();
+            Ok(())
+        }
+        let dir = plane("");
+        let store = crate::dispatchgrants::Store::default();
+        store.a_grant_for_one_chat_for_this_test("chat-1", "steward", "ops");
+        nevers_sealed_by(dir.path(), "shown", &store, sealer).expect("sealed");
+        assert!(!store.holds_a_grant_for_this_test());
+    }
+
+    #[test]
+    fn a_seal_refused_before_the_clear_keeps_the_grants_made_for_one_chat() {
+        // #7952's round 2: a press the core refuses before it clears leaves the store as it was,
+        // and the person is told what was refused.
+        fn sealer(_: &std::path::Path, _: &str, _: &dyn Fn()) -> std::io::Result<()> {
+            Err(std::io::Error::other("the list changed since it was shown"))
+        }
+        let dir = plane("");
+        let store = crate::dispatchgrants::Store::default();
+        store.a_grant_for_one_chat_for_this_test("chat-1", "steward", "ops");
+        let why = nevers_sealed_by(dir.path(), "shown", &store, sealer).expect_err("refused");
+        assert!(why.contains("changed since it was shown"), "{why}");
+        assert!(store.holds_a_grant_for_this_test());
+    }
+
+    #[test]
+    fn the_seal_press_hands_the_core_the_store_to_clear() {
+        // #7952's round 2, L3: `nevers_sealed` is the core's press with the store's clear, never
+        // a press that seals and forgets the grants held in memory. Outside the app the core
+        // refuses before any clear, so the store keeps its grant: this pins the wiring, the
+        // core's own tests pin the order.
+        let dir = plane("");
+        let store = crate::dispatchgrants::Store::default();
+        store.a_grant_for_one_chat_for_this_test("chat-1", "steward", "ops");
+        let why = nevers_sealed(dir.path(), "shown", &store).expect_err("not the app");
+        assert!(why.contains("only purlis's window can seal"), "{why}");
+        assert!(store.holds_a_grant_for_this_test());
     }
 
     #[test]
