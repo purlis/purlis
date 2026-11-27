@@ -225,6 +225,9 @@ impl<V: Clone + PartialEq> Shared<V> {
             let asked = Instant::now();
             let behind = Arc::clone(&slot);
             let at = repo.to_path_buf();
+            // Not carried into a counting scope (#7892): this read runs after the reader was
+            // answered, on the clock, so it is no part of what the read that asked cost, and a
+            // scope it joined would count it or not by how long the test ran.
             let started = std::thread::Builder::new()
                 .name("standing".into())
                 .spawn(move || Self::read_behind(&behind, &at, due, asked, compute));
