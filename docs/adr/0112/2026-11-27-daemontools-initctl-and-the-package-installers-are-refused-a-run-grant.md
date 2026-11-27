@@ -157,13 +157,12 @@ footing:
 The fourth review of #7828 found more of the same families, each refused on the same footing:
 
 - **Programs that run the command after them**: macOS's `taskpolicy`, util-linux's `choom` and
-  `uclampset`,
-  moreutils' `chronic`, `ifne`, `lckdo` and `zrun`, `cpulimit`, `nocache`, `schedtool`,
-  `dbus-run-session`, `xvfb-run`, `faketime`, `torsocks`, `proxychains` (and `proxychains4`, by
-  the name without its version),
-  `trickle`, and s6's `s6-maximumtime`. Also s6-networking's `s6-tcpserver`, `s6-tcpserver-access`,
-  `s6-tcpserver-socketbinder`, `s6-tcpclient`, `s6-tlsserver`, `s6-tlsclient`, `s6-tlsd` and
-  `s6-tlsc`, which are twins of the `s6-ipc*` programs.
+  `uclampset`, moreutils' `chronic`, `ifne`, `lckdo` and `zrun`, `cpulimit`, `nocache`, `schedtool`,
+  `dbus-run-session`, `xvfb-run`, `faketime`, `torsocks`, `proxychains` (and `proxychains4`, by the
+  name without its version), `trickle`, and s6's `s6-maximumtime`. Also s6-networking's
+  `s6-tcpserver`, `s6-tcpserver-access`, `s6-tcpserver-socketbinder`, `s6-tcpclient`,
+  `s6-tlsserver`, `s6-tlsclient`, `s6-tlsd` and `s6-tlsc`, which are twins of the `s6-ipc*`
+  programs.
 - **`rotatelogs`**, whose `-p` runs a program on each new log file.
 - **The package builders beside `debuild`**: `pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`,
   `fedpkg`, `centpkg`, `rhpkg` and `tito`. Also `debconf`, which runs the command after it, and
@@ -201,9 +200,10 @@ rightly stay refused, and some may be harmless. These are examples, not a comple
 - every `systemd-<name>`. Some run code (`systemd-analyze unit-shell` runs a shell in a unit's
   namespace) and others are thought harmless (`systemd-escape`, `systemd-path`,
   `systemd-creds`).
-- every `init-<name>` and `<name>-init`. The ones of other families that run or start what
-  they are handed or hold (`cloud-init`, `dumb-init`, `lxc-init`, `s6-rc-init`, `s6-linux-init`)
-  each have a row of their own, as the paragraph on a chance reach below says.
+- every `init-<name>` and `<name>-init`. The ones of other families that run what they are
+  handed, or hand a running supervisor what a chat may have written (`cloud-init`, `dumb-init`,
+  `lxc-init`, `s6-rc-init`, `s6-linux-init`), each have a row of their own, as the paragraph on a
+  chance reach below says.
 - every `yum-<name>`, `dnf-<name>` and `zypper-<name>`. `yum-config-manager` stays refused
   rightly, since it loads plugins through `-c` and `--setopt` as `yum` does.
 - every `cpan-<name>`. `cpan-upload` is thought to run nothing, though a chat may be handed a

@@ -2046,7 +2046,8 @@ fn the_rows_a_new_rows_form_also_reaches_are_each_kept_as_a_row_of_their_own() {
 }
 
 /// s6's `s6-envuidgid`, `s6-fghack` and `s6-setlock` run the program after them, and `s6-rc-init`
-/// starts s6-rc's services (round 13 of #7828's review). Daemontools' `envuidgid`, `fghack` and
+/// hands a running s6 the service folders of a compiled database a chat may have written, as
+/// `s6-rc-update` does (round 13 of #7828's review). Daemontools' `envuidgid`, `fghack` and
 /// `setlock` rows and the `init` row reach them by their last part, but only by chance, from
 /// another family, so each is refused by a row of its own.
 #[test]

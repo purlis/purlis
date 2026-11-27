@@ -2490,9 +2490,10 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "s6-rc-update",
     // Programs of other families that the rows #7828 added above reach by their last part, but only
     // by chance, so each has a row of its own (a unit test pins them): s6's `s6-envuidgid`,
-    // `s6-fghack` and `s6-setlock`, which run the program after them, and `s6-rc-init`, which
-    // starts s6-rc's services (round 13 of its review); and `cloud-init`, which runs the `bootcmd`
-    // and `runcmd` of the file it is handed, Yelp's `dumb-init` and LXC's `lxc-init`, which run the
+    // `s6-fghack` and `s6-setlock`, which run the program after them, and `s6-rc-init`, which hands
+    // a running s6 the service folders of a compiled database a chat may have written, as
+    // `s6-rc-update` does (round 13 of its review); and `cloud-init`, which runs the `bootcmd` and
+    // `runcmd` of the file it is handed, Yelp's `dumb-init` and LXC's `lxc-init`, which run the
     // command after them, and s6's `s6-linux-init` and `s6-linux-init-telinit`, which the `init`
     // and `telinit` rows reach (round 14).
     "s6-envuidgid",
