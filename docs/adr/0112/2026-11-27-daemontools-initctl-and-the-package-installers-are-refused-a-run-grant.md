@@ -21,8 +21,12 @@ on their manuals too, as running nothing they are handed: daemontools' `svc`, `s
 (and s6's `s6-svc`, `s6-svok` and `s6-svstat`), which talk to a supervisor already running, and
 its filters `readproctitle`, `tai64n` and `tai64nlocal`; and Upstart's `shutdown`, `reboot`,
 `halt` and `poweroff` (the last three run its fixed `/sbin/shutdown`), `runlevel`, which reads,
-and `initctl2dot`, which draws a graph. Reading each tool in source, to cite its lines or to give
-an Allow back, is filed as #7825.
+and `initctl2dot`, which draws a graph. From debianutils, beside `run-parts`: `which`,
+`tempfile`, `savelog`, `ischroot`, `add-shell`, `remove-shell`, `update-shells`, and
+`installkernel`, which runs `run-parts` only over the fixed `/etc/kernel` hook folders a chat
+cannot write (filed on #7833 all the same). From libcap, beside `capsh`: `getcap`, `setcap`,
+`getpcaps` and `captree`. Reading each tool in source, to cite its lines or to give an Allow back,
+is filed as #7825.
 
 ## daemontools (#6559)
 
