@@ -1,7 +1,17 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { Profiler, createElement, type ProfilerOnRenderCallback, type ReactNode } from "react";
+import {
+  Profiler,
+  createContext,
+  createElement,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  type ProfilerOnRenderCallback,
+  type ReactNode,
+} from "react";
 import { commands, type SlowMoment } from "./bindings";
 
 /**
@@ -11,7 +21,8 @@ import { commands, type SlowMoment } from "./bindings";
  * thread it never says at all. A second's wait for a tab, or half a second of a frozen window
  * while fifty chats work, is felt and then gone, with nothing left to look at. Each one is
  * written here, as one JSON line in `slow.jsonl` in the app's log folder, which the core keeps
- * to its newest 1,000 (`purlis_core::slowlog`): machine-local, never in a plane.
+ * to the newest of each kind up to that kind's cap (`purlis_core::slowlog`'s `Kind::keeping`,
+ * which also holds each kind's threshold): machine-local, never in a plane.
  *
  * - **An answer that took {@link SLOW_MS} or longer**, with its command, how long it took, when it
  *   was asked and how many chats were hot. Every command `answerWatch` times, so the ones
@@ -19,20 +30,25 @@ import { commands, type SlowMoment } from "./bindings";
  * - **A stall of {@link STALL_MS} or longer**: a frame that came that long after the one before
  *   it ({@link watchForStalls}), with how many chats were hot, the tab in front, and whether
  *   a view of a chat was being opened, and **what the window's thread did in that frame**
- *   (felt speed round 4, H9), the top {@link TOP} of each: `react`, the commit time of each
- *   region drawn ({@link Measured}); `events`, the core's events handled, by name and count
- *   ({@link eventHandled}); `answers`, the commands whose answers were handled, by name and
- *   count; and `scripts`, the scripts the webview says made a long frame, where it says so
- *   (Chromium's long-animation-frame timing; WebKit gives none).
+ *   (felt speed round 4, H9; #7891), so its causes can be told apart: `render_ms`, what React's
+ *   renders of the measured regions took of the gap, and the top {@link TOP} of each: `react`,
+ *   each region rendered ({@link Measured}) by its own time, with the time of the regions in it
+ *   and its commits; `events`, the core's events handled, each once, and `listeners`, the calls
+ *   of the window's listeners they made ({@link listenerCalled}); `answers`, the commands whose
+ *   answers were handled; and `marks`, what happened that costs a frame ({@link marked}).
+ * - **A change of the window's visibility**: hidden or shown, which WebKit also says when the
+ *   window is covered whole, with when ({@link watchForStalls}).
  *
  * Only written: nothing in the window reads it back or says it. Writing it is the one command
  * that is not timed (`answerWatch.ts`), so a slow write is not a slow answer to write.
  */
 
-/** An answer this long or longer is written down. */
+/** An answer this long or longer is written down: the core's threshold for an answer, which a
+ *  quicker one is not even sent to. */
 export const SLOW_MS = 1_000;
 
-/** A gap between frames this long or longer is a stall, and written down. */
+/** A gap between frames this long or longer is a stall, and written down: the core's threshold
+ *  for a stall. */
 export const STALL_MS = 200;
 
 /** The command that writes a slow moment: never timed itself. */
@@ -83,12 +99,16 @@ export function viewOpening(): () => void {
 /** How many of each kind of culprit a stall names: the largest. */
 export const TOP = 5;
 
-/** What the window's thread did since the last frame, each a name and what it adds up to. */
+/** What one region's renders added up to over a frame: its whole time, its own and its commits. */
+type Region = { ms: number; own: number; commits: number };
+
+/** What the window's thread did since the last frame, each by name. */
 const sinceLastFrame = {
-  react: new Map<string, number>(),
+  react: new Map<string, Region>(),
   events: new Map<string, number>(),
+  listeners: new Map<string, number>(),
   answers: new Map<string, number>(),
-  scripts: new Map<string, number>(),
+  marks: new Map<string, number>(),
 };
 
 function add(tally: Map<string, number>, name: string, by: number): void {
@@ -107,23 +127,125 @@ function startFrameAgain(): void {
   for (const tally of Object.values(sinceLastFrame)) tally.clear();
 }
 
-/** React's word on a commit of a {@link Measured} region: its time, added to the frame's. */
-const committed: ProfilerOnRenderCallback = (id, _phase, actualDuration) => {
-  add(sinceLastFrame.react, id, actualDuration);
-};
-
-/**
- * **A region of the window whose commits a stall can name** (H9): React's `Profiler`, its
- * time added up by `id` over the frame. Only the main regions wear one, so a stall names a
- * handful of places, not every component.
- */
-export function Measured({ id, children }: { id: string; children?: ReactNode }) {
-  return createElement(Profiler, { id, onRender: committed }, children);
+function region(name: string): Region {
+  let one = sinceLastFrame.react.get(name);
+  if (one === undefined) {
+    one = { ms: 0, own: 0, commits: 0 };
+    sinceLastFrame.react.set(name, one);
+  }
+  return one;
 }
 
-/** The window handled the core's event `name`: counted for the frame it is handled in. */
+/** The {@link Measured} region a component is drawn in, by its id. */
+const InRegion = createContext<string | undefined>(undefined);
+
+/**
+ * React's word on a commit of the {@link Measured} region `id`, drawn inside the region `parent`:
+ * its time added to its own and to its whole, and taken from its parent's own. React calls a
+ * region's `onRender` for every commit that rendered anything in it, so a parent's whole always
+ * holds its child's, and its own is what is left: PlaneView's body apart from the side views.
+ */
+function committed(id: string, parent: string | undefined, took: number): void {
+  const one = region(id);
+  one.ms += took;
+  one.own += took;
+  one.commits += 1;
+  if (parent !== undefined) region(parent).own -= took;
+}
+
+/**
+ * **A region of the window whose renders a stall can name** (H9, #7891): React's `Profiler`, its
+ * time added up by `id` over the frame, with the regions drawn inside it told apart. Only the
+ * main regions wear one, so a stall names a handful of places, not every component.
+ */
+export function Measured({ id, children }: { id: string; children?: ReactNode }) {
+  const parent = useContext(InRegion);
+  const onRender = useMemo<ProfilerOnRenderCallback>(
+    () => (name, _phase, actualDuration) => committed(name, parent, actualDuration),
+    [parent],
+  );
+  return createElement(
+    InRegion.Provider,
+    { value: id },
+    createElement(Profiler, { id, onRender }, children),
+  );
+}
+
+/** The regions rendered since the last frame, by their own time, the most first, and what they
+ *  took all told. */
+function rendered(): { render_ms: number; react: SlowStall["react"] } {
+  const all = [...sinceLastFrame.react].map(([name, { ms, own, commits }]) => ({
+    name,
+    ms,
+    own: Math.max(own, 0),
+    commits,
+  }));
+  return {
+    render_ms: Math.round(all.reduce((sum, one) => sum + one.own, 0)),
+    react: all
+      .sort((a, b) => b.own - a.own)
+      .slice(0, TOP)
+      .map(({ name, ms, own, commits }) => ({
+        name,
+        ms: Math.round(ms),
+        self_ms: Math.round(own),
+        commits,
+      })),
+  };
+}
+
+type SlowStall = Extract<SlowMoment, { kind: "stall" }>;
+
+/**
+ * The window handled one of the core's events, `name`, with one call: counted as an event and
+ * as a listener's call, for the frame it is handled in. What a terminal's piece of output is.
+ */
 export function eventHandled(name: string): void {
   add(sinceLastFrame.events, name, 1);
+  add(sinceLastFrame.listeners, name, 1);
+}
+
+/** The events whose listeners were called in the task running now, by name. */
+const heardThisTask = new Set<string>();
+
+/**
+ * **A listener of the core's event `name` was called** (`here.ts`): counted as a listener's
+ * call, and as the event only the first time in the task (#7891). Tauri calls every listener of
+ * one event in one go, a loop in one script (`tauri::event`'s emit), and each event in a script
+ * of its own, so the listeners of one event are called before any microtask runs: one cleared
+ * then sees each event once, however many listeners it calls.
+ */
+export function listenerCalled(name: string): void {
+  add(sinceLastFrame.listeners, name, 1);
+  if (heardThisTask.has(name)) return;
+  if (heardThisTask.size === 0) queueMicrotask(() => heardThisTask.clear());
+  heardThisTask.add(name);
+  add(sinceLastFrame.events, name, 1);
+}
+
+/** Something that costs a frame happened, `name` (a chat's pane mounted, a tab switched):
+ *  counted for the frame it happens in. */
+export function marked(name: string): void {
+  add(sinceLastFrame.marks, name, 1);
+}
+
+/** Marks `name` as the component is mounted, in the frame it is first drawn in: a chat's pane. */
+export function useMarkedOnMount(name: string): void {
+  useLayoutEffect(() => marked(name), [name]);
+}
+
+/**
+ * Marks `name` each time `value` changes to another that is not `undefined` once the component is
+ * drawn, never for the value it is first drawn with: a tab switched, and not the first one shown.
+ * Marked as the change is committed, in the frame it is drawn in.
+ */
+export function useMarkedOnChange(name: string, value: unknown): void {
+  const was = useRef(value);
+  useLayoutEffect(() => {
+    if (Object.is(was.current, value)) return;
+    was.current = value;
+    if (value !== undefined) marked(name);
+  }, [name, value]);
 }
 
 function write(moment: SlowMoment): void {
@@ -143,58 +265,6 @@ type Frames = (next: (time: number) => void) => unknown;
 
 /** What says whether the window is visible, and tells when that changes: the document. */
 type Page = EventTarget & { readonly visibilityState: DocumentVisibilityState };
-
-/** One script the webview says ran in a long animation frame (its `PerformanceScriptTiming`). */
-export type LongScript = {
-  readonly startTime: number;
-  readonly duration: number;
-  readonly invoker: string;
-  readonly sourceFunctionName: string;
-  readonly sourceURL: string;
-};
-
-/** A long animation frame the webview reported, with the scripts it says ran in it. */
-export type LongFrame = {
-  readonly startTime: number;
-  readonly duration: number;
-  readonly scripts: readonly LongScript[];
-};
-
-/** What hands over the long frames reported since it was last asked, none where none are. */
-type LongFrames = () => readonly LongFrame[];
-
-/**
- * **The webview's long animation frames**, where it reports them: Chromium's
- * `long-animation-frame` timing (WebKit has none, and then this is nothing). The entries are
- * taken as a stall is written, not as they are delivered, since the stalled frame's is still
- * queued then.
- */
-function webviewLongFrames(): LongFrames {
-  const types: readonly string[] =
-    typeof PerformanceObserver === "undefined"
-      ? []
-      : (PerformanceObserver.supportedEntryTypes ?? []);
-  if (!types.includes("long-animation-frame")) return () => [];
-  let kept: LongFrame[] = [];
-  const observer = new PerformanceObserver((list) => {
-    kept.push(...(list.getEntries() as unknown as LongFrame[]));
-    // Only the frames of the last few seconds can be in a stall.
-    if (kept.length > 50) kept = kept.slice(-50);
-  });
-  observer.observe({ type: "long-animation-frame", buffered: false });
-  return () => {
-    const taken = [...kept, ...(observer.takeRecords() as unknown as LongFrame[])];
-    kept = [];
-    return taken;
-  };
-}
-
-/** A script's name: its function and file where the webview says them, else what called it. */
-function scriptName(script: LongScript): string {
-  if (!script.sourceFunctionName) return script.invoker || "(script)";
-  const file = script.sourceURL.split(/[?#]/)[0].split("/").pop();
-  return file ? `${script.sourceFunctionName} (${file})` : script.sourceFunctionName;
-}
 
 /** How often the thread is asked whether it is free, while stalls are watched. */
 export const PROBE_MS = 100;
@@ -239,23 +309,28 @@ let watching: (() => void) | undefined;
  * stall: the clock starts again, at every change of visibility, with the next frame the visible
  * window is sent. A stall the thread was free all through ({@link threadProbe}) is still
  * written, marked `dark`: a webview that sends no frames while the screen is locked says it is
- * visible all the same, and time away is not a stall the person felt. Answers how to stop
+ * visible all the same, and time away is not a stall the person felt. Each change of visibility
+ * is written too (#7891): WebKit says a window covered whole, minimised or on another Space is
+ * hidden, so a stall can be read beside whether the person could see it. Answers how to stop
  * watching (a test's).
  */
 export function watchForStalls(
   frames: Frames = (next) => requestAnimationFrame(next),
   page: Page = document,
-  longFrames?: LongFrames,
 ): () => void {
   if (watching) return watching;
-  const longFramesSince = longFrames ?? webviewLongFrames();
   const thread = threadProbe();
   let last: number | undefined;
   let stopped = false;
+  let visible = page.visibilityState === "visible";
   // No frame comes while the window is hidden, so the frame before a hide cannot be what the
   // first frame after it is measured from: the change itself starts the clock again.
   const startAgain = () => {
     last = undefined;
+    const now = page.visibilityState === "visible";
+    if (now === visible) return;
+    visible = now;
+    write({ kind: "visibility", at: Date.now(), visible });
   };
   page.addEventListener("visibilitychange", startAgain);
   const onFrame = (time: number) => {
@@ -264,12 +339,6 @@ export function watchForStalls(
     if (page.visibilityState !== "visible") last = undefined;
     else {
       if (last !== undefined && time - last >= STALL_MS) {
-        const from = last;
-        for (const frame of longFramesSince()) {
-          if (frame.startTime + frame.duration <= from || frame.startTime >= time) continue;
-          for (const script of frame.scripts)
-            add(sinceLastFrame.scripts, scriptName(script), script.duration);
-        }
         write({
           kind: "stall",
           ms: Math.round(time - last),
@@ -278,10 +347,11 @@ export function watchForStalls(
           front: front?.name ?? null,
           opening: opening > 0,
           dark: unanswered < STALL_MS,
-          react: top(sinceLastFrame.react).map(({ name, n }) => ({ name, ms: n })),
+          ...rendered(),
           events: top(sinceLastFrame.events),
+          listeners: top(sinceLastFrame.listeners),
           answers: top(sinceLastFrame.answers),
-          scripts: top(sinceLastFrame.scripts).map(({ name, n }) => ({ name, ms: n })),
+          marks: top(sinceLastFrame.marks),
         });
       }
       last = time;

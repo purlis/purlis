@@ -77,7 +77,7 @@ import { watchForNoEcho } from "./noEcho";
 import { watchWrites } from "./stuckWrites";
 import { keepAltScreenToRows } from "./altScreenRows";
 import { useProjectShown } from "./projectShown";
-import { eventHandled, viewOpening } from "./slowLog";
+import { eventHandled, useMarkedOnMount, viewOpening } from "./slowLog";
 import { FIRST_PAGE, keepInView, pageHistory } from "./historyPages";
 
 /** A full reset (RIS): what a pane is written before the screen of a view opened again. */
@@ -142,6 +142,8 @@ export function SessionPane({
   /** **The chat's program has ended** (#4756): its last screen stays, and takes no input. */
   readOnly?: boolean;
 }) {
+  // A pane's mount costs a frame: the stall log marks it (`slowLog.ts`, #7891).
+  useMarkedOnMount("pane-mount");
   const holder = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | undefined>(undefined);
   /** The terminal and its view this pane draws now, while it draws one. */

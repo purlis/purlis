@@ -135,10 +135,12 @@ describe("a stall", () => {
         opening: true,
         // The test's frames are not the thread's: whether it was dark is the culprits' test's.
         dark: expect.any(Boolean),
+        render_ms: 0,
         react: [],
         events: [],
+        listeners: [],
         answers: [],
-        scripts: [],
+        marks: [],
       },
     ]);
   });
@@ -159,7 +161,7 @@ describe("a stall", () => {
     window.at(9_000);
     window.at(9_016);
     window.stop();
-    expect(written).toEqual([]);
+    expect(stalls()).toEqual([]);
   });
 
   it("is not measured from a frame a hidden window was sent after all", () => {
@@ -171,7 +173,7 @@ describe("a stall", () => {
     window.at(9_000);
     window.at(9_016);
     window.stop();
-    expect(written).toEqual([]);
+    expect(stalls()).toEqual([]);
   });
 
   it("says no view was opening once its opening is over, and no tab when none is in front", () => {
@@ -183,6 +185,35 @@ describe("a stall", () => {
     window.at(500);
     window.stop();
     expect(written).toMatchObject([{ kind: "stall", front: null, opening: false, hot: 0 }]);
+  });
+});
+
+/** The stalls written, without the visibility changes beside them. */
+function stalls(): SlowMoment[] {
+  return written.filter((one) => one.kind === "stall");
+}
+
+describe("a visibility change", () => {
+  it("is written each time the window is hidden or shown, with when, and nothing while it stays as it was", () => {
+    vi.useFakeTimers({ now: 1_793_000_000_000 });
+    const window = frames();
+    window.hide();
+    vi.advanceTimersByTime(5_000);
+    window.show();
+    window.show();
+    window.stop();
+
+    expect(written).toEqual([
+      { kind: "visibility", at: 1_793_000_000_000, visible: false },
+      { kind: "visibility", at: 1_793_000_005_000, visible: true },
+    ]);
+  });
+
+  it("is not written once stalls are no longer watched", () => {
+    const window = frames();
+    window.stop();
+    window.hide();
+    expect(written).toEqual([]);
   });
 });
 
@@ -198,11 +229,14 @@ describe("the recent entries", () => {
         front: "steward 3",
         opening: true,
         dark: false,
-        react: [{ name: "PlaneView", ms: 210 }],
+        render_ms: 210,
+        react: [{ name: "PlaneView", ms: 210, self_ms: 210, commits: 1 }],
         events: [{ name: "chat-events", n: 4 }],
+        listeners: [{ name: "chat-events", n: 4 }],
         answers: [],
-        scripts: [],
+        marks: [],
       },
+      { kind: "visibility", at: 3, visible: false },
     ];
     vi.spyOn(commands, "slowLogRecent").mockResolvedValueOnce({ status: "ok", data: entries });
     expect(await recentSlowLog()).toEqual(entries);

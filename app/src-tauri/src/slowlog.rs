@@ -5,7 +5,7 @@
 //! `purlis_core::slowlog`): what `app/src/slowLog.ts` sends, and reads back for a person's
 //! diagnostics (#4774).
 
-use purlis_core::slowlog::{Counted, Slow, Took};
+use purlis_core::slowlog::{Counted, Rendered, Slow, Spread, Took};
 use serde::{Deserialize, Serialize};
 
 /// One slow moment the window felt, as it sends it. `at` is milliseconds since 1970 by the
@@ -22,11 +22,13 @@ pub enum SlowMoment {
     },
     /// A gap of `ms` between two of the window's frames, seen at `at`, while `hot` chats were
     /// working, with the tab in front (`front`) and whether a view of a chat was opening, and
-    /// what the window's thread did in that frame, the top five of each (felt speed round 4,
-    /// H9): the regions whose React commits took longest (`react`), the core's events handled
-    /// (`events`) and answers handled (`answers`) by name and count, and the scripts the webview
-    /// said made the frame long (`scripts`). `dark`: the thread answered all through the gap,
-    /// so the webview withheld its frames (a locked screen, a display asleep, a window covered).
+    /// what the window's thread did in that frame (felt speed round 4, H9; #7891): `render_ms`,
+    /// what React's renders of the measured regions took of the gap, and the top five of each,
+    /// the regions whose renders took longest by their own time (`react`), the core's events
+    /// handled, each once (`events`), the calls of their listeners (`listeners`), the answers
+    /// handled (`answers`) and what happened that costs a frame (`marks`), by name and count.
+    /// `dark`: the thread answered all through the gap, so the webview withheld its frames (a
+    /// locked screen, a display asleep, a window covered).
     Stall {
         ms: u32,
         at: f64,
@@ -34,10 +36,12 @@ pub enum SlowMoment {
         front: Option<String>,
         opening: bool,
         dark: bool,
-        react: Vec<StallTook>,
+        render_ms: u32,
+        react: Vec<StallRendered>,
         events: Vec<StallCounted>,
+        listeners: Vec<StallCounted>,
         answers: Vec<StallCounted>,
-        scripts: Vec<StallTook>,
+        marks: Vec<StallCounted>,
     },
     /// The core's main thread ran a ping `ms` after it was asked to at `at`, busy with the
     /// command `running` when the wait was noticed (`crate::mainwatch`). The core writes it; the
@@ -59,16 +63,56 @@ pub enum SlowMoment {
         hot: u32,
         phases: Vec<StallTook>,
     },
+    /// The window became visible (`visible`) or stopped being visible at `at`: hidden,
+    /// minimised, on another Space or covered whole, as WebKit reports it (#7891).
+    Visibility { at: f64, visible: bool },
+    /// The core's answer to `command` of class `class`, asked at `at`: `queued_ms` waiting for
+    /// a thread, then `work_ms` doing it (#7893). The core writes it; the window only reads it
+    /// back.
+    AnswerSpan {
+        command: String,
+        class: String,
+        queued_ms: u32,
+        work_ms: u32,
+        at: f64,
+    },
+    /// How long the core's answers to each command took from `since` to `at` (#7893). The core
+    /// writes it; the window only reads it back.
+    AnswerSummary {
+        at: f64,
+        since: f64,
+        commands: Vec<AnswerSpread>,
+    },
 }
 
-/// Something the window's thread did in a stalled frame, by name, and how long it took there.
+/// A region of the window React rendered in a stalled frame, by name: `ms` with the regions
+/// inside it, `self_ms` its own body's, and how many `commits` rendered it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct StallRendered {
+    pub name: String,
+    pub ms: u32,
+    pub self_ms: u32,
+    pub commits: u32,
+}
+
+/// How long `n` answers to `command` of class `class` took: the median and 99th percentile.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
+pub struct AnswerSpread {
+    pub command: String,
+    pub class: String,
+    pub n: u32,
+    pub p50_ms: u32,
+    pub p99_ms: u32,
+}
+
+/// A phase of an opening, by name, and how long it took.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct StallTook {
     pub name: String,
     pub ms: u32,
 }
 
-/// Something the window handled `n` times in a stalled frame, by name.
+/// Something the window handled or did `n` times in a stalled frame, by name.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, specta::Type)]
 pub struct StallCounted {
     pub name: String,
@@ -96,6 +140,82 @@ impl From<StallCounted> for Counted {
 impl From<Counted> for StallCounted {
     fn from(Counted { name, n }: Counted) -> StallCounted {
         StallCounted { name, n }
+    }
+}
+
+impl From<StallRendered> for Rendered {
+    fn from(
+        StallRendered {
+            name,
+            ms,
+            self_ms,
+            commits,
+        }: StallRendered,
+    ) -> Rendered {
+        Rendered {
+            name,
+            ms,
+            self_ms,
+            commits,
+        }
+    }
+}
+
+impl From<Rendered> for StallRendered {
+    fn from(
+        Rendered {
+            name,
+            ms,
+            self_ms,
+            commits,
+        }: Rendered,
+    ) -> StallRendered {
+        StallRendered {
+            name,
+            ms,
+            self_ms,
+            commits,
+        }
+    }
+}
+
+impl From<AnswerSpread> for Spread {
+    fn from(
+        AnswerSpread {
+            command,
+            class,
+            n,
+            p50_ms,
+            p99_ms,
+        }: AnswerSpread,
+    ) -> Spread {
+        Spread {
+            command,
+            class,
+            n,
+            p50_ms,
+            p99_ms,
+        }
+    }
+}
+
+impl From<Spread> for AnswerSpread {
+    fn from(
+        Spread {
+            command,
+            class,
+            n,
+            p50_ms,
+            p99_ms,
+        }: Spread,
+    ) -> AnswerSpread {
+        AnswerSpread {
+            command,
+            class,
+            n,
+            p50_ms,
+            p99_ms,
+        }
     }
 }
 
@@ -136,10 +256,12 @@ impl From<SlowMoment> for Slow {
                 front,
                 opening,
                 dark,
+                render_ms,
                 react,
                 events,
+                listeners,
                 answers,
-                scripts,
+                marks,
             } => Slow::Stall {
                 ms,
                 at: at(when),
@@ -147,10 +269,12 @@ impl From<SlowMoment> for Slow {
                 front,
                 opening,
                 dark,
+                render_ms,
                 react: each(react),
                 events: each(events),
+                listeners: each(listeners),
                 answers: each(answers),
-                scripts: each(scripts),
+                marks: each(marks),
             },
             SlowMoment::CoreStall {
                 ms,
@@ -181,6 +305,32 @@ impl From<SlowMoment> for Slow {
                 hot,
                 phases: each(phases),
             },
+            SlowMoment::Visibility { at: when, visible } => Slow::Visibility {
+                at: at(when),
+                visible,
+            },
+            SlowMoment::AnswerSpan {
+                command,
+                class,
+                queued_ms,
+                work_ms,
+                at: when,
+            } => Slow::AnswerSpan {
+                command,
+                class,
+                queued_ms,
+                work_ms,
+                at: at(when),
+            },
+            SlowMoment::AnswerSummary {
+                at: when,
+                since,
+                commands,
+            } => Slow::AnswerSummary {
+                at: at(when),
+                since: at(since),
+                commands: each(commands),
+            },
         }
     }
 }
@@ -209,10 +359,12 @@ impl From<Slow> for SlowMoment {
                 front,
                 opening,
                 dark,
+                render_ms,
                 react,
                 events,
+                listeners,
                 answers,
-                scripts,
+                marks,
             } => SlowMoment::Stall {
                 ms,
                 at: ms_of(at),
@@ -220,10 +372,12 @@ impl From<Slow> for SlowMoment {
                 front,
                 opening,
                 dark,
+                render_ms,
                 react: each(react),
                 events: each(events),
+                listeners: each(listeners),
                 answers: each(answers),
-                scripts: each(scripts),
+                marks: each(marks),
             },
             Slow::CoreStall { ms, at, running } => SlowMoment::CoreStall {
                 ms,
@@ -245,6 +399,32 @@ impl From<Slow> for SlowMoment {
                 at: ms_of(at),
                 hot,
                 phases: each(phases),
+            },
+            Slow::Visibility { at, visible } => SlowMoment::Visibility {
+                at: ms_of(at),
+                visible,
+            },
+            Slow::AnswerSpan {
+                command,
+                class,
+                queued_ms,
+                work_ms,
+                at,
+            } => SlowMoment::AnswerSpan {
+                command,
+                class,
+                queued_ms,
+                work_ms,
+                at: ms_of(at),
+            },
+            Slow::AnswerSummary {
+                at,
+                since,
+                commands,
+            } => SlowMoment::AnswerSummary {
+                at: ms_of(at),
+                since: ms_of(since),
+                commands: each(commands),
             },
         }
     }
@@ -295,21 +475,28 @@ mod tests {
                 front: Some("steward 3".into()),
                 opening: true,
                 dark: false,
-                react: vec![StallTook {
+                render_ms: 230,
+                react: vec![StallRendered {
                     name: "PlaneView".into(),
-                    ms: 210,
+                    ms: 230,
+                    self_ms: 20,
+                    commits: 3,
                 }],
                 events: vec![StallCounted {
-                    name: "chat-events".into(),
-                    n: 4,
+                    name: "plane-changed".into(),
+                    n: 1,
+                }],
+                listeners: vec![StallCounted {
+                    name: "plane-changed".into(),
+                    n: 40,
                 }],
                 answers: vec![StallCounted {
                     name: "alertsEverywhere".into(),
                     n: 1,
                 }],
-                scripts: vec![StallTook {
-                    name: "TimerHandler".into(),
-                    ms: 290,
+                marks: vec![StallCounted {
+                    name: "pane-mount".into(),
+                    n: 2,
                 }],
             },
             SlowMoment::CoreStall {
@@ -321,6 +508,37 @@ mod tests {
                 command: "send_input".into(),
                 ms: 140,
                 at: 1_793_000_000_999.0,
+            },
+            SlowMoment::Opening {
+                ms: 4_300,
+                at: 1_793_000_001_000.0,
+                hot: 12,
+                phases: vec![StallTook {
+                    name: "branch_cut".into(),
+                    ms: 900,
+                }],
+            },
+            SlowMoment::Visibility {
+                at: 1_793_000_001_111.0,
+                visible: false,
+            },
+            SlowMoment::AnswerSpan {
+                command: "sandbox_state".into(),
+                class: "git".into(),
+                queued_ms: 40,
+                work_ms: 832,
+                at: 1_793_000_001_222.0,
+            },
+            SlowMoment::AnswerSummary {
+                at: 1_793_003_600_000.0,
+                since: 1_793_000_000_000.0,
+                commands: vec![AnswerSpread {
+                    command: "sandbox_state".into(),
+                    class: "git".into(),
+                    n: 133,
+                    p50_ms: 872,
+                    p99_ms: 2_400,
+                }],
             },
         ];
         for one in sent {
