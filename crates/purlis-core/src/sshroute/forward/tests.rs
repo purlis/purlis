@@ -187,3 +187,57 @@ fn a_forward_another_process_holds_is_used_only_while_its_socket_answers() {
     assert!(ssh_of("stale").is_some(), "this process opened it anew");
     let_go("stale");
 }
+
+/// **One pool's forward is held apart from every other's** (#7862, T6 Q7): while a forward to one
+/// machine is slow to open, a look at another pool's forward answers at once, never after the
+/// slow one's wait.
+/// Seen red: the look at the other pool waited out the slow forward's five seconds, behind one
+/// table of every pool's forwards.
+#[test]
+fn a_forward_slow_to_open_holds_up_no_other_pools() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = tempfile::tempdir().unwrap();
+    // An ssh that names the machine (`-G`), and otherwise makes no socket for five seconds.
+    let ssh = dir.path().join("ssh");
+    crate::forklock::while_descriptors_are_made(|| {
+        std::fs::write(
+            &ssh,
+            "#!/bin/sh\nfor a in \"$@\"; do [ \"$a\" = -G ] && { printf 'hostname box\\nuser me\\n'; \
+             exit 0; }; done\nsleep 5\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&ssh, std::fs::Permissions::from_mode(0o755)).unwrap();
+    });
+    let route = Route::parse("ssh://me@box/var/run/docker.sock").unwrap();
+    let key = key();
+    let (links, settings) = (dir.path().join("l"), dir.path().join("s"));
+    let opening = Opening {
+        ssh: &ssh,
+        route: &route,
+        pool: "slow-7862",
+        key: &key,
+        engine_links: &links,
+        settings_in: &settings,
+    };
+    let started = AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            started.store(true, Ordering::Release);
+            assert!(hold(&opening).is_err(), "the slow forward never opens");
+        });
+        while !started.load(Ordering::Acquire) {
+            std::thread::yield_now();
+        }
+        // Its ssh is running, waited on for its socket.
+        std::thread::sleep(Duration::from_millis(700));
+        let began = std::time::Instant::now();
+        assert!(!dropped("another-7862"));
+        assert_eq!(ssh_of("another-7862"), None);
+        let_go("another-7862");
+        assert!(
+            began.elapsed() < Duration::from_secs(2),
+            "another pool's forward waited {:?} on the slow one",
+            began.elapsed()
+        );
+    });
+}

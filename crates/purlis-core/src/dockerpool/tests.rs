@@ -2983,6 +2983,154 @@ fn a_running_runner_is_only_checked() {
     assert!(!fake.file("log").contains("start "), "{}", fake.file("log"));
 }
 
+/// How many of the fake's logged runs began with `words`.
+fn runs_of(fake: &FakeDocker, words: &str) -> usize {
+    fake.file("log")
+        .lines()
+        .filter(|line| line.starts_with(words))
+        .count()
+}
+
+/// **A link's container check reads each fact once** (#7862, T6 Q2): the daemon, the container
+/// and its home volume, one `docker` run each, where the check before the start and the whole
+/// check after it read the daemon and the container twice.
+/// Seen red: two `info` runs and two `container inspect` runs, before `checked` took what
+/// `resumed` had read.
+#[test]
+fn a_running_runners_check_reads_its_daemon_container_and_home_once_each() {
+    let fake = FakeDocker::new(&inspected());
+    assert_eq!(
+        fake.docker()
+            .resumed(&made())
+            .map(|resumed| resumed.started),
+        Ok(false)
+    );
+    let log = fake.file("log");
+    assert_eq!(runs_of(&fake, "info "), 1, "{log}");
+    assert_eq!(runs_of(&fake, "container inspect "), 1, "{log}");
+    assert_eq!(runs_of(&fake, "volume inspect "), 1, "{log}");
+}
+
+/// **A started runner's check reads its daemon once and its container again** (#7862): the start
+/// changed the container, so it is inspected again after it; the daemon and the volume did not
+/// change, and are not read again.
+#[test]
+fn a_started_runners_check_reads_its_container_again_and_nothing_else() {
+    let mut stopped = inspected();
+    stopped[0]["State"]["Running"] = false.into();
+    let fake = FakeDocker::new(&inspected());
+    fake.set("inspect-once", &stopped.to_string());
+    assert_eq!(
+        fake.docker()
+            .resumed(&made())
+            .map(|resumed| resumed.started),
+        Ok(true)
+    );
+    let log = fake.file("log");
+    assert_eq!(runs_of(&fake, "info "), 1, "{log}");
+    assert_eq!(runs_of(&fake, "container inspect "), 2, "{log}");
+    assert_eq!(runs_of(&fake, "volume inspect "), 1, "{log}");
+}
+
+/// **The daemon, the container and its home are read at once** (#7862, T6 Q2): each read waits,
+/// in the stand-in, until all three have begun, and gives up after five seconds. Read one after
+/// another, the first gives up, and the check is refused.
+/// Seen red: refused, `docker info` read alone.
+#[test]
+fn a_containers_check_reads_its_daemon_container_and_home_at_once() {
+    let fake = FakeDocker::new(&inspected());
+    let dir = fake.dir.path();
+    std::fs::create_dir(dir.join("together")).unwrap();
+    stand_in::program(
+        &dir.join("together"),
+        "docker",
+        &format!(
+            "#!/bin/sh\ncase \"$1 $2\" in\n  'info '*|'container inspect'|'volume inspect') \
+             touch '{dir}/arrived-'\"$1\"; n=0; \
+             while [ \"$(ls '{dir}' | grep -c '^arrived-')\" -lt 3 ]; do \
+             n=$((n+1)); [ $n -gt 100 ] && {{ echo \"$1 was read alone\" >&2; exit 1; }}; \
+             sleep 0.05; done ;;\nesac\nexec '{docker}' \"$@\"\n",
+            dir = dir.display(),
+            docker = dir.join("docker").display(),
+        ),
+    );
+    let docker = Docker::at(dir.join("together/docker")).with_settings_in(dir.join("settings"));
+    assert_eq!(docker.check(&made()), Ok(()), "{}", fake.file("log"));
+}
+
+/// The stand-in's `docker info --format '{{json .}}'`, as a Docker of id `engine` with `options`
+/// as its daemon's security options prints it.
+fn info_of(engine: &str, options: &serde_json::Value) -> String {
+    serde_json::json!({ "ID": engine, "SecurityOptions": options, "ServerErrors": [] }).to_string()
+}
+
+/// **On a cold link, the daemon's options are the pin's own `docker info`'s** (#7862, T6 Q2): the
+/// engine's check through a forward just opened reads all of `docker info`, the daemon's security
+/// options with it, and the container's check after it takes them from there. Taken once: the
+/// next check reads them again.
+/// Seen red: a second `docker info` (here answered as a whole info, which no check passes).
+#[test]
+fn a_cold_links_container_check_takes_the_daemon_from_the_pins_docker_info() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set(
+        "info",
+        &info_of(
+            "ENGINE",
+            &serde_json::json!(["name=seccomp,profile=builtin", "name=cgroupns"]),
+        ),
+    );
+    let docker = fake.docker().keeping_what_its_pin_said();
+    assert_eq!(docker.engine_id_said().as_deref(), Ok("ENGINE"));
+    assert_eq!(
+        docker.resumed(&made()).map(|resumed| resumed.started),
+        Ok(false)
+    );
+    assert_eq!(runs_of(&fake, "info "), 1, "{}", fake.file("log"));
+    // Taken once: the next check reads the daemon again, here as the whole info it can't pass.
+    assert!(docker.check(&made()).is_err());
+    assert!(runs_of(&fake, "info ") > 1, "{}", fake.file("log"));
+}
+
+/// **A daemon the pin's `docker info` says gives no built-in seccomp profile is refused as it
+/// always was** (#7862): nothing is checked differently for where the options were read.
+#[test]
+fn a_daemon_the_pins_docker_info_finds_without_the_builtin_profile_is_refused() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set(
+        "info",
+        &info_of(
+            "ENGINE",
+            &serde_json::json!(["name=seccomp,profile=unconfined"]),
+        ),
+    );
+    let docker = fake.docker().keeping_what_its_pin_said();
+    assert_eq!(docker.engine_id_said().as_deref(), Ok("ENGINE"));
+    let refused = docker.resumed(&made()).map(|_| ()).unwrap_err();
+    assert_eq!(
+        refused,
+        check_daemon(&serde_json::json!(["name=seccomp,profile=unconfined"])).unwrap_err()
+    );
+    assert_eq!(runs_of(&fake, "info "), 1, "{}", fake.file("log"));
+}
+
+/// **A `docker` that was never a pool's pin keeps nothing of what `docker info` said** (#7862):
+/// only the check of a pool's own link hands on what its pin read.
+#[test]
+fn a_docker_not_pointed_at_a_pool_keeps_nothing_its_info_said() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set(
+        "info",
+        &info_of(
+            "ENGINE",
+            &serde_json::json!(["name=seccomp,profile=builtin"]),
+        ),
+    );
+    let docker = fake.docker();
+    assert_eq!(docker.engine_id_said().as_deref(), Ok("ENGINE"));
+    assert!(docker.check(&made()).is_err(), "{}", fake.file("log"));
+    assert!(runs_of(&fake, "info ") > 1, "{}", fake.file("log"));
+}
+
 /// What the step guard wrote while `then` ran (#7182), at `debug` so a `docker` call is there too.
 fn steps_said_while(then: impl FnOnce()) -> String {
     #[derive(Clone, Default)]

@@ -861,7 +861,9 @@ fn round_trip_ms(socket: &std::path::Path) -> u64 {
         let mut got = Vec::new();
         let mut buffer = [0u8; 1024];
         loop {
-            let read = stream.read(&mut buffer).expect("the engine answers its ping");
+            let read = stream
+                .read(&mut buffer)
+                .expect("the engine answers its ping");
             assert!(read > 0, "the forward closed during a ping");
             got.extend_from_slice(&buffer[..read]);
             let text = String::from_utf8_lossy(&got);
@@ -972,7 +974,11 @@ fn a_start_on_a_remote_pool_times_each_of_its_steps() {
     let remote = trusted(&fixture, pool);
     forward::let_go_of_all();
     let docker = through(&fixture, pool, &remote).expect("the forward opens");
-    let rtt = round_trip_ms(docker.forwarded().expect("a pool on another machine's forward"));
+    let rtt = round_trip_ms(
+        docker
+            .forwarded()
+            .expect("a pool on another machine's forward"),
+    );
     let image = Image::pinned(&image).expect("the image is named by digest");
     let (user, home) = docker
         .declared(&image)
@@ -1083,6 +1089,21 @@ fn a_start_on_a_remote_pool_times_each_of_its_steps() {
         }
         out += "\n";
     }
+    // **The link's budget** (#7185, T5 Q4): the rows with no parent, the calls left out, held to
+    // 1.5 × the baseline of `docs/research/2026-11-remote-start-baseline.md`, at the rig's 40 ms.
+    let link_ms = |steps: &[StepLine]| -> u64 {
+        steps
+            .iter()
+            .filter(|line| line.parent.is_none() && !line.name.starts_with("docker_"))
+            .map(|line| line.ms)
+            .sum()
+    };
+    let budgets = [4500, 3000, 3700];
+    out += "| scenario | link (rows with no parent, ms) | budget (ms) |\n|---|---|---|\n";
+    for ((label, _, steps), budget) in table.iter().zip(budgets) {
+        out += &format!("| {label} | {} | {budget} |\n", link_ms(steps));
+    }
+    out += "\n";
     let _ = std::io::Write::write_all(&mut std::io::stderr(), out.as_bytes());
     if let Some(summary) = std::env::var_os("GITHUB_STEP_SUMMARY")
         && let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(summary)
@@ -1090,6 +1111,20 @@ fn a_start_on_a_remote_pool_times_each_of_its_steps() {
         let _ = std::io::Write::write_all(&mut file, out.as_bytes());
     }
 
+    // The budget holds only at the round trip it is stated at (#7185, T5 Q3): a rig that lost its
+    // netem, or one far slower, says nothing about it.
+    assert!(
+        (30..=60).contains(&rtt),
+        "the round trip measured {rtt} ms, outside the 30 to 60 ms the link's budget is stated \
+         at (the rig's netem is 40 ms ± 10 ms): {out}"
+    );
+    for ((label, _, steps), budget) in table.iter().zip(budgets) {
+        let link = link_ms(steps);
+        assert!(
+            link <= budget,
+            "{label}: the link took {link} ms, over its budget of {budget} ms: {out}"
+        );
+    }
     // Every step of the link path was timed, in the scenario it belongs to.
     let said = |at: usize, step: &str| table[at].2.iter().any(|line| line.name == step);
     for step in ["ssh_forward_open", "engine_pin_check", "docker_info"] {
