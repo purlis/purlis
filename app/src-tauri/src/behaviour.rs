@@ -1235,6 +1235,26 @@ impl OnTheRunner {
         HostStopped { runner: self, pid }
     }
 
+    /// The runner's data home: the first of its name's spellings, newest first, that is a folder
+    /// under its user's data directory, as the data home's ladder picks it (`datahome::in_base`).
+    /// Its host begins it as it starts (`datahome::begin_a_runners`), so it is there before any
+    /// browser has run on the runner, whose `browsers/` folder is made only by the first.
+    fn data_home(&self) -> PathBuf {
+        let spellings: Vec<&str> = purlis_core::names::DATA_HOME.spellings().collect();
+        let found = self.prints(&format!(
+            "for name in {}; do [ -d \"$HOME/.local/share/$name\" ] && \
+             {{ printf %s \"$HOME/.local/share/$name\"; break; }}; done; true",
+            spellings.join(" ")
+        ));
+        let found = found.trim();
+        assert!(
+            !found.is_empty(),
+            "the runner's host has begun its data home, as one of {spellings:?} under \
+             ~/.local/share"
+        );
+        PathBuf::from(found)
+    }
+
     /// Whether the process `pid` of the runner's container is there.
     fn has(&self, pid: u32) -> bool {
         let proc = format!("/proc/{pid}");
@@ -1253,20 +1273,13 @@ impl OnTheRunner {
     /// in with no key, its harness the program `program` is on this machine. A Codex profile is
     /// one for sandboxed chats only, its folder where purlis makes such a profile's (#2037), and
     /// an opencode profile one purlis made there, with its data folder beside its config folder:
-    /// under the runner's data home, in use once its first browser has started.
+    /// under the runner's data home, which its host begins as it starts, before any browser.
     fn signs_in_as(&self, harness: &str, name: &str, program: &Path) {
         use purlis_core::profilestore::{Folders, MachineProfile};
         let made_here = matches!(harness, "codex" | "opencode");
         let folder = if made_here {
-            let browsers = self.prints(&format!(
-                "ls -d \"$HOME\"/.local/share/*/{} | head -n 1",
-                purlis_core::datahome::BROWSERS
-            ));
-            let data = Path::new(browsers.trim())
-                .parent()
-                .expect("the runner's data home, where its browsers are")
-                .to_path_buf();
-            data.join(purlis_core::profilestore::DIR)
+            self.data_home()
+                .join(purlis_core::profilestore::DIR)
                 .join(name)
                 .join(purlis_core::profilestore::CONFIG)
         } else {
