@@ -487,6 +487,7 @@ pub(crate) const ANSWER_CLASSES: &[(Class, &[&str])] = &[
             "project_chats_run_on",
             "project_lives_here",
             "project_policy_state",
+            "project_prerequisites",
             "projects_not_held",
             "proposed_change",
             "proposed_pin",
