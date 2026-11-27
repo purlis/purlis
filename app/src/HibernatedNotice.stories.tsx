@@ -4,7 +4,8 @@
 /**
  * **The band over a hibernated chat** (SC-4a, #7630): it says the chat is hibernated, and
  * offers Resume. Drawn in every cell of the theme matrix, at a
- * pane's width.
+ * pane's width. Its baselines, in Chromium and WebKit, are drawn by a pull request's `stories`
+ * run, in the pinned image.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn } from "storybook/test";
