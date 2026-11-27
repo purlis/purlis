@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795742134351,
+  "lastUpdate": 1795744039216,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56826,6 +56826,48 @@ window.BENCHMARK_DATA = {
             "value": 102.108586,
             "unit": "ms",
             "extra": "median of 5 runs: 101.515, 101.661, 102.109, 102.204, 102.792 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3295c3892cb4bc85fd3d767713be1ddf65229950",
+          "message": "E2E: a window that paints no frames fails at once, naming why; checks for the benchmark Mac's screen session (#7824)\n\n* Outcome bars: a window that paints no frames fails with its cause, and the self-hosted Mac keeps its display awake (#7738)\n\nThe benchmark Mac's first run (45897228656) failed the studio's Library and\nopening bars on all three harnesses because WebKit painted no frames:\nrequestAnimationFrame never fired, so the Library drew its first screen and\nnever the rest (#4351's screen a frame), and the opening's rAF clock never\nstopped. The DOM still answered, so it read as the app's failure.\n\n- app/e2e/drawn.ts: theWindowPaintsFrames, in every config's before, fails\n  with the cause when the window paints under two frames in 5 s.\n- outcome-bars.yml (self-hosted only): fail before the build when the runner\n  user has no console session or a locked screen; caffeinate -d -i -u while the\n  bars run, stopped by the last step.\n- docs/updating.md: the Mac-side settings (auto-login, no screen lock, no\n  display sleep, a display or dummy plug).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CXE238C1Z2PAQ9HJ3AFG7J\nPurlis-Persona: steward\n\n* E2E: count the window's frames with no function named in the page\n\nThe frame check named its helpers inside browser.execute, and the spec's bundler wraps\na named function in a __name call the page does not have: on Linux every worker's\nbefore() threw \"Can't find variable: __name\" (#7824's scenario tests, part 3).\nAnonymous requestAnimationFrame callbacks, asked for by a timer, count the frames now.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* E2E: drawn.ts as Prettier writes it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T01:18:19Z",
+          "tree_id": "79e43403ccfbb9f397bd728e95361437746ece31",
+          "url": "https://github.com/purlis/purlis/commit/3295c3892cb4bc85fd3d767713be1ddf65229950"
+        },
+        "date": 1795744031598,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.566259,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.543, 0.566, 0.566, 0.570, 0.576 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2428155,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.199, 16.213, 16.243, 16.274, 16.330 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.687355,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.032, 101.045, 101.687, 101.852, 102.404 ms"
           }
         ]
       }
