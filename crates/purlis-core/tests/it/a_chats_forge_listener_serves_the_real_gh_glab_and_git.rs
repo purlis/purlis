@@ -1256,6 +1256,132 @@ fn a_push_the_gate_refuses_or_holds_says_why_in_gits_own_output_for_each_ref_and
     }
 }
 
+/// Bytes no compression makes smaller, so a commit holding them makes a pack at least as big.
+fn incompressible(len: usize) -> Vec<u8> {
+    let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
+    (0..len)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state.to_le_bytes()[0]
+        })
+        .collect()
+}
+
+#[test]
+fn a_held_push_of_an_explicit_sha_to_a_branch_says_why_whatever_its_size() {
+    purlis_core::unsteered!();
+    if !tool("git") {
+        return;
+    }
+    use crate::support::forge_listener::{ACME_APP_ID, PROJECT_ID};
+    use purlis_core::forge::createdbranches::{self, CreatedBranch};
+    use purlis_core::worktree::git::{Isolated, isolated, run_network};
+    let config = tempfile::tempdir().unwrap();
+    let s = setup_in(
+        Some(Arc::new(RefusesAndHolds)),
+        World::recording_to(config.path().to_owned()),
+    );
+    // The pull request's branch is on the forge already, so `<sha>:ci-pr` names it, and the chat
+    // made it: its record has the tip the push starts from, so the push reaches the gate's hold
+    // and not the refusal of a branch the chat does not own.
+    git_ok(&s.forge.bare, &["branch", "ci-pr", "main"]);
+    let base = {
+        let out = purlis_core::forklock::output(
+            Command::new("git")
+                .args(["rev-parse", "refs/heads/ci-pr"])
+                .current_dir(&s.forge.bare),
+        )
+        .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+    createdbranches::record(
+        config.path(),
+        PROJECT_ID,
+        "chat-listener",
+        &[CreatedBranch {
+            host: "github.com".to_owned(),
+            repo: "acme/app".to_owned(),
+            repo_id: Some(ACME_APP_ID),
+            branch: "ci-pr".to_owned(),
+            tip: base.clone(),
+            fast_forward_only: false,
+        }],
+    )
+    .unwrap();
+    let work = s.dir.path().join("clone");
+    let (ok, text) = s.git(
+        s.dir.path(),
+        &[
+            "clone",
+            "https://github.com/acme/app.git",
+            work.to_str().unwrap(),
+        ],
+    );
+    assert!(ok, "{text}");
+    std::fs::create_dir_all(work.join(".github/workflows")).unwrap();
+    std::fs::write(work.join(".github/workflows/ci.yml"), "on: push\n").unwrap();
+    // A pack larger than git's post buffer is announced by a probe request (a lone flush packet)
+    // before the push itself is sent.
+    std::fs::write(work.join("big.bin"), incompressible(300 * 1024)).unwrap();
+    git_ok(&work, &["add", "-A"]);
+    git_ok(&work, &["commit", "-q", "-m", "ci"]);
+    let sha = {
+        let out = purlis_core::forklock::output(
+            Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .current_dir(&work),
+        )
+        .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+    let route = production_route(&s, s.app_port(), &s.ca_file);
+    let isolation = Isolated::default().through_route(route);
+    for version in ["0", "2"] {
+        let config = format!("protocol.version={version}");
+        for buffer in ["1m", "64k"] {
+            let buffer = format!("http.postBuffer={buffer}");
+            for refspec in [format!("{sha}:ci-pr"), format!("{sha}:refs/heads/ci-pr")] {
+                let args = [
+                    "-c",
+                    config.as_str(),
+                    "-c",
+                    buffer.as_str(),
+                    "push",
+                    "origin",
+                    refspec.as_str(),
+                ];
+                let held = isolated(&isolation, || {
+                    run_network(&work, Some("!'/nonexistent/gh' auth git-credential"), &args)
+                })
+                .expect("git ran");
+                let case = format!("v{version}, {buffer}, {refspec}");
+                assert!(!held.ok(), "{case}: a held push was sent");
+                assert!(
+                    held.err.contains("[remote rejected]")
+                        && held.err.contains("waits in Asks")
+                        && !held.err.contains("hung up")
+                        && !held.err.contains("Everything up-to-date"),
+                    "{case}: {}",
+                    held.err
+                );
+            }
+        }
+    }
+    let tip = purlis_core::forklock::output(
+        Command::new("git")
+            .args(["rev-parse", "refs/heads/ci-pr"])
+            .current_dir(&s.forge.bare),
+    )
+    .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&tip.stdout).trim(),
+        base,
+        "the held push reached the forge"
+    );
+}
+
 /// A pin on `github.com`, as policy would set it.
 struct PinsGithub;
 

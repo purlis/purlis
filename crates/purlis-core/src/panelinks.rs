@@ -42,10 +42,10 @@ pub use file::{
 };
 pub use issue::IssueRef;
 mod chat;
+mod ondesktop;
 pub mod onrunner;
-mod runner;
 pub use chat::{ChatAt, ChatNumber, Goes};
-pub use runner::{RUNNER_KEPT, RUNNER_UNSURE, RunnerFile, RunnerFiles};
+pub use ondesktop::{RUNNER_KEPT, RUNNER_UNSURE, RunnerFile, RunnerFiles};
 
 /// **What the pane thinks a candidate is**: a hint that picks the kind that reads it, never
 /// trusted for more.

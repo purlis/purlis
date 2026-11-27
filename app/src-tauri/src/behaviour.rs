@@ -2325,13 +2325,11 @@ fn a_file_a_runner_chat_printed_is_read_on_its_runner(target: &Target) {
     Pane::on(target, id).shows("wrote the file");
 
     if target.runner.is_none() {
-        assert!(!target.sessions.reads_files_on_runner(id));
         assert!(target.sessions.runner_files_of(id).is_none());
         target.sessions.close(id).expect("it closes");
         std::fs::remove_file(&printed).expect("the file the chat wrote here");
         return;
     }
-    assert!(target.sessions.reads_files_on_runner(id));
     let reads = target
         .sessions
         .runner_files_of(id)

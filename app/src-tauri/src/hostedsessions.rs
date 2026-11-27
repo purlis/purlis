@@ -93,16 +93,6 @@ fn switched_on(value: Option<&str>) -> bool {
     value != Some("0")
 }
 
-/// **Whether a runner of session protocol `version` is asked for a file** (#6387, #7064): only
-/// one that keeps its own folders and sign-ins from the window ([`session::KNOWS_KEPT_FILES`]),
-/// so a runner before it, which would read them, is never asked and its chat's paths stay no
-/// link.
-pub(crate) fn runner_keeps_files_from_its_window(
-    version: purlis_session_protocol::version::Version,
-) -> bool {
-    version >= session::KNOWS_KEPT_FILES
-}
-
 /// **What a launch whose chats run in the session host makes of its planes** (#1998 to #2003):
 /// every project's chats run in the host `connection` reaches, over a link of each root's own;
 /// their hooks are heard through the host, which owns each project's hook channel, so nothing
@@ -748,6 +738,12 @@ impl Connection {
     /// The pool whose runner this connection's links reach, where they reach one.
     pub(crate) fn pool(&self) -> Option<&str> {
         self.to_a_pool.as_ref().map(|(_, named)| pool_named(named))
+    }
+
+    /// **The runner this connection's links reach, by the name the window keeps for it**:
+    /// `<pool>`, or `<pool>/<runner>` for a draining runner and a chat's fresh runner.
+    pub(crate) fn link_name(&self) -> Option<&str> {
+        self.to_a_pool.as_ref().map(|(_, named)| named.as_str())
     }
 
     /// The draining runner this connection's links name, where they name one (#4271): a chat's
@@ -4918,16 +4914,20 @@ impl HostedSessions {
         })
     }
 
-    /// **Whether this project's chats run on a Docker pool's runner** (#6387): a pool this
-    /// machine keeps among its Docker pools, on this machine's engine or another's. A cluster
-    /// pool's runner has no adapter to read its files yet.
-    fn on_a_docker_pool(&self) -> bool {
-        let (Some(pool), Some(config)) = (self.connection.pool(), self.connection.runners_config())
-        else {
+    /// **Whether this project's chats' files are read over a link of `version` to the runner
+    /// its connection's links reach** (#6387, #6949): [`crate::runnerfiles::reads_files_over`]
+    /// of that runner, false where the window reads none there.
+    fn reads_its_runners_files_over(
+        &self,
+        version: purlis_session_protocol::version::Version,
+    ) -> bool {
+        let (Some(named), Some(config)) = (
+            self.connection.link_name(),
+            self.connection.runners_config(),
+        ) else {
             return false;
         };
-        purlis_core::runners::pools(&config)
-            .is_ok_and(|pools| pools.iter().any(|one| one.name() == pool))
+        crate::runnerfiles::reads_files_over(&config, named, version)
     }
 
     /// **The runner `link` reached, as a chat's tab names it** (#2977): [`runner_shown`], none
@@ -5711,18 +5711,15 @@ impl SessionHost for HostedSessions {
         self.connection.fresh_runner_went();
     }
 
-    /// Only of a link already open, to a Docker pool's runner of 1.93 or later (#6387): a hover
-    /// never opens one to the runner.
-    fn reads_files_on_runner(&self, id: u32) -> bool {
-        self.runner_files_of(id).is_some()
-    }
-
+    /// Only of a link already open, to a runner of a kind the window reads files on, of a
+    /// version that reads them there ([`session::KNOWS_KEPT_FILES`], 1.97, on every kind;
+    /// #6387, #6949, #7064): a hover never opens one to the runner.
     fn runner_files_of(&self, id: u32) -> Option<crate::runnerfiles::ReadsOnRunner> {
-        if !self.kept_on_the_runner || !self.on_a_docker_pool() {
+        if !self.kept_on_the_runner {
             return None;
         }
         let link = self.own_link(Duration::ZERO).ok()?;
-        if !runner_keeps_files_from_its_window(link.version()) {
+        if !self.reads_its_runners_files_over(link.version()) {
             return None;
         }
         let program = lock(&self.running).get(&id)?.id.clone();

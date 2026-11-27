@@ -4034,20 +4034,6 @@ impl Chats {
         self.sessions.pool_of(session)
     }
 
-    /// **The runner chat `session` runs on, as its pane's file links read it there** (#6387):
-    /// none for a chat here, or on a runner the window can't read files on now.
-    pub(crate) fn runner_files_of(
-        &self,
-        session: u32,
-    ) -> Option<crate::runnerfiles::ReadsOnRunner> {
-        self.sessions.runner_files_of(session)
-    }
-
-    /// Whether the window can read chat `session`'s files on its runner now (#6387).
-    pub fn reads_files_on_runner(&self, session: u32) -> bool {
-        self.sessions.reads_files_on_runner(session)
-    }
-
     /// Whether Move here brings back a clone the runner chat `session` runs on made (#3811).
     pub fn clones_come_back(&self, session: u32) -> bool {
         self.sessions.clones_come_back(session)

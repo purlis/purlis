@@ -361,21 +361,16 @@ impl LinkKind for LocalFile {
     }
 
     fn resolve(&self, text: &str, pane: &Pane) -> Resolved {
-        if text.is_empty() || text.chars().any(|c| c.is_whitespace() || c.is_control()) {
-            return Resolved::Quiet;
-        }
-        let (words, line, column) = at_line(text);
-        // `FILE:` is the same scheme as `file:`: one naming another host is refused either way.
-        let named = if addressed(words) {
-            match on_this_machine(words) {
-                Ok(path) => path,
-                Err(why) => return why,
-            }
-        } else {
-            match self.joined(words, pane) {
+        let (written, line, column) = match written(text) {
+            Ok(read) => read,
+            Err(why) => return why,
+        };
+        let named = match written {
+            Written::Address(path) => path,
+            Written::Words(words) => match self.joined(words, pane) {
                 Some(path) => path,
                 None => return Resolved::Quiet,
-            }
+            },
         };
         // A chat on a runner, or one purlis cannot place, names its own machine's files: mapped
         // through its mounts (#6221), never read as this one's.
@@ -476,6 +471,35 @@ impl LocalFile {
         }
         Some(pane.starts_from()?.join(path))
     }
+}
+
+/// **What a file link's text names**, read before any filesystem is asked ([`written`]).
+pub(super) enum Written<'a> {
+    /// A `file:` address naming this machine, as the path it names.
+    Address(PathBuf),
+    /// The words as the chat printed them, without their `:line[:col]`.
+    Words(&'a str),
+}
+
+/// **A file link's text read into what it names, and the line and column it names** (#7081):
+/// the one reading every file link kind shares, on this machine ([`LocalFile`]) and on a
+/// runner ([`super::RunnerFile`]). Text with a space or a control character is no path. A
+/// `file:` address, in any case, is read as the file it names on this machine, or says why it
+/// is no link. A leading `~` is not read here: each side still handles it on its own, this
+/// machine from its home folder ([`LocalFile`]) and a runner's link by never asking for it
+/// ([`super::RunnerFile`]).
+pub(super) fn written(text: &str) -> Result<(Written<'_>, Option<u32>, Option<u32>), Resolved> {
+    if text.is_empty() || text.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err(Resolved::Quiet);
+    }
+    let (words, line, column) = at_line(text);
+    // `FILE:` is the same scheme as `file:`: one naming another host is refused either way.
+    let named = if addressed(words) {
+        Written::Address(on_this_machine(words)?)
+    } else {
+        Written::Words(words)
+    };
+    Ok((named, line, column))
 }
 
 /// A path's `:line[:col]`, as it is written after it.

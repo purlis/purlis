@@ -695,13 +695,6 @@ pub const KNOWS_PAGES_SHOWN: Version = Version {
     minor: 90,
 };
 
-/// The version that first reads a file for its window ([`Command::ReadFile`], #6387): none is
-/// asked of a host before.
-pub const KNOWS_READ_FILE: Version = Version {
-    major: 1,
-    minor: 93,
-};
-
 /// The largest file [`Command::ReadFile`] reads (1.93): what the light editor draws.
 pub const MOST_FILE_READ: u64 = 2 * 1024 * 1024;
 
