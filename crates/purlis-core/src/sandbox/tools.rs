@@ -2335,21 +2335,29 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "s6-setuidgid",
     "s6-softlimit",
     "s6-applyuidgid",
-    // and s6's `s6-envuidgid`, `s6-fghack` and `s6-setlock`, which run the program after them,
-    // and `s6-rc-init`, which starts s6-rc's services: daemontools' rows and the `init` row
-    // reach them by their last part, but only by chance, so each has a row of its own (round 13
-    // of #7828's review; a unit test pins them).
+    "coredumpctl",
+    // Programs of other families that rows #7828 added reach by their last part, but only by
+    // chance, so each has a row of its own (a unit test pins them): s6's `s6-envuidgid`,
+    // `s6-fghack` and `s6-setlock`, which run the program after them, and `s6-rc-init`, which
+    // starts s6-rc's services (round 13 of its review); and `cloud-init`, which runs the
+    // `bootcmd` and `runcmd` of the file it is handed, Yelp's `dumb-init` and LXC's `lxc-init`,
+    // which run the command after them, and s6's `s6-linux-init` and `s6-linux-init-telinit`,
+    // which the `init` and `telinit` rows reach (round 14).
     "s6-envuidgid",
     "s6-fghack",
     "s6-setlock",
     "s6-rc-init",
-    "coredumpctl",
-    // and the leads it left (#6564), whose source was out of reach, refused on what each is for:
-    // `aptitude -o Dir::Bin::Methods::<scheme>=` names the program a download runs, as
-    // `apt-get`'s does; `run-parts` runs every program in the folder it is named; `capsh --`
-    // hands what follows to a shell; `cpanm`, `cpan` and `cpm` run a distribution's
-    // `Makefile.PL` or `Build.PL`, and `carton exec` the command it is handed; and `dnf` and
-    // `yum` load the Python plugins of the `pluginpath` a `--setopt` or a `-c` file names.
+    "cloud-init",
+    "dumb-init",
+    "lxc-init",
+    "s6-linux-init",
+    "s6-linux-init-telinit",
+    // and the leads round 2 of #6556's review left (#6564), whose source was out of reach, refused
+    // on what each is for: `aptitude -o Dir::Bin::Methods::<scheme>=` names the program a download
+    // runs, as `apt-get`'s does; `run-parts` runs every program in the folder it is named; `capsh
+    // --` hands what follows to a shell; `cpanm`, `cpan` and `cpm` run a distribution's
+    // `Makefile.PL` or `Build.PL`, and `carton exec` the command it is handed; and `dnf` and `yum`
+    // load the Python plugins of the `pluginpath` a `--setopt` or a `-c` file names.
     "aptitude",
     "run-parts",
     "capsh",

@@ -201,8 +201,9 @@ rightly stay refused, and some may be harmless. These are examples, not a comple
 - every `systemd-<name>`. Some run code (`systemd-analyze unit-shell` runs a shell in a unit's
   namespace) and others are thought harmless (`systemd-escape`, `systemd-path`,
   `systemd-creds`).
-- every `init-<name>` and `<name>-init`. `cloud-init` stays refused rightly, since it runs the
-  `bootcmd` and `runcmd` of the file it is handed.
+- every `init-<name>` and `<name>-init`. The ones of other families that run what they are
+  handed (`cloud-init`, `dumb-init`, `lxc-init`, `s6-linux-init`) each have a row of their own,
+  as the next paragraph says.
 - every `yum-<name>`, `dnf-<name>` and `zypper-<name>`. `yum-config-manager` stays refused
   rightly, since it loads plugins through `-c` and `--setopt` as `yum` does.
 - every `cpan-<name>`. `cpan-upload` is thought to run nothing, though a chat may be handed a
@@ -222,11 +223,12 @@ unit test pins each as a row of its own, as it does `supervise-daemon` and
 A form that reaches a program of another family only by chance (OpenRC's `supervise-daemon` meeting
 daemontools' `supervise`, `find-repos-of-install` meeting `find`, `deb-systemd-invoke` meeting
 Python's `invoke`, and, as the thirteenth review found, s6's `s6-envuidgid`, `s6-fghack` and
-`s6-setlock` meeting daemontools' rows and `s6-rc-init` meeting `init`) is not what keeps that
-program refused: each has a row of its own and a unit test. A form within one family, such as
-`yum-config-manager` and the other `yum-<name>` programs reaching `yum`, or `aptitude-curses`
-reaching `aptitude`, is what refuses them, and a give-back under #7825 keeps it for the ones that
-run code.
+`s6-setlock` meeting daemontools' rows and `s6-rc-init` meeting `init`, and, as the fourteenth
+found, `cloud-init`, `dumb-init`, `lxc-init`, `s6-linux-init` and `s6-linux-init-telinit` meeting
+`init` and `telinit`) is not what keeps that program refused: each has a row of its own and a unit
+test. A form within one family, such as `yum-config-manager` and the other `yum-<name>` programs
+reaching `yum`, or `aptitude-curses` reaching `aptitude`, is what refuses them, and a give-back
+under #7825 keeps it for the ones that run code.
 
 Which to give back, and how to do it without giving back the ones that run code, is part of
 #7825.

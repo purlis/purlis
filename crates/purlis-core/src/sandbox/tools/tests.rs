@@ -2055,3 +2055,21 @@ fn the_s6_programs_other_families_rows_reach_by_chance_each_have_a_row_of_their_
         assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
     }
 }
+
+/// The programs of other families that the new `init` and `telinit` rows reach by their last part,
+/// only by chance (round 14 of #7828's review): `cloud-init` runs the `bootcmd` and `runcmd` of
+/// the file it is handed, Yelp's `dumb-init` and LXC's `lxc-init` run the command after them, and
+/// s6's `s6-linux-init` and `s6-linux-init-telinit` are its stage 1 and its `telinit`. Each is
+/// refused by a row of its own.
+#[test]
+fn the_programs_the_init_rows_reach_by_chance_each_have_a_row_of_their_own() {
+    for name in [
+        "cloud-init",
+        "dumb-init",
+        "lxc-init",
+        "s6-linux-init",
+        "s6-linux-init-telinit",
+    ] {
+        assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
+    }
+}
