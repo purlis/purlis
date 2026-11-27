@@ -211,13 +211,12 @@ fn root_of(planes: &Planes, plane: &PlaneId) -> Result<PathBuf, String> {
     Ok(planes.held(plane)?.root().to_path_buf())
 }
 
-/// Runs `work` off the window's thread, and says so where it did not finish.
+/// Runs `work` off the window's thread, through the app's one door ([`crate::off_the_window`]),
+/// and says so where it did not finish.
 async fn off_the_window<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
-    tauri::async_runtime::spawn_blocking(work)
-        .await
-        .map_err(|err| format!("reading the Inbox's updates did not finish: {err}"))?
+    crate::off_the_window("reading the Inbox's updates", work).await
 }
 
 /// [`Store::read`] as the window draws it.

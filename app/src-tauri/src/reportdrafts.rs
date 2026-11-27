@@ -359,12 +359,12 @@ fn root_of(planes: &Planes, plane: &PlaneId) -> Result<String, String> {
     Ok(planes.held(plane)?.root().display().to_string())
 }
 
+/// Runs `work` off the window's thread, through the app's one door ([`crate::off_the_window`]),
+/// and says so where it did not finish.
 async fn off_the_window<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
-    tauri::async_runtime::spawn_blocking(work)
-        .await
-        .map_err(|err| format!("The report draft did not finish: {err}"))?
+    crate::off_the_window("The report draft", work).await
 }
 
 /// **The project's report drafts**, oldest first: what its chats drafted and the person has not

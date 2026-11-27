@@ -15,7 +15,7 @@ use crate::planes::{PlaneId, Planes};
 
 /// A project whose sandbox is on, with a local settings file beside its manifest (which is
 /// what makes `sandbox_state` ask git), a persona, a session record and a usage file.
-fn a_project() -> tempfile::TempDir {
+pub(super) fn a_project() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a temp dir");
     let root = dir.path();
     std::fs::write(
@@ -639,9 +639,17 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
     ),
 ];
 
-/// Every `#[tauri::command]` in this crate that is a plain `fn`, by name.
-fn synchronous_commands() -> Vec<String> {
-    fn walk(dir: &Path, found: &mut Vec<String>) {
+/// One `#[tauri::command]` of this crate, as its source has it.
+struct InSource {
+    name: String,
+    asynchronous: bool,
+    /// The function's body: its lines up to the brace that closes it at its own indent.
+    body: String,
+}
+
+/// Every `#[tauri::command]` in this crate's sources.
+fn commands_in_source() -> Vec<InSource> {
+    fn walk(dir: &Path, found: &mut Vec<InSource>) {
         for entry in std::fs::read_dir(dir).expect("the crate's sources") {
             let path = entry.expect("an entry").path();
             if path.is_dir() {
@@ -657,17 +665,15 @@ fn synchronous_commands() -> Vec<String> {
                 if !line.trim_start().starts_with("#[tauri::command") {
                     continue;
                 }
-                let Some(signature) = lines[at + 1..]
+                let Some((from, signature)) = lines[at + 1..]
                     .iter()
+                    .enumerate()
                     .take(8)
-                    .find(|line| line.contains("fn "))
+                    .find(|(_, line)| line.contains("fn "))
                 else {
                     continue;
                 };
                 let before = signature.split("fn ").next().unwrap_or_default();
-                if before.contains("async") {
-                    continue;
-                }
                 let name: String = signature
                     .split("fn ")
                     .nth(1)
@@ -675,7 +681,21 @@ fn synchronous_commands() -> Vec<String> {
                     .chars()
                     .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
                     .collect();
-                found.push(name);
+                let indent = signature.len() - signature.trim_start().len();
+                let closes = |line: &&str| {
+                    line.len() - line.trim_start().len() == indent
+                        && line.trim_start().starts_with('}')
+                };
+                let body: Vec<&str> = lines[at + 1 + from + 1..]
+                    .iter()
+                    .take_while(|line| !closes(line))
+                    .copied()
+                    .collect();
+                found.push(InSource {
+                    name,
+                    asynchronous: before.contains("async"),
+                    body: body.join("\n"),
+                });
             }
         }
     }
@@ -684,8 +704,17 @@ fn synchronous_commands() -> Vec<String> {
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
         &mut found,
     );
-    found.sort();
+    found.sort_by(|a, b| a.name.cmp(&b.name));
     found
+}
+
+/// Every `#[tauri::command]` in this crate that is a plain `fn`, by name.
+fn synchronous_commands() -> Vec<String> {
+    commands_in_source()
+        .into_iter()
+        .filter(|command| !command.asynchronous)
+        .map(|command| command.name)
+        .collect()
 }
 
 #[test]
@@ -710,6 +739,84 @@ fn a_command_is_synchronous_only_where_the_list_says_why() {
     let mut once = listed.clone();
     once.dedup();
     assert_eq!(once, listed, "a command listed twice");
+}
+
+/// Every command the window can invoke, in every build: `ipc_commands.rs`'s list.
+fn registered() -> Vec<&'static str> {
+    let (value_free, vault_values): (&[&str], &[&str]) = app_commands!(command_names);
+    let e2e_only: &[&str] = app_commands!(e2e_command_names);
+    let mut all: Vec<&str> = [value_free, vault_values, e2e_only].concat();
+    all.sort_unstable();
+    all
+}
+
+#[test]
+fn every_registered_command_has_one_answer_class() {
+    // #7892: a command the window can invoke and the table does not class is one no gate
+    // counts; give it its class in `off_the_main_thread::ANSWER_CLASSES`.
+    let mut classed: Vec<&str> = crate::off_the_main_thread::ANSWER_CLASSES
+        .iter()
+        .flat_map(|(_, commands)| commands.iter().copied())
+        .collect();
+    classed.sort_unstable();
+    let mut once = classed.clone();
+    once.dedup();
+    let twice: Vec<&&str> = once
+        .iter()
+        .filter(|name| classed.iter().filter(|c| c == name).count() > 1)
+        .collect();
+    assert!(twice.is_empty(), "classed more than once: {twice:?}");
+    let registered = registered();
+    let unclassed: Vec<&&str> = registered.iter().filter(|n| !classed.contains(n)).collect();
+    assert!(
+        unclassed.is_empty(),
+        "registered with no answer class: {unclassed:?}"
+    );
+    let unregistered: Vec<&&str> = classed.iter().filter(|n| !registered.contains(n)).collect();
+    assert!(
+        unregistered.is_empty(),
+        "classed, but not registered: {unregistered:?}"
+    );
+}
+
+#[test]
+fn a_commands_answer_class_is_what_its_source_does() {
+    // #7892. A synchronous command answers on the window's thread. An `async` one whose own body
+    // hands its work to a raw `spawn_blocking`, or names no door, is not counted, and once it
+    // goes through `crate::off_the_window` alone it must be given a class the gate counts, with
+    // its ceiling recorded (`counts.rs`).
+    use crate::off_the_main_thread::{Class, answer_class};
+    let registered = registered();
+    let mut wrong = Vec::new();
+    for command in commands_in_source() {
+        if !registered.contains(&command.name.as_str()) {
+            continue;
+        }
+        let through_the_door =
+            command.body.contains("off_the_window") && !command.body.contains("spawn_blocking");
+        let should = if !command.asynchronous {
+            "Window"
+        } else if through_the_door {
+            "Model, Git or Unmeasured"
+        } else {
+            "Uncounted"
+        };
+        let class = answer_class(&command.name);
+        let right = match class {
+            Class::Window => !command.asynchronous,
+            Class::Uncounted => command.asynchronous && !through_the_door,
+            Class::Model | Class::Git | Class::Unmeasured => {
+                command.asynchronous && through_the_door
+            }
+        };
+        if !right {
+            wrong.push(format!(
+                "{} is {class:?}; its source says {should}",
+                command.name
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 
 /// A project with its manifest and nothing else: a chat starts in it without a sandbox.

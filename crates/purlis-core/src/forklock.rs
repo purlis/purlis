@@ -28,12 +28,15 @@ use std::process::{Child, Command, ExitStatus, Output, Stdio};
 
 pub use purlis_terminal::forklock::{while_a_terminal_is_opened, while_descriptors_are_made};
 
+pub mod counting;
+
 /// Starts `command`, as [`Command::spawn`] does, in two steps: **on the app's session bus**
 /// ([`on_the_apps_session_bus`], which changes `command`'s environment only in an app running
 /// without the bus), then **without a terminal half-open anywhere** (the fork lock,
 /// [`purlis_terminal::forklock::spawn`]). [`output`] and [`status`] start their programs here,
 /// so they take both steps too.
 pub fn spawn(command: &mut Command) -> io::Result<Child> {
+    counting::note_a_start();
     on_the_apps_session_bus(command);
     purlis_terminal::forklock::spawn(command)
 }
