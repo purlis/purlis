@@ -2291,13 +2291,14 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "s6-connlimit",
     "s6-fdholder-getdump",
     "s6-permafailon",
-    // daemontools (#6559), whose source (cr.yp.to) was out of reach, refused on what each is
-    // for: `supervise` runs a folder's `./run` and `svscan` starts one on each folder in the one
-    // it is named, as `runsv` and `runsvdir` do; `multilog`'s `!processor` has a shell run the
-    // processor; `setuidgid`, `envuidgid`, `softlimit`, `setlock`, `pgrphack` and `fghack` run
-    // the program after them, as `envdir` does; and `svscanboot` runs `svscan` (round 5 of
-    // #7828's review). `supervise`, `svscan`, `setuidgid` and `softlimit` reach the `s6-` rows
-    // by their forms too, which keep their own rows all the same (a unit test pins them).
+    // daemontools (#6559), whose source (cr.yp.to) was out of reach, refused on what each is for:
+    // `supervise` runs a folder's `./run` and `svscan` starts one on each folder in the one it is
+    // named, as `runsv` and `runsvdir` do; `multilog`'s `!processor` has a shell run the processor;
+    // `setuidgid`, `envuidgid`, `softlimit`, `setlock`, `pgrphack` and `fghack` run the program
+    // after them, as `envdir` does; and `svscanboot` runs `svscan` (round 5 of #7828's review).
+    // `supervise`, `svscan`, `setuidgid` and `softlimit` reach the `s6-` rows that were there
+    // before by their forms too, and `envuidgid`, `fghack` and `setlock` reach the `s6-` rows
+    // below; each keeps a row of its own all the same (unit tests pin them).
     "svscan",
     "svscanboot",
     "supervise",
@@ -2494,8 +2495,9 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // a running s6 the service folders of a compiled database a chat may have written, as
     // `s6-rc-update` does (round 13 of its review); and `cloud-init`, which runs the `bootcmd` and
     // `runcmd` of the file it is handed, Yelp's `dumb-init` and LXC's `lxc-init`, which run the
-    // command after them, and s6's `s6-linux-init` and `s6-linux-init-telinit`, which the `init`
-    // and `telinit` rows reach (round 14).
+    // command after them, and s6's `s6-linux-init`, its stage 1, which runs the `rc.init` of the
+    // folder its `-c` names, and `s6-linux-init-telinit`, its `telinit`, kept on the conservative
+    // side, which the `init` and `telinit` rows reach (round 14).
     "s6-envuidgid",
     "s6-fghack",
     "s6-setlock",
