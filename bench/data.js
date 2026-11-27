@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795783080919,
+  "lastUpdate": 1795786666168,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57708,6 +57708,48 @@ window.BENCHMARK_DATA = {
             "value": 101.146341,
             "unit": "ms",
             "extra": "median of 5 runs: 100.957, 101.032, 101.146, 101.731, 102.296 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b2f59863a27616a9f6704b1b4e9c00b7f81bf8cc",
+          "message": "story-baselines-pull fetches the artifact through gh api, and chats never use the update-baselines label (#7879) (#7938)\n\nThe download ran curl with gh auth token, which a sandboxed chat's forge\nroute answers 401. It now runs gh api on the artifact's zip, writing into\nthe download's file and resuming with a Range header, so the tool works\nwherever gh does and hands no token to another program. The resume and\nduplicate-path checks and the head and base checks stay.\n\ndocs/component-stories.md, CLAUDE.md and the stories-baselines.yml header\nsay, by the person's ruling on #7879, that a chat takes baselines with the\ntool and never puts the label on; the label stays for people. The\nworkflow's logic is unchanged.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8EE9NR7KXNNZG8AE0HQ246Q\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T13:05:24Z",
+          "tree_id": "3dcec6c025b81f76bd7f21f32c26ae21a53891b4",
+          "url": "https://github.com/purlis/purlis/commit/b2f59863a27616a9f6704b1b4e9c00b7f81bf8cc"
+        },
+        "date": 1795786658437,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.688041,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.681, 0.682, 0.688, 0.715, 0.721 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6729365,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.389, 16.632, 16.673, 16.786, 16.891 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8601875,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.371, 101.653, 101.860, 101.995, 102.575 ms"
           }
         ]
       }
