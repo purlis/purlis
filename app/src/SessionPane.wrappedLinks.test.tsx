@@ -437,6 +437,18 @@ describe("a link the program broke over rows at the pane's width", () => {
     await waitFor(() => expect(openedLast()).toEqual({ kind: "url", text: url }));
   });
 
+  it("is hovered from the second cell of the wide character it ends on", async () => {
+    const { term, drawn } = await opened();
+    const url = "https://purlis.dev/漢漢";
+    await write(term, `see ${url} now`);
+
+    // Each wide character takes two cells: the last one's second is the link's last cell.
+    hover(drawn, "see https://purlis.dev/".length + 3, 0);
+
+    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: url }]));
+    await waitFor(() => expect(painted).toEqual([{ y: 0, x: "see ".length, width: 23 }]));
+  });
+
   it("is not joined where a wide character that did not fit leaves its row's last column blank", async () => {
     const { term, drawn } = await opened();
     // 79 columns written, then a wide character the terminal moves to the next row itself.

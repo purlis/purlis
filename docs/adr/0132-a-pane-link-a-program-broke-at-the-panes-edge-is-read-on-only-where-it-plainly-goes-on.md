@@ -26,10 +26,11 @@ the link colour.
    - the row before it fills the pane to its last column (a wide character's second half
      counts);
    - the row after it is a line of its own (not one the terminal wrapped) and starts with as
-     many blank cells as the first row of the line before it, then a written cell. A harness
-     that indents the rows it goes on with (two spaces in a Claude Code message) indents its
-     first row's words the same, so the rows line up; a row indented more or less than that
-     starts something else. The rule is the cells' geometry alone: it names no program and
+     many blank cells as the first row of the line before it, then a written cell. A paragraph
+     a harness indents alike on every row (two blanks, as in a Claude Code reply after its
+     first paragraph) joins; a row indented more or less than that starts something else. A
+     first row that opens with a marker and hangs the rows after it (`⏺ ` then words, the rows
+     below indented to them) does not join yet: #7930. The rule is the cells' geometry alone: it names no program and
      reads nothing a program says about itself;
    - the row after it, past that indent, does not start with a box-drawing or block character
      (U+2500 to U+259F), the border of a frame or a bar, and does not start a link of its own:

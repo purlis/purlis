@@ -1183,7 +1183,7 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
             links.push({
               range: {
                 start: { x: first.x + 1, y: first.y + 1 },
-                end: { x: end.x + 1, y: end.y + 1 },
+                end: { x: end.x + widthAt(pane, end), y: end.y + 1 },
               },
               text: found.text,
               decorations: { pointerCursor: opens, underline: opens },
