@@ -14,6 +14,19 @@ export type Counts = { rendered: number; mounted: number; unmounted: number; com
  *  last cleared: for a budget about one component, such as a chip that must not redraw. */
 export const renderedBy = new Map<string, number>();
 
+/**
+ * **How many times each component was drawn inside each measured region** (`Measured` in
+ * `slowLog.ts`, the `Profiler` a stall names), by the region's id and then the component's name,
+ * since it was last cleared: for one component drawn in several places, such as the Inbox, whose
+ * Asks, Updates and Notices are each a view of their own. A component is counted in the nearest
+ * region around it, and not at all outside every region.
+ */
+export const renderedIn = new Map<string, Map<string, number>>();
+
+/** How many times `name` was drawn inside the measured region `region` (`renderedIn`). */
+export const drawnIn = (region: string, name: string): number =>
+  renderedIn.get(region)?.get(name) ?? 0;
+
 type Fiber = {
   tag: number;
   type: unknown;
@@ -21,10 +34,13 @@ type Fiber = {
   alternate: Fiber | null;
   child: Fiber | null;
   sibling: Fiber | null;
+  memoizedProps: unknown;
 };
 
 /** Function, class, forwardRef, memo and simple-memo components: what "a component" means. */
 const COMPONENTS = new Set([0, 1, 11, 14, 15]);
+/** React's tag for a `Profiler`, which is what a measured region is drawn as. */
+const PROFILER = 12;
 /** React's `PerformedWork` flag: the component's own function ran for this commit. */
 const PERFORMED_WORK = 1;
 
@@ -60,10 +76,22 @@ function within(fiber: Fiber, above: boolean): boolean {
   return above || (inside !== undefined && nameOf(fiber) === inside);
 }
 
-function drawn(fiber: Fiber, isInside: boolean): void {
+/** The measured region `fiber` is in: its own id if it is one, or the one around it. */
+function regionOf(fiber: Fiber, around: string | undefined): string | undefined {
+  if (fiber.tag !== PROFILER) return around;
+  const id = (fiber.memoizedProps as { id?: unknown } | null)?.id;
+  return typeof id === "string" ? id : around;
+}
+
+function drawn(fiber: Fiber, isInside: boolean, region: string | undefined): void {
   counts.rendered += 1;
   const name = nameOf(fiber);
   if (name) renderedBy.set(name, (renderedBy.get(name) ?? 0) + 1);
+  if (name && region !== undefined) {
+    const there = renderedIn.get(region) ?? new Map<string, number>();
+    renderedIn.set(region, there);
+    there.set(name, (there.get(name) ?? 0) + 1);
+  }
   // A memo is its child's wrapper, counted there; a component with no name is still named.
   if (inside === undefined || isInside || fiber.tag === 14) return;
   const named = name ?? "(anonymous)";
@@ -72,33 +100,36 @@ function drawn(fiber: Fiber, isInside: boolean): void {
 
 export const counts: Counts = { rendered: 0, mounted: 0, unmounted: 0, commits: 0 };
 
-function countMounted(fiber: Fiber | null, above: boolean): void {
+function countMounted(fiber: Fiber | null, above: boolean, around: string | undefined): void {
   for (let one = fiber; one; one = one.sibling) {
     const isInside = within(one, above);
+    const region = regionOf(one, around);
     if (COMPONENTS.has(one.tag)) {
       counts.mounted += 1;
-      drawn(one, isInside);
+      drawn(one, isInside, region);
     }
-    countMounted(one.child, isInside);
+    countMounted(one.child, isInside, region);
   }
 }
 
 /** One fiber that was there before: drawn again or not, then its children the same way. A
  *  fiber whose child is its alternate's child bailed out, and nothing below it ran. */
-function countUpdated(fiber: Fiber, above: boolean): void {
+function countUpdated(fiber: Fiber, above: boolean, around: string | undefined): void {
   const before = fiber.alternate;
   const isInside = within(fiber, above);
+  const region = regionOf(fiber, around);
   if (before === null) {
     if (COMPONENTS.has(fiber.tag)) {
       counts.mounted += 1;
-      drawn(fiber, isInside);
+      drawn(fiber, isInside, region);
     }
-    countMounted(fiber.child, isInside);
+    countMounted(fiber.child, isInside, region);
     return;
   }
-  if (COMPONENTS.has(fiber.tag) && (fiber.flags & PERFORMED_WORK) !== 0) drawn(fiber, isInside);
+  if (COMPONENTS.has(fiber.tag) && (fiber.flags & PERFORMED_WORK) !== 0)
+    drawn(fiber, isInside, region);
   if (fiber.child === before.child) return;
-  for (let child = fiber.child; child; child = child.sibling) countUpdated(child, isInside);
+  for (let child = fiber.child; child; child = child.sibling) countUpdated(child, isInside, region);
 }
 
 /**
@@ -140,7 +171,7 @@ let counting = false;
   onCommitFiberRoot: (_id: number, root: { current: Fiber }) => {
     if (!counting) return;
     counts.commits += 1;
-    countUpdated(root.current, false);
+    countUpdated(root.current, false, undefined);
     const roots: string[] = [];
     rootsOf(root.current, roots);
     commitRoots.push(roots);
