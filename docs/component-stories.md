@@ -256,10 +256,15 @@ add or change one:
      the checked-out head's own code, so take another person's pull request's baselines only in
      a checkout you would run anyway. It reads `purlis/purlis` unless `--repo` names another,
      never `gh`'s default repository, which in a fork's clone is the fork.
-     It needs `curl` and `unzip`: it fetches the artifact with `curl`, resuming a download that
-     breaks off and saying its size and where it stopped, and takes a path the artifact holds
-     twice when the copies are the same, refusing it by name when they differ.
-   - **The `update-baselines` label**: `.github/workflows/stories-baselines.yml` waits for the
+     It needs `gh` and `unzip`: it fetches the artifact through `gh api`, resuming a download
+     that breaks off and saying its size and where it stopped, and takes a path the artifact
+     holds twice when the copies are the same, refusing it by name when they differ. Since it
+     asks gh for nothing but API calls, never its token, it works from a sandboxed chat, whose gh
+     reaches GitHub through the chat's forge route (#7879).
+     **A chat takes baselines this way only**: it pulls them, reviews them and pushes them as its
+     own commit, and never puts the `update-baselines` label on (the person's ruling on #7879,
+     2026-11-27).
+   - **The `update-baselines` label** (for people, never a chat): `.github/workflows/stories-baselines.yml` waits for the
      head's `stories` run, takes its `story-baselines` with the base branch's own copy of
      `tools/story-baselines.mjs`, pushes them to the branch as one commit, takes the label off
      and comments which baselines it drew and which it deleted. It starts the `stories` check on
@@ -271,7 +276,9 @@ add or change one:
    (the ready gate, ADR 0127), and the merge queue's run draws no baselines, so put the
    `update-baselines` label on before you take them: it makes the pull request's run cover Chromium
    too, and starts that run if the label comes after the last push. `workflow_dispatch` of
-   `stories.yml` runs both browsers as well. A draft runs no stories.
+   `stories.yml` runs both browsers as well. A draft runs no stories. A chat that needs
+   Chromium's baselines asks the person to put the label on, then pulls the run's pictures with
+   the tool.
 
    Both refuse baselines drawn of another head, or of a head behind the base its run merged it
    with: update the branch, let `stories` run, and take that run's.

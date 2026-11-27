@@ -45,8 +45,9 @@ amending the same record do not conflict (`tools/adr-amendments.mjs` holds it).
   or edit a PNG under `__screenshots__/` by hand or from a local run. When only pictures fail,
   the run keeps the baselines it drew: take them with
   `node tools/story-baselines-pull.mjs <pull request>` in your checkout of the head, review them,
-  and push them with your next change (or put the `update-baselines` label on, whose commit
-  leaves the other checks waiting for approval) (`docs/component-stories.md`).
+  and push them with your next change. It fetches through `gh api`, so it works from a sandboxed
+  chat. **A chat never puts the `update-baselines` label on**: the label is for people, and its
+  commit leaves the other checks waiting for approval (`docs/component-stories.md`, #7879).
 - **No `unsafe`, with five audited exceptions** (`unsafe_code = "deny"` workspace-wide), each
   by the operator's ruling:
   1. `purlis_core::executor::inherit_nothing_else`: the `pre_exec` hook that closes every
