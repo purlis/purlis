@@ -72,14 +72,35 @@ export const grantingAnswer = (entry: PolicyPrerequisite): string =>
   entry.needs_new_key ? "Make a new key and accept" : "Accept";
 
 /**
- * **Free text from the file, drawn inert** (ADR 0130 §4): every control, format and bidi
- * character stripped (`\p{Cc}`, `\p{Cf}`, the line and paragraph separators), so nothing can turn
- * the line around or hide what follows, and cut to {@link INERT_CAP} characters.
+ * What is stripped from free text: control, format and bidi characters (`\p{Cc}`, `\p{Cf}`, the
+ * line and paragraph separators), the letters that draw nothing (the Hangul fillers, the blank
+ * Braille pattern) and every combining mark left once the text is composed, so nothing can turn
+ * the line around, hide what follows or draw over a neighbour.
  */
-export function inertWords(text: string, cap = INERT_CAP): string {
-  const stripped = text.replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, "");
-  const chars = [...stripped];
-  return chars.length > cap ? `${chars.slice(0, cap - 1).join("")}…` : stripped;
+const UNSEEN = /[\p{Cc}\p{Cf}\p{M}\u2028\u2029\u115F\u1160\u3164\uFFA0\u2800]/gu;
+
+/** The most characters of a whole line of names, each already cut to {@link INERT_CAP}. */
+const LINE_CAP = INERT_CAP * 4;
+
+const cut = (text: string, cap: number): string => {
+  const chars = [...text];
+  return chars.length > cap ? `${chars.slice(0, cap - 1).join("")}…` : text;
+};
+
+/**
+ * **Free text from the file, drawn inert** (ADR 0130 §4): composed (NFC, so an accented letter
+ * keeps its accent), stripped of {@link UNSEEN}, then each name in it (a run between spaces) cut
+ * to {@link INERT_CAP} characters on its own, so a long one never pushes the next out of view.
+ */
+export function inertWords(text: string): string {
+  const stripped = text.normalize("NFC").replace(UNSEEN, "");
+  const names = stripped.split(" ").map((name) => cut(name, INERT_CAP));
+  return cut(names.join(" "), LINE_CAP);
+}
+
+/** {@link inertWords}, isolated (`<bdi>`), so right-to-left text never reorders the line around it. */
+function Inert({ text }: { text: string }) {
+  return <bdi>{inertWords(text)}</bdi>;
 }
 
 /** The why-line of `entry`: the effect of each answer, by state. */
@@ -89,19 +110,26 @@ export function whyOf(entry: PolicyPrerequisite): string {
   return entry.nothing_kept ? SHIPPED_WHY : KEPT_WHY;
 }
 
-/** One plain clause of what a row's loosening does. */
+/**
+ * **One plain clause of what a row's loosening does, by its kind** (ADR 0130 §4). The kind is
+ * the pair of words the core gives each kind of row (`policypress.rs` `state_of_standing`): a
+ * family's mode, the sandbox's level, the merge route held, a dispatch deny, lineage, a
+ * protected branch.
+ */
 export function consequenceOf(row: PolicyWaiting): string {
   if (row.family === "sandbox")
     return row.committed === "off" ? "chats run with no sandbox" : "chats run with the floor only";
+  if (row.accepted === "held") return "chats merge through the forge route";
+  if (row.accepted === "protected") return "chats may push to that branch through the forge route";
+  if (row.accepted === "denied" && row.committed === "allowed")
+    return "a chat may push the branch of a task it dispatched once that task ends";
+  if (row.accepted === "denied" && row.committed === "lifted")
+    return "that dispatch is no longer refused";
   switch (row.committed) {
     case "log":
       return "what it would refuse runs, and is logged";
     case "off":
       return "what it would refuse runs, and is not logged";
-    case "lifted":
-      return "it is no longer denied";
-    case "allowed":
-      return "it is allowed";
     default:
       return `it runs as ${inertWords(row.committed)}`;
   }
@@ -112,7 +140,9 @@ function codes(words: readonly string[]) {
   return words.map((one, at) => (
     <span key={at}>
       {at > 0 && (at === words.length - 1 ? " and " : ", ")}
-      <code>{inertWords(one)}</code>
+      <code>
+        <Inert text={one} />
+      </code>
     </span>
   ));
 }
@@ -137,8 +167,11 @@ export function PolicySummary({ entry }: { entry: PolicyPrerequisite }) {
           {waiting.map((row, at) => (
             // The rows are drawn once per entry, and two may read alike: the place is the key.
             <li key={at}>
-              <code>{inertWords(row.family)}</code> from {inertWords(row.accepted)} to{" "}
-              {inertWords(row.committed)}: {consequenceOf(row)}.
+              <code>
+                <Inert text={row.family} />
+              </code>{" "}
+              from <Inert text={row.accepted} /> to <Inert text={row.committed} />:{" "}
+              {consequenceOf(row)}.
             </li>
           ))}
         </ul>
@@ -155,7 +188,14 @@ export function PolicySummary({ entry }: { entry: PolicyPrerequisite }) {
 
 /** What the alert shows, as one value: a change of any of it while it is up is said. */
 const showsOf = (entry: PolicyPrerequisite) =>
-  [entry.digest, entry.reasons.join("+"), entry.needs_new_key, entry.after_new_key].join("|");
+  JSON.stringify([
+    entry.digest,
+    entry.reasons,
+    entry.needs_new_key,
+    entry.after_new_key,
+    entry.nothing_kept,
+    entry.policy.waiting,
+  ]);
 
 /** What an answer that grants nothing was given for: the digest and the reasons shown. */
 const answeredFor = (entry: PolicyPrerequisite) => `${entry.digest}|${entry.reasons.join("+")}`;
@@ -179,32 +219,42 @@ const drawable = (data: unknown): data is Prerequisites =>
  * **The project's list as the core last told it**: asked once as it mounts, then each
  * `prerequisites-changed` for this plane. An event that came first wins over the ask, which is
  * older. `readAgain` asks once more and answers what it read, as a refused press does.
+ * `latest` is the list last heard, at once, before React draws it: what a press that returns
+ * reads, whichever came first.
  */
-function usePrerequisites(
-  plane: PlaneId,
-): [Prerequisites | undefined, () => Promise<Prerequisites | undefined>] {
+function usePrerequisites(plane: PlaneId): {
+  list: Prerequisites | undefined;
+  readAgain: () => Promise<Prerequisites | undefined>;
+  latest: () => Prerequisites | undefined;
+} {
   const [list, setList] = useState<Prerequisites>();
   const heard = useRef(0);
-  const read = useCallback(async (): Promise<Prerequisites | undefined> => {
+  const last = useRef<Prerequisites>(undefined);
+  const hold = useCallback((now: Prerequisites) => {
+    last.current = now;
+    setList(now);
+  }, []);
+  const readAgain = useCallback(async (): Promise<Prerequisites | undefined> => {
     const before = heard.current;
     const answer = await commands.projectPrerequisites(plane).catch(() => undefined);
     if (answer?.status !== "ok" || !drawable(answer.data)) return undefined;
-    if (heard.current === before) setList(answer.data);
+    if (heard.current === before) hold(answer.data);
     return answer.data;
-  }, [plane]);
+  }, [plane, hold]);
   useEffect(() => {
     const stop = untilStopped(
       listen<Prerequisites>(PREREQUISITES_CHANGED, (event) => {
         if (event.payload?.plane !== plane || !drawable(event.payload)) return;
         heard.current += 1;
-        setList(event.payload);
+        hold(event.payload);
       }),
     );
     // A list that cannot be read raises nothing: the core still holds what it holds.
-    void read();
+    void readAgain();
     return stop;
-  }, [plane, read]);
-  return [list, read];
+  }, [plane, readAgain, hold]);
+  const latest = useCallback(() => last.current, []);
+  return { list, readAgain, latest };
 }
 
 /** A press's answer, whatever it came to: a promise that threw is a refusal with its words. */
@@ -266,11 +316,14 @@ function PolicyAlert({
       onAccepted(done.data);
       return;
     }
-    // Which refusal it was is read from the list, never from the words: the same digest after
-    // a new key's press is the Keychain's refusal, and a digest that moved is the file's.
+    // Which refusal it was is read from the entry read again, never from the words: the same
+    // digest still needing a new key is the Keychain's refusal; any other is the press's own.
     const now = await onAskAgain();
-    const same = now?.list.some((one) => one.kind === "policy" && one.digest === shown) === true;
-    setSaid(withNewKey && same ? KEYCHAIN_REFUSED : done.error);
+    const keychain =
+      now?.list.some(
+        (one) => one.kind === "policy" && one.digest === shown && one.needs_new_key,
+      ) === true;
+    setSaid(withNewKey && keychain ? KEYCHAIN_REFUSED : done.error);
   };
 
   return (
@@ -279,7 +332,10 @@ function PolicyAlert({
       shows={showsOf(entry)}
       title={
         <>
-          <code>{inertWords(name)}</code>&apos;s policy needs your answer
+          <code>
+            <Inert text={name} />
+          </code>
+          &apos;s policy needs your answer
         </>
       }
       why={whyOf(entry)}
@@ -320,9 +376,16 @@ function PolicyAlert({
   );
 }
 
-/** What the Notice after Accept says. */
-export const acceptedSaid = (name: string) =>
-  `Policy accepted for ${name}. Guards follow it now; a chat started in strict mode keeps the full sandbox until you restart it.`;
+/**
+ * What the Notice after Accept says after the project's name. A running chat's guards read the
+ * policy it started with until #7729 (live reload): when that lands, this goes back to "Guards
+ * follow it now".
+ */
+export const ACCEPTED_AFTER =
+  "New chats follow it; a chat already running follows it once you restart it.";
+
+/** What the Notice after Accept says, as text. */
+export const acceptedSaid = (name: string) => `Policy accepted for ${name}. ${ACCEPTED_AFTER}`;
 
 /**
  * **The project's prerequisites, raised** (see above), with the Notice that follows an Accept.
@@ -339,11 +402,12 @@ export function PrerequisiteDialog({
   /** Opens Settings › Project › Policy, once the alert has closed unanswered. */
   onOpenPolicy?: () => void;
 }) {
-  const [list, readAgain] = usePrerequisites(plane);
+  const { list, readAgain, latest } = usePrerequisites(plane);
   const [accepted, setAccepted] = useState<string>();
   const [noticeShown, setNoticeShown] = useState(false);
   // The accepted entry is held back until the core's list no longer holds it: a later list that
-  // opens it again is a new question.
+  // opens it again is a new question. Any list that does not hold it clears it, the empty one
+  // too, whether it is heard before the press returns or after.
   const [seen, setSeen] = useState(list);
   if (seen !== list) {
     setSeen(list);
@@ -363,7 +427,10 @@ export function PrerequisiteDialog({
             entry={one}
             canAccept={canAccept}
             onAccepted={(state) => {
-              setAccepted(one.digest);
+              // The core may have emptied the list before the press returned: then nothing is
+              // held back, or a later list opening the same digest would never be raised.
+              if (latest()?.list.some((held) => held.digest === one.digest) === true)
+                setAccepted(one.digest);
               setNoticeShown(true);
               holdPolicy(plane, state);
               sandboxCommandReturned();
@@ -380,7 +447,9 @@ export function PrerequisiteDialog({
           label="The project's policy"
           onDismiss={() => setNoticeShown(false)}
         >
-          <p>{acceptedSaid(name)}</p>
+          <p>
+            Policy accepted for <bdi>{name}</bdi>. {ACCEPTED_AFTER}
+          </p>
         </Notice>
       )}
     </>

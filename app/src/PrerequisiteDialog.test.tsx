@@ -28,10 +28,12 @@ import {
   KEYCHAIN_REFUSED,
   PrerequisiteDialog,
   SHIPPED_WHY,
+  INERT_CAP,
   acceptedSaid,
   forgetPrerequisiteAnswers,
 } from "./PrerequisiteDialog";
 import { answersOf } from "./ui/dialog/dialog.testkit";
+import { RAISED_ALERT_CHANGED } from "./ui/dialog/RaisedAlert";
 
 const PLANE = "/home/dev/smart-ide";
 const TITLE = "smart-ide's policy needs your answer";
@@ -104,6 +106,10 @@ function core(
   );
   return (cmd: string) => asked.filter((one) => one.cmd === cmd).map((one) => one.args);
 }
+
+/** A line whose whole text is `text`, names isolated in it or not. */
+const saying = (text: string) => (_: string, element: Element | null) =>
+  element?.tagName === "P" && element.textContent === text;
 
 const answer = (name: string) => screen.getByRole("button", { name });
 
@@ -238,7 +244,7 @@ describe("the prerequisite modal", () => {
       await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
       expect(asked("accept_project_policy")).toEqual([{ plane: PLANE, shown: "d1" }]);
       await waitFor(() => expect(before).toHaveFocus());
-      expect(screen.getByText(acceptedSaid("smart-ide"))).toBeTruthy();
+      expect(screen.getByText(saying(acceptedSaid("smart-ide")))).toBeTruthy();
     } finally {
       before.remove();
     }
@@ -263,7 +269,7 @@ describe("the prerequisite modal", () => {
       ),
     );
     expect(screen.getByRole("alertdialog", { name: TITLE })).toBeTruthy();
-    expect(screen.queryByText(acceptedSaid("smart-ide"))).toBeNull();
+    expect(screen.queryByText(saying(acceptedSaid("smart-ide")))).toBeNull();
   });
 
   it("reads Make a new key and accept under a foreign key; a Keychain refusal stays up with its sentence, and a second press works", async () => {
@@ -368,5 +374,186 @@ describe("the prerequisite modal", () => {
     const second = await opened("Work in strict mode");
     expect(screen.getAllByRole("alertdialog")).toHaveLength(1);
     expect(second).toHaveTextContent("2 of 2");
+  });
+
+  describe("after an Accept", () => {
+    /** Accepts d1, with the core's emptied list heard `before` or after the press returns. */
+    async function acceptWithTheListEmptied(before: boolean) {
+      let list = listOf(entry());
+      core(
+        () => list,
+        async () => {
+          list = listOf();
+          if (before) await emit(PREREQUISITES_CHANGED, list);
+          return { ...WATCH, digest: "d1" };
+        },
+      );
+      render(<PrerequisiteDialog plane={PLANE} canAccept />);
+      await opened();
+      passes(SETTLE_MS);
+      await userEvent.click(answer("Accept"));
+      await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+      await waitFor(() => expect(screen.getByText(saying(acceptedSaid("smart-ide")))).toBeTruthy());
+      if (!before) await act(() => emit(PREREQUISITES_CHANGED, listOf()));
+    }
+
+    for (const before of [true, false])
+      it(`raises the same digest again when it reopens, the emptied list heard ${before ? "before" : "after"} the press returned`, async () => {
+        await acceptWithTheListEmptied(before);
+        await act(() =>
+          emit(
+            PREREQUISITES_CHANGED,
+            listOf(entry(), entry({ digest: "d9", reasons: ["broken"] })),
+          ),
+        );
+        expect(await opened()).toHaveTextContent("1 of 2");
+      });
+
+    it("says new chats follow it, and a running chat once it restarts (until #7729)", async () => {
+      core(() => listOf(entry()));
+      render(<PrerequisiteDialog plane={PLANE} canAccept />);
+      await opened();
+      passes(SETTLE_MS);
+      await userEvent.click(answer("Accept"));
+      const said = await screen.findByText(saying(acceptedSaid("smart-ide")));
+      expect(said).toHaveTextContent(/New chats follow it/);
+      expect(said).toHaveTextContent(/restart/);
+      expect(said).not.toHaveTextContent("Guards follow it now");
+    });
+  });
+
+  it("gives a new-key press's own error, not the Keychain's, where the key was made and the accept failed", async () => {
+    let made = false;
+    core(
+      () => listOf(entry({ needs_new_key: !made, reasons: ["broken"] })),
+      () => {
+        made = true;
+        throw "purlis could not keep your acceptance on this machine: the disk is full";
+      },
+    );
+    render(<PrerequisiteDialog plane={PLANE} canAccept />);
+    const alert = await opened("Work in strict mode");
+    passes(SETTLE_MS);
+    await userEvent.click(answer("Make a new key and accept"));
+    await waitFor(() =>
+      expect(within(alert).getByRole("alert")).toHaveTextContent("the disk is full"),
+    );
+    expect(alert).not.toHaveTextContent(KEYCHAIN_REFUSED);
+  });
+
+  it("says what Accept changes for each kind of row", async () => {
+    const kinds: PolicyState = {
+      ...LOOSER,
+      waiting: [
+        { family: "guards.git", accepted: "enforce", committed: "log" },
+        { family: "guards.git", accepted: "log", committed: "off" },
+        { family: "merges through the forge route", accepted: "held", committed: "log" },
+        { family: "sandbox", accepted: "full", committed: "floor" },
+        { family: "sandbox", accepted: "floor", committed: "off" },
+        { family: "dispatch.denies steward -> devops", accepted: "denied", committed: "lifted" },
+        { family: "lineage through the forge route", accepted: "denied", committed: "allowed" },
+        { family: "protected branch release/*", accepted: "protected", committed: "lifted" },
+      ],
+    };
+    core(() => listOf(entry({ policy: kinds })));
+    render(<PrerequisiteDialog plane={PLANE} canAccept />);
+    const alert = await opened();
+    const said = within(alert)
+      .getAllByRole("listitem")
+      .map((one) => one.textContent?.split(": ")[1]);
+    expect(said).toEqual([
+      "what it would refuse runs, and is logged.",
+      "what it would refuse runs, and is not logged.",
+      "chats merge through the forge route.",
+      "chats run with the floor only.",
+      "chats run with no sandbox.",
+      "that dispatch is no longer refused.",
+      "a chat may push the branch of a task it dispatched once that task ends.",
+      "chats may push to that branch through the forge route.",
+    ]);
+  });
+
+  const sameDigest: [string, Partial<PolicyPrerequisite>][] = [
+    ["nothing kept", { nothing_kept: true }],
+    [
+      "its rows",
+      {
+        policy: {
+          ...LOOSER,
+          waiting: [{ family: "network", accepted: "enforce", committed: "off" }],
+        },
+      },
+    ],
+  ];
+  for (const [what, over] of sameDigest)
+    it(`says it changed when ${what} changes under the same digest while it is up`, async () => {
+      core(() => listOf(entry()));
+      render(<PrerequisiteDialog plane={PLANE} canAccept />);
+      const alert = await opened();
+      passes(SETTLE_MS);
+      await act(() => emit(PREREQUISITES_CHANGED, listOf(entry(over))));
+      await waitFor(() => expect(alert).toHaveTextContent(RAISED_ALERT_CHANGED));
+    });
+
+  it("strips invisible letters and combining marks, keeps an accented name, and isolates each name", async () => {
+    const tricky: PolicyState = {
+      ...LOOSER,
+      waiting: [
+        {
+          family: "guardsㅤ.gitᅟ⠀ﾠ́⃝",
+          accepted: "enf̶orce",
+          committed: "log",
+        },
+      ],
+      locked: ["réseau"],
+    };
+    core(() => listOf(entry({ policy: tricky })));
+    render(<PrerequisiteDialog plane={PLANE} canAccept />);
+    const alert = await opened();
+    const row = within(alert).getByRole("listitem");
+    expect(row).toHaveTextContent("guards.git from enforce to log");
+    for (const hidden of ["ㅤ", "ᅟ", "⠀", "ﾠ", "́", "⃝", "̶"])
+      expect(alert.textContent).not.toContain(hidden);
+    expect(alert).toHaveTextContent("réseau stays enforced");
+    expect([...row.querySelectorAll("bdi")].map((one) => one.textContent)).toEqual([
+      "guards.git",
+      "enforce",
+      "log",
+    ]);
+  });
+
+  it("cuts each name of a row on its own, so a long asking persona leaves the target in view", async () => {
+    const long = "a".repeat(500);
+    const policy: PolicyState = {
+      ...LOOSER,
+      waiting: [
+        { family: `dispatch.denies ${long} -> devops`, accepted: "denied", committed: "lifted" },
+      ],
+    };
+    core(() => listOf(entry({ policy })));
+    render(<PrerequisiteDialog plane={PLANE} canAccept />);
+    const alert = await opened();
+    const code = within(alert).getByRole("listitem").querySelector("code");
+    expect(code?.textContent).toBe(`dispatch.denies ${"a".repeat(INERT_CAP - 1)}… -> devops`);
+  });
+
+  it("cuts and isolates a long right-to-left project name in the title and the Notice", async () => {
+    const plane = `/home/dev/${"ש".repeat(200)}`;
+    const cut = `${"ש".repeat(INERT_CAP - 1)}…`;
+    mockIPC(
+      (cmd) => {
+        if (cmd === "project_prerequisites") return { plane, list: [entry()] };
+        if (cmd === "accept_project_policy") return { ...WATCH, digest: "d1" };
+        return null;
+      },
+      { shouldMockEvents: true },
+    );
+    render(<PrerequisiteDialog plane={plane} canAccept />);
+    const alert = await opened("Keep my current rules", `${cut}'s policy needs your answer`);
+    expect(alert.querySelector("code bdi")?.textContent).toBe(cut);
+    passes(SETTLE_MS);
+    await userEvent.click(answer("Accept"));
+    const said = await screen.findByText(saying(acceptedSaid(cut)));
+    expect(said.querySelector("bdi")?.textContent).toBe(cut);
   });
 });
