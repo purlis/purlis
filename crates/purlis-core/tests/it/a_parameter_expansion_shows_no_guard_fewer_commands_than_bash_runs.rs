@@ -242,12 +242,16 @@ fn an_operator_in_a_trim_pattern_is_read_once_and_anywhere_else_twice() {
         "f=${t#*;}",
         "f=${t##*&}",
         "f=${t%<*}",
-        "f=${t%%${u}>*}",
         "f=${#t}; g=${@%|*}",
     ] {
         assert_eq!(readings(line), 1, "{line:?}");
     }
     for line in [
+        // A nested `${` anywhere: dash may close a bad one early, so nothing is certain.
+        "f=${t%%${u}>*}",
+        // A quote or an escape in the parameter's name.
+        "f=${t\\}#|*}",
+        "f=${t'x'#|*}",
         "f=${t:-a|b}",
         "f=${t/;/x}",
         "f=${t:+<}",
@@ -294,6 +298,12 @@ fn a_hash_or_percent_trims_only_after_a_name_or_one_special_parameter() {
         ": ${${y}%|cat<.charter/vaults/f.json;:}",
         ": ${${y}#&cat<.charter/vaults/f.json&}",
         "echo ${${1}%%|cat<.charter/vaults/f.json&}}",
+        // dash ends `${y\}#…}` at the escaped `}`, and a bad inner `${…}` at its first `}`.
+        ": ${y\\}#|cat<.charter/vaults/f.json;:}",
+        ": ${1\\}%&cat<.charter/vaults/f.json;:}",
+        ": ${x%${z${y}}|cat<.charter/vaults/f.json;:}",
+        ": ${x%${${y}}|cat<.charter/vaults/f.json&}}",
+        ": ${x%${!\\}}|cat<.charter/vaults/f.json;:}",
     ] {
         assert!(gate(cmd, root.path()).is_some(), "not refused: {cmd:?}");
     }
@@ -370,8 +380,8 @@ fn a_carriage_return_in_a_parameter_expansion_is_a_blank() {
 
 #[test]
 fn each_reading_of_a_line_adds_what_it_finds() {
-    use purlis_core::harness::{asked, model};
     purlis_core::unsteered!();
+    use purlis_core::harness::{asked, model};
     // The gravest risk of either reading.
     let risk = |line: &str| {
         asked::risk_of(&model::Action::Command {

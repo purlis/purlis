@@ -763,6 +763,23 @@ impl Lexer {
                     };
                     if self.state == St::Word
                         && self.braces > 0
+                        && (QUOTES.contains(c) || c == ESCAPE)
+                    {
+                        // A quote or an escape inside a parameter's name is no parameter a trim
+                        // can follow: dash ends `${y\}#|…}` at the escaped `}` and runs the rest
+                        // (round 6 review).
+                        if let Some(
+                            top @ (InBrace::Start
+                            | InBrace::Name
+                            | InBrace::Digits
+                            | InBrace::Special),
+                        ) = self.in_braces.last_mut()
+                        {
+                            *top = InBrace::Rest;
+                        }
+                    }
+                    if self.state == St::Word
+                        && self.braces > 0
                         && !QUOTES.contains(c)
                         && c != ESCAPE
                     {
@@ -773,14 +790,12 @@ impl Lexer {
                         let here = self.in_braces.last().copied();
                         match c {
                             '{' if self.dollars % 2 == 1 => {
-                                // A nested `${` is no parameter a trim can follow: dash ends a
-                                // `${${y}%…}` at the inner `}` and runs what comes after, so the
+                                // A nested `${` makes no enclosing `${` certainly a trim: dash
+                                // ends a bad substitution at its first `}`, so `${${y}%…}` and
+                                // `${x%${z${y}}|…}` close early and run what follows. Every
                                 // `${` it sits in is read the old way too (round 6 review).
-                                // Its `$` has made the parameter look like the special `$`.
-                                if let Some(top @ (InBrace::Start | InBrace::Special)) =
-                                    self.in_braces.last_mut()
-                                {
-                                    *top = InBrace::Rest;
+                                for level in &mut self.in_braces {
+                                    *level = InBrace::Rest;
                                 }
                                 self.braces += 1;
                                 self.in_braces.push(InBrace::Start);
