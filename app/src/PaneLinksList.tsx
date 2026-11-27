@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from "react";
-import { ExternalLink, FileText, MessageSquare } from "lucide-react";
+import { ExternalLink, FileText, GitPullRequest, MessageSquare } from "lucide-react";
 import type { KindHint } from "./bindings";
 import { sentence } from "./coreSentence";
 import { onAMac } from "./mac";
@@ -32,6 +32,7 @@ export const KIND_SAID: Record<KindHint, string> = {
   file: "File",
   chat: "Chat",
   osc8: "Link",
+  issue: "Issue or pull request",
 };
 
 /** Each kind's icon, at the row's lead (the prototype's S5). Its word is the row's description,
@@ -41,6 +42,7 @@ const KIND_ICON: Record<KindHint, ReactNode> = {
   file: <FileText aria-hidden="true" />,
   chat: <MessageSquare aria-hidden="true" />,
   osc8: <ExternalLink aria-hidden="true" />,
+  issue: <GitPullRequest aria-hidden="true" />,
 };
 
 /** What the list's items are called. */

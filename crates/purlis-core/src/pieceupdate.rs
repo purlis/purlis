@@ -1011,25 +1011,46 @@ fn rerecord(here: &Here, branch: &str, base: &str, say: &mut dyn FnMut(Say)) {
 /// `onto`; otherwise `onto` itself, as a plain rebase onto it. A piece cut from a base whose
 /// commits `onto` does not have (a clone's branch that moved apart from its remote, or another
 /// branch) carries only the commits after it, as `git rebase --onto <onto> <old base>` would.
+///
+/// The base is read both as the clone's branch and as the remote-tracking branch it follows,
+/// and the later of the two places `head` left them is the cut (#7875): a piece cut from
+/// `origin/main` is recorded as cut from `main`, which is often behind it, and taking the cut
+/// from `main` alone would count the commits between the two as the piece's own and replay
+/// them onto the new base.
 fn own_commits_after(
     folder: &Path,
     recorded: Option<&str>,
     onto_id: &str,
     head_id: &str,
 ) -> Result<String, String> {
-    let Some(old) = recorded.and_then(|base| commit_of(folder, &name::as_ref(base))) else {
+    let Some(base) = recorded else {
         return Ok(onto_id.to_owned());
     };
-    let fork =
-        git::run(folder, &["merge-base", &old, head_id], git::READ).map_err(|e| e.to_string())?;
-    let fork = fork.line().trim();
-    if fork.is_empty() || !full_id(fork) {
-        return Ok(onto_id.to_owned());
+    let followed = worktree::fresh::followed(folder, base).map_err(|e| e.to_string())?;
+    let mut cut: Option<String> = None;
+    for old in [Some(name::as_ref(base)), followed]
+        .iter()
+        .flatten()
+        .filter_map(|at| commit_of(folder, at))
+    {
+        let fork = git::run(folder, &["merge-base", &old, head_id], git::READ)
+            .map_err(|e| e.to_string())?;
+        let fork = fork.line().trim();
+        if fork.is_empty() || !full_id(fork) {
+            continue;
+        }
+        cut = match cut {
+            Some(earlier) if !is_ancestor(folder, &earlier, fork)? => Some(earlier),
+            _ => Some(fork.to_owned()),
+        };
     }
-    Ok(if is_ancestor(folder, fork, onto_id)? {
+    let Some(cut) = cut else {
+        return Ok(onto_id.to_owned());
+    };
+    Ok(if is_ancestor(folder, &cut, onto_id)? {
         onto_id.to_owned()
     } else {
-        fork.to_owned()
+        cut
     })
 }
 

@@ -5,11 +5,11 @@
 //! `~/notes.md`, `/etc/hosts:3` and a `file:///` address, read into the file on this machine it
 //! names, at its line and column.
 //!
-//! - **Only a file that is there links.** The text is joined to the folder the chat started in
-//!   (a relative path) or the home folder (`~/`), and walked one part at a time, every link on
-//!   the way followed by hand ([`LocalFile::walked`]). What is left must be a regular file.
-//!   Anything else is no link and says nothing on its hover ([`Resolved::Quiet`]): path-shaped
-//!   words are everywhere in a harness's output.
+//! - **Only a file that is there links.** The text is joined to the folder the chat is in now,
+//!   or the one it started in (a relative path, #6367) or the home folder (`~/`), and walked one
+//!   part at a time, every link on the way followed by hand ([`LocalFile::walked`]). What is
+//!   left must be a regular file. Anything else is no link and says nothing on its hover
+//!   ([`Resolved::Quiet`]): path-shaped words are everywhere in a harness's output.
 //! - **Some folders are never looked in for a hover** ([`LocalFile::guarded`]): the folders the
 //!   operating system asks the person before an app reads them (macOS's Documents, Desktop,
 //!   Downloads, Mail…), and removable, network and automounted volumes, where a look can stall.
@@ -230,53 +230,59 @@ impl LocalFile {
         Self::with(home, guarded)
     }
 
-    /// Whether `path` is in a folder a hover never looks in, and not on the way to or inside
-    /// one of `allowed` (the chat's project and folder, which purlis reads already).
-    fn guarded(&self, path: &Path, allowed: &[PathBuf]) -> bool {
-        if allowed
-            .iter()
-            .any(|allowed| path.starts_with(allowed) || allowed.starts_with(path))
-        {
-            return false;
-        }
-        self.guarded.iter().any(|folder| path.starts_with(folder))
-    }
-
-    /// **`path` (absolute) walked one part at a time from `/`**, each link on the way followed
-    /// by hand, as the system would follow it. `None` where a part is not there, where more
-    /// than [`MOST_LINKS`] links are followed, and where the walk reaches a folder it never
-    /// looks in: the walk stops before it asks the system anything about it.
+    /// [`walked`] with this kind's folders a hover never looks in.
     fn walked(&self, path: &Path, allowed: &[PathBuf]) -> Option<PathBuf> {
-        let mut todo: VecDeque<OsString> = VecDeque::new();
-        push_front(&mut todo, path);
-        let mut at = PathBuf::from("/");
-        let mut links = 0;
-        while let Some(part) = todo.pop_front() {
-            if part == ".." {
-                at.pop();
-                continue;
-            }
-            let next = at.join(&part);
-            if self.guarded(&next, allowed) {
-                return None;
-            }
-            let meta = std::fs::symlink_metadata(&next).ok()?;
-            if !meta.file_type().is_symlink() {
-                at = next;
-                continue;
-            }
-            links += 1;
-            if links > MOST_LINKS {
-                return None;
-            }
-            let target = std::fs::read_link(&next).ok()?;
-            if target.is_absolute() {
-                at = PathBuf::from("/");
-            }
-            push_front(&mut todo, &target);
-        }
-        Some(at)
+        walked(path, &self.guarded, allowed)
     }
+}
+
+/// Whether `path` is in one of `guarded`, folders a hover never looks in, and not on the way to
+/// or inside one of `allowed` (the chat's project and folder, which purlis reads already).
+fn guarded_by(path: &Path, guarded: &[PathBuf], allowed: &[PathBuf]) -> bool {
+    if allowed
+        .iter()
+        .any(|allowed| path.starts_with(allowed) || allowed.starts_with(path))
+    {
+        return false;
+    }
+    guarded.iter().any(|folder| path.starts_with(folder))
+}
+
+/// **`path` (absolute) walked one part at a time from `/`**, each link on the way followed by
+/// hand, as the system would follow it. `None` where a part is not there, where more than
+/// [`MOST_LINKS`] links are followed, and where the walk reaches one of `guarded` but where
+/// `allowed` is: the walk stops before it asks the system anything about it. The host's file
+/// link walks a path so, and so does a runner's for its window (#7076).
+pub(super) fn walked(path: &Path, guarded: &[PathBuf], allowed: &[PathBuf]) -> Option<PathBuf> {
+    let mut todo: VecDeque<OsString> = VecDeque::new();
+    push_front(&mut todo, path);
+    let mut at = PathBuf::from("/");
+    let mut links = 0;
+    while let Some(part) = todo.pop_front() {
+        if part == ".." {
+            at.pop();
+            continue;
+        }
+        let next = at.join(&part);
+        if guarded_by(&next, guarded, allowed) {
+            return None;
+        }
+        let meta = std::fs::symlink_metadata(&next).ok()?;
+        if !meta.file_type().is_symlink() {
+            at = next;
+            continue;
+        }
+        links += 1;
+        if links > MOST_LINKS {
+            return None;
+        }
+        let target = std::fs::read_link(&next).ok()?;
+        if target.is_absolute() {
+            at = PathBuf::from("/");
+        }
+        push_front(&mut todo, &target);
+    }
+    Some(at)
 }
 
 /// `path`'s parts put in front of `todo`, in order: its plain names and `..`; `/` and `.` are
@@ -294,7 +300,7 @@ fn push_front(todo: &mut VecDeque<OsString>, path: &Path) {
 /// **The folders a hover never looks in, on this system**: on macOS, those it asks the person
 /// before an app reads them, and the removable, network and automounted volumes; elsewhere, the
 /// usual places removable and network volumes are mounted.
-fn guarded_folders(home: Option<&Path>) -> Vec<PathBuf> {
+pub(crate) fn guarded_folders(home: Option<&Path>) -> Vec<PathBuf> {
     let mut guarded = Vec::new();
     if cfg!(target_os = "macos") {
         if let Some(home) = home {
@@ -454,7 +460,8 @@ impl LinkKind for LocalFile {
 
 impl LocalFile {
     /// `words` as a path on this machine: from `/`, from the home folder for `~/`, and from the
-    /// folder the chat started in otherwise. `None` where there is no folder to start from.
+    /// folder the chat is in now otherwise, or the one it started in ([`Pane::starts_from`]).
+    /// `None` where there is no folder to start from.
     fn joined(&self, words: &str, pane: &Pane) -> Option<PathBuf> {
         if let Some(rest) = words.strip_prefix("~/") {
             return Some(self.home.as_ref()?.join(rest));
@@ -467,7 +474,7 @@ impl LocalFile {
         if path.is_absolute() {
             return Some(path.to_path_buf());
         }
-        Some(pane.folder.as_ref()?.join(path))
+        Some(pane.starts_from()?.join(path))
     }
 }
 

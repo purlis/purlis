@@ -36,8 +36,10 @@ pub trait HeldSink: Send + Sync {
 pub trait BranchAsk: Send + Sync {
     /// Chat `chat` was refused an update to each of `branches`. Raises the ask (once for each
     /// chat and branch, however often it is refused), and answers the one sentence the chat is
-    /// told; `None` where no ask is raised (the person's policy does not ask, or the chat is
-    /// not open), and the chat is refused as it was.
+    /// told; `None` where no ask is raised (the chat is not open), and the chat is refused as it
+    /// was. It is raised in every `[policy] consents` mode (ADR 0125, amended 2026-11-27, §10).
+    /// **Its Allow lets the chat only add to the branch**: an update that replaces its history
+    /// stays refused (floor item 6; #7841).
     fn ask(&self, chat: &ChatId, branches: &[super::policy::NotYours]) -> Option<String>;
 }
 

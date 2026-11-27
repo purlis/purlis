@@ -1097,6 +1097,11 @@ pub struct Chats {
     /// come before the chat is listed as open. Forgotten as each start is announced and as the
     /// chat closes, so a model never outlives the program it was reported for.
     models: Mutex<HashMap<u32, String>>,
+    /// **The folder each chat's own harness said it works in now** (#6367), by the chat's number
+    /// ([`Self::heard_folder`]): where a relative path in its pane starts, and nothing else.
+    /// Live only, never written down, and forgotten as each start is announced and as the chat
+    /// closes, as [`Self::models`] is.
+    folders: Mutex<HashMap<u32, PathBuf>>,
     /// **Each chat's attendance fact** (T1-18, #6409; [`purlis_core::attendance::Fact`]), by
     /// the chat's number: set by how purlis started it, never more attended than the fact it
     /// had ([`purlis_core::attendance::Fact::resumed`]), and lowered by the reports the board
@@ -1931,6 +1936,7 @@ impl Chats {
             reopening: Mutex::new(std::collections::HashSet::new()),
             told: Mutex::new(HashMap::new()),
             models: Mutex::new(HashMap::new()),
+            folders: Mutex::new(HashMap::new()),
             attendance: Mutex::new(HashMap::new()),
             own_work: Mutex::new(HashMap::new()),
             going: crate::goingaway::Going::default(),
@@ -4229,8 +4235,9 @@ impl Chats {
     /// a new run under a new number whose beginning is ADR 0066's `wake`. The caller has read
     /// that the chat is hibernated; this refuses a chat with no conversation to pick up. The old
     /// one stays open until the new one has started, as [`Self::restart`]'s does; ending it is
-    /// the caller's next step. Nothing is told it yet: the wake line (ADR 0068) is SC-4j's.
-    pub fn wake(&self, session: u32, size: Size) -> Result<u32, String> {
+    /// the caller's next step. It is told `ended`, what its hibernation ended of its own, as its
+    /// wake line (SC-4d, #7633), where that is anything.
+    pub fn wake(&self, session: u32, size: Size, ended: &Own) -> Result<u32, String> {
         self.claim(session)?;
         let started = self.again_on_its_conversation(session).and_then(|again| {
             if again.resume.is_none() {
@@ -4240,10 +4247,18 @@ impl Chats {
             // as amended 2026-11-25): said before the `wake` run starts, so the log reads in the
             // order it happened. Its program is gone, so no end of it is heard to say so.
             self.superseded(session);
-            self.start_recorded_told(&again, size, Why::Wake, None, None)
+            // **Told what the hibernation ended** (SC-4d, #7633; ADR 0068 amended 2026-11-08):
+            // the own work the person was asked about, each piece by name. None for a chat
+            // whose hibernation ended nothing of its own, and then nothing is typed.
+            let first = self.told_woken(session, ended);
+            self.start_recorded_told(&again, size, Why::Wake, first.as_deref(), None)
         });
         match started {
-            Ok(started) => self.restarted(session, started, true),
+            Ok(started) => {
+                // Told once: the work it was told of is the old program's, gone with it.
+                lock(&self.own_work).remove(&session);
+                self.restarted(session, started, true)
+            }
             Err(why) => {
                 self.unclaim(session);
                 Err(why)
@@ -4385,6 +4400,35 @@ impl Chats {
             .chain(wake.as_deref())
             .collect();
         (!first.is_empty()).then(|| first.join("\n\n"))
+    }
+
+    /// **What chat `session` owns of its own now** (#5747, #5750): what its record holds, which
+    /// a hibernation's intent keeps for its wake line (SC-4d, #7633).
+    pub(crate) fn own_now(&self, session: u32) -> Own {
+        lock(&self.own_work)
+            .get(&session)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// **What hibernated chat `session` is told as it wakes** (SC-4d, #7633): the wake line of
+    /// `own`, what its hibernation ended of its own ([`purlis_core::wakeline::of_the_chat_woken`]),
+    /// or none.
+    fn told_woken(&self, session: u32, own: &Own) -> Option<String> {
+        let conversation = lock(&self.open)
+            .get(&session)
+            .and_then(|one| one.chat.resume.as_ref().map(ToString::to_string))
+            .unwrap_or_default();
+        let last = |piece: &purlis_core::ownwork::pieces::Piece| {
+            purlis_core::ownwork::last::of(piece, &conversation)
+        };
+        purlis_core::wakeline::of_the_chat_woken(&purlis_core::wakeline::Ended {
+            own_work: own.work.as_ref(),
+            pieces: &own.pieces,
+            mid_turn: own.mid_turn,
+            now: jiff::Timestamp::now().as_second(),
+            last: &last,
+        })
     }
 
     /// Marks chat `session` as restarting, or refuses: one restart at a time, whichever asked.
@@ -6325,6 +6369,7 @@ impl Chats {
             // A new program knows no model until its harness says (#1021), and has nothing of
             // its own running yet (#5747).
             lock(&self.models).remove(&session);
+            lock(&self.folders).remove(&session);
             lock(&self.own_work).remove(&session);
             if let Some(starting) = lock(&self.starting).as_ref() {
                 starting(session, harness, conversation.clone(), chat.graded);
@@ -6786,6 +6831,7 @@ impl Chats {
         lock(&self.sizes).remove(&session);
         lock(&self.owed).remove(&session);
         lock(&self.models).remove(&session);
+        lock(&self.folders).remove(&session);
         lock(&self.attendance).remove(&session);
         lock(&self.own_work).remove(&session);
         lock(&self.told).remove(&session);
@@ -8073,6 +8119,22 @@ impl Chats {
     pub(crate) fn holds_own_work(&self, session: u32, now: Option<purlis_core::ownwork::OwnWork>) {
         let now = now.and_then(purlis_core::ownwork::OwnWork::in_flight);
         self.own_changed(session, |own| own.work = now);
+    }
+
+    /// **What a chat's own harness said, in `report`, of the folder it works in now** (#6367):
+    /// kept as where a relative path in its pane starts. Only its own harness's
+    /// ([`purlis_core::panelinks::folder::of_its_own_harness`]): `now` is the conversation the
+    /// board holds for the chat after it took `report`.
+    pub fn heard_folder(&self, report: &purlis_core::hookwire::Report, now: Option<&str>) {
+        if let Some(folder) = purlis_core::panelinks::folder::of_its_own_harness(report, now) {
+            lock(&self.folders).insert(report.chat, folder);
+        }
+    }
+
+    /// **The folder chat `session`'s own harness last said it works in** (#6367), where it said
+    /// one ([`Self::heard_folder`]).
+    pub fn folder_now(&self, session: u32) -> Option<PathBuf> {
+        lock(&self.folders).get(&session).cloned()
     }
 
     /// **The model chat `session`'s harness said it runs on** (ADR 0087 §6, #1021), where it
@@ -9905,10 +9967,18 @@ fn its_own_model<'a>(
 /// end said it left running, each piece by name, and whether a turn was under way. What the
 /// record of open chats keeps of it, so a chat brought back is told what the restart ended.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct Own {
+pub(crate) struct Own {
     work: Option<purlis_core::ownwork::OwnWork>,
     pieces: Vec<purlis_core::ownwork::pieces::Piece>,
     mid_turn: bool,
+}
+
+impl Own {
+    /// Whether every piece of it is among `named`, by its id: what an ask that named them
+    /// covers (SC-4d, #7633).
+    pub(crate) fn all_named(&self, named: &[String]) -> bool {
+        self.pieces.iter().all(|piece| named.contains(&piece.id))
+    }
 }
 
 /// What a report of the chat's own harness says of its own work and its turn (#5747, #5750).

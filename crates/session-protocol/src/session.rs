@@ -630,16 +630,26 @@ use crate::view::{Limits, Views};
 /// close, a quit, a stop or the kill switch racing it wins. The window's alone. An older host
 /// refuses it `unknown_command`, so the window does not offer Hibernate on a chat it runs.
 ///
-/// 1.97 has a chat's start on a runner name the settings its profile was last kept with
+/// 1.97 has a host say which file it keeps from its window ([`FileRead::Kept`], #7064): its
+/// own purlis folders, a harness's sign-in and what no chat on it reads are never read, whatever
+/// the reach, and says [`FileRead::Unsure`] where it could not tell; a file with several names is kept where one of its other names is in such a
+/// folder (#7077). It reads only what is asked (#7078): a look reads a file's first 8 KiB to
+/// tell text, and a piece its own bytes alone. A window before 1.97 is answered
+/// [`FileRead::NotThere`] for a kept file, and a window asks a host to read a file
+/// only from this version ([`KNOWS_KEPT_FILES`]).
+///
+/// 1.98 is #7864's (#7920), which lands beside 1.99.
+///
+/// 1.99 has a chat's start on a runner name the settings its profile was last kept with
 /// ([`StartProgram::profile_held`], #7863, ADR 0078 as amended 2026-11-27): the runner reads what
 /// it holds of that profile for the desktop its link proved off its disk then, and starts the chat
 /// only where that comes to the digest named; else it refuses [`PROFILE_CHANGED`] and starts
 /// nothing, so the desktop keeps the profile again and starts it after. Named only by the window
-/// or its host's relay. A host before 1.97 ignores the field, so a desktop names it, and skips the
-/// keep before a start, only to a runner of 1.97 or later ([`KNOWS_PROFILE_HELD`]).
+/// or its host's relay. A host before 1.99 ignores the field, so a desktop names it, and skips the
+/// keep before a start, only to a runner of 1.99 or later ([`KNOWS_PROFILE_HELD`]).
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 97,
+    minor: 99,
 };
 
 /// The version that first starts a chat only where its profile's settings are as they were kept
@@ -647,7 +657,7 @@ pub const VERSION: Version = Version {
 /// before.
 pub const KNOWS_PROFILE_HELD: Version = Version {
     major: 1,
-    minor: 97,
+    minor: 99,
 };
 
 /// The version that first hibernates a chat's program ([`Command::Hibernate`], #7630): none is
@@ -655,6 +665,13 @@ pub const KNOWS_PROFILE_HELD: Version = Version {
 pub const KNOWS_HIBERNATE: Version = Version {
     major: 1,
     minor: 96,
+};
+
+/// The version that first hears [`FileRead::Kept`] (#7064): a window before it hears
+/// [`FileRead::NotThere`] for such a file.
+pub const KNOWS_KEPT_FILES: Version = Version {
+    major: 1,
+    minor: 97,
 };
 
 /// The version that first lists a browser's pages and downloads to its views and takes the
@@ -1050,7 +1067,7 @@ pub const NO_LOGIN_FORM_ON_CLEAN_LOAD: &str = "no_login_form_on_clean_load";
 pub const LOGIN_NOT_RUN: &str = "login_not_run";
 
 /// What a runner holds of the profile a start names is not what the start says it was last kept
-/// with (1.97, #7863, [`StartProgram::profile_held`]): a settings file there changed, came or went
+/// with (1.99, #7863, [`StartProgram::profile_held`]): a settings file there changed, came or went
 /// since. Nothing was started. Its desktop keeps the profile again, which puts its settings back,
 /// and starts the chat after.
 pub const PROFILE_CHANGED: &str = "profile_changed";
@@ -2312,7 +2329,7 @@ pub struct StartProgram {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
     /// [`whole_settings_digest`] of the settings that profile was last kept with on the runner
-    /// that starts it (1.97, #7863): the runner starts it only where what it holds of the profile,
+    /// that starts it (1.99, #7863): the runner starts it only where what it holds of the profile,
     /// read off its disk then, comes to this, and refuses [`PROFILE_CHANGED`] otherwise. None
     /// where the desktop kept the profile for this start, and the runner holds it to nothing more.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2697,7 +2714,9 @@ pub enum FileRead {
     /// A plain file of text, `size` bytes long. `from_workspace` is its path from the chat's
     /// workspace, `/` between its parts, for one in it, and `home` that workspace, for an ask
     /// to name; `version` names it as it is now, so a read in pieces is of one file. With an
-    /// `at`, the piece from there.
+    /// `at`, the piece from there. From 1.97 a look (no `at`) reads only the file's first 8 KiB
+    /// to tell it is text, and a piece only its own bytes, judged as text but for a character
+    /// cut at its edges.
     Plain {
         path: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2714,12 +2733,22 @@ pub enum FileRead {
     /// Something is there that is not a plain file: a folder, a device, a pipe, a socket, or a
     /// file of the host's own system (`/proc`, `/sys`, `/dev`).
     NotPlain { path: String },
-    /// A file that is not text, `size` bytes long.
+    /// A file that is not text, `size` bytes long: from 1.97, one whose first 8 KiB (a look)
+    /// or whose piece holds a NUL byte or is not UTF-8 but for a character cut at its edges. A
+    /// file with a NUL byte only later is linked, and its pieces joined are said to be binary.
     Binary { path: String, size: u64 },
     /// A file past [`MOST_FILE_READ`], `size` bytes long.
     TooLarge { path: String, size: u64 },
     /// A file outside the chat's workspace, asked with [`FileReach::Workspace`]: not read.
     Outside { path: String },
+    /// A file the host keeps from its window (1.97, #7064), whatever the reach and whatever
+    /// the person answered: in one of purlis's own folders there, a harness's sign-in, or one
+    /// no chat there reads. Not read.
+    Kept { path: String },
+    /// A file the host could not tell whether it keeps from its window (1.97, #7064, #7077):
+    /// the list of what it keeps could not be read whole, or a file with several names has
+    /// more places to look through than it looks in. Not read, as a kept file is not.
+    Unsure { path: String },
 }
 
 /// **What a chat counts as its own on the host** (1.93, [`FileRead::Plain`]): its workspace,

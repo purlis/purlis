@@ -197,8 +197,8 @@ pub fn rested(facts: &Facts) -> Result<(), NotRested> {
 /// harness whose own work purlis cannot see, on which a by-hand one is warned of instead, SC-4i,
 /// #7638), and with two refusals it keeps until the act can wait on them: any open task of its
 /// own (SC-4j, #7639), said as [`NotRested::FinishedTaskOpen`] once its report is not owed, and
-/// being a task at all (SC-4j). Own work is refused, as [`rested`] does,
-/// until the act asks first (SC-4d, #7633).
+/// being a task at all (SC-4j). Own work is refused, as [`rested`] does, unless the caller has
+/// asked the person first ([`by_hand_ending_its_own_work`], SC-4d, #7633).
 pub fn by_hand(facts: &Facts) -> Result<(), NotRested> {
     rested(&Facts {
         reports_its_own_work: true,
@@ -227,6 +227,17 @@ fn stands_apart(facts: &Facts) -> Result<(), NotRested> {
         return Err(NotRested::OnARunner);
     }
     Ok(())
+}
+
+/// **[`by_hand`], once its caller has asked the person about the chat's own work** (SC-4d,
+/// #7633, ruling 2): the ask named each piece, so own work alone no longer refuses the act, and
+/// the pieces it ends are told the chat when it wakes (ADR 0068, amended 2026-11-08). Every
+/// other refusal stands.
+pub fn by_hand_ending_its_own_work(facts: &Facts) -> Result<(), NotRested> {
+    by_hand(&Facts {
+        own_work: OwnWorkSeen::Nothing,
+        ..facts.clone()
+    })
 }
 
 /// At a turn boundary: `input-required` with reason `ready` or `turn-ended`, never `asked`, as

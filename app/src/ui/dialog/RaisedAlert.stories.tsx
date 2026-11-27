@@ -1,12 +1,14 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+// Pictures: drawn by the update-baselines bot (#7733 merged these stories without them).
 /**
  * **An alert the app raises** (#7728, ADR 0104 as amended 2026-11-26): opened with no press, it
  * starts on the answer that grants nothing, answers nothing until it has settled, and says so
  * when what it shows changes. Each is drawn, held to axe, walked by the keyboard, and compared
  * with its baseline in Chromium and WebKit (`docs/component-stories.md`). Those baselines are
- * drawn by a pull request's `stories` run, in the pinned image.
+ * drawn by a pull request's `stories` run, in the pinned image, and cover both browsers, one
+ * picture per appearance in each.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useEffect, useState } from "react";
@@ -105,8 +107,14 @@ export const RaisedByTheApp: Story = {
       "the keyboard starts on the answer that grants nothing",
     );
     expectFocusInSight();
-    await userEvent.click(page.getByRole("button", { name: "Accept" }));
+    // Pressed from the keyboard, not with `userEvent.click`: that one draws Accept under a pointer
+    // that is not there, until the engine's own pointer moves, which WebKit does when it will, so
+    // the picture was of either (#7847).
+    await userEvent.tab();
+    await untilFocused(() => page.getByRole("button", { name: "Accept" }), "Tab reaches Accept");
+    await userEvent.keyboard(" ");
     await expect(within(alert).getByRole("status")).toHaveTextContent(RAISED_ALERT_TOO_SOON);
+    await expect(alert.querySelector("[data-hovered]")).toBeNull();
     await pictureNow();
     await settles();
     await userEvent.keyboard("{Escape}");
