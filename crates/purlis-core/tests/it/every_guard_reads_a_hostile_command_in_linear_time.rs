@@ -209,6 +209,18 @@ fn shapes(deep: usize) -> Vec<Shape> {
             Box::new(|b| format!("cat <<'EOF'\n${{x\nEOF\n{}", fill("ls; ", b - 16))),
         ),
         (
+            // Each line of a heredoc a substitution on every line of its body: the dispatch,
+            // handoff and credential guards once read it in the square of its length (#7709,
+            // round 4).
+            "a heredoc with a backquoted substitution on every line",
+            Box::new(|b| format!("cat <<EOF\n{}EOF", fill("`a`\n", b - 16))),
+        ),
+        (
+            // A `${…}` that holds a blank has the line read twice (#7709, round 4).
+            "parameter expansions that hold a blank, repeated",
+            Box::new(|b| fill("${a:-b c} ", b)),
+        ),
+        (
             "substitutions nested around a long body",
             Box::new(move |b| {
                 format!(
@@ -454,9 +466,11 @@ fn every_guard_family_reads_a_hostile_command_in_time_proportional_to_its_length
     let families = families(root);
     // At the nesting cap: the deepest a command any guard reads may go.
     for (shape, line) in shapes(MAX_NESTING) {
-        let (small, large) = (line(4 * 1024), line(16 * 1024));
+        // Two pairs of sizes: the square of a line read in a fraction of a millisecond at 16 KB
+        // hides under the allowance, and shows at four times that (#7709, round 4).
+        let (small, large, larger) = (line(4 * 1024), line(16 * 1024), line(64 * 1024));
         // Inside the caps, so it is the guards that are measured.
-        assert_eq!(guardcaps::refusal(&large), None, "{shape}");
+        assert_eq!(guardcaps::refusal(&larger), None, "{shape}");
         for (family, judge) in &families {
             // The faster of two runs each, so a moment of load on the machine is not the measure.
             let time = |cmd: &str| {
@@ -469,10 +483,14 @@ fn every_guard_family_reads_a_hostile_command_in_time_proportional_to_its_length
                     .min()
                     .unwrap_or_default()
             };
-            let (t_small, t_large) = (time(&small), time(&large));
+            let (t_small, t_large, t_larger) = (time(&small), time(&large), time(&larger));
             assert!(
                 t_large < t_small * 10 + Duration::from_millis(100),
                 "{family} on {shape}: 4 KB took {t_small:?}, 16 KB took {t_large:?}"
+            );
+            assert!(
+                t_larger < t_large * 10 + Duration::from_millis(100),
+                "{family} on {shape}: 16 KB took {t_large:?}, 64 KB took {t_larger:?}"
             );
         }
     }
