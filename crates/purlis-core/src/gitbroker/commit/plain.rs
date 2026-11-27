@@ -55,9 +55,15 @@ pub fn placed(
 }
 
 /// Stages what `placed` holds and commits it with `message`, and answers the new commit, or
-/// why not. What was staged stays staged where the commit stops, as with git itself.
+/// why not. Named paths are committed alone, and anything else already staged stays staged;
+/// `--all` commits the whole index. What was staged stays staged where the commit stops, as
+/// with git itself.
 pub fn commit(placed: &Placed, message: &str) -> Result<Vec<Say>, String> {
-    let top = &placed.top;
+    made(&placed.top, &placed.stage, message)
+}
+
+/// [`commit`], of `stage` in the branch folder at `top`.
+fn made(top: &Path, stage: &Stage, message: &str) -> Result<Vec<Say>, String> {
     super::trailers_ok(message)?;
     // Before any git is chosen: on a Mac without developer tools `/usr/bin/git` is a stub that
     // opens the system's install dialog (#1813).
@@ -65,7 +71,7 @@ pub fn commit(placed: &Placed, message: &str) -> Result<Vec<Say>, String> {
     let branch = read(top, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok_or(
         "this folder is not on a branch (a detached HEAD), so there is no branch to commit on",
     )?;
-    let staging = match &placed.stage {
+    let staging = match stage {
         Stage::Tracked => ran(top, &["add", "--update"], None),
         Stage::Paths(paths) => ran(
             top,
@@ -82,17 +88,37 @@ pub fn commit(placed: &Placed, message: &str) -> Result<Vec<Say>, String> {
     if !staging? {
         return Err("git did not stage that, as it says above: nothing was committed".to_owned());
     }
-    if ran(top, &["diff", "--cached", "--quiet"], None)? {
+    // Named paths are committed alone, as `git commit -- <paths>` does: what else was staged
+    // before stays staged and out of the commit (#7928). `--all` commits the whole index.
+    let only: Vec<&str> = match stage {
+        Stage::Tracked => Vec::new(),
+        Stage::Paths(paths) => std::iter::once("--")
+            .chain(paths.iter().map(String::as_str))
+            .collect(),
+    };
+    let quiet = [
+        &["--literal-pathspecs", "diff", "--cached", "--quiet"][..],
+        &only,
+    ]
+    .concat();
+    if ran(top, &quiet, None)? {
         return Err(
             "there is nothing to commit: no named path differs from the branch's last commit"
                 .to_owned(),
         );
     }
-    let made = ran(
-        top,
-        &["commit", "--quiet", "--cleanup=whitespace", "--file=-"],
-        Some(message.as_bytes().to_vec()),
-    )?;
+    let committing = [
+        &[
+            "--literal-pathspecs",
+            "commit",
+            "--quiet",
+            "--cleanup=whitespace",
+            "--file=-",
+        ][..],
+        &only,
+    ]
+    .concat();
+    let made = ran(top, &committing, Some(message.as_bytes().to_vec()))?;
     if !made {
         return Err(
             "git did not make the commit, as it says above: what was named stays staged".to_owned(),
@@ -142,3 +168,6 @@ fn ran(top: &Path, args: &[&str], input: Option<Vec<u8>>) -> Result<bool, String
     }
     Ok(child.wait().map_err(could_not)?.success())
 }
+
+#[cfg(test)]
+mod tests;

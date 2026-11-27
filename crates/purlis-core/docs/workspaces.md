@@ -347,7 +347,9 @@ trailers. It names no repository or branch: the app uses the folder it started t
 - A chat in a clone uses `git commit` as before.
 - A chat that is not sandboxed, and a terminal, use the same command, and it does not go through
   the app: their own git stages and commits, with the person's config, the repository's hooks
-  and purlis's (the scan, the trailers), signing and filters, as `git add` and `git commit` would.
+  and purlis's (the scan, the trailers), signing and filters, as `git add` and
+  `git commit -- <paths>` would: the commit holds exactly the paths named, and anything else
+  already staged stays staged and is not committed (#7928). `--all` commits the whole index.
   None of the refusals above applies but a detached HEAD, another live chat's claim on the
   folder and a message claiming purlis's trailers. `purlis worktree push` works the same in any
   chat. To send such a chat to plain git instead, set `[plane] refuse_unsandboxed_commit = true`
