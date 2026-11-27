@@ -11,7 +11,7 @@
 //! **The outage rules** (#7188), as that suite states them: nothing silent for more than
 //! [`QUIET_LIMIT`] after a fault, and nothing waits past [`START_LIMIT`] to come back.
 //!
-//! **B4 asserts the M79 ruling** (#7187 decision 7, #7190 decision 3, 2026-11-18): a runner's
+//! **B4 asserts the person's ruling** (#7187 decision 7, #7190 decision 3, 2026-11-18): a runner's
 //! browser outlives an app quit, as its chats do. #2022 ("Quit ends every browser") holds for
 //! this machine alone.
 //!
@@ -54,7 +54,7 @@ fn a_chat(target: &Target) -> u32 {
 /// **A chat on the pool's runner, sandboxed, open and drawn**: Codex as the runner's own host
 /// composes it by its names, under purlis's Linux sandbox as every sandboxed runner chat is, so
 /// its runner is still trusted with a browser (#3298). Its program is a stand-in that says it is
-/// ready and waits; held while the folder its program is in is.
+/// ready and waits. The folder its program is in is answered beside it, to outlive the chat.
 fn a_sandboxed_chat(target: &Target) -> (u32, tempfile::TempDir) {
     let bin = tempfile::tempdir().expect("a folder for the harness");
     let program = stand_in::program(
@@ -418,7 +418,9 @@ mod b3_a_pool_forgotten_with_a_browser_open_ends_it_as_pool_forgotten {
 /// when it opens. The quit is what the app sends this machine's host at its quit
 /// ([`crate::sessionhost`]'s end), and the runner's host is told nothing: the runner's engine runs
 /// on past it, and the browser is never said closed. #2022 ("Quit ends every browser") holds for
-/// this machine alone (`browsers/hosted/tests.rs`).
+/// this machine alone (`browsers/hosted/tests.rs`). Of the app's exit it runs the host's end
+/// alone: the SSH forwards' end after it (`sshroute::forward::let_go_of_all`) would take the
+/// rig's own way to the runner with it, so it is not run here.
 mod b4_an_app_quit_with_a_runner_browser_open_leaves_it_running_on_its_runner {
     use super::*;
 
@@ -439,7 +441,7 @@ mod b4_an_app_quit_with_a_runner_browser_open_leaves_it_running_on_its_runner {
             .quit_within(START_LIMIT)
             .expect("the host answers the quit");
 
-        // Given as long as a browser ended there has to be gone, it is still there.
+        // For as long as an ended browser has to be gone (`ENDED_WITHIN`), it still runs.
         let quit = Instant::now();
         while quit.elapsed() < ENDED_WITHIN {
             assert!(
