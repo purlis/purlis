@@ -2724,3 +2724,38 @@ fn a_forge_refusal_the_route_counts_is_one_line_of_guards_forge_in_the_chats_enf
     assert!(enforcement::known_rule(Family::GuardsForge, &line.rule));
     assert!(enforcement::is_host_and_port(line.host.as_deref().unwrap()));
 }
+
+#[test]
+fn a_chat_started_by_a_chat_with_a_route_gets_one_too_or_is_refused_before_it_starts() {
+    // #7870: of two lanes one turn dispatched, one started with no forge route, so it could not
+    // fetch, update or push, and nothing it could do gave it one.
+    let scene = Scene::new();
+    let parent = scene.open("parent", "run-p", "/p/one", 1);
+    let project = Path::new("/p/one");
+
+    let lane = scene
+        .routes
+        .guard_handed("lane-1", "run-1", project, None, 1)
+        .expect("a lane of a routed parent starts");
+    assert!(lane.params().is_some(), "it has a route as its parent does");
+
+    scene.listener.fail.store(true, Ordering::SeqCst);
+    let refused = scene
+        .routes
+        .guard_handed("lane-2", "run-2", project, None, 1)
+        .err()
+        .expect("a lane whose route could not be made is not started");
+    assert_eq!(refused, NO_ROUTE_LIKE_ITS_PARENT);
+    assert!(!scene.routes.is_live("run-2"), "nothing of it is left");
+    assert!(
+        scene.routes.is_live("run-p") && parent.socket.exists(),
+        "the parent's route is untouched"
+    );
+
+    // A parent with no route of its own: the lane starts as it is.
+    let unrouted = scene
+        .routes
+        .guard_handed("lane-3", "run-3", project, None, 99)
+        .expect("a lane of a parent with no route is started");
+    assert!(unrouted.params().is_none());
+}

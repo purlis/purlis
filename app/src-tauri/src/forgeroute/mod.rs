@@ -993,6 +993,39 @@ impl ForgeRoutes {
         }
     }
 
+    /// **A chat another chat started** (a dispatch or a hand-off, #7870): its route, as
+    /// [`Self::guard`] starts one, held to the route of the chat that started it. Where that chat,
+    /// open as session `parent`, has a route and this start made none (a sign-in read that
+    /// failed while several starts asked at once, a listener that did not bind), it is started
+    /// once more; and if it still has none, the start is refused with the reason, before the chat
+    /// is started. A lane with no route can neither fetch, update nor push, and nothing it can do
+    /// by itself gets one. Where the parent has no route either, this chat is started as it is.
+    pub fn guard_handed(
+        &self,
+        chat: &str,
+        run: &str,
+        project: &Path,
+        chain: Option<&str>,
+        parent: u32,
+    ) -> Result<RouteGuard<'_>, String> {
+        let first = self.guard(chat, run, project, chain);
+        if first.params.is_some() || !self.session_has_route(parent) {
+            return Ok(first);
+        }
+        drop(first);
+        let again = self.guard(chat, run, project, chain);
+        if again.params.is_some() {
+            return Ok(again);
+        }
+        Err(NO_ROUTE_LIKE_ITS_PARENT.to_owned())
+    }
+
+    /// Whether the chat open as `session` has a live route.
+    fn session_has_route(&self, session: u32) -> bool {
+        let run = self.sessions().of_run.get(&session).cloned();
+        run.is_some_and(|run| self.is_live(&run))
+    }
+
     /// **A chat put back from the session host** (#7694): its program runs on, and the route of
     /// the app that started it went with that app, so the app's own git had none for it
     /// ([`Self::git_route`]) and `purlis worktree push` was refused. A route this app already holds
@@ -1866,6 +1899,25 @@ pub fn guard(
 ) -> Option<RouteGuard<'static>> {
     Some(routes()?.guard(chat, run, project, chain))
 }
+
+/// A chat another chat started (`chats.rs`): a route of its own wherever its parent has one
+/// ([`ForgeRoutes::guard_handed`]), or the reason it is not started.
+pub fn guard_handed(
+    chat: &str,
+    run: &str,
+    project: &Path,
+    chain: Option<&str>,
+    parent: u32,
+) -> Option<Result<RouteGuard<'static>, String>> {
+    Some(routes()?.guard_handed(chat, run, project, chain, parent))
+}
+
+/// What a chat is told when the chat that started it has a forge route and its own could not be
+/// made (#7870).
+pub const NO_ROUTE_LIKE_ITS_PARENT: &str = "purlis could not make this chat a forge route, \
+    though the chat that started it has one, so it was not started: without one it could not \
+    fetch, update or push. Start it again; if it is refused again, check your sign-in under \
+    Settings › You › Accounts.";
 
 /// A chat put back from the session host (`chats.rs`): the route the app's own git takes for it
 /// ([`ForgeRoutes::guard_reattached`]), with nothing handed to its program.

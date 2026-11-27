@@ -1318,6 +1318,158 @@ fn a_task_asked_for_from_a_workspace_s_folder_is_cut_as_purlis_worktree_add_cuts
     );
 }
 
+/// `f`'s clone given a bare `origin` of its own, fetched, with `main` following it; then the
+/// remote moves on by a commit `upstream-work` the clone has fetched but its `main` does not
+/// hold, and the clone stands on another branch with a commit of its own, `someones-work`.
+fn with_a_remote_that_moved_on(f: &support::Fixture) {
+    let remote = f.plane.join("remote.git");
+    support::git(
+        &f.plane,
+        &[
+            "clone",
+            "-q",
+            "--bare",
+            f.clone.to_str().unwrap(),
+            remote.to_str().unwrap(),
+        ],
+    );
+    support::git(
+        &f.clone,
+        &["remote", "add", "origin", remote.to_str().unwrap()],
+    );
+    support::git(&f.clone, &["fetch", "-q", "origin"]);
+    support::git(
+        &f.clone,
+        &["branch", "-q", "--set-upstream-to=origin/main", "main"],
+    );
+    let other = f.plane.join("other");
+    support::git(
+        &f.plane,
+        &[
+            "clone",
+            "-q",
+            remote.to_str().unwrap(),
+            other.to_str().unwrap(),
+        ],
+    );
+    f.commit(&other, "upstream-work");
+    support::git(&other, &["push", "-q", "origin", "main"]);
+    support::git(&f.clone, &["fetch", "-q", "origin"]);
+    support::git(&f.clone, &["checkout", "-q", "-b", "someones-branch"]);
+    f.commit(&f.clone, "someones-work");
+}
+
+#[test]
+fn three_worktree_tasks_cut_at_once_from_one_clone_each_start_at_the_remote_s_default() {
+    purlis_core::unsteered!();
+    // #7870: three `in: worktree` dispatches in one turn raced in one clone, and two were cut
+    // from the clone's checked-out commit, weeks behind the remote. Each is cut from the
+    // remote's default, as fetched, and none from the clone's HEAD.
+    let f = support::plane_with_clone("api");
+    with_a_remote_that_moved_on(&f);
+    let fetched = String::from_utf8_lossy(
+        &support::git(&f.clone, &["rev-parse", "refs/remotes/origin/main"]).stdout,
+    )
+    .trim()
+    .to_owned();
+    let repo = asked_from(&f, &f.workspace());
+    assert!(repo.from_default, "{repo:?}");
+
+    let cuts: Vec<_> = std::thread::scope(|scope| {
+        let started: Vec<_> = ["first task", "second task", "third task"]
+            .into_iter()
+            .map(|task| {
+                let (plane, repo) = (&f.plane, &repo);
+                scope.spawn(move || {
+                    dispatchplace::cut(
+                        plane,
+                        repo,
+                        task,
+                        &dispatchrecord::mint(),
+                        &Isolated::default(),
+                    )
+                })
+            })
+            .collect();
+        started
+            .into_iter()
+            .map(|cut| cut.join().expect("the cut does not panic"))
+            .collect()
+    });
+
+    let mut branches = Vec::new();
+    for cut in cuts {
+        let cut = cut.expect("every cut is made");
+        assert_eq!(cut.base, worktree::Base::Branch("main".to_owned()));
+        assert!(
+            !cut.notes
+                .iter()
+                .any(|note| matches!(note, worktree::Note::FromHead { .. })),
+            "{:?}",
+            cut.notes
+        );
+        assert_eq!(branch_at(&f, &cut.branch), fetched, "{}", cut.branch);
+        assert!(cut.path.join("upstream-work").is_file());
+        assert!(
+            !cut.path.join("someones-work").exists(),
+            "not the clone's HEAD"
+        );
+        branches.push(cut.branch);
+    }
+    branches.sort();
+    branches.dedup();
+    assert_eq!(
+        branches.len(),
+        3,
+        "three branches of their own: {branches:?}"
+    );
+}
+
+#[test]
+fn a_task_whose_clone_s_remote_cannot_say_its_default_is_refused_and_nothing_is_cut() {
+    purlis_core::unsteered!();
+    // #7870: where the clone has a remote and it does not answer which branch is its default,
+    // the task is not cut from the clone's checked-out commit: it is refused, saying why.
+    let f = support::plane_with_clone("api");
+    with_a_remote_that_moved_on(&f);
+    let gone = f.plane.join("gone.git");
+    support::git(
+        &f.clone,
+        &["remote", "set-url", "origin", gone.to_str().unwrap()],
+    );
+    let branches_before = support::git(&f.clone, &["branch", "--list"]).stdout;
+
+    let repo = asked_from(&f, &f.workspace());
+    let refused = dispatchplace::cut(
+        &f.plane,
+        &repo,
+        "check the queue",
+        &dispatchrecord::mint(),
+        &Isolated::default(),
+    )
+    .expect_err("no task is cut from the clone's HEAD");
+
+    assert_eq!(
+        refused.say(),
+        "purlis could not read which branch api's remote names its default, so it cut no \
+         branch for this task: it never starts one from the commit the clone is on. Check \
+         that the remote answers (`purlis sync` fetches it), then dispatch the task again."
+    );
+    assert_eq!(
+        support::git(&f.clone, &["branch", "--list"]).stdout,
+        branches_before,
+        "no branch was made"
+    );
+    assert!(
+        !f.workspace().join(".worktrees/api").exists()
+            || std::fs::read_dir(f.workspace().join(".worktrees/api"))
+                .unwrap()
+                .next()
+                .is_none(),
+        "no folder was made"
+    );
+}
+
 #[test]
 fn a_task_from_a_workspace_s_folder_whose_clone_has_no_remote_is_cut_from_head_and_says_so() {
     purlis_core::unsteered!();

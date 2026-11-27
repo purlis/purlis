@@ -318,11 +318,20 @@ pub fn checked_out_in(clone: &Path, branch: &str) -> Result<Option<std::path::Pa
         .map(|row| row.path))
 }
 
+/// How long one ask of a remote for its default branch may take ([`remote_default`]): a single
+/// line over the network, so far less than a fetch's deadline.
+pub const DEFAULT_ASKED: std::time::Duration = std::time::Duration::from_secs(20);
+
 /// The branch the remote `remote` of the clone at `clone` names its default, asked of the
 /// remote itself (`git ls-remote --symref <remote> HEAD`), reached as a fetch is
 /// ([`crate::repocmd::sync::reach`], `hosts` the chat's internet access where it has one).
 /// Never read from the clone, whose refs a chat may write. `None` where the remote does not
 /// answer or names none.
+///
+/// **Bounded, and asked twice at most** (#7870): each ask has [`DEFAULT_ASKED`], not a whole
+/// fetch's [`git::NETWORK`], since it carries one line; an ask that fails is made once more, as
+/// several cuts in one turn ask the same remote at once and one of them may meet a busy
+/// credential helper or proxy. So the question never holds a cut for minutes.
 pub fn remote_default(
     root: &Path,
     clone: &Path,
@@ -330,13 +339,17 @@ pub fn remote_default(
     hosts: Option<&[String]>,
 ) -> Option<String> {
     let (_, helper) = crate::repocmd::sync::reach(root, clone, remote, hosts, false).ok()?;
-    let asked = git::run_network(
-        clone,
-        helper.as_deref(),
-        &["ls-remote", "--symref", remote, "HEAD"],
-    )
-    .ok()
-    .filter(git::Run::ok)?;
+    let ask = || {
+        git::run_network_within(
+            clone,
+            helper.as_deref(),
+            &["ls-remote", "--symref", remote, "HEAD"],
+            DEFAULT_ASKED,
+        )
+        .ok()
+        .filter(git::Run::ok)
+    };
+    let asked = ask().or_else(ask)?;
     let branch = asked.out.lines().find_map(|line| {
         let (named, at) = line.strip_prefix("ref: ")?.split_once('\t')?;
         (at.trim() == "HEAD")
