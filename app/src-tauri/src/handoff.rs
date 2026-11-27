@@ -4604,9 +4604,6 @@ pub fn ask_persona(
         long: false,
         runs_on: None,
     };
-    // The person's ask from a tab starts a chat of theirs: it waits while a prerequisite of the
-    // project is open (ADR 0130 §5). A chat's own dispatch or handoff never does.
-    crate::prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)?;
     match dispatch_it(held, plane, &wanted, size)? {
         Dispatched::Started { it, .. } => Ok(*it),
         // The decision never asks the person for a grant of their own dispatch.
@@ -4810,14 +4807,28 @@ pub async fn ask_persona_chat(
         place,
     };
     let arrived = tauri::async_runtime::spawn_blocking(move || {
-        let locks = purlis_core::sandbox::policy::Locks::of(held.root());
-        ask_persona(&held, &plane, &asked, &locks, Size { columns, rows })
+        asked_from_a_tab(&held, &plane, &asked, Size { columns, rows })
     })
     .await
     .map_err(|err| format!("purlis could not start the chat: {err}"))??;
     let started = arrived.session;
     planes.arrived(arrived);
     Ok(started)
+}
+
+/// [`ask_persona_chat`]'s work, off the window: the person's ask from a tab starts a chat of
+/// theirs, so it waits while a prerequisite of the project is open (ADR 0130 §5), before the
+/// policy's locks or anything else is read, so it is judged on what is there once they answer.
+/// A chat's own dispatch or handoff never waits.
+pub(crate) fn asked_from_a_tab(
+    held: &Held,
+    plane: &PlaneId,
+    asked: &PersonAsk,
+    size: Size,
+) -> Result<Arrived, String> {
+    crate::prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)?;
+    let locks = purlis_core::sandbox::policy::Locks::of(held.root());
+    ask_persona(held, plane, asked, &locks, size)
 }
 
 /// What closing chat `session` would do with the chats below it: what the close dialog says

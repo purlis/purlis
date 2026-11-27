@@ -471,3 +471,238 @@ fn the_persons_cancel_ends_a_held_start_saying_what_is_still_open() {
         "{why}"
     );
 }
+
+/// The size the starts below are drawn at.
+const SIZE: purlis_core::engine::Size = purlis_core::engine::Size {
+    columns: 80,
+    rows: 24,
+};
+
+/// A project whose policy prerequisite is open, held.
+fn an_open_project() -> (tempfile::TempDir, Planes, PlaneId, Arc<crate::planes::Held>) {
+    let root = plane(OPEN);
+    let planes = Planes::telling(Arc::new(|_| {}), crate::Shipped::default(), None);
+    let id = planes.open(root.path());
+    let held = planes.held(&id).expect("held");
+    (root, planes, id, held)
+}
+
+/// Runs the person's start `what` on another thread, in the project `held` holds, whose policy
+/// prerequisite is open: it waits, and the person's Cancel (`cancel`) ends it saying what is
+/// still open. Each start is given what its own checks refuse at once, so a start that read or
+/// checked anything before it waited would end before it was cancelled, with another sentence.
+fn holds_before_its_checks(
+    held: &Arc<crate::planes::Held>,
+    what: &str,
+    cancel: impl Fn(),
+    start: impl FnOnce(&crate::planes::Held) -> Result<(), String> + Send + 'static,
+) {
+    let started = {
+        let held = Arc::clone(held);
+        std::thread::spawn(move || start(&held))
+    };
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!started.is_finished(), "{what} waits");
+    until(what, || {
+        cancel();
+        started.is_finished()
+    });
+    let why = started
+        .join()
+        .expect("the start ends")
+        .expect_err("cancelled");
+    assert!(
+        why.starts_with("purlis did not start the chat: ")
+            && why.contains("'s policy needs your answer in the purlis window on this machine"),
+        "{what}: {why}"
+    );
+}
+
+#[test]
+fn every_start_the_person_presses_holds_before_its_checks_while_a_prerequisite_is_open() {
+    // The person's ruling of 2026-11-27 (#7950): every start they press is held, and holds
+    // before its checks, so what it is readied under is what is there once they answer.
+    let (_root, _planes, id, held) = an_open_project();
+    let cancel = || crate::hostedsessions::cancel_starts(held.root());
+    holds_before_its_checks(&held, "Reopen of a closed chat", cancel, |held| {
+        crate::reopened_closed(held, "01K6CHATS0000000000000000D", SIZE).map(|_| ())
+    });
+    holds_before_its_checks(&held, "Resume of an ended chat", cancel, |held| {
+        crate::resumed_ended(held, 999, SIZE).map(|_| ())
+    });
+    holds_before_its_checks(&held, "Retry now", cancel, |held| {
+        crate::retried(held, "no such chat", SIZE).map(|_| ())
+    });
+    holds_before_its_checks(&held, "Start fresh", cancel, |held| {
+        crate::started_fresh(held, 999, SIZE).map(|_| ())
+    });
+    holds_before_its_checks(&held, "Restart", cancel, |held| {
+        crate::restarted(held, 999, SIZE, crate::planes::When::Now).map(|_| ())
+    });
+    holds_before_its_checks(&held, "Restart at a pause", cancel, |held| {
+        crate::restarted(held, 999, SIZE, crate::planes::When::AtAPause).map(|_| ())
+    });
+    holds_before_its_checks(&held, "restart without the sandbox", cancel, |held| {
+        crate::restarted_without_sandbox(held, 999, SIZE).map(|_| ())
+    });
+    holds_before_its_checks(&held, "a program the person named", cancel, |held| {
+        let chat = crate::unprofiled(
+            Some("/no/such/program".to_owned()),
+            Vec::new(),
+            Some(PathBuf::from("/no/such/folder")),
+            "named".to_owned(),
+        );
+        crate::opened_session(held, &chat, true, SIZE).map(|_| ())
+    });
+    holds_before_its_checks(&held, "Reopen of a finished task", cancel, |held| {
+        crate::finished::reopen(held, "no-such-task", SIZE).map(|_| ())
+    });
+    holds_before_its_checks(&held, "the person's ask from a tab", cancel, move |held| {
+        let asked = crate::handoff::PersonAsk {
+            chat: 999,
+            persona: String::new(),
+            name: String::new(),
+            ask: String::new(),
+            place: None,
+        };
+        crate::handoff::asked_from_a_tab(held, &id, &asked, SIZE).map(|_| ())
+    });
+}
+
+#[cfg(unix)]
+#[test]
+fn try_it_holds_before_it_reads_the_pool_and_its_own_cancel_ends_the_wait() {
+    let (_root, _planes, _id, held) = an_open_project();
+    let config = tempfile::tempdir().expect("a config home");
+    let pool = "held-pool";
+    let tried = {
+        let (held, config) = (Arc::clone(&held), config.path().to_path_buf());
+        std::thread::spawn(move || crate::poolsetuptab::try_it(&held, &config, None, pool, None))
+    };
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(
+        !tried.is_finished(),
+        "Try it waits, though there is no such pool"
+    );
+    // A Cancel on another start in the project leaves Try it alone.
+    crate::hostedsessions::cancel_starts(held.root());
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(
+        !tried.is_finished(),
+        "another start's Cancel is not Try it's"
+    );
+    until("Try it's Cancel", || {
+        crate::poolsetuptab::pool_setup_try_cancel(pool.to_owned());
+        tried.is_finished()
+    });
+    let tried = tried.join().expect("ends").expect("answered");
+    assert!(tried.cancelled && tried.failed.is_none(), "{tried:?}");
+}
+
+#[test]
+fn the_starts_the_person_does_not_make_start_at_once_while_a_prerequisite_is_open() {
+    // ADR 0130 §5's at-once list: a chat restored at a project's open, started again in its
+    // place or woken for its schedule or loop (`Made::Relaunch`), a running chat's dispatch or
+    // handoff (`Made::Asked`), and a start that does not say how it was made.
+    let (_root, _planes, _id, held) = an_open_project();
+    let never = std::sync::atomic::AtomicBool::new(false);
+    for made in [
+        purlis_core::sandbox::Made::Relaunch,
+        purlis_core::sandbox::Made::Asked {
+            how: purlis_core::sandbox::Asking::Dispatch,
+            above: Some(vec![Some("steward".to_owned())]),
+        },
+        purlis_core::sandbox::Made::Asked {
+            how: purlis_core::sandbox::Asking::Handoff,
+            above: None,
+        },
+        purlis_core::sandbox::Made::Unnamed,
+    ] {
+        let began = Instant::now();
+        assert_eq!(hold_start(&held, &made, &never), Ok(()), "{made:?}");
+        assert!(began.elapsed() < Duration::from_secs(1), "{made:?} waited");
+    }
+}
+
+/// Each function of the app's source under `src` that holds a start ([`hold_start`] or
+/// [`hold_a_start`]), as `file: function`, sorted. Tests and this module are left out.
+fn functions_that_hold(src: &Path) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut folders = vec![src.to_path_buf()];
+    while let Some(folder) = folders.pop() {
+        for entry in std::fs::read_dir(&folder).expect("a folder") {
+            let path = entry.expect("an entry").path();
+            let name = path
+                .file_name()
+                .expect("named")
+                .to_string_lossy()
+                .into_owned();
+            if path.is_dir() {
+                if name != "tests" && name != "prerequisites" {
+                    folders.push(path);
+                }
+                continue;
+            }
+            if !name.ends_with(".rs") || name.contains("test") || name == "prerequisites.rs" {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).expect("source");
+            let mut function = None;
+            for line in text.lines() {
+                let code = line.trim_start();
+                if code.starts_with("//") {
+                    continue;
+                }
+                if let Some(at) = code.find("fn ") {
+                    let rest = &code[at + 3..];
+                    let ident: String = rest
+                        .chars()
+                        .take_while(|c| c.is_alphanumeric() || *c == '_')
+                        .collect();
+                    if !ident.is_empty() && (at == 0 || code[..at].ends_with(' ')) {
+                        function = Some(ident);
+                    }
+                }
+                if code.contains("prerequisites::hold_start(")
+                    || code.contains("prerequisites::hold_a_start(")
+                {
+                    let relative = path.strip_prefix(src).expect("under src");
+                    found.push(format!(
+                        "{}: {}",
+                        relative.display(),
+                        function.clone().unwrap_or_default()
+                    ));
+                }
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+#[test]
+fn the_starts_that_hold_are_these_and_no_others() {
+    // Removing one of these holds lets a start of the person's past an open prerequisite;
+    // adding one to a start that is not the person's (restore, wake, schedule, loop, a chat's
+    // dispatch or handoff; ADR 0130 §5) would hold what must start at once. Either is this red.
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    assert_eq!(
+        functions_that_hold(&src),
+        [
+            "curation.rs: sent",
+            "curation.rs: start_typed_where_it_can_be",
+            "finished.rs: reopen",
+            "handoff.rs: asked_from_a_tab",
+            "lib.rs: opened_session",
+            "lib.rs: reopened_closed",
+            "lib.rs: restarted",
+            "lib.rs: restarted_without_sandbox",
+            "lib.rs: resume_session",
+            "lib.rs: resumed_ended",
+            "lib.rs: retried",
+            "lib.rs: start_chat",
+            "lib.rs: started_fresh",
+            "poolsetuptab.rs: try_on",
+        ]
+    );
+}

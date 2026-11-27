@@ -743,9 +743,6 @@ pub(crate) fn reopening(
     // default persona's grants where this persona's reach past them, until the person allows
     // its own on its tab.
     let held_grants = purlis_core::sessionresume::resumed_holds(root, record.persona.as_deref());
-    // The person's Reopen is a chat they start: it waits while a prerequisite is open, and is
-    // readied once they answer (ADR 0130 §5).
-    crate::prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)?;
     let ready = purlis_core::start::ready(
         &purlis_core::start::Start {
             profile: Some(profile.clone()),
@@ -822,20 +819,25 @@ pub(crate) fn reopen(
     if !held.tasks().reopen_begins(id) {
         return Err("That task is being reopened already: its chat is starting.".to_owned());
     }
-    let started = match dispatchrecord::read(held.root(), id) {
-        Some(record) if record.cleared => Err(
-            "That task was reopened or cleared already, so there is no row to reopen.".to_owned(),
-        ),
-        _ => reopening(held, id).and_then(|(chat, ready)| {
-            // The reports of the tasks it asked for, kept because it had gone (#1546).
-            match chat.identity.resumed_from.clone() {
-                Some(was) => crate::restored::reopening(held, &was, || {
-                    held.chats().start_ready(&chat, &ready, size)
-                }),
-                None => held.chats().start_ready(&chat, &ready, size),
-            }
-        }),
-    };
+    // The person's Reopen is a chat they start: it waits while a prerequisite is open, before
+    // the record or anything else is read, so every check below and the launch are what is
+    // there once they answer (ADR 0130 §5).
+    let started = crate::prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)
+        .and_then(|()| match dispatchrecord::read(held.root(), id) {
+            Some(record) if record.cleared => Err(
+                "That task was reopened or cleared already, so there is no row to reopen."
+                    .to_owned(),
+            ),
+            _ => reopening(held, id).and_then(|(chat, ready)| {
+                // The reports of the tasks it asked for, kept because it had gone (#1546).
+                match chat.identity.resumed_from.clone() {
+                    Some(was) => crate::restored::reopening(held, &was, || {
+                        held.chats().start_ready(&chat, &ready, size)
+                    }),
+                    None => held.chats().start_ready(&chat, &ready, size),
+                }
+            }),
+        });
     match started {
         Ok(session) => {
             held.tasks().reopen_started(id, session);

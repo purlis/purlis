@@ -32,7 +32,7 @@
 //! Meanwhile the entry reads [`State::Deferred`], which holds no start. It grants nothing: the
 //! policy in force is what it was.
 
-use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
@@ -151,14 +151,19 @@ impl List {
             .any(|entry| entry.state() == State::Open)
     }
 
-    /// This list, each entry deferred whose digest and reasons an answer kept (`answered`) was
-    /// shown for.
-    fn deferred_by(mut self, answered: &HashSet<Answered>) -> Self {
+    /// This list, each entry deferred whose digest and reasons an answer kept (`answers`) was
+    /// shown for, once `answers` has noted each pair it holds as held this run.
+    fn deferred_by(mut self, answers: &mut Answers) -> Self {
         for entry in &mut self.entries {
-            if let Prerequisite::Policy(policy) = entry
-                && answered.contains(&(policy.digest.clone(), policy.reasons.clone()))
-            {
-                policy.state = State::Deferred;
+            match entry {
+                Prerequisite::Policy(policy) => {
+                    let pair = (policy.digest.clone(), policy.reasons.clone());
+                    if answers.held(pair) {
+                        policy.state = State::Deferred;
+                    }
+                }
+                #[cfg(test)]
+                Prerequisite::StandIn => {}
             }
         }
         self
@@ -226,8 +231,44 @@ pub enum Shown {
     },
 }
 
-/// An answer that grants nothing, kept: the policy digest and the reasons it was shown for.
+/// A policy entry as it can be answered: its digest and its reasons.
 type Answered = (String, Vec<Reason>);
+
+/// **The digest and reasons pairs the list has held this run**, oldest first, each with whether
+/// the answer that grants nothing was given for it ([`Kept::defer`]). An answer is kept only for
+/// a pair the list held, so what a link sends that nobody was shown is dropped, and the pairs
+/// are bounded ([`ANSWERS_KEPT_AT_MOST`]): past that the oldest goes, and is asked again.
+#[derive(Debug, Default)]
+struct Answers(VecDeque<(Answered, bool)>);
+
+impl Answers {
+    /// Notes `pair` as held this run: whether it was answered.
+    fn held(&mut self, pair: Answered) -> bool {
+        if let Some((_, answered)) = self.0.iter().find(|(held, _)| *held == pair) {
+            return *answered;
+        }
+        if self.0.len() >= ANSWERS_KEPT_AT_MOST {
+            self.0.pop_front();
+        }
+        self.0.push_back((pair, false));
+        false
+    }
+
+    /// Answers `pair`, where the list held it this run: whether it did.
+    fn answer(&mut self, pair: &Answered) -> bool {
+        self.0
+            .iter_mut()
+            .find(|(held, _)| held == pair)
+            .map(|(_, answered)| *answered = true)
+            .is_some()
+    }
+
+    /// How many pairs are kept.
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
 
 /// **What a held start waits on**, in the core's words: each open entry of `list`, for the
 /// project at `root`, by its folder's name. What a held start is told, and says where it stops.
@@ -249,6 +290,10 @@ pub fn waiting_for(root: &Path, list: &List) -> String {
         .collect::<Vec<_>>()
         .join("; ")
 }
+
+/// **The most digest and reasons pairs a list keeps for a run** ([`Kept::defer`]): far past
+/// the policies one project goes through in a run, so an old answer goes only after many.
+const ANSWERS_KEPT_AT_MOST: usize = 32;
 
 /// How long a held start waits at most between looks at whether its caller stopped it.
 const LOOKS_EVERY: Duration = Duration::from_millis(100);
@@ -371,8 +416,9 @@ pub struct Kept {
     /// Woken each time a list is kept: what a held start waits on ([`Self::hold`]).
     kept_again: Condvar,
     /// **The answers that grant nothing given this run** ([`Self::defer`]), each against what
-    /// it was shown for. In memory only: a restart is when the person is asked again.
-    answered: Mutex<HashSet<Answered>>,
+    /// it was shown for, among the pairs the list held. In memory only: a restart is when the
+    /// person is asked again.
+    answered: Mutex<Answers>,
     /// Held across an evaluation, its keeping and its telling, so two evaluations at once are
     /// told in the order they were kept, and the last one told is the one kept.
     evaluating: Mutex<()>,
@@ -392,7 +438,7 @@ impl Kept {
         Self {
             list: Mutex::new(None),
             kept_again: Condvar::new(),
-            answered: Mutex::new(HashSet::new()),
+            answered: Mutex::new(Answers::default()),
             evaluating: Mutex::new(()),
             evaluator: Mutex::new(None),
             fresh_for: LAPSED_FRESH_FOR,
@@ -422,7 +468,7 @@ impl Kept {
     fn evaluate_holding(&self, _evaluating: MutexGuard<'_, ()>, root: &Path) -> List {
         *self.evaluator() = Some(std::thread::current().id());
         let now = evaluate(root)
-            .deferred_by(&self.answered.lock().unwrap_or_else(PoisonError::into_inner));
+            .deferred_by(&mut self.answered.lock().unwrap_or_else(PoisonError::into_inner));
         let changed = {
             let mut kept = self.list.lock().unwrap_or_else(PoisonError::into_inner);
             let changed = kept.as_ref().map(|(list, _)| list) != Some(&now);
@@ -497,14 +543,23 @@ impl Kept {
     /// **The answer that grants nothing** ("Work in strict mode" under Broken, "Keep my current
     /// rules" under Waiting; ADR 0130 §6), kept against what was `shown`, then the list
     /// evaluated again: an entry shown so reads [`State::Deferred`] and holds no start, while
-    /// one whose digest or reasons moved since is open still. It grants nothing and writes
-    /// nothing: the policy in force is what it was.
+    /// one whose digest or reasons moved since is open still. An answer for a pair the list
+    /// has not held this run is kept nowhere: a linked page may send it, and nobody was shown
+    /// it. It grants nothing and writes nothing: the policy in force is what it was.
     pub fn defer(&self, root: &Path, shown: Shown) -> List {
         let Shown::Policy { digest, reasons } = shown;
-        self.answered
+        let pair = (digest, reasons);
+        if !self
+            .answered
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert((digest, reasons));
+            .answer(&pair)
+        {
+            tracing::info!(
+                "purlis: an answer for a policy {} did not hold this run was not kept",
+                root.display()
+            );
+        }
         self.evaluate(root)
     }
 

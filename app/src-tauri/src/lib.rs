@@ -1400,10 +1400,17 @@ async fn reopen_closed_chat(
 ) -> Result<OpenChat, String> {
     let held = planes.held(&plane)?;
     off_the_window(STARTING_A_CHAT, move || {
-        let reopened = chatcard::reopen_closed(&held, &chat, Size { columns, rows })?;
-        drawn(&held, reopened.now).map_err(|_| chatcard::ended_as_it_started(reopened))
+        reopened_closed(&held, &chat, Size { columns, rows })
     })
     .await
+}
+
+/// [`reopen_closed_chat`]'s work, off the window. The person's Reopen is a chat they start: it
+/// waits while a prerequisite of the project is open, before the record is read (ADR 0130 §5).
+fn reopened_closed(held: &planes::Held, chat: &str, size: Size) -> Result<OpenChat, String> {
+    prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)?;
+    let reopened = chatcard::reopen_closed(held, chat, size)?;
+    drawn(held, reopened.now).map_err(|_| chatcard::ended_as_it_started(reopened))
 }
 
 /// **Resume** on the ended band of a chat the person ended (#5019, spec #4750 story 62): the
@@ -1420,15 +1427,22 @@ async fn resume_ended_chat(
 ) -> Result<OpenChat, String> {
     let held = planes.held(&plane)?;
     off_the_window(STARTING_A_CHAT, move || {
-        let started = held.chats().resume_ended(session, Size { columns, rows })?;
-        held.chats()
-            .open_now()
-            .into_iter()
-            .find(|open| open.session == started)
-            .map(|open| drawn_of(&held, open))
-            .ok_or_else(|| format!("chat {started} ended as it started"))
+        resumed_ended(&held, session, Size { columns, rows })
     })
     .await
+}
+
+/// [`resume_ended_chat`]'s work, off the window. The person's Resume is a chat they start: it
+/// waits while a prerequisite of the project is open, before the chat is read (ADR 0130 §5).
+fn resumed_ended(held: &planes::Held, session: u32, size: Size) -> Result<OpenChat, String> {
+    prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)?;
+    let started = held.chats().resume_ended(session, size)?;
+    held.chats()
+        .open_now()
+        .into_iter()
+        .find(|open| open.session == started)
+        .map(|open| drawn_of(held, open))
+        .ok_or_else(|| format!("chat {started} ended as it started"))
 }
 
 /// What git says about each of the focused workspace's clones, and what the forge cache
@@ -2324,13 +2338,26 @@ async fn open_session(
         // **The operator's own shell — no program named — is the one start the kill switch
         // lets through** (OV-1, ADR 0071). A program named here is anything at all, a harness
         // included, so it is refused while agents are stopped like every other chat.
-        if program_named {
-            chats.chats().start(&chat, size)
-        } else {
-            chats.chats().start_operator_shell(&chat, size)
-        }
+        opened_session(&chats, &chat, program_named, size)
     })
     .await
+}
+
+/// [`open_session`]'s work, off the window. A program the person named is a chat they start,
+/// a harness among them: it waits while a prerequisite of the project is open (ADR 0130 §5).
+/// Their own shell, no program named, is no chat, and never waits.
+fn opened_session(
+    held: &planes::Held,
+    chat: &Chat,
+    program_named: bool,
+    size: Size,
+) -> Result<u32, String> {
+    if program_named {
+        prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)?;
+        held.chats().start(chat, size)
+    } else {
+        held.chats().start_operator_shell(chat, size)
+    }
 }
 
 /// What a command that starts a chat names its work, off the window's thread (#1949): a start
@@ -2571,22 +2598,27 @@ async fn retry_chat_that_did_not_start(
     rows: u16,
 ) -> Result<OpenChat, String> {
     let held = planes.held(&plane)?;
-    let chat = tauri::async_runtime::spawn_blocking(move || {
-        // Reports kept for it while it was not open are handed to it once it starts, and a
-        // task is told to carry on (#1513).
-        let session = restored::retrying(&held, &id, || {
-            held.chats().retry(&id, Size { columns, rows })
-        });
-        // A task drawn under the chat that asked reads from the same list (#1497): its row
-        // goes where it started, and says the new reason where it did not.
-        held.rows_changed();
-        drawn(&held, session?)
-    })
-    .await
-    .map_err(|err| format!("purlis could not start the chat: {err}"))??;
+    let chat =
+        tauri::async_runtime::spawn_blocking(move || retried(&held, &id, Size { columns, rows }))
+            .await
+            .map_err(|err| format!("purlis could not start the chat: {err}"))??;
     // Its project is short of one fewer: the row's "2 of 3 chats back" moves (#5324).
     planes.tell_chats_back(&plane);
     Ok(chat)
+}
+
+/// [`retry_chat_that_did_not_start`]'s work, off the window. The person's Retry now is a chat
+/// they start: it waits while a prerequisite of the project is open, before the chat is read
+/// (ADR 0130 §5). The app's own retry, of a chat restored at a project's open, never waits.
+fn retried(held: &planes::Held, id: &str, size: Size) -> Result<OpenChat, String> {
+    prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)?;
+    // Reports kept for it while it was not open are handed to it once it starts, and a task
+    // is told to carry on (#1513).
+    let session = restored::retrying(held, id, || held.chats().retry(id, size));
+    // A task drawn under the chat that asked reads from the same list (#1497): its row goes
+    // where it started, and says the new reason where it did not.
+    held.rows_changed();
+    drawn(held, session?)
 }
 
 /// Forget this chat (NO-3): drops the chat with id `id` that this launch could not start from
@@ -2622,11 +2654,18 @@ async fn start_chat_fresh(
 ) -> Result<OpenChat, String> {
     let held = planes.held(&plane)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let started = held.start_chat_fresh(session, Size { columns, rows })?;
-        drawn(&held, started)
+        started_fresh(&held, session, Size { columns, rows })
     })
     .await
     .map_err(|err| format!("purlis could not start the chat: {err}"))?
+}
+
+/// [`start_chat_fresh`]'s work, off the window. The person's Start fresh is a chat they start:
+/// it waits while a prerequisite of the project is open, before the chat is read (ADR 0130 §5).
+fn started_fresh(held: &planes::Held, session: u32, size: Size) -> Result<OpenChat, String> {
+    prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)?;
+    let started = held.start_chat_fresh(session, size)?;
+    drawn(held, started)
 }
 
 /// **Restart chat** (#1428): the person asks for chat `session` to be restarted on its
@@ -2752,23 +2791,36 @@ async fn restart_chat(
         planes::When::AtAPause
     };
     tauri::async_runtime::spawn_blocking(move || {
-        match held.restart_chat(session, Size { columns, rows }, when)? {
-            planes::Restarted::Started(started) => Ok(ChatRestart {
-                chat: Some(drawn(&held, started)?),
-                notices: held.chats().start_notes(started),
-                not_yet: None,
-                unsent: held.hibernated().handed_back(started),
-            }),
-            planes::Restarted::NotYet(why) => Ok(ChatRestart {
-                chat: None,
-                notices: Vec::new(),
-                not_yet: Some(why.to_owned()),
-                unsent: None,
-            }),
-        }
+        restarted(&held, session, Size { columns, rows }, when)
     })
     .await
     .map_err(|err| format!("purlis could not restart the chat: {err}"))?
+}
+
+/// [`restart_chat`]'s work, off the window. The person's Restart is a chat they start: it waits
+/// while a prerequisite of the project is open, before the chat is read or its pause looked at
+/// (ADR 0130 §5).
+fn restarted(
+    held: &planes::Held,
+    session: u32,
+    size: Size,
+    when: planes::When,
+) -> Result<ChatRestart, String> {
+    prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)?;
+    match held.restart_chat(session, size, when)? {
+        planes::Restarted::Started(started) => Ok(ChatRestart {
+            chat: Some(drawn(held, started)?),
+            notices: held.chats().start_notes(started),
+            not_yet: None,
+            unsent: held.hibernated().handed_back(started),
+        }),
+        planes::Restarted::NotYet(why) => Ok(ChatRestart {
+            chat: None,
+            notices: Vec::new(),
+            not_yet: Some(why.to_owned()),
+            unsent: None,
+        }),
+    }
 }
 
 /// **Moves chat `session` to the runner of pool `to`, or here where `to` is `null`** (#2048):
@@ -2911,11 +2963,23 @@ async fn restart_chat_without_sandbox(
 ) -> Result<OpenChat, String> {
     let held = planes.held(&plane)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let started = held.restart_chat_without_sandbox(session, Size { columns, rows })?;
-        drawn(&held, started)
+        restarted_without_sandbox(&held, session, Size { columns, rows })
     })
     .await
     .map_err(|err| format!("purlis could not start the chat again: {err}"))?
+}
+
+/// [`restart_chat_without_sandbox`]'s work, off the window. The person's restart without the
+/// sandbox is a chat they start: it waits while a prerequisite of the project is open, before
+/// the chat is read (ADR 0130 §5).
+fn restarted_without_sandbox(
+    held: &planes::Held,
+    session: u32,
+    size: Size,
+) -> Result<OpenChat, String> {
+    prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)?;
+    let started = held.restart_chat_without_sandbox(session, size)?;
+    drawn(held, started)
 }
 
 /// Every chat this plane has open that is running on instructions the plane has changed since

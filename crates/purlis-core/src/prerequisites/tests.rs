@@ -774,6 +774,71 @@ fn a_change_back_to_a_digest_already_answered_this_run_does_not_reopen_it() {
     assert!(!back.holds());
 }
 
+#[test]
+fn an_answer_for_a_digest_and_reasons_the_list_never_held_is_not_kept() {
+    // The answer is served on a link (ADR 0130 §8): one against a pair nobody was shown, such
+    // as the digest of a policy not committed yet, defers nothing when that policy lands.
+    let _home = OwnConfigHome::new();
+    let root = broken(WATCH);
+    let kept = Kept::new(Heard::default().told());
+    let list = kept.evaluate(root.path());
+    std::fs::write(root.path().join("charter.toml"), STRICT).expect("another policy");
+    let not_yet = digest_of(root.path());
+    std::fs::write(root.path().join("charter.toml"), WATCH).expect("back");
+    assert_ne!(not_yet, the_policy(&list).digest);
+
+    let answered = kept.defer(
+        root.path(),
+        Shown::Policy {
+            digest: not_yet.clone(),
+            reasons: vec![Reason::Broken],
+        },
+    );
+    assert_eq!(the_policy(&answered).state, State::Open, "nothing answered");
+
+    std::fs::write(root.path().join("charter.toml"), STRICT).expect("it lands");
+    let landed = kept.evaluate(root.path());
+    assert_eq!(the_policy(&landed).digest, not_yet);
+    assert_eq!(the_policy(&landed).state, State::Open);
+    assert!(landed.holds());
+}
+
+#[test]
+fn answers_for_pairs_never_held_keep_nothing_and_the_real_answer_still_holds() {
+    // What a link sends is unchecked, and kept for the app's whole run: it must not grow.
+    let _home = OwnConfigHome::new();
+    let root = broken(WATCH);
+    let kept = Kept::new(Heard::default().told());
+    let list = kept.evaluate(root.path());
+    for n in 0..200 {
+        kept.defer(
+            root.path(),
+            Shown::Policy {
+                digest: format!("{n:064x}"),
+                reasons: vec![Reason::Broken],
+            },
+        );
+    }
+    let answers = kept.answered.lock().expect("answers").len();
+    assert!(answers <= ANSWERS_KEPT_AT_MOST, "{answers} kept");
+    assert!(!kept.defer(root.path(), shown(&list)).holds(), "answered");
+}
+
+#[test]
+fn the_pairs_a_list_held_are_bounded_and_the_oldest_goes_first_asked_again() {
+    let pair = |n: usize| (format!("{n:064x}"), vec![Reason::Waiting]);
+    let mut answers = Answers::default();
+    assert!(!answers.held(pair(0)));
+    assert!(answers.answer(&pair(0)), "held, so kept");
+    assert!(answers.held(pair(0)), "answered");
+    for n in 1..ANSWERS_KEPT_AT_MOST * 4 {
+        answers.held(pair(n));
+    }
+    assert_eq!(answers.len(), ANSWERS_KEPT_AT_MOST);
+    assert!(!answers.answer(&pair(0)), "the oldest went");
+    assert!(!answers.held(pair(0)), "and is asked again");
+}
+
 /// Every file under `dir`, with what it holds.
 fn files_under(dir: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     let mut files = BTreeMap::new();
