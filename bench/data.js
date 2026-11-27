@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795777160526,
+  "lastUpdate": 1795781596099,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57624,6 +57624,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0183765,
             "unit": "ms",
             "extra": "median of 5 runs: 100.810, 100.935, 102.018, 102.380, 103.528 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "50f772d8f6f6b960a969881d6d70a3bd662b87ed",
+          "message": "ADR 0086, amended 2026-11-27: W1, W2 and A1 count window draws, listeners and asks and a core answer's cost in CI; L16 and L17 are evidence rows for a 100 ms freeze and window reads (#7890) (#7919)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8E00TJQ8EPN7WJC9BGB6SJH\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T11:39:48Z",
+          "tree_id": "577b0e39fb195f01f584327457743deefecf8b41",
+          "url": "https://github.com/purlis/purlis/commit/50f772d8f6f6b960a969881d6d70a3bd662b87ed"
+        },
+        "date": 1795781589000,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5584165,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.552, 0.553, 0.558, 0.563, 0.574 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3309735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.143, 16.153, 16.331, 16.382, 16.514 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.94448750000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.593, 101.860, 101.944, 102.118, 102.534 ms"
           }
         ]
       }
