@@ -190,7 +190,7 @@ pub(super) fn refused_as_changed(pool: &str, name: &str) {
 }
 
 /// Whether profile `name` on pool `pool`'s runner refused a start as changed in this run.
-fn refused_before(pool: &str, name: &str) -> bool {
+pub(super) fn refused_before(pool: &str, name: &str) -> bool {
     REFUSED
         .lock()
         .unwrap_or_else(PoisonError::into_inner)

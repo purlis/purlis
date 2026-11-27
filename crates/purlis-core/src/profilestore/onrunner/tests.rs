@@ -3147,3 +3147,64 @@ fn an_mcp_server_a_chat_added_on_a_runner_is_never_held_as_kept() {
     fs::write(&there, "not JSON").unwrap();
     assert_eq!(held(), None, "a state file no keep can read");
 }
+
+/// **A name that is not text, inside a listed folder, is never held as kept** (#7863): no read
+/// takes it in, so no desktop sends it, and a keep takes it away with the folder it is in. Only
+/// Linux lets any bytes be a file's name, and a runner is Linux.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_name_that_is_not_text_in_a_listed_folder_is_never_held_as_kept() {
+    use std::os::unix::ffi::OsStrExt as _;
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let as_kept = Some(whole_kept(&in_batches(&kept).unwrap()));
+    let held = || held_whole_for_the_desktop(&runner, DESKTOP, &kept.name).unwrap();
+    let skill = record.folders.config.join("skills/x");
+    fs::create_dir_all(&skill).unwrap();
+    fs::write(skill.join("SKILL.md"), "A skill.").unwrap();
+    let planted = skill.join(std::ffi::OsStr::from_bytes(b"\xff.sh"));
+    fs::write(&planted, "echo planted").unwrap();
+
+    assert_eq!(held(), None);
+    kept_staged(&runner, dir.path(), in_batches(&kept).unwrap()).expect("kept again");
+    assert!(fs::symlink_metadata(&planted).is_err());
+    assert_eq!(held(), as_kept);
+}
+
+/// **A settings file's or folder's mode changed on a runner moves what it holds off the digest
+/// of the keep** (#7863): a keep writes each file `0600` and each folder `0700`, so a chat's
+/// `chmod`, an exec bit or a wider read, has the next start keep the profile, which puts them
+/// back.
+#[test]
+fn a_mode_changed_on_a_runner_is_not_held_as_kept() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let as_kept = Some(whole_kept(&in_batches(&kept).unwrap()));
+    let held = || held_whole_for_the_desktop(&runner, DESKTOP, &kept.name).unwrap();
+    let config = &record.folders.config;
+    let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o7777;
+    let chmod = |path: &Path, mode: u32| {
+        fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
+    };
+    assert_eq!(held(), as_kept);
+
+    for (path, kept_as, changed, what) in [
+        ("CLAUDE.md", 0o600, 0o755, "a listed file made runnable"),
+        (
+            "agents/review.md",
+            0o600,
+            0o644,
+            "a file in a listed folder made readable",
+        ),
+        ("agents", 0o700, 0o755, "a listed folder made readable"),
+    ] {
+        let at = config.join(path);
+        assert_eq!(mode(&at), kept_as, "{what}: as kept");
+        chmod(&at, changed);
+        assert_ne!(held(), as_kept, "{what}");
+        kept_staged(&runner, dir.path(), in_batches(&kept).unwrap()).expect("kept again");
+        assert_eq!(mode(&at), kept_as, "{what}: kept again");
+        assert_eq!(held(), as_kept, "{what}");
+    }
+}

@@ -91,8 +91,9 @@ pub type Holding = Arc<
         + Sync,
 >;
 
-/// [`session::whole_settings_digest`] of what the runner holds now of the profile named, for the
-/// desktop a link proved, read off its disk then; `None` where it keeps no such profile for it
+/// The digest of what the runner holds now of the profile named, its settings' contents
+/// ([`session::whole_settings_digest`]) with their modes, for the desktop a link proved, read off
+/// its disk then; `None` where it keeps no such profile for it
 /// (a start's `profile_held`, 1.99, #7863).
 pub type Matching = Arc<dyn Fn(&Pinned, &str) -> Result<Option<String>, String> + Send + Sync>;
 

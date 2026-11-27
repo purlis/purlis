@@ -41,23 +41,27 @@ changes is when the profile link is made.
    which is a start that makes the profile link anyway. It is what has a runner forget a profile
    no longer chosen for it or no longer on this machine, so it is not tied to the keep.
 7. **A skipped keep is held to what the runner holds** (the person's ruling of 2026-11-27, option
-   2). The keep remembered carries the digest of the profile's settings it left on the runner
-   (`settings_changed.whole`, or the whole of what it sent). The chat's start names it
+   2). The keep remembered carries the digest of the profile's settings it left on the runner:
+   their contents (`settings_changed.whole`, or the whole of what it sent) and their modes, each
+   file `0600` and each folder `0700` as a keep writes them. The chat's start names it
    (`StartProgram.profile_held`, session protocol 1.99), carried from the very decision that
    skipped the keep, never read again from what this machine remembers, which another chat's
    sign-out or forget may empty meanwhile. Only the window or its host's relay may name it, as
    with `tools_allowed`. The runner, on the paired link the chat's start arrives on, reads the
    profile as it holds it on disk then and answers with its digest only where a keep would leave
-   it exactly as it is: its settings files, hashed the way the desktop hashes them, and nothing
-   else a keep removes or rewrites. That is, no file past a read's limits, no entry a read leaves
-   out inside a listed folder (a link, a hidden or credential-shaped name, a skill's
-   `node_modules`, `__pycache__` or `venv`), none of what a keep clears that no desktop sends (each
+   its settings' contents and modes as they are: the contents of its settings files, hashed the
+   way the desktop hashes them, the mode of each of those files and of each folder they are in
+   (one not as a keep writes it moves the digest off the one named), and nothing else a keep
+   removes. That is, no file past a read's limits, no entry a read leaves out inside a listed
+   folder (a link, a hidden, credential-shaped or not-text name, a skill's `node_modules`,
+   `__pycache__` or `venv`), none of what a keep clears that no desktop sends (each
    harness's list: Claude Code's `hooks` and `rules`, Codex's `.env`, `AGENTS.override.md`,
    `hooks.json`, `rules` and `skills`, opencode's plugins, skills, tools, `package.json` and
    `node_modules`), no link on the way to the settings folder, and, for Claude Code, a state file
    whose user-scope MCP servers are those its kept `mcp-servers.json` names, where it keeps one,
    and in which no project has servers of its own (an empty list, which starts nothing, counts as
-   none). Anything else, a settings file planted, changed or gone among them, and a keep left
+   none). Anything else, a settings file planted, changed, gone or with its mode changed among
+   them, and a keep left
    unfinished or a profile kept for another desktop, refuses the start as `profile_changed`, and
    nothing starts. The desktop then forgets what it remembered, keeps the profile in full, and
    starts the chat once more, naming nothing. A keep that fails there is why the chat did not
@@ -73,9 +77,10 @@ changes is when the profile link is made.
 Its guarantee holds: **no chat starts over a profile's settings on a runner other than what this
 machine kept there.** A chat may be able to write in a settings folder, so nothing is taken on
 trust (item 1): what is remembered on this machine is only what to ask the runner, and the runner's
-answer is read off its disk at each start. What is proven there is exactly what item 7 lists: that
-a keep made then would write, remove and rewrite nothing. Anything a keep would change, a settings
-file changed or planted since the last keep, something it clears that no desktop sends, or an MCP
-server it would take out, ends at a keep (item 3), which writes what it checked and clears what no
+answer is read off its disk at each start. What is proven there is what item 7 lists: that the
+settings files' contents, and their and their folders' modes, are those a keep made then would
+write, and that nothing it removes is there. Anything a keep would change, a settings file
+changed, planted or made runnable since the last keep, something it clears that no desktop sends,
+or an MCP server it would take out, ends at a keep (item 3), which writes what it checked and clears what no
 desktop sent (item 5): the skip only spares the link where the check finds nothing a keep would
 do.

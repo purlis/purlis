@@ -138,6 +138,23 @@ impl Linked {
     }
 }
 
+/// **What a start on pool `pool` on `profile` names of its settings**: `digest`, and, where its
+/// runner refuses it as not holding them, the profile readied again by `ready`, after which that
+/// runner is kept on at every start until the app restarts (#7863).
+fn held_at_start(
+    digest: String,
+    pool: &str,
+    profile: &str,
+    ready: impl Fn(&str, &str) -> Result<(), String> + Send + Sync + 'static,
+) -> crate::host::ProfileHeld {
+    let (pool, profile) = (pool.to_owned(), profile.to_owned());
+    crate::host::ProfileHeld::new(digest, move || {
+        // A runner that did not hold it as kept is kept on at every start from now on.
+        kept_until_restart::refused_as_changed(&pool, &profile);
+        ready(&pool, &profile)
+    })
+}
+
 impl ProfilesOnPools for Linked {
     fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
         self.readied(root, pool, profile).map(drop)
@@ -157,17 +174,13 @@ impl ProfilesOnPools for Linked {
         let Some(digest) = self.readied(root, pool, profile)? else {
             return Ok(None);
         };
-        let (linked, root, pool, profile) = (
-            Linked::at(self.config.clone()),
-            root.to_path_buf(),
-            pool.to_owned(),
-            profile.to_owned(),
-        );
-        Ok(Some(crate::host::ProfileHeld::new(digest, move || {
-            // A runner that did not hold it as kept is kept on at every start from now on.
-            kept_until_restart::refused_as_changed(&pool, &profile);
-            linked.ready(&root, &pool, &profile)
-        })))
+        let (linked, root) = (Linked::at(self.config.clone()), root.to_path_buf());
+        Ok(Some(held_at_start(
+            digest,
+            pool,
+            profile,
+            move |pool, profile| linked.ready(&root, pool, profile),
+        )))
     }
 
     fn ready_on_its_own_runner(

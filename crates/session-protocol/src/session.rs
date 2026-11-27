@@ -2328,10 +2328,11 @@ pub struct StartProgram {
     /// The profile it runs on, or none (1.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
-    /// [`whole_settings_digest`] of the settings that profile was last kept with on the runner
-    /// that starts it (1.99, #7863): the runner starts it only where what it holds of the profile,
-    /// read off its disk then, comes to this, and refuses [`PROFILE_CHANGED`] otherwise. None
-    /// where the desktop kept the profile for this start, and the runner holds it to nothing more.
+    /// The digest of the settings that profile was last kept with on the runner that starts it,
+    /// their contents ([`whole_settings_digest`]) with their modes (1.99, #7863): the runner
+    /// starts it only where what it holds of the profile, read off its disk then, comes to this,
+    /// and refuses [`PROFILE_CHANGED`] otherwise. None where the desktop kept the profile for
+    /// this start, and the runner holds it to nothing more.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_held: Option<String>,
     /// The size its terminal starts at, in columns and rows (1.2).

@@ -1268,3 +1268,32 @@ fn a_start_refused_on_its_secret_ask_names_it_beside_its_own_refusal_alone() {
     .unwrap_err();
     assert_eq!(got_past.secret_ask, None);
 }
+
+/// **A start its runner refused as not holding its profile as kept keeps it again, and that
+/// runner is kept on at every start after** (#7863): what the start named is forgotten, and no
+/// skip is remembered there again until the app restarts.
+#[test]
+fn a_start_refused_as_changed_keeps_again_and_marks_the_runner_refused() {
+    let pool = "refused-at-a-start";
+    let readied = std::sync::Arc::new(Mutex::new(Vec::new()));
+    let held = held_at_start("as-kept".to_owned(), pool, "work", {
+        let readied = readied.clone();
+        move |pool, profile| {
+            readied
+                .lock()
+                .unwrap()
+                .push((pool.to_owned(), profile.to_owned()));
+            Ok(())
+        }
+    });
+    assert_eq!(held.digest, "as-kept");
+    assert!(!kept_until_restart::refused_before(pool, "work"));
+
+    held.keep_again().expect("kept again");
+
+    assert_eq!(
+        *readied.lock().unwrap(),
+        [(pool.to_owned(), "work".to_owned())]
+    );
+    assert!(kept_until_restart::refused_before(pool, "work"));
+}

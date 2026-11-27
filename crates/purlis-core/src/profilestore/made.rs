@@ -913,6 +913,8 @@ enum Sink<'a> {
         left_behind: &'a mut Vec<(String, u64)>,
         /// Whether a file is read at all.
         wanted: &'a dyn Fn(&str) -> bool,
+        /// The mode of each file read and each folder walked, by its path ([`SettingsRead::modes`]).
+        modes: &'a mut std::collections::BTreeMap<String, rustix::fs::Mode>,
     },
     /// What each whole holds, read from no file ([`settings_measured`]).
     Measure {
@@ -1008,6 +1010,7 @@ fn entry(
                 most_files,
                 left_behind,
                 wanted,
+                modes,
             } => {
                 if !wanted(shown) {
                     return Ok(());
@@ -1029,6 +1032,7 @@ fn entry(
                 }
                 *so_far += bytes.len();
                 files.push((shown.to_owned(), bytes));
+                modes.insert(shown.to_owned(), Mode::from_raw_mode(stat.st_mode));
             }
             Sink::Measure { wholes, files } => {
                 let whole = wholes.entry(whole_of(shown).to_owned()).or_default();
@@ -1052,8 +1056,12 @@ fn entry(
             .push(format!("{shown}: more than {DEEPEST} folders deep"));
         return Ok(());
     }
-    if let Sink::Disk { folder } = &place.into {
-        private_dir_within(folder, to)?;
+    match &mut place.into {
+        Sink::Disk { folder } => private_dir_within(folder, to)?,
+        Sink::Memory { modes, .. } => {
+            modes.insert(shown.to_owned(), Mode::from_raw_mode(stat.st_mode));
+        }
+        Sink::Measure { .. } => {}
     }
     // What a runner has no use for goes no further, as a chat's start pays for all it sends.
     let to_a_runner = !matches!(place.into, Sink::Disk { .. });
@@ -1063,6 +1071,12 @@ fn entry(
     while let Some(one) = listing.read() {
         let one = one?;
         let Ok(text) = one.file_name().to_str() else {
+            // No read takes it in and no import copies it, so a keep, which replaces the folder
+            // whole, takes it away: said, so no runner holds the folder as kept (#7863).
+            place.copied.skipped.push(format!(
+                "{shown}/{}: a name that is not text",
+                one.file_name().to_string_lossy()
+            ));
             continue;
         };
         if text != "." && text != ".." {
@@ -1122,6 +1136,10 @@ pub struct SettingsRead {
     pub skipped: Vec<String>,
     /// Those of [`Self::skipped`] that the list names itself ([`Copied::unread_listed`]).
     pub unread_listed: Vec<String>,
+    /// The permission bits of each file of [`Self::files`] and of each folder walked, by its
+    /// path, as `fstat` read them (#7863).
+    #[cfg(unix)]
+    pub modes: std::collections::BTreeMap<String, rustix::fs::Mode>,
 }
 
 /// **The settings files `kind`'s settings folder `config` holds, as an import reads them**
@@ -1140,6 +1158,7 @@ pub fn settings_read(
 ) -> Result<SettingsRead, String> {
     let mut files = Vec::new();
     let mut left_behind = Vec::new();
+    let mut modes = std::collections::BTreeMap::new();
     let walked = settings_walked(
         kind,
         config,
@@ -1150,11 +1169,13 @@ pub fn settings_read(
             most_files,
             left_behind: &mut left_behind,
             wanted,
+            modes: &mut modes,
         },
     )?;
     Ok(SettingsRead {
         files,
         left_behind,
+        modes,
         skipped: walked.skipped,
         unread_listed: walked.unread_listed,
     })

@@ -8997,6 +8997,8 @@ struct ProfilesOnAPool {
     refusing: Mutex<Option<String>>,
     /// Why it refuses from its second asking on: the row settled since the first.
     refusing_after_one: Mutex<Option<String>>,
+    /// What a start's readying says its runner must still hold of the profile (#7863).
+    held: Mutex<Option<String>>,
 }
 
 impl crate::poolprofiles::ProfilesOnPools for ProfilesOnAPool {
@@ -9012,6 +9014,47 @@ impl crate::poolprofiles::ProfilesOnPools for ProfilesOnAPool {
             None => Ok(()),
         }
     }
+
+    fn ready_for_a_start(
+        &self,
+        root: &Path,
+        pool: &str,
+        profile: &str,
+    ) -> Result<Option<crate::host::ProfileHeld>, String> {
+        self.ready(root, pool, profile)?;
+        Ok(lock(&self.held)
+            .clone()
+            .map(|digest| crate::host::ProfileHeld::new(digest, || Ok(()))))
+    }
+}
+
+/// **A chat's start on a pool's runner names what its readying said the runner must still hold
+/// of its profile** (#7863), carried from that very readying, and nothing where it said nothing.
+#[test]
+fn a_runner_chat_s_start_names_what_its_readying_said_the_runner_must_hold() {
+    let host = Pretend::default();
+    host.on_pool("builds");
+    let on_pools = Arc::new(ProfilesOnAPool::default());
+    let mut chats = Chats::on_host(Box::new(|_| {}), Box::new(host.clone()), no_project());
+    chats.readying_profiles_on_pools(on_pools.clone());
+    let named_held = |host: &Pretend| {
+        host.named()
+            .last()
+            .and_then(|(_, named, _)| named.profile_held.as_ref().map(|held| held.digest.clone()))
+    };
+
+    *lock(&on_pools.held) = Some("as-kept".to_owned());
+    chats
+        .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
+        .expect("it starts on the runner");
+    assert_eq!(named_held(&host).as_deref(), Some("as-kept"));
+
+    *lock(&on_pools.held) = None;
+    chats
+        .start_ready(&on_the_profile_work(), &a_harness_ready(None), SIZE)
+        .expect("it starts on the runner");
+    assert_eq!(host.named().len(), 2);
+    assert_eq!(named_held(&host), None, "held to nothing more");
 }
 
 /// What a runner's host answers a start with where it finds the profile signed out (#4233).
