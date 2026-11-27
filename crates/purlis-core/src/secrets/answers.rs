@@ -1611,6 +1611,14 @@ impl Draft {
         !self.lost_owner_records.is_empty()
     }
 
+    /// **The person's press that forgets the lost owner records** (#7748 round 3): the listings of
+    /// owner records that do not load are taken out, so the keys they named are free for a first
+    /// claim again and a file put back afterwards is listed nowhere and ignored. Returns how many
+    /// were forgotten.
+    pub(crate) fn forget_lost_owner_records(&mut self, _press: &Press) -> usize {
+        std::mem::take(&mut self.lost_owner_records).len()
+    }
+
     /// **Refuses the commit**, with nothing written, saying `why`.
     pub(crate) fn refuse(&mut self, why: &str) {
         self.refused = Some(why.to_owned());
@@ -1809,12 +1817,28 @@ fn highest_counter(place: &Place) -> io::Result<u64> {
 /// `entries`, at a counter past every one seen (see [`highest_counter`]), so no older copy ever
 /// replays. A registry that does not hold its seal, or is missing where something is kept, is
 /// replaced first ([`mend_registry`]). Needs the person's [`Press`], an empty `entries` included.
+///
+/// **It keeps the nevers and the owner records itself**, whatever the deny cause: `entries` never
+/// holds an owner record ([`Draft::add`] refuses the kind, and the whole mend with it), since an
+/// owner moves only by a hand-over or "Let this chat push it" ([`crate::policy::owner`]). Where the
+/// last manifest is this clone's and as new as the anchor, its owner records that load are kept
+/// and the ones that do not stay listed as lost (#7748 round 3). Where it is older, missing,
+/// another clone's or unsealed, what it named may have moved since, so none of it is kept and the
+/// store starts **with its owner records lost** ([`OWNER_RECORDS_UNKNOWN`]): no new owner is
+/// recorded until the person forgets them ([`Draft::forget_lost_owner_records`]).
 pub fn recommit(root: &Path, press: &Press, entries: &[Entry]) -> io::Result<u64> {
     let place = plane_place(root).ok_or_else(no_home)?;
     let _turn = store_lock()?;
     // Asked before the registry is mended, so a refusal here changes nothing (#7234 final check,
     // item 4).
     let counter = highest_counter(&place)?;
+    let kept_before = counter > 0
+        || store_exists(&place)
+        || sealed_here(root)
+        || matches!(read_registry(), Read::Value(registry) if registry
+            .planes
+            .iter()
+            .any(|plane| plane.anchor == place.anchor_bind && plane.sealed));
     mend_registry(press, Some(root))?;
     let id = match register_unlocked(root)? {
         Registration::Registered(id) => id,
@@ -1842,16 +1866,37 @@ pub fn recommit(root: &Path, press: &Press, entries: &[Entry]) -> io::Result<u64
         // the plane stays denied until they read or are gone (#7251, item 3).
         crate::dispatchnever::Left::Unread => {}
     }
-    for entry in entries {
-        // An owner record the press keeps is the app's own record, kept as it was: `add` refuses
-        // the kind, which would fail the whole mend.
-        if entry.kind == OWNER {
+    if manifest_is_current(&place, &last) {
+        for entry in last.entries.iter().filter(|e| e.kind == OWNER) {
             draft.add_owner_record(&entry.text);
-        } else {
-            draft.add(press, &entry.kind, &entry.text);
         }
+        draft.lost_owner_records = lost_owner_records(&last);
+    } else if kept_before {
+        draft.lost_owner_records.push(Listed {
+            kind: OWNER.to_owned(),
+            digest: OWNER_RECORDS_UNKNOWN.to_owned(),
+            mac: String::new(),
+        });
+    }
+    for entry in entries {
+        draft.add(press, &entry.kind, &entry.text);
     }
     write(&place, Some((root, &id)), draft, None, counter)
+}
+
+/// **The listing a mend leaves where it could not tell which owner records the store held**
+/// ([`recommit`]): an owner record no file can ever load (no digest is these words, and no seal is
+/// empty), so it reads as lost and no new owner is recorded until the person forgets it.
+const OWNER_RECORDS_UNKNOWN: &str = "unknown-at-a-mend";
+
+/// Whether `found`'s manifest is this clone's and as new as its anchor says: what it lists is the
+/// store as it was last written, not an older copy put back.
+fn manifest_is_current(place: &Place, found: &Found) -> bool {
+    matches!(
+        (&found.anchor, &found.manifest),
+        (Some(anchor), Some(manifest))
+            if manifest.bind == place.bind && manifest.counter >= anchor.counter
+    )
 }
 
 /// **Commits a change to the Everywhere entry** (the nevers every plane shares), as [`commit`].

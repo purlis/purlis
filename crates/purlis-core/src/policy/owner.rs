@@ -402,6 +402,19 @@ pub fn let_this_chat(_press: &Press, root: &Path, owned: &Owned<'_>, chat: &str)
     Ok(())
 }
 
+/// **The person's press of "Forget the lost owner records"** (#7748 round 3): the way out of a
+/// lost record, which otherwise keeps every new owner record refused. The branches, folders and
+/// tasks those records named are no one's from then on, and the next chat to claim one owns it.
+/// Only a [`Press`] reaches it, so no chat's request does. Returns how many were forgotten.
+/// Refused, as every commit is, in the deny state: the press that mends it comes first.
+pub fn forget_lost_records(press: &Press, root: &Path) -> io::Result<usize> {
+    let mut forgotten = 0;
+    answers::commit(root, |draft| {
+        forgotten = draft.forget_lost_owner_records(press);
+    })?;
+    Ok(forgotten)
+}
+
 /// The owner records a commit's draft holds now.
 fn records_in(draft: &answers::Draft) -> Records {
     let mut standing = Standing::fresh();

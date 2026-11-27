@@ -540,20 +540,258 @@ fn the_decision_reads_the_owner_of_what_the_sealed_request_touches() {
     assert!(forbidden(&unnamed), "{unnamed:?}");
 }
 
+// ---- review round 3: the press that mends the deny state, and the way out of a lost record ----
+
+/// A plane whose project policy the press can read (`HEAD` holds it), registered as the app opens
+/// it, with the line dispatched, `TASK`'s record of "work", `GRANDCHILD`'s of "theirs", a record
+/// of "gone" and a never.
+fn plane_with_records(m: &Machine) -> PathBuf {
+    use crate::policy::force::tests::{STRICT, plane as plane_with};
+    let root = plane_with(m, &[("purlis.toml", STRICT)]);
+    answers::register(&root).expect("registered");
+    dispatched(&root);
+    assert!(record_owner(&root, &branch("work"), TASK).expect("recorded"));
+    assert!(record_owner(&root, &branch("theirs"), GRANDCHILD).expect("recorded"));
+    assert!(record_owner(&root, &branch("gone"), STRANGER).expect("recorded"));
+    answers::commit(&root, |draft| draft.add(&press(), answers::NEVER, "rm -rf")).expect("a never");
+    root
+}
+
+/// [`plane_with_records`], the record of "gone" then deleted: a lost listing.
+fn plane_with_a_lost_record(m: &Machine) -> PathBuf {
+    let root = plane_with_records(m);
+    delete_the_record_of(&branch("gone"));
+    assert!(lists_a_lost_owner_record(&root));
+    root
+}
+
+/// Deletes the sealed file of the record of `owned`, as a chat that writes the store could.
+fn delete_the_record_of(owned: &Owned<'_>) {
+    let key = owned.key();
+    let file = owner_files()
+        .into_iter()
+        .find(|file| std::fs::read_to_string(file).is_ok_and(|text| text.contains(&key)))
+        .expect("the record's file");
+    std::fs::remove_file(file).expect("deleted");
+}
+
+/// **The person's Accept, as the window makes it**: the press the plane raises now, accepted.
+fn accept_the_press(root: &Path) {
+    let raised = crate::policy::press::of(root).expect("a press waits");
+    crate::policy::press::accept(root, &press(), &raised.digest).expect("the press");
+    let after = answers::standing(root);
+    assert!(
+        !after.is_deny(),
+        "the press mended nothing: {:?}",
+        after.state
+    );
+}
+
+/// The ways a plane comes into the deny state with its manifest still this clone's and as new as
+/// the keyring says: what the press mends while every owner record it listed stays.
+fn deny_with_the_manifest_current(root: &Path, cause: &str) {
+    let store = store_dir();
+    match cause {
+        "past-the-cap" => answers::commit(root, |draft| {
+            draft.add_narrowing(answers::PAST_THE_CAP, "a commit");
+        })
+        .map(|_| ())
+        .expect("recorded"),
+        "never-fails-seal" | "never-missing" => {
+            let never = std::fs::read_dir(store.join(answers::NEVER))
+                .expect("the nevers")
+                .flatten()
+                .next()
+                .expect("a never")
+                .path();
+            if cause == "never-missing" {
+                std::fs::remove_file(never).expect("deleted");
+            } else {
+                let text = std::fs::read_to_string(&never).expect("a never");
+                std::fs::write(&never, text.replace("rm -rf", "rm -r")).expect("edited");
+            }
+        }
+        other => panic!("no such cause: {other}"),
+    }
+    assert!(answers::standing(root).is_deny(), "{cause}");
+}
+
 #[test]
-fn the_persons_press_that_starts_the_store_again_keeps_the_owner_records_it_is_handed() {
-    // Self-review of round 2: the Accept press past the floor's cap mends the store with what it
-    // kept, owner records included. They go in as the app's own records, not through `add`,
-    // which refuses the kind and would fail the whole press.
+fn the_accept_that_mends_the_deny_state_keeps_every_owner_record_and_the_lost_listing() {
+    for cause in ["past-the-cap", "never-fails-seal", "never-missing"] {
+        let m = machine();
+        let root = plane_with_a_lost_record(&m);
+        deny_with_the_manifest_current(&root, cause);
+
+        accept_the_press(&root);
+
+        // The records that loaded stay, as they were.
+        assert_eq!(
+            owner_of(&root, TASK, &branch("work")),
+            Owner::Actor,
+            "{cause}"
+        );
+        assert_eq!(
+            owner_of(&root, TASK, &branch("theirs")),
+            Owner::Task,
+            "{cause}"
+        );
+        // The lost listing stays, so no chat is recorded in the lost record's place.
+        assert!(
+            lists_a_lost_owner_record(&root),
+            "{cause}: the listing was dropped"
+        );
+        assert!(
+            record_owner(&root, &branch("gone"), TASK).is_err(),
+            "{cause}"
+        );
+        assert!(
+            record_owner(&root, &branch("work"), STRANGER).is_err(),
+            "{cause}"
+        );
+        assert_eq!(
+            owner_of(&root, TASK, &branch("work")),
+            Owner::Actor,
+            "{cause}"
+        );
+        assert_eq!(
+            owner_of(&root, TASK, &branch("gone")),
+            Owner::Nobody,
+            "{cause}"
+        );
+    }
+}
+
+#[test]
+fn the_accept_after_the_store_was_put_back_or_taken_away_brings_no_old_owner_back() {
+    for cause in ["older-copy", "manifest-gone", "git-swapped"] {
+        let m = machine();
+        let root = plane_with_records(&m);
+        let store = store_dir();
+        let older = m.dir.path().join("older-store");
+        copy_dir(&store, &older);
+        assert_eq!(hand_over(&root, GRANDCHILD).expect("handed over"), 1);
+        assert_eq!(
+            owner_of(&root, TASK, &branch("theirs")),
+            Owner::Actor,
+            "{cause}"
+        );
+        match cause {
+            "older-copy" => {
+                std::fs::remove_dir_all(&store).expect("taken away");
+                copy_dir(&older, &store);
+            }
+            "manifest-gone" => std::fs::remove_file(store.join("manifest.json")).expect("gone"),
+            "git-swapped" => {
+                std::fs::rename(root.join(".git"), root.join(".git-old")).expect("moved");
+                std::fs::create_dir(root.join(".git")).expect("a new .git");
+                copy_dir(&root.join(".git-old"), &root.join(".git"));
+                std::fs::remove_dir_all(root.join(".git-old")).expect("removed");
+            }
+            other => panic!("no such cause: {other}"),
+        }
+        assert!(answers::standing(&root).is_deny(), "{cause}");
+
+        accept_the_press(&root);
+
+        // What the keyring says is newer is not known: nothing an older or missing manifest
+        // named is an owner, the grandchild's handed-over branch included…
+        assert_eq!(
+            owner_of(&root, GRANDCHILD, &branch("theirs")),
+            Owner::Nobody,
+            "{cause}"
+        );
+        assert_eq!(
+            owner_of(&root, TASK, &branch("work")),
+            Owner::Nobody,
+            "{cause}"
+        );
+        // …and no first claim is free until the person forgets the lost records.
+        assert!(lists_a_lost_owner_record(&root), "{cause}");
+        assert!(
+            record_owner(&root, &branch("theirs"), GRANDCHILD).is_err(),
+            "{cause}"
+        );
+        assert!(
+            record_owner(&root, &branch("work"), STRANGER).is_err(),
+            "{cause}"
+        );
+        assert!(record_dispatch(&root, STRANGER, TASK).is_err(), "{cause}");
+
+        assert_eq!(
+            forget_lost_records(&press(), &root).expect("forgotten"),
+            1,
+            "{cause}"
+        );
+        assert!(!lists_a_lost_owner_record(&root), "{cause}");
+        assert!(
+            record_owner(&root, &branch("work"), STRANGER).expect("recorded"),
+            "{cause}"
+        );
+    }
+}
+
+#[test]
+fn forgetting_the_lost_owner_records_frees_their_keys_and_keeps_the_rest() {
+    let m = machine();
+    let root = plane_with_a_lost_record(&m);
+    assert_eq!(forget_lost_records(&press(), &root).expect("forgotten"), 1);
+    assert!(!lists_a_lost_owner_record(&root));
+    // The record that loaded is kept.
+    assert_eq!(owner_of(&root, TASK, &branch("work")), Owner::Actor);
+    // The lost record's key is free for a first claim, and a new record can be made again.
+    assert!(record_owner(&root, &branch("gone"), TASK).expect("recorded"));
+    assert_eq!(owner_of(&root, TASK, &branch("gone")), Owner::Actor);
+    assert!(record_owner(&root, &branch("new"), SIBLING).expect("recorded"));
+    // Nothing more to forget: the press changes nothing and says so by its count.
+    assert_eq!(
+        forget_lost_records(&press(), &root).expect("nothing lost"),
+        0
+    );
+}
+
+#[test]
+fn a_record_put_back_after_the_person_forgot_it_counts_for_nothing() {
+    // A task that deletes its own record before its hand-over and puts it back afterwards: once
+    // the person forgot the lost listing, the file put back is listed nowhere and ignored.
+    let m = machine();
+    let root = plane(&m);
+    assert!(record_owner(&root, &branch("mine"), STRANGER).expect("recorded"));
+    let key = branch("mine").key();
+    let (file, bytes) = owner_files()
+        .into_iter()
+        .find_map(|file| {
+            let bytes = std::fs::read(&file).ok()?;
+            String::from_utf8_lossy(&bytes)
+                .contains(&key)
+                .then_some((file, bytes))
+        })
+        .expect("the record's file");
+    std::fs::remove_file(&file).expect("deleted");
+    forget_lost_records(&press(), &root).expect("forgotten");
+    std::fs::write(&file, &bytes).expect("put back");
+    assert_eq!(owner_of(&root, STRANGER, &branch("mine")), Owner::Nobody);
+    assert!(!lists_a_lost_owner_record(&root));
+    assert!(record_owner(&root, &branch("mine"), TASK).expect("recorded"));
+    assert_eq!(owner_of(&root, TASK, &branch("mine")), Owner::Actor);
+}
+
+#[test]
+fn an_owner_record_handed_to_the_mend_is_refused_and_changes_nothing() {
+    // The mend keeps the owner records the store holds itself; one handed in by its caller would
+    // be an owner made by a press other than "Let this chat push it".
     let m = machine();
     let root = plane(&m);
     assert!(record_owner(&root, &branch("work"), TASK).expect("recorded"));
-    let kept: Vec<answers::Entry> = answers::standing(&root)
-        .entries
-        .into_iter()
-        .filter(|entry| entry.kind == answers::OWNER)
-        .collect();
-    assert_eq!(kept.len(), 1, "{kept:?}");
-    answers::recommit(&root, &press(), &kept).expect("the press mends the store");
+    let handed = answers::Entry::new(
+        answers::OWNER,
+        &Fact::Owns {
+            of: branch("work").key(),
+            chat: STRANGER.to_owned(),
+        }
+        .text(),
+    );
+    assert!(answers::recommit(&root, &press(), &[handed]).is_err());
     assert_eq!(owner_of(&root, TASK, &branch("work")), Owner::Actor);
+    assert_eq!(owner_of(&root, STRANGER, &branch("work")), Owner::Other);
 }

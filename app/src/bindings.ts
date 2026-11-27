@@ -3757,6 +3757,14 @@ export const commands = {
 	 *  (`session_protocol::ui::WINDOW_ONLY`). Refused where the id is not the one shown.
 	 */
 	confirmDeviceId: (plane: PlaneId, id: string) => typedError<DeviceShown, string>(__TAURI_INVOKE("confirm_device_id", { plane, id })),
+	/**
+	 *  **The person forgets the lost owner records** of the open project (#7748): what they named is
+	 *  no chat's from now on, and the next chat to claim it owns it. The Notice's way out of a record
+	 *  that is missing or was changed, which otherwise keeps purlis from recording any new owner. The
+	 *  press is the person's in their window, so this command is the window's alone
+	 *  (`session_protocol::ui::WINDOW_ONLY`). Answers where the sealed answers stand now.
+	 */
+	forgetLostOwnerRecords: (plane: PlaneId) => typedError<AnswersShown, string>(__TAURI_INVOKE("forget_lost_owner_records", { plane })),
 	/**  **What chat `chat`'s ask offers the person**, decided by the host now. The window's alone. */
 	askOffered: (plane: PlaneId, chat: number, action: string, kind: string, resource: string) => typedError<OfferShown, string>(__TAURI_INVOKE("ask_offered", { plane, chat, action, kind, resource })),
 	/**  **"Allow for this chat, for…"**: [`give`], on the person's press. The window's alone. */

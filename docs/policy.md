@@ -183,7 +183,9 @@ a browser's `close` and every forge operation, `context.owner` says whose the th
 to the chat that acts: `"self"`, `"task"` (a chat down its own dispatch line), `"asker"` (one up
 it), `"other"` or `"none"`. It is always there, so a rule reads it with no `has`. purlis computes
 it from records only the app seals, so a chat can't make itself an owner by editing a file. A
-record that is missing or was changed reads as `"none"`, and the window says so.
+record that is missing or was changed reads as `"none"`, and the window says so. While one is,
+purlis records no new owner in the project, until you press **Forget the lost owner records** on
+that Notice: what those records named is then no chat's, and the next chat to claim it owns it.
 
 **Write `context.owner != "self"`, never `context.owner == "other"`.** `"none"` is what a rule
 sees wherever purlis holds no record, which today is nearly everywhere, and wherever a record was

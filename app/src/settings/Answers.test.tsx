@@ -165,6 +165,53 @@ describe("the sealed answers' Notices", () => {
     );
   });
 
+  it("the_lost_owner_records_notice_says_what_to_press_and_forgetting_them_clears_it", async () => {
+    const sent: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "answers_shown") return OWNER_RECORDS_LOST;
+      if (cmd === "forget_lost_owner_records") {
+        sent.push(args);
+        return HOLDS;
+      }
+      throw new Error(`unexpected ${cmd}`);
+    });
+    render(<AnswersNotices plane={PLANE} />);
+    const notice = await waitFor(() => {
+      const found = document.querySelector('[data-cause="answers-owner-records-lost"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect(notice).toHaveTextContent("Press Forget the lost owner records");
+    expect(notice).toHaveTextContent("the next chat to claim one owns it");
+    fireEvent.click(screen.getByRole("button", { name: "Forget the lost owner records" }));
+    await waitFor(() =>
+      expect(document.querySelector('[data-cause="answers-owner-records-lost"]')).toBeNull(),
+    );
+    expect(sent).toEqual([{ plane: PLANE }]);
+  });
+
+  it("a_forget_that_fails_says_why_and_keeps_the_notice", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "answers_shown") return OWNER_RECORDS_LOST;
+      if (cmd === "forget_lost_owner_records") {
+        throw "purlis could not forget the lost owner records, so nothing changed: the plane's answers are in the deny state";
+      }
+      throw new Error(`unexpected ${cmd}`);
+    });
+    render(<AnswersNotices plane={PLANE} />);
+    await waitFor(() =>
+      expect(document.querySelector('[data-cause="answers-owner-records-lost"]')).not.toBeNull(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Forget the lost owner records" }));
+    const failed = await waitFor(() => {
+      const found = document.querySelector('[data-cause^="answers-owner-records-not-forgotten"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect(failed).toHaveTextContent("could not forget the lost owner records");
+    expect(document.querySelector('[data-cause="answers-owner-records-lost"]')).not.toBeNull();
+  });
+
   it("answers_that_hold_say_nothing", async () => {
     mockIPC((cmd) => {
       if (cmd === "answers_shown") return HOLDS;

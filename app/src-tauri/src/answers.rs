@@ -11,6 +11,9 @@
 //!   [`answers::Press`]. It names the id the window showed, so an id that changed since is never
 //!   confirmed unseen. It is the window's alone, never a link's: a chat's request is not the
 //!   person's press.
+//! - [`forget_lost_owner_records`] is the person's press of "Forget the lost owner records"
+//!   (#7748): the Notice's way out of an owner record that is missing or was changed, and the
+//!   window's alone for the same reason.
 
 use purlis_core::secrets::answers::{self, Device, Import, State};
 
@@ -145,6 +148,36 @@ pub(crate) async fn confirm_device_id(
     .await
 }
 
+/// **The person forgets the lost owner records** of the open project (#7748): what they named is
+/// no chat's from now on, and the next chat to claim it owns it. The Notice's way out of a record
+/// that is missing or was changed, which otherwise keeps purlis from recording any new owner. The
+/// press is the person's in their window, so this command is the window's alone
+/// (`session_protocol::ui::WINDOW_ONLY`). Answers where the sealed answers stand now.
+#[tauri::command]
+#[specta::specta]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "the window's command layer is the one place that makes the person's press"
+)]
+pub(crate) async fn forget_lost_owner_records(
+    planes: tauri::State<'_, crate::planes::Planes>,
+    plane: PlaneId,
+) -> Result<AnswersShown, String> {
+    planes.held(&plane)?;
+    let root = plane.root().to_path_buf();
+    crate::off_the_window("forgetting the lost owner records", move || {
+        purlis_core::policy::owner::forget_lost_records(
+            &answers::Press::of_the_persons_press(),
+            &root,
+        )
+        .map_err(|why| {
+            format!("purlis could not forget the lost owner records, so nothing changed: {why}")
+        })?;
+        Ok(read(&root))
+    })
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,6 +188,18 @@ mod tests {
         let shown = device_shown();
         assert!(["confirmed", "unconfirmed", "unset"].contains(&shown.state.as_str()));
         assert_eq!(shown.id.is_some(), shown.state != "unset");
+    }
+
+    #[test]
+    fn the_presses_on_the_sealed_answers_are_the_windows_alone() {
+        // Each is the person's press in their window: a link or a chat that reached one would
+        // confirm a device id or free a lost owner's branch for a first claim unseen.
+        for command in ["confirm_device_id", "forget_lost_owner_records"] {
+            assert!(
+                purlis_session_protocol::ui::WINDOW_ONLY.contains(&command),
+                "{command}"
+            );
+        }
     }
 
     #[test]

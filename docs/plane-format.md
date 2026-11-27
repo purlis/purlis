@@ -5106,7 +5106,14 @@ write into this folder cannot make its own text arrive as the person's.
   record named can't be told, so no key is free), every commit keeps that listing as it was (its
   digest and seal, never dropped), and the window shows a Notice (`answers-owner-records-lost`). A
   hand-over and the person's press of "Let this chat push it" still move a record that loads. Only
-  the person's press that starts the store again (`recommit`) leaves the listing out. A rule reads
+  the person's press of "Forget the lost owner records" (`policy::owner::forget_lost_records`, the
+  Notice's way out) takes the listings out: the keys they named are no one's, and the next chat to
+  claim one owns it. **The press that mends the deny state (`recommit`) keeps the owner records**,
+  whatever the cause: where the last manifest is this clone's and as new as the anchor, every
+  record that loads and every lost listing stay as they were; where it is older, missing, another
+  clone's or unsealed, none of what it named is kept and the store starts with one lost listing,
+  digest `unknown-at-a-mend` and no seal, which no file can load, so no new owner is recorded until
+  the person forgets it. A rule reads
   the value as `context.owner != "self"`, so `none` is held to what `other` is. No owner is read
   from a file a chat can write: not the piece log (the one-writer mutex's), not `app/dispatches/`,
   not `forge-created-branches.jsonl`. A port's server and a browser are owned by the chat that

@@ -207,6 +207,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The person's press that confirms the device id (M75-07a, spec §9.4): only a press in a
     // window accepts, so no link and no chat reaches it.
     "confirm_device_id",
+    // The person's press that forgets the lost owner records (#7748): it frees what they named for
+    // a first claim, so only a press in a window makes it, never a link or a chat.
+    "forget_lost_owner_records",
     // The timed grant and the Allowed list (M75-21, spec §8.8): what an ask offers, the person's
     // press that allows it for a while, and the list that shows and removes what was allowed.
     // Only the person in their window answers an ask, so no link and no chat reaches them.

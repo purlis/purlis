@@ -602,6 +602,7 @@ macro_rules! app_commands {
                 knowngaps::chat_known_gaps,
                 answers::answers_shown,
                 answers::confirm_device_id,
+                answers::forget_lost_owner_records,
                 timedgrants::ask_offered,
                 timedgrants::give_timed_grant,
                 timedgrants::allowed_answers,
