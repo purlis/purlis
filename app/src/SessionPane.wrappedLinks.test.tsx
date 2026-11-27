@@ -640,6 +640,74 @@ describe("a link the program broke over rows at the pane's width", () => {
     expect(resolved()).toEqual([{ kind: "url", text: `${head}${border}` }]);
   });
 
+  it.each([
+    ["a reply's marker", "⏺ Next step"],
+    ["a filled circle", "● done"],
+    ["a tool result's corner", "⎿  Read 3 files"],
+    ["a prompt's chevron", "❯ prompt"],
+    ["a check mark", "✓ ok"],
+    ["an arrow", "→ next"],
+    ["an ellipsis", "…and more"],
+    ["a marker with no blank after it", "⏺Next"],
+  ])("is not joined onto a row that opens with %s", async (_, next) => {
+    const { term, drawn } = await opened();
+    const url = upTo(COLS, "https://a.example/", "p");
+    await write(term, `${url}\r\n${next}`);
+
+    hover(drawn, 10, 0);
+    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: url }]));
+    hover(drawn, 1, 1);
+    await settle();
+
+    expect(resolved()).toEqual([{ kind: "url", text: url }]);
+  });
+
+  it("is not joined where the words past the break hold a character no link goes on with", async () => {
+    const { term, drawn } = await opened();
+    const url = upTo(COLS, "https://a.example/", "p");
+    await write(term, `${url}\r\nmore⏺words`);
+
+    hover(drawn, 10, 0);
+    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: url }]));
+    hover(drawn, 1, 1);
+    await settle();
+
+    expect(resolved().map((one) => one.text)).not.toContain(`${url}more⏺words`);
+  });
+
+  /** Words read from both rows at once: the first row's address and the next row's words. */
+  const readsBoth = (text: string) => text.includes("a.example") && text.includes("b.example");
+
+  it.each([
+    ["braille blanks", "\u2800"],
+    ["halfwidth Hangul fillers", "\uFFA0"],
+  ])("is not joined where its row reaches the edge only with %s", async (_, pad) => {
+    const { term, drawn } = await opened();
+    const address = "see https://a.example";
+    await write(term, `${address}${pad.repeat(COLS - address.length)}\r\n.b.example/login`);
+
+    hover(drawn, 10, 0);
+    await waitFor(() => expect(resolved().length).toBeGreaterThan(0));
+    hover(drawn, 2, 1);
+    await settle();
+
+    expect(resolved().some((one) => readsBoth(one.text))).toBe(false);
+  });
+
+  it("is not joined where its row reaches the edge only with concealed cells", async () => {
+    const { term, drawn } = await opened();
+    const address = "see https://a.example";
+    const hidden = `\u001b[8m${"x".repeat(COLS - address.length)}\u001b[28m`;
+    await write(term, `${address}${hidden}\r\n.b.example/login`);
+
+    hover(drawn, 10, 0);
+    await waitFor(() => expect(resolved().length).toBeGreaterThan(0));
+    hover(drawn, 2, 1);
+    await settle();
+
+    expect(resolved().some((one) => readsBoth(one.text))).toBe(false);
+  });
+
   it("is not joined where its row stops short of the pane's edge", async () => {
     const { term, drawn } = await opened();
     const url = upTo(COLS - 12, "https://a.example/", "p");
@@ -694,6 +762,17 @@ describe("a link a program marked (OSC 8) over more rows, or broken by the progr
         { y: 2, x: 0, width: 40 },
       ]),
     );
+  });
+
+  it("is drawn only over its own row where a later link was written over the rows after it", async () => {
+    const { term, drawn } = await opened();
+    await write(term, osc8("https://a.example/long", "a".repeat(2 * COLS + 40)));
+    // The program goes back up and writes another link over the whole of the second row.
+    await write(term, `\u001b[2;1H${osc8("https://b.example/other", "b".repeat(COLS))}`);
+
+    hover(drawn, 2, 0);
+
+    await waitFor(() => expect(painted).toEqual([{ y: 0, x: 0, width: COLS }]));
   });
 
   it("is drawn only over the written cells of a row the program broke it on, not the blanks after them", async () => {
