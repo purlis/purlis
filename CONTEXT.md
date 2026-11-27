@@ -366,6 +366,41 @@ speed and memory limits are performance budgets too; its open and hot chat count
 _Avoid_: budget (unqualified: that is a chat's spend budget), limit (for a row CI checks only
 against earlier runs), SLA
 
+**Release absolute** (a performance budget's kind):
+Judged against its value on the operator's own machine, once per release; a miss is a bug filed
+before the release notes, never a blocked release (ADR 0086 §1).
+
+**CI absolute** (a performance budget's kind):
+Judged exactly in its CI job: a count or a size, or a timing whose budget is many times what it
+measures; a miss fails the job (ADR 0086 §1).
+
+**CI relative** (a performance budget's kind):
+Judged against what `main` last recorded for it; a sustained regression past 20% fails the job
+(ADR 0086 §1).
+
+**Evidence** (a performance budget's kind):
+Measured and recorded, and never fails anything: what a row is until it is steady enough to
+judge, or a run whose setup differs from the one its series holds (ADR 0086, amended 2026-10-04).
+_Avoid_: informational, soft gate
+
+**Benchmark Mac**:
+The one fixed Mac, outside GitHub's shared runners, that measures the window and felt rows of the
+performance budgets, so that one machine's timings make each series. No pull request reaches it
+(ADR 0086, amended 2026-11-27).
+_Avoid_: CI Mac, runner (alone)
+
+**Budget run**:
+The job on the **Benchmark Mac** that measures the window and felt rows after each push to `main`
+and nightly, and records each as a point of its series. It judges nothing as it runs: a
+regression is detected from the series, after the merge that caused it.
+_Avoid_: benchmark (alone), perf job, bench run
+
+**Gating row**:
+A performance budget's row whose series has become steady enough (five consecutive points on
+`main` within about 7%) that a sustained slowdown past 20% alerts or fails. Until then the row is
+**Evidence**.
+_Avoid_: steady row, required row
+
 **Remote chat**:
 A vendor-cloud session purlis lists read-only, with its state, pull request and cost: a chat of
 kind **observed**, which purlis never pauses, stops or counts toward a budget. Every chat

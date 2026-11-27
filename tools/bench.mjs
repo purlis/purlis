@@ -9,6 +9,11 @@
 //   node tools/bench.mjs                 # build, then measure everything, both renderer arms
 //   node tools/bench.mjs --skip-build    # measure what is already built
 //   node tools/bench.mjs --only window --arms webgl
+//   node tools/bench.mjs --skip-build --only window --specs burst.bench.ts --grep "tab switch" \
+//     --target-dir target/dev-release
+//                                        # the budget run's L2 (`budget-run.yml`, #7737): one
+//                                        # spec file, the tests whose title matches, on the build
+//                                        # in that folder
 //   node tools/bench.mjs --skip-build --only coldstart --app target/debug/purlis-app --limit 2000 \
 //     --ceiling 2500 --warm-up --fresh-profile
 //                                        # CI's Linux cold start: one discarded launch, then each
@@ -132,6 +137,14 @@ const { values: options } = parseArgs({
     rounds: { type: "string", default: "5" },
     // Launches per size of the `restore` case.
     "restore-launches": { type: "string", default: "3" },
+    // The window bench's spec files to run (`app/e2e/bench/<name>`), comma-separated; all of them
+    // when unset.
+    specs: { type: "string" },
+    // Only the window bench tests whose title matches (mocha's `grep`), such as "tab switch".
+    grep: { type: "string" },
+    // Where the window bench finds the e2e build, when it is not `target/release` (the budget run
+    // builds `dev-release`, as the outcome bars do).
+    "target-dir": { type: "string" },
   },
 });
 const only = new Set(options.only.split(","));
@@ -795,22 +808,33 @@ function screenIsLocked() {
 /** The specs that measure a paint, and so need a screen that is drawn. */
 const NEEDS_A_PAINT = (spec) => spec !== "chunking.bench.ts";
 
+/** The window bench's spec files this run measures: `--specs`, or every one. */
+function windowSpecs() {
+  const all = readdirSync(join(APP, "e2e", "bench")).filter((name) => name.endsWith(".bench.ts"));
+  if (!options.specs) return all;
+  const asked = options.specs.split(",").map((name) => name.trim()).filter(Boolean);
+  const unknown = asked.filter((name) => !all.includes(name));
+  if (unknown.length > 0) throw new Error(`--specs names no bench spec: ${unknown.join(", ")} (there are ${all.join(", ")})`);
+  return asked;
+}
+
 function windowArm(arm) {
   const found = {};
   const locked = screenIsLocked();
+  const grep = options.grep ? ["--mochaOpts.grep", options.grep] : [];
   // One wdio run per spec file: a run keeps one app for all its spec files, and a spec must
   // not measure what the one before it left running.
-  for (const spec of readdirSync(join(APP, "e2e", "bench")).filter((name) => name.endsWith(".bench.ts"))) {
+  for (const spec of windowSpecs()) {
     if (locked && NEEDS_A_PAINT(spec)) {
       found[`${spec} skipped`] = "the screen is locked, so nothing in the window draws";
       continue;
     }
     try {
-      run("npx", ["wdio", "run", "e2e/wdio.bench.conf.ts", "--spec", `e2e/bench/${spec}`], {
+      run("npx", ["wdio", "run", "e2e/wdio.bench.conf.ts", "--spec", `e2e/bench/${spec}`, ...grep], {
         cwd: APP,
         env: {
           ...process.env,
-          CHARTER_TARGET_DIR: RELEASE,
+          CHARTER_TARGET_DIR: options["target-dir"] ? resolve(options["target-dir"]) : RELEASE,
           CHARTER_BENCH_RENDERER: arm,
           CHARTER_BENCH_OUT: OUT,
         },
