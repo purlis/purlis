@@ -2003,3 +2003,11 @@ fn without_guard_takes_out_the_one_guard_and_names_the_folder_by_what_is_left() 
 fn supervise_daemon_is_refused_by_a_row_of_its_own_and_not_only_by_its_first_part() {
     assert!(super::NOT_FOR_A_RUN_GRANT.contains(&"supervise-daemon"));
 }
+
+/// `find-repos-of-install`, of dnf-plugins-core, loads plugins as `dnf` does (round 6 of #7828's
+/// review). Its first part reaches the `find` row as well, but by chance, so it is refused by a
+/// row of its own, which a give-back of the forms (#7825) must not take with it.
+#[test]
+fn find_repos_of_install_is_refused_by_a_row_of_its_own_and_not_only_by_its_first_part() {
+    assert!(super::NOT_FOR_A_RUN_GRANT.contains(&"find-repos-of-install"));
+}

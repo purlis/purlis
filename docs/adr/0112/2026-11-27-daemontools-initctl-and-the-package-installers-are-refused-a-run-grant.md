@@ -32,8 +32,8 @@ each tool in source, to cite its lines or to give an Allow back, is filed as #78
   **`pgrphack`** and **`fghack`** each run the program after them, as its `envdir` (refused
   since #5833) and s6's chain loaders (2026-11-13) do.
 
-`svc`, `svok` and `svstat` are left offered: they talk to a `supervise` already running, over its
-`supervise/control` and `supervise/status` files, and run nothing themselves.
+`svc`, `svok` and `svstat` are left offered: they talk to a `supervise` already running, over
+the files in its `supervise` folder (`control`, `ok`, `status`), and run nothing themselves.
 
 ## aptitude, run-parts, capsh, cpanm and dnf (#6564)
 

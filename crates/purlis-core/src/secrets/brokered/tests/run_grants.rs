@@ -3598,14 +3598,14 @@ fn s6s_runners_the_debian_perl_and_rpm_builders_and_systemds_image_tools_are_off
 /// that run the command after them (macOS's `taskpolicy`, util-linux's `choom` and `uclampset`,
 /// moreutils' `chronic`, `ifne`, `lckdo` and `zrun`, `cpulimit`, `nocache`, `schedtool`,
 /// `dbus-run-session`, `xvfb-run`, `faketime`, `torsocks`, `proxychains`, `trickle`, and s6's
-/// `s6-maximumtime` and its networking twins of the `s6-ipc*` programs); `rotatelogs -p`, which
-/// runs a program on each new log; Debian's and Fedora's package builders beside `debuild`
-/// (`pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`, `fedpkg`, `centpkg`, `rhpkg`, `tito`),
-/// `debconf` and `deb-systemd-invoke`, which run the command or the unit they are handed (the
-/// second, like `proxychains4`, reaching another row by a form of its name), and MacPorts'
-/// `daemondo --start-cmd`; Perl's servers and runners beside `plackup` (`starman`, `starlet`,
-/// `morbo`, `hypnotoad`, `mojo`, `start_server`, `mbtiny`); and `s6-svlink` and `s6-rc-update`,
-/// which hand a running s6 a service folder or a database a chat may have written.
+/// `s6-maximumtime`; and s6-networking's `s6-tcpserver` and the rest, twins of the `s6-ipc*`
+/// programs); `rotatelogs -p`, which runs a program on each new log; Debian's and Fedora's package
+/// builders beside `debuild` (`pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`, `fedpkg`, `centpkg`,
+/// `rhpkg`, `tito`), `debconf` and `deb-systemd-invoke`, which run the command or the unit they are
+/// handed (the second, like `proxychains4`, reaching another row by a form of its name), and
+/// MacPorts' `daemondo --start-cmd`; Perl's servers and runners beside `plackup` (`starman`,
+/// `starlet`, `morbo`, `hypnotoad`, `mojo`, `start_server`, `mbtiny`); and `s6-svlink` and
+/// `s6-rc-update`, which hand a running s6 a service folder or a database a chat may have written.
 #[test]
 fn more_chain_loaders_loggers_builders_perl_servers_and_s6s_linkers_are_offered_no_run_grant() {
     for name in [
@@ -3663,7 +3663,7 @@ fn more_chain_loaders_loggers_builders_perl_servers_and_s6s_linkers_are_offered_
 
 /// The utilities that ship beside `dnf` and `yum` (dnf-plugins-core, yum-utils) take `-c` and
 /// `--setopt` and load plugins as `dnf` and `yum` do, and no form of their names reaches either;
-/// daemontools' `svscanboot` runs `svscan` (round 5 of #7828's review).
+/// daemontools' `svscanboot` runs `svscan` (rounds 5 and 6 of #7828's review).
 #[test]
 fn the_dnf_and_yum_utilities_and_svscanboot_are_offered_no_run_grant() {
     for name in [

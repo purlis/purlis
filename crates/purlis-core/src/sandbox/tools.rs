@@ -2348,8 +2348,8 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "dnf",
     "yum",
     // and the utilities beside them (dnf-plugins-core, yum-utils), which take `-c` and `--setopt`
-    // and load plugins as they do, and reach neither by a form of their names (round 5 of
-    // #7828's review)
+    // and load plugins as they do, and reach neither by a form of their names (rounds 5 and 6
+    // of #7828's review)
     "yumdownloader",
     "repoquery",
     "reposync",
@@ -2428,14 +2428,14 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // and round 4's: more programs that run the command after them (macOS's `taskpolicy`,
     // util-linux's `choom` and `uclampset`, moreutils' `chronic`, `ifne`, `lckdo` and `zrun`,
     // `cpulimit`, `nocache`, `schedtool`, `dbus-run-session`, `xvfb-run`, `faketime`, `torsocks`,
-    // `proxychains`, `trickle`, and s6's `s6-maximumtime` and its networking twins of the `s6-ipc*`
-    // programs); `rotatelogs -p`, which runs a program on each new log; the package builders beside
-    // `debuild` (`pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`, `fedpkg`, `centpkg`, `rhpkg`,
-    // `tito`), and `debconf`, which runs the command it is handed (`deb-systemd-invoke` reaches the
-    // `invoke` row by its last part, and `proxychains4` `proxychains` without its version), and
-    // MacPorts' `daemondo --start-cmd`; Perl's servers and runners beside `plackup`; and
-    // `s6-svlink` and `s6-rc-update`, which hand a running s6 a folder or a database a chat may
-    // have written.
+    // `proxychains`, `trickle`, and s6's `s6-maximumtime`; and s6-networking's `s6-tcpserver` and
+    // the rest, twins of the `s6-ipc*` programs); `rotatelogs -p`, which runs a program on each new
+    // log; the package builders beside `debuild` (`pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`,
+    // `fedpkg`, `centpkg`, `rhpkg`, `tito`), and `debconf`, which runs the command it is handed
+    // (`deb-systemd-invoke` reaches the `invoke` row by its last part, and `proxychains4`
+    // `proxychains` without its version), and MacPorts' `daemondo --start-cmd`; Perl's servers and
+    // runners beside `plackup`; and `s6-svlink` and `s6-rc-update`, which hand a running s6 a
+    // folder or a database a chat may have written.
     "taskpolicy",
     "choom",
     "uclampset",
