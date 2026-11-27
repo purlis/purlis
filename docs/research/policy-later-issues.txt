@@ -1,0 +1,25 @@
+# The M80 issue list: the open issues of milestone 59, "M80 · Chats as resources", one per line,
+# as <number><TAB><title>. A `later:<issue>` row of docs/research/policy-inventory-map.tsv names
+# one of them (#7746). crates/purlis-core/tests/it/every_inventory_row_is_mapped.rs reads this
+# file offline, never the live forge. Update it by hand, in a pull request, when an M80 issue is
+# filed or closed. Read from the forge on 2026-11-27.
+7753	Chats as resources: the spec, its ADR and review rounds
+7754	Chats as resources: the Chat resource and the multi-chat oracle
+7755	Chats as resources: the chats family and lineage messaging (tell, report, answer)
+7756	Chats as resources: cancel and close (own tasks; never one the person typed into)
+7757	Chats as resources: observe screens, transcripts and session records
+7758	Chats as resources: another chat's branch folder
+7759	Chats as resources: the owner on a branch and a pull request
+7760	Chats as resources: browsers and ports
+7761	Chats as resources: todos and artifacts
+7762	Chats as resources: sibling messaging (transport, Activity, cycle detection, injection)
+7763	Chats as resources: pools and runners under policy
+7764	Chats as resources: Settings and policy why for chat-to-chat
+7765	Chats as resources: coverage, SymCC, mutation and the generator
+7766	Chats as resources: docs
+7767	Chats as resources: scaling to many chats and trees
+7770	Chats as resources: sibling messaging's design and its Fable review
+7771	Chats as resources: sibling messages on the lineage's Activity
+7772	Chats as resources: a wait cycle between chats raises one Blocking ask
+7773	Chats as resources: wait, note, pass-on and ask under the policy
+7774	Chats as resources: the M80 gate

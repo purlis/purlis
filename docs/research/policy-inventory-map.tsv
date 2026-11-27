@@ -1,8 +1,14 @@
 # The mapping of the #6970 inventory (docs/research/policy-inventory.md, read at eb9c63fe8):
 # one line per row, checked by crates/purlis-core/tests/it/every_inventory_row_is_mapped.rs.
-# A target is rule:<@id>, set:<name>, limit:<key>, fixed:<thing>, sandbox-level-step or
-# not-a-chat-decision. A pending row's family has not moved into the policy yet: its
-# migration slice (M75 11, 24-36) confirms or replaces its target and clears the mark.
+# A target is rule:<@id>, set:<name>, limit:<key>, fixed:<thing>, sandbox-level-step,
+# not-a-chat-decision or later:<issue>. A pending row's family has not moved into the policy
+# yet: its migration slice (M75 11, 24-36) confirms or replaces its target and clears the mark.
+# A later:<issue> row is mapped, not pending: an M80 issue owns its decision, and until it
+# lands the row stays hard-coded as it is today (#7746). Its issue is in
+# docs/research/policy-later-issues.txt, and its mark is approved:<name>, matching a line of
+# docs/research/policy-later-approvals.md for the same row and issue. A row with two targets
+# is split into sub-rows, one target each (its cite with a small letter after, its own part
+# of the decision, and the row's file:line): Dispatch #82, #83 and Browser #B69 (spec §15.5).
 # Rows are the inventory's own (section, number), as #7104's docs/policy-inventory-families.md
 # keys them, and each row's family is that table's (Q308b; read at 6fa489695). Where it says
 # `fixed`, the target names which of spec §2.5's three fixed things; the two rows it fixes as
@@ -44,7 +50,7 @@
 #kept	Vaults #15	An administrator's lock, which holds whatever `[policy]` says (docs/policy.md).
 #kept	Admin locks #L11	An administrator's lock, which holds whatever `[policy]` says (docs/policy.md).
 #kept	Admin locks #L25	An administrator's lock, which holds whatever `[policy]` says (docs/policy.md).
-row	family	target	pending	decision	where
+row	family	target	mark	decision	where
 Sandbox #1	sandbox		pending	Whether a project's chats run at the full sandbox (`[sandbox] mode = "on"`)	`crates/purlis-core/src/sandbox.rs:818` (read), `crates/purlis-core/src/sandbox.rs:398` (`on_block` written by the one-time offer), `app/src-tauri/src/sandboxing.rs:712` (`answer_sandbox_offer`), `crates/purlis-core/src/sandbox/local.rs:661` (`offer_due`)
 Sandbox #2	sandbox		pending	A new project is scaffolded with `[sandbox]`, the default egress and no `mode`, so its chats start at the floor	`crates/purlis-core/src/sandbox.rs:405`
 Sandbox #3	sandbox		pending	A `charter.toml` that is missing or unreadable means "the sandbox is unknown", so the chat is refused (never read as "off")	`crates/purlis-core/src/sandbox.rs:8309` (`PlaneMissing`), `crates/purlis-core/src/sandbox.rs:435` (`Plane::read`); `crates/purlis-core/src/sandbox/personal.rs:327` reads it as `On`
@@ -199,7 +205,7 @@ Ports #P9	ports		pending	A person may allow a chat to **serve** (listen) on one 
 Ports #P10	ports		pending	Listen grant scopes: this chat or this project on this machine	`app/src-tauri/src/sandboxing.rs:1715`
 Ports #P11	ports		pending	Claude Code chat off macOS cannot be allowed one listen port (its sandbox binds all or none); on macOS its server dials in through `purlis listen`; on a runner it is refused	`app/src-tauri/src/hooks.rs:2120`, `app/src-tauri/src/hooks.rs:2183` (`CLAUDE_CODE_LISTEN_SAID`), `app/src-tauri/src/hooks.rs:1246`; core withdraws listen-only ports for Claude `crates/purlis-core/src/sandbox.rs:7468`
 Ports #P12	ports		pending	A server asking for a port the system picks (`listen(0)`) is refused on macOS, and on Linux on any address but 127.0.0.1	`app/src-tauri/src/hooks.rs:2194` (`PICKED_PORT_SAID`), `crates/purlis-core/src/sandbox/localport.rs:422` (`PICKED`)
-Ports #P13	ports		pending	On Linux a chat may bind port 0 on 127.0.0.1 with no grant, from a pool of 256 pre-picked ports, and connect only to its own such socket	`crates/linux-sandbox/src/loopback.rs:1`, `crates/linux-sandbox/src/linux/mod.rs:55` (`POOL` 256)
+Ports #P13	ports	later:7760	approved:The person (the project owner)	On Linux a chat may bind port 0 on 127.0.0.1 with no grant, from a pool of 256 pre-picked ports, and connect only to its own such socket	`crates/linux-sandbox/src/loopback.rs:1`, `crates/linux-sandbox/src/linux/mod.rs:55` (`POOL` 256)
 Ports #P14	secrets		pending	Door rules: `Host` must be the door's own (else 421), `Origin` the door's own (else 403), cookies stripped and kept in a door jar, `Transfer-Encoding` refused, one request per connection, carried only to the chat's own socket	`crates/purlis-core/src/sandbox/door.rs:111` (421/403 refusals), `crates/purlis-core/src/sandbox/door.rs:298` (`own_hosts`), `crates/purlis-core/src/sandbox/door.rs:281`
 Ports #P15	ports		pending	Door limits: 30 s head, 32 KiB head, 256 connections, 64 jars, 128 cookies, 4 KiB cookie, 64 KiB jar, 3 s slot wait, 1 s GO answer, 16 slots per door	`crates/purlis-core/src/sandbox/door.rs:57`-`:83`
 Ports #P16	ports		pending	Most parked slots across a chat's doors	`crates/purlis-core/src/sandbox.rs:5476` (`CHAT_SLOTS_MOST` 32)
@@ -717,9 +723,12 @@ Dispatch #77	limits		pending	≤8 held dispatches per chat, ≤8 per pool	`app/s
 Dispatch #78	runners		pending	Workspace naming a pool not kept / runner not kept starts no chat	`crates/purlis-core/src/runners.rs:741` (`runner_for`)
 Dispatch #79	runners		pending	Draining runner starts no new chat	`crates/purlis-core/src/runners.rs:28-31` (doc; `draining`)
 Dispatch #80	limits		pending	Pool limits: profileSize 128 MiB (≤1024), profileFiles 8192 (≤65 536), codeSize 1024 MiB, codeSendTime 10 min, signInWait 15, vouchWait 5 (clusters), answerWait 30, cpus 2000m, memory 4096 MiB, processes 1024, tmp 1024 MiB, suspendAfter 1440 min	`crates/purlis-core/src/poollimits.rs:216` (`ALL`), rows `:218-436`; `:492` (`check`)
-Dispatch #81	dispatch		pending	Messages only along the lineage: down to own tasks, up to own asker	`crates/purlis-core/src/dispatchtalk.rs:131` (`down`), `:148` (`up`)
-Dispatch #82	dispatch		pending	Wait/cancel/close/tell only on tasks the chat dispatched itself	`crates/purlis-core/src/dispatched.rs:385` (`owned`)
-Dispatch #83	dispatch		pending	A chat may not cancel/close a task the person typed into; task started by person cannot message up	`crates/purlis-core/src/dispatched.rs:416-422`; `crates/purlis-core/src/dispatchtalk.rs:150,159`
+Dispatch #81	dispatch	later:7755	approved:The person (the project owner)	Messages only along the lineage: down to own tasks, up to own asker	`crates/purlis-core/src/dispatchtalk.rs:131` (`down`), `:148` (`up`)
+Dispatch #82a	dispatch	later:7756	approved:The person (the project owner)	Cancel and close only on tasks the chat dispatched itself	`crates/purlis-core/src/dispatched.rs:385` (`owned`)
+Dispatch #82b	dispatch	later:7755	approved:The person (the project owner)	Tell only tasks the chat dispatched itself	`crates/purlis-core/src/dispatched.rs:385` (`owned`)
+Dispatch #82c	dispatch	later:7773	approved:The person (the project owner)	Wait only on tasks the chat dispatched itself	`crates/purlis-core/src/dispatched.rs:385` (`owned`)
+Dispatch #83a	dispatch		pending	A chat may not cancel/close a task the person typed into	`crates/purlis-core/src/dispatched.rs:416-422`; `crates/purlis-core/src/dispatchtalk.rs:150,159`
+Dispatch #83b	dispatch	later:7756	approved:The person (the project owner)	A task started by the person cannot message up	`crates/purlis-core/src/dispatched.rs:416-422`; `crates/purlis-core/src/dispatchtalk.rs:150,159`
 Dispatch #84	limits		pending	Message/report text ≤4096 bytes, no control chars; pass-on note ≤240 bytes	`crates/purlis-core/src/handoff.rs:568` (`MOST_REPORT_BYTES`); `crates/purlis-core/src/dispatchrecord.rs:1896`; `crates/purlis-core/src/dispatchtalk.rs:2129`
 Dispatch #85	limits		pending	Queue ≤256 messages per chat; a confined command cannot queue	`crates/purlis-core/src/dispatchqueue.rs:46`
 Dispatch #86	dispatch		pending	Task question goes to asker first; reaches person after 100 s of asker's turn, or at once if asker gone	`crates/purlis-core/src/dispatchtalk.rs:343`, `:1231` (`look`)
@@ -910,7 +919,8 @@ Browser #B65	vaults		pending	A login on a pool's runner needs the person's opt-i
 Browser #B66	vaults		pending	A browser that performed a declared login keeps it (sealed, this device only) for the next chat of the same profile/persona/login identity, whenever the chat has a profile	`app/src-tauri/src/chatbrowsers.rs:4956` (`login.keep`); `crates/purlis-core/src/browserlogins.rs:168` `identity_of`
 Browser #B67	browser		pending	A kept login store holds at most 256 MiB unsealed	`crates/purlis-core/src/browserlogins.rs:67` `MOST_BYTES`
 Browser #B68	vaults		pending	A browser signed in with a login is handed over only to a chat whose login has the same identity now	`app/src-tauri/src/chatbrowsers.rs:6095` `may_log_in`; `hand_over` :1889
-Browser #B69	browser		pending	A chat names and closes only its own browsers; it can't close one the person drives	`app/src-tauri/src/chatbrowsers.rs:3514` (Close), :3523
+Browser #B69a	browser	later:7760	approved:The person (the project owner)	A chat names and closes only its own browsers	`app/src-tauri/src/chatbrowsers.rs:3514` (Close), :3523
+Browser #B69b	browser		pending	A chat can't close a browser the person drives	`app/src-tauri/src/chatbrowsers.rs:3514` (Close), :3523
 Browser #B70	browser		pending	While the person drives a browser, every agent call on it is refused and one in flight is cut	`crates/browser-engine/src/drive/browser/takeover.rs:224` `take_over`
 Browser #B71	browser		pending	"The browser needs you": `ask_operator` aimed at a browser raises an Ask whose only answer is Take over; while it waits the chat's acts on that browser are refused	`app/src-tauri/src/browserneedsyou.rs:295` `answered_first`, :271 `waits_said`; routed at `crates/purlis-cli/src/mcp.rs:186`
 Browser #B72	browser		pending	A chat's browsers end when the chat closes; a pinned one outlives it (and never idles) until the person stops it, Stop all, or quit	`app/src-tauri/src/chatbrowsers.rs:3128` `forget`, :1845 `pin`
