@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795805825081,
+  "lastUpdate": 1795809266024,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58002,6 +58002,48 @@ window.BENCHMARK_DATA = {
             "value": 101.418282,
             "unit": "ms",
             "extra": "median of 5 runs: 100.937, 101.287, 101.418, 101.700, 102.336 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4aca3f3777465195764418ea8f46e8cb73cdf935",
+          "message": "Merge guard: keep quoting inside process substitutions and ${…} (#7709) (#7715)\n\n* Merge guard: tests for quoting inside process substitutions and ${…} (#7709), red\n\nA jq program with pipes in a process substitution fed to a loop, and a\n`|` inside ${t%%|*}, are refused today. A merge in a substitution\nstays held.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BTT2PYJ5K667009YQ0EV16\nPurlis-Persona: steward\n\n* Merge guard: keep quoting inside process substitutions and ${…} (#7709)\n\nTwo misreadings refused read-only lines.\n\nThe lexer split a parameter expansion at its operators, so\n`f=${t%%|*}` was a pipe into a program `*}`. It now reads `${…}`\nas one word, to the `}` that closes it, as bash counts braces. A\n`${` that never closes, or that holds a `(` or a backtick, is read\nfrom its `{` as before, so the commands a substitution inside it runs\nstay segments of their own and the recorded answers stand. A bash 5.3\n`${ …; }` is left as it was.\n\nThe floor reads a substitution's body, where a script runner on the\nline could read it, for what it could print: its words joined into one\nline, their quoting gone. For jq that made `.[]` of\n`jq -r 'sort_by(.iid) | .[]'` a program the shell builds. Only a\nprogram that prints its own words (echo, printf, print, a here-string)\ngets the speculative checks on that line now; any other is read for a\nliteral merge alone, as the round-7 comment already said.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8BTT2PYJ5K667009YQ0EV16\nPurlis-Persona: steward\n\n* Merge guard round 2: red tests for the lexer's ${…} close, a command in ${…}, a non-printer's exact readings and linear time (#7709)\n\nbash and dash close ${…} at the first unquoted }, so { v=${s#{}; gh pr merge 1; }\nhides the merge from the current lexer. Also: a ${x:-gh pr merge 1} program, a merge a\nnon-printer spells out past a redirection or through a shell-filled API path, every\nconsumer of a substitution, the accepted loosening pinned, and two linear-time shapes\nfor unclosed ${.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8C2VJFZEP2S4VF8FEMHTAYS\nPurlis-Persona: steward\n\n* Merge guard round 2: ${…} closes at its first unquoted }, a command in ${…} is held, a non-printer's words are read exactly (#7709)\n\n- Lexer: inside ${…} only a nested ${ is counted, so the word ends at the first\n  unquoted }, as bash and dash close it. A rewound ${ marks how far it was read,\n  and no ${ opened inside that stretch is read as one word again: linear.\n- Floor: a ${…} program holding a blank is built by the shell (${x:-gh pr merge 1}).\n- Floor: the printed words of a program that does not print them skip only the\n  speculative checks, at that one level (NotItsWords); the exact readings and the\n  shell-filled API check still run, and nested levels are read in full.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8C2VJFZEP2S4VF8FEMHTAYS\nPurlis-Persona: steward\n\n* Merge guard round 3: red tests for a quoted } in ${…}, an unclosable body on every reading, ${ in heredoc data, a nested funsub, and the accepted loosening's forms (#7709)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CTJ47GFKGY1AJDSTQ0PHE6\nPurlis-Persona: steward\n\n* Merge guard round 3: the lexer says where a ${…}'s blanks stood, an unclosable body is refused on every reading, ${ in heredoc data hides nothing, a nested funsub is a command (#7709)\n\n- F1: Tok::split_in_braces / Reading::split_in_braces replace the recount on the dequoted word, so a quoted or escaped } no longer closes a ${…} early.\n- F2: unclosable |= !reading_a_hedge() && body_the_reader_cannot_close(&body), as on main.\n- F3: the credential guard segments heredoc::commands_a_shell_runs(cmd); the dispatch and handoff guards read it as well as the raw line, keeping their documented over-match of heredoc body lines.\n- F4: a { after an odd $ inside ${…} that cannot begin a parameter (a bash 5.3 funsub) reads the word again from its first {, as ( and a backtick do.\n- F5: yes prints its words.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CTJ47GFKGY1AJDSTQ0PHE6\nPurlis-Persona: steward\n\n* Merge guard round 4, red tests: a heredoc-bound ${, a flag kept across a rewind, a blank read the old way too, a larger linear-time pair (#7709)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8D4N3F4FDVJR0EGWF2DGGN0\nPurlis-Persona: steward\n\n* Merge guard round 4: a ${ never reads past its line, a rewind keeps the blank of a closed one, a line whose ${…} holds a blank is read the old way too (#7709)\n\nF1: a ${ left open when its line ends is read again from its { as main read it, so a\nheredoc body's unclosed ${ never hides the commands after the delimiter, for every guard.\nThe round-3 heredoc filters in the cred, dispatch and handoff guards go back to main's\nreading, which restores their linear time (F4).\nF2: the rewind mark keeps split_in_braces, so a second ${ read again does not clear the\nfirst one's blank.\nF3: shellseg::on_either_reading judges a line a second time with every ${ read the old way\nwhenever a ${…} held an unquoted blank, at every guard's entry and around the tool gate's\narms. The text-keyed reading caches key on the mode.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8D4N3F4FDVJR0EGWF2DGGN0\nPurlis-Persona: steward\n\n* Merge guard round 5: an operator in a ${…} reads the line the old way too, outside a trim pattern; the branch-folder hold and the ask risk read both ways (#7709)\n\nA ;, &, |, < or > inside a ${…} is not split by the shell, but eval, sh -c or a pipe\nto a shell runs the value as a line (eval ${x:-cat<f}), so it now sends the line to\nthe second reading as a blank does, except inside a %/# trim pattern, which gives no\ntext, so f=${t%%|*} stays read once. branch_write and the ask-row risk readings\n(askrisk::Facts::of_command(_in), harness::asked::risk_of) are read through\nshellseg::on_either_reading.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8DBZ88Y87J2KBQW0CTDHAAX\nPurlis-Persona: steward\n\n* Merge guard round 6: a trim only after a NAME, a positional or one special parameter; both readings' writes, risks and merges put together (#7709)\n\n${!#:+…} is the last positional parameter's alternative, not a trim, and\n${##…}, ${#%…}, ${!x#…} and $${ are not certainly trims, so each is read\nthe old way too. A \\r in ${…} is a blank, as the lexer's WHITESPACE has it.\nbranch_write names the writes of both readings, risk_of takes the graver,\nan ask's class is the old reading's, and two merges on two readings are\nunreadable (shellseg::on_both_readings).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8DJHVQG8QJ2H04XY2NDXN66\nPurlis-Persona: steward\n\n* Lexer: a nested ${ as the parameter is no trim, so ${${y}%…} is read the old way too (round 6 review)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* Lexer: a nested ${ makes every enclosing ${ uncertain, and a quote or escape in a parameter's name is no trim (round 6 review); a test opens with unsteered!()\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* Lexer: a nested ${ marks only the levels not yet marked, so a word of many nested ${ is read in linear time (CI's linear-time tests); clippy's slice fill\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* Linear-time family test: leave the project-root guards on a backquoted heredoc to #7838\n\nThey read it faster than linearly on main as well (4e6396140c): about 17 ms at 16 KB and\n160 ms at 64 KB in release, the same as at 32b83bba7c, so #7709 only exposed it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8E6YXKDXQPDWXGH6JYSY8FP\nPurlis-Persona: steward\n\n* Linear-time test: skip the backquoted heredoc for the hook-skip guard too, quadratic on main as well (#7838)\n\nMeasured in release on that shape at 16 KB and 64 KB, at 98f6a43861 and on main\nb013530d94: the hook-skip guard takes 14.6 -> 161 ms here and 14.3 -> 155 ms on\nmain, about the square of the length, like the project-root guards. Every other\nfamily is linear on both and keeps the shape. The table is on #7838.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8EBY6GC12S5V91TA643JJXW\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T18:01:34Z",
+          "tree_id": "9a1efe763bca6b47eb6ca84e08df22aa087daee4",
+          "url": "https://github.com/purlis/purlis/commit/4aca3f3777465195764418ea8f46e8cb73cdf935"
+        },
+        "date": 1795809259194,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.711954,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.678, 0.678, 0.712, 0.714, 0.721 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.630316999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.118, 16.570, 16.630, 16.665, 16.751 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9150265,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.592, 101.808, 101.915, 102.342, 102.544 ms"
           }
         ]
       }
