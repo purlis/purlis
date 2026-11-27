@@ -2335,6 +2335,14 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "s6-setuidgid",
     "s6-softlimit",
     "s6-applyuidgid",
+    // and s6's `s6-envuidgid`, `s6-fghack` and `s6-setlock`, which run the program after them,
+    // and `s6-rc-init`, which starts s6-rc's services: daemontools' rows and the `init` row
+    // reach them by their last part, but only by chance, so each has a row of its own (round 13
+    // of #7828's review; a unit test pins them).
+    "s6-envuidgid",
+    "s6-fghack",
+    "s6-setlock",
+    "s6-rc-init",
     "coredumpctl",
     // and the leads it left (#6564), whose source was out of reach, refused on what each is for:
     // `aptitude -o Dir::Bin::Methods::<scheme>=` names the program a download runs, as

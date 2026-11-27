@@ -219,12 +219,14 @@ The forms also reach rows that were there before: `systemd` reaches `systemd-run
 unit test pins each as a row of its own, as it does `supervise-daemon` and
 `find-repos-of-install`.
 
-A form that reaches a program of another family only by chance (OpenRC's `supervise-daemon`
-meeting daemontools' `supervise`, `find-repos-of-install` meeting `find`, `deb-systemd-invoke`
-meeting Python's `invoke`) is not what keeps that program refused: each has a row of its own and
-a unit test. A form within one family, such as `yum-config-manager` and the other `yum-<name>`
-programs reaching `yum`, or `aptitude-curses` reaching `aptitude`, is what refuses them, and a
-give-back under #7825 keeps it for the ones that run code.
+A form that reaches a program of another family only by chance (OpenRC's `supervise-daemon` meeting
+daemontools' `supervise`, `find-repos-of-install` meeting `find`, `deb-systemd-invoke` meeting
+Python's `invoke`, and, as the thirteenth review found, s6's `s6-envuidgid`, `s6-fghack` and
+`s6-setlock` meeting daemontools' rows and `s6-rc-init` meeting `init`) is not what keeps that
+program refused: each has a row of its own and a unit test. A form within one family, such as
+`yum-config-manager` and the other `yum-<name>` programs reaching `yum`, or `aptitude-curses`
+reaching `aptitude`, is what refuses them, and a give-back under #7825 keeps it for the ones that
+run code.
 
 Which to give back, and how to do it without giving back the ones that run code, is part of
 #7825.

@@ -2044,3 +2044,14 @@ fn the_rows_a_new_rows_form_also_reaches_are_each_kept_as_a_row_of_their_own() {
         assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
     }
 }
+
+/// s6's `s6-envuidgid`, `s6-fghack` and `s6-setlock` run the program after them, and `s6-rc-init`
+/// starts s6-rc's services (round 13 of #7828's review). Daemontools' `envuidgid`, `fghack` and
+/// `setlock` rows and the `init` row reach them by their last part, but only by chance, from
+/// another family, so each is refused by a row of its own.
+#[test]
+fn the_s6_programs_other_families_rows_reach_by_chance_each_have_a_row_of_their_own() {
+    for name in ["s6-envuidgid", "s6-fghack", "s6-setlock", "s6-rc-init"] {
+        assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
+    }
+}
