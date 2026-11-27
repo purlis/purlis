@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795769067561,
+  "lastUpdate": 1795770696834,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57414,6 +57414,48 @@ window.BENCHMARK_DATA = {
             "value": 101.14052649999999,
             "unit": "ms",
             "extra": "median of 5 runs: 99.734, 100.707, 101.141, 102.351, 103.027 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c33d372d3bebe528bb1248960177f7caf22a1c1a",
+          "message": "Pool setup: the Trust button keeps its focus while its add runs, so WebKit's picture settles (#7856)\n\n* Picture the app-raised alert without a hover no pointer makes (fixes main)\n\nRaisedAlert.stories.tsx's RaisedByTheApp pressed Accept with the story's\nuserEvent.click and then took its picture. That click only dispatches\nevents: React Aria draws Accept as hovered (data-hovered) with no pointer\non it, until the engine's own pointer, parked in the window's corner,\nsends a real pointerover, which ends the hover. Chromium sends it at\nonce; WebKit when the pointer next moves, so its picture was of either\nstate and never settled on the bot's baseline (#7847's run 45924866984).\n\nThe early press is now made from the keyboard, Tab to Accept and Space,\nwhich the settle guard refuses just the same, and the story holds that\nno answer is drawn hovered when it is pictured. The story's play is also\nwalked in jsdom (RaisedAlert.story.test.tsx), where the hover assertion\nwas seen red before the change.\n\nSupersedes #7847; keeps its comment line. Pictures to be redrawn by the\nupdate-baselines bot.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8DCKV7APZKWD3PJ2555N58K\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Pool setup: Trust keeps the focus while its press runs, so WebKit's picture of a refused add settles\n\nAction's main button was natively disabled while Trust and create the pool ran. WebKit takes the\nfocus from a focused button it disables, when it next lays the page out, so the story's picture\nhad the focus ring or not (run 45934794896). The button is now unavailable by hand while its own\npress runs (aria-disabled, #3522) and keeps the focus. The story presses it from the keyboard, as\n#7853 does for RaisedAlert, and waits for the press to be over, the focus on the button with its\nring, and no hover, before the picture.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8DJQC00BR7QM3HYNY03HGB8\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Start the checks on the bot's pictures\n\nThe update-baselines bot pushes with the workflow token, which starts no checks, and the\nbranch was level with main, so update-branch had nothing to do.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-27T08:17:22Z",
+          "tree_id": "11825f30315d4b62799fba4b48d8100523a9d199",
+          "url": "https://github.com/purlis/purlis/commit/c33d372d3bebe528bb1248960177f7caf22a1c1a"
+        },
+        "date": 1795770690188,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.567874,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.559, 0.567, 0.568, 0.572, 0.577 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.310390499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.247, 16.257, 16.310, 16.339, 16.377 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.016751,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.241, 100.126, 101.017, 101.668, 102.347 ms"
           }
         ]
       }
