@@ -31,11 +31,26 @@ reads it again when it is opened, so a pane never chooses what opens (spec #6208
   not ignore, which is all the editor opens. A file git ignores says so on its hover. Where
   purlis could not read the branch's list of files, the file still links, and its hover says
   the editor checks it as it opens.
+- **A link too long for one row is one link over all its rows**, whether the terminal wrapped
+  it or the program broke the line itself at the pane's edge: hovering any row draws all of it,
+  and ⌘-click on any row opens the whole. A break the program wrote is read across only on the
+  normal screen (never in an editor, pager or multiplexer on the alternate screen), where the
+  row fills the pane to its edge with cells that draw and the next row goes straight on at the indent of the
+  line's first row's words (so a paragraph a harness indents two blanks on every row joins,
+  and so does a reply or list item whose first row opens with a marker such as `⏺ `, `• `,
+  `- ` or a number (`1. `, `12) `) and whose next rows are indented to its words), not with a
+  frame's border, a link of its own or an item of its own (a nested list's `- ` or `1. `, a
+  tool result's `⎿ `). Where the joined words name no file, each row's piece links on its own
+  (ADR 0132).
 - **A chat's number is looked up in the pane's own project.** A number no chat there had is no
   link. A title never links, and `#641` alone is an issue's number, not a chat.
 
 ## What asks first
 
+- **A web address read across rows the program broke at the pane's edge.** purlis joins the
+  rows only where they plainly go on, but the join is still a guess about what the program
+  meant, so the ask shows the whole address as it was read. One on a single row, or one the
+  terminal wrapped, opens without asking (ADR 0132).
 - **A file outside the chat's workspace** (the project, for a chat at its root). The ask names
   the file, the workspace and the chat whose output named it. Opening one only shows it, so the
   ask starts on _Open file_.
