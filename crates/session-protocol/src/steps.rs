@@ -282,6 +282,18 @@ fn pool_named(alias: &str) -> Option<String> {
     .then(|| alias.to_owned())
 }
 
+/// **`$then!` at `level`**, the one match from a step's level to tracing's: tracing fixes an
+/// event's level where it is written, so a level chosen at run time is matched to each here.
+macro_rules! at_level {
+    ($level:expr, $then:ident) => {
+        match $level {
+            tracing::Level::DEBUG => $then!(tracing::Level::DEBUG),
+            tracing::Level::WARN => $then!(tracing::Level::WARN),
+            _ => $then!(tracing::Level::INFO),
+        }
+    };
+}
+
 /// How a step ended, as its line says it.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Outcome {
@@ -466,13 +478,13 @@ pub fn begin_debug(name: &'static str) -> Step {
 fn start(name: &'static str, pool: Option<String>, debug: bool) -> Step {
     // Made only where a line would be written: a step at a level nobody reads costs a clock read.
     let span = if debug {
-        if tracing::enabled!(target: "purlis::step", tracing::Level::DEBUG) {
-            tracing::debug_span!(target: "purlis::step", "step", step = name)
+        if tracing::enabled!(target: TARGET, tracing::Level::DEBUG) {
+            tracing::debug_span!(target: TARGET, "step", step = name)
         } else {
             tracing::Span::none()
         }
-    } else if tracing::enabled!(target: "purlis::step", tracing::Level::INFO) {
-        tracing::info_span!(target: "purlis::step", "step", step = name)
+    } else if tracing::enabled!(target: TARGET, tracing::Level::INFO) {
+        tracing::info_span!(target: TARGET, "step", step = name)
     } else {
         tracing::Span::none()
     };
@@ -607,14 +619,12 @@ impl Drop for Step {
             (false, Outcome::Refused) => tracing::Level::WARN,
             (false, _) => tracing::Level::INFO,
         };
-        let enabled = match level {
-            tracing::Level::DEBUG => {
-                tracing::enabled!(target: "purlis::step", tracing::Level::DEBUG)
-            }
-            tracing::Level::WARN => tracing::enabled!(target: "purlis::step", tracing::Level::WARN),
-            _ => tracing::enabled!(target: "purlis::step", tracing::Level::INFO),
-        };
-        if !enabled {
+        macro_rules! enabled_at {
+            ($level:expr) => {
+                tracing::enabled!(target: TARGET, $level)
+            };
+        }
+        if !at_level!(level, enabled_at) {
             return;
         }
         let ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
@@ -650,20 +660,15 @@ impl Drop for Step {
         } else {
             format!(" ({})", said.join(", "))
         };
-        self.span.in_scope(|| match level {
-            tracing::Level::DEBUG => tracing::debug!(
-                target: "purlis::step", step, outcome, ms, pool, parent, cause, attempt, start,
-                "purlis: step {step} {outcome} after {ms} ms{tail}"
-            ),
-            tracing::Level::WARN => tracing::warn!(
-                target: "purlis::step", step, outcome, ms, pool, parent, cause, attempt, start,
-                "purlis: step {step} {outcome} after {ms} ms{tail}"
-            ),
-            _ => tracing::info!(
-                target: "purlis::step", step, outcome, ms, pool, parent, cause, attempt, start,
-                "purlis: step {step} {outcome} after {ms} ms{tail}"
-            ),
-        });
+        macro_rules! line_at {
+            ($level:expr) => {
+                tracing::event!(
+                    target: TARGET, $level, step, outcome, ms, pool, parent, cause, attempt, start,
+                    "purlis: step {step} {outcome} after {ms} ms{tail}"
+                )
+            };
+        }
+        self.span.in_scope(|| at_level!(level, line_at));
     }
 }
 

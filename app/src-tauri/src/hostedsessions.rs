@@ -1461,6 +1461,10 @@ struct Shared {
     skill_lines: Mutex<SkillLines>,
     /// Logs each skill line, and keeps how far, one at a time in the order they were read.
     skill_logger: Mutex<Option<std::sync::mpsc::Sender<SkillLogged>>>,
+    /// **The Start each program was started for** (#7864), by its id, until a view of it is
+    /// first drawn: a pane attaches after the start that made it has returned, so its
+    /// `view_first_frame` is told its Start here, and only the first view drawn of it is.
+    starts: Mutex<HashMap<String, purlis_session_protocol::steps::StartId>>,
 }
 
 /// **The skill lines a link to a pool's runner read** (#4219): the newest
@@ -2133,6 +2137,10 @@ impl HostLink {
             purlis_session_protocol::steps::Name::StartProgramCall,
         );
         let start = with_this_threads_start(start);
+        let named = start
+            .start
+            .as_deref()
+            .and_then(purlis_session_protocol::steps::StartId::parse);
         let waits = (self.pool.is_some() && !can_be_cancelled()).then(|| {
             let secs = self.limits().in_force(AnswerWait);
             (Instant::now() + Duration::from_secs(secs), secs)
@@ -2208,7 +2216,20 @@ impl HostLink {
             step.cancelled();
             return answer;
         }
+        if let (Ok(Answer::ProgramStarted { program, .. }), Some(named)) = (&answer, named) {
+            // One that ended before its answer came is drawn by nothing: kept, it would stay.
+            let mut starts = lock(&self.shared.starts);
+            if !lock(&self.shared.unclaimed_ends).contains_key(program) {
+                starts.insert(program.clone(), named);
+            }
+        }
         step.ended(answer)
+    }
+
+    /// The Start `program` was started for, taken (#7864): the first view drawn of it names it,
+    /// and none after does.
+    fn start_of(&self, program: &str) -> Option<purlis_session_protocol::steps::StartId> {
+        lock(&self.shared.starts).remove(program)
     }
 
     /// Send `command` and do not wait for its answer: what it refuses is logged.
@@ -2724,13 +2745,14 @@ impl HostLink {
     /// Draw view `view` with `sink`: its stream may already be here.
     /// `paced`: acknowledged only as the pane reports it drew it (#4733), not as it is handed.
     /// `whole` is told once a snapshot has all been handed to `sink` (SC-4b, #7631).
-    fn draw(&self, view: u32, sink: Sink, paced: bool, whole: Option<Whole>) {
+    /// `program` is what it is a view of, so its first frame names the Start that made it.
+    fn draw(&self, view: u32, program: &str, sink: Sink, paced: bool, whole: Option<Whole>) {
         let sink = TextSink {
             sink,
             paced: paced.then(Paced::default),
             whole,
         };
-        self.draw_into(view, Draws::Text(Arc::new(Mutex::new(sink))));
+        self.draw_into(view, Draws::Text(Arc::new(Mutex::new(sink))), Some(program));
     }
 
     /// The pane drawing view `view` drew `pieces` more of what it was handed (#4733).
@@ -2745,14 +2767,15 @@ impl HostLink {
         self.id
     }
 
-    /// Draw browser view `view`'s frames into `sink`, each whole (#2012), its page's origin
-    /// into `origins` (#2300) and what its page is into `pages` (#6938): its stream may already
-    /// be here.
+    /// Draw browser view `view` of `program`'s frames into `sink`, each whole (#2012), its page's
+    /// origin into `origins` (#2300) and what its page is into `pages` (#6938): its stream may
+    /// already be here.
     /// The window holds the view to the link's frames itself where `held` names them (#2050,
     /// #3297): a view of a browser on a runner.
     pub(crate) fn draw_frames(
         &self,
         view: u32,
+        program: &str,
         sink: FrameSink,
         origins: OriginSink,
         pages: Option<PageSink>,
@@ -2765,7 +2788,11 @@ impl HostLink {
             held: held.map(HeldFrames::to),
             closed: None,
         };
-        self.draw_into(view, Draws::Frames(Arc::new(Mutex::new(sinks))));
+        self.draw_into(
+            view,
+            Draws::Frames(Arc::new(Mutex::new(sinks))),
+            Some(program),
+        );
     }
 
     /// Draw view `view` of a browser's DevTools (#2028): its frames to `sink`, and why they
@@ -2778,10 +2805,13 @@ impl HostLink {
             held: None,
             closed: Some(closed),
         };
-        self.draw_into(view, Draws::Frames(Arc::new(Mutex::new(sinks))));
+        // DevTools are opened by the person, never by a Start.
+        self.draw_into(view, Draws::Frames(Arc::new(Mutex::new(sinks))), None);
     }
 
-    fn draw_into(&self, view: u32, sink: Draws) {
+    /// `program`: what it is a view of, whose Start its first frame names (taken only where a
+    /// first frame's step begins here, so a view drawn again keeps it for the next).
+    fn draw_into(&self, view: u32, sink: Draws, program: Option<&str>) {
         let waiting = {
             let mut views = lock(&self.shared.views);
             // A view drawn again before its first frame keeps the step it began with (#7864).
@@ -2793,6 +2823,7 @@ impl HostLink {
                     purlis_session_protocol::steps::begin(
                         purlis_session_protocol::steps::Name::ViewFirstFrame,
                     )
+                    .of_start(program.and_then(|program| self.start_of(program)).as_ref())
                 });
             views.drawing.insert(
                 view,
@@ -3344,6 +3375,8 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                 pathless,
             }) => lines.hear(&shared, project, heard, line, pathless),
             Told::Pushed(Pushed::Ended { program, exit, .. }) => {
+                // Never viewed, its Start is drawn by nothing now.
+                lock(&shared.starts).remove(&program);
                 let tell = lock(&shared.ends).remove(&program);
                 match tell {
                     Some(tell) => tell(Ending::Exited(exit)),
@@ -4116,9 +4149,14 @@ fn held_on(holding: &Holding, for_a_start: bool) -> Result<(Arc<HostLink>, Strin
     // Decided once: a link that came back during the wait still needs what a hold does after it,
     // its programs read and its board taken above all.
     let waited = waits && !lock(held).as_ref().is_some_and(stays_held);
-    if waited {
-        waits_off_the_lock(holding, &link)?;
-    }
+    // **One `hold_project` row for a start's hold** (#7864): begun before its wait for the
+    // runner and ended by the hold after it, so a sum counts the wait once. The redials the kept
+    // link makes meanwhile are for no Start, and in none of its sums.
+    let waited_hold = if waited {
+        Some(waits_off_the_lock(holding, &link)?)
+    } else {
+        None
+    };
     let mut held = lock(held);
     if !waited
         && let Some(on) = &*held
@@ -4153,21 +4191,28 @@ fn held_on(holding: &Holding, for_a_start: bool) -> Result<(Arc<HostLink>, Strin
     link.when_reconnecting(Arc::clone(reconnects));
     // A runner holds it where it keeps its projects, `<data>/projects/<project id>`, and is sent
     // the project's own code to check out there as a chat starts or moves there (#2046, #4590).
-    // Timed as the start's `hold_project` (#7864).
-    timed_hold(
-        || {
-            link.call_of_a_start(Command::HoldProject {
-                project: project.clone(),
-                project_path: if *kept_on_the_runner {
-                    String::new()
-                } else {
-                    root.display().to_string()
-                },
-            })
+    // Timed as the start's `hold_project` (#7864), and only a start's: a hold again after a
+    // re-link, or the auto-save's, is no step of a start and writes no row of one.
+    let step = waited_hold.or_else(|| {
+        for_a_start.then(|| {
+            purlis_session_protocol::steps::begin(purlis_session_protocol::steps::Name::HoldProject)
+        })
+    });
+    let hold = link.call_of_a_start(Command::HoldProject {
+        project: project.clone(),
+        project_path: if *kept_on_the_runner {
+            String::new()
+        } else {
+            root.display().to_string()
         },
-        |why| why == START_CANCELLED,
-    )
-    .map_err(|why| format!("{NOT_HELD} {why}"))?;
+    });
+    if let Some(step) = step {
+        match &hold {
+            Err(why) if why == START_CANCELLED => step.cancelled(),
+            _ => drop(step.ended(hold.as_ref().map(|_| ()))),
+        }
+    }
+    hold.map_err(|why| format!("{NOT_HELD} {why}"))?;
     link.when_not_held(&project, holds_again(holding, link.id, &project));
     // The numbers that went out before the host held the project are never dealt again.
     let dealt = opened.load(Ordering::Relaxed);
@@ -4453,8 +4498,12 @@ fn a_dispatchs_hold_within(connection: &Connection) -> Duration {
 /// **A start's first hold, off the hold's lock** (#4415): the host's answer waits while the runner
 /// comes back, and nothing else waits on it. The person's Cancel ends a person's wait, and
 /// [`a_dispatchs_hold_within`] a dispatch's. Holding again is harmless, so [`held_on`] goes on as
-/// it does for any hold, and is answered at once.
-fn waits_off_the_lock(holding: &Holding, link: &HostLink) -> Result<(), String> {
+/// it does for any hold, and is answered at once. Answers the start's `hold_project` step, still
+/// running, for that hold to end (#7864); a wait that fails ends it here.
+fn waits_off_the_lock(
+    holding: &Holding,
+    link: &HostLink,
+) -> Result<purlis_session_protocol::steps::Step, String> {
     struct Waited<'a>(&'a AtomicUsize);
     impl Drop for Waited<'_> {
         fn drop(&mut self) {
@@ -4478,13 +4527,18 @@ fn waits_off_the_lock(holding: &Holding, link: &HostLink) -> Result<(), String> 
     // so a refusal while it already was is the host's, not the runner's (#4536).
     let was_down = lock(&link.shared.runner_log).link_is_down();
     let within = (!can_be_cancelled()).then(|| a_dispatchs_hold_within(&holding.connection));
-    // Timed as the start's `hold_project` on the runner (#7864).
-    timed_hold(
-        || link.call_held_for_a_start(hold, within),
-        |why| matches!(why, Unanswered::Here(why) if why == START_CANCELLED),
-    )
-    .map(|_| ())
-    .map_err(|unanswered| {
+    // The start's `hold_project` on the runner (#7864), until the hold after the wait ends it.
+    let step =
+        purlis_session_protocol::steps::begin(purlis_session_protocol::steps::Name::HoldProject);
+    let waited = link.call_held_for_a_start(hold, within);
+    if let Err(Unanswered::Here(why)) = &waited
+        && why == START_CANCELLED
+    {
+        step.cancelled();
+        return Err(format!("{NOT_HELD} {START_CANCELLED}"));
+    }
+    // Refused by any other way out.
+    waited.map(|_| step).map_err(|unanswered| {
         // **The runner not coming back is this machine's own finding** (#4536): no answer in
         // time, the link ended, or a refusal while the link was already down. What a runner
         // says over a link that is up is never marked, whatever its code.
@@ -4507,22 +4561,6 @@ fn with_this_threads_start(mut start: StartProgram) -> StartProgram {
         start.start = purlis_session_protocol::steps::start_id().map(|id| id.to_string());
     }
     start
-}
-
-/// **A start's hold, timed as its `hold_project` step** (#7864): done or refused by what `hold`
-/// answers, and cancelled where `cancelled` says the person cancelled it.
-fn timed_hold<T, E>(
-    hold: impl FnOnce() -> Result<T, E>,
-    cancelled: impl Fn(&E) -> bool,
-) -> Result<T, E> {
-    let step =
-        purlis_session_protocol::steps::begin(purlis_session_protocol::steps::Name::HoldProject);
-    let held = hold();
-    match &held {
-        Err(why) if cancelled(why) => step.cancelled(),
-        _ => drop(step.ended(held.as_ref().map(|_| ()))),
-    }
-    held
 }
 
 /// **A start's hold that was not answered with yes** (#4536): what this window found itself, or
@@ -5095,7 +5133,7 @@ fn attach_terminal(
     listed: impl FnOnce(u32),
 ) -> Result<Watching, String> {
     let attached = match link.call(Command::AttachView {
-        program,
+        program: program.clone(),
         kind: ViewKind::Terminal,
         role: None,
         rate: None,
@@ -5105,7 +5143,7 @@ fn attach_terminal(
         other => return Err(format!("the session host answered a view with {other:?}")),
     };
     listed(attached.view);
-    link.draw(attached.view, sink, paced, whole);
+    link.draw(attached.view, &program, sink, paced, whole);
     Ok(Watching {
         view: attached.view,
         size: Size {

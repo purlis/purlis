@@ -113,3 +113,27 @@ fn the_filter_lets_the_steps_debug_lines_through_only_while_it_is_on() {
         );
     }
 }
+
+#[test]
+fn each_change_reaches_the_filter_while_the_switch_is_still_held() {
+    // A turn on and a turn off at once: each applied under the lock, so the filter ends on the
+    // one that changed the switch last, never on the one it undid.
+    let switch: Arc<std::sync::OnceLock<Arc<Switch>>> = Arc::new(std::sync::OnceLock::new());
+    let held_while_applied = Arc::new(Mutex::new(Vec::new()));
+    let made = Arc::new(Switch::new(Box::new({
+        let switch = Arc::clone(&switch);
+        let held_while_applied = Arc::clone(&held_while_applied);
+        move |_on| {
+            let held = switch.get().unwrap().until.try_lock().is_err();
+            held_while_applied.lock().unwrap().push(held);
+        }
+    })));
+    let _ = switch.set(Arc::clone(&made));
+
+    made.turn_on(at(0));
+    made.turn_off();
+    made.turn_on(at(1));
+    made.at(at(61));
+
+    assert_eq!(*held_while_applied.lock().unwrap(), [true; 4]);
+}

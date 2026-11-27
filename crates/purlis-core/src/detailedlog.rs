@@ -54,10 +54,13 @@ impl Switch {
     }
 
     /// Turns it on at `now`, for [`LASTS`] from `now`: turned on again, it lasts an hour from then.
+    ///
+    /// Each change is applied under the switch's lock, so a turn on and a turn off at once reach
+    /// the filter in the order they changed the switch, and it never ends on what was undone.
     pub fn turn_on(&self, now: Timestamp) -> Detailed {
         let until = now + LASTS;
-        let was = self.until().replace(until);
-        if was.is_none() {
+        let mut held = self.until();
+        if held.replace(until).is_none() {
             (self.apply)(true);
         }
         Detailed { until: Some(until) }
@@ -65,7 +68,8 @@ impl Switch {
 
     /// Turns it off now.
     pub fn turn_off(&self) -> Detailed {
-        if self.until().take().is_some() {
+        let mut held = self.until();
+        if held.take().is_some() {
             (self.apply)(false);
         }
         Detailed { until: None }
@@ -76,7 +80,6 @@ impl Switch {
         let mut until = self.until();
         if until.is_some_and(|until| now >= until) {
             *until = None;
-            drop(until);
             (self.apply)(false);
             return Detailed { until: None };
         }
