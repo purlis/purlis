@@ -23,6 +23,26 @@ pub struct PolicyWaiting {
     pub committed: String,
 }
 
+/// One pair said never to: the asking persona, and the persona it never dispatches to.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct NeverPair {
+    /// The persona that asks.
+    pub asking: String,
+    /// The persona it never dispatches to.
+    pub target: String,
+}
+
+/// **The never-dispatch list's pairs the window offers to keep after a new seal key** (#7714,
+/// H1 of #7734's round 3): what Keep these nevers ([`keep_project_nevers`]) seals, exactly.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct NeversToKeep {
+    /// The pairs the list's file holds now, in its order: none where it holds none, or is gone.
+    pub pairs: Vec<NeverPair>,
+    /// Their digest: what the press names, so a list that changed since it was shown keeps
+    /// nothing.
+    pub digest: String,
+}
+
 /// What the window says about the project's `[policy]` on this machine.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PolicyState {
@@ -35,6 +55,22 @@ pub struct PolicyState {
     pub not_in_force: Vec<String>,
     /// Whether this machine keeps an acceptance whose seal does not hold, which counts as none.
     pub unsealed: bool,
+    /// Whether the seal's key on this machine is another program's, most likely an earlier
+    /// build's before an update (#7714): nothing holds, and the window offers Make a new key and
+    /// accept ([`accept_project_policy_with_new_key`]) in place of Accept.
+    pub key_foreign: bool,
+    /// Whether the acceptance does not hold because purlis made a new seal key on this machine
+    /// since it was sealed (#7714), never because something edited it: the window says so.
+    pub new_key: bool,
+    /// Whether purlis vouches that this project's never-dispatch list was anchored by a seal key
+    /// it has replaced since (#7714): it reads as unread until the person keeps the pairs shown
+    /// ([`keep_project_nevers`]). Accept never seals them.
+    pub nevers_new_key: bool,
+    /// The pairs Keep these nevers keeps, where `nevers_new_key` and the list's file reads.
+    pub nevers_to_keep: Option<NeversToKeep>,
+    /// Whether that list holds a name purlis cannot show faithfully (#7734's round 4): no pair
+    /// is offered to keep, and the window says so.
+    pub nevers_unshowable: bool,
     /// The digest of the committed text this was read from: what Accept names, so a press on a
     /// file that changed since it was shown accepts nothing.
     pub digest: String,
@@ -146,6 +182,18 @@ fn state_of(root: &std::path::Path) -> PolicyState {
             .map(|family| family.key().to_owned())
             .collect(),
         unsealed: standing.unsealed,
+        key_foreign: standing.key_foreign,
+        new_key: standing.new_key,
+        nevers_new_key: standing.nevers_new_key,
+        nevers_to_keep: standing.nevers_to_keep.map(|kept| NeversToKeep {
+            pairs: kept
+                .pairs
+                .into_iter()
+                .map(|(asking, target)| NeverPair { asking, target })
+                .collect(),
+            digest: kept.digest,
+        }),
+        nevers_unshowable: standing.nevers_unshowable,
         digest: standing.digest,
         template: standing.said.template.word().to_owned(),
         template_default: !standing.said.template_said,
@@ -316,6 +364,52 @@ pub async fn accept_project_policy(
     .await
 }
 
+/// **Your press where the seal's key is another program's: make a new key and accept the
+/// project's `[policy]` as it was shown** (#7714), on the project `plane` names, never the one in
+/// front when it lands. The old `purlis-seal` items are replaced, which macOS may ask you to
+/// allow; the digest is checked again once its prompt returns; then a new key seals this
+/// project's acceptance. Every other project accepted on this machine then needs accepting
+/// again. The window's alone. The window draws it in the prerequisite modal (#7719).
+#[tauri::command]
+#[specta::specta]
+pub async fn accept_project_policy_with_new_key(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    shown: String,
+) -> Result<PolicyState, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window(READING_POLICY, move || new_key_pressed(&root, &shown)).await
+}
+
+/// [`accept_project_policy_with_new_key`] on the project at `root`, off the window's thread.
+fn new_key_pressed(root: &std::path::Path, shown: &str) -> Result<PolicyState, String> {
+    enforcement::press_with_new_key(root, shown)
+        .map_err(|why| format!("purlis could not keep your acceptance on this machine: {why}"))?;
+    Ok(state_of(root))
+}
+
+/// **Your press: keep the never-dispatch pairs the window showed, sealed with the new seal key**
+/// (#7714, H1 of #7734's round 3), on the project `plane` names. Its own press, never a part of
+/// Accept: `shown` is the digest of the pairs shown ([`NeversToKeep`]), so a list that changed
+/// since keeps nothing. The window's alone.
+#[tauri::command]
+#[specta::specta]
+pub async fn keep_project_nevers(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    shown: String,
+) -> Result<PolicyState, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window(READING_POLICY, move || nevers_kept(&root, &shown)).await
+}
+
+/// [`keep_project_nevers`] on the project at `root`, off the window's thread.
+fn nevers_kept(root: &std::path::Path, shown: &str) -> Result<PolicyState, String> {
+    purlis_core::dispatchnever::keep_shown_after_a_new_key(root, shown)
+        .map_err(|why| format!("purlis could not keep your never-dispatch list: {why}"))?;
+    Ok(state_of(root))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -350,6 +444,54 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn the_new_key_press_is_the_windows_alone_as_accept_is() {
+        // #7714: making a new seal key replaces what every plane's seal rests on, so no chat
+        // reaches it through a link, as no chat reaches Accept.
+        for press in [
+            "accept_project_policy",
+            "accept_project_policy_with_new_key",
+            "keep_project_nevers",
+        ] {
+            assert!(purlis_session_protocol::ui::window_only(press), "{press}");
+            assert!(
+                !purlis_session_protocol::ui::served_on_a_link(press),
+                "{press}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_new_key_press_reads_the_project_it_names_and_no_other() {
+        // #7714, ruling 6: the press is bound to its own project. What another project shows is
+        // never accepted on this one.
+        let (one, other) = (
+            plane("[policy]\ntemplate = \"open\"\n"),
+            plane("[policy]\ntemplate = \"team\"\n"),
+        );
+        let planes = Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None);
+        let (first, second) = (planes.open(one.path()), planes.open(other.path()));
+        let root = planes.held(&first).expect("held").root().to_path_buf();
+        let shown_there = state_of(planes.held(&second).expect("held").root()).digest;
+        let why = new_key_pressed(&root, &shown_there).expect_err("nothing accepted");
+        assert!(why.contains("changed since it was shown"), "{why}");
+        // What this project shows passes, and is then refused only because a test is not the
+        // app, which alone seals.
+        let why = new_key_pressed(&root, &state_of(&root).digest).expect_err("not the app");
+        assert!(!why.contains("changed since it was shown"), "{why}");
+    }
+
+    #[test]
+    fn keeping_the_nevers_where_no_new_key_listed_them_keeps_nothing() {
+        // H2 of #7734's round 3: the press seals only a list purlis vouches a new key left
+        // unread, so a project no new key listed shows nothing to keep and keeps nothing.
+        let dir = plane("[policy]\ntemplate = \"open\"\n");
+        assert_eq!(state_of(dir.path()).nevers_to_keep, None);
+        let none = purlis_core::dispatchnever::digest_of_pairs(&[]);
+        let why = nevers_kept(dir.path(), &none).expect_err("nothing kept");
+        assert!(why.contains("kept nothing"), "{why}");
     }
 
     #[test]

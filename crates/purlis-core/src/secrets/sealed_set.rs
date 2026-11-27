@@ -151,7 +151,7 @@ fn entry_holds(store: &str, clone: &str, entry: &Entry) -> bool {
 }
 
 /// The keyring account kind a set of `store` is anchored under.
-fn anchor_kind(store: &str) -> String {
+pub(crate) fn anchor_kind(store: &str) -> String {
     format!("{store}-live")
 }
 
