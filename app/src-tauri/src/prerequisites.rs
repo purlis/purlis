@@ -229,7 +229,11 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
                 for burst in
                     crate::watchset::trailing_bursts(events, QUIET_FOR, LONGEST, MOST_PATHS)
                 {
-                    if !(burst.everything || burst.paths.iter().any(|path| concerns(&named, path)))
+                    if !(burst.everything
+                        || burst
+                            .paths
+                            .iter()
+                            .any(|path| concerns(&named, &watched, &burst, path)))
                     {
                         continue;
                     }
@@ -242,6 +246,11 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
                     named = files();
                     let unwatched = {
                         let mut watcher = watcher.lock().unwrap_or_else(PoisonError::into_inner);
+                        // A followed folder that went is forgotten, so one made again in its
+                        // place is followed again (#7885's review, F7).
+                        for folder in gone(&watched, &burst) {
+                            crate::watchset::forget(&mut *watcher, &mut watched, &folder);
+                        }
                         crate::watchset::follow(&mut *watcher, &mut watched, folders_of(&named))
                     };
                     lapsed(!unwatched.is_empty());
@@ -254,12 +263,40 @@ impl<W: notify::Watcher + Send + 'static> Watch<W> {
 }
 
 /// Whether a change at `path` concerns one of `files`: it is one, or a folder on the way to
-/// one, made, removed or renamed. The platform may name a path by its real spelling
-/// (`/private/var` for `/var` on macOS), so each file is asked by both.
-fn concerns(files: &[PathBuf], path: &Path) -> bool {
+/// one, made, removed or renamed. A folder the watch follows (`watched`) that is still there
+/// concerns nothing: its own change is only that something in it changed, and a change to one
+/// of the files names the file (a poller sees a folder's time move with any write beside the
+/// file). One that went ([`gone`]) concerns. The platform may name a path by its real spelling
+/// (`/private/var` for `/var` on macOS), so each file is asked by both; `watched` and the paths
+/// a burst names are both real.
+fn concerns(
+    files: &[PathBuf],
+    watched: &HashSet<PathBuf>,
+    burst: &crate::watchset::Burst,
+    path: &Path,
+) -> bool {
+    if watched.contains(path) && !went(burst, path) {
+        return false;
+    }
     files
         .iter()
         .any(|file| file.starts_with(path) || resolved(file).starts_with(path))
+}
+
+/// The folders the watch follows (`watched`) that `burst` says went: a removal named it, or it
+/// is no longer a folder.
+fn gone(watched: &HashSet<PathBuf>, burst: &crate::watchset::Burst) -> Vec<PathBuf> {
+    burst
+        .paths
+        .iter()
+        .filter(|path| watched.contains(*path) && went(burst, path))
+        .cloned()
+        .collect()
+}
+
+/// Whether the folder at `path` went: `burst` names its removal, or it is no longer a folder.
+fn went(burst: &crate::watchset::Burst, path: &Path) -> bool {
+    burst.removed.contains(path) || !path.is_dir()
 }
 
 /// `file` with the nearest folder above it that is there resolved, links and all.

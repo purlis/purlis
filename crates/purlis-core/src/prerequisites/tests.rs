@@ -291,7 +291,7 @@ fn a_list_whose_watch_lapsed_is_evaluated_again_at_each_read() {
     let _home = OwnConfigHome::new();
     let root = plane(OPEN);
     let heard = Heard::default();
-    let kept = Kept::new(heard.told());
+    let kept = Kept::new(heard.told()).fresh_for(Duration::ZERO);
     assert!(!kept.current(root.path()).is_empty());
     std::fs::write(root.path().join("charter.toml"), WATCH).expect("tightened");
     assert!(
@@ -440,6 +440,49 @@ fn a_read_in_the_handler_of_a_lapsed_watch_gets_the_list_just_kept() {
     let read = read.lock().expect("read").clone();
     assert_eq!(read.len(), 1);
     assert_eq!(read[0].0, read[0].1);
+}
+
+#[test]
+fn a_lapsed_read_while_another_thread_evaluates_waits_and_gets_what_that_evaluation_kept() {
+    // #7885's review, round 3: a lapsed read that found an evaluation under way returned the
+    // list kept before it, older than the change that evaluation was reading.
+    let _home = OwnConfigHome::new();
+    let root = plane(OPEN);
+    let kept = Arc::new(Kept::new(Heard::default().told()));
+    assert!(!kept.current(root.path()).is_empty());
+    kept.lapsed(true);
+    let evaluating = kept.evaluating.lock().expect("the lock");
+    let reader = std::thread::spawn({
+        let (kept, root) = (Arc::clone(&kept), root.path().to_path_buf());
+        move || kept.current(&root)
+    });
+    // Long enough for the read to reach the lock, which it must wait on.
+    std::thread::sleep(Duration::from_millis(200));
+    std::fs::write(root.path().join("charter.toml"), WATCH).expect("tightened");
+    let evaluated = kept.evaluate_holding(evaluating, root.path());
+    assert!(evaluated.is_empty(), "{evaluated:?}");
+    assert_eq!(reader.join().expect("the read"), evaluated);
+}
+
+#[test]
+fn a_lapsed_list_is_evaluated_again_no_more_often_than_its_freshness_allows() {
+    // A window asks at each render: while lapsed, a list just evaluated answers the reads
+    // after it, and one older than that is evaluated again.
+    let _home = OwnConfigHome::new();
+    let root = plane(OPEN);
+    let heard = Heard::default();
+    let kept = Kept::new(heard.told()).fresh_for(Duration::from_millis(300));
+    kept.lapsed(true);
+    assert!(!kept.current(root.path()).is_empty());
+    std::fs::write(root.path().join("charter.toml"), WATCH).expect("tightened");
+    assert!(
+        !kept.current(root.path()).is_empty(),
+        "just evaluated: reused"
+    );
+    assert_eq!(heard.taken().len(), 1, "the open alone");
+    std::thread::sleep(Duration::from_millis(350));
+    assert!(kept.current(root.path()).is_empty(), "older: read again");
+    assert_eq!(heard.taken().len(), 1, "the read that changed it");
 }
 
 #[test]

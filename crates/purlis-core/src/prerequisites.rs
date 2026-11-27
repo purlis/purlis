@@ -17,11 +17,13 @@
 //! [`watched`] names (the plane root's `HEAD`, the settings file, the local settings file, this
 //! machine's policy file, the acceptance record and the never-dispatch list), on a new seal key,
 //! and after every answer ([`Kept::accept`], [`Kept::accept_with_new_key`]). Where its watch
-//! misses a file, at each read too ([`Kept::lapsed`]).
+//! misses a file, at a read too, at most once a second ([`Kept::lapsed`]).
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::thread::ThreadId;
+use std::time::{Duration, Instant};
 
 use crate::enforcement::{self, Standing};
 
@@ -233,16 +235,24 @@ fn git_dir(root: &Path) -> PathBuf {
         .unwrap_or(dot_git)
 }
 
+/// How long a list evaluated while its watch lapsed answers the reads after it: a window asking
+/// at each render evaluates the policy at most this often.
+const LAPSED_FRESH_FOR: Duration = Duration::from_secs(1);
+
 /// Told a project's whole list each time it changes, after it is kept.
 pub type Told = Arc<dyn Fn(&List) + Send + Sync + 'static>;
 
 /// **The list the app holds for one project**, and who is told when it changes.
 pub struct Kept {
-    /// The list as last evaluated; `None` before the first evaluation.
-    list: Mutex<Option<List>>,
+    /// The list as last evaluated, and when; `None` before the first evaluation.
+    list: Mutex<Option<(List, Instant)>>,
     /// Held across an evaluation, its keeping and its telling, so two evaluations at once are
     /// told in the order they were kept, and the last one told is the one kept.
     evaluating: Mutex<()>,
+    /// The thread holding [`Self::evaluating`], so a read in the handler it tells is known.
+    evaluator: Mutex<Option<ThreadId>>,
+    /// How long a list evaluated while lapsed answers the reads after it ([`LAPSED_FRESH_FOR`]).
+    fresh_for: Duration,
     /// Whether its watch misses a file ([`Self::lapsed`]).
     lapsed: AtomicBool,
     told: Told,
@@ -255,9 +265,18 @@ impl Kept {
         Self {
             list: Mutex::new(None),
             evaluating: Mutex::new(()),
+            evaluator: Mutex::new(None),
+            fresh_for: LAPSED_FRESH_FOR,
             lapsed: AtomicBool::new(false),
             told,
         }
+    }
+
+    /// This list, a lapsed read reusing an evaluation younger than `fresh_for`.
+    #[cfg(test)]
+    fn fresh_for(mut self, fresh_for: Duration) -> Self {
+        self.fresh_for = fresh_for;
+        self
     }
 
     /// **Evaluates the list for the project at `root` again**, keeps it, and then, where it
@@ -272,46 +291,65 @@ impl Kept {
 
     /// [`Self::evaluate`], with its lock `_evaluating` taken.
     fn evaluate_holding(&self, _evaluating: MutexGuard<'_, ()>, root: &Path) -> List {
+        *self.evaluator() = Some(std::thread::current().id());
         let now = evaluate(root);
         let changed = {
             let mut kept = self.list.lock().unwrap_or_else(PoisonError::into_inner);
-            let changed = kept.as_ref() != Some(&now);
-            *kept = Some(now.clone());
+            let changed = kept.as_ref().map(|(list, _)| list) != Some(&now);
+            *kept = Some((now.clone(), Instant::now()));
             changed
         };
         // After it is kept, and outside the lock a read takes.
         if changed {
             (self.told)(&now);
         }
+        *self.evaluator() = None;
         now
     }
 
-    /// **The list as kept**, evaluated first where it never was, and again at each read where
-    /// its watch lapsed ([`Self::lapsed`]). A read while an evaluation is under way (one in the
-    /// handler it tells, or on another thread) gets the list kept: that evaluation tells what
-    /// it finds.
-    pub fn current(&self, root: &Path) -> List {
-        let kept = self
-            .list
+    /// Which thread is evaluating, where one is.
+    fn evaluator(&self) -> MutexGuard<'_, Option<ThreadId>> {
+        self.evaluator
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        match kept {
+    }
+
+    /// The list kept, and when it was evaluated.
+    fn kept(&self) -> Option<(List, Instant)> {
+        self.list
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// **The list as kept**, evaluated first where it never was, and again where its watch
+    /// lapsed ([`Self::lapsed`]) and what is kept is older than a second: a window asking at
+    /// each render evaluates it no more often than that. A lapsed read while an evaluation is
+    /// under way on another thread waits for it, and gets what it kept. A read in the handler
+    /// an evaluation tells gets the list that evaluation kept: evaluating again there would
+    /// wait on itself.
+    pub fn current(&self, root: &Path) -> List {
+        match self.kept() {
             None => self.evaluate(root),
-            Some(kept) if !self.lapsed.load(Ordering::SeqCst) => kept,
-            Some(kept) => match self.evaluating.try_lock() {
-                Ok(evaluating) => self.evaluate_holding(evaluating, root),
-                Err(std::sync::TryLockError::Poisoned(poisoned)) => {
-                    self.evaluate_holding(poisoned.into_inner(), root)
+            Some((kept, _)) if !self.lapsed.load(Ordering::SeqCst) => kept,
+            Some((kept, _)) if *self.evaluator() == Some(std::thread::current().id()) => kept,
+            Some(_) => {
+                let evaluating = self
+                    .evaluating
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                match self.kept() {
+                    Some((kept, at)) if at.elapsed() < self.fresh_for => kept,
+                    _ => self.evaluate_holding(evaluating, root),
                 }
-                Err(std::sync::TryLockError::WouldBlock) => kept,
-            },
+            }
         }
     }
 
     /// **Whether the watch that evaluates this list again misses a file it is evaluated from**
     /// (a folder the platform would not watch, or no watch at all): then the list kept is no
-    /// answer, and each read ([`Self::current`]) evaluates it again, until the watch is whole.
+    /// answer, and a read ([`Self::current`]) evaluates it again, at most once a second, until
+    /// the watch is whole.
     pub fn lapsed(&self, lapsed: bool) {
         self.lapsed.store(lapsed, Ordering::SeqCst);
     }

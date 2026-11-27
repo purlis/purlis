@@ -198,6 +198,95 @@ fn a_folder_the_platform_would_not_watch_is_reported_and_followed_again_before_e
     );
 }
 
+/// A real folder, a file of the list in it and one in a folder not there yet, the folder
+/// followed, as [`Watch`] holds them: what [`concerns`] is asked against.
+struct Followed {
+    _dir: tempfile::TempDir,
+    folder: PathBuf,
+    files: Vec<PathBuf>,
+    watched: HashSet<PathBuf>,
+}
+
+fn followed() -> Followed {
+    let dir = tempfile::tempdir().expect("a folder");
+    let folder = std::fs::canonicalize(dir.path()).expect("real");
+    let files = vec![
+        folder.join("charter.toml"),
+        folder.join("etc").join("purlis").join("policy.json"),
+    ];
+    let watched = folders_of(&files);
+    assert_eq!(watched, HashSet::from([folder.clone()]));
+    Followed {
+        _dir: dir,
+        folder,
+        files,
+        watched,
+    }
+}
+
+/// A burst naming `paths`, of which `removed` a removal named.
+fn burst(paths: &[&Path], removed: &[&Path]) -> crate::watchset::Burst {
+    crate::watchset::Burst {
+        paths: paths.iter().map(|path| path.to_path_buf()).collect(),
+        removed: removed.iter().map(|path| path.to_path_buf()).collect(),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_change_to_a_file_of_the_list_concerns_it() {
+    let at = followed();
+    let file = &at.files[0];
+    assert!(concerns(&at.files, &at.watched, &burst(&[file], &[]), file));
+}
+
+#[test]
+fn a_followed_folder_that_is_still_there_concerns_nothing() {
+    // #7885's review, round 3: a poller sees the folder's time move with a write beside the
+    // file, and a change to the file names the file.
+    let at = followed();
+    let beside = at.folder.join("notes.md");
+    let burst = burst(&[&beside, &at.folder], &[]);
+    assert!(!concerns(&at.files, &at.watched, &burst, &at.folder));
+    assert!(!concerns(&at.files, &at.watched, &burst, &beside));
+    assert!(gone(&at.watched, &burst).is_empty());
+}
+
+#[test]
+fn a_folder_made_on_the_way_to_a_file_of_the_list_concerns_it() {
+    let at = followed();
+    let made = at.folder.join("etc");
+    std::fs::create_dir(&made).expect("made");
+    assert!(concerns(
+        &at.files,
+        &at.watched,
+        &burst(&[&made], &[]),
+        &made
+    ));
+}
+
+#[test]
+fn a_followed_folder_a_removal_names_concerns_it_and_is_gone() {
+    let at = followed();
+    let burst = burst(&[&at.folder], &[&at.folder]);
+    assert!(concerns(&at.files, &at.watched, &burst, &at.folder));
+    assert_eq!(gone(&at.watched, &burst), vec![at.folder.clone()]);
+}
+
+#[test]
+fn a_followed_folder_no_longer_a_folder_concerns_it_and_is_gone() {
+    // Moved away with no removal named: what is at its path now is no folder.
+    let at = followed();
+    let moved = at.folder.with_extension("moved");
+    std::fs::rename(&at.folder, &moved).expect("moved");
+    let burst = burst(&[&at.folder], &[]);
+    let concerned = concerns(&at.files, &at.watched, &burst, &at.folder);
+    let went = gone(&at.watched, &burst);
+    std::fs::rename(&moved, &at.folder).expect("moved back");
+    assert!(concerned);
+    assert_eq!(went, vec![at.folder.clone()]);
+}
+
 #[test]
 fn a_change_to_a_watched_file_evaluates_again_and_one_beside_it_does_not() {
     let dir = tempfile::tempdir().expect("a folder");
