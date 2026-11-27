@@ -47,6 +47,7 @@ export const SHIPPING_WORKFLOWS = ["release.yml", "runner-image.yml", "operator-
 export const NOT_SHIPPING = {
   "ci.yml": "checks every pull request and main: its builds are tested, linted and measured, never handed on",
   "outcome-bars.yml": "the Skill studio's outcome bars on macOS (ADR 0127, amended 2026-11-26): its build carries the e2e feature, is measured and is never handed on",
+  "budget-run.yml": "the budget run on the benchmark Mac (#7737, ADR 0086 amended 2026-11-27): its build carries the e2e feature, is measured and is never handed on",
   "forge-live.yml": "runs the forge contract tests against a real forge: it compiles tests only",
   "mutants.yml": "mutation testing of the core crate: its builds are only ever tested",
   "operator.yml": "checks the cluster operator and runs it on a throwaway kind cluster; its push to main calls operator-image.yml, which ships",
