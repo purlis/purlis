@@ -6312,6 +6312,10 @@ export const POOL_MINTS_WITHOUT_ASKING = "pool-mints-without-asking" as const;
 
 export const POOL_PIN_CHANGED = "pool-pin-changed" as const;
 
+export const POOL_SIGN_IN_NEXT_WITHIN_SECS = 60 as const;
+
+export const POOL_SIGN_IN_PAGE_WITHIN_SECS = 180 as const;
+
 export const PREREQUISITES_CHANGED = "prerequisites-changed" as const;
 
 export const PROJECT_READY = "project-ready" as const;

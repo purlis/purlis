@@ -176,7 +176,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
       const opened = await strip();
       expect(within(opened).getByText(/Step 1 of 3/)).toBeInTheDocument();
       act(() => vi.advanceTimersByTime(29_000));
-      expect(within(opened).queryByText(/has not answered/)).toBeNull();
+      expect(within(opened).queryByText(/runner has not/)).toBeNull();
 
       act(() => vi.advanceTimersByTime(1_000));
       expect(
@@ -187,7 +187,29 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
 
       await userEvent.click(within(opened).getByRole("button", { name: "Try again" }));
       await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
-      expect(within(opened).queryByText(/has not answered/)).toBeNull();
+      expect(within(opened).queryByText(/runner has not/)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says the runner has not asked for the code after 30 s at the open page, and when purlis stops (#7942)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const opened = await strip();
+      says({ at: "open", url: PAGE });
+      await within(opened).findByText(/Step 1 of 3/);
+      act(() => vi.advanceTimersByTime(29_000));
+      expect(within(opened).queryByText(/runner has not/)).toBeNull();
+
+      act(() => vi.advanceTimersByTime(1_000));
+      expect(
+        await within(opened).findByText(
+          "builds's runner has not asked for the code yet. At 1 minute purlis stops waiting and shows what the runner printed, or try again now.",
+        ),
+      ).toBeVisible();
+      expect(within(opened).queryByText(/sign-in page for 30 s/)).toBeNull();
+      expect(within(opened).getByRole("button", { name: "Try again" })).toBeVisible();
     } finally {
       vi.useRealTimers();
     }
@@ -201,7 +223,7 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
       says({ at: "code" });
       await within(opened).findByRole("textbox", { name: "Paste code" });
       act(() => vi.advanceTimersByTime(120_000));
-      expect(within(opened).queryByText(/has not answered/)).toBeNull();
+      expect(within(opened).queryByText(/runner has not/)).toBeNull();
     } finally {
       vi.useRealTimers();
     }

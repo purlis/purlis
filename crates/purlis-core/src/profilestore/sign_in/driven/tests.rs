@@ -134,6 +134,162 @@ fn another_page_on_a_line_of_its_own_is_never_opened() {
     );
 }
 
+/// **An address alone is a page only on the line right after the words before one** (#7942's
+/// review): Claude Code's `visit:` or `Sign in at:`. Any other line of its own, its vendor's own
+/// host among them, is passed over and ends nothing: the page that follows its words still opens.
+#[test]
+fn a_page_alone_is_taken_only_right_after_the_words_before_it() {
+    for before in [
+        "Opening browser to sign in\n".to_owned(),
+        "Opening browser to sign in\nhttps://claude.com/cai/oauth/authorize\n".to_owned(),
+        format!("{PAGE_2_1_332}\n"),
+        format!("If the browser didn't open, visit:\nsomething else\n{PAGE_2_1_332}\n"),
+    ] {
+        let mut driven = claude();
+        let said = driven.read(&before);
+        assert!(
+            !said.iter().any(|event| matches!(event, Event::Open { .. })),
+            "{before:?}: {said:?}"
+        );
+        assert!(!driven.is_over(), "{before:?}: {said:?}");
+
+        assert_eq!(
+            driven.read(RECORDED_2_1_332.trim_end_matches('\n')),
+            [
+                Event::Open {
+                    url: PAGE_2_1_332.to_owned()
+                },
+                Event::AskCode
+            ],
+            "{before:?}"
+        );
+    }
+}
+
+/// **An address alone right after the words before a page, refused, cannot be followed**
+/// (#7942's review): it is where the login's page goes, so the strip says so at once, with what
+/// the runner printed, and never waits on a page that already came.
+#[test]
+fn a_page_alone_that_is_refused_cannot_be_followed() {
+    let mut driven = claude();
+    let elsewhere = PAGE_2_1_332.replace("claude.com/cai", "claude.com.example.net/cai");
+
+    let said = driven.read(&format!(
+        "If the browser didn't open, visit:\n{elsewhere}\n"
+    ));
+
+    assert!(
+        matches!(said.as_slice(), [Event::CouldNotFollow { said }] if said.contains(&elsewhere)),
+        "{said:?}"
+    );
+}
+
+/// **What the login prints on its other output between the words and its page takes nothing
+/// from it** (#7942's review): a warning on standard error is a line of its own output.
+#[test]
+fn a_line_on_the_other_output_does_not_hide_a_page_alone() {
+    let mut driven = claude();
+
+    assert_eq!(driven.read("If the browser didn't open, visit:\n"), []);
+    assert_eq!(
+        driven.read_from(Stream::Err, "(node:42) Warning: something is deprecated\n"),
+        []
+    );
+    assert_eq!(
+        driven.read(&format!("{PAGE_2_1_332}\n")),
+        [Event::Open {
+            url: PAGE_2_1_332.to_owned()
+        }]
+    );
+}
+
+/// **A page on a line cut at [`MOST_PARTIAL`] is never opened** (#7942's review): what is left of
+/// it may be its page cut short, on the same line as its words or alone.
+#[test]
+fn a_page_on_a_line_too_long_to_be_whole_is_never_opened() {
+    let state = "&state=recorded";
+    let long = format!("{state}{}", "a".repeat(MOST_PARTIAL));
+    for printed in [
+        format!(
+            "{}If the browser didn't open, visit: {}\n",
+            "x".repeat(MOST_PARTIAL - 300),
+            PAGE_2_1_332.replace(state, &long)
+        ),
+        format!(
+            "If the browser didn't open, visit:\n{}\n",
+            PAGE_2_1_332.replace(state, &long)
+        ),
+    ] {
+        for pieces in [printed.len(), 64] {
+            let mut driven = claude();
+            let mut said = Vec::new();
+            for piece in printed.as_bytes().chunks(pieces) {
+                said.extend(driven.read(&String::from_utf8_lossy(piece)));
+            }
+
+            assert!(
+                !said.iter().any(|event| matches!(event, Event::Open { .. })),
+                "in pieces of {pieces}: {said:?}"
+            );
+        }
+    }
+}
+
+/// `text` in pieces of about `most` bytes, each cut between characters, as a reader of a pipe
+/// decodes it.
+fn in_pieces(text: &str, most: usize) -> Vec<&str> {
+    let mut pieces = Vec::new();
+    let mut rest = text;
+    while !rest.is_empty() {
+        let mut at = most.min(rest.len());
+        while !rest.is_char_boundary(at) {
+            at += 1;
+        }
+        let (piece, after) = rest.split_at(at);
+        pieces.push(piece);
+        rest = after;
+    }
+    pieces
+}
+
+/// **Every page refused on the same line is refused alone too** (#7942's review): a user before
+/// the host, a host spelled in other letters, a script, a terminal's link whose words are another
+/// page than its target, two addresses, and an escape never ended.
+#[test]
+fn a_page_on_another_host_is_never_opened_from_a_line_of_its_own() {
+    let with_a_user = format!("https://someone{}claude.com/cai/oauth/authorize", '@');
+    let elsewhere = PAGE_2_1_332.replace("claude.com/cai", "claude.com.example.net/cai");
+    for page in [
+        with_a_user,
+        PAGE_2_1_332.replace("claude.com", "claude.c\u{43e}m"),
+        PAGE_2_1_332.replace("claude.com", "xn--claude-9za.com"),
+        format!("javascript:alert(1)//{PAGE_2_1_332}"),
+        format!("\u{1b}]8;;{PAGE_2_1_332}\u{7}{elsewhere}\u{1b}]8;;\u{7}"),
+        format!("{PAGE_2_1_332} {elsewhere}"),
+        format!("{elsewhere} {PAGE_2_1_332}"),
+        format!("{elsewhere}\u{1b}]8;;{PAGE_2_1_332}"),
+        format!("\u{1b}]8;;{PAGE_2_1_332}"),
+        "https://claude.com/cai/oauth/authorize/../../public".to_owned(),
+        "http://claude.com/cai/oauth/authorize".to_owned(),
+        "https://claude.com:8443/cai/oauth/authorize".to_owned(),
+    ] {
+        for pieces in [usize::MAX, 64] {
+            let mut driven = claude();
+            let printed = format!("If the browser didn't open, visit:\n{page}\n");
+            let mut said = Vec::new();
+            for piece in in_pieces(&printed, pieces) {
+                said.extend(driven.read(piece));
+            }
+
+            assert!(
+                !said.iter().any(|event| matches!(event, Event::Open { .. })),
+                "{} in pieces of {pieces}: {said:?}",
+                cut(&page.replace(PAGE_2_1_332, "PAGE"), 200)
+            );
+        }
+    }
+}
+
 /// **Claude Code 2.1.332's login, driven end to end** (#7939): a stand-in prints what it prints
 /// with its input a pipe, its page on a line of its own, and the strip gets the page to open.
 #[cfg(unix)]
@@ -541,7 +697,7 @@ fn a_page_that_sends_the_browser_elsewhere_cannot_be_followed() {
         page.replace("auth.openai.com", "auth.openai.com.evil.example"),
         page.replacen("/oauth/authorize", "/elsewhere", 1),
     ] {
-        let said = codex().read(&format!("{bad}\n"));
+        let said = codex().read(&CODEX.replace(&page, &bad));
 
         assert!(
             matches!(said.as_slice(), [Event::CouldNotFollow { .. }]),

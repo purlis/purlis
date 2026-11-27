@@ -3621,6 +3621,16 @@ fn commands() -> Builder<tauri::Wry> {
             "TASK_SCREENS_KEPT_FOR_DAYS",
             purlis_core::retention::KEEP_FOR.as_secs() / (24 * 60 * 60),
         )
+        // How long a pool sign-in waits on its runner for its page, and then for its next step
+        // (#7939, #7942's review): the strip says each limit from the core's own number.
+        .constant(
+            "POOL_SIGN_IN_PAGE_WITHIN_SECS",
+            purlis_core::profilestore::sign_in::driven::PAGE_WITHIN.as_secs(),
+        )
+        .constant(
+            "POOL_SIGN_IN_NEXT_WITHIN_SECS",
+            purlis_core::profilestore::sign_in::driven::NEXT_WITHIN.as_secs(),
+        )
         // The one rule for a character a reader does not see (SK-51, #3202): the window marks
         // what it draws itself from the core's own tables, never from a list of its own.
         .constant(unicoderule::UNICODE_RULE, unicoderule::rule())

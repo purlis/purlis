@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   commands,
+  POOL_SIGN_IN_NEXT_WITHIN_SECS,
+  POOL_SIGN_IN_PAGE_WITHIN_SECS,
   type PoolLimitOffer,
   type PoolSignInStep,
   type PoolSignInTerminal,
@@ -51,6 +53,28 @@ export const drivenPlan = (kind: string, plan: string) =>
  */
 const QUIET_AFTER_MS = 30_000;
 const QUIET_FOR = `${QUIET_AFTER_MS / 1000} s`;
+
+/** `secs` in whole minutes, as a person says them: "1 minute", "3 minutes". */
+const inMinutes = (secs: number) => {
+  const minutes = Math.round(secs / 60);
+  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+};
+
+/**
+ * **What the strip says of a quiet runner at each step it waits on** (#7939, #7942's review),
+ * each with the core's own limit for that step: its page at the start, then its ask for the
+ * code once the page is open, then its status check, which has no limit of the strip's to say.
+ */
+function quietSaid(step: StripStep["at"], pool: string, who: string, harness: string): string {
+  switch (step) {
+    case "checking":
+      return `${pool}'s runner has not said for ${QUIET_FOR} whether ${who} is signed in. purlis says when it answers.`;
+    case "open":
+      return `${pool}'s runner has not asked for the code yet. At ${inMinutes(POOL_SIGN_IN_NEXT_WITHIN_SECS)} purlis stops waiting and shows what the runner printed, or try again now.`;
+    default:
+      return `${pool}'s runner has not shown the sign-in page for ${QUIET_FOR}. It may still be fetching ${harness}. At ${inMinutes(POOL_SIGN_IN_PAGE_WITHIN_SECS)} purlis stops waiting and shows what the runner printed, or try again now.`;
+  }
+}
 
 /** The steps where purlis waits on the runner, not on the person. */
 const WAITS_ON_THE_RUNNER: ReadonlyArray<StripStep["at"]> = ["starting", "open", "checking"];
@@ -557,9 +581,7 @@ function Body(props: SignInStripProps & { who: string }) {
       )}
       {props.quiet === true && (
         <p className="ui-setting-help ui-text-secondary" role="status">
-          {props.step.at === "checking"
-            ? `${props.pool}'s runner has not said for ${QUIET_FOR} whether ${props.who} is signed in. purlis says when it answers.`
-            : `${props.pool}'s runner has not shown the sign-in page for ${QUIET_FOR}. It may still be fetching ${props.harness}. At 3 minutes purlis stops waiting and shows what the runner printed, or try again now.`}
+          {quietSaid(props.step.at, props.pool, props.who, props.harness)}
         </p>
       )}
       <StepBody {...props} />

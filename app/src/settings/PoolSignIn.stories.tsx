@@ -164,6 +164,19 @@ export const QuietRunner: Story = {
 };
 
 /**
+ * **The page is open and the runner has not asked for the code after 30 s** (#7942's review):
+ * said with the core's 1 minute limit for that step, and Try again.
+ */
+export const QuietAtThePage: Story = {
+  args: { step: { at: "open", url: PAGE }, quiet: true },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByText(/has not asked for the code yet. At 1 minute/)).toBeVisible();
+    await expect(canvas.queryByText(/has not shown the sign-in page/)).toBeNull();
+    await expect(canvas.getByRole("button", { name: "Try again" })).toBeVisible();
+  },
+};
+
+/**
  * **The runner's check said nothing for 30 s** (#7939): said, with neither Try again nor Cancel,
  * which would end a check that may yet say signed in.
  */
