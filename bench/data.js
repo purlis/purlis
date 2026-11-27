@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795764912258,
+  "lastUpdate": 1795766199569,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57246,6 +57246,48 @@ window.BENCHMARK_DATA = {
             "value": 102.00821149999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.094, 101.518, 102.008, 102.814, 102.906 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "610f2e3f0d3bc3c1851fedf34652aa3d59b16226",
+          "message": "The nested-repository search counts folders and refuses when it runs out (#7818)\n\n* The nested-repository search counts folders and refuses when it runs out (#6377)\n\nThe search inside the repositories found was bounded by entries and, past\nthe bound, returned as if it had found everything. It now counts folders as\nthe first pass does, with an entries guard, and on exhaustion names the\nrepository whose work tree held the most, so the start is refused.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7T2F6G404PWBDPADEEE388V\nPurlis-Persona: steward\n\n* Name the inside bound for what it counts; say which readers of the pins are advisory\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7T2F6G404PWBDPADEEE388V\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T07:04:11Z",
+          "tree_id": "1533c3f7ca69f5fda785cd87982729506a027e13",
+          "url": "https://github.com/purlis/purlis/commit/610f2e3f0d3bc3c1851fedf34652aa3d59b16226"
+        },
+        "date": 1795766192148,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3583805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.340, 0.348, 0.358, 0.368, 0.385 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.233118499999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.199, 16.217, 16.233, 16.867, 16.981 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5494085,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.379, 101.441, 101.549, 101.550, 102.710 ms"
           }
         ]
       }
