@@ -303,6 +303,12 @@ pub(super) fn upstream_of(
     Ok(there.ok().then_some(origins))
 }
 
+/// The remote-tracking branch (`refs/remotes/origin/main`) that branch `branch` of the clone at
+/// `clone` follows: its upstream, or `origin`'s of the same name. `None` where it follows none.
+pub fn followed(clone: &Path, branch: &str) -> Result<Option<String>, Refusal> {
+    upstream_of(clone, branch, &name::as_ref(branch))
+}
+
 /// The worktree of the clone that has `branch` checked out, if one does.
 pub fn checked_out_in(clone: &Path, branch: &str) -> Result<Option<std::path::PathBuf>, Refusal> {
     let listed = git::run(clone, &["worktree", "list", "--porcelain"], git::READ)?;
