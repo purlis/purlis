@@ -2792,6 +2792,25 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "scons",
     "ctest",
     "buck2",
+    // Programs #7833 names that another family's row reaches by a form only by chance, so each
+    // has a row of its own (a unit test pins them): REFUSED_NAMES' `rc` reaches s6's `s6-rc`,
+    // which brings a compiled database's services up, `update-rc.d`, which links an init script
+    // into the runlevels, `invoke-rc.d`, which runs one, and OpenRC's `rc-service`, which runs
+    // one, and `rc-status`, kept with it on the conservative side; the `service` row reaches
+    // daemontools' `update-service --add`, which hands a running `svscan` a folder as
+    // `s6-svlink` does; `envdir`, `setsid` and `svscanboot` reach `s6-envdir` and `s6-setsid`,
+    // which run the program after them, and `s6-svscanboot`, which runs `s6-svscan`; and the
+    // `node` prefix reaches `nodemon`, which runs the command its `--exec` names.
+    "s6-rc",
+    "update-rc.d",
+    "invoke-rc.d",
+    "rc-service",
+    "rc-status",
+    "update-service",
+    "s6-envdir",
+    "s6-setsid",
+    "s6-svscanboot",
+    "nodemon",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

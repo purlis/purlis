@@ -2087,3 +2087,28 @@ fn the_programs_the_prove_fakeroot_and_init_rows_reach_by_chance_each_have_a_row
         assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
     }
 }
+
+/// Programs #7833 names that are refused today only because another family's row meets a form
+/// of their name by chance (rounds 13, 14, 16 and 19 of #7828's review): REFUSED_NAMES' `rc`
+/// reaches s6's `s6-rc`, `update-rc.d`, `invoke-rc.d` and OpenRC's `rc-service` and `rc-status`;
+/// the `service` row reaches daemontools' `update-service`; the `envdir`, `setsid` and
+/// `svscanboot` rows reach `s6-envdir`, `s6-setsid` and `s6-svscanboot`; and the `node` prefix
+/// reaches `nodemon`. Each runs or starts what it is handed, so a give-back of the forms (#7825)
+/// must not take it with it: each is refused by a row of its own.
+#[test]
+fn the_7833_programs_other_families_rows_reach_by_chance_each_have_a_row_of_their_own() {
+    for name in [
+        "s6-rc",
+        "update-rc.d",
+        "invoke-rc.d",
+        "rc-service",
+        "rc-status",
+        "update-service",
+        "s6-envdir",
+        "s6-setsid",
+        "s6-svscanboot",
+        "nodemon",
+    ] {
+        assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
+    }
+}
