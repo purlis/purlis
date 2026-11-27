@@ -79,6 +79,88 @@ fn a_page_in_a_terminals_link_is_the_same_page() {
     );
 }
 
+/// What Claude Code 2.1.332's `claude auth login` prints with its input a pipe, as its own code
+/// writes it (#7939): its page on a line of its own after `visit:`, then the prompt.
+const RECORDED_2_1_332: &str = include_str!("claude-2.1.332-login.txt");
+
+const PAGE_2_1_332: &str = "https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c250a-\
+                            e61b-44d9-88ed-5944d1962f5e&response_type=code&redirect_uri=https%3A%2F\
+                            %2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback&scope=user%3Ainference\
+                            &state=recorded";
+
+/// **Claude Code's page on a line of its own is its page** (#7939): 2.1.332 prints it after
+/// `If the browser didn't open, visit:` and a line break, plainly or in a terminal's link. Read
+/// only on the same line, the strip waited for a page that had come.
+#[test]
+fn claude_codes_page_on_a_line_of_its_own_is_opened_then_the_code_asked_for() {
+    let printed = RECORDED_2_1_332.trim_end_matches('\n');
+    let linked = printed.replace(
+        PAGE_2_1_332,
+        &format!("\u{1b}]8;;{PAGE_2_1_332}\u{7}{PAGE_2_1_332}\u{1b}]8;;\u{7}"),
+    );
+    for printed in [printed, linked.as_str()] {
+        let mut driven = claude();
+        let mut said = Vec::new();
+        for piece in printed.as_bytes().chunks(5) {
+            said.extend(driven.read(&String::from_utf8_lossy(piece)));
+        }
+
+        assert_eq!(
+            said,
+            [
+                Event::Open {
+                    url: PAGE_2_1_332.to_owned()
+                },
+                Event::AskCode
+            ],
+            "{printed:?}"
+        );
+    }
+}
+
+/// A line of its own that is not one of Claude Code's own pages is never opened.
+#[test]
+fn another_page_on_a_line_of_its_own_is_never_opened() {
+    let mut driven = claude();
+    let elsewhere = PAGE_2_1_332.replace("claude.com/cai", "claude.com.example.net/cai");
+
+    let said = driven.read(&format!(
+        "If the browser didn't open, visit:\n{elsewhere}\n"
+    ));
+
+    assert!(
+        !said.iter().any(|event| matches!(event, Event::Open { .. })),
+        "{said:?}"
+    );
+}
+
+/// **Claude Code 2.1.332's login, driven end to end** (#7939): a stand-in prints what it prints
+/// with its input a pipe, its page on a line of its own, and the strip gets the page to open.
+#[cfg(unix)]
+#[test]
+fn claude_code_2_1_332s_login_is_driven_end_to_end() {
+    let mut login = stand_in(
+        "printf '%s' \"$PRINTED\"; read code; [ \"$code\" = 'abc#recorded' ] || exit 3; \
+         echo 'Login successful.'",
+    );
+    login.env = vec![(
+        "PRINTED".to_owned(),
+        RECORDED_2_1_332.trim_end_matches('\n').to_owned(),
+    )];
+    let driving = drive_with(&login, "claude", None, None, LONGEST, || Standing::SignedIn).unwrap();
+
+    assert_eq!(
+        next(&driving),
+        Event::Open {
+            url: PAGE_2_1_332.to_owned()
+        }
+    );
+    assert_eq!(next(&driving), Event::AskCode);
+    driving.paste("abc#recorded").unwrap();
+    assert_eq!(next(&driving), Event::Checking);
+    assert_eq!(next(&driving), Event::SignedIn);
+}
+
 /// **A Claude Code page is opened only as its own login asks**: for its own client, a code, and
 /// the browser sent back to the page that shows the code, each named once. A runner that rewrote
 /// it could otherwise ask the person's account for another client, or send the code elsewhere.
@@ -1261,4 +1343,121 @@ fn a_page_that_binds_its_code_to_no_proof_is_not_followed() {
     ] {
         assert_eq!(carried(&page(challenge)), None, "{challenge}");
     }
+}
+
+/// The step lines written while `then` ran.
+fn steps_said_while(then: impl FnOnce()) -> String {
+    #[derive(Clone, Default)]
+    struct Said(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Said {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Said {
+        type Writer = Said;
+        fn make_writer(&'a self) -> Said {
+            self.clone()
+        }
+    }
+    let said = Said::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(said.clone())
+        .with_ansi(false)
+        .with_max_level(tracing::Level::INFO)
+        .finish();
+    tracing::subscriber::with_default(subscriber, then);
+    String::from_utf8(said.0.lock().unwrap().clone()).unwrap()
+}
+
+/// The outcome the line of step `name` says, in `out`.
+fn outcome_of<'a>(out: &'a str, name: &str) -> Option<&'a str> {
+    out.lines().find_map(|line| {
+        line.split_once(&format!("purlis: step {name} "))?
+            .1
+            .split(' ')
+            .next()
+    })
+}
+
+/// **A sign-in that reaches its page and signs in says each of its steps done** (#7939): its
+/// address, then its end, each naming its pool.
+#[test]
+fn a_sign_in_says_its_address_and_its_end_as_steps() {
+    use purlis_session_protocol::steps::sign_in::{ADDRESS, DONE};
+    let out = steps_said_while(|| {
+        let mut timed = Timed::started("lab", true);
+        timed.heard(&Event::Open {
+            url: PAGE.to_owned(),
+        });
+        timed.heard(&Event::AskCode);
+        timed.heard(&Event::Checking);
+        timed.heard(&Event::SignedIn);
+    });
+
+    assert_eq!(outcome_of(&out, ADDRESS), Some("done"), "{out}");
+    assert_eq!(outcome_of(&out, DONE), Some("done"), "{out}");
+    assert!(out.lines().all(|line| line.contains("pool: lab")), "{out}");
+}
+
+/// **A sign-in whose page never came says its address refused** (#7939): the stall is in the log
+/// as the step it stalled in, and no end is said of a page that was never shown.
+#[test]
+fn a_sign_in_whose_page_never_came_says_its_address_refused() {
+    use purlis_session_protocol::steps::sign_in::{ADDRESS, DONE};
+    let out = steps_said_while(|| {
+        let mut timed = Timed::started("lab", true);
+        timed.heard(&Event::CouldNotFollow {
+            said: String::new(),
+        });
+    });
+
+    assert_eq!(outcome_of(&out, ADDRESS), Some("refused"), "{out}");
+    assert_eq!(outcome_of(&out, DONE), None, "{out}");
+}
+
+/// **A cancelled sign-in says the step it was at cancelled**, never refused.
+#[test]
+fn a_cancelled_sign_in_says_its_step_cancelled() {
+    use purlis_session_protocol::steps::sign_in::{ADDRESS, DONE};
+    let at_the_page = steps_said_while(|| {
+        let mut timed = Timed::started("lab", true);
+        timed.heard(&Event::Open {
+            url: PAGE.to_owned(),
+        });
+        timed.heard(&Event::Cancelled);
+    });
+    let before_it = steps_said_while(|| {
+        let mut timed = Timed::started("lab", true);
+        timed.cancelled();
+    });
+
+    assert_eq!(
+        outcome_of(&at_the_page, DONE),
+        Some("cancelled"),
+        "{at_the_page}"
+    );
+    assert_eq!(
+        outcome_of(&before_it, ADDRESS),
+        Some("cancelled"),
+        "{before_it}"
+    );
+}
+
+/// A sign-in in the runner's terminal shows no page here: only its end is a step.
+#[test]
+fn a_sign_in_in_a_terminal_says_only_its_end() {
+    use purlis_session_protocol::steps::sign_in::{ADDRESS, DONE};
+    let out = steps_said_while(|| {
+        let mut timed = Timed::started("lab", false);
+        timed.heard(&Event::Checking);
+        timed.heard(&Event::SignedIn);
+    });
+
+    assert_eq!(outcome_of(&out, ADDRESS), None, "{out}");
+    assert_eq!(outcome_of(&out, DONE), Some("done"), "{out}");
 }

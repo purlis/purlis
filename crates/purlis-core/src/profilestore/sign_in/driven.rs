@@ -187,6 +187,70 @@ impl Event {
     }
 }
 
+/// **The steps of one sign-in on a pool's runner, as the log times them** (#7939,
+/// [`purlis_session_protocol::steps::sign_in`]): from its start until its page is told
+/// ([`ADDRESS`]), then until the runner says it is signed in ([`DONE`]). Fed each [`Event`] its
+/// driver hears; a step it never heard the end of is `refused` when this goes, so a stall is in
+/// the log as the step it stalled in.
+///
+/// [`ADDRESS`]: purlis_session_protocol::steps::sign_in::ADDRESS
+/// [`DONE`]: purlis_session_protocol::steps::sign_in::DONE
+pub struct Timed {
+    pool: String,
+    address: Option<purlis_session_protocol::steps::Step>,
+    done: Option<purlis_session_protocol::steps::Step>,
+}
+
+impl Timed {
+    /// A sign-in on `pool` just started: `driven` where purlis reads its page, else in the
+    /// runner's terminal, which shows none here.
+    pub fn started(pool: &str, driven: bool) -> Self {
+        use purlis_session_protocol::steps::{begin_in, sign_in};
+        Self {
+            pool: pool.to_owned(),
+            address: driven.then(|| begin_in(sign_in::ADDRESS, pool)),
+            done: (!driven).then(|| begin_in(sign_in::DONE, pool)),
+        }
+    }
+
+    /// Its driver heard `event`.
+    pub fn heard(&mut self, event: &Event) {
+        use purlis_session_protocol::steps::{begin_in, sign_in};
+        match event {
+            Event::Open { .. } | Event::Approve { .. } | Event::DeviceCode { .. } => {
+                if let Some(address) = self.address.take() {
+                    address.done();
+                }
+                if self.done.is_none() {
+                    self.done = Some(begin_in(sign_in::DONE, &self.pool));
+                }
+            }
+            Event::SignedIn => {
+                if let Some(done) = self.done.take() {
+                    done.done();
+                }
+            }
+            Event::Cancelled => self.cancelled(),
+            // Over some other way: whichever step it was at is refused.
+            event if event.is_last() => {
+                self.address = None;
+                self.done = None;
+            }
+            _ => {}
+        }
+    }
+
+    /// The person cancelled it, at whichever step it was.
+    pub fn cancelled(&mut self) {
+        if let Some(address) = self.address.take() {
+            address.cancelled();
+        }
+        if let Some(done) = self.done.take() {
+            done.cancelled();
+        }
+    }
+}
+
 /// What a harness's login prints, and where its pages may be.
 struct Words {
     kind: &'static str,
@@ -248,10 +312,12 @@ const NO_WORDS: Words = Words {
 /// Claude Code 2.1.314's `auth login`, by its own code: `If the browser didn't open, visit:`
 /// or `Sign in at:` before the page, `Paste code here` for the code, its refusals of a pasted
 /// code, and `Login failed:`. Its sign-in pages are its own code's three `authorize` pages.
+/// From 2.1.332 at least, its page is on a line of its own after those words (#7939).
 const CLAUDE: Words = Words {
     kind: "claude",
     plan: None,
     page_after: &["visit: ", "Sign in at: "],
+    page_alone: true,
     asks_code: "Paste code here",
     refuses: &["Invalid code", "That code is not from this sign-in"],
     fails: "Login failed: ",

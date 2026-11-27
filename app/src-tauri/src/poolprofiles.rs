@@ -1847,6 +1847,8 @@ struct SignIn {
     /// On a cluster pool, the runner the gate judged (#3819): each code passed on checks it
     /// is still so.
     judged: Option<Box<purlis_core::runners::ClusterKept>>,
+    /// Its steps, as the log times them (#7939).
+    timed: driven::Timed,
 }
 
 static SIGN_INS: Mutex<Vec<SignIn>> = Mutex::new(Vec::new());
@@ -1892,120 +1894,141 @@ pub async fn pool_sign_in_start(
     // Numbered as it is asked, so of two starts the one asked last is the one kept.
     let flow = NEXT_SIGN_IN.fetch_add(1, Ordering::SeqCst);
     tauri::async_runtime::spawn_blocking(move || {
-        let config = config_root()?;
-        let yours = yours(&config, &pool)?;
-        may_sign_in_on(&config, &pool)?;
-        let record = record_named(&config, &name)?;
-        profilestore::sign_in::plan_named(&record.harness, provider.as_deref())?;
-        let kept = onrunner::Kept::of(&record)?;
-        if keep_on_as(Ok(yours.clone()), &config, &pool, &kept, Waking::No)?.is_none() {
-            return Err(format!(
-                "Pool {pool}: {OLDER_RUNNER}. Nothing was signed in."
-            ));
+        let step = purlis_session_protocol::steps::begin_in(
+            purlis_session_protocol::steps::sign_in::START,
+            &pool,
+        );
+        let started = started_sign_in(flow, pool, name, provider, terminal);
+        match &started {
+            Err(why) if why == REPLACED => step.cancelled(),
+            _ => drop(step.ended(started.as_ref())),
         }
-        let judged = match &yours {
-            Yours::Cluster(kept) => Some(kept.clone()),
-            Yours::Docker(_) => None,
-        };
-        let typed = match terminal {
-            // A login approved in the browser restarts by its device code: nothing carries the
-            // browser's answer to a terminal (#4044).
-            Some(size) => {
-                let size = purlis_core::engine::Size {
-                    columns: size.columns,
-                    rows: size.rows,
-                };
-                if driven::waits_for_the_browser(&record.harness, provider.as_deref()) {
-                    Typed::DeviceInOwnTerminal(size)
-                } else {
-                    Typed::InOwnTerminal(size)
-                }
-            }
-            None => Typed::Driven,
-        };
-        // A cluster pool's is held to the runner its gate judged; a Docker pool's to this one.
-        let started = match &yours {
-            Yours::Docker(_) => Some(
-                purlis_core::runners::runner_for(&config, &pool).map_err(|why| why.to_string())?,
-            ),
-            Yours::Cluster(_) => None,
-        };
-        // The pool's limit as it stands: only the wait changes, and every check above stands.
-        let longest = purlis_core::runners::longest_login_of(&config, &pool);
-        let wait = longest.as_secs() / 60;
-        // Only a login purlis follows is started to be driven.
-        if terminal.is_none() {
-            driven::follows(&record.harness, provider.as_deref(), true)?;
-        }
-        let login = started_on(&yours, &config, &pool, &name, provider.as_deref(), typed)?;
-        let carry: callback::Carry = {
-            let (config, pool, yours) = (config.clone(), pool.clone(), yours.clone());
-            Arc::new(move |target: &str| {
-                may_sign_in_on(&config, &pool)?;
-                let to = match &started {
-                    Some(started) => ToARunner::of_kept(
-                        &Machine::here(&config)?,
-                        &still_the_runner(&config, &pool, started)?,
-                    )?,
-                    None => to_a_runner(&config, &pool, Waking::No, &yours)?,
-                };
-                crate::runnerlinks::sign_in_redirect(&to, target)
-            })
-        };
-        let check = {
-            let pool = pool.clone();
-            move || match keep_on(&config, &pool, &kept) {
-                Ok(Some(standing)) => standing,
-                _ => Standing::CannotTell,
-            }
-        };
-        let driving = Arc::new(match terminal {
-            Some(_) => driven::in_a_terminal_started(login, longest, check),
-            None => driven::drive_started(
-                login,
-                &record.harness,
-                provider.as_deref(),
-                Some(carry),
-                longest,
-                check,
-            )?,
-        });
-        // One of the same profile on the same pool is let go and ended, after the lock.
-        let before: Vec<SignIn> = {
-            let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
-            let (same, others): (Vec<_>, Vec<_>) = std::mem::take(&mut *held)
-                .into_iter()
-                .partition(|one| one.pool == pool && one.name == name);
-            *held = others;
-            let (later, before): (Vec<_>, Vec<_>) =
-                same.into_iter().partition(|one| one.flow > flow);
-            if later.is_empty() {
-                held.push(SignIn {
-                    flow,
-                    pool,
-                    name,
-                    wait,
-                    driving,
-                    judged,
-                });
-                before
-            } else {
-                held.extend(later);
-                drop(held);
-                driving.cancel();
-                for one in before {
-                    stop(&one, REPLACED);
-                }
-                return Err(REPLACED.to_owned());
-            }
-        };
-        for one in before {
-            stop(&one, REPLACED);
-        }
-        Ok(flow)
+        started
     })
     .await
     .map_err(|why| format!("the sign-in did not start: {why}"))?
+}
+
+/// [`pool_sign_in_start`]'s work, off the window's thread.
+fn started_sign_in(
+    flow: u32,
+    pool: String,
+    name: String,
+    provider: Option<String>,
+    terminal: Option<PoolSignInTerminal>,
+) -> Result<u32, String> {
+    let config = config_root()?;
+    let yours = yours(&config, &pool)?;
+    may_sign_in_on(&config, &pool)?;
+    let record = record_named(&config, &name)?;
+    profilestore::sign_in::plan_named(&record.harness, provider.as_deref())?;
+    let kept = onrunner::Kept::of(&record)?;
+    if keep_on_as(Ok(yours.clone()), &config, &pool, &kept, Waking::No)?.is_none() {
+        return Err(format!(
+            "Pool {pool}: {OLDER_RUNNER}. Nothing was signed in."
+        ));
+    }
+    let judged = match &yours {
+        Yours::Cluster(kept) => Some(kept.clone()),
+        Yours::Docker(_) => None,
+    };
+    let typed = match terminal {
+        // A login approved in the browser restarts by its device code: nothing carries the
+        // browser's answer to a terminal (#4044).
+        Some(size) => {
+            let size = purlis_core::engine::Size {
+                columns: size.columns,
+                rows: size.rows,
+            };
+            if driven::waits_for_the_browser(&record.harness, provider.as_deref()) {
+                Typed::DeviceInOwnTerminal(size)
+            } else {
+                Typed::InOwnTerminal(size)
+            }
+        }
+        None => Typed::Driven,
+    };
+    // A cluster pool's is held to the runner its gate judged; a Docker pool's to this one.
+    let started = match &yours {
+        Yours::Docker(_) => {
+            Some(purlis_core::runners::runner_for(&config, &pool).map_err(|why| why.to_string())?)
+        }
+        Yours::Cluster(_) => None,
+    };
+    // The pool's limit as it stands: only the wait changes, and every check above stands.
+    let longest = purlis_core::runners::longest_login_of(&config, &pool);
+    let wait = longest.as_secs() / 60;
+    // Only a login purlis follows is started to be driven.
+    if terminal.is_none() {
+        driven::follows(&record.harness, provider.as_deref(), true)?;
+    }
+    let login = started_on(&yours, &config, &pool, &name, provider.as_deref(), typed)?;
+    let carry: callback::Carry = {
+        let (config, pool, yours) = (config.clone(), pool.clone(), yours.clone());
+        Arc::new(move |target: &str| {
+            may_sign_in_on(&config, &pool)?;
+            let to = match &started {
+                Some(started) => ToARunner::of_kept(
+                    &Machine::here(&config)?,
+                    &still_the_runner(&config, &pool, started)?,
+                )?,
+                None => to_a_runner(&config, &pool, Waking::No, &yours)?,
+            };
+            crate::runnerlinks::sign_in_redirect(&to, target)
+        })
+    };
+    let check = {
+        let pool = pool.clone();
+        move || match keep_on(&config, &pool, &kept) {
+            Ok(Some(standing)) => standing,
+            _ => Standing::CannotTell,
+        }
+    };
+    let driving = Arc::new(match terminal {
+        Some(_) => driven::in_a_terminal_started(login, longest, check),
+        None => driven::drive_started(
+            login,
+            &record.harness,
+            provider.as_deref(),
+            Some(carry),
+            longest,
+            check,
+        )?,
+    });
+    // One of the same profile on the same pool is let go and ended, after the lock.
+    let before: Vec<SignIn> = {
+        let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
+        let (same, others): (Vec<_>, Vec<_>) = std::mem::take(&mut *held)
+            .into_iter()
+            .partition(|one| one.pool == pool && one.name == name);
+        *held = others;
+        let (later, before): (Vec<_>, Vec<_>) = same.into_iter().partition(|one| one.flow > flow);
+        if later.is_empty() {
+            let timed = driven::Timed::started(&pool, terminal.is_none());
+            held.push(SignIn {
+                flow,
+                pool,
+                name,
+                wait,
+                driving,
+                judged,
+                timed,
+            });
+            before
+        } else {
+            held.extend(later);
+            drop(held);
+            driving.cancel();
+            for one in before {
+                stop(&one, REPLACED);
+            }
+            return Err(REPLACED.to_owned());
+        }
+    };
+    for one in before {
+        stop(&one, REPLACED);
+    }
+    Ok(flow)
 }
 
 /// **The next step of sign-in `flow`**, waiting a while for one; null while there is none yet.
@@ -2031,13 +2054,22 @@ pub async fn pool_sign_in_next(
     .map_err(|why| format!("the sign-in did not answer: {why}"))??;
     let mut said_over = None;
     let mut stopped = false;
+    if let Some(event) = event.as_ref().filter(|event| !event.is_last()) {
+        let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(one) = held.iter_mut().find(|one| one.flow == flow) {
+            one.timed.heard(event);
+        }
+    }
     if let Some(event) = event.as_ref().filter(|event| event.is_last()) {
-        let over = {
+        let mut over = {
             let mut held = SIGN_INS.lock().unwrap_or_else(PoisonError::into_inner);
             held.iter()
                 .position(|one| one.flow == flow)
                 .map(|at| held.remove(at))
         };
+        if let Some(over) = over.as_mut() {
+            over.timed.heard(event);
+        }
         // Every stop lets a sign-in go before it ends it.
         stopped = over.is_none();
         if let Some(over) = over.as_ref()
@@ -2422,7 +2454,8 @@ fn this_desktops_runner(config: &Path, pool: &str) -> Result<purlis_core::runner
 #[tauri::command]
 #[specta::specta]
 pub fn pool_sign_in_cancel(flow: u32) {
-    for one in let_go(|one| one.flow == flow) {
+    for mut one in let_go(|one| one.flow == flow) {
+        one.timed.cancelled();
         one.driving.cancel();
     }
 }

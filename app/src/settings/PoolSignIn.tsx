@@ -44,6 +44,16 @@ export const approvesIn = (kind: string, plan?: string) =>
 export const drivenPlan = (kind: string, plan: string) =>
   kind === "opencode" && (plan === "github-copilot" || plan === "openai");
 
+/**
+ * **How long the strip waits on the runner before it says so** (#7939, #7187: nothing is silent
+ * for more than 30 s): at a step where purlis, not the person, is waiting. The core still ends
+ * each wait at its own limit, and says why.
+ */
+const QUIET_AFTER_MS = 30_000;
+
+/** The steps where purlis waits on the runner, not on the person. */
+const WAITS_ON_THE_RUNNER: ReadonlyArray<StripStep["at"]> = ["starting", "open", "checking"];
+
 /** The size of the strip's terminal: as wide as a login expects, and a few lines shorter. */
 const TERMINAL: PoolSignInTerminal = { columns: 80, rows: 16 };
 
@@ -136,6 +146,8 @@ export function PoolSignIn({
   onStanding?: (standing: SignInStanding) => void;
 }) {
   const [step, setStep] = useState<StripStep>({ at: "starting" });
+  /** The try and step at which the runner said nothing for {@link QUIET_AFTER_MS} (#7939). */
+  const [quietAt, setQuietAt] = useState<string>();
   const [page, setPage] = useState<string>();
   const [code, setCode] = useState("");
   const [pasteRefused, setPasteRefused] = useState<string>();
@@ -159,6 +171,15 @@ export function PoolSignIn({
 
   const standing = standingAt(step);
   useEffect(() => onStanding?.(standing), [onStanding, standing]);
+
+  // Each step, and each try, has its own 30 s before the strip says the runner is quiet.
+  const waitingAt = `${attempt}:${step.at}`;
+  const quiet = quietAt === waitingAt;
+  useEffect(() => {
+    if (!WAITS_ON_THE_RUNNER.includes(step.at)) return;
+    const timer = setTimeout(() => setQuietAt(waitingAt), QUIET_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [step.at, waitingAt]);
 
   const printer: Printer = useCallback((print) => {
     printing.current.print = print;
@@ -325,6 +346,7 @@ export function PoolSignIn({
       provider={provider}
       approves={approvesIn(kind, provider)}
       step={step}
+      quiet={quiet}
       code={code}
       setCode={setCode}
       pasteRefused={pasteRefused}
@@ -372,6 +394,8 @@ export type SignInStripProps = {
   /** Whether its login is approved in the browser, with nothing to paste. */
   approves?: boolean;
   step: StripStep;
+  /** Whether the runner has said nothing at this step for 30 s (#7939). */
+  quiet?: boolean;
   /** What the code field holds. */
   code: string;
   setCode: (code: string) => void;
@@ -450,12 +474,21 @@ export function SignInStrip(props: SignInStripProps) {
               Close
             </Button>
           </>
-        ) : step.at === "checking" ? null : (
-          // While it is checked, the login on the runner has already ended: nothing is left to
-          // cancel, and what it signed in stays.
-          <Button size="sm" variant="ghost" onPress={() => onEnd(false)}>
-            Cancel
-          </Button>
+        ) : (
+          <>
+            {props.quiet === true && (
+              <Button size="sm" variant="primary" onPress={props.onTryAgain}>
+                Try again
+              </Button>
+            )}
+            {/* While it is checked, the login on the runner has already ended: nothing is left
+                to cancel, and what it signed in stays. */}
+            {step.at !== "checking" && (
+              <Button size="sm" variant="ghost" onPress={() => onEnd(false)}>
+                Cancel
+              </Button>
+            )}
+          </>
         )}
         {onTerminal !== undefined && step.at !== "signed-in" && step.at !== "checking" && (
           <Button
@@ -519,6 +552,13 @@ function Body(props: SignInStripProps & { who: string }) {
           refused={props.pasteRefused}
           onApply={props.onRaiseLimit}
         />
+      )}
+      {props.quiet === true && (
+        <p className="ui-setting-help ui-text-secondary" role="status">
+          {props.step.at === "checking"
+            ? `${props.pool}'s runner has not said for 30 s whether ${props.who} is signed in. You can wait, or try again.`
+            : `${props.pool}'s runner has not answered for 30 s. It may still be fetching ${props.harness}; you can wait, or try again.`}
+        </p>
       )}
       <StepBody {...props} />
       {props.terminal !== undefined && props.step.at !== "not-started" && (
