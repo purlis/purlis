@@ -8501,6 +8501,16 @@ export const PlaneView = memo(function PlaneView({
           if (trouble.status === "ok") setWouldNotStart(trouble.data ?? []);
         })
         .catch(() => undefined);
+      // A chat put back from the session host is owed a restart as it comes back, after this
+      // view first read the list, where its program holds the old app's forge route (#7962).
+      void commands
+        .owedRestarts(plane)
+        .then((owed) => {
+          if (owed.status !== "ok" || !Array.isArray(owed.data)) return;
+          const core: readonly number[] = owed.data;
+          setOwedRestarts((was) => core.reduce((all, one) => withRestartOwed(all, one), was));
+        })
+        .catch(() => undefined);
     }).catch(() => undefined);
     return () => void listening.then((stop) => stop?.()).catch(() => undefined);
   }, [plane]);
