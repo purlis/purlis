@@ -307,6 +307,41 @@ test("a push to a registry on the job's own loopback publishes nothing", () => {
   }
 });
 
+test("a build whose only output is a cache in the Actions cache publishes nothing, and any other output or cache does", () => {
+  const listed = Object.keys(NOT_SHIPPING)[0];
+  const step = (...inputs) =>
+    [
+      "      - name: The apt layer",
+      "        uses: docker/build-push-action@0123456789abcdef0123456789abcdef01234567 # v7",
+      "        with:",
+      "          file: runner-image/Dockerfile",
+      ...inputs.map((i) => `          ${i}`),
+      "      - run: cargo build -p a",
+    ].join("\n");
+  const gha = "cache-to: type=gha,mode=min,scope=x,ignore-error=true";
+  const onMain = "cache-to: ${{ github.ref == 'refs/heads/main' && format('type=gha,mode=min,scope=x-{0}', runner.arch) || '' }}";
+  for (const text of [
+    step("outputs: type=cacheonly", "cache-from: type=gha,scope=x", gha),
+    step("outputs: type=cacheonly", onMain),
+    step("outputs: type=cacheonly"),
+  ]) {
+    assert.deepEqual(workflowErrors([{ name: listed, text }]), [], text);
+  }
+  for (const text of [
+    step("outputs: type=cacheonly", "cache-to: type=registry,ref=ghcr.io/purlis/cache"),
+    step("outputs: type=cacheonly", "cache-to: |\n            type=gha"),
+    step("outputs: type=cacheonly", "cache-to: type=gha,url=https://cache.example.com/,mode=max"),
+    step("outputs: type=cacheonly", "cache-to: type=gha,scope=x,${{ vars.EXTRA_CACHE }}"),
+    step("outputs: type=cacheonly", "cache-to: ${{ format('type=gha,{0}', vars.MORE) }}"),
+    step("outputs: type=cacheonly", gha, "push: true"),
+    step("outputs: type=registry", gha),
+    step(gha),
+    `${step("outputs: type=cacheonly", gha)}\n      - run: docker push ghcr.io/purlis/x:y`,
+  ]) {
+    assert.match(workflowErrors([{ name: listed, text }])[0]?.error ?? "", /publishes/, text);
+  }
+});
+
 test("cargo run or test with a release profile is a build, never skipped", () => {
   assert.deepEqual(one("cargo run --locked --release -p release-manifest -- --out x"), {
     line: 1, manifest: "Cargo.toml", packages: ["release-manifest"],

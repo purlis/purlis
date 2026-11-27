@@ -2669,6 +2669,8 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         if: matrix.pool
         id: buildx
+        # Without it the image is built on Docker's own builder, as before (no cache).
+        continue-on-error: true
         with:
           use: false
       - name: gh's and glab's packages, checked, and an empty context for the apt layer
@@ -2678,9 +2680,9 @@ jobs:
         run: |
           runner-image/fetch-forge-programs.sh "$(dpkg --print-architecture)" "$RUNNER_TEMP/forge-programs"
           mkdir -p "$RUNNER_TEMP/apt-layer/plugin" && touch "$RUNNER_TEMP/apt-layer/purlis"
-          echo "ARCH=$(dpkg --print-architecture)" >> "$GITHUB_ENV"
+          echo "RUNNER_IMAGE_ARCH=$(dpkg --print-architecture)" >> "$GITHUB_ENV"
       - name: The runner image's apt layer, for Pool setup's run
-        if: matrix.pool
+        if: matrix.pool && steps.buildx.outputs.name != ''
         continue-on-error: true
         timeout-minutes: 15
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -2688,11 +2690,12 @@ jobs:
           builder: ${{ steps.buildx.outputs.name }}
           context: ${{ runner.temp }}/apt-layer
           file: runner-image/Dockerfile
-          build-contexts: forge-programs-${{ env.ARCH }}=${{ runner.temp }}/forge-programs
+          build-contexts: forge-programs-${{ env.RUNNER_IMAGE_ARCH }}=${{ runner.temp }}/forge-programs
           provenance: false
           outputs: type=cacheonly
-          cache-from: type=gha,scope=runner-image-apt-pool-setup-${{ env.ARCH }}
-          cache-to: type=gha,mode=min,scope=runner-image-apt-pool-setup-${{ env.ARCH }},ignore-error=true
+          cache-from: type=gha,scope=runner-image-apt-pool-setup-${{ env.RUNNER_IMAGE_ARCH }}
+          # Only main saves (#5858); every ref reads.
+          cache-to: ${{ github.ref == 'refs/heads/main' && format('type=gha,mode=min,scope=runner-image-apt-pool-setup-{0},ignore-error=true', env.RUNNER_IMAGE_ARCH) || '' }}
       - name: The runner image of this build, for Pool setup's run, by digest
         if: matrix.pool
         # It takes 1-17 min. A stalled pull or build held the queue head for the job's whole 60 min
@@ -2716,9 +2719,10 @@ jobs:
           docker run --detach --publish 127.0.0.1:5000:5000 --name registry "$registry"
           context="$RUNNER_TEMP/runner"
           cp -R app/src-tauri/plugin "$context/plugin"
-          # On the apt layer's builder, loaded into Docker, where the build below starts from it.
-          again docker buildx build --builder "$BUILDER" --load --file runner-image/Dockerfile \
-            --build-context "forge-programs-$ARCH=$RUNNER_TEMP/forge-programs" --tag purlis-runner:scenario "$context"
+          # On the apt layer's builder (Docker's own when buildx's setup failed), loaded into
+          # Docker, where the build below starts from it.
+          again docker buildx build ${BUILDER:+--builder "$BUILDER"} --load --file runner-image/Dockerfile \
+            --build-context "forge-programs-$RUNNER_IMAGE_ARCH=$RUNNER_TEMP/forge-programs" --tag purlis-runner:scenario "$context"
           # Its Dockerfile copies nothing in, so its context is an empty folder: stdin, as before,
           # would be read once and empty on a second try.
           mkdir -p "$RUNNER_TEMP/pool-runner"
