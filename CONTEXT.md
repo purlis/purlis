@@ -1474,9 +1474,9 @@ _Avoid_: notification, news
 An **Ask** that stops one of the person's chats, or a `purlis` command, until they answer: a
 permission, a question, a dispatch grant, a secret, a run grant, a browser site or login, a
 sandbox block or consent, a command's confirmation in the window, a budget reached, a suspected
-loop. It counts on the ✋ whatever its source, every open project's together. A decision that
-stops no chat is a **Notice**, and a chat that cannot tell purlis it waits is never counted
-(ADR 0121).
+loop (not a **Prerequisite**). It counts on the ✋ whatever its source, every open project's
+together. A decision that stops no chat is a **Notice**, and a chat that cannot tell purlis it
+waits is never counted (ADR 0121).
 _Avoid_: urgent, priority, blocker
 
 **Expiring ask**:
@@ -2003,6 +2003,22 @@ by policy". It never loosens what a project or a person sets. One that forbids t
 requires the sandbox in every project on that machine, which Settings shows as "On, required by
 policy" (ADR 0067 §1, §4 as amended).
 _Avoid_: supervisor, managed tier (in UI text; that is a harness vendor's), org settings
+
+**Prerequisite**:
+A condition a project must meet before its chats can work, which only the person can satisfy, in
+the window. The core defines each one and decides when it is open; the app's process holds each
+project's list and pushes a "prerequisites changed" event with the whole list, which the window
+reads and the CLI and `purlis doctor` ask for. The first is the policy prerequisite: this
+machine's acceptance of the project's `[policy]` is Broken or Waiting. While one is open, a chat
+the person starts there waits, and running chats keep the policy in force: **strict mode** (every
+family enforced at the full sandbox, no cross-persona dispatch; not the `strict` template, which
+leaves the sandbox to `[sandbox]` and denies no dispatch) under Broken, the policy accepted before
+under Waiting. The window raises it as one modal, an alert of the dialog family, with
+**Work in strict mode** (under Broken) or **Keep my current rules** (under Waiting) and **Accept**,
+and keeps its **Notice** up after the first answer. It is never in Asks, adds nothing to the ✋ and
+sends no system notification; a project not in front shows a dot on its tab in the title bar
+(ADR 0130).
+_Avoid_: gate, blocker, barrier
 
 ### Core and extensions
 

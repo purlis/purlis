@@ -31,6 +31,7 @@ const OPENS: ScreenLink = {
     does: { does: "opens", into: "browser" },
     chat: null,
   },
+  place: { left: 0, top: 0, width: 0, height: 0 },
 };
 
 const REFUSED: ScreenLink = {
@@ -42,6 +43,7 @@ const REFUSED: ScreenLink = {
     does: { does: "refused", reason: "purlis opens only http and https addresses" },
     chat: null,
   },
+  place: { left: 0, top: 0, width: 0, height: 0 },
 };
 
 function offer(id: string, title: string): Offer {

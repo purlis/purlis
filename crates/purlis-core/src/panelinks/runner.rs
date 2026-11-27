@@ -126,6 +126,8 @@ impl LinkKind for RunnerFile {
                 identity: super::onrunner::identity_of(&version).map(str::to_owned),
             },
             in_home: from_workspace.is_some(),
+            // The runner answered whether the file is there, so nothing is left to check (#6489).
+            unchecked: false,
             shown,
             short,
         })))

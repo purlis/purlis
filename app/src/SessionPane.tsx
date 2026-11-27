@@ -247,7 +247,7 @@ export function SessionPane({
       if (link === undefined) return;
       if (id === "terminal.openLink") {
         // A chat's card stands at the link: the menu has gone with its row (#6442).
-        if (linkHands !== undefined) void openLink(link.candidate, linkHands, null, link.place);
+        if (linkHands !== undefined) void openLink(link.candidate, linkHands, link.place);
         return;
       }
       const out = navigator.clipboard as ClipboardOut | undefined;

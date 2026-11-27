@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { PlaneId } from "./bindings";
 import type { Place } from "./pieceViews";
 
@@ -76,4 +76,32 @@ export function usePendingJump(plane: PlaneId, place: Place): Pending | undefine
         ? pending
         : undefined,
   );
+}
+
+/** **A jump a tab took**: its count, the path it named, and its line and column. */
+export type Landed = Pick<Pending, "at" | "path" | "line" | "column">;
+
+/**
+ * **The newest pending jump into `place` that `takes` accepts, once the tab drawing it took it**:
+ * the Files tab's (FM-8) and a project-root file's own tab's (#6356) one way to land. It is taken
+ * while drawing, the way React keeps what an earlier render saw, so the tab never draws the old
+ * file first, and `took` runs then too, for what else the tab picks with it; it is settled after,
+ * so a tab opened later does not land on it again.
+ */
+export function useLandedJump(
+  plane: PlaneId,
+  place: Place,
+  takes: (jump: Pending) => boolean = () => true,
+  took?: (jump: Pending) => void,
+): Landed | undefined {
+  const jump = usePendingJump(plane, place);
+  const [landed, setLanded] = useState<Landed>();
+  if (jump !== undefined && jump.at !== landed?.at && takes(jump)) {
+    setLanded({ at: jump.at, path: jump.path, line: jump.line, column: jump.column });
+    took?.(jump);
+  }
+  useEffect(() => {
+    if (landed !== undefined) settleJump(landed.at);
+  }, [landed]);
+  return landed;
 }

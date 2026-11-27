@@ -13,7 +13,8 @@ import type {
   LinkSeen,
   OpensIn,
 } from "./bindings";
-import { capitalised, endedAt } from "./chatEnded";
+import { endedAt } from "./chatEnded";
+import { capitalised } from "./textCase";
 import { sentence } from "./coreSentence";
 import { onAMac } from "./mac";
 import {
@@ -68,14 +69,17 @@ const OPENS_IN: Record<OpensIn, string> = {
 };
 
 /** **What ⌘-click on a link does**, the tooltip's second line. A file says where it is first
- *  (D2): "Outside smart-ide · ⌘-click asks first". */
+ *  (D2): "Outside smart-ide · ⌘-click asks first"; one whose branch could not say whether it
+ *  offers it says first that the editor checks it as it opens (#6489). */
 export function linkDoesSaid(seen: LinkSeen, mac: boolean): string {
   const click = modifierSaid(mac);
   // A chat link says where its chat is; every other kind, what opening it does.
   if (seen.chat) return chatSaid(seen.chat, click);
   switch (seen.does.does) {
-    case "opens":
-      return `${click} opens it ${OPENS_IN[seen.does.into]}`;
+    case "opens": {
+      const opens = `${click} opens it ${OPENS_IN[seen.does.into]}`;
+      return seen.unchecked ? `${sentence(seen.unchecked)} · ${opens}` : opens;
+    }
     case "asks":
       return `${sentence(seen.does.reason)} · ${click} asks first`;
     case "refused":
@@ -121,8 +125,9 @@ export function LinkTip({
   );
 }
 
-/** What the window answers for a link ⌘-clicked, while it is up. */
-type Answering = { answer: LinkOpened; candidate: LinkCandidate };
+/** What the window answers for a link ⌘-clicked, while it is up, and where the link is drawn,
+ *  which an accepted ask opens it from again. */
+type Answering = { answer: LinkOpened; candidate: LinkCandidate; place: LinkPlace };
 
 /**
  * **A pane's link surfaces, and the hands its link hook is handed** (`paneLinks.ts`): `core`
@@ -150,7 +155,7 @@ export function usePaneLinks({
   colour: () => string;
   /** The links on the pane's screen, newest first (`LinkedPane.onScreen`). */
   onScreen?: () => Promise<ScreenLink[]>;
-  onChat?: (go: ChatGo, place: LinkPlace | undefined) => void;
+  onChat?: (go: ChatGo, place: LinkPlace) => void;
 }): {
   hands: LinkHands | undefined;
   surfaces: ReactNode;
@@ -201,29 +206,26 @@ export function usePaneLinks({
     // Kept a moment, so the pointer can reach it (WCAG 1.4.13).
     else later(() => !onTip.current && setShown(null), TOOLTIP_CLOSE_DELAY);
   }, []);
-  const answered = useCallback(
-    (answer: LinkOpened, candidate: LinkCandidate, place?: LinkPlace) => {
-      if (answer.answer === "opened") return;
-      // What the answer draws (a card, a dialog, a tab) stands where the tooltip did: it goes.
-      pending.current = null;
-      clearTimeout(timer.current);
-      setShown(null);
-      // A chat link shows the chat or its card (#6217): the pane's to do.
-      if (answer.answer === "chat") {
-        now.current.onChat?.(answer.go, place);
-        return;
-      }
-      // A file opens in an editor tab of the pane's project (#6216); with none, it cannot.
-      if (answer.answer === "file") {
-        const { plane, session } = now.current.from;
-        if (plane !== null) return openFileLink(plane, session, answer);
-        setAnswering({ answer: { answer: "refused", reason: UNASKED }, candidate });
-        return;
-      }
-      setAnswering({ answer, candidate });
-    },
-    [],
-  );
+  const answered = useCallback((answer: LinkOpened, candidate: LinkCandidate, place: LinkPlace) => {
+    if (answer.answer === "opened") return;
+    // What the answer draws (a card, a dialog, a tab) stands where the tooltip did: it goes.
+    pending.current = null;
+    clearTimeout(timer.current);
+    setShown(null);
+    // A chat link shows the chat or its card (#6217): the pane's to do.
+    if (answer.answer === "chat") {
+      now.current.onChat?.(answer.go, place);
+      return;
+    }
+    // A file opens in an editor tab of the pane's project (#6216); with none, it cannot.
+    if (answer.answer === "file") {
+      const { plane, session } = now.current.from;
+      if (plane !== null) return openFileLink(plane, session, answer);
+      setAnswering({ answer: { answer: "refused", reason: UNASKED }, candidate, place });
+      return;
+    }
+    setAnswering({ answer, candidate, place });
+  }, []);
   const hands = useMemo(
     () =>
       core === undefined
@@ -244,12 +246,7 @@ export function usePaneLinks({
     <>
       {shown !== null && (
         <>
-          <span
-            ref={anchor}
-            className="pane-link-anchor"
-            aria-hidden="true"
-            style={placed(shown.place)}
-          />
+          <span ref={anchor} className="pane-link-anchor" aria-hidden="true" style={shown.place} />
           <AnchoredTooltip
             anchor={anchor}
             onPointerEnter={() => {
@@ -272,7 +269,7 @@ export function usePaneLinks({
           onPick={(link) => {
             closeLinksList();
             // A chat's card stands at the link: the list it was picked in has gone (#6442).
-            if (hands !== undefined) void openLink(link.candidate, hands, null, link.place);
+            if (hands !== undefined) void openLink(link.candidate, hands, link.place);
           }}
           onCopy={(link) => {
             void navigator.clipboard?.writeText(link.seen.target).catch((why: unknown) => {
@@ -288,23 +285,14 @@ export function usePaneLinks({
           onClose={() => setAnswering(null)}
           onConfirm={(token) => {
             setAnswering(null);
-            if (hands !== undefined) void openLink(answering.candidate, hands, token);
+            if (hands !== undefined)
+              void openLink(answering.candidate, hands, answering.place, token);
           }}
         />
       )}
     </>
   );
   return { hands, surfaces, list: core === undefined ? undefined : openLinksList };
-}
-
-/** Where an anchor stands: over the link, or at the window's top left where none was said. */
-export function placed(place: LinkPlace | undefined) {
-  return {
-    left: place?.left ?? 0,
-    top: place?.top ?? 0,
-    width: place?.width ?? 0,
-    height: place?.height ?? 0,
-  };
 }
 
 /** **The window's answer to a link that did not open**: why not, or the question first. An
@@ -342,6 +330,7 @@ export function LinkAnswer({
         target={answer.target}
         kind={answer.about.kind}
         host={answer.about.host}
+        chat={chat}
         onClose={onClose}
         onOpen={() => onConfirm(answer.token)}
       />
@@ -468,13 +457,16 @@ function aroundHost(target: string, host: string | null): ReactNode {
  * prototype's S8, D10): its words, and where it really goes, the real host drawn apart so a
  * look-alike is seen. It starts on *Don't open*, and Return never opens it: *Open in browser*
  * is plain, not primary. A file's target says *Copy path* and *Open file*. It is answered by
- * the ask's one-use token, which proves only that this window was handed the ask.
+ * the ask's one-use token, which proves only that this window was handed the ask. `chat` is the
+ * chat whose output held the link, said under the title as {@link FileOutsideAsk} says it
+ * (#6601): none for a shell's pane.
  */
 export function MisleadingAsk({
   text,
   target,
   kind,
   host,
+  chat,
   onClose,
   onOpen,
 }: {
@@ -482,6 +474,7 @@ export function MisleadingAsk({
   target: string;
   kind: KindHint;
   host: string | null;
+  chat?: AskingChat;
   onClose: () => void;
   onOpen: () => void;
 }) {
@@ -490,6 +483,7 @@ export function MisleadingAsk({
   return (
     <Dialog
       title="This link goes somewhere its text doesn't say"
+      subtitle={chat === undefined ? undefined : fromChatSaid(chat)}
       description={`A program marked these words as a link to a different ${file ? "file" : "address"}.`}
       cancel={{ children: "Don't open" }}
       alternative={{
@@ -527,7 +521,7 @@ export function MisleadingAsk({
 /** **A chat, as an ask names the pane it came from** (#6355): its number and its title. */
 export type AskingChat = { number: number; title: string };
 
-/** "From chat #N · title", the prototype's S7 line; a chat called only by its number is said once. */
+/** "From chat #N · title", the prototype's S7 line and S8's; a chat called only by its number is said once. */
 export function fromChatSaid({ number, title }: AskingChat): string {
   const named = title.trim();
   return named === "" || named === String(number)
