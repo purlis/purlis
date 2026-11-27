@@ -4227,10 +4227,18 @@ impl Chats {
             // as amended 2026-11-25): said before the `wake` run starts, so the log reads in the
             // order it happened. Its program is gone, so no end of it is heard to say so.
             self.superseded(session);
-            self.start_recorded_told(&again, size, Why::Wake, None, None)
+            // **Told what the hibernation ended** (SC-4d, #7633; ADR 0068 amended 2026-11-08):
+            // the own work the person was asked about, each piece by name. None for a chat
+            // whose hibernation ended nothing of its own, and then nothing is typed.
+            let first = self.told_woken(session);
+            self.start_recorded_told(&again, size, Why::Wake, first.as_deref(), None)
         });
         match started {
-            Ok(started) => self.restarted(session, started, true),
+            Ok(started) => {
+                // Told once: the work it was told of is the old program's, gone with it.
+                lock(&self.own_work).remove(&session);
+                self.restarted(session, started, true)
+            }
             Err(why) => {
                 self.unclaim(session);
                 Err(why)
@@ -4372,6 +4380,36 @@ impl Chats {
             .chain(wake.as_deref())
             .collect();
         (!first.is_empty()).then(|| first.join("\n\n"))
+    }
+
+    /// **What hibernated chat `session` is told as it wakes** (SC-4d, #7633): the wake line of
+    /// what its hibernation ended of its own ([`purlis_core::wakeline::of_the_chat_woken`]), from
+    /// its record as [`Self::told_with_its_wake_line`] reads it, or none.
+    fn told_woken(&self, session: u32) -> Option<String> {
+        let own = lock(&self.own_work)
+            .get(&session)
+            .cloned()
+            .unwrap_or_default();
+        let conversation = lock(&self.open)
+            .get(&session)
+            .and_then(|one| one.chat.resume.as_ref().map(ToString::to_string))
+            .unwrap_or_default();
+        let last = |piece: &purlis_core::ownwork::pieces::Piece| {
+            purlis_core::ownwork::last::of(piece, &conversation)
+        };
+        purlis_core::wakeline::of_the_chat_woken(&purlis_core::wakeline::Ended {
+            own_work: own.work.as_ref(),
+            pieces: &own.pieces,
+            mid_turn: own.mid_turn,
+            now: jiff::Timestamp::now().as_second(),
+            last: &last,
+        })
+    }
+
+    /// [`Self::told_woken`], for a test: what hibernated chat `session` would be told as it wakes.
+    #[cfg(test)]
+    pub(crate) fn told_as_it_wakes(&self, session: u32) -> Option<String> {
+        self.told_woken(session)
     }
 
     /// Marks chat `session` as restarting, or refuses: one restart at a time, whichever asked.

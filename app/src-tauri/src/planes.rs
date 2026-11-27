@@ -1187,6 +1187,11 @@ impl Held {
         self.operator_typing(session, &bytes);
         let held = Arc::clone(self);
         self.lanes.send(session, move || {
+            // **Held, never lost** (SC-4d, #7633): a chat being hibernated past its intent, or
+            // hibernated, has no program to read it. Kept as its unsent text.
+            if held.hibernated.holds_input(session, &bytes) {
+                return Ok(());
+            }
             held.linked(session)?;
             held.chats.sessions().input(session, &bytes)
         });
@@ -1932,19 +1937,40 @@ impl Held {
     /// otherwise its program is ended at its turn boundary and its engine dropped by the
     /// session host.
     ///
-    /// **Decided and done in the chat's turn in its lane** (ADR 0108): a prompt, a report or
-    /// anything else typed into it waits behind the act, so nothing starts a turn between the
-    /// facts being read and the program ending. The flag is written first, in flight, so the
-    /// exit that follows is read as a hibernation and no run ends `failed | exited`; it is
-    /// hibernated, and Resume offered, only once the host has answered. A second press while one
-    /// is in flight is refused and leaves the first alone. Where the act fails the flag goes
-    /// again, unless the program's end was already heard as the hibernation.
+    /// **Decided and done in the chat's turn in its lane** (ADR 0108), under its hibernating
+    /// latch (SC-4d, #7633; spec #1391, *The act, and its latch*): a second caller finds the
+    /// latch taken and does nothing. The screen is kept, then the intent is written, so the exit
+    /// that follows is read as a hibernation and no run ends `failed | exited`. **What arrived
+    /// before the intent aborts the act**, read once more after it: a key the pane typed (sent
+    /// on to the program still there), a hook saying a turn began or an ask, a quit, or the
+    /// program ending by itself, whose run takes its own cause. An aborted act leaves no kept
+    /// screen. **What the pane types after the intent is held** as the chat's unsent text, and
+    /// never sent to the program that is going ([`crate::hibernation::Hibernated::unsent`]).
+    /// The host ends the program, killing it after a bound where it ignores its signals; a
+    /// hook of the ending run is dropped with its number. It is hibernated, and Resume
+    /// offered, only once the host has answered. Where the act fails the latch goes again,
+    /// unless the program's end was already heard as the hibernation.
     pub fn hibernate_chat(&self, session: u32) -> Result<(), crate::hibernation::Refused> {
         self.lanes
-            .in_turn(session, || self.hibernate_in_its_turn(session))
+            .in_turn(session, || self.hibernate_in_its_turn(session, false))
     }
 
-    fn hibernate_in_its_turn(&self, session: u32) -> Result<(), crate::hibernation::Refused> {
+    /// [`Self::hibernate_chat`], once its caller has asked the person about the chat's own work,
+    /// naming each piece (SC-4d, #7633, ruling 2; the Ask is SC-4i's, #7638): own work alone no
+    /// longer refuses it, and what it ends is told the chat as it wakes.
+    pub fn hibernate_chat_ending_its_own_work(
+        &self,
+        session: u32,
+    ) -> Result<(), crate::hibernation::Refused> {
+        self.lanes
+            .in_turn(session, || self.hibernate_in_its_turn(session, true))
+    }
+
+    fn hibernate_in_its_turn(
+        &self,
+        session: u32,
+        own_work_asked: bool,
+    ) -> Result<(), crate::hibernation::Refused> {
         use crate::hibernation::Refused;
         if self.hibernated.in_flight(session) {
             return Err(crate::hibernation::ALREADY_HIBERNATING.to_owned().into());
@@ -1954,17 +1980,16 @@ impl Held {
                 .to_owned()
                 .into());
         }
-        // The looked-at clock holds back only the app's own hibernation.
-        let facts = crate::hibernation::facts_of(self, session, false);
-        purlis_core::rested::by_hand(&facts).map_err(Refused::Not)?;
+        self.may_hibernate(session, own_work_asked)?;
+        // Step 1: the latch. A second caller finds it taken and does nothing.
         if !self
             .hibernated
-            .intend(session, crate::hibernation::By::Operator)
+            .latch(session, crate::hibernation::By::Operator)
         {
             return Err(crate::hibernation::ALREADY_HIBERNATING.to_owned().into());
         }
-        // What it shows is kept while its program is still there to show it (SC-4b, #7631);
-        // nothing that goes wrong there stops the hibernation.
+        // Step 3: what it shows is kept while its program is still there to show it (SC-4b,
+        // #7631); nothing that goes wrong there stops the hibernation.
         let id = self
             .chats
             .recorded_chat(session)
@@ -1973,23 +1998,65 @@ impl Held {
             crate::hibernation::keep_screen(self.root(), self.chats.sessions(), session, id);
         }
         // A chat that is not hibernated after all keeps no screen: nothing would remove it.
-        let not_hibernated = |why: String| -> Result<(), Refused> {
+        let not_hibernated = |why: Refused| -> Result<(), Refused> {
             if let Some(id) = &id {
                 purlis_core::hibernatedscreens::forget(self.root(), id);
             }
-            Err(why.into())
+            Err(why)
         };
-        if let Err(why) = self.chats.sessions().hibernate(session) {
+        // Step 4: the intent, recorded before the program ends, so its exit is read as the
+        // hibernation. Its program ended by itself while its screen was taken: the act aborts,
+        // and its run has taken its own cause.
+        if !self.hibernated.intend(session) {
+            self.hibernated.unlatch(session);
+            return not_hibernated(crate::hibernation::ENDED_ANOTHER_WAY.to_owned().into());
+        }
+        // **What arrived before the intent aborts the act** (SC-4d, #7633): read once more now
+        // that it is recorded, so nothing slips between. A key the pane typed waits in its
+        // lane and is sent to the program still there; a hook saying a turn began, or an ask,
+        // moved the board; a quit takes ADR 0076 §3's path, not this one.
+        let arrived = if self.chats.ending() {
+            Some(Refused::Said(QUIT_AS_IT_HIBERNATED.to_owned()))
+        } else if self.lanes.typed_waiting(session) {
+            Some(Refused::Not(purlis_core::rested::NotRested::LookedAt))
+        } else {
+            self.may_hibernate(session, own_work_asked).err()
+        };
+        if let Some(why) = arrived {
             if self.hibernated.failed(session) {
+                // Its program's end was already heard as the hibernation: it is one.
                 return Ok(());
             }
             return not_hibernated(why);
         }
+        if let Err(why) = self.chats.sessions().hibernate(session) {
+            if self.hibernated.failed(session) {
+                return Ok(());
+            }
+            return not_hibernated(why.into());
+        }
         if !self.hibernated.settle(session) {
             // Another end won while it ended (a close, a quit, a stop, the kill switch).
-            return not_hibernated(crate::hibernation::ENDED_ANOTHER_WAY.to_owned());
+            return not_hibernated(crate::hibernation::ENDED_ANOTHER_WAY.to_owned().into());
         }
         Ok(())
+    }
+
+    /// Whether the person may hibernate chat `session` now, by the core's reasons: with its own
+    /// work ended where they were asked about it ([`purlis_core::rested::by_hand_ending_its_own_work`]).
+    fn may_hibernate(
+        &self,
+        session: u32,
+        own_work_asked: bool,
+    ) -> Result<(), crate::hibernation::Refused> {
+        // The looked-at clock holds back only the app's own hibernation.
+        let facts = crate::hibernation::facts_of(self, session, false);
+        let may = if own_work_asked {
+            purlis_core::rested::by_hand_ending_its_own_work(&facts)
+        } else {
+            purlis_core::rested::by_hand(&facts)
+        };
+        may.map_err(crate::hibernation::Refused::Not)
     }
 
     /// Wakes hibernated chat `session` (SC-4a, #7630): a new `wake` run on its conversation,
@@ -6972,6 +7039,11 @@ fn the_host_s_stop(
 /// What a chat's end leaves in the event log, read and written as both binaries' session hosts
 /// do (#2494).
 pub(crate) use purlis_core::hookchannel::{how_its_run_ended, its_run_ends, its_run_hibernates};
+
+/// Why a hibernation did not take when purlis began to quit as it acted (SC-4d, #7633): the
+/// quit ends the chat as it ends every chat.
+const QUIT_AS_IT_HIBERNATED: &str =
+    "Not hibernated: purlis is quitting, and keeps this chat as it keeps the rest.";
 
 #[path = "planes/tab_windows.rs"]
 mod tab_windows;

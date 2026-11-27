@@ -8207,7 +8207,8 @@ export const PlaneView = memo(function PlaneView({
   const hibernateChat = useCallback(
     (session: number) => {
       void commands
-        .hibernateChat(plane, session)
+        // Own work is not asked about yet (SC-4i, #7638): a chat with some is refused.
+        .hibernateChat(plane, session, false)
         .then((done) => {
           if (done.status === "error") hibernateRefused(plane, session, done.error);
           else if (done.data.outcome === "refused")

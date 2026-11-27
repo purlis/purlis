@@ -555,6 +555,11 @@ export const commands = {
 	/**  Chat `session`, where it is hibernated. */
 	chatHibernated: (plane: PlaneId, session: number) => typedError<{
 	by: By,
+	/**
+	 *  What the pane typed into it once its program was ending, which no program read: its
+	 *  unsent text, held in memory, never lost (SC-4d, #7633). Absent where it typed nothing.
+	 */
+	unsent?: string | null,
 } | null, string>(__TAURI_INVOKE("chat_hibernated", { plane, session })),
 	hibernatedChatScreen: __WINDOW_ONLY_RESULT,
 	/**  The chats of `plane` that are hibernated: what the window reads its rows by as it opens. */
@@ -4915,8 +4920,26 @@ export type ChatHeld = {
 };
 
 /**  Chat `session` as the window reads its hibernation. */
-export type ChatHibernation = {
+export type ChatHibernation = ChatHibernation_Serialize | ChatHibernation_Deserialize;
+
+/**  Chat `session` as the window reads its hibernation. */
+export type ChatHibernation_Deserialize = {
 	by: By,
+	/**
+	 *  What the pane typed into it once its program was ending, which no program read: its
+	 *  unsent text, held in memory, never lost (SC-4d, #7633). Absent where it typed nothing.
+	 */
+	unsent?: string | null,
+};
+
+/**  Chat `session` as the window reads its hibernation. */
+export type ChatHibernation_Serialize = {
+	by: By,
+	/**
+	 *  What the pane typed into it once its program was ending, which no program read: its
+	 *  unsent text, held in memory, never lost (SC-4d, #7633). Absent where it typed nothing.
+	 */
+	unsent?: string | null,
 };
 
 /**  A chat's Chat log: whether purlis knows the chat, and its rows. */

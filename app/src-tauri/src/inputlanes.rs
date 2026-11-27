@@ -145,6 +145,23 @@ impl Lanes {
         self.drain(session);
     }
 
+    /// **Whether what a pane typed waits in chat `session`'s lane** (SC-4d, #7633): a key, a
+    /// paste or a mouse report not yet sent, behind a turn that has the lane. A resize or a
+    /// view's close is not typing.
+    pub fn typed_waiting(&self, session: u32) -> bool {
+        self.lock().get(&session).is_some_and(|lane| {
+            lane.jobs.iter().any(|job| {
+                matches!(
+                    job,
+                    Job::Send {
+                        droppable: true,
+                        ..
+                    }
+                )
+            })
+        })
+    }
+
     /// Runs `work` on this thread once everything sent to chat `session` before it has been,
     /// and nothing after it runs until it has: what types into a chat and waits for the answer.
     pub fn in_turn<T>(&self, session: u32, work: impl FnOnce() -> T) -> T {
