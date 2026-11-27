@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795757164903,
+  "lastUpdate": 1795757487856,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57078,6 +57078,48 @@ window.BENCHMARK_DATA = {
             "value": 100.800371,
             "unit": "ms",
             "extra": "median of 5 runs: 100.293, 100.390, 100.800, 101.716, 101.736 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1a2e8694c82fae6e8a9e1281a2383bc74beab15e",
+          "message": "Bump the tauri group across 1 directory with 2 updates (#7261)\n\nBumps the tauri group with 2 updates in the / directory: [tauri](https://github.com/tauri-apps/tauri) and [tauri-build](https://github.com/tauri-apps/tauri).\n\n\nUpdates `tauri` from 2.12.5 to 2.12.7\n- [Release notes](https://github.com/tauri-apps/tauri/releases)\n- [Commits](https://github.com/tauri-apps/tauri/compare/tauri-v2.12.5...tauri-v2.12.7)\n\nUpdates `tauri-build` from 2.7.4 to 2.7.6\n- [Release notes](https://github.com/tauri-apps/tauri/releases)\n- [Commits](https://github.com/tauri-apps/tauri/compare/tauri-build-v2.7.4...tauri-build-v2.7.6)\nBump the tauri group across 1 directory with 2 updates\n\nBumps the tauri group with 2 updates in the /app directory: [@tauri-apps/api](https://github.com/tauri-apps/tauri) and [@tauri-apps/cli](https://github.com/tauri-apps/tauri).\n\n\nUpdates `@tauri-apps/api` from 2.12.4 to 2.12.5\n- [Release notes](https://github.com/tauri-apps/tauri/releases)\n- [Commits](https://github.com/tauri-apps/tauri/compare/@tauri-apps/api-v2.12.4...@tauri-apps/api-v2.12.5)\n\nUpdates `@tauri-apps/cli` from 2.12.4 to 2.12.6\n- [Release notes](https://github.com/tauri-apps/tauri/releases)\n- [Commits](https://github.com/tauri-apps/tauri/compare/@tauri-apps/cli-v2.12.4...@tauri-apps/cli-v2.12.6)\n\n---\nupdated-dependencies:\n- dependency-name: \"@tauri-apps/api\"\n  dependency-version: 2.12.5\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: tauri\n- dependency-name: \"@tauri-apps/cli\"\n  dependency-version: 2.12.5\n  dependency-type: direct:development\n  update-type: version-update:semver-patch\n  dependency-group: tauri\n- dependency-name: tauri\n  dependency-version: 2.12.6\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: tauri\n- dependency-name: tauri-build\n  dependency-version: 2.7.6\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: tauri\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-27T04:55:11Z",
+          "tree_id": "6fa04a8940c0abae4dc4047b3e7fc77735c92745",
+          "url": "https://github.com/purlis/purlis/commit/1a2e8694c82fae6e8a9e1281a2383bc74beab15e"
+        },
+        "date": 1795757479704,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5368820000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.522, 0.536, 0.537, 0.539, 0.547 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.245045500000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.169, 16.172, 16.245, 16.316, 16.633 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.077861,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.160, 100.254, 101.078, 101.320, 101.836 ms"
           }
         ]
       }
