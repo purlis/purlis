@@ -82,6 +82,7 @@ fn made(branch: &str) -> CreatedBranch {
         repo_id: Some(REPO_ID),
         branch: branch.to_owned(),
         tip: "1".repeat(40),
+        fast_forward_only: false,
     }
 }
 
@@ -575,6 +576,7 @@ fn a_push_another_chat_made_through_the_route_moves_the_tip_under_this_live_run(
         OTHER,
         &[CreatedBranch {
             tip: "3".repeat(40),
+            fast_forward_only: false,
             ..made("mine")
         }],
     )
@@ -825,6 +827,7 @@ fn a_world_with(config: &Path, project: &Path, task: &Task) -> World {
         "task-chat",
         &[CreatedBranch {
             tip: "1".repeat(40),
+            fast_forward_only: false,
             ..made(task.pushed)
         }],
         task.via,
@@ -910,6 +913,7 @@ fn a_chat_may_not_push_a_tasks_branch_from_a_stale_tip_or_a_branch_of_an_undispa
         "stranger",
         &[CreatedBranch {
             tip: "5".repeat(40),
+            fast_forward_only: false,
             ..made("task/theirs")
         }],
     )
@@ -943,6 +947,7 @@ fn a_task_does_not_move_the_branch_of_the_chat_that_dispatched_it() {
         "chat-listener",
         &[CreatedBranch {
             tip: "7".repeat(40),
+            fast_forward_only: false,
             ..made("asker/own")
         }],
     )
@@ -1217,6 +1222,7 @@ fn a_branch_the_person_allowed_is_no_lineage_after_the_child_pushes_it_again_thr
         "task-chat",
         &[CreatedBranch {
             tip: "2".repeat(40),
+            fast_forward_only: false,
             ..made("task/work")
         }],
         Some(createdbranches::Via::Route),

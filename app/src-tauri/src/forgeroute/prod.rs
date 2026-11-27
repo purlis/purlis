@@ -332,6 +332,7 @@ mod tests {
                 repo_id: Some(7),
                 branch: "mine".into(),
                 tip: tip.clone(),
+                fast_forward_only: false,
             }],
         );
 
@@ -409,6 +410,7 @@ mod tests {
             repo_id: Some(7),
             branch: branch.into(),
             tip: "1".repeat(40),
+            fast_forward_only: false,
         };
         // The child's confirmed pushes, as `record_created` writes them (the route's).
         recorded.record_created(&project, "child", &[made("task/work"), made("task/other")]);

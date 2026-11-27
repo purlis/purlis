@@ -461,6 +461,7 @@ pub fn let_chat_push(
             repo_id: Some(*repo_id),
             branch: branch.clone(),
             tip: tip.clone(),
+            fast_forward_only: false,
         }],
         Some(crate::forge::createdbranches::Via::Allow),
     )

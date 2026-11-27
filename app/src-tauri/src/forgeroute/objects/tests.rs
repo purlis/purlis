@@ -481,12 +481,13 @@ mod through_the_policy {
             vec![repo.clone()],
             Arc::new(Heads(heads)),
         );
-        let tips: purlis_core::forge::proxy::TipSource = Arc::new(move |_host, _repo_id, branch| {
-            (branch == "fix").then(|| purlis_core::forge::createdbranches::OwnedTip {
-                tip: TIP.to_owned(),
-                fast_forward_only: by_allow,
-            })
-        });
+        let tips: purlis_core::forge::proxy::TipSource =
+            Arc::new(move |_host, _repo_id, branch| {
+                (branch == "fix").then(|| purlis_core::forge::createdbranches::OwnedTip {
+                    tip: TIP.to_owned(),
+                    fast_forward_only: by_allow,
+                })
+            });
         let policy = ChatPolicy::new(vec![repo]).with_tips(tips);
         let head = RequestHead::new(
             "PUT",

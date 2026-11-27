@@ -75,6 +75,12 @@ pub struct CreatedBranch {
     pub branch: String,
     /// The commit the push left the branch at.
     pub tip: String,
+    /// **The push was checked as one that may only add to the branch** (the chat held it by the
+    /// person's Allow, [`OwnedTip::fast_forward_only`]): its route line is recorded
+    /// [`Via::Allow`] whatever the file says when the forge confirms it, so a line written
+    /// between the check and the confirm can never drop the marker (#7841). Read only by a
+    /// [`Via::Route`] record.
+    pub fast_forward_only: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -102,7 +108,8 @@ struct Line {
 
 /// **How a push line came to be written**: what lets a reader tell a push the forge confirmed
 /// through the route from the person's **Allow** (`docs/plane-format.md`). A line without it
-/// (written before the key, or by [`record`]) is neither, and is never taken for a route push.
+/// (written before the key, or by [`record`]) is neither, and is never taken for a route push:
+/// like an Allow, a branch it holds moves only forward ([`OwnedTip::fast_forward_only`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Via {
@@ -150,7 +157,10 @@ pub fn record(
 /// when the chat pushes it again through the route**: the later line keeps the earlier one's
 /// marker, so the Allow never becomes a route push one push later and so never chains to the
 /// chat that asked for the child ([`tip_for`]). Only a branch the chat made through the route
-/// itself, or took up by lineage from another chat, is a route line.
+/// itself, or took up by lineage from another chat, is a route line. **A push the route checked as
+/// one that may only add** ([`CreatedBranch::fast_forward_only`]) is recorded [`Via::Allow`] from
+/// that check, not from the file read again at the confirm, where another chat's line may stand
+/// by then (#7841).
 pub fn record_via(
     config_root: &Path,
     project_id: &str,
@@ -163,6 +173,8 @@ pub fn record_via(
         .filter(|c| c.repo_id.is_some())
         .map(|c| {
             let via = match (via, c.repo_id) {
+                // The check read the chat's Allow: the marker it read is the one recorded.
+                (Some(Via::Route), Some(_)) if c.fast_forward_only => Some(Via::Allow),
                 (Some(Via::Route), Some(repo_id)) => {
                     match owner_line(config_root, &c.host, repo_id, &c.branch) {
                         Some(earlier)
@@ -327,9 +339,11 @@ pub fn tip_for(
 pub struct OwnedTip {
     /// Lower-case.
     pub tip: String,
-    /// **The chat owns the branch by the person's Allow** ([`Via::Allow`], which a later push
-    /// keeps): the branch was made by someone else, and floor item 6 of ADR 0125's 2026-11-27
-    /// amendment holds, so its new tip must descend from the forge's (#7841).
+    /// **The chat owns the branch by anything but a route push** ([`Via::Allow`], which a later
+    /// push keeps, or a line with no `via`, which an Allow of #7415's time to #7552's is): the
+    /// branch may have been made by someone else, and floor item 6 of ADR 0125's 2026-11-27
+    /// amendment holds, so its new tip must descend from the forge's (#7841). Only a
+    /// [`Via::Route`] line, a branch the chat made through the route, may be rewound.
     pub fast_forward_only: bool,
 }
 
@@ -351,7 +365,7 @@ pub fn owned_tip_for(
     }
     if owner.chat == chat {
         return Some(OwnedTip {
-            fast_forward_only: owner.via == Some(Via::Allow),
+            fast_forward_only: owner.via != Some(Via::Route),
             tip: owner.tip,
         });
     }
@@ -408,6 +422,7 @@ mod tests {
             repo_id: Some(REPO_ID),
             branch: branch.into(),
             tip: "a".repeat(40),
+            fast_forward_only: false,
         }
     }
 
@@ -689,6 +704,61 @@ mod tests {
         f.write_all(b"not json\n").unwrap();
         record(dir.path(), PROJECT, "chat-a", &[made("two")]).unwrap();
         assert_eq!(own(dir.path(), PROJECT, "chat-a"), ["one", "two"]);
+    }
+
+    fn owned(dir: &Path, chat: &str, branch: &str) -> Option<OwnedTip> {
+        owned_tip_for(dir, PROJECT, chat, "github.com", REPO_ID, branch, &|_| {
+            false
+        })
+    }
+
+    #[test]
+    fn a_push_checked_as_only_adding_is_recorded_allow_whatever_line_is_written_before_its_confirm()
+    {
+        let dir = tempfile::tempdir().unwrap();
+        record_via(
+            dir.path(),
+            PROJECT,
+            "a",
+            &[made("theirs")],
+            Some(Via::Allow),
+        )
+        .unwrap();
+        // The check reads the chat's Allow: the push may only add to the branch.
+        let checked = owned(dir.path(), "a", "theirs").expect("a's by the Allow");
+        assert!(checked.fast_forward_only);
+        // Between the check and the forge's confirm, the person lets another chat push it.
+        record_via(
+            dir.path(),
+            PROJECT,
+            "b",
+            &[made("theirs")],
+            Some(Via::Allow),
+        )
+        .unwrap();
+        let mut pushed = made("theirs");
+        pushed.tip = "b".repeat(40);
+        pushed.fast_forward_only = checked.fast_forward_only;
+        record_via(dir.path(), PROJECT, "a", &[pushed], Some(Via::Route)).unwrap();
+
+        let owner = owner_line(dir.path(), "github.com", REPO_ID, "theirs").unwrap();
+        assert_eq!(
+            owner.via,
+            Some(Via::Allow),
+            "the marker the check read is kept"
+        );
+        assert!(owned(dir.path(), "a", "theirs").unwrap().fast_forward_only);
+    }
+
+    #[test]
+    fn a_branch_held_by_a_line_with_no_via_moves_only_forward_and_a_route_line_does_not() {
+        let dir = tempfile::tempdir().unwrap();
+        // A line written before `via` was a key (an Allow of #7415's time reads the same).
+        record(dir.path(), PROJECT, "a", &[made("old")]).unwrap();
+        record_via(dir.path(), PROJECT, "a", &[made("cut")], Some(Via::Route)).unwrap();
+
+        assert!(owned(dir.path(), "a", "old").unwrap().fast_forward_only);
+        assert!(!owned(dir.path(), "a", "cut").unwrap().fast_forward_only);
     }
 
     #[test]

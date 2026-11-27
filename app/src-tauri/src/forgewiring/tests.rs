@@ -343,21 +343,7 @@ fn commit_with(dir: &std::path::Path, files: &[(&str, &[u8])], message: &str) ->
 
 /// The thin pack a client sends for `tip` when the forge advertises `have`.
 fn thin_pack(dir: &std::path::Path, tip: &HeadSha, have: &[&HeadSha]) -> Vec<u8> {
-    let mut input = format!("{}\n", tip.as_str());
-    for h in have {
-        input.push_str(&format!("^{}\n", h.as_str()));
-    }
-    let mut child = purlis_core::forklock::spawn(
-        std::process::Command::new("git")
-            .current_dir(dir)
-            .args(["pack-objects", "--stdout", "--revs", "--thin", "-q"])
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped()),
-    )
-    .unwrap();
-    std::io::Write::write_all(&mut child.stdin.take().unwrap(), input.as_bytes()).unwrap();
-    child.wait_with_output().unwrap().stdout
+    thin_pack_of(dir, &[tip], have)
 }
 
 const CI: &str = ".github/workflows/ci.yml";
@@ -543,6 +529,158 @@ fn pushing_the_branch_s_own_tip_again_to_a_branch_the_chat_holds_by_allow_is_sen
     let read = scene.read_allowed(&scene.old_tip.clone(), &pack);
 
     assert!(read.is_ok(), "{read:?}");
+}
+
+impl Rebase {
+    /// The commit the branch's old tip was made on: a reset of the branch to it is a rewind
+    /// whose pack is empty, for the forge has every object of it.
+    fn older(&self) -> HeadSha {
+        let out = git_in(
+            &self.forge,
+            &["rev-parse", &format!("{}~1", self.old_tip.as_str())],
+        );
+        HeadSha::try_from(String::from_utf8(out.unwrap()).unwrap().trim().to_owned()).unwrap()
+    }
+
+    /// `push` read whole, as [`PushGate::check`] reads it once its repo is known: every update
+    /// against this forge, whose branches are each at the old tip.
+    fn read_push(&self, updates: Vec<PushUpdate>, pack: Vec<u8>) -> PushVerdict {
+        let home = tempfile::tempdir().unwrap();
+        let parent = tempfile::tempdir().unwrap();
+        let gate = CiPushGate {
+            parent: parent.path().to_path_buf(),
+            ..gate(context(true, home.path()))
+        };
+        let push = PushRead {
+            host: "github.com".to_owned(),
+            port: 443,
+            repo: "acme/app".to_owned(),
+            updates,
+            pack,
+        };
+        let sources = |_| -> Result<Sources, String> {
+            Ok((
+                Box::new(TwoTips {
+                    default_tip: self.default_tip.clone(),
+                    branch_tip: self.old_tip.clone(),
+                }),
+                Box::new(LocalForge(self.forge.clone())),
+            ))
+        };
+        gate.read_push(
+            &ChatId::new("chat"),
+            7,
+            &Repo::try_from("acme/app").unwrap(),
+            &push,
+            &sources,
+        )
+    }
+
+    /// An update of `branch` from the old tip to `tip`, marked as the core marks it.
+    fn update(&self, branch: &str, tip: &HeadSha, fast_forward_only: bool) -> PushUpdate {
+        PushUpdate {
+            old: self.old_tip.as_str().to_owned(),
+            new: tip.as_str().to_owned(),
+            name: format!("refs/heads/{branch}"),
+            fast_forward_only,
+        }
+    }
+}
+
+/// The thin pack a client sends for every one of `tips` when the forge advertises `have`.
+fn thin_pack_of(dir: &std::path::Path, tips: &[&HeadSha], have: &[&HeadSha]) -> Vec<u8> {
+    let mut input = String::new();
+    for tip in tips {
+        input.push_str(&format!("{}\n", tip.as_str()));
+    }
+    for h in have {
+        input.push_str(&format!("^{}\n", h.as_str()));
+    }
+    let mut child = purlis_core::forklock::spawn(
+        std::process::Command::new("git")
+            .current_dir(dir)
+            .args(["pack-objects", "--stdout", "--revs", "--thin", "-q"])
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped()),
+    )
+    .unwrap();
+    std::io::Write::write_all(&mut child.stdin.take().unwrap(), input.as_bytes()).unwrap();
+    child.wait_with_output().unwrap().stdout
+}
+
+#[test]
+fn a_reset_of_a_branch_the_chat_holds_by_allow_to_an_older_commit_is_refused_though_it_sends_no_objects()
+ {
+    // A rewind adds no commit, so its pack is empty: only the gate's reading of the forge's
+    // objects shows that it drops the branch's tip. On the chat's own branch the same reset is
+    // no rewind refused: only its CI file (back to the old default's) is read, and held.
+    let scene = rebase_scene();
+    let older = scene.older();
+    let own = match scene.read(&older, &scene.empty()) {
+        Err(PushVerdict::Refuse(why)) => why,
+        other => panic!("not held: {other:?}"),
+    };
+    assert!(own.contains("changes CI files"), "{own}");
+
+    let why = match scene.read_allowed(&older, &scene.empty()) {
+        Err(PushVerdict::Refuse(why)) => why,
+        other => panic!("not refused: {other:?}"),
+    };
+
+    assert!(why.contains("task was not this chat's"), "{why}");
+}
+
+#[test]
+fn the_mark_the_core_put_on_an_update_is_what_the_gate_reads_it_by() {
+    // `check`'s own reading of a push: the same rebase is sent where the core did not mark the
+    // update, and refused where it did.
+    let scene = rebase_scene();
+    let (tip, pack) = scene.rebased(b"v2\n");
+
+    let unmarked = scene.read_push(vec![scene.update("task", &tip, false)], pack.clone());
+    let marked = scene.read_push(vec![scene.update("task", &tip, true)], pack);
+
+    assert!(matches!(unmarked, PushVerdict::Forward), "{unmarked:?}");
+    let why = said(marked);
+    assert!(why.contains("task was not this chat's"), "{why}");
+}
+
+#[test]
+fn a_push_of_two_branches_is_refused_when_its_marked_one_is_rewritten_and_sent_when_only_the_other_is()
+ {
+    let scene = rebase_scene();
+    let (rebased, _) = scene.rebased(b"v2\n");
+    let (added, _) = scene.added(b"bin\0\n");
+    let pack = || {
+        thin_pack_of(
+            &scene.forge,
+            &[&rebased, &added],
+            &[&scene.old_tip, &scene.default_tip],
+        )
+    };
+
+    // The branch the chat holds by Allow (`task`) rewritten, its own (`mine`) moved on.
+    let refused = scene.read_push(
+        vec![
+            scene.update("mine", &added, false),
+            scene.update("task", &rebased, true),
+        ],
+        pack(),
+    );
+    // The branch held by Allow moved on, its own rewritten.
+    let sent = scene.read_push(
+        vec![
+            scene.update("task", &added, true),
+            scene.update("mine", &rebased, false),
+        ],
+        pack(),
+    );
+
+    let why = said(refused);
+    assert!(why.contains("task was not this chat's"), "{why}");
+    assert!(!why.contains("mine"), "{why}");
+    assert!(matches!(sent, PushVerdict::Forward), "{sent:?}");
 }
 
 // ---- a push that sends no new objects: its tip must be in a branch of this repo ----

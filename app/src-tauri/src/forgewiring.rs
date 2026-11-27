@@ -579,6 +579,39 @@ impl PushGate for CiPushGate {
                 "purlis did not send this push: it is reading other pushes now, so try again in a moment.",
             );
         };
+        let url = format!("https://{}/{}.git", served.repo.host, served.repo.path);
+        let sources = |budget: std::time::Duration| -> Result<Sources, String> {
+            let (forge, _) = self.context.forge_of(&served, None)?;
+            // Each push fetches what changed since the last into the repo's own cache, all its
+            // fetches within one deadline (inside the listener's connection total).
+            let from = purlis_core::heldact::FromForge {
+                cache: self.cache_of(&served).map(|cache| cache.for_a_push(budget)),
+                ..self.context.fetch_source(&served, &url)?
+            };
+            Ok((forge, Box::new(from)))
+        };
+        self.read_push(chat, session, &repo, push, &sources)
+    }
+}
+
+/// The forge as the person, and where a quarantine fetches the push's base from, for one update.
+type Sources = (
+    Box<dyn purlis_core::heldact::HeldForge>,
+    Box<dyn purlis_core::heldact::BaseObjects>,
+);
+
+impl CiPushGate {
+    /// **Every branch update of `push`, each read by [`Self::read_update`]** against the forge
+    /// `sources` gives for it, as [`PushGate::check`] reads them once the push's repo is known:
+    /// the first refusal answers for the whole push.
+    fn read_push(
+        &self,
+        chat: &ChatId,
+        session: u32,
+        repo: &Repo,
+        push: &PushRead,
+        sources: &dyn Fn(std::time::Duration) -> Result<Sources, String>,
+    ) -> PushVerdict {
         // One deadline for every fetch of this push, whatever the number of branches it updates.
         let started = std::time::Instant::now();
         for update in &push.updates {
@@ -596,18 +629,8 @@ impl PushGate for CiPushGate {
             else {
                 return Self::refuse("purlis did not send this push: a name it cannot read.");
             };
-            let (forge, _) = match self.context.forge_of(&served, None) {
+            let (forge, from) = match sources(budget) {
                 Ok(made) => made,
-                Err(why) => return Self::refuse(format!("purlis did not send this push: {why}.")),
-            };
-            let url = format!("https://{}/{}.git", served.repo.host, served.repo.path);
-            let from = match self.context.fetch_source(&served, &url) {
-                // Each push fetches what changed since the last into the repo's own cache, all
-                // its fetches within one deadline (inside the listener's connection total).
-                Ok(from) => purlis_core::heldact::FromForge {
-                    cache: self.cache_of(&served).map(|cache| cache.for_a_push(budget)),
-                    ..from
-                },
                 Err(why) => return Self::refuse(format!("purlis did not send this push: {why}.")),
             };
             let one = Update {
@@ -619,7 +642,7 @@ impl PushGate for CiPushGate {
                 pack: &push.pack,
             };
             if let Err(verdict) =
-                self.read_update(chat, session, forge.as_ref(), &from, &repo, &one)
+                self.read_update(chat, session, forge.as_ref(), from.as_ref(), repo, &one)
             {
                 return verdict;
             }

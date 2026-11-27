@@ -561,6 +561,7 @@ impl ChatPolicy {
                             repo_id: repo.project_id,
                             branch: branch.clone(),
                             tip: String::new(),
+                            fast_forward_only: false,
                         });
                         return false;
                     }
@@ -587,6 +588,7 @@ impl ChatPolicy {
                         repo_id: Some(repo_id),
                         branch,
                         tip: String::new(),
+                        fast_forward_only: false,
                     });
                 }
             }
@@ -1198,6 +1200,7 @@ impl ChatPolicy {
                     repo_id: repo.project_id,
                     branch: branch.to_string(),
                     tip: command.new_id.clone(),
+                    fast_forward_only: false,
                 },
                 false,
             )))
@@ -1215,6 +1218,7 @@ impl ChatPolicy {
                         repo_id: repo.project_id,
                         branch: branch.to_string(),
                         tip: command.new_id.clone(),
+                        fast_forward_only: tip.fast_forward_only,
                     },
                     // Owned by the person's Allow: it was another's, so only forward (#7841).
                     tip.fast_forward_only,
