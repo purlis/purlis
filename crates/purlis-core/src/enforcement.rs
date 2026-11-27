@@ -70,6 +70,47 @@ pub const LINEAGE_KEY: &str = "lineage";
 /// Set by the app at the launch, after anything a profile set, and never inherited.
 pub const ENV: &str = "PURLIS_POLICY";
 
+/// **Where this machine's acceptance of a project's `[policy]` lives, as a refusal names it**
+/// (ADR 0130 §7, §8): acceptance is per machine, so a chat started on another machine (a runner's
+/// or a pool's, #7722) is told which machine's window accepts it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AcceptedOn<'a> {
+    /// The machine this chat runs on.
+    ThisMachine,
+    /// Another machine, by the name the person knows it by.
+    Machine(&'a str),
+}
+
+impl AcceptedOn<'_> {
+    /// "on this machine", or "on <machine>".
+    fn on(self) -> String {
+        match self {
+            Self::ThisMachine => "on this machine".to_owned(),
+            Self::Machine(name) => format!("on {name}"),
+        }
+    }
+
+    /// The window that accepts it: purlis's own, on that machine.
+    fn window(self) -> String {
+        match self {
+            Self::ThisMachine => "purlis's window".to_owned(),
+            Self::Machine(name) => format!("purlis's window on {name}"),
+        }
+    }
+}
+
+/// **Why a refusal an unaccepted policy causes was made, and the way out** (ADR 0130 §7): the
+/// policy is not accepted where it lives (`on`), and only that window accepts it. Never "set the
+/// family to `log`": loosening the family the policy holds changes nothing until it is accepted.
+/// A clause to follow "because "; the caller says what was refused.
+pub fn unaccepted_said(on: AcceptedOn<'_>) -> String {
+    format!(
+        "this project's policy isn't accepted {}. A person accepts it in {}; a chat cannot.",
+        on.on(),
+        on.window()
+    )
+}
+
 /// One family of purlis's refusals (Q308, from the #6970 inventory).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Family {
@@ -853,7 +894,7 @@ const MERGES_KEPT: &str = "guards.merge.opted_in";
 
 /// How every family runs for one chat: what [`at_start`] resolved, the sandbox's level, and the
 /// dispatch denies.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Resolved {
     modes: BTreeMap<Family, Mode>,
     /// The project's sandbox level ([`SandboxLevel`]); the `sandbox` family's mode follows it
@@ -877,7 +918,30 @@ pub struct Resolved {
     /// as this person accepted them: never fewer ([`Self::stricter`]), and a name the project
     /// drops waits for the press ([`Self::protection_lifted`]).
     protected: BTreeSet<String>,
+    /// **The families enforced only because this machine's acceptance is Broken or Waiting**
+    /// (ADR 0130 §7): enforced here, where the project's committed file under this machine's
+    /// locks would not enforce them. What a refusal names as its cause ([`Self::unaccepted`]).
+    /// A cause, not a mode: it never changes how a family runs, and equality ignores it.
+    unaccepted: BTreeSet<Family>,
+    /// **The dispatch denies held only because the acceptance is Broken or Waiting**: in
+    /// [`Self::denies`], and not in what the committed file denies.
+    unaccepted_denies: crate::dispatchgrant::Denied,
 }
+
+/// Equal where they run the same: the cause of an enforced family ([`Resolved::unaccepted`]) is
+/// what a refusal says, not how anything runs, so a policy kept as accepted compares as it runs.
+impl PartialEq for Resolved {
+    fn eq(&self, other: &Self) -> bool {
+        self.modes == other.modes
+            && self.level == other.level
+            && self.denies == other.denies
+            && self.merges == other.merges
+            && self.lineage == other.lineage
+            && self.protected == other.protected
+    }
+}
+
+impl Eq for Resolved {}
 
 impl Resolved {
     /// Every family at `mode`, the sandbox off where `mode` is and at the floor otherwise: what a
@@ -925,6 +989,8 @@ impl Resolved {
             merges,
             lineage: true,
             protected: BTreeSet::new(),
+            unaccepted: BTreeSet::new(),
+            unaccepted_denies: crate::dispatchgrant::Denied::default(),
         }
     }
 
@@ -1005,7 +1071,75 @@ impl Resolved {
         // An allowance holds only where both allow it; a protection where either has it.
         stricter.lineage = self.lineage && other.lineage;
         stricter.protected = self.protected.union(&other.protected).cloned().collect();
+        // **A cause is said only where acceptance is the reason for this chat** (ADR 0130 §7): a
+        // family one side enforces with no cause (the start's [`ENV`], the chain's policy, which
+        // carry none) is enforced on its own merits, and the press would not lift its refusal.
+        let own_merits = |side: &Self, family: Family| {
+            side.mode(family) == Mode::Enforce && !side.unaccepted(family)
+        };
+        stricter.unaccepted = self
+            .unaccepted
+            .union(&other.unaccepted)
+            .copied()
+            .filter(|family| !own_merits(self, *family) && !own_merits(other, *family))
+            .collect();
+        stricter.unaccepted_denies = self.unaccepted_denies.with(&other.unaccepted_denies);
         stricter
+    }
+
+    /// **The policy in force where `accepted` is what this machine accepted and `committed` what
+    /// the project's file says under its locks**: their stricter, with each family it enforces
+    /// that `committed` alone would not marked as held by the unaccepted policy (ADR 0130 §7).
+    /// Under a held acceptance with nothing waiting, `committed` is never looser, and nothing
+    /// is marked.
+    fn accepting(committed: &Self, accepted: &Self) -> Self {
+        let mut resolved = committed.stricter(accepted);
+        resolved.unaccepted = Family::ALL
+            .into_iter()
+            .filter(|family| {
+                resolved.mode(*family) == Mode::Enforce && committed.mode(*family) < Mode::Enforce
+            })
+            .collect();
+        resolved.unaccepted_denies = crate::dispatchgrant::Denied::parse(
+            &resolved.denies.without(&committed.denies).join("|"),
+        );
+        resolved
+    }
+
+    /// **Whether `family` is enforced only because this machine's acceptance of the project's
+    /// policy is Broken or Waiting** (ADR 0130 §7): its refusal names the unaccepted policy, and
+    /// never tells the person to set the family to `log`. False for a family enforced on its own
+    /// merits: by the committed file, its template, or an administrator's lock.
+    pub fn unaccepted(&self, family: Family) -> bool {
+        self.unaccepted.contains(&family)
+    }
+
+    /// The keys of [`Self::unaccepted`]'s families, as the app's Policy answer carries them
+    /// ([`crate::hookwire::Answer::Policy`]).
+    pub fn unaccepted_keys(&self) -> Vec<String> {
+        self.unaccepted
+            .iter()
+            .map(|family| family.key().to_owned())
+            .collect()
+    }
+
+    /// **This, with the families `keys` names marked as held by the unaccepted policy**: what a
+    /// hook reads off the app's Policy answer. A key it does not know, or a family this does not
+    /// enforce, marks nothing: a cause changes the words of a refusal, never whether it is made.
+    #[must_use]
+    pub fn with_unaccepted(mut self, keys: &[String]) -> Self {
+        self.unaccepted = keys
+            .iter()
+            .filter_map(|key| Family::of_key(key))
+            .filter(|family| self.mode(*family) == Mode::Enforce)
+            .collect();
+        self
+    }
+
+    /// **The dispatch denies held only because the acceptance is Broken or Waiting**: what the
+    /// committed file does not deny ([`crate::dispatchgrant::Deny::Unaccepted`]).
+    pub fn unaccepted_denies(&self) -> &crate::dispatchgrant::Denied {
+        &self.unaccepted_denies
     }
 
     /// **Whether lineage is allowed**: the project does not deny it, no administrator's lock holds
@@ -1300,11 +1434,73 @@ pub fn at_start(root: &Path) -> Resolved {
 /// and **kept as accepted wherever it is stricter**, so a tightening holds until the person
 /// presses to loosen it, through a rolled-back `HEAD` or a broken file alike. Best effort: an
 /// acceptance that cannot be kept changes nothing this answers.
+///
+/// Resolved once per plane for one answer ([`resolved_once`]), never longer.
 fn resolved_in_the_app(root: &Path) -> Resolved {
+    if let Some(kept) =
+        RESOLVED_ONCE.with_borrow(|kept| kept.as_ref().and_then(|kept| kept.get(root).cloned()))
+    {
+        return kept;
+    }
+    let resolved = resolve_in_the_app(root);
+    RESOLVED_ONCE.with_borrow_mut(|kept| {
+        if let Some(kept) = kept {
+            kept.insert(root.to_path_buf(), resolved.clone());
+        }
+    });
+    resolved
+}
+
+/// Each project's policy as one answer resolved it in the app, by the plane; `None` outside one
+/// ([`resolved_once`]).
+type ResolvedOnce = Option<std::collections::HashMap<PathBuf, Resolved>>;
+
+thread_local! {
+    static RESOLVED_ONCE: std::cell::RefCell<ResolvedOnce> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// **`work`, with each project's policy resolved once** (H20): every [`in_force`] (and every
+/// other reader of [`resolved_in_the_app`]) in it gets what the first resolution found. A
+/// resolution runs git twice, reads the locks and verifies the sealed acceptance; the new-chat
+/// picker asked it once per persona, 44 s at 38 personas on a loaded Mac.
+///
+/// **For one answer, never longer**, as [`crate::personas::read_once`] (which opens it) is: the
+/// project's committed policy and the person's acceptance change, so what was resolved is
+/// dropped when `work` returns. The same strictness: a `HEAD` git could not read is strict for
+/// the whole answer and kept for none, and a tightening is kept as accepted by the first
+/// resolution, as it was before. A press in it is never answered from before the press
+/// ([`press`]).
+pub fn resolved_once<T>(work: impl FnOnce() -> T) -> T {
+    /// Drops what was resolved when the outermost answer ends, however it ends.
+    struct Answering(bool);
+    impl Drop for Answering {
+        fn drop(&mut self) {
+            if self.0 {
+                RESOLVED_ONCE.with_borrow_mut(|kept| *kept = None);
+            }
+        }
+    }
+    let _answering = Answering(RESOLVED_ONCE.with_borrow_mut(|kept| {
+        let outermost = kept.is_none();
+        if outermost {
+            *kept = Some(std::collections::HashMap::new());
+        }
+        outermost
+    }));
+    work()
+}
+
+/// [`resolved_in_the_app`], resolved now.
+fn resolve_in_the_app(root: &Path) -> Resolved {
+    #[cfg(test)]
+    RESOLUTIONS.with(|count| count.set(count.get() + 1));
     let accepted = accepted(root);
     let settings = Settings::read(root);
-    let resolved =
-        Resolved::of(&settings, &crate::sandbox::policy::Locks::of(root)).stricter(&accepted);
+    let resolved = Resolved::accepting(
+        &Resolved::of(&settings, &crate::sandbox::policy::Locks::of(root)),
+        &accepted,
+    );
     // A `HEAD` git could not read is strict for now and never kept (#7073): a git that timed out
     // once is no tightening the project made, and would need a press to undo.
     if resolved != accepted
@@ -1344,6 +1540,11 @@ pub fn press(root: &Path, shown: &str) -> std::io::Result<()> {
         ));
     }
     crate::sandbox::local::accept_policy(root, now.as_kept())?;
+    RESOLVED_ONCE.with_borrow_mut(|kept| {
+        if let Some(kept) = kept {
+            kept.remove(root);
+        }
+    });
     // One press for the level (the follow-up's item 1): where it accepts the team's off, the
     // team's own ask is answered with it, so nobody is asked twice.
     if now.level() == SandboxLevel::Off
@@ -1437,6 +1638,13 @@ thread_local! {
     static IN_THE_APP: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
     /// A test's stand-in for what the app answered this process ([`answered_by_the_app`]).
     static ANSWERED: std::cell::RefCell<Option<Resolved>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many times this thread has resolved a project's policy in the app (git, the locks
+    /// and the sealed acceptance), for a test of an answer that resolves it once.
+    pub(crate) static RESOLUTIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// **A test's process is not the app** (or is again) for this thread.
@@ -1568,10 +1776,23 @@ pub fn sandbox_level(root: &Path, file: impl FnOnce() -> SandboxLevel) -> Sandbo
 /// - **Anywhere else**: the committed file's at `HEAD`, as unreadable as strictly. No other
 ///   process judges a dispatch for a chat.
 pub fn denies_in_force(root: &Path) -> crate::dispatchgrant::Denied {
+    denies_in_force_and_unaccepted(root).0
+}
+
+/// [`denies_in_force`], and of those the denies held only because this machine's acceptance is
+/// Broken or Waiting ([`Resolved::unaccepted_denies`]), from the same read. None anywhere but
+/// in the app, which alone verifies the acceptance.
+pub fn denies_in_force_and_unaccepted(
+    root: &Path,
+) -> (crate::dispatchgrant::Denied, crate::dispatchgrant::Denied) {
     if in_the_app() {
-        resolved_in_the_app(root).denies
+        let resolved = resolved_in_the_app(root);
+        (resolved.denies, resolved.unaccepted_denies)
     } else {
-        Settings::read(root).denies
+        (
+            Settings::read(root).denies,
+            crate::dispatchgrant::Denied::default(),
+        )
     }
 }
 
@@ -1975,3 +2196,6 @@ pub fn this_chat() -> Option<String> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod unaccepted_tests;

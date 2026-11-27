@@ -222,11 +222,12 @@ fn every_rule_an_allow_is_held_to_refuses_it_with_nothing_audited() {
         refused(add(&world, &store, ("steward", "devops"), Level::You, None))
             .starts_with("You said never to steward chats dispatching to devops")
     );
-    // A list of nevers that does not read grants nothing.
+    // A list of nevers that does not read grants nothing, and says the file is why: its own
+    // fault, not an unaccepted policy's (ADR 0130 §7).
     std::fs::write(purlis_core::dispatchnever::path(world.root()), "not json").expect("broken");
     assert_eq!(
         refused(add(&world, &store, ("devops", "steward"), Level::You, None)),
-        purlis_core::dispatchnever::unread_said(world.root())
+        purlis_core::dispatchnever::file_unread_said(world.root())
     );
     // A grant for everyone where the project has no file of its own.
     std::fs::remove_file(purlis_core::dispatchnever::path(world.root())).expect("mended");

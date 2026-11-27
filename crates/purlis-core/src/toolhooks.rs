@@ -271,6 +271,7 @@ fn refused(reason: String) -> Verdict {
         reason: rule_of(&reason),
         shape: None,
         denial: reason,
+        unaccepted: None,
     }
 }
 
