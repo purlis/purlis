@@ -455,6 +455,10 @@ struct Lexer {
     operator_in_braces: bool,
     /// Where each `${…}` the word is inside has got to, outermost first.
     in_braces: Vec<InBrace>,
+    /// How many of [`Lexer::in_braces`], from the outermost, a nested `${` has already made
+    /// [`InBrace::Rest`]: a level never leaves `Rest`, so the next nested `${` marks only the
+    /// levels above, and a word of many nested `${` is read in linear time.
+    rest_below: usize,
 }
 
 /// How far into a `${…}` the lexer has read: an operator character in its trim pattern gives no
@@ -534,6 +538,7 @@ impl Lexer {
             split_in_braces: false,
             operator_in_braces: false,
             in_braces: Vec::new(),
+            rest_below: 0,
         }
     }
 
@@ -615,6 +620,7 @@ impl Lexer {
         self.split_in_braces = false;
         self.operator_in_braces = false;
         self.in_braces.clear();
+        self.rest_below = 0;
         let mut quoted = false;
         let mut escapedstate = St::Space;
         loop {
@@ -751,6 +757,7 @@ impl Lexer {
                         (self.bare, self.start, quoted) = (mark.bare, mark.start, mark.quoted);
                         self.braces = 0;
                         self.in_braces.clear();
+                        self.rest_below = 0;
                         self.braces_off = true;
                         self.split_in_braces = mark.split_in_braces;
                         self.operator_in_braces = mark.operator_in_braces;
@@ -794,9 +801,13 @@ impl Lexer {
                                 // ends a bad substitution at its first `}`, so `${${y}%…}` and
                                 // `${x%${z${y}}|…}` close early and run what follows. Every
                                 // `${` it sits in is read the old way too (round 6 review).
-                                for level in &mut self.in_braces {
-                                    *level = InBrace::Rest;
+                                let depth = self.in_braces.len();
+                                if let Some(above) =
+                                    self.in_braces.get_mut(self.rest_below.min(depth)..)
+                                {
+                                    above.fill(InBrace::Rest);
                                 }
+                                self.rest_below = depth;
                                 self.braces += 1;
                                 self.in_braces.push(InBrace::Start);
                             }
@@ -811,6 +822,7 @@ impl Lexer {
                             '}' => {
                                 self.braces -= 1;
                                 self.in_braces.pop();
+                                self.rest_below = self.rest_below.min(self.in_braces.len());
                             }
                             c if WHITESPACE.contains(c) => self.split_in_braces = true,
                             ';' | '&' | '|' | '<' | '>' if here != Some(InBrace::Trim) => {
@@ -881,6 +893,7 @@ impl Lexer {
                         if opens {
                             self.braces = 1;
                             self.in_braces = vec![InBrace::Start];
+                            self.rest_below = 0;
                             self.brace_mark = Some(BraceMark {
                                 at: self.instream.i,
                                 pushed: self.pushback_chars.clone(),
