@@ -1373,6 +1373,13 @@ pub(crate) fn committed_for_test(text: &str) -> Resolved {
     )
 }
 
+/// The policy in force where the project says `committed` and this person `accepted` what they
+/// did, each family the acceptance alone enforces marked as unaccepted, as a test names it.
+#[cfg(test)]
+pub(crate) fn in_force_for_test(committed: &Resolved, accepted: &Resolved) -> Resolved {
+    Resolved::accepting(committed, accepted)
+}
+
 /// **What this person last accepted** for the project at `root`: the shipped default, `watch`,
 /// where nothing was ever kept (the upgrade announces it once); **`strict`** where one was kept
 /// and what is here now is not it (the review of #6992): removed, edited, an older copy put back,
@@ -1534,10 +1541,7 @@ pub fn level_waiting(root: &Path) -> Option<(SandboxLevel, SandboxLevel)> {
 pub fn press(root: &Path, shown: &str) -> std::io::Result<()> {
     let now = committed(root);
     if digest(&now) != shown {
-        return Err(std::io::Error::other(
-            "the project's policy changed since it was shown, so nothing was accepted; look at \
-             it again",
-        ));
+        return Err(changed_since_shown());
     }
     crate::sandbox::local::accept_policy(root, now.as_kept())?;
     RESOLVED_ONCE.with_borrow_mut(|kept| {
@@ -1554,6 +1558,31 @@ pub fn press(root: &Path, shown: &str) -> std::io::Result<()> {
         crate::sandbox::local::answer_team_off(root, answer)?;
     }
     Ok(())
+}
+
+/// **The person's press where the seal's key is another program's: make a new key and accept**
+/// (#7714), the window's alone, on the plane it names. A view already stale asks nothing of
+/// macOS. Then the old items are replaced and a new key made
+/// ([`crate::sandbox::local::renew_seal_key`]), which macOS may ask the person to allow, and
+/// **the digest is checked again after that prompt returns**: a file that changed while it was
+/// open accepts nothing, with the new key kept. Then this plane's acceptance is sealed from what
+/// the person was shown, as [`press`] seals it. Every other plane whose acceptance was sealed
+/// with the old key reads as broken because of the new key ([`Standing::new_key`]), never as
+/// never accepted. Where the key is the app's own, nothing is replaced and it is [`press`].
+pub fn press_with_new_key(root: &Path, shown: &str) -> std::io::Result<()> {
+    if digest(&committed(root)) != shown {
+        return Err(changed_since_shown());
+    }
+    crate::sandbox::local::renew_seal_key()?;
+    press(root, shown)
+}
+
+/// What a press says where the project's file changed since it was shown.
+fn changed_since_shown() -> std::io::Error {
+    std::io::Error::other(
+        "the project's policy changed since it was shown, so nothing was accepted; look at it \
+         again",
+    )
 }
 
 /// **What the window says about the project's `[policy]` on this machine** (Q308a, Q308b).
@@ -1583,6 +1612,26 @@ pub struct Standing {
     pub refused: Vec<String>,
     /// Whether an acceptance is kept here whose seal does not hold: it counts as none.
     pub unsealed: bool,
+    /// Whether the seal's key on this machine is another program's (#7714), whoever made it:
+    /// what happens after an update macOS treats as a different app. Then nothing holds, and
+    /// the press is [`press_with_new_key`].
+    pub key_foreign: bool,
+    /// Whether this plane's acceptance broke because purlis replaced its seal key on this
+    /// machine since it was sealed (#7714), never because something edited it
+    /// ([`crate::sandbox::local::broken_by_a_new_key`]): enforced as broken all the same.
+    pub new_key: bool,
+    /// Whether purlis vouches that this plane's nevers were anchored by a seal key it has
+    /// replaced since (#7714, F3 of #7734's review; H2 of its round 3), and not sealed again:
+    /// they read as unread until the person keeps the pairs the window shows
+    /// ([`crate::dispatchnever::keep_shown_after_a_new_key`]). Accept never seals them.
+    pub nevers_new_key: bool,
+    /// The pairs that press keeps, and the digest it names (H1 of #7734's round 3): where
+    /// `nevers_new_key` and the file reads.
+    pub nevers_to_keep: Option<crate::dispatchnever::ToKeep>,
+    /// Whether that list holds a name purlis cannot show faithfully (M1 of #7734's round 4):
+    /// then no pair is offered to keep, and the window says why
+    /// ([`crate::dispatchnever::holds_a_name_it_cannot_show`]).
+    pub nevers_unshowable: bool,
     /// The digest of the committed text this was read from, which the press must name.
     pub digest: String,
     /// What the project's `[policy]` says, from the same read: its template and the families
@@ -1622,6 +1671,11 @@ pub fn standing(root: &Path) -> Standing {
         protection_lifted: now.protection_lifted(&accepted),
         refused: settings.refused.clone(),
         unsealed: crate::sandbox::local::policy_unsealed(root),
+        key_foreign: crate::secrets::seal::key_is_foreign(),
+        new_key: crate::sandbox::local::broken_by_a_new_key(root),
+        nevers_new_key: crate::dispatchnever::vouched_for_a_new_key(root),
+        nevers_to_keep: crate::dispatchnever::to_keep_after_a_new_key(root),
+        nevers_unshowable: crate::dispatchnever::holds_a_name_it_cannot_show(root),
         digest: digest(&now),
         runs: now.stricter(&accepted),
         locked: Family::ALL
@@ -1917,6 +1971,32 @@ pub const RULE_MERGE_HOLD: &str = "merge-hold";
 pub const RULE_BRANCH_FOLDER: &str = "branch-folder";
 /// The rule id of `forge_milestones`' bound to the chat's own workspace (`guards.forge`).
 pub const RULE_FORGE_WORKSPACE: &str = "forge.milestones.workspace";
+/// The rule ids of a forge route refusal (#7779; ADR 0128, amended 2026-11-27, §10), by its kind
+/// and act: a request purlis doesn't carry, a floor act (also no action), and a known act the
+/// policy doesn't allow. Each is counted under "Would have blocked".
+pub const RULE_FORGE_REFUSALS: &[&str] = &[
+    RULE_FORGE_NO_ACTION,
+    RULE_FORGE_ADMINISTRATION,
+    RULE_FORGE_RULE,
+    RULE_FORGE_APPROVAL,
+    RULE_FORGE_MERGE,
+    RULE_FORGE_RELEASE_OR_TAG,
+    RULE_FORGE_FORK,
+];
+/// A forge request purlis doesn't carry.
+pub const RULE_FORGE_NO_ACTION: &str = "forge.no-action";
+/// A floor act: the repo's administration.
+pub const RULE_FORGE_ADMINISTRATION: &str = "forge.no-action.administration";
+/// A floor act: a rule over the repo (a ruleset or a branch protection).
+pub const RULE_FORGE_RULE: &str = "forge.no-action.rule";
+/// A floor act: an approval or a review.
+pub const RULE_FORGE_APPROVAL: &str = "forge.no-action.approval";
+/// A known act the policy doesn't allow: a merge.
+pub const RULE_FORGE_MERGE: &str = "forge.not-allowed.merge";
+/// A known act the policy doesn't allow: a release or a tag.
+pub const RULE_FORGE_RELEASE_OR_TAG: &str = "forge.not-allowed.release-or-tag";
+/// A known act the policy doesn't allow: a fork.
+pub const RULE_FORGE_FORK: &str = "forge.not-allowed.fork";
 /// The rule id of a dispatched chat on a profile that switches the prompts off (`mode`).
 pub const RULE_ASKS_NOBODY: &str = "dispatch.prompts-off";
 /// The rule id of a persona's deny-list its harness cannot carry (`tools`).
@@ -1951,6 +2031,7 @@ pub fn known_rule(family: Family, rule: &str) -> bool {
         RULE_MERGE_HOLD => Some(Family::GuardsMerge),
         RULE_BRANCH_FOLDER => Some(Family::GuardsGit),
         RULE_FORGE_WORKSPACE => Some(Family::GuardsForge),
+        _ if RULE_FORGE_REFUSALS.contains(&rule) => Some(Family::GuardsForge),
         RULE_ASKS_NOBODY => Some(Family::HarnessMode),
         RULE_DENY_LIST => Some(Family::Tools),
         RULE_PROFILE_APPROVAL | RULE_DECLARATION_APPROVAL => Some(Family::Trust),

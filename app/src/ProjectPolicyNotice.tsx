@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import { commands, type PlaneId, type PolicyState } from "./bindings";
+import { commands, type NeversToKeep, type PlaneId, type PolicyState } from "./bindings";
 import { Notice } from "./Notice";
 import { inTheWindow } from "./personaHostsAllow";
 import { holdPolicy } from "./projectPolicy";
@@ -21,6 +21,49 @@ export const POLICY_ACCEPT_MEANS =
 /** What the window says where this machine's acceptance does not hold: every family enforced. */
 export const POLICY_UNSEALED_SAID =
   "The policy this machine kept as accepted does not hold, so every family is enforced and no chat dispatches to another persona until you accept the project's policy again.";
+
+/**
+ * What the window says where a new seal key left the project's never-dispatch list unread
+ * (#7714). Accept never keeps it: Keep these nevers is a press of its own, and it seals exactly
+ * the pairs shown (H1 of #7734's round 3).
+ */
+export const NEVERS_NEW_KEY_SAID =
+  "purlis made a new seal key on this machine, so it cannot vouch for your never-dispatch list, and no chat dispatches to another persona until you keep the pairs it holds now.";
+
+/**
+ * What the window says of the pairs Keep these nevers seals: that it holds none, that its file
+ * does not read, or that it holds a name purlis cannot show as it is (#7734's round 4), each with
+ * nothing offered where nothing can be kept. The pairs themselves are drawn apart
+ * ({@link NeverPairs}), never joined into a sentence, so no name can read as several pairs.
+ */
+export const neversToKeepSaid = (kept: NeversToKeep | null, unshowable: boolean): string => {
+  if (kept === null)
+    return unshowable
+      ? "It holds a name no persona can have, which purlis cannot show as it is, so there is nothing to keep. Fix the file, and its pairs show here."
+      : "Its file does not read, so there is nothing to keep yet. Fix the file, and its pairs show here.";
+  if (kept.pairs.length === 0)
+    return "It holds no pair now. Keep these nevers keeps it empty, so no pair is refused.";
+  return `Keep these nevers seals exactly ${kept.pairs.length === 1 ? "the pair" : "the pairs"} below.`;
+};
+
+/** The pairs Keep these nevers seals, each an item of its own with each name as code. */
+export function NeverPairs({ kept }: { kept: NeversToKeep | null }) {
+  if (kept === null || kept.pairs.length === 0) return null;
+  return (
+    <ul className="granted-list" aria-label="The pairs Keep these nevers seals">
+      {kept.pairs.map((one, at) => (
+        // The list is drawn once per answer, and two pairs may be alike: the place is the key.
+        <li key={at}>
+          <code>{one.asking}</code> never dispatches to <code>{one.target}</code>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Keep these nevers: the pairs shown, by their digest, on the project `plane` names. */
+export const keepNevers = (plane: PlaneId, kept: NeversToKeep) =>
+  commands.keepProjectNevers(plane, kept.digest);
 
 /** Whether an answer is a policy state to draw: one of any other shape says nothing. */
 const drawable = (data: PolicyState | null | undefined): data is PolicyState =>
@@ -67,6 +110,8 @@ export function ProjectPolicyNotice({
   const [again, setAgain] = useState(0);
   const [hidden, setHidden] = useState(false);
   const [refusedHidden, setRefusedHidden] = useState(false);
+  const [neversSaid, setNeversSaid] = useState<string>();
+  const [neversHidden, setNeversHidden] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -125,8 +170,67 @@ export function ProjectPolicyNotice({
       </Notice>
     ) : null;
 
+  const keep = () => {
+    const kept = state.nevers_to_keep;
+    if (busy || kept === null) return;
+    setBusy(true);
+    setNeversSaid(undefined);
+    void keepNevers(plane, kept)
+      .then((done) => {
+        if (done.status !== "ok") {
+          setNeversSaid(done.error);
+          setAgain((n) => n + 1);
+          return;
+        }
+        if (drawable(done.data)) {
+          setState(done.data);
+          holdPolicy(plane, done.data);
+        }
+        sandboxCommandReturned();
+      })
+      .catch((err: unknown) =>
+        setNeversSaid(`purlis could not keep your never-dispatch list: ${String(err)}`),
+      )
+      .finally(() => setBusy(false));
+  };
+
+  const neversBody = (
+    <>
+      <p>
+        {`${NEVERS_NEW_KEY_SAID} ${neversToKeepSaid(state.nevers_to_keep, state.nevers_unshowable)}`}
+        {!canAccept && " Keep them from purlis's own window on this machine."}
+        {neversSaid !== undefined && ` ${neversSaid}`}
+      </p>
+      <NeverPairs kept={state.nevers_to_keep} />
+    </>
+  );
+  const nevers =
+    !state.nevers_new_key || neversHidden ? null : canAccept && state.nevers_to_keep !== null ? (
+      <Notice
+        cause="nevers-new-key"
+        label="Your never-dispatch list"
+        fixes={[{ label: "Keep these nevers", onPress: keep, busy }]}
+      >
+        {neversBody}
+      </Notice>
+    ) : (
+      <Notice
+        cause="nevers-new-key"
+        label="Your never-dispatch list"
+        onDismiss={() => setNeversHidden(true)}
+      >
+        {neversBody}
+      </Notice>
+    );
+
   const waits = state.waiting.length > 0 || state.unsealed;
-  if (!waits || hidden) return refused;
+  if (!waits || hidden)
+    return (
+      <>
+        {refused}
+        {nevers}
+      </>
+    );
 
   const body = (
     <p>
@@ -140,6 +244,7 @@ export function ProjectPolicyNotice({
   return (
     <>
       {refused}
+      {nevers}
       {canAccept && (state.waiting.length > 0 || state.unsealed) ? (
         <Notice
           cause="policy-loosened"
