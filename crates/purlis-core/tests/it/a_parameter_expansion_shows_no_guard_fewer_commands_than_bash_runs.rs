@@ -290,6 +290,10 @@ fn a_hash_or_percent_trims_only_after_a_name_or_one_special_parameter() {
         "set -- ''; eval ${!#:-cat<.charter/vaults/f.json}",
         "eval ${!#:+:|cat<.charter/vaults/f.json}",
         "true ${!#:+<.charter/vaults/f.json}",
+        // dash ends `${${y}%…}` at the inner `}` and runs the rest.
+        ": ${${y}%|cat<.charter/vaults/f.json;:}",
+        ": ${${y}#&cat<.charter/vaults/f.json&}",
+        "echo ${${1}%%|cat<.charter/vaults/f.json&}}",
     ] {
         assert!(gate(cmd, root.path()).is_some(), "not refused: {cmd:?}");
     }

@@ -773,6 +773,15 @@ impl Lexer {
                         let here = self.in_braces.last().copied();
                         match c {
                             '{' if self.dollars % 2 == 1 => {
+                                // A nested `${` is no parameter a trim can follow: dash ends a
+                                // `${${y}%…}` at the inner `}` and runs what comes after, so the
+                                // `${` it sits in is read the old way too (round 6 review).
+                                // Its `$` has made the parameter look like the special `$`.
+                                if let Some(top @ (InBrace::Start | InBrace::Special)) =
+                                    self.in_braces.last_mut()
+                                {
+                                    *top = InBrace::Rest;
+                                }
                                 self.braces += 1;
                                 self.in_braces.push(InBrace::Start);
                             }
