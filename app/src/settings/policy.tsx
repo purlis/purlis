@@ -7,7 +7,11 @@ import { chatNumberSaid } from "../chatNumber";
 import { SETTINGS, usePlaneChanged } from "../planeChanged";
 import { holdPolicy, modeSaid, templateSaid } from "../projectPolicy";
 import {
+  keepNevers,
   mayAcceptPolicy,
+  NEVERS_NEW_KEY_SAID,
+  NeverPairs,
+  neversToKeepSaid,
   POLICY_ACCEPT_MEANS,
   POLICY_UNSEALED_SAID,
   waitingSaid,
@@ -95,6 +99,28 @@ export function PolicyStanding({
       .catch((err: unknown) => setSaid(`purlis could not keep your acceptance: ${String(err)}`))
       .finally(() => setBusy(false));
   };
+  const keep = () => {
+    const kept = state?.nevers_to_keep;
+    if (kept === null || kept === undefined || busy) return;
+    setBusy(true);
+    setSaid(undefined);
+    void keepNevers(plane, kept)
+      .then((done) => {
+        if (done.status !== "ok") {
+          // Refused, as where the list changed since it was shown: read what stands now.
+          setSaid(done.error);
+          readAgain();
+        } else if (drawable(done.data)) {
+          setState(done.data);
+          holdPolicy(plane, done.data);
+          sandboxCommandReturned();
+        }
+      })
+      .catch((err: unknown) =>
+        setSaid(`purlis could not keep your never-dispatch list: ${String(err)}`),
+      )
+      .finally(() => setBusy(false));
+  };
   return (
     <div
       id={ids.id}
@@ -129,6 +155,23 @@ export function PolicyStanding({
               {state.refused.map((one) => inertly(one)).join(". ")}. Until the file is fixed, every
               family is enforced.
             </p>
+          )}
+          {state.nevers_new_key && (
+            <>
+              <p>
+                {`${NEVERS_NEW_KEY_SAID} ${neversToKeepSaid(state.nevers_to_keep, state.nevers_unshowable)}`}
+                {!canAccept && " Keep them from purlis's own window on this machine."}
+              </p>
+              <NeverPairs kept={state.nevers_to_keep} />
+              {canAccept && state.nevers_to_keep !== null && (
+                <ButtonRow>
+                  {/* It seals the pairs shown: an answer that refuses, never one that grants. */}
+                  <Button isDisabled={busy} onPress={keep}>
+                    Keep these nevers
+                  </Button>
+                </ButtonRow>
+              )}
+            </>
           )}
           {(state.waiting.length > 0 || state.unsealed) && (
             <>
