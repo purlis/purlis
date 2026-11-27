@@ -528,8 +528,8 @@ describe("the prerequisite modal", () => {
     const shown = names.map(inertWords);
     expect(shown).toEqual(names.map((name) => name.normalize("NFC")));
     expect(new Set(shown).size).toBe(names.length);
-    // A pile of marks on one letter is cut to three.
-    expect([...inertWords(`क${"ि".repeat(9)}`)]).toHaveLength(4);
+    // A pile of marks on one letter is cut to six.
+    expect([...inertWords(`क${"ि".repeat(9)}`)]).toHaveLength(7);
   });
 
   it("cuts each name of a row on its own, so a long asking persona leaves the target in view", async () => {

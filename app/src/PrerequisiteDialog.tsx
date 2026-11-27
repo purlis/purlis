@@ -85,8 +85,8 @@ export const grantingAnswer = (entry: PolicyPrerequisite): string =>
 const UNSEEN =
   /[\p{Cc}\p{Cf}\p{Me}\p{Script=Inherited}\u2028\u2029\u115F\u1160\u3164\uFFA0\u2800]/gu;
 
-/** A run of marks past this many on one letter is cut, so stacked marks never draw over a line. */
-const STACKED_MARKS = /(\p{M}{3})\p{M}+/gu;
+/** A run of more than six marks on one letter is cut (Burmese legitimately carries four), so stacked marks never draw over a line. */
+const STACKED_MARKS = /(\p{M}{6})\p{M}+/gu;
 
 /** The most characters of a whole line of names, each already cut to {@link INERT_CAP}. */
 const LINE_CAP = INERT_CAP * 4;
