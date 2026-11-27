@@ -30,13 +30,28 @@ export function HibernatedNotice({
 }) {
   const hibernated = useHibernated(plane, session);
   if (hibernated === null) return null;
-  return <HibernatedBand session={session} onResume={onResume} />;
+  return (
+    <HibernatedBand session={session} onResume={onResume} unsent={hibernated.unsent ?? undefined} />
+  );
 }
 
-/** The band itself, for a chat known to be hibernated: what its story draws. */
-export function HibernatedBand({ session, onResume }: { session: number; onResume: () => void }) {
+/**
+ * The band itself, for a chat known to be hibernated: what its story draws. `unsent` is what
+ * its pane typed once its program was ending, which no program read (SC-4d, #7633): shown
+ * here, and handed back to the pane when it is resumed ({@link UnsentNotice}).
+ */
+export function HibernatedBand({
+  session,
+  onResume,
+  unsent,
+}: {
+  session: number;
+  onResume: () => void;
+  unsent?: string;
+}) {
   const offScreen = useContext(NoticeOf) !== null;
   const chat = offScreen ? "That chat" : "This chat";
+  const typed = unsent === undefined ? "" : shown(unsent);
   return (
     <Notice
       cause={`chat-hibernated:${session}`}
@@ -46,6 +61,67 @@ export function HibernatedBand({ session, onResume }: { session: number; onResum
     >
       {chat} is hibernated: its program ended and its conversation is kept. Resume starts it again
       on its conversation.
+      {typed !== "" && (
+        <>
+          {" "}
+          What you typed since was not sent, and is kept until you resume it:{" "}
+          <span className="whitespace-pre-wrap">{typed}</span>
+        </>
+      )}
+    </Notice>
+  );
+}
+
+/**
+ * What a pane typed, as the window shows it: each control character (an Enter, a Tab) a space,
+ * so it reads as the words typed, and nothing drawn as a terminal would draw it.
+ */
+function shown(typed: string): string {
+  // eslint-disable-next-line no-control-regex
+  return typed.replace(/[\u0000-\u001f\u007f]/g, " ").trim();
+}
+
+/** What the panes of chats woken typed while they were hibernated, by plane and session. */
+const handedBack = new Map<string, string>();
+
+/**
+ * **The core handed back what chat `session`'s pane typed while it was hibernated** (SC-4d,
+ * #7633), with its woken run: said on that run's pane, unsent, until put away. It is never
+ * typed into the woken program: when and how it is delivered is SC-4j's (#7639).
+ */
+export function unsentHandedBack(plane: PlaneId, session: number, unsent: string) {
+  if (shown(unsent) === "") return;
+  handedBack.set(keyOf(plane, session), unsent);
+  for (const tell of listeners) tell();
+}
+
+/**
+ * **What the person typed into a chat while it was hibernated, on its woken pane** (SC-4d,
+ * #7633): not sent, and said so, with the words, until put away with Dismiss.
+ */
+export function UnsentNotice({ plane, session }: { plane: PlaneId; session: number }) {
+  const key = keyOf(plane, session);
+  const unsent = useSyncExternalStore(
+    subscribe,
+    () => handedBack.get(key),
+    () => undefined,
+  );
+  const offScreen = useContext(NoticeOf) !== null;
+  if (unsent === undefined) return null;
+  const chat = offScreen ? "That chat" : "This chat";
+  return (
+    <Notice
+      cause={`chat-unsent:${session}`}
+      at="pane"
+      label="Not sent"
+      onDismiss={() => {
+        handedBack.delete(key);
+        for (const tell of listeners) tell();
+      }}
+    >
+      {chat} was hibernated when you typed this, so it was not sent:{" "}
+      <span className="whitespace-pre-wrap">{shown(unsent)}</span> Type it again if you still want
+      it.
     </Notice>
   );
 }
