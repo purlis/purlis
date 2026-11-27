@@ -351,29 +351,56 @@ function indentOf(line: IBufferLine, nothing: DrawsNothing): number {
  */
 const MARKERS = new Set([..."\u23FA\u2022\u25CF\u25E6\u25AA\u2023\u002D\u002A\u002B"]);
 
+/** The most digits a numbered list item's number is read with. */
+const MOST_DIGITS = 3;
+
+/**
+ * Where a numbered list item's marker that opens at column `at` of `line` ends: one to
+ * {@link MOST_DIGITS} digits then `.` or `)`, as `1. ` and `12) ` number a list. Just past it,
+ * or `undefined` where no such marker opens there.
+ */
+function pastANumber(line: IBufferLine, at: number, nothing: DrawsNothing): number | undefined {
+  let x = at;
+  while (x - at < MOST_DIGITS && /^\d$/u.test(drawnAt(line, x, nothing))) x += 1;
+  if (x === at || !/^[.)]$/u.test(drawnAt(line, x, nothing))) return undefined;
+  return x + 1;
+}
+
+/** Where a marker that opens at column `at` of `line` ends, a bullet ({@link MARKERS}) or a
+ *  number ({@link pastANumber}): just past it, or `undefined` where none opens there. */
+function pastAMarker(line: IBufferLine, at: number, nothing: DrawsNothing): number | undefined {
+  if (MARKERS.has(drawnAt(line, at, nothing)))
+    return at + Math.max(1, line.getCell(at)?.getWidth() ?? 1);
+  return pastANumber(line, at, nothing);
+}
+
 /**
  * **The hanging indent of `line`, the first row of a line** (#7930): the blank cells it starts
- * with, and where those are followed by a marker ({@link MARKERS}) and one blank before a
+ * with, and where those are followed by a marker ({@link pastAMarker}) and one blank before a
  * written cell, the marker's cells and that blank as well, where the line's words start.
  */
 function hangingIndentOf(line: IBufferLine, nothing: DrawsNothing): number {
   const indent = indentOf(line, nothing);
-  if (!MARKERS.has(drawnAt(line, indent, nothing))) return indent;
-  const words = indent + Math.max(1, line.getCell(indent)?.getWidth() ?? 1) + 1;
-  const hangs = drawnAt(line, words - 1, nothing) === "" && drawnAt(line, words, nothing) !== "";
+  const past = pastAMarker(line, indent, nothing);
+  if (past === undefined) return indent;
+  const words = past + 1;
+  const hangs = drawnAt(line, past, nothing) === "" && drawnAt(line, words, nothing) !== "";
   return hangs ? words : indent;
 }
 
 /**
  * Whether row `line`, past `indent`, opens as an item of its own: one character that is no
- * letter or digit (a list's marker, a bullet, Claude Code's `⎿`), then a blank. Under a row
- * that opens with a marker it is the next item, never words going on (#7930).
+ * letter or digit (a list's marker, a bullet, Claude Code's `⎿`), or a list item's number
+ * ({@link pastANumber}), then a blank. Under a row that opens with a marker it is the next
+ * item, never words going on (#7930).
  */
 function opensAnItem(line: IBufferLine, indent: number, nothing: DrawsNothing): boolean {
   const opens = drawnAt(line, indent, nothing);
-  if (opens === "" || /^[\p{L}\p{N}]/u.test(opens)) return false;
-  const after = indent + Math.max(1, line.getCell(indent)?.getWidth() ?? 1);
-  return drawnAt(line, after, nothing) === "";
+  if (opens === "") return false;
+  const after = /^[\p{L}\p{N}]/u.test(opens)
+    ? pastANumber(line, indent, nothing)
+    : indent + Math.max(1, line.getCell(indent)?.getWidth() ?? 1);
+  return after !== undefined && drawnAt(line, after, nothing) === "";
 }
 
 /**

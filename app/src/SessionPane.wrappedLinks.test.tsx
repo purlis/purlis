@@ -459,6 +459,9 @@ describe("a link the program broke over rows at the pane's width", () => {
     ["a list item's dash", "- "],
     ["a bullet", "• "],
     ["a reply's marker under an indent of its own", "  ⏺ "],
+    ["a numbered list item", "1. "],
+    ["a numbered list item with two digits and a parenthesis", "12) "],
+    ["a numbered list item under an indent of its own", "  3. "],
   ])("is one link where its first row opens with %s", async (_, opening) => {
     const { term, drawn } = await opened();
     const head = upTo(COLS - opening.length, "https://purlis.dev/", "a");
@@ -496,6 +499,9 @@ describe("a link the program broke over rows at the pane's width", () => {
     ["a nested list item's dash", "- ", "  - next item"],
     ["a nested bullet", "• ", "  • next item"],
     ["a tool result's corner under a reply's marker", "⏺ ", "  ⎿  done"],
+    ["a nested numbered item", "1. ", "   1. next item"],
+    ["a nested numbered item with a parenthesis", "12) ", "    2) next item"],
+    ["a numbered item nested under a dash", "- ", "  1. next item"],
   ])(
     "is not joined where the row it hangs opens with %s and a blank of its own",
     async (_, opening, next) => {

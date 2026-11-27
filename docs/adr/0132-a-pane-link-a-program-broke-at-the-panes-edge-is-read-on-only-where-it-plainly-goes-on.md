@@ -29,10 +29,13 @@ the link colour.
      may join, and item 4's ask is what stands between such a join and an address opened;
    - the row before it fills the pane to its last column (a wide character's second half
      counts) with a cell that draws. What draws is one rule (`drawnAt`): a blank, a cell no
-     program wrote, a concealed cell (SGR 8), a braille blank (U+2800), a Hangul filler and
-     what the core says draws nothing (`LinkCore.drawsNothing`) draw nothing, so a row padded to
-     the edge with any of them stops short, as it looks. The same rule reads a row's indent and
-     where its written cells end;
+     program wrote, a concealed cell (SGR 8), a cell drawn in its own background colour (a
+     palette or true colour on itself; the default colours inverted still draw), a braille
+     blank (U+2800), a Hangul filler and what the core says draws nothing (`LinkCore.drawsNothing`) draw nothing, so a row padded to
+     the edge with any of them stops short, as it looks. The same rule reads a row's indent,
+     where its written cells end and the words of a link a program marked (OSC 8). An indent is
+     counted in columns, so one of wide or combined characters (an ideographic space U+3000)
+     is left out of the joined words whole;
    - the row after it is a line of its own (not one the terminal wrapped) and starts with as
      many blank cells as the hanging indent of the first row of the line before it, then a
      written cell. That indent is the first row's blank cells, and where those are followed by
@@ -40,15 +43,15 @@ the link colour.
      indents alike on every row (two blanks, as in a Claude Code reply after its first
      paragraph) joins, and so does one whose first row opens with a marker and hangs the rows
      after it under its words (`⏺ ` then words, the rows below indented two blanks; `- ` or
-     `• ` in a list). A row indented more or less than that starts something else, and so does
-     a row under a marker at the marker's own indent, as the next item of a list does. The
-     markers are a short fixed set, `⏺ • ● ◦ ▪ ‣ - * +`, the bullets Claude Code, Markdown and
-     common command-line programs put before a reply or a list item; a first row opening with
-     any other character and a blank (`→ `, `> `) hangs nothing, nor does an ordered list's
-     number (`1. `), left out to keep the set to single characters. The rule is the cells'
+     `• ` in a list, `1. ` or `12) ` in a numbered one). A row indented more or less than that
+     starts something else, and so does a row under a marker at the marker's own indent, as
+     the next item of a list does. The markers are a short fixed set, `⏺ • ● ◦ ▪ ‣ - * +`, the
+     bullets Claude Code, Markdown and common command-line programs put before a reply or a
+     list item, and a numbered item's number, one to three digits then `.` or `)`; a first row
+     opening with any other character and a blank (`→ `, `> `) hangs nothing. The rule is the cells'
      geometry alone: it names no program and reads nothing a program says about itself;
    - the row after it, past that indent, does not open as an item of its own: one character
-     that is no letter or digit, then a blank. A nested list's dash or bullet, or the `⎿`
+     that is no letter or digit, or a numbered item's number, then a blank. A nested list's dash or bullet, or the `⎿`
      Claude Code puts before a tool's result under its `⏺ ` line, is the next item, and its
      marker taken on would end the link above it with a `-` or a `⎿`. The cost is a link whose
      last piece on the next row is one such character alone before a blank (`…/a_` broken
@@ -97,7 +100,9 @@ the link colour.
    pointer is on, while those cells still hold what they held when the program closed it.
    Where the program moved the cursor while it was open, or wrote over its cells after it
    closed (going back up to draw the screen again), only the part xterm hands is drawn: its
-   other rows may now hold another link.
+   other rows may now hold another link. A later link written over any of its cells counts
+   whatever words it draws: the cells hold another link where its target, or the `id` the
+   program gave it, differs. The same link written again over its cells is still the one link.
 
 At most 24 rows are read as one line, as for a wrapped line, and a link that runs on past them
 is no link. A marked link longer than that is drawn whole from its first 24 rows, and as the
