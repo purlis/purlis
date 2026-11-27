@@ -354,6 +354,33 @@ fn a_gitlab_rebase_is_forwarded_only_for_a_source_branch_the_chat_made() {
 }
 
 #[test]
+fn a_gitlab_rebase_of_a_source_branch_the_chat_holds_by_the_persons_allow_is_refused() {
+    purlis_core::unsteered!();
+    // The forge's rebase replaces the branch's history, and the route never reads the commits it
+    // would write: a branch the chat holds by the person's Allow moves only by the chat's own
+    // fast-forward push (#7841). The same rebase is forwarded on a branch the chat made.
+    let held = |fast_forward_only: bool| {
+        let tips: purlis_core::forge::proxy::TipSource =
+            std::sync::Arc::new(move |host: &str, repo_id: u64, branch: &str| {
+                (host == "gitlab.com" && repo_id == 42 && branch == "work").then(|| {
+                    purlis_core::forge::createdbranches::OwnedTip {
+                        tip: "1".repeat(40),
+                        fast_forward_only,
+                    }
+                })
+            });
+        let objects =
+            ObjectsWithHeads::default().pull("group/proj", "MR_own", 5, "group/proj", "work");
+        Scene::tuned(objects, move |proxy| proxy.with_tips(tips))
+    };
+
+    let out = rebase(&held(true), 5);
+    assert!(is_refused(&out, Refusal::ProtectedPullHead), "{out:?}");
+    let out = rebase(&held(false), 5);
+    assert!(forwarded(&out), "{out:?}");
+}
+
+#[test]
 fn a_gitlab_merge_request_from_the_default_branch_is_refused_when_opened() {
     purlis_core::unsteered!();
     let s = scene();

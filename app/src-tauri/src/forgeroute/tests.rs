@@ -157,8 +157,13 @@ impl Recorded for FakeRecorded {
         _host: &str,
         _repo_id: u64,
         branch: &str,
-    ) -> Option<String> {
-        self.tip_of(project, chat, branch)
+    ) -> Option<purlis_core::forge::createdbranches::OwnedTip> {
+        self.tip_of(project, chat, branch).map(|tip| {
+            purlis_core::forge::createdbranches::OwnedTip {
+                tip,
+                fast_forward_only: false,
+            }
+        })
     }
     fn own_branches(&self, project: &Path, chat: &str, _host: &str, _repo_id: u64) -> Vec<String> {
         self.own_of(chat)

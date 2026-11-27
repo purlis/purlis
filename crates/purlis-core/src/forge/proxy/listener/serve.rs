@@ -291,10 +291,14 @@ fn read_push(forwarded: &Forwarded, port: u16, body: &[u8]) -> Option<PushRead> 
         if !is_object_id(old) || !is_object_id(new) {
             return None;
         }
+        let fast_forward_only = name
+            .strip_prefix("refs/heads/")
+            .is_some_and(|branch| forwarded.fast_forward_only.iter().any(|b| b == branch));
         updates.push(PushUpdate {
             old: old.to_owned(),
             new: new.to_owned(),
             name: name.to_owned(),
+            fast_forward_only,
         });
     }
     if updates.is_empty() {
@@ -875,6 +879,20 @@ mod tests {
         assert_eq!(push.updates.len(), 1);
         assert_eq!(push.updates[0].new, TIP);
         assert_eq!(push.pack, b"PACK");
+    }
+
+    #[test]
+    fn an_update_of_a_branch_the_core_marked_reaches_the_gate_as_one_that_must_fast_forward() {
+        let mut forwarded = Forwarded::for_storage("gitlab.com", "https://gitlab.com/x");
+        forwarded.fast_forward_only = vec!["theirs".to_owned()];
+        let theirs = format!("{TIP} {TIP} refs/heads/theirs\0 report-status");
+        let mine = format!("{TIP} {TIP} refs/heads/mine");
+        let tag = format!("{TIP} {TIP} refs/tags/theirs");
+
+        let push = read_push(&forwarded, 443, &push_of(&[&theirs, &mine, &tag])).expect("a push");
+
+        let marked: Vec<bool> = push.updates.iter().map(|u| u.fast_forward_only).collect();
+        assert_eq!(marked, [true, false, false]);
     }
 
     #[test]
