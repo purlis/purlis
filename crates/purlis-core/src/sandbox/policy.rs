@@ -279,6 +279,7 @@ impl Locks {
     /// With the project's own `[sandbox] policy = "never"` beside them (#2071 PR C), which
     /// requires the full sandbox as [`Self::forbids_opt_out`] does, said as the project's.
     pub fn of(root: &Path) -> Self {
+        crate::forklock::counting::note_a_locks_read();
         let held = Self {
             team_never: super::team::Team::of(root).policy == super::team::Policy::Never,
             ..Self::of_this_machine()

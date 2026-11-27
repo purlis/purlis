@@ -4558,7 +4558,17 @@ export type BusyChat = {
 /**  How a chat that is hibernated was put to rest. */
 export type By = 
 /**  The person did, from its row. */
-"operator";
+"operator" | 
+/**
+ *  The app did, by itself, for a rested chat: read back from the record at a restart
+ *  (SC-4e, #7634).
+ */
+"idle" | 
+/**
+ *  Its session host ended while it rested at a turn's end (#2278), read back from the
+ *  record at a restart (SC-4e, #7634): it has no kept screen.
+ */
+"host_crash";
 
 /**
  *  A harness the operator started by hand in a shell tab, as the window draws its banner.
