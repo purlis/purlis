@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795764321521,
+  "lastUpdate": 1795764912258,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57204,6 +57204,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9204575,
             "unit": "ms",
             "extra": "median of 5 runs: 101.072, 101.848, 101.920, 102.210, 102.859 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f014baad3eb7fe9cc908ae234c3e22b364969d00",
+          "message": "Pane links: remotes are read from the config bytes inside the project, owner/repo#N is a file where the file is there, look-alike issue words ask (#7860)\n\n* Pane links: files the resolver reads are bounded, regular and one-named; commondir is resolved in the project; owner/repo/#N asks (fourth round)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7QX1SKZ6RJCMXX5RDWC1EB1\nPurlis-Persona: steward\n\n* Pane links, fourth round: the new files of the branch (issue.rs, folder.rs, issue_tests.rs, changes, ADR 0126)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7QX1SKZ6RJCMXX5RDWC1EB1\nPurlis-Persona: steward\n\n* Pane links: the folder decision is ADR 0129, since main's 0126 is the masked kept screen\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CXX3C7563FP1HDH3TPS4DY\nPurlis-Persona: steward\n\n* Pane links: the folder decision is ADR 0130, since main's 0129 is purlis-core staying one crate; a resolver offering a branch's files links issue numbers too\n\nResolver::offering, the app's resolver since the pane-link follow-ups, knew web addresses and\nfiles only, so an issue or pull request number in a pane was no link there. It now holds the\nissue kind between them, as Resolver::default does.\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8D137K054EH8S5Q74AV8C2Q\nPurlis-Persona: steward\n\n* Pane links: the app's issue-link tests build on main's hover, which says when a file is unchecked\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8D137K054EH8S5Q74AV8C2Q\nPurlis-Persona: steward\n\n* Pane links: the folder decision is ADR 0131, since main's 0130 is prerequisites\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8D137K054EH8S5Q74AV8C2Q\nPurlis-Persona: steward",
+          "timestamp": "2026-11-27T06:46:20Z",
+          "tree_id": "1a4a8f8b68753c854f788a1b3671c42d9b7bc607",
+          "url": "https://github.com/purlis/purlis/commit/f014baad3eb7fe9cc908ae234c3e22b364969d00"
+        },
+        "date": 1795764902230,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7122415,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.691, 0.703, 0.712, 0.720, 0.727 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.678655499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.374, 16.541, 16.679, 16.711, 16.760 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.00821149999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.094, 101.518, 102.008, 102.814, 102.906 ms"
           }
         ]
       }
