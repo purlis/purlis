@@ -3686,3 +3686,72 @@ fn the_dnf_and_yum_utilities_and_svscanboot_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The supervisors, init systems, queues and schedulers #7833 names, refused on what each is for:
+/// `tini`, `catatonit`, `daemonize` and libslack's `daemon` run the program after them; `pm2
+/// start` and `supervisord -c` run the scripts and `[program:x]` commands they are handed;
+/// sysvinit's `startpar` the init scripts it is named; runit's `runit` its stage scripts and
+/// `runsvchdir` switches the folder `runsvdir` runs; `dinit`, GNU Shepherd's `shepherd` and
+/// OpenRC's old `runscript` run the services of a folder or file they are named, and `dinitctl`
+/// and `herd` start them; perp's `perpd` and `perpboot` supervise a folder's services, and its
+/// `tinylog` is `multilog`'s twin; s6's `s6-svscanctl` has a running `s6-svscan` start what a
+/// chat wrote into its folder, `s6-instance-create` starts a service, `s6-sudoc` hands
+/// `s6-sudod` a command line, `s6-notifywhenup` runs the program after it, `s6-fdholder-daemon`
+/// runs `s6-fdholderd` under `s6-ipcserver`'s access rules (`s6-fdholderd` kept with it), and
+/// `s6-linux-init-shutdownd` runs the `rc.shutdown` of the folder its `-c` names; the Procfile
+/// runners (`overmind`, `foreman`, `honcho`, `hivemind`, `goreman`), the queues (`pueue`,
+/// `pueued`, `tsp`, `nq`), `ubic-admin`, `reflex`, s6-overlay's `with-contenv` and
+/// `cloud-init-per` run the commands they are handed; `transactional-update run` and `shell`
+/// run a command or a shell; `fcrontab` and `incrontab` hand a daemon a table of commands;
+/// `logrotate` runs a file's `prerotate` and `postrotate` scripts; and `lefthook` and `husky`
+/// run a repository's hooks.
+#[test]
+fn the_supervisors_init_systems_queues_and_schedulers_of_7833_are_offered_no_run_grant() {
+    for name in [
+        "tini",
+        "catatonit",
+        "daemonize",
+        "daemon",
+        "pm2",
+        "supervisord",
+        "startpar",
+        "runit",
+        "runsvchdir",
+        "dinit",
+        "dinitctl",
+        "shepherd",
+        "herd",
+        "runscript",
+        "perpd",
+        "perpboot",
+        "tinylog",
+        "s6-svscanctl",
+        "s6-instance-create",
+        "s6-sudoc",
+        "s6-notifywhenup",
+        "s6-fdholder-daemon",
+        "s6-fdholderd",
+        "s6-linux-init-shutdownd",
+        "overmind",
+        "foreman",
+        "honcho",
+        "hivemind",
+        "goreman",
+        "pueue",
+        "pueued",
+        "tsp",
+        "nq",
+        "ubic-admin",
+        "reflex",
+        "with-contenv",
+        "cloud-init-per",
+        "transactional-update",
+        "fcrontab",
+        "incrontab",
+        "logrotate",
+        "lefthook",
+        "husky",
+    ] {
+        refused_as_running_others(name);
+    }
+}

@@ -2514,6 +2514,67 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "prove6",
     "fakeroot-ng",
     "grunt-init",
+    // The supervisors, init systems, queues and schedulers #7833 names (rounds 2 to 22 of #7828's
+    // review), whose source was out of reach, refused on what each is for: `tini`, `catatonit`,
+    // `daemonize` and libslack's `daemon` run the program after them; `pm2 start` and
+    // `supervisord -c` the scripts and `[program:x]` commands they are handed; sysvinit's
+    // `startpar` the init scripts it is named; runit's `runit` its stage scripts, and
+    // `runsvchdir` switches the folder `runsvdir` runs; `dinit`, GNU Shepherd's `shepherd` and
+    // OpenRC's old `runscript` run the services of a folder or a file they are named, and
+    // `dinitctl` and `herd` start them; perp's `perpd` and `perpboot` supervise a folder's
+    // services, and its `tinylog` is `multilog`'s twin; s6's `s6-svscanctl -a` has a running
+    // `s6-svscan` start what a chat wrote into its folder, `s6-instance-create` starts a service,
+    // `s6-sudoc` hands `s6-sudod` a command line, `s6-notifywhenup` runs the program after it,
+    // `s6-fdholder-daemon` runs `s6-fdholderd` under `s6-ipcserver`'s access rules
+    // (`s6-fdholderd` kept with it on the conservative side), and `s6-linux-init-shutdownd` runs
+    // the `rc.shutdown` of the folder its `-c` names; the Procfile runners, the command queues,
+    // `ubic-admin`, `reflex`, s6-overlay's `with-contenv` and `cloud-init-per` run the commands
+    // they are handed; `transactional-update run` and `shell` a command or a shell; `fcrontab`
+    // and `incrontab` hand a daemon a table of commands; `logrotate` runs a file's `prerotate`
+    // and `postrotate` scripts; and `lefthook` and `husky` a repository's hooks.
+    "tini",
+    "catatonit",
+    "daemonize",
+    "daemon",
+    "pm2",
+    "supervisord",
+    "startpar",
+    "runit",
+    "runsvchdir",
+    "dinit",
+    "dinitctl",
+    "shepherd",
+    "herd",
+    "runscript",
+    "perpd",
+    "perpboot",
+    "tinylog",
+    "s6-svscanctl",
+    "s6-instance-create",
+    "s6-sudoc",
+    "s6-notifywhenup",
+    "s6-fdholder-daemon",
+    "s6-fdholderd",
+    "s6-linux-init-shutdownd",
+    "overmind",
+    "foreman",
+    "honcho",
+    "hivemind",
+    "goreman",
+    "pueue",
+    "pueued",
+    "tsp",
+    "nq",
+    "ubic-admin",
+    "reflex",
+    "with-contenv",
+    "cloud-init-per",
+    "transactional-update",
+    "fcrontab",
+    "incrontab",
+    "logrotate",
+    "lefthook",
+    "husky",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
