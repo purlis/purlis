@@ -4494,7 +4494,9 @@ impl Docker {
     /// It answers what it read of the container before anything was started ([`Ran`]), and
     /// whether it started it, so the runner hours record has both (#3492).
     pub fn resumed(&self, made: &Made) -> Result<Resumed, Refused> {
-        let step = purlis_session_protocol::steps::begin("container_check");
+        let step = purlis_session_protocol::steps::begin(
+            purlis_session_protocol::steps::Name::ContainerCheck,
+        );
         let engine = self.check_daemon()?;
         let inspected = self.json(
             &["container", "inspect", made.container.as_str()],
@@ -4510,8 +4512,10 @@ impl Docker {
         checked_on(&inspected, made, engine, false)?;
         let id = made.container.as_str().to_owned();
         {
-            let started =
-                purlis_session_protocol::steps::begin("runner_start").under("container_check");
+            let started = purlis_session_protocol::steps::begin(
+                purlis_session_protocol::steps::Name::RunnerStart,
+            )
+            .under(purlis_session_protocol::steps::Name::ContainerCheck);
             started.ended(self.run(&["start".to_owned(), id.clone()], None, MOST_INSPECTED))?;
         }
         // Started here and not as it was made once it runs: it is stopped again, and not linked.

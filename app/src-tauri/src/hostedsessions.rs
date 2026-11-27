@@ -1335,6 +1335,20 @@ struct Drawing {
     drained: bool,
     /// [`ENDED`] has been written.
     finished: bool,
+    /// Its `view_first_frame` step (#7864), until its first chunk or frame is drawn: let go of
+    /// as cancelled where the view is closed first, and refused where its stream ends first.
+    first: Option<purlis_session_protocol::steps::Step>,
+}
+
+/// The view `view`'s first chunk or frame is drawn: its `view_first_frame` step is done.
+fn first_drawn(shared: &Shared, view: u32) {
+    let step = lock(&shared.views)
+        .drawing
+        .get_mut(&view)
+        .and_then(|drawing| drawing.first.take());
+    if let Some(step) = step {
+        step.done();
+    }
 }
 
 /// The window's link to its session host: the client its commands go through, the views the
@@ -2104,7 +2118,10 @@ impl HostLink {
     ) -> Result<Answer, session::Refusal> {
         use purlis_core::poollimits::LimitId::AnswerWait;
         // The window's wait for a program to start, over the link and the relay if any (#7182).
-        let step = purlis_session_protocol::steps::begin("start_program_call");
+        let step = purlis_session_protocol::steps::begin(
+            purlis_session_protocol::steps::Name::StartProgramCall,
+        );
+        let start = named_by_its_start(start);
         let waits = (self.pool.is_some() && !can_be_cancelled()).then(|| {
             let secs = self.limits().in_force(AnswerWait);
             (Instant::now() + Duration::from_secs(secs), secs)
@@ -2210,16 +2227,21 @@ impl HostLink {
         if self.version() < MOVES_CODE {
             return Err(moves_no_code());
         }
+        // Timed as the start's `code_send` (#7864): the bundle's stream and the host's take.
+        let step =
+            purlis_session_protocol::steps::begin(purlis_session_protocol::steps::Name::CodeSend);
         let (project, repo) = (project.to_owned(), repo.to_owned());
         let held = self.held_for_a_send(bundle)?;
         let given = held.given;
-        self.write_on_a_stream(bundle, held, move |client, transfer| {
-            Box::pin(async move {
-                client
-                    .take_code_held(&project, &repo, transfer, refs, checkout, given)
-                    .await
-            })
-        })
+        step.ended(
+            self.write_on_a_stream(bundle, held, move |client, transfer| {
+                Box::pin(async move {
+                    client
+                        .take_code_held(&project, &repo, transfer, refs, checkout, given)
+                        .await
+                })
+            }),
+        )
     }
 
     /// **Has the host take a moving chat's work tree over** (1.44, #2048): `refs`, the branch
@@ -2758,6 +2780,9 @@ impl HostLink {
                     ended: false,
                     drained: false,
                     finished: false,
+                    first: Some(purlis_session_protocol::steps::begin(
+                        purlis_session_protocol::steps::Name::ViewFirstFrame,
+                    )),
                 },
             );
             views.waiting.remove(&view)
@@ -2771,7 +2796,14 @@ impl HostLink {
     /// Stop drawing view `view`.
     pub(crate) fn undraw(&self, view: u32) {
         let mut views = lock(&self.shared.views);
-        views.drawing.remove(&view);
+        // Closed before its first frame: the person's doing, not a refusal.
+        if let Some(step) = views
+            .drawing
+            .remove(&view)
+            .and_then(|mut drawing| drawing.first.take())
+        {
+            step.cancelled();
+        }
         views.waiting.remove(&view);
     }
 
@@ -3096,6 +3128,9 @@ async fn draw_from(mut reader: Reader, shared: Arc<Shared>) {
         // Each chunk is one piece, and carries exactly its own bytes: a character cut between
         // two chunks is the pane's terminal's to put together, so nothing is held back here.
         give(&shared, view, epoch, bytes.len(), bytes.to_vec());
+        if !bytes.is_empty() {
+            first_drawn(&shared, view);
+        }
         if reader.snapshot_complete() {
             told_whole(&shared, view);
         }
@@ -3139,6 +3174,7 @@ async fn draw_frames_from(mut reader: Reader, shared: &Arc<Shared>, sink: &Arc<M
         // up: whatever was said of its runner's link, the view is reconnected (#2542).
         if !whole.is_empty() && std::mem::take(&mut first) {
             reconnect(shared, Reconnect::Drawn(view));
+            first_drawn(shared, view);
         }
         for frame in whole {
             use purlis_session_protocol::view::frames::{AIMED_JPEG, CLOSED, JPEG, ORIGIN, PAGE};
@@ -4093,15 +4129,22 @@ fn held_on(holding: &Holding, for_a_start: bool) -> Result<(Arc<HostLink>, Strin
     link.when_reconnecting(Arc::clone(reconnects));
     // A runner holds it where it keeps its projects, `<data>/projects/<project id>`, and is sent
     // the project's own code to check out there as a chat starts or moves there (#2046, #4590).
-    link.call_of_a_start(Command::HoldProject {
+    // Timed as the start's `hold_project` (#7864).
+    let step =
+        purlis_session_protocol::steps::begin(purlis_session_protocol::steps::Name::HoldProject);
+    let holding_it = link.call_of_a_start(Command::HoldProject {
         project: project.clone(),
         project_path: if *kept_on_the_runner {
             String::new()
         } else {
             root.display().to_string()
         },
-    })
-    .map_err(|why| format!("{NOT_HELD} {why}"))?;
+    });
+    match &holding_it {
+        Err(why) if why == START_CANCELLED => step.cancelled(),
+        _ => drop(step.ended(holding_it.as_ref().map(|_| ()))),
+    }
+    holding_it.map_err(|why| format!("{NOT_HELD} {why}"))?;
     link.when_not_held(&project, holds_again(holding, link.id, &project));
     // The numbers that went out before the host held the project are never dealt again.
     let dealt = opened.load(Ordering::Relaxed);
@@ -4412,25 +4455,41 @@ fn waits_off_the_lock(holding: &Holding, link: &HostLink) -> Result<(), String> 
     // so a refusal while it already was is the host's, not the runner's (#4536).
     let was_down = lock(&link.shared.runner_log).link_is_down();
     let within = (!can_be_cancelled()).then(|| a_dispatchs_hold_within(&holding.connection));
-    link.call_held_for_a_start(hold, within)
-        .map(|_| ())
-        .map_err(|unanswered| {
-            // **The runner not coming back is this machine's own finding** (#4536): no answer in
-            // time, the link ended, or a refusal while the link was already down. What a runner
-            // says over a link that is up is never marked, whatever its code.
-            let (here, said) = match unanswered {
-                Unanswered::Here(why) => (why != START_CANCELLED, why),
-                Unanswered::Host(refused) => (was_down, refused.why),
-            };
-            match holding.connection.pool() {
-                Some(pool) if here => crate::poolprofiles::not_reached(pool, &said),
-                _ => format!("{NOT_HELD} {said}"),
-            }
-        })
+    // Timed as the start's `hold_project` on the runner (#7864).
+    let step =
+        purlis_session_protocol::steps::begin(purlis_session_protocol::steps::Name::HoldProject);
+    let held = link.call_held_for_a_start(hold, within);
+    match &held {
+        Err(Unanswered::Here(why)) if why == START_CANCELLED => step.cancelled(),
+        _ => drop(step.ended(held.as_ref().map(|_| ()))),
+    }
+    held.map(|_| ()).map_err(|unanswered| {
+        // **The runner not coming back is this machine's own finding** (#4536): no answer in
+        // time, the link ended, or a refusal while the link was already down. What a runner
+        // says over a link that is up is never marked, whatever its code.
+        let (here, said) = match unanswered {
+            Unanswered::Here(why) => (why != START_CANCELLED, why),
+            Unanswered::Host(refused) => (was_down, refused.why),
+        };
+        match holding.connection.pool() {
+            Some(pool) if here => crate::poolprofiles::not_reached(pool, &said),
+            _ => format!("{NOT_HELD} {said}"),
+        }
+    })
 }
 
 /// **A start's hold that was not answered with yes** (#4536): what this window found itself, or
 /// the host's refusal as it came.
+/// `start`, naming the Start this thread works for (1.97, #7864), where it names none: so the
+/// host's `harness_spawn` line names it too, and a runner's log joins this one. A host before
+/// 1.97 ignores it.
+fn named_by_its_start(mut start: StartProgram) -> StartProgram {
+    if start.start.is_none() {
+        start.start = purlis_session_protocol::steps::start_id().map(|id| id.to_string());
+    }
+    start
+}
+
 enum Unanswered {
     Here(String),
     Host(purlis_session_protocol::session::Refusal),

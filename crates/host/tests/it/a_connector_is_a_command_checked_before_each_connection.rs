@@ -224,11 +224,11 @@ async fn a_links_check_and_what_it_runs_name_the_steps_they_are_inside() {
         "/bin/cat",
         Vec::new(),
         Arc::new(|| {
-            steps::begin("container_check").done();
+            steps::begin(steps::Name::ContainerCheck).done();
             Err(NotChecked::Refused("no".to_owned()))
         }),
     );
-    let first = steps::begin("first_link");
+    let first = steps::begin(steps::Name::FirstLink);
     let mut links = first.inside(|| {
         hostlink::keep_linked(
             connector,

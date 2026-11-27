@@ -629,9 +629,15 @@ use crate::view::{Limits, Views};
 /// entry forgotten, and its end is kept as the host's own lowest act ([`Command::Hibernate`]), so a
 /// close, a quit, a stop or the kill switch racing it wins. The window's alone. An older host
 /// refuses it `unknown_command`, so the window does not offer Hibernate on a chat it runs.
+///
+/// 1.97 has a window name the Start a start is for ([`StartProgram::start`], #7864): an id of
+/// letters and digits the window made as the person pressed Start, which the host writes on its
+/// `harness_spawn` line in its own diagnostic log, so the window's lines and the runner's join
+/// up. A host before 1.97 ignores the field, and its line names no start; nothing else changes on
+/// either side.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 96,
+    minor: 97,
 };
 
 /// The version that first hibernates a chat's program ([`Command::Hibernate`], #7630): none is
@@ -2352,6 +2358,14 @@ pub struct StartProgram {
     /// whose `link_frames` are out of bounds is refused `malformed`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link_frames: Option<crate::browsing::LinkFrames>,
+    /// The id of the Start the person pressed (1.97, #7864): the window makes one as the start
+    /// begins and names it on each step of it in its own diagnostic log, and the host names it on
+    /// its `harness_spawn` line, so the two logs' lines join up. Letters and digits alone
+    /// ([`crate::steps::StartId::parse`]): a host writes one of any other shape nowhere. A host
+    /// before 1.97 ignores it, as it ignores any field it does not know, and a start without one
+    /// starts as before. Never read to decide anything.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<String>,
 }
 
 impl StartProgram {
@@ -2382,6 +2396,7 @@ impl StartProgram {
             note: None,
             ends_with_its_window: false,
             link_frames: None,
+            start: None,
         }
     }
 }

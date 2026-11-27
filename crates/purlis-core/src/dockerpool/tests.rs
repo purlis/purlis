@@ -3026,7 +3026,8 @@ fn a_container_check_inside_a_link_check_names_it_and_a_runner_start_names_the_c
     stopped[0]["State"]["Running"] = false.into();
     let fake = FakeDocker::new(&stopped);
     let out = steps_said_while(|| {
-        let link = purlis_session_protocol::steps::begin("link_check");
+        let link =
+            purlis_session_protocol::steps::begin(purlis_session_protocol::steps::Name::LinkCheck);
         let _ = link.inside(|| fake.docker().resumed(&made()));
     });
     assert!(

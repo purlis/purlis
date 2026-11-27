@@ -4504,3 +4504,25 @@ fn a_runner_gone_ends_its_chats_where_a_changed_key_leaves_them_dimmed() {
     heard(Reconnect::KeyChanged);
     assert_eq!(dimmed.lock().unwrap().chats.len(), 2);
 }
+
+#[test]
+fn a_start_asked_of_a_host_names_the_start_this_window_made() {
+    // #7864: the runner's `harness_spawn` names the window's Start, so the logs join up.
+    use purlis_session_protocol::steps::{StartId, starting};
+    let id = StartId::parse("01JD3Q4M0R8W2ZK7A6F1B9CXYE").unwrap();
+    let _held = starting(id);
+    let asked = named_by_its_start(StartProgram::of(
+        "01J9PRJCT00000000000000000",
+        session::ProgramKind::Harness,
+    ));
+    assert_eq!(asked.start.as_deref(), Some("01JD3Q4M0R8W2ZK7A6F1B9CXYE"));
+}
+
+#[test]
+fn a_start_outside_any_start_names_none() {
+    let asked = named_by_its_start(StartProgram::of(
+        "01J9PRJCT00000000000000000",
+        session::ProgramKind::Harness,
+    ));
+    assert_eq!(asked.start, None);
+}

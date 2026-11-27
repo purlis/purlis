@@ -177,6 +177,23 @@ impl Links {
     }
 }
 
+/// The typed cause a `link_dial` line says for `down` (#7864), `otherwise` where its flags say
+/// none: never its words, which may name a host.
+fn cause_of(down: &Down, otherwise: crate::steps::Cause) -> crate::steps::Cause {
+    use crate::steps::Cause;
+    if down.host_key_changed {
+        Cause::HostKeyChanged
+    } else if down.key_changed {
+        Cause::KeyChanged
+    } else if down.gone {
+        Cause::Gone
+    } else if down.refused {
+        Cause::Refused
+    } else {
+        otherwise
+    }
+}
+
 /// The first pause before linking again after a link would not come up; it doubles with each
 /// try that fails, up to [`MOST_PAUSE`].
 pub const FIRST_PAUSE: Duration = Duration::from_millis(250);
@@ -202,7 +219,11 @@ pub fn keep_linked<C: Connector>(
     // that has ended is named no more, so one kept past it, linking again, is inside nothing.
     tokio::spawn(crate::steps::current().future(async move {
         let mut ups: u64 = 0;
+        // Each try since the link was last up, for its `link_dial` line (#7864).
+        let tries = std::sync::atomic::AtomicU32::new(0);
         let dial = || async {
+            let attempt = tries.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            let mut step = crate::steps::begin(crate::steps::Name::LinkDial).attempt(attempt);
             let io = connector.connect().await.map_err(|why| Down {
                 // A connector's own check that the far end's key is no longer the one
                 // it was paired with (a cluster runner's, #3292) is a changed key too.
@@ -217,16 +238,34 @@ pub fn keep_linked<C: Connector>(
                     .get_ref()
                     .is_some_and(|inner| inner.is::<FarEndHostKeyChanged>()),
                 why: format!("the connector did not connect: {why}"),
-            })?;
-            connect_kept(io, handshake, &ours, &answering, liveness)
-                .await
-                .map_err(|why| Down {
-                    key_changed: matches!(why, super::LinkRefused::NotThePinnedHost { .. }),
-                    gone: false,
-                    refused: false,
-                    host_key_changed: false,
-                    why: why.to_string(),
-                })
+            });
+            let io = match io {
+                Ok(io) => io,
+                Err(down) => {
+                    step.found(cause_of(&down, crate::steps::Cause::Unreachable));
+                    return Err(down);
+                }
+            };
+            let linked = connect_kept(io, handshake, &ours, &answering, liveness).await;
+            let handshake_cause = match &linked {
+                Err(super::LinkRefused::TimedOut) => crate::steps::Cause::TimedOut,
+                _ => crate::steps::Cause::Handshake,
+            };
+            let linked = linked.map_err(|why| Down {
+                key_changed: matches!(why, super::LinkRefused::NotThePinnedHost { .. }),
+                gone: false,
+                refused: false,
+                host_key_changed: false,
+                why: why.to_string(),
+            });
+            match &linked {
+                Ok(_) => {
+                    tries.store(0, std::sync::atomic::Ordering::Relaxed);
+                    step.done();
+                }
+                Err(down) => step.found(cause_of(down, handshake_cause)),
+            }
+            linked
         };
         let mut pause = FIRST_PAUSE;
         loop {

@@ -23,7 +23,7 @@ own pool, in their own local log, and that is a ruling, not an oversight (a host
 path or a `docker` argument is never in a line; a `docker` run is named by its verb only, past
 any `-H`, `--context` or `--host` before it). The spans are meant to stay.
 
-The top-level steps are `info`. Each `docker` run is a line at `debug` (`RUST_LOG=purlis::step=debug`),
+The top-level steps are `info`. Each `docker` run is a line at `debug`, let through by Settings › Diagnostics' *Detailed remote log for one hour*:
 the calls inside the steps.
 
 | step | where | what it covers |
@@ -40,6 +40,20 @@ the calls inside the steps.
 | `start_program_call` | `hostedsessions.rs::call_start` | the window's wait for `StartProgram`, over the link and relay |
 | `harness_spawn` | `host/hosting.rs::start` | the host's own start of the program (on the runner for a pool) |
 | `browser_engine_prepare`, `browser_engine_download`, `browser_engine_start` | `browser-engine` | `prepare` is the whole prepare, written only when it refused, was cancelled or downloaded (never for the person's own Chrome or an engine already installed); the download is its child; the engine's process start until it answers |
+| `link_dial` | `session-protocol/hostlink/keep.rs::keep_linked` | each try of a kept link (#7864): its connector and handshake, with its `attempt` since the link was last up and, where it failed, its typed `cause` |
+| `hold_project` | `hostedsessions.rs::held_on`, the runner's hold | the window's hold of the project on its host, or on the pool's runner (#7864) |
+| `code_send` | `hostedsessions.rs::send_code` | the bundle of the project's code sent to the runner, and its take there (#7864) |
+| `browser_first_page` | `browser-engine`'s `drive::Browser` | from the engine answering until its first page is attached and its frames known (#7864) |
+| `view_first_frame` | `hostedsessions.rs::draw_into` | from a view's stream being drawn until its first chunk or frame is; `cancelled` where the person closes it first (#7864) |
+
+**These names are a contract since #7864** (decided in #7189): they are listed once, in
+`purlis_session_protocol::steps::Name::ALL`, which a test pins. Renaming one is a breaking change
+with a changelog line. `refused` lines are `warn`; the rest `info`. Each line has `step`,
+`outcome` and `ms`, and where known `pool`, `parent`, a typed `cause`, `attempt` and `start`: the
+id of the Start the person pressed, carried to the runner in the start it asks for (session
+protocol 1.97), so its `harness_spawn` line joins the window's. The `docker_*` call lines stay
+`debug` and outside the contract; Settings › Diagnostics' *Detailed remote log for one hour* lets
+them through.
 
 **Nested steps overlap, so a sum counts them twice. Sum the rows with no `parent`.** A step
 begun while another one runs names it as its `parent` (a `Context` carries that across the thread

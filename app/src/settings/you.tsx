@@ -28,6 +28,7 @@ import { poolsGroup } from "./pools";
 import { accountsGroup } from "./accounts";
 import { readinessGroup } from "./readiness";
 import { notificationsGroup } from "./notifications";
+import { diagnosticsGroup } from "./diagnostics";
 import { reportsGroup } from "./reports";
 import { profilesGroup } from "./profiles";
 import { THEME_GROUP, themeRows } from "./themeGallery";
@@ -92,6 +93,7 @@ export function youGroups(plane?: string): SettingsGroup[] {
     },
     notificationsGroup(plane),
     reportsGroup(plane),
+    diagnosticsGroup(),
     thisMachineGroup(),
     browserLimitsGroup(),
     poolsGroup(plane),

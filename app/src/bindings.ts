@@ -647,6 +647,10 @@ export const commands = {
 	 *  the sent list Settings › You › Reports shows. Empty on a machine with no config home.
 	 */
 	reportsSent: () => typedError<SentReport[], string>(__TAURI_INVOKE("reports_sent")),
+	/**  Whether the detailed remote log is on, and until when. */
+	detailedRemoteLog: () => __TAURI_INVOKE<DetailedRemoteLog>("detailed_remote_log"),
+	/**  Turns the detailed remote log on, for an hour from now, or off now. */
+	setDetailedRemoteLog: (on: boolean) => __TAURI_INVOKE<DetailedRemoteLog>("set_detailed_remote_log", { on }),
 	/**
 	 *  **The bytes each kind of report sends**, made by the core's own envelope builders from a
 	 *  sample panic and a sample draft (`purlis_core::report::samples`), so what the window shows
@@ -9181,6 +9185,12 @@ export type DeletesCutShort = {
 	settled: string[],
 	/**  Neither finished nor put back: tried again the next time the studio opens. */
 	unsettled: string[],
+};
+
+/**  What the switch says, as the window reads it. */
+export type DetailedRemoteLog = {
+	/**  When it turns itself off, in RFC 3339, while it is on; `null` while it is off. */
+	until: string | null,
 };
 
 /**  What Diagnostics says of the device's RAM class (ADR 0082 §3). */

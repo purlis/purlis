@@ -689,3 +689,77 @@ async fn host_a_sends_no_start_from_kept_logins_on_to_host_b() {
     assert_eq!(refusal.code, session::NOT_ALLOWED);
     assert_eq!(dials.load(Ordering::SeqCst), 0, "nothing was sent on");
 }
+
+/// What `purlis::step` writes while it is held, as the diagnostic log would hold it.
+#[derive(Clone, Default)]
+struct StepLog(Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for StepLog {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for StepLog {
+    type Writer = StepLog;
+    fn make_writer(&'a self) -> StepLog {
+        self.clone()
+    }
+}
+
+impl StepLog {
+    fn said(&self) -> String {
+        String::from_utf8_lossy(&self.0.lock().unwrap()).into_owned()
+    }
+}
+
+/// Starts a program through host A on host B, naming `start` as the Start it is for, and
+/// answers what host B's `harness_spawn` line said.
+async fn the_spawn_line_of_a_start_naming(start: &str) -> String {
+    let log = StepLog::default();
+    let _logging = tracing::subscriber::set_default(
+        tracing_subscriber::fmt()
+            .with_writer(log.clone())
+            .with_ansi(false)
+            .with_max_level(tracing::Level::INFO)
+            .finish(),
+    );
+    let window = a_window(over_the_link).await;
+    let project = tempfile::tempdir().unwrap();
+    window
+        .client
+        .hold_project(PROJECT, project.path().to_str().unwrap())
+        .await
+        .expect("host B holds the project");
+    let mut asked = StartProgram::of(PROJECT, ProgramKind::Harness);
+    asked.start = Some(start.to_owned());
+    window
+        .client
+        .start_program(asked)
+        .await
+        .expect("host B starts it");
+    let said = log.said();
+    said.lines()
+        .find(|line| line.contains("step harness_spawn "))
+        .unwrap_or_else(|| panic!("no harness_spawn line in {said}"))
+        .to_owned()
+}
+
+#[tokio::test]
+async fn the_runners_harness_spawn_names_the_start_the_window_made() {
+    // #7864: the window's lines and the runner's join up by the Start's id, carried over the
+    // link in the start (1.97).
+    let line = the_spawn_line_of_a_start_naming("01JD3Q4M0R8W2ZK7A6F1B9CXYE").await;
+    assert!(line.contains("start: 01JD3Q4M0R8W2ZK7A6F1B9CXYE"), "{line}");
+}
+
+#[tokio::test]
+async fn a_start_id_that_is_not_one_is_written_nowhere() {
+    let line = the_spawn_line_of_a_start_naming("/home/aharon/.ssh/id_ed25519").await;
+    assert!(!line.contains("start"), "{line}");
+    assert!(!line.contains("/home"), "{line}");
+}
