@@ -1644,7 +1644,7 @@ mod hosted {
                 lock(&kept).insert(of.clone(), origin.clone());
                 origins(origin);
             });
-            link.draw_frames(attached.view, frames, origins, Some(pages), held);
+            link.draw_frames(attached.view, program, frames, origins, Some(pages), held);
             // The lease is the host's: a view opened again says whether the person still drives.
             let person_drives = matches!(
                 link.call(Command::List),

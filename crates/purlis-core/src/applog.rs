@@ -204,6 +204,19 @@ pub(crate) fn as_a_service_on_this_thread(service: bool) {
     SERVICE_HERE.with(|here| here.set(service));
 }
 
+/// How the app's log's filter is changed while Settings › Diagnostics' detailed remote log is on
+/// (#7864, [`crate::detailedlog`]).
+static KEEPING: OnceLock<reload::Handle<Targets, Registry>> = OnceLock::new();
+
+/// **Lets the steps of a remote start through at `debug`, or no longer** (#7864): what
+/// [`crate::detailedlog`]'s switch calls. Only `purlis::step`: the rest is kept as before. A
+/// process with no log of the app's ([`install`] not called) has nothing to change.
+pub fn keep_step_detail(on: bool) {
+    if let Some(keeping) = KEEPING.get() {
+        let _ = keeping.reload(crate::detailedlog::kept(on));
+    }
+}
+
 /// How [`install_for_a_terminal`]'s filter is widened for a service.
 static WIDENING: OnceLock<reload::Handle<Targets, Registry>> = OnceLock::new();
 
@@ -234,7 +247,7 @@ fn terminal_widening(
 /// What a log keeps: charter's own crates (`purlis_core`, `purlis_app_lib`, `purlis_host`) at
 /// `info`, so what purlis did is there to read; everything it links at `warn`, so a library's
 /// routine chatter is not.
-fn what_a_log_keeps() -> Targets {
+pub(crate) fn what_a_log_keeps() -> Targets {
     Targets::new()
         .with_target("purlis", Level::INFO)
         .with_default(Level::WARN)
@@ -293,8 +306,10 @@ fn subscriber_to(
     file: Option<RollingFileAppender>,
     screen: impl for<'a> MakeWriter<'a> + Send + Sync + 'static,
 ) -> impl tracing::Subscriber + Send + Sync {
+    let (kept, keeping) = reload::Layer::new(crate::detailedlog::kept(false));
+    let _ = KEEPING.set(keeping);
     tracing_subscriber::registry()
-        .with(what_a_log_keeps())
+        .with(kept)
         .with(file.map(|file| {
             tracing_subscriber::fmt::layer()
                 .with_ansi(false)

@@ -5319,6 +5319,12 @@ impl Chats {
         // its folder in the meantime is refused, and a folder that is going is no place to
         // start one (#1472).
         let _starting = self.going.starting_in(chat.cwd.as_deref())?;
+        // **The id of this Start** (#7864): every step it makes on this thread, or hands on in
+        // a step's context, names it, and so does the runner's `harness_spawn`, told it in the
+        // start (session protocol 1.98), so the two diagnostic logs' lines join up.
+        let _start_named = purlis_session_protocol::steps::starting(
+            purlis_session_protocol::steps::StartId::mint(),
+        );
         // **A chat put back that the session host still runs, or ran, from before this window
         // is reattached, not started again** (#2006): the window that started it went without a
         // quit, and the host kept it. Everything the window keeps of a running chat is made as
@@ -5505,7 +5511,10 @@ impl Chats {
                 })
         {
             // The whole check and keep of the profile on the pool: a link of its own (#7182).
-            let step = purlis_session_protocol::steps::begin_in("profile_ready", &pool);
+            let step = purlis_session_protocol::steps::begin_in(
+                purlis_session_protocol::steps::Name::ProfileReady,
+                &pool,
+            );
             // Inside the step: the link it makes is a `first_link` under it.
             step.inside(|| match &own_runner {
                 Some(runner) => {
