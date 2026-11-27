@@ -19,6 +19,7 @@ import {
   symlinkSync,
   utimesSync,
   writeFileSync,
+  writeSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -172,16 +173,18 @@ const ARTIFACT_OF = (extra = []) =>
     [DRAWN, JSON.stringify({ head: HEAD, base: BASE })],
   ]);
 
-const TOKEN = "token-the-stub-gh-hands-out";
-const REDRAWN_URL = "https://api.github.com/repos/purlis/purlis/actions/artifacts/43/zip";
+const WHOLE_PATH = "repos/purlis/purlis/actions/artifacts/42/zip";
+const REDRAWN_PATH = "repos/purlis/purlis/actions/artifacts/43/zip";
 const OTHER = "src/ui/__screenshots__/button.stories.tsx/button_default_dark-webkit-linux.png";
 
 /**
- * A `gh`, `git` and `curl` that answer as GitHub would for pull request 7, whose stories run kept
+ * A `gh` and `git` that answer as GitHub would for pull request 7, whose stories run kept
  * `artifact` (a zip's bytes); `behind` is how far the head is behind the base the run merged it
- * with. Each `curl` writes the next of `stops` bytes of the zip (all of it once they run out),
- * appending when told to continue, and fails when it wrote less than the whole. `unzip` is the
- * real one. Every call is kept in `calls`.
+ * with. Each `gh api` of an artifact's zip writes, into the file it was handed as its output,
+ * the next of `stops` bytes of the zip (all of it once they run out), from the byte its `Range`
+ * header names, and fails when it wrote less than the whole. A store that `resumes` honours the
+ * range; one that "ignores" it sends the whole zip again; one that does not (`false`) refuses it.
+ * `unzip` is the real one. Every call is kept in `calls`.
  */
 const githubOf = ({
   behind = "0",
@@ -192,7 +195,6 @@ const githubOf = ({
     id: 42,
     size_in_bytes: zip.length,
     expired: false,
-    archive_download_url: "https://api.github.com/repos/purlis/purlis/actions/artifacts/42/zip",
   }),
   resumes = true,
   // The pictures drawn again, a zip's bytes, when the run kept them; `redrawnListed` lists the
@@ -202,29 +204,27 @@ const githubOf = ({
     id: 43,
     size_in_bytes: zip.length,
     expired: false,
-    archive_download_url: REDRAWN_URL,
   }),
 } = {}) => {
   const left = [...stops];
-  const served = (url) => (url === REDRAWN_URL ? redrawn : artifact);
+  const served = (path) => (path === REDRAWN_PATH ? redrawn : artifact);
   return (command, args, options = {}) => {
-    calls.push({ command, args, input: options.input });
+    calls.push({ command, args, input: options.input, stdio: options.stdio });
     const said = (stdout) => ({ status: 0, stdout, stderr: "" });
     if (command === "git") return said(`${HEAD}\n`);
     if (command === "unzip") return spawnSync(command, args, options);
-    if (command === "curl") {
-      const out = args[args.indexOf("--output") + 1];
+    if (command === "gh" && args[0] === "api" && /\/artifacts\/\d+\/zip$/.test(args.at(-1))) {
       const artifact = served(args.at(-1));
-      if (args.includes("--continue-at") && !resumes)
-        return { status: 33, stdout: "", stderr: "curl: (33) HTTP server doesn't seem to support byte ranges. Cannot resume.\n" };
-      const from = args.includes("--continue-at") && existsSync(out) ? statSync(out).size : 0;
+      const range = args.find((arg) => arg.startsWith("Range: bytes="));
+      if (range && resumes === false)
+        return { status: 1, stdout: "", stderr: "gh: Range Not Satisfiable (HTTP 416)\n" };
+      const from = range && resumes === true ? Number(range.slice("Range: bytes=".length, -1)) : 0;
       const to = left.length > 0 ? left.shift() : artifact.length;
-      writeFileSync(out, artifact.subarray(from, Math.max(from, to)), { flag: from > 0 ? "a" : "w" });
+      writeSync(options.stdio[1], artifact.subarray(from, Math.max(from, to)));
       return to < artifact.length
-        ? { status: 18, stdout: "", stderr: "curl: (18) end of response with bytes missing\n" }
+        ? { status: 1, stdout: "", stderr: "unexpected EOF\n" }
         : said("");
     }
-    if (args[0] === "auth") return said(`${TOKEN}\n`);
     if (args[0] === "pr") return said(`${HEAD} ${FROM}\n`);
     if (args[0] === "api" && args.includes("-X")) return said(JSON.stringify([runOf({})]));
     if (args[0] === "api" && /\/runs\/\d+\/artifacts\?name=/.test(args[1])) {
@@ -243,6 +243,9 @@ const githubOf = ({
     return { status: 1, stdout: "", stderr: `not stubbed: ${command} ${args.join(" ")}` };
   };
 };
+
+/** The calls that fetched an artifact's zip. */
+const downloads = (calls) => calls.filter((call) => call.command === "gh" && /\/artifacts\/\d+\/zip$/.test(call.args.at(-1)));
 
 /** A checkout that already holds OTHER, a baseline the run's artifacts do not. */
 const checkoutWithOther = () => {
@@ -294,8 +297,8 @@ test("a run that kept its pictures drawn again is pulled from those alone, and n
     exec: githubOf({ calls, redrawn: ARTIFACT_OF() }),
   });
   assert.deepEqual(
-    calls.filter((call) => call.command === "curl").map((call) => call.args.at(-1)),
-    [REDRAWN_URL],
+    downloads(calls).map((call) => call.args.at(-1)),
+    [REDRAWN_PATH],
   );
   assert.deepEqual(readFileSync(join(root, "app", PICTURE)), DRAWN_PNG);
   assert.deepEqual(readFileSync(join(root, "app", OTHER)), DRAWN_PNG);
@@ -313,23 +316,18 @@ test("with no pictures drawn again kept, the whole set is pulled and deletes the
 });
 
 test("an expired copy is never the one taken: a re-run's fresh copy is, and with none fresh the whole set is", (t) => {
-  const expired = (zip) => ({
-    id: 41,
-    size_in_bytes: zip.length,
-    expired: true,
-    archive_download_url: "https://api.github.com/repos/purlis/purlis/actions/artifacts/41/zip",
-  });
-  const fresh = (zip) => ({ id: 43, size_in_bytes: zip.length, expired: false, archive_download_url: REDRAWN_URL });
+  const expired = (zip) => ({ id: 41, size_in_bytes: zip.length, expired: true });
+  const fresh = (zip) => ({ id: 43, size_in_bytes: zip.length, expired: false });
   for (const [redrawnListed, from, kept] of [
-    [(zip) => [expired(zip), fresh(zip)], REDRAWN_URL, true],
-    [(zip) => [expired(zip)], "https://api.github.com/repos/purlis/purlis/actions/artifacts/42/zip", false],
+    [(zip) => [expired(zip), fresh(zip)], REDRAWN_PATH, true],
+    [(zip) => [expired(zip)], WHOLE_PATH, false],
   ]) {
     const root = checkoutWithOther();
     t.after(() => rmSync(root, { recursive: true, force: true }));
     const calls = [];
     pull({ pr: "7", repo: FROM, root, exec: githubOf({ calls, redrawn: ARTIFACT_OF(), redrawnListed }) });
     assert.deepEqual(
-      calls.filter((call) => call.command === "curl").map((call) => call.args.at(-1)),
+      downloads(calls).map((call) => call.args.at(-1)),
       [from],
     );
     assert.equal(existsSync(join(root, "app", OTHER)), kept, from);
@@ -466,11 +464,11 @@ test("a download that breaks off is resumed from where it stopped, and the stop 
   const calls = [];
   const said = pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ artifact, stops: [100, 300], calls }) });
   assert.deepEqual(readFileSync(join(root, "app", PICTURE)), DRAWN_PNG);
-  const curls = calls.filter((call) => call.command === "curl");
-  assert.equal(curls.length, 3);
-  assert.equal(curls[0].args.includes("--continue-at"), false);
-  assert.equal(curls[1].args.includes("--continue-at"), true);
-  assert.match(said[0], new RegExp(`^the download of the baselines \\(${artifact.length} bytes\\) stopped at 100 bytes: curl: \\(18\\)`));
+  assert.deepEqual(
+    downloads(calls).map((call) => call.args.find((arg) => arg.startsWith("Range:"))),
+    [undefined, "Range: bytes=100-", "Range: bytes=300-"],
+  );
+  assert.match(said[0], new RegExp(`^the download of the baselines \\(${artifact.length} bytes\\) stopped at 100 bytes: unexpected EOF$`));
   assert.match(said[1], /stopped at 300 bytes/);
 });
 
@@ -484,21 +482,23 @@ test("a download that keeps breaking off is refused with its size and where it s
     (error) =>
       error instanceof Refused &&
       error.message ===
-        `the download of the baselines (${artifact.length} bytes) stopped at 80 bytes after 4 attempts: curl: (18) end of response with bytes missing`,
+        `the download of the baselines (${artifact.length} bytes) stopped at 80 bytes after 4 attempts: unexpected EOF`,
   );
   assert.equal(existsSync(join(root, "app", PICTURE)), false);
   assert.deepEqual(readdirSync(tmp), []);
 });
 
-test("gh's token reaches curl on its input, never in its arguments", (t) => {
+test("the zip comes through gh api into the download's file, and no token is taken from gh (#7879)", (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "pull-tmp-"));
   const root = checkout();
   t.after(() => [tmp, root].forEach((dir) => rmSync(dir, { recursive: true, force: true })));
   const calls = [];
   pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ calls }) });
-  const curl = calls.find((call) => call.command === "curl");
-  assert.equal(curl.input, `Authorization: Bearer ${TOKEN}\n`);
-  assert.equal(calls.some((call) => call.args.some((arg) => arg.includes(TOKEN))), false);
+  const [download] = downloads(calls);
+  assert.deepEqual(download.args, ["api", WHOLE_PATH]);
+  assert.equal(typeof download.stdio[1], "number");
+  assert.equal(calls.some((call) => call.command === "curl"), false);
+  assert.equal(calls.some((call) => call.args[0] === "auth"), false);
 });
 
 test("an artifact as large as a whole run's, its listing over a megabyte, is taken", (t) => {
@@ -522,12 +522,29 @@ test("a store that will not resume a download is started again from nothing", (t
   const calls = [];
   const said = pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ stops: [100], resumes: false, calls }) });
   assert.deepEqual(readFileSync(join(root, "app", PICTURE)), DRAWN_PNG);
-  const curls = calls.filter((call) => call.command === "curl");
   assert.deepEqual(
-    curls.map((call) => call.args.includes("--continue-at")),
+    downloads(calls).map((call) => call.args.some((arg) => arg.startsWith("Range:"))),
     [false, true, false],
   );
-  assert.match(said[1], /stopped at 100 bytes: curl: \(33\)/);
+  assert.match(said[1], /stopped at 100 bytes: gh: Range Not Satisfiable \(HTTP 416\)/);
+});
+
+test("a store that ignores the range and sends the whole again is started again from nothing", (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "pull-tmp-"));
+  const root = checkout();
+  t.after(() => [tmp, root].forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+  const artifact = ARTIFACT_OF();
+  const calls = [];
+  const said = pull({ pr: "7", repo: FROM, root, tmp, exec: githubOf({ artifact, stops: [100], resumes: "ignores", calls }) });
+  assert.deepEqual(readFileSync(join(root, "app", PICTURE)), DRAWN_PNG);
+  assert.deepEqual(
+    downloads(calls).map((call) => call.args.some((arg) => arg.startsWith("Range:"))),
+    [false, true, false],
+  );
+  assert.equal(
+    said[1],
+    `the download of the baselines (${artifact.length} bytes) stopped at ${100 + artifact.length} bytes: gh api finished with ${100 + artifact.length} bytes written`,
+  );
 });
 
 test("a run that kept no baselines, or whose baselines expired, is refused before any download", (t) => {
@@ -542,7 +559,7 @@ test("a run that kept no baselines, or whose baselines expired, is refused befor
       () => pull({ pr: "7", repo: FROM, root, exec: githubOf({ listed, calls }) }),
       (error) => error instanceof Refused && why.test(error.message),
     );
-    assert.equal(calls.some((call) => call.command === "curl"), false);
+    assert.deepEqual(downloads(calls), []);
   }
 });
 
