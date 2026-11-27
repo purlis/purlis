@@ -31,6 +31,7 @@ mod asks;
 mod file;
 mod osc8;
 pub use asks::{Asks, Identity};
+pub(crate) use file::guarded_folders;
 pub use file::{
     FileAt, Home, HomeIs, LocalFile, NOT_OFFERED, Offers, OffersFiles, ReadFrom, UNCHECKED, home_of,
 };
@@ -38,7 +39,7 @@ mod chat;
 pub mod onrunner;
 mod runner;
 pub use chat::{ChatAt, ChatNumber, Goes};
-pub use runner::{RunnerFile, RunnerFiles};
+pub use runner::{RUNNER_KEPT, RUNNER_UNSURE, RunnerFile, RunnerFiles};
 
 /// **What the pane thinks a candidate is**: a hint that picks the kind that reads it, never
 /// trusted for more.
