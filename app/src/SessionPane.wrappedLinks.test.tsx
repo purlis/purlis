@@ -416,6 +416,105 @@ describe("a link the program broke over rows at the pane's width", () => {
     expect(resolved()).toEqual([{ kind: "url", text: url }]);
   });
 
+  it("is one link where its first row opens with a marker and the rows after it hang under its words", async () => {
+    const { term, drawn } = await opened();
+    // A Claude Code reply: `⏺ ` and the words, then each row after it indented two blanks.
+    const head = upTo(COLS - "⏺ ".length, "https://purlis.dev/", "a");
+    const url = `${head}tail`;
+    await write(term, `⏺ ${head}\r\n  tail now`);
+
+    hover(drawn, 3, 1);
+    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: url }]));
+    await waitFor(() =>
+      expect(painted).toEqual([
+        { y: 0, x: 2, width: COLS - 2 },
+        { y: 1, x: 2, width: "tail".length },
+      ]),
+    );
+    click(drawn, 40, 0, { ctrlKey: true });
+
+    await waitFor(() => expect(openedLast()).toEqual({ kind: "url", text: url }));
+  });
+
+  it("is one link over three rows hung under a marker, from its last", async () => {
+    const { term, drawn } = await opened();
+    const one = upTo(COLS - "⏺ ".length, "https://purlis.dev/", "x");
+    const two = "y".repeat(COLS - 2);
+    await write(term, `⏺ ${one}\r\n  ${two}\r\n  zz now`);
+
+    hover(drawn, 3, 2);
+
+    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: `${one}${two}zz` }]));
+  });
+
+  it.each([
+    ["a list item's dash", "- "],
+    ["a bullet", "• "],
+    ["a reply's marker under an indent of its own", "  ⏺ "],
+  ])("is one link where its first row opens with %s", async (_, opening) => {
+    const { term, drawn } = await opened();
+    const head = upTo(COLS - opening.length, "https://purlis.dev/", "a");
+    const hang = " ".repeat(opening.length);
+    await write(term, `${opening}${head}\r\n${hang}tail now`);
+
+    hover(drawn, opening.length + 1, 1);
+
+    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: `${head}tail` }]));
+  });
+
+  it.each([
+    ["no blanks", ""],
+    ["fewer blanks than its first row's words", " "],
+    ["more blanks than its first row's words", "    "],
+  ])(
+    "is not joined where a marker opens its first row and the next row starts with %s",
+    async (_, next) => {
+      const { term, drawn } = await opened();
+      const url = upTo(COLS - "⏺ ".length, "https://a.example/", "p");
+      await write(term, `⏺ ${url}\r\n${next}indented words`);
+
+      hover(drawn, 10, 0);
+      await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: url }]));
+      hover(drawn, next.length + 1, 1);
+      await settle();
+
+      expect(resolved()).toEqual([{ kind: "url", text: url }]);
+    },
+  );
+
+  it.each([
+    ["a nested list item's dash", "- ", "  - next item"],
+    ["a nested bullet", "• ", "  • next item"],
+    ["a tool result's corner under a reply's marker", "⏺ ", "  ⎿  done"],
+  ])(
+    "is not joined where the row it hangs opens with %s and a blank of its own",
+    async (_, opening, next) => {
+      const { term, drawn } = await opened();
+      const url = upTo(COLS - opening.length, "https://a.example/", "p");
+      await write(term, `${opening}${url}\r\n${next}`);
+
+      hover(drawn, 10, 0);
+      await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: url }]));
+      hover(drawn, 6, 1);
+      await settle();
+
+      expect(resolved()).toEqual([{ kind: "url", text: url }]);
+    },
+  );
+
+  it("is not joined under a first row that opens with a character no list or reply marks with", async () => {
+    const { term, drawn } = await opened();
+    const url = upTo(COLS - "→ ".length, "https://a.example/", "p");
+    await write(term, `→ ${url}\r\n  indented words`);
+
+    hover(drawn, 10, 0);
+    await waitFor(() => expect(resolved()).toEqual([{ kind: "url", text: url }]));
+    hover(drawn, 3, 1);
+    await settle();
+
+    expect(resolved()).toEqual([{ kind: "url", text: url }]);
+  });
+
   it("is one link where a wide character fills its row's last column", async () => {
     const { term, drawn } = await opened();
     // Two cells each: the row ends on the second half of the last one.

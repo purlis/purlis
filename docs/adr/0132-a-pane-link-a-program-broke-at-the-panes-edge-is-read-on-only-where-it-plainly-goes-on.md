@@ -26,12 +26,25 @@ the link colour.
    - the row before it fills the pane to its last column (a wide character's second half
      counts);
    - the row after it is a line of its own (not one the terminal wrapped) and starts with as
-     many blank cells as the first row of the line before it, then a written cell. A paragraph
-     a harness indents alike on every row (two blanks, as in a Claude Code reply after its
-     first paragraph) joins; a row indented more or less than that starts something else. A
-     first row that opens with a marker and hangs the rows after it (`⏺ ` then words, the rows
-     below indented to them) does not join yet: #7930. The rule is the cells' geometry alone: it names no program and
-     reads nothing a program says about itself;
+     many blank cells as the hanging indent of the first row of the line before it, then a
+     written cell. That indent is the first row's blank cells, and where those are followed by
+     a marker and one blank, the marker and the blank as well (#7930): a paragraph a harness
+     indents alike on every row (two blanks, as in a Claude Code reply after its first
+     paragraph) joins, and so does one whose first row opens with a marker and hangs the rows
+     after it under its words (`⏺ ` then words, the rows below indented two blanks; `- ` or
+     `• ` in a list). A row indented more or less than that starts something else, and so does
+     a row under a marker at the marker's own indent, as the next item of a list does. The
+     markers are a short fixed set, `⏺ • ● ◦ ▪ ‣ - * +`, the bullets Claude Code, Markdown and
+     common command-line programs put before a reply or a list item; a first row opening with
+     any other character and a blank (`→ `, `> `) hangs nothing, nor does an ordered list's
+     number (`1. `), left out to keep the set to single characters. The rule is the cells'
+     geometry alone: it names no program and reads nothing a program says about itself;
+   - the row after it, past that indent, does not open as an item of its own: one character
+     that is no letter or digit, then a blank. A nested list's ` -` or ` •`, or the `  ⎿  `
+     Claude Code puts before a tool's result under its `⏺ ` line, is the next item, and its
+     marker taken on would end the link above it with a `-` or a `⎿`. The cost is a link whose
+     last piece on the next row is one such character alone before a blank (`…/a_` broken
+     as `…/a` at the edge and `_ then words` below), which reads as two pieces;
    - the row after it, past that indent, does not start with a box-drawing or block character
      (U+2500 to U+259F), the border of a frame or a bar, and does not start a link of its own:
      an address (`scheme://`) or a path from `~/`, `./` or `../`;

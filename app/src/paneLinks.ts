@@ -303,14 +303,47 @@ function indentOf(line: IBufferLine): number {
   return x;
 }
 
+/**
+ * The markers a row may open with before words the rows after it hang under (#7930): the
+ * bullets Claude Code (`⏺ `), Markdown and common command-line programs put before a reply or
+ * a list item. A short fixed set, so a row opening with any other character and a blank hangs
+ * nothing.
+ */
+const MARKERS = new Set(["⏺", "•", "●", "◦", "▪", "‣", "-", "*", "+"]);
+
+/**
+ * **The hanging indent of `line`, the first row of a line** (#7930): the blank cells it starts
+ * with, and where those are followed by a marker ({@link MARKERS}) and one blank before a
+ * written cell, the marker's cells and that blank as well, where the line's words start.
+ */
+function hangingIndentOf(line: IBufferLine): number {
+  const indent = indentOf(line);
+  if (!MARKERS.has(drawnAt(line, indent))) return indent;
+  const words = indent + Math.max(1, line.getCell(indent)?.getWidth() ?? 1) + 1;
+  const hangs = drawnAt(line, words - 1) === "" && drawnAt(line, words) !== "";
+  return hangs ? words : indent;
+}
+
+/**
+ * Whether row `line`, past `indent`, opens as an item of its own: one character that is no
+ * letter or digit (a list's marker, a bullet, Claude Code's `⎿`), then a blank. Under a row
+ * that opens with a marker it is the next item, never words going on (#7930).
+ */
+function opensAnItem(line: IBufferLine, indent: number): boolean {
+  const opens = drawnAt(line, indent);
+  if (opens === "" || /^[\p{L}\p{N}]/u.test(opens)) return false;
+  return drawnAt(line, indent + Math.max(1, line.getCell(indent)?.getWidth() ?? 1)) === "";
+}
+
 /** A box-drawing or block character (U+2500 to U+259F): a frame's or a bar's, never a link's. */
 const BOX = /[\u2500-\u259F]/u;
 
 /**
  * **Where a row's words may go on onto the next row the program wrote** (#7819), and the indent
  * they go on after: `row` fills the pane to its last column, and the row after it is a line of
- * its own (no soft wrap) that starts with as many blank cells as the first row of `row`'s line,
- * then a written cell that is no box-drawing or block character. Only then may a link's words
+ * its own (no soft wrap) that starts with as many blank cells as the hanging indent of the first
+ * row of `row`'s line ({@link hangingIndentOf}), then a written cell that is no box-drawing or
+ * block character and does not open an item of its own ({@link opensAnItem}). Only then may a link's words
  * that reach the edge be read on there. On the alternate screen (a full-screen program such as
  * an editor, a pager or a multiplexer) a row is never read on: its rows are a picture the
  * program drew, which may be cut at the edge, not text it broke there.
@@ -325,8 +358,8 @@ function goesOnAfter(pane: Terminal, row: number): number | undefined {
   let first = row;
   while (first > 0 && row - first < MOST_ROWS && buffer.getLine(first)?.isWrapped) first -= 1;
   const start = buffer.getLine(first);
-  const indent = start === undefined ? 0 : indentOf(start);
-  if (indentOf(next) !== indent) return undefined;
+  const indent = start === undefined ? 0 : hangingIndentOf(start);
+  if (indentOf(next) !== indent || opensAnItem(next, indent)) return undefined;
   const opens = drawnAt(next, indent);
   return opens === "" || BOX.test(opens) ? undefined : indent;
 }
