@@ -689,7 +689,8 @@ fn modes_not_as_kept(read: &super::made::SettingsRead) -> Option<BTreeMap<&str, 
             .match_indices('/')
             .map(|(at, _)| (&path[..at], KEPT_FOLDER_MODE));
         for (at, kept) in std::iter::once((path.as_str(), KEPT_FILE_MODE)).chain(folders) {
-            let mode = *read.modes.get(at)?;
+            // Only the bits a keep sets: a folder made in a setgid one inherits its setgid bit.
+            let mode = *read.modes.get(at)? & rustix::fs::Mode::from_raw_mode(0o777);
             if mode != kept {
                 off.insert(at, u64::from(mode.bits()));
             }

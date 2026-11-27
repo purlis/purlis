@@ -3208,3 +3208,50 @@ fn a_mode_changed_on_a_runner_is_not_held_as_kept() {
         assert_eq!(held(), as_kept, "{what}");
     }
 }
+
+/// **A project's MCP choice a chat left on a runner is never held as kept** (#7863, as #7946's
+/// keep takes them out): a list of servers to enable or disable that names any, or every one of
+/// a folder's `.mcp.json` servers turned on, has the next start keep the profile. A project as
+/// Claude Code saves it by default, with empty lists, is held as kept: an empty list is no list.
+#[test]
+fn a_projects_mcp_choice_a_chat_left_on_a_runner_is_never_held_as_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let as_kept = Some(whole_kept(&in_batches(&kept).unwrap()));
+    let held = || held_whole_for_the_desktop(&runner, DESKTOP, &kept.name).unwrap();
+    let there = super::super::sent::claude_state_file(&record);
+    let with_project = |project: serde_json::Value| {
+        let mut doc: serde_json::Value = fs::read_to_string(&there)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
+        doc["projects"] = serde_json::json!({ "/work": project });
+        fs::write(&there, doc.to_string()).unwrap();
+    };
+    assert_eq!(held(), as_kept);
+
+    with_project(serde_json::json!({
+        "mcpServers": {},
+        "enabledMcpServers": [],
+        "disabledMcpServers": [],
+        "enabledMcpjsonServers": [],
+        "disabledMcpjsonServers": [],
+        "enableAllProjectMcpServers": false,
+    }));
+    assert_eq!(
+        held(),
+        as_kept,
+        "a project as Claude Code saves it by default"
+    );
+
+    for (key, choice) in [
+        ("enabledMcpServers", serde_json::json!(["planted"])),
+        ("disabledMcpServers", serde_json::json!(["docs"])),
+        ("enabledMcpjsonServers", serde_json::json!(["planted"])),
+        ("disabledMcpjsonServers", serde_json::json!(["docs"])),
+        ("enableAllProjectMcpServers", serde_json::json!(true)),
+    ] {
+        with_project(serde_json::json!({ key: choice }));
+        assert_eq!(held(), None, "{key}");
+    }
+}

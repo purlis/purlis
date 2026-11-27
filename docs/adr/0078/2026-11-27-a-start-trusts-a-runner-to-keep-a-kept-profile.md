@@ -59,8 +59,9 @@ changes is when the profile link is made.
    `hooks.json`, `rules` and `skills`, opencode's plugins, skills, tools, `package.json` and
    `node_modules`), no link on the way to the settings folder, and, for Claude Code, a state file
    whose user-scope MCP servers are those its kept `mcp-servers.json` names, where it keeps one,
-   and in which no project has servers of its own (an empty list, which starts nothing, counts as
-   none). Anything else, a settings file planted, changed, gone or with its mode changed among
+   and in which no project has servers of its own or a choice of them (`enabledMcpServers`,
+   `disabledMcpServers`, `enabledMcpjsonServers`, `disabledMcpjsonServers`, or
+   `enableAllProjectMcpServers` on; an empty list, which starts nothing, counts as none). Anything else, a settings file planted, changed, gone or with its mode changed among
    them, and a keep left
    unfinished or a profile kept for another desktop, refuses the start as `profile_changed`, and
    nothing starts. The desktop then forgets what it remembered, keeps the profile in full, and

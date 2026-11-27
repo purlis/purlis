@@ -442,10 +442,22 @@ pub fn prepare(wrap: &Wrap, cwd: &Path) {
     super::codex::replace(&state, doc.to_string().as_bytes(), 0o600);
 }
 
+/// **The choices of MCP servers a project of Claude Code's state file holds** (#7946, which has
+/// each keep take them out): which servers to start or not, and whether to start every one a
+/// folder's `.mcp.json` names. #7946 defines the same list; once it lands, this is that one.
+pub const PROJECT_MCP_CHOICES: [&str; 5] = [
+    "enabledMcpServers",
+    "disabledMcpServers",
+    "enableAllProjectMcpServers",
+    "enabledMcpjsonServers",
+    "disabledMcpjsonServers",
+];
+
 /// **Whether [`keep_mcp_servers`] would leave the state file `state` loading what it would**
-/// (#7863): its user-scope servers are `servers` where those are given, and no project has servers
-/// of its own. An empty list is no list, as it starts nothing, so a project's `mcpServers: {}`,
-/// which Claude Code writes itself, is as kept. A state file that is no plain file of JSON is never
+/// (#7863): its user-scope servers are `servers` where those are given, no project has servers
+/// of its own, and no project makes a choice of them ([`PROJECT_MCP_CHOICES`]). An empty list is
+/// no list, as it starts nothing, so a project's `mcpServers: {}`, `enabledMcpjsonServers: []` or
+/// `enableAllProjectMcpServers: false`, which Claude Code writes itself, is as kept. A state file that is no plain file of JSON is never
 /// as kept, as no keep can read it.
 #[must_use]
 pub fn mcp_servers_as_kept(state: &Path, servers: Option<&serde_json::Value>) -> bool {
@@ -472,9 +484,16 @@ pub fn mcp_servers_as_kept(state: &Path, servers: Option<&serde_json::Value>) ->
         .get("projects")
         .and_then(serde_json::Value::as_object)
         .is_none_or(|projects| {
-            projects
-                .values()
-                .all(|project| loads(project.get("mcpServers")).is_none())
+            projects.values().all(|project| {
+                loads(project.get("mcpServers")).is_none()
+                    && PROJECT_MCP_CHOICES
+                        .iter()
+                        .all(|key| match project.get(*key) {
+                            None | Some(serde_json::Value::Bool(false)) => true,
+                            Some(serde_json::Value::Array(list)) => list.is_empty(),
+                            Some(_) => false,
+                        })
+            })
         });
     users_as_kept && no_projects_own
 }
