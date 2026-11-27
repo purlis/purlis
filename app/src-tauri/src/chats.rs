@@ -5397,7 +5397,13 @@ impl Chats {
                         // A chat another chat started has a route wherever that chat has one, or
                         // is not started (#7870).
                         Some(from) => {
-                            crate::forgeroute::guard_handed(chat_id, run, project, chain, from.chat)
+                            let handed = crate::forgeroute::Handed {
+                                parent: from.id.clone(),
+                                lane: chat.cwd.as_deref().and_then(crate::forgeroute::lane_of),
+                                // No id until this start minted one: never started before.
+                                first_start: chat.identity.id.is_none(),
+                            };
+                            crate::forgeroute::guard_handed(chat_id, run, project, chain, &handed)
                         }
                         None => crate::forgeroute::guard(chat_id, run, project, chain).map(Ok),
                     }

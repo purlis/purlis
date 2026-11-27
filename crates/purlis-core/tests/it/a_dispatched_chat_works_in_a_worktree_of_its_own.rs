@@ -14,6 +14,7 @@ use crate::support;
 
 use std::path::Path;
 
+use purlis_core::chatpiece::Cut;
 use purlis_core::dispatchplace::{
     self, Discarded, Ground, LeftIn, NotDeleted, NotDone, NotMerged, Refused, Repo, Tidied, Tree,
     Where,
@@ -1437,6 +1438,7 @@ fn a_task_whose_clone_s_remote_cannot_say_its_default_is_refused_and_nothing_is_
         &f.clone,
         &["remote", "set-url", "origin", gone.to_str().unwrap()],
     );
+    no_default_fetched(&f);
     let branches_before = support::git(&f.clone, &["branch", "--list"]).stdout;
 
     let repo = asked_from(&f, &f.workspace());
@@ -1449,11 +1451,21 @@ fn a_task_whose_clone_s_remote_cannot_say_its_default_is_refused_and_nothing_is_
     )
     .expect_err("no task is cut from the clone's HEAD");
 
-    assert_eq!(
-        refused.say(),
-        "purlis could not read which branch api's remote names its default, so it cut no \
-         branch for this task: it never starts one from the commit the clone is on. Check \
-         that the remote answers (`purlis sync` fetches it), then dispatch the task again."
+    let said = refused.say();
+    assert!(
+        said.starts_with(
+            "purlis could not tell which branch api's remote names its default ('origin' did \
+             not answer (access or network): "
+        ),
+        "{said}"
+    );
+    assert!(
+        said.ends_with(
+            "and the clone has fetched no default branch of 'origin'), so it cut no branch for \
+             this task: it never starts one from the commit the clone is on. Check that the \
+             remote answers (`purlis sync` fetches it), then dispatch the task again."
+        ),
+        "{said}"
     );
     assert_eq!(
         support::git(&f.clone, &["branch", "--list"]).stdout,
@@ -1467,6 +1479,205 @@ fn a_task_whose_clone_s_remote_cannot_say_its_default_is_refused_and_nothing_is_
                 .next()
                 .is_none(),
         "no folder was made"
+    );
+}
+
+/// The clone keeps no record of which branch its remote names its default
+/// (`refs/remotes/origin/HEAD`), whichever git made the fixture: git 2.48 writes one on fetch.
+fn no_default_fetched(f: &support::Fixture) {
+    support::git_tried(&f.clone, &["remote", "set-head", "origin", "--delete"]);
+}
+
+/// `f`'s remote moves on once more, by `later-work`, which the clone has not fetched.
+fn the_remote_moves_on_unfetched(f: &support::Fixture) {
+    let other = f.plane.join("other");
+    f.commit(&other, "later-work");
+    support::git(&other, &["push", "-q", "origin", "main"]);
+}
+
+/// The one task cut from the workspace's folder, as `cut` answers it.
+fn cut_from_the_workspace(f: &support::Fixture) -> Result<Cut, Refused> {
+    let repo = asked_from(f, &f.workspace());
+    assert!(repo.from_default, "{repo:?}");
+    dispatchplace::cut(
+        &f.plane,
+        &repo,
+        "check the queue",
+        &dispatchrecord::mint(),
+        &Isolated::default(),
+    )
+}
+
+#[test]
+fn a_task_from_a_stale_clone_starts_at_the_remote_s_default_as_fetched_now() {
+    purlis_core::unsteered!();
+    // #7870: the clone's last fetch is not the remote's default now. The default is fetched
+    // before the cut, so the task starts from what the remote has.
+    let f = support::plane_with_clone("api");
+    with_a_remote_that_moved_on(&f);
+    the_remote_moves_on_unfetched(&f);
+
+    let cut = cut_from_the_workspace(&f).expect("the task is cut");
+
+    assert_eq!(cut.base, worktree::Base::Branch("main".to_owned()));
+    assert!(cut.path.join("upstream-work").is_file());
+    assert!(
+        cut.path.join("later-work").is_file(),
+        "the remote's newest commit, fetched for the cut"
+    );
+    assert!(
+        !cut.path.join("someones-work").exists(),
+        "not the clone's HEAD"
+    );
+    assert!(
+        !cut.notes
+            .iter()
+            .any(|note| note.to_string().contains("could not")),
+        "{:?}",
+        cut.notes
+    );
+}
+
+#[test]
+fn a_task_whose_remote_does_not_answer_starts_from_its_default_as_last_fetched_and_says_how_old() {
+    purlis_core::unsteered!();
+    // #7870: a remote that does not answer now leaves the default the clone last fetched,
+    // never the clone's HEAD; the note says so, and how old that fetch is.
+    let f = support::plane_with_clone("api");
+    with_a_remote_that_moved_on(&f);
+    support::git(&f.clone, &["remote", "set-head", "origin", "main"]);
+    let gone = f.plane.join("gone.git");
+    support::git(
+        &f.clone,
+        &["remote", "set-url", "origin", gone.to_str().unwrap()],
+    );
+
+    let cut = cut_from_the_workspace(&f).expect("cut from the default as last fetched");
+
+    assert_eq!(cut.base, worktree::Base::Branch("main".to_owned()));
+    assert!(cut.path.join("upstream-work").is_file());
+    assert!(
+        !cut.path.join("someones-work").exists(),
+        "not the clone's HEAD"
+    );
+    let said: Vec<String> = cut.notes.iter().map(ToString::to_string).collect();
+    assert!(
+        said.iter().any(|note| {
+            note.starts_with("purlis could not ask 'origin' which branch is its default (")
+                && note.contains(
+                    "so the new branch starts from origin/main as the clone last fetched it (",
+                )
+                // The fixture's git dates its reflog at its own fixed time, so any age.
+                && note.ends_with(" ago)")
+        }),
+        "{said:?}"
+    );
+}
+
+#[test]
+fn a_task_whose_remote_purlis_may_not_reach_is_refused_with_that_reason_or_cut_from_the_last_fetch()
+{
+    purlis_core::unsteered!();
+    // #7870: an SSH origin on a host the project does not manage is never asked. Its reason
+    // reaches the person, and where the clone fetched a default before, that is cut from.
+    let f = support::plane_with_clone("api");
+    with_a_remote_that_moved_on(&f);
+    support::git(
+        &f.clone,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "git@unmanaged.invalid:acme/api.git",
+        ],
+    );
+    no_default_fetched(&f);
+
+    let refused = cut_from_the_workspace(&f).expect_err("nothing to cut from");
+    assert!(
+        refused
+            .say()
+            .contains("remote 'origin' is an SSH address on a host this project does not manage"),
+        "{}",
+        refused.say()
+    );
+
+    support::git(&f.clone, &["remote", "set-head", "origin", "main"]);
+    let cut = cut_from_the_workspace(&f).expect("cut from the default as last fetched");
+    assert!(cut.path.join("upstream-work").is_file());
+    assert!(
+        cut.notes
+            .iter()
+            .any(|note| note.to_string().contains("is an SSH address")),
+        "{:?}",
+        cut.notes
+    );
+}
+
+#[test]
+fn a_task_whose_clone_has_no_branch_of_the_default_s_name_is_cut_from_the_remote_s() {
+    purlis_core::unsteered!();
+    // #7870: a clone that never checked out its remote's default has no branch of that name to
+    // record the task's base as; one is made following the remote's, as `git checkout` would.
+    let f = support::plane_with_clone("api");
+    with_a_remote_that_moved_on(&f);
+    support::git(&f.clone, &["branch", "-q", "-D", "main"]);
+
+    let cut = cut_from_the_workspace(&f).expect("the task is cut");
+
+    assert_eq!(cut.base, worktree::Base::Branch("main".to_owned()));
+    assert!(cut.path.join("upstream-work").is_file());
+    assert!(
+        !cut.path.join("someones-work").exists(),
+        "not the clone's HEAD"
+    );
+    let upstream = support::git(&f.clone, &["rev-parse", "--abbrev-ref", "main@{upstream}"]);
+    assert_eq!(
+        String::from_utf8_lossy(&upstream.stdout).trim(),
+        "origin/main"
+    );
+    assert!(
+        cut.notes.iter().any(|note| note.to_string()
+            == "the clone had no branch main, so purlis made one following origin/main"),
+        "{:?}",
+        cut.notes
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn asking_a_remote_that_never_answers_ends_at_its_deadline_and_says_so() {
+    purlis_core::unsteered!();
+    // #7870: the ask is bounded, so a remote that hangs never holds a cut for minutes. Here its
+    // refs are a pipe nothing writes, so the remote's side waits for ever.
+    let f = support::plane_with_clone("api");
+    with_a_remote_that_moved_on(&f);
+    let remote = f.plane.join("remote.git");
+    let packed = remote.join("packed-refs");
+    let _ = std::fs::remove_file(&packed);
+    let made = purlis_core::forklock::status(std::process::Command::new("mkfifo").arg(&packed))
+        .expect("mkfifo runs");
+    assert!(made.success());
+
+    let started = std::time::Instant::now();
+    let asked = worktree::fresh::asked_default_within(
+        &f.plane,
+        &f.clone,
+        "origin",
+        None,
+        std::time::Duration::from_secs(1),
+        std::time::Duration::from_millis(10),
+    );
+    let took = started.elapsed();
+
+    let why = asked.expect_err("a remote that never answers names no default");
+    assert!(
+        why.contains("git took longer than 1 s and was stopped"),
+        "{why}"
+    );
+    assert!(
+        took < std::time::Duration::from_secs(12),
+        "two bounded asks, not a fetch's deadline: {took:?}"
     );
 }
 
