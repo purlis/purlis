@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795766199569,
+  "lastUpdate": 1795767329196,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57288,6 +57288,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5494085,
             "unit": "ms",
             "extra": "median of 5 runs: 101.379, 101.441, 101.549, 101.550, 102.710 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1099f45a6296c938718570c5f5093431547b6549",
+          "message": "worktree update --base replays only the piece's own commits (#7875) (#7883)\n\nA piece cut from origin/main is recorded as cut from main, which is often\nbehind it. The cut point was taken from main alone, so the commits between\nmain and origin/main counted as the piece's own and were replayed onto the\nnew base. The cut is now the later of where the piece left the recorded\nbranch and the remote-tracking branch it follows.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8DT9XHWRK7N5J086QFR3AF0\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T07:35:26Z",
+          "tree_id": "110ce70286490c3634d4047f2a45d7ddc16497f2",
+          "url": "https://github.com/purlis/purlis/commit/1099f45a6296c938718570c5f5093431547b6549"
+        },
+        "date": 1795767321475,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.336318,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.324, 0.336, 0.336, 0.336, 0.337 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.224155000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.129, 16.198, 16.224, 16.578, 16.779 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.2228365,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.239, 100.932, 101.223, 102.073, 102.419 ms"
           }
         ]
       }
