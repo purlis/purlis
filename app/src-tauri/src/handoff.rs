@@ -378,6 +378,10 @@ pub fn answer(
         // chat's sandbox, on the route of the run of the chat whose token the line carries, and
         // only of a repository recorded for that run. Never a route or a chat the line names.
         Ask::RemoteRefs(asked) => remote_refs_answer(asked.chat, &asked.url),
+        // What the asking chat's project needs from the person (ADR 0130 §2): the list this
+        // app holds for the project it holds the chat in, never one the line names. No ticket,
+        // for the record's reason: it reads.
+        Ask::Prerequisites(_) => prerequisites_answer(held, plane),
         // A brokered git action (#1335): no ticket, for the record's reason — the line names
         // only the chat whose token it carries, and what it asks is checked against the app's
         // record of that chat.
@@ -1790,6 +1794,17 @@ fn policy_answer(held: &Held, chat: u32) -> Answer {
         spelled: policy.spelled(),
         unaccepted: policy.unaccepted_keys(),
     }
+}
+
+/// **The project's prerequisites, as the app holds them** ([`Ask::Prerequisites`]): the same
+/// payload the window's event carries.
+fn prerequisites_answer(held: &Held, plane: &PlaneId) -> Answer {
+    let list = held.prerequisites().current(held.root());
+    serde_json::to_value(crate::prerequisites::Prerequisites::of(plane.clone(), &list))
+        .map_or_else(
+            |why| no(format!("purlis could not say what this project needs: {why}")),
+            |data| Answer::Prerequisites { data },
+        )
 }
 
 /// **Writes one log line a chat's process handed over** ([`Ask::PolicyLog`]), or says why not.

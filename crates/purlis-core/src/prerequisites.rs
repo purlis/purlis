@@ -136,14 +136,49 @@ thread_local! {
 /// **The prerequisites of the project at `root`**, evaluated now. Only the app, which alone can
 /// verify what the person accepted, evaluates them: every other reader asks it.
 pub fn evaluate(root: &Path) -> List {
-    let _ = root;
-    List::default()
+    let mut entries = Vec::new();
+    // Evaluated before the policy one, so a test sees the order is the list's, not this.
+    #[cfg(test)]
+    if STAND_IN.with(std::cell::Cell::get) {
+        entries.push(Prerequisite::StandIn);
+    }
+    entries.extend(policy(root).map(|policy| Prerequisite::Policy(Box::new(policy))));
+    List::of(entries)
 }
 
 /// **The policy prerequisite of the project at `root`**, where it is open (ADR 0130 §3).
+///
+/// **Broken** where this machine kept an acceptance that does not hold now. **Waiting** where
+/// the committed policy is looser than what was accepted, or than the shipped `watch` where
+/// nothing was kept; under Broken, looser than the shipped `watch` alone, never weighed against
+/// the record that does not hold. Never alone, with nothing looser than `watch`, is none: the
+/// shipped default is no loosening the person must weigh. All of one read
+/// ([`enforcement::standing`]).
 pub fn policy(root: &Path) -> Option<Policy> {
-    let _ = root;
-    None
+    let standing = enforcement::standing(root);
+    let waiting = if standing.broken {
+        standing.loosens_the_shipped
+    } else {
+        standing.waits()
+    };
+    let reasons: Vec<Reason> = [
+        standing.broken.then_some(Reason::Broken),
+        waiting.then_some(Reason::Waiting),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    if reasons.is_empty() {
+        return None;
+    }
+    Some(Policy {
+        state: State::Open,
+        reasons,
+        digest: standing.digest.clone(),
+        needs_new_key: standing.key_foreign,
+        after_new_key: standing.broken && standing.new_key,
+        standing,
+    })
 }
 
 /// **The files whose change evaluates the list again**, for the project at `root`: the plane
@@ -153,8 +188,37 @@ pub fn policy(root: &Path) -> Option<Policy> {
 /// makes one evaluates every project again. Where a file is not there, its change is its
 /// coming.
 pub fn watched(root: &Path) -> Vec<PathBuf> {
-    let _ = root;
-    Vec::new()
+    let mut files: Vec<PathBuf> = [crate::names::PLANE_MANIFEST, crate::names::LOCAL_SETTINGS]
+        .iter()
+        .flat_map(|name| name.spellings().map(|file| root.join(file)).collect::<Vec<_>>())
+        .collect();
+    let git = git_dir(root);
+    files.extend(["HEAD", "packed-refs", "logs/HEAD"].map(|file| git.join(file)));
+    if let Some(branch) = std::fs::read_to_string(git.join("HEAD"))
+        .ok()
+        .and_then(|head| head.strip_prefix("ref: ").map(|named| named.trim().to_owned()))
+        .filter(|named| named.starts_with("refs/") && !named.contains(".."))
+    {
+        files.push(git.join(branch));
+    }
+    files.push(PathBuf::from(crate::sandbox::policy::MACHINE_FILE));
+    let record = crate::sandbox::local::path(root);
+    if !record.as_os_str().is_empty() {
+        files.push(record);
+    }
+    files
+}
+
+/// The plane root's git folder: `.git`, or where a `.git` file points (`gitdir: …`).
+fn git_dir(root: &Path) -> PathBuf {
+    let dot_git = root.join(".git");
+    std::fs::read_to_string(&dot_git)
+        .ok()
+        .and_then(|text| {
+            text.strip_prefix("gitdir: ")
+                .map(|pointed| root.join(pointed.trim()))
+        })
+        .unwrap_or(dot_git)
 }
 
 /// Told a project's whole list each time it changes, after it is kept.
@@ -184,8 +248,22 @@ impl Kept {
     /// **Evaluates the list for the project at `root` again**, keeps it, and then, where it
     /// differs from the list kept before (or none was), tells it whole.
     pub fn evaluate(&self, root: &Path) -> List {
-        let _ = root;
-        List::default()
+        let _evaluating = self
+            .evaluating
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let now = evaluate(root);
+        let changed = {
+            let mut kept = self.list.lock().unwrap_or_else(PoisonError::into_inner);
+            let changed = kept.as_ref() != Some(&now);
+            *kept = Some(now.clone());
+            changed
+        };
+        // After it is kept, and outside the lock a read takes.
+        if changed {
+            (self.told)(&now);
+        }
+        now
     }
 
     /// **The list as kept**, evaluated first where it never was.

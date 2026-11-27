@@ -212,6 +212,7 @@ mod poolsignin_confirm;
 mod pooltools;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod portal;
+mod prerequisites;
 mod projectready;
 mod projectsettings;
 mod proposals;
@@ -3539,6 +3540,10 @@ fn commands() -> Builder<tauri::Wry> {
         .typ::<reconnecting::ChatsReconnecting>()
         // What `fresh-runners-kept` carries (#4569).
         .typ::<freshkept::FreshRunnersKept>()
+        // What `prerequisites-changed` carries, `project_prerequisites` answers and the hook socket
+        // hands a chat's `purlis`, and the event's name (ADR 0130 §2).
+        .typ::<prerequisites::Prerequisites>()
+        .constant("PREREQUISITES_CHANGED", prerequisites::EVENT)
         // What `project-ready` carries, and the event's name (#5322).
         .typ::<projectready::ProjectReady>()
         .constant("PROJECT_READY", projectready::EVENT)
@@ -5035,6 +5040,10 @@ pub fn run() {
                         );
                     })
                 })
+                // Each project's whole list of prerequisites, to every window: a project not in
+                // front shows a dot on its tab, and an answer in one window closes the modal in
+                // each (ADR 0130 §2, §8).
+                .telling_prerequisites(prerequisites::to_every_window(app.handle().clone()))
                 // A task's fresh runner kept since its work is not all here: the window's Notice
                 // offers Fetch again and Discard (#4569).
                 .telling_fresh_kept({

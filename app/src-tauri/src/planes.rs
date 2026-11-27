@@ -456,6 +456,12 @@ pub struct Held {
     /// What each chat's browser-site count is read from, kept until the policy or the sites
     /// kept here change (#4739).
     kept_sites: crate::network::KeptSites,
+    /// Its prerequisites, as the core last evaluated them (ADR 0130 §2). In memory only.
+    prerequisites: Arc<purlis_core::prerequisites::Kept>,
+    /// What evaluates them again when a file they are evaluated from changes; dropped with the
+    /// plane. None where the platform would not watch: they are then evaluated on its open and
+    /// after every answer.
+    _prerequisites_watch: Option<crate::prerequisites::Watch>,
     /// This plane, once it is in its `Arc`: what a program's end writes the record through.
     me: Arc<std::sync::OnceLock<std::sync::Weak<Held>>>,
 }
@@ -953,6 +959,12 @@ impl Held {
     pub fn browser_sites_in_force(&self) -> Arc<crate::network::SitesInForce> {
         self.kept_sites
             .now(|| crate::network::SitesInForce::read(&self.root))
+    }
+
+    /// Its prerequisites as the app holds them (ADR 0130 §2): every answer is made through
+    /// them, so the list is evaluated again after it.
+    pub fn prerequisites(&self) -> Arc<purlis_core::prerequisites::Kept> {
+        Arc::clone(&self.prerequisites)
     }
 
     /// This machine's policy changed, or a browser site was kept or removed for every chat
@@ -2986,6 +2998,8 @@ pub struct Planes {
     reconnecting: crate::reconnecting::Teller,
     /// Told each plane's fresh runners kept since their work is not all here (#4569).
     fresh_kept: crate::freshkept::Teller,
+    /// Told each plane's whole list of prerequisites each time it changes (ADR 0130 §2).
+    prerequisites_told: crate::prerequisites::Teller,
     /// Told each project put back as it finishes opening: ready, or failed (#5322).
     ready: crate::projectready::Teller,
     /// Told each step of a smart close in any plane (ADR 0064).
@@ -3271,6 +3285,7 @@ impl Planes {
             lost_with_the_host: Arc::new(|_| {}),
             reconnecting: Arc::new(|_| {}),
             fresh_kept: Arc::new(|_| {}),
+            prerequisites_told: Arc::new(|_| {}),
             ready: Arc::new(|_| {}),
             smart: Arc::new(|_| {}),
             stops: Arc::new(|_| {}),
@@ -3644,6 +3659,14 @@ impl Planes {
     /// time they change, so the window's Notice offers Fetch again and Discard (#4569).
     pub fn telling_fresh_kept(mut self, fresh_kept: crate::freshkept::Teller) -> Self {
         self.fresh_kept = fresh_kept;
+        self
+    }
+
+    /// Tells `told` each plane's whole list of prerequisites, after it is kept, each time it
+    /// changes (ADR 0130 §2): on its open, on a change to what it is evaluated from, and after
+    /// every answer.
+    pub fn telling_prerequisites(mut self, told: crate::prerequisites::Teller) -> Self {
+        self.prerequisites_told = told;
         self
     }
 
@@ -5884,6 +5907,36 @@ impl Planes {
         // restart, as a task's open question is (#5079).
         let secret_asks = Arc::new(purlis_core::secrets::ask::Asks::kept(&root));
         chats.ask_secrets_in(Arc::clone(&secret_asks));
+        // Its prerequisites, each change told whole to every window (ADR 0130 §2), evaluated
+        // first by their watch, off this thread: the project's open.
+        let prerequisites = Arc::new(purlis_core::prerequisites::Kept::new({
+            let (told, plane) = (Arc::clone(&self.prerequisites_told), id.clone());
+            Arc::new(move |list: &purlis_core::prerequisites::List| {
+                told(crate::prerequisites::Prerequisites::of(plane.clone(), list));
+            })
+        }));
+        let prerequisites_watch = {
+            let (kept, at) = (Arc::clone(&prerequisites), root.clone());
+            let evaluate = Arc::new(move || {
+                kept.evaluate(&at);
+            });
+            crate::prerequisites::Watch::start(&root, {
+                let evaluate = Arc::clone(&evaluate);
+                move || evaluate()
+            })
+            .map_err(|why| {
+                tracing::warn!(
+                    "purlis: what {} needs from you is not watched ({why}); it is read on its \
+                     open and after every answer",
+                    root.display()
+                );
+                // Still evaluated on its open, off this thread.
+                let _ = std::thread::Builder::new()
+                    .name("purlis-prerequisites-open".into())
+                    .spawn(move || evaluate());
+            })
+            .ok()
+        };
         Held {
             id,
             root,
@@ -5946,6 +5999,8 @@ impl Planes {
             touched_files: crate::taskchanges::Touched::default(),
             talk_sweep,
             kept_sites: crate::network::KeptSites::default(),
+            prerequisites,
+            _prerequisites_watch: prerequisites_watch,
             me,
             noticed,
             pauses: crate::pausing::Pauses::default(),

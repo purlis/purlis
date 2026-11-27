@@ -112,7 +112,12 @@ const PROTECTED_ROW: &str = "protected branch";
 /// the families set apart, what waits and the digest Accept names are all of one read of the
 /// file. Only reads: the core alone resolves the policy, and nothing here keeps anything.
 fn state_of(root: &std::path::Path) -> PolicyState {
-    let standing = enforcement::standing(root);
+    state_of_standing(enforcement::standing(root))
+}
+
+/// [`state_of`], of a read already made: what the prerequisite list hands on of the same read
+/// it found the prerequisite in (`crate::prerequisites`).
+pub(crate) fn state_of_standing(standing: enforcement::Standing) -> PolicyState {
     let overrides = enforcement::Family::ALL
         .into_iter()
         .filter_map(|family| {
@@ -346,7 +351,8 @@ pub async fn project_policy_state(
 /// **Your press: accept the project's `[policy]` as its committed file said it when it was
 /// shown** (`shown`, the state's digest), looser where it is looser, at once. Sealed on this
 /// machine by the app; refused where it cannot be sealed, or where the file changed since it was
-/// shown. The window's alone.
+/// shown. The window's alone. Made through the project's prerequisite list, which is evaluated
+/// again after it and tells every window (ADR 0130 §2).
 #[tauri::command]
 #[specta::specta]
 pub async fn accept_project_policy(
@@ -354,14 +360,21 @@ pub async fn accept_project_policy(
     plane: PlaneId,
     shown: String,
 ) -> Result<PolicyState, String> {
-    let root = planes.held(&plane)?.root().to_path_buf();
-    crate::off_the_window(READING_POLICY, move || {
-        enforcement::press(&root, &shown).map_err(|why| {
-            format!("purlis could not keep your acceptance on this machine: {why}")
-        })?;
-        Ok(state_of(&root))
-    })
-    .await
+    let held = planes.held(&plane)?;
+    let (root, kept) = (held.root().to_path_buf(), held.prerequisites());
+    crate::off_the_window(READING_POLICY, move || pressed(&root, &kept, &shown)).await
+}
+
+/// [`accept_project_policy`] on the project at `root`, whose list `kept` holds, off the window's
+/// thread.
+pub(crate) fn pressed(
+    root: &std::path::Path,
+    kept: &purlis_core::prerequisites::Kept,
+    shown: &str,
+) -> Result<PolicyState, String> {
+    kept.accept(root, shown)
+        .map_err(|why| format!("purlis could not keep your acceptance on this machine: {why}"))?;
+    Ok(state_of(root))
 }
 
 /// **Your press where the seal's key is another program's: make a new key and accept the
@@ -369,7 +382,8 @@ pub async fn accept_project_policy(
 /// front when it lands. The old `purlis-seal` items are replaced, which macOS may ask you to
 /// allow; the digest is checked again once its prompt returns; then a new key seals this
 /// project's acceptance. Every other project accepted on this machine then needs accepting
-/// again. The window's alone. The window draws it in the prerequisite modal (#7719).
+/// again, and each one's list is evaluated again. The window's alone. The window draws it in the
+/// prerequisite modal (#7719).
 #[tauri::command]
 #[specta::specta]
 pub async fn accept_project_policy_with_new_key(
@@ -377,13 +391,43 @@ pub async fn accept_project_policy_with_new_key(
     plane: PlaneId,
     shown: String,
 ) -> Result<PolicyState, String> {
-    let root = planes.held(&plane)?.root().to_path_buf();
-    crate::off_the_window(READING_POLICY, move || new_key_pressed(&root, &shown)).await
+    let held = planes.held(&plane)?;
+    let (root, kept) = (held.root().to_path_buf(), held.prerequisites());
+    let others = every_other_list(&planes, &plane);
+    crate::off_the_window(READING_POLICY, move || {
+        new_key_pressed(&root, &kept, &shown, &others)
+    })
+    .await
 }
 
-/// [`accept_project_policy_with_new_key`] on the project at `root`, off the window's thread.
-fn new_key_pressed(root: &std::path::Path, shown: &str) -> Result<PolicyState, String> {
-    enforcement::press_with_new_key(root, shown)
+/// Each held project but `plane`, by its root, with the list the app holds for it.
+fn every_other_list(
+    planes: &Planes,
+    plane: &PlaneId,
+) -> Vec<(std::path::PathBuf, std::sync::Arc<purlis_core::prerequisites::Kept>)> {
+    planes
+        .open_now()
+        .into_iter()
+        .filter(|other| other != plane)
+        .filter_map(|other| planes.held(&other).ok())
+        .map(|held| (held.root().to_path_buf(), held.prerequisites()))
+        .collect()
+}
+
+/// [`accept_project_policy_with_new_key`] on the project at `root`, whose list `kept` holds, off
+/// the window's thread; then the list of each project of `others` is evaluated again, since a
+/// new seal key breaks every acceptance the old one sealed, whatever the press came to.
+fn new_key_pressed(
+    root: &std::path::Path,
+    kept: &purlis_core::prerequisites::Kept,
+    shown: &str,
+    others: &[(std::path::PathBuf, std::sync::Arc<purlis_core::prerequisites::Kept>)],
+) -> Result<PolicyState, String> {
+    let pressed = kept.accept_with_new_key(root, shown);
+    for (other, list) in others {
+        list.evaluate(other);
+    }
+    pressed
         .map_err(|why| format!("purlis could not keep your acceptance on this machine: {why}"))?;
     Ok(state_of(root))
 }
@@ -473,13 +517,17 @@ mod tests {
         );
         let planes = Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None);
         let (first, second) = (planes.open(one.path()), planes.open(other.path()));
-        let root = planes.held(&first).expect("held").root().to_path_buf();
+        let held = planes.held(&first).expect("held");
+        let (root, kept) = (held.root().to_path_buf(), held.prerequisites());
+        let others = every_other_list(&planes, &first);
         let shown_there = state_of(planes.held(&second).expect("held").root()).digest;
-        let why = new_key_pressed(&root, &shown_there).expect_err("nothing accepted");
+        let why =
+            new_key_pressed(&root, &kept, &shown_there, &others).expect_err("nothing accepted");
         assert!(why.contains("changed since it was shown"), "{why}");
         // What this project shows passes, and is then refused only because a test is not the
         // app, which alone seals.
-        let why = new_key_pressed(&root, &state_of(&root).digest).expect_err("not the app");
+        let why = new_key_pressed(&root, &kept, &state_of(&root).digest, &others)
+            .expect_err("not the app");
         assert!(!why.contains("changed since it was shown"), "{why}");
     }
 

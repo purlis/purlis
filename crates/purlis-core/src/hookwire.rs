@@ -1705,6 +1705,20 @@ pub enum Ask {
     /// cannot. No ticket: the line can only name the chat whose token it carries, and what it
     /// hands over is what the forge says the repository's branches and tags are at.
     RemoteRefs(RemoteRefsAsk),
+    /// **What the asking chat's project needs from the person** (ADR 0130 §2): its whole list
+    /// of prerequisites, as the app holds it, which `purlis` in a chat says and never computes.
+    /// The app answers [`Answer::Prerequisites`] with the list of the project it holds the chat
+    /// in, never one a line names. It waits on nothing. No ticket, for a record's reason: it
+    /// reads.
+    Prerequisites(PrerequisitesAsk),
+}
+
+/// **A chat's ask for its project's prerequisites** ([`Ask::Prerequisites`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PrerequisitesAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
 }
 
 /// **A hook's ask for a remote's ref tips** ([`Ask::RemoteRefs`]).
@@ -2658,6 +2672,9 @@ pub enum Answer {
     /// The chats of the asking chat's workspace ([`Ask::Chats`], #6235): the `purlis.chats`
     /// answer's data, names, states and times only.
     Chats { data: serde_json::Value },
+    /// The asking chat's project's whole list of prerequisites ([`Ask::Prerequisites`]): the
+    /// app's `Prerequisites`, the same payload its window's event carries.
+    Prerequisites { data: serde_json::Value },
     /// What a chat's router points its prompt at (SK-15c): the text its hook adds to the turn's
     /// context, in purlis's own words, or none.
     Pointed {
@@ -2929,6 +2946,7 @@ impl Ask {
             Self::Policy(asked) => asked.chat,
             Self::PolicyLog(line) => line.chat,
             Self::RemoteRefs(asked) => asked.chat,
+            Self::Prerequisites(asked) => asked.chat,
         }
     }
 }

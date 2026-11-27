@@ -238,7 +238,12 @@ fn a_commit_that_moves_the_plane_roots_head_is_heard_and_raises_it() {
 #[test]
 fn a_change_to_the_local_settings_file_is_heard_and_evaluated() {
     let _home = OwnConfigHome::new();
-    let root = plane(OPEN);
+    // The local file is read only where git ignores it. It can tighten a family, never take
+    // the merge opt-in `open` makes, so the loosening is one family.
+    let root = plane("[policy]\ntemplate = \"watch\"\n[policy.guards]\nrelease = \"off\"\n");
+    std::fs::write(root.path().join(".gitignore"), "charter.local.toml\n").expect("ignored");
+    git(root.path(), &["init", "-q"]);
+    commit(root.path(), "open");
     let heard = Heard::default();
     let kept = Kept::new(heard.told());
     assert!(!kept.evaluate(root.path()).is_empty());
@@ -246,7 +251,8 @@ fn a_change_to_the_local_settings_file_is_heard_and_evaluated() {
     let before = watched_now(root.path());
     std::fs::write(root.path().join("charter.local.toml"), WATCH).expect("the local file");
     assert_ne!(watched_now(root.path()), before, "a file the list watches moved");
-    assert!(kept.evaluate(root.path()).is_empty(), "the local file tightened it");
+    let after = kept.evaluate(root.path());
+    assert!(after.is_empty(), "the local file tightened it: {after:#?}");
     assert_eq!(heard.taken(), vec![List::default()]);
 }
 

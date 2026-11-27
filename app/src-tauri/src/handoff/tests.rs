@@ -3312,6 +3312,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Policy(_) => 26,
             Ask::PolicyLog(_) => 27,
             Ask::RemoteRefs(_) => 28,
+            Ask::Prerequisites(_) => 29,
         }
     }
     let asks = vec![
@@ -3495,10 +3496,12 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             chat,
             url: "https://github.com/acme/app.git".to_owned(),
         }),
+        // What the asking chat's project needs from the person (ADR 0130 §2): a read.
+        Ask::Prerequisites(purlis_core::hookwire::PrerequisitesAsk { chat }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=28).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=29).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 
@@ -16002,6 +16005,43 @@ fn a_policy_log_line_is_kept_only_for_an_open_chat_a_known_rule_and_a_host_and_p
         enforcement::read_log(&plane.root, enforcement::UNKNOWN_CHAT).is_empty(),
         "nothing is written for an unidentified caller"
     );
+}
+
+/// ADR 0130 §2: a chat's `purlis` asks the app for its project's prerequisites and never computes
+/// them: the socket answers with the list the app holds for the window, the same payload its
+/// event carries.
+#[test]
+fn the_socket_answers_a_chats_ask_for_its_prerequisites_with_the_list_the_window_holds() {
+    use purlis_core::hookwire::PrerequisitesAsk;
+    let plane = Plane::new();
+    std::fs::write(
+        plane.root.join(purlis_core::plane::MANIFEST),
+        "[policy]\ntemplate = \"open\"\n",
+    )
+    .expect("looser than watch");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    // The socket checked the line's token before this: the chat is the app's own.
+    let asking = 1;
+    let held_list = held.prerequisites().current(&plane.root);
+    assert!(!held_list.is_empty(), "nothing kept, looser than watch: Waiting");
+    let answered = answer(
+        &held,
+        &id,
+        &Tickets::default(),
+        1,
+        Ask::Prerequisites(PrerequisitesAsk { chat: asking }),
+        &nobody,
+    );
+    let Answer::Prerequisites { data } = answered else {
+        panic!("not the list: {answered:?}");
+    };
+    let window = crate::prerequisites::Prerequisites::of(id.clone(), &held_list);
+    assert_eq!(data, serde_json::to_value(&window).expect("JSON"));
+    assert_eq!(data["list"][0]["kind"], "policy", "{data}");
+    assert_eq!(data["list"][0]["reasons"], serde_json::json!(["waiting"]), "{data}");
 }
 
 /// #7073: the socket's [`Ask::PolicyLog`] reaches the checks: a line for the asking chat is kept
