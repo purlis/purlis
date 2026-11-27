@@ -120,6 +120,7 @@ fn on_runner() -> Pane {
         session: Some(7),
         folder: None,
         runs: Runs::OnRunner,
+        now_in: None,
     }
 }
 

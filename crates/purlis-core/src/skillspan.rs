@@ -508,7 +508,7 @@ impl Tracker {
                 Ended::Session
             }
             _ => {
-                if matches!(report.event.said(report.detail), Said::Ask(_)) {
+                if matches!(report.event.said(report.detail.clone()), Said::Ask(_)) {
                     self.spans.heard(
                         key,
                         Heard {
