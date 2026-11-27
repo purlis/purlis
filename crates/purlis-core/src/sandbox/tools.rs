@@ -2448,15 +2448,15 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // and round 4's: more programs that run the command after them (macOS's `taskpolicy`,
     // util-linux's `choom` and `uclampset`, moreutils' `chronic`, `ifne`, `lckdo` and `zrun`,
     // `cpulimit`, `nocache`, `schedtool`, `dbus-run-session`, `xvfb-run`, `faketime`, `torsocks`,
-    // `proxychains`, `trickle`, and s6's `s6-maximumtime`; and s6-networking's `s6-tcpserver` and
-    // the rest, twins of the `s6-ipc*` programs); `rotatelogs -p`, which runs a program on each new
-    // log; the package builders beside `debuild` (`pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`,
-    // `fedpkg`, `centpkg`, `rhpkg`, `tito`), and `debconf`, which runs the command it is handed
-    // (`proxychains4` reaches `proxychains` without its version), `deb-systemd-invoke`, which has
+    // `proxychains` (and `proxychains4`, which reaches it without its version), `trickle`, and s6's
+    // `s6-maximumtime`; and s6-networking's `s6-tcpserver` and the rest, twins of the `s6-ipc*`
+    // programs); `rotatelogs -p`, which runs a program on each new log; the package builders beside
+    // `debuild` (`pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`, `fedpkg`, `centpkg`, `rhpkg`,
+    // `tito`), `debconf`, which runs the command it is handed, `deb-systemd-invoke`, which has
     // `systemctl` act on a unit (its last part reaches Python's `invoke` row only by chance, so it
-    // has a row of its own), and MacPorts' `daemondo --start-cmd`; Perl's servers and
-    // runners beside `plackup`; and `s6-svlink` and `s6-rc-update`, which hand a running s6 a
-    // folder or a database a chat may have written.
+    // has a row of its own), and MacPorts' `daemondo --start-cmd`; Perl's servers and runners
+    // beside `plackup`; and `s6-svlink` and `s6-rc-update`, which hand a running s6 a folder or a
+    // database a chat may have written.
     "taskpolicy",
     "choom",
     "uclampset",

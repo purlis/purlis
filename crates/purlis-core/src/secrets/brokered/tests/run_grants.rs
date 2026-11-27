@@ -3597,17 +3597,17 @@ fn s6s_runners_the_debian_perl_and_rpm_builders_and_systemds_image_tools_are_off
 /// More of the same families (round 4 of #7828's review), refused on what each is for: programs
 /// that run the command after them (macOS's `taskpolicy`, util-linux's `choom` and `uclampset`,
 /// moreutils' `chronic`, `ifne`, `lckdo` and `zrun`, `cpulimit`, `nocache`, `schedtool`,
-/// `dbus-run-session`, `xvfb-run`, `faketime`, `torsocks`, `proxychains`, `trickle`, and s6's
-/// `s6-maximumtime`; and s6-networking's `s6-tcpserver` and the rest, twins of the `s6-ipc*`
-/// programs); `rotatelogs -p`, which runs a program on each new log; Debian's and Fedora's package
-/// builders beside `debuild` (`pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`, `fedpkg`, `centpkg`,
-/// `rhpkg`, `tito`), `debconf` and `deb-systemd-invoke`, which run the command or the unit they are
-/// handed (the second by a row of its own, pinned by a unit test in `sandbox::tools`, as its last
-/// part reaches Python's `invoke` row by chance; `proxychains4` reaches `proxychains` without its
-/// version), and MacPorts' `daemondo --start-cmd`; Perl's servers and runners beside `plackup`
-/// (`starman`, `starlet`, `morbo`, `hypnotoad`, `mojo`, `start_server`, `mbtiny`); and `s6-svlink`
-/// and `s6-rc-update`, which hand a running s6 a service folder or a database a chat may have
-/// written.
+/// `dbus-run-session`, `xvfb-run`, `faketime`, `torsocks`, `proxychains` (and `proxychains4`, which
+/// reaches it without its version), `trickle`, and s6's `s6-maximumtime`; and s6-networking's
+/// `s6-tcpserver` and the rest, twins of the `s6-ipc*` programs); `rotatelogs -p`, which runs a
+/// program on each new log; Debian's and Fedora's package builders beside `debuild` (`pdebuild`,
+/// `cowbuilder`, `qemubuilder`, `dgit`, `fedpkg`, `centpkg`, `rhpkg`, `tito`), `debconf` and
+/// `deb-systemd-invoke`, which run the command or the unit they are handed (the second by a row of
+/// its own, pinned by a unit test in `sandbox::tools`, as its last part reaches Python's `invoke`
+/// row by chance), and MacPorts' `daemondo --start-cmd`; Perl's servers and runners beside
+/// `plackup` (`starman`, `starlet`, `morbo`, `hypnotoad`, `mojo`, `start_server`, `mbtiny`); and
+/// `s6-svlink` and `s6-rc-update`, which hand a running s6 a service folder or a database a chat
+/// may have written.
 #[test]
 fn more_chain_loaders_loggers_builders_perl_servers_and_s6s_linkers_are_offered_no_run_grant() {
     for name in [
