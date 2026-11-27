@@ -91,6 +91,10 @@ pub struct LinkCandidate {
     // Left out, it is `None`: serde reads a missing `Option` so with no `default`.
     #[specta(optional)]
     pub target: Option<String>,
+    /// Whether the pane read the words across a line break the program wrote at its edge
+    /// (#7819): a web address read so asks before it opens. Left out, it is not.
+    #[specta(optional)]
+    pub joined: Option<bool>,
 }
 
 impl From<LinkCandidate> for Candidate {
@@ -99,6 +103,7 @@ impl From<LinkCandidate> for Candidate {
             kind: candidate.kind.into(),
             text: candidate.text,
             target: candidate.target,
+            joined: candidate.joined.unwrap_or(false),
         }
     }
 }
