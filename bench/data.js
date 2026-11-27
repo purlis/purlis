@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795741632141,
+  "lastUpdate": 1795742134351,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56784,6 +56784,48 @@ window.BENCHMARK_DATA = {
             "value": 102.1909615,
             "unit": "ms",
             "extra": "median of 5 runs: 100.939, 100.980, 102.191, 102.678, 102.798 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ebc5318dcdabd1661a510394088bf04cec66a26a",
+          "message": "Refusals name an unaccepted policy as their cause (#7717) (#7803)\n\n* Refusals name an unaccepted policy: the tests, red (#7717)\n\nThe tests of ADR 0130 §7, with the API they name and the cause never\nmarked yet: under a Broken or Waiting acceptance a guard's, a secrets\nor vaults refusal and a dispatch name the unaccepted policy and not\nthe log switch; no refusal under Broken blames the list of pairs said\nnever to; a file that does not read for its own reason, and a family\nenforced on its own merits, keep their words; the place is a parameter.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8CMT3KG01DYSK2BH3ZQMXBK\nPurlis-Persona: steward\n\n* Refusals name an unaccepted policy: the new test file, red (#7717)\n\nThe core tests of ADR 0130 §7 and the changelog fragment, left out of\nthe commit before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8CMT3KG01DYSK2BH3ZQMXBK\nPurlis-Persona: steward\n\n* Refusals name an unaccepted policy as their cause (#7717)\n\nWhere this machine's acceptance of the project's policy is Broken or\nWaiting, the policy in force marks each family it enforces that the\ncommitted file under this machine's locks would not\n(Resolved::unaccepted), and each dispatch deny the committed file does\nnot hold. A refusal by such a family says the policy isn't accepted on\nthis machine and that purlis's window accepts it, in place of\nOVERRIDE_NOTE; one on its own merits keeps its words. The cause reaches\nthe hook in the app's Policy answer (unaccepted, serde default, so an\nolder app leaves today's words), and a floor joined to it keeps it.\nA nevers file that does not read only because the acceptance is Broken\nnames the policy, and a dispatch across personas is refused as strict\nmode's; one that does not read for its own reason, or with no seal key,\nkeeps today's sentence. The sentence takes where the acceptance lives\n(AcceptedOn) for #7722.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8CMT3KG01DYSK2BH3ZQMXBK\nPurlis-Persona: steward\n\n* toolgate: pass the mode function itself (clippy redundant_closure)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8CMT3KG01DYSK2BH3ZQMXBK\nPurlis-Persona: steward\n\n* Unread nevers under an unaccepted policy hold in every dispatch mode (#7717, round 2 of #7803)\n\n- A record of nevers that does not read only because the acceptance is\n  Broken is its own answer, Covers::NeversUnaccepted (unattended:\n  Refusal::NeversUnaccepted), which no dispatch mode lifts, attended or\n  not. It keeps the unaccepted policy's words. This also closes the race\n  where the grants are read under Broken and the mode under Held.\n- Resolved::stricter keeps a family's cause only where neither side\n  enforces it on its own merits (PURLIS_POLICY, the chain's policy).\n- unread_by_the_policy checks the file's own seals (with the app's own\n  key) before blaming the policy: a sealed never taken out is the file's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8D0EER3RSNWA8GM8QMK7FF8\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T00:37:14Z",
+          "tree_id": "69065ef253314fe73b50ffe9d6b48a05eeca6c2a",
+          "url": "https://github.com/purlis/purlis/commit/ebc5318dcdabd1661a510394088bf04cec66a26a"
+        },
+        "date": 1795742126605,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.707882,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.675, 0.701, 0.708, 0.712, 0.721 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.682074,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.508, 16.633, 16.682, 16.708, 16.847 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.108586,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.515, 101.661, 102.109, 102.204, 102.792 ms"
           }
         ]
       }
