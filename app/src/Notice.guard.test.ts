@@ -730,6 +730,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 2,
     why: READING + ": Reading the vaults…; and Open vault's filter that matches no vault (#2910)",
   },
+  "ui/dialog/RaisedAlert.tsx": {
+    count: 1,
+    why:
+      "an alert the app raises, saying that what it asks changed while it was open, or that a " +
+      "press came before it settled (#7728): its own answers are the way out",
+  },
   "ui/dialog/Dialog.tsx": {
     count: 3,
     why:

@@ -1564,6 +1564,38 @@ Every other dialog stays modal, and a click outside one answers nothing.
 - **Stories hold it** (`Dialog.stories.tsx`): a form, Esc, a question, a dialog longer than the
   window with every field walked and never under the footer, and a list beside its details
   whose choice moves nothing, in Chromium and WebKit, with axe.
+
+### An alert the app raises
+
+**A question the app asks with no press of the person's is `RaisedAlert`**
+(`app/src/ui/dialog/RaisedAlert.tsx`, #7728; [ADR 0104's amendment of
+2026-11-26](adr/0104/2026-11-26-the-dialog-family-serves-an-app-raised-alert.md)). It is the
+family's `AlertDialog`, with the dialog rules whole. A screen asks for one by drawing it with
+`raised` while the app has it to ask, and it closes when the screen stops raising it, once the
+answer has landed. It holds no content of its own (the first is an open prerequisite's, ADR 0130).
+
+| Rule | How |
+| --- | --- |
+| **Its answers' places** | `cancel` is the answer that grants nothing, and is required: it leads, Esc chooses it, and the keyboard starts on it, since the person may be typing when it opens. `main` is the granting answer, of the `grants` variant, so Return never finds it from a field (`returnFinds`). |
+| **A settle guard** | No key (Return, Space, Esc) and no press reaches an answer for `SETTLE_MS` (1.5 s, the Notices' guard, #1695) after it is drawn or after what it shows changes. A press then does nothing and says so in the alert; a key that repeats, held down, answers nothing at any time. |
+| **No silent swap** | `shows` is what it shows, as one value (a digest, a reason). A new value while it is up is said ("This question changed while it was open. Read it again."), drawn, arms the guard again, and takes the keyboard off any answer to `cancel`. A redraw with the same value is no change. |
+| **When it may open** | Never during an IME composition, while a key is down, or while a dialog, the palette, a menu or a select's list is up (`ui/layers.ts` counts the dialogs and menus; `ui/dialog/raised.ts` hears the keys). It waits, and opens when that ends. A key with no keyup counts as down for 2 s after its last keydown, and the window losing focus forgets every key. |
+| **One per window** | Alerts raised together are shown one after another in the order raised, never stacked. While more than one is in the run, each says where it stands in its subtitle ("1 of 2"); the run starts again once none is left. |
+| **For a screen reader** | `aria-busy` while an answer's press is in flight (its `onPress` returned a promise that has not settled), and no second press meanwhile; described by its count and its why-line (`why`); a body that scrolls is a stop of the keyboard's, named by the title, so it can be scrolled. A list in the body is the screen's, and is a real list. |
+| **Focus returns** | To what had it when it opened, as in every dialog of the family. |
+
+| Prop | Says |
+| --- | --- |
+| `raised` | whether the app has it to ask now |
+| `shows` | what it shows, as one value; a change while it is up is a change of content |
+| `title`, `why` | the header, and the why-line: what each answer does |
+| `cancel`, `main`, `alternative` | the answers, as the family's, whose `onPress` may return a promise |
+| `summary`, `size`, `className`, `afterClose` | as a dialog's |
+
+- **Stories hold it** (`RaisedAlert.stories.tsx`): raised with no press, a press before it
+  settles refused, Esc keeping the rules; and its content changing while it is up, in Chromium
+  and WebKit, with axe.
+
 ## A workspace's tabs are drawn by the tabs family's parts (#2914)
 
 The tabs on a workspace's strip are drawn by `app/src/ui/tabs`: `TabCell` is one tab's cell (its

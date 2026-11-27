@@ -2700,3 +2700,32 @@ fn a_chat_put_back_whose_route_is_still_live_keeps_it_as_it_was() {
         "the old sentinel still works: {served:?}"
     );
 }
+
+// ---- what a forge refusal counts (#7779) ----
+
+#[test]
+fn a_forge_refusal_the_route_counts_is_one_line_of_guards_forge_in_the_chats_enforcement_log() {
+    use purlis_core::enforcement::{self, Family};
+    use purlis_core::forge::proxy::Refused;
+    let project = tempfile::tempdir().expect("a project");
+    let sink = refusals_counted_in(project.path().to_owned());
+
+    sink(
+        &ChatId::new("run-1"),
+        &Refused {
+            rule: enforcement::RULE_FORGE_MERGE,
+            host: "api.github.com:443".to_owned(),
+        },
+    );
+
+    let lines = enforcement::read_log(project.path(), "run-1");
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    let line = &lines[0];
+    assert_eq!(line.rule, "forge.not-allowed.merge");
+    assert_eq!(line.family, Family::GuardsForge.key());
+    assert_eq!(line.chat, "run-1");
+    assert_eq!(line.host.as_deref(), Some("api.github.com:443"));
+    // It is a line the window puts on the page: a known rule of its family, about a `host:port`.
+    assert!(enforcement::known_rule(Family::GuardsForge, &line.rule));
+    assert!(enforcement::is_host_and_port(line.host.as_deref().unwrap()));
+}

@@ -365,31 +365,13 @@ pub fn answer(
         // what the person accepted, so a hook asks it. No ticket, for the record's reason: the
         // answer is of the project this app holds the chat in, never one the line names.
         // A dispatched chat is never looser than its chain (Q308a, Q308b), by the app's record.
-        Ask::Policy(asked) => Answer::Policy {
-            spelled: purlis_core::enforcement::in_force(held.root())
-                .for_chat(
-                    held.chats()
-                        .handed_from(asked.chat)
-                        .and_then(|from| from.policy)
-                        .as_deref(),
-                )
-                .spelled(),
-        },
+        Ask::Policy(asked) => policy_answer(held, asked.chat),
         // One log line a hook hands over (Q308): written under the app's own record of the open
         // chat whose token the line carries, by its id. Refused (the re-review of #6992, S3) for
         // a chat this app has no open record of, a family or rule purlis does not have, or a host
         // that is no `host:port`; nothing is written for an unidentified caller.
         Ask::PolicyLog(line) => match policy_line(held, &line) {
-            Ok(()) => Answer::Policy {
-                spelled: purlis_core::enforcement::in_force(held.root())
-                    .for_chat(
-                        held.chats()
-                            .handed_from(line.chat)
-                            .and_then(|from| from.policy)
-                            .as_deref(),
-                    )
-                    .spelled(),
-            },
+            Ok(()) => policy_answer(held, line.chat),
             Err(why) => no(why),
         },
         // The ref tips a remote has, for the pre-push scan (#7302): asked by the app, outside the
@@ -1792,6 +1774,22 @@ pub fn close_reported(held: &Arc<Held>, reported: Vec<(u32, ClosesWith)>, decidi
 /// cannot answer one directory two ways (SI-1).
 pub(crate) fn workspace_of(root: &std::path::Path, cwd: &std::path::Path) -> Option<String> {
     purlis_core::active::workspace_of_tree(root, cwd)
+}
+
+/// **How each family runs for chat `chat`, as the app answers its hook** ([`Ask::Policy`], Q308):
+/// the policy in force, never looser than its chain (Q308a, Q308b), and which families of it an
+/// unaccepted policy alone enforces, which the hook's refusals name as their cause (ADR 0130 §7).
+fn policy_answer(held: &Held, chat: u32) -> Answer {
+    let policy = purlis_core::enforcement::in_force(held.root()).for_chat(
+        held.chats()
+            .handed_from(chat)
+            .and_then(|from| from.policy)
+            .as_deref(),
+    );
+    Answer::Policy {
+        spelled: policy.spelled(),
+        unaccepted: policy.unaccepted_keys(),
+    }
 }
 
 /// **Writes one log line a chat's process handed over** ([`Ask::PolicyLog`]), or says why not.

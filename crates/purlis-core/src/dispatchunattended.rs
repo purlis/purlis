@@ -104,6 +104,9 @@ pub enum Refusal {
     NeverAbove(String, String),
     /// This machine's record of nevers does not read, so no grant counts.
     NeversUnread,
+    /// This machine's record of nevers does not read only because its acceptance of the
+    /// project's policy is Broken ([`Covers::NeversUnaccepted`]): the target. Held in every mode.
+    NeversUnaccepted(String),
     /// The project's policy denies the pair (`[dispatch.denies]`): the target, and why.
     Denied(String, dispatchgrant::Deny),
     /// A grant covers the pair, and on this system its seal does not keep it out of reach of
@@ -119,6 +122,7 @@ impl Refusal {
             Self::Never(asking, target) => dispatchgrant::never_said(asking, target),
             Self::NeverAbove(above, target) => dispatchgrant::never_above_said(above, target),
             Self::NeversUnread => dispatchgrant::NEVERS_UNREAD.to_owned(),
+            Self::NeversUnaccepted(target) => dispatchgrant::unread_unaccepted_said(target),
             Self::Denied(target, deny) => dispatchgrant::denied_said(target, *deny),
             Self::Unsandboxed(missing) => {
                 let target = crate::shown::short(&missing.target);
@@ -292,6 +296,7 @@ pub fn answer_on(
         Covers::NeverAbove(above) => Answer::Refused(Refusal::NeverAbove(above, target.to_owned())),
         // A chat's own persona never reads as this; for any other, nobody is here to ask.
         Covers::Unread => Answer::Refused(Refusal::NeversUnread),
+        Covers::NeversUnaccepted => Answer::Refused(Refusal::NeversUnaccepted(target.to_owned())),
         Covers::Denied(deny) => Answer::Refused(Refusal::Denied(target.to_owned(), deny)),
         Covers::Covered if asking == Some(target) => Answer::Covered,
         Covers::Covered if !sandboxed && !reach.sealed_here => {
@@ -315,7 +320,8 @@ pub fn answer_on(
 /// ticket T1.1-73): under `off` or `log`, a pair nothing covers, one the policy denies, and one
 /// refused only because the asking chat has no sandbox ([`Refusal::Unsandboxed`],
 /// [`Refusal::NotSealedHere`]), is covered. A lock, the person's nevers, a never above and a
-/// nevers record that does not read stand in every mode.
+/// nevers record that does not read, whatever its cause ([`Refusal::NeversUnread`],
+/// [`Refusal::NeversUnaccepted`]), stand in every mode.
 pub fn as_the_policy_runs(answer: Answer, mode: crate::enforcement::Mode) -> Answer {
     match answer {
         Answer::Refused(
