@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795748648487,
+  "lastUpdate": 1795750612351,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -56952,6 +56952,48 @@ window.BENCHMARK_DATA = {
             "value": 100.920856,
             "unit": "ms",
             "extra": "median of 5 runs: 99.963, 100.826, 100.921, 101.781, 102.238 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a12bd42b151930dc800a3565350ef29d3ce69be2",
+          "message": "An update's foreign seal key: one press makes a new key and accepts (#7714) (#7734)\n\n* Tests: an update's foreign seal key, one press makes a new key and accepts (#7714), red\n\nThe core's renew and the new-key press are stubs here, so these fail for the\nreason they test: the press does not replace the key, another plane is not\nsaid to need accepting again for a new key, and the window offers no press.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8C18KQ6CGV9088MJC9SYXB7\nPurlis-Persona: steward\n\n* An update's foreign seal key: one press makes a new key and accepts (#7714)\n\nThe core's press and a window-only command; the window draws it with #7719.\n\n- enforcement::press_with_new_key / accept_project_policy_with_new_key\n  (WINDOW_ONLY): for any foreign key, the digest checked before and again\n  after macOS's prompt, then this project's acceptance sealed as shown.\n- seal::renew: the spares, every anchor and the old list deleted, the new\n  list kept, the old key deleted last and a new one kept. A refused prompt\n  accepts nothing and says so; a press cut short is finished by the next.\n- The projects the old key sealed are kept in the keyring list\n  purlis-seal/seal-key-replaced, sealed with the new key and added to by a\n  later replacement: each stays Broken, never Never; only a list that holds\n  says it broke because of the new key (PolicyState.new_key). Taken off on\n  re-acceptance; tamper detection unchanged.\n- FOREIGN_KEY claims no origin; ADR 0047 amendment and plane-format.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8C18KQ6CGV9088MJC9SYXB7\nPurlis-Persona: steward\n\n* ADR 0047 amendment: a foreign seal key is replaced by one press (#7714)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8C18KQ6CGV9088MJC9SYXB7\nPurlis-Persona: steward\n\n* Tests (red): a new key cut short keeps every project listed, and the nevers after a new key (#7714, review F2/F3)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CP5EHVBG0K9KMF5NW8KZCN\nPurlis-Persona: steward\n\n* A new seal key: the list before any anchor goes, the nevers kept, the press's real body tested (#7714, review round 2)\n\n- seal::renew keeps the new key at rest in the app's own spare first, writes\n  the list of replaced planes (policy and nevers anchors) before any anchor\n  goes, at a free one of two accounts, and deletes the old key last (F2, F6).\n- A list carried from before is vouched for only where its seal holds under\n  the old key or the new one; otherwise its entries are kept marked '?' (F5).\n- unlist_replaced cleans up a list whose seal does not hold (F6).\n- renew_key does not hold the key's cache across macOS's prompt; the keychain\n  is read again after it returns (F7).\n- A plane whose nevers a replaced key anchored reads Unread with the new-key\n  words (a wiped file included) until the person's Accept seals them as they\n  stand; PolicyState.nevers_new_key lets Settings offer Accept (F3).\n- Refusal text names Keychain Access and never promises a prompt (F1).\n- renew_key's real body runs in tests against TestKeychain; an order double,\n  every cut point, and a partial refusal are tested (F4).\n- ADR 0047 amendment and plane-format.md corrected, declared gaps included.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CP5EHVBG0K9KMF5NW8KZCN\nPurlis-Persona: steward\n\n* Tests (red): nevers kept only by a shown-pairs press, gated on vouches; the probe never takes the parked key; a stale slot deleted only where covered (#7714, #7734 round 3: H1, H2, M3, M4)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CV1SMDGXWJNZ9M01X3HH3D\nPurlis-Persona: steward\n\n* A new seal key: nevers kept only by their own shown press, gated on vouches; the probe's own spare; a list slot deleted only where covered (#7714, #7734 round 3)\n\nH1: Accept never seals nevers. Keep these nevers (keep_project_nevers, window-only)\nshows the pairs the file holds and seals exactly those, digest-bound under the file's lock.\nH2: the words, the pairs and the press rest on vouches; a list that only names a plane\nkeeps its nevers unread. M3: the ownership probe uses purlis-seal/spare-of-the-probe, which\nread_or_make recovers from, and is skipped while a press renews. M4: write_list deletes a\nslot only where the other covers it. L5: vouching by name is accepted and documented.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CV1SMDGXWJNZ9M01X3HH3D\nPurlis-Persona: steward\n\n* A new seal key: only nameable nevers shown, each pair apart; the probe's spare of the spare; a planted list named; RENEWING held across the read (#7714, #7734 round 4)\n\nM1: a never-dispatch pair whose name no persona can have (zero-width, homoglyph,\nspace, comma, \" to \") is never shown to keep, and the press refuses it under the\nlock; PolicyState.nevers_unshowable says why. The Notice draws each pair as its\nown list item with code names, as Settings does, never joined prose.\n\nL2: a listed-but-unvouched plane's words and the keep press's refusal name the\nkeychain items to delete in Keychain Access; read_or_make and renew cover\npurlis-seal/spare/spare-of-the-probe; write_list's neither-covers refusal says a\nplanted item is in the way and names it.\n\nL3: found() takes RENEWING and holds it across the cache's read\n(found_unless_renewing), tested outside cfg(not(test)).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8D369E7T8C2VNDPJ64N4Q24\nPurlis-Persona: steward\n\n* A new seal key: never ask for purlis's own list to go; a probe spare's probe takes the other of a pair; a mixed list offers no press (#7714, #7734 round 5)\n\nM1: the words for a plane a list purlis cannot vouch for names never ask\nthe person to delete the vouched list. Where one list slot's seal does not\nhold under the key of now, they name that account alone and say to keep\nevery other purlis-seal item; where purlis's own list carries the entry\nmarked ?, they ask for no delete. LISTS_IN_THE_WAY names the slot that does\nnot hold, by account (reading under the old key too during a press), and\nsays to delete neither where purlis cannot tell them apart. The 'only\ndeleting its items lets the file be read again' claim is gone.\n\nL2: probe_spare_of alternates between <service>/spare-of-the-probe and\n<service>/spare-of-the-probe-again, so a probe of a probe's spare never\nnests; the key's read and the press's sweep cover both for the key and its\nspare.\n\nL3: a nevers list with one name no persona can have among valid ones\noffers no press.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8D9FM07RWRKGF12C2F9X89Q\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T02:50:55Z",
+          "tree_id": "e74ba808a8dcc1e06bd02b11e324338b8145d140",
+          "url": "https://github.com/purlis/purlis/commit/a12bd42b151930dc800a3565350ef29d3ce69be2"
+        },
+        "date": 1795750603242,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.722469,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.701, 0.719, 0.722, 0.735, 0.744 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7489475,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.558, 16.688, 16.749, 16.772, 16.790 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.950698,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.039, 101.588, 101.951, 102.069, 102.149 ms"
           }
         ]
       }
