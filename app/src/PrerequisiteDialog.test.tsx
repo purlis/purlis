@@ -31,6 +31,7 @@ import {
   INERT_CAP,
   acceptedSaid,
   forgetPrerequisiteAnswers,
+  inertWords,
 } from "./PrerequisiteDialog";
 import { answersOf } from "./ui/dialog/dialog.testkit";
 import { RAISED_ALERT_CHANGED } from "./ui/dialog/RaisedAlert";
@@ -520,6 +521,15 @@ describe("the prerequisite modal", () => {
       "enforce",
       "log",
     ]);
+  });
+
+  it("keeps the vowel signs of other scripts, so names that differ in them stay apart", () => {
+    const names = ["कमल", "कमला", "कोमल", "कमाल", "हिंदी", "தமிழ்", "বাংলা", "สมชัย"];
+    const shown = names.map(inertWords);
+    expect(shown).toEqual(names.map((name) => name.normalize("NFC")));
+    expect(new Set(shown).size).toBe(names.length);
+    // A pile of marks on one letter is cut to three.
+    expect([...inertWords(`क${"ि".repeat(9)}`)]).toHaveLength(4);
   });
 
   it("cuts each name of a row on its own, so a long asking persona leaves the target in view", async () => {

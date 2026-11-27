@@ -17,10 +17,10 @@ import { forgetPolicies } from "./projectPolicy";
 import { WATCH } from "./projectPolicy.fixture";
 import { expectFocusInSight, pictureNow, untilFocused } from "./stories.testkit";
 import {
+  ACCEPTED_AFTER,
   ACCEPT_IN_THE_WINDOW,
   BROKEN_SUMMARY,
   PrerequisiteDialog,
-  acceptedSaid,
   forgetPrerequisiteAnswers,
 } from "./PrerequisiteDialog";
 
@@ -153,7 +153,7 @@ export const PolicyAccepted: Story = {
     await settles();
     await userEvent.click(page.getByRole("button", { name: "Accept" }));
     await waitFor(() => expect(page.queryByRole("alertdialog")).toBeNull());
-    await expect(page.getByText(acceptedSaid("smart-ide"))).toBeVisible();
+    await expect(page.getByText(ACCEPTED_AFTER, { exact: false })).toBeVisible();
     await userEvent.tab();
     await untilFocused(
       () => page.getByRole("button", { name: /Dismiss/ }),

@@ -77,7 +77,16 @@ export const grantingAnswer = (entry: PolicyPrerequisite): string =>
  * Braille pattern) and every combining mark left once the text is composed, so nothing can turn
  * the line around, hide what follows or draw over a neighbour.
  */
-const UNSEEN = /[\p{Cc}\p{Cf}\p{M}\u2028\u2029\u115F\u1160\u3164\uFFA0\u2800]/gu;
+// Marks of no script of their own (Unicode's Inherited: Latin diacritics, overlays such as a
+// strike, marks for symbols, variation selectors) and enclosing marks: after NFC such a mark that
+// is still loose was not part of a letter, so it only decorates or disguises. Other scripts' marks
+// (Devanagari, Tamil and Thai vowel signs, viramas) are their letters' own parts and are kept, so
+// two names that differ only in them stay apart.
+const UNSEEN =
+  /[\p{Cc}\p{Cf}\p{Me}\p{Script=Inherited}\u2028\u2029\u115F\u1160\u3164\uFFA0\u2800]/gu;
+
+/** A run of marks past this many on one letter is cut, so stacked marks never draw over a line. */
+const STACKED_MARKS = /(\p{M}{3})\p{M}+/gu;
 
 /** The most characters of a whole line of names, each already cut to {@link INERT_CAP}. */
 const LINE_CAP = INERT_CAP * 4;
@@ -93,7 +102,7 @@ const cut = (text: string, cap: number): string => {
  * to {@link INERT_CAP} characters on its own, so a long one never pushes the next out of view.
  */
 export function inertWords(text: string): string {
-  const stripped = text.normalize("NFC").replace(UNSEEN, "");
+  const stripped = text.normalize("NFC").replace(UNSEEN, "").replace(STACKED_MARKS, "$1");
   const names = stripped.split(" ").map((name) => cut(name, INERT_CAP));
   return cut(names.join(" "), LINE_CAP);
 }
