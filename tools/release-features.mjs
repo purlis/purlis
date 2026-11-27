@@ -432,8 +432,35 @@ const PUBLISHES = [
  * commit pushed.
  */
 function publishes(text) {
-  const live = withoutShippingCalls(text.split("\n").filter((l) => !l.trimStart().startsWith("#"))).join("\n");
+  const live = withoutCacheOnlyBuilds(withoutShippingCalls(text.split("\n").filter((l) => !l.trimStart().startsWith("#")))).join("\n");
   return PUBLISHES.some((publish) => publish.test(live));
+}
+
+/**
+ * `lines` without the `docker/build-push-action` steps that build only a cache in the Actions
+ * cache (#7781): `outputs: type=cacheonly`, no `push:`, and each `cache-to:` on one line with
+ * no cache type but `type=gha` (an expression around it is fine, as a main-only save is one).
+ * Such a build hands nobody an image. A cache in a registry (`type=registry`) is a push, and a
+ * value this cannot read on one line is kept, so it is still checked.
+ */
+function withoutCacheOnlyBuilds(lines) {
+  const dropped = new Set();
+  for (const [i, line] of lines.entries()) {
+    const start = /^(\s*)- /.exec(line);
+    if (!start) continue;
+    const indent = start[1].length;
+    let end = i + 1;
+    while (end < lines.length && (lines[end].trim() === "" || /^\s*/.exec(lines[end])[0].length > indent)) end++;
+    const step = lines.slice(i, end);
+    const cacheTo = step.filter((l) => /^\s*cache-to:/.test(l));
+    const cacheOnly =
+      step.some((l) => /^\s*(- )?uses:\s*["']?docker\/build-push-action@/.test(l)) &&
+      step.some((l) => /^\s*outputs:\s*type=cacheonly\s*$/.test(l)) &&
+      !step.some((l) => /^\s*push:/.test(l)) &&
+      cacheTo.every(isActionsCacheOnly);
+    if (cacheOnly) for (let k = i; k < end; k++) dropped.add(k);
+  }
+  return lines.filter((_, i) => !dropped.has(i));
 }
 
 /** `lines` without the jobs that call a workflow of `SHIPPING_WORKFLOWS`. */
@@ -453,6 +480,28 @@ function withoutShippingCalls(lines) {
     jobs.filter(({ from, to }) => lines.slice(from, to).some((l) => calls.test(l))).flatMap(({ from, to }) => [...Array(to - from).keys()].map((k) => from + k)),
   );
   return lines.filter((_, i) => !dropped.has(i));
+}
+
+/**
+ * Whether a `cache-to:` line names one cache in this repository's Actions cache and nothing else:
+ * `type=gha` with only `mode`, `scope` and `ignore-error` (so no `url=` or `token=` sends it
+ * elsewhere), either written out or as the one string of `${{ <cond> && format('…', …) || '' }}`
+ * or `${{ <cond> && '…' || '' }}`. A field an expression splices in has no key, so it is refused.
+ */
+function isActionsCacheOnly(line) {
+  const value = line.replace(/^\s*cache-to:\s*/, "").trim();
+  let literal = value;
+  if (value.startsWith("${{")) {
+    const guarded = /^\$\{\{(?:[^'&]|'[^']*')*&&\s*(?:format\(\s*)?'([^']*)'[^']*\|\|\s*''\s*\}\}$/.exec(value);
+    if (!guarded) return false;
+    literal = guarded[1];
+  }
+  const fields = literal.split(",").map((f) => f.trim());
+  return (
+    fields.every((f) => /^(type|mode|scope|ignore-error)=\S+$/.test(f)) &&
+    fields.filter((f) => f.startsWith("type=")).length === 1 &&
+    fields.includes("type=gha")
+  );
 }
 
 /**
