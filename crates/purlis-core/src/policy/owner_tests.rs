@@ -129,6 +129,84 @@ fn the_owner_values_are_self_task_asker_other_or_none() {
 }
 
 #[test]
+fn the_host_computes_context_owner_from_what_the_act_touches() {
+    let m = machine();
+    let root = plane(&m);
+    dispatched(&root);
+    assert!(record_owner(&root, &branch("work"), TASK).expect("recorded"));
+    let standing = answers::standing(&root);
+    let work = Touched::from(branch("work"));
+
+    assert_eq!(of_request(&standing, Some(TASK), Some(&work)), Owner::Actor);
+    assert_eq!(of_request(&standing, Some(ROOT), Some(&work)), Owner::Task);
+    assert_eq!(
+        of_request(&standing, Some(SIBLING), Some(&work)),
+        Owner::Other
+    );
+    let opened = Touched::OpenedBy(ROOT.to_owned());
+    assert_eq!(
+        of_request(&standing, Some(TASK), Some(&opened)),
+        Owner::Asker
+    );
+    // Nothing named (the merge hold, until #7035), no actor, or a branch no record names: "none".
+    assert_eq!(of_request(&standing, Some(TASK), None), Owner::Nobody);
+    assert_eq!(of_request(&standing, None, Some(&work)), Owner::Nobody);
+    assert_eq!(of_request(&standing, Some(""), Some(&work)), Owner::Nobody);
+    let theirs = Touched::from(branch("theirs"));
+    assert_eq!(
+        of_request(&standing, Some(TASK), Some(&theirs)),
+        Owner::Nobody
+    );
+    // Another forge's branch of the same name is another record.
+    let elsewhere = Touched::from(Owned::Branch {
+        host: "gitlab.com",
+        repo: "acme/app",
+        branch: "work",
+    });
+    assert_eq!(
+        of_request(&standing, Some(TASK), Some(&elsewhere)),
+        Owner::Nobody
+    );
+
+    // The host's context carries the value, on every action that declares it, and `made_by`
+    // reads "none" until M81 fills it.
+    let asker = crate::policy::decide::Asker {
+        chat: 7,
+        of: crate::policy::levels::Chat {
+            workspace: Some("web"),
+            persona: None,
+        },
+        sandbox: "floor",
+        attended: true,
+        harness_mode: "default",
+        depth: 1,
+        via: "hook",
+        start: None,
+    };
+    for action in [
+        "push",
+        "merge",
+        "reach",
+        "browse",
+        "close",
+        "comment.update",
+    ] {
+        let context = asker.context(action, None, Owner::Task);
+        assert_eq!(context["owner"], "task", "{action}: {context}");
+    }
+    assert_eq!(
+        asker.context("comment.update", None, Owner::Task)["made_by"],
+        "none"
+    );
+    assert!(
+        asker
+            .context("cut", None, Owner::Task)
+            .get("owner")
+            .is_none()
+    );
+}
+
+#[test]
 fn a_record_a_chat_edited_never_makes_it_an_owner() {
     let m = machine();
     let root = plane(&m);

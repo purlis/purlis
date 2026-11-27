@@ -231,6 +231,39 @@ pub fn owner(actor: &str, holder: Option<&str>, records: &Records) -> Owner {
     }
 }
 
+/// **What an act touches, for its `context.owner`**, as the enforcement point that asks names it
+/// to the host ([`crate::policy::decide::Sealed::touched`]). Nothing named reads `"none"`: the
+/// merge hold (its resource is a pull request, whose head branch is not read yet: #7035) and the
+/// forge operations ask that way today.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Touched {
+    /// A forge branch or a branch folder, which an owner record keys ([`Owned`]).
+    Recorded(String),
+    /// A port's server or a browser, by the chat the host's registry says opened it.
+    OpenedBy(String),
+}
+
+impl From<Owned<'_>> for Touched {
+    fn from(owned: Owned<'_>) -> Self {
+        Self::Recorded(owned.key())
+    }
+}
+
+/// **`context.owner` for one request**: [`owner`] for `actor`, the asking chat's stable id, over
+/// the records `standing` verified, of what `touched` names. No actor or nothing named is
+/// `"none"`, never `"self"`.
+pub fn of_request(standing: &Standing, actor: Option<&str>, touched: Option<&Touched>) -> Owner {
+    let (Some(actor), Some(touched)) = (actor.filter(|actor| !actor.is_empty()), touched) else {
+        return Owner::Nobody;
+    };
+    let records = Records::of(standing);
+    let holder = match touched {
+        Touched::Recorded(key) => records.owns.get(key).map(String::as_str),
+        Touched::OpenedBy(chat) => Some(chat.as_str()),
+    };
+    owner(actor, holder, &records)
+}
+
 /// **Records that `chat` owns `owned`**: the app's record of a forge branch the route saw it
 /// create, or of the first claim on a branch folder. **The first record stands.** Where one is
 /// already sealed, this changes nothing, whoever asks: a record moves only by [`hand_over`] or

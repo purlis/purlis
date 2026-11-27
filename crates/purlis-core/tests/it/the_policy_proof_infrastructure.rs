@@ -28,6 +28,7 @@ fn merge() -> Cell {
             "harness_mode": "default",
             "depth": 0,
             "via": "hook",
+            "owner": "none",
         }),
         gap: None,
     }
@@ -176,6 +177,7 @@ fn a_malformed_cell_fails_loudly_in_the_oracle() {
             "harness_mode": "default",
             "depth": 0,
             "via": "hook",
+            "owner": "none",
         }),
         ..merge()
     };

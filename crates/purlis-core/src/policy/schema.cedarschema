@@ -50,6 +50,8 @@ entity Tool in [ToolSet] {
   @source("committed|sealed") declaration?: { command: String },
 };
 entity Port, Socket, Command;
+// A browser the host opened for a chat, by its id in the host's registry (#7748).
+entity Browser;
 entity EnvVar;
 
 // ── context (§3.2) ────────────────────────────────────────────────────────────────────────
@@ -86,6 +88,34 @@ type GitCtx = {
   @source("host-supplied") amend: Bool,
 };
 
+type OwnedCtx = {
+  @source("host-supplied") sandbox: String,
+  @source("host-supplied") attended: Bool,
+  @source("sealed") machine?: String,
+  @source("host-supplied") harness_mode: String,
+  @source("host-supplied") depth: Long,
+  // Whose the resource is, to the asking chat (ADR 0125, amended 2026-11-27, §5; #7748):
+  // "self" | "task" | "asker" | "other" | "none", computed once by the host from records only the
+  // app seals (`policy::owner`), never derived in a rule. "none" where it holds no record.
+  @source("host-supplied") owner: String,
+};
+
+type OwnedGitCtx = {
+  @source("host-supplied") sandbox: String,
+  @source("host-supplied") attended: Bool,
+  @source("sealed") machine?: String,
+  @source("host-supplied") harness_mode: String,
+  @source("host-supplied") depth: Long,
+  @source("host-supplied") force: Bool,
+  @source("host-supplied") "skip-hooks": Bool,
+  @source("host-supplied") brokered: Bool,
+  @source("host-supplied") amend: Bool,
+  // Whose the resource is, to the asking chat (ADR 0125, amended 2026-11-27, §5; #7748):
+  // "self" | "task" | "asker" | "other" | "none", computed once by the host from records only the
+  // app seals (`policy::owner`), never derived in a rule. "none" where it holds no record.
+  @source("host-supplied") owner: String,
+};
+
 type ViaCtx = {
   @source("host-supplied") sandbox: String,
   @source("host-supplied") attended: Bool,
@@ -93,6 +123,19 @@ type ViaCtx = {
   @source("host-supplied") harness_mode: String,
   @source("host-supplied") depth: Long,
   @source("host-supplied") via: String,
+};
+
+type OwnedViaCtx = {
+  @source("host-supplied") sandbox: String,
+  @source("host-supplied") attended: Bool,
+  @source("sealed") machine?: String,
+  @source("host-supplied") harness_mode: String,
+  @source("host-supplied") depth: Long,
+  @source("host-supplied") via: String,
+  // Whose the resource is, to the asking chat (ADR 0125, amended 2026-11-27, §5; #7748):
+  // "self" | "task" | "asker" | "other" | "none", computed once by the host from records only the
+  // app seals (`policy::owner`), never derived in a rule. "none" where it holds no record.
+  @source("host-supplied") owner: String,
 };
 
 type SaveCtx = {
@@ -122,10 +165,14 @@ type ForgeCtx = {
   @source("host-supplied") harness_mode: String,
   @source("host-supplied") depth: Long,
   @source("host-supplied") via: String,
+  // Whose the resource is, to the asking chat (ADR 0125, amended 2026-11-27, §5; #7748):
+  // "self" | "task" | "asker" | "other" | "none", computed once by the host from records only the
+  // app seals (`policy::owner`), never derived in a rule. "none" where it holds no record.
+  @source("host-supplied") owner: String,
   // Who made the object the act names (a comment, an issue), in `context.owner`'s words:
   // "self" | "task" | "asker" | "other" | "none". Filled in M81 (#7793), from the record of the
-  // objects a chat made; until then never set (ADR 0128, amended 2026-11-27, §2).
-  @source("host-supplied") made_by?: String,
+  // objects a chat made; until then "none" (ADR 0128, amended 2026-11-27, §2; #7748).
+  @source("host-supplied") made_by: String,
 };
 
 type ShapeCtx = {
@@ -178,6 +225,20 @@ type BrowserCtx = {
   @source("host-supplied") origin: String,
 };
 
+type OwnedBrowserCtx = {
+  @source("host-supplied") sandbox: String,
+  @source("host-supplied") attended: Bool,
+  @source("sealed") machine?: String,
+  @source("host-supplied") harness_mode: String,
+  @source("host-supplied") depth: Long,
+  @source("host-supplied") port: Long,
+  @source("host-supplied") origin: String,
+  // Whose the resource is, to the asking chat (ADR 0125, amended 2026-11-27, §5; #7748):
+  // "self" | "task" | "asker" | "other" | "none", computed once by the host from records only the
+  // app seals (`policy::owner`), never derived in a rule. "none" where it holds no record.
+  @source("host-supplied") owner: String,
+};
+
 type StartCtx = {
   @source("host-supplied") sandbox: String,
   @source("host-supplied") attended: Bool,
@@ -199,7 +260,7 @@ action "sandbox", "network", "ports", "processes",
        "asks", "dispatch", "vaults", "secrets", "secrets.credential_files", "browser", "skills",
        "mode", "tools", "trust", "runners", "consents", "limits", "audit";
 
-// ── actions (§3.3): 62, each in exactly one family ─────────────────────────────────────────
+// ── actions (§3.3): 63, each in exactly one family ─────────────────────────────────────────
 
 action read, write in ["sandbox"]
   appliesTo { principal: Chat, resource: Path, context: Ctx };
@@ -210,18 +271,20 @@ action dial in ["network"]
   appliesTo { principal: Chat, resource: Socket, context: NetworkCtx };
 
 action reach, listen in ["ports"]
-  appliesTo { principal: Chat, resource: Port, context: Ctx };
+  appliesTo { principal: Chat, resource: Port, context: OwnedCtx };
 
 action exec in ["processes"]
   appliesTo { principal: Chat, resource: Command, context: Ctx };
 
-action commit, push, update, cut, discard in ["guards.git"]
+action commit, push, update, discard in ["guards.git"]
+  appliesTo { principal: Chat, resource: Branch, context: OwnedGitCtx };
+action cut in ["guards.git"]
   appliesTo { principal: Chat, resource: Branch, context: GitCtx };
 action clone in ["guards.git"]
   appliesTo { principal: Chat, resource: Repo, context: GitCtx };
 
 action merge in ["guards.merge"]
-  appliesTo { principal: Chat, resource: Branch, context: ViaCtx };
+  appliesTo { principal: Chat, resource: Branch, context: OwnedViaCtx };
 action land in ["guards.merge"]
   appliesTo { principal: Chat, resource: Repo, context: ViaCtx };
 
@@ -277,7 +340,9 @@ action inherit in ["secrets"]
   appliesTo { principal: Chat, resource: EnvVar, context: ViaCtx };
 
 action browse in ["browser"]
-  appliesTo { principal: Chat, resource: Host, context: BrowserCtx };
+  appliesTo { principal: Chat, resource: Host, context: OwnedBrowserCtx };
+action close in ["browser"]
+  appliesTo { principal: Chat, resource: Browser, context: OwnedCtx };
 action fill, "log-in" in ["browser"]
   appliesTo { principal: Chat, resource: Secret, context: BrowserCtx };
 action upload, download in ["browser"]

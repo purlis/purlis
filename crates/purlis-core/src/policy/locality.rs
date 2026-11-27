@@ -260,6 +260,8 @@ pub fn process_request<'a>(action: &'a str, resource: (&'a str, &'a str)) -> Req
             "harness_mode" => "unknown".into(),
             "depth" => 0.into(),
             "via" => "hook".into(),
+            // No chat, so nothing it acts on is its own (#7748).
+            "owner" | "made_by" => super::owner::Owner::Nobody.word().into(),
             _ => continue,
         };
         context.insert(field.clone(), value);

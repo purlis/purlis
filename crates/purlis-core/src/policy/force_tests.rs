@@ -153,6 +153,7 @@ fn request<'a>(
 pub(in crate::policy) fn merge(attended: bool) -> Request<'static> {
     let mut context = base(attended);
     context["via"] = "hook".into();
+    context["owner"] = "none".into();
     request("merge", ("Branch", "acme/web#main"), context)
 }
 
@@ -1141,6 +1142,7 @@ fn start_in(root: &Path, standing: Standing) -> Decision {
             chat: None,
             now: None,
             retired: Default::default(),
+            touched: None,
         },
     )
 }

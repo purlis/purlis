@@ -722,7 +722,13 @@ impl Asker<'_> {
     /// The context of `action` as the host makes it: each field the action's context declares
     /// that the host knows. A field it does not know is left out, so the request does not fit
     /// the schema and is denied, never guessed (§6.3).
-    pub(super) fn context(&self, action: &str, machine: Option<&str>) -> serde_json::Value {
+    /// `owner` is what [`super::owner::of_request`] computed for the request, once.
+    pub(super) fn context(
+        &self,
+        action: &str,
+        machine: Option<&str>,
+        owner: super::owner::Owner,
+    ) -> serde_json::Value {
         let mut context = serde_json::Map::new();
         for field in super::context_fields(action) {
             let value: serde_json::Value = match field.as_str() {
@@ -746,6 +752,10 @@ impl Asker<'_> {
                     Some(id) => id.into(),
                     None => continue,
                 },
+                "owner" => owner.word().into(),
+                // Who made the forge object an operation names: "none" until the record of the
+                // objects a chat made (M81, #7793).
+                "made_by" => super::owner::Owner::Nobody.word().into(),
                 // The narrowing fields come with each family's slice.
                 _ => continue,
             };
@@ -776,6 +786,10 @@ pub struct Sealed {
     /// caller to end with their Journal line ([`force::retire_lost_grants`]): the core has no
     /// Journal, the app has. Filled by the decision, taken by the caller; a clone shares it.
     pub retired: std::sync::Arc<std::sync::Mutex<Vec<grants::Ended>>>,
+    /// **What the act touches**, as the enforcement point that asks names it: what
+    /// `context.owner` is computed from, once, by [`super::owner::of_request`] (#7748). Unset, the
+    /// owner reads `"none"`.
+    pub touched: Option<super::owner::Touched>,
 }
 
 impl Sealed {
@@ -803,6 +817,7 @@ impl Sealed {
             chat: None,
             now: None,
             retired: Default::default(),
+            touched: None,
         }
     }
 
@@ -823,6 +838,7 @@ impl Sealed {
             chat: None,
             now: None,
             retired: Default::default(),
+            touched: None,
         }
     }
 }
@@ -995,7 +1011,15 @@ fn judged_then<T>(
             of: asker.of,
             action,
             resource,
-            context: asker.context(action, sealed.machine.as_deref()),
+            context: asker.context(
+                action,
+                sealed.machine.as_deref(),
+                super::owner::of_request(
+                    &sealed.standing,
+                    sealed.chat.as_deref(),
+                    sealed.touched.as_ref(),
+                ),
+            ),
         };
         // The policy in force: the project as committed now and what the person accepted, the
         // stricter winning, and what the app saw tighten sealed into the accepted floor (M75-14).

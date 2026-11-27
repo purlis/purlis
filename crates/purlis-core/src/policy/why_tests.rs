@@ -41,6 +41,7 @@ fn sealed(standing: Standing) -> Sealed {
         chat: None,
         now: None,
         retired: Default::default(),
+        touched: None,
     }
 }
 
@@ -495,7 +496,7 @@ fn a_once_grant_is_shown_as_serving_and_left_unspent() {
         of: me.of,
         action: MERGE.0,
         resource: MERGE.1,
-        context: me.context(MERGE.0, None),
+        context: me.context(MERGE.0, None, crate::policy::owner::Owner::Nobody),
     };
     let entries: Vec<_> = plain
         .decision
@@ -509,6 +510,7 @@ fn a_once_grant_is_shown_as_serving_and_left_unspent() {
         chat: Some(ULID.to_owned()),
         now: None,
         retired: Default::default(),
+        touched: None,
     };
     // It is shown as serving, however often it is asked: asking spends nothing.
     for _ in 0..2 {
@@ -651,7 +653,7 @@ fn a_never_that_denies_is_said_as_the_persons_own_answer_with_no_file_and_line()
         of: me.of,
         action: MERGE.0,
         resource: MERGE.1,
-        context: me.context(MERGE.0, None),
+        context: me.context(MERGE.0, None, crate::policy::owner::Owner::Nobody),
     };
     let standing = holding(vec![Never::of(&request, Scope::Everywhere).entry()]);
     let why = why_now(&root, standing);

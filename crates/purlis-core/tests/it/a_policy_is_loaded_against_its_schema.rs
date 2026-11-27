@@ -317,8 +317,9 @@ fn every_action_belongs_to_exactly_one_family_group() {
         );
     }
     assert_eq!(
-        verbs, 62,
-        "spec §3.3's 51 actions, with `call` gone and today's 12 forge operations in its place (#7776)"
+        verbs, 63,
+        "spec §3.3's 51 actions, with `call` gone and today's 12 forge operations in its place \
+         (#7776), and a browser's `close` (#7748)"
     );
 }
 
@@ -363,22 +364,69 @@ fn the_v1_schema_has_no_forge_verb_string() {
     );
 }
 
+/// The actions whose context carries `context.owner` (#7748; ADR 0125, amended 2026-11-27): the
+/// nine the amendment names, and every forge operation (ADR 0128, amended 2026-11-27, §2).
+const OWNED: [&str; 9] = [
+    "commit", "push", "update", "discard", "merge", "reach", "listen", "browse", "close",
+];
+
+/// The record an action's context is, its named type's where it names one.
+fn context_record<'a>(schema: &'a serde_json::Value, action: &str) -> &'a serde_json::Value {
+    let context = &schema["actions"][action]["appliesTo"]["context"];
+    match context["type"].as_str() {
+        Some("Record") | None => context,
+        Some(named) => &schema["commonTypes"][named],
+    }
+}
+
 #[test]
-fn the_v1_schema_declares_context_made_by_as_optional() {
+fn the_v1_schema_declares_context_owner_required_on_exactly_the_owned_actions() {
     purlis_core::unsteered!();
     let schema = schema_json();
-    let common = &schema["commonTypes"];
+    let owned: BTreeSet<&str> = OWNED.into_iter().chain(FORGE_OPERATIONS).collect();
+    for (action, _) in policy::actions() {
+        let has = policy::context_fields(action).iter().any(|f| f == "owner");
+        assert_eq!(has, owned.contains(action), "`{action}` and `owner`");
+        if has {
+            let owner = &context_record(&schema, action)["attributes"]["owner"];
+            assert_eq!(owner["name"], "String", "{action}: {owner}");
+            // Required: the host always supplies it, "none" where it holds no record, so a rule
+            // reads it with no `has` and a request without it does not fit the schema.
+            assert_ne!(owner["required"], false, "{action}: `owner` is required");
+        }
+    }
+    assert!(
+        !policy::context_fields("call").iter().any(|f| f == "owner"),
+        "there is no `call`"
+    );
+    assert_eq!(
+        schema["actions"]["close"]["appliesTo"]["resourceTypes"],
+        serde_json::json!(["Browser"]),
+        "a browser's `close` is of the browser the host opened"
+    );
+    assert!(
+        policy::SCHEMA.contains("@source(\"host-supplied\") owner: String"),
+        "`owner` is the host's"
+    );
+
+    // A rule reads it with no `has`, and only the five values mean anything.
+    let reads = "// purlis-policy 1\n\
+                 @id(\"guards-git-push-not-own\")\n\
+                 forbid (principal, action == Action::\"push\", resource)\n\
+                 when { context.owner == \"other\" };\n";
+    with_project(reads).expect("an unguarded read of `owner` validates");
+}
+
+#[test]
+fn the_v1_schema_declares_context_made_by_as_required() {
+    purlis_core::unsteered!();
+    let schema = schema_json();
     for operation in FORGE_OPERATIONS {
-        let context = &schema["actions"][operation]["appliesTo"]["context"];
-        let record = match context["type"].as_str() {
-            Some("Record") | None => context,
-            Some(named) => &common[named],
-        };
-        let made_by = &record["attributes"]["made_by"];
+        let made_by = &context_record(&schema, operation)["attributes"]["made_by"];
         assert_eq!(made_by["name"], "String", "{operation}: {made_by}");
-        assert_eq!(
+        assert_ne!(
             made_by["required"], false,
-            "{operation}: `made_by` is optional, filled in M81 (#7793)"
+            "{operation}: `made_by` is required, \"none\" until M81 fills it (#7793)"
         );
     }
     assert!(
@@ -388,14 +436,12 @@ fn the_v1_schema_declares_context_made_by_as_optional() {
         "`mint` makes no forge object"
     );
 
-    // A rule may read it only behind `has`, as for any optional field.
-    let guarded = "// purlis-policy 1\n\
-                   @id(\"guards-forge-own-comments\")\n\
-                   permit (principal, action == Action::\"comment.update\", resource)\n\
-                   when { context has made_by && context.made_by == \"self\" };\n";
-    with_project(guarded).expect("a guarded read of `made_by` validates");
-    let unguarded = guarded.replace("context has made_by && ", "");
-    assert!(!refused(with_project(&unguarded)).is_empty());
+    // A rule reads it with no `has`, as for any required field.
+    let reads = "// purlis-policy 1\n\
+                 @id(\"guards-forge-own-comments\")\n\
+                 permit (principal, action == Action::\"comment.update\", resource)\n\
+                 when { context.made_by == \"self\" };\n";
+    with_project(reads).expect("a read of `made_by` validates");
 }
 
 #[test]
@@ -666,7 +712,11 @@ fn an_ask_with_no_permit_under_it_is_no_permit_and_an_error_is_a_deny() {
         chat: "web/builder",
         action: "merge",
         resource: ("Branch", "acme/web#main"),
-        context: with(base_context(), "via", "".into()),
+        context: with(
+            with(base_context(), "via", "".into()),
+            "owner",
+            "none".into(),
+        ),
     };
     let shipped = policy::load(&[File::shipped_default()]).unwrap();
     assert_eq!(
@@ -768,6 +818,7 @@ fn one_decision_within_budget_relative_to_baseline() {
         context: serde_json::json!({
             "sandbox": "floor", "attended": true, "harness_mode": "default", "depth": 0,
             "force": true, "skip-hooks": false, "brokered": false, "amend": false,
+            "owner": "none",
         }),
     };
     assert_eq!(

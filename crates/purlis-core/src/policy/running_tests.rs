@@ -166,6 +166,7 @@ fn a_loosening_reaches_the_running_chats_decisions_at_once_after_the_press() {
         chat: None,
         now: None,
         retired: Default::default(),
+        touched: None,
     };
     let running = started(&root);
     assert_eq!(
