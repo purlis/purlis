@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795771520253,
+  "lastUpdate": 1795772116786,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57498,6 +57498,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2612965,
             "unit": "ms",
             "extra": "median of 5 runs: 101.789, 101.805, 102.261, 102.269, 103.270 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "db7a471de6a9823c5d2e3394fb05d734c7936503",
+          "message": "Remote start: container check read once and in parallel, per-pool locks, link budget gate, a real round-trip probe (#7862, #7832) (#7884)\n\n* Remote parity: time the round trip through the sshd's netem, not docker-proxy on loopback (#7832)\n\nThe baseline test's probe timed a TCP connect to 127.0.0.1:2222, which\nDocker's userland proxy accepts on the runner's loopback, so it never\ncrossed the sshd's eth0 and read 0 ms. It now times five GET /_ping\nrequests to the engine over one connection to the pool's forward, after\nan untimed one opens its ssh channel: each answer leaves through the\nsshd's eth0. Still the median of 5.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8DNVQKNKR9AQCRJB6RAN12H\nPurlis-Persona: steward\n\n* Remote start: one container check read once and in parallel, per-pool locks, and the link budget gate (#7862)\n\nThe container check (D-2050-26, the seccomp rulings) still runs whole\non every link and is never cached; nothing is checked differently.\n\n- Docker::resumed hands what it read to the check: the daemon and the\n  container are read once, where both were read twice. A container\n  started there is inspected again once it runs; the daemon and its\n  home volume are not.\n- info, container inspect and volume inspect run at once, each answer\n  held to the check in the order it always was, so every refusal is\n  the one it was.\n- On a cold link the daemon's options come from the pin's own\n  docker info: a docker pointed at a pool's forward keeps what its pin\n  check read, and the first container check after it takes that once,\n  within 30 s. The app's link check now checks the container through\n  the docker its pin check returned, which it used to drop.\n- HELD_HERE (sshroute/forward.rs) and the router's replacing lock are\n  per pool: a forward slow to open holds up no other pool.\n- a_start_on_a_remote_pool_times_each_of_its_steps fails when the link\n  (the rows with no parent) exceeds warm 3.0 s, cold 4.5 s or runner\n  stopped 3.7 s, or when the measured round trip is outside 30-60 ms.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8DNVQKNKR9AQCRJB6RAN12H\nPurlis-Persona: steward\n\n* Remote start: the after table, and PIN_SAID_FOR sorted as a security limit (#7862)\n\n- docs/research/2026-11-remote-start-baseline.md gets the after table\n  from this PR's remote-parity run (job 140359149184): round trip 34 ms;\n  container_check warm 1396 -> 635 ms, cold 1744 -> 536 ms, stopped\n  1817 -> 1375 ms; the link (rows with no parent) warm 1991 -> 1198,\n  cold 2970 -> 1732, stopped 2391 -> 2004 ms.\n- PIN_SAID_FOR is sorted (#4275) as Security: it bounds how long the\n  pin's docker info stands for the daemon in the seccomp check. This\n  is what turned rust tests (part 4 of 4) red.\n- Review: Seen red notes on the tests that lacked them, and where the\n  budgets come from.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8DNVQKNKR9AQCRJB6RAN12H\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T08:41:15Z",
+          "tree_id": "0894661576d7dbaba2c42b3f51f5e2644bb71066",
+          "url": "https://github.com/purlis/purlis/commit/db7a471de6a9823c5d2e3394fb05d734c7936503"
+        },
+        "date": 1795772109097,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7138985,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.685, 0.707, 0.714, 0.720, 0.721 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.481111,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.412, 16.438, 16.481, 16.667, 16.789 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.848398,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.932, 101.464, 101.848, 102.293, 102.663 ms"
           }
         ]
       }
