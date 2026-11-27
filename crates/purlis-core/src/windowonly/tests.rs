@@ -58,11 +58,10 @@ fn a_window_only_refusal_raises_one_ask_carrying_its_control() {
     assert_eq!(raised[0].control.label(), "Trust this clone");
     assert!(
         raised[0]
-            .control
             .says()
             .starts_with("Trust this clone so chats can use GitHub"),
         "{}",
-        raised[0].control.says()
+        raised[0].says()
     );
     assert_eq!(told.load(std::sync::atomic::Ordering::SeqCst), 1);
 
@@ -185,4 +184,183 @@ fn a_window_only_refusal_is_raised_as_an_ask_as_policy_consents_runs() {
                 .all(|line| line.family == "consents" && line.rule == "window-only.ask")
         );
     }
+}
+
+fn unowned(branch: &str) -> crate::forge::proxy::NotYours {
+    crate::forge::proxy::NotYours {
+        host: "github.com".to_owned(),
+        repo: "acme/app".to_owned(),
+        repo_id: 41,
+        branch: branch.to_owned(),
+    }
+}
+
+fn push_asks(root: &Path, session: Option<u32>) -> PushAsks {
+    std::fs::write(
+        crate::names::manifest(root),
+        "[policy]\ntemplate = \"strict\"\n",
+    )
+    .expect("the manifest");
+    PushAsks {
+        root: root.to_path_buf(),
+        chat: "chat-1".to_owned(),
+        session: Box::new(move || session),
+        owner_of: Box::new(|_, _, branch| (branch == "owned").then(|| "chat-2".to_owned())),
+    }
+}
+
+#[test]
+fn a_chat_that_has_ended_is_asked_nothing_and_asks_nothing() {
+    use crate::forge::proxy::{BranchAsk, ChatId};
+    let root = tempfile::tempdir().unwrap();
+    let asks = push_asks(root.path(), None);
+    assert_eq!(asks.ask(&ChatId::new("chat-1"), &[unowned("theirs")]), None);
+    assert!(every(root.path()).is_empty());
+}
+
+#[test]
+fn an_ask_says_who_owns_the_branch_where_and_that_history_can_be_replaced() {
+    use crate::forge::proxy::{BranchAsk, ChatId};
+    let root = tempfile::tempdir().unwrap();
+    let asks = push_asks(root.path(), Some(5));
+    asks.ask(&ChatId::new("chat-1"), &[unowned("owned")])
+        .unwrap();
+    asks.ask(&ChatId::new("chat-1"), &[unowned("nobody")])
+        .unwrap();
+    let said: Vec<String> = every(root.path()).iter().map(Refusal::says).collect();
+    assert!(
+        said[0].contains("owned in acme/app on github.com"),
+        "{}",
+        said[0]
+    );
+    assert!(said[0].contains("Chat chat-2 owns it"), "{}", said[0]);
+    assert!(said[1].contains("Nobody owns it"), "{}", said[1]);
+    for one in &said {
+        assert!(
+            one.contains("replace the branch's history, not only add to it"),
+            "{one}"
+        );
+    }
+    project_ended(root.path());
+}
+
+#[test]
+fn no_more_than_three_asks_wait_for_a_chat_and_one_is_raised_for_a_push() {
+    use crate::forge::proxy::{BranchAsk, ChatId};
+    let root = tempfile::tempdir().unwrap();
+    let asks = push_asks(root.path(), Some(5));
+    let chat = ChatId::new("chat-1");
+    // A push of many branches raises one.
+    let many: Vec<_> = (0..50).map(|n| unowned(&format!("b{n}"))).collect();
+    asks.ask(&chat, &many).unwrap();
+    assert_eq!(every(root.path()).len(), 1);
+    asks.ask(&chat, &many).unwrap();
+    asks.ask(&chat, &many).unwrap();
+    assert_eq!(every(root.path()).len(), 3);
+    let said = asks.ask(&chat, &many).unwrap();
+    assert_eq!(
+        every(root.path()).len(),
+        3,
+        "past the cap nothing is raised"
+    );
+    assert!(said.contains("already waiting"), "{said}");
+    // Another chat has its own three.
+    let other = push_asks(root.path(), Some(6));
+    other.ask(&chat, &many).unwrap();
+    assert_eq!(every(root.path()).len(), 4);
+    project_ended(root.path());
+}
+
+/// A [`PushAsks`] for chat `chat-1`, session 5, in a project whose `[policy]` runs `consents` as
+/// `consents`.
+fn push_asks_under(root: &Path, consents: &str) -> PushAsks {
+    std::fs::write(
+        crate::names::manifest(root),
+        format!("[policy]\ntemplate = \"strict\"\nconsents = \"{consents}\"\n"),
+    )
+    .expect("the manifest");
+    PushAsks {
+        root: root.to_path_buf(),
+        chat: "chat-1".to_owned(),
+        session: Box::new(|| Some(5)),
+        owner_of: Box::new(|_, _, _| None),
+    }
+}
+
+/// **A NotYourBranch refusal raises Let this chat push it whatever `consents` runs as** (ADR
+/// 0125, amended 2026-11-27, §10; #7749): a family turned down never makes purlis stricter.
+fn a_not_your_branch_push_raises_its_ask_under(consents: &str) {
+    use crate::forge::proxy::{BranchAsk, ChatId};
+    let root = tempfile::tempdir().unwrap();
+    let asks = push_asks_under(root.path(), consents);
+    let said = asks
+        .ask(&ChatId::new("chat-1"), &[unowned("theirs")])
+        .unwrap_or_else(|| panic!("an ask is raised under consents = {consents}"));
+    assert!(
+        said.contains("is waiting in the window"),
+        "{consents}: {said}"
+    );
+    let raised = every(root.path());
+    assert_eq!(raised.len(), 1, "{consents}: {raised:?}");
+    assert_eq!(raised[0].control.label(), "Allow", "{consents}");
+    project_ended(root.path());
+}
+
+#[test]
+fn a_not_your_branch_push_raises_its_ask_under_consents_off() {
+    a_not_your_branch_push_raises_its_ask_under("off");
+}
+
+#[test]
+fn a_not_your_branch_push_raises_its_ask_under_consents_log() {
+    a_not_your_branch_push_raises_its_ask_under("log");
+}
+
+#[test]
+fn a_not_your_branch_push_raises_its_ask_under_consents_enforce() {
+    a_not_your_branch_push_raises_its_ask_under("enforce");
+}
+
+#[test]
+fn the_other_window_only_refusals_still_follow_consents() {
+    // Every other window-only refusal (today, the forge's Trust this clone) is raised only where
+    // `[policy] consents` enforces, as before #7749.
+    for (consents, asked) in [("enforce", true), ("log", false), ("off", false)] {
+        let root = tempfile::tempdir().unwrap();
+        push_asks_under(root.path(), consents);
+        assert_eq!(asks(root.path()), asked, "consents = {consents}");
+    }
+}
+
+#[test]
+fn pushes_served_at_once_never_raise_more_push_asks_than_the_cap() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().to_path_buf();
+    let raised: usize = std::thread::scope(|s| {
+        let handles: Vec<_> = (0..32)
+            .map(|n| {
+                let path = path.clone();
+                s.spawn(move || {
+                    let control = Control::LetChatPush {
+                        chat: "chat-1".to_owned(),
+                        host: "github.com".to_owned(),
+                        repo: "acme/app".to_owned(),
+                        repo_id: 7,
+                        branch: format!("work-{n}"),
+                    };
+                    usize::from(raise_push_capped(
+                        &path,
+                        9,
+                        control,
+                        None,
+                        MAX_PUSH_ASKS_WAITING,
+                    ))
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).sum()
+    });
+    assert_eq!(raised, MAX_PUSH_ASKS_WAITING);
+    assert_eq!(every(root.path()).len(), MAX_PUSH_ASKS_WAITING);
+    forget(root.path(), 9);
 }

@@ -93,16 +93,31 @@ pub const STUB_FILE: &str = "keyring-stub.json";
 /// is recorded, and the recording is replayed on macOS and Linux alike.
 pub const STORE_NAME: &str = "the system keyring";
 
-/// A value read out of a store. Its `Debug` never prints it.
-pub struct Secret(String);
+/// A value read out of a store. Its `Debug` never prints it, and its bytes are zeroed when it
+/// is dropped (a copy made by [`Secret::into_inner`] is the caller's to keep short).
+pub struct Secret(zeroize::Zeroizing<String>);
 
 impl Secret {
     pub fn new(value: String) -> Self {
-        Self(value)
+        Self(zeroize::Zeroizing::new(value))
     }
 
-    pub fn into_inner(self) -> String {
-        self.0
+    /// A copy as a [`secrecy::SecretString`], for a caller that hands it on to a transport. The
+    /// value is never borrowed as text outside this crate (#7301): two credentials are compared
+    /// by their account, not by their bytes.
+    pub fn to_secret_string(&self) -> secrecy::SecretString {
+        secrecy::SecretString::from(self.0.to_string())
+    }
+
+    /// The value, borrowed, **for this crate's tests only** (#7301): nothing outside them reads
+    /// a secret without taking it, and two credentials are compared by their account.
+    #[cfg(test)]
+    pub(crate) fn expose(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(mut self) -> String {
+        std::mem::take(&mut *self.0)
     }
 }
 
@@ -222,7 +237,7 @@ impl OsStore {
 impl Store for OsStore {
     fn get(&self, service: &str, account: &str) -> Result<Option<Secret>, VaultError> {
         match Self::entry(service, account)?.get_password() {
-            Ok(value) => Ok(Some(Secret(value))),
+            Ok(value) => Ok(Some(Secret::new(value))),
             Err(::keyring::Error::NoEntry) => Ok(None),
             Err(e) => Err(failure("read", service, &e)),
         }
@@ -501,7 +516,7 @@ impl Store for FileStore {
             .load()?
             .get(&Self::slot(service, account))
             .and_then(Value::as_str)
-            .map(|v| Secret(v.to_owned())))
+            .map(|v| Secret::new(v.to_owned())))
     }
 
     fn set(&self, service: &str, account: &str, value: &str) -> Result<Held, VaultError> {

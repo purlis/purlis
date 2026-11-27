@@ -1796,6 +1796,7 @@ impl purlis_host::Code for Moves {
         at: Option<u64>,
     ) -> Result<purlis_host::protocol::session::FileRead, purlis_host::protocol::session::Refusal>
     {
+        let machine = crate::sandbox::Machine::this();
         Ok(crate::panelinks::onrunner::read_for_window(
             &crate::panelinks::onrunner::Asked {
                 project,
@@ -1803,6 +1804,8 @@ impl purlis_host::Code for Moves {
                 path,
                 reach,
                 at,
+                machine: &machine,
+                guarded: &crate::panelinks::guarded_folders(machine.home.as_deref()),
             },
         ))
     }

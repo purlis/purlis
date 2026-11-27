@@ -102,6 +102,63 @@ pub fn unvouched_clones(root: &Path, config_root: &Path) -> Vec<Unvouched> {
     out
 }
 
+/// A clone the trust list holds and the list of confirmed repos does not: trusted, but not
+/// confirmed with the forge, so the route serves no chat from it (one login, ADR 0128 D4). Every
+/// clone trusted before the confirmed list existed is one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unconfirmed {
+    /// The workspace that holds it.
+    pub workspace: String,
+    /// Its folder, relative to the project.
+    pub folder: String,
+    /// The `<host>/<owner>/<repo>` the trust list holds for it.
+    pub place: String,
+}
+
+/// Every clone in the workspaces of the project at `root` that the trust list at `config_root`
+/// holds and no confirmed repo serves at its trusted address, by workspace and then name. A confirmed list that cannot be
+/// read lists nothing: a clone is never shown as unconfirmed on a guess.
+pub fn unconfirmed_clones(root: &Path, config_root: &Path) -> Vec<Unconfirmed> {
+    let recorded = super::read_push_remotes(config_root);
+    let Ok(confirmed) = crate::forge::confirmed::all(config_root) else {
+        return Vec::new();
+    };
+    let plane = crate::workspaces::Plane::open(root.to_path_buf());
+    let mut out = Vec::new();
+    for workspace in plane.workspaces().unwrap_or_default() {
+        let Ok(clones) = crate::repos::clones(root, &workspace) else {
+            continue;
+        };
+        for repo in clones.repos {
+            let key = crate::sandbox::local::clone_key(&repo.path);
+            let Some(place) = recorded.get(&key) else {
+                continue;
+            };
+            // Served only when an entry names this clone at the address it is trusted at, as
+            // `confirmed::serves` requires: one confirmed at A and trusted again at B is served
+            // nothing.
+            if confirmed.iter().any(|c| {
+                c.clone_key == key
+                    && crate::forge::confirmed::trusted_address_is(place, &c.host, &c.path)
+            }) {
+                continue;
+            }
+            let folder = repo
+                .path
+                .strip_prefix(root)
+                .unwrap_or(&repo.path)
+                .to_string_lossy()
+                .into_owned();
+            out.push(Unconfirmed {
+                workspace: workspace.clone(),
+                folder,
+                place: place.clone(),
+            });
+        }
+    }
+    out
+}
+
 /// When the folder at `path` was made, in seconds since 1970, where its disk keeps a creation
 /// time.
 fn created_at(path: &Path) -> Option<u64> {
@@ -168,4 +225,11 @@ pub fn vouch_clone(
 /// such a clone.
 pub fn trusted(config_root: &Path, clone: &Path) -> bool {
     super::read_push_remotes(config_root).contains_key(&crate::sandbox::local::clone_key(clone))
+}
+
+/// The remote recorded for `clone` when the person trusted it (`<host>/<owner>/<repo>`), or `None`
+/// when it has none. The trust list's own address, which a confirmed repo must still agree with
+/// ([`crate::forge::confirmed::serves`]).
+pub(crate) fn recorded_remote(config_root: &Path, clone: &Path) -> Option<String> {
+    super::read_push_remotes(config_root).remove(&crate::sandbox::local::clone_key(clone))
 }

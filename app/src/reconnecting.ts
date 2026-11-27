@@ -36,7 +36,13 @@ export function useReconnecting(plane: PlaneId, session: number): boolean {
           if (told.plane !== plane || !told.sessions.includes(session)) return;
           heard = true;
           // A runner whose key changed is not linked again: its chats stay dimmed (#2752).
-          show(told.reconnection !== "reconnected");
+          // A forgotten pool's chats end, and a runner gone's: nothing is left to reconnect
+          // (#7187).
+          show(
+            told.reconnection !== "reconnected" &&
+              told.reconnection !== "pool_forgotten" &&
+              told.reconnection !== "runner_gone",
+          );
         });
         if (gone) unlisten();
         else stop = unlisten;

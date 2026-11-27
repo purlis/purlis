@@ -89,6 +89,7 @@ let namedBy: PoolNamedBy[];
 let heldRunners: string[];
 /** What each removal was told to discard (#4860). */
 let discarded: unknown[];
+let despiteChecks: boolean[] = [];
 /** What Remove answers, where a test says: a `throw`n refusal or a PoolRemoval. */
 let removeCame: { refused: string } | PoolRemoval | undefined;
 let forgotten: unknown[];
@@ -146,6 +147,7 @@ beforeEach(() => {
   namedBy = [];
   heldRunners = [];
   discarded = [];
+  despiteChecks = [];
   removeCame = undefined;
   forgotten = [];
   mockIPC(
@@ -246,6 +248,7 @@ beforeEach(() => {
       if (cmd === "remove_docker_pool") {
         removed.push(a.name);
         discarded.push(a.discarding);
+        despiteChecks.push(a.despiteItsCheck as boolean);
         if (removeCame !== undefined && "refused" in removeCame) throw removeCame.refused;
         if (removeCame !== undefined) return removeCame;
         pools = pools.filter((one) => one.name !== a.name);
@@ -1001,6 +1004,57 @@ describe("You › This machine › Pools", () => {
     ).toBeInTheDocument();
   });
 
+  it("says how many runners on its engine belong to another desktop, and says nothing where none do (#7192)", async () => {
+    pools = [a_pool("builds")];
+    version = {
+      runner: "0.4.2",
+      why: null,
+      desktop: "0.4.2",
+      follows: true,
+      draining: 0,
+      held: 0,
+      named: true,
+      waiting: 0,
+      owed: [],
+      owed_why: null,
+      left: [],
+      not_checked: [],
+      other_desktops: "2 runners belong to another desktop",
+    };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText("2 runners belong to another desktop."),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing of other desktops' runners where its version names none (#7192)", async () => {
+    pools = [a_pool("builds")];
+    version = {
+      runner: "0.4.2-dev.16",
+      why: null,
+      desktop: "0.4.2-dev.17",
+      follows: true,
+      draining: 0,
+      held: 0,
+      named: null,
+      waiting: 0,
+      owed: [],
+      owed_why: null,
+      left: [],
+      not_checked: [],
+      other_desktops: null,
+    };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await within(group).findByText(/Its runner runs purlis 0\.4\.2-dev\.16/);
+    expect(group).not.toHaveTextContent(/another desktop/);
+  });
+
   it("names each older runner kept unchecked in a line of its own, saying what is left of it and what lets it go", async () => {
     pools = [a_pool("builds")];
     version = {
@@ -1514,10 +1568,12 @@ describe("A cluster pool (#3292)", () => {
     const forget = await within(group).findByRole("button", { name: "Forget it here" });
     expect(
       within(group).getByText(
-        /lab didn.t answer on port 22\..*Nothing was removed\. Forget it here forgets pool build-box on this machine without contacting lab\. Its runner.s container and home volume stay on lab\. lab still lists this machine as the runner.s peer\./,
+        /lab didn.t answer on port 22\..*Nothing was removed\. Forget it here forgets pool build-box on this machine without contacting lab\. Whatever may be left on lab stays there: its runner.s container and home volume, the browsers it ran, and the logins given on it\. lab still lists this machine as the runner.s peer\./,
       ),
     ).toBeInTheDocument();
     expect(forgotten).toEqual([]);
+    // A machine that doesn't answer is never contacted: Forget alone.
+    expect(within(group).queryByRole("button", { name: "Remove" })).toBeNull();
     await userEvent.click(forget);
     await waitFor(() => expect(forgotten).toEqual(["build-box"]));
     await waitFor(() =>
@@ -1531,7 +1587,30 @@ describe("A cluster pool (#3292)", () => {
     expect(within(group).queryByRole("button", { name: "Forget it here" })).toBeNull();
   });
 
-  it("on another machine that answers and refuses offers no Forget it here", async () => {
+  it("on another machine that answers and refuses offers Remove beside Forget it here, and Remove goes on to clean it (#7187)", async () => {
+    pools = [onAnother(true)];
+    removeCame = {
+      state: "refused",
+      why: "lab didn't accept your sign-in.",
+      host: "lab",
+    };
+    const group = await poolsGroup();
+    await removeIt(group, "build-box");
+    expect(await within(group).findByRole("button", { name: "Forget it here" })).toBeEnabled();
+    expect(despiteChecks).toEqual([false]);
+    // Remove, beside Forget: asked again, it goes on instead of stopping at the check.
+    removeCame = undefined;
+    await userEvent.click(within(group).getByRole("button", { name: "Remove" }));
+    const asked = await screen.findByRole("alertdialog", { name: "Remove pool build-box?" });
+    await waitFor(() =>
+      expect(within(asked).getByRole("button", { name: "Remove pool" })).toBeEnabled(),
+    );
+    await userEvent.click(within(asked).getByRole("button", { name: "Remove pool" }));
+    await waitFor(() => expect(despiteChecks).toEqual([false, true]));
+    expect(forgotten).toEqual([]);
+  });
+
+  it("on another machine that answers and refuses with no offer of Forget it here is only an error", async () => {
     pools = [onAnother(true)];
     removeCame = { refused: "lab didn't accept your sign-in." };
     const group = await poolsGroup();

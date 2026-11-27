@@ -67,7 +67,7 @@ export function SignInTerminal({
     if (!where) return;
     const look = inForce();
     const pane = new Terminal({
-      // A program's own link (OSC 8) opens nothing here, unless the pane links (#6218).
+      // A program's own link (OSC 8) opens nothing: the sign-in terminal links nothing (#6218).
       linkHandler: INERT_LINKS,
       fontSize: textSizes().terminal,
       fontFamily: terminalFont(),

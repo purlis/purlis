@@ -499,3 +499,54 @@ fn a_deleted_folder_leaves_a_registration_that_remove_clears() {
     assert!(said(&out).contains("stale"), "{}", said(&out));
     assert!(!p.listed_by_git().contains(&path.display().to_string()));
 }
+
+// ---- `worktree adopt`, the person's and never a chat's (#7694) ----
+
+impl Plane {
+    /// `charter` with `env` set over what [`Plane::charter_in`] sets.
+    fn charter_with(&self, args: &[&str], env: &[(&str, &str)]) -> Output {
+        support::purlis()
+            .args(args)
+            .current_dir(&self.root)
+            .env_clear()
+            .env("CHARTER_ROOT", &self.root)
+            .env("HOME", &self.home)
+            .env("GIT_CONFIG_GLOBAL", self.home.join(".gitconfig"))
+            .env("PATH", "/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin")
+            .env("USER", "tester")
+            .env("NO_COLOR", "1")
+            .envs(IDENTITY)
+            .envs(env.iter().copied())
+            .output()
+            .expect("the binary runs")
+    }
+}
+
+/// The chat marks a session the app started carries: a chat's, and a shell tab's alike.
+const IN_THE_APP: [(&str, &str); 2] = [("PURLIS_CHAT", "7"), ("PURLIS_SESSION_ID", "7")];
+
+#[test]
+fn adopt_in_the_persons_own_shell_tab_records_the_branch_the_folder_is_on() {
+    let p = Plane::new();
+    let path = p.cut("p1");
+    p.git(&path, &["checkout", "-q", "-b", "fix/p1-other"]);
+    let mut env = IN_THE_APP.to_vec();
+    env.push((purlis_core::shellguard::SHELL_TAB_ENV, "1"));
+
+    let out = p.charter_with(&["wt", "adopt", "svc", "p1", "-w", "alpha"], &env);
+
+    assert!(out.status.success(), "{}", said(&out));
+    assert!(said(&out).contains("fix/p1-other"), "{}", said(&out));
+}
+
+#[test]
+fn adopt_in_a_chat_is_refused_and_names_the_persons_terminal() {
+    let p = Plane::new();
+    let path = p.cut("p1");
+    p.git(&path, &["checkout", "-q", "-b", "fix/p1-other"]);
+
+    let out = p.charter_with(&["wt", "adopt", "svc", "p1", "-w", "alpha"], &IN_THE_APP);
+
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    assert!(said(&out).contains("only you do"), "{}", said(&out));
+}

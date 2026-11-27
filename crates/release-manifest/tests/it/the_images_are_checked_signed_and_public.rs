@@ -148,9 +148,11 @@ fn triggers(text: &str) -> Vec<&str> {
 #[test]
 fn only_a_green_gate_on_a_push_to_this_repositorys_main_publishes() {
     let release = workflow::release_jobs();
+    // `plan` is not behind the gate (R2, #7381); the job that calls the image is.
+    assert_eq!(job_named(&release, "plan", "release.yml").condition(), None);
     assert_eq!(
-        job_named(&release, "plan", "release.yml").condition(),
-        Some("needs.gate.outputs.green == 'true'")
+        job_named(&release, "runner-image", "release.yml").condition(),
+        Some("needs.keys.outputs.publish == 'true' && needs.gate.outputs.green == 'true'")
     );
     for image in IMAGES.iter().filter(|image| !image.released) {
         let (text, jobs) = workflow(image);
@@ -224,7 +226,7 @@ fn the_runner_image_is_published_only_by_the_release_it_belongs_to() {
     let call = job_named(&release, "runner-image", RUNNER.gate);
     assert_eq!(
         call.condition(),
-        Some("needs.plan.outputs.publish == 'true'")
+        Some("needs.keys.outputs.publish == 'true' && needs.gate.outputs.green == 'true'")
     );
     assert!(
         call.body

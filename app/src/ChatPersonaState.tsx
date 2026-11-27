@@ -7,6 +7,7 @@ import {
   asksThePerson,
   failedUnseen,
   failuresUnseenOf,
+  isHibernated,
   leftWorkOf,
   markOf,
   ownWorkOf,
@@ -91,6 +92,7 @@ function shownFrom(
     ownWork: ownWorkOf(states, session),
     stuck: stuckOf(states, session) !== undefined,
     leftWork: leftWorkOf(states, session),
+    hibernated: isHibernated(states, session),
   });
 }
 

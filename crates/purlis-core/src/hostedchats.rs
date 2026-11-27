@@ -144,6 +144,7 @@ pub fn asker(root: &Path, number: u32) -> Option<Asker> {
         root: root.to_path_buf(),
         env: Env::from_process(),
         chat: number,
+        id: place(root, number).map(|(id, _)| id),
         persona: composed.persona,
         folder: Some(composed.folder),
         confines: Some(composed.confines),

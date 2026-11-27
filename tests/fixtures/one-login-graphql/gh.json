@@ -1,0 +1,62 @@
+[
+ {
+  "command": "gh pr view 7 -R github.localhost/acme/app",
+  "variables": {"owner": "acme", "repo": "app", "pr_number": 7},
+  "query": "query PullRequestByNumber($owner: String!, $repo: String!, $pr_number: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $pr_number) { id number title state body url baseRefName headRefName isDraft maintainerCanModify mergeable additions deletions changedFiles author{login ...on User{id name}} autoMergeRequest{authorEmail commitBody commitHeadline mergeMethod enabledAt enabledBy{login ...on User{id name}}} commits{totalCount} headRepositoryOwner{id login ...on User{name}} headRepository{id name} isCrossRepository reviewRequests(first:100){nodes{requestedReviewer{__typename ...on User{login} ...on Team{organization{login} name slug}}}} reviews(last:100){nodes{id author{login} authorAssociation submittedAt body state commit{oid} reactionGroups{content users{totalCount}}} totalCount} assignees(first:100){nodes{id login name databaseId} totalCount} labels(first:100){nodes{id name description color} totalCount} projectCards(first:100){nodes{project{name} column{name}} totalCount} milestone{number title description dueOn} comments(last:100){nodes{id author{login ...on User{id name}} authorAssociation body createdAt includesCreatedEdit isMinimized minimizedReason reactionGroups{content users{totalCount}} url viewerDidAuthor} totalCount} reactionGroups{content users{totalCount}} statusCheckRollup: commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename ...on StatusContext{context state targetUrl createdAt} ...on CheckRun{name checkSuite{workflowRun{workflow{name}}} status conclusion startedAt completedAt detailsUrl}} pageInfo{hasNextPage endCursor}}}}}} } } }"
+ },
+ {
+  "command": "gh pr list -R github.localhost/acme/app",
+  "variables": {"owner": "acme", "repo": "app", "limit": 30, "state": ["OPEN"]},
+  "query": "query PullRequestList($owner: String!, $repo: String!, $limit: Int!, $endCursor: String, $baseBranch: String, $headBranch: String, $state: [PullRequestState!]) { repository(owner: $owner, name: $repo) { pullRequests(states: $state, baseRefName: $baseBranch, headRefName: $headBranch, first: $limit, after: $endCursor, orderBy: {field: CREATED_AT, direction: DESC}) { totalCount nodes { number title state url headRefName headRepositoryOwner{id login ...on User{name}} isCrossRepository isDraft createdAt labels(first:100){nodes{name} totalCount} } pageInfo{hasNextPage endCursor} } } }"
+ },
+ {
+  "command": "gh pr checks 7 -R github.localhost/acme/app",
+  "variables": {"owner": "acme", "repo": "app", "pr_number": 7},
+  "query": "query PullRequestStatusChecks($owner: String!, $repo: String!, $pr_number: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $pr_number) { number headRefName statusCheckRollup: commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes { __typename ...on StatusContext { context state targetUrl createdAt description isRequired } ...on CheckRun { name status conclusion startedAt completedAt detailsUrl checkSuite{workflowRun{event workflow{name}}} isRequired } } pageInfo { hasNextPage endCursor } } } } } } } } }"
+ },
+ {
+  "command": "gh pr status -R github.localhost/acme/app",
+  "variables": {"owner": "acme", "repo": "app", "headRefName": "fix"},
+  "query": "query PullRequestStatus($owner: String!, $repo: String!, $headRefName: String!) { repository(owner: $owner, name: $repo) { defaultBranchRef{name} pullRequests(headRefName: $headRefName, first: 1, orderBy: {field: CREATED_AT, direction: DESC}) { totalCount edges { node { number title url state headRefName isDraft reviewDecision mergeStateStatus commits(last:1){nodes{commit{statusCheckRollup{state}}}} } } } } viewer { login } }"
+ },
+ {
+  "command": "gh issue view 3 -R github.localhost/acme/app",
+  "variables": {"owner": "acme", "repo": "app", "issue_number": 3},
+  "query": "query IssueByNumber($owner: String!, $repo: String!, $issue_number: Int!) { repository(owner: $owner, name: $repo) { hasIssuesEnabled issue(number: $issue_number) { id number url state closed stateReason title body createdAt updatedAt author{login ...on User{id name}} comments(first:100){nodes{id author{login} authorAssociation body createdAt url viewerDidAuthor isMinimized} totalCount} assignees(first:100){nodes{id login name} totalCount} labels(first:100){nodes{id name description color} totalCount} projectCards(first:100){nodes{project{name} column{name}} totalCount} milestone{number title description dueOn} reactionGroups{content users{totalCount}} } } }"
+ },
+ {
+  "command": "gh issue list -R github.localhost/acme/app",
+  "variables": {"owner": "acme", "repo": "app", "limit": 30, "states": ["OPEN"]},
+  "query": "query IssueList($owner: String!, $repo: String!, $limit: Int!, $endCursor: String, $states: [IssueState!] = OPEN) { repository(owner: $owner, name: $repo) { hasIssuesEnabled issues(first: $limit, after: $endCursor, orderBy: {field: CREATED_AT, direction: DESC}, states: $states) { totalCount nodes { number url title state updatedAt createdAt labels(first:100){nodes{name} totalCount} assignees(first:100){nodes{login} totalCount} } pageInfo{hasNextPage endCursor} } } }"
+ },
+ {
+  "command": "gh repo view acme/app",
+  "variables": {"owner": "acme", "name": "app"},
+  "query": "query RepositoryInfo($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { id name owner{login} hasIssuesEnabled description hasWikiEnabled viewerPermission defaultBranchRef{name} isPrivate isFork isArchived mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed parent{id name owner{login} viewerPermission defaultBranchRef{name} isPrivate} } }"
+ },
+ {
+  "command": "gh repo view acme/app --json name,url,languages,licenseInfo,repositoryTopics,issues,pullRequests,latestRelease",
+  "variables": {"owner": "acme", "name": "app"},
+  "query": "query RepositoryInfo($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { name url languages(first:100){edges{size node{name}} totalCount} licenseInfo{name key spdxId url} repositoryTopics(first:100){nodes{topic{name}}} issues(states:[OPEN]){totalCount} pullRequests(states:[OPEN]){totalCount} latestRelease{name tagName url publishedAt} } }"
+ },
+ {
+  "command": "gh release list -R github.localhost/acme/app",
+  "variables": {"owner": "acme", "name": "app", "perPage": 30},
+  "query": "query ReleaseList($owner: String!, $name: String!, $perPage: Int!, $endCursor: String) { repository(owner: $owner, name: $name) { releases(first: $perPage, orderBy: {field: CREATED_AT, direction: DESC}, after: $endCursor) { nodes { name tagName isDraft isLatest isPrerelease createdAt publishedAt } pageInfo { hasNextPage endCursor } } } }"
+ },
+ {
+  "command": "gh release view v1 -R github.localhost/acme/app --json name,tagName,assets",
+  "variables": {"owner": "acme", "name": "app", "tag": "v1"},
+  "query": "query ReleaseView($owner: String!, $name: String!, $tag: String!) { repository(owner: $owner, name: $name) { release(tagName: $tag) { name tagName isDraft isPrerelease createdAt publishedAt author{login} releaseAssets(first:100){nodes{name size downloadUrl contentType downloadCount} totalCount} } } }"
+ },
+ {
+  "command": "gh api graphql (who is signed in, and the rate limit)",
+  "variables": {},
+  "query": "query { viewer { login } rateLimit { limit cost remaining resetAt } }"
+ },
+ {
+  "command": "gh api graphql (an object of the chat's repo, by id)",
+  "variables": {"id": "PR_kwDO_1"},
+  "query": "query($id: ID!) { node(id: $id) { __typename id ...on PullRequest { number title state } ...on Issue { number title } } }"
+ }
+]

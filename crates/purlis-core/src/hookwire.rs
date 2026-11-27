@@ -135,6 +135,7 @@ pub const NOT_INHERITED: &[&str] = &[
     PROMPT_KEY_ENV,
     crate::sandbox::tools::POOL_IMAGE_VAR,
     HARNESS_INTERNAL_ENV,
+    crate::shellguard::SHELL_TAB_ENV,
 ];
 
 /// A harness's internal variable. It stays out of a chat's environment: never inherited
@@ -1697,6 +1698,24 @@ pub enum Ask {
     /// cannot. The rule, the family and the host alone. The app answers [`Answer::Policy`]. No
     /// ticket, for a record's reason.
     PolicyLog(PolicyLogAsk),
+    /// **A hook's ask for the ref tips a remote has** (#7302): `pre-push`'s ask of the remote,
+    /// which a chat's sandbox cannot make for itself under the one login. The app asks the remote
+    /// outside the sandbox, on the chat's own run's route, and only for a repository recorded for
+    /// that run. It answers [`Answer::RemoteRefs`], or [`Answer::No`] where it will not or
+    /// cannot. No ticket: the line can only name the chat whose token it carries, and what it
+    /// hands over is what the forge says the repository's branches and tags are at.
+    RemoteRefs(RemoteRefsAsk),
+}
+
+/// **A hook's ask for a remote's ref tips** ([`Ask::RemoteRefs`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemoteRefsAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    /// The remote's HTTPS address, as the push names it. The app asks it only where its host
+    /// and repository are recorded for the chat's run.
+    pub url: String,
 }
 
 /// **A hook's ask for its chat's policy** ([`Ask::Policy`]).
@@ -2556,8 +2575,19 @@ pub enum Answer {
     /// would stand once it heard the asking line. `false` for a chat the app holds no fact for.
     Attended { attended: bool },
     /// **How each family runs for the asking chat** ([`Ask::Policy`], Q308): `family=mode` pairs,
-    /// as [`crate::enforcement::Resolved::spelled`] writes them.
-    Policy { spelled: String },
+    /// as [`crate::enforcement::Resolved::spelled`] writes them, and **the families of those
+    /// enforced only because this machine's acceptance of the project's policy is Broken or
+    /// Waiting** ([`crate::enforcement::Resolved::unaccepted`], ADR 0130 §7), by their keys: a
+    /// refusal by one names the unaccepted policy as its cause. Absent from an older app, which
+    /// leaves every refusal its own words.
+    Policy {
+        spelled: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        unaccepted: Vec<String>,
+    },
+    /// **The commits a remote's branches and tags are at** ([`Ask::RemoteRefs`], #7302), full
+    /// object ids as `ls-remote` names them.
+    RemoteRefs { tips: Vec<String> },
     /// The app will not, and this is the sentence saying why. The asker prints the command
     /// to run in a terminal and says this underneath it: a refusal the operator cannot see
     /// is a handoff that vanished.
@@ -2898,6 +2928,7 @@ impl Ask {
             Self::Attendance(asked) => asked.chat,
             Self::Policy(asked) => asked.chat,
             Self::PolicyLog(line) => line.chat,
+            Self::RemoteRefs(asked) => asked.chat,
         }
     }
 }
@@ -3538,6 +3569,13 @@ pub struct SandboxBlocked {
     /// person to check, and judged again as a grant before anything is allowed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suggested: Option<String>,
+    /// **The `purlis` command the block was met by** (#7178), in fixed words only
+    /// ([`crate::sandboxblock::command::in_line`]): what a Report of purlis's own block names, so
+    /// the operation can be located where the block names no path. The app checks it again
+    /// ([`crate::sandboxblock::command::known`]); a chat can send any, which buys nothing but
+    /// those words in a draft.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purlis_command: Option<String>,
 }
 
 /// What hears a brokered `secret exec` ([`crate::secrets::brokered`]): the ask, and its
@@ -3867,10 +3905,11 @@ pub fn deliver_armed<L: SpoolLine>(
     let delivered = with_delivery(line, delivery.as_ref())?;
     let bytes = line_armed(token, armed.map(armed::ArmedKey::expose), &delivered)?;
     let to = path.to_path_buf();
-    let answered = within(A_NOTICE_TAKES_AT_MOST, move || {
+    let taken_within = a_line_is_taken_within();
+    let answered = within(taken_within, move || {
         let socket = std::os::unix::net::UnixStream::connect(&to)?;
-        socket.set_write_timeout(Some(A_NOTICE_TAKES_AT_MOST))?;
-        socket.set_read_timeout(Some(A_NOTICE_TAKES_AT_MOST))?;
+        socket.set_write_timeout(Some(taken_within))?;
+        socket.set_read_timeout(Some(taken_within))?;
         (&socket).write_all(&bytes)?;
         let mut said = String::new();
         std::io::BufReader::new(&socket)
@@ -3901,6 +3940,18 @@ pub fn deliver_armed<L: SpoolLine>(
         Some(kept) => with_delivery(&kept, delivery.as_ref())?,
         None => delivered,
     };
+    // A hook inside the chat's sandbox (Codex, opencode, a chat purlis wraps whole) has the spool
+    // denied: trying it would only make the sandbox refuse purlis's own write, and read, of the
+    // project's state (#7178). The line is lost, as the spool's own words say it is.
+    if crate::sandbox::writes_are_sandboxed() {
+        return Err(not_spooled(
+            &why,
+            io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "this hook runs inside the chat's sandbox, which denies the spool",
+            ),
+        ));
+    }
     spool::append(&spool::dir_for(path), line.chat(), token, &kept)
         .map(Delivered::Spooled)
         .map_err(|spooled| not_spooled(&why, spooled))
@@ -3984,6 +4035,33 @@ fn one_line_with_a_deadline(
 /// a thread of its own, so this is only a bound on an app that has stopped reading.
 #[cfg(unix)]
 const A_NOTICE_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// What sets [`A_NOTICE_TAKES_AT_MOST`] for a line's delivery ([`deliver_armed`]) in
+/// milliseconds instead, in a debug build, for the tests that read what the app was told.
+///
+/// A tool line the app does not take in a quarter of a second is spooled, not sent, which is
+/// right for a hook and wrong for a test that waits on the app's own record of it: on a loaded
+/// runner the connect, the write and the receipt can take longer, and the test's line goes to
+/// a spool nobody there reads (#7436, #7452). The knob lifts the bound for those tests; a
+/// release build never reads it.
+#[cfg(all(unix, debug_assertions))]
+pub const A_LINE_DEADLINE_ON_PURPOSE_ENV: &str = "PURLIS_TEST_HOOK_LINE_DEADLINE_MS";
+
+/// How long a line's delivery waits for the app to take it: [`A_NOTICE_TAKES_AT_MOST`], or in
+/// a debug build what [`A_LINE_DEADLINE_ON_PURPOSE_ENV`] says (a number of milliseconds above
+/// zero; anything else reads as unset). [`A_TOOL_HOOK_TELLS_WITHIN`] is computed from the
+/// constant, so a hook run with the knob set is outside that bound, on purpose.
+#[cfg(unix)]
+fn a_line_is_taken_within() -> std::time::Duration {
+    #[cfg(debug_assertions)]
+    if let Some(ms) = crate::envvar::var(A_LINE_DEADLINE_ON_PURPOSE_ENV)
+        .and_then(|ms| ms.parse::<u64>().ok())
+        .filter(|ms| *ms > 0)
+    {
+        return std::time::Duration::from_millis(ms);
+    }
+    A_NOTICE_TAKES_AT_MOST
+}
 
 /// How long a notice's sender stays, all told, for the app to look at who sent it and let the
 /// connection go (D-1407-10). Spent in full only on an app that has stopped reading.
@@ -4422,9 +4500,14 @@ impl Listener {
                 let serving_turns = std::sync::Arc::clone(&turns);
                 dealt += 1;
                 let this = dealt;
-                let started = serving.run(
+                let started = serving.run_with_slot(
                     slot,
-                    Box::new(move || {
+                    Box::new(move |slot| {
+                        // Locals drop in reverse: the place is given back first, and the
+                        // duplicate closes the connection last, so a hook that reconnects on
+                        // seeing it end finds the place free (#7608).
+                        let _hold = connection.try_clone().ok();
+                        let _slot = slot;
                         serve(connection, pid, this, &tokens, &hearing, &serving_turns);
                     }),
                 );
@@ -5496,16 +5579,30 @@ impl Serving {
 
     /// Serves `job` in `slot`'s place on a thread of the pool, starting one if none is free.
     /// An error is a thread that would not start: `job` is dropped unrun.
+    #[cfg(test)]
     fn run(
         self: &std::sync::Arc<Self>,
         slot: Slot,
         job: Box<dyn FnOnce() + Send>,
     ) -> io::Result<()> {
+        self.run_with_slot(
+            slot,
+            Box::new(move |slot| {
+                let _slot = slot;
+                job();
+            }),
+        )
+    }
+
+    /// [`Self::run`], handing `job` the place, so it can give it back before its connection
+    /// closes (#7608).
+    fn run_with_slot(
+        self: &std::sync::Arc<Self>,
+        slot: Slot,
+        job: Box<dyn FnOnce(Slot) + Send>,
+    ) -> io::Result<()> {
         let mut state = self.lock();
-        state.waiting.push_back(Box::new(move || {
-            let _slot = slot;
-            job();
-        }));
+        state.waiting.push_back(Box::new(move || job(slot)));
         // Every admitted connection has a thread, so none waits behind a held one: the
         // admitted count is bounded by `at_most`, and so is this.
         if state.waiting.len() > state.idle && state.threads < self.at_most {

@@ -19,8 +19,10 @@
 #[path = "../workflow/mod.rs"]
 mod workflow;
 
+mod a_dev_build_compiles_before_the_gate_and_signs_after_it;
 mod a_dev_channel_build_is_lighter_and_a_stable_build_is_not;
 mod a_failed_runs_leftover_images_are_listed_and_never_deleted;
+mod a_release_checkout_leaves_out_the_story_baselines;
 mod a_release_checks_the_notices_its_own_source_ships;
 mod a_runner_image_failure_never_holds_back_a_release;
 mod cargo_deny_is_fetched_only_when_mains_cache_misses;
@@ -29,6 +31,7 @@ mod every_published_build_carries_its_provenance;
 mod every_release_carries_its_sbom;
 mod no_release_build_turns_on_the_test_fence;
 mod the_app_keeps_the_hardened_runtime;
+mod the_developer_id_key_is_imported_on_a_hosted_runner_only;
 mod the_engine_manifest_is_signed_on_main_with_least_privilege;
 mod the_forge_nightly_runs_live_with_least_privilege;
 mod the_images_are_checked_signed_and_public;

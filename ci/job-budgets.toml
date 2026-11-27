@@ -1,0 +1,248 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# Each job of `.github/workflows/ci.yml` and the minutes its p50 may take (spec #7324, ADR 0127, in
+# line with ADR 0086: every budget names the job that measures it, here by its id in `ci.yml`).
+# `ci-health` reads each job's p50 of the last seven days against its budget every day and files
+# an `area:ci` ticket when it runs more than 20% over. A matrix job's p50 pools its legs.
+#
+# A job without a budget fails `tools/job-budgets.test.mjs`, so a new job brings its own. Raising
+# a budget takes a pull request that says why; lowering one is welcome.
+#
+# Seeded on 2026-11-22 from the p50 of each job's passed runs, rounded up to the minute, with a
+# floor of one: 43 runs of `ci.yml` read through the public API (every merge-group and push run of
+# the newest 100 green ones, 31 pull request runs spread evenly over them, and the last three
+# nightly runs), which is the same number `ci-health` computes (`overBudget`). A job that did not
+# run in them says so beside its budget.
+
+# The jobs of `.github/workflows/release.yml` (#7384, train R5) are budgeted below the ci ones, each
+# with `workflow = "release"`, the Cargo `profile` its runs build with, the `check` run's name in
+# full and the `run` its number was measured from (ADR 0086). A dev build of `main` is `dev-release`
+# and the nightly profile guard and a stable tag are `release`; the two are budgeted apart, and a
+# build started by hand (which may ask for either) is judged by neither. `ci-health` reads
+# `release.yml` runs as it reads `ci.yml` runs.
+
+# A job of another workflow that `tools/job-budgets.mjs` lists in `JOB_WORKFLOWS` is budgeted by its
+# id, as a ci job is, with `workflow = "<name>"` (the file is `.github/workflows/<name>.yml`).
+
+[[job]]
+id = "changes"
+p50 = 1
+
+[[job]]
+id = "stale-group"
+p50 = 42  # waits for the group it guards; 4 runs
+
+[[job]]
+id = "rust-build"
+p50 = 9  # an estimate, not yet measured: everything but the app, which ended its compile four minutes in, plus the probes and the archive
+
+[[job]]
+id = "rust-build-app"
+p50 = 17  # an estimate, not yet measured: the app's test build alone, as the 11 to 16 minutes it took inside the one build, plus the probes
+
+[[job]]
+id = "rust"
+p50 = 16  # pools its four parts, which no longer wait for the app's build; an estimate, lower it once measured
+
+[[job]]
+id = "rust-app"
+p50 = 9  # pools its two parts; an estimate, not yet measured
+
+[[job]]
+id = "git-lfs"
+p50 = 8
+
+[[job]]
+id = "lint"
+p50 = 11
+
+[[job]]
+id = "rust-doctests"
+p50 = 6
+
+[[job]]
+id = "rust-checks"
+p50 = 1  # the required-check gate
+
+[[job]]
+id = "parity"
+p50 = 26
+
+[[job]]
+id = "remote-parity"
+p50 = 33
+
+[[job]]
+id = "remote-faults-notice"
+p50 = 1  # runs on the nightly schedule only (skipped on every pull request and push run, so none measured): one `gh` call on a bare runner, the floor of one; measure after a week of nightlies
+
+[[job]]
+id = "deny"
+p50 = 1
+
+[[job]]
+id = "web"
+p50 = 12  # pools its four parts
+
+[[job]]
+id = "web-checks"
+p50 = 1  # the required-check gate
+
+[[job]]
+id = "bench"
+p50 = 3
+
+[[job]]
+id = "bench-record"
+p50 = 1
+
+[[job]]
+id = "app"
+p50 = 15
+
+[[job]]
+id = "app-evidence"
+p50 = 12  # no green run of its own measured: the evidence legs of `app`, 4 runs
+
+[[job]]
+id = "fedora"
+p50 = 45  # no green run in the sample: the wall of its two red runs, 41 and 47 min; revisit when one is green
+
+[[job]]
+id = "macos-tests"
+p50 = 85  # no green run in the sample: the wall of its red runs, 74 to 94 min; revisit when one is green
+
+[[job]]
+id = "browser-engine-macos"
+p50 = 1  # 7 runs
+
+[[job]]
+id = "studio-confinement-macos"
+p50 = 40  # 11 runs
+
+[[job]]
+id = "listen-shim"
+p50 = 1
+
+[[job]]
+id = "recorded"
+p50 = 8
+
+[[job]]
+id = "scenario"
+p50 = 15
+
+[[job]]
+id = "scenario-checks"
+p50 = 1  # the required-check gate
+
+[[job]]
+id = "scenario-linux"
+p50 = 23
+
+
+[[job]]
+id = "outcome-bars-linux"
+p50 = 26  # 12 runs
+
+[[job]]
+id = "outcome-bars-linux-checks"
+p50 = 1  # the required-check gate
+
+[[job]]
+id = "pool-setup-scenario"
+p50 = 21
+
+[[job]]
+id = "pool-setup-scenario-checks"
+p50 = 1  # the required-check gate
+
+[[job]]
+id = "scenario-linux-checks"
+p50 = 1  # the required-check gate
+
+[[job]]
+id = "windows"
+p50 = 6  # 2 runs
+
+[[job]]
+id = "forgeroute"
+p50 = 20  # added on main after seeding, no runs measured: seeded from the parity jobs; measure after a week
+
+[[job]]
+id = "forgeroute-macos"
+p50 = 30  # added on main after seeding, no runs measured: seeded above its Linux leg for macOS; measure after a week
+
+# ---- release.yml (#7384) ----
+#
+# Every number below is the job's minutes in one measured run, rounded up (the convention above).
+# The macOS jobs are the one-cargo-run job (R1, #7396): run 45069994116 took 90.2 min on the
+# `release` profile, which it was started by hand with. No dev-release run of the one-run job is
+# measured yet, so the dev budget borrows that run as a ceiling (the lighter profile cannot be
+# slower, ADR 0092); R0's run 45069887140 measured the old two-run job at 101 min on dev-release,
+# which no longer exists. Reset each on the median of its first clean runs once R1's pull
+# requests have landed.
+#
+# `lto = "off"` for `dev-release` (R7, #7418, ADR 0092 amended 2026-11-24). Run 45137164155 built
+# it on the one-cargo-run job with each LTO setting: Linux compiled in 24.0 and 18.7 min with LTO
+# off against 32.2 and 31.2 with thin, so the Linux dev budget drops from 35 to 28. macOS compiled
+# in 111.2 and 91.3 against 114.6 and 107.2 (dsymutil 1.5 against 10), but its six jobs shared the
+# runners and swapped, so those absolute times are no basis for a lower budget: it stays 91 until a
+# dev publish with the new profile has run.
+
+[[job]]
+id = "release-macos-dev"
+workflow = "release"
+profile = "dev-release"
+check = "macOS (.app)"
+run = 45069994116  # 90.2 min, `release` profile: still a ceiling; R7's contended runs cannot support a lower one
+p50 = 91
+
+[[job]]
+id = "release-macos-release"
+workflow = "release"
+profile = "release"
+check = "macOS (.app, .dmg)"
+run = 45069994116  # 90.2 min (compile 84.5)
+p50 = 91
+
+[[job]]
+id = "release-linux-dev"
+workflow = "release"
+profile = "dev-release"
+check = "Linux (.deb, AppImage)"
+run = 45137164155  # R7, LTO off: compile 18.7 and 24.0 min, plus about 4 min of setup and bundling
+p50 = 28
+
+[[job]]
+id = "release-linux-release"
+workflow = "release"
+profile = "release"
+check = "Linux (.deb, AppImage)"
+run = 45069994116  # 37 min
+p50 = 37
+
+[[job]]
+id = "release-runner-binary-aarch64-dev"
+workflow = "release"
+profile = "dev-release"
+check = "runner binary (linux-aarch64)"
+run = 45069994116  # 10.1 min, `release` profile: a ceiling for dev-release
+p50 = 11
+
+[[job]]
+id = "release-runner-binary-aarch64-release"
+workflow = "release"
+profile = "release"
+check = "runner binary (linux-aarch64)"
+run = 45069994116  # 10.1 min
+p50 = 11
+
+# `outcome-bars.yml` (ADR 0127, amended 2026-11-26): the macOS outcome bars, `ci.yml`'s
+# `outcome-bars` job until then, with the budget it had there. On main's push runs of 2026-11-25/26
+# it took 36 to 72 minutes, 30 to 65 of them its release build.
+[[job]]
+id = "outcome-bars"
+workflow = "outcome-bars"
+p50 = 54  # 6 runs, measured as ci.yml's job

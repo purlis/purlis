@@ -17,10 +17,30 @@ use crate::planes::{PlaneId, Planes};
 pub struct PolicyWaiting {
     /// The family's key, as `[policy]` spells it.
     pub family: String,
-    /// What you accepted: `off`, `log` or `enforce`.
+    /// What you accepted: `off`, `log` or `enforce`; the sandbox's level `off`, `floor` or `full`.
     pub accepted: String,
     /// What the project's file says now.
     pub committed: String,
+}
+
+/// One pair said never to: the asking persona, and the persona it never dispatches to.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct NeverPair {
+    /// The persona that asks.
+    pub asking: String,
+    /// The persona it never dispatches to.
+    pub target: String,
+}
+
+/// **The never-dispatch list's pairs the window offers to keep after a new seal key** (#7714,
+/// H1 of #7734's round 3): what Keep these nevers ([`keep_project_nevers`]) seals, exactly.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct NeversToKeep {
+    /// The pairs the list's file holds now, in its order: none where it holds none, or is gone.
+    pub pairs: Vec<NeverPair>,
+    /// Their digest: what the press names, so a list that changed since it was shown keeps
+    /// nothing.
+    pub digest: String,
 }
 
 /// What the window says about the project's `[policy]` on this machine.
@@ -30,8 +50,27 @@ pub struct PolicyState {
     pub waiting: Vec<PolicyWaiting>,
     /// Each value of `[policy]` purlis could not read, in one sentence, enforced meanwhile.
     pub refused: Vec<String>,
+    /// The families that mean nothing without a sandbox (`network`, `ports`, `processes`),
+    /// where the project's level is no sandbox: said beside the press that would make it so.
+    pub not_in_force: Vec<String>,
     /// Whether this machine keeps an acceptance whose seal does not hold, which counts as none.
     pub unsealed: bool,
+    /// Whether the seal's key on this machine is another program's, most likely an earlier
+    /// build's before an update (#7714): nothing holds, and the window offers Make a new key and
+    /// accept ([`accept_project_policy_with_new_key`]) in place of Accept.
+    pub key_foreign: bool,
+    /// Whether the acceptance does not hold because purlis made a new seal key on this machine
+    /// since it was sealed (#7714), never because something edited it: the window says so.
+    pub new_key: bool,
+    /// Whether purlis vouches that this project's never-dispatch list was anchored by a seal key
+    /// it has replaced since (#7714): it reads as unread until the person keeps the pairs shown
+    /// ([`keep_project_nevers`]). Accept never seals them.
+    pub nevers_new_key: bool,
+    /// The pairs Keep these nevers keeps, where `nevers_new_key` and the list's file reads.
+    pub nevers_to_keep: Option<NeversToKeep>,
+    /// Whether that list holds a name purlis cannot show faithfully (#7734's round 4): no pair
+    /// is offered to keep, and the window says so.
+    pub nevers_unshowable: bool,
     /// The digest of the committed text this was read from: what Accept names, so a press on a
     /// file that changed since it was shown accepts nothing.
     pub digest: String,
@@ -59,6 +98,16 @@ pub struct PolicyOverride {
     pub runs: String,
 }
 
+/// What the waiting row for the merge opt-in is named: the route changes, not the hook's mode.
+const MERGE_ROUTE_ROW: &str = "merges through the forge route";
+
+/// What the waiting row for lineage is named: a parent taking up its ended child's branch through
+/// the forge route (`[policy] lineage`).
+const LINEAGE_ROW: &str = "lineage through the forge route";
+
+/// What a waiting row for a protected branch the project dropped is named, before the branch.
+const PROTECTED_ROW: &str = "protected branch";
+
 /// The project's `[policy]` as the window says it: one [`enforcement::standing`], so the template,
 /// the families set apart, what waits and the digest Accept names are all of one read of the
 /// file. Only reads: the core alone resolves the policy, and nothing here keeps anything.
@@ -79,11 +128,28 @@ fn state_of(root: &std::path::Path) -> PolicyState {
         waiting: standing
             .waiting
             .into_iter()
-            .map(|(family, accepted, committed)| PolicyWaiting {
-                family: family.key().to_owned(),
+            .map(|(family, accepted, committed)| {
+                // The merge opt-in's row has equal modes, because the hook already runs the
+                // mode (`watch` is `log`): what changes is the forge route, held until now.
+                if family == enforcement::Family::GuardsMerge && accepted == committed {
+                    return PolicyWaiting {
+                        family: MERGE_ROUTE_ROW.to_owned(),
+                        accepted: "held".to_owned(),
+                        committed: committed.word().to_owned(),
+                    };
+                }
+                PolicyWaiting {
+                    family: family.key().to_owned(),
+                    accepted: accepted.word().to_owned(),
+                    committed: committed.word().to_owned(),
+                }
+            })
+            // The sandbox waits by its level (the follow-up's item 1): `off`, `floor` or `full`.
+            .chain(standing.level.map(|(accepted, committed)| PolicyWaiting {
+                family: enforcement::Family::Sandbox.key().to_owned(),
                 accepted: accepted.word().to_owned(),
                 committed: committed.word().to_owned(),
-            })
+            }))
             // A deny you accepted that the project's file took away waits for the same press
             // (the review of #7113): `dispatch.denies steward -> devops from denied to lifted`.
             .chain(standing.lifted.into_iter().map(|deny| PolicyWaiting {
@@ -91,9 +157,43 @@ fn state_of(root: &std::path::Path) -> PolicyState {
                 accepted: "denied".to_owned(),
                 committed: "lifted".to_owned(),
             }))
+            // Lineage the person accepted a denial of, that the project's file now allows, and a
+            // protected branch it no longer names, wait for the same press.
+            .chain(standing.lineage_waiting.then(|| PolicyWaiting {
+                family: LINEAGE_ROW.to_owned(),
+                accepted: "denied".to_owned(),
+                committed: "allowed".to_owned(),
+            }))
+            .chain(
+                standing
+                    .protection_lifted
+                    .into_iter()
+                    .map(|name| PolicyWaiting {
+                        family: format!("{PROTECTED_ROW} {name}"),
+                        accepted: "protected".to_owned(),
+                        committed: "lifted".to_owned(),
+                    }),
+            )
             .collect(),
         refused: standing.refused,
+        not_in_force: standing
+            .not_in_force
+            .into_iter()
+            .map(|family| family.key().to_owned())
+            .collect(),
         unsealed: standing.unsealed,
+        key_foreign: standing.key_foreign,
+        new_key: standing.new_key,
+        nevers_new_key: standing.nevers_new_key,
+        nevers_to_keep: standing.nevers_to_keep.map(|kept| NeversToKeep {
+            pairs: kept
+                .pairs
+                .into_iter()
+                .map(|(asking, target)| NeverPair { asking, target })
+                .collect(),
+            digest: kept.digest,
+        }),
+        nevers_unshowable: standing.nevers_unshowable,
         digest: standing.digest,
         template: standing.said.template.word().to_owned(),
         template_default: !standing.said.template_said,
@@ -264,6 +364,52 @@ pub async fn accept_project_policy(
     .await
 }
 
+/// **Your press where the seal's key is another program's: make a new key and accept the
+/// project's `[policy]` as it was shown** (#7714), on the project `plane` names, never the one in
+/// front when it lands. The old `purlis-seal` items are replaced, which macOS may ask you to
+/// allow; the digest is checked again once its prompt returns; then a new key seals this
+/// project's acceptance. Every other project accepted on this machine then needs accepting
+/// again. The window's alone. The window draws it in the prerequisite modal (#7719).
+#[tauri::command]
+#[specta::specta]
+pub async fn accept_project_policy_with_new_key(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    shown: String,
+) -> Result<PolicyState, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window(READING_POLICY, move || new_key_pressed(&root, &shown)).await
+}
+
+/// [`accept_project_policy_with_new_key`] on the project at `root`, off the window's thread.
+fn new_key_pressed(root: &std::path::Path, shown: &str) -> Result<PolicyState, String> {
+    enforcement::press_with_new_key(root, shown)
+        .map_err(|why| format!("purlis could not keep your acceptance on this machine: {why}"))?;
+    Ok(state_of(root))
+}
+
+/// **Your press: keep the never-dispatch pairs the window showed, sealed with the new seal key**
+/// (#7714, H1 of #7734's round 3), on the project `plane` names. Its own press, never a part of
+/// Accept: `shown` is the digest of the pairs shown ([`NeversToKeep`]), so a list that changed
+/// since keeps nothing. The window's alone.
+#[tauri::command]
+#[specta::specta]
+pub async fn keep_project_nevers(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    shown: String,
+) -> Result<PolicyState, String> {
+    let root = planes.held(&plane)?.root().to_path_buf();
+    crate::off_the_window(READING_POLICY, move || nevers_kept(&root, &shown)).await
+}
+
+/// [`keep_project_nevers`] on the project at `root`, off the window's thread.
+fn nevers_kept(root: &std::path::Path, shown: &str) -> Result<PolicyState, String> {
+    purlis_core::dispatchnever::keep_shown_after_a_new_key(root, shown)
+        .map_err(|why| format!("purlis could not keep your never-dispatch list: {why}"))?;
+    Ok(state_of(root))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -278,26 +424,74 @@ mod tests {
     #[test]
     fn the_window_is_told_the_template_and_each_override_with_how_it_runs() {
         let dir =
-            plane("[policy]\ntemplate = \"team\"\nguards.release = \"log\"\nnetwork = \"off\"\n");
+            plane("[policy]\ntemplate = \"team\"\nguards.release = \"log\"\nskills = \"off\"\n");
         let state = state_of(dir.path());
         assert_eq!(state.template, "team");
         assert!(!state.template_default);
         assert_eq!(
             state.overrides,
             [
-                // Not switchable yet: the file says off, and it runs enforced.
-                PolicyOverride {
-                    family: "network".into(),
-                    said: "off".into(),
-                    runs: "enforce".into(),
-                },
                 PolicyOverride {
                     family: "guards.release".into(),
                     said: "log".into(),
                     runs: "log".into(),
                 },
+                // Not switchable yet: the file says off, and it runs enforced.
+                PolicyOverride {
+                    family: "skills".into(),
+                    said: "off".into(),
+                    runs: "enforce".into(),
+                },
             ]
         );
+    }
+
+    #[test]
+    fn the_new_key_press_is_the_windows_alone_as_accept_is() {
+        // #7714: making a new seal key replaces what every plane's seal rests on, so no chat
+        // reaches it through a link, as no chat reaches Accept.
+        for press in [
+            "accept_project_policy",
+            "accept_project_policy_with_new_key",
+            "keep_project_nevers",
+        ] {
+            assert!(purlis_session_protocol::ui::window_only(press), "{press}");
+            assert!(
+                !purlis_session_protocol::ui::served_on_a_link(press),
+                "{press}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_new_key_press_reads_the_project_it_names_and_no_other() {
+        // #7714, ruling 6: the press is bound to its own project. What another project shows is
+        // never accepted on this one.
+        let (one, other) = (
+            plane("[policy]\ntemplate = \"open\"\n"),
+            plane("[policy]\ntemplate = \"team\"\n"),
+        );
+        let planes = Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None);
+        let (first, second) = (planes.open(one.path()), planes.open(other.path()));
+        let root = planes.held(&first).expect("held").root().to_path_buf();
+        let shown_there = state_of(planes.held(&second).expect("held").root()).digest;
+        let why = new_key_pressed(&root, &shown_there).expect_err("nothing accepted");
+        assert!(why.contains("changed since it was shown"), "{why}");
+        // What this project shows passes, and is then refused only because a test is not the
+        // app, which alone seals.
+        let why = new_key_pressed(&root, &state_of(&root).digest).expect_err("not the app");
+        assert!(!why.contains("changed since it was shown"), "{why}");
+    }
+
+    #[test]
+    fn keeping_the_nevers_where_no_new_key_listed_them_keeps_nothing() {
+        // H2 of #7734's round 3: the press seals only a list purlis vouches a new key left
+        // unread, so a project no new key listed shows nothing to keep and keeps nothing.
+        let dir = plane("[policy]\ntemplate = \"open\"\n");
+        assert_eq!(state_of(dir.path()).nevers_to_keep, None);
+        let none = purlis_core::dispatchnever::digest_of_pairs(&[]);
+        let why = nevers_kept(dir.path(), &none).expect_err("nothing kept");
+        assert!(why.contains("kept nothing"), "{why}");
     }
 
     #[test]

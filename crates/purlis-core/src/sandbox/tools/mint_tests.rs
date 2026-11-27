@@ -253,3 +253,53 @@ fn a_key_kept_under_the_reserved_prefix_is_refused_with_no_line_and_no_project_f
         mint::Raw::Taken
     );
 }
+
+/// #1349 (and #7133, blocker B2): a minting tool's shim, run as a chat runs it with no app to
+/// mint from and no token handed on, says what to do and fails. It never runs the program, which
+/// would read the person's own login, so a stand-in program that records its run is never run.
+#[cfg(unix)]
+#[test]
+fn a_minting_tools_shim_with_no_token_says_the_way_out_and_never_runs_the_program() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    let ran = tmp.path().join("ran");
+    let program = tmp.path().join("gh");
+    std::fs::write(&program, format!("#!/bin/sh\ntouch '{}'\n", ran.display())).unwrap();
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let script = tmp.path().join("shim");
+    let text = super::shim(
+        std::path::Path::new("/purlis"),
+        "dev",
+        &Ready {
+            tool: gh(),
+            program: program.clone(),
+        },
+    );
+    std::fs::write(&script, text).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let run = |token: Option<&str>| {
+        let mut command = std::process::Command::new(&script);
+        command
+            .args(["pr", "list"])
+            .env_remove("PURLIS_HOOK_SOCKET")
+            .env_remove("CHARTER_HOOK_SOCKET")
+            .env_remove("GH_TOKEN");
+        if let Some(token) = token {
+            command.env("GH_TOKEN", token);
+        }
+        crate::forklock::output(&mut command).unwrap()
+    };
+    let out = run(None);
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert!(said.contains("Agent identity"), "{said}");
+    assert!(said.contains("credentials class is off"), "{said}");
+    assert!(!ran.exists(), "the program ran with no token");
+    // Inside a `secret exec` run, which handed the minted token on, it runs.
+    let handed = run(Some("minted"));
+    assert!(handed.status.success(), "{handed:?}");
+    assert!(
+        ran.exists(),
+        "the program did not run with the token handed on"
+    );
+}

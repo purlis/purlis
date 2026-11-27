@@ -199,6 +199,42 @@ pub fn commit(held: &Held, ask: &CommitAsk) -> Answer {
     answer
 }
 
+/// What a chat is told when the app is asked to push or update for it and it has no forge route.
+#[cfg(feature = "forge-wiring")]
+const NO_ROUTE: &str = "This chat has no forge route, so the app does not push or update for it \
+    with a login of yours. Sign in under Settings › You › Accounts, trust this clone, and start \
+    the chat again. Nothing was sent.";
+
+/// **The route the app's git takes for a chat's `work`** (one login, ADR 0128): `Some` where the
+/// work reaches the network and the chat has a route, which it goes through; `None` for work that
+/// reaches none, and for the project's own update and save where the chat has no route (they keep
+/// the window's sign-in, a purlis account, never a CLI login); and the sentence where a push or an
+/// update of a branch folder or clone has no route, which is never answered with a login of the
+/// person's. `found` is what [`crate::forgeroute::git_route`] said of the chat.
+#[cfg(feature = "forge-wiring")]
+fn route_for(
+    work: &GitWork,
+    found: Option<std::io::Result<purlis_core::worktree::git::NetworkRoute>>,
+) -> Result<Option<purlis_core::worktree::git::NetworkRoute>, String> {
+    let on_the_network = matches!(
+        work,
+        GitWork::WorktreeUpdate { .. } | GitWork::WorktreePush { .. } | GitWork::CloneUpdate { .. }
+    );
+    let root_network = matches!(work, GitWork::RootUpdate {} | GitWork::RootSave { .. });
+    if !on_the_network && !root_network {
+        return Ok(None);
+    }
+    match found {
+        Some(Ok(route)) => Ok(Some(route)),
+        Some(Err(why)) => Err(format!(
+            "purlis could not set up this chat's forge route for its git ({why}), so nothing was \
+             sent."
+        )),
+        None if on_the_network => Err(NO_ROUTE.to_owned()),
+        None => Ok(None),
+    }
+}
+
 /// Runs `ask` for its chat, or says why not.
 pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
     if let Some(no) = on_a_runner(held, ask.chat) {
@@ -236,6 +272,19 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         }
     };
     let isolation = signing_isolation(held);
+    // One login (ADR 0128): the git the app runs for a chat goes through that chat's own route, so
+    // its proxy and policy, the push gate and the held CI-file check decide what is sent and with
+    // whose token, and the person's gh or glab login is never used for it. A chat with no route
+    // gets no push or update from the app: that is said, never a silent fall back to the login.
+    #[cfg(feature = "forge-wiring")]
+    let (isolation, through_route) =
+        match route_for(&ask.work, crate::forgeroute::git_route(ask.chat)) {
+            Ok(Some(route)) => (isolation.through_route(route), true),
+            Ok(None) => (isolation, false),
+            Err(why) => return Answer::No { why },
+        };
+    #[cfg(not(feature = "forge-wiring"))]
+    let through_route = false;
     let run = || {
         purlis_core::gitbroker::answer_telling(
             held.root(),
@@ -250,7 +299,7 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
     // The root's update is the window's own Update (#3831), fetched as the window fetches it:
     // its sign-in, offered to the remote recorded for the project alone. A chat's save of the
     // project pushes as the window's automatic save does, held to that same remote.
-    let answered = if root_update || root_save {
+    let answered = if (root_update || root_save) && !through_route {
         crate::forgeaccounts::window_git(run)
     } else {
         run()
@@ -319,3 +368,69 @@ fn told(held: &Held, chat: u32, answered: purlis_core::gitbroker::Answered) -> A
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, feature = "forge-wiring"))]
+mod route_tests {
+    use super::*;
+    use purlis_core::worktree::git::NetworkRoute;
+
+    fn push() -> GitWork {
+        GitWork::WorktreePush {
+            repo: "app".into(),
+            piece: "p".into(),
+            lease: false,
+        }
+    }
+
+    fn route() -> std::io::Result<NetworkRoute> {
+        Ok(NetworkRoute::default())
+    }
+
+    #[test]
+    fn a_push_or_an_update_of_a_chat_with_a_route_goes_through_it() {
+        assert!(matches!(route_for(&push(), Some(route())), Ok(Some(_))));
+        assert!(matches!(
+            route_for(&GitWork::RootUpdate {}, Some(route())),
+            Ok(Some(_))
+        ));
+    }
+
+    #[test]
+    fn a_push_of_a_chat_with_no_route_is_refused_and_never_falls_back_to_a_login() {
+        let said = route_for(&push(), None).unwrap_err();
+        assert!(
+            said.contains("no forge route") && said.contains("Nothing was sent"),
+            "{said}"
+        );
+        let update = GitWork::CloneUpdate {
+            repo: "app".into(),
+            step: purlis_core::hookwire::UpdateStep::Start { base: None },
+        };
+        assert!(route_for(&update, None).is_err());
+    }
+
+    #[test]
+    fn the_projects_own_update_and_save_keep_the_windows_sign_in_where_there_is_no_route() {
+        assert_eq!(route_for(&GitWork::RootUpdate {}, None), Ok(None));
+    }
+
+    #[test]
+    fn a_route_that_cannot_be_made_refuses_and_says_so() {
+        let broken = Err(std::io::Error::other("bad path"));
+        let said = route_for(&push(), Some(broken)).unwrap_err();
+        assert!(
+            said.contains("bad path") && said.contains("nothing was sent"),
+            "{said}"
+        );
+    }
+
+    #[test]
+    fn work_that_reaches_no_network_is_left_as_it_is() {
+        let remove = GitWork::WorktreeRemove {
+            repo: "app".into(),
+            piece: "p".into(),
+            delete_branch: false,
+        };
+        assert_eq!(route_for(&remove, None), Ok(None));
+    }
+}

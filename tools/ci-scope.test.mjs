@@ -24,9 +24,15 @@ import {
   WINDOW_SOURCE_GUARDS,
   ciToolsOf,
   gatesOf,
+  pullRequestPathsOf,
+  workflowNeeded,
   namedIn,
   scopesOf,
   scopesOfPath,
+  shipsOf,
+  PARTIAL_DEV_BUILDS,
+  askShips,
+  storiesBrowsers,
   webParts,
 } from "./ci-scope.mjs";
 
@@ -507,6 +513,8 @@ const WALK_ONLY_CODE = {
   "app/src/theme/themeIds.test.ts": "app/src and app/e2e (both run web)",
   "crates/purlis-cli/tests/it/every_command_charter_names_is_one_it_has.rs":
     "crates/*/src, app/src-tauri/src and the plugin's skills",
+  "crates/purlis-core/tests/it/a_held_ci_push_is_read_in_a_quarantine_never_from_the_chat_clone.rs":
+    "crates/ and app/src-tauri/ Rust sources",
   "crates/purlis-core/src/doctor/shadowed/tests.rs": "a plane's docs/; purlis's own is exempt",
   "crates/purlis-core/tests/it/every_named_limit_on_a_runners_path_is_sorted.rs":
     "crates/ and app/src-tauri/ Rust",
@@ -962,6 +970,12 @@ test("a job that only asks whether it is needed is not started on a pull request
   yes("crates/purlis-core/src/sandbox/sshproxy.rs", "confinement");
   yes("crates/purlis-cli/tests/it/a_chats_ssh_route_carries_from_inside_its_sandbox.rs", "confinement");
   yes("crates/host/src/lib.rs", "parity");
+  // The fault suite and what it is built from (#7188).
+  yes("crates/purlis-core/tests/it/a_live_remote_chat_survives_the_faults_that_define_trust.rs", "parity");
+  yes("crates/purlis-core/tests/support/outage.rs", "parity");
+  yes("crates/purlis-core/tests/support/remote_rig.rs", "parity");
+  yes("crates/purlis-core/tests/support/real_infra.rs", "parity");
+  yes("tests/remote-faults/faults.sh", "parity");
   yes("crates/session-protocol/src/lib.rs", "bench");
   yes("Cargo.lock", "bench");
   for (const event of ["merge_group", "push", "schedule"]) {
@@ -976,7 +990,7 @@ test("a job that only asks whether it is needed is not started on a pull request
 
 // By the operator's choice of 2026-11-01: what the bars measure and the suite itself. A regression
 // from anywhere else shows on main's push, which always runs it.
-test("the outcome bars run on a pull request that touches what they measure, and on main; Linux's in the merge queue too", () => {
+test("the macOS outcome bars run on main and the nightly alone, in a workflow of their own; Linux's run on a pull request its gate lets in and in the merge queue", () => {
   const on = (path) => gatesOf({ event: "pull_request", paths: [path] })["outcome-bars"];
   for (const path of [
     "app/src/SkillStudioTab.tsx",
@@ -1008,15 +1022,19 @@ test("the outcome bars run on a pull request that touches what they measure, and
     assert.equal(on(path), false, path);
 
   const ci = read(".github/workflows/ci.yml");
-  const job = ci.slice(ci.indexOf("\n  outcome-bars:\n"), ci.indexOf("\n  outcome-bars-linux:\n"));
-  assert.ok(
-    job.includes(
-      "github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')",
-    ),
-    "main's push and a pull request its gate lets in, and not the merge group",
-  );
+  // The steward's ruling of 2026-11-23 (#7335): Macs are the queue's scarce resource, so the job
+  // is not in the merge group, and a pull request's run is a subset of the queue's, so it is not
+  // on a pull request either. Since 2026-11-26 it is a workflow of its own (`outcome-bars.yml`),
+  // which triggers on those two events alone.
+  const bars = read(".github/workflows/outcome-bars.yml");
+  const triggers = bars.slice(bars.indexOf("\non:\n"), bars.indexOf("\nconcurrency:\n"));
+  assert.match(triggers, /\n  push:\n    branches: \[main\]\n/, "main's push");
+  assert.match(triggers, /\n  schedule:\n/, "the nightly");
+  assert.doesNotMatch(triggers, /merge_group|pull_request|workflow_run/, "neither a pull request nor the merge group");
+  const job = bars.slice(bars.indexOf("\n  outcome-bars:\n"));
   assert.match(job, /\n        os: \[macos-latest\]\n/);
   assert.match(job, /\n    continue-on-error: true\n/);
+  assert.doesNotMatch(ci, /\n  outcome-bars:\n/);
   // The Linux leg is required since #5277, so it runs wherever a required check is read: every
   // run but a pull request's, and a pull request its gate lets in.
   const linux = ci.slice(ci.indexOf("\n  outcome-bars-linux:\n"), ci.indexOf("\n  outcome-bars-linux-checks:\n"));
@@ -1123,8 +1141,10 @@ test("a draft pull request runs no macOS job but app builds, and marking it read
   const nightly = (n) =>
     /\n    if: (github\.event_name == 'schedule'|\$\{\{ github\.event_name == 'schedule' \}\})\n/.test(body(n));
   // `scenario` runs on no pull request at all, the next test's claim.
+  // The macOS outcome bars run in `outcome-bars.yml`, on main's push and the nightly alone (the
+  // steward's rulings of 2026-11-23 and 2026-11-26), so a pull request never reaches them.
   const gated = onMac.filter((n) => n !== "app" && n !== "scenario" && !nightly(n));
-  assert.ok(gated.includes("outcome-bars") && onMac.includes("scenario"), gated.join(", "));
+  assert.ok(!onMac.includes("outcome-bars") && onMac.includes("scenario") && gated.length > 0, gated.join(", "));
   // The draft clause must bind the whole condition: no `||` outside parentheses before it.
   const topLevelOr = (expr) => {
     let depth = 0;
@@ -1159,7 +1179,7 @@ test("the macOS scenarios run in the merge queue and on main, never on a pull re
     /\n          if \[ "\$SCOPE" = false \] \|\| \[ "\$EVENT" = pull_request \]; then want=skipped; else want=success; fi\n/,
   );
   // Linux runs the same specs on the pull request.
-  assert.doesNotMatch(job("scenario-linux", "outcome-bars"), /event_name != 'pull_request'/);
+  assert.doesNotMatch(job("scenario-linux", "outcome-bars-linux"), /event_name != 'pull_request'/);
 });
 
 // A gate says what the job's own step decides: the step stays, for the merge group and the push,
@@ -1207,4 +1227,447 @@ test("a change that cannot be read runs every scope, part and gated job", () => 
   for (const key of [...SCOPES, ...Object.keys(GATES)]) assert.equal(said[key], "true", key);
   assert.equal(said["web-parts"], "[1,2,3,4]");
   rmSync(dir, { recursive: true });
+});
+
+// ---- `ships`: whether a dev build has anything to build (#7383, R4) ----
+
+const ships = (paths, kind = "dev") => shipsOf({ kind, paths }).ships;
+
+test("a dev build is skipped when everything since the published commit is docs, research, other Markdown, tests or another workflow", () => {
+  assert.equal(ships(["docs/spec.md", "docs/adr/0120-x.md", "research/notes.md"]), false);
+  assert.equal(ships(["README.md", "changes/a-fix.md"]), false);
+  assert.equal(
+    ships([
+      "crates/purlis-core/tests/it/a_thing_works.rs",
+      "app/src/Thing.test.tsx",
+      "app/e2e/specs/opening.e2e.ts",
+      "tools/ci-scope.test.mjs",
+    ]),
+    false,
+  );
+  assert.equal(ships([".github/workflows/ci.yml", ".github/workflows/docs.yml"]), false);
+});
+
+test("a dev build is made when the change reaches a crate, a lockfile, the toolchain, release.yml, CHANGELOG.md or a path nothing knows", () => {
+  for (const path of [
+    "crates/purlis-core/src/lib.rs",
+    "app/src/App.tsx",
+    "Cargo.lock",
+    "app/package-lock.json",
+    "rust-toolchain.toml",
+    ".github/workflows/release.yml",
+    "CHANGELOG.md",
+    "something/new/nobody-heard-of.bin",
+    ".github/actions/rust-toolchain/action.yml",
+    // Called by release.yml.
+    ".github/workflows/runner-image.yml",
+    // Markdown compiled or bundled into a build.
+    "crates/purlis-core/docs/secrets.md",
+    "crates/purlis-core/templates/rust/personas/rust-engineer/persona.md",
+    "app/src-tauri/plugin/skills/x/SKILL.md",
+  ]) {
+    assert.equal(ships([path]), true, path);
+    assert.equal(ships(["docs/spec.md", path]), true, `${path} beside a doc`);
+  }
+});
+
+test("a stable tag, a hand-started build and an unreadable change always build", () => {
+  assert.equal(ships(["docs/spec.md"], "stable"), true);
+  assert.equal(ships(["docs/spec.md"], "dispatch"), true);
+  assert.equal(ships(["docs/spec.md"], "schedule"), true);
+  assert.equal(ships(null), true);
+  assert.equal(ships([]), true);
+});
+
+const compare = (files, status = "ahead") => JSON.stringify({ status, files: files.map((filename) => ({ filename })) });
+const PUBLISHED = "a".repeat(40);
+const PUSHED = "c".repeat(40);
+const forge = ({ files, status, release = "ok", calls = [] }) => (args) => {
+  calls.push(args.at(-1));
+  const url = args.at(-1);
+  if (url.endsWith("releases/tags/dev")) {
+    if (release === "404") throw new Error("gh api: HTTP 404");
+    return JSON.stringify({ assets: [{ name: "dev.json", id: 7 }] });
+  }
+  if (url.endsWith("releases/assets/7")) {
+    return JSON.stringify({ version: "0.5.1-dev.9", notes: `a dev build of ${PUBLISHED}` });
+  }
+  const page = Number(/[?&]page=(\d+)/.exec(url)?.[1] ?? 1);
+  return compare(files.slice((page - 1) * 100, page * 100), status);
+};
+
+test("a displaced crate commit followed by a docs commit is built: the push is measured from what dev.json names, not from its parent", () => {
+  // B (a crate change) was displaced and never built; C (docs) is pushed on top of it.
+  // C's parent is B, and C alone is docs. Since A, which dev.json names, it is B and C.
+  const calls = [];
+  const answer = askShips({
+    repo: "purlis/purlis",
+    kind: "dev",
+    sha: PUSHED,
+    api: forge({ files: ["crates/purlis-core/src/lib.rs", "docs/spec.md"], calls }),
+  });
+  assert.equal(answer.ships, true);
+  assert.ok(calls.some((u) => u.includes(`compare/${PUBLISHED}...${PUSHED}`)), calls.join("\n"));
+});
+
+test("a docs-only change since dev.json's commit is not built", () => {
+  const answer = askShips({
+    repo: "purlis/purlis",
+    kind: "dev",
+    sha: PUSHED,
+    api: forge({ files: ["docs/spec.md", "research/x.md"] }),
+  });
+  assert.equal(answer.ships, false);
+  assert.match(answer.why, /docs\/spec\.md/);
+});
+
+test("when dev.json cannot be read, or the compare says nothing of order, a dev build ships", () => {
+  const ask = (api) => askShips({ repo: "purlis/purlis", kind: "dev", sha: PUSHED, api });
+  assert.equal(ask(forge({ files: ["docs/a.md"], release: "404" })).ships, true);
+  assert.equal(ask(() => { throw new Error("network down"); }).ships, true);
+  assert.equal(ask(forge({ files: ["docs/a.md"], status: "diverged" })).ships, true);
+  assert.equal(ask(forge({ files: ["docs/a.md"], status: "behind" })).ships, true);
+  assert.equal(ask(forge({ files: ["docs/a.md"], status: "identical" })).ships, true);
+});
+
+test("a compare too long to list in full ships, and a rename counts both of its paths", () => {
+  const many = Array.from({ length: 300 }, (_, i) => `docs/page-${i}.md`);
+  assert.equal(
+    askShips({ repo: "purlis/purlis", kind: "dev", sha: PUSHED, api: forge({ files: many }) }).ships,
+    true,
+  );
+  const api = () =>
+    JSON.stringify({
+      status: "ahead",
+      files: [{ filename: "docs/moved.md", previous_filename: "crates/purlis-core/src/old.rs" }],
+    });
+  const answered = askShips({
+    repo: "purlis/purlis",
+    kind: "dev",
+    sha: PUSHED,
+    api: (args) => (args.at(-1).includes("compare") ? api() : forge({ files: [] })(args)),
+  });
+  assert.equal(answered.ships, true);
+});
+
+test("a stable or hand-started build does not even ask the forge", () => {
+  const api = () => {
+    throw new Error("asked");
+  };
+  for (const kind of ["stable", "dispatch", "schedule"]) {
+    assert.equal(askShips({ repo: "r/r", kind, sha: PUSHED, api }).ships, true);
+  }
+});
+
+// The ready gate (#7335, spec #7324): a draft pull request runs the fast guards and the web
+// tests, and marking it ready runs the heavy jobs the change's scopes name.
+const HEAVY = ["rust", "app", "scenario", "stories"];
+const draftOf = (paths, event = "pull_request") =>
+  [...scopesOf({ event, paths, ciToolNames: CI_TOOLS, draft: true }).scopes].sort();
+const readyOf = (paths) =>
+  [...scopesOf({ event: "pull_request", paths, ciToolNames: CI_TOOLS, draft: false }).scopes].sort();
+
+test("a draft turns every heavy scope off and keeps the web checks, the tools' tests and the docs", () => {
+  const fast = ["docs", "tools", "web"];
+  assert.deepEqual(draftOf(["app/src/App.tsx"]), ["tools", "web"]);
+  assert.deepEqual(draftOf(["crates/purlis-core/src/lib.rs"]), ["docs", "tools"]);
+  assert.deepEqual(draftOf(["docs/a.md"]), ["docs", "tools"]);
+  for (const path of ["app/src/App.tsx", "crates/purlis-core/src/lib.rs", "Cargo.lock", "app/package.json"]) {
+    for (const scope of HEAVY) assert.ok(!draftOf([path]).includes(scope), `${path}: ${scope}`);
+  }
+  assert.deepEqual(draftOf(["Cargo.lock"]), fast);
+});
+
+test("a draft that changes the workflows or CI config still runs no heavy scope: marking it ready runs them all", () => {
+  for (const path of [".github/workflows/ci.yml", ".github/actions/change-scope/action.yml", "ci/x.sh"]) {
+    for (const scope of HEAVY) assert.ok(!draftOf([path]).includes(scope), `${path}: ${scope}`);
+    assert.deepEqual(readyOf([path]), all, `${path} on a ready PR`);
+  }
+});
+
+test("a ready web-only change runs the web side and the stories, not Rust", () => {
+  assert.deepEqual(readyOf(["app/src/App.tsx"]), ["app", "scenario", "stories", "tools", "web"]);
+  assert.ok(!readyOf(["app/src/App.tsx"]).includes("rust"));
+  // Not a draft by default: a caller that names no draft state gets the ready PR's scopes.
+  assert.deepEqual(of(["app/src/App.tsx"]), readyOf(["app/src/App.tsx"]));
+});
+
+test("a merge group, a push and a nightly run every scope whatever the draft state says", () => {
+  for (const event of ["merge_group", "push", "schedule", "workflow_dispatch"]) {
+    assert.deepEqual(draftOf(["docs/a.md"], event), all, event);
+  }
+});
+
+test("a draft starts none of the gated jobs, and a ready pull request starts those its paths name", () => {
+  const paths = ["crates/purlis-core/src/sandbox/seatbelt.rs"];
+  const draft = gatesOf({ event: "pull_request", paths, draft: true });
+  for (const gate of Object.keys(GATES)) assert.equal(draft[gate], false, `${gate} on a draft`);
+  assert.equal(gatesOf({ event: "pull_request", paths, draft: false }).confinement, true);
+  assert.equal(gatesOf({ event: "pull_request", paths }).confinement, true);
+  for (const on of Object.values(gatesOf({ event: "merge_group", paths: [], draft: true }))) {
+    assert.equal(on, true);
+  }
+});
+
+test("stories run WebKit alone on a pull request and both browsers on every other run", () => {
+  assert.deepEqual(storiesBrowsers({ event: "pull_request" }), ["webkit"]);
+  for (const event of ["merge_group", "push", "schedule", "workflow_dispatch"]) {
+    assert.deepEqual(storiesBrowsers({ event }), ["chromium", "webkit"], event);
+  }
+});
+
+test("a pull request that asks for baselines runs Chromium's stories as well; a plain ready one stays WebKit-only", () => {
+  // The queue draws no baselines, so a Chromium-only picture change needs the PR's own run.
+  assert.deepEqual(storiesBrowsers({ event: "pull_request", labels: "update-baselines" }), ["chromium", "webkit"]);
+  assert.deepEqual(storiesBrowsers({ event: "pull_request", labels: "bug,update-baselines,fixes-main" }), [
+    "chromium",
+    "webkit",
+  ]);
+  assert.deepEqual(storiesBrowsers({ event: "pull_request", labels: "" }), ["webkit"]);
+  assert.deepEqual(storiesBrowsers({ event: "pull_request" }), ["webkit"]);
+  // A label that only contains the name does not ask.
+  assert.deepEqual(storiesBrowsers({ event: "pull_request", labels: "update-baselines-later,no-update-baselines" }), [
+    "webkit",
+  ]);
+});
+
+test("the tool says the browsers from the labels it is handed, and the action and stories.yml pass and use them", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ci-scope-labels-"));
+  const browsers = (labels) => {
+    const out = join(dir, `out-${labels || "none"}`);
+    execFileSync("node", [join(ROOT, "tools/ci-scope.mjs"), "pull_request", "HEAD", "false", labels], {
+      cwd: ROOT,
+      env: { ...process.env, GITHUB_OUTPUT: out },
+      stdio: "pipe",
+    });
+    return readFileSync(out, "utf8").split("\n").find((l) => l.startsWith("stories-browsers="));
+  };
+  assert.equal(browsers(""), 'stories-browsers=["webkit"]');
+  assert.equal(browsers("bug"), 'stories-browsers=["webkit"]');
+  assert.equal(browsers("bug,update-baselines"), 'stories-browsers=["chromium","webkit"]');
+  rmSync(dir, { recursive: true });
+  const action = readFileSync(join(ROOT, ".github/actions/change-scope/action.yml"), "utf8");
+  assert.match(action, /LABELS: \$\{\{ join\(github\.event\.pull_request\.labels\.\*\.name, ','\) \}\}/);
+  assert.match(action, /ci-scope\.mjs "\$EVENT" "\$BASE" "\$DRAFT" "\$LABELS"/);
+  // The label starts a stories run of its own, which `stories-baselines.yml` then waits for; any
+  // other label starts one that does nothing and cancels nothing.
+  const stories = readFileSync(join(ROOT, ".github/workflows/stories.yml"), "utf8");
+  assert.match(stories, /types: \[opened, synchronize, reopened, ready_for_review, labeled\]/);
+  assert.match(stories, /github\.event\.label\.name != 'update-baselines' && github\.run_id/);
+});
+
+test("the tool says a draft's scopes on the run, from the draft state it is handed", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ci-scope-draft-"));
+  const run = (event, draft) => {
+    const out = join(dir, `${event}-${draft}`);
+    execFileSync("node", [join(ROOT, "tools/ci-scope.mjs"), event, "HEAD", draft], {
+      cwd: ROOT,
+      env: { ...process.env, GITHUB_OUTPUT: out },
+      stdio: "pipe",
+    });
+    return Object.fromEntries(
+      readFileSync(out, "utf8").trim().split("\n").map((l) => l.split("=")),
+    );
+  };
+  // HEAD against HEAD: no paths, which runs everything unless the draft turns the heavy off.
+  const draft = run("pull_request", "true");
+  for (const scope of HEAVY) assert.equal(draft[scope], "false", `${scope} on a draft`);
+  for (const gate of Object.keys(GATES)) assert.equal(draft[gate], "false", gate);
+  assert.equal(draft.web, "true");
+  assert.equal(draft["stories-browsers"], '["webkit"]');
+  const ready = run("pull_request", "false");
+  for (const scope of SCOPES) assert.equal(ready[scope], "true", `${scope} when ready`);
+  assert.equal(ready["stories-browsers"], '["webkit"]');
+  const queue = run("merge_group", "true");
+  for (const scope of SCOPES) assert.equal(queue[scope], "true", `${scope} in the queue`);
+  assert.equal(queue["stories-browsers"], '["chromium","webkit"]');
+  rmSync(dir, { recursive: true });
+});
+
+test("a job that reads the scopes gets the draft state: the change-scope action passes it on", () => {
+  const action = readFileSync(join(ROOT, ".github/actions/change-scope/action.yml"), "utf8");
+  assert.match(action, /DRAFT: \$\{\{ github\.event\.pull_request\.draft \}\}/);
+  assert.match(action, /ci-scope\.mjs "\$EVENT" "\$BASE" "\$DRAFT"/);
+  assert.match(action, /stories-browsers:/);
+});
+
+// **A path-filtered workflow's queue run is scoped by the filter it already has** (#7420): a merge
+// group's event carries no `paths`, so `workflow-scope` reads the workflow's own
+// `pull_request.paths` and the paths the group changes, and the workflow's jobs run when they meet.
+const FILTERED = [
+  "name: w",
+  "on:",
+  "  pull_request:",
+  "    paths:",
+  "      # a comment",
+  "      - crates/a/**",
+  "      - 'tools/b*'",
+  '      - "docs/c.md"',
+  "      - '!crates/a/skip/**'",
+  "  merge_group:",
+  "    types: [checks_requested]",
+  "  schedule:",
+  '    - cron: "1 2 * * *"',
+  "jobs:",
+  "  j:",
+  "    runs-on: ubuntu-24.04",
+  "",
+].join("\n");
+
+test("a workflow's path filter is read from its pull_request block, comments and quotes aside", () => {
+  assert.deepEqual(pullRequestPathsOf(FILTERED), ["crates/a/**", "tools/b*", "docs/c.md", "!crates/a/skip/**"]);
+  assert.equal(pullRequestPathsOf("name: w\non:\n  pull_request:\n    branches: [main]\n  merge_group:\njobs:\n"), null);
+  assert.equal(pullRequestPathsOf("name: w\non: [push]\njobs:\n"), null);
+});
+
+test("a change meets a path filter as GitHub's does: a later line decides, and `!` takes a path out", () => {
+  const filter = pullRequestPathsOf(FILTERED);
+  assert.equal(workflowNeeded(filter, ["crates/a/src/x.rs"]), true);
+  assert.equal(workflowNeeded(filter, ["tools/bee.mjs"]), true);
+  assert.equal(workflowNeeded(filter, ["docs/c.md"]), true);
+  assert.equal(workflowNeeded(filter, ["crates/a/skip/y.rs"]), false);
+  assert.equal(workflowNeeded(filter, ["crates/b/src/x.rs", "README.md"]), false);
+  assert.equal(workflowNeeded(filter, ["README.md", "crates/a/skip/y.rs", "crates/a/ok.rs"]), true);
+});
+
+test("a dotfile is in a filter's `**` and `*`, as on GitHub", () => {
+  assert.equal(workflowNeeded(["operator/**"], ["operator/.cargo/config.toml"]), true);
+  assert.equal(workflowNeeded(["runner-image/**"], ["runner-image/.dockerignore"]), true);
+  assert.equal(workflowNeeded([".github/workflows/w.yml"], [".github/workflows/w.yml"]), true);
+  assert.equal(workflowNeeded(["a/**", "!a/.x/**"], ["a/.x/f"]), false);
+});
+
+test("a change that cannot be read, and a workflow with no filter, are needed: a fault runs more", () => {
+  assert.equal(workflowNeeded(pullRequestPathsOf(FILTERED), []), true);
+  assert.equal(workflowNeeded(null, ["README.md"]), true);
+});
+
+test("`workflow <file> <base>` says whether the change since base meets the workflow's filter", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ci-scope-workflow-"));
+  try {
+    const git = (...args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+    git("init", "-q", "-b", "main");
+    git("config", "user.email", "t@example.com");
+    git("config", "user.name", "t");
+    git("config", "commit.gpgsign", "false");
+    execFileSync("sh", ["-c", `mkdir -p ${dir}/crates/a ${dir}/other && echo 1 > ${dir}/other/f && echo 1 > ${dir}/crates/a/f`]);
+    execFileSync("sh", ["-c", `cat > ${dir}/w.yml`], { input: FILTERED });
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    const base = git("rev-parse", "HEAD").trim();
+    const run = () =>
+      execFileSync("node", [join(ROOT, "tools/ci-scope.mjs"), "workflow", join(dir, "w.yml"), base], {
+        cwd: dir,
+        encoding: "utf8",
+        env: { ...process.env, GITHUB_OUTPUT: "" },
+      });
+    execFileSync("sh", ["-c", `echo 2 > ${dir}/other/f`]);
+    git("commit", "-qam", "unrelated");
+    assert.match(run(), /^run=false$/m);
+    execFileSync("sh", ["-c", `echo 2 > ${dir}/crates/a/f`]);
+    git("commit", "-qam", "related");
+    assert.match(run(), /^run=true$/m);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---- `ships` per platform: no macOS dev build when only Linux-only paths changed (#7324) ----
+
+const platforms = (paths, partial = true) => {
+  const { macos, linux } = shipsOf({ kind: "dev", paths, partial });
+  return { macos, linux };
+};
+
+test("a change to Linux-only paths builds Linux and not macOS", () => {
+  for (const path of [
+    "runner-image/Dockerfile",
+    "runner-image/fetch-forge-programs.sh",
+    ".github/workflows/runner-image.yml",
+    "app/src-tauri/packaging/deb/postinst",
+    "crates/linux-sandbox/src/linux/filter.rs",
+    "crates/linux-sandbox/src/linux/notify.rs",
+    "crates/linux-sandbox/src/loopback.rs",
+  ]) {
+    assert.deepEqual(platforms([path]), { macos: false, linux: true }, path);
+    // Docs and tests beside it change nothing.
+    assert.deepEqual(platforms(["docs/spec.md", path]), { macos: false, linux: true }, path);
+  }
+  assert.deepEqual(
+    platforms(["runner-image/Dockerfile", "app/src-tauri/packaging/deb/postrm"]),
+    { macos: false, linux: true },
+  );
+});
+
+test("one path macOS compiles or bundles builds both platforms", () => {
+  for (const path of [
+    // The sandbox crate's cross-platform modules are in every build's graph (purlis-core
+    // depends on it unconditionally), so only its `linux/` and `loopback` files are Linux-only.
+    "crates/linux-sandbox/src/lib.rs",
+    "crates/linux-sandbox/src/profile.rs",
+    "crates/linux-sandbox/Cargo.toml",
+    "crates/purlis-core/src/lib.rs",
+    "app/src/App.tsx",
+    "Cargo.lock",
+    ".github/workflows/release.yml",
+    "CHANGELOG.md",
+    "something/new/nobody-heard-of.bin",
+  ]) {
+    assert.deepEqual(platforms([path]), { macos: true, linux: true }, path);
+    assert.deepEqual(
+      platforms(["runner-image/Dockerfile", path]),
+      { macos: true, linux: true },
+      `${path} beside a Linux-only path`,
+    );
+  }
+});
+
+test("a change that ships nothing builds neither platform", () => {
+  assert.deepEqual(platforms(["docs/spec.md", "changes/a.md"]), { macos: false, linux: false });
+  assert.equal(shipsOf({ kind: "dev", paths: ["docs/spec.md"], partial: true }).ships, false);
+});
+
+test("ships is true when either platform builds", () => {
+  const answer = shipsOf({ kind: "dev", paths: ["runner-image/Dockerfile"], partial: true });
+  assert.equal(answer.ships, true);
+  assert.match(answer.why, /Linux/);
+});
+
+test("a build that cannot be measured, or is not a dev build, builds both platforms", () => {
+  for (const [kind, paths] of [
+    ["dev", null],
+    ["dev", []],
+    ["stable", ["runner-image/Dockerfile"]],
+    ["dispatch", ["runner-image/Dockerfile"]],
+    ["schedule", ["runner-image/Dockerfile"]],
+  ]) {
+    const { macos, linux } = shipsOf({ kind, paths, partial: true });
+    assert.deepEqual({ macos, linux }, { macos: true, linux: true }, `${kind} ${paths}`);
+  }
+});
+
+test("partial dev builds are OFF: macOS builds whenever Linux does, until a partial publish is safe", () => {
+  // One manifest names one version for both platforms, so a dev.json for a Linux-only build
+  // would announce a version whose macOS asset is an older build's (docs/adr/0092/2026-11-24-…,
+  // the PR body of #7324). The decision is made and held back by `PARTIAL_DEV_BUILDS`.
+  assert.equal(PARTIAL_DEV_BUILDS, false);
+  const { macos, linux, ships } = shipsOf({ kind: "dev", paths: ["runner-image/Dockerfile"] });
+  assert.deepEqual({ macos, linux, ships }, { macos: true, linux: true, ships: true });
+  assert.equal(shipsOf({ kind: "dev", paths: ["docs/spec.md"] }).macos, false);
+});
+
+test("askShips carries the platforms through, measured from the published commit", () => {
+  const answer = askShips({
+    repo: "purlis/purlis",
+    kind: "dev",
+    sha: PUSHED,
+    partial: true,
+    api: forge({ files: ["runner-image/Dockerfile", "docs/spec.md"] }),
+  });
+  assert.deepEqual(
+    { ships: answer.ships, macos: answer.macos, linux: answer.linux },
+    { ships: true, macos: false, linux: true },
+  );
+  const unreadable = askShips({ repo: "purlis/purlis", kind: "dev", sha: PUSHED, partial: true, api: () => { throw new Error("down"); } });
+  assert.deepEqual({ macos: unreadable.macos, linux: unreadable.linux }, { macos: true, linux: true });
 });

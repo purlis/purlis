@@ -42,7 +42,10 @@ describe("Add a pool… (#4484)", () => {
     render(<AddDockerPoolHost plane="/p" onPoolSetup={onPoolSetup} />);
     act(() => startAddingAPool("cluster"));
     await waitFor(() => expect(onPoolSetup).toHaveBeenCalledWith("/p"));
-    expect(asked).toContainEqual({ cmd: "pool_setup_choose_cluster", args: { context: null } });
+    expect(asked).toContainEqual({
+      cmd: "pool_setup_choose_cluster",
+      args: { context: null, kubeconfig: null },
+    });
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 

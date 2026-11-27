@@ -1153,7 +1153,8 @@ pub struct ChatOnPool {
     pub workspace: String,
     /// The pool's runner as the chat started there, so a draining runner is held only by a chat
     /// that may be on it (#5393). None for a chat found by a restart or kept before this was
-    /// written: it may be on any of the pool's runners.
+    /// written: it may be on any of the pool's runners, and only a runner's own count of the
+    /// chats it runs says whether it is on that one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runner: Option<String>,
 }
@@ -1353,6 +1354,12 @@ pub struct Device {
 /// unreadable store refuses rather than minting a second identity over the first. Where the
 /// store refuses (not unix, ADR 0031) there is no device id, and this says so.
 pub fn device_id(config_root: &Path) -> io::Result<String> {
+    // An id that is there is read and nothing is written: `update` takes the lock and rewrites the
+    // whole store, and a chat's sandbox keeps the home folder from a command that does it just to
+    // read a name (#7178). Only the first ask, which mints, writes.
+    if let Some(id) = known_device_id(config_root) {
+        return Ok(id);
+    }
     let loaded = update(config_root, |store| {
         mint_into(store);
     })?;
@@ -2140,7 +2147,13 @@ impl Store {
         if let Some(entry) = self.recents.iter_mut().find(|e| e.plane == plane)
             && let Some(trust) = entry.trust.as_mut()
         {
-            trust.approved = when;
+            // Stamped only when the record's half moved: a vouch that found it as it was
+            // leaves the store byte for byte as it was, so it is not written (#7603).
+            if trust.contributed.starts != contributed.starts
+                || trust.contributed.profiles != contributed.profiles
+            {
+                trust.approved = when;
+            }
             trust.contributed.starts = contributed.starts;
             trust.contributed.profiles = contributed.profiles;
         }
@@ -2602,8 +2615,26 @@ pub fn update(config_root: &Path, change: impl FnOnce(&mut Store)) -> io::Result
     {
         keep_unread(config_root)?;
     }
+    let before = loaded.store.clone();
     change(&mut loaded.store);
-    write(config_root, &loaded.store)?;
+    // **A change that changed nothing writes nothing** (#7603): every write moves the config
+    // folder's watch, which the window hears, so on a busy machine a rewrite of the same bytes
+    // a second kept the window and its pickers busy for nothing.
+    if loaded.store != before || !on_disk_is(config_root, &loaded.store) {
+        write(config_root, &loaded.store)?;
+    } else {
+        // What a write does besides the bytes, still done: the folder at 0700 and the store at
+        // 0600, so a store left looser by another tool is tightened by the next update.
+        let dir = private_dir(config_root)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ =
+                std::fs::set_permissions(dir.join(FILE), std::fs::Permissions::from_mode(0o600));
+        }
+        #[cfg(not(unix))]
+        let _ = dir;
+    }
     Ok(loaded)
 }
 
@@ -2724,9 +2755,20 @@ impl Drop for Lock {
 pub fn write(config_root: &Path, store: &Store) -> io::Result<()> {
     supported()?;
     let dir = private_dir(config_root)?;
+    write_beside(config_root, &dir.join(FILE), rendered(store).as_bytes())
+}
+
+/// The store as [`write`] puts it on disk.
+fn rendered(store: &Store) -> String {
     let text = serde_json::to_string_pretty(&OnDisk::from(store))
         .expect("the store is plain data serde can always write");
-    write_beside(config_root, &dir.join(FILE), (text + "\n").as_bytes())
+    text + "\n"
+}
+
+/// Whether the file holds `store` exactly as [`write`] would put it: a store that is missing,
+/// unreadable or written another way is not, and is written.
+fn on_disk_is(config_root: &Path, store: &Store) -> bool {
+    matches!(read_text(config_root), Ok(Some(text)) if text == rendered(store))
 }
 
 /// Replace `target`, a file in charter's own directory, whole: 0600, through the walk from

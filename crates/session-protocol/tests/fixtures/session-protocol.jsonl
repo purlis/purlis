@@ -194,6 +194,8 @@
 {"call":{"id":179,"command":"kept_profiles"}}
 {"reply":{"re":179,"ok":{"profiles":{"names":["work","claude"]}}}}
 {"pushed":{"link_down":{"why":"the connector did not connect: pool first's runner first was removed outside purlis: Docker has no container 0f9ad8c1e2b3; its home volume went too, and with it the sign-ins kept there","gone":true}}}
+{"pushed":{"link_down":{"why":"the connector did not connect: pool first's machine refused the sign-in","refused":true}}}
+{"pushed":{"link_down":{"why":"the connector did not connect: pool first's machine presented another host key","host_key_changed":true}}}
 {"call":{"id":180,"command":"sign_in_redirect","target":"/auth/callback?code=recorded&state=recorded"}}
 {"reply":{"re":180,"ok":"done"}}
 {"call":{"id":181,"command":"start_program","project":"01J9PRJCT00000000000000000","kind":"harness","number":13,"launch":{"program":"codex","harness":"codex","prompt_key":"0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"}}}
@@ -274,3 +276,9 @@
 {"reply":{"re":217,"ok":{"file":{"found":"plain","path":"/home/purlis/projects/01J9PRJCT00000000000000000/workspaces/app/src/main.rs","from_workspace":"src/main.rs","home":{"workspace":"app","folder":"/home/purlis/projects/01J9PRJCT00000000000000000/workspaces/app"},"size":12,"version":"2049:131074:12:1731751200000000000"}}}}
 {"call":{"id":218,"command":"read_file","program":"01J9ZQ8000000000000000000D","path":"/etc/hosts","reach":"anywhere","at":0}}
 {"reply":{"re":218,"ok":{"file":{"found":"plain","path":"/etc/hosts","home":{"folder":"/home/purlis/projects/01J9PRJCT00000000000000000"},"size":10,"version":"2049:12:10:1731751200000000000","piece":{"at":0,"bytes":"MTI3LjAuMC4xCg=="}}}}}
+{"call":{"id":219,"command":"hibernate","program":"01J9ZQ8000000000000000000D"}}
+{"reply":{"re":219,"ok":"done"}}
+{"call":{"id":220,"command":"read_file","program":"01J9ZQ8000000000000000000D","path":"/home/purlis/.codex/auth.json","reach":"anywhere"}}
+{"reply":{"re":220,"ok":{"file":{"found":"kept","path":"/home/purlis/.codex/auth.json"}}}}
+{"call":{"id":221,"command":"read_file","program":"01J9ZQ8000000000000000000D","path":"/home/purlis/projects/01J9PRJCT00000000000000000/workspaces/app/second.md","reach":"workspace"}}
+{"reply":{"re":221,"ok":{"file":{"found":"unsure","path":"/home/purlis/projects/01J9PRJCT00000000000000000/workspaces/app/second.md"}}}}

@@ -775,6 +775,22 @@ export const commands = {
 	 */
 	acceptProjectPolicy: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("accept_project_policy", { plane, shown })),
 	/**
+	 *  **Your press where the seal's key is another program's: make a new key and accept the
+	 *  project's `[policy]` as it was shown** (#7714), on the project `plane` names, never the one in
+	 *  front when it lands. The old `purlis-seal` items are replaced, which macOS may ask you to
+	 *  allow; the digest is checked again once its prompt returns; then a new key seals this
+	 *  project's acceptance. Every other project accepted on this machine then needs accepting
+	 *  again. The window's alone. The window draws it in the prerequisite modal (#7719).
+	 */
+	acceptProjectPolicyWithNewKey: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("accept_project_policy_with_new_key", { plane, shown })),
+	/**
+	 *  **Your press: keep the never-dispatch pairs the window showed, sealed with the new seal key**
+	 *  (#7714, H1 of #7734's round 3), on the project `plane` names. Its own press, never a part of
+	 *  Accept: `shown` is the digest of the pairs shown ([`NeversToKeep`]), so a list that changed
+	 *  since keeps nothing. The window's alone.
+	 */
+	keepProjectNevers: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("keep_project_nevers", { plane, shown })),
+	/**
 	 *  **What the project's `[policy]` let through and logged** (Q308a: the "would have blocked"
 	 *  count, which opens the log): every chat's lines, newest first. A read, off the window's
 	 *  thread.
@@ -1025,6 +1041,17 @@ export const commands = {
 	 *  merged.
 	 */
 	dontMergeHeldRequest: (plane: PlaneId, session: number, repo: string, number: number, head: string) => typedError<null, string>(__TAURI_INVOKE("dont_merge_held_request", { plane, session, repo, number, head })),
+	/**  **The held acts a project's chats asked for**, for Asks. */
+	heldActsWaiting: (plane: PlaneId) => typedError<HeldActShown[], string>(__TAURI_INVOKE("held_acts_waiting", { plane })),
+	/**
+	 *  **The person's press** of a held act, as the window: the first press asks once more, the second
+	 *  (naming the nonce the first returned) performs, with the person's own sign-in, exactly the act
+	 *  the row showed (`digest`). Where the forge refuses, the ask waits again and the refusal is
+	 *  said.
+	 */
+	pressHeldAct: (plane: PlaneId, ask: number, digest: string, nonce: string | null) => typedError<HeldPress, string>(__TAURI_INVOKE("press_held_act", { plane, ask, digest, nonce })),
+	/**  **Don't**, on a held act: the ask is put away and nothing is done. */
+	dontHeldAct: (plane: PlaneId, ask: number) => typedError<boolean, string>(__TAURI_INVOKE("dont_held_act", { plane, ask })),
 	/**
 	 *  **This project's sites, or also the open web**, on chat `session`'s browser Ask (#2013): its
 	 *  browser starts at its next browser call, reaching that; the chat is told on its next turn.
@@ -1040,8 +1067,8 @@ export const commands = {
 	/**
 	 *  **Allow or Keep off on chat `session`'s pool login Ask** (#2050): with `allow`, its persona's
 	 *  browser logins may be filled on the pool's runner while the app runs and the pool stays as
-	 *  the Ask showed it; Keep off refuses them there until the pool changes, with the reason the
-	 *  person typed. Every chat of that persona that waits on that pool is answered with it, and
+	 *  the Ask showed it; Keep off refuses them there until the pool changes or another window of
+	 *  this machine gives a yes, with the reason the person typed. Every chat of that persona that waits on that pool is answered with it, and
 	 *  each is told on its next turn.
 	 */
 	answerPoolLogin: (plane: PlaneId, session: number, allow: boolean, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_pool_login", { plane, session, allow, reason })),
@@ -1241,6 +1268,25 @@ export const commands = {
 	 *  files are not touched.
 	 */
 	putAwayArrivedFiles: (plane: PlaneId, chat: string) => typedError<null, string>(__TAURI_INVOKE("put_away_arrived_files", { plane, chat })),
+	/**  Chat `session`, where it is hibernated. */
+	chatHibernated: (plane: PlaneId, session: number) => typedError<{
+	by: By,
+} | null, string>(__TAURI_INVOKE("chat_hibernated", { plane, session })),
+	/**
+	 *  **What hibernated chat `session` showed as it was hibernated** (SC-4b, #7631): what its pane
+	 *  draws read-only with Resume. Null where it is not hibernated, has no id, or nothing was
+	 *  kept: a missing, corrupt or oversize file reads as none kept.
+	 */
+	hibernatedChatScreen: (plane: PlaneId, session: number) => typedError<string | null, string>(__TAURI_INVOKE("hibernated_chat_screen", { plane, session })),
+	/**  The chats of `plane` that are hibernated: what the window reads its rows by as it opens. */
+	hibernatedChats: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("hibernated_chats", { plane })),
+	/**
+	 *  Hibernate on a chat's row (SC-4a, #7630): the person's act. Where the chat may not be
+	 *  hibernated now it is answered why, as a typed reason the window words (SC-4c, #7632);
+	 *  where the act cannot be done, in a sentence. Otherwise its program ends and the window is
+	 *  told. The window's alone (`WINDOW_ONLY`).
+	 */
+	hibernateChat: (plane: PlaneId, session: number) => typedError<Hibernation, string>(__TAURI_INVOKE("hibernate_chat", { plane, session })),
 	/**
 	 *  Chat `session`, where its program ended with its session host and the person has not put
 	 *  it away.
@@ -1257,6 +1303,11 @@ export const commands = {
 	 *  home (#4350).
 	 */
 	with_the_runner: boolean,
+	/**
+	 *  Its pool was forgotten on this machine (#7187, Pool forgotten): the chat ended, and the
+	 *  runner may be there still, though no longer reached from here.
+	 */
+	pool_forgotten: boolean,
 	/**
 	 *  **What it had left running of its own, which ended with its host** (#5752, spec #5743),
 	 *  in purlis's words ("1 background shell, 1 monitor"), from the record of its last turn's
@@ -2358,6 +2409,21 @@ export const commands = {
 	 */
 	agentIdentityRemove: (plane: PlaneId, app: string) => typedError<IdentityRemoved, string>(__TAURI_INVOKE("agent_identity_remove", { plane, app })),
 	/**
+	 *  **What the tab draws**, read fresh: each GitLab host the project's clones are on, with the
+	 *  personas set up for it.
+	 */
+	gitlabAccessList: (plane: PlaneId) => typedError<GitlabShown, string>(__TAURI_INVOKE("gitlab_access_list", { plane })),
+	/**  **The exact lines setting up adds**, from the one source it writes from. */
+	gitlabAccessLines: (plane: PlaneId, host: string, personas: string[]) => typedError<string, string>(__TAURI_INVOKE("gitlab_access_lines", { plane, host, personas })),
+	/**
+	 *  **Sets GitLab access up**: writes what the page showed, or nothing, then allows it on this
+	 *  machine where only those lines wait. The token is kept in each persona's vault and goes
+	 *  nowhere else.
+	 */
+	gitlabAccessSet: (plane: PlaneId, host: string, personas: string[], token: string, shown: string) => typedError<GitlabFinished, string>(__TAURI_INVOKE("gitlab_access_set", { plane, host, personas, token, shown })),
+	/**  **Takes GitLab access for a host away**: only what this flow wrote. */
+	gitlabAccessRemove: (plane: PlaneId, host: string) => typedError<null, string>(__TAURI_INVOKE("gitlab_access_remove", { plane, host })),
+	/**
 	 *  Sign in to `kind` on `host` in the person's browser, as the try `attempt`: the forge's
 	 *  authorization page is opened there, its one redirect is taken on a loopback port, and the
 	 *  code is exchanged for a token kept in the account's own keyring item. The account as Settings
@@ -2372,6 +2438,57 @@ export const commands = {
 	 *  One that has not started yet is stopped as it starts; one that is over is left as it ended.
 	 */
 	forgePkceSignInCancel: (attempt: string) => __TAURI_INVOKE<void>("forge_pkce_sign_in_cancel", { attempt }),
+	/**  This machine's pinned applications, in the order they were pinned. */
+	forgeApplications: () => typedError<ForgeApplicationRow[], string>(__TAURI_INVOKE("forge_applications")),
+	/**
+	 *  **The person's press of *Use this application*** (D1.3 rule 2): pins `client_id` for `kind` on
+	 *  `host`, with `owner`, the organization or group the person expects the application to be owned
+	 *  by. A changed client id or owner is a new press, and the answer says what it replaced.
+	 */
+	forgeUseApplication: (kind: string, host: string, clientId: string, owner: string) => typedError<ForgeApplicationPinned, string>(__TAURI_INVOKE("forge_use_application", { kind, host, clientId, owner })),
+	/**
+	 *  Takes `host`'s pinned application away. Accounts signed in through it stay listed and keep
+	 *  their tokens until they end; they can no longer be renewed.
+	 */
+	forgeRemoveApplication: (kind: string, host: string) => typedError<null, string>(__TAURI_INVOKE("forge_remove_application", { kind, host })),
+	/**
+	 *  **The request to send an owner** who has not made the application on `host`: what to enter,
+	 *  as text to copy (D1.3 rule 3).
+	 */
+	forgeApplicationRequest: (kind: string, host: string) => typedError<string, string>(__TAURI_INVOKE("forge_application_request", { kind, host })),
+	/**  Every confirmed repo, with the account that serves it and the accounts it could be served by. */
+	forgeProjectAccounts: () => typedError<ProjectAccountRow[], string>(__TAURI_INVOKE("forge_project_accounts")),
+	/**  **The press that chooses which account serves a repo.** */
+	forgeChooseProjectAccount: (cloneKey: string, kind: string, host: string, repoId: string, accountId: string) => typedError<null, string>(__TAURI_INVOKE("forge_choose_project_account", { cloneKey, kind, host, repoId, accountId })),
+	/**
+	 *  The person's press that records the clone at `folder` (relative to the project) for D4: the
+	 *  repo's numeric id is read from the forge as `account_id` (the only account on the host, when
+	 *  none is named) and kept with the account. The clone must already be trusted.
+	 */
+	forgeTrustCloneRepo: (plane: PlaneId, folder: string, accountId: string | null) => typedError<ConfirmedAnswer, string>(__TAURI_INVOKE("forge_trust_clone_repo", { plane, folder, accountId })),
+	/**
+	 *  The project's clones that are on the trust list and not confirmed with the forge: what Settings ›
+	 *  You › Accounts offers *Confirm* for. None in a fenced build, whose config home is not the
+	 *  person's.
+	 */
+	forgeUnconfirmedClones: (plane: PlaneId) => typedError<UnconfirmedClone[], string>(__TAURI_INVOKE("forge_unconfirmed_clones", { plane })),
+	/**
+	 *  **Ask GitHub for CI-file permission** on the press a held CI-file push needs (D1.1, D8.3): a
+	 *  device flow asking for what the account holds and `workflow`. The code and the forge's page
+	 *  are answered for the window to show. Waited on with [`forge_ci_permission_wait`].
+	 */
+	forgeCiPermissionStart: (accountId: string) => typedError<ForgeDeviceCode, string>(__TAURI_INVOKE("forge_ci_permission_start", { accountId })),
+	/**
+	 *  Wait for the person to allow CI files on GitHub's page for `flow`, then keep the second token
+	 *  as its own keychain item. The everyday token is read back first: if GitHub folded the
+	 *  permission into it, nothing is kept and a CI-file push is not offered.
+	 */
+	forgeCiPermissionWait: (flow: number) => typedError<CiPermissionAnswer, string>(__TAURI_INVOKE("forge_ci_permission_wait", { flow })),
+	/**
+	 *  Stop waiting on a CI-permission `flow`: the polling ends within a moment, and nothing of it
+	 *  is kept.
+	 */
+	forgeCiPermissionCancel: (flow: number) => __TAURI_INVOKE<void>("forge_ci_permission_cancel", { flow }),
 	/**
 	 *  This machine's profiles, in the order they were made, each with the version of its harness
 	 *  installed here beside its pin (#2038): each harness asked `--version` once.
@@ -3898,6 +4015,13 @@ export const commands = {
 	 */
 	vouchClone: (plane: PlaneId, folder: string, place: string) => typedError<string, string>(__TAURI_INVOKE("vouch_clone", { plane, folder, place })),
 	/**
+	 *  **Allow**: records chat `chat` (session `session`) as the owner of `branch` in `repo` at the
+	 *  tip the forge has on it now. Answers that tip, or why nothing was recorded.
+	 */
+	allowChatPush: (plane: PlaneId, session: number, chat: string, host: string, repo: string, repoId: string, branch: string) => typedError<string, string>(__TAURI_INVOKE("allow_chat_push", { plane, session, chat, host, repo, repoId, branch })),
+	/**  **Keep blocked**: the push stays refused, and the chat is not asked again. */
+	keepChatPushBlocked: (plane: PlaneId, session: number, chat: string, host: string, repo: string, repoId: string, branch: string) => typedError<null, string>(__TAURI_INVOKE("keep_chat_push_blocked", { plane, session, chat, host, repo, repoId, branch })),
+	/**
 	 *  Make a workspace: `charter workspace create <name>`, with the vision when one was typed.
 	 * 
 	 *  **The name is checked by the core and by nothing in the window.** `wscmd::create` runs
@@ -3926,6 +4050,11 @@ export const commands = {
 	 *  shows what it publishes and where at once, and says who reads it when the forge answers.
 	 */
 	planeRemoteReaders: (plane: PlaneId) => typedError<RemoteReaders, string>(__TAURI_INVOKE("plane_remote_readers", { plane })),
+	/**
+	 *  Whether the project at the open plane is ready for all users on its forge. Asks the network:
+	 *  off the UI thread.
+	 */
+	planeReadiness: (plane: PlaneId) => typedError<ReadinessAnswer, string>(__TAURI_INVOKE("plane_readiness", { plane })),
 	/**
 	 *  What deleting this workspace would discard, for the dialog to show **before** anything is
 	 *  pressed.
@@ -4157,8 +4286,18 @@ export const commands = {
 	/**
 	 *  The state of each of this repo's branch folders, asked once `worktree_list` has named them
 	 *  (#5321): what each has uncommitted, or why it could not be read.
+	 * 
+	 *  **An answer may be partial** (H16): a folder still being read has `reading` set and nothing
+	 *  else, and the window asks again at once, which waits for the next folder to finish. The
+	 *  whole of 133 folders took 47 s in one answer; the first now comes in about one status's time,
+	 *  and an ask with nothing changed reads nothing.
+	 * 
+	 *  **`round` is the refresh an ask continues** (#7667): an ask with none is a new refresh, and
+	 *  reads again what no watch vouches for; one naming the `round` an answer carried is given
+	 *  what that refresh has read. Each ask without a `round` starts a new round, so a window that
+	 *  never names one makes every ask a refresh of its own.
 	 */
-	worktreeStates: (plane: PlaneId, workspace: string, repo: string) => typedError<PieceState[], string>(__TAURI_INVOKE("worktree_states", { plane, workspace, repo })),
+	worktreeStates: (plane: PlaneId, workspace: string, repo: string, round: number | null) => typedError<PieceState[], string>(__TAURI_INVOKE("worktree_states", { plane, workspace, repo, round })),
 	/**
 	 *  **New branch**, from a repo's row (GL-1): cut a piece off the clone's HEAD and log it
 	 *  `claimed`. It starts nothing. `branch` is the name the operator typed, used exactly or
@@ -4382,6 +4521,25 @@ export const commands = {
 	 *  doctor` runs them.
 	 */
 	poolSetupCheckAgain: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_check_again", { plane })),
+	/**
+	 *  **Try now** (#7191), on the status bar of a pool that can't be reached: every failing forward
+	 *  is tried again at once, not after its wait (the forward's own retry, as Check again does
+	 *  first), and the pool is read again. It runs no doctor: that is Check pool's.
+	 */
+	poolSetupTryNow: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_try_now", { plane })),
+	/**
+	 *  **Forget the pool an add refused** (#7191), from the status bar: no pool was made, so the
+	 *  refusal Pool setup keeps is all there is to forget. Nothing on any machine is touched.
+	 */
+	poolSetupForgetRefused: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_forget_refused")),
+	/**
+	 *  **Trust and create the pool** (#7191, Refined 2): for Docker on another machine, Connect and
+	 *  Pool in one press. The machine Connect read is trusted at `fingerprint`, which the person saw;
+	 *  every check of the pool's image is asked of its engine, so a full disk or a missing image is a
+	 *  finding before the machine is called connected; `owned` is who can sign in there; and the pool
+	 *  is made. A refused add keeps the pool, Refused, with its reason.
+	 */
+	poolSetupTrustAndCreate: (plane: PlaneId, fingerprint: string, owned: boolean, adding: PoolAdding) => typedError<PoolSetupTrustedAndCreated, string>(__TAURI_INVOKE("pool_setup_trust_and_create", { plane, fingerprint, owned, adding })),
 	/**  **Keeps that the person chose Docker on Where.** Nothing else changes. */
 	poolSetupChooseDocker: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_docker")),
 	/**
@@ -4463,8 +4621,16 @@ export const commands = {
 	 *  **Keeps that the person chose their team's cluster on Where**, through kubeconfig context
 	 *  `context` (#4492): its name alone. Nothing on the cluster changes. With no context, only the
 	 *  kind is kept, as Add a cluster pool… opens Pool setup: Where then recommends a context.
+	 *  `kubeconfig` is the one file the context is read from (#7192): a path, never `KUBECONFIG`'s
+	 *  list; none is kubectl's default.
 	 */
-	poolSetupChooseCluster: (context: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_cluster", { context })),
+	poolSetupChooseCluster: (context: string | null, kubeconfig: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_cluster", { context, kubeconfig })),
+	/**
+	 *  **Keeps the folder a kubeconfig's credential plugin is in** (#7192), named where purlis found
+	 *  it in none of the usual install folders. Only that folder is added to the commands purlis runs
+	 *  for the cluster.
+	 */
+	poolSetupPluginFolder: (folder: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_plugin_folder", { folder })),
 	/**
 	 *  **Applies one part of a cluster's install** (#4493), on that part's own button: `upstream`,
 	 *  `definitions`, `signing-key` or `operator`, to the cluster chosen on Where, with the person's
@@ -4598,9 +4764,10 @@ export const commands = {
 	 *  `discarding` names the held runners whose conversations the person was asked about, and agreed
 	 *  to discard with the pool (#4860): a runner held now that it does not name removes nothing.
 	 *  A pool on another machine that doesn't answer is removed not at all: the answer says so, and
-	 *  the window offers to forget it here.
+	 *  the window offers to forget it here. One that answers and refuses is offered Remove as well,
+	 *  which goes on where `despite_its_check` says it was asked again (#7187).
 	 */
-	removeDockerPool: (name: string, elsewhere: boolean, discarding: string[]) => typedError<PoolRemoval, string>(__TAURI_INVOKE("remove_docker_pool", { name, elsewhere, discarding })),
+	removeDockerPool: (name: string, elsewhere: boolean, discarding: string[], despiteItsCheck: boolean) => typedError<PoolRemoval, string>(__TAURI_INVOKE("remove_docker_pool", { name, elsewhere, discarding, despiteItsCheck })),
 	/**
 	 *  **Forgets pool `name` on this machine without contacting its machine**: the window's Forget it
 	 *  here, offered where Remove found that machine doesn't answer. Its runners stay there, and the
@@ -4681,7 +4848,8 @@ export const commands = {
 	clusterPoolKey: (kubeconfig: string | null, context: string, pool: string, pasted: string | null) => typedError<ClusterPoolKey, string>(__TAURI_INVOKE("cluster_pool_key", { kubeconfig, context, pool, pasted })),
 	/**
 	 *  **Where the runner of a chat being started has got to** (#3709), read from the cluster, for the
-	 *  window's Start while it waits. Nothing where there is no stage to say.
+	 *  window's Start while it waits. Nothing where there is no stage to say; for a pool whose link is
+	 *  down, that it is waited for (#7187).
 	 */
 	runnerStage: (plane: PlaneId, workspace: string | null, runsOn: {
 	pool: string | null,
@@ -5993,8 +6161,8 @@ export const commands = {
 	 */
 	aboutCharter: () => __TAURI_INVOKE<About>("about_charter"),
 	/**
-	 *  Copy diagnostics' answer: the system, and the open and hot chats of every project held.
-	 *  Read from memory only, so it costs nothing on the window's thread.
+	 *  Copy diagnostics' answer: the system, the open and hot chats of every project held, and the
+	 *  device's class. Read from memory only, so it costs nothing on the window's thread.
 	 */
 	diagnosticsHere: () => __TAURI_INVOKE<DiagnosticsHere>("diagnostics_here"),
 	/**
@@ -6626,10 +6794,22 @@ export type AnswerPath =
  */
 { via: "trust-clone"; folder: string; place: string } | 
 /**
+ *  `allow_chat_push` for Allow and `keep_chat_push_blocked` for Keep blocked, each for the
+ *  ask the refusal raised: chat `chat`'s update of `branch` in `repo` (lower case) at `host`,
+ *  the repo the forge numbers `repo_id`. Allow records the chat as the owner at the branch's
+ *  tip **read from the forge as the person when pressed**, never one the chat said.
+ */
+{ via: "let-chat-push"; chat: string; host: string; repo: string; repo_id: string; branch: string } | 
+/**
  *  `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
  *  clone Notice's own command, and each clone it trusts leaves the ask (R-336).
  */
 { via: "trust-clones"; clones: CloneToVouch[] } | 
+/**
+ *  `press_held_act` twice and `dont_held_act`, for held act `ask`, from its own card in Asks,
+ *  which draws exactly what the core read and hands back its digest (#7685).
+ */
+{ via: "held-act"; ask: number } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
@@ -7132,6 +7312,14 @@ export type AskSource =
  */
 "trust-clone" | 
 /**
+ *  **A chat refused an update of a branch it has no record of** (ADR 0128, amended
+ *  2026-11-23, #7363): pushed before the route existed, or by another chat. Allow records the
+ *  chat as its owner at the commit the forge holds when pressed, and Keep blocked leaves it
+ *  refused. One per chat and branch, and never for a protected, default, deploy or pages
+ *  branch.
+ */
+"let-chat-push" | 
+/**
  *  **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
  *  never one per clone. Trust all records each, as its Notice's Trust this clone does.
  */
@@ -7140,7 +7328,13 @@ export type AskSource =
  *  **Pool setup's cluster is ready** (#4496): the admin the person asked has given what
  *  the install couldn't, and Pool setup goes on. Said once, about no chat.
  */
-"pool-setup";
+"pool-setup" | 
+/**
+ *  **A forge act a chat's route held** (ADR 0128 D8, #7685): a tag, a release, a push that
+ *  changes CI files or a fork. The chat did not do it: the person's two presses make it,
+ *  with their own sign-in, on its card in Asks (`HeldActAsks`).
+ */
+"held-act";
 
 /**
  *  Every ask a project holds open, as the window lists them: the whole list each time, so the
@@ -7786,6 +7980,11 @@ export type BusyChat = {
 	state: string,
 };
 
+/**  How a chat that is hibernated was put to rest. */
+export type By = 
+/**  The person did, from its row. */
+"operator";
+
 /**
  *  A harness the operator started by hand in a shell tab, as the window draws its banner.
  * 
@@ -8161,6 +8360,11 @@ export type ChatHeld = {
 	session: number,
 };
 
+/**  Chat `session` as the window reads its hibernation. */
+export type ChatHibernation = {
+	by: By,
+};
+
 /**  A chat's Chat log: whether purlis knows the chat, and its rows. */
 export type ChatLog = {
 	/**  purlis knows the chat by its number: open, or ended here and still kept. */
@@ -8313,6 +8517,12 @@ export type ChatNoticed = {
 	 *  whose adapter reports no mode purlis can check.
 	 */
 	mode: ModeDiffers | null,
+	/**
+	 *  The forge sign-ins its route found missing or ended (ADR 0128, #7290), one per host and
+	 *  in host order: each a standing fault its pane says in a Notice with a way into Settings ›
+	 *  You › Accounts. Empty until one is found.
+	 */
+	sign_in: SignInNeeded[],
 };
 
 /**  A chat on a device, as its row names it. */
@@ -8621,6 +8831,16 @@ export type ChosenInstruction = {
 	text: string,
 };
 
+/**  How a second sign-in ended. */
+export type CiPermissionAnswer = {
+	/**
+	 *  `ready` (the second token is kept) or `not-offered` (GitHub folded the permission into
+	 *  the everyday sign-in, so a CI-file push is not offered).
+	 */
+	state: string,
+	says: string,
+};
+
 /**  What came of a clash. */
 export type ClashOutcome = 
 /**  Both copies load. */
@@ -8791,6 +9011,15 @@ export type CommandDoes =
 /**  Runs one of its actions, on nothing in particular. */
 { kind: "run"; action: RowAction };
 
+/**  What a recording found, for the window to say. */
+export type ConfirmedAnswer = {
+	/**  `recorded`, `choose` (several accounts on the host: the person picks) or `sign-in` (none). */
+	state: string,
+	/**  The repo as recorded, `owner/name`. */
+	path: string | null,
+	host: string | null,
+};
+
 /**  The crash Notice's state (#5700), as the window names it. */
 export type CrashNoticeSaid = 
 /**  A crash was caught after Not now: the Notice is raised. */
@@ -8954,6 +9183,19 @@ export type DeletesCutShort = {
 	unsettled: string[],
 };
 
+/**  What Diagnostics says of the device's RAM class (ADR 0082 §3). */
+export type DeviceClass = 
+/**  The machine's memory is still being read. */
+{ kind: "reading" } | 
+/**  The machine's memory could not be read: no class is known, and so no target. */
+{ kind: "not_known" } | 
+/**  The class, and the hot target it gives: a budget, never a cap. */
+{ kind: "known"; 
+/**  The class in GB (8, 16, 32 or 64), or `None` under 8 GB. */
+class_gb: number | null; 
+/**  How many hot chats the device targets. */
+hot_target: number };
+
 /**
  *  **What the Devices view draws first** (#2052): this machine's version, where everything the
  *  window has open runs, and each pool's limits.
@@ -8984,10 +9226,12 @@ export type DiagnosticsHere = {
 	/**  The chats open in every project this app holds, a shell tab not among them. */
 	open: number,
 	/**
-	 *  The open chats whose run has a program (the glossary's **hot chat**): any not done or
-	 *  failed.
+	 *  The open chats whose run has a process (the glossary's **hot chat**): `starting`,
+	 *  `working`, `input-required` or `paused`. A queued or hibernated run is open, not hot.
 	 */
 	hot: number,
+	/**  The device's RAM class and its hot target. */
+	device: DeviceClass,
 };
 
 /**  What a discard is checked against. */
@@ -10316,6 +10560,11 @@ export type FinishedTask = {
 	 *  finds its row by. None for a task that finished before this app was started.
 	 */
 	chat: number | null,
+	/**
+	 *  **Its chat's ULID**, where its record names one (#7145): what the Chats list's filter
+	 *  matches a closed chat's row to it by, as a number may have been another chat's.
+	 */
+	chat_id: string | null,
 	persona: string | null,
 	/**
 	 *  **How it ended, as a value** ([`How`]): what the window draws its state from. The
@@ -10613,6 +10862,35 @@ export type ForgeAccountRow = {
 	scopes: string[] | null,
 	/**  The scopes beyond what purlis needs (ADR 0077 §2). */
 	wider: string[],
+	/**
+	 *  Whether the second sign-in for CI files is already given (its token is kept apart, so the
+	 *  scopes above never show it). Only the listing ([`forge_accounts`]) asks the keychain; a row
+	 *  another command returns says `false`, and the window reads the list again.
+	 */
+	ci_allowed: boolean,
+};
+
+/**  What a press of *Use this application* changed. */
+export type ForgeApplicationPinned = {
+	host: string,
+	/**  `pinned`, `client-id` (another application replaced the pinned one) or `owner`. */
+	change: string,
+	/**  The client id (or owner) this replaced, for the Notice a changed pin raises. */
+	replaced: string | null,
+	consent: string,
+};
+
+/**  A host's pinned application, as Settings lists it. */
+export type ForgeApplicationRow = {
+	kind: string,
+	host: string,
+	client_id: string,
+	/**  The owner the person expects the forge's page to show. */
+	owner: string,
+	/**  What to read before signing in: *check that the application is owned by …*. */
+	consent: string,
+	/**  Accounts signed in on the host now. */
+	signed_in: number,
 };
 
 /**
@@ -10669,6 +10947,16 @@ export type ForgeOwners = {
 	host: string | null,
 	login: string,
 	owners: OwnerRow[],
+};
+
+/**
+ *  **What the window says once about a project's old forge token lines**
+ *  ([`sandbox::tools::replaced::Told`]): its text, and a cause key that moves only when the
+ *  lines do, so a dismissal stands until they change.
+ */
+export type ForgeReplaced = {
+	cause: string,
+	text: string,
 };
 
 /**  One forge's CLI, as the first-run screen lists it. */
@@ -10871,6 +11159,27 @@ export type GitInstall =
 export type GitPresence = { kind: "present" } | 
 /**  No git. `install` is how this machine gets one. */
 { kind: "missing"; install: GitInstall };
+
+/**  What setting up did. */
+export type GitlabFinished = {
+	/**  Personas with an Allow of their own still to give. */
+	to_allow: string[],
+};
+
+/**  One GitLab host of the project's clones. */
+export type GitlabRow = {
+	host: string,
+	/**  Personas whose `glab` line this flow wrote for the host. */
+	personas: string[],
+	/**  Personas with a `glab` line of their own for the host: shown, never replaced. */
+	by_hand: string[],
+};
+
+/**  What the tab draws. */
+export type GitlabShown = {
+	rows: GitlabRow[],
+	personas: string[],
+};
 
 /**
  *  A remembered project that is no longer a project where it was (NO-5, #1237): what the
@@ -11166,7 +11475,13 @@ export type GrantWhat =
  *  chat. Given from its own ask (`answer_run_grant`), never from a block's Allow, and kept in
  *  memory only.
  */
-"run-grant";
+"run-grant" | 
+/**
+ *  A persona's browser logins on a pool's runner (#7190): the opt-in the person gave once,
+ *  kept on this machine across a restart and bound to the pool's definition and image. Given
+ *  from its own Ask (`answer_pool_login`), never from a block's Allow.
+ */
+"pool-login";
 
 /**  The folders chats may be granted, and those just dropped from the list. */
 export type GrantableFolders = {
@@ -11346,11 +11661,57 @@ export type HarnessSetupFound = {
 	local_models: LocalModelRow[],
 };
 
+/**
+ *  **A held act the person is asked about**: exactly what the core read, and the digest of it
+ *  that a press hands back.
+ */
+export type HeldActShown = {
+	ask: number,
+	/**  The chat that asked. */
+	session: number,
+	/**  `tag`, `release`, `CI-file push` or `fork`. */
+	kind: string,
+	repo: string,
+	rows: HeldRowShown[],
+	body: HeldBodyShown | null,
+	/**  What a press names, so it performs only what was drawn. */
+	digest: string,
+};
+
+/**  **A long text an ask shows whole**: a release's notes, a CI file's diff. */
+export type HeldBodyShown = {
+	label: string,
+	text: string,
+};
+
+/**  **What a press did.** */
+export type HeldPress = 
+/**
+ *  The first press: the forge was read again and the ask is as shown. Press again, naming
+ *  `nonce`, to perform it.
+ */
+{ step: "asks-once-more"; shown: HeldActShown; nonce: string } | 
+/**  The second press: the act was performed. `said` is what was made. */
+{ step: "done"; said: string };
+
 /**  One change Remove held: its proposal's id, and the file it changes. */
 export type HeldRemoval = {
 	id: number,
 	file: string,
 };
+
+/**  **One line of an ask**, as the window draws it. */
+export type HeldRowShown = {
+	label: string,
+	value: string,
+};
+
+/**  What the window is answered when it asks for a chat's hibernation. */
+export type Hibernation = 
+/**  Its program ended as a hibernation. */
+{ outcome: "hibernated" } | 
+/**  It may not be hibernated now, for this reason. */
+{ outcome: "refused"; why: Why };
 
 /**
  *  The project's hosts as they changed (`sandbox::local::HostsChange`): each spelled as the
@@ -12024,9 +12385,32 @@ export type LinkSeen = {
 	does: LinkDoes,
 	/**  The words of a link a program marked, where they name another target than it goes to. */
 	its_text?: string | null,
+	/**
+	 *  Why the editor checks this file only as it opens (#6489): its branch could not say
+	 *  whether it offers it. None for every other link.
+	 */
+	unchecked?: string | null,
 	/**  What the chat a chat link names is: none for every other kind. */
 	chat: ChatSeen | null,
 };
+
+/**
+ *  **Which remote state a pool's runner is in while its link is down** (#7187, CONTEXT.md), as
+ *  the window says it: the core's [`RemoteState`](purlis_core::sshroute::connect::RemoteState),
+ *  read where the link tells it. A runner gone and a pool forgotten are not here: a link that
+ *  says them is not down but ended, and they are told as [`Reconnection::RunnerGone`] and
+ *  [`Reconnection::PoolForgotten`], with no [`LinkDown`] kept.
+ */
+export type LinkState = 
+/**
+ *  Nothing answers, or not yet (Docker still starting on a machine whose `sshd` is up
+ *  included): purlis tries again, and the person may press Try now.
+ */
+"unreachable" | 
+/**  The machine answers and refuses: purlis stopped trying on its own; Try now and Check pool. */
+"refused" | 
+/**  The machine presents another key or engine than the pinned one. */
+"host_key_changed";
 
 /**  One repo the person can get. */
 export type ListedRepo = {
@@ -12152,6 +12536,11 @@ export type LostChat = {
 	 *  home (#4350).
 	 */
 	with_the_runner: boolean,
+	/**
+	 *  Its pool was forgotten on this machine (#7187, Pool forgotten): the chat ended, and the
+	 *  runner may be there still, though no longer reached from here.
+	 */
+	pool_forgotten: boolean,
 	/**
 	 *  **What it had left running of its own, which ended with its host** (#5752, spec #5743),
 	 *  in purlis's words ("1 background shell, 1 monitor"), from the record of its last turn's
@@ -12789,6 +13178,28 @@ export type NeedsYou = {
 	fix_does: string,
 };
 
+/**  One pair said never to: the asking persona, and the persona it never dispatches to. */
+export type NeverPair = {
+	/**  The persona that asks. */
+	asking: string,
+	/**  The persona it never dispatches to. */
+	target: string,
+};
+
+/**
+ *  **The never-dispatch list's pairs the window offers to keep after a new seal key** (#7714,
+ *  H1 of #7734's round 3): what Keep these nevers ([`keep_project_nevers`]) seals, exactly.
+ */
+export type NeversToKeep = {
+	/**  The pairs the list's file holds now, in its order: none where it holds none, or is gone. */
+	pairs: NeverPair[],
+	/**
+	 *  Their digest: what the press names, so a list that changed since it was shown keeps
+	 *  nothing.
+	 */
+	digest: string,
+};
+
 /**  A branch the window cut: the piece it is, and what git calls it (ADR 0072 §4). */
 export type NewBranch = {
 	piece: string,
@@ -13192,6 +13603,12 @@ export type OpenChat = {
 	 *  a runner before 1.51, whose Move here row says such a clone stays there.
 	 */
 	clones_come_back?: boolean | null,
+	/**
+	 *  Whether its row offers Hibernate (SC-4a, #7630): its harness resumes a conversation by
+	 *  id and its session host can hibernate a chat (session protocol 1.96). `null` otherwise:
+	 *  a shell, a harness that cannot, or a host that would refuse it.
+	 */
+	hibernates?: boolean | null,
 	/**  The persona it adopted. */
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */
@@ -13967,6 +14384,13 @@ export type PieceState = {
 	uncommitted?: number | null,
 	/**  As [`Piece::unread`]. */
 	unread?: string | null,
+	/**  Still being read: ask again (H16). Neither of the others is said while it is. */
+	reading?: boolean | null,
+	/**
+	 *  The refresh this answer belongs to, the same on every folder of one answer: the window
+	 *  names it when it asks again for the folders still reading (#7667).
+	 */
+	round?: number | null,
 };
 
 /**  What the plane's pin says against this charter. */
@@ -14384,8 +14808,37 @@ export type PolicyState = {
 	waiting: PolicyWaiting[],
 	/**  Each value of `[policy]` purlis could not read, in one sentence, enforced meanwhile. */
 	refused: string[],
+	/**
+	 *  The families that mean nothing without a sandbox (`network`, `ports`, `processes`),
+	 *  where the project's level is no sandbox: said beside the press that would make it so.
+	 */
+	not_in_force: string[],
 	/**  Whether this machine keeps an acceptance whose seal does not hold, which counts as none. */
 	unsealed: boolean,
+	/**
+	 *  Whether the seal's key on this machine is another program's, most likely an earlier
+	 *  build's before an update (#7714): nothing holds, and the window offers Make a new key and
+	 *  accept ([`accept_project_policy_with_new_key`]) in place of Accept.
+	 */
+	key_foreign: boolean,
+	/**
+	 *  Whether the acceptance does not hold because purlis made a new seal key on this machine
+	 *  since it was sealed (#7714), never because something edited it: the window says so.
+	 */
+	new_key: boolean,
+	/**
+	 *  Whether purlis vouches that this project's never-dispatch list was anchored by a seal key
+	 *  it has replaced since (#7714): it reads as unread until the person keeps the pairs shown
+	 *  ([`keep_project_nevers`]). Accept never seals them.
+	 */
+	nevers_new_key: boolean,
+	/**  The pairs Keep these nevers keeps, where `nevers_new_key` and the list's file reads. */
+	nevers_to_keep: NeversToKeep | null,
+	/**
+	 *  Whether that list holds a name purlis cannot show faithfully (#7734's round 4): no pair
+	 *  is offered to keep, and the window says so.
+	 */
+	nevers_unshowable: boolean,
 	/**
 	 *  The digest of the committed text this was read from: what Accept names, so a press on a
 	 *  file that changed since it was shown accepts nothing.
@@ -14411,7 +14864,7 @@ export type PolicyState = {
 export type PolicyWaiting = {
 	/**  The family's key, as `[policy]` spells it. */
 	family: string,
-	/**  What you accepted: `off`, `log` or `enforce`. */
+	/**  What you accepted: `off`, `log` or `enforce`; the sandbox's level `off`, `floor` or `full`. */
 	accepted: string,
 	/**  What the project's file says now. */
 	committed: string,
@@ -14568,6 +15021,17 @@ export type PoolLink =
 /**  It did not answer, and why. */
 { state: "down"; why: string } | 
 /**
+ *  **Its machine answers, but refuses** (#7187, Refused): its sign-in, Docker or forwarding
+ *  fails, and why. purlis stopped trying on its own; Check pool says what changed.
+ */
+{ state: "refused"; why: string } | 
+/**
+ *  **Its machine presents another host key, CA or engine than the pinned one** (#7187, Host
+ *  key changed), and why, as a link says it: a security stop, never tried again on its own;
+ *  the person says it is all right in the pool's settings.
+ */
+{ state: "host_key_changed"; why: string } | 
+/**
  *  It suspended itself, a day without a link (#2051): its container is stopped, its home
  *  kept, and the window's next chat there starts it again. A check never wakes it.
  */
@@ -14695,8 +15159,18 @@ export type PoolProfiles = {
 export type PoolRemoval = 
 /**  It is gone, or what of it stays is said in `left`. */
 { state: "removed"; left: string | null } | 
-/**  Its machine, `host`, doesn't answer, `why`: nothing was removed, and nothing was sent. */
-{ state: "unreachable"; why: string; host: string };
+/**
+ *  Its machine, `host`, doesn't answer, or presents another key or engine, `why`: nothing
+ *  was removed, and nothing was sent. Such a machine is never contacted (#7187, Unreachable,
+ *  Host key changed).
+ */
+{ state: "unreachable"; why: string; host: string } | 
+/**
+ *  Its machine, `host`, answers and refuses, `why` (#7187, Refused): nothing was removed.
+ *  Remove, which cleans the machine, stays offered beside Forget it here, and goes on where
+ *  it is asked again.
+ */
+{ state: "refused"; why: string; host: string };
 
 /**
  *  **A pool whose runner was removed outside purlis** (#4149): what the Notice of a refused
@@ -14784,6 +15258,23 @@ export type PoolSetupCheck = {
 	verdict: string,
 	title: string,
 	more: string | null,
+	/**
+	 *  How long the check took, in milliseconds, once it was done (#7191). None where it wasn't
+	 *  timed.
+	 */
+	took_ms: number | null,
+	/**  Where it has taken over thirty seconds: what it is waiting on and why (#7191). */
+	waiting_on: string | null,
+};
+
+/**
+ *  One check of the machine's engine, timed (#7191): by its cause, in milliseconds where it is
+ *  done, with what it waits on and why where it has taken past thirty seconds.
+ */
+export type PoolSetupCheckTook = {
+	cause: string,
+	took_ms: number | null,
+	waiting_on: string | null,
 };
 
 /**  The kubeconfig's contexts, by name alone, for Where's Options on a cluster (#4492). */
@@ -14793,6 +15284,11 @@ export type PoolSetupContexts = {
 	chosen: string | null,
 	/**  The chosen cluster's Pools, by name, where its operator runs (#4494). */
 	pools: string[],
+	/**
+	 *  The one kubeconfig file the contexts are read from (#7192): the one chosen, else the
+	 *  home's `.kube/config` where it exists. Its path, nothing of what is in it.
+	 */
+	kubeconfig: string | null,
 	/**
 	 *  Whether the person joins their team's install (#4495): the key is then confirmed by
 	 *  pasting the one their admin gave them.
@@ -14889,6 +15385,8 @@ export type PoolSetupMachine = {
 	checked?: string[] | null,
 	/**  That doctor couldn't measure Docker's disk there, which holds nothing up (#6272). */
 	disk_unmeasured?: boolean | null,
+	/**  **How long each of those checks took**, by cause, and what a slow one waits on (#7191). */
+	took?: PoolSetupCheckTook[] | null,
 };
 
 /**  A limit a profile is over. */
@@ -14922,6 +15420,16 @@ export type PoolSetupPodmanConnection = {
 	name: string,
 	route: string,
 	identity: string | null,
+};
+
+/**
+ *  **A pool's state, as the status bar reads it** (#7191): `unreachable`, `refused`,
+ *  `host-key-changed`, `runner-gone` or `pool-forgotten`, with the reason of a refusal.
+ */
+export type PoolSetupPoolState = {
+	pool: string,
+	state: string,
+	reason: string | null,
 };
 
 /**
@@ -14971,6 +15479,12 @@ export type PoolSetupShown = {
 	/**  The name a new pool is recommended, which no pool here has (#6256). */
 	recommended: string,
 	contexts: PoolSetupContexts,
+	/**
+	 *  **The pool's state, where there is one to say** (#7191): the status bar's. A failed add
+	 *  keeps the pool, `refused`, with its reason. Remote trains A's `RemoteState` replaces what
+	 *  reads this once it is on `main`.
+	 */
+	pool_state?: PoolSetupPoolState | null,
 };
 
 /**  This machine's profiles against pool `pool`'s limits (#4482). */
@@ -14991,6 +15505,8 @@ export type PoolSetupStep = {
 	skippable: boolean,
 	see: PoolSetupSee | null,
 	checks: PoolSetupCheck[],
+	/**  How long the step took, in milliseconds, where it was timed (#7191): the rail shows it. */
+	took_ms: number | null,
 	/**  A second way on, beside `next`: on Where, the other kind (ADR 0123 §6). */
 	other: PoolSetupAction | null,
 	/**  The machine, on Connect (#6266). */
@@ -15043,6 +15559,19 @@ export type PoolSetupTried = {
 	link: PoolSetupCheck | null,
 	/**  The workspace its chat started in, where it got that far: where Open a chat opens. */
 	workspace: string | null,
+};
+
+/**
+ *  What **Trust and create the pool** did (#7191): what is shown now, and what stopped it where
+ *  the pool wasn't made.
+ */
+export type PoolSetupTrustedAndCreated = {
+	/**  Pool setup as it stands, with a finding of Connect's laid over Connect. */
+	shown: PoolSetupShown,
+	/**  What a team's image breaks, where it makes nothing. */
+	breaks: string[],
+	/**  Why the add was refused, where it was: the pool is kept, Refused, with this reason. */
+	refused: string | null,
 };
 
 /**
@@ -15164,6 +15693,13 @@ export type PoolVersion = {
 	 *  each by name with what is left of it: the Pools group names each in a line of its own.
 	 */
 	not_checked: PoolNotChecked[],
+	/**
+	 *  **How many runners on its engine belong to another desktop** (#7192), as a line ("2
+	 *  runners belong to another desktop"): two desktops can share one remote engine, each with
+	 *  its own runner of a pool. Only said, never acted on. Left out where there are none or the
+	 *  engine could not be asked.
+	 */
+	other_desktops?: string | null,
 };
 
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */
@@ -15299,6 +15835,39 @@ export type ProfileRow = {
 	 *  sent; optional for the same reason.
 	 */
 	icon?: HarnessIconRow | null,
+};
+
+/**  One account the person may choose for a repo. */
+export type ProjectAccountChoice = {
+	id: string,
+	login: string,
+};
+
+/**  A confirmed repo, and the account that serves it. */
+export type ProjectAccountRow = {
+	/**  What the choice names the clone by. */
+	clone_key: string,
+	/**  `github` or `gitlab`: with the host and the repo number, what names the repo. */
+	kind: string,
+	/**
+	 *  The forge's own number for the repo, as text (a repo number can outgrow what the window's
+	 *  numbers hold).
+	 */
+	repo_id: string,
+	host: string,
+	path: string,
+	/**  The account serving it, or null when it is signed out or gone. */
+	serving: ProjectAccountChoice | null,
+	/**
+	 *  `serving`; `signed-out` (the chosen account is signed out, or holds CI-file permission:
+	 *  the person signs it in again, or chooses another; **no other account serves in its
+	 *  place**); `unchosen` (several accounts are signed in, and none was chosen); or
+	 *  `application-changed` (the chosen account signed in through an application the host no
+	 *  longer pins).
+	 */
+	state: string,
+	/**  The signed-in accounts on this repo's host, for the choice. */
+	choices: ProjectAccountChoice[],
 };
 
 /**
@@ -15870,6 +16439,31 @@ export type ReadOnlyProject = {
 	mendable: boolean,
 };
 
+/**  What asking about the project's forge came to. */
+export type ReadinessAnswer = 
+/**
+ *  Nothing was checked, and why on one line: no `origin`, a path on this machine, a host no
+ *  forge purlis knows.
+ */
+{ state: "notChecked"; why: string } | 
+/**  The forge `host` was asked about `path`. `ready` is every check ready, and only that. */
+{ state: "checked"; host: string; path: string; ready: boolean; checks: ReadinessCheck[] };
+
+/**  One check, as the window draws it. */
+export type ReadinessCheck = {
+	id: string,
+	title: string,
+	/**  `ready`, `blocked` or `unknown`. */
+	verdict: string,
+	/**  Who can fix a blocker: `you`, `owner` or `admin`. */
+	who: string | null,
+	detail: string,
+	link: string | null,
+	steps: string[],
+	/**  A short message for whoever can fix it, when it is not the person. */
+	request: string | null,
+};
+
 /**  The prefix rebuilds this conversation has paid for (`↻N 696k`). */
 export type Rebuilds = {
 	count: number,
@@ -15954,11 +16548,25 @@ export type Reconnection =
  */
 "key_changed" | 
 /**
- *  The runner was removed outside purlis (#4149): its host does not link to it again until
- *  it is made again, so its chats stay dimmed and the window offers Make the runner again in
- *  a Notice of its own.
+ *  The runner was removed outside purlis (#4149, #7187 Runner gone): its chats end, as a
+ *  forgotten pool's do, and are not dimmed; the window offers Start again on this pool in a
+ *  Notice of its own.
  */
-"runner_gone";
+"runner_gone" | 
+/**
+ *  The runner's machine answers, but its sign-in, Docker or forwarding fails (#7187,
+ *  Refused): its host stops trying on its own, so its chats stay dimmed and the window says
+ *  why, with Check pool and Try now, which dials once.
+ */
+"refused" | 
+/**
+ *  The runner's machine presents another host key, CA or engine than the pinned one (#7187,
+ *  Host key changed): its host never links to it again on its own, so its chats stay dimmed
+ *  and the window says why, with Check and trust again in the pool's settings.
+ */
+"host_key_changed" | 
+/**  The pool was forgotten here (#7187, Pool forgotten): its chats end, and say so. */
+"pool_forgotten";
 
 /**
  *  The level a referrer is changed at, when it is not the entry's own
@@ -17164,6 +17772,8 @@ export type RunnerLinkDown = {
 	why: string,
 	/**  When the link went down, in seconds since 1970. */
 	since: number,
+	/**  Which state it is in (#7187): Refused says why and offers Check pool and Try now (purlis's own retries stopped). */
+	state: LinkState,
 };
 
 /**  How the window reads what a runner records (#3393). */
@@ -17467,6 +18077,13 @@ export type SandboxState = {
 	 *  allowed (ADR 0093): asked about once, up front. `null` where nothing waits.
 	 */
 	expects?: ProjectExpects | null,
+	/**
+	 *  **Tool lines the person's sign-in replaces** (ADR 0128, "Migration"), with the one-login
+	 *  train's `forge-wiring` feature on: the project's `mint = "github-app"` and vault forge
+	 *  token lines, which still parse and run nothing. The window says it once, until the lines
+	 *  change. `null` where the project has none, and always without the feature.
+	 */
+	forge_replaced?: ForgeReplaced | null,
 	/**
 	 *  **The project's sandbox off** (#2071 PR C, #2156): its committed `[sandbox] mode =
 	 *  "off"`, where it came from as far as purlis verified it, and how the person on this
@@ -18429,6 +19046,15 @@ export type SidebarWorkspace = {
 	 *  (charter-app#301). Every place a workspace is drawn marks it.
 	 */
 	live: boolean,
+};
+
+/**
+ *  **A chat's forge route had no usable sign-in**: the host, and whether there never was one
+ *  (`missing`) or it ended (`ended`). Never told for a forge that merely could not be reached.
+ */
+export type SignInNeeded = {
+	host: string,
+	ended: boolean,
 };
 
 /**  A forge account setup adds the key to. */
@@ -19717,7 +20343,13 @@ export type SlowMoment =
  *  The command `command`, received on the core's main thread at `at`, held it for `ms`
  *  (`crate::mainwatch`). The core writes it; the window only reads it back.
  */
-{ kind: "core_command"; command: string; ms: number; at: number | null };
+{ kind: "core_command"; command: string; ms: number; at: number | null } | 
+/**
+ *  A new chat's opening that took `ms`, begun at `at`, while `hot` chats were open, and the
+ *  phases it passed through in the order it ran them (H12). The core writes it; the window
+ *  only reads it back.
+ */
+{ kind: "opening"; ms: number; at: number | null; hot: number; phases: StallTook[] };
 
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
 export type SlowStart = {
@@ -21070,6 +21702,14 @@ export type TurnPick = {
 	number: number,
 };
 
+/**  A clone the person trusted that is not confirmed with the forge, so no chat's route serves it. */
+export type UnconfirmedClone = {
+	/**  Its folder, relative to the project. */
+	folder: string,
+	/**  The `<host>/<owner>/<repo>` the trust list holds for it. */
+	place: string,
+};
+
 /**  What an undo came to. */
 export type UndoAnswer = 
 /**
@@ -21618,6 +22258,13 @@ export type WhatChanged = {
 	 */
 	sinceTurnEnded: boolean,
 };
+
+/**
+ *  **Why a chat was not hibernated**, as the window is told it: the core's
+ *  [`NotRested`], one value for one reason, whose words are the window's
+ *  (`app/src/hibernationWords.ts`, `docs/ui-copy.md`).
+ */
+export type Why = "working" | "asking" | "paused" | "hibernated" | "ended" | "cannot_resume" | "cannot_see_its_own_work" | "own_work" | "line_coming" | "task_open" | "finished_task_open" | "report_owed" | "is_a_task" | "observed" | "on_a_runner" | "child_run" | "looked_at";
 
 /**
  *  A tint holds `token`, tinted, at least `distance` from `from` in OKLab, `from` as the tint

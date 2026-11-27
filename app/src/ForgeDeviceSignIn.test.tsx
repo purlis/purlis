@@ -8,7 +8,12 @@ import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { ForgeAccountRow, ForgeDeviceCode } from "./bindings";
 import { ForgeDeviceSignIn } from "./ForgeDeviceSignIn";
-import { ForgeSignInEnded, SIGN_IN_ENDED } from "./ForgeSignInEnded";
+import {
+  ForgeSignInEnded,
+  SIGN_IN_ENDED,
+  SIGN_IN_TROUBLE,
+  forgeAccountsChanged,
+} from "./ForgeSignInEnded";
 import { NoticeList } from "./Notice";
 import { accountsGroup } from "./settings/accounts";
 import type { LiveSetting } from "./settings/groups";
@@ -39,6 +44,7 @@ const OCTOCAT: ForgeAccountRow = {
   signed_in: true,
   scopes: ["repo", "read:org"],
   wider: [],
+  ci_allowed: false,
 };
 
 let accounts: ForgeAccountRow[];
@@ -313,5 +319,67 @@ describe("a browser sign-in the forge ended", () => {
     await screen.findByText(/sign-in to github.com as octocat has ended/);
     await userEvent.click(screen.getByRole("button", { name: /Dismiss/ }));
     await waitFor(() => expect(screen.queryByText(/has ended/)).toBeNull());
+  });
+
+  it("says a pin that moved, and a renewal that keeps failing, each once, with a way out", async () => {
+    accounts = [OCTOCAT];
+    render(<Lines />);
+    await waitFor(() => expect(commandsSent("forge_accounts")).toHaveLength(1));
+    await act(() => emit(SIGN_IN_TROUBLE, { account: OCTOCAT.id, trouble: "pin-changed" }));
+    const pin = await screen.findByText(/stopped renewing its sign-in to github.com as octocat/);
+    expect(pin.closest("[data-cause]")).toHaveAttribute(
+      "data-cause",
+      "forge-sign-in-pin-changed:01J9OCTOCAT",
+    );
+    // Told twice, drawn once.
+    await act(() => emit(SIGN_IN_TROUBLE, { account: OCTOCAT.id, trouble: "pin-changed" }));
+    expect(screen.getAllByText(/stopped renewing its sign-in/)).toHaveLength(1);
+
+    await act(() => emit(SIGN_IN_TROUBLE, { account: OCTOCAT.id, trouble: "renewal-failing" }));
+    const failing = await screen.findByText(/could not renew its sign-in to github.com as octocat/);
+    expect(failing.closest("[data-cause]")).toHaveAttribute(
+      "data-cause",
+      "forge-sign-in-renewal-failing:01J9OCTOCAT",
+    );
+    expect(screen.getAllByRole("button", { name: "Sign in again" })).toHaveLength(2);
+
+    await userEvent.click(screen.getAllByRole("button", { name: /Dismiss/ })[0]);
+    await waitFor(() => expect(screen.queryByText(/stopped renewing/)).toBeNull());
+    expect(screen.getByText(/could not renew its sign-in/)).toBeTruthy();
+  });
+
+  it("says a refused second sign-in was removed and where to allow CI files, with no Sign in again", async () => {
+    accounts = [OCTOCAT];
+    render(<Lines />);
+    await waitFor(() => expect(commandsSent("forge_accounts")).toHaveLength(1));
+    await act(() =>
+      emit(SIGN_IN_TROUBLE, { account: OCTOCAT.id, trouble: "second-sign-in-refused" }),
+    );
+    const refused = await screen.findByText(
+      /github.com refused the sign-in that lets purlis push CI files as octocat, so purlis removed it/,
+    );
+    expect(refused).toHaveTextContent("allow CI files in Settings › You › Accounts");
+    expect(refused.closest("[data-cause]")).toHaveAttribute(
+      "data-cause",
+      "forge-sign-in-second-sign-in-refused:01J9OCTOCAT",
+    );
+    expect(screen.queryByRole("button", { name: "Sign in again" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /Dismiss/ }));
+    await waitFor(() => expect(screen.queryByText(/so purlis removed it/)).toBeNull());
+  });
+
+  it("draws nothing for a trouble of an account that is not listed or not signed in, and clears them when an account is signed in or out", async () => {
+    const SIGNED_OUT: ForgeAccountRow = { ...ENDED, id: "01J9OUT", login: "other" };
+    accounts = [OCTOCAT, SIGNED_OUT];
+    render(<Lines />);
+    await waitFor(() => expect(commandsSent("forge_accounts")).toHaveLength(1));
+    await act(() => emit(SIGN_IN_TROUBLE, { account: "01J9NOBODY", trouble: "pin-changed" }));
+    await act(() => emit(SIGN_IN_TROUBLE, { account: SIGNED_OUT.id, trouble: "pin-changed" }));
+    expect(screen.queryByText(/stopped renewing/)).toBeNull();
+
+    await act(() => emit(SIGN_IN_TROUBLE, { account: OCTOCAT.id, trouble: "renewal-failing" }));
+    await screen.findByText(/could not renew its sign-in/);
+    act(() => forgeAccountsChanged());
+    await waitFor(() => expect(screen.queryByText(/could not renew its sign-in/)).toBeNull());
   });
 });

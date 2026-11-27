@@ -1067,6 +1067,22 @@ impl Kubectl {
         )
     }
 
+    /// **This kubectl, with `folder` added to the `PATH` of its runs** (#7192): the one folder a
+    /// kubeconfig's credential plugin was found in, never the person's whole shell `PATH`. An
+    /// absolute folder only, and not twice; a kubectl held by its path alone is left as it is.
+    #[must_use]
+    pub fn with_plugin_folder(mut self, folder: &std::path::Path) -> Kubectl {
+        let Some(path) = self.path.take() else {
+            return self;
+        };
+        let mut folders: Vec<PathBuf> = std::env::split_paths(&path).collect();
+        if folder.is_absolute() && !folders.iter().any(|one| one == folder) {
+            folders.push(folder.to_path_buf());
+        }
+        self.path = std::env::join_paths(folders).ok().or(Some(path));
+        self
+    }
+
     /// This kubectl, reading the kubeconfig at `path`.
     #[must_use]
     pub fn with_kubeconfig(mut self, path: impl Into<PathBuf>) -> Kubectl {
@@ -2180,6 +2196,11 @@ pub fn tell_the_mint_port(
     let Claimed {
         namespace, name, ..
     } = &paired.claimed;
+    // No runner chat is minted a token once the sign-in replaces the App (ADR 0128 D9), so a
+    // runner is told of no port, and this reads nothing of the Pool.
+    if cfg!(feature = "forge-wiring") {
+        return Ok(());
+    }
     let seen = kubectl.pool(pool)?;
     if !seen.mints_in_cluster {
         return Ok(());
@@ -2216,7 +2237,8 @@ pub fn to_tell_at_a_link(
     pin: &PoolPin,
     claimed: &Claimed,
 ) -> Result<Option<crate::forge::mintport::Told>, Refused> {
-    if !seen.mints_in_cluster {
+    // No runner chat is minted a token once the sign-in replaces the App (ADR 0128 D9).
+    if cfg!(feature = "forge-wiring") || !seen.mints_in_cluster {
         return Ok(None);
     }
     Ok(kubectl
@@ -2235,6 +2257,10 @@ pub fn tell_again(
     pod: &str,
     told: &crate::forge::mintport::Told,
 ) -> Result<bool, Refused> {
+    if cfg!(feature = "forge-wiring") {
+        // Nothing was told, so nothing is left to tell again.
+        return Ok(true);
+    }
     let line = serde_json::to_string(told).map_err(|why| Refused::Other(why.to_string()))?;
     kubectl
         .run(

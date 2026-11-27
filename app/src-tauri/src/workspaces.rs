@@ -378,6 +378,8 @@ pub(crate) async fn remove_for_the_person(
             crate::activity::forgotten_in(&held, &named);
             // A chat that asked the person to remove it is told they did (qw356).
             crate::removalasks::removed(&held, &named);
+            // And no hibernated chat's kept screen outlives it (SC-4b, #7631).
+            held.hibernated_screens_swept();
         }
         Ok(removed)
     })
@@ -758,7 +760,16 @@ pub async fn drop_repo(
 
 fn drop_in(root: &Path, workspace: &str, repo: &str) -> Result<Vec<String>, Refused> {
     let mut said = Vec::new();
+    // The clone's key is read before it goes: a clone that is gone has no identity to read.
+    let key = purlis_core::repofolder::folder(root, workspace, repo)
+        .ok()
+        .map(|clone| purlis_core::forge::confirmed::key_of_clone(&clone));
     let done = wscmd::drop::drop_repo(root, workspace, repo, &mut |line: Say| said.push(line));
+    if done.code == 0 {
+        // ADR 0128 D4: a repo the person removed is no longer one purlis serves. Best effort: the
+        // clone's key cannot match a clone made later, so a stale entry serves nothing.
+        crate::onelogin::forget_removed_clone(key.as_deref());
+    }
     ran(done.code, said).map_err(|said| Refused {
         said,
         at_risk: done.refused_over.into_iter().map(AtRisk::from).collect(),

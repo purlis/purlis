@@ -61,20 +61,24 @@ import { Health } from "../Doctor";
 import { EndingChat } from "../EndingChat";
 import { AskFirst } from "../ExtensionAction";
 import { Extensions } from "../Extensions";
+import { ForgeCiPermission } from "../ForgeCiPermission";
 import { ForgeDeviceSignIn } from "../ForgeDeviceSignIn";
 import { RemoveSigningConfirm } from "../settings/signing";
 import { SigningSetupDialog } from "../SigningSetupDialog";
 import { ForgeGitLabSignIn } from "../ForgeGitLabSignIn";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
+import { UseApplication } from "../settings/oneLogin";
 import { AddDockerPoolHost } from "../AddDockerPool";
 import { ReportConsentDialog, WhatReportsSend } from "../ReportConsent";
 import { SentReports } from "../settings/SentReports";
 import { startAddingAPool } from "../pools";
 import { ReplaceRunner } from "../settings/PoolLimits";
 import { DiscardHeldRunner, RemovePool } from "../settings/pools";
+import { ForgetPoolDialog } from "../poolsetup/ForgetPool";
 import { LetRunnerGo } from "../KeptRunnerNotice";
 import { StartOverAsk } from "../AgentIdentityFlow";
 import { RemoveIdentity } from "../AgentIdentityTab";
+import { RemoveGitlabAccess } from "../GitLabAccessTab";
 import { RemoveProfile } from "../settings/profiles";
 import { StopKeepingTaskScreens } from "../settings/taskScreens";
 import { SpecimenDialog } from "../specimen/Specimen";
@@ -393,6 +397,7 @@ const CLOSED_CHAT_CARD: ChatCard = {
     asker: 0,
     name: "Signed commits 5607",
     chat: null,
+    chat_id: null,
     persona: null,
     how: "done",
     outcome: "done",
@@ -587,6 +592,18 @@ function dialogCore() {
           expires_in: 900,
           scopes: ["repo", "read:org"],
         };
+      case "forge_ci_permission_start":
+        return {
+          flow: 2,
+          host: "github.com",
+          title: "GitHub",
+          user_code: "CIPM-4321",
+          verification_uri: "https://github.com/login/device",
+          expires_in: 900,
+          scopes: ["repo", "read:org", "workflow"],
+        };
+      case "forge_ci_permission_wait":
+        return new Promise(() => undefined);
       case "forge_device_sign_in_wait":
         // Still waiting for the person: the dialog is drawn with its code up.
         return new Promise(() => undefined);
@@ -1183,6 +1200,22 @@ const DIALOGS: Opened[] = [
     },
   },
   {
+    name: "Allow CI files, showing its code",
+    file: "ForgeCiPermission.tsx",
+    open: async () => {
+      render(
+        <ForgeCiPermission
+          accountId="acct"
+          login="octocat"
+          host="github.com"
+          onDone={nothing}
+          onCancel={nothing}
+        />,
+      );
+      await screen.findByText("CIPM-4321");
+    },
+  },
+  {
     name: "Remove signing's confirmation",
     file: "settings/signing.tsx",
     open: async () => {
@@ -1230,6 +1263,21 @@ const DIALOGS: Opened[] = [
     open: async () => render(<RemovePool name="builds" onRemove={nothing} onCancel={nothing} />),
   },
   {
+    name: "forgetting a pool in Pool setup, where the machine answers (#7191)",
+    file: "poolsetup/ForgetPool.tsx",
+    open: async () =>
+      render(
+        <ForgetPoolDialog
+          pool="builds"
+          where="lab"
+          canRemove
+          onForget={nothing}
+          onRemove={nothing}
+          onCancel={nothing}
+        />,
+      ),
+  },
+  {
     name: "discarding a held runner's conversations",
     file: "settings/pools.tsx",
     open: async () =>
@@ -1269,6 +1317,12 @@ const DIALOGS: Opened[] = [
     file: "AgentIdentityTab.tsx",
     open: async () =>
       render(<RemoveIdentity host="github.com" onClose={nothing} onRemove={nothing} />),
+  },
+  {
+    name: "removing GitLab access",
+    file: "GitLabAccessTab.tsx",
+    open: async () =>
+      render(<RemoveGitlabAccess host="gitlab.example.com" onClose={nothing} onRemove={nothing} />),
   },
   {
     name: "adding a pool",
@@ -1319,6 +1373,11 @@ const DIALOGS: Opened[] = [
     name: "the forge token sign-in",
     file: "ForgeTokenSignIn.tsx",
     open: async () => render(<ForgeTokenSignIn onSignedIn={nothing} onCancel={nothing} />),
+  },
+  {
+    name: "using an owner's application",
+    file: "settings/oneLogin.tsx",
+    open: async () => render(<UseApplication onPinned={nothing} onCancel={nothing} />),
   },
   {
     name: "removing a profile",
@@ -1600,6 +1659,7 @@ const DIALOGS: Opened[] = [
               reason: "purlis will not open an address that carries a name or a password",
             },
             candidate: { kind: "url", text: "https://purlis.dev/account" },
+            place: { left: 0, top: 0, width: 0, height: 0 },
           }}
           onClose={nothing}
           onConfirm={nothing}
@@ -1622,6 +1682,7 @@ const DIALOGS: Opened[] = [
               about: { about: "link" },
             },
             candidate: { kind: "url", text: "docs.purlis.dev/setup" },
+            place: { left: 0, top: 0, width: 0, height: 0 },
           }}
           onClose={nothing}
           onConfirm={nothing}
@@ -1637,6 +1698,7 @@ const DIALOGS: Opened[] = [
           links={[
             {
               candidate: { kind: "url", text: "https://purlis.dev/setup" },
+              place: { left: 0, top: 0, width: 0, height: 0 },
               seen: {
                 kind: "url",
                 target: "https://purlis.dev/setup",
@@ -1647,6 +1709,7 @@ const DIALOGS: Opened[] = [
             },
             {
               candidate: { kind: "url", text: "ftp://purlis.dev/old" },
+              place: { left: 0, top: 0, width: 0, height: 0 },
               seen: {
                 kind: "url",
                 target: "ftp://purlis.dev/old",

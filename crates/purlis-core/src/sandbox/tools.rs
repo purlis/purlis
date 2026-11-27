@@ -85,6 +85,7 @@ pub mod fill;
 pub mod host;
 pub mod login;
 pub mod mint;
+pub mod replaced;
 pub mod repo;
 
 /// The key in a persona's table that holds its tools.
@@ -815,6 +816,13 @@ pub fn keyed(
             ));
             continue;
         }
+        // The person's sign-in replaces both old ways of handing a chat a forge token (ADR 0128,
+        // "Migration"): the line keeps parsing, and the tool is left out with what to do.
+        #[cfg(feature = "forge-wiring")]
+        if let Some(kind) = replaced::kind_named(name, tool) {
+            fault(replaced::sentence(kind).to_owned());
+            continue;
+        }
         // Its `args` (#3421), set on the tool once it is read whole, below.
         match tool.get(args::KEY) {
             None => {}
@@ -1228,6 +1236,11 @@ pub struct Resolved {
     pub unallowed: Vec<String>,
     /// On a runner, each tool of [`Resolved::absent`] and what its name says in the chat (#4354).
     pub refusing: Vec<(String, String)>,
+    /// **A forge program no tool of this chat runs, under the class that holds the person's own
+    /// login back** (#1349): each with the sentence its shim answers with, and exit 1, so a chat
+    /// that runs it is told which flow sets it up and the program is never run bare
+    /// ([`guard_forges`]).
+    pub guards: Vec<(String, String)>,
     /// Nothing is allowed this chat, and it only says what is absent (#4373). Its shims go in a
     /// folder of their own, named by what they say ([`refusals_folder`]): the persona's folder
     /// holds the shims of another chat's Allow, which this chat is never to find first on its
@@ -1280,7 +1293,13 @@ pub fn neither_allowed_nor_in_the_image(persona: &str, name: &str, image: Option
 /// **The folder the shims of a chat that only refuses go in** (#4373), beside the persona's
 /// `folder`: named by the digest of what they say, so it holds those shims and nothing else, and
 /// two such chats that say the same share one.
-fn refusals_folder(folder: &Path, refusing: &[(String, String)], unallowed: &[String]) -> PathBuf {
+fn refusals_folder(
+    folder: &Path,
+    refusing: &[(String, String)],
+    unallowed: &[String],
+    guards: &[(String, String)],
+    ready: &[Ready],
+) -> PathBuf {
     use sha2::Digest as _;
     let mut digest = sha2::Sha256::new();
     for (name, said) in refusing {
@@ -1289,9 +1308,36 @@ fn refusals_folder(folder: &Path, refusing: &[(String, String)], unallowed: &[St
         digest.update(said.as_bytes());
         digest.update([0, u8::from(unallowed.contains(name)), 0]);
     }
+    // A guard is one chat's own (#1349): what it says is in the name, so a chat whose class is
+    // off, which has none, never finds or deletes this chat's. Nothing is added with no guard,
+    // so a folder named before guards existed keeps its name.
+    for (name, said) in guards {
+        digest.update(b"guard\0");
+        digest.update(name.as_bytes());
+        digest.update([0]);
+        digest.update(said.as_bytes());
+        digest.update([0]);
+    }
+    // The folder also holds the ready tools' shims, and where Allow is per chat (a runner's,
+    // `from_desktop`) two chats of one persona with the same guard have different ready sets:
+    // the set is in the name, so neither finds the other's shim first on its `PATH` (#4373) nor
+    // deletes it on a restart. Nothing is added with none ready, so such a folder keeps its name.
+    let mut names: Vec<&str> = ready.iter().map(|one| one.tool.name.as_str()).collect();
+    names.sort_unstable();
+    for name in names {
+        digest.update(b"ready\0");
+        digest.update(name.as_bytes());
+        digest.update([0]);
+    }
     let digest = digest.finalize();
+    // TODO(#7230): a `guarded/<digest>` folder is never removed once no chat uses it; nothing
+    // here knows which chats are live, so a sweep belongs to whatever ends a chat's sandbox.
     folder
-        .join("refusing")
+        .join(if guards.is_empty() {
+            "refusing"
+        } else {
+            "guarded"
+        })
         .join(crate::runnerlink::hex_of(&digest[..16]))
 }
 
@@ -1447,6 +1493,7 @@ pub(crate) fn for_chat_on(
             absent: Vec::new(),
             unallowed: Vec::new(),
             refusing: Vec::new(),
+            guards: Vec::new(),
             only_refuses: true,
         });
         into.absent.extend(unallowed.absent.iter().cloned());
@@ -1455,8 +1502,13 @@ pub(crate) fn for_chat_on(
     if let Some(resolved) = &mut resolved {
         resolved.refuse_what_is_absent(image);
         if resolved.only_refuses {
-            resolved.folder =
-                refusals_folder(&resolved.folder, &resolved.refusing, &resolved.unallowed);
+            resolved.folder = refusals_folder(
+                &resolved.folder,
+                &resolved.refusing,
+                &resolved.unallowed,
+                &[],
+                &resolved.ready,
+            );
         }
     }
     resolved
@@ -1521,10 +1573,30 @@ pub(crate) fn resolve_beside(
             continue;
         }
         match found {
-            Some((_, program)) => ready.push(Ready {
-                tool: tool.clone(),
-                program,
-            }),
+            Some((_, program)) => {
+                // A forge CLI takes no value from a vault once the sign-in replaces it (ADR
+                // 0128), whatever the line names its variable: judged by the program as found.
+                #[cfg(feature = "forge-wiring")]
+                {
+                    let real = program.canonicalize().ok();
+                    let names: Vec<&Path> = [Path::new(&tool.name), program.as_path()]
+                        .into_iter()
+                        .chain(real.as_deref())
+                        .collect();
+                    if forge_of(&names).is_some() {
+                        left.push(format!(
+                            "{persona}'s tool {} {}",
+                            tool.name,
+                            replaced::FORGE_PROGRAM_SAID
+                        ));
+                        continue;
+                    }
+                }
+                ready.push(Ready {
+                    tool: tool.clone(),
+                    program,
+                });
+            }
             None => {
                 // Nowhere at all, as distinct from only where a chat could have put it.
                 if found_in(wanted, search, &[]).is_none() {
@@ -1546,6 +1618,7 @@ pub(crate) fn resolve_beside(
         absent,
         unallowed: Vec::new(),
         refusing: Vec::new(),
+        guards: Vec::new(),
         only_refuses: false,
     })
 }
@@ -2161,6 +2234,9 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "supervisorctl",
     "openrc",
     "openrc-run",
+    // OpenRC's `supervise-daemon` runs the program it is named; its first part reaches the
+    // `supervise` row too, but it is refused on a row of its own (round 3 of #7828's review).
+    "supervise-daemon",
     "chkconfig",
     "deb-systemd-helper",
     // and their kin the review of #6556 found: systemd's `systemd-cat`, `systemd-inhibit`,
@@ -2177,6 +2253,62 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "s6-supervise",
     "s6-svscan",
     "runsvdir",
+    // Upstart's `initctl` (#6557), whose source was out of reach, refused on what it is for:
+    // `set-env` copies a value into the init daemon's job environment, as `import-environment`
+    // does, and `start` and `emit` start jobs (its `start`, `stop` and the rest are links to it,
+    // judged by its name). Upstart's `init --user --confdir <folder>` runs a folder's jobs, and
+    // `init` is as often a link to `systemd`, the service manager itself, refused with it on the
+    // conservative side (every `systemd-<name>` goes with it, by its first part).
+    "initctl",
+    "init",
+    "upstart",
+    "systemd",
+    // (`systemd` reaches the `systemd-<name>` and `<name>-systemd` rows above and elsewhere by
+    // their forms too, which keep their own rows all the same: a unit test pins them.)
+    // and the kin of `initctl` and `systemd` round 2 of #7828's review found: Upstart's `telinit
+    // -e` puts a value into the environment of the jobs its runlevel starts; systemd's `machinectl
+    // shell`, `homectl with`, `userdbctl --chain`, `varlinkctl call exec:` and `portablectl attach
+    // --now` run a command or an image they are handed, and are no `systemd-<name>`.
+    "telinit",
+    "machinectl",
+    "homectl",
+    "userdbctl",
+    "varlinkctl",
+    "portablectl",
+    // s6's programs that run the program after them and reach no row by a form of their name
+    // (rounds 2 and 3 of #7828's review): `s6-svlisten1` and `s6-ftrig-listen1` reach these
+    // rows without their version. `s6-svc`, `s6-svok` and `s6-svstat` run nothing.
+    "s6-svlisten",
+    "s6-notifyoncheck",
+    "s6-ftrig-listen",
+    "s6-ipcserver",
+    "s6-ipcserverd",
+    "s6-ipcserver-socketbinder",
+    "s6-ipcclient",
+    "s6-fdholder-retrieve",
+    "s6-sudod",
+    "s6-ipcserver-access",
+    "s6-connlimit",
+    "s6-fdholder-getdump",
+    "s6-permafailon",
+    // daemontools (#6559), whose source (cr.yp.to) was out of reach, refused on what each is for:
+    // `supervise` runs a folder's `./run` and `svscan` starts one on each folder in the one it is
+    // named, as `runsv` and `runsvdir` do; `multilog`'s `!processor` has a shell run the processor;
+    // `setuidgid`, `envuidgid`, `softlimit`, `setlock`, `pgrphack` and `fghack` run the program
+    // after them, as `envdir` does; and `svscanboot` runs `svscan` (round 5 of #7828's review).
+    // `supervise`, `svscan`, `setuidgid` and `softlimit` reach the `s6-` rows that were there
+    // before by their forms too, and `envuidgid`, `fghack` and `setlock` reach the `s6-` rows
+    // below; each keeps a row of its own all the same (unit tests pin them).
+    "svscan",
+    "svscanboot",
+    "supervise",
+    "multilog",
+    "setuidgid",
+    "envuidgid",
+    "softlimit",
+    "setlock",
+    "pgrphack",
+    "fghack",
     // Homebrew (#6325): `brew ruby -e` runs the Ruby it is handed, `brew sh --cmd` a shell
     // command, and `brew <name>` the `brew-<name>` its search path finds.
     "brew",
@@ -2205,6 +2337,183 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "s6-softlimit",
     "s6-applyuidgid",
     "coredumpctl",
+    // and the leads round 2 of #6556's review left (#6564), whose source was out of reach, refused
+    // on what each is for: `aptitude -o Dir::Bin::Methods::<scheme>=` names the program a download
+    // runs, as `apt-get`'s does; `run-parts` runs every program in the folder it is named; `capsh
+    // --` hands what follows to a shell; `cpanm`, `cpan` and `cpm` run a distribution's
+    // `Makefile.PL` or `Build.PL`, and `carton exec` the command it is handed; and `dnf` and `yum`
+    // load the Python plugins of the `pluginpath` a `--setopt` or a `-c` file names.
+    "aptitude",
+    "run-parts",
+    "capsh",
+    "cpanm",
+    "cpan",
+    "cpm",
+    "carton",
+    "dnf",
+    "yum",
+    // and the utilities beside them (dnf-plugins-core, yum-utils), which take `-c` and `--setopt`
+    // and load plugins as they do, and reach neither by a form of their names (rounds 5 and 6
+    // of #7828's review)
+    "yumdownloader",
+    "repoquery",
+    "reposync",
+    "repotrack",
+    "repoclosure",
+    "debuginfo-install",
+    "needs-restarting",
+    "package-cleanup",
+    "repodiff",
+    "repomanage",
+    "repo-graph",
+    // reached by its first part, `find`, too, but by chance
+    "find-repos-of-install",
+    // The kin of the #6559 and #6564 tools above that round 1 of #7828's review found, refused on
+    // what each is for: programs that run the command after them, as `setuidgid` and `capsh` do;
+    // the loggers that run a `!processor` they are handed, on the command line or in a log folder's
+    // `config`, as `multilog` does; `anacron`, which runs an anacrontab it is named; the Perl
+    // installers and runners beside `cpanm` (`cpanp`'s `!` evaluates Perl, `plenv exec` and `carmel
+    // exec` run a command, `prove` and `dzil` a distribution's code); and the package managers
+    // beside `dnf`: `zypper <name>` runs the `zypper-<name>` its search path finds, `makepkg` a
+    // `PKGBUILD`, MacPorts' `port` a `Portfile`, and `microdnf` and `tdnf` take settings as `dnf`
+    // does.
+    "runuser",
+    "gosu",
+    "prlimit",
+    "chrt",
+    "runcon",
+    "setarch",
+    "numactl",
+    "bwrap",
+    "proot",
+    "unbuffer",
+    "sg",
+    "run-one",
+    "run-this-one",
+    "keep-one-running",
+    "svlogd",
+    "s6-log",
+    "anacron",
+    "cpanp",
+    "carmel",
+    "plenv",
+    "prove",
+    "dzil",
+    "zypper",
+    "makepkg",
+    "port",
+    "microdnf",
+    "tdnf",
+    // and the kin round 3 of that review found: `fakeroot`, `fakechroot` and `eatmydata` run the
+    // command after them; `debuild`, `dh`, `pbuilder`, `sbuild` and `gbp` run a package's
+    // `debian/rules`, as `dpkg-buildpackage` does; `yath`, `cover`, `milla`, `minil` and
+    // `plackup` run a distribution's tests or hooks, or the Perl they are handed; `mock` runs its
+    // configuration as Python, `portindex` evaluates every `Portfile`, and `spectool` and
+    // `rpmlint` parse a spec whose `%(…)` a shell runs; and systemd's `kernel-install`, `ukify`
+    // and `mkosi` run the plugins, tools or scripts of a folder they are named.
+    "fakeroot",
+    "fakechroot",
+    "eatmydata",
+    "debuild",
+    "dh",
+    "pbuilder",
+    "sbuild",
+    "gbp",
+    "yath",
+    "cover",
+    "milla",
+    "minil",
+    "plackup",
+    "mock",
+    "portindex",
+    "spectool",
+    "rpmlint",
+    "kernel-install",
+    "ukify",
+    "mkosi",
+    // and round 4's: more programs that run the command after them (macOS's `taskpolicy`,
+    // util-linux's `choom` and `uclampset`, moreutils' `chronic`, `ifne`, `lckdo` and `zrun`,
+    // `cpulimit`, `nocache`, `schedtool`, `dbus-run-session`, `xvfb-run`, `faketime`, `torsocks`,
+    // `proxychains` (and `proxychains4`, which reaches it without its version), `trickle`, and s6's
+    // `s6-maximumtime`; and s6-networking's `s6-tcpserver` and the rest, twins of the `s6-ipc*`
+    // programs); `rotatelogs -p`, which runs a program on each new log; the package builders beside
+    // `debuild` (`pdebuild`, `cowbuilder`, `qemubuilder`, `dgit`, `fedpkg`, `centpkg`, `rhpkg`,
+    // `tito`), `debconf`, which runs the command it is handed, `deb-systemd-invoke`, which has
+    // `systemctl` act on a unit (its last part reaches Python's `invoke` row only by chance, so it
+    // has a row of its own), and MacPorts' `daemondo --start-cmd`; Perl's servers and runners
+    // beside `plackup`; and `s6-svlink` and `s6-rc-update`, which hand a running s6 a folder or a
+    // database a chat may have written.
+    "taskpolicy",
+    "choom",
+    "uclampset",
+    "chronic",
+    "ifne",
+    "lckdo",
+    "zrun",
+    "cpulimit",
+    "nocache",
+    "schedtool",
+    "dbus-run-session",
+    "xvfb-run",
+    "faketime",
+    "torsocks",
+    "proxychains",
+    "trickle",
+    "s6-maximumtime",
+    "s6-tcpserver",
+    "s6-tcpserver-socketbinder",
+    "s6-tcpserver-access",
+    "s6-tcpclient",
+    "s6-tlsserver",
+    "s6-tlsclient",
+    "s6-tlsd",
+    "s6-tlsc",
+    "rotatelogs",
+    "pdebuild",
+    "cowbuilder",
+    "qemubuilder",
+    "dgit",
+    "debconf",
+    "deb-systemd-invoke",
+    "fedpkg",
+    "centpkg",
+    "rhpkg",
+    "tito",
+    "daemondo",
+    "starman",
+    "starlet",
+    "morbo",
+    "hypnotoad",
+    "mojo",
+    "start_server",
+    "mbtiny",
+    "s6-svlink",
+    "s6-rc-update",
+    // Programs of other families that the rows #7828 added above reach by their last part, but only
+    // by chance, so each has a row of its own (a unit test pins them): s6's `s6-envuidgid`,
+    // `s6-fghack` and `s6-setlock`, which run the program after them, and `s6-rc-init`, which hands
+    // a running s6 the service folders of a compiled database a chat may have written, as
+    // `s6-rc-update` does (round 13 of its review); and `cloud-init`, which runs the `bootcmd` and
+    // `runcmd` of the file it is handed, Yelp's `dumb-init` and LXC's `lxc-init`, which run the
+    // command after them, and s6's `s6-linux-init`, its stage 1, which runs the `rc.init` of the
+    // folder its `-c` names, and `s6-linux-init-telinit`, its `telinit`, kept on the conservative
+    // side, which the `init` and `telinit` rows reach (round 14).
+    "s6-envuidgid",
+    "s6-fghack",
+    "s6-setlock",
+    "s6-rc-init",
+    "cloud-init",
+    "dumb-init",
+    "lxc-init",
+    "s6-linux-init",
+    "s6-linux-init-telinit",
+    // and, from round 20, Raku's `prove6`, which runs the test files it is pointed at and reaches
+    // `prove` without its version, `fakeroot-ng`, a project of its own that runs the command
+    // after it and reaches `fakeroot` by its first part, and `grunt-init`, which runs a
+    // template's code and reaches `init` by its last part.
+    "prove6",
+    "fakeroot-ng",
+    "grunt-init",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
@@ -2520,7 +2829,12 @@ pub fn allows(ready: &Ready, args: &[String]) -> Result<(), String> {
         .into_iter()
         .chain(real.as_deref())
         .collect();
-    if let Some(why) = args::refused_forge(&names, args) {
+    let host = ready
+        .tool
+        .host
+        .as_deref()
+        .unwrap_or_else(|| host::default_of(forge_of(&names).unwrap_or(false)));
+    if let Some(why) = args::refused_forge(&names, host, args) {
         return Err(why);
     }
     // The forge host its run reaches (#3869).
@@ -2607,7 +2921,8 @@ fn forge_of(names: &[&Path]) -> Option<bool> {
 }
 
 /// **The variables a forge tool's run starts with** (#3869): its host, from its declaration
-/// or the forge's own, as the program reads it ([`host::env`]); none for any other program.
+/// or the forge's own, as the program reads it ([`host::env`]), and for glab its telemetry and
+/// update check turned off; none for any other program.
 pub fn forge_env(ready: &Ready) -> Vec<(String, String)> {
     let real = ready.program.canonicalize().ok();
     let names: Vec<&Path> = [Path::new(&ready.tool.name), ready.program.as_path()]
@@ -2617,7 +2932,15 @@ pub fn forge_env(ready: &Ready) -> Vec<(String, String)> {
     forge_of(&names)
         .map(|glab| {
             let host = ready.tool.host.as_deref().unwrap_or(host::default_of(glab));
-            vec![host::env(glab, host)]
+            let mut env = vec![host::env(glab, host)];
+            if glab {
+                // glab posts usage events, with the token, to the host's `usage_data` route
+                // unless told not to, and looks for a newer release: the token goes only to
+                // the calls the chat makes (#1349).
+                env.push(("GLAB_SEND_TELEMETRY".to_owned(), "false".to_owned()));
+                env.push(("GLAB_CHECK_UPDATE".to_owned(), "false".to_owned()));
+            }
+            env
         })
         .unwrap_or_default()
 }
@@ -2894,6 +3217,276 @@ pub fn refusing_shim(persona: &str, name: &str, said: &str, passes_on: Option<&P
     )
 }
 
+/// **The flow that gives a chat a GitLab token** (#1349), as a refusal names it: the command that
+/// does it from a terminal and the window's tab. `host` is the project's GitLab host where it has
+/// one, else a placeholder the person fills.
+pub fn gitlab_flow(persona: &str, host: Option<&str>) -> String {
+    format!(
+        "run `purlis gitlab access {host} --persona {persona}` (or Settings › GitLab access in the \
+         purlis window), which keeps a GitLab token in a vault and declares glab for {persona}, \
+         then restart the chat",
+        host = host.unwrap_or("<your GitLab host>"),
+    )
+}
+
+/// **What a minting tool's shim says when there is no token to run it with** (#1349): a chat that
+/// holds the credentials class cannot read the person's own login, and a tool declared with a
+/// `mint` line never runs without the token it mints (#7133), so it says why and the way on.
+///
+/// `mints`: whether the tool is declared with a `mint` line. Only then does Agent identity
+/// matter, and the shim can only see that the chat's hook channel variable is missing, while
+/// `secret exec` may still reach the app by its ancestry (#6995): so it says the app was not
+/// reached from here, never that Agent identity is not set up. Any other tool is declared with a
+/// token held in a vault, so its token is not missing: the hook channel that hands it on is, as
+/// under `env -i glab mr list`.
+pub fn no_minted_token_said(name: &str, mints: bool) -> String {
+    let way = if mints {
+        "The app could not be reached from this shell to mint one: run it from the chat's own \
+         terminal, set up Agent identity in Settings › Agent identity if it is not, or choose a \
+         sandbox template where the credentials class is off."
+            .to_owned()
+    } else {
+        "The app could not be reached from this shell to hand on the token the tool is declared \
+         with: run it from the chat's own terminal (not under `env -i`), or choose a sandbox \
+         template where the credentials class is off."
+            .to_owned()
+    };
+    format!(
+        "{name} has no token in this chat, and a chat never uses the person's own {name} login. \
+         {way}"
+    )
+}
+
+/// **What the shim of an undeclared `glab` says** (#1349): this chat's persona declares no `glab`
+/// tool that is allowed here, and the chat never uses the person's own login, so it names the flow
+/// that sets one up and the Allow that follows it.
+pub fn undeclared_glab_said(persona: &str, host: Option<&str>) -> String {
+    if cfg!(feature = "forge-wiring") {
+        let _ = (persona, host);
+        return SIGN_IN_SAID.to_owned();
+    }
+    format!(
+        "glab has no token in this chat, and a chat never uses the person's own glab login. To \
+         give it one, {}, and allow it ({ALLOW_IS_ASKED}). Or choose a sandbox template where \
+         the credentials class is off.",
+        gitlab_flow(persona, host)
+    )
+}
+
+/// **What the shim of a `glab` the persona declares but that runs nothing here says** (#1349): it
+/// is not allowed yet (or no program was found), and the chat never falls back to the person's
+/// own login.
+pub fn declared_glab_not_running_said(persona: &str) -> String {
+    if cfg!(feature = "forge-wiring") {
+        let _ = persona;
+        return SIGN_IN_SAID.to_owned();
+    }
+    format!(
+        "glab is {persona}'s tool but is not running in this chat, and a chat never uses the \
+         person's own glab login. Allow it in Settings › GitLab access ({ALLOW_IS_ASKED}), make \
+         sure glab is installed, then restart the chat."
+    )
+}
+
+/// What a guarded `glab` says once the sign-in replaces the tokens a chat was handed (ADR 0128):
+/// this chat has no sign-in route to a GitLab host, so `glab` has nothing to act through. The shim
+/// is only written for such a chat: one with a route that covers a GitLab host runs the real `glab`
+/// ([`without_guard`]). Signing in is Settings › Accounts (Forges is where hosts are added).
+const SIGN_IN_SAID: &str = "glab has no token in this chat: this chat has no route to a GitLab \
+     host. A chat acts only through your purlis sign-in, never your own glab login. Sign in \
+     under Settings › Accounts, then restart the chat.";
+
+/// **The forge programs a chat under the credentials class is guarded from running bare**
+/// (#1349): [`guard_forges`] writes a shim for each that no tool of the chat declares.
+pub const GUARDED_FORGES: [&str; 1] = ["glab"];
+
+/// **`resolved`, with a shim that says the way on for each of [`GUARDED_FORGES`] that no tool of
+/// this chat runs** (#1349): where the sandbox holds the person's own credentials back
+/// ([`crate::sandbox::Class::Credentials`]) the program would only fail on that refusal, so its
+/// name in the chat names the flow instead and exits 1. `gitlab_hosts` are the project's GitLab
+/// hosts, one of which the sentence names where there is exactly one. A tool the persona declares
+/// has its own shim, which is never replaced; a name the persona declares that is not ready (not
+/// allowed here yet, or not found) is guarded with a sentence that says to allow it. The shims go
+/// in a folder of this chat's own, named by what they say ([`refusals_folder`]).
+pub fn guard_forges(
+    resolved: Option<Resolved>,
+    root: &Path,
+    persona: &str,
+    gitlab_hosts: &[String],
+    declared: &[String],
+) -> Option<Resolved> {
+    let own = |name: &str| {
+        resolved.as_ref().is_some_and(|one| {
+            one.ready.iter().any(|ready| ready.tool.name == name)
+                || one.refusing.iter().any(|(tool, _)| tool == name)
+        })
+    };
+    let guards: Vec<(String, String)> = GUARDED_FORGES
+        .iter()
+        .filter(|name| !own(name))
+        .map(|name| {
+            let host = match gitlab_hosts {
+                [only] => Some(only.as_str()),
+                _ => None,
+            };
+            let said = if declared.iter().any(|tool| tool == name) {
+                declared_glab_not_running_said(persona)
+            } else {
+                undeclared_glab_said(persona, host)
+            };
+            ((*name).to_owned(), said)
+        })
+        .collect();
+    if guards.is_empty() {
+        return resolved;
+    }
+    let mut into = resolved.unwrap_or_else(|| Resolved {
+        persona: persona.to_owned(),
+        folder: folder(root, persona),
+        ready: Vec::new(),
+        left: Vec::new(),
+        absent: Vec::new(),
+        unallowed: Vec::new(),
+        refusing: Vec::new(),
+        guards: Vec::new(),
+        only_refuses: true,
+    });
+    into.guards = guards;
+    // The guard is this chat's alone: its shims go in a folder named by what they say, never in
+    // the persona's, which a chat of the same persona without a guard writes and cleans.
+    into.folder = refusals_folder(
+        &folder(root, persona),
+        &into.refusing,
+        &into.unallowed,
+        &into.guards,
+        &into.ready,
+    );
+    Some(into)
+}
+
+/// **`resolved` without the guard of `name`** ([`guard_forges`]), for a chat whose forge route
+/// runs that program for real (ADR 0128): the shim would sit first on its `PATH` and keep the
+/// program from ever reaching the route. The shims' folder is named again by what is left in it:
+/// a chat that only refuses keeps a folder of its own ([`refusals_folder`]), and one with ready
+/// tools goes back to the persona's. Nothing is returned where nothing is left to arm or to say:
+/// a `left` or `absent` tool still is, since arming them is what warns that they run nothing.
+pub fn without_guard(mut resolved: Resolved, root: &Path, name: &str) -> Option<Resolved> {
+    let before = resolved.guards.len();
+    resolved.guards.retain(|(guarded, _)| guarded != name);
+    if resolved.guards.len() == before {
+        return Some(resolved);
+    }
+    if resolved.ready.is_empty()
+        && resolved.refusing.is_empty()
+        && resolved.guards.is_empty()
+        && resolved.left.is_empty()
+        && resolved.absent.is_empty()
+    {
+        return None;
+    }
+    let persona_folder = folder(root, &resolved.persona);
+    resolved.folder = if resolved.only_refuses {
+        refusals_folder(
+            &persona_folder,
+            &resolved.refusing,
+            &resolved.unallowed,
+            &resolved.guards,
+            &resolved.ready,
+        )
+    } else {
+        persona_folder
+    };
+    Some(resolved)
+}
+
+/// The shim of a guarded forge program ([`guard_forges`]): the sentence, and exit 1. It never
+/// runs the program, whatever is handed to it.
+pub fn guard_shim(persona: &str, name: &str, said: &str) -> String {
+    format!(
+        "#!/bin/sh\n# Written by purlis for a chat of {persona} (#1349). `{name}` has no token in \
+         this chat\n# and never falls back to the person's own login. Edits here are overwritten.\n\
+         echo {said} >&2\nexit 1\n",
+        said = quoted(&format!("purlis: {said}")),
+    )
+}
+
+/// **The forge routes the tools of a chat give it** (#1349): for each tool whose program is `gh`
+/// or `glab` (or that mints, which is a GitHub App's token), whether it is glab's and the host it
+/// reaches ([`host::default_of`] where it names none).
+pub fn forge_routes(ready: &[Ready]) -> Vec<(bool, String)> {
+    ready
+        .iter()
+        .filter_map(|one| {
+            let real = one.program.canonicalize().ok();
+            let names: Vec<&Path> = [Path::new(&one.tool.name), one.program.as_path()]
+                .into_iter()
+                .chain(real.as_deref())
+                .collect();
+            let glab = match forge_of(&names) {
+                Some(glab) => glab,
+                None if one.tool.mint.is_some() => false,
+                None => return None,
+            };
+            let host = one.tool.host.clone();
+            Some((
+                glab,
+                host.unwrap_or_else(|| host::default_of(glab).to_owned()),
+            ))
+        })
+        .collect()
+}
+
+/// The forge programs whose own login a chat never falls back to (ADR 0067 §5 class 6): each
+/// reads a file [`crate::sandbox::CREDENTIAL_FILES`] names.
+pub const FORGE_PROGRAMS: [&str; 2] = ["gh", "glab"];
+
+/// The variables each forge program reads its token from, best first.
+const FORGE_TOKEN_VARS: [(&str, &[&str]); 2] = [
+    ("gh", &["GH_TOKEN", "GITHUB_TOKEN"]),
+    ("glab", &["GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN"]),
+];
+
+/// **The variable a forge tool's token is handed in**, for a tool of [`FORGE_PROGRAMS`] or one
+/// that mints, where the shim refuses to run it without one. Chosen, in this order: a tool that
+/// mints hands the token minted in [`mint::VAR`] (its one value); else the first of the program's
+/// own token variables ([`FORGE_TOKEN_VARS`]) the tool hands; else its only value; and a tool
+/// that hands several, none of them the program's, is none (the shim then says nothing it
+/// cannot know, and the program is refused by the credentials class).
+fn forge_token_var(tool: &Tool) -> Option<String> {
+    let hands = |var: &str| tool.values.iter().find(|value| value.var == var);
+    if tool.mint.is_some() {
+        return hands(mint::VAR)
+            .or_else(|| tool.values.first())
+            .map(|value| value.var.clone());
+    }
+    let known = FORGE_TOKEN_VARS
+        .iter()
+        .find(|(program, _)| *program == tool.name)?
+        .1;
+    known
+        .iter()
+        .find_map(|var| hands(var))
+        .or(match tool.values.as_slice() {
+            [only] => Some(only),
+            _ => None,
+        })
+        .map(|value| value.var.clone())
+}
+
+/// `exec -a <name> program "$@"` under the declared name (#1977) where the shell can name it: POSIX
+/// `exec` has no `-a` (dash's has none), so it is tried in a subshell first. Empty where the tool
+/// declares no name.
+fn named_exec(ready: &Ready) -> String {
+    ready.argv0().map_or_else(String::new, |name| {
+        let name = quoted(name);
+        format!(
+            "if (exec -a {name} true) 2>/dev/null; then\n\
+             exec -a {name} {program} \"$@\"\nfi\n",
+            program = quoted(&ready.program.display().to_string()),
+        )
+    })
+}
+
 /// The shim for `ready`, run by `purlis`.
 pub fn shim(purlis: &Path, persona: &str, ready: &Ready) -> String {
     if ready.tool.login.is_some() {
@@ -2930,9 +3523,7 @@ pub fn shim(purlis: &Path, persona: &str, ready: &Ready) -> String {
          that chat runs\n# through `purlis secret exec`, which hands it {var} from the {vault} \
          vault: the chat\n# never reads the vault. Edits here are overwritten.\n\
          if [ -z \"{channel}\" ]; then\n\
-         # No app to ask from here: inside a `secret exec` run already, which handed the value \
-         on, or\n# outside the chat. The program itself, with nothing added.\n\
-         {named}exec {program} \"$@\"\nfi\nexec {words} \"$@\"\n",
+         {no_app}fi\nexec {words} \"$@\"\n",
         name = ready.tool.name,
         var = ready
             .tool
@@ -2942,18 +3533,32 @@ pub fn shim(purlis: &Path, persona: &str, ready: &Ready) -> String {
             .collect::<Vec<_>>()
             .join(" and "),
         vault = ready.tool.vault,
-        program = quoted(&ready.program.display().to_string()),
         words = words.join(" "),
-        // Under the declared name (#1977) where the shell can name it: POSIX `exec` has no
-        // `-a` (dash's has none), so it is tried in a subshell first.
-        named = ready.argv0().map_or_else(String::new, |name| {
-            let name = quoted(name);
+        no_app = if let Some(var) = forge_token_var(&ready.tool) {
+            // A forge tool's program is never run bare (#1349, #7133): with no app to mint
+            // from and no token handed on, it would read the person's own login, or fail on
+            // the credentials class's refusal of it. It says what to do, and fails.
             format!(
-                "if (exec -a {name} true) 2>/dev/null; then\n\
-                 exec -a {name} {program} \"$@\"\nfi\n",
+                "# No app to mint a token from here. Inside a `secret exec` run the token is \
+                 handed on already;\n# otherwise this tool never falls back to the person's own \
+                 login.\nif [ -n \"${{{var}:-}}\" ]; then\n{named}exec {program} \"$@\"\nfi\n\
+                 echo {said} >&2\nexit 1\n",
+                said = quoted(&format!(
+                    "purlis: {}",
+                    no_minted_token_said(&ready.tool.name, ready.tool.mint.is_some())
+                )),
+                named = named_exec(ready),
                 program = quoted(&ready.program.display().to_string()),
             )
-        }),
+        } else {
+            format!(
+                "# No app to ask from here: inside a `secret exec` run already, which handed the \
+                 value on, or\n# outside the chat. The program itself, with nothing added.\n\
+                 {named}exec {program} \"$@\"\n",
+                named = named_exec(ready),
+                program = quoted(&ready.program.display().to_string()),
+            )
+        },
     )
 }
 
@@ -3011,12 +3616,13 @@ impl Resolved {
                 .iter()
                 .map(|one| &one.tool.name)
                 .chain(self.refusing.iter().map(|(tool, _)| tool))
+                .chain(self.guards.iter().map(|(tool, _)| tool))
                 .any(|tool| std::ffi::OsStr::new(tool) == name);
             if !current {
                 std::fs::remove_file(entry.path()).map_err(refused(&entry.path()))?;
             }
         }
-        if self.ready.is_empty() && self.refusing.is_empty() {
+        if self.ready.is_empty() && self.refusing.is_empty() && self.guards.is_empty() {
             return Ok(None);
         }
         let put = |path: &Path, text: &str, mode: u32| -> std::io::Result<()> {
@@ -3046,6 +3652,13 @@ impl Resolved {
                     said,
                     self.unallowed.contains(name).then_some(bin.as_path()),
                 ),
+                0o700,
+            )?;
+        }
+        for (name, said) in &self.guards {
+            put(
+                &bin.join(name),
+                &guard_shim(&self.persona, name, said),
                 0o700,
             )?;
         }
@@ -3132,6 +3745,7 @@ mod fill_tests;
 #[cfg(test)]
 mod host_tests;
 #[cfg(test)]
+#[cfg(not(feature = "forge-wiring"))]
 mod mint_tests;
 #[cfg(test)]
 mod repo_tests;

@@ -75,6 +75,7 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
 import { List, ListRowSection } from "./ui/list/List";
 import { chatsOf, SnoozeAll, type Snoozing } from "./AsksSnooze";
 import { CoolingLine, RulesIMade } from "./AskRules";
+import { HeldActAsks } from "./HeldActAsks";
 
 import { chainSaid, NothingDone } from "./inboxRowParts";
 import { inOrder, type Standing } from "./asksOrder";
@@ -500,7 +501,14 @@ export function Inbox({
       : part !== "updates"
         ? { ...updates, rows: shownRows }
         : heldBy(hold, updates, shownRows, from === "project" ? teammatesClear : undefined);
-  const listed = (unheld ?? []).filter(scopeHolds(scope, sets));
+  const inScope = (unheld ?? []).filter(scopeHolds(scope, sets));
+  // A held forge act (#7685) is counted with the asks, and drawn by its own card below, with its
+  // two presses (`HeldActAsks`): never a row of its own as well. The scope narrows its cards as
+  // it narrows the rows, so what Asks draws is what it counts.
+  const listed = inScope.filter((ask) => ask.answer.via !== "held-act");
+  const heldActsListed = inScope.flatMap((ask) =>
+    ask.answer.via === "held-act" ? [ask.answer.ask] : [],
+  );
   /** This project's name, as its tab says it: every row is tagged with it and its workspace (ADR
    *  0121 decision 5, #6006). */
   const project = elsewhere?.waitingHere?.find((one) => one.plane === plane)?.project;
@@ -843,6 +851,8 @@ export function Inbox({
           )}
         </div>
       )}
+      {/* **Held forge acts** (one login F2): a tag, release, CI-file push or fork a chat asked for. */}
+      {drawsAsks && <HeldActAsks plane={plane} listed={heldActsListed} />}
       {drawsAsks && <DismissUndo hold={ignoring} cause="ask-ignored" said={ignoredSaid} />}
       {/* What was just dismissed, while its Undo stands (#5650). */}
       {(part === "updates" || part === "notices") && <DismissUndo hold={hold} />}
@@ -925,7 +935,7 @@ export function Inbox({
         {!drawsAsks ? null : asks === undefined ? (
           // Not read yet is not empty; what the window already knows waits wider is offered.
           <EmptyScope said={NOT_READ_YET} wider={wider} onWiden={widen} />
-        ) : rows.length === 0 ? (
+        ) : rows.length === 0 && heldActsListed.length === 0 ? (
           wider === undefined ? (
             <Empty
               recent={recent.slice(0, MOST_ANSWERED)}

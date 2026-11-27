@@ -104,8 +104,11 @@ pub enum Refusal {
     NeverAbove(String, String),
     /// This machine's record of nevers does not read, so no grant counts.
     NeversUnread,
-    /// The project's policy denies the pair (`[dispatch.denies]`): the target.
-    Denied(String),
+    /// This machine's record of nevers does not read only because its acceptance of the
+    /// project's policy is Broken ([`Covers::NeversUnaccepted`]): the target. Held in every mode.
+    NeversUnaccepted(String),
+    /// The project's policy denies the pair (`[dispatch.denies]`): the target, and why.
+    Denied(String, dispatchgrant::Deny),
     /// A grant covers the pair, and on this system its seal does not keep it out of reach of
     /// a chat with no sandbox: the target.
     NotSealedHere(String),
@@ -119,7 +122,8 @@ impl Refusal {
             Self::Never(asking, target) => dispatchgrant::never_said(asking, target),
             Self::NeverAbove(above, target) => dispatchgrant::never_above_said(above, target),
             Self::NeversUnread => dispatchgrant::NEVERS_UNREAD.to_owned(),
-            Self::Denied(target) => dispatchgrant::denied_said(target),
+            Self::NeversUnaccepted(target) => dispatchgrant::unread_unaccepted_said(target),
+            Self::Denied(target, deny) => dispatchgrant::denied_said(target, *deny),
             Self::Unsandboxed(missing) => {
                 let target = crate::shown::short(&missing.target);
                 format!(
@@ -292,7 +296,8 @@ pub fn answer_on(
         Covers::NeverAbove(above) => Answer::Refused(Refusal::NeverAbove(above, target.to_owned())),
         // A chat's own persona never reads as this; for any other, nobody is here to ask.
         Covers::Unread => Answer::Refused(Refusal::NeversUnread),
-        Covers::Denied(_) => Answer::Refused(Refusal::Denied(target.to_owned())),
+        Covers::NeversUnaccepted => Answer::Refused(Refusal::NeversUnaccepted(target.to_owned())),
+        Covers::Denied(deny) => Answer::Refused(Refusal::Denied(target.to_owned(), deny)),
         Covers::Covered if asking == Some(target) => Answer::Covered,
         Covers::Covered if !sandboxed && !reach.sealed_here => {
             Answer::Refused(Refusal::NotSealedHere(target.to_owned()))
@@ -315,13 +320,14 @@ pub fn answer_on(
 /// ticket T1.1-73): under `off` or `log`, a pair nothing covers, one the policy denies, and one
 /// refused only because the asking chat has no sandbox ([`Refusal::Unsandboxed`],
 /// [`Refusal::NotSealedHere`]), is covered. A lock, the person's nevers, a never above and a
-/// nevers record that does not read stand in every mode.
+/// nevers record that does not read, whatever its cause ([`Refusal::NeversUnread`],
+/// [`Refusal::NeversUnaccepted`]), stand in every mode.
 pub fn as_the_policy_runs(answer: Answer, mode: crate::enforcement::Mode) -> Answer {
     match answer {
         Answer::Refused(
             Refusal::Unsandboxed(_)
             | Refusal::Missing(_)
-            | Refusal::Denied(_)
+            | Refusal::Denied(..)
             | Refusal::NotSealedHere(_),
         ) if mode != crate::enforcement::Mode::Enforce => Answer::Covered,
         other => other,
@@ -338,7 +344,7 @@ pub fn as_the_policy_runs_for(
     mode: crate::enforcement::Mode,
 ) -> Answer {
     let rule = match &answer {
-        Answer::Refused(Refusal::Denied(_)) => dispatchgrant::DENY_RULE,
+        Answer::Refused(Refusal::Denied(..)) => dispatchgrant::DENY_RULE,
         Answer::Refused(
             Refusal::Unsandboxed(_) | Refusal::Missing(_) | Refusal::NotSealedHere(_),
         ) => dispatchgrant::ASK_RULE,
@@ -356,12 +362,18 @@ pub fn as_the_policy_runs_for(
     .unwrap_or(Answer::Covered)
 }
 
+/// Claude Code's flag that narrows hooks to the managed ones.
+const SAFE_MODE_FLAG: &str = "--safe-mode";
+
 /// The words of a harness's command line that start it with its permission prompts off, as a
 /// profile's command would carry them: Claude Code's and Codex's.
-const BYPASS_FLAGS: [&str; 4] = [
+const BYPASS_FLAGS: [&str; 5] = [
     "--dangerously-skip-permissions",
     "--dangerously-bypass-approvals-and-sandbox",
     "--yolo",
+    // Claude Code's flag that narrows hooks to the managed ones, as `disableAllHooks` does
+    // ([`crate::footerclaim`]): purlis's guards are not managed.
+    SAFE_MODE_FLAG,
     // Codex's low-friction mode: it runs what its own sandbox allows without asking first.
     "--full-auto",
 ];
@@ -383,17 +395,174 @@ const CLAUDE_CODE_MODE_FLAG: &str = "--permission-mode";
 /// The flag Claude Code reads settings by: a file's path, or the settings inline as JSON.
 const CLAUDE_CODE_SETTINGS_FLAG: &str = "--settings";
 
-/// Inline Claude Code settings `value` without a `permissions.defaultMode` that switches the
-/// prompts off, or `None` where it is no JSON or carries no such mode.
-fn settings_without_bypass(value: &str) -> Option<String> {
-    let mut settings: serde_json::Value = serde_json::from_str(value).ok()?;
-    let permissions = settings.get_mut("permissions")?.as_object_mut()?;
-    let mode = permissions.get("defaultMode")?.as_str()?;
-    if ClaudeCodeMode::of(mode) != ClaudeCodeMode::BypassPermissions {
-        return None;
+/// Whether `--settings`' `value` is the settings inline, not a file's path: it opens with `{`
+/// once the whitespace Claude Code ignores is passed.
+fn is_inline(value: &str) -> bool {
+    value
+        .trim_start_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
+        .starts_with('{')
+}
+
+/// Whether a `permissions.allow` entry allows every Bash command unasked: `Bash` alone, or
+/// `Bash(*)`, `Bash(:*)` and the like, where the glob inside is nothing but wildcards. Read
+/// without regard to case or whitespace (`bash`, `Bash (*)`, a tab inside the parentheses): a
+/// spelling Claude Code reads as the same rule must not slip past, so this reads more as broad,
+/// never less.
+pub(crate) fn is_broad_bash_allow(rule: &str) -> bool {
+    let rule: String = rule
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .flat_map(char::to_lowercase)
+        .collect();
+    match rule.strip_prefix("bash") {
+        Some("") => true,
+        Some(rest) => rest
+            .strip_prefix('(')
+            .and_then(|rest| rest.strip_suffix(')'))
+            .is_some_and(|glob| glob.chars().all(|c| matches!(c, '*' | ':'))),
+        None => false,
     }
-    permissions.remove("defaultMode");
-    Some(settings.to_string())
+}
+
+/// Whether an inline `env` key moves where purlis's guards or their state are read from: the
+/// home and config folder Claude Code reads its settings from, and any variable of purlis's own.
+fn is_guard_env(name: &str) -> bool {
+    let name = name.trim().to_ascii_uppercase();
+    name == "HOME"
+        || name == "CLAUDE_CONFIG_DIR"
+        || crate::names::ENV_PREFIX
+            .spellings()
+            .any(|prefix| name.starts_with(prefix))
+}
+
+/// The inline settings that switch the permission prompts off, as [`settings_without_bypass`]
+/// names them; every other key it takes out puts a guard at risk.
+const PROMPT_KEYS: [&str; 3] = [
+    "permissions.defaultMode",
+    "permissions.allow of Bash",
+    "sandbox.autoAllowBashIfSandboxed",
+];
+
+/// What inline settings carry that [`settings_without_bypass`] takes out.
+type Removed = Vec<&'static str>;
+
+/// Inline Claude Code settings `value` without what turns the chat's prompts or guards off, and
+/// what was taken out, or `None` where they carry none of it (#7165): a `permissions.defaultMode`
+/// that switches the prompts off, a broad `permissions.allow` of Bash (`"Bash"`), a `hooks` key
+/// (a hook of the profile's own may answer allow ahead of purlis's guard) and `disableAllHooks`
+/// (which would silence purlis's guards), whatever the value of the last two. **Inline settings
+/// this cannot read are `Err`** (#7155): Claude Code accepts JSON `serde_json` rejects (comments,
+/// trailing commas, a byte-order mark), so none of these can be shown absent, and it is taken
+/// out whole.
+fn settings_without_bypass(value: &str) -> Option<Result<(String, Removed), ()>> {
+    let Ok(mut settings) = serde_json::from_str::<serde_json::Value>(value) else {
+        return is_inline(value).then_some(Err(()));
+    };
+    let mut removed = Removed::new();
+    if let Some(permissions) = settings
+        .get_mut("permissions")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        let off = permissions
+            .get("defaultMode")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|mode| ClaudeCodeMode::of(mode) == ClaudeCodeMode::BypassPermissions);
+        if off {
+            permissions.remove("defaultMode");
+            removed.push("permissions.defaultMode");
+        }
+        if let Some(allow) = permissions
+            .get_mut("allow")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            let before = allow.len();
+            allow.retain(|rule| !rule.as_str().is_some_and(is_broad_bash_allow));
+            if allow.len() != before {
+                removed.push("permissions.allow of Bash");
+            }
+        }
+    }
+    if let Some(auto) = settings
+        .get_mut("sandbox")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        let off = serde_json::Value::Bool(false);
+        // Claude Code's documented default for the key is on
+        // (https://docs.claude.com/en/docs/claude-code/settings, "sandbox settings"; purlis's
+        // own `harness/claude.rs` and `sandbox/claude_wrap.rs` rely on it), so a key that is
+        // absent from an enabled sandbox is as much a finding as one set to true, and removing
+        // the key would restore the default. Fail closed: the key is written `false`.
+        let enabled = auto.get("enabled").is_some_and(|on| on != &off);
+        let allows = auto.get(AUTO_ALLOW_KEY).is_some_and(|on| on != &off)
+            || (enabled && !auto.contains_key(AUTO_ALLOW_KEY));
+        if allows {
+            auto.insert(AUTO_ALLOW_KEY.to_owned(), off);
+            removed.push("sandbox.autoAllowBashIfSandboxed");
+        }
+    }
+    if let Some(object) = settings.as_object_mut() {
+        for key in GUARD_KEYS {
+            if object.remove(key).is_some() {
+                removed.push(key);
+            }
+        }
+        if let Some(env) = object
+            .get_mut("env")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            let before = env.len();
+            env.retain(|name, _| !is_guard_env(name));
+            if env.len() != before {
+                removed.push("env that moves its guards");
+            }
+        }
+    }
+    (!removed.is_empty()).then(|| Ok((settings.to_string(), removed)))
+}
+
+/// Top-level keys of inline settings that put a hook of the profile's own ahead of, or silence,
+/// purlis's guards, whatever their value: `hooks`, `disableAllHooks` and `allowManagedHooksOnly`
+/// ([`crate::footerclaim`]).
+const GUARD_KEYS: [&str; 3] = ["hooks", "disableAllHooks", "allowManagedHooksOnly"];
+
+/// The sandbox key that lets Bash run unasked wherever the sandbox holds it.
+const AUTO_ALLOW_KEY: &str = "autoAllowBashIfSandboxed";
+
+/// What a profile's words do, for the sentence that refuses them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum What {
+    /// They switch the permission prompts off.
+    PromptsOff,
+    /// They can silence or outrank purlis's guards, as well as, perhaps, the prompts.
+    GuardsOff,
+    /// Inline settings purlis cannot read, so it cannot tell.
+    Unreadable,
+}
+
+impl What {
+    /// What follows "starts its harness with" in a sentence that refuses them. `PromptsOff` is
+    /// the sentence it always was.
+    pub fn clause(self) -> &'static str {
+        match self {
+            Self::PromptsOff => "the permission prompts off",
+            Self::GuardsOff => {
+                "settings that can switch the permission prompts or purlis's guards off"
+            }
+            Self::Unreadable => {
+                "inline settings purlis cannot read, so it cannot tell whether they switch the \
+                 permission prompts or its guards off"
+            }
+        }
+    }
+}
+
+/// What [`bypass_in`] found: the words as shown to a person, and what they do.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Found {
+    /// As shown to a person.
+    pub flag: String,
+    /// What they do.
+    pub what: What,
 }
 
 /// **The words of `command` that start a harness with its permission prompts off**, if any
@@ -412,7 +581,45 @@ fn settings_without_bypass(value: &str) -> Option<String> {
 /// may be attached to its flag (`--ask-for-approval=never`, `-anever`,
 /// `-capproval_policy=never`) or be the next word.
 pub fn bypass_in(command: &[String]) -> Option<String> {
-    (0..command.len()).find_map(|at| bypass_at(command, at).map(|bypass| bypass.shown))
+    bypass_found(command).map(|found| found.flag)
+}
+
+/// [`bypass_in`], with what the words do ([`What`]).
+pub fn bypass_found(command: &[String]) -> Option<Found> {
+    bypass_all_beside(command, &[]).into_iter().next()
+}
+
+/// Every finding of [`bypass_found`], in the order of the words: what a notice names whole.
+pub fn bypass_all(command: &[String]) -> Vec<Found> {
+    bypass_all_beside(command, &[])
+}
+
+/// [`bypass_found`] on a line that holds settings purlis wrote itself: `own` are those words,
+/// exactly as armed ([`crate::sandbox::Words::armed`]), and a `--settings` whose value is one
+/// of them is purlis's own hooks and guards, never read as a profile's. **Only an exact word
+/// is exempt**, so a profile's settings that merely look like purlis's are read as any other.
+/// No start uses this: it is for tests that arm settings.
+#[cfg(test)]
+pub fn bypass_found_beside(command: &[String], own: &[String]) -> Option<Found> {
+    bypass_all_beside(command, own).into_iter().next()
+}
+
+fn bypass_all_beside(command: &[String], own: &[String]) -> Vec<Found> {
+    let mut found = Vec::new();
+    let mut at = 0;
+    while at < command.len() {
+        match bypass_at(command, at, own) {
+            Some(bypass) => {
+                at += bypass.words;
+                found.push(Found {
+                    flag: bypass.shown,
+                    what: bypass.what,
+                });
+            }
+            None => at += 1,
+        }
+    }
+    found
 }
 
 /// **`command` with the words that switch the prompts off taken out** ([`bypass_in`]): what a
@@ -421,10 +628,22 @@ pub fn bypass_in(command: &[String]) -> Option<String> {
 /// goes with it where it is the next word; inline `--settings` keep every key but the
 /// permission mode.
 pub fn without_bypass(command: &[String]) -> Vec<String> {
+    without_bypass_with(command, &[])
+}
+
+/// [`without_bypass`] on a line that holds settings purlis wrote itself ([`bypass_found_beside`]):
+/// those words are kept whole, hooks and all.
+/// No start uses this: it is for tests that arm settings.
+#[cfg(test)]
+pub fn without_bypass_beside(command: &[String], own: &[String]) -> Vec<String> {
+    without_bypass_with(command, own)
+}
+
+fn without_bypass_with(command: &[String], own: &[String]) -> Vec<String> {
     let mut kept = Vec::with_capacity(command.len());
     let mut at = 0;
     while at < command.len() {
-        match bypass_at(command, at) {
+        match bypass_at(command, at, own) {
             Some(bypass) => {
                 kept.extend(bypass.kept);
                 at += bypass.words;
@@ -447,10 +666,12 @@ struct Bypass {
     /// What stands in their place once the prompts are back on: nothing, or the same inline
     /// `--settings` without the permission mode.
     kept: Vec<String>,
+    /// What they do.
+    what: What,
 }
 
 /// The words at `at` of `command` that switch the prompts off, if they do.
-fn bypass_at(command: &[String], at: usize) -> Option<Bypass> {
+fn bypass_at(command: &[String], at: usize, own: &[String]) -> Option<Bypass> {
     use crate::sandbox::codex::{is_flag, split};
     let word = command.get(at)?;
     if BYPASS_FLAGS.contains(&word.as_str()) {
@@ -458,6 +679,12 @@ fn bypass_at(command: &[String], at: usize) -> Option<Bypass> {
             shown: word.clone(),
             words: 1,
             kept: Vec::new(),
+            // `--safe-mode` narrows hooks, so purlis's guards: not the prompts.
+            what: if word == SAFE_MODE_FLAG {
+                What::GuardsOff
+            } else {
+                What::PromptsOff
+            },
         });
     }
     if !is_flag(word) {
@@ -467,16 +694,35 @@ fn bypass_at(command: &[String], at: usize) -> Option<Bypass> {
     let value = attached.or_else(|| command.get(at + 1).map(String::as_str))?;
     let words = if attached.is_some() { 1 } else { 2 };
     // **Claude Code's inline settings may carry the permission mode** (the re-review of #7104):
-    // `permissions.defaultMode`. A settings file's path is not read here.
+    // `permissions.defaultMode`, and what else would silence a guard ([`settings_without_bypass`]).
+    // A settings file's path is not read here.
     if flag == CLAUDE_CODE_SETTINGS_FLAG {
-        let rewritten = settings_without_bypass(value)?;
-        return Some(Bypass {
-            // The mode's own word is the attendance fact's alone to spell.
-            shown: format!("{flag} (its permissions.defaultMode)"),
-            words,
-            kept: match attached {
-                Some(_) => vec![format!("{flag}={rewritten}")],
-                None => vec![flag.to_owned(), rewritten],
+        // Purlis's own armed settings carry its hooks: they are not a profile's to be read.
+        if own.iter().any(|word| word == value) {
+            return None;
+        }
+        return Some(match settings_without_bypass(value)? {
+            Ok((rewritten, removed)) => Bypass {
+                // The mode's own word is the attendance fact's alone to spell.
+                shown: format!("{flag} (its {})", removed.join(", its ")),
+                words,
+                what: if removed.iter().all(|key| PROMPT_KEYS.contains(key)) {
+                    What::PromptsOff
+                } else {
+                    What::GuardsOff
+                },
+                kept: match attached {
+                    Some(_) => vec![format!("{flag}={rewritten}")],
+                    None => vec![flag.to_owned(), rewritten],
+                },
+            },
+            // Refused whole: nothing of it is kept, so no mode in it runs.
+            Err(()) => Bypass {
+                // Not a claim that they switch anything off: only that none can be ruled out.
+                shown: format!("{flag} (unreadable)"),
+                words,
+                kept: Vec::new(),
+                what: What::Unreadable,
             },
         });
     }
@@ -496,6 +742,7 @@ fn bypass_at(command: &[String], at: usize) -> Option<Bypass> {
         },
         words,
         kept: Vec::new(),
+        what: What::PromptsOff,
     })
 }
 
@@ -525,22 +772,24 @@ pub enum NamedBy<'a> {
 /// the asking chat's own profile, not on one its dispatch names, and not on one the persona's
 /// definition names, which a chat can write. A handoff is held to it as a task is.
 pub fn bypass_refusal(profile: &str, command: &[String], by: NamedBy<'_>) -> Option<String> {
-    let flag = crate::shown::short(&bypass_in(command)?);
+    let found = bypass_found(command)?;
+    let flag = crate::shown::short(&found.flag);
+    let clause = found.what.clause();
     let profile = crate::shown::short(profile);
     Some(match by {
         NamedBy::TheAskingChat => format!(
-            "profile '{profile}' starts its harness with the permission prompts off ({flag}), \
+            "profile '{profile}' starts its harness with {clause} ({flag}), \
              and a task never takes that from the chat that dispatched it. Dispatch \
              from a chat on a profile that asks."
         ),
         NamedBy::TheDispatch => format!(
-            "the dispatch names profile '{profile}', which starts its harness with the \
-             permission prompts off ({flag}), and purlis starts no chat for another chat on \
+            "the dispatch names profile '{profile}', which starts its harness with \
+             {clause} ({flag}), and purlis starts no chat for another chat on \
              such a profile. Name a profile that asks, or none."
         ),
         NamedBy::ThePersona(persona) => format!(
-            "persona '{}' names profile '{profile}', which starts its harness with the \
-             permission prompts off ({flag}), and purlis starts no chat for another chat on \
+            "persona '{}' names profile '{profile}', which starts its harness with \
+             {clause} ({flag}), and purlis starts no chat for another chat on \
              such a profile. Give the persona a profile that asks, from its view, or name one \
              with --profile.",
             crate::shown::short(persona)

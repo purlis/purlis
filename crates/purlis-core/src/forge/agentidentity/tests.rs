@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(not(feature = "forge-wiring"))]
 use std::io::{Read as _, Write as _};
 use std::sync::Mutex;
 
@@ -64,6 +65,7 @@ impl Endpoint for Conversions {
     }
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 /// A request head to `port`, answered with status line and body.
 fn get(port: u16, target: &str) -> String {
     let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).expect("connects");
@@ -77,6 +79,7 @@ fn get(port: u16, target: &str) -> String {
     answer
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 /// The value of `name=` in a page, up to its closing quote.
 fn after<'a>(text: &'a str, name: &str) -> &'a str {
     let from = text.find(name).expect("in the page") + name.len();
@@ -147,6 +150,7 @@ fn the_page_escapes_the_manifest_and_may_post_only_to_github() {
     assert!(!policy.contains("unsafe-inline"), "{policy}");
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_redirect_with_the_right_state_gets_the_app_and_any_other_request_gets_nothing() {
     let conversions = Conversions::say(201, &app_answer("acme", "Organization"));
@@ -474,6 +478,7 @@ fn a_new_plane(text: &str) -> tempfile::TempDir {
     root
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn finish_allows_on_a_plane_not_sandboxed_yet() {
     let root = a_new_plane("[sandbox]\n\n[sandbox.personas.dev]\n");
@@ -487,6 +492,7 @@ fn finish_allows_on_a_plane_not_sandboxed_yet() {
     assert_eq!(allowed, ["dev"]);
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn finish_leaves_a_persona_with_more_on_its_list_to_its_own_allow() {
     let root = a_new_plane("[sandbox]\n\n[sandbox.personas.dev]\nhosts = [\"a.example\"]\n");
@@ -497,6 +503,7 @@ fn finish_leaves_a_persona_with_more_on_its_list_to_its_own_allow() {
     assert_eq!(left, ["dev"]);
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn finish_allows_what_it_wrote_and_never_a_line_on_disk_it_did_not_write() {
     let before = "[sandbox]\n\n[sandbox.personas.dev]\n";
@@ -511,6 +518,7 @@ fn finish_allows_what_it_wrote_and_never_a_line_on_disk_it_did_not_write() {
     let mut allowed = Vec::new();
     let left = allow_as_written(
         root.path(),
+        "gh",
         &["dev".to_owned()],
         before,
         &written,
@@ -541,6 +549,7 @@ fn finish_allows_what_it_wrote_and_never_a_line_on_disk_it_did_not_write() {
     );
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn held_reads_each_app_with_its_personas() {
     let root = tempfile::tempdir().unwrap();
@@ -745,6 +754,7 @@ fn the_project_s_forge_hosts_are_read_from_its_clones_with_a_host_it_knows_no_fo
     );
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 /// **A browser through the whole flow, with no socket** (the report of 2026-11-17): it loads the start
 /// page, reads the `state` its form posts to GitHub, and comes back as `back` says, given that
 /// state. The clock moves only while the listener rests, so a flow that keeps waiting runs out its
@@ -805,6 +815,7 @@ fn through_a_browser(back: &dyn Fn(&str) -> String) -> (Result<Created, String>,
     (said, shown)
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 /// A browser's `GET` of `target`, with `more` header lines, as Chromium sends it.
 fn browser_get(target: &str, more: &str) -> String {
     format!(
@@ -815,6 +826,7 @@ fn browser_get(target: &str, more: &str) -> String {
     )
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn github_s_redirect_with_this_try_s_state_makes_the_app() {
     let (made, shown) = through_a_browser(&|state| {
@@ -824,6 +836,7 @@ fn github_s_redirect_with_this_try_s_state_makes_the_app() {
     assert!(shown.contains("GitHub made the App"), "{shown}");
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_browser_that_carries_many_cookies_for_this_machine_still_gets_through() {
     // Cookies are kept per host, not per port, so every local server a developer runs adds to
@@ -836,6 +849,7 @@ fn a_browser_that_carries_many_cookies_for_this_machine_still_gets_through() {
     assert!(shown.contains("GitHub made the App"), "{shown}");
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn github_coming_back_without_this_try_s_state_ends_the_wait_and_says_where_the_app_is() {
     for back in [
@@ -922,6 +936,7 @@ fn the_apps_page_is_the_owner_s_own() {
     );
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_wait_that_runs_out_says_so_and_where_the_app_may_be() {
     let (made, _) = through_a_browser(&|_| browser_get("/favicon.ico", ""));
@@ -931,4 +946,179 @@ fn a_wait_that_runs_out_says_so_and_where_the_app_may_be() {
         why.contains("https://github.com/organizations/acme/settings/apps"),
         "{why}"
     );
+}
+
+/// #1349: a chat whose sandbox holds the person's own credentials, in a project with a GitHub
+/// remote and no agent identity minting its token, is told so at its start, with both ways out.
+#[cfg(not(feature = "forge-wiring"))]
+#[test]
+fn a_start_with_the_class_on_a_github_remote_and_no_identity_says_the_ways_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    for folder in ["personas", "inventory", "workspaces"] {
+        std::fs::create_dir_all(root.join(folder)).unwrap();
+    }
+    clone_with_remotes(&root, "svc", &["https://github.com/acme/svc.git"]);
+    let forges = hosts_of_the_project(&root);
+    let said = credentials_note(true, &[], &forges, Some("dev")).expect("it says");
+    assert!(said.contains("Settings › Agent identity"), "{said}");
+    assert!(said.contains("credentials class is off"), "{said}");
+}
+
+#[cfg(not(feature = "forge-wiring"))]
+#[test]
+fn the_credentials_note_is_said_only_where_it_is_true() {
+    let github = [HostFound {
+        host: "github.com".into(),
+        kind: Some(Kind::GitHub),
+    }];
+    let gitlab = [HostFound {
+        host: "gitlab.com".into(),
+        kind: Some(Kind::GitLab),
+    }];
+    let none = [HostFound {
+        host: "bitbucket.org".into(),
+        kind: None,
+    }];
+    let note = |holds, routes: &[(bool, String)], forges: &[HostFound]| {
+        credentials_note(holds, routes, forges, Some("dev"))
+    };
+    let mint = [(false, "github.com".to_owned())];
+    assert_eq!(note(false, &[], &github), None, "class off");
+    assert_eq!(note(true, &mint, &github), None, "a mint holds");
+    assert_eq!(note(true, &[], &[]), None, "no remote");
+    assert_eq!(note(true, &[], &none), None, "no known forge");
+    let gitlab_said = note(true, &[], &gitlab).expect("gitlab");
+    assert!(!gitlab_said.contains("Agent identity"), "{gitlab_said}");
+    assert!(
+        gitlab_said.contains("credentials class is off"),
+        "{gitlab_said}"
+    );
+    assert!(
+        gitlab_said.contains("purlis gitlab access gitlab.com --persona dev"),
+        "{gitlab_said}"
+    );
+}
+
+/// #1349 part 2: a forge host is served by a route to that very host and kind, so a GitLab
+/// remote is not served by a GitHub mint, a host is not served by a tool of another host, and
+/// each forge is told its own way.
+#[cfg(not(feature = "forge-wiring"))]
+#[test]
+fn a_gitlab_host_is_served_only_by_a_glab_route_to_that_host() {
+    let both = [
+        HostFound {
+            host: "github.com".into(),
+            kind: Some(Kind::GitHub),
+        },
+        HostFound {
+            host: "git.acme.internal".into(),
+            kind: Some(Kind::GitLab),
+        },
+    ];
+    let note = |routes: &[(bool, String)]| credentials_note(true, routes, &both, Some("dev"));
+    let mint = (false, "github.com".to_owned());
+    let glab = (true, "git.acme.internal".to_owned());
+    // A GitHub mint serves GitHub and says only the GitLab way.
+    let said = note(std::slice::from_ref(&mint)).expect("gitlab is unserved");
+    assert!(!said.contains("Agent identity"), "{said}");
+    assert!(
+        said.contains("purlis gitlab access git.acme.internal --persona dev"),
+        "{said}"
+    );
+    // A glab tool on the right host serves GitLab and says only the GitHub way.
+    let said = note(std::slice::from_ref(&glab)).expect("github is unserved");
+    assert!(said.contains("Agent identity"), "{said}");
+    assert!(!said.contains("gitlab access"), "{said}");
+    // Both: nothing to say.
+    assert_eq!(note(&[mint.clone(), glab]), None);
+    // A glab tool on another host serves nothing here, and the sentence names the mismatch.
+    let said = note(&[mint, (true, "gitlab.com".to_owned())]).expect("host mismatch");
+    assert!(said.contains("gitlab.com, which is not where"), "{said}");
+    assert!(said.contains("host must match"), "{said}");
+    // The host is matched without regard to case.
+    let upper = [
+        (true, "GIT.ACME.INTERNAL".to_owned()),
+        (false, "github.com".to_owned()),
+    ];
+    assert_eq!(note(&upper), None);
+}
+
+/// The operator does not link purlis-core, so its own list of what a token may ask for
+/// (`MINTABLE`) is a copy of [`CHAT_PERMISSIONS`]' names: this pins them equal (#7249).
+#[test]
+fn the_operators_mintable_names_are_a_chats_permissions() {
+    let source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../operator/src/github.rs"),
+    )
+    .unwrap();
+    let from = source.find("pub const MINTABLE").expect("MINTABLE");
+    let list = &source[from..];
+    let list = &list[list.find('=').unwrap()..];
+    let list = &list[..list.find("];").unwrap()];
+    let mut mintable: Vec<&str> = list.split('"').skip(1).step_by(2).collect();
+    mintable.sort_unstable();
+    let mut chat: Vec<&str> = CHAT_PERMISSIONS.iter().map(|(name, _)| *name).collect();
+    chat.sort_unstable();
+    assert_eq!(mintable, chat);
+}
+
+// With the one-login train no setup writes a line or stores a key for a chat (ADR 0128).
+
+#[cfg(feature = "forge-wiring")]
+const REFUSED: &str = crate::sandbox::tools::replaced::SETUP_REFUSED;
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn setting_up_an_apps_lines_is_refused_and_writes_nothing() {
+    let text = "[sandbox]\n\n[sandbox.personas.dev]\n";
+    let root = a_new_plane(text);
+    assert_eq!(
+        add_lines(root.path(), "Iv23li", &["dev".to_owned()]),
+        Err(REFUSED.to_owned())
+    );
+    let said = write_and_allow(root.path(), "Iv23li", &["dev".to_owned()], &mut |_| {
+        panic!("nothing was written, so nothing is allowed")
+    });
+    assert_eq!(said, Err(REFUSED.to_owned()));
+    assert_eq!(
+        std::fs::read_to_string(crate::names::manifest(root.path())).unwrap(),
+        text
+    );
+}
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn making_an_app_is_refused_before_anything_is_listened_on_or_opened() {
+    let conversions = Conversions::say(201, &serde_json::json!({}));
+    let said = create_app(
+        &acme(),
+        &AtomicBool::new(false),
+        &Ways {
+            bind: &|| panic!("nothing is listened on"),
+            open: &|_: &str| panic!("no page is opened"),
+            exchange: &conversions,
+            clock: loopback::Clock::system(),
+        },
+    );
+    assert_eq!(said.err(), Some(REFUSED.to_owned()));
+}
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn a_chat_that_cannot_use_the_persons_login_is_pointed_to_the_sign_in_and_no_flow() {
+    let note = credentials_note(
+        true,
+        &[],
+        &[HostFound {
+            host: "github.com".to_owned(),
+            kind: Some(Kind::GitHub),
+        }],
+        Some("dev"),
+    )
+    .expect("a note");
+    assert!(note.contains("sign in under Settings › Accounts"), "{note}");
+    assert!(!note.contains("Agent identity"), "{note}");
+    assert!(!note.contains("purlis gitlab access"), "{note}");
 }

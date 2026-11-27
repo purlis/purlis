@@ -1,0 +1,406 @@
+{
+  "data": {
+    "nodes": [
+      {
+        "workflowRun": {
+          "databaseId": 45070000000,
+          "url": "https://github.com/purlis/purlis/actions/runs/45070000000"
+        },
+        "checkRuns": {
+          "nodes": [
+            {
+              "databaseId": 450700000000,
+              "name": "macOS (.app, .dmg)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-16T02:00:00Z",
+              "completedAt": "2026-11-16T03:30:12Z"
+            },
+            {
+              "databaseId": 450700000001,
+              "name": "Linux (.deb, AppImage)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-16T02:00:00Z",
+              "completedAt": "2026-11-16T02:37:00Z"
+            },
+            {
+              "databaseId": 450700000002,
+              "name": "runner binary (linux-aarch64)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-16T02:00:00Z",
+              "completedAt": "2026-11-16T02:10:06Z"
+            },
+            {
+              "databaseId": 450700000003,
+              "name": "what this run makes",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-16T02:00:00Z",
+              "completedAt": "2026-11-16T02:00:36Z"
+            }
+          ]
+        }
+      },
+      {
+        "workflowRun": {
+          "databaseId": 45070000001,
+          "url": "https://github.com/purlis/purlis/actions/runs/45070000001"
+        },
+        "checkRuns": {
+          "nodes": [
+            {
+              "databaseId": 450700000010,
+              "name": "macOS (.app, .dmg)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-17T02:01:00Z",
+              "completedAt": "2026-11-17T03:32:12Z"
+            },
+            {
+              "databaseId": 450700000011,
+              "name": "Linux (.deb, AppImage)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-17T02:01:00Z",
+              "completedAt": "2026-11-17T02:38:00Z"
+            },
+            {
+              "databaseId": 450700000012,
+              "name": "runner binary (linux-aarch64)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-17T02:01:00Z",
+              "completedAt": "2026-11-17T02:11:06Z"
+            },
+            {
+              "databaseId": 450700000013,
+              "name": "what this run makes",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-17T02:01:00Z",
+              "completedAt": "2026-11-17T02:01:36Z"
+            }
+          ]
+        }
+      },
+      {
+        "workflowRun": {
+          "databaseId": 45070000002,
+          "url": "https://github.com/purlis/purlis/actions/runs/45070000002"
+        },
+        "checkRuns": {
+          "nodes": [
+            {
+              "databaseId": 450700000020,
+              "name": "macOS (.app, .dmg)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-18T02:02:00Z",
+              "completedAt": "2026-11-18T03:32:12Z"
+            },
+            {
+              "databaseId": 450700000021,
+              "name": "Linux (.deb, AppImage)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-18T02:02:00Z",
+              "completedAt": "2026-11-18T02:39:00Z"
+            },
+            {
+              "databaseId": 450700000022,
+              "name": "runner binary (linux-aarch64)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-18T02:02:00Z",
+              "completedAt": "2026-11-18T02:12:06Z"
+            },
+            {
+              "databaseId": 450700000023,
+              "name": "what this run makes",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-18T02:02:00Z",
+              "completedAt": "2026-11-18T02:02:36Z"
+            }
+          ]
+        }
+      },
+      {
+        "workflowRun": {
+          "databaseId": 45070000003,
+          "url": "https://github.com/purlis/purlis/actions/runs/45070000003"
+        },
+        "checkRuns": {
+          "nodes": [
+            {
+              "databaseId": 450700000030,
+              "name": "macOS (.app, .dmg)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-19T02:03:00Z",
+              "completedAt": "2026-11-19T03:34:12Z"
+            },
+            {
+              "databaseId": 450700000031,
+              "name": "Linux (.deb, AppImage)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-19T02:03:00Z",
+              "completedAt": "2026-11-19T02:40:00Z"
+            },
+            {
+              "databaseId": 450700000032,
+              "name": "runner binary (linux-aarch64)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-19T02:03:00Z",
+              "completedAt": "2026-11-19T02:13:06Z"
+            },
+            {
+              "databaseId": 450700000033,
+              "name": "what this run makes",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-19T02:03:00Z",
+              "completedAt": "2026-11-19T02:03:36Z"
+            }
+          ]
+        }
+      },
+      {
+        "workflowRun": {
+          "databaseId": 45070000004,
+          "url": "https://github.com/purlis/purlis/actions/runs/45070000004"
+        },
+        "checkRuns": {
+          "nodes": [
+            {
+              "databaseId": 450700000040,
+              "name": "macOS (.app, .dmg)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-20T02:04:00Z",
+              "completedAt": "2026-11-20T03:34:12Z"
+            },
+            {
+              "databaseId": 450700000041,
+              "name": "Linux (.deb, AppImage)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-20T02:04:00Z",
+              "completedAt": "2026-11-20T02:41:00Z"
+            },
+            {
+              "databaseId": 450700000042,
+              "name": "runner binary (linux-aarch64)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-20T02:04:00Z",
+              "completedAt": "2026-11-20T02:14:06Z"
+            },
+            {
+              "databaseId": 450700000043,
+              "name": "what this run makes",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-20T02:04:00Z",
+              "completedAt": "2026-11-20T02:04:36Z"
+            }
+          ]
+        }
+      },
+      {
+        "workflowRun": {
+          "databaseId": 45070000005,
+          "url": "https://github.com/purlis/purlis/actions/runs/45070000005"
+        },
+        "checkRuns": {
+          "nodes": [
+            {
+              "databaseId": 450700000050,
+              "name": "macOS (.app)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-21T02:05:00Z",
+              "completedAt": "2026-11-21T03:33:00Z"
+            },
+            {
+              "databaseId": 450700000051,
+              "name": "Linux (.deb, AppImage)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-21T02:05:00Z",
+              "completedAt": "2026-11-21T02:40:00Z"
+            },
+            {
+              "databaseId": 450700000052,
+              "name": "runner binary (linux-aarch64)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-21T02:05:00Z",
+              "completedAt": "2026-11-21T02:15:00Z"
+            }
+          ]
+        }
+      },
+      {
+        "workflowRun": {
+          "databaseId": 45070000006,
+          "url": "https://github.com/purlis/purlis/actions/runs/45070000006"
+        },
+        "checkRuns": {
+          "nodes": [
+            {
+              "databaseId": 450700000060,
+              "name": "macOS (.app)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-22T02:06:00Z",
+              "completedAt": "2026-11-22T03:34:00Z"
+            },
+            {
+              "databaseId": 450700000061,
+              "name": "Linux (.deb, AppImage)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-22T02:06:00Z",
+              "completedAt": "2026-11-22T02:41:00Z"
+            },
+            {
+              "databaseId": 450700000062,
+              "name": "runner binary (linux-aarch64)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-22T02:06:00Z",
+              "completedAt": "2026-11-22T02:16:00Z"
+            }
+          ]
+        }
+      },
+      {
+        "workflowRun": {
+          "databaseId": 45070000007,
+          "url": "https://github.com/purlis/purlis/actions/runs/45070000007"
+        },
+        "checkRuns": {
+          "nodes": [
+            {
+              "databaseId": 450700000070,
+              "name": "macOS (.app)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-16T02:07:00Z",
+              "completedAt": "2026-11-16T03:35:00Z"
+            },
+            {
+              "databaseId": 450700000071,
+              "name": "Linux (.deb, AppImage)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-16T02:07:00Z",
+              "completedAt": "2026-11-16T02:42:00Z"
+            },
+            {
+              "databaseId": 450700000072,
+              "name": "runner binary (linux-aarch64)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-16T02:07:00Z",
+              "completedAt": "2026-11-16T02:17:00Z"
+            }
+          ]
+        }
+      },
+      {
+        "workflowRun": {
+          "databaseId": 45070000008,
+          "url": "https://github.com/purlis/purlis/actions/runs/45070000008"
+        },
+        "checkRuns": {
+          "nodes": [
+            {
+              "databaseId": 450700000080,
+              "name": "macOS (.app)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-17T02:08:00Z",
+              "completedAt": "2026-11-17T03:36:00Z"
+            },
+            {
+              "databaseId": 450700000081,
+              "name": "Linux (.deb, AppImage)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-17T02:08:00Z",
+              "completedAt": "2026-11-17T02:43:00Z"
+            },
+            {
+              "databaseId": 450700000082,
+              "name": "runner binary (linux-aarch64)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-17T02:08:00Z",
+              "completedAt": "2026-11-17T02:18:00Z"
+            }
+          ]
+        }
+      },
+      {
+        "workflowRun": {
+          "databaseId": 45070000009,
+          "url": "https://github.com/purlis/purlis/actions/runs/45070000009"
+        },
+        "checkRuns": {
+          "nodes": [
+            {
+              "databaseId": 450700000090,
+              "name": "macOS (.app)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-18T02:09:00Z",
+              "completedAt": "2026-11-18T03:37:00Z"
+            },
+            {
+              "databaseId": 450700000091,
+              "name": "Linux (.deb, AppImage)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-18T02:09:00Z",
+              "completedAt": "2026-11-18T02:44:00Z"
+            },
+            {
+              "databaseId": 450700000092,
+              "name": "runner binary (linux-aarch64)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-18T02:09:00Z",
+              "completedAt": "2026-11-18T02:19:00Z"
+            }
+          ]
+        }
+      },
+      {
+        "workflowRun": {
+          "databaseId": 45070000010,
+          "url": "https://github.com/purlis/purlis/actions/runs/45070000010"
+        },
+        "checkRuns": {
+          "nodes": [
+            {
+              "databaseId": 450700000100,
+              "name": "macOS (.app)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-19T02:10:00Z",
+              "completedAt": "2026-11-19T03:38:00Z"
+            },
+            {
+              "databaseId": 450700000101,
+              "name": "Linux (.deb, AppImage)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-19T02:10:00Z",
+              "completedAt": "2026-11-19T02:45:00Z"
+            },
+            {
+              "databaseId": 450700000102,
+              "name": "runner binary (linux-aarch64)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-19T02:10:00Z",
+              "completedAt": "2026-11-19T02:20:00Z"
+            }
+          ]
+        }
+      },
+      {
+        "workflowRun": {
+          "databaseId": 45070000011,
+          "url": "https://github.com/purlis/purlis/actions/runs/45070000011"
+        },
+        "checkRuns": {
+          "nodes": [
+            {
+              "databaseId": 450700000110,
+              "name": "macOS (.app, .dmg)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-20T02:11:00Z",
+              "completedAt": "2026-11-20T08:51:00Z"
+            },
+            {
+              "databaseId": 450700000111,
+              "name": "Linux (.deb, AppImage)",
+              "conclusion": "SUCCESS",
+              "startedAt": "2026-11-20T02:11:00Z",
+              "completedAt": "2026-11-20T08:51:00Z"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -168,6 +168,13 @@ pub enum PoolLink {
     OperatorKeyChanged,
     /// It did not answer, and why.
     Down { why: String },
+    /// **Its machine answers, but refuses** (#7187, Refused): its sign-in, Docker or forwarding
+    /// fails, and why. purlis stopped trying on its own; Check pool says what changed.
+    Refused { why: String },
+    /// **Its machine presents another host key, CA or engine than the pinned one** (#7187, Host
+    /// key changed), and why, as a link says it: a security stop, never tried again on its own;
+    /// the person says it is all right in the pool's settings.
+    HostKeyChanged { why: String },
     /// It suspended itself, a day without a link (#2051): its container is stopped, its home
     /// kept, and the window's next chat there starts it again. A check never wakes it.
     Suspended,
@@ -329,6 +336,12 @@ pub struct PoolVersion {
     /// **Its older runners kept as they could not be checked for such work** (ruled 2026-11-08),
     /// each by name with what is left of it: the Pools group names each in a line of its own.
     pub not_checked: Vec<PoolNotChecked>,
+    /// **How many runners on its engine belong to another desktop** (#7192), as a line ("2
+    /// runners belong to another desktop"): two desktops can share one remote engine, each with
+    /// its own runner of a pool. Only said, never acted on. Left out where there are none or the
+    /// engine could not be asked.
+    #[specta(optional)]
+    pub other_desktops: Option<String>,
 }
 
 /// **An older runner of a pool kept unchecked** (ruled 2026-11-08): its name, and what is left of
@@ -440,9 +453,7 @@ pub async fn set_remote_pool_owned(
             purlis_core::runners::set_remote_owned(&config_root()?, &name, owned, &shown)
                 .map_err(|why| why.to_string())?;
             if !owned {
-                for project in held {
-                    project.browsers().forget_pool_logins(&name);
-                }
+                crate::chatbrowsers::forget_pool_logins_in(&held, &name)?;
             }
             Ok(())
         })
@@ -552,8 +563,14 @@ pub fn add_on(machine: &Machine, pool: &Pool) -> Result<PoolRow, String> {
 pub enum PoolRemoval {
     /// It is gone, or what of it stays is said in `left`.
     Removed { left: Option<String> },
-    /// Its machine, `host`, doesn't answer, `why`: nothing was removed, and nothing was sent.
+    /// Its machine, `host`, doesn't answer, or presents another key or engine, `why`: nothing
+    /// was removed, and nothing was sent. Such a machine is never contacted (#7187, Unreachable,
+    /// Host key changed).
     Unreachable { why: String, host: String },
+    /// Its machine, `host`, answers and refuses, `why` (#7187, Refused): nothing was removed.
+    /// Remove, which cleans the machine, stays offered beside Forget it here, and goes on where
+    /// it is asked again.
+    Refused { why: String, host: String },
 }
 
 /// **Removes the pool `name`**: this desktop is taken out of its runner's peers over a link of
@@ -566,7 +583,8 @@ pub enum PoolRemoval {
 /// `discarding` names the held runners whose conversations the person was asked about, and agreed
 /// to discard with the pool (#4860): a runner held now that it does not name removes nothing.
 /// A pool on another machine that doesn't answer is removed not at all: the answer says so, and
-/// the window offers to forget it here.
+/// the window offers to forget it here. One that answers and refuses is offered Remove as well,
+/// which goes on where `despite_its_check` says it was asked again (#7187).
 #[tauri::command]
 #[specta::specta]
 pub async fn remove_docker_pool(
@@ -575,6 +593,7 @@ pub async fn remove_docker_pool(
     name: String,
     elsewhere: bool,
     discarding: Vec<String>,
+    despite_its_check: bool,
 ) -> Result<PoolRemoval, String> {
     #[cfg(unix)]
     {
@@ -600,7 +619,7 @@ pub async fn remove_docker_pool(
                     });
                 }
                 let machine = Machine::here(&config)?;
-                if let Some(unreachable) = unreachable_of(&machine, &name) {
+                if let Some(unreachable) = unreachable_of(&machine, &name, despite_its_check) {
                     return Ok(unreachable);
                 }
                 as_the_person_was_told(&machine, &name, elsewhere)?;
@@ -608,15 +627,27 @@ pub async fn remove_docker_pool(
                 remove_on(&machine, &name, &discarding)
             };
             if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app) {
-                links_end_once_gone(&host.connection(), &config, &name);
+                links_end_once_gone(&host.connection(), &config, &name, false);
             }
-            removed.map(|left| PoolRemoval::Removed { left })
+            // A removed pool keeps no login opt-in, which is kept on disk now (#7190): a store
+            // that could not take one out is said with what stays, and it no longer applies.
+            if removed.is_ok()
+                && let Ok(browsers) = crate::browsers::browsers(&app)
+            {
+                browsers.pool_gone(&name);
+            }
+            removed.map(|left| {
+                let logins = crate::chatbrowsers::forget_pool_logins_in(&held, &name).err();
+                PoolRemoval::Removed {
+                    left: said_together([left, logins]),
+                }
+            })
         })
         .await
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, planes, name, elsewhere, discarding);
+        let _ = (app, planes, name, elsewhere, discarding, despite_its_check);
         Err(NOT_HERE.to_owned())
     }
 }
@@ -679,36 +710,65 @@ fn gone_from_here(
     name: &str,
     left: &str,
 ) -> Option<String> {
-    for project in held {
-        project.browsers().forget_pool_logins(name);
-    }
+    let logins_kept = crate::chatbrowsers::forget_pool_logins_in(held, name).err();
+    // Its browsers first, while their links stand: each is stopped on its machine where that
+    // answers, and one it did not answer for is listed as left there (#7187 item 6).
+    let browsers_left = match crate::browsers::browsers(app) {
+        Ok(browsers) => crate::browsers::left_on_the_machine(browsers.end_on_forgotten(name).left),
+        Err(why) => {
+            tracing::warn!("purlis: the browsers on forgotten pool {name} were not ended: {why}");
+            None
+        }
+    };
     if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(app) {
-        links_end_once_gone(&host.connection(), config, name);
+        links_end_once_gone(&host.connection(), config, name, true);
     }
-    (!left.is_empty()).then(|| crate::devices::shown_safely(left))
+    let said = (!left.is_empty()).then(|| crate::devices::shown_safely(left));
+    // What stays, said together: a login opt-in the store could not take out is one of them.
+    said_together([said, browsers_left, logins_kept])
+}
+
+/// What stays after a pool is removed or forgotten, said as one: each line there is, one after
+/// the other; none where there is none.
+fn said_together(lines: impl IntoIterator<Item = Option<String>>) -> Option<String> {
+    lines
+        .into_iter()
+        .flatten()
+        .reduce(|all, one| format!("{all} {one}"))
 }
 
 /// **Remove of pool `name` where its machine doesn't answer**: nothing is removed, and the window
 /// offers to forget it here. `None` for a pool on this machine, or one whose machine answers.
 #[cfg(unix)]
-fn unreachable_of(machine: &Machine, name: &str) -> Option<PoolRemoval> {
+fn unreachable_of(machine: &Machine, name: &str, despite_its_check: bool) -> Option<PoolRemoval> {
     let pools = purlis_core::runners::pools(&machine.config).ok()?;
     let pool = pools.iter().find(|pool| pool.name() == name)?;
     let host = pool.remote_engine()?.host().to_owned();
     let finding = purlis_core::sshroute::pool::docker_of(&machine.docker, pool).err()?;
-    unreachable_said(&host, &finding)
+    let said = unreachable_said(&host, &finding);
+    // Asked again by the person after it said the machine answers: Remove goes on as it did
+    // before (#7122, #7139). A machine that does not answer is never gone on to.
+    if despite_its_check && matches!(said, PoolRemoval::Refused { .. }) {
+        return None;
+    }
+    Some(said)
 }
 
-/// [`unreachable_of`], once the machine `host` was found: only one that can't be reached.
+/// [`unreachable_of`], once the machine `host` was found: whatever it found, for Remove can
+/// reach nothing of a pool that is not reachable, whether the machine doesn't answer, refuses
+/// the sign-in, Docker or forwarding, or presents another key or engine (#7187: Forget works in
+/// every state).
 #[cfg(unix)]
-fn unreachable_said(
-    host: &str,
-    finding: &purlis_core::sshroute::connect::Finding,
-) -> Option<PoolRemoval> {
-    purlis_core::poolsetup::connecting::unreachable(finding).then(|| PoolRemoval::Unreachable {
-        why: crate::devices::shown_safely(&purlis_core::poolsetup::connect_said(finding)),
-        host: host.to_owned(),
-    })
+fn unreachable_said(host: &str, finding: &purlis_core::sshroute::connect::Finding) -> PoolRemoval {
+    let why = crate::devices::shown_safely(&purlis_core::poolsetup::connect_said(finding));
+    let host = host.to_owned();
+    // Refused is a machine that answers and says no: not one that is silent, and not one whose
+    // key or engine changed, which nothing is sent to.
+    if finding.remote_state() == purlis_core::sshroute::connect::RemoteState::Refused {
+        PoolRemoval::Refused { why, host }
+    } else {
+        PoolRemoval::Unreachable { why, host }
+    }
 }
 
 /// Refused, with nothing done, where what Remove would do to pool `name` is no longer what the
@@ -753,6 +813,7 @@ fn links_end_once_gone(
     connection: &crate::hostedsessions::Connection,
     config: &std::path::Path,
     name: &str,
+    forgotten: bool,
 ) {
     let read = purlis_core::runners::pools(config)
         .map(|pools| pools.iter().any(|pool| pool.name() == name))
@@ -762,7 +823,7 @@ fn links_end_once_gone(
         });
     match read {
         Ok(true) => {}
-        Ok(false) => connection.pool_removed(name),
+        Ok(false) => connection.pool_removed(name, forgotten),
         Err(why) => {
             tracing::warn!("purlis: what this machine keeps of its pools was not read: {why}");
             connection.links_to_pool_end(name);
@@ -1233,6 +1294,12 @@ pub fn version_on(
             .into_iter()
             .map(|(runner, left)| PoolNotChecked { runner, left })
             .collect(),
+        other_desktops: machine.for_pool(name).ok().and_then(|on| {
+            let device = purlis_core::machine::device_id(&machine.config).ok()?;
+            purlis_core::pools::belonging_to_another_desktop(&on.docker, &device)
+                .ok()
+                .flatten()
+        }),
     })
 }
 

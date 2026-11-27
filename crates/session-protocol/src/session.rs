@@ -608,9 +608,52 @@ use crate::view::{Limits, Views};
 /// answered an ask for it. Only a plain file is read, at most [`MOST_FILE_READ`] bytes, in
 /// pieces of [`MOST_FILE_PIECE`]; a binary file, a device and a folder are not. An older host
 /// is not asked, and its chat's paths stay no link.
+///
+/// 1.94 has a window name the families its resolution of the project's policy does not enforce
+/// for a chat's confinement ([`Confine::lifted`], the Q308 follow-up): its board answers a host
+/// nothing lists Allow with nobody asked (`asks`), or its proxy carries one (`network`), and the
+/// host tells each ([`SandboxTold::Lifted`]) so the window logs it under the chat. A host
+/// before 1.94 reads no families, and enforces both, as before; a runner applies its own locks over
+/// them.
+///
+/// 1.95 tells a window that a runner's host answers and refuses (#7187): `link_down` may say
+/// `refused` where the machine a pool reaches it through answers but its sign-in, Docker or
+/// forwarding fails, which the relaying host does not retry on its own, and `host_key_changed`
+/// where the machine presents another host key, CA or engine than the pinned one, a security stop
+/// that is never retried on its own. A window before 1.95 ignores both fields and reads the link
+/// as any link that is down, so its Reconnecting notice and Try now go on as they did; nothing is
+/// sent to a host of any version for either.
+///
+/// 1.96 has a host end a chat's program as a hibernation ([`Command::Hibernate`], #7630, SC-4a,
+/// ADR 0076 as amended 2026-11-25): the program is stopped, its engine dropped and its hosted
+/// entry forgotten, and its end is kept as the host's own lowest act ([`Command::Hibernate`]), so a
+/// close, a quit, a stop or the kill switch racing it wins. The window's alone. An older host
+/// refuses it `unknown_command`, so the window does not offer Hibernate on a chat it runs.
+///
+/// 1.97 has a host say which file it keeps from its window ([`FileRead::Kept`], #7064): its
+/// own purlis folders, a harness's sign-in and what no chat on it reads are never read, whatever
+/// the reach, and says [`FileRead::Unsure`] where it could not tell; a file with several names is kept where one of its other names is in such a
+/// folder (#7077). It reads only what is asked (#7078): a look reads a file's first 8 KiB to
+/// tell text, and a piece its own bytes alone. A window before 1.97 is answered
+/// [`FileRead::NotThere`] for a kept file, and a window asks a host to read a file
+/// only from this version ([`KNOWS_KEPT_FILES`]).
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 93,
+    minor: 97,
+};
+
+/// The version that first hibernates a chat's program ([`Command::Hibernate`], #7630): none is
+/// asked of a host before.
+pub const KNOWS_HIBERNATE: Version = Version {
+    major: 1,
+    minor: 96,
+};
+
+/// The version that first hears [`FileRead::Kept`] (#7064): a window before it hears
+/// [`FileRead::NotThere`] for such a file.
+pub const KNOWS_KEPT_FILES: Version = Version {
+    major: 1,
+    minor: 97,
 };
 
 /// The version that first lists a browser's pages and downloads to its views and takes the
@@ -1536,6 +1579,14 @@ pub enum Command {
     /// refused [`NO_SUCH_CHAT`] for a program the host does not hold. The window's alone
     /// ([`crate::grants::Power::Reattach`]).
     Hold { program: String, still: bool },
+    /// **End `program` as a hibernation** (1.96, #7630, ADR 0076 as amended 2026-11-25): the
+    /// host records that the end is its own lowest act, stops the program and everything it
+    /// started, and **drops its engine** and forgets it, so its memory is returned, which
+    /// [`Command::Stop`] (keeps it until closed) does not. Its end is told as a hibernation: it
+    /// writes no `run.ended`. Answered [`Answer::Done`] once it has ended; refused
+    /// [`NO_SUCH_CHAT`] for a program the host does not hold. The window's alone
+    /// ([`crate::grants::Power::Reattach`]).
+    Hibernate { program: String },
     /// **Where the host's own event log ends now** (1.41, #3393): its device and the `seq` of
     /// its last line, 0 for none, answered [`Answer::LogEnd`]: the cursor a client that holds
     /// none of it subscribes from, so it is pushed what is written from now on. Refused
@@ -1666,6 +1717,14 @@ pub struct Confine {
     /// Whether its proxy holds a connection to a host nothing lists while the person is asked.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub asks: bool,
+    /// **The families the window's resolution of the project's policy does not enforce for this
+    /// chat** (1.94, the Q308 follow-up): `"asks"`, where its board answers a host nothing
+    /// lists Allow with nobody asked, and `"network"`, where its proxy carries such a host. The
+    /// host tells each one so carried ([`SandboxTold::Lifted`]), and the window, which alone
+    /// resolves the policy and knows the chat, logs it. None, as a host before 1.94 reads it:
+    /// both enforced.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lifted: Vec<String>,
 }
 
 /// **The request a browser made of a sign-in's redirect** (1.59, #4044): it holds a one-time code,
@@ -1707,6 +1766,40 @@ pub struct ConfinePlan {
     /// The services on the machine the chat was given, each by its port.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub given: Vec<u16>,
+    /// The chat's forge route (one login, ADR 0128 D3a): where its proxy hands a `CONNECT` to a
+    /// forge host, and the hosts it never tunnels to. Only a plan made for a chat of this machine
+    /// has one, for a proxy that runs on it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forge: Option<ForgeEgress>,
+}
+
+/// A chat's forge route as its proxy is told it ([`ConfinePlan::forge`]).
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForgeEgress {
+    /// The forge hosts its proxy never tunnels to.
+    pub denied: Vec<String>,
+    /// The listener's loopback address and port.
+    pub door: std::net::IpAddr,
+    pub port: u16,
+    /// The forge hosts handed to the listener.
+    pub hosts: Vec<String>,
+    /// The run's hand-off secret, in hex: what its proxy proves to the door and the door proves
+    /// back. Empty in a plan that has none, which is refused.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub handoff: String,
+}
+
+// Written by hand so the secret is in no Debug line.
+impl std::fmt::Debug for ForgeEgress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ForgeEgress")
+            .field("denied", &self.denied)
+            .field("door", &self.door)
+            .field("port", &self.port)
+            .field("hosts", &self.hosts)
+            .field("handoff", &"..")
+            .finish()
+    }
 }
 
 /// A host a confinement's proxy carries, and the layer that lists it (1.4).
@@ -1830,6 +1923,10 @@ pub enum SandboxTold {
     /// An Allow next time · once of `target` ended without its attempt (1.88, T1-34, Q278):
     /// put out past the most a board keeps, or by a Keep blocked. The window audits its end.
     DroppedNext { target: String },
+    /// It let `target`, a host and port, through only because `family` (one of
+    /// [`Confine::lifted`]) is not enforced for the chat (1.94): the window writes the line of
+    /// the chat's enforcement log where the family logs. Told only where the window named it.
+    Lifted { family: String, target: String },
 }
 
 /// What a [`Command::Start`] asks for.
@@ -2585,7 +2682,9 @@ pub enum FileRead {
     /// A plain file of text, `size` bytes long. `from_workspace` is its path from the chat's
     /// workspace, `/` between its parts, for one in it, and `home` that workspace, for an ask
     /// to name; `version` names it as it is now, so a read in pieces is of one file. With an
-    /// `at`, the piece from there.
+    /// `at`, the piece from there. From 1.97 a look (no `at`) reads only the file's first 8 KiB
+    /// to tell it is text, and a piece only its own bytes, judged as text but for a character
+    /// cut at its edges.
     Plain {
         path: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2602,12 +2701,22 @@ pub enum FileRead {
     /// Something is there that is not a plain file: a folder, a device, a pipe, a socket, or a
     /// file of the host's own system (`/proc`, `/sys`, `/dev`).
     NotPlain { path: String },
-    /// A file that is not text, `size` bytes long.
+    /// A file that is not text, `size` bytes long: from 1.97, one whose first 8 KiB (a look)
+    /// or whose piece holds a NUL byte or is not UTF-8 but for a character cut at its edges. A
+    /// file with a NUL byte only later is linked, and its pieces joined are said to be binary.
     Binary { path: String, size: u64 },
     /// A file past [`MOST_FILE_READ`], `size` bytes long.
     TooLarge { path: String, size: u64 },
     /// A file outside the chat's workspace, asked with [`FileReach::Workspace`]: not read.
     Outside { path: String },
+    /// A file the host keeps from its window (1.97, #7064), whatever the reach and whatever
+    /// the person answered: in one of purlis's own folders there, a harness's sign-in, or one
+    /// no chat there reads. Not read.
+    Kept { path: String },
+    /// A file the host could not tell whether it keeps from its window (1.97, #7064, #7077):
+    /// the list of what it keeps could not be read whole, or a file with several names has
+    /// more places to look through than it looks in. Not read, as a kept file is not.
+    Unsure { path: String },
 }
 
 /// **What a chat counts as its own on the host** (1.93, [`FileRead::Plain`]): its workspace,
@@ -3148,6 +3257,18 @@ pub enum Pushed {
         /// refused.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         gone: bool,
+        /// The other host answers, but refuses (1.95, #7187): its sign-in, Docker or forwarding
+        /// fails. The relaying host does not link to it again on its own; until something asks
+        /// again, each command that needs it tries once and is refused. A window before 1.95
+        /// ignores the field and reads it as any link that is down, which it waits on.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        refused: bool,
+        /// The machine the other host is reached through presents another host key, CA or
+        /// engine than the pinned one (1.95, #7187): a security stop, never linked again on
+        /// its own; the person says it is all right in the pool's settings. A window before
+        /// 1.95 ignores the field and reads it as any link that is down.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        host_key_changed: bool,
     },
     /// The link a relaying host reaches the other host over is back (1.17, #2496), with what the
     /// client's link stands on carried over to it: its views draw again, each from a snapshot.
@@ -3386,6 +3507,7 @@ wire_words!(Command {
     NoteProgram => "note_program",
     NoteStrays => "note_strays",
     Hold => "hold",
+    Hibernate => "hibernate",
     LogEnd => "log_end",
     AskGrade => "ask_grade",
     AnswerGrade => "answer_grade",
@@ -3435,9 +3557,10 @@ impl Command {
             Command::LogIn { .. } | Command::FillSecret { .. } => Power::LogIn,
             Command::Inspect { .. } | Command::InspectorInput { .. } => Power::Inspect,
             Command::ProgramsOf { .. } => Power::ProgramsOf,
-            Command::NoteProgram { .. } | Command::NoteStrays { .. } | Command::Hold { .. } => {
-                Power::Reattach
-            }
+            Command::NoteProgram { .. }
+            | Command::NoteStrays { .. }
+            | Command::Hold { .. }
+            | Command::Hibernate { .. } => Power::Reattach,
             Command::Quit => Power::Quit,
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,
@@ -4042,7 +4165,9 @@ impl Lane {
             | Command::NoteProgram { program, .. }
             | Command::NoteStrays { program }
             // A hold keeps its order with the stop that may follow it.
-            | Command::Hold { program, .. } => Some(Lane::Program(program.clone())),
+            | Command::Hold { program, .. }
+            // A hibernation keeps its order with the close or stop that may follow it.
+            | Command::Hibernate { program } => Some(Lane::Program(program.clone())),
             // A confinement's own commands keep their order: an Allow, then what it holds.
             Command::Confine(confine) => Some(Lane::Confinement(confine.confinement.clone())),
             Command::LetGoOfConfinement { confinement }
@@ -4687,6 +4812,14 @@ impl Client {
         self.done(Command::Hold {
             program: program.into(),
             still,
+        })
+        .await
+    }
+
+    /// Ends `program` as a hibernation, dropping its engine (1.96, #7630).
+    pub async fn hibernate(&self, program: &str) -> Result<(), CallError> {
+        self.done(Command::Hibernate {
+            program: program.into(),
         })
         .await
     }

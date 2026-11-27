@@ -83,7 +83,8 @@ Windows yet.
 ## 0. The `release` environment: where the secrets live
 
 The signing secrets are **environment** secrets, not repository secrets. The release workflow's
-`plan`, `build` and `publish` jobs run in an environment called `release` whenever they publish,
+`keys`, `build`, `sign-macos` and `publish` jobs (and the others that read a key) run in an
+environment called `release` whenever they publish,
 and the environment's deployment policy decides which refs may reach them:
 
 | Policy entry | Type | Admits |
@@ -111,7 +112,8 @@ environment holds them, delete the repository copies:
 
 ```sh
 for s in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
-         APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY; do
+         APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+         APPLE_API_ISSUER APPLE_API_KEY APPLE_API_KEY_P8; do
   gh secret delete "$s" --repo purlis/purlis 2>/dev/null || true
 done
 ```
@@ -194,9 +196,9 @@ The `.pub` file is one line of base64, and that line is the whole value. A test 
 `app/src-tauri` accepts either the placeholder or a real minisign key and fails on anything in
 between. The release workflow refuses to publish while the placeholder is there.
 
-## 3. The Developer ID certificate: optional, and what skipping it costs
+## 3. The Developer ID certificate and notarization: optional, and what skipping them costs
 
-**Skip this and everything still works.** With none of the three secrets below set, the
+**Skip this and everything still works.** With none of the six secrets below set, the
 workflow ad-hoc signs the macOS bundle instead (`codesign -s -`). That is not the same as
 leaving it unsigned: on Apple Silicon a binary with no signature does not execute at all, so
 signing is never optional — only *whose* signature it carries is. What an ad-hoc signature
@@ -207,24 +209,98 @@ install from a browser, described at the bottom of this page.
 Apple's. Every update is verified against that key before anything is unpacked, whoever signed
 the bundle.
 
-If you do have an Apple Developer account, set all three and the workflow uses them. Set
-*some* of the three and the workflow refuses the publish, because a half-configured
-certificate silently signs with something nobody chose.
+### Where the key is used
 
-1. On developer.apple.com: **Certificates → + → Developer ID Application**. Create it and
-   download it into Keychain Access.
-2. In Keychain Access, export that certificate *with its private key* as `charter-devid.p12`,
-   with a password.
-3. Then:
+The Developer ID private key is imported on a **GitHub-hosted** macOS runner and nowhere else
+(ADR 0042, amended 2026-11-25). The `build` job may run on a self-hosted Mac (the repository
+variable `MACOS_RELEASE_RUNNER`); it seals its bundle ad-hoc and never reads a secret below. The
+`sign-macos` job, which runs on `macos-latest` after the checks have passed, in the `release`
+environment, takes that bundle and signs it, notarizes a stable one, and makes the `.app.zip`,
+the updater's `.app.tar.gz` with its minisign signature, and the `.dmg`.
+
+- A **stable** build (a `v*` tag) is Developer ID signed **and notarized**.
+- A **dev** build is Developer ID signed and **not** notarized: it reaches people through the
+  updater, which sets no quarantine flag.
+
+### The secrets
+
+Six secrets, all **environment secrets of `release`** (step 0), in two groups. The Developer ID
+group is all or none; the notarization group is all or none; and **a stable build needs both or
+neither**. Half of either group, or a Developer ID without the notarization group on a stable tag
+(or the reverse), stops the publish in the `keys` job, before the build, and says which is
+missing. A dev build with the notarization group set does not notarize and says so.
+
+| Secret | What it holds | Used for |
+|---|---|---|
+| `APPLE_CERTIFICATE` | the Developer ID Application certificate and its private key, as a `.p12`, base64 on one line | signing, every build |
+| `APPLE_CERTIFICATE_PASSWORD` | the password the `.p12` was exported with | signing, every build |
+| `APPLE_SIGNING_IDENTITY` | the certificate's identity string, `Developer ID Application: Purlis, Inc (TEAMID)` | signing, every build |
+| `APPLE_API_ISSUER` | the App Store Connect issuer ID (a UUID) | notarizing, stable only |
+| `APPLE_API_KEY` | the API key's **key ID** (ten characters, not the file name) | notarizing, stable only |
+| `APPLE_API_KEY_P8` | the text of the `AuthKey_<KEYID>.p8` file | notarizing, stable only |
+
+### How to produce each one
+
+**`APPLE_CERTIFICATE` and `APPLE_CERTIFICATE_PASSWORD`: the Developer ID Application certificate
+as a base64 `.p12`.** Only the account holder can create a Developer ID certificate.
+
+1. On a Mac, open **Keychain Access → Certificate Assistant → Request a Certificate From a
+   Certificate Authority**. Enter the account's email and a common name, choose **Saved to disk**,
+   and save the `.certSigningRequest`.
+2. On developer.apple.com: **Certificates, Identifiers & Profiles → Certificates → +**, choose
+   **Developer ID Application**, upload the request and download the `.cer`. Double-click it to
+   add it to the login keychain, the same one that holds the request's private key.
+3. In Keychain Access, under **My Certificates**, find **Developer ID Application: Purlis, Inc
+   (TEAMID)** with the key nested under it. Right-click it and **Export**, as `purlis-devid.p12`,
+   with a password you will keep. Exporting the certificate without its key gives a `.p12` that
+   cannot sign.
+4. Then:
 
 ```sh
-security find-identity -v -p codesigning    # copy the "Developer ID Application: … (TEAMID)" line
-
-base64 -i charter-devid.p12 | gh secret set APPLE_CERTIFICATE --repo purlis/purlis --env release
+base64 -i purlis-devid.p12 | tr -d '\n' | gh secret set APPLE_CERTIFICATE --repo purlis/purlis --env release
 gh secret set APPLE_CERTIFICATE_PASSWORD --repo purlis/purlis --env release       # the .p12 password
-gh secret set APPLE_SIGNING_IDENTITY --repo purlis/purlis --env release \
-  --body "Developer ID Application: Your Name (TEAMID)"
+rm purlis-devid.p12                                                                 # and empty the Trash
 ```
+
+**`APPLE_SIGNING_IDENTITY`: the identity string.** It is the certificate's name exactly as
+`codesign` lists it, in the form `Developer ID Application: <Name> (<TEAMID>)`, where `<Name>` is
+the legal name on the account and `<TEAMID>` is the ten-character team ID. With the certificate in
+your keychain:
+
+```sh
+security find-identity -v -p codesigning
+#   1) 0123456789ABCDEF0123456789ABCDEF01234567 "Developer ID Application: Purlis, Inc (ABCDE12345)"
+
+gh secret set APPLE_SIGNING_IDENTITY --repo purlis/purlis --env release \
+  --body "Developer ID Application: Purlis, Inc (ABCDE12345)"
+```
+
+Copy what is between the quotes, whole. The signing job refuses to start if the string matches no
+identity in the `.p12`, and prints the identities the `.p12` does hold.
+
+**`APPLE_API_ISSUER`, `APPLE_API_KEY` and `APPLE_API_KEY_P8`: an App Store Connect API key.**
+Notarization signs in with an API key, never an Apple ID password.
+
+1. On appstoreconnect.apple.com: **Users and Access → Integrations → App Store Connect API →
+   Team Keys** (a *team* key, not an individual one). The account holder may have to request
+   access to the API there first.
+2. **Generate API Key** (or **+**), name it `purlis-notarization`, give it the **Developer**
+   role, which is enough for `notarytool`, and generate it.
+3. The **Issuer ID** is shown above the table of keys: a UUID. The **Key ID** is in the new key's
+   row. **Download** the key: `AuthKey_<KEYID>.p8`. Apple offers the download once, so keep it
+   until the secrets are set.
+4. Then:
+
+```sh
+gh secret set APPLE_API_ISSUER --repo purlis/purlis --env release --body "00000000-0000-0000-0000-000000000000"
+gh secret set APPLE_API_KEY    --repo purlis/purlis --env release --body "ABCDE12345"       # the key ID
+gh secret set APPLE_API_KEY_P8 --repo purlis/purlis --env release < AuthKey_ABCDE12345.p8   # the file's text
+rm AuthKey_ABCDE12345.p8                                                                    # keep one copy somewhere safe
+```
+
+The job writes the `.p8` to a file of its own for `notarytool`, with permissions for its owner
+alone, and deletes it, and the keychain the certificate was imported into, when the job ends,
+however it ended.
 
 **If you adopt a team, keep it.** macOS lets an app replace its own bundle in `/Applications`
 without asking for App Management permission when the new bundle is signed by the same team.
@@ -239,8 +315,7 @@ in ADR 0042 §3, including what it does *not* cover. Moving from ad-hoc to a rea
 the same one-time reinstall any team change is, so adopting a certificate later is not blocked
 by anything here.
 
-**Not set, on purpose:** `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, `APPLE_API_*`. Those
-are notarization, which ADR 0042 declines. The consequence is below.
+**Not set, on purpose:** `APPLE_ID` and `APPLE_PASSWORD`. Nothing here signs in with an Apple ID.
 
 ## 4. The dev channel's release: once
 
@@ -256,6 +331,142 @@ It **must** stay a prerelease. GitHub's `latest` pointer skips prereleases, and 
 thing keeping stable machines off dev builds. The workflow checks this before every dev
 publish. After this, a green `main`'s build replaces this release's assets, one build at a time
 ("When a merge reaches the dev channel", above). The tag itself never moves.
+
+## Building macOS on a self-hosted Mac
+
+`release.yml`'s macOS build (the `.app`, and the macOS runner binary it hands to `runner-binaries`)
+can run on a self-hosted Mac, **for a dev build only**: the dev channel's, started by a push to
+`main` or by hand with the `dev-release` profile. A stable build (a `v*` tag) and the nightly
+profile guard, which builds the way a stable build does, always run on `macos-latest`, whatever
+the variable says. **A signed stable release must come from a GitHub-hosted runner**: a stable
+build's key signs what a person installs and updates to, and the runner it came from is then
+GitHub's to vouch for, not a laptop's. Only the build job reads `MACOS_RELEASE_RUNNER`, and only
+when `plan` has chosen channel `dev` and profile `dev-release`; the Linux build and every other
+job stay on GitHub's runners. A test holds that condition. The operator may overrule it, by
+editing that line, which is a reviewed change.
+
+**The variable** is a JSON array of runner labels, in Settings → Secrets and variables → Actions →
+Variables (a variable, not a secret: it holds labels):
+
+```sh
+gh variable set MACOS_RELEASE_RUNNER --repo purlis/purlis \
+  --body '["self-hosted","macOS","ARM64","purlis-release"]'
+```
+
+The workflow reads it as `fromJSON(vars.MACOS_RELEASE_RUNNER || '"macos-latest"')`, so an unset
+variable is exactly the string `"macos-latest"`. **To go back to GitHub's runners, delete the
+variable** (`gh variable delete MACOS_RELEASE_RUNNER --repo purlis/purlis`): no commit, and the
+next run is hosted. Nothing in the code names a self-hosted label.
+
+**One runner per Mac, with a label of its own.** `purlis-release` above is the dedicated label; do
+not reuse `m1` or another shared one, or an unrelated job lands on the Mac. Register exactly one
+runner service on each machine, and give each Mac's runner the same `purlis-release` label so
+either can take the job. The build needs the whole 16 GB of a MacBook: #7499 measured 2.9 GB of
+swap on a 7.5 GB runner. A second runner on the same Mac would run two builds at once and both
+would swap. The job's `timeout-minutes` (150) is for a cold build on a hosted runner; time the
+first one on the Mac before relying on it.
+
+**What a persistent runner is made to forget.** A hosted runner is a fresh machine; a Mac is not,
+so ADR 0092's rule (no cache in the job that holds the signing keys, ADR 0042) is kept by steps
+that run only where `runner.environment` is `self-hosted`:
+
+- the work folder is emptied before the checkout, so no `target/` or `node_modules/` of an earlier
+  job survives;
+- Cargo's, rustup's and the temporary folder are this job's own, under `$RUNNER_TEMP/job-home`, so
+  neither `~/.cargo` nor `~/.rustup` nor `/var/folders` of the runner user is read, and the
+  toolchain is installed per user from `rust-toolchain.toml` as on a hosted runner;
+- the last step deletes every keychain in the runner user's search list that is not the login
+  keychain, which is where the bundler imports a Developer ID certificate, even when the build
+  failed. An ad-hoc build creates none.
+
+The swap file, `sudo` and `apt` steps are Linux's; nothing for macOS touches system swap, Homebrew
+or `/etc`.
+
+**What the operator installs first**, on each Mac, as the runner user:
+
+- the GitHub Actions runner, as a service of that user, with the label `purlis-release`;
+- Xcode command line tools (`xcode-select --install`), and a signed-in GUI session for that user if
+  a stable release is to make its `.dmg`, whose bundler drives Finder through AppleScript (it is
+  allowed to fail; the `.app` does not need it);
+- `gh` and `jq` at `/opt/homebrew/bin` or `/usr/local/bin`: the wait for `ci` takes `gh` from
+  those two places only, and refuses another;
+- `git`. Node and the Rust toolchain are installed by the job (`actions/setup-node`,
+  `rust-toolchain.toml`), and `rustup` is used if it is there.
+
+**The security preconditions.** Set all three before the variable. A runner that is online and in
+no group of its own takes any job whose labels match.
+
+1. **A runner group that only `release.yml` on `main` may use.** Organization Settings → Actions →
+   Runner groups: put the two runners in a group of their own, restrict it to the `purlis/purlis`
+   repository, and under "Workflow access" allow only
+   `purlis/purlis/.github/workflows/release.yml@refs/heads/main`. A stable release starts from a
+   tag and never takes the variable's runner, so the group needs no tag entry. A dev job that no
+   runner of the group may take queues (GitHub gives up after 24 hours) and does not fall back to
+   a hosted one.
+2. **Fork pull requests need approval.** Settings → Actions → General → "Fork pull request
+   workflows": require approval for all outside collaborators. No workflow a pull request starts
+   may name a self-hosted runner, and `tools/no-self-hosted-on-pull-request.test.mjs` fails the
+   build if one does (it also refuses a `runs-on` read from a variable, input or secret in one);
+   this setting is the second line.
+3. **A dedicated macOS user for the runner service.** A standard (non-admin) user that owns
+   nothing else: no personal keychain, no SSH keys, no cloud credentials, no sudo. The job runs
+   code from the commit it builds, as that user, and the keychain clean-up deletes that user's
+   keychains.
+
+**What provenance says of a self-hosted dev build.** It is attested and verified by the
+`provenance` job, which runs on a GitHub-hosted runner, so `--deny-self-hosted-runners` stays on
+both checks unchanged and passes: the flag looks at the runner that made the attestation, not at
+the one that built the files. What the attestation then says about the *build machine* is the
+operator's word, not GitHub's, and a compromised self-hosted Mac signs what it likes. That is why
+a stable release never uses one, why the three conditions above come first, and why a self-hosted
+run says so in its summary ("Built on a self-hosted runner").
+
+### The outcome bars on a self-hosted Mac
+
+`outcome-bars.yml` (the Skill studio's outcome bars on macOS, on main's push and the nightly) runs
+where the repository variable `OUTCOME_BARS_RUNNER` says, read the same way as
+`fromJSON(vars.OUTCOME_BARS_RUNNER || '"macos-latest"')`: unset, `macos-latest`; set, a JSON array
+of labels:
+
+```sh
+gh variable set OUTCOME_BARS_RUNNER --repo purlis/purlis \
+  --body '["self-hosted","macOS","ARM64","purlis-bars"]'
+```
+
+Delete the variable to go back to GitHub's runners. Its own label, `purlis-bars`, and its own
+**runner group `purlis-bars`**, restricted to the `purlis/purlis` repository and under "Workflow
+access" to `purlis/purlis/.github/workflows/outcome-bars.yml@refs/heads/main` alone, so that neither
+group's runner takes the other's job. The workflow has no pull request, `pull_request_target`, merge
+queue or `workflow_run` trigger (`tools/no-self-hosted-on-pull-request.test.mjs` holds that), and it
+holds no secret. The job does what `release.yml`'s build does on a persistent runner (it empties the
+work folder before the checkout, keeps Cargo's, rustup's, npm's and the temporary folder under
+`$RUNNER_TEMP/job-home`, says "Built on a self-hosted runner" in its summary, and removes the job
+folder and stops sccache at the end, `always()`). Unlike that build it restores and, on `main`,
+saves its rust-cache and sccache entries, as on a hosted runner. It never turns Spotlight off,
+which on GitHub's runners it does with `sudo`. The runner user is the dedicated non-admin user above.
+
+**The window has to paint** (#7738). The bars drive the real window, and WebKit runs no
+`requestAnimationFrame` for a window behind the lock screen, on a display that is asleep, or on a
+Mac with no display. Its DOM still answers every query, so the failures read as the app's: the
+Library draws its first screen and never the rest, and an opening is never timed. That is what the
+first run on the benchmark Mac (45897228656) did on all three harnesses. So the Mac needs:
+
+- **the runner user logged in on the console**, by automatic login, and its runner a LaunchAgent in
+  that session (not a LaunchDaemon, which has no window server);
+- **no screen lock**: as that user, `sysadminctl -screenLock off -password -` (asks for the
+  user's password), and no screen saver (`defaults -currentHost write com.apple.screensaver
+  idleTime -int 0`);
+- **a display that does not sleep**, as an admin: `sudo pmset -a displaysleep 0 sleep 0`, and on a
+  Mac with no monitor, an HDMI dummy plug, so that the window server has a display to paint on.
+
+The job checks what it can before the build (`A self-hosted Mac's window can be painted`): it
+fails when the runner user has no session on the console or its screen is locked, warns when no
+display is listed, and keeps the display awake with `caffeinate -d -i -u` while the bars run.
+Every scenario run also checks, before its first spec, that the window paints two frames within
+5 s (`theWindowPaintsFrames` in `app/e2e/drawn.ts`), and fails with that cause when it does not.
+
+The bars' limits were set on `macos-latest` (`app/e2e/outcomeBars.ts`), so a faster Mac passes
+them more easily. Re-set them from its runs before reading a green run there as the same claim.
 
 ## Cutting a stable release
 
@@ -318,10 +529,14 @@ of the next version, with the fragments in `changes/` folded into its copy befor
 
 ## What a first-time installer sees on macOS
 
-Either way the build is **not notarized**, and either way a browser marks what it downloads as
-quarantined, so a first launch is refused once. What differs is only how it is refused.
+**A stable build, with step 3 done, is notarized**, with the ticket stapled to the app and the
+`.dmg`: Gatekeeper accepts a copy a browser downloaded, and the first launch needs nothing extra.
 
-**The one instruction that works in both cases**, before the first launch:
+Everything else is **not notarized**, and a browser marks what it downloads as quarantined, so a
+first launch is refused once. That is a dev build (Developer ID signed or ad-hoc), and any build
+made with step 3 skipped. What differs is only how it is refused.
+
+**The one instruction that works in every case**, before the first launch:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/purlis.app
@@ -329,10 +544,10 @@ xattr -dr com.apple.quarantine /Applications/purlis.app
 
 Quarantine is the flag Gatekeeper assesses. Remove it and there is nothing left to refuse.
 
-**With a Developer ID (step 3 done).** macOS 15 and later answer a quarantined, un-notarized
-app with **"purlis" Not Opened**, which offers only *Done* and *Move to Trash*. Click *Done*,
-open **System Settings → Privacy & Security**, click **Open Anyway** beside purlis, and
-confirm.
+**A dev build with a Developer ID (step 3 done).** macOS 15 and later answer a quarantined,
+un-notarized app with **"purlis" Not Opened**, which offers only *Done* and *Move to Trash*.
+Click *Done*, open **System Settings → Privacy & Security**, click **Open Anyway** beside purlis,
+and confirm.
 
 **Ad-hoc signed (step 3 skipped).** Gatekeeper has no developer to check, so it refuses a
 quarantined copy outright. The **Open Anyway** route may work here too, but **that has not been

@@ -26,10 +26,25 @@ fn the_steps_are_in_the_manifest_since_next() {
     };
     assert_eq!(
         names("parts"),
-        ["root", "count", "press", "mark", "name", "line"]
+        ["root", "count", "press", "mark", "name", "line", "took"]
     );
+    // What a release has not shipped yet is dated NEXT, not a literal (ADR 0103, amended 2026-10-25).
+    let took = steps["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|one| one["name"] == "took")
+        .expect("a step's time is a part of the family");
+    assert_eq!(took["since"], parts::NEXT);
     assert_eq!(
         names("variants"),
-        ["done", "current", "attention", "skipped", "waiting", "later"]
+        [
+            "done",
+            "current",
+            "attention",
+            "skipped",
+            "waiting",
+            "later"
+        ]
     );
 }

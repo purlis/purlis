@@ -392,6 +392,7 @@ fn a_cluster_pool(owned: bool, mints: bool, sign_ins: SignIns) -> PoolFacts {
         name: "team".into(),
         runner: Runner::Running,
         sign_ins,
+        others: None,
         cluster: Some(KeptHere {
             context: "kind-team".into(),
             pool: "team".into(),
@@ -767,4 +768,61 @@ fn a_cluster_without_purlis_whose_install_cant_be_read_is_not_joining() {
     let facts = super::read(Ok(&kubectl), Some("kind-team"), true);
     assert!(!facts.joining, "{facts:?}");
     assert!(facts.doctor.is_some(), "doctor says what is lacking");
+}
+
+#[test]
+fn a_kubeconfig_chosen_is_kept_beside_its_context_as_one_file() {
+    let config = tempfile::tempdir().unwrap();
+    let file = config.path().join("team.yaml");
+    std::fs::write(&file, "apiVersion: v1\n").unwrap();
+    choose_cluster_in(config.path(), Some(&file), "kind-team").unwrap();
+    let choices = read_choices(config.path()).unwrap();
+    assert_eq!(choices.kubeconfig.as_deref(), Some(file.as_path()));
+    assert_eq!(choices.context.as_deref(), Some("kind-team"));
+    let kept =
+        std::fs::read_to_string(crate::machine::dir(config.path()).join(CHOICES_FILE)).unwrap();
+    let kept: serde_json::Value = serde_json::from_str(&kept).unwrap();
+    let mut keys: Vec<&String> = kept.as_object().unwrap().keys().collect();
+    keys.sort();
+    assert_eq!(keys, ["context", "kind", "kubeconfig", "version"], "{kept}");
+}
+
+#[test]
+fn a_kubeconfig_that_merges_files_or_isnt_a_file_is_refused() {
+    let config = tempfile::tempdir().unwrap();
+    let one = config.path().join("a.yaml");
+    std::fs::write(&one, "x").unwrap();
+    // `KUBECONFIG=a:b` merges; setup never does (#7192).
+    let merged = PathBuf::from(format!("{}:{}", one.display(), one.display()));
+    assert!(choose_cluster_in(config.path(), Some(&merged), "kind-team").is_err());
+    assert!(
+        choose_cluster_in(config.path(), Some(Path::new("relative.yaml")), "kind-team").is_err()
+    );
+    assert!(
+        choose_cluster_in(
+            config.path(),
+            Some(&config.path().join("missing.yaml")),
+            "kind-team"
+        )
+        .is_err()
+    );
+    assert_eq!(read_choices(config.path()).unwrap(), Choices::default());
+}
+
+#[test]
+fn the_kubeconfig_shown_is_the_one_chosen_else_the_homes_when_it_exists() {
+    let home = tempfile::tempdir().unwrap();
+    let mut choices = Choices::default();
+    assert_eq!(kubeconfig_shown(&choices, Some(home.path())), None);
+    std::fs::create_dir(home.path().join(".kube")).unwrap();
+    std::fs::write(home.path().join(".kube/config"), "x").unwrap();
+    assert_eq!(
+        kubeconfig_shown(&choices, Some(home.path())),
+        Some(home.path().join(".kube/config"))
+    );
+    choices.kubeconfig = Some(PathBuf::from("/elsewhere/team.yaml"));
+    assert_eq!(
+        kubeconfig_shown(&choices, Some(home.path())),
+        Some(PathBuf::from("/elsewhere/team.yaml"))
+    );
 }

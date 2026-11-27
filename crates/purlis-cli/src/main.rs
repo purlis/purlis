@@ -44,6 +44,7 @@ mod extcmd;
 mod extensions;
 mod gitask;
 mod githook;
+mod gitlab;
 mod gradelink;
 mod guard;
 mod handoff;
@@ -384,6 +385,11 @@ enum Command {
     /// Read/write secrets in a vault; values stay out of the model.
     #[command(subcommand)]
     Secret(secret::SecretCommand),
+
+    /// GitLab access for the project's chats: a token in a persona's vault and the `glab` tool
+    /// that hands it on, where the person's own login is held back.
+    #[command(subcommand)]
+    Gitlab(gitlab::GitlabCommand),
 
     /// Manage secret vaults (provider + config + persona).
     #[command(subcommand)]
@@ -2573,6 +2579,10 @@ fn tell_the_host_about_blocks(word: &str, payload: &str) -> hooks::Blocked {
     // A tool that ran nothing (a read of a background command's output): a quiet line (#1884).
     let read_back = purlis_core::sandboxblock::read_back(&data);
     let chat_dir = hooks::chat_dir(&purlis_core::envvar::var);
+    // The `purlis` command the call ran, in fixed words, for a Report of purlis's own block.
+    let purlis_command = data["tool_input"]["command"]
+        .as_str()
+        .and_then(purlis_core::sandboxblock::command::in_line);
     for (block, target) in hooks::blocks(&data, &purlis_core::envvar::var) {
         let own = purlis_core::sandboxblock::its_own_to_retry(
             &block,
@@ -2594,6 +2604,7 @@ fn tell_the_host_about_blocks(word: &str, payload: &str) -> hooks::Blocked {
             target,
             read_back,
             suggested,
+            purlis_command: purlis_command.clone().filter(|_| block.ours),
         };
         match hookwire::tell_blocked(std::path::Path::new(&socket), token.as_ref(), &blocked) {
             Ok(()) if !own => taken.taken.push(block),
@@ -2715,11 +2726,18 @@ fn hook(name: &str, now: Option<&str>) -> ExitCode {
         // a decision not made in time is a refusal (#1355, #928). The budget is what keeps the
         // harness's own timeout, which may run the tool, from ever being reached.
         let (text, answered) = if is_a_pretooluse_hook(name) {
-            let budget = guard::Budget::start();
+            let budget = guard::Budget::start(name);
             let Some(text) = payload_within(budget.left()) else {
                 guard::out_of_time()
             };
-            let answered = guard::decided_within(&budget, || decide(&text));
+            // purlis's own `report`, and nothing that only looks like it, is let through with
+            // no ask of the host or the network, so the guard cannot block the report of its
+            // own fault (#7542). Anything else is judged in full.
+            let answered = if guarded && guard::is_purlis_report(&text) {
+                hooks::Answered::of(purlis_core::toolhooks::Answer::Nothing)
+            } else {
+                guard::decided_within(&budget, || decide(&text))
+            };
             (text, answered)
         } else {
             let text = payload();
@@ -3922,6 +3940,7 @@ fn run(command: Command) -> Result<u8, clierror::CliError> {
         | Command::Workspace(WorkspaceCommand::Autosave)
         | Command::GitPolicy { .. }
         | Command::Secret(_)
+        | Command::Gitlab(_)
         | Command::Plugin(_)
         | Command::Profile(
             ProfileCommand::Create { .. }
@@ -5507,6 +5526,11 @@ fn main() -> ExitCode {
     if let Some(code) = purlis_core::files::serve_if_asked() {
         std::process::exit(code);
     }
+    // Started by a chat's git as its credential helper (ADR 0128 D3c): answer with the chat's
+    // sentinel and exit, before anything else of the command runs.
+    if let Some(code) = purlis_core::forgewire::serve_sentinel_if_asked() {
+        std::process::exit(code);
+    }
     // Started by a chat's ssh as its route's `ProxyCommand` (#3536): carry one connection
     // through the chat's SOCKS port and exit. Nothing else of the command runs.
     if let Some(code) = purlis_core::sandbox::sshproxy::proxy_if_asked() {
@@ -6109,6 +6133,7 @@ fn main() -> ExitCode {
     let command = match cli.command {
         Command::Secret(c) => return with_here(|here| secret::secret(here, c, graft)),
         Command::Vault(c) => return with_here(|here| secret::vault(here, c)),
+        Command::Gitlab(c) => return with_here(|here| gitlab::run(here, c)),
         Command::Persona(memory::PersonaCommand::Secret(c)) => {
             return with_here(|here| secret::persona_secret(here, c, graft));
         }

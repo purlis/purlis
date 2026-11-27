@@ -35,7 +35,8 @@ fn every_macos_build_reads_the_runtime_and_the_entitlements_off_the_signed_app()
     // Every macOS build, not only a publish: the profile guard and a build started by hand are
     // signed the same way (ad-hoc), and they are where a break shows first.
     assert!(
-        step.iter().any(|l| l.trim() == "if: runner.os == 'macOS'"),
+        step.iter()
+            .any(|l| l.trim() == "if: steps.ci.outputs.green == 'true' && runner.os == 'macOS'"),
         "{step:#?}"
     );
     let lines = run_lines(&step);
@@ -79,7 +80,7 @@ fn the_check_blocks_everywhere_but_a_dev_publish_until_a_runner_has_measured_it(
     );
     assert_eq!(
         exempt[0].trim(),
-        "continue-on-error: ${{ needs.plan.outputs.publish == 'true' && needs.plan.outputs.channel == 'dev' }}"
+        "continue-on-error: ${{ needs.keys.outputs.publish == 'true' && needs.plan.outputs.channel == 'dev' }}"
     );
 }
 
@@ -87,7 +88,7 @@ fn the_check_blocks_everywhere_but_a_dev_publish_until_a_runner_has_measured_it(
 fn the_check_runs_on_the_bundle_that_is_uploaded() {
     let jobs = release_jobs();
     let build = job(&jobs, "build");
-    let (built, _) = step_named(build, "Build the app");
+    let (built, _) = step_named(build, "Bundle the app");
     let (checked, step) = step_named(build, CHECK);
     let (uploaded, _) = step_named(build, "Upload");
     assert!(built < checked && checked < uploaded);

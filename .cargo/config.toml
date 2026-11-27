@@ -1,0 +1,15 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# Every binary cargo runs on macOS (`cargo run`, `cargo test`, `cargo nextest run`, and the app
+# `cargo tauri dev` starts) is signed with one stable identity first, so the Keychain does not ask
+# for a password after each rebuild. It does nothing on CI or where no identity exists. The
+# script says which identity and why; `docs/development.md`, "Local macOS signing", says how to
+# get one. Only macOS targets have a runner: Linux, and the archives CI runs there, never meet it.
+# The path is relative to this file's parent, the repository root.
+
+[target.aarch64-apple-darwin]
+runner = ["tools/macos-dev-sign-run.sh"]
+
+[target.x86_64-apple-darwin]
+runner = ["tools/macos-dev-sign-run.sh"]

@@ -1686,6 +1686,26 @@ fn a_network_call_hands_the_forge_cli_its_credential_and_no_other_call_does() {
 }
 
 #[test]
+fn a_call_stopped_at_its_deadline_says_it_took_longer_than_the_deadline() {
+    // A stopped git writes nothing, and a caller reading the first line of its stderr reported
+    // "could not fetch" with no cause (the 120 s a push's base fetch is given).
+    let dir = repo();
+    let answer = run(
+        dir.path(),
+        &["-c", "alias.hang=!sleep 30", "hang"],
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    assert_eq!(answer.code, None);
+    assert_eq!(
+        answer.err.lines().next(),
+        Some("git took longer than 1 s and was stopped"),
+        "{:?}",
+        answer.err
+    );
+}
+
+#[test]
 fn a_call_stopped_at_its_deadline_returns_then_and_what_git_started_is_ended_with_it() {
     // `clone` runs `git-remote-https`, which runs the credential helper. Ending git alone
     // left them running, holding the pipes, and a reader that waits for every writer
@@ -2196,4 +2216,65 @@ fn every_git_call_reads_its_messages_in_the_c_locale() {
     });
     assert!(env.contains(&("LC_ALL", "C".to_owned())), "{env:?}");
     assert!(!env.iter().any(|(name, _)| *name == "LANG"), "{env:?}");
+}
+
+/// A child that writes `lines` lines to stderr, `gap_ms` apart, then exits.
+fn writes_slowly(lines: u32, gap_ms: u32) -> Child {
+    let script = format!(
+        "i=0; while [ $i -lt {lines} ]; do echo progress >&2; sleep 0.{gap_ms:03}; i=$((i+1)); done"
+    );
+    let mut command = std::process::Command::new("sh");
+    command
+        .args(["-c", &script])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    crate::forklock::spawn(&mut command).expect("sh runs")
+}
+
+/// #7587: a fetch that goes silent is cut at the stall, long before its upper bound.
+#[test]
+fn a_call_that_writes_nothing_for_the_stall_is_cut_and_says_so() {
+    let mut command = std::process::Command::new("sh");
+    command
+        .args(["-c", "echo first >&2; sleep 30"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let child = crate::forklock::spawn(&mut command).expect("sh runs");
+    let started = Instant::now();
+    let raw = wait_raw_until(
+        child,
+        Duration::from_secs(60),
+        None,
+        Some(Duration::from_millis(400)),
+    )
+    .expect("waits");
+    assert_eq!(raw.code, None, "the child was ended");
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "{:?}",
+        started.elapsed()
+    );
+    let said = String::from_utf8_lossy(&raw.err);
+    assert!(said.starts_with("git was silent for"), "{said}");
+}
+
+/// #7587: a slow fetch that keeps writing runs past the stall, to its end.
+#[test]
+fn a_call_that_keeps_writing_runs_past_the_stall_without_being_cut() {
+    // 8 lines 150 ms apart: 1.2 s in all, each gap well inside the 500 ms stall.
+    let raw = wait_raw_until(
+        writes_slowly(8, 150),
+        Duration::from_secs(60),
+        None,
+        Some(Duration::from_millis(500)),
+    )
+    .expect("waits");
+    assert_eq!(raw.code, Some(0), "{}", String::from_utf8_lossy(&raw.err));
+    assert_eq!(
+        String::from_utf8_lossy(&raw.err)
+            .matches("progress")
+            .count(),
+        8
+    );
 }

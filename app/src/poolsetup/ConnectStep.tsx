@@ -20,8 +20,22 @@ import { CheckLine, CheckList, type CheckVerdict } from "../ui/checks/Checks";
 import { Radio, RadioGroup } from "../ui/choice/Radio";
 import { CodeBlock } from "../ui/code/CodeBlock";
 import { TextField } from "../ui/field/Field";
-import { Action, Busy, Options, Recommended, Say, SeeWhat, StepHead } from "./parts";
+import {
+  Action,
+  Busy,
+  Options,
+  Recommended,
+  Say,
+  SeeWhat,
+  StepHead,
+  Took,
+  WaitingOn,
+} from "./parts";
 import { WhoCanSignIn } from "./WhoCanSignIn";
+import { MergedFields, type Merged } from "./MergedFields";
+import { poolStateOf, type WithPoolState } from "./poolState";
+import { asked, type Adding } from "./PoolStep";
+import { readReleaseImage, type ReleaseImage } from "../pools";
 
 /**
  * **Connect, the step of a pool on another machine** (#6266, ADR 0123 §3 and §6), as the accepted
@@ -653,11 +667,15 @@ function ConfirmCa({
   busy,
   onTrust,
   onNotIt,
+  merged,
+  onTrustAndCreate,
 }: {
   step: PoolSetupStep;
   busy: boolean;
   onTrust: (fingerprint: string) => void;
   onNotIt: () => void;
+  merged?: Merged;
+  onTrustAndCreate?: (fingerprint: string) => void;
 }) {
   const machine = step.machine;
   const ca = machine?.ca;
@@ -681,14 +699,26 @@ function ConfirmCa({
         copy="Copy fingerprint"
       />
       {step.see && <SeeWhat open note={step.see.note} text={step.see.text} />}
+      {merged && <MergedFields merged={merged} host={host} />}
       <Action
-        does={step.next?.does}
-        main="Trust this machine"
-        reserve={["Trust this machine", "Continue"]}
+        does={
+          merged
+            ? `Keeps this CA for pool ${merged.name.trim() || merged.recommended}, checks Docker on ${host} and that it has room for the runner image, then makes the pool's runner there.`
+            : step.next?.does
+        }
+        main={merged ? "Trust and create the pool" : "Trust this machine"}
+        reserve={["Trust this machine", "Trust and create the pool", "Continue"]}
         icon={<KeyRound aria-hidden size={16} />}
         busy={busy}
-        onMain={() => onTrust(ca.fingerprint)}
+        onMain={() =>
+          merged && onTrustAndCreate ? onTrustAndCreate(ca.fingerprint) : onTrust(ca.fingerprint)
+        }
       >
+        {merged && (
+          <Button variant="secondary" onPress={() => onTrust(ca.fingerprint)} isDisabled={busy}>
+            Trust this machine only
+          </Button>
+        )}
         <Button variant="ghost" onPress={onNotIt} isDisabled={busy}>
           This isn&apos;t it
         </Button>
@@ -703,11 +733,16 @@ function Confirm({
   busy,
   onTrust,
   onNotIt,
+  merged,
+  onTrustAndCreate,
 }: {
   step: PoolSetupStep;
   busy: boolean;
   onTrust: (fingerprint: string) => void;
   onNotIt: () => void;
+  /** Where Connect and Pool are one (#7191): the pool's name and who can sign in. */
+  merged?: Merged;
+  onTrustAndCreate?: (fingerprint: string) => void;
 }) {
   const machine = step.machine;
   const key = machine?.key;
@@ -729,14 +764,26 @@ function Confirm({
       {step.see && (
         <SeeWhat open={machine.known !== true} note={step.see.note} text={step.see.text} />
       )}
+      {merged && <MergedFields merged={merged} host={host} />}
       <Action
-        does={step.next?.does}
-        main="Trust this machine"
-        reserve={["Trust this machine", "Continue"]}
+        does={
+          merged
+            ? `Keeps this key for pool ${merged.name.trim() || merged.recommended}, checks Docker on ${host} and that it has room for the runner image, then makes the pool's runner there. purlis connects only to a machine showing this key.`
+            : step.next?.does
+        }
+        main={merged ? "Trust and create the pool" : "Trust this machine"}
+        reserve={["Trust this machine", "Trust and create the pool", "Continue"]}
         icon={<KeyRound aria-hidden size={16} />}
         busy={busy}
-        onMain={() => onTrust(key.fingerprint)}
+        onMain={() =>
+          merged && onTrustAndCreate ? onTrustAndCreate(key.fingerprint) : onTrust(key.fingerprint)
+        }
       >
+        {merged && (
+          <Button variant="secondary" onPress={() => onTrust(key.fingerprint)} isDisabled={busy}>
+            Trust this machine only
+          </Button>
+        )}
         <Button variant="ghost" onPress={onNotIt} isDisabled={busy}>
           This isn&apos;t it
         </Button>
@@ -754,13 +801,29 @@ function Checked({ step, done }: { step: PoolSetupStep; done: boolean }) {
     <>
       <h2 className="pool-setup-h2">{`Docker on ${host}`}</h2>
       <CheckList aria-label={`What purlis checked on ${host}`}>
-        {checksOf(over).map((check, at) => (
-          <CheckLine
-            key={check.title(host)}
-            verdict={verdicts[at] ?? "todo"}
-            title={verdicts[at] === "warn" ? "purlis couldn't measure its disk" : check.title(host)}
-          />
-        ))}
+        {checksOf(over).map((check, at) => {
+          // A line's time is the core's, by the cause it would fail with (#7191).
+          const times = (step.machine?.took ?? []).filter((one) =>
+            check.causes.includes(one.cause),
+          );
+          const ms = times.reduce<number | null>(
+            (sum, one) => (one.took_ms == null ? sum : (sum ?? 0) + one.took_ms),
+            null,
+          );
+          const waiting = times.find((one) => one.waiting_on)?.waiting_on;
+          return (
+            <CheckLine
+              key={check.title(host)}
+              verdict={verdicts[at] ?? "todo"}
+              title={
+                verdicts[at] === "warn" ? "purlis couldn't measure its disk" : check.title(host)
+              }
+              trail={ms === null ? undefined : <Took ms={ms} />}
+            >
+              {waiting && <WaitingOn text={waiting} />}
+            </CheckLine>
+          );
+        })}
       </CheckList>
     </>
   );
@@ -774,10 +837,16 @@ export function ConnectStep({
   changed,
   onNext,
   onConnectAgain,
+  adding,
 }: {
   step: PoolSetupStep;
   shown: PoolSetupShown;
   plane: PlaneId;
+  /**
+   * The pool being made, held above the step (#7191): where it is given, Connect and Pool are
+   * one for a new pool, and Trust and create the pool runs every check to a linked runner.
+   */
+  adding?: Adding;
   /** What a press of Connect to or Trust this machine read, with its finding laid over. */
   onShown: (shown: PoolSetupShown) => void;
   /** Something was kept: read again. */
@@ -863,6 +932,57 @@ export function ConnectStep({
       else onShown(answer.data);
     });
   };
+  const [owned, setOwned] = useState(false);
+  const [offered, setOffered] = useState<ReleaseImage>();
+  const newPool = shown.pool === null && adding !== undefined;
+  useEffect(() => {
+    if (!newPool) return;
+    let live = true;
+    void readReleaseImage().then((read) => {
+      if (live) setOffered(read);
+    });
+    return () => {
+      live = false;
+    };
+  }, [newPool]);
+  const recommended = shown.recommended ?? "";
+  const naming = adding?.typed ?? shown.name ?? "";
+  /** **Trust and create the pool** (#7191): every check from first contact to a linked runner. */
+  const trustAndCreate = (fingerprint: string) => {
+    if (!adding) return;
+    const named = offered && "image" in offered ? offered.image : undefined;
+    const team = adding.chosen.image === "team" || named === undefined;
+    const using = team ? adding.chosen.team.trim() : (named ?? "");
+    const wanted = asked(naming.trim() === "" ? recommended : naming, using, adding.chosen);
+    if (wanted === undefined || using === "") {
+      setTrouble(
+        using === ""
+          ? "This build of purlis names no runner image, so give one by its digest."
+          : "A limit under Options isn't a whole number.",
+      );
+      return;
+    }
+    setPressing("trusting");
+    setTrouble(undefined);
+    void commands.poolSetupTrustAndCreate(plane, fingerprint, owned, wanted).then((answer) => {
+      setPressing(undefined);
+      if (answer.status === "error") return setTrouble(answer.error);
+      onShown(answer.data.shown);
+      if (answer.data.breaks.length > 0) {
+        adding.set({ making: false, breaks: answer.data.breaks });
+        return setTrouble(
+          `The image breaks what a runner needs: ${answer.data.breaks.join(" ")} Nothing was made.`,
+        );
+      }
+      // A refused add keeps the pool, Refused, with its reason: the status bar says it.
+      if (answer.data.refused) return setTrouble(answer.data.refused);
+      adding.set({ making: false });
+      changed();
+    });
+  };
+  const merged: Merged | undefined = newPool
+    ? { name: naming, recommended, onName: adding.type, owned, onOwned: setOwned }
+    : undefined;
   const trust = (fingerprint: string) => {
     setPressing("trusting");
     setTrouble(undefined);
@@ -911,7 +1031,9 @@ export function ConnectStep({
   };
   // A made pool's machine is never forgotten: This isn't it reads it again as it stands.
   const notIt = () => (madePool ? checkAgain() : pick(null));
-  const done = step.state === "done";
+  // A pool whose add was not taken is never Connected beside its Not added bar (#7191).
+  const turnedDown = poolStateOf(shown as WithPoolState)?.state === "refused";
+  const done = step.state === "done" && !turnedDown;
   const meeting = step.next?.id === "trust-machine";
   // A tcp:// machine is refused on its card until the person chooses a route (#6267): chosen
   // TLS, the pick with Options open says how to name its files; chosen SSH, it is read again.
@@ -1009,12 +1131,32 @@ export function ConnectStep({
         </Busy>
       )}
       {meeting && over === "ssh" && (
-        <Confirm step={step} busy={pressing !== undefined} onTrust={trust} onNotIt={notIt} />
+        <Confirm
+          step={step}
+          busy={pressing !== undefined}
+          onTrust={trust}
+          onNotIt={notIt}
+          merged={merged}
+          onTrustAndCreate={trustAndCreate}
+        />
       )}
       {meeting && over === "tls" && (
-        <ConfirmCa step={step} busy={pressing !== undefined} onTrust={trust} onNotIt={notIt} />
+        <ConfirmCa
+          step={step}
+          busy={pressing !== undefined}
+          onTrust={trust}
+          onNotIt={notIt}
+          merged={merged}
+          onTrustAndCreate={trustAndCreate}
+        />
       )}
-      {pressing === "trusting" && <Busy>{`Checking Docker on ${host}. This only reads.`}</Busy>}
+      {pressing === "trusting" && (
+        <Busy>
+          {newPool
+            ? `Checking Docker on ${host}, then making the pool's runner there. If it lacks the runner image, purlis downloads it there first, which can take a few minutes.`
+            : `Checking Docker on ${host}. This only reads.`}
+        </Busy>
+      )}
       {pressing === "checking" && (
         <Busy>
           {madePool

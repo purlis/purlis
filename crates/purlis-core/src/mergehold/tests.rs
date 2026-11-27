@@ -42,7 +42,8 @@ fn a_merges_request_is_read_past_its_flags() {
         read("gh pr merge --subject 7 12 --repo=o/r"),
         Some(Held::Request(Request {
             repo: Some(Repo::try_from("o/r").unwrap()),
-            number: 12
+            number: 12,
+            act: LandAs::Merge,
         }))
     );
     assert_eq!(read("gh pr merge -R 'o/r; id' 12"), Some(Held::Unreadable));
@@ -57,6 +58,7 @@ fn a_held_merge_is_a_hold_only_where_the_app_confirmed_its_ask() {
     let request = Held::Request(Request {
         repo: None,
         number: 12,
+        act: LandAs::Merge,
     });
     let held = AppSaid::Held("The person is asked in Asks to merge request 12.");
     assert_eq!(reason(&request, &held), REASON);
@@ -352,6 +354,7 @@ fn a_slow_checks_read_is_unknown_and_the_ask_is_still_raised() {
     let request = Request {
         repo: None,
         number: 12,
+        act: LandAs::Merge,
     };
     let (_, raised) = asked(&holds, 4, &request, &resolve, 40).expect("asked");
     assert_eq!(raised, Raised::New);
@@ -449,7 +452,8 @@ fn gh_pr_merge_help_on_a_branch_named_help_is_still_held() {
         held("gh pr merge 12 --body=--help"),
         Some(Held::Request(Request {
             repo: None,
-            number: 12
+            number: 12,
+            act: LandAs::Merge,
         }))
     );
 }
@@ -475,7 +479,8 @@ fn the_unreadable_merge_refusal_names_a_form_that_is_asked() {
             held(&cmd),
             Some(Held::Request(Request {
                 repo: None,
-                number: 12
+                number: 12,
+                act: LandAs::Merge,
             })),
             "{cmd}, named in: {said}"
         );
@@ -492,12 +497,14 @@ fn every_refusal_names_only_the_commands_of_its_ways_out() {
     let request = Held::Request(Request {
         repo: None,
         number: 12,
+        act: LandAs::Merge,
     });
     for held_ in [request, Held::Unreadable, Held::Land] {
         for app in [
             AppSaid::Held("The person is asked in Asks to merge request 12."),
             AppSaid::Refused("chat 4 is not one this app has open."),
             AppSaid::OtherBuild,
+            AppSaid::OlderApp,
             AppSaid::Unheard,
         ] {
             let said = refusal(&held_, &app);
@@ -522,5 +529,225 @@ fn every_refusal_names_only_the_commands_of_its_ways_out() {
                 assert!(said.contains("A yes in this chat merges nothing"), "{said}");
             }
         }
+    }
+}
+
+/// #7177: a refusal reads as sentences: the app's words end in a full stop before what follows
+/// them, and the other-build refusals name a restart of purlis, never a new chat.
+#[test]
+fn a_refusal_ends_the_apps_words_with_a_full_stop_and_names_a_restart() {
+    let request = Held::Request(Request {
+        repo: None,
+        number: 12,
+        act: LandAs::Merge,
+    });
+    for why in [
+        "the app could not read this line: it is from a purlis this app does not know",
+        "chat 4 is not one this app has open.",
+    ] {
+        let said = refusal(&request, &AppSaid::Refused(why));
+        assert!(
+            said.contains(&format!("{}. Ask the person", why.trim_end_matches('.'))),
+            "{said}"
+        );
+    }
+    // A new chat is no way out: the same app starts it with the same binary (#7177).
+    for app in [AppSaid::OtherBuild, AppSaid::OlderApp] {
+        let said = refusal(&request, &app);
+        assert!(!said.contains("start a new chat"), "{said}");
+        assert!(said.contains("restart purlis"), "{said}");
+    }
+    let said = refusal(&request, &AppSaid::OlderApp);
+    assert!(
+        said.contains("purlis was updated on disk but the running app is older: restart purlis"),
+        "{said}"
+    );
+    assert!(said.contains("then run the same line again"), "{said}");
+    assert!(!said.contains("update the purlis plugin"), "{said}");
+    assert!(refusal(&request, &AppSaid::OtherBuild).contains("update the purlis plugin"));
+}
+
+/// #7177: `glab mr merge <n>` reaches the request with the right number and repo under each
+/// flag glab merges with, alone and combined: a boolean flag never hides the number, and a value
+/// flag's value (`--sha`) is never read as it.
+#[test]
+fn a_glab_merge_is_read_to_its_request_under_each_of_its_flags() {
+    let sha = "0123456789abcdef0123456789abcdef01234567";
+    let ask = |repo: Option<&str>, number: u64| {
+        Some(Held::Request(Request {
+            repo: repo.map(|repo| Repo::try_from(repo).unwrap()),
+            number,
+            act: LandAs::Merge,
+        }))
+    };
+    for (cmd, repo) in [
+        ("glab mr merge 7", None),
+        ("glab mr merge 7 -R grp/sub/api", Some("grp/sub/api")),
+        ("glab mr merge -R grp/sub/api 7", Some("grp/sub/api")),
+        ("glab mr merge 7 --repo grp/sub/api", Some("grp/sub/api")),
+        ("glab mr merge 7 --repo=grp/sub/api", Some("grp/sub/api")),
+        ("glab mr merge 7 --squash", None),
+        ("glab mr merge --squash 7", None),
+        ("glab mr merge 7 --remove-source-branch", None),
+        ("glab mr merge 7 --yes", None),
+        ("glab mr merge 7 -y", None),
+        (&format!("glab mr merge 7 --sha {sha}"), None),
+        (&format!("glab mr merge --sha {sha} 7"), None),
+        (&format!("glab mr merge --sha={sha} 7"), None),
+        (
+            &format!(
+                "glab mr merge 7 -R grp/sub/api --squash --remove-source-branch --sha {sha} --yes"
+            ),
+            Some("grp/sub/api"),
+        ),
+        (
+            &format!(
+                "glab mr merge --yes --sha {sha} --squash -R grp/sub/api 7 --remove-source-branch"
+            ),
+            Some("grp/sub/api"),
+        ),
+        ("glab mr accept 7 --squash --yes", None),
+    ] {
+        assert_eq!(held(cmd), ask(repo, 7), "{cmd}");
+    }
+}
+
+/// #7246: bash 5.3 runs `${ cmd; }` and `${| cmd; }` inside double quotes as it does outside
+/// them, so the merge in one is a merge the hold reads, as it reads one in `"$( … )"`.
+#[test]
+fn a_merge_in_a_double_quoted_bash_5_3_substitution_is_held() {
+    // A merge inside a quoted substitution is held as one purlis cannot name the request of, as
+    // `"$(gh pr merge 12)"` is.
+    assert_eq!(held(r#"echo "$(gh pr merge 12)""#), Some(Held::Unreadable));
+    for cmd in [
+        r#"echo "${ gh pr merge 12; }""#,
+        r#"x="${| gh pr merge 12; }""#,
+        "x=\"${\ngh pr merge 12\n}\"",
+        r#"echo "a ${ echo "b"; gh pr merge 12; } c""#,
+        r#"echo "${ { true; }; gh pr merge 12; }""#,
+        // Read widely: the shell refuses these, and a guard that reads them only holds more.
+        r#"echo "${;gh pr merge 12; }""#,
+        // A program the quoted substitution prints.
+        r#""${ echo gh; }" pr merge 12"#,
+        r#"echo "${ echo } ; gh pr merge 12; }""#,
+        r#"echo "$( echo "${ gh pr merge 12; }" )""#,
+        r#"echo "${ echo "${ gh pr merge 12; }"; }""#,
+        "x=$(cat <<EOF\n\"${ gh pr merge 12; }\"\nEOF\n)",
+        "echo \"$\\\n{ gh pr merge 12; }\"",
+    ] {
+        assert_eq!(held(cmd), Some(Held::Unreadable), "{cmd}");
+    }
+    // One that never closes is read as unreadable, not as nothing.
+    for cmd in [r#"echo "${ true; ""#, "echo \"${ true; \" x"] {
+        assert!(
+            crate::floorguard::release_floor_reason(cmd, true).is_some(),
+            "{cmd}"
+        );
+    }
+}
+
+/// A quoted parameter expansion is no substitution: nothing in it is read as a command.
+#[test]
+fn a_quoted_parameter_expansion_is_not_a_bash_5_3_substitution() {
+    for cmd in [
+        r#"echo "${TITLE}""#,
+        r#"echo "${#}${1}""#,
+        r#"echo "${TITLE:-x}""#,
+        r#"echo "${arr[@]}" "${!ref}" "${*}${@}${?}${$}${-}${_x}""#,
+        r#"echo '${ gh pr merge 12; }'"#,
+    ] {
+        assert_eq!(held(cmd), None, "{cmd}");
+        assert_eq!(
+            crate::floorguard::release_floor_reason(cmd, true),
+            None,
+            "{cmd}"
+        );
+    }
+}
+
+/// #7250, round 2: a `}` that is a plain word closes nothing, so the merge after it is read. The
+/// `&`, `|` and `(` of a redirection, an array or a `[[ … ]]` start no command.
+#[test]
+fn a_funsub_close_is_read_only_where_bash_closes_it() {
+    for cmd in [
+        r#"echo "${ echo >& } ; gh pr merge 12; }""#,
+        r#"echo "${ echo >| } ; gh pr merge 12; }""#,
+        r#"echo "${ a=( } ); gh pr merge 12; }""#,
+        r#"echo "${ [[ x == y || } == z ]]; gh pr merge 12; }""#,
+        // The neighbours: a `<&`, an `&>`, a subshell, a function body and a `[[ … ]]` that ends.
+        r#"echo "${ cat <& } ; gh pr merge 12; }""#,
+        r#"echo "${ echo &> } ; gh pr merge 12; }""#,
+        r#"echo "${ ( } ); gh pr merge 12; }""#,
+        r#"echo "${ f() { true; }; gh pr merge 12; }""#,
+        r#"echo "${ [[ a && b ]]; gh pr merge 12; }""#,
+        r#"echo "${ echo >&2; gh pr merge 12; }""#,
+        // One that does not close is refused, not half read.
+        r#"echo "${ [[ x == y ; gh pr merge 12; }""#,
+    ] {
+        assert_eq!(held(cmd), Some(Held::Unreadable), "{cmd}");
+    }
+}
+
+/// #7250, round 2: a `${` inside single quotes, or escaped, is text, so a regex that holds one is
+/// no substitution.
+#[test]
+fn a_quoted_or_escaped_dollar_brace_is_no_funsub() {
+    for cmd in [
+        "sed 's/${[a-z]*}/x/' f",
+        r"grep -E '\${[A-Z_]+}' f",
+        r"grep -rn '\${\*}' src",
+        "grep -c '${.*}' f",
+        r"grep -c \${.*} f",
+        "sed $'s/${[a-z]*}/x/' f",
+    ] {
+        assert_eq!(held(cmd), None, "{cmd}");
+        assert_eq!(
+            crate::floorguard::release_floor_reason(cmd, true),
+            None,
+            "{cmd}"
+        );
+    }
+    // Quoted by single quotes inside double quotes is not quoted at all.
+    assert_eq!(
+        held(r#"echo "'${ gh pr merge 12; }'""#),
+        Some(Held::Unreadable)
+    );
+}
+
+/// A `gh api` / `glab api` read inside a substitution is read as one at the top of a line
+/// (#7092, #7195): the reported shape, two GETs in `$(...)` joined by `[ -z ] &&`, is no merge.
+#[test]
+fn a_plain_api_read_inside_a_substitution_is_no_merge() {
+    for cmd in [
+        r#"P=$(glab api "projects/:id/pipelines?ref=main&per_page=1" | head -1); [ -z "$P" ] && P=$(glab api "projects/:id/pipelines?per_page=1" | head -1); echo "$P""#,
+        "P=`glab api projects/:id/pipelines | head -1`; [ -z \"$P\" ] && P=`glab api projects/:id/pipelines | head -1`",
+        "P=$(gh api repos/o/r/actions/runs --jq '.workflow_runs[0].id'); [ -z \"$P\" ] && P=$(gh api -X GET repos/o/r/actions/runs)",
+        // The variable is quoted: in bash and dash an unquoted variable from a forge answer is
+        // split and globbed (`mer*` can match a file named `merge -XPUT`), so only the quoted
+        // form is the readable one (round 9).
+        r#"for id in $(gh api repos/o/r/pulls --jq '.[].number'); do gh api "repos/o/r/pulls/$id"; done"#,
+    ] {
+        assert_eq!(held(cmd), None, "{cmd}");
+    }
+}
+
+/// What a substitution holds stays held: a write whose endpoint the shell builds, a write whose
+/// method or body the guard cannot read, a merge path or command, and a merge run through `eval`
+/// or `bash -c`.
+#[test]
+fn a_write_or_a_merge_inside_a_substitution_is_held() {
+    for cmd in [
+        "P=$(gh api -X POST repos/o/r/issues/$N/comments -f body=x)",
+        "P=$(glab api -X POST projects/:id/pipeline/$X)",
+        "P=$(gh api -X $M repos/o/r/pulls/5)",
+        "P=$(gh api --input f.json repos/o/r/pulls/5)",
+        "P=$(gh api -X POST repos/o/r/issues/$(cat n)/comments -f body=x)",
+        "P=$(glab api -X PUT projects/:id/merge_requests/5/merge)",
+        "P=$(gh api repos/o/r/pulls/5/merge -X PUT); echo $P",
+        "P=$(gh pr merge 5)",
+        "P=$(eval gh pr merge 5)",
+        "P=$(bash -c 'gh pr merge 5')",
+    ] {
+        assert!(held(cmd).is_some(), "{cmd}");
     }
 }

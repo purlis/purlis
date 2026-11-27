@@ -11,7 +11,13 @@ import type { PolicyLog, PolicyState } from "./bindings";
 export const WATCH: PolicyState = {
   waiting: [],
   refused: [],
+  not_in_force: [],
   unsealed: false,
+  key_foreign: false,
+  new_key: false,
+  nevers_new_key: false,
+  nevers_to_keep: null,
+  nevers_unshowable: false,
   digest: "d1",
   template: "watch",
   template_default: true,

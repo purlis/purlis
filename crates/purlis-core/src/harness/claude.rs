@@ -68,6 +68,10 @@ impl HarnessAdapter for ClaudeCode {
         // the chat runs in (its manifests, #1336). A form of another kind is not one, and the
         // chat is armed with nothing rather than started without it.
         let form = sandbox.applied().map(|applied| applied.form_in(cwd));
+        // A chat on a repo that claims the forge lock (#7205), before `sandbox` names its form.
+        let forge_locked = sandbox
+            .applied()
+            .is_some_and(crate::sandbox::Applied::forge_locked);
         let wrapped;
         let sandbox = match &form {
             None => None,
@@ -110,7 +114,8 @@ impl HarnessAdapter for ClaudeCode {
             args: [
                 args,
                 // A grade's chat loads no MCP server but purlis's (SK-16): none of the person's
-                // own, nor a project's, nor a connector.
+                // own, nor a project's, nor a connector. (A chat on a repo that claims the forge
+                // lock keeps them all but a forge's, which [`denied_tools`] denies, #7205.)
                 if kit.graded {
                     words(["--strict-mcp-config"])
                 } else {
@@ -140,7 +145,7 @@ impl HarnessAdapter for ClaudeCode {
                             own_listing(kit.own),
                         ),
                         sandbox,
-                        &denied_tools(kit),
+                        &denied_tools(kit, forge_locked),
                         screened.as_ref(),
                         kit.graded,
                         // An outcome eval's chat has no shell unless its skill asked for one (#4476).
@@ -405,6 +410,12 @@ impl HarnessAdapter for ClaudeCode {
         true
     }
 
+    /// Yes: its `Stop` hook says what the turn left running of its own (ADR 0068, amended
+    /// 2026-11-08), read into [`crate::ownwork::Said`].
+    fn reports_its_own_work(&self) -> bool {
+        true
+    }
+
     /// Yes: its mode is read from the hook purlis armed (R-095, T1-17).
     fn reports_a_mode_purlis_can_check(&self) -> bool {
         true
@@ -498,10 +509,14 @@ impl HarnessAdapter for ClaudeCode {
         if let Some(why) = settings_keep_a_grade_from_running(env) {
             return Some(why);
         }
-        if let Some(flag) = crate::dispatchunattended::bypass_in(command)
-            .or_else(|| mode_that_does_not_ask(command))
-        {
-            return Some(prompts_off_by(&flag));
+        if let Some(found) = crate::dispatchunattended::bypass_found(command) {
+            return Some(prompts_off_by(&found));
+        }
+        if let Some(flag) = mode_that_does_not_ask(command) {
+            return Some(prompts_off_by(&crate::dispatchunattended::Found {
+                flag,
+                what: crate::dispatchunattended::What::PromptsOff,
+            }));
         }
         // A plugin the command loads itself is not in the install record, so a grade could not
         // turn it off for its chat (P8, #3468).
@@ -1100,7 +1115,7 @@ fn mcp_config(kit: Kit<'_>) -> String {
 }
 
 /// The tools the chat's persona denies it ([`crate::personaverbs::chatstart::denied_tools`]).
-fn denied_tools(kit: Kit<'_>) -> Vec<String> {
+fn denied_tools(kit: Kit<'_>, forge_locked: bool) -> Vec<String> {
     let mut denied = kit.persona.map_or_else(Vec::new, |of| {
         crate::personaverbs::chatstart::denied_tools(of.root, of.persona)
     });
@@ -1116,6 +1131,11 @@ fn denied_tools(kit: Kit<'_>) -> Vec<String> {
     }
     if kit.writes_its_piece {
         denied.push(format!("mcp__{}", crate::chattools::SERVER));
+    }
+    // A chat on a repo that claims the forge lock has no forge connector's tool (#7205); every
+    // other server, purlis's own and the person's, is as it was.
+    if forge_locked {
+        denied.extend(crate::forgelock::claude_denied());
     }
     denied
 }
@@ -1242,11 +1262,12 @@ fn bypass_by_default(text: &str) -> Option<bool> {
 
 /// **Why a grade's chat may not start on a profile whose command holds `flag`**: one that keeps
 /// the chat from ever asking. The one sentence each such flag is refused with.
-fn prompts_off_by(flag: &str) -> String {
+fn prompts_off_by(found: &crate::dispatchunattended::Found) -> String {
     format!(
-        "This profile's command turns the program's permission prompts off ({}), and a grade \
-         never runs on one: pick another profile.",
-        crate::shown::one_line(flag, 60)
+        "This profile's command starts the program with {} ({}), and a grade never runs on \
+         one: pick another profile.",
+        found.what.clause(),
+        crate::shown::one_line(&found.flag, 60)
     )
 }
 

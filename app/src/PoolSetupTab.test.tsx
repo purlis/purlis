@@ -1,7 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -57,6 +65,7 @@ const setup = (at: string, steps: PoolSetupStep[], pool: string | null = null): 
     joining: false,
     pinned: null,
     key_changed: false,
+    kubeconfig: null,
   },
 });
 
@@ -125,6 +134,107 @@ afterEach(() => {
 });
 
 describe("PoolSetupTab", () => {
+  it("a refused add keeps the pool: the bar names it and says why, and Check pool runs doctor", async () => {
+    const refused = {
+      ...CHOSEN,
+      pool_state: { pool: "lab", state: "refused", reason: "the disk on lab is full" },
+    };
+    const calls = core(() => refused, { pool_setup_check_again: () => refused });
+    render(<PoolSetupTab plane="p" />);
+    expect(await screen.findByText("Not added: pool lab")).toBeInTheDocument();
+    expect(screen.getByText(/the disk on lab is full/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Check pool" }));
+    await waitFor(() =>
+      expect(calls.some((call) => call.cmd === "pool_setup_check_again")).toBe(true),
+    );
+  });
+
+  it("Forget pool… on a refused add asks what may be left, then forgets the kept refusal", async () => {
+    const refused = {
+      ...CHOSEN,
+      pool_state: { pool: "lab", state: "refused", reason: "no room" },
+    };
+    const calls = core(() => refused, { pool_setup_forget_refused: () => null });
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Forget pool…" }));
+    expect(calls.some((call) => call.cmd === "pool_setup_forget_refused")).toBe(false);
+    const asked = await screen.findByRole("alertdialog", { name: "Forget pool lab?" });
+    const left = within(asked).getByRole("list", { name: /What may be left on/ });
+    expect(
+      within(left)
+        .getAllByRole("listitem")
+        .map((one) => one.textContent),
+    ).toEqual([
+      "its runner's container and home volume",
+      "the browsers it ran",
+      "the logins given on it",
+    ]);
+    // Nothing was made, so there is nothing to Remove.
+    expect(within(asked).queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
+    await userEvent.click(within(asked).getByRole("button", { name: "Forget it here" }));
+    await waitFor(() =>
+      expect(calls.some((call) => call.cmd === "pool_setup_forget_refused")).toBe(true),
+    );
+  });
+
+  it("forgets a refusal of pool a in the tab, not in Settings, where pool b was made", async () => {
+    const both = {
+      ...MADE,
+      pool: "b",
+      pool_state: { pool: "a", state: "refused", reason: "no room" },
+    };
+    const calls = core(() => both, { pool_setup_forget_refused: () => null });
+    const onOpenPools = vi.fn();
+    render(<PoolSetupTab plane="p" onOpenPools={onOpenPools} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Forget pool…" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Forget it here" }));
+    await waitFor(() =>
+      expect(calls.some((call) => call.cmd === "pool_setup_forget_refused")).toBe(true),
+    );
+    expect(onOpenPools).not.toHaveBeenCalled();
+  });
+
+  it("forgets a made pool in the tab where its state is not a refusal", async () => {
+    const down = { ...MADE, pool_state: { pool: "dev-box", state: "unreachable", reason: null } };
+    const calls = core(() => down, { forget_docker_pool: () => null });
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Forget pool…" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Forget it here" }));
+    await waitFor(() => expect(calls.some((call) => call.cmd === "forget_docker_pool")).toBe(true));
+    expect(calls.some((call) => call.cmd === "pool_setup_forget_refused")).toBe(false);
+  });
+
+  it("offers Remove only where the machine answers", async () => {
+    const answers = {
+      ...MADE,
+      pool_state: { pool: "dev-box", state: "runner-gone", reason: null },
+    };
+    core(() => answers);
+    const { unmount } = render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Forget pool…" }));
+    expect(await screen.findByRole("button", { name: "Remove" })).toBeInTheDocument();
+    unmount();
+    cleanup();
+    forgetPools();
+    const silent = { ...MADE, pool_state: { pool: "dev-box", state: "unreachable", reason: null } };
+    core(() => silent);
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Forget pool…" }));
+    await screen.findByRole("alertdialog");
+    expect(screen.queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
+  });
+
+  it("Try now tries the forward again, not only a read", async () => {
+    const down = {
+      ...MADE,
+      pool_state: { pool: "dev-box", state: "unreachable", reason: null },
+    };
+    const calls = core(() => down, { pool_setup_try_now: () => down });
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Try now" }));
+    await waitFor(() => expect(calls.some((call) => call.cmd === "pool_setup_try_now")).toBe(true));
+  });
+
   it("shows each step's state as the core read it", async () => {
     core(() => READY);
     render(<PoolSetupTab plane="p" />);
@@ -577,6 +687,7 @@ describe("Where, on a cluster (#4492)", () => {
       joining: false,
       pinned: null,
       key_changed: false,
+      kubeconfig: "/Users/me/.kube/config",
     },
   });
 
@@ -598,32 +709,93 @@ describe("Where, on a cluster (#4492)", () => {
     await waitFor(() =>
       expect(sent).toContainEqual({
         cmd: "pool_setup_choose_cluster",
-        args: { context: "kind-team" },
+        args: { context: "kind-team", kubeconfig: "/Users/me/.kube/config" },
       }),
     );
   });
 
-  it("keeps the context chosen under Options instead", async () => {
+  it("keeps the context picked from the file's contexts instead", async () => {
     const sent = asking();
     render(<PoolSetupTab plane="p" />);
-    await userEvent.click(await screen.findByRole("button", { name: "Options" }));
-    await userEvent.click(screen.getByRole("radio", { name: "prod-eu" }));
+    await userEvent.click(await screen.findByRole("button", { name: /Context/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "prod-eu" }));
     await userEvent.click(screen.getByRole("button", { name: "Continue with this cluster" }));
     await waitFor(() =>
       expect(sent).toContainEqual({
         cmd: "pool_setup_choose_cluster",
-        args: { context: "prod-eu" },
+        args: { context: "prod-eu", kubeconfig: "/Users/me/.kube/config" },
       }),
     );
   });
 
-  it("offers Docker as the place purlis didn't recommend", async () => {
+  it("offers This machine as the place purlis didn't recommend, as a card", async () => {
     const sent = asking();
     render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("radio", { name: /This machine/ }));
     await userEvent.click(
-      await screen.findByRole("button", { name: "Use Docker on this machine instead" }),
+      screen.getByRole("button", { name: "Use Docker on this machine instead" }),
     );
     await waitFor(() => expect(sent.map((one) => one.cmd)).toContain("pool_setup_choose_docker"));
+  });
+
+  it("reads the contexts of another kubeconfig file typed, and keeps that file with the context", async () => {
+    const sent: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      sent.push({ cmd, args });
+      if (cmd === "cluster_contexts")
+        return { kubeconfig: "/work/team.yaml", contexts: ["team-a", "team-b"], current: "team-b" };
+      return cmd === "pool_setup" ? onACluster() : null;
+    });
+    render(<PoolSetupTab plane="p" />);
+    const file = await screen.findByRole("textbox", { name: "Kubeconfig file" });
+    await userEvent.clear(file);
+    await userEvent.type(file, "/work/team.yaml");
+    await waitFor(() =>
+      expect(sent).toContainEqual({
+        cmd: "cluster_contexts",
+        args: { kubeconfig: "/work/team.yaml" },
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Context/ })).toHaveTextContent("team-b"),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Continue with this cluster" }));
+    await waitFor(() =>
+      expect(sent).toContainEqual({
+        cmd: "pool_setup_choose_cluster",
+        args: { context: "team-b", kubeconfig: "/work/team.yaml" },
+      }),
+    );
+  });
+});
+
+describe("Where offers three places, always (#7191)", () => {
+  const dockerReady = (): PoolSetupShown => ({
+    ...setup("where", [
+      step("where", "Where chats run", "current", {
+        findings: ["Docker is ready."],
+        next: action("use-docker", "Continue with Docker"),
+        other: action("use-remote-docker", "Set up Docker on another machine"),
+      }),
+      step("pool", "Pool", "later"),
+    ]),
+  });
+
+  it("shows the cluster card where Docker here is ready and no kubeconfig context is found", async () => {
+    core(() => dockerReady());
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("radio", { name: /A Kubernetes cluster/ }));
+    expect(await screen.findByRole("textbox", { name: "Kubeconfig file" })).toBeInTheDocument();
+    expect(screen.getByText(/Name the kubeconfig file/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use this cluster" })).toBeDisabled();
+  });
+
+  it("shows the cluster card where Docker is missing, so a cluster is not out of reach", async () => {
+    core(() => MISSING);
+    render(<PoolSetupTab plane="p" />);
+    expect(await screen.findByRole("radio", { name: /A Kubernetes cluster/ })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /This machine/ })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Another machine with Docker/ })).toBeInTheDocument();
   });
 });
 
@@ -708,8 +880,9 @@ describe("Docker here pointing at another machine (#6268)", () => {
     const calls = core(() => elsewhere({ route: "ssh://me@build-box", context: null }));
     render(<PoolSetupTab plane="p" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Set up Docker on another machine" }),
+      await screen.findByRole("radio", { name: /Another machine with Docker/ }),
     );
+    await userEvent.click(screen.getByRole("button", { name: "Set up Docker on another machine" }));
     await waitFor(() =>
       expect(calls).toContainEqual({
         cmd: "pool_setup_machine",
@@ -722,8 +895,9 @@ describe("Docker here pointing at another machine (#6268)", () => {
     const calls = core(() => elsewhere({ route: "ssh://me@build-box", context: "build-box" }));
     render(<PoolSetupTab plane="p" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Set up Docker on another machine" }),
+      await screen.findByRole("radio", { name: /Another machine with Docker/ }),
     );
+    await userEvent.click(screen.getByRole("button", { name: "Set up Docker on another machine" }));
     await waitFor(() =>
       expect(calls).toContainEqual({
         cmd: "pool_setup_docker_context",
@@ -736,10 +910,33 @@ describe("Docker here pointing at another machine (#6268)", () => {
     const calls = core(() => elsewhere(null));
     render(<PoolSetupTab plane="p" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Set up Docker on another machine" }),
+      await screen.findByRole("radio", { name: /Another machine with Docker/ }),
     );
+    await userEvent.click(screen.getByRole("button", { name: "Set up Docker on another machine" }));
     await waitFor(() =>
       expect(calls.map((one) => one.cmd)).toContain("pool_setup_choose_remote_docker"),
     );
+  });
+});
+
+describe("The pool's status bar (#7191)", () => {
+  it("shows the pool's state once, at the top, where the core reports one", async () => {
+    core(
+      () =>
+        ({
+          ...MADE,
+          pool_state: { state: "refused", reason: "the disk is full" },
+        }) as PoolSetupShown,
+    );
+    render(<PoolSetupTab plane="p" />);
+    expect(await screen.findByRole("region", { name: "Pool dev-box" })).toBeInTheDocument();
+    expect(screen.getByText(/the pool was not added: the disk is full/)).toBeInTheDocument();
+  });
+
+  it("shows no bar where the core says nothing of the pool's state", async () => {
+    core(() => MADE);
+    render(<PoolSetupTab plane="p" />);
+    await screen.findByText("Sign-ins", { selector: "[data-part='name']" });
+    expect(screen.queryByRole("region", { name: "Pool dev-box" })).not.toBeInTheDocument();
   });
 });

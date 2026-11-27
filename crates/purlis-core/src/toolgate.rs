@@ -340,6 +340,32 @@ pub struct Verdict {
     pub shape: Option<String>,
     /// The arm's sentence, **without** [`OVERRIDE_NOTE`] — [`said`] adds that.
     pub denial: String,
+    /// **Why it was refused, where an unaccepted policy is the cause** (ADR 0130 §7): the
+    /// family that refused runs enforced only because this machine's acceptance of the
+    /// project's policy is Broken or Waiting, and this is
+    /// [`crate::enforcement::unaccepted_said`]'s clause. Said in place of [`OVERRIDE_NOTE`],
+    /// whose way out (set the family to `log`) changes nothing until the policy is accepted.
+    /// `None` for a refusal on the family's own merits.
+    pub unaccepted: Option<String>,
+}
+
+/// What a refusal an unaccepted policy causes says after the arm's sentence, in place of
+/// [`OVERRIDE_NOTE`] (ADR 0130 §7): `cause` is [`crate::enforcement::unaccepted_said`]'s clause.
+pub fn unaccepted_note(cause: &str) -> String {
+    format!("{UNACCEPTED_NOTE_LEAD}{cause}")
+}
+
+/// How [`unaccepted_note`] begins.
+const UNACCEPTED_NOTE_LEAD: &str = " — Refused because ";
+
+/// **A refusal's own words** (`said`), without what every refusal ends with: [`OVERRIDE_NOTE`],
+/// or the cause an unaccepted policy gives it ([`unaccepted_note`]).
+pub fn own_words(said: &str) -> &str {
+    [OVERRIDE_NOTE, UNACCEPTED_NOTE_LEAD]
+        .into_iter()
+        .filter_map(|note| said.find(note))
+        .min()
+        .map_or(said, |at| &said[..at])
 }
 
 impl Verdict {
@@ -354,16 +380,39 @@ impl Verdict {
             reason: reason.into(),
             shape,
             denial: denial.into(),
+            unaccepted: None,
         }
+    }
+
+    /// **This refusal, by `family` under `policy`, with the cause an unaccepted policy gives it**
+    /// (ADR 0130 §7), where `policy` enforces `family` only because this machine's acceptance is
+    /// Broken or Waiting; as it is otherwise. `on` is where that acceptance lives. For a refusal
+    /// made outside the gate (the merge hold, the branch-folder claim, the vault-file guard).
+    #[must_use]
+    pub fn caused_by(
+        mut self,
+        policy: &crate::enforcement::Resolved,
+        family: Family,
+        on: crate::enforcement::AcceptedOn<'_>,
+    ) -> Self {
+        if policy.mode(family) == Mode::Enforce && policy.unaccepted(family) {
+            self.unaccepted = Some(crate::enforcement::unaccepted_said(on));
+        }
+        self
     }
 
     /// What the harness shows the chat — `_deny`'s `f"charter guard: {reason}{_OVERRIDE_NOTE}"`,
     /// and without the note where the arm names the shape to retry ([`RETRY_SHAPED`], #3830).
+    ///
+    /// **Where an unaccepted policy is the cause** ([`Self::unaccepted`], ADR 0130 §7), it says
+    /// so in the note's place, after a shape to retry as after any other sentence.
     pub fn said(&self) -> String {
-        if RETRY_SHAPED.contains(&self.reason.as_str()) {
-            format!("purlis guard: {}", self.denial)
-        } else {
-            said(&self.denial)
+        match &self.unaccepted {
+            Some(cause) => format!("purlis guard: {}{}", self.denial, unaccepted_note(cause)),
+            None if RETRY_SHAPED.contains(&self.reason.as_str()) => {
+                format!("purlis guard: {}", self.denial)
+            }
+            None => said(&self.denial),
         }
     }
 
@@ -470,10 +519,61 @@ pub fn judged(
     plane: Option<&Plane<'_>>,
     modes: &dyn Fn(Family) -> Mode,
 ) -> Judged {
+    // A relative path in the line is read against the payload's directory (#7195).
+    floorguard::in_directory(call.cwd, || {
+        judged_in_its_directory(call, plane, modes, None)
+    })
+}
+
+/// **[`judged`] under `policy`, each refusal naming its cause** (ADR 0130 §7): where the arm
+/// that refused runs enforced only because this machine's acceptance of the project's policy is
+/// Broken or Waiting ([`crate::enforcement::Resolved::unaccepted`]), its refusal says so, with
+/// `on` where that acceptance lives, and not [`OVERRIDE_NOTE`]. An arm enforced on its own
+/// merits (the committed file, its template, a lock) refuses as [`judged`] has it.
+pub fn judged_under(
+    call: &Call<'_>,
+    plane: Option<&Plane<'_>>,
+    policy: &crate::enforcement::Resolved,
+    on: crate::enforcement::AcceptedOn<'_>,
+) -> Judged {
+    let modes = |family| policy.mode(family);
+    // On its merits, a family the unaccepted policy alone holds is not enforced.
+    let merits = |family| {
+        if policy.unaccepted(family) {
+            Mode::Log
+        } else {
+            policy.mode(family)
+        }
+    };
+    let cause = Cause {
+        merits: &merits,
+        said: crate::enforcement::unaccepted_said(on),
+    };
+    floorguard::in_directory(call.cwd, || {
+        judged_in_its_directory(call, plane, &modes, Some(&cause))
+    })
+}
+
+/// What [`judged_under`] tells an unaccepted policy's refusals by (ADR 0130 §7).
+struct Cause<'a> {
+    /// How each family runs on its own merits: as in force, but below enforced where only the
+    /// unaccepted policy holds it.
+    merits: &'a dyn Fn(Family) -> Mode,
+    /// [`crate::enforcement::unaccepted_said`]'s clause.
+    said: String,
+}
+
+fn judged_in_its_directory(
+    call: &Call<'_>,
+    plane: Option<&Plane<'_>>,
+    modes: &dyn Fn(Family) -> Mode,
+    cause: Option<&Cause<'_>>,
+) -> Judged {
     let gate = Gate {
         modes,
         logged: std::cell::RefCell::new(Vec::new()),
         sandboxed: plane.is_some_and(|plane| plane.launched.sandboxed),
+        cause,
     };
     // **A7c holds in every mode** (Q308b keeps the person's own denies): where the person's
     // ask and deny rules name a program, a command too big or too deep to read whole cannot be
@@ -489,7 +589,7 @@ pub fn judged(
         })
     };
     let caps_refuse = |verdict: Verdict| match gate.mode(Arm::Caps) {
-        Mode::Enforce => Some(verdict),
+        Mode::Enforce => Some(gate.caused(verdict)),
         _ if persons_rules_bind() => Some(verdict),
         _ => gate.refuses(verdict),
     };
@@ -523,6 +623,8 @@ struct Gate<'a> {
     /// Whether the chat runs in a wrap: only then are the arms that exist because of it
     /// (A3c, A3d, A9, A9b) asked at all.
     sandboxed: bool,
+    /// How an unaccepted policy's refusals are told ([`judged_under`]); none for [`judged`].
+    cause: Option<&'a Cause<'a>>,
 }
 
 impl Gate<'_> {
@@ -532,11 +634,20 @@ impl Gate<'_> {
     /// re-review of #6992): `--no-verify` and `send-pack` skip the token scan, which Q308a keeps
     /// at enforce wherever `guards.credential` is.
     fn mode(&self, arm: Arm) -> Mode {
-        let mode = arm
-            .family()
-            .map_or(Mode::Enforce, |family| (self.modes)(family));
+        self.mode_under(arm, self.modes)
+    }
+
+    /// [`Self::mode`], each family run as `modes` says.
+    fn mode_under(&self, arm: Arm, modes: &dyn Fn(Family) -> Mode) -> Mode {
+        // The wrap's own arms are enforced whatever the project's level (the review of #7105): a
+        // chat may run wrapped at its person's own level where the project's is no sandbox, and
+        // git its wrap stops partway is refused whenever a wrap is applied.
+        if arm.family() == Some(Family::Sandbox) {
+            return Mode::Enforce;
+        }
+        let mode = arm.family().map_or(Mode::Enforce, modes);
         if arm == Arm::HookSkip {
-            return mode.max((self.modes)(Family::GuardsCredential));
+            return mode.max(modes(Family::GuardsCredential));
         }
         // **The caps run at the strictest family the gate asks** (Q308b): a command too big or
         // too deep to read is one no arm read whole, so it cannot be shown clear of an
@@ -550,14 +661,22 @@ impl Gate<'_> {
                 .iter()
                 .filter(|other| **other != Arm::Caps)
                 .filter(|other| self.sandboxed || other.family() != Some(Family::Sandbox))
-                .filter_map(|other| other.family().map(|_| self.mode(*other)))
-                .chain([
-                    (self.modes)(Family::GuardsMerge),
-                    (self.modes)(Family::GuardsGit),
-                ])
+                .filter_map(|other| other.family().map(|_| self.mode_under(*other, modes)))
+                .chain([modes(Family::GuardsMerge), modes(Family::GuardsGit)])
                 .fold(mode, Mode::max);
         }
         mode
+    }
+
+    /// `verdict`, an enforced refusal, with the cause an unaccepted policy gives it where its arm
+    /// is enforced only because of it (ADR 0130 §7): below enforced on its own merits.
+    fn caused(&self, mut verdict: Verdict) -> Verdict {
+        if let (Some(cause), Some(arm)) = (self.cause, verdict.arm)
+            && self.mode_under(arm, cause.merits) < Mode::Enforce
+        {
+            verdict.unaccepted = Some(cause.said.clone());
+        }
+        verdict
     }
 
     /// Whether `arm` is asked at all.
@@ -569,7 +688,7 @@ impl Gate<'_> {
     fn refuses(&self, verdict: Verdict) -> Option<Verdict> {
         let mode = verdict.arm.map_or(Mode::Enforce, |arm| self.mode(arm));
         match mode {
-            Mode::Enforce => Some(verdict),
+            Mode::Enforce => Some(self.caused(verdict)),
             Mode::Log => {
                 self.logged.borrow_mut().push(verdict);
                 None

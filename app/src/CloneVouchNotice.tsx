@@ -130,7 +130,27 @@ export function CloneVouchNotices({
       setBusy(clone.folder);
       void commands
         .vouchClone(plane, clone.folder, place)
-        .then((answer) => {
+        .then(async (answer) => {
+          // Trusted: the repo is read from the forge as the person and recorded (ADR 0128 D4). A
+          // repo purlis could not record, or that needs the person's choice of account, is said.
+          const recorded =
+            answer.status === "ok"
+              ? await commands.forgeTrustCloneRepo(plane, clone.folder, null).catch(() => undefined)
+              : undefined;
+          if (answer.status === "ok" && recorded !== undefined) {
+            const said =
+              recorded.status === "error"
+                ? `Trusted, but purlis could not record the repo: ${recorded.error}`
+                : recorded.data.state === "choose"
+                  ? "Trusted. Choose which account serves it in Settings › You › Accounts."
+                  : recorded.data.state === "sign-in"
+                    ? "Trusted. Sign in to this host to record the repo."
+                    : undefined;
+            if (said !== undefined) {
+              setRefused((was) => ({ ...was, [clone.folder]: said }));
+              return;
+            }
+          }
           setRefused((was) => {
             const rest = Object.fromEntries(
               Object.entries(was).filter(([folder]) => folder !== clone.folder),

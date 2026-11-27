@@ -55,7 +55,31 @@ still comes. A repo not probed is listed unmarked. Nothing is cloned until the p
 
 - **What it needs:** in the window, a purlis sign-in to the host (Settings › You ›
   Accounts), or else [`gh`](https://cli.github.com/) installed and authenticated (`gh
-  auth login`, then `gh auth status`). A `purlis` command and a chat always use `gh`.
+  auth login`, then `gh auth status`). A `purlis` command always uses `gh`. With the one-login
+  train (ADR 0128, not in a build yet), a chat holds **no forge token**: it reaches GitHub (and GitLab) through purlis's own proxy as you, with
+  your sign-in, inside the repos recorded for that chat and no further (ADR 0128). Every chat
+  is on this one route. There is no agent identity, no GitHub App the organisation registers
+  for a chat, and no token a vault hands a chat: a project's `mint = "github-app"` line and a
+  tool that hands a vault value in `GH_TOKEN` or `GITLAB_TOKEN` still load, run nothing, and
+  raise a Notice and a `purlis doctor` row that say to sign in under Settings › Accounts and
+  delete the line. purlis never deletes a vault item or a keyring entry for you: it offers, and
+  waits for your press. A runner holds no sign-in either: with the desktop present its forge
+  calls go to the desktop's proxy, and a headless runner uses a token connection the operator
+  provisions. Every chat is also on the lock's baseline: `gh`'s config folder emptied, git's
+  credential helpers emptied (yours, the system's, a repository's own) with no prompt, its ssh
+  agent socket emptied and git's ssh told no agent (not in Claude Code, whose sandbox sets git's
+  ssh itself), `browser_login` to a forge host refused, and its tool calls to a forge connector
+  (`github`, `gitlab`, the claude.ai and plugin forms of each, `gh`, `glab`) refused (#7205).
+  A chat whose sandbox does not hold your credentials class has these routes only: they deny no
+  file, so your `gh` config and `~/.ssh` stay readable there, and with the baseline on every chat,
+  that is more chats than a mint alone ever claimed. Open: on macOS `gh`'s keychain token; a helper the chat names itself (`git -c
+  credential.helper=…`, `GIT_CONFIG_COUNT=0 git …`, `env -u GIT_CONFIG_COUNT …`); a socket you
+  granted; a bare `ssh` reading `~/.ssh/config` (Codex, opencode); Claude Code's own ssh and its
+  ssh agent; and a forge server under a name purlis does not list, since connector servers still
+  start and only calls to the listed names are refused; a token an MCP server reads from its own
+  variable (such as `GITHUB_PERSONAL_ACCESS_TOKEN`, which purlis does not list) is not refused; and
+  a program that is not a forge's, under your Allow, is handed what the Allow names. Until that train lands, a build still mints a token for a chat and a chat is on the baseline
+  only where its sandbox holds your credentials back.
 - **What "owner" means:** a GitHub **org** or a personal **user** account. `purlis`
   tries the org endpoint first and falls back to the user endpoint on a genuine 404 —
   you don't have to say which one it is.
@@ -727,3 +751,45 @@ guessing wrong would mean two unrelated repos could clone over each other.
 
 See `docs/control-plane.md` for the full `charter.toml` reference, including a worked
 mixed-forge example.
+
+## Project readiness (one login, slice D)
+
+`forge::readiness` answers, per project, whether the forge would let *everyone else* with access
+sign in to purlis and work. It is not part of `ForgeBackend`: its forge-specific reads are a
+separate trait, `readiness::Probe`, implemented in `github/readiness.rs` and `gitlab/readiness.rs`
+(so no request is built outside those two), and the default branch's protection is read through
+the seam's own `Requests::ruleset_protects`, the reading the hold on landing a change uses.
+Nothing is stored (a report is derived on each ask), so there is no tier to name.
+
+| Check | GitHub | GitLab | Applies to |
+|---|---|---|---|
+| Role | `GET repos/{o}/{r}`: `permissions` (`admin`, `push`, `pull`) | `GET projects/{path}`: `permissions.project_access` and `group_access` levels (Developer 30 pushes, Maintainer 40 administers) | every connection |
+| Organization approval | the same read: a **403** naming "OAuth App access restrictions" is blocked; a private organization repo that reads is approved; a public one proves nothing, so unknown. A 403 with `X-GitHub-SSO` is SAML (unknown, with its own way out); a rate limit says nothing (unknown); any other 403 names no cause, so it is unknown and guided with both the OAuth restriction and the IP allow list | none (GitLab has no approval of an OAuth app) | GitHub organization repo; **ready only over purlis's own sign-in**, unknown over the CLI login or an imported one |
+| purlis on the server | purlis ships no registration for the host and the person pinned none (`registered::pinned`; unreadable pins are unknown; anything but github.com unless pinned): blocked, the server's admin, or the organization's owner, registers an OAuth app with the device flow on | the same (anything but gitlab.com; a group's owner registers it for the group) | sign-in or CLI |
+| Server allows OAuth applications | none | `GET application/settings`: `user_oauth_applications` (administrators only; anyone else is unknown) | GitLab, self-hosted, sign-in or CLI |
+| Default branch protected | `ruleset_protects` | `ruleset_protects` | every connection |
+| CI token may push | `GET repos/{o}/{r}/actions/permissions/workflow` (admins only; else unknown) | `ci_push_repository_for_job_token_allowed` on the project | token (`CI` set) |
+
+A check is **ready**, **blocked** (with who can fix it: you, owner, admin) or **unknown**, and an
+unknown is never ready: a report is ready for all users only when every check that applies is.
+`purlis doctor` shows the `project readiness` row (not in the preflight, which asks no network),
+and the app's Settings › You › Ready for all users shows the same checks with their steps and
+request texts.
+
+**The connection is the real one.** The window carries the `Connection` its call takes
+(`signin::connection`): `SignIn` only for purlis's own OAuth sign-in, `Cli` for the `gh` or `glab`
+login (what `purlis doctor` reads over, and the window where the person has not signed in to
+purlis on the host), `Token` in CI. A private organization repo that reads over the CLI login says
+nothing about purlis's approval, so that check is unknown there, with a step to sign in to purlis.
+
+**What cannot be detected is guided, never judged** (ADR D10): Enterprise Managed Users, outside
+collaborators where approval requests are off, IP allow lists and SAML. A plain 403 gives a row
+that names both the OAuth restriction and the allow list; a SAML 403 (`X-GitHub-SSO`) gives its own
+steps. None is ready. No address from a response header is copied into a link or a request text.
+
+**Where it runs.** The check reads the person's own forge login, so it is the window's alone
+(`plane_readiness` is in `WINDOW_ONLY`: no link, so no chat, can call it) and `purlis doctor`
+refuses it inside a chat ("run it from the window"). A doctor that checked nothing (no plane, no
+repository, no origin) says "not checked", never green. The Settings group asks when it is opened
+(the person opened it; the read is window-only and read-only) and again each time they press Check
+again; nothing is kept.

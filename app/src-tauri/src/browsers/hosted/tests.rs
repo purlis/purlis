@@ -620,6 +620,8 @@ fn a_browser_view_on_a_runner_is_reconnecting_while_its_link_is_down_and_reconne
             why: "the link to it ended".into(),
             key_changed: false,
             gone: false,
+            refused: false,
+            host_key_changed: false,
         })
         .unwrap();
     until("the view is said to be reconnecting", || {
@@ -641,6 +643,8 @@ fn a_browser_view_that_draws_again_from_a_snapshot_is_reconnected() {
             why: "the link to it ended".into(),
             key_changed: false,
             gone: false,
+            refused: false,
+            host_key_changed: false,
         })
         .unwrap();
     until("the view is said to be reconnecting", || {
@@ -682,6 +686,8 @@ fn a_browser_view_closed_while_its_link_is_down_is_told_nothing_more() {
             why: "the link to it ended".into(),
             key_changed: false,
             gone: false,
+            refused: false,
+            host_key_changed: false,
         })
         .unwrap();
     until("the view is said to be reconnecting", || {
@@ -1784,4 +1790,371 @@ fn a_host_before_1_73_is_not_asked_whether_a_page_asks_to_sign_in() {
     };
     assert!(!super::says_asks_to_sign_in(before));
     assert!(super::says_asks_to_sign_in(KNOWS_ASKS_TO_SIGN_IN));
+}
+
+/// **Browsers on a pool the person forgot end as the person's, stopped on the machine where it
+/// answers** (#7187 item 6): `Forget it here` ends the window's links to the pool, and without
+/// this its browsers were left to be recorded as crashes.
+#[test]
+fn a_forgotten_pools_browsers_are_stopped_there_and_said_closed_by_the_person_never_crashed() {
+    use crate::chatbrowsers::Driver;
+    use purlis_core::eventlog::browsing::{Closer, Said};
+
+    let WithARunner {
+        window:
+            Window {
+                browsers,
+                root,
+                _dirs,
+                _runtime,
+                ..
+            },
+        on_the_runner,
+        _store,
+    } = a_window_with_a_runner();
+    let said: Arc<Mutex<Vec<Said>>> = Arc::default();
+    let saying = Arc::clone(&said);
+    let browsers = browsers.saying(Arc::new(move |_, one| saying.lock().unwrap().push(one)));
+    let program = browsers
+        .start(
+            &root,
+            Some("builds"),
+            purlis_session_protocol::browsing::BrowserReach::default(),
+            None,
+        )
+        .expect("it starts on the runner");
+    let here = browsers.open(&root).unwrap();
+    assert_eq!(on_the_runner.started().len(), 1);
+
+    let ended = browsers.end_on_forgotten("builds");
+
+    assert_eq!((ended.stopped, ended.left), (1, 0));
+    assert_eq!(browsers.pool_of(&program), None, "forgotten with its pool");
+    assert!(
+        browsers.pool_of(&here).is_none() && browsers.started_in(&root, &here),
+        "this machine's own browser is not the pool's"
+    );
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let ends: Vec<Said> = said
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|one| !matches!(one, Said::Opened { .. }))
+        .cloned()
+        .collect();
+    assert_eq!(
+        ends,
+        [Said::Closed {
+            browser: program,
+            by: Closer::Person
+        }]
+    );
+}
+
+/// **The person's close is logged only once the close has happened** (#7187 item 6): a browser
+/// the machine did not answer for is said closed by no one, and is not marked as ending here.
+#[test]
+fn a_close_is_said_only_after_it_succeeds() {
+    use purlis_core::eventlog::browsing::{Closer, Said};
+
+    let Window {
+        browsers,
+        root,
+        _dirs,
+        _runtime,
+        ..
+    } = window();
+    let said: Arc<Mutex<Vec<Said>>> = Arc::default();
+    let saying = Arc::clone(&said);
+    let browsers = browsers.saying(Arc::new(move |_, one| saying.lock().unwrap().push(one)));
+    let program = browsers.open(&root).expect("it starts");
+    let closed = |said: &Arc<Mutex<Vec<Said>>>| {
+        said.lock()
+            .unwrap()
+            .iter()
+            .filter(|one| matches!(one, Said::Closed { .. }))
+            .count()
+    };
+
+    let failed = browsers.closing_then_saying(&program, Some(Closer::Person), |_| {
+        Err("the machine did not answer".to_owned())
+    });
+
+    assert!(failed.is_err());
+    assert_eq!(closed(&said), 0, "a close that failed is not said");
+    assert!(
+        !browsers.closing.lock().unwrap().contains(&program),
+        "and the browser is not marked as ending here"
+    );
+    browsers
+        .closing_then_saying(&program, Some(Closer::Person), |window| {
+            window.close(&program)
+        })
+        .expect("closed");
+    assert_eq!(closed(&said), 1, "said once, after it succeeded");
+}
+
+/// **Quitting purlis ends this machine's browsers and leaves a runner's running** (#7187 item 7,
+/// ADR 0068 as amended 2026-11-19): a runner is its own device, so its browsers outlive a quit as
+/// its chats do, and the window reattaches to them when it opens. The quit is what
+/// `SessionHost::end` sends this machine's host, which ends every program it runs and stops;
+/// the runner's host is told nothing.
+#[test]
+fn a_quit_ends_this_machines_browsers_and_leaves_a_runners_browser_running() {
+    use purlis_session_protocol::session::{Answer, Command};
+
+    let WithARunner {
+        window:
+            Window {
+                browsers,
+                root,
+                _dirs,
+                _runtime,
+                ..
+            },
+        on_the_runner,
+        _store,
+    } = a_window_with_a_runner();
+    let on_a_runner = crate::chatbrowsers::Driver::start(
+        &browsers,
+        &root,
+        Some("builds"),
+        purlis_session_protocol::browsing::BrowserReach::default(),
+        None,
+    )
+    .expect("it starts on the runner");
+    let here = browsers.open(&root).expect("and one on this machine");
+    let running = |program: &str| {
+        browsers
+            .link_for(program)
+            .ok()
+            .and_then(|link| match link.call(Command::List) {
+                Ok(Answer::Chats(listed)) => Some(
+                    listed
+                        .iter()
+                        .any(|one| one.chat == program && one.state != "ended"),
+                ),
+                _ => None,
+            })
+    };
+    assert_eq!(running(&on_a_runner), Some(true));
+    assert_eq!(running(&here), Some(true));
+
+    // What the app does at its quit to this machine's host.
+    browsers
+        .link()
+        .expect("this machine's link")
+        .quit_within(std::time::Duration::from_secs(5))
+        .expect("the host answers the quit");
+
+    assert_eq!(
+        running(&on_a_runner),
+        Some(true),
+        "the runner's browser runs on past the quit"
+    );
+    assert_eq!(on_the_runner.started().len(), 1);
+    assert_ne!(
+        running(&here),
+        Some(true),
+        "this machine's browser ended with the quit"
+    );
+}
+
+/// What the person is told of browsers a forgotten pool's machine did not answer for: they are
+/// listed as left there, and said safely.
+#[test]
+fn browsers_left_on_a_forgotten_pools_machine_are_listed_as_left() {
+    assert_eq!(crate::browsers::left_on_the_machine(0), None);
+    let one = crate::browsers::left_on_the_machine(1).unwrap();
+    assert!(
+        one.contains("1 browser ") && one.contains("keeps running"),
+        "{one}"
+    );
+    let two = crate::browsers::left_on_the_machine(2).unwrap();
+    assert!(
+        two.contains("2 browsers ") && two.contains("keep running"),
+        "{two}"
+    );
+}
+
+/// **Starts on different engines are not one queue** (#7187 item 8): the window-wide mutex is
+/// gone, and an engine's own gate holds only that engine's starts one at a time.
+#[test]
+fn a_start_on_one_engine_waits_for_that_engines_count_alone() {
+    let gates = super::StartGates::default();
+    let (builds, same, other, this_machine) = (
+        gates.of(Some("builds"), || "engine-a".into()),
+        gates.of(Some("builds"), || "engine-a".into()),
+        gates.of(Some("tests"), || "engine-b".into()),
+        gates.of(None, || unreachable!("this machine's host names no engine")),
+    );
+    let mut waited = false;
+    let counting = builds.turn(|| waited = true);
+    assert!(!waited, "a free turn waits for nothing");
+    assert!(
+        same.turn.try_lock().is_err(),
+        "the same engine's next start waits"
+    );
+    assert!(
+        other.turn.try_lock().is_ok(),
+        "another engine's start does not"
+    );
+    assert!(
+        this_machine.turn.try_lock().is_ok(),
+        "nor this machine's own host's"
+    );
+    drop(counting);
+}
+
+/// Two pools on one engine are one budget: the second pool's start waits for the first's count.
+#[test]
+fn two_pools_on_one_engine_share_one_gate() {
+    let gates = super::StartGates::default();
+    let first = gates.of(Some("builds"), || "engine-a".into());
+    let second = gates.of(Some("tests"), || "engine-a".into());
+    let slot = first.room_for_one_more(0, 1).expect("room");
+
+    assert!(Arc::ptr_eq(&first, &second));
+    assert!(
+        second.room_for_one_more(0, 1).is_none(),
+        "a start on the other pool counts the first's"
+    );
+    drop(slot);
+}
+
+/// The engine a pool is on is named from its records: a pool on another machine by the machine
+/// and engine as pinned, a local pool by this machine's Docker, none by the pool itself.
+#[test]
+fn an_engine_is_named_from_the_pools_records() {
+    assert_eq!(super::engine_of(None, "builds"), "pool builds");
+    let nowhere = tempfile::tempdir().unwrap();
+    assert_eq!(
+        super::engine_of(Some(nowhere.path()), "builds"),
+        "pool builds"
+    );
+}
+
+/// A replaced link is the same runner: the gate is keyed by the engine, so its starts are still
+/// counted against the one budget, and the last pool on an engine removed takes its gate with it.
+#[test]
+fn a_gate_outlives_its_link_and_goes_with_its_last_pool() {
+    let gates = super::StartGates::default();
+    let before = gates.of(Some("builds"), || "engine-a".into());
+    let slot = before.room_for_one_more(0, 1).expect("room");
+
+    // The link was replaced as it reconnected; the next start finds the same gate.
+    let after = gates.of(Some("builds"), || "engine-a".into());
+    assert!(
+        after.room_for_one_more(0, 1).is_none(),
+        "past the budget the first start is still counting"
+    );
+    drop(slot);
+    assert!(after.room_for_one_more(0, 1).is_some());
+
+    let gone = Arc::downgrade(&before);
+    drop((before, after));
+    gates.forget("builds");
+    assert!(
+        gone.upgrade().is_none(),
+        "a removed pool's gate is not kept"
+    );
+}
+
+/// A pool still on its engine keeps the gate when another pool on it goes.
+#[test]
+fn a_gate_stays_while_another_pool_is_on_its_engine() {
+    let gates = super::StartGates::default();
+    let first = gates.of(Some("builds"), || "engine-a".into());
+    drop(gates.of(Some("tests"), || "engine-a".into()));
+    let gate = Arc::downgrade(&first);
+    drop(first);
+
+    gates.forget("builds");
+
+    assert!(gate.upgrade().is_some(), "tests is still on that engine");
+}
+
+/// A pool added again under its old name, on its old engine, while a start still holds the old
+/// gate, finds that gate: the browsers it counts are not counted twice.
+#[test]
+fn a_pool_added_again_does_not_count_against_a_gate_a_start_still_holds() {
+    let gates = super::StartGates::default();
+    let old = gates.of(Some("builds"), || "engine-a".into());
+    let slot = old.room_for_one_more(0, 1).expect("room");
+    gates.forget("builds");
+
+    let new = gates.of(Some("builds"), || "engine-a".into());
+
+    assert!(Arc::ptr_eq(&old, &new), "the start is still on its way");
+    assert!(
+        new.room_for_one_more(0, 1).is_none(),
+        "so the budget it holds is still counted"
+    );
+    drop(slot);
+}
+
+/// A start still holding the gate of a removed pool keeps it until the start has answered, and
+/// then it is gone with the next look.
+#[test]
+fn a_removed_pools_gate_goes_once_its_last_start_has_answered() {
+    let gates = super::StartGates::default();
+    let old = gates.of(Some("builds"), || "engine-a".into());
+    let slot = old.room_for_one_more(0, 1).expect("room");
+    let weak = Arc::downgrade(&old);
+    drop(old);
+    gates.forget("builds");
+    assert!(weak.upgrade().is_some());
+
+    drop(slot);
+    drop(gates.of(Some("tests"), || "engine-b".into()));
+
+    assert!(weak.upgrade().is_none());
+}
+
+/// The turn is held for the count alone: a start that is on its way (a long engine download)
+/// holds a slot of the budget, never the turn, so the next start counts at once and is refused
+/// only where the budget is spent.
+#[test]
+fn a_start_on_its_way_holds_a_slot_and_not_the_turn() {
+    let gates = super::StartGates::default();
+    let gate = gates.of(Some("builds"), || "engine-a".into());
+    let on_its_way = {
+        let _counting = gate.turn(|| ());
+        gate.room_for_one_more(1, 3).expect("room for the first")
+    };
+
+    let mut waited = false;
+    let _counting = gate.turn(|| waited = true);
+    assert!(
+        !waited,
+        "the next start did not wait for the first's download"
+    );
+    let second = gate.room_for_one_more(1, 3).expect("room for the second");
+    assert!(
+        gate.room_for_one_more(1, 3).is_none(),
+        "one running and two on their way is the budget of 3"
+    );
+    drop((on_its_way, second));
+    assert!(gate.room_for_one_more(1, 3).is_some());
+}
+
+/// A start that has to wait for another's turn says so (nothing silent), and its wait ends
+/// as the turn is free.
+#[test]
+fn a_start_waiting_for_the_turn_says_so() {
+    let gates = super::StartGates::default();
+    let gate = gates.of(Some("builds"), || "engine-a".into());
+    let counting = gate.turn(|| ());
+    let waiting = {
+        let gate = Arc::clone(&gate);
+        std::thread::spawn(move || {
+            let said = Mutex::new(false);
+            let _turn = gate.turn(|| *said.lock().unwrap() = true);
+            *said.lock().unwrap()
+        })
+    };
+    std::thread::sleep(Duration::from_millis(100));
+    drop(counting);
+
+    assert!(waiting.join().unwrap(), "it said it was waiting");
 }

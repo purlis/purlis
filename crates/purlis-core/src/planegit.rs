@@ -2407,13 +2407,25 @@ fn push_head_within(
                     Rebased::Failed(said) => {
                         // Not a conflict, and not called one (qw348): git's own words say what
                         // stopped it. Whatever the failed checkout wrote is put back.
+                        // git refusing purlis's own call is purlis's fault, not a rebase that
+                        // failed (#7627).
+                        let refused = said.starts_with(bringin::REFUSED_BY_GIT);
                         return rebase_undone(
                             root,
                             &branch,
                             &head,
                             &onto_id,
-                            format!("the rebase onto the remote did not go through: {said}"),
-                            "Nothing was pushed. Settle what git names, then `purlis save`.",
+                            if refused {
+                                said
+                            } else {
+                                format!("the rebase onto the remote did not go through: {said}")
+                            },
+                            if refused {
+                                "Nothing was pushed. There is nothing in your project to settle: \
+                         report this with `purlis report bug`, or update purlis."
+                            } else {
+                                "Nothing was pushed. Settle what git names, then `purlis save`."
+                            },
                             say,
                         );
                     }

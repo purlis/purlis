@@ -7,13 +7,15 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   statSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
+import { freemem, homedir, loadavg } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
+import { type RunnerSample, parseSwapUsedMb } from "./openTimes.js";
 import {
   HARNESS,
   PROGRAM_COLUMNS,
@@ -85,6 +87,45 @@ function processes(): ProcessRow[] {
  */
 export function harnessesRunning(): number {
   return processes().filter((row) => runs(row.program, HARNESS)).length;
+}
+
+/**
+ * How many fake harnesses run, by the cheapest answer: one `ps` of the program column alone,
+ * with no command lines to carry (a sandboxed chat's is hundreds of KiB) and no second listing
+ * to join. It is what the fifty opens are timed with (#7523 diagnosis): the full
+ * {@link harnessesRunning} grew with the process table and was part of every measured open.
+ */
+export function harnessesRunningCheaply(): number {
+  return ps(["-A", "-o", "comm="])
+    .split("\n")
+    .filter((line) => {
+      const path = line.trimEnd();
+      return runs(path.slice(path.lastIndexOf("/") + 1), HARNESS);
+    }).length;
+}
+
+/** The runner now: free memory, swap in use (macOS `sysctl`, Linux `/proc/meminfo`) and load. */
+export function runnerNow(): RunnerSample {
+  let swapMb: number | null = null;
+  try {
+    if (process.platform === "darwin") {
+      swapMb = parseSwapUsedMb(
+        execFileSync("sysctl", ["vm.swapusage"], { encoding: "utf8", timeout: 2_000 }),
+      );
+    } else if (process.platform === "linux") {
+      const info = readFileSync("/proc/meminfo", "utf8");
+      const kb = (key: string) => Number(new RegExp(`^${key}:\\s+(\\d+)`, "m").exec(info)?.[1]);
+      swapMb = Math.round((kb("SwapTotal") - kb("SwapFree")) / 1024);
+      if (!Number.isFinite(swapMb)) swapMb = null;
+    }
+  } catch {
+    swapMb = null;
+  }
+  return {
+    swapMb,
+    freeMb: Math.round(freemem() / 1_048_576),
+    load: Math.round(loadavg()[0] * 100) / 100,
+  };
 }
 
 /**

@@ -154,6 +154,16 @@ export function picturesToDraw(report) {
   return [...pairs.values()];
 }
 
+/** The browsers this run was asked for: `STORY_BROWSERS`, a JSON list (`stories.yml` hands it the
+ *  change-scope tool's `stories-browsers`), else every one. */
+export function browsersAsked(env = process.env) {
+  if (!env.STORY_BROWSERS) return BROWSERS;
+  const asked = JSON.parse(env.STORY_BROWSERS);
+  if (!Array.isArray(asked) || asked.length === 0 || !asked.every((b) => BROWSERS.includes(b)))
+    throw new Error(`STORY_BROWSERS is not a list of ${BROWSERS.join(", ")}: ${env.STORY_BROWSERS}`);
+  return asked;
+}
+
 /** A shard's report's file name, `report-<browser>-<shard>-of-<shards>.json`, read; `undefined`
  *  for any other name. */
 export function shardOf(fileName) {
@@ -164,11 +174,12 @@ export function shardOf(fileName) {
   return { browser, shard: Number(shard), of: Number(of), name: `${browser}-${shard}-of-${of}` };
 }
 
-/** What is missing of the shards' reports, by their file names: every browser in `BROWSERS`
- *  wrote one from each shard, and its shards agree on how many there are. */
-export function shardProblems(fileNames) {
+/** What is missing of the shards' reports, by their file names: every browser in `browsers` (the
+ *  ones the run was asked for, `STORY_BROWSERS`: WebKit alone on a pull request, #7335; every one
+ *  in `BROWSERS` by default) wrote one from each shard, and its shards agree on how many there are. */
+export function shardProblems(fileNames, browsers = BROWSERS) {
   const shards = fileNames.map(shardOf).filter(Boolean);
-  return BROWSERS.flatMap((browser) => {
+  return browsers.flatMap((browser) => {
     const its = shards.filter((one) => one.browser === browser);
     if (its.length === 0) return [`${browser}: no shard wrote a report`];
     const counts = [...new Set(its.map(({ of }) => of))].sort((a, b) => a - b);
@@ -613,7 +624,7 @@ if (
 ) {
   const [reports, drawn] = process.argv.slice(3);
   const names = existsSync(reports) ? readdirSync(reports) : [];
-  const found = shardProblems(names);
+  const found = shardProblems(names, browsersAsked());
   if (drawn !== undefined && found.length === 0) {
     const shards = names.flatMap((fileName) => {
       const shard = shardOf(fileName);
@@ -650,7 +661,7 @@ if (
     }
     return [{ browser: shard.browser, report }];
   });
-  const { headline } = named(runs, process.env.GITHUB_WORKSPACE || process.cwd(), shardProblems(names));
+  const { headline } = named(runs, process.env.GITHUB_WORKSPACE || process.cwd(), shardProblems(names, browsersAsked()));
   if (headline) console.log(headline);
 } else if (process.argv[1] === fileURLToPath(import.meta.url)) {
   // `<browser> <report>`, once for each report a browser's shards wrote: the annotations of

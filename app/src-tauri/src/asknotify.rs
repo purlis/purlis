@@ -75,7 +75,8 @@
 //! **Nothing is sent while the person is looking** ([`Looking`], decision 11): the window
 //! holding the ask's project is on screen, focused and has that project in front, and it
 //! shows either the chat itself (`Chats::looks_at`, #1486, #1489) or that project's Asks
-//! ([`InboxOpen`], which the window says). Every question unanswered reads as "not looking",
+//! ([`InboxOpen`], which the window says). A chat with an ask its pane draws nowhere (a held
+//! forge act, #7685) is not looked at for being on screen: only Asks draws that ask. Every question unanswered reads as "not looking",
 //! so a notification is sent rather than held back: one not needed costs a glance, one needed
 //! and not sent costs a chat sitting unanswered.
 //!
@@ -1170,7 +1171,9 @@ fn kind_said(ask: &Shown) -> &'static str {
         AskSource::Looping => "Paused, as it may be looping",
         AskSource::MergeHold => "Asks you to merge a request",
         AskSource::TrustClone => "Asks you to trust a clone",
+        AskSource::LetChatPush => "Asks you to let it push a branch it has no record of",
         AskSource::TrustClones => "Asks you to trust clones purlis did not clone",
+        AskSource::HeldAct => "Asks you to approve a forge act it was not let do",
     }
 }
 
@@ -1402,11 +1405,15 @@ pub struct Looking {
     pub inbox_open: bool,
     /// It has the chat on screen in the tab in front.
     pub chat_on_screen: bool,
+    /// The chat has an ask its pane draws nowhere (a held forge act, #7685): only Asks draws it,
+    /// so the chat on screen is no look at it.
+    pub asks_off_its_pane: bool,
 }
 
 impl Looking {
     pub fn is_looking(self) -> bool {
-        self.window_in_front && (self.inbox_open || self.chat_on_screen)
+        self.window_in_front
+            && (self.inbox_open || (self.chat_on_screen && !self.asks_off_its_pane))
     }
 }
 
@@ -1880,6 +1887,7 @@ fn looking(
             window_in_front: false,
             inbox_open: false,
             chat_on_screen: false,
+            asks_off_its_pane: false,
         };
     };
     // A tab window draws its one project, so it has it in front whenever it is drawn.
@@ -1895,6 +1903,7 @@ fn looking(
             .try_state::<Notifier>()
             .is_some_and(|notifier| notifier.inbox.is_open(window.label(), plane)),
         chat_on_screen: held.chats().looks_at(session),
+        asks_off_its_pane: held.held_acts().waits_for(session),
     }
 }
 

@@ -171,6 +171,7 @@ beforeEach(() => {
               signed_in: true,
               scopes: CODE.scopes,
               wider: [],
+              ci_allowed: false,
             });
           };
           refuse = (why) => reject(why);

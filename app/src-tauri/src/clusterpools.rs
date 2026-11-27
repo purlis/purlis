@@ -213,8 +213,97 @@ pub fn stage_of(
     }))
 }
 
+/// **A start waiting for the pool `pool`'s runner, whose link is down** (#7187): the pane's
+/// "Waiting for <pool> — <reason>", with the Cancel the picker already has. `None` where `pool`'s
+/// link is not down.
+///
+/// `cluster_wait` is a cluster pool's `vouchWait` (#4403): its start waits that long for the
+/// cluster to vouch for the runner, not 30 seconds, and the pane says so, as a step of its own
+/// that is never silent.
+pub fn waiting_for_link(
+    pool: &str,
+    down: &[crate::reconnecting::RunnerLinkDown],
+    cluster_wait: Option<std::time::Duration>,
+) -> Option<RunnerStage> {
+    let down = down.iter().find(|one| one.pool == pool)?;
+    let why = crate::devices::shown_safely(&down.why);
+    let why = why.trim_end_matches('.');
+    Some(match cluster_wait {
+        None => RunnerStage {
+            said: format!("Waiting for {pool} — {why}"),
+            more: "purlis keeps linking to it. Cancel stops waiting; after 30 seconds the start \
+                   ends with this reason, with Try now and Check pool."
+                .to_owned(),
+            cluster_said: None,
+        },
+        Some(wait) => RunnerStage {
+            said: format!("Waiting for the cluster to vouch for {pool}'s runner — {why}"),
+            more: format!(
+                "purlis keeps linking to it. Cancel stops waiting; the start ends with this \
+                 reason after {}, this pool's vouch wait, with Try now and Check pool.",
+                wait_said(wait)
+            ),
+            cluster_said: None,
+        },
+    })
+}
+
+/// A wait, in the largest whole unit: 45 seconds, 1 minute, 10 minutes.
+fn wait_said(wait: std::time::Duration) -> String {
+    let secs = wait.as_secs();
+    if secs >= 60 && secs.is_multiple_of(60) {
+        purlis_core::counts::counted(secs / 60, "minute", "minutes")
+    } else {
+        purlis_core::counts::counted(secs, "second", "seconds")
+    }
+}
+
+/// **A start on pool `pool`'s runner, which is linked, and taking a while** (#7187): nothing on
+/// the remote path is silent for more than 30 seconds, so the pane says what it waits on and
+/// when it gives up.
+pub fn waiting_on_runner(pool: &str) -> RunnerStage {
+    RunnerStage {
+        said: format!("Waiting for {pool}'s runner"),
+        more: "It is starting the chat. A start that takes more than 3 minutes ends, saying \
+               which step it was on."
+            .to_owned(),
+        cluster_said: None,
+    }
+}
+
+/// **What a start in `root`'s `workspace` is waiting on** (#3709, #7187): a pool whose link is
+/// down first, then where a cluster's runner has got to, then, for any other pool, that its
+/// runner is starting the chat. Nothing where the chat runs on this machine.
+pub fn stage_while_waiting(
+    root: &Path,
+    workspace: Option<&str>,
+    start: Option<&purlis_core::machine::StartChoice>,
+    down: &[crate::reconnecting::RunnerLinkDown],
+) -> Result<Option<RunnerStage>, String> {
+    let config = config_root()?;
+    let Some(pool) = purlis_core::pools::chat_place(&config, root, workspace, start)?.pool else {
+        return Ok(None);
+    };
+    // A cluster pool waits for the cluster to vouch for its runner as long as the person set.
+    let cluster_wait = purlis_core::runners::cluster_pools(&config)
+        .ok()
+        .and_then(|pools| {
+            pools
+                .iter()
+                .find(|one| one.name() == pool)
+                .map(ClusterPool::vouch_wait)
+        });
+    if let Some(stage) = waiting_for_link(&pool, down, cluster_wait) {
+        return Ok(Some(stage));
+    }
+    Ok(Some(
+        stage_of(root, workspace, start)?.unwrap_or_else(|| waiting_on_runner(&pool)),
+    ))
+}
+
 /// **Where the runner of a chat being started has got to** (#3709), read from the cluster, for the
-/// window's Start while it waits. Nothing where there is no stage to say.
+/// window's Start while it waits. Nothing where there is no stage to say; for a pool whose link is
+/// down, that it is waited for (#7187).
 #[tauri::command]
 #[specta::specta]
 pub async fn runner_stage(
@@ -225,8 +314,9 @@ pub async fn runner_stage(
 ) -> Result<Option<RunnerStage>, String> {
     let held = planes.held(&plane)?;
     let start = runs_on.map(crate::RunsOnPick::choice).transpose()?;
+    let down = held.chats().sessions().runners_down();
     crate::off_the_window("reading where the runner has got to", move || {
-        stage_of(held.root(), workspace.as_deref(), start.as_ref())
+        stage_while_waiting(held.root(), workspace.as_deref(), start.as_ref(), &down)
     })
     .await
 }
@@ -557,6 +647,30 @@ pub fn add_on(
     within: std::time::Duration,
 ) -> Result<ClusterPoolRow, String> {
     let kubeconfig = kubeconfig_of(adding.kubeconfig.as_deref(), home)?;
+    // The credential plugin the context signs in with (#7192): found in a usual install folder,
+    // or in the one the person named in Pool setup, its folder alone joins the `PATH` of every
+    // run of this add, and so of the plugin path the pool keeps.
+    let with_plugin = {
+        let base = kubectl
+            .clone()
+            .pointed_at(&kubeconfig, adding.context.trim());
+        let named = purlis_core::poolsetup::read_choices(config)
+            .ok()
+            .and_then(|choices| choices.plugin_dir);
+        match purlis_core::poolsetup::cluster::plugin_facts(
+            &base,
+            adding.context.trim(),
+            named.as_deref(),
+            home,
+        ) {
+            Some(purlis_core::poolsetup::cluster::PluginFacts {
+                found: Some(folder),
+                ..
+            }) => kubectl.clone().with_plugin_folder(&folder),
+            _ => kubectl.clone(),
+        }
+    };
+    let kubectl = &with_plugin;
     let pointed = kubectl
         .clone()
         .pointed_at(&kubeconfig, adding.context.trim());
@@ -637,10 +751,9 @@ pub async fn set_cluster_pool_owned(
         purlis_core::runners::set_cluster_owned(&config_root()?, &name, owned)
             .map_err(|why| why.to_string())?;
         if !owned {
-            for project in held {
-                project.browsers().forget_pool_logins(&name);
-            }
+            let logins = crate::chatbrowsers::forget_pool_logins_in(&held, &name);
             crate::poolprofiles::cancel_sign_ins_on(&name);
+            logins?;
         }
         Ok(())
     })

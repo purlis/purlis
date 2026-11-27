@@ -168,6 +168,22 @@ fn tables(cmd: &str) -> Value {
     ])
 }
 
+/// The sentence of the one refusal round 7 of #7131 adds to a line the Python let through.
+const ROUND_SEVEN_HOLD: &str = "A substitution here holds a comment, a heredoc or a `$'` quote";
+
+/// The sentences of the two holds round 3 of #7423 adds to a line the Python let through: a flag
+/// before a forge CLI's noun that may take the noun as its value (`gh -c x merge`), and a word
+/// of a line the lexer rejects that holds an expansion character.
+const ROUND_THREE_HOLDS: [&str; 4] = [
+    "stands before the command and may take the next word as its value",
+    "is filled in by the shell, which may split it",
+    // Round 11 of #7423 (the allowlist): a forge CLI call whose noun or verb is no command the
+    // table knows, or that a program in front of it may complete, is held. The Python let a
+    // mistyped `gh push` or `glab -c x clone` through.
+    "is empty, filled in by the shell, or not a command purlis knows",
+    "may hand it words (a pipe, a file, a here-string, the names it finds)",
+];
+
 #[test]
 fn the_recorded_python_answer_is_the_answer_these_guards_give() {
     purlis_core::unsteered!();
@@ -189,6 +205,26 @@ fn the_recorded_python_answer_is_the_answer_these_guards_give() {
     for (at, row) in ats.iter().zip(&rows) {
         let cmd = row["cmd"].as_str().expect("every row names its command");
         let mut check = |what: &str, want: &Value, got: Value| {
+            // Round 7 of #7131 holds a substitution whose body carries a comment, a heredoc not
+            // closed inside it or a `$'` quote, where the Python read the line through. Only that
+            // hold is allowed to differ, and only from a line the Python let through.
+            if what == "rfr"
+                && want.is_null()
+                && got
+                    .as_str()
+                    .is_some_and(|said| said.contains(ROUND_SEVEN_HOLD))
+            {
+                return;
+            }
+            // Round 3 of #7423 holds those, only where the Python let the line through.
+            if what == "rfr"
+                && want.is_null()
+                && got
+                    .as_str()
+                    .is_some_and(|said| ROUND_THREE_HOLDS.iter().any(|hold| said.contains(hold)))
+            {
+                return;
+            }
             if want != &got {
                 wrong.push(format!(
                     "{at} {cmd:?}\n    {what} python={want}\n    {what}   rust={got}"

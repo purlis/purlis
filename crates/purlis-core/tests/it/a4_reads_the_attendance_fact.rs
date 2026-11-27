@@ -195,6 +195,7 @@ fn the_merge_hold_takes_precedence_over_a4() {
         Some(Held::Request(Request {
             repo: None,
             number: 12,
+            act: Default::default(),
         }))
     );
     // With A4 reading attendance, neither an unattended nor an attended chat the app started is

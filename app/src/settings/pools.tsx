@@ -124,6 +124,8 @@ function linkSaid(link: PoolLink | "asking" | undefined): string | undefined {
   if (link === undefined || link === "asking") return "asking its runner…";
   if (link.state === "linked") return "linked";
   if (link.state === "key_changed" || link.state === "operator_key_changed") return "key changed";
+  if (link.state === "refused") return "refused";
+  if (link.state === "host_key_changed") return "host key changed";
   if (link.state === "suspended") return "suspended";
   if (link.state === "removed") return "removed outside purlis";
   if (link.state === "on_another_engine") return "on another Docker engine";
@@ -188,6 +190,8 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
       );
     }
   }
+  // Runners another desktop made on the same engine: only said, never touched (#7192).
+  if (version.other_desktops != null) lines.push(`${version.other_desktops}.`);
   return lines.length === 0 ? undefined : lines.join(" ");
 }
 
@@ -614,8 +618,10 @@ function PoolEntry({
                 name={pool.name}
                 host={unreachable.host}
                 why={unreachable.why}
+                answers={unreachable.answers}
                 removing={removing}
                 onForget={onForget}
+                onRemove={remove}
                 onDismiss={onDismissUnreachable}
               />
             )}
@@ -631,9 +637,12 @@ function PoolEntry({
               <p className="ui-setting-help ui-text-secondary">{anotherEngineSaid(pool.name)}</p>
             )}
             {remade !== undefined && <p className="ui-setting-help ui-text-secondary">{remade}</p>}
-            {typeof link === "object" && link.state === "down" && (
-              <p className="ui-setting-help ui-text-secondary">{link.why}</p>
-            )}
+            {typeof link === "object" &&
+              (link.state === "down" ||
+                link.state === "refused" ||
+                link.state === "host_key_changed") && (
+                <p className="ui-setting-help ui-text-secondary">{link.why}</p>
+              )}
             {/* Its Notice, with Check and trust again, stands in the window's Notices (#6270). */}
             {typeof link === "object" && link.state === "pin_changed" && (
               <p className="ui-setting-help ui-text-secondary">{link.change.said}</p>
@@ -698,32 +707,47 @@ export function UnreachableNotice({
   name,
   host,
   why,
+  answers = false,
   removing,
   onForget,
+  onRemove,
   onDismiss,
 }: {
   name: string;
   host: string;
   why: string;
+  /** The machine answered, and refused (#7187): Remove, which cleans it, stays beside Forget. */
+  answers?: boolean;
   removing: boolean;
   onForget: () => void;
+  onRemove?: () => void;
   onDismiss: () => void;
 }) {
   return (
     <Notice
       cause={`pool-unreachable:${name}`}
       tone="trouble"
-      fixes={[{ label: "Forget it here", onPress: onForget, busy: removing }]}
+      fixes={[
+        { label: "Forget it here", onPress: onForget, busy: removing },
+        ...(answers && onRemove !== undefined
+          ? [{ label: "Remove", onPress: onRemove, busy: removing }]
+          : []),
+      ]}
       onDismiss={onDismiss}
     >
-      {unreachableSaid(name, host, why)}
+      {answers ? answeringSaid(name, host, why) : unreachableSaid(name, host, why)}
     </Notice>
   );
 }
 
 /** What {@link UnreachableNotice} says of pool `name` on `host`, which didn't answer for `why`. */
 export const unreachableSaid = (name: string, host: string, why: string) =>
-  `${why} Nothing was removed. Forget it here forgets pool ${name} on this machine without contacting ${host}. Its runner's container and home volume stay on ${host}. ${host} still lists this machine as the runner's peer. purlis then says the commands that remove them on ${host}. There is no undo.`;
+  `${why} Nothing was removed. Forget it here forgets pool ${name} on this machine without contacting ${host}. Whatever may be left on ${host} stays there: its runner's container and home volume, the browsers it ran, and the logins given on it. ${host} still lists this machine as the runner's peer. purlis then says the commands that remove them on ${host}. There is no undo.`;
+
+/** What {@link UnreachableNotice} says of pool `name` on `host`, which answered but refused, for
+ *  `why` (#7187): Remove tries to clean it, Forget it here does not contact it. */
+export const answeringSaid = (name: string, host: string, why: string) =>
+  `${why} Nothing was removed. ${host} answers, so Remove can still try to clean it. Forget it here forgets pool ${name} on this machine without contacting ${host}. Whatever may be left on ${host} stays there: its runner's container and home volume, the browsers it ran, and the logins given on it. ${host} still lists this machine as the runner's peer. There is no undo.`;
 
 /** What marking a cluster pool as the person's own means (#4071): who else can read its runner. */
 const MY_OWN_SAID =
@@ -830,9 +854,12 @@ function ClusterPoolEntry({
               </p>
             )}
             <KeyChangedNotice name={pool.name} link={link} removing={removing} onRemove={onAsk} />
-            {typeof link === "object" && link.state === "down" && (
-              <p className="ui-setting-help ui-text-secondary">{link.why}</p>
-            )}
+            {typeof link === "object" &&
+              (link.state === "down" ||
+                link.state === "refused" ||
+                link.state === "host_key_changed") && (
+                <p className="ui-setting-help ui-text-secondary">{link.why}</p>
+              )}
             {pool.owned ? (
               profiles
             ) : (

@@ -79,7 +79,7 @@ fn a_job_that_holds_nothing_writes_the_manifest_and_hands_it_on() {
     assert!(
         manifest
             .condition()
-            .is_some_and(|said| said.contains("needs.plan.outputs.publish == 'true'")),
+            .is_some_and(|said| said.contains("needs.keys.outputs.publish == 'true'")),
         "a manifest is written only for a run that publishes: {:?}",
         manifest.condition()
     );

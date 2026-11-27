@@ -39,6 +39,11 @@ export const REQUIRED_CHECKS = [
   // Required since #4335 (2026-11-02): it passed 60 of 60 merge-queue runs and 40 of 40 pushes on
   // 2026-11-01 and 11-02, and always ended before the slowest other job, so it costs no wait.
   "parity against a Docker pool (host, protocol, sandbox, browsers)",
+  // Required since #7188 (the ruling of 2026-11-18): remote is trusted only if a live chat survives
+  // what the link does, so a pull request that touches remote code waits on this job's fault
+  // suite, and its red on a push is main's. It was evidence (`continue-on-error` on a push) until
+  // then. The operator adds it to branch protection; `ci-health` says until they do.
+  "parity against Docker on another machine, over SSH and TLS",
   "recorded behaviour",
   "rust (fmt, clippy, test)",
   "rust (licences, advisories)",
@@ -74,7 +79,7 @@ const truth = (value) => (value === UNKNOWN ? UNKNOWN : Boolean(value));
  * other side settles it, so only a known false can take a job off a push. What this cannot parse
  * is unknown too.
  */
-export function evaluate(source) {
+export function evaluate(source, facts = PUSH) {
   const inner = /^\s*\$\{\{(.*)\}\}\s*$/s.exec(source);
   const words = (inner ? inner[1] : source).match(WORDS) ?? [];
   let at = 0;
@@ -102,7 +107,7 @@ export function evaluate(source) {
       at += 1;
       return word in CALLS ? CALLS[word] : UNKNOWN;
     }
-    return PUSH[word];
+    return facts[word];
   };
   const compare = () => {
     const left = atom();
@@ -139,6 +144,10 @@ export function evaluate(source) {
     return UNKNOWN;
   }
 }
+
+/** What a pull request's run and a merge group's run know (`ci-stages.mjs`, #7335). */
+export const PULL_REQUEST = { "github.event_name": "pull_request" };
+export const MERGE_GROUP = { "github.event_name": "merge_group" };
 
 /** Whether a job can run on a push: only an `if:` known to be false says it cannot. */
 export const onPush = (job) => job.if === undefined || evaluate(job.if) !== false;

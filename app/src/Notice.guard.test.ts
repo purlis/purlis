@@ -80,6 +80,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: READING,
   },
+  "GitLabAccessTab.tsx": {
+    count: 1,
+    why: READING,
+  },
   // Why a pinned artifact cannot be opened (#5952): its folder gone, or its read refused. Read
   // once as the tab opens; closing and pressing its icon again is the retry. Since #5954 a
   // missing, too-large or refused one carries Repin and Unpin as its way out, and an unpinned
@@ -323,6 +327,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       READING +
       ": reading which forge tools this machine has, or that it could not",
   },
+  "ForgeCiPermission.tsx": {
+    count: 4,
+    why:
+      ACTION +
+      ". The second sign-in's own lines (ADR 0128 D1.1), inside its dialog: asking, the code and " +
+      "the wait for the person to allow it on the forge's page, the answer, and the core's " +
+      "sentence for how it ended; Try again and Cancel are the way out",
+  },
   "ForgeDeviceSignIn.tsx": {
     count: 4,
     why:
@@ -421,6 +433,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     why:
       ACTION +
       ". An Undo in Rules I made that could not take its rule's grant away: said in the list's own dialog, beside the rule, which stays (#6010)",
+  },
+  "HeldActAsks.tsx": {
+    count: 3,
+    why:
+      ACTION +
+      ". A held act's own row (one login F2): the question its first press asks once more, what a press that did nothing refused with, and what the second press made, said beside the row's answers",
   },
   "KillSwitch.tsx": {
     count: 1,
@@ -712,6 +730,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 2,
     why: READING + ": Reading the vaults…; and Open vault's filter that matches no vault (#2910)",
   },
+  "ui/dialog/RaisedAlert.tsx": {
+    count: 1,
+    why:
+      "an alert the app raises, saying that what it asks changed while it was open, or that a " +
+      "press came before it settled (#7728): its own answers are the way out",
+  },
   "ui/dialog/Dialog.tsx": {
     count: 3,
     why:
@@ -809,6 +833,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "its Try again, Cancel and Open in terminal are the way out; and whether Copy code put the " +
       "device code on the clipboard (#4045), beside the button",
   },
+  "settings/oneLogin.tsx": {
+    count: 4,
+    why:
+      ACTION +
+      ". The Accounts group's one-login rows (ADR 0128): what Use this application, Copy a request " +
+      "and Remove just did, what Confirm is asking the forge, then its answer, and a refusal said " +
+      "in the dialog that asked, beside the press that retries it",
+  },
   "settings/accounts.tsx": {
     count: 2,
     why:
@@ -823,6 +855,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ". The Signed commits card's read refusal (#5628), in the core's words; another device's " +
       "key Remove refused, beside its row; and what Replace key or Remove signing came to, with " +
       "a refusal's keys page (#5632). Set up signing, Remove and Open its keys page are the ways on",
+  },
+  "settings/readiness.tsx": {
+    count: 3,
+    why:
+      ACTION +
+      ". The Ready for all users group's lines (one login, slice D): the read's refusal, why " +
+      "nothing was checked, and the verdict of what was; its Check again is the way on",
   },
   "settings/profiles.tsx": {
     count: 2,
@@ -1067,6 +1106,16 @@ describe("the window's standing lines", () => {
     const drawn = sources()
       .flatMap(({ text }) => tags(text, (tag) => tag === "Notice"))
       .filter(({ attrs }) => /cause=\{`mode-differs:/.test(attrs));
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0].attrs).toMatch(/\b(?:fixes|link|onDismiss)=/);
+  });
+
+  it("include the forge-sign-in-needed Notice, with its way out", () => {
+    // ADR 0128 (#7290): a forge sign-in a chat's route found missing or ended is a standing
+    // fault, drawn as a Notice with its cause key and a way out, never as a line by hand.
+    const drawn = sources()
+      .flatMap(({ text }) => tags(text, (tag) => tag === "Notice"))
+      .filter(({ attrs }) => /cause=\{`forge-sign-in-needed:/.test(attrs));
     expect(drawn).toHaveLength(1);
     expect(drawn[0].attrs).toMatch(/\b(?:fixes|link|onDismiss)=/);
   });

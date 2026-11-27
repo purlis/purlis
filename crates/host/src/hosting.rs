@@ -601,6 +601,16 @@ const MOST_WINDOWS_KEPT: usize = 16;
 /// The most notices a subscriber's queue holds before it is let go of.
 const MOST_NOTICES_QUEUED: usize = 1024;
 
+/// **How long a start waits for a runner whose link is down, for every kind of pool** (#7187):
+/// the way a cluster pool's start waits for its runner. It is the window's own 30 seconds
+/// before "Reconnecting…" says why (#7135), so a start that gives up says it as that notice
+/// does. A key changed or a runner gone is never waited out.
+pub const LINK_DOWN_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// **The longest a start on a relayed runner takes** (#7187): three minutes, after which it
+/// fails naming the step it was stuck on, so nothing on the remote path hangs for ever.
+pub const START_WITHIN: std::time::Duration = std::time::Duration::from_secs(180);
+
 /// The hosted programs and the projects they are in: what answers the session protocol on
 /// every link. A clone is the same host.
 #[derive(Clone)]
@@ -656,6 +666,12 @@ struct Inner {
     drains: OnceLock<crate::routing::DrainsTo>,
     /// What asks for a suspended runner it relays to to run again, as a chat starts there (#3980).
     runs_again: OnceLock<crate::routing::RunsAgain>,
+    /// How long a start waits for a runner whose link is down (#7187): [`LINK_DOWN_WAIT`]
+    /// unless a test holds it shorter.
+    link_down_wait: OnceLock<std::time::Duration>,
+    /// The longest a start on a relayed runner takes (#7187): [`START_WITHIN`] unless a test
+    /// holds it shorter.
+    start_within: OnceLock<std::time::Duration>,
     /// Until when a start waits for each runner asked to run again (#4403), by `<pool>/<runner>`:
     /// a wake is one word on its Claim, and every link's start waits for that one wake.
     waking: Mutex<HashMap<String, std::time::Instant>>,
@@ -1277,6 +1293,8 @@ impl Hosting {
                 most_bundle: OnceLock::new(),
                 drains: OnceLock::new(),
                 runs_again: OnceLock::new(),
+                link_down_wait: OnceLock::new(),
+                start_within: OnceLock::new(),
                 waking: Mutex::default(),
                 runners,
                 unattended: crate::unattended::Links::default(),
@@ -1512,6 +1530,39 @@ impl Hosting {
     pub fn running_again_with(self, runs_again: crate::routing::RunsAgain) -> Hosting {
         let _ = self.inner.runs_again.set(runs_again);
         self
+    }
+
+    /// This host, a start waiting `wait` for a runner whose link is down instead of
+    /// [`LINK_DOWN_WAIT`].
+    #[must_use]
+    pub fn waiting_for_a_down_link(self, wait: std::time::Duration) -> Hosting {
+        let _ = self.inner.link_down_wait.set(wait);
+        self
+    }
+
+    /// This host, a start on a relayed runner held to `within` instead of [`START_WITHIN`].
+    #[must_use]
+    pub fn starting_within(self, within: std::time::Duration) -> Hosting {
+        let _ = self.inner.start_within.set(within);
+        self
+    }
+
+    /// The longest a start on a relayed runner takes (#7187).
+    pub(crate) fn start_within(&self) -> std::time::Duration {
+        self.inner
+            .start_within
+            .get()
+            .copied()
+            .unwrap_or(START_WITHIN)
+    }
+
+    /// How long a start waits for a runner whose link is down (#7187).
+    pub(crate) fn link_down_wait(&self) -> std::time::Duration {
+        self.inner
+            .link_down_wait
+            .get()
+            .copied()
+            .unwrap_or(LINK_DOWN_WAIT)
     }
 
     /// Whether this host is stopped: nothing wakes a runner meanwhile (#2051, #4403).
@@ -2303,6 +2354,7 @@ impl Hosting {
         self.let_through(&start, peer)?;
         a_note_that_fits(start.note.as_ref())?;
         let _starting = self.starting(&start)?;
+        let step = purlis_session_protocol::steps::begin("harness_spawn");
         let start = ids_of(start, peer.scope());
         let size = Size {
             columns: start.cols.unwrap_or(80),
@@ -2687,6 +2739,7 @@ impl Hosting {
         });
         // How it runs sandboxed, as recorded above: what a window that started it by its names
         // judges it by (1.29, #2692).
+        step.done();
         Ok(Answer::ProgramStarted {
             program,
             number: Some(number),
@@ -3275,6 +3328,47 @@ impl Hosting {
         Ok(Answer::Done)
     }
 
+    /// **Ends `program` as a hibernation** (#7630): its end is marked the host's lowest act
+    /// ([`Stopped::Hibernated`]) first, so any other act racing it wins, and the program is
+    /// stopped off the runtime. **Then its engine is dropped**: it is forgotten as a close
+    /// forgets it, unless a close already did, which leaves that close's end. Answered once it
+    /// has ended.
+    async fn hibernate(&self, program: &str) -> Result<Answer, Refusal> {
+        let running = {
+            let state = self.state();
+            let hosted = state
+                .programs
+                .get(program)
+                .ok_or_else(|| no_such_program(program))?;
+            stopping_by(&hosted.stopping, Stopped::Hibernated);
+            Arc::clone(&hosted.running)
+        };
+        let _ = tokio::task::spawn_blocking(move || running.stop()).await;
+        let (hosted, confinements) = {
+            let mut state = self.state();
+            let Some(hosted) = state.programs.remove(program) else {
+                // A close forgot it while it ended: that end stands.
+                return Ok(Answer::Done);
+            };
+            state.closed.extend(hosted.process);
+            let confinements = take_confinements(&mut state, |owner| {
+                *owner == Owner::Program(program.to_owned())
+            });
+            (hosted, confinements)
+        };
+        // A line for it is not read from now on: one that came after the intent belongs to
+        // the run that ended, and is dropped.
+        if let Some(channel) = self.channel(&hosted.at) {
+            channel.forget(hosted.number);
+        }
+        let _ = tokio::task::spawn_blocking(move || {
+            drop(hosted);
+            drop(confinements);
+        })
+        .await;
+        Ok(Answer::Done)
+    }
+
     /// Deals the next number in held `project`, at the place `peer`'s link holds it (#2000): it
     /// only rises, so no chat there has had it.
     fn deal(&self, project: &str, peer: &Peer) -> Result<Answer, Refusal> {
@@ -3349,7 +3443,7 @@ impl Hosting {
             code: session::NOT_STARTED.into(),
             why: format!("the read did not finish: {why}"),
         })??;
-        Ok(Answer::File(Box::new(read)))
+        Ok(Answer::File(Box::new(said_to(read, peer.version()))))
     }
 
     /// The hook channel of `project`, where it has one, for the link `peer` came on, which must
@@ -3751,6 +3845,7 @@ impl Beside for ForTheProgram {
                     plan: plan.clone(),
                     // It asks the link it is named to; one named to none refuses instead.
                     asks: !named_to.is_empty(),
+                    lifted: Vec::new(),
                 },
                 planned: Planned::Composed,
                 alone: &alone,
@@ -4383,6 +4478,8 @@ impl session::Host for Hosting {
             Command::NoteStrays { program } => self.note_strays(&program),
             Command::Hold { program, still } => self.hold_still(&program, still).await,
             // Only the window's link reaches this: the grants refuse every other.
+            Command::Hibernate { program } => self.hibernate(&program).await,
+            // Only the window's link reaches this: the grants refuse every other.
             Command::Quit => Ok(self.quit().await),
             // The person's own (#2014): each may wait on the engine (a take-over on an act's
             // last input, a key on a read of the page), so off the runtime.
@@ -4625,6 +4722,19 @@ fn a_note_that_fits(note: Option<&session::ProgramNote>) -> Result<(), Refusal> 
             ),
         }),
         _ => Ok(()),
+    }
+}
+
+/// **`read` as a window of `version` hears it** (#7064): one before 1.97 knows no
+/// [`session::FileRead::Kept`], and no [`session::FileRead::Unsure`], so a file kept from it, or one the host could not tell of, is not there and stays no link.
+pub(crate) fn said_to(read: session::FileRead, version: Version) -> session::FileRead {
+    match read {
+        session::FileRead::Kept { .. } | session::FileRead::Unsure { .. }
+            if version < session::KNOWS_KEPT_FILES =>
+        {
+            session::FileRead::NotThere
+        }
+        read => read,
     }
 }
 

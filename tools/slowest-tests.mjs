@@ -28,6 +28,8 @@ import { existsSync, readFileSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { flakyAnnotation } from "./flake-annotation.mjs";
+
 /** How many tests, and how many binaries, each notice lists. */
 export const LIMIT = 30;
 
@@ -103,11 +105,10 @@ export function readFlaky(xml) {
   return flaky;
 }
 
-/** One `::warning` line per flaky test. */
+/** One `::warning` line per flaky test, in the format every runner writes (`flake-annotation.mjs`). */
 export function flakyAnnotations(flaky) {
-  return flaky.map(
-    (one) =>
-      `::warning title=${escapeProperty(`Flaky (passed on retry ${one.retries}): ${one.binary} ${one.name}`)}::${escapeData(one.said.join("\n"))}`,
+  return flaky.map((one) =>
+    flakyAnnotation({ retries: one.retries, test: `${one.binary} ${one.name}`, said: one.said }),
   );
 }
 

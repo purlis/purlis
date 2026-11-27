@@ -165,6 +165,12 @@ pub struct SandboxState {
     /// allowed (ADR 0093): asked about once, up front. `null` where nothing waits.
     #[specta(optional)]
     pub expects: Option<ProjectExpects>,
+    /// **Tool lines the person's sign-in replaces** (ADR 0128, "Migration"), with the one-login
+    /// train's `forge-wiring` feature on: the project's `mint = "github-app"` and vault forge
+    /// token lines, which still parse and run nothing. The window says it once, until the lines
+    /// change. `null` where the project has none, and always without the feature.
+    #[specta(optional)]
+    pub forge_replaced: Option<ForgeReplaced>,
     /// **The project's sandbox off** (#2071 PR C, #2156): its committed `[sandbox] mode =
     /// "off"`, where it came from as far as purlis verified it, and how the person on this
     /// machine answered it. `null` where the project does not turn the sandbox off in a commit.
@@ -265,6 +271,24 @@ pub struct ProjectExpects {
     /// Whether the person is still to be asked: something is declared that they have neither
     /// allowed nor said "Not now" to on this machine.
     pub asked: bool,
+}
+
+/// **What the window says once about a project's old forge token lines**
+/// ([`sandbox::tools::replaced::Told`]): its text, and a cause key that moves only when the
+/// lines do, so a dismissal stands until they change.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ForgeReplaced {
+    pub cause: String,
+    pub text: String,
+}
+
+impl From<sandbox::tools::replaced::Told> for ForgeReplaced {
+    fn from(told: sandbox::tools::replaced::Told) -> Self {
+        Self {
+            cause: told.cause,
+            text: told.text,
+        }
+    }
 }
 
 /// One local socket or system service a project expects ([`sandbox::services::Awaited`]).
@@ -629,6 +653,7 @@ fn state_on(root: &std::path::Path, os: sandbox::Os) -> SandboxState {
             CertificateCheck::of(sandbox::CertificateChecks::of(&policy, &locks), os)
         }),
         expects: sandbox::services::awaiting(root, &sandbox::Machine::this()).map(Into::into),
+        forge_replaced: sandbox::tools::replaced::told(root).map(Into::into),
         team_off: TeamOffState::of(sandbox::team::team_off(root)),
         level_held: sandbox::team::allowed_levels(root).why,
         yours: yours_of(root, &locks),
@@ -701,8 +726,23 @@ pub async fn sandbox_state(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
 ) -> Result<SandboxState, String> {
-    let root = planes.held(&plane)?.root().to_path_buf();
-    crate::off_the_window(READING_SANDBOX, move || Ok(state_of(&root))).await
+    let held = planes.held(&plane)?;
+    crate::off_the_window(READING_SANDBOX, move || Ok(state_once(&held))).await
+}
+
+/// [`state_of`] the plane once per burst (H15): the window asks on every plane change, and a
+/// start emits several, so the asks that come while a read runs share the one read that starts
+/// after them.
+pub(crate) fn state_once(held: &crate::planes::Held) -> SandboxState {
+    state_in_a_burst(held, || state_of(held.root()))
+}
+
+/// `read`, as the plane's sandbox-state burst runs it.
+fn state_in_a_burst(
+    held: &crate::planes::Held,
+    read: impl FnOnce() -> SandboxState,
+) -> SandboxState {
+    held.bursts().sandbox_state.ask(read)
 }
 
 /// The person's answer to the one-time offer: `turn_on` writes `[sandbox] mode = "on"` into
@@ -1314,6 +1354,8 @@ fn block_evidence(
     let harness_version = harness.and_then(purlis_core::sandbox::program::version_heard);
     Ok(Evidence::PurlisFailure(PurlisFailure::SandboxBlock {
         block,
+        // The window does not say which command it was met by.
+        command: None,
         // The window does not say which chat's block it was, so no persona's kind is claimed.
         ran_as: purlis_core::report::RanAs {
             harness,
@@ -1403,6 +1445,9 @@ fn filed(
 /// How a Run grant is named in the Granted list's ids.
 const RUN_GRANT: &str = "run-grant";
 
+/// How a pool login opt-in is named in the Granted list's ids.
+const POOL_LOGIN: &str = "pool-login";
+
 /// What a grant names, as the window sends it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
@@ -1439,6 +1484,10 @@ pub enum GrantWhat {
     /// chat. Given from its own ask (`answer_run_grant`), never from a block's Allow, and kept in
     /// memory only.
     RunGrant,
+    /// A persona's browser logins on a pool's runner (#7190): the opt-in the person gave once,
+    /// kept on this machine across a restart and bound to the pool's definition and image. Given
+    /// from its own Ask (`answer_pool_login`), never from a block's Allow.
+    PoolLogin,
 }
 
 impl GrantWhat {
@@ -1465,6 +1514,7 @@ impl GrantWhat {
             Self::Browser => sandbox::local::BROWSER,
             Self::BrowserSite => sandbox::local::BROWSER_SITE,
             Self::RunGrant => RUN_GRANT,
+            Self::PoolLogin => POOL_LOGIN,
         }
     }
 
@@ -1481,6 +1531,7 @@ impl GrantWhat {
             Self::Browser,
             Self::BrowserSite,
             Self::RunGrant,
+            Self::PoolLogin,
         ]
         .into_iter()
         .find(|what| what.word() == word)
@@ -1733,6 +1784,13 @@ pub(crate) fn judged(
         );
     }
     let what = match what {
+        GrantWhat::PoolLogin => {
+            return refused(
+                "purlis allows a browser login on a pool from the ask it raises, not from a \
+                 block's."
+                    .to_owned(),
+            );
+        }
         GrantWhat::RunGrant => {
             return refused(
                 "purlis allows a program with a vault's keys from the ask it raises, not from a \
@@ -2599,6 +2657,83 @@ fn run_grant_target(bound: &purlis_core::secrets::ask::run::Bound) -> String {
     )
 }
 
+/// The opt-in a Granted list's `id` names, where it names one: the persona, the login by its
+/// identity and the pool ([`pool_login_id`]).
+fn pool_login_of(id: &str) -> Option<(&str, &str, &str)> {
+    match id.split(SEP).collect::<Vec<_>>().as_slice() {
+        ["machine", POOL_LOGIN, persona, login, pool] => Some((persona, login, pool)),
+        _ => None,
+    }
+}
+
+/// What Remove on the Granted list is sent by for a pool login opt-in.
+fn pool_login_id(one: &purlis_core::poollogins::Granted) -> String {
+    format!(
+        "machine{SEP}{POOL_LOGIN}{SEP}{}{SEP}{}{SEP}{}",
+        one.persona, one.login, one.pool
+    )
+}
+
+/// **The opt-ins kept for browser logins on a pool's runner** (#7190), as the Granted list shows
+/// them: this machine's alone, each with the persona it is for.
+fn pool_login_rows(browsers: &crate::chatbrowsers::ChatBrowsers) -> Vec<SandboxGrant> {
+    browsers
+        .pool_login_grants()
+        .into_iter()
+        .map(|one| SandboxGrant {
+            id: pool_login_id(&one),
+            what: GrantWhat::PoolLogin,
+            // The login as its persona declared it, never its identity hash.
+            target: format!("{} on {}", one.name, one.pool),
+            persona: Some(one.persona),
+            level: GrantLevel::Machine,
+            by: None,
+            at: None,
+            chat: None,
+            locked: None,
+            waiting: None,
+            for_no_persona: false,
+            expected: false,
+            cautions: None,
+        })
+        .collect()
+}
+
+/// **Takes back the pool login opt-in** of `persona`'s login `login` on `pool` (#7190): checked
+/// to be there, **audited first** as every grant's removal is (`trust.sandbox.revoke`, an audit
+/// that cannot be written takes nothing), then taken out; the next login there asks. Refused
+/// where it is no longer there.
+fn revoke_pool_login(
+    browsers: &crate::chatbrowsers::ChatBrowsers,
+    persona: &str,
+    login: &str,
+    pool: &str,
+    audit: Audit<'_>,
+) -> Result<(), String> {
+    let gone = || "purlis did not remove it: it is no longer there.".to_owned();
+    let Some(one) = browsers
+        .pool_login_grants()
+        .into_iter()
+        .find(|one| one.persona == persona && one.login == login && one.pool == pool)
+    else {
+        return Err(gone());
+    };
+    audit(
+        None,
+        &sandbox::grant::Audited {
+            granted: false,
+            what: POOL_LOGIN,
+            target: &format!("{persona}: {} on {pool}", one.name),
+            level: sandbox::grant::Level::Machine,
+        },
+    )?;
+    if browsers.remove_pool_login_grant(persona, login, pool)? {
+        Ok(())
+    } else {
+        Err(gone())
+    }
+}
+
 /// The number of the Run grant a Granted list's `id` names, where it names one.
 fn run_grant_of(id: &str) -> Option<u32> {
     let parts: Vec<&str> = id.split(SEP).collect();
@@ -2638,6 +2773,7 @@ pub(crate) fn all_grants_of(held: &crate::planes::Held) -> Vec<SandboxGrant> {
             }
         })
         .collect();
+    out.extend(pool_login_rows(held.browsers()));
     out.extend(grants_of(held.root(), held.chats(), held.browsers()));
     out
 }
@@ -2938,6 +3074,7 @@ fn grants_of(
             GrantWhat::Vault
             | GrantWhat::Browser
             | GrantWhat::BrowserSite
+            | GrantWhat::PoolLogin
             | GrantWhat::RunGrant => one.locked.take(),
             // Only hosts a chat would reach are listed for a persona (#1362).
             GrantWhat::PersonaHosts => None,
@@ -3034,6 +3171,7 @@ fn revoke(
         | GrantWhat::PersonaHosts
         | GrantWhat::Browser
         | GrantWhat::BrowserSite
+        | GrantWhat::PoolLogin
         | GrantWhat::RunGrant => return Err(gone()),
         GrantWhat::Host => What::Host(sandbox::hosts::Host::parse(target).map_err(|_| gone())?),
         GrantWhat::Write => What::Write(std::path::PathBuf::from(target)),
@@ -3289,6 +3427,9 @@ pub(crate) fn revoke_granted(
 ) -> Result<(), String> {
     let root = held.root();
     let audit = held.audit_then_record(network);
+    if let Some((persona, login, pool)) = pool_login_of(id) {
+        return revoke_pool_login(held.browsers(), persona, login, pool, &audit);
+    }
     if let Some(number) = run_grant_of(id) {
         return revoke_run_grant(held, number);
     }
@@ -3753,3 +3894,165 @@ pub fn tell_run_grants_moved(
 
 #[cfg(test)]
 mod tests;
+
+/// **Whether `asks` at `mode` answers an ask for `what` itself**: a folder under `off` or `log`;
+/// a local socket under `off` alone. A socket may be a container engine's or a cluster's, whose
+/// containers reach the vaults from outside the wrap, so under `log` (the shipped `watch`) it is
+/// still the person's to allow, with what allowing it means beside it (the Q308 follow-up,
+/// item 3).
+pub(crate) fn answers(what: GrantWhat, mode: purlis_core::enforcement::Mode) -> bool {
+    use purlis_core::enforcement::Mode;
+    match what {
+        GrantWhat::Write => mode != Mode::Enforce,
+        GrantWhat::Socket => mode == Mode::Off,
+        _ => false,
+    }
+}
+
+/// The rule a folder or socket ask answered by the project's `[policy]` is logged by.
+pub(crate) const ASK_ANSWERED_RULE: &str = purlis_core::enforcement::RULE_SANDBOX_ASK;
+
+/// **A folder or socket ask the project's `[policy]` answers itself** (Q308a; the Q308
+/// follow-up, item 3): where `asks` is off or logged ([`answers`]: a socket under off alone), a
+/// block whose Notice would offer Allow for a folder to write or a local socket is answered
+/// Allow **for this chat**, with nobody asked, and a line naming it in the chat's enforcement log
+/// where the family logs. A folder is answered only in the project or a folder the person
+/// listed ([`sandbox::grant::unasked_write`]): never a held folder a later program loads code
+/// from, nor one the floor holds on `PATH`, which still raise the Notice. It is the very grant
+/// the Notice's Allow makes ([`judged_and_kept`]): judged by the core, so a denial class, a
+/// folder off the allowlist and a policy lock are refused as they always were, and then the
+/// Notice is raised as before; audited; and taken at the chat's restart once its turn ends. The person's
+/// Keep blocked and an administrator's lock still hold. `true` where it was answered, and no
+/// Notice is owed.
+pub(crate) fn answered_by_the_policy(
+    held: &crate::planes::Held,
+    told: &crate::hooks::ChatBlocked,
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+) -> bool {
+    use crate::hooks::BlockOffer;
+    use purlis_core::enforcement::{self, Family};
+    let what = match told.offer {
+        BlockOffer::Write => GrantWhat::Write,
+        BlockOffer::Socket => GrantWhat::Socket,
+        _ => return false,
+    };
+    if told.ours || told.quiet.is_some() {
+        return false;
+    }
+    let Some(target) = told.target.as_deref() else {
+        return false;
+    };
+    let root = held.root();
+    let mode = enforcement::mode(root, Family::Asks);
+    answered_at(held, told, (what, target), network, mode)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A test's seam: what a chat does between [`answered_at`]'s two resolutions of a folder,
+    /// run once and taken.
+    pub(crate) static BETWEEN_RESOLUTIONS: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        std::cell::RefCell::new(None);
+    /// A test's seam: the machine [`answered_at`] judges against, in place of this one, so a
+    /// test builds the home and `PATH` it needs.
+    pub(crate) static MACHINE: std::cell::RefCell<Option<sandbox::Machine>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The machine [`answered_at`] judges against: this one, or a test's ([`MACHINE`]).
+fn this_machine() -> sandbox::Machine {
+    #[cfg(test)]
+    if let Some(machine) = MACHINE.with(|seam| seam.borrow().clone()) {
+        return machine;
+    }
+    sandbox::Machine::this()
+}
+
+#[cfg(test)]
+fn between_resolutions() {
+    if let Some(then) = BETWEEN_RESOLUTIONS.with(|seam| seam.borrow_mut().take()) {
+        then();
+    }
+}
+
+/// [`answered_by_the_policy`] with `asks` at `mode`, as the project's `[policy]` resolved it.
+pub(crate) fn answered_at(
+    held: &crate::planes::Held,
+    told: &crate::hooks::ChatBlocked,
+    (what, target): (GrantWhat, &str),
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+    mode: purlis_core::enforcement::Mode,
+) -> bool {
+    use purlis_core::enforcement::{self, Family, Mode};
+    if !answers(what, mode) {
+        return false;
+    }
+    let root = held.root();
+    let machine = this_machine();
+    // **Never a folder a later program loads code from** (the review of #7105, blocker 1): a
+    // held folder the Notice would lift for this chat, or a folder the floor holds on `PATH`.
+    // Only the project and the folders the person listed are answered; the rest still raise
+    // the Notice, in every mode.
+    let unasked = if what == GrantWhat::Write {
+        let Some(folder) = held.chats().folder_of(told.session) else {
+            return false;
+        };
+        let ground = sandbox::grant::Ground::of(root, &folder, &machine);
+        match sandbox::grant::unasked_write(target, &ground) {
+            Ok(folder) => Some(folder),
+            Err(_) => return false,
+        }
+    } else {
+        None
+    };
+    #[cfg(test)]
+    between_resolutions();
+    let folder = held.chats().folder_of(told.session);
+    let Ok((granted, level)) = judged(
+        root,
+        &machine,
+        folder.as_deref(),
+        told.session,
+        (what, target, GrantLevel::Chat),
+    ) else {
+        return false;
+    };
+    // **Exactly the folder [`sandbox::grant::unasked_write`] answered** (the re-review of
+    // #7105, blocker 2): `target` is resolved twice, there and in [`judged`], and a chat that
+    // swaps what a path in it leads to between the two would otherwise have the second folder
+    // kept, a held one among them, with nobody asked. A folder that resolved differently is
+    // not answered, and its Notice is raised.
+    if let Some(unasked) = &unasked
+        && granted != sandbox::grant::What::Write(unasked.clone())
+    {
+        return false;
+    }
+    if kept_for(
+        root,
+        held.chats(),
+        Some(told.session),
+        (&granted, level),
+        &held.audit_then_record(network),
+        now_secs(),
+    )
+    .is_err()
+    {
+        return false;
+    }
+    if mode == Mode::Log {
+        let chat = held
+            .chats()
+            .id_of(told.session)
+            .unwrap_or_else(|| enforcement::UNKNOWN_CHAT.to_owned());
+        // The line names what was allowed, the folder granted rather than the path the chat
+        // was blocked at, so the person can read back what the policy let in.
+        enforcement::record(
+            root,
+            &chat,
+            Family::Asks,
+            ASK_ANSWERED_RULE,
+            Some(&granted.target()),
+        );
+    }
+    true
+}

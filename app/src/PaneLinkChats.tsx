@@ -5,7 +5,6 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import type { ChatCard, ChatGo } from "./bindings";
 import { readItOffer, reopenOffer, showLinkedChatOffer, type Offer } from "./actions";
 import { ClosedChatCardPopover } from "./ClosedChatCard";
-import { placed } from "./PaneLinkSurfaces";
 import type { LinkPlace } from "./paneLinks";
 
 /**
@@ -21,17 +20,15 @@ import type { LinkPlace } from "./paneLinks";
  *   no core draws too: this reaches the window's actions, and only a pane that has them uses it.
  */
 export function usePaneLinkChats(onRun: ((offer: Offer) => void) | undefined): {
-  onChat: (go: ChatGo, place: LinkPlace | undefined) => void;
+  onChat: (go: ChatGo, place: LinkPlace) => void;
   surfaces: ReactNode;
 } {
   const run = useRef(onRun);
   useEffect(() => {
     run.current = onRun;
   });
-  const [carded, setCarded] = useState<{ card: ChatCard; place: LinkPlace | undefined } | null>(
-    null,
-  );
-  const onChat = useCallback((go: ChatGo, place: LinkPlace | undefined) => {
+  const [carded, setCarded] = useState<{ card: ChatCard; place: LinkPlace } | null>(null);
+  const onChat = useCallback((go: ChatGo, place: LinkPlace) => {
     // The pane's own chat is in front already: nothing more.
     if (go.to === "chat") run.current?.(showLinkedChatOffer(go.session));
     else if (go.to === "card") setCarded({ card: go.card, place });
@@ -43,12 +40,7 @@ export function usePaneLinkChats(onRun: ((offer: Offer) => void) | undefined): {
   };
   const surfaces = carded !== null && (
     <>
-      <span
-        ref={anchor}
-        className="pane-link-anchor"
-        aria-hidden="true"
-        style={placed(carded.place)}
-      />
+      <span ref={anchor} className="pane-link-anchor" aria-hidden="true" style={carded.place} />
       <ClosedChatCardPopover
         card={carded.card}
         triggerRef={anchor}

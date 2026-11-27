@@ -238,6 +238,8 @@ import { usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
 import { useEditorTabs, type EditorTabOpened } from "./editorTab";
 import { Notice, NoticeInCentre, NoticeOf, type NoticesDot } from "./Notice";
+import { hibernateRefused } from "./HibernatedNotice";
+import { NOT_HIBERNATED } from "./hibernationWords";
 import { useAskedControl } from "./windowControls";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
 import { LivesHere } from "./LivesHere";
@@ -332,6 +334,7 @@ import { DOCTOR_LINE, DoctorNotices, useDoctor } from "./Doctor";
 import { useFirstOpen } from "./firstOpen";
 import { StaleCloneNotices, useStaleClones } from "./StaleCloneNotices";
 import { CloneVouchNotices } from "./CloneVouchNotice";
+import { ForgeReplacedNotice } from "./ForgeReplacedNotice";
 import { BrowsersAtQuitNotice } from "./BrowsersAtQuitNotice";
 import { usePin } from "./Updates";
 import { projectName } from "./projectName";
@@ -490,7 +493,7 @@ import {
 
 /** Which window action a trouble line is about (NO-4): the picker's options, a shell, Needs
  *  you, or a browser (#2012). */
-type TroubleFrom = "start-options" | "shell" | "needs-you" | "browser";
+type TroubleFrom = "start-options" | "shell" | "needs-you" | "browser" | "links";
 
 /** **A chat ended on purpose in its pane** (#5019), as the window held it when it ended: its
  *  name, and the record a Smart close wrote, which is its way back. */
@@ -800,7 +803,7 @@ import {
   whenAChatLogIsAsked,
 } from "./blockedMarkers";
 import { SeenRowsOf } from "./seenRows";
-import { listLinksOf } from "./paneLinksOpen";
+import { LINKS_UNLISTED, listLinksOf } from "./paneLinksOpen";
 
 /** Whether two lists of the right side's extension panels draw the same tabs. */
 const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
@@ -8186,6 +8189,36 @@ export const PlaneView = memo(function PlaneView({
   );
   /** Whether a chat has a Restart chat row: not a shell, which has no conversation. */
   const restartable = useCallback((session: number) => !shells.has(session), [shells]);
+  /** Whether a chat has a Hibernate row (#7630): where the core says it is offered, as
+   *  `session.rs`'s `KNOWS_HIBERNATE` does: a harness that resumes by id, on a host that can
+   *  hibernate it. Never a shell, a chat in this process, or one on an older host. A chat the
+   *  picker started is in the sidebar's rows only, so those are read too, as `glances` does. */
+  const hibernatable = useCallback(
+    (session: number) =>
+      [
+        ...(sidebar ? [...sidebar.workspaces.flatMap((ws) => ws.chats), ...sidebar.unfiled] : []),
+        ...reopened,
+      ].find((one) => one.session === session)?.hibernates === true,
+    [reopened, sidebar],
+  );
+  /** Hibernates chat `session` by hand (#7630): where it may not be, the core says why as a
+   *  typed reason (#7632), and its words are said on the chat's pane; where the act could not be
+   *  done, the core's sentence is. */
+  const hibernateChat = useCallback(
+    (session: number) => {
+      void commands
+        .hibernateChat(plane, session)
+        .then((done) => {
+          if (done.status === "error") hibernateRefused(plane, session, done.error);
+          else if (done.data.outcome === "refused")
+            hibernateRefused(plane, session, NOT_HIBERNATED[done.data.why]);
+        })
+        .catch((err: unknown) =>
+          hibernateRefused(plane, session, `purlis could not hibernate the chat: ${String(err)}`),
+        );
+    },
+    [plane],
+  );
   /**
    * **Move to runner and Move here** (#2048): where each chat can move, by what the core said of
    * it as it started (its harness, the pool it runs on) and the pools this machine keeps. A
@@ -8968,13 +9001,18 @@ export const PlaneView = memo(function PlaneView({
       unlinkWorkItem,
       startFresh: askStartFresh,
       restartChat,
+      hibernateChat,
       moveChat,
       endChat,
       // A chat's Ask {persona}… and Use skill… open their dialogs: the one way in to each.
       askPersona: openAskPersona,
       useSkill: openUseSkill,
-      // The pane's own list (#6332): the pane drawing the chat says how to open it.
-      listLinks: (session) => void listLinksOf(plane, session),
+      // The pane's own list (#6332): the pane drawing the chat says how to open it. Where none
+      // has yet, the row says so rather than nothing (#6488).
+      listLinks: (session) => {
+        if (listLinksOf(plane, session)) succeeded("links");
+        else refusedBy("links", LINKS_UNLISTED);
+      },
       showChatSkills: (session) => askChatSkills(plane, session),
       openStudioChat: (session) => {
         const link = studioLinks[session];
@@ -9120,6 +9158,7 @@ export const PlaneView = memo(function PlaneView({
       toggleRegionSeen,
       moveSideView,
       restartChat,
+      hibernateChat,
       moveChat,
       endChat,
       linkWorkItem,
@@ -9150,6 +9189,8 @@ export const PlaneView = memo(function PlaneView({
       shellInFolder,
       startChatHere,
       plane,
+      refusedBy,
+      succeeded,
       focusWorkspace,
       ofWorkspace,
       ignoreNeedsYou,
@@ -10068,6 +10109,7 @@ export const PlaneView = memo(function PlaneView({
             linkable: (session) => filedIn(session) !== OUTSIDE,
             planeUpdated: planeUpdates,
             restartable,
+            hibernatable,
             movesTo,
             movesOnceAPoolIsSetUp: movesOnceSetUp,
             movesWith: movesWithChat,
@@ -10146,6 +10188,7 @@ export const PlaneView = memo(function PlaneView({
       filedIn,
       planeUpdates,
       restartable,
+      hibernatable,
       movesTo,
       movesOnceSetUp,
       movesWithChat,
@@ -12087,7 +12130,7 @@ export const PlaneView = memo(function PlaneView({
         onOpenPools={() => openSettingsAt({ group: "you.machine.pools" })}
       />
       {/* **The runner this project's chats run on was removed outside purlis** (#4149): said
-          once for the project, with Make the runner again. */}
+          once for the project, with Start again on this pool. */}
       <RunnerGoneNotice
         plane={plane}
         onOpenPools={() => openSettingsAt({ group: "you.machine.pools" })}
@@ -12141,6 +12184,15 @@ export const PlaneView = memo(function PlaneView({
         dismissed={dismissed}
         dismiss={dismiss}
         settle={settleNotices}
+      />
+      {/* **Old forge token lines the sign-in replaces** (ADR 0128): said once for the project's
+          lines, with Open sign-in; nothing in its file or a vault is changed from here. */}
+      <ForgeReplacedNotice
+        plane={plane}
+        dismissed={dismissed}
+        dismiss={dismiss}
+        settle={settleNotices}
+        onSignIn={() => openSettingsAt({ group: "you.accounts" })}
       />
       {savedNotice && (
         <Notice

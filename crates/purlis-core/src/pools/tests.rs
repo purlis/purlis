@@ -3,6 +3,15 @@
 
 use super::*;
 use crate::dockerpool::tests::{FakeDocker, ID, inspected};
+
+/// What the engine prints for the pool's runner as this desktop makes it, under its tag (#7192).
+fn inspected_ours() -> serde_json::Value {
+    let name = format!("first-{}", crate::dockerpool::device_tag(OURS));
+    let mut inspect = inspected();
+    inspect[0]["Name"] = format!("/purlis-runner-{name}").into();
+    inspect[0]["Mounts"][0]["Name"] = format!("purlis-runner-{name}-home").into();
+    inspect
+}
 use crate::runners::Set;
 use crate::runners::tests::pool;
 use purlis_session_protocol::hostlink::LinkKey;
@@ -33,7 +42,7 @@ fn successor_answers() -> Pinned {
 
 /// A Docker that makes a runner called `first` of the runner image, and pairs it as `answers`.
 fn a_docker(answers: &Pinned) -> FakeDocker {
-    let fake = FakeDocker::new(&inspected());
+    let fake = FakeDocker::new(&inspected_ours());
     fake.set(
         "image",
         r#"[{"Config":{"User":"10001:10001","Env":["PATH=/usr/bin","HOME=/home/purlis"]}}]"#,
@@ -41,6 +50,11 @@ fn a_docker(answers: &Pinned) -> FakeDocker {
     fake.set(
         "paired",
         &format!("{}\n", crate::runnerlink::to_line(answers)),
+    );
+    // Its runner is made under this desktop's tag (#7192).
+    named_as(
+        &fake,
+        &format!("first-{}", crate::dockerpool::device_tag(OURS)),
     );
     fake
 }
@@ -98,7 +112,7 @@ fn a_pool_whose_runner_does_not_pair_is_taken_back_whole() {
         "{log}"
     );
     assert!(
-        log.contains("volume rm --force purlis-runner-first-home"),
+        log.contains("volume rm --force purlis-runner-first-19f34e7e-home"),
         "{log}"
     );
     assert!(runners::pools(config.path()).unwrap().is_empty());
@@ -200,7 +214,7 @@ fn a_pool_whose_runner_could_not_all_be_removed_stays_to_be_removed_again() {
     )
     .unwrap();
     fake.set("rm-fails-volume", "1");
-    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("volumes", "purlis-runner-first-19f34e7e-home\n");
     let removed = remove(config.path(), &fake.docker(), "first", None)
         .unwrap()
         .unwrap();
@@ -267,7 +281,9 @@ fn a_chat_is_kept_only_on_a_pool_this_machine_keeps_and_goes_with_its_end() {
 }
 
 /// **A draining runner's work is owed while a project may still have some of it to fetch**
-/// (#5393), and a chat kept on the pool's next runner holds nothing back.
+/// (#5393), and a chat kept on the pool's next runner holds nothing back. Nor does a record that
+/// can't say which runner it is on: only the runner can say whether that chat runs there, so the
+/// drain asks it, and a record read here never holds every older runner of the pool for ever.
 #[test]
 fn work_is_owed_from_a_draining_runner_until_its_fetch_and_a_chat_on_the_next_runner_owes_none() {
     let config = tempfile::tempdir().unwrap();
@@ -309,7 +325,10 @@ fn work_is_owed_from_a_draining_runner_until_its_fetch_and_a_chat_on_the_next_ru
         store.keep_chat_on_pool(plane, 3, chat(None));
     })
     .unwrap();
-    assert_eq!(owed(), [plane], "a record that can't say counts for each");
+    assert!(
+        owed().is_empty(),
+        "a record that can't say is the runner's to answer, not owed here"
+    );
 
     crate::machine::update(config.path(), |store| store.leave_chat_on_pool(plane, 3)).unwrap();
     assert_eq!(owed(), [plane], "its chat ended, and its fetch has not run");
@@ -319,6 +338,45 @@ fn work_is_owed_from_a_draining_runner_until_its_fetch_and_a_chat_on_the_next_ru
     })
     .unwrap();
     assert!(owed().is_empty(), "its fetch ran");
+}
+
+/// **A chat whose record names no runner is listed for a runner too old to say what it holds**
+/// (2026-11-26): only those of the pool, and none once the chat has left it.
+#[test]
+fn a_chat_recorded_with_no_runner_is_listed_for_its_pool_alone() {
+    let config = tempfile::tempdir().unwrap();
+    let plane = std::path::Path::new("/planes/a");
+    let chat = |pool: &str, runner: Option<&str>| crate::machine::ChatOnPool {
+        pool: pool.to_owned(),
+        workspace: "ide".to_owned(),
+        runner: runner.map(str::to_owned),
+    };
+    let listed = || -> Vec<std::path::PathBuf> {
+        chats_of_no_recorded_runner(config.path(), "first")
+            .unwrap()
+            .into_iter()
+            .map(|owing| owing.plane)
+            .collect()
+    };
+    crate::machine::update(config.path(), |store| {
+        store.remember(plane, 1);
+        store.keep_chat_on_pool(plane, 1, chat("first", Some("first-old")));
+        store.keep_chat_on_pool(plane, 2, chat("second", None));
+    })
+    .unwrap();
+    assert!(
+        listed().is_empty(),
+        "each record names its runner or another pool"
+    );
+
+    crate::machine::update(config.path(), |store| {
+        store.keep_chat_on_pool(plane, 3, chat("first", None));
+    })
+    .unwrap();
+    assert_eq!(listed(), [plane]);
+
+    crate::machine::update(config.path(), |store| store.forget_chat_on_pool(plane, 3)).unwrap();
+    assert!(listed().is_empty(), "its chat left the pool");
 }
 
 /// A chat started again on another of its pool's runners has left work on the one it was on.
@@ -411,10 +469,13 @@ const NEW: &str = "ghcr.io/purlis/purlis-runner@sha256:fedcba9876543210fedcba987
 
 /// `fake` makes the runner `name` of `image` from now on, and pairs it as `answers`.
 fn makes(fake: &FakeDocker, name: &str, image: &str, answers: &Pinned) {
-    let mut inspect = inspected();
+    let mut inspect = inspected_ours();
     inspect[0]["Config"]["Image"] = image.into();
     inspect[0]["Image"] = image.rsplit_once('@').unwrap().1.into();
     inspect[0]["Config"]["Labels"]["purlis.runner"] = name.into();
+    // Made by this desktop, so under its tag (#7192).
+    let name = &format!("{name}-{}", crate::dockerpool::device_tag(OURS));
+    inspect[0]["Name"] = format!("/purlis-runner-{name}").into();
     inspect[0]["Mounts"][0]["Name"] = format!("purlis-runner-{name}-home").into();
     fake.set("inspect", &inspect.to_string());
     fake.set(
@@ -485,7 +546,7 @@ fn a_pool_of_a_teams_own_image_is_never_moved() {
     let ours = desktop();
     let fake = a_docker(&runner_answers());
     let team = "registry.example/team/runner@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-    let mut inspect = inspected();
+    let mut inspect = inspected_ours();
     inspect[0]["Config"]["Image"] = team.into();
     fake.set("inspect", &inspect.to_string());
     let pool = Pool::new(
@@ -585,19 +646,20 @@ fn a_drained_runner_carries_its_sign_ins_to_the_pools_runner_then_goes_with_its_
     let log = fake.file("log");
     let lines: Vec<&str> = log.lines().collect();
     let at = |what: &dyn Fn(&str) -> bool| lines.iter().position(|line| what(line));
-    let copying = format!("--name purlis-runner-{successor}-copy ");
+    let copying = format!("--name purlis-runner-{successor}-19f34e7e-copy ");
     let copied = at(&|line| line.contains(&copying)).expect(&log);
-    let removed = at(&|line| line == "volume rm --force purlis-runner-first-home").expect(&log);
+    let removed =
+        at(&|line| line == "volume rm --force purlis-runner-first-19f34e7e-home").expect(&log);
     assert!(copied < removed, "{log}");
     let copy = lines[copied];
     assert!(copy.starts_with("run --rm --network none"), "{copy}");
     assert!(
-        copy.contains("type=volume,source=purlis-runner-first-home,target=/from,readonly"),
+        copy.contains("type=volume,source=purlis-runner-first-19f34e7e-home,target=/from,readonly"),
         "{copy}"
     );
     assert!(
         copy.contains(&format!(
-            "type=volume,source=purlis-runner-{successor}-home,target=/to "
+            "type=volume,source=purlis-runner-{successor}-19f34e7e-home,target=/to "
         )),
         "{copy}"
     );
@@ -739,7 +801,7 @@ fn a_drain_whose_removal_failed_does_not_carry_again_at_the_next_look() {
     let fake = a_docker(&runner_answers());
     a_pool_draining(config.path(), &fake);
     fake.set("rm-fails-volume", "1");
-    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("volumes", "purlis-runner-first-19f34e7e-home\n");
 
     let unpaired = std::cell::Cell::new(0);
     let unpair = |_: &runners::Kept| {
@@ -760,7 +822,7 @@ fn a_drain_whose_removal_failed_does_not_carry_again_at_the_next_look() {
     let log = fake.file("log");
     assert!(!log.contains("-copy "), "{log}");
     assert!(
-        log.contains("volume rm --force purlis-runner-first-home"),
+        log.contains("volume rm --force purlis-runner-first-19f34e7e-home"),
         "{log}"
     );
     assert_eq!(unpaired.get(), 1);
@@ -791,7 +853,7 @@ fn a_stopped_runner_that_could_not_be_unpaired_is_drained() {
     let config = tempfile::tempdir().unwrap();
     let fake = a_docker(&runner_answers());
     a_pool_draining_since_the_mark(config.path(), &fake);
-    let mut stopped = inspected();
+    let mut stopped = inspected_ours();
     stopped[0]["State"]["Running"] = false.into();
     fake.set("inspect", &stopped.to_string());
     let unpair = |_: &runners::Kept| Err("it is stopped".to_owned());
@@ -969,7 +1031,7 @@ fn replacing_a_stopped_runner_notes_its_stop_and_leaves_it_to_its_home() {
     let mut inspect: serde_json::Value = serde_json::from_str(&fake.file("inspect")).unwrap();
     inspect[0]["HostConfig"]["NanoCpus"] = 1_500_000_000_u64.into();
     fake.set("inspect", &inspect.to_string());
-    let mut stopped = inspected();
+    let mut stopped = inspected_ours();
     stopped[0]["State"]["Running"] = false.into();
     stopped[0]["State"]["FinishedAt"] = "2026-11-01T00:00:00Z".into();
     fake.set("inspect-once", &stopped.to_string());
@@ -992,7 +1054,7 @@ fn a_held_runner_with_no_container_left_can_be_removed() {
     a_pool_draining(config.path(), &fake);
     hold(config.path(), "first").unwrap();
     fake.set("inspect", "no such container");
-    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("volumes", "purlis-runner-first-19f34e7e-home\n");
 
     let removed = remove_held(config.path(), &fake.docker(), "first", None).unwrap();
 
@@ -1010,7 +1072,7 @@ fn a_held_runner_gives_nothing_from_a_home_made_since() {
     a_pool_draining(config.path(), &fake);
     hold(config.path(), "first").unwrap();
     fake.set("inspect", "no such container");
-    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("volumes", "purlis-runner-first-19f34e7e-home\n");
     home_prints(&fake, "2026-01-01T00:00:00Z");
 
     remove_held(config.path(), &fake.docker(), "first", None).unwrap();
@@ -1050,7 +1112,7 @@ fn a_held_runner_is_removed_by_the_person_and_any_other_is_refused() {
     let refused = remove_held(config.path(), &fake.docker(), "first", None).unwrap_err();
     assert!(refused.to_string().contains("is not held"), "{refused}");
 
-    let mut stopped = inspected();
+    let mut stopped = inspected_ours();
     stopped[0]["State"]["Running"] = false.into();
     stopped[0]["State"]["FinishedAt"] = "2026-11-01T00:00:00Z".into();
     fake.set("inspect", &stopped.to_string());
@@ -1068,10 +1130,10 @@ fn signing_out_of_a_pool_reaches_its_draining_runners_and_nothing_is_carried_for
     let fake = a_docker(&runner_answers());
     a_pool_draining_since_the_mark(config.path(), &fake);
     // Docker answers for the draining runner, as it was made.
-    fake.set("inspect", &inspected().to_string());
+    fake.set("inspect", &inspected_ours().to_string());
     fake.set(
         "volume",
-        r#"[{"Name":"purlis-runner-first-home","Driver":"local","Options":null,"Labels":null}]"#,
+        r#"[{"Name":"purlis-runner-first-19f34e7e-home","Driver":"local","Options":null,"Labels":null}]"#,
     );
 
     let said = sign_out_draining(config.path(), &fake.docker(), "first", "work", &[]).unwrap();
@@ -1115,10 +1177,10 @@ fn a_sign_out_runs_once_on_each_draining_runner() {
     let config = tempfile::tempdir().unwrap();
     let fake = a_docker(&runner_answers());
     a_pool_draining(config.path(), &fake);
-    fake.set("inspect", &inspected().to_string());
+    fake.set("inspect", &inspected_ours().to_string());
     fake.set(
         "volume",
-        r#"[{"Name":"purlis-runner-first-home","Driver":"local","Options":null,"Labels":null}]"#,
+        r#"[{"Name":"purlis-runner-first-19f34e7e-home","Driver":"local","Options":null,"Labels":null}]"#,
     );
     let first = sign_out_draining(config.path(), &fake.docker(), "first", "work", &[]).unwrap();
     assert_eq!(first.len(), 1);
@@ -1146,7 +1208,7 @@ fn a_drain_docker_failed(config: &std::path::Path, fake: &FakeDocker) {
     home_prints(fake, HOME_CREATED);
     fake.set("copy-fails", "");
     fake.set("rm-fails-volume", "1");
-    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("volumes", "purlis-runner-first-19f34e7e-home\n");
     let first = drain(config, &fake.docker(), "first", None).unwrap();
     assert!(!first.forgotten, "{first:?}");
     let kept = runners::named(config, "first").unwrap().unwrap();
@@ -1214,7 +1276,7 @@ fn a_carry_a_rule_stopped_is_not_tried_again() {
     let kept = runners::named(config.path(), "first").unwrap().unwrap();
     crate::runnertaint::mark(config.path(), &kept.made.container).unwrap();
     fake.set("rm-fails-volume", "1");
-    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("volumes", "purlis-runner-first-19f34e7e-home\n");
 
     drain(config.path(), &fake.docker(), "first", None).unwrap();
 
@@ -1241,7 +1303,7 @@ fn a_drained_runner_whose_sign_ins_are_not_carried_is_removed_all_the_same() {
     assert!(removed.forgotten);
     assert!(
         fake.file("log")
-            .contains("volume rm --force purlis-runner-first-home"),
+            .contains("volume rm --force purlis-runner-first-19f34e7e-home"),
         "{}",
         fake.file("log")
     );
@@ -1277,7 +1339,7 @@ fn a_drain_carries_no_sign_in_to_or_from_a_runner_a_chat_ran_on_without_the_sand
         let log = fake.file("log");
         assert!(!log.contains("-copy "), "{marked_drained}: {log}");
         assert!(
-            log.contains("volume rm --force purlis-runner-first-home"),
+            log.contains("volume rm --force purlis-runner-first-19f34e7e-home"),
             "{log}"
         );
     }
@@ -1300,7 +1362,7 @@ fn a_copy_container_an_earlier_carry_left_is_removed_before_the_next_carry() {
     fake.set(
         "containers-full",
         &format!(
-            "{LEFT} purlis-runner-{successor}-copy {}\n",
+            "{LEFT} purlis-runner-{successor}-19f34e7e-copy {}\n",
             runners::desktop_label(config.path())
         ),
     );
@@ -1313,7 +1375,7 @@ fn a_copy_container_an_earlier_carry_left_is_removed_before_the_next_carry() {
         .find(&format!("container rm --force --volumes {LEFT}"))
         .expect(&log);
     let copied = log
-        .find(&format!("--name purlis-runner-{successor}-copy "))
+        .find(&format!("--name purlis-runner-{successor}-19f34e7e-copy "))
         .expect(&log);
     assert!(left < copied, "{log}");
 }
@@ -1410,12 +1472,12 @@ const LEFT: &str = "1eff00000000000000000000000000000000000000000000000000000000
 /// What a follow that stopped after Docker made the runner `name` left: its container, labelled
 /// as that runner made by `desktop`, and its home volume.
 fn left_behind(fake: &FakeDocker, name: &str, desktop: &str) {
-    fake.set("containers", &format!("purlis-runner-{name}\n"));
+    fake.set("containers", &format!("purlis-runner-{name}-19f34e7e\n"));
     fake.set(
         "containers-full",
-        &format!("{LEFT} purlis-runner-{name} {desktop}\n"),
+        &format!("{LEFT} purlis-runner-{name}-19f34e7e {desktop}\n"),
     );
-    fake.set("volumes", &format!("purlis-runner-{name}-home\n"));
+    fake.set("volumes", &format!("purlis-runner-{name}-19f34e7e-home\n"));
 }
 
 /// **A follow leaves no runner behind** (#2869): a container this desktop made, and the home
@@ -1443,7 +1505,9 @@ fn a_container_and_volume_a_follow_left_behind_are_removed_by_the_next() {
         "{log}"
     );
     assert!(
-        log.contains(&format!("volume rm --force purlis-runner-{successor}-home")),
+        log.contains(&format!(
+            "volume rm --force purlis-runner-{successor}-19f34e7e-home"
+        )),
         "{log}"
     );
     // The runner it made carries this desktop's label.
@@ -1509,9 +1573,14 @@ fn what_a_kept_runner_claims_is_left_as_it_is() {
 
     // Moved to the image again, as a later look would after the pool's image was put back.
     assert!(
-        clear_leftovers_of(config.path(), &fake.docker(), &successor)
-            .unwrap()
-            .is_none()
+        clear_leftovers_of(
+            config.path(),
+            &fake.docker(),
+            &successor,
+            Some(&ours.device)
+        )
+        .unwrap()
+        .is_none()
     );
     let after = fake.file("log");
     assert_eq!(
@@ -3014,7 +3083,7 @@ mod cluster {
             .unwrap()
         };
         let opt_ins = crate::poollogins::OptIns::default();
-        opt_ins.allow("devops", "site", of_pod("pod-uid-1"));
+        opt_ins.allow("devops", "site", "shop", of_pod("pod-uid-1"));
         assert_eq!(
             opt_ins.standing("devops", "site", &of_pod("pod-uid-1")),
             crate::poollogins::Standing::Allowed
@@ -3525,7 +3594,7 @@ mod cluster {
             Duration::ZERO,
         )
         .unwrap();
-        let docker = FakeDocker::new(&inspected());
+        let docker = FakeDocker::new(&inspected_ours());
         let refused = add(
             config.path(),
             &docker.docker(),
@@ -3557,7 +3626,7 @@ fn removed_outside_purlis(
     fake.set(
         "volumes",
         if home_made.is_some() {
-            "purlis-runner-first-home\n"
+            "purlis-runner-first-19f34e7e-home\n"
         } else {
             ""
         },
@@ -3637,11 +3706,11 @@ fn a_runner_removed_outside_purlis_is_made_again_with_its_sign_ins_and_paired() 
     let log = fake.file("log");
     assert!(log.contains("--cpus 2 --memory 4096m"), "{log}");
     assert!(
-        log.contains("type=volume,source=purlis-runner-first-home,target=/from,readonly"),
+        log.contains("type=volume,source=purlis-runner-first-19f34e7e-home,target=/from,readonly"),
         "the sign-ins were carried from the old home: {log}"
     );
     assert!(
-        log.contains("volume rm --force purlis-runner-first-home"),
+        log.contains("volume rm --force purlis-runner-first-19f34e7e-home"),
         "{log}"
     );
     assert_ne!(old.made, again.kept.made);
@@ -3714,7 +3783,7 @@ fn a_runner_made_again_keeps_the_gone_ones_home_where_it_holds_a_conversation() 
         .find(|run| run.contains(" seen /from - "))
         .expect(&log);
     assert!(
-        read.contains("source=purlis-runner-first-home,target=/from,readonly"),
+        read.contains("source=purlis-runner-first-19f34e7e-home,target=/from,readonly"),
         "{read}"
     );
     assert!(!read.contains("target=/to"), "{read}");
@@ -3736,7 +3805,7 @@ fn a_runner_made_again_removes_the_gone_ones_home_where_it_holds_none() {
     assert_eq!(runners::read(config.path()).unwrap(), vec![again.kept]);
     let log = fake.file("log");
     assert!(
-        log.contains("volume rm --force purlis-runner-first-home"),
+        log.contains("volume rm --force purlis-runner-first-19f34e7e-home"),
         "{log}"
     );
 }
@@ -3996,7 +4065,7 @@ fn a_draining_runner_removed_outside_purlis_goes_with_its_own_homes_sign_ins_car
     a_pool_draining(config.path(), &fake);
     // The fake has one volume, and making the successor printed over it.
     home_prints(&fake, HOME_CREATED);
-    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("volumes", "purlis-runner-first-19f34e7e-home\n");
     fake.set("containers", "");
 
     fake.set("engine", "engine-b\n");
@@ -4023,7 +4092,7 @@ fn a_draining_runner_removed_outside_purlis_takes_nothing_from_a_home_made_since
     a_pool_draining(config.path(), &fake);
     // The fake has one volume, and making the successor printed over it.
     home_prints(&fake, HOME_CREATED);
-    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("volumes", "purlis-runner-first-19f34e7e-home\n");
     fake.set("containers", "");
     home_prints(&fake, "2026-01-01T00:00:00Z");
 
@@ -4047,7 +4116,7 @@ fn a_draining_runner_removed_outside_purlis_carries_once() {
     a_pool_draining(config.path(), &fake);
     // The fake has one volume, and making the successor printed over it.
     home_prints(&fake, HOME_CREATED);
-    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("volumes", "purlis-runner-first-19f34e7e-home\n");
     fake.set("containers", "");
     fake.set("rm-fails-volume", "1");
 
@@ -4064,7 +4133,7 @@ fn a_draining_runner_removed_outside_purlis_carries_once() {
             .carried
     );
     std::fs::write(fake.file_path("log"), "").unwrap();
-    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("volumes", "purlis-runner-first-19f34e7e-home\n");
     drain_removed(config.path(), &fake.docker(), "first").unwrap();
 
     assert!(
@@ -4153,12 +4222,12 @@ fn a_runner_made_again_that_does_not_pair_is_taken_back_and_the_pool_stays() {
     );
     assert!(
         log.contains(&format!(
-            "volume rm --force purlis-runner-{AGAIN_NAMED}-home"
+            "volume rm --force purlis-runner-{AGAIN_NAMED}-19f34e7e-home"
         )),
         "{log}"
     );
     assert!(
-        !log.contains("volume rm --force purlis-runner-first-home\n"),
+        !log.contains("volume rm --force purlis-runner-first-19f34e7e-home\n"),
         "{log}"
     );
     assert_eq!(runners::read(config.path()).unwrap(), vec![old]);
@@ -4182,7 +4251,7 @@ fn a_runner_of_a_pool_with_its_own_limits_reads_back_with_them() {
     let config = tempfile::tempdir().unwrap();
     let ours = desktop();
     let fake = a_docker(&runner_answers());
-    let mut inspect = inspected();
+    let mut inspect = inspected_ours();
     inspect[0]["HostConfig"]["NanoCpus"] = 1_500_000_000_u64.into();
     fake.set("inspect", &inspect.to_string());
     let set = Set {
@@ -4357,7 +4426,7 @@ fn a_start_on_a_pool_at_the_projects_root_is_refused_and_never_runs_here() {
 /// whose home Docker says holds `found` conversations. The log is emptied.
 fn a_stopped_runner_draining(config: &std::path::Path, fake: &FakeDocker, found: u32) {
     a_pool_draining(config, fake);
-    let mut stopped = inspected();
+    let mut stopped = inspected_ours();
     stopped[0]["State"]["Running"] = false.into();
     stopped[0]["State"]["FinishedAt"] = "2026-11-01T00:00:00Z".into();
     fake.set("inspect", &stopped.to_string());
@@ -4481,7 +4550,7 @@ fn a_runner_a_look_would_hold_is_named_among_the_held_before_it_is_noted() {
     let config = tempfile::tempdir().unwrap();
     let fake = a_docker(&runner_answers());
     a_pool_draining(config.path(), &fake);
-    let mut stopped = inspected();
+    let mut stopped = inspected_ours();
     stopped[0]["State"]["Running"] = false.into();
     stopped[0]["State"]["FinishedAt"] = "2026-11-01T00:00:00Z".into();
     fake.set("inspect", &stopped.to_string());
@@ -4508,7 +4577,7 @@ fn a_gone_runner_is_named_only_where_its_home_is_still_there() {
     a_pool_draining(config.path(), &fake);
     fake.set("inspect", "no such container");
     fake.set("containers", "");
-    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("volumes", "purlis-runner-first-19f34e7e-home\n");
 
     assert_eq!(
         held_of(config.path(), &fake.docker(), "first").unwrap(),
@@ -4547,7 +4616,7 @@ fn a_runner_discarded_while_its_home_was_read_is_not_said_to_be_held() {
     );
 
     // Docker lists the home the read's mount made again of its name.
-    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("volumes", "purlis-runner-first-19f34e7e-home\n");
 
     assert!(!held_for_its_conversations(config.path(), &fake.docker(), "first").unwrap());
 
@@ -4555,7 +4624,7 @@ fn a_runner_discarded_while_its_home_was_read_is_not_said_to_be_held() {
     // A home the read's mount made again of its name goes with it.
     let log = fake.file("log");
     assert!(
-        log.contains("volume rm --force purlis-runner-first-home"),
+        log.contains("volume rm --force purlis-runner-first-19f34e7e-home"),
         "{log}"
     );
 }
@@ -4695,7 +4764,7 @@ fn a_home_made_since_its_container_went_is_not_read_for_conversations() {
     a_stopped_runner_draining(config.path(), &fake, 2);
     fake.set("inspect", "no such container");
     fake.set("containers", "");
-    fake.set("volumes", "purlis-runner-first-home\n");
+    fake.set("volumes", "purlis-runner-first-19f34e7e-home\n");
     home_prints(&fake, "2026-01-01T00:00:00Z");
 
     assert!(!held_for_its_conversations(config.path(), &fake.docker(), "first").unwrap());
@@ -4716,7 +4785,7 @@ fn a_held_runner_goes_once_its_conversations_are_all_brought_back() {
     a_stopped_runner_draining(config.path(), &fake, 2);
     let stopped = fake.file("inspect");
     // Running as it was when its drain began: only it can say what it runs, so it is not held.
-    fake.set("inspect", &inspected().to_string());
+    fake.set("inspect", &inspected_ours().to_string());
 
     let refused = bring_back(config.path(), &fake.docker(), "first", None).unwrap_err();
     assert!(refused.to_string().contains("held"), "{refused}");
@@ -4738,7 +4807,10 @@ fn a_held_runner_goes_once_its_conversations_are_all_brought_back() {
         .lines()
         .find(|line| line.contains("target=/to"))
         .expect(&into);
-    assert!(into.contains("first-fedcba98-home,target=/to"), "{into}");
+    assert!(
+        into.contains("first-fedcba98-19f34e7e-home,target=/to"),
+        "{into}"
+    );
 
     fake.set("conversations", "conversations 2 0 0\n");
     let brought = bring_back(config.path(), &fake.docker(), "first", None).unwrap();
@@ -4809,7 +4881,7 @@ fn a_held_runner_that_runs_again_is_stopped_before_its_conversations_come_back()
     let fake = a_docker(&runner_answers());
     a_stopped_runner_draining(config.path(), &fake, 1);
     hold(config.path(), "first").unwrap();
-    fake.set("inspect", &inspected().to_string());
+    fake.set("inspect", &inspected_ours().to_string());
     fake.set("conversations", "conversations 1 0 0\n");
 
     bring_back(config.path(), &fake.docker(), "first", None).unwrap();
@@ -5440,4 +5512,218 @@ fn a_pool_whose_key_changed_is_not_forgotten_where_the_person_was_not_told_so() 
         "{refused}"
     );
     assert_eq!(runners::pools(config.path()).unwrap().len(), 1);
+}
+
+/// **Two desktops on one engine each make a runner of a pool** (#7192): the pool's runner is made
+/// under this desktop's tag, so another desktop's of the same pool is a name of its own.
+#[test]
+fn adding_a_pool_makes_its_runner_under_this_desktops_tag() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let tag = crate::dockerpool::device_tag(&ours.device);
+    named_as(&fake, &format!("first-{tag}"));
+    let kept = a_pool_added(config.path(), &fake, &ours);
+    assert_eq!(kept.made.runner.tag(), Some(tag.as_str()));
+    assert_eq!(kept.name(), "first");
+    let log = fake.file("log");
+    assert!(
+        log.contains(&format!("--name purlis-runner-first-{tag} ")),
+        "{log}"
+    );
+}
+
+/// What the fake engine prints for a runner made under `container_suffix`'s name.
+fn named_as(fake: &FakeDocker, container_suffix: &str) {
+    let mut inspect = inspected_ours();
+    inspect[0]["Name"] = format!("/purlis-runner-{container_suffix}").into();
+    inspect[0]["Mounts"][0]["Name"] = format!("purlis-runner-{container_suffix}-home").into();
+    fake.set("inspect", &inspect.to_string());
+    fake.set(
+        "volume",
+        &serde_json::json!([{
+            "Name": format!("purlis-runner-{container_suffix}-home"),
+            "Driver": "local",
+            "Options": null,
+            "Labels": null
+        }])
+        .to_string(),
+    );
+}
+
+/// A runner kept under the name it was made with, before names carried a tag.
+fn kept_before_tags(config: &Path, fake: &FakeDocker) -> Kept {
+    let ours = desktop();
+    let kept = a_pool_added(config, fake, &ours);
+    let locked = runners::lock(config);
+    runners::note_locked(
+        config,
+        kept.name(),
+        |row| row.made.runner = row.made.runner.clone().named_as_kept(None, None),
+        &locked,
+    )
+    .unwrap();
+    runners::named(config, "first").unwrap().unwrap()
+}
+
+/// **A runner under the old name is adopted at its next link** (#7192): its container is renamed
+/// and the row keeps the new name and the volume it has.
+#[test]
+fn a_runner_kept_under_the_old_name_is_adopted_at_its_next_link() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = kept_before_tags(config.path(), &fake);
+    let label = runners::desktop_label(config.path());
+    fake.set(
+        "containers-full",
+        &format!(
+            "{} purlis-runner-first {label}\n",
+            crate::dockerpool::tests::ID
+        ),
+    );
+    let tag = crate::dockerpool::device_tag(&ours.device);
+
+    let adopted = adopt_at_link(config.path(), &fake.docker(), &old, &ours.device).unwrap();
+    assert_eq!(
+        adopted.made.runner.container(),
+        format!("purlis-runner-first-{tag}")
+    );
+    assert_eq!(adopted.made.runner.volume(), "purlis-runner-first-home");
+    // Kept: the next look reads it as adopted and renames nothing again.
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert_eq!(kept.made, adopted.made);
+    let again = adopt_at_link(config.path(), &fake.docker(), &old, &ours.device).unwrap();
+    assert_eq!(again.made, adopted.made);
+    let log = fake.file("log");
+    assert_eq!(log.matches("container rename").count(), 1, "{log}");
+}
+
+#[test]
+fn a_runner_another_desktop_adopted_first_is_not_adopted_and_stays_as_it_was_kept() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    let old = kept_before_tags(config.path(), &fake);
+    // Another desktop renamed the container already.
+    fake.set(
+        "containers-full",
+        &format!(
+            "{} purlis-runner-first-4e5f6a7b theirs\n",
+            crate::dockerpool::tests::ID
+        ),
+    );
+    assert!(adopt_at_link(config.path(), &fake.docker(), &old, &ours.device).is_err());
+    let kept = runners::named(config.path(), "first").unwrap().unwrap();
+    assert_eq!(kept.made, old.made);
+    assert!(!fake.file("log").contains("rename"), "{}", fake.file("log"));
+}
+
+/// **Pool status says how many runners belong to another desktop and touches none** (#7192):
+/// those that carry another device's tag. Read once for the engine, whatever its pools.
+#[test]
+fn pool_status_says_how_many_runners_belong_to_another_desktop() {
+    let fake = a_docker(&runner_answers());
+    let mine = crate::dockerpool::device_tag(OURS);
+    let theirs = crate::dockerpool::device_tag("01JA0ANOTHERDESKT00000000Z");
+    let rows = |others: &[(&str, &str)]| {
+        let mut text = format!(
+            "{} purlis-runner-first-{mine} mine {mine} first\n",
+            "a".repeat(64)
+        );
+        for (id, name) in others {
+            text.push_str(&format!("{id} {name} mine {theirs} x\n"));
+        }
+        fake.set("containers-full", &text);
+    };
+    rows(&[]);
+    assert_eq!(
+        belonging_to_another_desktop(&fake.docker(), OURS).unwrap(),
+        None
+    );
+    rows(&[("c".repeat(64).as_str(), "purlis-runner-first-4e5f6a7b")]);
+    assert_eq!(
+        belonging_to_another_desktop(&fake.docker(), OURS)
+            .unwrap()
+            .as_deref(),
+        Some("1 runner belongs to another desktop")
+    );
+    rows(&[
+        ("c".repeat(64).as_str(), "purlis-runner-first-4e5f6a7b"),
+        ("d".repeat(64).as_str(), "purlis-runner-second-4e5f6a7b"),
+    ]);
+    let log_before = fake.file("log");
+    assert_eq!(
+        belonging_to_another_desktop(&fake.docker(), OURS)
+            .unwrap()
+            .as_deref(),
+        Some("2 runners belong to another desktop")
+    );
+    let log = fake.file("log");
+    assert_eq!(
+        log.matches("container ls").count() - log_before.matches("container ls").count(),
+        1,
+        "{log}"
+    );
+    for changed in [" rm", "stop", "rename", "kill"] {
+        assert!(!log.contains(changed), "{changed}: {log}");
+    }
+}
+
+/// **Only a device label makes a runner another desktop's** (#7192): a runner with no label,
+/// or with this desktop's own, that no kept row names is not counted.
+#[test]
+fn pool_status_counts_only_runners_that_carry_another_desktops_tag() {
+    let fake = a_docker(&runner_answers());
+    let mine = crate::dockerpool::device_tag(OURS);
+    fake.set(
+        "containers-full",
+        &format!(
+            "{} purlis-runner-first mine - first\n{} purlis-runner-first-{mine} mine {mine} first\n",
+            "a".repeat(64),
+            "c".repeat(64),
+        ),
+    );
+    assert_eq!(
+        belonging_to_another_desktop(&fake.docker(), OURS).unwrap(),
+        None
+    );
+}
+
+/// **Another desktop's untagged successor survives the sweep** (#7192): its container has the
+/// old name and the desktop label this config path hashes to as well, and no row of this
+/// desktop records it. It is left, its home with it, and said.
+#[test]
+fn another_desktops_untagged_successor_with_the_same_config_label_survives_the_sweep() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    fake.set("containers", &format!("purlis-runner-{successor}\n"));
+    fake.set(
+        "containers-full",
+        &format!(
+            "{LEFT} purlis-runner-{successor} {}\n",
+            runners::desktop_label(config.path())
+        ),
+    );
+    fake.set("volumes", &format!("purlis-runner-{successor}-home\n"));
+    let said = clear_leftovers_of(
+        config.path(),
+        &fake.docker(),
+        &successor,
+        Some(&ours.device),
+    )
+    .unwrap()
+    .expect("what was left is said");
+    assert!(
+        said.contains(&format!("purlis-runner-{successor}")),
+        "{said}"
+    );
+    let log = fake.file("log");
+    for changed in ["container rm", "volume rm"] {
+        assert!(!log.contains(changed), "{changed}: {log}");
+    }
 }

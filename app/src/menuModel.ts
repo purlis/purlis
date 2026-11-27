@@ -217,12 +217,13 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "chat.rename": { said: SAID.renameChat, slot: "first", keys: () => RENAME_KEY_SAID },
   "chat.useskill": { said: SAID.useSkill, slot: "first" },
   // Its pane's links (#6332): opens a list, under Open ▸ with what else it opens (the list is
-  // ten rows at most, #4753), with ⇧⌘L drawn and said from the key registry.
+  // ten rows at most, #4753), with ⇧⌘L drawn and said from the key registry on the focused
+  // pane's row alone, the one terminal the key reaches (#6488, `Offer.keyHere`).
   "chat.links": {
     said: SAID.linksInThisPane,
     slot: "open",
     under: "open",
-    keys: () => keySaid("pane.links"),
+    keys: (offer) => (offer.keyHere === true ? keySaid("pane.links") : undefined),
   },
   "chat.worklink": { said: SAID.linkWorkItem, slot: "first" },
   "chat.workunlink": { said: SAID.unlinkWorkItem, slot: "first" },
@@ -254,6 +255,8 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "chat.log": { said: SAID.chatLog, slot: "open", under: "open" },
   "needs.ignore": { said: SAID.ignore, slot: "open" },
   "chat.restart": { said: SAID.restart, midTurn: SAID.restartMidTurn, slot: "run" },
+  // It ends the program but keeps the conversation, as a restart does, so it is with what runs.
+  "chat.hibernate": { said: SAID.hibernate, slot: "run" },
   // It ends the program, so it is with what ends, as the menus' rule 4 keeps the danger colour.
   "chat.fresh": { said: SAID.startFresh, slot: "end", danger: true, warns: WARNS.fresh },
   "chat.stop": stopped(WARNS.stops),

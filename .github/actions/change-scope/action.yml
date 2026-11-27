@@ -3,7 +3,7 @@
 
 # Which of CI's scopes this change needs (#3505): `tools/ci-scope.mjs` reads the change against
 # the commit it is measured by (`change-base`) and says, for each scope, `true` or `false`. A pull
-# request is scoped; any other event runs every scope.
+# request is scoped, and a draft runs no heavy scope (#7335); any other event runs every scope.
 #
 # The job's checkout must have `fetch-depth: 2`. The runner's own Node runs the script: it reads
 # git and files, and needs no package.
@@ -34,6 +34,9 @@ outputs:
   web-parts:
     description: The parts of the web job this change needs, as JSON.
     value: ${{ steps.scope.outputs.web-parts }}
+  stories-browsers:
+    description: The browsers the stories run in, as JSON. WebKit alone on a ready pull request, both on every other run and on a pull request labelled update-baselines.
+    value: ${{ steps.scope.outputs.stories-browsers }}
   listen-shim:
     description: Whether a pull request needs the listen shim job.
     value: ${{ steps.scope.outputs.listen-shim }}
@@ -62,4 +65,9 @@ runs:
       env:
         EVENT: ${{ github.event_name }}
         BASE: ${{ steps.base.outputs.sha }}
-      run: node tools/ci-scope.mjs "$EVENT" "$BASE"
+        # A draft runs no heavy scope (the ready gate, #7335). Empty on any other event.
+        DRAFT: ${{ github.event.pull_request.draft }}
+        # The pull request's labels: `update-baselines` runs Chromium's stories as well, so the
+        # run can draw its pictures (the queue draws none).
+        LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+      run: node tools/ci-scope.mjs "$EVENT" "$BASE" "$DRAFT" "$LABELS"

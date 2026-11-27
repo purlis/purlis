@@ -183,6 +183,7 @@ pub fn sorter_in(
             target,
             read_back: false,
             suggested: None,
+            purlis_command: None,
         })
     })
 }

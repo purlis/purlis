@@ -104,6 +104,17 @@ fn a_file_longer_than_a_piece_is_read_whole_in_pieces() {
 }
 
 #[test]
+fn pieces_that_join_into_a_file_that_is_not_text_are_said_to_be_binary() {
+    // Each piece passed as text on the runner, cut inside a character; whole, it is not.
+    let runner = fake(b"caf\xe9\n");
+
+    assert_eq!(
+        reads(&runner).read("latin1.txt", None),
+        Ok(ReadThere::Binary(5))
+    );
+}
+
+#[test]
 fn an_empty_file_is_read_as_no_text() {
     let runner = fake(b"");
 
@@ -171,6 +182,33 @@ fn a_file_now_outside_the_workspace_is_not_shown_and_says_to_open_it_again() {
         said.contains("outside the chat's workspace on runner pool/runner-1"),
         "{said}"
     );
+}
+
+#[test]
+fn a_file_the_runner_keeps_is_not_shown_even_when_it_was_opened_on_an_ask() {
+    let mut runner = fake(b"");
+    runner.answer = Some(FileRead::Kept {
+        path: "/home/purlis/.codex/auth.json".into(),
+    });
+
+    for opened in [None, Some("1:2")] {
+        let said = reads(&runner)
+            .read("/home/purlis/.codex/auth.json", opened)
+            .unwrap_err();
+        assert_eq!(said, format!("{}.", purlis_core::panelinks::RUNNER_KEPT));
+    }
+}
+
+#[test]
+fn a_file_the_runner_could_not_tell_of_is_not_shown_and_the_tab_says_so() {
+    let mut runner = fake(b"");
+    runner.answer = Some(FileRead::Unsure {
+        path: "/w/second.md".into(),
+    });
+
+    let said = reads(&runner).read("/w/second.md", None).unwrap_err();
+
+    assert_eq!(said, format!("{}.", purlis_core::panelinks::RUNNER_UNSURE));
 }
 
 #[test]
@@ -299,6 +337,8 @@ mod over_real_files {
                 path,
                 reach,
                 at,
+                machine: &purlis_core::sandbox::Machine::this(),
+                guarded: &[],
             }))
         }
     }

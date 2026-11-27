@@ -13,6 +13,14 @@
 
 pub mod folders;
 pub mod forge_cli;
+#[cfg(all(unix, feature = "forge-wiring"))]
+pub mod forge_listener;
+pub mod forge_proxy;
+pub mod held_acts;
+pub mod one_login;
+pub mod outage;
+pub mod real_infra;
+pub mod remote_rig;
 pub mod shipped;
 
 use std::path::{Path, PathBuf};

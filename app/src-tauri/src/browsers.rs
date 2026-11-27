@@ -398,6 +398,23 @@ impl BrowserInput {
 #[cfg(unix)]
 pub(crate) use hosted::WindowBrowsers;
 
+/// **What the person is told of `left` browsers a forgotten pool's machine did not answer for**
+/// (#7187 item 6): they keep running there until the container is removed.
+pub(crate) fn left_on_the_machine(left: usize) -> Option<String> {
+    match left {
+        0 => None,
+        1 => Some(
+            "1 browser could not be stopped on the pool's machine and keeps running there until \
+             its runner is removed."
+                .to_owned(),
+        ),
+        many => Some(format!(
+            "{many} browsers could not be stopped on the pool's machine and keep running there \
+             until its runner is removed."
+        )),
+    }
+}
+
 #[cfg(unix)]
 mod hosted {
     use std::collections::HashMap;
@@ -415,6 +432,158 @@ mod hosted {
     use crate::chatbrowsers::NotStarted;
     use crate::hostedsessions::{Connection, FrameSink, HostLink, OriginSink, Reconnect};
     use crate::reconnecting::Reconnection;
+
+    /// **One gate per engine, or for this machine's own host** (#7187 item 8), not per pool and
+    /// not per link: a link is replaced as it reconnects, and a new gate for the new link would
+    /// let a start run past the budget the old one was counting; two pools on one engine are one
+    /// machine's budget. A start counts the host's browsers against its budget before the next
+    /// on that engine does, and a start on another engine waits for none. A gate goes when the
+    /// last pool on its engine is removed or forgotten ([`Self::forget`]) and no start is
+    /// holding it: while one does, a pool added again on that engine finds the same gate, so
+    /// nothing is counted twice.
+    ///
+    /// **The budgets are independent on purpose.** This machine's own host ([`GateOf::ThisMachine`])
+    /// and a Docker pool on this machine's engine ([`GateOf::Engine`]) are two engines that
+    /// each run their own browsers, so each has its own gate and its own budget: a start on one
+    /// never waits for the other's, and the two are not summed.
+    #[derive(Default)]
+    pub(crate) struct StartGates(Mutex<Gates>);
+
+    /// What a gate is for: this machine's own host, or the engine a pool's runner is on.
+    #[derive(Clone, PartialEq, Eq, Hash)]
+    enum GateOf {
+        ThisMachine,
+        Engine(String),
+    }
+
+    #[derive(Default)]
+    struct Gates {
+        by_engine: HashMap<GateOf, Arc<Gate>>,
+        /// The engine each pool was last seen on.
+        pools: HashMap<String, GateOf>,
+    }
+
+    impl Gates {
+        /// Drops the gates no pool is on any more and no start holds.
+        fn sweep(&mut self) {
+            let pools = &self.pools;
+            self.by_engine.retain(|of, gate| {
+                *of == GateOf::ThisMachine
+                    || pools.values().any(|on| on == of)
+                    || Arc::strong_count(gate) > 1
+                    || gate.starting.load(std::sync::atomic::Ordering::SeqCst) > 0
+            });
+        }
+    }
+
+    /// **What the engine of pool `pool` is called, for its gate**: the machine and engine as
+    /// pinned for a pool on another machine, this machine's Docker for a local one, and the
+    /// cluster and context for a cluster pool. A pool its records do not name is its own.
+    pub(crate) fn engine_of(config: Option<&Path>, pool: &str) -> String {
+        let Some(config) = config else {
+            return format!("pool {pool}");
+        };
+        if let Some(kept) = purlis_core::runners::pools(config)
+            .ok()
+            .and_then(|pools| pools.into_iter().find(|one| one.name() == pool))
+        {
+            return kept.remote_engine().map_or_else(
+                || "this machine's Docker".to_owned(),
+                |remote| format!("remote {}", remote.pinned_said()),
+            );
+        }
+        if let Some(cluster) = purlis_core::runners::cluster_pools(config)
+            .ok()
+            .and_then(|pools| pools.into_iter().find(|one| one.name() == pool))
+        {
+            return match cluster.pin() {
+                Ok(pin) => format!("cluster {} context {}", pin.cluster, cluster.context()),
+                Err(_) => format!("cluster context {}", cluster.context()),
+            };
+        }
+        format!("pool {pool}")
+    }
+
+    /// **One host's turn at counting its browsers, and the starts counted but not yet running.**
+    /// The turn is held for the count alone, never across the start itself, which may download
+    /// the engine for minutes; what that start will add is held as a [`Slot`] meanwhile.
+    #[derive(Default)]
+    pub(crate) struct Gate {
+        turn: Mutex<()>,
+        /// Starts that have counted themselves in and have not answered yet.
+        starting: std::sync::atomic::AtomicUsize,
+    }
+
+    /// A start's place in its host's budget, until its start has answered.
+    pub(crate) struct Slot(Arc<Gate>);
+
+    impl Drop for Slot {
+        fn drop(&mut self) {
+            self.0
+                .starting
+                .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    impl Gate {
+        /// The turn at counting: `waiting` is called once if another start has it, which the
+        /// window shows, and it is waited for.
+        pub(crate) fn turn(&self, waiting: impl FnOnce()) -> std::sync::MutexGuard<'_, ()> {
+            match self.turn.try_lock() {
+                Ok(turn) => turn,
+                Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    waiting();
+                    self.turn.lock().unwrap_or_else(PoisonError::into_inner)
+                }
+            }
+        }
+
+        /// **A place for one more start**, where `running` browsers and the starts that are
+        /// counted already leave room in `budget`: the caller holds [`Self::turn`].
+        pub(crate) fn room_for_one_more(
+            self: &Arc<Self>,
+            running: usize,
+            budget: usize,
+        ) -> Option<Slot> {
+            use std::sync::atomic::Ordering::SeqCst;
+            (running + self.starting.load(SeqCst) < budget).then(|| {
+                self.starting.fetch_add(1, SeqCst);
+                Slot(Arc::clone(self))
+            })
+        }
+    }
+
+    impl StartGates {
+        /// The gate of the engine `pool`'s runner is on (`engine` names it), or this machine's own
+        /// where none: the same one each time, none shared with another engine.
+        pub(crate) fn of(&self, pool: Option<&str>, engine: impl FnOnce() -> String) -> Arc<Gate> {
+            let of = pool.map_or(GateOf::ThisMachine, |_| GateOf::Engine(engine()));
+            let mut all = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(pool) = pool {
+                all.pools.insert(pool.to_owned(), of.clone());
+            }
+            all.sweep();
+            Arc::clone(all.by_engine.entry(of).or_default())
+        }
+
+        /// Pool `pool` was removed or forgotten: its engine's gate goes with the last pool on it,
+        /// once no start holds it.
+        pub(crate) fn forget(&self, pool: &str) {
+            let mut all = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+            all.pools.remove(pool);
+            all.sweep();
+        }
+    }
+
+    /// **What forgetting a pool did to the window's browsers on it** (#7187 item 6).
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+    pub(crate) struct Forgotten {
+        /// Stopped on the pool's machine.
+        pub stopped: usize,
+        /// Not stopped: the machine did not answer, so each runs on there.
+        pub left: usize,
+    }
 
     /// **The window's line for the end of browser `program`** (#2745): how the session host said
     /// it ended. The host's own line, in the same log, says who ended it and why.
@@ -732,7 +901,7 @@ mod hosted {
         /// The most browsers the device runs at once (#2023), read at each start, and the lock
         /// one start holds from its count to its start, so two never both take the last.
         budget: Arc<dyn Fn() -> usize + Send + Sync>,
-        starting: Mutex<()>,
+        starting: StartGates,
         /// How many acts of the person's this window sent (#2176): part of each one's id.
         acts: std::sync::atomic::AtomicU64,
         /// Each view the window watches, and whether it is dimmed while its runner's link is
@@ -841,7 +1010,7 @@ mod hosted {
                 projects: Mutex::new(HashMap::new()),
                 ended: Arc::new(|_| {}),
                 budget: Arc::new(|| purlis_core::browserlimits::budget_for(None)),
-                starting: Mutex::new(()),
+                starting: StartGates::default(),
                 dimming: Arc::default(),
                 acts: std::sync::atomic::AtomicU64::new(0),
                 says: Arc::new(|_, _| {}),
@@ -1002,24 +1171,45 @@ mod hosted {
         /// or may have run, there without the sandbox: the runner's host clears each one's data
         /// folder as it ends. Answers how many it ended.
         pub(crate) fn end_on(&self, pool: &str) -> usize {
+            self.end_each_on(pool, None).stopped
+        }
+
+        /// **Ends every browser the window started on pool `pool`, which the person forgot**
+        /// (#7187 item 6): each is stopped on its machine where that answers, and said closed by
+        /// the person, never crashed; one the machine did not answer for stays running there,
+        /// and is counted as `left`. Done before the pool's links end.
+        pub(crate) fn end_on_forgotten(&self, pool: &str) -> Forgotten {
+            self.pool_gone(pool);
+            self.end_each_on(pool, Some(Closer::Person))
+        }
+
+        /// **Pool `pool` is removed or forgotten here**: its engine's start gate goes with the
+        /// last pool on it. Only a pool that goes keeps no gate: one that goes on keeps it, so a
+        /// start in progress and the next are counted together.
+        pub(crate) fn pool_gone(&self, pool: &str) {
+            self.starting.forget(pool);
+        }
+
+        fn end_each_on(&self, pool: &str, closer: Option<Closer>) -> Forgotten {
             let programs: Vec<String> = self
                 .projects()
                 .iter()
                 .filter(|(at, _)| at.pool.as_deref() == Some(pool))
                 .flat_map(|(_, held)| held.browsers.clone())
                 .collect();
-            programs
-                .iter()
-                .filter(|program| {
-                    self.close(program)
-                        .inspect_err(|why| {
-                            tracing::warn!(
-                                "purlis: a browser on pool {pool}'s runner was not ended: {why}"
-                            );
-                        })
-                        .is_ok()
-                })
-                .count()
+            let mut ended = Forgotten::default();
+            for program in &programs {
+                match self.closing_then_saying(program, closer, |window| window.close(program)) {
+                    Ok(()) => ended.stopped += 1,
+                    Err(why) => {
+                        tracing::warn!(
+                            "purlis: a browser on pool {pool}'s runner was not ended: {why}"
+                        );
+                        ended.left += 1;
+                    }
+                }
+            }
+            ended
         }
 
         /// **The pool whose runner `program` runs on** (#2050), where the window started it on
@@ -1168,6 +1358,35 @@ mod hosted {
             (self.says)(root.as_deref(), said);
         }
 
+        /// **Runs `close` of `program`, and says `closer` closed it only once it has**
+        /// (#7187 item 6): a close the machine did not answer for says nothing, and leaves the
+        /// browser unmarked, so what later ends it is told as it is. Its project is read before
+        /// `close`, which lets go of the window's hold on it.
+        pub(crate) fn closing_then_saying(
+            &self,
+            program: &str,
+            closer: Option<Closer>,
+            close: impl FnOnce(&Self) -> Result<(), String>,
+        ) -> Result<(), String> {
+            let root = self.root_of(program);
+            let first = !lock(&self.closing).contains(program);
+            let closed = close(self);
+            match (&closed, closer) {
+                (Ok(()), Some(by)) if first => (self.says)(
+                    root.as_deref(),
+                    Said::Closed {
+                        browser: program.to_owned(),
+                        by,
+                    },
+                ),
+                (Err(_), _) if first => {
+                    lock(&self.closing).remove(program);
+                }
+                _ => {}
+            }
+            closed
+        }
+
         /// **At most `budget` browsers run on this device at once** (#2023): every browser the
         /// session host runs counts, whoever started it.
         #[cfg(test)]
@@ -1299,25 +1518,46 @@ mod hosted {
             if let Some(why) = at.pool.as_deref().and_then(|pool| self.untrusted(pool)) {
                 return Err(NotStarted::Failed(why));
             }
-            let _one_at_a_time = self.starting.lock().unwrap_or_else(PoisonError::into_inner);
-            let running = match link.call(Command::List).map_err(NotStarted::Failed)? {
-                Answer::Chats(listed) => listed
-                    .iter()
-                    .filter(|one| one.kind == Some(ProgramKind::Browser) && one.state != "ended")
-                    .count(),
-                other => {
-                    return Err(NotStarted::Failed(format!(
-                        "the session host answered a list with {other:?}"
-                    )));
-                }
-            };
-            let budget = (self.budget)();
-            if running >= budget {
-                return Err(NotStarted::Full { most: budget });
-            }
-            // Named here, so the engine download this window is told of is known to be this
-            // start's, and waited for as long as the download may take (#2207).
+            // Named here: it is what a start waiting for its turn is shown by, and what its
+            // engine download is told of (#2207).
             let named = purlis_core::browsers::a_browsers_id();
+            // One count at a time on this runner's host, whose budget it is; starts on other
+            // runners go on at once (#7187 item 8). Held for the count alone: what this start
+            // adds is held as a slot until it has answered, so a long engine download keeps the
+            // next start waiting for nothing.
+            let gate = self.starting.of(at.pool.as_deref(), || {
+                engine_of(
+                    self.connection.runners_config().as_deref(),
+                    at.pool.as_deref().unwrap_or_default(),
+                )
+            });
+            let (budget, _slot) = {
+                let _counting = gate.turn(|| crate::enginedownload::here().queued(&named));
+                // Whether it was cancelled as it waited, which it learns as it has the turn.
+                if crate::enginedownload::here().dequeued(&named) {
+                    return Err(NotStarted::Cancelled);
+                }
+                let running = match link.call(Command::List).map_err(NotStarted::Failed)? {
+                    Answer::Chats(listed) => listed
+                        .iter()
+                        .filter(|one| {
+                            one.kind == Some(ProgramKind::Browser) && one.state != "ended"
+                        })
+                        .count(),
+                    other => {
+                        return Err(NotStarted::Failed(format!(
+                            "the session host answered a list with {other:?}"
+                        )));
+                    }
+                };
+                let budget = (self.budget)();
+                let Some(slot) = gate.room_for_one_more(running, budget) else {
+                    return Err(NotStarted::Full { most: budget });
+                };
+                (budget, slot)
+            };
+            // So the engine download this window is told of is known to be this start's, and
+            // waited for as long as the download may take (#2207).
             // Waited on before it is asked for, so no word of its download comes too early.
             crate::enginedownload::here().started(&named);
             // On a pool's runner, its views over the link are held to the pool's own frames
@@ -1435,6 +1675,11 @@ mod hosted {
         /// **The person cancels the engine's download for `program`'s start** (#2207): nothing
         /// of it is kept, and the start is refused in words that say so.
         pub(crate) fn cancel_download(&self, program: &str) -> Result<(), String> {
+            // A start still waiting for its runner's turn has no download to cancel: it is
+            // refused as it gets its turn.
+            if crate::enginedownload::here().cancel_queued(program) {
+                return Ok(());
+            }
             self.link_for(program)?
                 .call(Command::CancelEngineDownload {
                     program: program.to_owned(),
@@ -1883,9 +2128,12 @@ mod hosted {
     /// for each change, outside the hold.
     fn hear(dimming: &Mutex<Dimming>, link: u64, heard: Reconnect) {
         let (dim, now) = match heard {
-            Reconnect::Started(_) | Reconnect::KeyChanged | Reconnect::Gone => {
-                (true, Reconnection::Reconnecting)
-            }
+            Reconnect::Started(_)
+            | Reconnect::KeyChanged
+            | Reconnect::Gone
+            | Reconnect::Refused
+            | Reconnect::HostKeyChanged
+            | Reconnect::PoolForgotten => (true, Reconnection::Reconnecting),
             Reconnect::Over | Reconnect::Drawn(_) => (false, Reconnection::Reconnected),
         };
         let told: Vec<LinkSaid> = lock(dimming)

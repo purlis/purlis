@@ -262,7 +262,8 @@ fn a_record_that_does_not_read_lets_no_grant_cover_any_pair_of_two_personas() {
         "purlis could not read the list of pairs the person said never to on this machine, so \
          no dispatch grant counts until it reads, and nobody is here to ask. Nothing was \
          started. Do this work without another persona, or say in what you leave behind that \
-         it is waiting; a person mends the list on this machine."
+         it is waiting; a person mends the list on this machine, or opens purlis again if its \
+         keyring did not start."
     );
 }
 
@@ -497,4 +498,17 @@ fn an_older_nevers_file_put_back_reads_as_unread() {
     assert!(matches!(read(root), Nevers::Read(pairs) if pairs.len() == 2));
     std::fs::write(path(root), older).unwrap();
     assert_eq!(read(root), Nevers::Unread);
+}
+
+#[test]
+fn the_kinds_a_new_seal_key_lists_are_the_kinds_the_nevers_are_anchored_as() {
+    // F3 of #7734's review: a new key keeps a plane on its list by these names, so they are the
+    // names the anchors are kept under.
+    assert_eq!(
+        ANCHOR_KINDS,
+        [
+            crate::secrets::sealed_set::anchor_kind(STORE).as_str(),
+            WHOLE_KIND
+        ]
+    );
 }

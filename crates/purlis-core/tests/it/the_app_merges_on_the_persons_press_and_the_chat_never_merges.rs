@@ -100,6 +100,7 @@ fn the_app_merges_on_the_persons_press_and_the_chat_never_merges() {
     let request = Request {
         repo: None,
         number: 12,
+        act: Default::default(),
     };
     let (asked, raised) = mergehold::asked(&holds, 4, &request, &|_| Ok((key(12), facts())), 1_000)
         .expect("the request is found");
@@ -235,17 +236,23 @@ fn a_press_on_a_request_whose_base_moved_merges_nothing() {
     assert_eq!(holds.every().len(), 1);
 }
 
-/// Q239 (S5): the press merges by the repo's own method, as the forge says it at the press.
+/// Q239 (S5): the press merges by the repo's own method, which is the one the row showed.
 #[test]
 fn a_press_merges_by_the_repos_own_method() {
     purlis_core::unsteered!();
     let holds = Holds::default();
-    holds.raise(4, key(12), facts(), 1_000);
+    let squashing = purlis_core::mergehold::Facts {
+        squash: true,
+        ..facts()
+    };
+    holds.raise(4, key(12), squashing.clone(), 1_000);
     let squashes = Forge {
         squash: true,
         ..Forge::default()
     };
-    asked_once_more(&holds, &key(12));
+    holds
+        .refresh(4, &key(12), key(12), squashing, Reread::AsksOnceMore)
+        .expect("asked once more");
     assert!(
         holds
             .press(4, &key(12), Seen::None, the_window(), &squashes)
@@ -275,6 +282,7 @@ fn facts() -> purlis_core::mergehold::Facts {
         },
         ruleset: purlis_core::mergehold::Ruleset::None,
         approved_by: None,
+        squash: false,
         read_at: 40,
     }
 }

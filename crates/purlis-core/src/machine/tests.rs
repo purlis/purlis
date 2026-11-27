@@ -99,6 +99,26 @@ fn a_device_id_is_minted_once_and_kept() {
     assert!(store.device.unwrap().created > 0, "with when it was minted");
 }
 
+#[cfg(unix)]
+#[test]
+fn asking_for_an_id_that_is_there_writes_nothing() {
+    // #7178: a chat's sandbox keeps the home folder from a command that rewrites the store only to
+    // read a name from it.
+    use std::os::unix::fs::PermissionsExt as _;
+    let machine = machine();
+    let id = device_id(machine.path()).unwrap();
+    let dir = crate::machine::dir(machine.path());
+    let before = std::fs::read(file(machine.path())).unwrap();
+    let kept = std::fs::metadata(&dir).unwrap().permissions();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+
+    let asked = device_id(machine.path());
+
+    std::fs::set_permissions(&dir, kept).unwrap();
+    assert_eq!(asked.expect("read, not written"), id);
+    assert_eq!(std::fs::read(file(machine.path())).unwrap(), before);
+}
+
 #[test]
 fn an_update_that_is_not_about_the_device_keeps_its_id() {
     let machine = machine();
@@ -3148,4 +3168,115 @@ fn that_a_planes_pool_chats_are_all_recorded_is_written_and_read_back() {
     assert!(back.pool_chats_recorded(Path::new("/planes/a")));
     assert!(!back.pool_chats_recorded(Path::new("/planes/b")));
     assert!(!back.pool_chats_recorded(Path::new("/planes/elsewhere")));
+}
+
+#[test]
+fn an_update_that_changes_nothing_does_not_rewrite_the_store() {
+    let machine = machine();
+    update(machine.path(), |store| {
+        store.remember(Path::new("/planes/a"), 1)
+    })
+    .unwrap();
+    let file = file(machine.path());
+    let inode = |p: &Path| std::os::unix::fs::MetadataExt::ino(&std::fs::metadata(p).unwrap());
+    let first = inode(&file);
+
+    update(machine.path(), |_| {}).unwrap();
+
+    assert_eq!(
+        inode(&file),
+        first,
+        "the store was replaced by an identical one"
+    );
+}
+
+#[test]
+fn a_vouch_that_finds_the_record_as_it_was_leaves_the_store_as_it_was() {
+    let mut store = Store::default();
+    let plane = Path::new("/planes/known");
+    store.approve(plane, 1, Contribution::default());
+    store.vouch(plane, Contribution::default(), 99);
+    let kept = store
+        .recent(plane)
+        .unwrap()
+        .trust
+        .as_ref()
+        .unwrap()
+        .approved;
+    assert_eq!(
+        kept, 1,
+        "a later vouch of the same record restamped the approval"
+    );
+}
+
+#[test]
+fn an_update_that_changes_nothing_still_writes_a_store_that_is_not_there() {
+    let machine = machine();
+
+    update(machine.path(), |_| {}).unwrap();
+
+    assert!(file(machine.path()).exists(), "no store was made");
+}
+
+#[test]
+fn an_update_that_changes_nothing_writes_a_store_whose_bytes_differ() {
+    let machine = machine();
+    update(machine.path(), |store| {
+        store.remember(Path::new("/planes/a"), 1)
+    })
+    .unwrap();
+    let file = file(machine.path());
+    let pretty = std::fs::read_to_string(&file).unwrap();
+    // The same store, written another way: compact.
+    let compact =
+        serde_json::to_string(&serde_json::from_str::<serde_json::Value>(&pretty).unwrap())
+            .unwrap();
+    std::fs::write(&file, &compact).unwrap();
+
+    update(machine.path(), |_| {}).unwrap();
+
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), pretty);
+}
+
+#[cfg(unix)]
+#[test]
+fn an_update_that_changes_nothing_still_tightens_the_modes() {
+    use std::os::unix::fs::PermissionsExt;
+    let machine = machine();
+    update(machine.path(), |store| {
+        store.remember(Path::new("/planes/a"), 1)
+    })
+    .unwrap();
+    let file = file(machine.path());
+    let dir = file.parent().unwrap().to_path_buf();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    update(machine.path(), |_| {}).unwrap();
+
+    let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&file), 0o600, "the store");
+    assert_eq!(mode(&dir), 0o700, "the folder");
+}
+
+#[test]
+fn a_vouch_whose_record_moved_restamps_the_approval() {
+    let mut store = Store::default();
+    let plane = Path::new("/planes/known");
+    store.approve(plane, 1, Contribution::default());
+    let approved = |store: &Store| {
+        store
+            .recent(plane)
+            .unwrap()
+            .trust
+            .as_ref()
+            .unwrap()
+            .approved
+    };
+
+    store.vouch(plane, a_launch(&["/bin/sh"]), 5);
+    assert_eq!(approved(&store), 5, "starts moved");
+
+    store.vouch(plane, on_profiles(&["mine"]), 9);
+    assert_eq!(approved(&store), 9, "profiles moved");
 }

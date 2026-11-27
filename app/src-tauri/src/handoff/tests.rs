@@ -2484,6 +2484,7 @@ fn a_task_whose_program_ends_with_its_session_host_is_not_failed_and_its_pane_sa
             left_in: crate::hostlost::LeftIn::Failed,
             resumable: true,
             with_the_runner: false,
+            pool_forgotten: false,
         }),
         "failed: it never said its turn ended; it has its conversation to resume"
     );
@@ -2601,6 +2602,7 @@ fn a_chat_that_ended_with_a_gone_runner_is_not_resumable() {
             left_in: crate::hostlost::LeftIn::Hibernated,
             resumable: false,
             with_the_runner: true,
+            pool_forgotten: false,
         })
     );
 }
@@ -2629,6 +2631,7 @@ fn a_chat_idle_when_its_session_host_ends_is_hibernated_and_resume_starts_it_on_
             left_in: crate::hostlost::LeftIn::Hibernated,
             resumable: true,
             with_the_runner: false,
+            pool_forgotten: false,
         })
     );
     held.chats().ask_restart(steward).expect("Resume asks");
@@ -3308,6 +3311,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Attendance(_) => 25,
             Ask::Policy(_) => 26,
             Ask::PolicyLog(_) => 27,
+            Ask::RemoteRefs(_) => 28,
         }
     }
     let asks = vec![
@@ -3464,6 +3468,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             request: purlis_core::mergehold::Request {
                 repo: None,
                 number: 12,
+                act: Default::default(),
             },
             cwd: "/nowhere".to_owned(),
         }),
@@ -3486,10 +3491,14 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             rule: "A3".to_owned(),
             host: None,
         }),
+        Ask::RemoteRefs(purlis_core::hookwire::RemoteRefsAsk {
+            chat,
+            url: "https://github.com/acme/app.git".to_owned(),
+        }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=27).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=28).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 
@@ -12572,6 +12581,10 @@ mod needed_you_at_the_hook;
 /// No block is ever the source of an ask: Asks holds asks only (R-171, R-240, #6417).
 mod blocks_are_never_asks;
 
+/// A held CI-file push from a dispatched task reaches the person's Asks, and only their press
+/// pushes it (#7685).
+mod held_ci_pushes;
+
 /// **A task another chat dispatches starts where its asking chat runs** (#2003, D-2003-7): the
 /// window's answer to the dispatch (`task_dispatched`) starts it through the seam every chat
 /// starts through, so in a project whose chats run in the session host, the host runs it. Who
@@ -12980,6 +12993,9 @@ fn a_task_s_level_is_heard_only_from_its_asking_chat_s_own_harness() {
 
 /// A chat's open or dispatch heard from a pool waits for the person's Approve.
 mod heard_from_a_pool;
+
+/// A dispatched chat's vault checks in the window run under its chain's `[policy]` (#7153).
+mod chain_policy_checks;
 
 /// **A dispatch that names where the levels already put it starts at once, and follows them**
 /// (#4536): `--this-machine` in a workspace that runs here asks nobody, and the chat keeps no
@@ -14451,7 +14467,7 @@ fn keep_blocked_on_a_runs_notice_on_a_vault_its_persona_holds_says_what_the_noti
         matches!(ran, purlis_core::secrets::ask::run::RunHeld::Refused { .. }),
         "{ran:?}"
     );
-    let notice = crate::vaultroute::kept_blocked_but_held(&plane.root, Some("ops"), "team")
+    let notice = crate::vaultroute::kept_blocked_but_held(&plane.root, Some("ops"), "team", None)
         .expect("ops holds team");
     assert_eq!(
         pressed.expect("pressed").expect("kept"),
@@ -16040,4 +16056,12 @@ fn no_grant_with_no_sandbox() -> String {
         },
     )
     .say()
+}
+
+#[test]
+fn a_hook_asking_for_the_refs_of_a_chat_with_no_route_is_told_no() {
+    assert!(matches!(
+        remote_refs_answer(987_654, "https://github.com/acme/app.git"),
+        Answer::No { .. }
+    ));
 }

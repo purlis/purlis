@@ -283,6 +283,11 @@ pub struct Ctx {
     /// The strictest `[policy]` along the chain that dispatched the chat this context reads
     /// for ([`Ctx::under_chain`]): none but for a read the app makes for one chat.
     pub(crate) policy: Option<String>,
+    /// Whether this context reads for a chat: the app's own broker serving a chat's `secret exec`,
+    /// or its read for a runner chat's tool, whose environment is the app's and says nothing of
+    /// the chat ([`Ctx::for_a_chat`]). What a chat is refused (a forge token, with the one-login
+    /// train's feature on) hangs on this, not on the environment a chat's own process carries.
+    pub(crate) for_a_chat: bool,
 }
 
 impl Ctx {
@@ -299,7 +304,16 @@ impl Ctx {
             chat_writes: Vec::new(),
             kept: identity::Kept::for_a_new_context(),
             policy: None,
+            for_a_chat: false,
         }
+    }
+
+    /// This context, reading for a chat: set by the app where it serves a chat's request, never
+    /// from anything the chat sent.
+    #[must_use]
+    pub fn for_a_chat(mut self) -> Self {
+        self.for_a_chat = true;
+        self
     }
 
     /// This context, for a chat whose chain ran under `policy` at its strictest
@@ -806,15 +820,6 @@ pub fn make_private_dir(dir: &Path) -> std::io::Result<()> {
 /// does not know is held to do so too.
 pub fn reads_on_open(provider: &str) -> bool {
     !matches!(provider, "keyring" | "plain-file" | "reference")
-}
-
-/// **Whether reading one value of a vault of `provider` asks nobody** (#6309): a keyring vault's
-/// value is its own item, and a plain-file vault's is in its own file. Not so a reference
-/// vault's, though opening one does not read ([`reads_on_open`]): its value is what `op read` or
-/// `vault kv get` answers, either of which may ask the person; nor any other provider's, which
-/// reads through its program; nor one this build does not know.
-pub fn reads_a_value_without_asking(provider: &str) -> bool {
-    matches!(provider, "keyring" | "plain-file")
 }
 
 #[cfg(test)]

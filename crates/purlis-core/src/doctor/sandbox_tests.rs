@@ -6,7 +6,10 @@
 
 use std::path::PathBuf;
 
-use super::{grants_held_row, kept_for, kept_row, local_ports_row, relayed_internal_row};
+use super::{
+    grants_held_row, kept_for, kept_row, local_ports_row, relayed_internal_row,
+    replaced_by_sign_in_row,
+};
 use crate::doctor::Row;
 use crate::doctor::Status;
 use crate::sandbox::HeldGrant;
@@ -287,4 +290,48 @@ fn a_relayed_internal_entry_not_taken_is_a_warning_naming_it() {
         row.detail
     );
     assert_eq!(relayed_internal_row(&[]), None);
+}
+
+#[test]
+fn old_forge_token_lines_are_one_warning_naming_the_step_and_each_tool() {
+    use crate::sandbox::tools::replaced::{Found, Kind};
+    let row = replaced_by_sign_in_row(&[
+        Found {
+            persona: "dev".into(),
+            tool: "gh".into(),
+            kind: Kind::GithubApp,
+        },
+        Found {
+            persona: "dev".into(),
+            tool: "glab".into(),
+            kind: Kind::VaultToken,
+        },
+    ])
+    .expect("a row");
+    assert_eq!(row.name, "forge sign-in replaces");
+    assert_eq!(row.status, Status::Warn);
+    // Only the line to delete is the finding: the `mint` line guards its App's key.
+    assert!(row.detail.starts_with("1 tool line"), "{}", row.detail);
+    assert!(row.detail.contains("glab of dev") && !row.detail.contains("gh of dev"));
+    assert!(row.hint.contains("Settings › Accounts"));
+    assert_eq!(replaced_by_sign_in_row(&[]), None);
+}
+
+#[test]
+fn a_mint_line_kept_on_purpose_is_no_finding_and_never_warns() {
+    use crate::sandbox::tools::replaced::{Found, Kind};
+    let row = replaced_by_sign_in_row(&[Found {
+        persona: "dev".into(),
+        tool: "gh".into(),
+        kind: Kind::GithubApp,
+    }])
+    .expect("a row");
+    assert_eq!(row.status, Status::Ok);
+    assert!(
+        row.detail
+            .contains("Kept, they stop purlis handing the App's key")
+            || row.detail.contains("Kept"),
+        "{}",
+        row.detail
+    );
 }

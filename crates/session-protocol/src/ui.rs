@@ -243,6 +243,14 @@ pub const WINDOW_ONLY: &[&str] = &[
     // window draws, and read back. A link has no native window of its own here.
     "draw_native_window",
     "native_window_drawn",
+    // The device's RAM class stood in for the machine's in a scenario test (SC-4f, #7635): the
+    // `e2e` build only, and no chat's to set.
+    "ram_class_stand_in",
+    // Whether the open project's forge would let everyone else sign in (one login, slice D):
+    // read over the person's own forge sign-in, which no chat has (ADR D5, D10.1), and shown
+    // in their Settings. A link is refused it, so a chat never reads the person's forge
+    // through it.
+    "plane_readiness",
     // Ends.
     "end_task",
     "task_ending",
@@ -306,11 +314,30 @@ pub const WINDOW_ONLY: &[&str] = &[
     "agent_identity_lines",
     "agent_identity_finish",
     "agent_identity_remove",
+    "gitlab_access_list",
+    "gitlab_access_lines",
+    "gitlab_access_set",
+    "gitlab_access_remove",
     // The browser sign-in to gitlab.com (#730, ADR 0077 §3): it opens the person's browser and
     // a loopback listener on this machine, and ends with a token in the keychain. No link
     // starts one or stops one.
     "forge_pkce_sign_in",
     "forge_pkce_sign_in_cancel",
+    // One login (ADR 0128 D5): provisioning is the person's press, in the window. An application an
+    // owner made, pinned with the owner the person expects (D1.3); which account serves a repo
+    // (D2); the repo's number recorded at a clone or a trust (D4); and the second, CI-file token
+    // (D1.1). No link and no chat presses any of them.
+    "forge_applications",
+    "forge_use_application",
+    "forge_remove_application",
+    "forge_application_request",
+    "forge_project_accounts",
+    "forge_choose_project_account",
+    "forge_trust_clone_repo",
+    "forge_unconfirmed_clones",
+    "forge_ci_permission_start",
+    "forge_ci_permission_wait",
+    "forge_ci_permission_cancel",
     // This machine's profiles (#2034, ADR 0095): the list, and the person's make, import and
     // remove of one, each asked in the window. What a chat runs as is never a chat's to change.
     "machine_profiles",
@@ -407,6 +434,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     "view_held_merge",
     "merge_held_request",
     "dont_merge_held_request",
+    // Press and Don't on a tag, release, CI-file push or fork a chat asked for (ADR 0128 D8): the
+    // app performs it with the person's own sign-in on the press of the window alone, twice. No
+    // chat answers its own ask.
+    "held_acts_waiting",
+    "press_held_act",
+    "dont_held_act",
     // What a chat's browser may reach, on its first browser call's Ask (#2013): the person's
     // answer alone. No chat answers its own Ask.
     "allow_chat_browser",
@@ -461,6 +494,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Dismiss on a chat's Notice that its program ended with its session host (#2007): the
     // person's answer.
     "put_away_lost_chat",
+    // Hibernate on a chat's row (SC-4a, #7630): the person's own act on a chat, which no chat
+    // does for them. Its Resume is Restart chat's, which wakes a hibernated chat.
+    "hibernate_chat",
     // Put away on the Inbox's Notice of a chat's undelivered messages (#3958): the person's
     // answer that they have read it.
     "put_away_left_messages",
@@ -565,6 +601,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The person's press accepting a loosening of the project's `[policy]` (Q308a): theirs
     // alone, so no chat loosens its own enforcement through a link.
     "accept_project_policy",
+    // Make a new key and accept (#7714): it replaces the seal key every project's acceptance on
+    // this machine rests on, so it is the person's press alone, as Accept is (drawn by #7719).
+    "accept_project_policy_with_new_key",
+    // Keep these nevers (#7714, H1 of #7734's round 3): it seals the never-dispatch pairs the
+    // window showed with the new seal key, so it is the person's press alone, as Accept is.
+    "keep_project_nevers",
     // Remove on the Allowed list (#1927): the person's standing answers are taken back in
     // their own window.
     "revoke_sandbox_grant",
@@ -581,6 +623,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Grant commands (#1927): a consent given, answered or taken back.
     "allow_refused_vault",
     "keep_vault_blocked",
+    // Let a chat push a branch it has no record of (ADR 0128, amended 2026-11-23): Allow records
+    // the chat as the branch's owner, so it is the person's press in the window alone, and Keep
+    // blocked is its answer.
+    "allow_chat_push",
+    "keep_chat_push_blocked",
     "put_away_refused_vault",
     "allow_persona_grants",
     "confirm_sandbox_host",
@@ -1049,6 +1096,15 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_stop_waiting",
     // Get help (#4497): it starts a chat as the person.
     "pool_setup_get_help",
+    // Train B's presses (#7191, #7192), each the person's own in their window: Forget the pool an
+    // add refused (removes the kept refusal), Try now (retries every failing forward and reads
+    // the pools again), Trust and create (trusts the key the person saw and makes the pool), and
+    // keeping the folder of a kubeconfig's credential plugin (adds it to the commands purlis
+    // runs for the cluster).
+    "pool_setup_forget_refused",
+    "pool_setup_try_now",
+    "pool_setup_trust_and_create",
+    "pool_setup_plugin_folder",
     "add_docker_pool",
     "remove_docker_pool",
     // Forget it here, offered where Remove found the pool's machine doesn't answer: the person's
@@ -1276,6 +1332,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // served to anything else.
     "chat_by_number",
     "chat_screen",
+    // A hibernated chat's kept screen (SC-4b, #7631): what it showed is the person's to read
+    // in its pane, served to nothing else, as a task's kept screen is.
+    "hibernated_chat_screen",
     // The closed chats the Chats list's filter finds (#6484): their titles are the person's, and
     // only the window's list looks among them. Its row opens its chat by its ULID (#6685's
     // review), the window's as `chat_by_number` is.
@@ -1520,6 +1579,10 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     "chat_log",
     // A chat whose program ended with its session host (#2007): what its pane says.
     "chat_lost_with_the_host",
+    // Whether a chat is hibernated by the person (SC-4a, #7630): what its row and pane say.
+    "chat_hibernated",
+    // The chats hibernated by the person (SC-4a, #7630): what the rows read as the window opens.
+    "hibernated_chats",
     "chat_moves",
     "chat_network",
     "chat_order",

@@ -22,7 +22,7 @@ guards.release = "log"     # one family, apart from the template
 
 ## Templates
 
-| Template | What runs | Sandbox (wired in a later release; today `[sandbox]` decides) |
+| Template | What runs | Sandbox (a committed `[sandbox] mode` overrides it) |
 |---|---|---|
 | `open` | nothing | none |
 | `watch` (the default) | everything logs; `secrets`, `vaults`, `guards.credential` and `trust` are enforced | the floor |
@@ -32,17 +32,49 @@ guards.release = "log"     # one family, apart from the template
 
 The families, and what each covers, are listed in
 [`docs/plane-format.md`](plane-format.md#policy--which-of-purliss-refusals-run). In this release
-the git, merge, release, save and credential guards, `secrets`, `dispatch` (a pair
-nothing covers starts with no grant) and `asks` (a host is answered Allow) switch, and so do
-the nine families ruling Q308b added (`guards.forge`, `guards.shape`, `guards.plane`, `mode`,
-`tools`, `trust`, `runners`, `consents` and `limits`; under `limits = "log"` a limit is counted,
-not applied, up to an administrator's ceiling where there is one); every other family is a key already and stays enforced until it is wired. Which
-choke point switches each, and the family of every decision purlis makes about a chat, are in
-[`docs/policy-inventory-families.md`](policy-inventory-families.md). One key decides a sandbox rule: `secrets.credential_files = "enforce"` holds your SSH keys and
-forge and cloud credential files from chats at the floor too, as `team` and `strict` do; the full
-sandbox always holds them (ADR 0067 §5 class 6, Q325). Your own denies hold in every mode,
-`open` included: a dispatch never, a host you kept blocked, and your harness's ask and deny rules
-for a program, behind which a Bash guard that fails to answer refuses the call.
+the git, merge, release, save and credential guards, `secrets`, the sandbox level, `network`,
+`ports` (off or enforce only), `dispatch` (a pair nothing covers starts with no grant) and `asks`
+(a host and a folder are answered Allow; a socket only under `off`) switch, and so do the nine
+families ruling Q308b added (`guards.forge`, `guards.shape`, `guards.plane`, `mode`, `tools`,
+`trust`, `runners`, `consents` and `limits`; under `limits = "log"` a limit is counted, not
+applied, up to an administrator's ceiling where there is one); every other family is a key already
+and stays enforced until it is wired. Which choke point switches each, and the family of every
+decision purlis makes about a chat, are in
+[`docs/policy-inventory-families.md`](policy-inventory-families.md). One key decides a sandbox
+rule: `secrets.credential_files = "enforce"` holds your SSH keys and forge and cloud credential
+files from chats at the floor too, as `team` and `strict` do; the full sandbox always holds them
+(ADR 0067 §5 class 6, Q325). Your own denies hold in every mode, `open` included: a dispatch never,
+a host you kept blocked, and your harness's ask and deny rules for a program, behind which a Bash
+guard that fails to answer refuses the call. Where the sandbox is on, a Bash guard that fails to
+answer refuses the call too, since it judges the sandbox's own rules (Q327).
+
+**`guards.merge` is honoured by the forge route as by the hook, once you opt in.** The route
+forwards a merge only where your committed `[policy]` names `guards.merge` itself, or a template
+other than the default `watch` (`open`); with no `[policy]`, or `watch` and no `guards.merge` key,
+it holds every merge for your press, though the hook runs `watch` as `log`. Under `log` or `off` a chat's
+merge through its own forge route (REST, GraphQL, auto-merge, the merge queue, GitLab's merge and
+merge when the pipeline succeeds, and so `gh pr merge` and `glab mr merge`) goes through, and
+`log` writes one line to the chat's enforcement log (the chat and the repo, never the request);
+under `enforce` it is still a held act the window asks you about. Only a repo your chat's own run
+recorded, a branch merge, a tag, a release, a ruleset and the repository's administration stay
+refused, an administrator's lock keeps the family enforced, and a policy purlis cannot read is
+`enforce` (ADR 0128, amended 2026-11-22).
+
+**The names of purlis's own sockets are held at every floor, whatever `ports` says.** A chat in
+the sandbox can neither move nor link `hooks.sock`, `slots.sock`, `purlisd*.sock`,
+`purlis-crash-*.sock`, the app's single-instance socket, or the folders holding purlis's server
+sockets and pool forwards (`purlis-serve`, `engine-links`), so a socket moved while `ports` is
+enforced is not reached after a `ports = "off"` you press. The same rule stops a chat **creating
+any file with one of those names anywhere** (a file called `hooks.sock`, `slots.sock` or
+`purlisd*.sock`): purlis's own test suite, run inside a chat, cannot make them either.
+**Any folder named `purlis-serve` or `engine-links`, wherever it is, becomes unwritable to chats**
+(nothing in it can be made, moved or removed), your own among them: name yours otherwise.
+
+That call is decided **when the chat starts**, from the rules its harness will read (the
+project's, and yours in the `CLAUDE_CONFIG_DIR` its profile sets). A deny rule you add mid-chat
+holds a dead Bash guard closed from the next start, not before, and a settings layer reached
+only through a folder the chat `cd`s into later is not counted at the start: under `open` or
+`log` that window is accepted, so that `open` stays open (Q327, #7155).
 
 **A profile or harness declaration nobody approved still asks** under every template but `open`
 (Q329). Only `open`, or your own pressed `trust = "off"` or `"log"`, lets one start
@@ -58,7 +90,10 @@ unapproved, and then its chat's tab says so as it starts.
   **Would have blocked** count is every chat's enforcement log, and opens it: the newest lines,
   by rule, family, chat and the `host:port` a rule was about. A line that is not as purlis
   writes it (an unknown rule, a host that is no `host:port`, another chat's) is left out and
-  counted apart.
+  counted apart. A forge route refusal (#7779) is a line of `guards.forge` too, whatever the
+  family's mode: its rule names its kind and act (`forge.no-action`, `forge.no-action.<floor
+  act>`, `forge.not-allowed.<act>`), never its path, body or a number. A chat refused in a
+  loop is counted once a minute for each rule and `host:port`.
 - **Where this machine's acceptance does not hold**, every family is enforced: the pane head says
   `strict`, Settings says why and offers the Accept that seals it again, and nothing says
   `watch` is the default.

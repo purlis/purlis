@@ -30,6 +30,8 @@ use purlis_core::hookwire::{
 use purlis_core::mergehold::{self, Facts, Holds, MergeKey, Raised};
 
 const CHAT: u32 = 4;
+/// The milliseconds a hook's line may take to be taken by the app here, [`Chat::denial_with`].
+const A_LINE_PATIENCE: &str = "10000";
 const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
 
 /// A plane, a home that is not the operator's, and the app that started chat [`CHAT`] in it.
@@ -53,6 +55,12 @@ impl Chat {
     /// A chat whose app is of another build than its purlis, where `of_this_build` is false: it
     /// cannot read the merge's hand-over, and answers with `hookwire::UNKNOWN_LINE` (#6960).
     fn answering(of_this_build: bool) -> Self {
+        Self::answering_with(of_this_build, None)
+    }
+
+    /// [`Chat::answering`], with the app answering its hook's ask for the chat's policy with
+    /// `policy` where there is one: otherwise it answers no, and every family is enforced.
+    fn answering_with(of_this_build: bool, policy: Option<Answer>) -> Self {
         let tmp = tempfile::tempdir().expect("a directory");
         let base = tmp.path().canonicalize().expect("a real path");
         let root = base.join("plane");
@@ -96,6 +104,9 @@ impl Chat {
             permission: Box::new(|_| None),
             answer: Box::new(move |_, ask| {
                 was_asked.lock().unwrap().push(ask.clone());
+                if let (Ask::Policy(_), Some(policy)) = (&ask, &policy) {
+                    return policy.clone();
+                }
                 let Ask::Merge(merge) = ask else {
                     return Answer::No {
                         why: "not asked here".to_owned(),
@@ -127,6 +138,7 @@ impl Chat {
                         },
                         ruleset: mergehold::Ruleset::Protects,
                         approved_by: None,
+                        squash: false,
                         read_at: 1_000,
                     };
                     Ok((key, facts))
@@ -204,6 +216,17 @@ impl Chat {
     /// The `permissionDecisionReason` the chat's hook printed for a call of `tool` with
     /// `input` in `mode`, or `None` where it did not deny.
     fn denial_of(&self, tool: &str, input: serde_json::Value, mode: &str) -> Option<String> {
+        self.denial_with(tool, input, mode, &[])
+    }
+
+    /// [`Self::denial_of`], with `env` set in the hook's environment too.
+    fn denial_with(
+        &self,
+        tool: &str,
+        input: serde_json::Value,
+        mode: &str,
+        env: &[(&str, &std::ffi::OsStr)],
+    ) -> Option<String> {
         let command = input.to_string();
         let payload = serde_json::json!({
             "session_id": "11111111-2222-4333-8444-555555555555",
@@ -224,7 +247,13 @@ impl Chat {
             .env("PATH", "/usr/bin:/bin")
             .env(SOCKET_ENV, &self.socket)
             .env(CHAT_ENV, CHAT.to_string())
+            // The hook's tool line is spooled, not sent, when the app does not take it in a
+            // quarter of a second, and `rule()` reads what the app was sent: on a loaded runner
+            // that misses, and the test reads no rule (#7436, #7452). Lifted, as the guard
+            // budget is for the large bodies.
+            .env("PURLIS_TEST_HOOK_LINE_DEADLINE_MS", A_LINE_PATIENCE)
             .envs(self.token.iter().map(|token| (TOKEN_ENV, token.expose())))
+            .envs(env.iter().copied())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -317,6 +346,31 @@ fn a_held_action_is_refused_to_the_chat_and_raises_one_ask() {
     assert_eq!(chat.merges_asked(), 2);
 }
 
+/// #7177: a chat's single-line `glab mr merge` on a GitLab project, through the real hook, is
+/// refused to it and raises one merge Ask at the app for that MR and repo, with the head the
+/// app read; the hook never runs the merge.
+#[test]
+fn a_glab_mr_merge_line_raises_one_merge_ask_for_its_mr_and_repo() {
+    let chat = Chat::new();
+    let reason = chat
+        .denial(
+            "glab mr merge 7 -R grp/sub/api --squash --remove-source-branch --yes",
+            "default",
+        )
+        .expect("an attended chat's glab merge is refused to it");
+    assert!(
+        reason.contains("asked in Asks to merge request 7 of grp/sub/api"),
+        "{reason}"
+    );
+    assert_eq!(chat.rule().as_deref(), Some(mergehold::REASON));
+    let waiting = chat.holds.every();
+    assert_eq!(waiting.len(), 1, "{waiting:?}");
+    assert_eq!(waiting[0].key.number, 7);
+    assert_eq!(waiting[0].key.repo.as_str(), "grp/sub/api");
+    assert_eq!(waiting[0].key.head.as_str(), HEAD);
+    assert_eq!(chat.merges_asked(), 1);
+}
+
 #[test]
 fn a_merge_whose_request_cannot_be_read_is_refused_and_asks_nobody() {
     let chat = Chat::new();
@@ -326,6 +380,25 @@ fn a_merge_whose_request_cannot_be_read_is_refused_and_asks_nobody() {
     assert!(reason.contains("nobody was asked"), "{reason}");
     assert_eq!(chat.merges_asked(), 0);
     assert!(chat.holds.every().is_empty());
+}
+
+/// The hook's refusal of a line held as unreadable names the cause the floor read it by, so a
+/// chat learns which variable made the line a merge and how to write it (#7176): the switch of
+/// `guard.rs` to `mergehold::refusal_for`.
+#[test]
+fn a_held_line_names_the_variable_that_made_it_one_and_the_way_out() {
+    let chat = Chat::new();
+    let reason = chat
+        .denial(
+            "for j in $(glab api projects/p/pipelines/9/jobs | jq -r '.[].id'); do glab api -X POST \"projects/p/jobs/$j/play\"; done",
+            "default",
+        )
+        .expect("refused");
+    assert!(reason.contains("It took it for one because"), "{reason}");
+    assert!(reason.contains("projects/p/jobs/$j/play"), "{reason}");
+    assert!(reason.contains("for j in 101 102"), "{reason}");
+    assert!(reason.contains("nobody was asked"), "{reason}");
+    assert_eq!(chat.merges_asked(), 0);
 }
 
 #[test]
@@ -381,12 +454,11 @@ fn an_unknown_build_merge_answer_names_restart_or_update_and_no_refused_form() {
     assert!(reason.contains("different builds"), "{reason}");
     assert!(reason.contains("restart purlis"), "{reason}");
     assert!(reason.contains("update the purlis plugin"), "{reason}");
+    assert!(!reason.contains("start a new chat"), "{reason}");
     assert!(!reason.contains(hookwire::UNKNOWN_LINE), "{reason}");
-    // The refusal's own words, before the note every guard's refusal ends with.
-    let own = reason
-        .split(purlis_core::toolgate::OVERRIDE_NOTE)
-        .next()
-        .unwrap_or(&reason);
+    // The refusal's own words, before the note every guard's refusal ends with: the override
+    // note, or the cause an unaccepted policy gives it (ADR 0130 §7).
+    let own = purlis_core::toolgate::own_words(&reason);
     assert!(!own.contains('`'), "names a command: {own}");
     assert!(
         reason.contains("A yes in this chat merges nothing"),
@@ -394,6 +466,72 @@ fn an_unknown_build_merge_answer_names_restart_or_update_and_no_refused_form() {
     );
     assert_eq!(chat.rule().as_deref(), Some(mergehold::REASON_NOT_ASKED));
     assert!(chat.holds.every().is_empty());
+}
+
+/// ADR 0130 §7 (#7717): where the app says the chat's merges are held only because this machine
+/// has not accepted the project's policy, the refusal names that and purlis's window, and does
+/// not tell the person to set the family to `log`. An app that says nothing of it (the tests
+/// above) leaves the refusal its own words.
+#[test]
+fn a_merge_held_only_because_the_policy_is_not_accepted_names_that_and_not_the_log_switch() {
+    use purlis_core::enforcement::{AcceptedOn, Mode, Resolved, unaccepted_said};
+    let chat = Chat::answering_with(
+        true,
+        Some(Answer::Policy {
+            spelled: Resolved::all(Mode::Enforce).spelled(),
+            unaccepted: vec!["guards.merge".to_owned()],
+        }),
+    );
+    let reason = chat.denial("gh pr merge 12", "default").expect("refused");
+    assert!(
+        reason.contains(&unaccepted_said(AcceptedOn::ThisMachine)),
+        "{reason}"
+    );
+    assert!(
+        !reason.contains(purlis_core::toolgate::OVERRIDE_NOTE),
+        "{reason}"
+    );
+}
+
+/// #7177: where the hook is the app's own binary (`CHARTER_HOOK_BINARY` names it) and the app
+/// still answers `UNKNOWN_LINE`, a bundle was replaced under the running app: the chat is told
+/// to restart purlis and run the same line again, and a new chat or the plugin is not offered.
+/// Run through the real hook, so the `UNKNOWN_LINE` answer reaches `AppSaid` as the guard maps it.
+#[test]
+fn an_older_app_under_the_hooks_own_binary_is_told_to_restart_purlis() {
+    let chat = Chat::answering(false);
+    let binary = std::ffi::OsStr::new(support::PURLIS);
+    let reason = chat
+        .denial_with(
+            "Bash",
+            serde_json::json!({"command": "gh pr merge 12"}),
+            "default",
+            &[
+                ("CHARTER_HOOK_BINARY", binary),
+                ("PURLIS_HOOK_BINARY", binary),
+            ],
+        )
+        .expect("refused");
+    assert!(
+        reason.contains("purlis was updated on disk but the running app is older: restart purlis"),
+        "{reason}"
+    );
+    assert!(reason.contains("then run the same line again"), "{reason}");
+    assert!(!reason.contains("update the purlis plugin"), "{reason}");
+    assert!(!reason.contains("start a new chat"), "{reason}");
+    assert_eq!(chat.rule().as_deref(), Some(mergehold::REASON_NOT_ASKED));
+    assert!(chat.holds.every().is_empty());
+    // Another binary named: a plugin of another build, as before.
+    let other = std::ffi::OsStr::new("/nonexistent/purlis");
+    let reason = chat
+        .denial_with(
+            "Bash",
+            serde_json::json!({"command": "gh pr merge 12"}),
+            "default",
+            &[("CHARTER_HOOK_BINARY", other)],
+        )
+        .expect("refused");
+    assert!(reason.contains("update the purlis plugin"), "{reason}");
 }
 
 /// #6960 (c): one cell per way out `mergehold::ways_out` can name, each run as the chat or the

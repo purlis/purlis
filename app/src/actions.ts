@@ -138,6 +138,8 @@ import {
   SHORTCUTS_VIEW,
   AGENT_IDENTITY_TITLE,
   AGENT_IDENTITY_VIEW,
+  GITLAB_ACCESS_TITLE,
+  GITLAB_ACCESS_VIEW,
   DEVICES_TITLE,
   DEVICES_VIEW,
   type AskedBy,
@@ -416,6 +418,9 @@ export type Does =
   | { verb: "startFresh"; session: number }
   /** Restarts a chat on its conversation (#1462): by its number, with a tab or without. */
   | { verb: "restartChat"; session: number }
+  /** Hibernates a chat by hand (SC-4a, #7630): its program ends at a turn boundary and its
+   *  conversation is kept. Its Resume is Restart chat's. */
+  | { verb: "hibernateChat"; session: number }
   /** Moves a chat to pool `to`'s runner, or here for `null` (#2048): prepared now, it moves at
    *  the chat's next pause. */
   | { verb: "moveChat"; session: number; to: string | null }
@@ -860,6 +865,12 @@ export type Offer = {
    */
   menuOnly?: true;
   /**
+   * **The window's key for this row works here now** (#6488): set on a pane's *Links in this
+   * pane…* row while that pane is the focused one of the tab in front, the only terminal
+   * ⇧⌘L reaches. A menu draws the key on this row alone (`menuModel.ts`).
+   */
+  keyHere?: true;
+  /**
    * **A row about the chat in front, though its id names it** (#4851): the palette ranks it
    * with the rows that name nothing ({@link aboutWhatIsInFront}). A chat's Branch rows used to
    * be `worktree.merge` and `worktree.remove`, about the chat in front alone, and at fifty
@@ -1085,6 +1096,9 @@ export type Now = {
   /** Whether a chat can be restarted on its conversation: it has a Restart chat row. A shell
    *  has no conversation, and no row. */
   restartable?: (session: number) => boolean;
+  /** Whether a chat has a Hibernate row (SC-4a, #7630): not a shell, which has no conversation
+   *  to pick up. Whether it may be hibernated now is the core's answer, in words, when pressed. */
+  hibernatable?: (session: number) => boolean;
   /** Where a chat can move (#2048): each pool it may move to, or `null` for this machine, for a
    *  chat on a pool's runner. Nothing for a chat that does not move. */
   movesTo?: (session: number) => readonly (string | null)[];
@@ -1197,6 +1211,8 @@ export type Doing = {
   startFresh: (session: number) => void;
   /** Restarts the chat on its conversation, once its turn has ended. A task is asked first. */
   restartChat: (session: number) => void;
+  /** Hibernates the chat (SC-4a, #7630): the core refuses, in a sentence, where it may not. */
+  hibernateChat?: (session: number) => void;
   /** Asks for the chat to move to pool `to`'s runner, or here (#2048). */
   moveChat: (session: number, to: string | null) => void;
   /** Opens the dialog that asks `persona` for something from the chat. */
@@ -1828,6 +1844,13 @@ const RESTART_KEEPS =
 export const RESTART_NOTE = `${RESTART_KEEPS} Mid-turn, it restarts when the turn ends.`;
 
 /**
+ * The note on Hibernate chat (SC-4a, #7630): what it ends, what it keeps, and what brings the
+ * chat back. Only a chat at a turn's end, on a harness that resumes by itself, is hibernated.
+ */
+export const HIBERNATE_NOTE =
+  "Ends its program and keeps its conversation. Resume starts it again where it left off.";
+
+/**
  * The note for a chat that reports no state (docs/ui-copy.md, "Uncertainty is stated, not
  * hidden"): purlis cannot wait for the end of a turn it cannot see, so it does not say it will.
  */
@@ -1882,6 +1905,7 @@ export const SHORTCUTS_ID = "shortcuts.show";
 /** The Devices view's row (#2052). */
 export const DEVICES_ID = "devices.show";
 export const AGENT_IDENTITY_ID = "agent-identity.show";
+export const GITLAB_ACCESS_ID = "gitlab-access.show";
 /** The right sidebar's own views, as the region's palette row names them: "Inbox, Personas and
  *  Vaults" (#1738). */
 const RIGHT_VIEWS_SAID = ((names: string[]) =>
@@ -2778,6 +2802,15 @@ export function catalogue(now: Now): Offer[] {
     }),
     note: "What chats act as on GitHub. Your own sign-in never reaches a chat.",
     plus: PLUS_VIEWS,
+  });
+  // **GitLab access** (#1349): the token a chat's glab is handed, where your own sign-in is held back.
+  offers.push({
+    ...can(GITLAB_ACCESS_ID, GITLAB_ACCESS_TITLE, {
+      verb: "openView",
+      view: GITLAB_ACCESS_VIEW,
+      title: GITLAB_ACCESS_TITLE,
+    }),
+    note: "What chats use on GitLab. Your own glab sign-in never reaches a chat.",
   });
   // **Devices** (#2052): this machine and every runner it keeps, offered once it keeps a pool,
   // so nothing about runners shows before the first is added (spec #2041 story 6).
@@ -3797,6 +3830,9 @@ export function perform(offer: Offer, doing: Doing): Ran | Promise<Ran> {
     case "restartChat":
       doing.restartChat(does.session);
       return DID;
+    case "hibernateChat":
+      doing.hibernateChat?.(does.session);
+      return DID;
     case "moveChat":
       doing.moveChat(does.session, does.to);
       return DID;
@@ -4702,6 +4738,11 @@ export function restartId(session: number): string {
   return `chat.restart:${session}`;
 }
 
+/** The catalogue's id for Hibernate chat on a chat's row (SC-4a, #7630). */
+export function hibernateId(session: number): string {
+  return `chat.hibernate:${session}`;
+}
+
 /** One open chat the catalogue offers a chat's rows for (#4753), by its number. */
 export type ChatHere = { session: number; name: string };
 
@@ -4761,12 +4802,28 @@ function chatRows(now: Now): Offer[] {
   const drawn = new Set(
     now.tabs.order.flatMap((tab) => panesOf(now.tabs, tab).map((one) => one.session)),
   );
+  const focused = focusedChat(now.tabs);
+  /**
+   * **Links in this pane…** (#6332, spec #6208 D10): the links on its pane's screen, to pick
+   * from by the keyboard, on its list's Open ▸ and in the palette, as Use skill… is (#4753). A
+   * chat no pane draws has no screen to list. ⇧⌘L is said on the focused pane's row alone.
+   */
+  const linksRow = (session: number, name: string): Offer[] =>
+    drawn.has(session)
+      ? [
+          {
+            ...can(chatLinksId(session), `Links in ${name}…`, { verb: "listLinks", session }, name),
+            ...(session === focused ? { keyHere: true as const } : {}),
+          },
+        ]
+      : [];
   for (const { session, name } of chatsHere(now)) {
     // **A chat ended on purpose that its pane still shows** (#5019): the core has closed it, so
-    // only what reads it is left, its Activity and its Network. The ended band's Resume and
-    // Clear pane are its ways out, and no End… is offered a second time.
+    // only what reads it is left, its Activity and its Network, and its pane's links (#6488).
+    // The ended band's Resume and Clear pane are its ways out, and no End… is offered a second
+    // time.
     if (endedHere.has(session)) {
-      offers.push(...readingRows(session, name));
+      offers.push(...linksRow(session, name), ...readingRows(session, name));
       continue;
     }
     // A shell runs no harness: no tool with skills, no profile to ask a persona on.
@@ -4792,13 +4849,7 @@ function chatRows(now: Now): Offer[] {
       can(renameId(session), `Rename chat ${name}…`, { verb: "renameChat", session }, name),
     );
 
-    // **Links in this pane…** (#6332, spec #6208 D10): the links on its pane's screen, to pick
-    // from by the keyboard, on its list's Open ▸ and in the palette, as Use skill… is (#4753). A
-    // chat no pane draws has no screen to list.
-    if (drawn.has(session))
-      offers.push(
-        can(chatLinksId(session), `Links in ${name}…`, { verb: "listLinks", session }, name),
-      );
+    offers.push(...linksRow(session, name));
 
     // **Move…** (#4764): the keyboard's drag of the chat, as its row's drag is the pointer's.
     // Every chat's, as Rename is; ⌘⇧M on its row or its pane does the same.
@@ -4892,6 +4943,20 @@ function chatRows(now: Now): Offer[] {
         note: RESTART_NOTE,
         midTurn: { session, title: `Restart chat ${name} when this turn ends` },
         noState: { session, note: restartNoteNoState(name) },
+      });
+
+    // **Hibernate** (SC-4a, #7630): the chat's program ends at a turn boundary and its
+    // conversation is kept; Restart chat is its Resume. Where it may not be hibernated the core
+    // says why, in words, when it is pressed.
+    if (now.hibernatable?.(session) ?? false)
+      offers.push({
+        ...can(
+          hibernateId(session),
+          `Hibernate chat ${name}`,
+          { verb: "hibernateChat", session },
+          name,
+        ),
+        note: HIBERNATE_NOTE,
       });
 
     // **Start fresh** (NO-3, charter#369): for a chat the project's instructions changed under

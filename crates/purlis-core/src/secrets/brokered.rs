@@ -372,7 +372,12 @@ pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) 
     if vaults_off(ctx) {
         return None;
     }
-    refused_where(ctx, vault, reader, &|| super::setup::sandboxed_chat(ctx))
+    let refused = refused_where(ctx, vault, reader, &|| super::setup::sandboxed_chat(ctx))?;
+    // Named as its cause where only an unaccepted policy runs the check (ADR 0130 §7).
+    Some(match vaults_unaccepted(ctx) {
+        Some(cause) => Markup::lines([refused, Markup::from(format!("  {cause}"))]),
+        None => refused,
+    })
 }
 
 /// **Whether the project's `[policy]` turns the `vaults` family off** (Q308, Q308a; item 4 of
@@ -1784,6 +1789,9 @@ pub struct Asker {
     /// The app's own environment, which every value is resolved in.
     pub env: Env,
     pub chat: u32,
+    /// Its id (ADR 0066), as the app recorded it: what everything purlis names on disk of what
+    /// it was handed is sealed for (#7129). `None` for a chat given none, which is handed nothing.
+    pub id: Option<String>,
     /// The persona the app started the chat as.
     pub persona: Option<String>,
     /// The chat's folder, which its sandbox lets it write.
@@ -2003,14 +2011,53 @@ pub fn authorise(ctx: &Ctx, persona: Option<&str>, vault: &str) -> Result<(), St
             .map(|_| ())
             .map_err(|e| e.message.to_string());
     }
+    // The check's own refusals name an unaccepted policy where that alone runs it (ADR 0130 §7);
+    // a vault the project does not register is refused whatever the policy.
+    match authorise_tagged(ctx, persona, vault) {
+        Err(Refused::ByTheCheck(why)) => Err(match vaults_unaccepted(ctx) {
+            Some(cause) => format!("{why} {cause}"),
+            None => why,
+        }),
+        Err(Refused::Unregistered(why)) => Err(why),
+        Ok(()) => Ok(()),
+    }
+}
+
+/// Why [`authorise_tagged`] refused: the `vaults` family's check, or a vault the project does not
+/// register, which no policy opens.
+enum Refused {
+    ByTheCheck(String),
+    Unregistered(String),
+}
+
+/// **Why the `vaults` family's check runs, where an unaccepted policy is the cause** (ADR 0130 §7):
+/// the family is enforced only because this machine's acceptance of the project's policy is
+/// Broken or Waiting, and no administrator's lock holds the vault to its persona. Its sentence.
+pub fn vaults_unaccepted(ctx: &Ctx) -> Option<String> {
+    use crate::enforcement::{self, Family, Mode};
+    if crate::sandbox::policy::Locks::of(&ctx.root).forbids_vault_grants() {
+        return None;
+    }
+    let policy = enforcement::in_force(&ctx.root).for_chat(ctx.policy.as_deref());
+    (policy.mode(Family::Vaults) == Mode::Enforce && policy.unaccepted(Family::Vaults)).then(|| {
+        format!(
+            "Refused because {}",
+            enforcement::unaccepted_said(enforcement::AcceptedOn::ThisMachine)
+        )
+    })
+}
+
+/// [`authorise`]'s check of a vault the project registers, with the `vaults` family enforced.
+fn authorise_tagged(ctx: &Ctx, persona: Option<&str>, vault: &str) -> Result<(), Refused> {
     let Some(persona) = persona.filter(|p| !p.is_empty()) else {
-        return Err(format!(
+        return Err(Refused::ByTheCheck(format!(
             "this chat runs as no persona, so purlis hands it no vault. Start the chat as the \
              persona that vault '{vault}' is tagged with."
-        ));
+        )));
     };
-    let doc = registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
-    let registered = registry::vault_in(&doc, vault).map_err(|e| e.message.to_string())?;
+    let unregistered = |e: super::VaultError| Refused::Unregistered(e.message.to_string());
+    let doc = registry::load_registry(ctx).map_err(unregistered)?;
+    let registered = registry::vault_in(&doc, vault).map_err(unregistered)?;
     let tagged = registry::vaults_for_persona(&doc, persona);
     if tagged.iter().any(|t| t == vault) || allowed_here(ctx, persona, vault) {
         return Ok(());
@@ -2022,10 +2069,10 @@ pub fn authorise(ctx: &Ctx, persona: Option<&str>, vault: &str) -> Result<(), St
     };
     let routes = routes(ctx, &not);
     if cmd::persona_vault(ctx, persona).is_ok_and(|declared| declared == vault) {
-        return Err(format!(
+        return Err(Refused::ByTheCheck(format!(
             "persona '{persona}' names vault '{vault}' in its own file, and a chat can edit that \
              file, so purlis does not open the vault for a chat on that alone. {routes}"
-        ));
+        )));
     }
     let theirs = if tagged.is_empty() {
         "none is tagged with it".to_owned()
@@ -2039,10 +2086,10 @@ pub fn authorise(ctx: &Ctx, persona: Option<&str>, vault: &str) -> Result<(), St
                 .join(", ")
         )
     };
-    Err(format!(
+    Err(Refused::ByTheCheck(format!(
         "vault '{vault}' is not one persona '{persona}' may use, so purlis did not open it \
          ({theirs}). {routes}"
-    ))
+    )))
 }
 
 /// One vault as `purlis vault list` shows it to a sandboxed chat (#1430): its name, the
@@ -2629,7 +2676,7 @@ fn granted_ready(
         Some(confines) => {
             Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
         }
-        None => Ctx::new(&asker.root, asker.env.clone()),
+        None => Ctx::new(&asker.root, asker.env.clone()).for_a_chat(),
     };
     (ready, ctx)
 }
@@ -2656,6 +2703,7 @@ pub fn fill_value(
     super::handedto::remember(
         &asker.root,
         asker.chat,
+        asker.id.as_deref(),
         &super::handedto::Entry::new(vault, key),
         value.expose(),
     )
@@ -2742,10 +2790,12 @@ pub fn fill_code(
         .map_err(|why| format!("{key} in vault '{vault}' {why}, so purlis filled nothing"))?;
     drop(value);
     let code = purlis_session_protocol::browsing::Secret::new(seed.code_now());
-    // A code is made for now from its seed: a launch after a crash cannot know it (#6309).
+    // A code is made for now from its seed, once: named so (#6309), and found after a crash by
+    // what is named of it (#6907).
     super::handedto::remember(
         &asker.root,
         asker.chat,
+        asker.id.as_deref(),
         &super::handedto::Entry::new(vault, key).in_form(super::handedto::Form::Unrepeatable),
         code.expose(),
     )
@@ -2759,7 +2809,7 @@ fn reading_for(asker: &Asker) -> Ctx {
         Some(confines) => {
             Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
         }
-        None => Ctx::new(&asker.root, asker.env.clone()),
+        None => Ctx::new(&asker.root, asker.env.clone()).for_a_chat(),
     };
     ctx.under_chain(asker.policy.as_deref())
 }
@@ -2880,8 +2930,14 @@ fn read_login(
         .chain([(pass_key, &password)]);
     for (key, value) in handed {
         let entry = super::handedto::Entry::new(vault, key);
-        super::handedto::remember(&asker.root, asker.chat, &entry, value.expose())
-            .map_err(|why| not_named_said(&why))?;
+        super::handedto::remember(
+            &asker.root,
+            asker.chat,
+            asker.id.as_deref(),
+            &entry,
+            value.expose(),
+        )
+        .map_err(|why| not_named_said(&why))?;
     }
     Ok((
         LogIn {
@@ -3009,7 +3065,7 @@ fn login_ready(
         Some(confines) => {
             Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
         }
-        None => Ctx::new(&asker.root, asker.env.clone()),
+        None => Ctx::new(&asker.root, asker.env.clone()).for_a_chat(),
     };
     authorise(&ctx, asker.persona.as_deref(), &ready.tool.vault)?;
     Ok((ready, ctx))
@@ -3055,6 +3111,7 @@ fn refused_block(asker: &Asker, vault: &str, target: String) -> RunBlocked {
             target: Some(target),
             read_back: false,
             suggested: None,
+            purlis_command: None,
         },
         vault: vault.to_owned(),
     }
@@ -3609,7 +3666,7 @@ pub(crate) fn serve_recorded(
         }
         let _ = send(writer, &Frame::Refused { why, code });
     };
-    let ctx = Ctx::new(&asker.root, asker.env.clone());
+    let ctx = Ctx::new(&asker.root, asker.env.clone()).for_a_chat();
     let mut command = wanted.command.clone();
     if command.first().is_some_and(|c| c == "--") {
         command.remove(0);
@@ -4277,7 +4334,13 @@ pub(crate) fn serve_recorded(
     // Whatever the run prints of them, the chat's kept screen never keeps one (#6309).
     for one in &prepared.values {
         let entry = super::handedto::Entry::new(&wanted.vault, &one.key).in_form(one.form.clone());
-        if let Err(why) = super::handedto::remember(&asker.root, asker.chat, &entry, &one.value) {
+        if let Err(why) = super::handedto::remember(
+            &asker.root,
+            asker.chat,
+            asker.id.as_deref(),
+            &entry,
+            &one.value,
+        ) {
             return refuse(&mut *writer, 1, not_named_said(&why));
         }
     }
@@ -4410,6 +4473,7 @@ pub(crate) fn serve_recorded(
         chat_writes: Vec::new(),
         kept: super::identity::Kept::default(),
         policy: asker.policy.clone(),
+        for_a_chat: true,
     };
     exec::record(
         &ctx_traced,

@@ -36,8 +36,8 @@ fn a_project_that_says_nothing_runs_the_watch_template() {
                 Family::Trust => Mode::Enforce,
                 // The person's own credential files are theirs at the floor (Q325).
                 Family::CredentialFiles => Mode::Off,
-                // The floor is a wrap.
-                Family::Sandbox => Mode::Enforce,
+                // The floor is a wrap, and `ports` takes no log (Q328).
+                Family::Sandbox | Family::Ports => Mode::Enforce,
                 _ => Mode::Log,
             };
             assert_eq!(settings.mode(family), want, "{}", family.key());
@@ -60,15 +60,18 @@ fn each_template_runs_each_family_as_the_ruling_says() {
             "{}",
             family.key()
         );
-        let hold =
-            if secret.contains(&family) || family == Family::GuardsMerge || family == Family::Trust
-            {
-                Mode::Enforce
-            } else {
-                Mode::Log
-            };
+        let hold = if secret.contains(&family)
+            || family == Family::GuardsMerge
+            || family == Family::Ports
+            || family == Family::Trust
+        {
+            Mode::Enforce
+        } else {
+            Mode::Log
+        };
         assert_eq!(Template::Hold.mode(family), hold, "{}", family.key());
         let team = if secret.contains(&family)
+            || family == Family::Ports
             || family.added_by_q308b()
             || matches!(
                 family,
@@ -456,7 +459,11 @@ fn the_committed_file_is_read_at_head_not_as_the_working_tree_has_it() {
 #[test]
 fn the_resolved_policy_reads_back_as_it_was_spelled_and_a_missing_family_is_enforced() {
     let resolved = Resolved::of(&said("[policy]\ntemplate = \"team\"\n"), &Locks::none());
-    assert_eq!(Resolved::parse(&resolved.spelled()), resolved);
+    // The spelling carries no opt-in (`team` enforces `guards.merge`, so has none), so compare it.
+    assert_eq!(
+        Resolved::parse(&resolved.spelled()).spelled(),
+        resolved.spelled()
+    );
     assert_eq!(
         Resolved::parse("network=off").mode(Family::GuardsGit),
         Mode::Enforce
@@ -610,7 +617,21 @@ fn an_acceptance_removed_after_one_was_kept_reads_as_strict() {
     object.remove("policy_accepted");
     object.remove("policy_seal");
     std::fs::write(&file, doc.to_string()).expect("written");
-    assert_eq!(in_force(root.path()), Resolved::strict());
+    assert_eq!(in_force(root.path()), broken_accepted());
+}
+
+#[test]
+fn an_acceptance_removed_while_the_seal_key_does_not_read_is_broken_never_none() {
+    // #7153: with no key nothing verifies, but the keyring's marker still says one was kept, so
+    // a record taken away is broken, never the shipped default, and no accepted deny is dropped.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    std::fs::remove_file(machine_file(root.path())).expect("the record gone");
+    crate::secrets::seal::set_for_this_test(None);
+    let record = crate::sandbox::local::policy_accepted_record(root.path());
+    crate::secrets::seal::set_for_this_test(Some(vec![7; 32]));
+    assert_eq!(record, crate::sandbox::local::PolicyAccepted::Broken);
 }
 
 #[test]
@@ -634,7 +655,7 @@ fn an_older_sealed_acceptance_put_back_reads_as_strict() {
         "[policy]\ntemplate = \"open\"\n",
     )
     .expect("loosened");
-    assert_eq!(in_force(root.path()), Resolved::strict());
+    assert_eq!(in_force(root.path()), broken_accepted());
 }
 
 #[test]
@@ -700,7 +721,7 @@ fn a_whole_machine_file_put_back_from_before_a_tightening_reads_as_strict() {
         "[policy]\ntemplate = \"watch\"\n",
     )
     .expect("loosened");
-    assert_eq!(in_force(root.path()), Resolved::strict());
+    assert_eq!(in_force(root.path()), broken_accepted());
 }
 
 /// A pair nothing covers, as a cross-persona dispatch from `root` would be judged.
@@ -729,9 +750,11 @@ fn a_record_removed_under_its_anchor_refuses_every_dispatch_across_personas() {
     object.remove("policy_seal");
     std::fs::write(&file, doc.to_string()).expect("written");
     assert!(broken(root.path()));
+    // Refused as strict mode's, by the unaccepted policy (ADR 0130 §7), never blamed on the
+    // nevers, which the broken acceptance alone leaves unread.
     assert_eq!(
         a_dispatch_across_personas(root.path()),
-        crate::dispatchgrant::Covers::Unread
+        crate::dispatchgrant::Covers::NeversUnaccepted
     );
     // The press, on the committed file as it stands, mends it.
     press(root.path(), &digest_of(root.path())).expect("pressed again");
@@ -791,10 +814,10 @@ fn a_git_folder_copied_aside_and_back_is_no_fresh_install() {
         "a new clone key"
     );
     assert!(broken(root.path()));
-    assert_eq!(in_force(root.path()), Resolved::strict());
+    assert_eq!(in_force(root.path()), broken_accepted());
     assert_eq!(
         a_dispatch_across_personas(root.path()),
-        crate::dispatchgrant::Covers::Unread
+        crate::dispatchgrant::Covers::NeversUnaccepted
     );
 }
 
@@ -866,8 +889,7 @@ fn a_sealed_acceptance_whose_anchor_is_gone_is_broken() {
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
     crate::secrets::seal::forget_kept_for_this_test();
     assert!(broken(root.path()));
-    // Every family enforced, and every dispatch across personas denied.
-    assert_eq!(in_force(root.path()), Resolved::strict());
+    assert_eq!(in_force(root.path()), broken_accepted());
 }
 
 #[test]
@@ -879,7 +901,202 @@ fn a_seal_key_another_program_made_breaks_every_acceptance_until_the_next_press(
     let found = (broken(never.path()), in_force(never.path()));
     crate::secrets::seal::set_foreign_for_this_test(false);
     assert!(found.0, "a project never pressed is broken too");
-    assert_eq!(found.1, Resolved::strict());
+    assert_eq!(found.1, broken_accepted());
+}
+
+// ---- The Q308 follow-up, item 1: the sandbox level ------------------------------------------
+
+#[test]
+fn the_sandbox_level_is_the_sandbox_mode_else_the_templates() {
+    for (text, level) in [
+        ("", SandboxLevel::Floor),
+        ("[policy]\ntemplate = \"open\"\n", SandboxLevel::Off),
+        ("[policy]\ntemplate = \"hold\"\n", SandboxLevel::Floor),
+        ("[policy]\ntemplate = \"team\"\n", SandboxLevel::Full),
+        // Strict leaves it to `[sandbox]`, as before Q308: the floor where it names no mode.
+        ("[policy]\ntemplate = \"strict\"\n", SandboxLevel::Floor),
+        (
+            "[policy]\ntemplate = \"strict\"\n[sandbox]\nmode = \"on\"\n",
+            SandboxLevel::Full,
+        ),
+        (
+            "[policy]\ntemplate = \"open\"\n[sandbox]\nmode = \"on\"\n",
+            SandboxLevel::Full,
+        ),
+        (
+            "[policy]\ntemplate = \"team\"\n[sandbox]\nmode = \"off\"\n",
+            SandboxLevel::Off,
+        ),
+        // `never` refuses the team's off, and a mode purlis cannot read is `on`.
+        (
+            "[sandbox]\nmode = \"off\"\npolicy = \"never\"\n",
+            SandboxLevel::Full,
+        ),
+        ("[sandbox]\nmode = \"maybe\"\n", SandboxLevel::Full),
+        // A bad `[policy]` value is strict, and `[sandbox]` still decides.
+        ("[policy]\ntemplate = \"lenient\"\n", SandboxLevel::Floor),
+    ] {
+        let settings = said(text);
+        assert_eq!(settings.level(), level, "{text:?}");
+        assert_eq!(
+            settings.mode(Family::Sandbox),
+            mode_of_level(level),
+            "{text:?}"
+        );
+        assert_eq!(
+            Resolved::of(&settings, &Locks::none()).level(),
+            level,
+            "{text:?}"
+        );
+    }
+}
+
+#[test]
+fn the_local_file_can_raise_the_level_but_never_lower_it() {
+    let raised = plane(
+        "[policy]\ntemplate = \"watch\"\n",
+        Some("[policy]\ntemplate = \"team\"\n"),
+    );
+    assert_eq!(Settings::read(raised.path()).level(), SandboxLevel::Full);
+    let lowered = plane(
+        "[policy]\ntemplate = \"team\"\n",
+        Some("[policy]\ntemplate = \"open\"\n[sandbox]\nmode = \"off\"\n"),
+    );
+    assert_eq!(Settings::read(lowered.path()).level(), SandboxLevel::Full);
+}
+
+#[test]
+fn a_lock_on_the_sandbox_keeps_a_wrap_whatever_the_template() {
+    let open = said("[policy]\ntemplate = \"open\"\n");
+    let locks = Locks::locking_enforcement(Family::Sandbox);
+    let resolved = Resolved::of(&open, &locks);
+    assert_eq!(resolved.level(), SandboxLevel::Floor);
+    assert_eq!(resolved.mode(Family::Sandbox), Mode::Enforce);
+}
+
+#[test]
+fn the_level_reads_back_as_spelled_and_an_acceptance_from_before_it_is_the_floor() {
+    let team = Resolved::of(&said("[policy]\ntemplate = \"team\"\n"), &Locks::none());
+    assert!(
+        team.spelled().contains("sandbox=full"),
+        "{}",
+        team.spelled()
+    );
+    assert_eq!(Resolved::parse(&team.spelled()).spelled(), team.spelled());
+    // #6992 kept the sandbox as a mode: `enforce` was a wrap, at least the floor.
+    assert_eq!(
+        Resolved::parse("sandbox=enforce").level(),
+        SandboxLevel::Floor
+    );
+    assert_eq!(Resolved::parse("sandbox=off").level(), SandboxLevel::Off);
+    // A level it cannot read is the strictest.
+    assert_eq!(Resolved::parse("network=off").level(), SandboxLevel::Full);
+}
+
+#[test]
+fn a_process_that_is_not_the_app_never_runs_a_level_looser_than_the_file_says() {
+    let _home = OwnConfigHome::new();
+    let named = plane("[policy]\ntemplate = \"open\"\n", None);
+    let open = Resolved::of(&said("[policy]\ntemplate = \"open\"\n"), &Locks::none());
+    let team = Resolved::of(&said("[policy]\ntemplate = \"team\"\n"), &Locks::none());
+    crate::secrets::seal::set_for_this_test(None);
+    set_in_the_app_for_this_test(false);
+    answered_by_the_app(Some(open));
+    let under_open = sandbox_level(named.path(), || SandboxLevel::Full);
+    answered_by_the_app(Some(team));
+    let under_team = sandbox_level(named.path(), || SandboxLevel::Floor);
+    answered_by_the_app(None);
+    let unanswered = sandbox_level(named.path(), || SandboxLevel::Off);
+    set_in_the_app_for_this_test(true);
+    crate::secrets::seal::set_for_this_test(Some(vec![7; 32]));
+    assert_eq!(under_open, SandboxLevel::Full);
+    assert_eq!(under_team, SandboxLevel::Full);
+    // No answer is strict: never below the floor, whatever the file says.
+    assert_eq!(unanswered, SandboxLevel::Floor);
+}
+
+#[test]
+fn a_loosened_level_waits_for_the_press_and_the_window_is_told_it_by_its_words() {
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"team\"\n", None);
+    assert_eq!(at_start(root.path()).level(), SandboxLevel::Full);
+    std::fs::write(
+        root.path().join("charter.toml"),
+        "[policy]\ntemplate = \"watch\"\n",
+    )
+    .expect("loosened");
+    assert_eq!(at_start(root.path()).level(), SandboxLevel::Full);
+    let standing = standing(root.path());
+    assert_eq!(
+        standing.level,
+        Some((SandboxLevel::Full, SandboxLevel::Floor))
+    );
+    assert!(
+        standing
+            .waiting
+            .iter()
+            .all(|(family, _, _)| *family != Family::Sandbox)
+    );
+    press(root.path(), &standing.digest).expect("pressed");
+    assert_eq!(at_start(root.path()).level(), SandboxLevel::Floor);
+    assert_eq!(level_waiting(root.path()), None);
+}
+
+#[test]
+fn ports_are_never_logged_the_kernel_tells_nothing_it_let_through() {
+    // Ruling Q328: `ports` is off or enforce; `log` is enforced, and said.
+    let settings = said("[policy]\ntemplate = \"open\"\nports = \"log\"\n");
+    assert_eq!(settings.mode(Family::Ports), Mode::Enforce);
+    assert!(!settings.refused.is_empty());
+    // Only `ports` is enforced: the rest of the project's policy stands (the review of #7105).
+    assert_eq!(settings.template, Template::Open);
+    assert_eq!(settings.mode(Family::Network), Mode::Off);
+    assert_eq!(settings.mode(Family::GuardsGit), Mode::Off);
+    // A value purlis cannot read still makes the whole policy strict.
+    let unread = said("[policy]\ntemplate = \"open\"\nports = \"loud\"\n");
+    assert_eq!(unread.template, Template::Strict);
+    for template in Template::ALL {
+        assert_ne!(
+            template.mode(Family::Ports),
+            Mode::Log,
+            "{}",
+            template.word()
+        );
+    }
+    assert_eq!(
+        said("[policy]\nports = \"off\"\n").mode(Family::Ports),
+        Mode::Off
+    );
+}
+
+#[test]
+fn a_team_off_answer_the_project_never_committed_never_lowers_the_accepted_level() {
+    // The review of #7105: the team's-off answer is kept unsealed, so it lowers the sealed level
+    // only for an off the project committed and still says, which this person accepted.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"team\"\n", None);
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    assert_eq!(accepted(root.path()).level(), SandboxLevel::Full);
+    crate::sandbox::local::answer_team_off(
+        root.path(),
+        crate::sandbox::local::TeamOffAnswer { accepted: true },
+    )
+    .expect("an answer written beside the seal");
+    assert_eq!(accepted(root.path()).level(), SandboxLevel::Full);
+    assert_eq!(at_start(root.path()).level(), SandboxLevel::Full);
+}
+
+#[test]
+fn a_broken_acceptance_runs_the_full_sandbox_never_the_floor() {
+    // The review of #7105: a broken acceptance is never looser than the full sandbox it may have
+    // kept.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"team\"\n", None);
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    crate::secrets::seal::forget_kept_for_this_test();
+    assert!(broken(root.path()));
+    assert_eq!(accepted(root.path()).level(), SandboxLevel::Full);
+    assert_eq!(accepted(root.path()), broken_accepted());
 }
 
 /// **The `vaults` family** (item 4 of the Q308 follow-up): off or enforce only. `open`, or
@@ -1066,6 +1283,18 @@ fn a_project_that_named_guards_git_keeps_the_plane_roots_arms_as_strict_after_th
     }
     // An administrator's lock on `guards.git` held A3 and A3b at enforce before the move, and
     // still does, whatever the project says of either family (the re-review of #7104).
+    assert_eq!(
+        under(
+            &said("[policy]\nguards.shape = \"off\"\n"),
+            &Locks::parse(
+                r#"{"enforcement": ["guards.git"]}"#,
+                Path::new("/etc/purlis/policy.json")
+            ),
+            Family::GuardsShape
+        ),
+        Mode::Off,
+        "a lock on guards.git leaves guards.shape the project's"
+    );
     let git_locked = Locks::parse(
         r#"{"enforcement": ["guards.git"]}"#,
         Path::new("/etc/purlis/policy.json"),
@@ -1074,10 +1303,18 @@ fn a_project_that_named_guards_git_keeps_the_plane_roots_arms_as_strict_after_th
         "[policy]\n",
         "[policy]\ntemplate = \"open\"\n",
         "[policy]\nguards.git = \"off\"\nguards.plane = \"off\"\n",
+        "[policy]\nguards.shape = \"off\"\n",
     ] {
         assert_eq!(
             under(&said(text), &git_locked, Family::GuardsPlane),
             Mode::Enforce,
+            "{text}"
+        );
+        // Only `guards.plane` moves with it: `guards.shape` stays the project's to switch, so a
+        // refused lock file (which locks everything) cannot pass this test (#7155).
+        assert_eq!(
+            under(&said(text), &git_locked, Family::GuardsShape),
+            under(&said(text), &Locks::none(), Family::GuardsShape),
             "{text}"
         );
     }
@@ -1187,8 +1424,13 @@ fn a_head_git_could_not_read_once_is_never_kept_as_accepted() {
     let ran = git_in(root.path(), &["symbolic-ref", "HEAD", "refs/heads/not-yet"]);
     assert!(ran.status.success(), "{ran:?}");
     assert_eq!(in_force(root.path()), Resolved::strict());
+    assert!(in_force(root.path()).denies().is_all());
     let ran = git_in(root.path(), &["symbolic-ref", "HEAD", branch.trim()]);
     assert!(ran.status.success(), "{ran:?}");
+    // Every dispatch across personas was denied while it could not read, and that deny is no
+    // more kept than the modes are (#7153): nothing is denied, and no deny waits to be lifted.
+    assert!(in_force(root.path()).denies().is_empty());
+    assert!(standing(root.path()).lifted.is_empty());
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
     assert!(waiting(root.path()).is_empty());
 }
@@ -1227,8 +1469,8 @@ fn a_log_line_is_not_a_read_of_the_whole_log() {
 
 #[test]
 fn a_press_with_a_seal_key_another_program_made_says_how_to_recover_and_then_accepts() {
-    // #7073: the app cannot delete an item another program owns, so the press says which item
-    // to delete and how; once it is gone, the next press makes a key and accepts.
+    // #7073, #7714: Accept says when this happens without claiming who made the item, and how
+    // to recover by hand; once the item is gone, the next press makes a key and accepts.
     let _home = OwnConfigHome::new();
     let root = plane("[policy]\ntemplate = \"open\"\n", None);
     crate::secrets::seal::set_foreign_for_this_test(true);
@@ -1237,10 +1479,945 @@ fn a_press_with_a_seal_key_another_program_made_says_how_to_recover_and_then_acc
     let why = refused.expect_err("nothing accepted").to_string();
     assert_eq!(why, crate::secrets::seal::FOREIGN_KEY);
     assert!(
-        why.contains("security delete-generic-password -s purlis-seal"),
+        why.contains("This happens after an update that macOS treats as a different app"),
         "{why}"
     );
+    assert!(
+        !why.contains("earlier build"),
+        "never claims the origin: {why}"
+    );
+    assert!(why.contains("Keychain Access"), "{why}");
     press(root.path(), &digest_of(root.path())).expect("accepted once the item is gone");
     assert!(!broken(root.path()));
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
+}
+
+// ---- lineage and protected branches: an allowance and a list read as `[policy]` is ---------------
+
+/// `text` written as the plane's committed file and committed.
+fn commit_file(root: &Path, text: &str) {
+    std::fs::write(root.join("charter.toml"), text).expect("written");
+    for args in [
+        &["add", "charter.toml"][..],
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "x",
+        ],
+    ] {
+        let ran = git_in(root, args);
+        assert!(ran.status.success(), "{args:?}: {ran:?}");
+    }
+}
+
+const DENY_LINEAGE: &str = "[policy]\nlineage = \"deny\"\n";
+
+#[test]
+fn lineage_is_on_where_nothing_is_set_and_guards_forge_has_no_say_in_it() {
+    let _home = OwnConfigHome::new();
+    for text in [
+        "",
+        "[policy]\n",
+        "[policy]\nlineage = \"allow\"\n",
+        "[policy]\nguards.forge = \"off\"\n",
+        "[policy]\nguards.forge = \"log\"\n",
+        "[policy]\nguards.forge = \"enforce\"\n",
+        "[policy]\ntemplate = \"strict\"\n",
+    ] {
+        let root = a_committed_plane(text);
+        assert!(lineage_in_force(root.path()), "{text}");
+    }
+}
+
+#[test]
+fn tightening_guards_forge_from_off_to_log_does_not_turn_lineage_on() {
+    let _home = OwnConfigHome::new();
+    for forge in ["off", "log", "enforce"] {
+        let root = a_committed_plane(&format!("{DENY_LINEAGE}guards.forge = \"{forge}\"\n"));
+        assert!(!lineage_in_force(root.path()), "{forge}");
+    }
+}
+
+#[test]
+fn a_commit_that_denies_lineage_takes_effect_at_once() {
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane("[policy]\n");
+    assert!(lineage_in_force(root.path()));
+    commit_file(root.path(), DENY_LINEAGE);
+    assert!(!lineage_in_force(root.path()));
+    assert!(!standing(root.path()).lineage_waiting);
+}
+
+#[test]
+fn a_commit_that_allows_lineage_again_waits_for_the_press() {
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane(DENY_LINEAGE);
+    assert!(!lineage_in_force(root.path()));
+    commit_file(root.path(), "[policy]\n");
+    assert!(!lineage_in_force(root.path()), "still denied until pressed");
+    let waiting = standing(root.path());
+    assert!(waiting.lineage_waiting);
+    press(root.path(), &waiting.digest).expect("pressed");
+    assert!(lineage_in_force(root.path()));
+    assert!(!standing(root.path()).lineage_waiting);
+}
+
+#[test]
+fn a_lock_holds_lineage_off_and_a_refused_lock_file_does_too() {
+    let policy = std::path::Path::new("/etc/purlis/policy.json");
+    let held = Locks::parse(r#"{"sandbox": {"lineage": false}}"#, policy);
+    assert!(held.forbids_lineage());
+    assert!(!Resolved::of(&said(""), &held).lineage());
+    assert!(!Locks::none().forbids_lineage());
+    assert!(Resolved::of(&said(""), &Locks::none()).lineage());
+    for text in [r#"{"sandbox": {"lineage": true}}"#, r#"{"sandbox": {}}"#] {
+        assert!(!Locks::parse(text, policy).forbids_lineage(), "{text}");
+    }
+    let refused = Locks::parse("not json", policy);
+    assert!(refused.forbids_lineage());
+    assert!(!Resolved::of(&said(""), &refused).lineage());
+}
+
+#[test]
+fn a_value_purlis_cannot_read_means_no_lineage() {
+    for text in [
+        "[policy]\nlineage = \"maybe\"\n",
+        "[policy]\nlineage = true\n",
+        "[policy]\nlineage = 1\n",
+        "[policy]\nlineage = [\"allow\"]\n",
+        "[policy]\ntemplate = \"loose\"\n",
+        "[policy]\nnot_a_family = \"off\"\n",
+        "policy = [unclosed\n",
+        "policy = 3\n",
+    ] {
+        let settings = said(text);
+        assert!(settings.lineage_denied, "{text}");
+        assert!(!Resolved::of(&settings, &Locks::none()).lineage(), "{text}");
+    }
+    assert!(!said("[policy]\nlineage = \"allow\"\n").lineage_denied);
+}
+
+#[test]
+fn a_head_git_cannot_read_means_no_lineage_and_is_never_kept() {
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane("[policy]\n");
+    assert!(lineage_in_force(root.path()));
+    std::fs::remove_file(the_files_blob(root.path())).expect("the blob gone");
+    assert!(!lineage_in_force(root.path()));
+}
+
+#[test]
+fn the_local_file_can_deny_lineage_and_never_allow_it() {
+    let denied = plane(DENY_LINEAGE, Some("[policy]\nlineage = \"allow\"\n"));
+    assert!(Settings::read(denied.path()).lineage_denied);
+    let local = plane("[policy]\n", Some(DENY_LINEAGE));
+    assert!(Settings::read(local.path()).lineage_denied);
+}
+
+#[test]
+fn lineage_in_the_working_tree_alone_changes_nothing() {
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane(DENY_LINEAGE);
+    assert!(!lineage_in_force(root.path()));
+    std::fs::write(root.path().join("charter.toml"), "[policy]\n").expect("edited, not committed");
+    assert!(!lineage_in_force(root.path()));
+}
+
+const PROTECT: &str = "[risk]\nprotected_branches = [\"m75-policy\", \"phase-1-proven\"]\n";
+
+#[test]
+fn the_protected_branches_are_read_from_head() {
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane(PROTECT);
+    assert_eq!(
+        protected_branches_in_force(root.path()),
+        ["m75-policy", "phase-1-proven"]
+    );
+}
+
+#[test]
+fn a_protected_list_edited_or_broken_in_the_working_tree_loses_nothing() {
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane(PROTECT);
+    assert_eq!(protected_branches_in_force(root.path()).len(), 2);
+    for edited in [
+        "",
+        "[risk]\nprotected_branches = [\"x\"]\n",
+        "risk = [unclosed\n",
+    ] {
+        std::fs::write(root.path().join("charter.toml"), edited).expect("not committed");
+        assert_eq!(
+            protected_branches_in_force(root.path()),
+            ["m75-policy", "phase-1-proven"],
+            "{edited}"
+        );
+    }
+}
+
+#[test]
+fn a_commit_that_drops_a_protection_waits_for_the_press_and_one_that_adds_holds_at_once() {
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane(PROTECT);
+    assert_eq!(protected_branches_in_force(root.path()).len(), 2);
+    // A name added: at once.
+    commit_file(
+        root.path(),
+        "[risk]\nprotected_branches = [\"m75-policy\", \"phase-1-proven\", \"lts/*\"]\n",
+    );
+    assert_eq!(
+        protected_branches_in_force(root.path()),
+        ["lts/*", "m75-policy", "phase-1-proven"]
+    );
+    // A name dropped: held until the person presses.
+    commit_file(
+        root.path(),
+        "[risk]\nprotected_branches = [\"m75-policy\"]\n",
+    );
+    assert_eq!(protected_branches_in_force(root.path()).len(), 3);
+    let waiting = standing(root.path());
+    assert_eq!(waiting.protection_lifted, ["lts/*", "phase-1-proven"]);
+    press(root.path(), &waiting.digest).expect("pressed");
+    assert_eq!(protected_branches_in_force(root.path()), ["m75-policy"]);
+}
+
+#[test]
+fn a_head_git_cannot_read_keeps_the_accepted_protected_list() {
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane(PROTECT);
+    assert_eq!(protected_branches_in_force(root.path()).len(), 2);
+    std::fs::remove_file(the_files_blob(root.path())).expect("the blob gone");
+    assert_eq!(
+        protected_branches_in_force(root.path()),
+        ["m75-policy", "phase-1-proven"]
+    );
+}
+
+#[test]
+fn the_protected_list_and_the_lineage_denial_are_kept_and_read_back() {
+    let settings = said(&format!("{DENY_LINEAGE}{PROTECT}"));
+    let resolved = Resolved::of(&settings, &Locks::none());
+    let kept = resolved.as_kept_for_test();
+    let back = Resolved::of_kept_for_test(&kept);
+    assert!(!resolved.lineage());
+    assert!(!back.lineage());
+    assert_eq!(back.protected_branches(), ["m75-policy", "phase-1-proven"]);
+    // An acceptance from before either key existed reads as allowed, with nothing protected.
+    let old = Resolved::of(&said(""), &Locks::none()).as_kept_for_test();
+    let read = Resolved::of_kept_for_test(&old);
+    assert!(read.lineage());
+    assert!(read.protected_branches().is_empty());
+}
+
+// ---- an update's foreign seal key: one press makes a new key and accepts (#7714) ----------------
+
+/// A plane whose acceptance of `committed` was pressed and sealed with the key of now.
+fn accepted_plane(committed: &str) -> tempfile::TempDir {
+    let root = plane(committed, None);
+    press(root.path(), &digest_of(root.path())).expect("accepted");
+    root
+}
+
+#[test]
+fn a_press_with_an_updates_foreign_key_makes_a_new_key_and_accepts_what_was_shown() {
+    // #7714: after an update macOS takes for another program, the old build owns the seal's
+    // key. The one press replaces it and seals this plane's acceptance of what was shown.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    let shown = standing(root.path());
+    assert!(shown.key_foreign, "the window is told the key is foreign");
+    assert!(broken(root.path()));
+    press_with_new_key(root.path(), &shown.digest).expect("a new key, and accepted");
+    assert!(!crate::secrets::seal::key_is_foreign());
+    assert!(matches!(
+        crate::sandbox::local::policy_accepted_record(root.path()),
+        crate::sandbox::local::PolicyAccepted::Held(_)
+    ));
+    assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
+    let after = standing(root.path());
+    assert!(!after.key_foreign && !after.unsealed && !after.new_key);
+}
+
+#[test]
+fn the_new_key_press_still_accepts_only_what_was_shown() {
+    // The digest rule stays: a file that changed since it was shown accepts nothing, and no
+    // key is replaced for it.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    let refused = press_with_new_key(root.path(), "not what was shown");
+    assert!(refused.is_err());
+    assert!(crate::secrets::seal::key_is_foreign(), "no key replaced");
+    crate::secrets::seal::set_foreign_for_this_test(false);
+}
+
+#[test]
+fn another_plane_sealed_with_the_old_key_reads_as_accept_again_with_why() {
+    // #7714: the other planes' seals no longer verify under the new key. Each reads as needing
+    // acceptance again because purlis made a new key, never as a record edited by something.
+    let _home = OwnConfigHome::new();
+    let here = accepted_plane("[policy]\ntemplate = \"open\"\n");
+    let other = accepted_plane("[policy]\ntemplate = \"open\"\n");
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    let there = standing(other.path());
+    assert!(
+        broken(other.path()),
+        "enforced as strictly as any broken record"
+    );
+    assert!(
+        there.unsealed && there.new_key,
+        "said as a new key: {there:?}"
+    );
+    // Accepted again, it holds, and the reason is gone.
+    press(other.path(), &digest_of(other.path())).expect("accepted again");
+    let there = standing(other.path());
+    assert!(!there.unsealed && !there.new_key);
+}
+
+#[test]
+fn a_record_edited_after_the_new_key_still_reads_broken_with_the_tamper_words() {
+    // #7714: tamper detection is not weakened. A record of this plane edited after the new key
+    // sealed it reads broken, and is never said to be the new key's.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(root.path(), &digest_of(root.path())).expect("a new key");
+    let file = crate::sandbox::local::path(root.path());
+    let text = std::fs::read_to_string(&file).expect("the record");
+    let edited = text.replacen("\"asks\": \"off\"", "\"asks\": \"log\"", 1);
+    assert_ne!(edited, text, "{text}");
+    std::fs::write(&file, edited).expect("edited");
+    let now = standing(root.path());
+    assert!(broken(root.path()));
+    assert!(now.unsealed && !now.new_key, "the tamper words: {now:?}");
+}
+
+#[test]
+fn a_new_key_press_macos_refuses_says_the_manual_step_and_accepts_nothing() {
+    // #7714: where macOS does not let purlis delete the old build's items, the press says so
+    // plainly and names the manual step.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    crate::secrets::seal::set_renew_refused_for_this_test(true);
+    let why = press_with_new_key(root.path(), &digest_of(root.path()))
+        .expect_err("nothing accepted")
+        .to_string();
+    crate::secrets::seal::set_renew_refused_for_this_test(false);
+    assert!(
+        why.contains("macOS did not let purlis replace its old key, so nothing was accepted"),
+        "{why}"
+    );
+    assert!(why.contains("Keychain Access"), "{why}");
+    assert!(crate::secrets::seal::key_is_foreign());
+    assert!(broken(root.path()));
+    // The press can be made again, and this time macOS allows it.
+    press_with_new_key(root.path(), &digest_of(root.path())).expect("pressed again");
+    assert!(!broken(root.path()));
+}
+
+#[test]
+fn the_new_key_press_checks_what_was_shown_again_after_macos_prompt_returns() {
+    // #7714, ruling 5: the file can change while macOS's prompt is open. The press then accepts
+    // nothing, keeps the new key, and a press on what is shown now accepts.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    let shown = digest_of(root.path());
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    let file = root.path().join("charter.toml");
+    crate::secrets::seal::set_during_prompt_for_this_test(Box::new(move || {
+        std::fs::write(file, "[policy]\ntemplate = \"team\"\n").expect("changed meanwhile");
+    }));
+    let why = press_with_new_key(root.path(), &shown)
+        .expect_err("nothing accepted")
+        .to_string();
+    assert!(why.contains("changed since it was shown"), "{why}");
+    assert!(
+        !crate::secrets::seal::key_is_foreign(),
+        "the new key is kept"
+    );
+    assert!(!matches!(
+        crate::sandbox::local::policy_accepted_record(root.path()),
+        crate::sandbox::local::PolicyAccepted::Held(_)
+    ));
+    press_with_new_key(root.path(), &digest_of(root.path())).expect("accepted as shown now");
+    assert_eq!(
+        crate::sandbox::local::policy_accepted_record(root.path()),
+        crate::sandbox::local::PolicyAccepted::Held(committed(root.path()).as_kept())
+    );
+}
+
+#[test]
+fn after_the_new_key_press_no_other_project_that_had_an_acceptance_reads_never() {
+    // #7714, ruling 1: every other project that had an acceptance stays broken, so no accepted
+    // deny drops to the shipped default; one whose record was already gone too. A project that
+    // never had one is left as it was, and the press accepts its own project alone.
+    use crate::sandbox::local::{PolicyAccepted, policy_accepted_record};
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let kept = accepted_plane("[policy]\ntemplate = \"strict\"\n");
+    let gone = accepted_plane("[policy]\ntemplate = \"strict\"\n");
+    let never = plane("[policy]\ntemplate = \"open\"\n", None);
+    std::fs::remove_file(crate::sandbox::local::path(gone.path())).expect("record gone");
+    assert_eq!(policy_accepted_record(gone.path()), PolicyAccepted::Broken);
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    for other in [&kept, &gone] {
+        assert_eq!(policy_accepted_record(other.path()), PolicyAccepted::Broken);
+        assert!(standing(other.path()).new_key);
+    }
+    assert_eq!(policy_accepted_record(never.path()), PolicyAccepted::Never);
+    assert!(!standing(never.path()).new_key);
+    assert!(matches!(
+        policy_accepted_record(here.path()),
+        PolicyAccepted::Held(_)
+    ));
+}
+
+#[test]
+fn a_new_key_press_where_the_key_is_the_apps_own_replaces_nothing() {
+    // The press makes a new key only where the old one is another program's: anywhere else it
+    // is Accept, and no other plane's seal is broken by it.
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let other = accepted_plane("[policy]\ntemplate = \"open\"\n");
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("accepted");
+    assert!(!broken(here.path()) && !broken(other.path()));
+    assert!(!standing(other.path()).new_key);
+}
+
+#[test]
+fn a_list_of_replaced_planes_whose_seal_does_not_hold_gives_no_new_key_words() {
+    // #7714, F3: the list is sealed with the new key. One edited, or put there by another
+    // program, gives no plane the new key's words; it only ever keeps a plane broken.
+    use crate::sandbox::local::{PolicyAccepted, anchor_key, policy_accepted_record};
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let other = accepted_plane("[policy]\ntemplate = \"strict\"\n");
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    assert!(standing(other.path()).new_key, "the list holds");
+    crate::secrets::seal::set_replaced_for_this_test(
+        &crate::secrets::seal::a_foreign_list_for_this_test(&[format!(
+            "policy-accepted:{}",
+            anchor_key(other.path())
+        )]),
+    );
+    assert!(
+        !standing(other.path()).new_key,
+        "a list that does not hold says nothing"
+    );
+    assert_eq!(policy_accepted_record(other.path()), PolicyAccepted::Broken);
+}
+
+#[test]
+fn a_project_accepted_again_after_the_new_key_is_taken_off_the_list() {
+    // #7714, F3: the entry goes when the project is accepted again, and the item with its last
+    // entry; a record that breaks after that gets the tamper words.
+    use crate::sandbox::local::anchor_key;
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let other = accepted_plane("[policy]\ntemplate = \"open\"\n");
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    assert!(
+        crate::secrets::seal::replaced().vouches(&["policy-accepted"], &anchor_key(other.path()))
+    );
+    press(other.path(), &digest_of(other.path())).expect("accepted again");
+    assert_eq!(
+        crate::secrets::seal::replaced(),
+        crate::secrets::seal::Replaced::default(),
+        "its last entry gone, the item went with it"
+    );
+    let file = crate::sandbox::local::path(other.path());
+    let text = std::fs::read_to_string(&file).expect("the record");
+    let edited = text.replacen("\"asks\": \"off\"", "\"asks\": \"log\"", 1);
+    assert_ne!(edited, text, "{text}");
+    std::fs::write(&file, edited).expect("edited");
+    let now = standing(other.path());
+    assert!(broken(other.path()));
+    assert!(now.unsealed && !now.new_key, "the tamper words: {now:?}");
+}
+
+#[test]
+fn a_second_new_key_adds_to_the_planes_the_first_listed() {
+    // #7714, F3: a plane the first replacement listed and not accepted since has no anchor left
+    // for the second to find; the list it kept carries it.
+    use crate::sandbox::local::anchor_key;
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let first = accepted_plane("[policy]\ntemplate = \"open\"\n");
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a first new key");
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    let again = plane("[policy]\ntemplate = \"team\"\n", None);
+    press_with_new_key(again.path(), &digest_of(again.path())).expect("a second new key");
+    let listed = crate::secrets::seal::replaced();
+    assert!(
+        listed.vouches(&["policy-accepted"], &anchor_key(first.path())),
+        "{listed:?}"
+    );
+    assert!(
+        listed.vouches(&["policy-accepted"], &anchor_key(here.path())),
+        "{listed:?}"
+    );
+    assert!(standing(first.path()).new_key && standing(here.path()).new_key);
+}
+
+// ---- the nevers after a new key (#7734's review, F3) -------------------------------------------
+
+/// The pair `steward` to `devops` said never to in the plane at `root`, sealed with the key of
+/// now.
+fn a_never(root: &std::path::Path) {
+    crate::dispatchnever::add(root, "steward", "devops").expect("a never kept");
+    assert_eq!(
+        crate::dispatchnever::read(root),
+        crate::dispatchnever::Nevers::Read(vec![("steward".to_owned(), "devops".to_owned())])
+    );
+}
+
+#[test]
+fn after_a_new_key_an_untouched_nevers_file_says_the_new_key_never_restore_that_file() {
+    // F3: the old key's anchor of the nevers went with it. The file is as purlis wrote it, so
+    // "Restore that file" cannot be done: the words say purlis made a new key, and to review it.
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    for other in [
+        accepted_plane("[policy]\ntemplate = \"open\"\n"),
+        plane("[policy]\ntemplate = \"open\"\n", None),
+    ] {
+        a_never(other.path());
+        crate::secrets::seal::set_foreign_for_this_test(true);
+        press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+        assert_eq!(
+            crate::dispatchnever::read(other.path()),
+            crate::dispatchnever::Nevers::Unread
+        );
+        let said = crate::dispatchnever::unread_said(other.path());
+        assert!(said.contains("purlis made a new seal key"), "{said}");
+        assert!(!said.contains("Restore that file"), "{said}");
+        assert!(standing(other.path()).nevers_new_key);
+    }
+}
+
+#[test]
+fn after_a_new_key_a_wiped_nevers_file_is_never_read_as_no_nevers() {
+    // F3: a project whose nevers the old key anchored, and whose file is gone now. Read as no
+    // nevers, the person's refusals would drop silently; it reads as unread until they accept.
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let other = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(other.path());
+    std::fs::remove_file(crate::dispatchnever::path(other.path())).expect("wiped");
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    assert_eq!(
+        crate::dispatchnever::read(other.path()),
+        crate::dispatchnever::Nevers::Unread
+    );
+}
+
+/// `list` as pairs.
+fn pairs(list: &[(&str, &str)]) -> Vec<(String, String)> {
+    list.iter()
+        .map(|(asking, target)| ((*asking).to_owned(), (*target).to_owned()))
+        .collect()
+}
+
+/// What the window shows of the nevers of the plane at `root` after a new key.
+fn shown_nevers(root: &std::path::Path) -> crate::dispatchnever::ToKeep {
+    crate::dispatchnever::to_keep_after_a_new_key(root).expect("the pairs are shown")
+}
+
+#[test]
+fn accept_after_a_new_key_seals_no_never_and_the_shown_press_seals_exactly_what_was_shown() {
+    // H1 of #7734's round 3: Accept accepts exactly the policy the window showed, so it never
+    // seals nevers as a side effect, on the pressing project or another. With the file untouched,
+    // wiped or edited since the old key sealed it, the nevers stay unread after Accept; the
+    // window shows the pairs the file holds now, and the press that names them seals exactly
+    // those. A press naming anything else seals nothing.
+    use crate::dispatchnever::{Nevers, keep_shown_after_a_new_key, read};
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(here.path());
+    let wiped = accepted_plane("[policy]\ntemplate = \"open\"\n");
+    a_never(wiped.path());
+    std::fs::remove_file(crate::dispatchnever::path(wiped.path())).expect("wiped");
+    let edited = accepted_plane("[policy]\ntemplate = \"open\"\n");
+    a_never(edited.path());
+    std::fs::write(
+        crate::dispatchnever::path(edited.path()),
+        r#"{"never": [{"asking": "steward", "target": "ops"}, {"asking": "devops", "target": "steward"}]}"#,
+    )
+    .expect("edited");
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    for other in [&wiped, &edited] {
+        press(other.path(), &digest_of(other.path())).expect("accepted again");
+    }
+    for (root, kept) in [
+        (&here, pairs(&[("steward", "devops")])),
+        (&wiped, Vec::new()),
+        (&edited, pairs(&[("steward", "ops"), ("devops", "steward")])),
+    ] {
+        let root = root.path();
+        assert_eq!(read(root), Nevers::Unread, "Accept sealed no never");
+        assert!(standing(root).nevers_new_key);
+        let shown = shown_nevers(root);
+        assert_eq!(shown.pairs, kept);
+        assert!(keep_shown_after_a_new_key(root, "not what was shown").is_err());
+        assert_eq!(read(root), Nevers::Unread, "nothing kept");
+        keep_shown_after_a_new_key(root, &shown.digest).expect("kept as shown");
+        assert_eq!(read(root), Nevers::Read(kept));
+        assert!(!standing(root).nevers_new_key);
+        assert_eq!(crate::dispatchnever::to_keep_after_a_new_key(root), None);
+    }
+}
+
+#[test]
+fn a_nevers_file_changed_after_it_was_shown_keeps_nothing() {
+    // H1 of #7734's round 3: the press is bound to the pairs shown by their digest.
+    use crate::dispatchnever::{Nevers, keep_shown_after_a_new_key, read};
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(here.path());
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    let shown = shown_nevers(here.path());
+    std::fs::write(
+        crate::dispatchnever::path(here.path()),
+        r#"{"never": [{"asking": "steward", "target": "ops"}]}"#,
+    )
+    .expect("changed meanwhile");
+    let why = keep_shown_after_a_new_key(here.path(), &shown.digest)
+        .expect_err("nothing kept")
+        .to_string();
+    assert!(why.contains("changed since it was shown"), "{why}");
+    assert_eq!(read(here.path()), Nevers::Unread);
+}
+
+#[test]
+fn a_nevers_list_with_a_name_no_persona_can_have_offers_no_press_shown_or_pressed() {
+    // M1 of #7734's round 4: a name that renders as another (a zero-width character, a
+    // homoglyph, a trailing space) or as several pairs (a comma, " to ") is never shown as
+    // pairs to keep, and a press naming its digest keeps nothing, checked under the lock.
+    use crate::dispatchnever::{
+        Nevers, digest_of_pairs, holds_a_name_it_cannot_show, keep_shown_after_a_new_key, read,
+    };
+    for (asking, target) in [
+        ("ste\u{200b}ward", "devops"),
+        ("st\u{0435}ward", "devops"),
+        ("steward ", "devops"),
+        ("steward, ops", "devops"),
+        ("steward", "ops to devops"),
+    ] {
+        let _home = OwnConfigHome::new();
+        let here = plane("[policy]\ntemplate = \"open\"\n", None);
+        a_never(here.path());
+        crate::secrets::seal::set_foreign_for_this_test(true);
+        press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+        std::fs::write(
+            crate::dispatchnever::path(here.path()),
+            serde_json::json!({"never": [{"asking": asking, "target": target}]}).to_string(),
+        )
+        .expect("written");
+        let root = here.path();
+        assert!(standing(root).nevers_new_key, "{asking:?}");
+        assert_eq!(
+            crate::dispatchnever::to_keep_after_a_new_key(root),
+            None,
+            "{asking:?} {target:?}"
+        );
+        assert!(holds_a_name_it_cannot_show(root), "{asking:?} {target:?}");
+        assert!(standing(root).nevers_unshowable, "{asking:?} {target:?}");
+        let shown = digest_of_pairs(&pairs(&[(asking, target)]));
+        let why = keep_shown_after_a_new_key(root, &shown)
+            .expect_err("nothing kept")
+            .to_string();
+        assert!(why.contains("no persona can have"), "{why}");
+        assert_eq!(read(root), Nevers::Unread);
+    }
+}
+
+#[test]
+fn a_list_item_planted_under_a_healthy_key_offers_no_new_key_words_and_no_reseal() {
+    // H2 of #7734's round 3: a list that does not hold under the key of now only keeps the
+    // nevers unread. It says nothing of a new key, shows no pairs to keep, and no press, Accept
+    // or the shown pairs', seals the file as it stands.
+    use crate::dispatchnever::{Nevers, keep_shown_after_a_new_key, read, unread_said};
+    use crate::sandbox::local::anchor_key;
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(root.path());
+    std::fs::write(crate::dispatchnever::path(root.path()), r#"{"never": []}"#).expect("tampered");
+    crate::secrets::seal::set_replaced_for_this_test(
+        &crate::secrets::seal::a_foreign_list_for_this_test(&[format!(
+            "dispatch-nevers-live:{}",
+            anchor_key(root.path())
+        )]),
+    );
+    assert_eq!(read(root.path()), Nevers::Unread);
+    let said = unread_said(root.path());
+    assert!(!said.contains("new seal key"), "{said}");
+    // L2 of #7734's round 4, as M1 of its round 5 corrects it: the words name the way out, the
+    // one item purlis did not seal, by account.
+    assert!(
+        said.contains(
+            "Delete only the keychain item named purlis-seal with the account seal-key-replaced \
+             in Keychain Access"
+        ),
+        "{said}"
+    );
+    assert!(!said.contains("unlock"), "{said}");
+    let now = standing(root.path());
+    assert!(!now.nevers_new_key, "{now:?}");
+    assert_eq!(
+        crate::dispatchnever::to_keep_after_a_new_key(root.path()),
+        None
+    );
+    press(root.path(), &digest_of(root.path())).expect("accepted");
+    let none = crate::dispatchnever::digest_of_pairs(&[]);
+    let why = keep_shown_after_a_new_key(root.path(), &none)
+        .expect_err("nothing kept")
+        .to_string();
+    assert!(why.contains("Keychain Access"), "{why}");
+    assert_eq!(
+        read(root.path()),
+        Nevers::Unread,
+        "the tampered file is never sealed"
+    );
+}
+
+#[test]
+fn a_nevers_list_with_one_name_no_persona_can_have_among_valid_ones_offers_no_press() {
+    // L3 of #7734's round 5: one name purlis cannot show faithfully among names it can is
+    // enough to offer no pair, and a press naming the pairs keeps nothing.
+    use crate::dispatchnever::{
+        Nevers, digest_of_pairs, holds_a_name_it_cannot_show, keep_shown_after_a_new_key, read,
+    };
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(here.path());
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    let mixed = [
+        ("steward", "devops"),
+        ("st\u{0435}ward", "ops"),
+        ("devops", "steward"),
+    ];
+    let never: Vec<serde_json::Value> = mixed
+        .iter()
+        .map(|(asking, target)| serde_json::json!({"asking": asking, "target": target}))
+        .collect();
+    std::fs::write(
+        crate::dispatchnever::path(here.path()),
+        serde_json::json!({ "never": never }).to_string(),
+    )
+    .expect("written");
+    let root = here.path();
+    assert!(standing(root).nevers_new_key);
+    assert_eq!(crate::dispatchnever::to_keep_after_a_new_key(root), None);
+    assert!(holds_a_name_it_cannot_show(root));
+    for shown in [pairs(&mixed), pairs(&[mixed[0], mixed[2]])] {
+        let why = keep_shown_after_a_new_key(root, &digest_of_pairs(&shown))
+            .expect_err("nothing kept")
+            .to_string();
+        assert!(why.contains("no persona can have"), "{why}");
+    }
+    assert_eq!(read(root), Nevers::Unread);
+}
+
+#[test]
+fn deleting_the_item_the_words_name_turns_no_project_into_never_accepted_or_no_nevers() {
+    // M1 of #7734's round 5: after a new key, another program plants a list in the free slot.
+    // The words name that item alone, never purlis's own list; once the person deletes it as
+    // told, no project the new key listed reads as never accepted, and no nevers as none, a
+    // file wiped since included.
+    use crate::dispatchnever::{Nevers, read, unread_said};
+    use crate::sandbox::local::{PolicyAccepted, anchor_key, policy_accepted_record};
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let other = accepted_plane("[policy]\ntemplate = \"strict\"\n");
+    let nevers = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(nevers.path());
+    let wiped = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(wiped.path());
+    let ghost = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::an_update_for_this_test();
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    std::fs::remove_file(crate::dispatchnever::path(wiped.path())).expect("wiped");
+    let planted = crate::secrets::seal::plant_in_the_free_slot_for_this_test(
+        &crate::secrets::seal::a_foreign_list_for_this_test(&[format!(
+            "dispatch-nevers-live:{}",
+            anchor_key(ghost.path())
+        )]),
+    );
+    let [first, second] = crate::secrets::seal::LIST_ACCOUNTS_FOR_TESTS;
+    let own = if planted == first { second } else { first };
+    let said = unread_said(ghost.path());
+    assert!(
+        said.contains(&format!(
+            "Delete only the keychain item named purlis-seal with the account {planted} in"
+        )),
+        "{said}"
+    );
+    assert!(!said.contains(&format!("account {own} ")), "{said}");
+    assert!(!said.contains(&format!("account {own}.")), "{said}");
+    for root in [&nevers, &wiped] {
+        let said = unread_said(root.path());
+        assert!(said.contains("purlis made a new seal key"), "{said}");
+    }
+    crate::secrets::seal::delete_in_keychain_access_for_this_test(planted);
+    assert_eq!(policy_accepted_record(other.path()), PolicyAccepted::Broken);
+    assert!(standing(other.path()).new_key);
+    for root in [&nevers, &wiped] {
+        assert_eq!(read(root.path()), Nevers::Unread);
+        assert!(standing(root.path()).nevers_new_key);
+    }
+    press(other.path(), &digest_of(other.path())).expect("accepted again");
+    for root in [&nevers, &wiped] {
+        assert_eq!(
+            read(root.path()),
+            Nevers::Unread,
+            "still listed after a write"
+        );
+        assert!(standing(root.path()).nevers_new_key);
+    }
+}
+
+#[test]
+fn a_project_purlis_own_list_carries_unvouched_stays_unread_and_no_delete_is_asked() {
+    // M1 of #7734's round 5: a plane only a list another program made named is carried onto
+    // purlis's own list by a new key, marked `?`. Its nevers stay unread, the words ask for no
+    // keychain item to go, and nothing is kept for it.
+    use crate::dispatchnever::{Nevers, digest_of_pairs, keep_shown_after_a_new_key, read};
+    use crate::sandbox::local::anchor_key;
+    let _home = OwnConfigHome::new();
+    let ghost = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(ghost.path());
+    crate::secrets::seal::forget_kept_for_this_test();
+    crate::secrets::seal::set_replaced_for_this_test(
+        &crate::secrets::seal::a_foreign_list_for_this_test(&[format!(
+            "dispatch-nevers-live:{}",
+            anchor_key(ghost.path())
+        )]),
+    );
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::an_update_for_this_test();
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    let root = ghost.path();
+    assert_eq!(read(root), Nevers::Unread);
+    assert!(crate::dispatchnever::listed_for_a_new_key(root));
+    assert!(!standing(root).nevers_new_key);
+    assert_eq!(crate::secrets::seal::unvouched_list_items_said(), None);
+    let said = crate::dispatchnever::unread_said(root);
+    assert!(
+        said.contains("delete no keychain item named purlis-seal"),
+        "{said}"
+    );
+    assert!(!said.contains("Delete only"), "{said}");
+    assert!(!said.contains("new seal key on this machine"), "{said}");
+    for account in crate::secrets::seal::LIST_ACCOUNTS_FOR_TESTS {
+        assert!(!said.contains(account), "{account}: {said}");
+    }
+    let why = keep_shown_after_a_new_key(root, &digest_of_pairs(&pairs(&[("steward", "devops")])))
+        .expect_err("nothing kept")
+        .to_string();
+    assert!(why.contains("delete no keychain item"), "{why}");
+    assert_eq!(read(root), Nevers::Unread);
+}
+
+#[test]
+fn a_new_key_press_refused_part_way_after_an_update_and_pressed_again_lists_every_project() {
+    // F2 and F4 of #7734's review, on the press's whole body: every item is the old build's
+    // after an update, and macOS refuses one anchor's delete after another anchor went. No
+    // project reads as never accepted, or its nevers as none, and the next press lists each.
+    use crate::sandbox::local::{PolicyAccepted, anchor_key, policy_accepted_record};
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let mut others = [
+        accepted_plane("[policy]\ntemplate = \"strict\"\n"),
+        accepted_plane("[policy]\ntemplate = \"strict\"\n"),
+    ];
+    others.sort_by_key(|one| anchor_key(one.path()));
+    let nevers = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(nevers.path());
+    crate::secrets::seal::an_update_for_this_test();
+    crate::secrets::seal::set_delete_refused_for_this_test(&format!(
+        "policy-accepted:{}",
+        anchor_key(others[1].path())
+    ));
+    let why = press_with_new_key(here.path(), &digest_of(here.path()))
+        .expect_err("refused part way")
+        .to_string();
+    assert!(
+        why.contains("macOS did not let purlis replace its old key"),
+        "{why}"
+    );
+    assert!(crate::secrets::seal::key_is_foreign());
+    for other in &others {
+        assert_ne!(policy_accepted_record(other.path()), PolicyAccepted::Never);
+    }
+    assert_eq!(
+        crate::dispatchnever::read(nevers.path()),
+        crate::dispatchnever::Nevers::Unread
+    );
+    crate::secrets::seal::set_renew_refused_for_this_test(false);
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("pressed again");
+    for other in &others {
+        assert_eq!(policy_accepted_record(other.path()), PolicyAccepted::Broken);
+        assert!(standing(other.path()).new_key);
+    }
+    assert!(standing(nevers.path()).nevers_new_key);
+    assert!(
+        crate::dispatchnever::unread_said(nevers.path()).contains("purlis made a new seal key")
+    );
+}
+
+#[test]
+fn a_plane_only_a_foreign_list_names_stays_broken_without_the_new_key_words() {
+    // F5 of #7734's review: a list before the press that holds under no key of the app's is
+    // carried, so its plane never reads as never accepted, and is never vouched for.
+    use crate::sandbox::local::{PolicyAccepted, anchor_key, policy_accepted_record};
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let ghost = accepted_plane("[policy]\ntemplate = \"strict\"\n");
+    std::fs::remove_file(crate::sandbox::local::path(ghost.path())).expect("record gone");
+    crate::secrets::seal::forget_kept_for_this_test();
+    crate::secrets::seal::set_replaced_for_this_test(
+        &crate::secrets::seal::a_foreign_list_for_this_test(&[format!(
+            "policy-accepted:{}",
+            anchor_key(ghost.path())
+        )]),
+    );
+    crate::secrets::seal::an_update_for_this_test();
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    assert_eq!(policy_accepted_record(ghost.path()), PolicyAccepted::Broken);
+    assert!(!standing(ghost.path()).new_key, "never vouched for");
+}
+
+#[test]
+fn accepting_a_plane_a_list_that_does_not_hold_names_takes_it_off_that_list() {
+    // F6 of #7734's review: the list is cleaned up even where its seal does not hold. Its last
+    // entry gone, the item goes with it.
+    use crate::sandbox::local::anchor_key;
+    let _home = OwnConfigHome::new();
+    let other = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::set_replaced_for_this_test(
+        &crate::secrets::seal::a_foreign_list_for_this_test(&[format!(
+            "policy-accepted:{}",
+            anchor_key(other.path())
+        )]),
+    );
+    assert!(
+        crate::secrets::seal::replaced().lists(&["policy-accepted"], &anchor_key(other.path()))
+    );
+    press(other.path(), &digest_of(other.path())).expect("accepted");
+    assert!(crate::secrets::seal::replaced().is_empty());
 }

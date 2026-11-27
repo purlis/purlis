@@ -563,6 +563,43 @@ own, apart from the session protocol's. It belongs to **Project**, with the two 
 _Avoid_: connection (unqualified), session (that is the process), pairing (that is how the keys
 were pinned)
 
+**Unreachable** (a pool or runner):
+The first of the five states a pool on another machine is in when purlis cannot use it: nothing
+answers, or not yet: a Docker engine that does not answer yet (`dockerd` still starting after a
+reboot, while `sshd` is up) is this, and the notice says "Docker on <host> isn't answering yet", so
+a machine whose `sshd` comes up before its `dockerd` recovers unattended. purlis retries on its
+own, 5 to 120 seconds apart for the forward and at most 30 seconds apart for the link, and **Try now** forgets what was remembered of the failure
+and tries at once. A start waits up to 30 seconds with "Waiting for <pool>", then ends with the
+reason, offering Try now and Check pool. A part of **Pool** (ADR 0078, #7187).
+_Avoid_: offline, down (that is the link's own word for an outage, whatever its state), timed out
+
+**Refused** (a pool or runner):
+The machine answers, but sign-in, forwarding or Docker's permissions fail, or its disk is full (a
+Docker that is merely silent is **Unreachable**); so does a runners file that cannot be read, with
+its reason shown. purlis stops retrying on its own, shows the
+reason and offers Check pool and **Try now** (which dials once and is told again if nothing
+changed); the person's next start tries again too, and a start refused so does not wait. Said only of a machine that answered:
+one that did not is **Unreachable**. A part of **Pool** (#7187).
+_Avoid_: denied, failed, blocked
+
+**Host key changed** (a pool or runner):
+The machine presents another host key, or another engine, than the one pinned. A security stop:
+purlis never retries it on its own, and it ends only with the person's OK in pool settings. A
+part of **Pool** (ADR 0123, #7187).
+_Avoid_: key mismatch, untrusted, refused (that is a machine that answered and said no)
+
+**Runner gone** (a runner):
+The runner's container is no longer on its machine, removed outside purlis. Its chats end, and
+the window offers "Start again on this pool", which makes a runner again. A part of **Runner**
+(#4149, #7187).
+_Avoid_: removed (that is purlis's own Remove), lost, dead
+
+**Pool forgotten** (a pool):
+The person forgot the pool on this machine, whatever state it was in. Its chats and browsers end,
+and the window says so; what may be left on the machine, runners, browsers and logins, is listed
+before the person confirms. A part of **Pool** (#7122, #7139, #7187).
+_Avoid_: removed (Remove contacts the machine; forgetting does not), deleted
+
 **Label** (of a runner):
 What a runner not marked owned is for: exactly one of `harness` (runs chats), `app` (serves one
 version of a workspace repo) or `browser` (runs browsers only purlis drives). purlis enforces it
@@ -608,6 +645,15 @@ someone), and one step with one main action on the right. The steps of a kind of
 Everything it shows is read fresh, and only the person's choices are stored, so work done by hand
 or through `purlis pool` is picked up (spec #4469). Window text says Pool setup.
 _Avoid_: wizard, onboarding, add pool form (that is what it replaces)
+
+**Pool state**:
+The one state a **Pool** is in, when it is in trouble, said by Pool setup's status bar: *Unreachable*
+(purlis can't reach it and keeps trying), *Not added* (the machine or cluster would not take it; the
+pool is kept with its reason, and purlis stops trying; named `refused` in code, never *Refused* in
+the window, ui-copy R-170), *Host key changed* (purlis stops and waits for the person's OK),
+*Runner gone* (its home volume, with the sign-ins, is still there) and *Pool forgotten* (nothing to
+show). One status bar holds it and what can be done about it (#7191).
+_Avoid_: pool status, health
 
 **Claim**:
 One person's request for a runner from a pool, and the runner it is given. A **kept** claim has
@@ -658,8 +704,11 @@ _Avoid_: permission, secret (for the approval), capability (that is an extension
 **Pool login opt-in**:
 The person's answer, in an Ask, that one persona's browser login may be filled in its chats'
 browsers on one pool's runner: bound to that login as declared and allowed, to the pool as it is
-defined, its image, the runner that receives the values and the engine it runs on, and kept only
-while purlis runs. It is asked only where purlis can show the runner is the person's own: a Docker
+defined, its image, the runner that receives the values, the engine it runs on, and the pin
+with the person's *This is my own* mark: taking the mark back or giving it again asks again. It is
+kept on this machine across restarts, has no time limit, is never synced, and the person removes it
+from Granted (a Keep off is not kept). It is asked only where purlis can show the runner is the
+person's own: a Docker
 pool on this machine's own engine, or a cluster pool the person marked *This is my own* whose
 claim the operator vouches for at that moment. A runner not shown to be
 owned is never asked about and never receives a value. A login that waited while the desktop
@@ -1425,9 +1474,9 @@ _Avoid_: notification, news
 An **Ask** that stops one of the person's chats, or a `purlis` command, until they answer: a
 permission, a question, a dispatch grant, a secret, a run grant, a browser site or login, a
 sandbox block or consent, a command's confirmation in the window, a budget reached, a suspected
-loop. It counts on the ✋ whatever its source, every open project's together. A decision that
-stops no chat is a **Notice**, and a chat that cannot tell purlis it waits is never counted
-(ADR 0121).
+loop (not a **Prerequisite**). It counts on the ✋ whatever its source, every open project's
+together. A decision that stops no chat is a **Notice**, and a chat that cannot tell purlis it
+waits is never counted (ADR 0121).
 _Avoid_: urgent, priority, blocker
 
 **Expiring ask**:
@@ -1954,6 +2003,22 @@ by policy". It never loosens what a project or a person sets. One that forbids t
 requires the sandbox in every project on that machine, which Settings shows as "On, required by
 policy" (ADR 0067 §1, §4 as amended).
 _Avoid_: supervisor, managed tier (in UI text; that is a harness vendor's), org settings
+
+**Prerequisite**:
+A condition a project must meet before its chats can work, which only the person can satisfy, in
+the window. The core defines each one and decides when it is open; the app's process holds each
+project's list and pushes a "prerequisites changed" event with the whole list, which the window
+reads and the CLI and `purlis doctor` ask for. The first is the policy prerequisite: this
+machine's acceptance of the project's `[policy]` is Broken or Waiting. While one is open, a chat
+the person starts there waits, and running chats keep the policy in force: **strict mode** (every
+family enforced at the full sandbox, no cross-persona dispatch; not the `strict` template, which
+leaves the sandbox to `[sandbox]` and denies no dispatch) under Broken, the policy accepted before
+under Waiting. The window raises it as one modal, an alert of the dialog family, with
+**Work in strict mode** (under Broken) or **Keep my current rules** (under Waiting) and **Accept**,
+and keeps its **Notice** up after the first answer. It is never in Asks, adds nothing to the ✋ and
+sends no system notification; a project not in front shows a dot on its tab in the title bar
+(ADR 0130).
+_Avoid_: gate, blocker, barrier
 
 ### Core and extensions
 

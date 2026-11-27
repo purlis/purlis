@@ -262,6 +262,10 @@ pub const NOT_COMPOSED_HERE: &str =
 /// the way (#4745). It is called on the view's own thread, one batch at a time.
 pub type Sink = Box<dyn FnMut(Vec<u8>) + Send>;
 
+/// Told once a view's snapshot has all been handed to its [`Sink`] (SC-4b, #7631): what a screen
+/// taken to be kept waits on, so a look a slow link cut short is never taken as the screen.
+pub type Whole = Box<dyn FnOnce() + Send>;
+
 /// What a fresh runner's end is told once its work came back or did not (#4569): what did not, in
 /// sentences. It answers whether the runner went.
 pub type FreshDone = Box<dyn FnOnce(Vec<String>) -> bool + Send>;
@@ -587,6 +591,18 @@ pub trait SessionHost: Send + Sync {
         self.watch_within(id, sink, history)
     }
 
+    /// [`Self::watch_within`], `whole` told once every byte of the view's snapshot has been
+    /// handed to `sink`, and before anything after it (SC-4b, #7631): how a screen taken to be
+    /// kept knows it has all of it, however slowly its link carries it. Never told where the
+    /// view ends first. `u32::MAX` for `history` is all of it, as [`Self::watch`] draws.
+    fn watch_whole(
+        &self,
+        id: u32,
+        sink: Sink,
+        history: u32,
+        whole: Whole,
+    ) -> Result<Watching, String>;
+
     /// The pane drawing view `view` of session `id` has drawn `pieces` more of what its sink
     /// was handed, in the order it was handed them (#4733). Nothing where nothing paces a view.
     fn drawn(&self, id: u32, view: u32, pieces: u32) -> Result<(), String> {
@@ -630,10 +646,33 @@ pub trait SessionHost: Send + Sync {
     /// note them, or the program's start did not ask its strays to end with it.
     fn note_strays(&self, _id: u32) {}
 
+    /// Returns once every [`SessionHost::note_strays`] asked so far has been listed (#7431).
+    /// Tests only: the note is on a thread of its own, and a sleep is a guess at its length.
+    #[cfg(test)]
+    fn notes_have_settled(&self) {}
+
     /// **Holds session `id`'s program still, its whole process group, or lets it go on** (ADR
     /// 0076 §4, #6015): what a chat paused at its budget or in a loop is, until the person
     /// answers. Nothing where the host cannot hold it: the chat is asked about all the same.
     fn hold(&self, _id: u32, _still: bool) {}
+
+    /// **Whether this host can end chat `id`'s program as a hibernation** (#7630): what
+    /// decides whether its row offers Hibernate. False for a host that runs its chats in this
+    /// process, and for one before protocol 1.96.
+    fn can_hibernate(&self, id: u32) -> bool {
+        let _ = id;
+        false
+    }
+
+    /// **Ends chat `id`'s program as a hibernation** (SC-4a, #7630): the host stops it, drops its
+    /// engine and forgets it, and tells its end as the host's own lowest act, so it writes no
+    /// `run.ended`. Answered once it has ended. Refused, in a sentence, for a host that cannot:
+    /// one before protocol 1.96, or one that runs its chats in this process.
+    fn hibernate(&self, id: u32) -> Result<(), String> {
+        Err(format!(
+            "purlis did not hibernate chat {id}: the host it runs in cannot do that."
+        ))
+    }
 
     /// Calls `tell` as each session's program ends, with the id and how it ended.
     ///
@@ -705,6 +744,14 @@ pub trait SessionHost: Send + Sync {
     /// (#4350), whose home its conversation went with. Never, where chats run in the window's own
     /// process.
     fn lost_with_its_runner(&self, id: u32) -> bool {
+        let _ = id;
+        false
+    }
+
+    /// Whether the host session `id`'s program ended with was a pool forgotten on this machine
+    /// (#7187, Pool forgotten): its runner may be there still, but is no longer reached from
+    /// here. Never, where chats run in the window's own process.
+    fn lost_with_its_pool_forgotten(&self, id: u32) -> bool {
         let _ = id;
         false
     }
@@ -924,14 +971,24 @@ pub trait SessionHost: Send + Sync {
     /// (#6504), as [`Self::watch`] opens one of a session this window runs: what a launch reads
     /// a finished task's screen through before [`Self::close_what_was_not_reattached`] ends it.
     /// A host that outlives no window has none.
-    fn watch_left(&self, number: u32, sink: Sink) -> Result<Watching, String> {
-        let _ = sink;
+    /// `whole` is told as [`Self::watch_whole`] tells it.
+    fn watch_left(&self, number: u32, sink: Sink, whole: Whole) -> Result<Watching, String> {
+        let _ = (sink, whole);
         Err(format!("chat {number} was not left in the session host"))
     }
 
     /// Closes view `view` of chat `number`, left in the host ([`Self::watch_left`]).
     fn unwatch_left(&self, number: u32, view: u32) {
         let _ = (number, view);
+    }
+
+    /// **The run each chat this plane left in the host from before this window is in**, by its
+    /// number, as the host recorded it as the chat started (#6737): what a launch whose record of
+    /// what was open was refused proves which chat a program it left is by, through the run's
+    /// own start in the event log. A chat whose host kept no run is left out, as is every one a
+    /// host that outlives no window holds.
+    fn runs_left(&self) -> Vec<(u32, String)> {
+        Vec::new()
     }
 
     /// **The browsers this plane left in the host from before this window** (#2025), running
@@ -1070,7 +1127,9 @@ pub(crate) mod pretend {
     use purlis_core::engine::Size;
     use purlis_core::session::Exit;
 
-    use super::{Ends, NOT_COMPOSED_HERE, Named, Opening, Readiness, SessionHost, Sink, Watching};
+    use super::{
+        Ends, NOT_COMPOSED_HERE, Named, Opening, Readiness, SessionHost, Sink, Watching, Whole,
+    };
 
     /// Deals numbers, remembers what it was asked to run, and ends a session when a test says
     /// its program ended. A clone is the same host, so a test keeps one after handing one over.
@@ -1135,11 +1194,18 @@ pub(crate) mod pretend {
         pools_held_left: Mutex<Vec<(u32, Vec<std::path::PathBuf>)>>,
         /// How each chat left running is sandboxed, as its host recorded it (#2636).
         ran_in: Mutex<Vec<(u32, Option<purlis_session_protocol::session::RunSandbox>)>>,
+        /// The run each chat left running is in, where a test said ([`Pretend::left_in_run`]).
+        runs_left: Mutex<Vec<(u32, String)>>,
         /// What each session shows, where a test said ([`Pretend::shows`]): what a view of it
         /// is sent first.
         screens: Mutex<Vec<(u32, String)>>,
         /// The chats reattached, in order.
         reattached: Mutex<Vec<u32>>,
+        /// The chats it let go of as hibernated (#7630), until each is closed.
+        hibernated: Mutex<Vec<u32>>,
+        /// Why a hibernation fails, while a test says one does, and whether its program has
+        /// ended by then ([`Pretend::hibernates_none`], [`Pretend::hibernates_unanswered`]).
+        hibernate_fails: Mutex<Option<(String, bool)>>,
         /// The chats left running that nothing reattached, closed.
         closed_left: Mutex<Vec<u32>>,
         /// The browsers left from before this window ([`Pretend::leaves_a_browser`], #2025).
@@ -1368,6 +1434,11 @@ pub(crate) mod pretend {
             lock(&self.seen.ran_in).push((number, ran));
         }
 
+        /// Chat `number`, left running, is in run `run`, as its host recorded it (#6737).
+        pub fn left_in_run(&self, number: u32, run: &str) {
+            lock(&self.seen.runs_left).push((number, run.to_owned()));
+        }
+
         /// Chat `number`, left running, is no longer in the host: its program ended there after
         /// a window that comes back judged it kept, so it is started rather than reattached.
         pub fn forgets_it_left(&self, number: u32) {
@@ -1428,6 +1499,23 @@ pub(crate) mod pretend {
         /// Everything it was asked to start, whole, in the order it was asked.
         pub fn openings(&self) -> Vec<Opening> {
             lock(&self.seen.openings).clone()
+        }
+
+        /// Fails every hibernation from now with `why`, before any program ends; `None`
+        /// hibernates them again (#7630).
+        pub fn hibernates_none(&self, why: Option<&str>) {
+            *lock(&self.seen.hibernate_fails) = why.map(|why| (why.to_owned(), false));
+        }
+
+        /// Ends the program of every hibernation from now, then fails to answer with `why`: a
+        /// link that went down after the host had acted (#7630).
+        pub fn hibernates_unanswered(&self, why: &str) {
+            *lock(&self.seen.hibernate_fails) = Some((why.to_owned(), true));
+        }
+
+        /// The chats it let go of as hibernated and has not closed (#7630).
+        pub fn hibernated(&self) -> Vec<u32> {
+            lock(&self.seen.hibernated).clone()
         }
 
         /// Refuses every start from now with `why`, as a host with no pseudo-terminal to give
@@ -1790,12 +1878,32 @@ pub(crate) mod pretend {
                 older: 0,
             })
         }
+        // It hands its screen within the watch, so it is whole as the watch returns.
+        fn watch_whole(
+            &self,
+            id: u32,
+            sink: Sink,
+            _history: u32,
+            whole: Whole,
+        ) -> Result<Watching, String> {
+            let watching = self.watch(id, sink)?;
+            whole();
+            Ok(watching)
+        }
         fn unwatch(&self, id: u32, view: u32) -> Result<(), String> {
             self.here(id)?;
             self.reached(format!("unwatched {id} {view}"));
             Ok(())
         }
         fn close(&self, id: u32) -> Result<(), String> {
+            // A hibernated chat was let go of as it hibernated: it closes here, as a real
+            // host's window closes it (#7630).
+            let mut hibernated = lock(&self.seen.hibernated);
+            if hibernated.contains(&id) {
+                hibernated.retain(|one| *one != id);
+                return Ok(());
+            }
+            drop(hibernated);
             self.here(id)?;
             lock(&self.seen.running).retain(|one| *one != id);
             Ok(())
@@ -1824,6 +1932,28 @@ pub(crate) mod pretend {
         fn hold(&self, id: u32, still: bool) {
             let said = if still { "held" } else { "let go" };
             lock(&self.seen.terminal).push(format!("{said} {id}"));
+        }
+        fn can_hibernate(&self, _id: u32) -> bool {
+            true
+        }
+        /// As a real host: its program ends, and its end is heard, before the host answers.
+        fn hibernate(&self, id: u32) -> Result<(), String> {
+            self.here(id)?;
+            let fails = lock(&self.seen.hibernate_fails).clone();
+            if let Some((why, false)) = fails {
+                return Err(why);
+            }
+            lock(&self.seen.terminal).push(format!("hibernated {id}"));
+            lock(&self.seen.running).retain(|running| *running != id);
+            lock(&self.seen.hibernated).push(id);
+            let tell = lock(&self.seen.ends).clone();
+            if let Some(tell) = tell {
+                tell(id, Exit::Signal("Terminated".to_owned()));
+            }
+            match fails {
+                Some((why, _)) => Err(why),
+                None => Ok(()),
+            }
         }
         fn stopped_by(&mut self, switch: Arc<crate::killswitch::KillSwitch>) {
             *lock(&self.seen.switch) = Some(switch);
@@ -1934,7 +2064,12 @@ pub(crate) mod pretend {
             lock(&self.seen.left).retain(|(one, _)| !numbers.contains(one));
             lock(&self.seen.closed_left).extend_from_slice(numbers);
         }
-        fn watch_left(&self, number: u32, mut sink: Sink) -> Result<Watching, String> {
+        fn watch_left(
+            &self,
+            number: u32,
+            mut sink: Sink,
+            whole: Whole,
+        ) -> Result<Watching, String> {
             if !self.left_running(number) {
                 return Err(format!("chat {number} is not left running"));
             }
@@ -1946,6 +2081,8 @@ pub(crate) mod pretend {
             if let Some(screen) = shown {
                 sink(screen.into_bytes());
             }
+            // Its screen is handed within the watch.
+            whole();
             Ok(Watching {
                 view: 1,
                 size: Size {
@@ -1960,6 +2097,13 @@ pub(crate) mod pretend {
         }
         fn browsers_left(&self) -> Vec<purlis_session_protocol::session::HeldProgram> {
             std::mem::take(&mut *lock(&self.seen.browsers_left))
+        }
+        fn runs_left(&self) -> Vec<(u32, String)> {
+            lock(&self.seen.runs_left)
+                .iter()
+                .filter(|(number, _)| self.left_running(*number))
+                .cloned()
+                .collect()
         }
     }
 

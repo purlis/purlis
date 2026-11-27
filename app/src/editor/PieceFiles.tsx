@@ -62,7 +62,7 @@ import { Badge } from "../ui/badge/Badge";
 import type { ViewRef } from "../tabs";
 import { BranchTree } from "./BranchTree";
 import { LightEditor } from "./LightEditor";
-import { settleJump, usePendingJump } from "../fileJump";
+import { useLandedJump } from "../fileJump";
 import { onAMac } from "../mac";
 import { modifierSaid } from "../PaneLinkSurfaces";
 import { outsideLanding } from "../paneLinkFiles";
@@ -658,16 +658,16 @@ export function PieceFileTab({
   const [kept, setKept] = useState<Kept>();
   const read = useFile(plane, cut, path, setKept) ?? READING;
   const changed = useChanged(plane, cut, path);
-  const landed = useRootLanding(plane, cut, path);
-  const lands = landed?.line ?? line;
-  const at = useCursorLine(plane, cut, path, lands);
+  const jumped = useRootJump(plane, cut, path);
+  const startLine = jumped?.line ?? line;
+  const at = useCursorLine(plane, cut, path, startLine);
   const selection = useSelectedLines(path);
   // A jump to a line (a diff, a record) lands in the text at that line; a file opened to be read
   // is rendered.
-  const [source, setSource] = useState(lands !== undefined);
-  const [sourceFor, setSourceFor] = useState(landed?.at);
-  if (landed !== undefined && landed.at !== sourceFor) {
-    setSourceFor(landed.at);
+  const [source, setSource] = useState(startLine !== undefined);
+  const [sourceShownFor, setSourceShownFor] = useState(jumped?.at);
+  if (jumped !== undefined && jumped.at !== sourceShownFor) {
+    setSourceShownFor(jumped.at);
     setSource(true);
   }
   // What acts on a branch's file — your editor, its path, a chat's context — names a branch,
@@ -695,9 +695,9 @@ export function PieceFileTab({
       <Shown
         path={path}
         read={read}
-        line={lands}
-        column={landed?.column}
-        landing={landed?.at}
+        line={startLine}
+        column={jumped?.column}
+        landing={jumped?.at}
         onLine={at.moved}
         onLines={selection.selected}
         source={source}
@@ -711,18 +711,12 @@ export function PieceFileTab({
  * **A jump into the project's root lands in the file's own tab** (#6356): the root has no
  * branch's file tab to land in (`PlaneView.tsx`), so a pane's link to a file there, or any jump
  * to one at a line, opens this tab, which takes the line and column from the pending jump as
- * the Files tab does. Only the root's: a branch's jump is the Files tab's to settle.
+ * the Files tab does ({@link useLandedJump}). Only the root's: a branch's jump is the Files
+ * tab's to settle.
  */
-function useRootLanding(plane: PlaneId, cut: Place, path: string) {
-  const jump = usePendingJump(plane, cut);
+function useRootJump(plane: PlaneId, cut: Place, path: string) {
   const root = isPlaneRoot(cut);
-  const [landed, setLanded] = useState<{ at: number; line?: number; column?: number }>();
-  if (root && jump !== undefined && jump.path === path && jump.at !== landed?.at)
-    setLanded({ at: jump.at, line: jump.line, column: jump.column });
-  useEffect(() => {
-    if (landed !== undefined) settleJump(landed.at);
-  }, [landed]);
-  return landed;
+  return useLandedJump(plane, cut, (jump) => root && jump.path === path);
 }
 
 /**
@@ -868,23 +862,9 @@ export function PieceFilesTab({
 }) {
   const [picked, setPicked] = useState<string>();
   const [source, setSource] = useState<{ path: string; on: boolean }>();
-  // **A jump lands here** (FM-8): the file it names is picked and its line brought into view.
-  // Taken while drawing, the way React keeps what an earlier render saw, so the preview never
-  // draws the old file first; settled after, so a tab opened later does not land on it again.
-  const jump = usePendingJump(plane, cut);
-  const [landed, setLanded] = useState<{
-    at: number;
-    path: string;
-    line?: number;
-    column?: number;
-  }>();
-  if (jump !== undefined && jump.at !== landed?.at) {
-    setLanded({ at: jump.at, path: jump.path, line: jump.line, column: jump.column });
-    setPicked(jump.path);
-  }
-  useEffect(() => {
-    if (landed !== undefined) settleJump(landed.at);
-  }, [landed]);
+  // **A jump lands here** (FM-8): the file it names is picked and its line brought into view
+  // ({@link useLandedJump}).
+  const landed = useLandedJump(plane, cut, undefined, (jump) => setPicked(jump.path));
   const line = landed !== undefined && landed.path === picked ? landed.line : undefined;
   const column = landed !== undefined && landed.path === picked ? landed.column : undefined;
   const at = useCursorLine(plane, cut, picked, line);

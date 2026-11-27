@@ -112,23 +112,32 @@ export function decide({ published, version, sha, relation }) {
  * `api`: a function from `gh api`'s arguments to what it printed, which throws when it fails.
  */
 export function ask({ repo, version, sha, api }) {
+  const published = readPublished({ repo, api });
+  if (published === null) return decide({ published, version, sha, relation: null });
+  if (published.sha === sha) return decide({ published, version, sha, relation: "identical" });
+  const compared = JSON.parse(api([`repos/${repo}/compare/${published.sha}...${sha}`]));
+  return decide({ published, version, sha, relation: compared.status });
+}
+
+/**
+ * The build the `dev` prerelease's `dev.json` announces, or `null` when nothing is published
+ * (no `dev` release, or none with a `dev.json`). Any other failure throws: it is not an answer.
+ */
+export function readPublished({ repo, api }) {
   let release;
   try {
     release = JSON.parse(api([`repos/${repo}/releases/tags/dev`]));
   } catch (error) {
     // No `dev` release at all: nothing is published, and `plan`'s next step says how the
-    // operator creates it. Any other failure is not an answer.
+    // operator creates it.
     if (!/HTTP 404/.test(String(error.message))) throw error;
-    return decide({ published: null, version, sha, relation: null });
+    return null;
   }
   const asset = (release.assets ?? []).find((one) => one.name === "dev.json");
-  if (!asset) return decide({ published: null, version, sha, relation: null });
-  const published = publishedBuild(
+  if (!asset) return null;
+  return publishedBuild(
     api(["-H", "Accept: application/octet-stream", `repos/${repo}/releases/assets/${asset.id}`]),
   );
-  if (published.sha === sha) return decide({ published, version, sha, relation: "identical" });
-  const compared = JSON.parse(api([`repos/${repo}/compare/${published.sha}...${sha}`]));
-  return decide({ published, version, sha, relation: compared.status });
 }
 
 function ghApi(args) {

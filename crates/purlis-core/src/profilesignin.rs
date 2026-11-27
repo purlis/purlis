@@ -221,17 +221,19 @@ impl Handed {
     }
 
     /// The vault entry each value was read from, each sealed with its value for the project at
-    /// `root` ([`crate::secrets::handedto::Named::of`]), never a value: an error where no seal
-    /// can be made.
+    /// `root` and the chat whose id is `chat` ([`crate::secrets::handedto::Named::of`]), never a
+    /// value: an error where no seal can be made, or the chat has no id (#7129).
     pub fn named(
         &self,
         root: &std::path::Path,
+        chat: Option<&str>,
     ) -> std::io::Result<Vec<crate::secrets::handedto::Named>> {
+        let chat = chat.ok_or_else(crate::secrets::handedto::no_chat_id)?;
         self.pairs
             .iter()
             .zip(&self.entries)
             .map(|((_, value), entry)| {
-                crate::secrets::handedto::Named::of(root, entry.clone(), value)
+                crate::secrets::handedto::Named::of(root, chat, entry.clone(), value)
             })
             .collect()
     }

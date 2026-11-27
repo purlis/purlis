@@ -64,6 +64,7 @@ fn facts() -> mergehold::Facts {
         },
         ruleset: mergehold::Ruleset::Protects,
         approved_by: None,
+        squash: false,
         read_at: 40,
     }
 }
@@ -114,7 +115,11 @@ impl Fake {
     fn ask(&self, number: u64) -> MergeAsk {
         MergeAsk {
             chat: 4,
-            request: Request { repo: None, number },
+            request: Request {
+                repo: None,
+                number,
+                act: Default::default(),
+            },
             cwd: self.clone.display().to_string(),
         }
     }
@@ -348,6 +353,7 @@ fn a_project_closed_before_the_merge_is_asked_about_answers_no() {
         request: Request {
             repo: None,
             number: 12,
+            act: Default::default(),
         },
         cwd: "/".to_owned(),
     };
@@ -689,7 +695,7 @@ fn a_press_whose_fresh_read_disagrees_with_what_was_shown_is_refused() {
             12,
             HEAD,
             Seen::Protects,
-            &facts().digest(),
+            &facts().digest(purlis_core::mergehold::LandAs::Merge),
             &backend_of
         ),
         Err(mergehold::NotMerged::RulesetChanged.to_string())
@@ -910,7 +916,7 @@ fn a_press_shown_other_facts_than_its_fresh_read_is_refused() {
         Answer::MergeHeld { .. }
     ));
     asked_once_more(&project);
-    let shown = facts().digest();
+    let shown = facts().digest(purlis_core::mergehold::LandAs::Merge);
     let mut failed = at(HEAD);
     failed.facts.checks.ci = Ci::Failed;
     failed.facts.read_at = 90;
@@ -972,7 +978,7 @@ fn a_press_that_hands_back_a_stale_digest_merges_nothing_though_the_core_holds_t
             12,
             HEAD,
             Seen::Protects,
-            &running.digest(),
+            &running.digest(purlis_core::mergehold::LandAs::Merge),
             &backend_of,
         ),
         Err(super::SHOWN_OTHER.to_owned())

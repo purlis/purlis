@@ -1215,6 +1215,33 @@ fn a_kubectl_run_never_inherits_a_kubeconfig_and_finds_plugins_beside_it_or_syst
 
 #[cfg(unix)]
 #[test]
+fn only_the_plugin_folder_named_joins_a_runs_path_and_never_a_relative_or_repeated_one() {
+    let cluster = FakeCluster::new();
+    let sdk = cluster.dir.path().join("google-cloud-sdk/bin");
+    let kubectl = cluster
+        .kubectl()
+        .with_plugin_folder(&sdk)
+        .with_plugin_folder(&sdk)
+        .with_plugin_folder(std::path::Path::new("relative/bin"))
+        .pointed_at(std::path::Path::new("/home/ada/.kube/config"), "team");
+    kubectl.whoami().unwrap();
+    let env = cluster.environments();
+    let (kubeconfig, path) = env.trim().split_once('|').unwrap();
+    assert_eq!(kubeconfig, "unset");
+    let folders: Vec<&str> = path.split(':').collect();
+    let sdk = sdk.display().to_string();
+    assert_eq!(
+        folders.iter().filter(|dir| **dir == sdk).count(),
+        1,
+        "{path}"
+    );
+    assert!(!folders.contains(&"relative/bin"), "{path}");
+    // The shell's own folders are still not the run's.
+    assert!(!path.contains(".local/bin"), "{path}");
+}
+
+#[cfg(unix)]
+#[test]
 fn a_kubeconfigs_contexts_and_its_contexts_namespace_are_read() {
     let cluster = FakeCluster::new();
     let kubectl = cluster.kubectl();
@@ -1455,6 +1482,7 @@ fn the_pin() -> PoolPin {
 }
 
 #[cfg(unix)]
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_runner_is_told_of_the_port_only_on_a_pool_that_opts_in() {
     let last_run = |dir: &std::path::Path| std::fs::read_to_string(dir.join("args")).unwrap();
@@ -1473,6 +1501,7 @@ fn a_runner_is_told_of_the_port_only_on_a_pool_that_opts_in() {
 }
 
 #[cfg(unix)]
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn at_a_link_a_runner_is_told_again_only_on_a_pool_that_opts_in_and_by_the_pinned_key() {
     let dir = tempfile::tempdir().unwrap();
@@ -1688,4 +1717,28 @@ fn only_a_runner_on_its_way_has_a_stage() {
     );
     assert_eq!(stage_of(&a_claim_saying("True", "Pulling", "")), None);
     assert_eq!(stage_of(&serde_json::json!({})), None);
+}
+
+#[cfg(unix)]
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn no_runner_is_told_of_a_port_once_the_sign_in_replaces_the_app_even_on_a_pool_that_opts_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let every = std::time::Duration::from_millis(1);
+    let kubectl = says_where_to_ask(dir.path(), true, &operator_key().spelled());
+    let paired = a_paired_runner();
+    // The first tell sends nothing: kubectl was never run.
+    tell_the_mint_port(&kubectl, &the_pin(), "pool", &paired, every).unwrap();
+    assert!(!dir.path().join("args").exists());
+    // Nor does a link's: there is nothing to tell.
+    let seen = kubectl.pool("pool").unwrap();
+    assert_eq!(
+        to_tell_at_a_link(&seen, &kubectl, &the_pin(), &paired.claimed).unwrap(),
+        None
+    );
+    // And telling again reports it settled without running anything.
+    let told = told_of_the_port(&paired.claimed, &the_pin(), "10.0.0.1:1".to_owned());
+    assert!(tell_again(&kubectl, "ns", "pod", &told).unwrap());
+    let ran = std::fs::read_to_string(dir.path().join("args")).unwrap_or_default();
+    assert!(!ran.contains("--mint-port"), "{ran}");
 }

@@ -84,7 +84,7 @@ export function AddDockerPoolHost({
       if (setupOf !== undefined) await goOnWithPoolSetupOf(setupOf);
       else {
         await startANewPoolSetup();
-        if (kind === "cluster") await commands.poolSetupChooseCluster(null);
+        if (kind === "cluster") await commands.poolSetupChooseCluster(null, null);
       }
       onPoolSetup(plane);
     })();

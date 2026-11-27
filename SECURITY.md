@@ -11,8 +11,10 @@ and not in a public issue.
 Every build file a release publishes (the `.dmg`, `.app.zip`, `.deb`, AppImage, the
 updater archives with their `.sig` files, and the SBOMs), on the stable channel and the `dev` prerelease
 alike, carries a signed [SLSA build provenance](https://slsa.dev/spec/v1.0/provenance)
-attestation. It says the file came out of this repository's `release.yml` on a GitHub-hosted
-runner, and names the commit the workflow ran at. With the [GitHub CLI](https://cli.github.com/)
+attestation. It says the file came out of this repository's `release.yml`, attested by a
+GitHub-hosted runner, and names the commit the workflow ran at. A stable release is built on a
+GitHub-hosted runner; a dev build's macOS files may be built on the operator's own Mac, which the
+attestation does not say (`docs/updating.md`, "Building macOS on a self-hosted Mac"). With the [GitHub CLI](https://cli.github.com/)
 installed, for a stable release tagged `<tag>`:
 
 ```sh

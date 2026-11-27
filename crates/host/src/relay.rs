@@ -88,6 +88,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
+use futures::FutureExt;
 use futures::future::BoxFuture;
 use purlis_session_protocol::auth::Scope;
 use purlis_session_protocol::browsing::Secret;
@@ -279,7 +280,89 @@ impl Relay {
     }
 }
 
+/// The programs whose given-up starts are being closed on a runner ([`Relay::closes_a_late_start`]),
+/// by program id (a ULID, unique everywhere). A start for the same id again, which a retried chat
+/// makes, ends its closing: what it began is the chat now, not the orphan.
+///
+/// Held across a closer's check and its send (an async lock), so a start made again waits for a
+/// Close already on its way, and is sent after it, never before: the Close cannot reach the
+/// program the retried start began.
+static CLOSING: tokio::sync::Mutex<std::collections::BTreeSet<String>> =
+    tokio::sync::Mutex::const_new(std::collections::BTreeSet::new());
+
+/// A start for `program` is made again: no given-up start of it is closed any more.
+pub(crate) async fn stops_closing_a_late_start(program: &str) {
+    CLOSING.lock().await.remove(program);
+}
+
+/// How many times a start given up on is closed on the runner, if the runner began it
+/// ([`Relay::closes_a_late_start`]): at once, then after `every`, twice that, and so on.
+const LATE_START_TRIES: usize = 9;
+
 impl Relay {
+    /// **The step `peer`'s start is on, in words** (#7187): where the link to the other host is.
+    /// Said when a start has taken too long.
+    pub(crate) fn step_of(&self, peer: &Peer) -> String {
+        let Ok(relayed) = self.relayed(peer) else {
+            return "the link this was sent on had ended".to_owned();
+        };
+        match &*relayed.standing.borrow() {
+            Standing::Linking => "linking to the runner".to_owned(),
+            Standing::Down(down) | Standing::Over(Some(down)) => {
+                format!("linking to the runner, which is down: {}", down.why)
+            }
+            Standing::Over(None) => "the link to the runner, which had ended".to_owned(),
+            Standing::Up(_) => "the runner starting the program".to_owned(),
+        }
+    }
+
+    /// **Closes `program` on the other host, if a start that was given up on began it after all**
+    /// (#7187): the start ran out of time and its client was told it failed, but the runner may
+    /// have begun the program meanwhile, and a chat nobody knows of would run there for ever.
+    /// Tried at once and again, each time after twice the last pause from `every`, for as long as
+    /// [`LATE_START_TRIES`] say, on the link the start went over; a runner that holds no such
+    /// program refuses each try, which is the usual end of it. Done on a task of its own: the
+    /// start's refusal does not wait for it.
+    pub(crate) async fn closes_a_late_start(
+        &self,
+        peer: &Peer,
+        program: String,
+        every: std::time::Duration,
+    ) {
+        let Ok(relayed) = self.relayed(peer) else {
+            return;
+        };
+        let standing = relayed.standing.clone();
+        CLOSING.lock().await.insert(program.clone());
+        tokio::spawn(async move {
+            let mut pause = std::time::Duration::ZERO;
+            for _ in 0..LATE_START_TRIES {
+                tokio::time::sleep(pause).await;
+                // The lock is held from the check to the Close's answer.
+                let closing = CLOSING.lock().await;
+                if !closing.contains(&program) {
+                    return;
+                }
+                let up = match &*standing.borrow() {
+                    Standing::Up(up) => Some(Arc::clone(up)),
+                    _ => None,
+                };
+                if let Some(up) = up
+                    && up
+                        .call(Command::Close {
+                            program: program.clone(),
+                        })
+                        .await
+                        .is_ok()
+                {
+                    return;
+                }
+                drop(closing);
+                pause = if pause.is_zero() { every } else { pause * 2 };
+            }
+        });
+    }
+
     /// **Waits, for at most `patience`, for the link `peer`'s commands go over to come up** (#4403):
     /// for a runner on its way back, which refuses each link until it is vouched for. It ends at
     /// once on what waiting cannot mend, a changed key or a runner gone for good, and whatever it
@@ -298,7 +381,7 @@ impl Relay {
             loop {
                 let (waits, up) = match &*standing.borrow_and_update() {
                     Standing::Linking => (true, false),
-                    Standing::Down(down) => (!down.key_changed && !down.gone, false),
+                    Standing::Down(down) => (!down.stops_retrying(), false),
                     Standing::Up(_) => (false, true),
                     Standing::Over(_) => (false, false),
                 };
@@ -336,7 +419,7 @@ impl Relay {
             let _changing = Counted::start(&relayed.client.changing);
             let comes_up = matches!(
                 &*standing.borrow(),
-                Standing::Down(down) if !down.key_changed && !down.gone
+                Standing::Down(down) if !down.stops_retrying()
             );
             if comes_up {
                 let mut kept = relayed.client.kept();
@@ -501,6 +584,10 @@ impl Relayed {
     /// are over are taken anew, as a command that finds them over takes them.
     fn link_now(&self) {
         if matches!(*self.standing.borrow(), Standing::Over(_)) {
+            // Links taken anew: the ended ones are told Try now first ([`waits_for_links_anew`]),
+            // so a connector's memory of why the last try failed (a refused machine's) is let go
+            // of before the new ones dial, and the click is not answered from it (#7187).
+            self.try_now.notify_one();
             self.again.notify_one();
         } else {
             self.try_now.notify_one();
@@ -520,7 +607,11 @@ impl Relayed {
                 Standing::Up(_) if peer.has_ended() => return Err(ended()),
                 Standing::Up(upstream) => return Ok(upstream),
                 Standing::Down(down) => return Err(not_linked(&down)),
-                Standing::Over(Some(gone)) if asked_again => return Err(not_linked(&gone)),
+                // A security stop is not dialled again by each command that meets it: only the
+                // person's OK (`link_now`) takes links anew (#7187).
+                Standing::Over(Some(gone)) if asked_again || gone.host_key_changed => {
+                    return Err(not_linked(&gone));
+                }
                 Standing::Over(gone) => {
                     asked_again |= gone.is_some();
                     self.again.notify_one();
@@ -567,6 +658,25 @@ fn not_linked(down: &Down) -> Refusal {
             why: format!(
                 "Runner removed outside purlis ({why}). purlis sent it nothing and does not link \
                  to it again: make the runner again in its pool's settings, then send this again"
+            ),
+        };
+    }
+    if down.host_key_changed {
+        return Refusal {
+            code: session::NOT_STARTED.into(),
+            why: format!(
+                "The runner's machine presented another key than the one trusted ({why}). purlis \
+                 sent it nothing and does not link to it until you say it is all right: check \
+                 and trust it again in the pool's settings, then send this again"
+            ),
+        };
+    }
+    if down.refused {
+        return Refusal {
+            code: session::NOT_STARTED.into(),
+            why: format!(
+                "The runner's machine refused ({why}). purlis sent it nothing and stopped trying: use Check \
+                 pool in the pool's settings, then send this again"
             ),
         };
     }
@@ -658,7 +768,7 @@ async fn keep(
                         up = None;
                         retiring = None;
                         told.down(&client, &down);
-                        gone = down.gone.then(|| down.clone());
+                        gone = down.ends_its_links().then(|| down.clone());
                         tell.send_replace(Standing::Down(down));
                     }
                     None => no_more = true,
@@ -677,8 +787,21 @@ async fn keep(
             }
         }
         tell.send_replace(Standing::Over(gone));
-        again.notified().await;
+        waits_for_links_anew(links.as_mut(), &again, &try_now).await;
         tell.send_replace(Standing::Linking);
+    }
+}
+
+/// Wait until a command asks for links anew, with the links that ended still in hand.
+///
+/// **A Try now that came with the ask is let go of to these links first** (#7187): their Try now
+/// lets go of what the connector remembers of why the last try failed, and the new links dial
+/// the moment they are taken, so it must be done before [`Source`] is called or the click would
+/// be answered from a remembered Refused.
+async fn waits_for_links_anew(ended: &mut dyn Taken, again: &Notify, try_now: &Notify) {
+    again.notified().await;
+    if try_now.notified().now_or_never().is_some() {
+        ended.try_now();
     }
 }
 
@@ -688,8 +811,14 @@ enum LinkTold {
     /// Nothing since the link was last up: it is up, as far as the client knows.
     #[default]
     Up,
-    /// That no link is up, why, and whether the other host is gone for good (#4149).
-    Down { gone: bool, why: String },
+    /// That no link is up, why, whether the other host is gone for good (#4149), and whether it
+    /// answers and refuses (#7187).
+    Down {
+        gone: bool,
+        refused: bool,
+        host_key_changed: bool,
+        why: String,
+    },
 }
 
 impl LinkTold {
@@ -701,10 +830,23 @@ impl LinkTold {
     fn down(&mut self, client: &ClientLink, down: &Down) {
         let (tell, was_gone) = match &*self {
             LinkTold::Up => (true, false),
-            LinkTold::Down { gone, why } => ((down.gone && !gone) || *why != down.why, *gone),
+            LinkTold::Down {
+                gone,
+                refused,
+                host_key_changed,
+                why,
+            } => (
+                (down.gone && !gone)
+                    || (down.refused && !refused)
+                    || (down.host_key_changed && !host_key_changed)
+                    || *why != down.why,
+                *gone,
+            ),
         };
         *self = LinkTold::Down {
             gone: down.gone || was_gone,
+            refused: down.refused,
+            host_key_changed: down.host_key_changed,
             why: down.why.clone(),
         };
         if tell {
@@ -712,6 +854,8 @@ impl LinkTold {
                 why: down.why.clone(),
                 key_changed: down.key_changed,
                 gone: down.gone,
+                refused: down.refused,
+                host_key_changed: down.host_key_changed,
             });
         }
     }

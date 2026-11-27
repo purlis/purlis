@@ -11,6 +11,25 @@ import { Notice } from "./Notice";
 /** The event the core's refresh sends the window when a forge ended a sign-in. */
 export const SIGN_IN_ENDED = "forge-sign-in-ended";
 
+/** The event the core sends the window when a sign-in is not renewing, though no forge ended it. */
+export const SIGN_IN_TROUBLE = "forge-sign-in-trouble";
+
+/** What {@link SIGN_IN_TROUBLE} carries: the account's id and the kind of trouble. */
+export type SignInTrouble = {
+  account: string;
+  trouble:
+    | "pin-changed"
+    | "renewal-failing"
+    | "everyday-holds-workflow"
+    | "scopes-unknown"
+    | "second-sign-in-refused";
+};
+
+/** Whether `account` is a pasted token or an imported login: no sign-in of purlis's own to repeat. */
+function pasted(account: { method: string }): boolean {
+  return account.method === "token" || account.method === "imported";
+}
+
 /** The event a surface sends this window when it signed an account in or out. */
 export const ACCOUNTS_CHANGED = "purlis:forge-accounts-changed";
 
@@ -34,6 +53,17 @@ function ended(account: ForgeAccountRow): boolean {
   );
 }
 
+/** What the Notice for an everyday token that holds `workflow` says. */
+function WorkflowHeld({ account }: { account: ForgeAccountRow }) {
+  return (
+    <>
+      GitHub added permission to push CI files (<code>workflow</code>) to purlis&apos;s sign-in to{" "}
+      {account.host} as {account.login}, so purlis gives it to no chat. To fix it, revoke purlis at
+      https://{account.host}/settings/applications, then sign in again without allowing CI files.
+    </>
+  );
+}
+
 /**
  * **A browser sign-in the forge ended, and the way back** (#729; ADR 0077 §3).
  *
@@ -52,6 +82,8 @@ function ended(account: ForgeAccountRow): boolean {
 export function ForgeSignInEnded() {
   const [accounts, setAccounts] = useState<ForgeAccountRow[]>([]);
   const [dismissed, setDismissed] = useState<readonly string[]>([]);
+  /** The troubles the core told of, until the account ends, is signed in again or one is dismissed. */
+  const [troubles, setTroubles] = useState<readonly SignInTrouble[]>([]);
   /** The forge of the account being signed in to again. */
   const [again, setAgain] = useState<string>();
 
@@ -66,14 +98,51 @@ export function ForgeSignInEnded() {
 
   useEffect(() => {
     reread();
-    window.addEventListener(ACCOUNTS_CHANGED, reread);
+    // A surface here signed an account in or out: what was told of its trouble is the person's
+    // to have acted on.
+    const changed = () => {
+      setTroubles([]);
+      reread();
+    };
+    window.addEventListener(ACCOUNTS_CHANGED, changed);
     const listening = listen(SIGN_IN_ENDED, reread).catch(() => undefined);
+    const hearing = listen<SignInTrouble>(SIGN_IN_TROUBLE, (heard) => {
+      const { account, trouble } = heard.payload;
+      setTroubles((was) =>
+        was.some((t) => t.account === account && t.trouble === trouble)
+          ? was
+          : [...was, { account, trouble }],
+      );
+      reread();
+    }).catch(() => undefined);
     return () => {
-      window.removeEventListener(ACCOUNTS_CHANGED, reread);
+      window.removeEventListener(ACCOUNTS_CHANGED, changed);
       // The window may be gone before the listener is: nothing is left to stop then.
       void listening.then((stop) => stop?.()).catch(() => undefined);
+      void hearing.then((stop) => stop?.()).catch(() => undefined);
     };
   }, [reread]);
+
+  /** The accounts a trouble is drawn for: still listed, and still signed in. */
+  const told = troubles.flatMap((trouble) => {
+    const account = accounts.find((a) => a.id === trouble.account && a.signed_in);
+    return account ? [{ account, trouble: trouble.trouble }] : [];
+  });
+  // An account whose everyday token holds `workflow` is read off the list, so the Notice outlives
+  // the event and a restart: purlis serves such a token to no chat until it is signed in again
+  // without it (ADR 0128 D1.1).
+  const troubled = [
+    ...told,
+    ...accounts
+      .filter(
+        (a) =>
+          a.signed_in &&
+          a.kind === "github" &&
+          (a.scopes ?? []).includes("workflow") &&
+          !told.some((t) => t.account.id === a.id && t.trouble === "everyday-holds-workflow"),
+      )
+      .map((account) => ({ account, trouble: "everyday-holds-workflow" as const })),
+  ];
 
   return (
     <>
@@ -92,6 +161,60 @@ export function ForgeSignInEnded() {
             there.
           </Notice>
         ))}
+      {troubled.map(({ account, trouble }) => (
+        <Notice
+          key={`${trouble}:${account.id}`}
+          cause={`forge-sign-in-${trouble}:${account.id}`}
+          tone="trouble"
+          fixes={
+            // A pasted token has no sign-in to repeat: signing in again does not make it checkable.
+            (trouble === "scopes-unknown" && pasted(account)) ||
+            trouble === "second-sign-in-refused"
+              ? undefined
+              : [{ label: "Sign in again", onPress: () => setAgain(account.kind) }]
+          }
+          onDismiss={() =>
+            setTroubles((was) =>
+              was.filter((t) => !(t.account === account.id && t.trouble === trouble)),
+            )
+          }
+        >
+          {trouble === "everyday-holds-workflow" ? (
+            <WorkflowHeld account={account} />
+          ) : trouble === "scopes-unknown" && pasted(account) ? (
+            <>
+              purlis cannot check what the token for {account.login} on {account.host} may do (a
+              fine-grained token does not say), so it may allow CI files (<code>workflow</code>) and
+              purlis does not give it to chats. Use a token or a sign-in that says what it may do.
+            </>
+          ) : trouble === "scopes-unknown" ? (
+            <>
+              {account.host} did not say what purlis&apos;s sign-in as {account.login} may do, so it
+              may allow CI files (<code>workflow</code>) and purlis gives it to no chat. Sign in
+              again to check it.
+            </>
+          ) : trouble === "second-sign-in-refused" ? (
+            <>
+              {account.host} refused the sign-in that lets purlis push CI files as {account.login},
+              so purlis removed it. To push a CI file again, allow CI files in Settings › You ›
+              Accounts.
+            </>
+          ) : trouble === "pin-changed" ? (
+            <>
+              purlis stopped renewing its sign-in to {account.host} as {account.login}: the
+              application pinned for {account.host} is not the one it signed in through. Until you
+              check the application in Settings › You › Accounts and sign in again, the sign-in
+              stops working when its token expires.
+            </>
+          ) : (
+            <>
+              purlis could not renew its sign-in to {account.host} as {account.login} several times
+              in a row. It keeps trying and keeps the sign-in, which {account.host} has not ended.
+              If it keeps failing, check your connection or sign in again.
+            </>
+          )}
+        </Notice>
+      ))}
       {again === "gitlab" && (
         <ForgeGitLabSignIn
           onCancel={() => setAgain(undefined)}

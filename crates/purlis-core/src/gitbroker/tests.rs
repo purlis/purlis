@@ -1045,6 +1045,64 @@ fn a_chats_save_with_pull_is_refused_and_names_the_update() {
     assert_eq!(last_subject(&root), "one");
 }
 
+fn save_with_pull_for(root: &Path) -> Answered {
+    answer_telling(
+        root,
+        &held_chat(root),
+        &GitAsk {
+            chat: 4,
+            workspace: String::new(),
+            alive: false,
+            work: GitWork::RootSave {
+                message: Some("from a chat".to_owned()),
+                sign: false,
+                no_push: true,
+                pull: true,
+            },
+        },
+        &git::Isolated::default(),
+        jiff::Timestamp::now(),
+    )
+}
+
+fn said_by(answered: &Answered) -> String {
+    let Answer::Said { lines, .. } = &answered.answer else {
+        panic!("not run: {answered:?}");
+    };
+    lines
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn a_chats_save_with_pull_in_pull_request_mode_names_update_in_the_window_and_tells_the_person() {
+    let (_dir, root) = saved_project();
+    std::fs::write(root.join("charter.toml"), "[plane]\nmode = \"pr\"\n").unwrap();
+
+    let answered = save_with_pull_for(&root);
+
+    let said = said_by(&answered);
+    assert!(said.contains("Update in the window"), "{said}");
+    assert!(
+        !said.contains("purlis worktree update"),
+        "that update is refused in this mode: {said}"
+    );
+    assert_eq!(answered.needs, Some(crate::state::Need::RootUpdateRefused));
+}
+
+#[test]
+fn a_chats_save_with_pull_in_a_mode_that_does_not_open_a_request_keeps_its_advice_and_tells_nobody()
+{
+    let (_dir, root) = saved_project();
+
+    let answered = save_with_pull_for(&root);
+
+    assert!(said_by(&answered).contains("purlis worktree update"));
+    assert_eq!(answered.needs, None);
+}
+
 #[test]
 fn a_trailer_spelled_with_space_before_its_colon_is_left_out_of_a_chats_message() {
     let message = "from a chat\n\nPurlis-Chat : 01OTHER\npurlis-persona\t: another\n  \

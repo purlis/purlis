@@ -2895,6 +2895,7 @@ fn a_plan(listed: Vec<(String, By)>, given: Vec<u16>) -> Plan {
         any_port: false,
         beside: plan::Beside::Wrapped,
         given,
+        forge: None,
     }
 }
 
@@ -2942,6 +2943,7 @@ struct HeardOfIt {
 
 fn hearing(heard: &Arc<HeardOfIt>, asks: bool) -> Hearing {
     Hearing {
+        network: None,
         refusals: egress::Refusals::telling({
             let heard = Arc::clone(heard);
             Arc::new(move |host: &str, port: u16| {
@@ -3769,18 +3771,29 @@ fn a_host_killed_outright_brings_twenty_chats_back_within_thirty_seconds() {
         Pane::on(&target, id).shows(&format!("CHAT-{n}-READY"));
         id
     }));
+    let host = target.host.as_ref().expect("the host's target");
+    // The link the killed host was served on. The chats are told they ended when the host's
+    // process goes, and the supervisor still answers that link as ready until it has seen it
+    // close, so "the host serves" is a different link than this one: a chat started on the
+    // old one is refused with "the link is closed" (#7442).
+    let old = host
+        .wait(Duration::from_secs(10))
+        .expect("the host serves before it is killed");
     let killed = Instant::now();
 
     (target.kill_the_host.as_ref().expect("a host process"))();
 
     let within = Duration::from_secs(30);
-    let host = target.host.as_ref().expect("the host's target");
-    while !(ends.lock().expect("the ends").len() == CHATS && host.wait(Duration::ZERO).is_ok()) {
+    let serves_anew = || {
+        host.wait(Duration::ZERO)
+            .is_ok_and(|link| !std::sync::Arc::ptr_eq(&link, &old))
+    };
+    while !(ends.lock().expect("the ends").len() == CHATS && serves_anew()) {
         assert!(
             killed.elapsed() < within,
-            "after {within:?}, {} of {CHATS} chats were told they ended, and the host serves: {}",
+            "after {within:?}, {} of {CHATS} chats were told they ended, and a new host serves: {}",
             ends.lock().expect("the ends").len(),
-            host.wait(Duration::ZERO).is_ok()
+            serves_anew()
         );
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -4214,13 +4227,120 @@ on_every_target!(
     a_hook_refuses_a_listener_that_is_not_its_chats_ancestor,
     a_sandboxed_chats_proxy_carries_what_it_lists_and_refuses_the_rest,
     a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,
-    an_ask_raised_by_a_chats_proxy_is_answered_from_the_window;
+    an_ask_raised_by_a_chats_proxy_is_answered_from_the_window,
+    a_hibernated_chats_kept_screen_is_its_newest_lines_within_a_mebibyte,
+    a_hibernated_chats_kept_screen_is_an_open_alternate_screen_alone;
     not yet through a link ("an opt-out is asked again on the device a chat moves to, ADR 0078 §4"):
     an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts;
     not yet through a link ("the window's re-arm and its shell while stopped cross a link in #2220"):
     stop_all_ends_every_chat_and_none_starts_until_the_window_re_arms,
     while_stopped_the_operators_shell_opens;
 );
+
+/// Whether chat `id` of `target` can be hibernated: only a host that can is offered Hibernate
+/// (#7630), and only it pages a view's history; the window's own process does neither. Where it
+/// cannot, the chat is closed and the skip of the kept screen's `case` is said, so a target that
+/// stopped hibernating is seen rather than passing silently.
+fn hibernates_here(target: &Target, id: u32, case: &str) -> bool {
+    if target.sessions.can_hibernate(id) {
+        return true;
+    }
+    // Written to stderr by name, past the test harness's capture, so the skip shows in a run.
+    let _ = std::io::Write::write_fmt(
+        &mut std::io::stderr(),
+        format_args!(
+            "skipped: this target cannot hibernate a chat, so its kept screen ({case}) is not \
+             taken\n"
+        ),
+    );
+    target.sessions.close(id).expect("it closes");
+    false
+}
+
+/// **A hibernated chat's kept screen is its newest lines, within a mebibyte** (SC-4b, #7631;
+/// spec #1391, D3): a shell prints thousands of lines, every cell its own colour, so what its
+/// terminal draws is many times 1 MiB; the screen is taken as the app takes it as it hibernates a
+/// chat (`hibernation::keep_screen`), through the view each target serves, with fewer lines of
+/// history until it fits. What is kept is at most 1 MiB, and drawn into a blank terminal it shows
+/// what the chat's own screen showed last, with lines of history above it, each whole.
+fn a_hibernated_chats_kept_screen_is_its_newest_lines_within_a_mebibyte(target: &Target) {
+    let id = target
+        .sessions
+        .open(
+            None,
+            &a_shell(
+                r#"awk 'BEGIN { for (i = 0; i < 4000; i++) { l = ""; for (j = 0; j < 60; j++) l = l sprintf("\033[3%dm%d", (i + j) % 8, j % 10); printf "%s\033[0m line %d\r\n", l, i } printf "PRINTED.\r\n" }'; read line"#,
+            ),
+            &|_| {},
+        )
+        .expect("it starts");
+    Pane::on(target, id).shows("PRINTED.");
+    if !hibernates_here(target, id, "its newest lines within a mebibyte") {
+        return;
+    }
+    let whole = crate::skillgrade::screen_of(target.sessions.as_ref(), id).expect("its screen");
+    assert!(
+        whole.len() > purlis_core::hibernatedscreens::MOST_BYTES,
+        "the case is past the bound: {}",
+        whole.len()
+    );
+
+    let kept = purlis_core::hibernatedscreens::fitted(|history| {
+        crate::skillgrade::screen_within(target.sessions.as_ref(), id, history)
+    })
+    .expect("a screen is kept");
+
+    assert!(
+        kept.len() <= purlis_core::hibernatedscreens::MOST_BYTES,
+        "{}",
+        kept.len()
+    );
+    let mut blank = AlacrittyEngine::new(SIZE, 5_000);
+    blank.advance(kept.as_bytes());
+    let lines = blank.screen().lines;
+    assert!(lines.iter().any(|line| line == "PRINTED."), "{lines:?}");
+    assert!(
+        lines.iter().any(|line| line.ends_with(" line 3999")),
+        "{lines:?}"
+    );
+    assert!(blank.history() > 0, "lines of history are kept above it");
+    target.sessions.close(id).expect("it closes");
+}
+
+/// **While its alternate screen is open, a hibernated chat's kept screen is that screen alone**
+/// (SC-4b, #7631; the engine's limit): a shell prints lines, then opens the alternate screen
+/// and draws on it, as an editor does. What is kept draws the alternate screen into a blank
+/// terminal, and none of the lines behind it.
+fn a_hibernated_chats_kept_screen_is_an_open_alternate_screen_alone(target: &Target) {
+    let id = target
+        .sessions
+        .open(
+            None,
+            &a_shell(
+                r#"awk 'BEGIN { for (i = 0; i < 200; i++) printf "behind %d\r\n", i; printf "\033[?1049h\033[2J\033[HTHE EDITOR." }'; read line"#,
+            ),
+            &|_| {},
+        )
+        .expect("it starts");
+    Pane::on(target, id).shows("THE EDITOR.");
+    if !hibernates_here(target, id, "an open alternate screen alone") {
+        return;
+    }
+
+    let kept = purlis_core::hibernatedscreens::fitted(|history| {
+        crate::skillgrade::screen_within(target.sessions.as_ref(), id, history)
+    })
+    .expect("a screen is kept");
+
+    let mut blank = AlacrittyEngine::new(SIZE, 5_000);
+    blank.advance(kept.as_bytes());
+    assert_eq!(
+        blank.screen().lines.first().map(String::as_str),
+        Some("THE EDITOR.")
+    );
+    assert!(!kept.contains("behind "), "none of what is behind it");
+    target.sessions.close(id).expect("it closes");
+}
 
 /// **A sandboxed runner chat reaches neither its runner's browser engine nor its host** (#3338,
 /// spec #2041): on a Docker pool's runner, the chat, the session host and the browser engine
@@ -4621,6 +4741,9 @@ fn a_sandboxed_opencode_chat_on_a_profile_its_runner_made_writes_its_own_data(ta
 /// of its own for them. Declared, `gh`
 /// runs through its shim on the value its desktop sent for that run, which stands in for the
 /// person's Allow and vault. A declared program the image does not have says so, naming the image.
+// The old route, retired under the one login (ADR 0128): a runner chat's `gh` is not a declared
+// tool with a vault token there, so this has nothing to run.
+#[cfg(not(feature = "forge-wiring"))]
 fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Target) {
     let Some(runner) = &target.runner else {
         return;
@@ -4640,7 +4763,7 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
              [ \"$1\" = login ] && [ \"$2\" = status ] && exit 0\n\
              for word in \"$@\"; do [ \"$word\" = --version ] && { echo 'codex-cli 0.147.0'; exit 0; }; done\n\
              gh --version | head -1 | sed 's/ version.*/ ANSWERED./'\n\
-             glab --version | head -1 | cut -c1-4 | sed 's/$/ ANSWERED./'\n\
+             said=$(glab --version 2>&1); case \"$said\" in *\"purlis gitlab access\"*) echo 'glab GUARDED.' ;; *) echo \"$said\" | head -1 | cut -c1-4 | sed 's/$/ ANSWERED./' ;; esac\n\
              if gh auth token >/dev/null 2>&1; then echo 'TOKEN some.'; else echo 'TOKEN none.'; fi\n\
              echo \"AT $HOME.\"\n\
              if cat \"$HOME/.config/gh/hosts.yml\" >/dev/null 2>&1; then echo 'KEPT read.'; else echo 'KEPT held.'; fi\n\
@@ -4673,11 +4796,13 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
         (id, Pane::on(target, id))
     };
 
-    // No tool: both answer, and neither is anyone.
+    // No tool: gh answers and is nobody; glab is guarded.
     let (id, pane) = chat_says(None);
     pane.shows("TRIED.");
     pane.shows("gh ANSWERED.");
-    pane.shows("glab ANSWERED.");
+    // #1349: a chat that holds the person's own login back has no glab of its own, and its
+    // shim says which flow gives it a token (and fails) in place of running on a login it never reads.
+    pane.shows("glab GUARDED.");
     pane.shows("TOKEN none.");
     // The home the runner's user keeps it in, so the refusals below are of that file.
     pane.shows(&format!(
@@ -4702,7 +4827,7 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
     let (id, pane) = chat_says(None);
     pane.shows("TRIED.");
     pane.shows("gh ANSWERED.");
-    pane.shows("glab ANSWERED.");
+    pane.shows("glab GUARDED.");
     pane.shows("KEPT held.");
     pane.shows("SETTINGS kept.");
     target.sessions.close(id).expect("it closes");
@@ -4746,7 +4871,8 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
     let (id, pane) = chat_says(Some(digest));
     pane.shows("TRIED.");
     pane.shows("gh ANSWERED.");
-    pane.shows("glab ANSWERED.");
+    // The persona declares gh and kubectl, not glab, so glab is still guarded (#1349).
+    pane.shows("glab GUARDED.");
     // `auth` is refused a declared tool (`tools::args`), so the token is never read back.
     pane.shows("TOKEN none.");
     pane.shows("KUBECTL named the image, ended 127.");
@@ -5163,6 +5289,7 @@ mod the_persons_shell_on_a_runner_makes_no_namespace {
     }
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 mod a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them {
     /// Run by the parity job, which names a runner image; elsewhere it runs nothing.
     #[test]
