@@ -7295,6 +7295,14 @@ impl Chats {
         lock(&self.open).get(&session)?.harness
     }
 
+    /// The numbers of the chats open, a shell tab among them, lowest first: what the gate of
+    /// automatic hibernation reads (SC-4g, #7636), without what [`Self::open_now`] gathers.
+    pub fn sessions_open(&self) -> Vec<u32> {
+        let mut open: Vec<u32> = lock(&self.open).keys().copied().collect();
+        open.sort_unstable();
+        open
+    }
+
     /// What `session` was started as, where charter has it open: its harness, or `None` inside
     /// for a shell. The outer `None` is a chat charter does not have open.
     pub fn started_as(&self, session: u32) -> Option<Option<Harness>> {

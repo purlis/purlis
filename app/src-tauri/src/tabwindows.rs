@@ -396,6 +396,8 @@ pub fn looked_at_again<R: Runtime>(window: &tauri::Window<R>) {
         return;
     };
     let away = window.is_minimized().unwrap_or(false) || !window.is_visible().unwrap_or(true);
+    // A window that lost the focus starts the clocks of the chats it shows (SC-4g, #7636).
+    let focused = window.is_focused().unwrap_or(true);
     let drawn: Vec<(PlaneId, u32)> = match showing.tab_window(window.label()) {
         Some(tab) => vec![(tab.plane, tab.number)],
         None => showing
@@ -404,9 +406,11 @@ pub fn looked_at_again<R: Runtime>(window: &tauri::Window<R>) {
             .unwrap_or_default(),
     };
     for (plane, number) in drawn {
-        if let Ok(held) = planes.held(&plane)
-            && held.chats().window_away(number, away)
-        {
+        let Ok(held) = planes.held(&plane) else {
+            continue;
+        };
+        held.window_focused(number, focused);
+        if held.chats().window_away(number, away) {
             crate::dispatched::front_moved(&held);
             // A window back on screen may show an announced chat for the first time (#4759).
             crate::layout::seen_on_screen(&held);

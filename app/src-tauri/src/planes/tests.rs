@@ -9618,3 +9618,254 @@ fn a_woken_chat_whose_hibernation_ended_nothing_is_started_with_no_wake_line() {
     let started = started_with_last(&host);
     assert!(!started.contains("purlis: this chat was"), "{started:?}");
 }
+
+/// **A Claude Code chat at rest** on the pretend host (SC-4g, #7636): its turn ended in the
+/// conversation purlis chose for it, on a harness that resumes by id and reports its own work,
+/// with nothing of its own out. Rested in every fact but time. Its reports are handed to the
+/// board, not sent over the plane's socket, so no hook is heard and nothing pokes the gate:
+/// the test reads it.
+fn a_claude_chat_resting(held: &Held, dir: &Path, name: &str) -> u32 {
+    use purlis_core::state::Event::{SessionStart, Stop, UserPromptSubmit};
+    let beside = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/hibernate-stand-ins");
+    std::fs::create_dir_all(&beside).expect("a folder for the stand-in");
+    let beside = tempfile::tempdir_in(&beside).expect("a folder of its own");
+    let claude = stand_in::claude_code(beside.path(), "claude", "#!/bin/sh\nexit 0\n");
+    let mut chat = one_chat_on(&claude.display().to_string()).chats.remove(0);
+    chat.name = name.to_owned();
+    let here = dir.join("plane/workspaces/alpha");
+    std::fs::create_dir_all(&here).expect("a folder of the project");
+    chat.cwd = Some(here);
+    let session = held
+        .chats()
+        .start(&chat, STARTING)
+        .expect("the host starts it");
+    std::mem::forget(beside);
+    assert_eq!(
+        held.chats().harness(session),
+        Some(purlis_core::harness::Harness::ClaudeCode),
+        "not a harness that reports its own work, so nothing below is evidence"
+    );
+    let conversation = held
+        .board()
+        .conversation(session)
+        .expect("purlis chose its conversation");
+    for event in [SessionStart, UserPromptSubmit, Stop] {
+        held.hooks().board().reported(&purlis_core::hookwire::Report {
+            chat: session,
+            event,
+            conversation: purlis_core::hookwire::Conversation::Named(conversation.clone()),
+            pid: Some(5000 + session),
+            agent: None,
+            detail: purlis_core::state::Detail::default(),
+        });
+    }
+    assert_eq!(
+        purlis_core::rested::rested(&crate::hibernation::facts_of(held, session, false)),
+        Ok(()),
+        "it never came to rest: {:?}",
+        crate::hibernation::facts_of(held, session, false)
+    );
+    session
+}
+
+/// A project on the pretend host whose gate reads `clock` and a hot target of `target`, with
+/// no chat on screen.
+fn gated_on(
+    host: &Pretend,
+    dir: &Path,
+    clock: &Arc<crate::autohibernate::HeldClock>,
+    target: u32,
+) -> (Planes, PathBuf, Arc<Held>) {
+    let clock: Arc<dyn crate::autohibernate::Clock> = clock.clone();
+    hibernating_on_with(host, dir, |planes| planes.gating_on(clock, target))
+}
+
+/// Nothing on screen: no chat is in front.
+fn nothing_on_screen(held: &Held) {
+    held.chats().bring_to_front(None);
+    assert_eq!(held.chats().looked_at(), Vec::<u32>::new());
+}
+
+#[test]
+fn under_the_target_a_day_rested_hibernates_nothing_and_arms_nothing() {
+    use crate::autohibernate::Read;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 2);
+    let one = a_claude_chat_resting(&held, dir.path(), "one");
+    let two = a_claude_chat_resting(&held, dir.path(), "two");
+    nothing_on_screen(&held);
+
+    assert_eq!(planes.gate().read(), Read::Nothing);
+    clock.advance(std::time::Duration::from_secs(24 * 60 * 60));
+    assert_eq!(planes.gate().read(), Read::Nothing);
+
+    assert_eq!(planes.gate().armed(), None);
+    assert_eq!(held.hibernated().of(one), None);
+    assert_eq!(held.hibernated().of(two), None);
+    assert_eq!(host.hibernated(), Vec::<u32>::new());
+}
+
+#[test]
+fn over_the_target_the_longest_rested_chat_goes_first_for_idle_one_at_a_time_to_the_target() {
+    use crate::autohibernate::{AFTER, Clock, Read};
+    const MINUTE: std::time::Duration = std::time::Duration::from_secs(60);
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 1);
+    let first = a_claude_chat_resting(&held, dir.path(), "first");
+    let second = a_claude_chat_resting(&held, dir.path(), "second");
+    let third = a_claude_chat_resting(&held, dir.path(), "third");
+    nothing_on_screen(&held);
+    let start = clock.now();
+
+    // Read once: every chat rests from now, and exactly one deadline is armed.
+    assert_eq!(planes.gate().read(), Read::Armed(start + AFTER));
+    assert_eq!(planes.gate().armed(), Some(start + AFTER));
+    // The person types in two of them: the third has rested longest, then the first.
+    held.looked().typed(first, start + MINUTE);
+    held.looked().typed(second, start + 2 * MINUTE);
+    clock.advance(AFTER + 5 * MINUTE);
+
+    let plane = held.plane_id().clone();
+    assert_eq!(planes.gate().read(), Read::Hibernated((plane.clone(), third)));
+    assert_eq!(planes.gate().read(), Read::Hibernated((plane, first)));
+    assert_eq!(planes.gate().read(), Read::Nothing, "it stops at the target");
+
+    assert_eq!(held.hibernated().of(third), Some(crate::hibernation::By::Idle));
+    assert_eq!(held.hibernated().of(first), Some(crate::hibernation::By::Idle));
+    assert_eq!(held.hibernated().of(second), None);
+    assert_eq!(host.hibernated(), [third, first]);
+    assert_eq!(planes.gate().armed(), None);
+}
+
+#[test]
+fn a_chat_on_screen_is_never_hibernated_by_the_gate() {
+    use crate::autohibernate::Read;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 1);
+    let looked_at = a_claude_chat_resting(&held, dir.path(), "looked-at");
+    let other = a_claude_chat_resting(&held, dir.path(), "other");
+    held.chats().bring_to_front(Some(looked_at));
+    assert_eq!(held.chats().looked_at(), [looked_at]);
+
+    assert!(matches!(planes.gate().read(), Read::Armed(_)));
+    clock.advance(std::time::Duration::from_secs(24 * 60 * 60));
+    assert_eq!(
+        planes.gate().read(),
+        Read::Hibernated((held.plane_id().clone(), other))
+    );
+    assert_eq!(planes.gate().read(), Read::Nothing);
+    assert_eq!(held.hibernated().of(looked_at), None);
+}
+
+#[test]
+fn a_task_is_skipped_and_the_next_longest_rested_chat_goes() {
+    // Until SC-4j (#7639) the act refuses a task, so the gate never picks one: it is skipped,
+    // and the next goes.
+    use crate::autohibernate::{Clock, Read};
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 1);
+    let asker = a_claude_chat_resting(&held, dir.path(), "asker");
+    let task = a_claude_chat_resting(&held, dir.path(), "task");
+    held.chats().handed_from_for_tests(
+        task,
+        purlis_core::reopen::HandedFrom {
+            id: None,
+            chat: asker,
+            name: "asker".to_owned(),
+            workspace: purlis_core::active::Place::PlaneRoot,
+            report: purlis_core::reopen::Owed::Sent,
+            mode: purlis_core::dispatchdecision::Mode::Task,
+            depth: 1,
+            root: None,
+            above: None,
+            by_person: false,
+            long: false,
+            policy: None,
+        },
+    );
+    let plain = a_claude_chat_resting(&held, dir.path(), "plain");
+    nothing_on_screen(&held);
+    // The task has rested longest; the asker has a task open, and is not rested.
+    assert!(matches!(planes.gate().read(), Read::Armed(_)));
+    held.looked().typed(plain, clock.now() + std::time::Duration::from_secs(60));
+    clock.advance(std::time::Duration::from_secs(24 * 60 * 60));
+
+    assert_eq!(
+        planes.gate().read(),
+        Read::Hibernated((held.plane_id().clone(), plain))
+    );
+    assert_eq!(held.hibernated().of(task), None);
+    assert_eq!(held.hibernated().of(asker), None);
+}
+
+#[test]
+fn the_app_s_own_hibernation_moves_its_run_to_hibernated_for_idle() {
+    // The first producer of `Cause::Idle` (ADR 0076 §2): where the window writes the log.
+    let dir = tempfile::tempdir().expect("a directory");
+    let logs = dir.path().join("events");
+    let events = an_event_log(&logs);
+    let host = Pretend::default();
+    let (planes, _told) = planes_on(&host);
+    let planes = planes.recording_events(Some(events.clone()));
+    let plane = planes.open(&a_plane(&dir.path().join("plane")));
+    let held = planes.held(&plane).expect("it is held");
+    let session = held
+        .chats()
+        .start(&one_chat_on("/nowhere/a-harness").chats[0], STARTING)
+        .expect("the host starts it");
+    let (run, _) = a_chat_with_sub_agents(&events, plane.root(), session, &[]);
+    assert!(
+        held.hibernated()
+            .latch_and_intend(session, crate::hibernation::By::Idle)
+    );
+
+    host.program_ends(
+        session,
+        purlis_core::session::Exit::Signal("Terminated".to_owned()),
+    );
+
+    assert_eq!(
+        own_run_lines(&logs),
+        [
+            ("run.started".to_owned(), run.clone(), "start".to_owned()),
+            ("run.moved".to_owned(), run, "hibernated | idle".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn the_app_s_act_reads_the_looked_at_clock_and_the_count_again() {
+    use crate::hibernation::Refused;
+    use purlis_core::rested::NotRested;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (_planes, _logs, held) = gated_on(&host, dir.path(), &clock, 1);
+    let session = a_claude_chat_resting(&held, dir.path(), "one");
+    nothing_on_screen(&held);
+
+    assert_eq!(
+        held.hibernate_chat_idle(session, &|| true),
+        Err(Refused::Not(NotRested::LookedAt)),
+        "it has not rested its time"
+    );
+    clock.advance(crate::autohibernate::AFTER);
+    assert_eq!(
+        held.hibernate_chat_idle(session, &|| false),
+        Err(Refused::Said(crate::hibernation::AT_THE_TARGET.to_owned()))
+    );
+    assert_eq!(held.hibernated().of(session), None);
+    assert_eq!(held.hibernate_chat_idle(session, &|| true), Ok(()));
+    assert_eq!(
+        held.hibernated().of(session),
+        Some(crate::hibernation::By::Idle)
+    );
+}

@@ -161,6 +161,8 @@ pub(crate) fn seen_on_screen(held: &crate::planes::Held) {
     if held.chats().mark_seen() {
         held.rows_changed();
     }
+    // And the looked-at clock: a chat that left the screen starts resting (SC-4g, #7636).
+    held.look_again(held.looked_now());
 }
 
 /// **Every tab the window has, told whenever it changes** (#4751): the record keeps it, so a

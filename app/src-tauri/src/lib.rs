@@ -35,6 +35,7 @@ mod askoutcome;
 mod askrules;
 mod askwrites;
 mod atlimit;
+mod autohibernate;
 mod autosave;
 mod awayrunners;
 mod blockedsave;
@@ -5195,6 +5196,21 @@ pub fn run() {
                     })
                 }),
             ));
+            // **The gate of automatic hibernation** (SC-4g, #7636): it reads that class's hot
+            // target, and nothing while the class is not known, on a thread of its own.
+            {
+                let handle = app.handle().clone();
+                let gate = app.state::<planes::Planes>().gate().clone();
+                gate.reads_its_target(std::sync::Arc::new(move || {
+                    match handle.state::<diagnostics::Device>().class() {
+                        diagnostics::DeviceClass::Known { hot_target, .. } => Some(hot_target),
+                        diagnostics::DeviceClass::Reading | diagnostics::DeviceClass::NotKnown => {
+                            None
+                        }
+                    }
+                }));
+                gate.start();
+            }
 
             // The working directory, resolved ONCE, to decide which plane the first window
             // opens. Everything after this names its plane; nothing asks the working
