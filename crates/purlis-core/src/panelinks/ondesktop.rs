@@ -192,5 +192,4 @@ impl LinkKind for RunnerFile {
 }
 
 #[cfg(test)]
-#[path = "ondesktop_tests.rs"]
 mod tests;
