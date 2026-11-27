@@ -154,21 +154,25 @@ pub fn sweep(root: &Path, named: impl Fn(&str) -> bool, now: SystemTime) -> usiz
 
 /// **The sweep at a project's open** ([`sweep`]): a screen is kept where the record of open
 /// chats holds its chat hibernated ([`crate::reopen::Chat::hibernated`], SC-4e, #7634), and
-/// every other goes. Where that record cannot be read, no chat is known to be hibernated, and
-/// every screen goes: a launch that cannot read it puts no chat back.
+/// every other goes. With no record at all, no chat is hibernated, and every screen goes.
+/// **Where the record is there and cannot be read**, which chats are hibernated is not known:
+/// every screen is kept to its age, as `retention::returning` keeps every task's and
+/// `secrets::handedto::on_open` every chat's names, since a garbled record read as "none
+/// hibernated" would delete what a hibernated chat wakes to.
 pub fn on_open(root: &Path, now: SystemTime) -> usize {
-    let hibernated: Vec<String> = crate::reopen::read_strictly(root)
-        .ok()
-        .flatten()
-        .map(|record| {
-            record
-                .chats
-                .into_iter()
-                .filter(|chat| chat.hibernated.is_some())
-                .filter_map(|chat| chat.identity.id)
-                .collect()
-        })
-        .unwrap_or_default();
+    let hibernated: Vec<String> = match crate::reopen::read_strictly(root) {
+        Ok(record) => record
+            .map(|record| {
+                record
+                    .chats
+                    .into_iter()
+                    .filter(|chat| chat.hibernated.is_some())
+                    .filter_map(|chat| chat.identity.id)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        Err(_) => return sweep(root, |_| true, now),
+    };
     sweep(root, |id| hibernated.iter().any(|one| one == id), now)
 }
 

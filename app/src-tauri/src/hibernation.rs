@@ -14,9 +14,9 @@
 //! This is the tracer: one chat, by hand. **Nothing is automatic.** The flag survives a restart
 //! as its chat's mark in the record of open chats (SC-4e, #7634): written with the act's intent,
 //! before the program ends, taken back where the act aborts, and read at the next launch, which
-//! gives a chat it marks no reopen ([`Hibernated::asleep`]). What a ruling on the spec could change sits in two
-//! places: the core's [`purlis_core::rested`], the one pure answer to *may it be hibernated*,
-//! and [`Hibernated`], the one place that says which chats are.
+//! gives a chat it marks no reopen ([`Hibernated::asleep`]). What a ruling on the spec could
+//! change sits in two places: the core's [`purlis_core::rested`], the one pure answer to *may
+//! it be hibernated*, and [`Hibernated`], the one place that says which chats are.
 //!
 //! **What it showed is kept** (SC-4b, #7631): as it is hibernated, its screen and scrollback are
 //! taken from the session host, fitted to 1 MiB, masked and kept
@@ -220,8 +220,9 @@ pub enum Typed {
 }
 
 /// **The chats of a project that are hibernated, or being hibernated, by session**, in memory;
-/// the record of open chats carries each one's mark across a restart (SC-4e, #7634). The one answer to *is it hibernated*: the program-end path, the
-/// pane, the row and the wake read it here.
+/// the record of open chats carries each one's mark across a restart (SC-4e, #7634). The one
+/// answer to *is it hibernated*: the program-end path, the pane, the row and the wake read it
+/// here.
 #[derive(Debug, Default)]
 pub struct Hibernated {
     held: Mutex<HashMap<u32, Held>>,

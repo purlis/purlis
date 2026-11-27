@@ -7526,6 +7526,17 @@ impl Chats {
         (from.mode == Mode::Task && from.report == Owed::Due).then(|| from.clone())
     }
 
+    /// **Whether chat `session`, left at a turn's end by its session host's end, is marked
+    /// hibernated by it** (SC-4e, #7634; #2278), for the next launch to keep it hibernated. Not
+    /// a chat on a pool or a runner (#7877: only this machine's chats hibernate), nor a task
+    /// that still owes its report, nor a chat with a task of its own open: each keeps the
+    /// reopen it has had, a task told to carry on (#1513) and its report delivered.
+    pub(crate) fn takes_a_host_crash_mark(&self, session: u32) -> bool {
+        self.pool_of(session).is_none()
+            && self.owed_task_report(session).is_none()
+            && self.tasks_of(session).is_empty()
+    }
+
     /// The deciding lock, where nobody holds it now ([`Self::deciding`]).
     pub fn try_deciding(&self) -> Option<MutexGuard<'_, ()>> {
         match self.dispatching.try_lock() {
@@ -9167,16 +9178,40 @@ impl Chats {
             (own != Own::default()).then_some((one.number, own))
         }));
         // **A chat its record marks hibernated is given no start, visible or not** (SC-4e,
-        // #7634): it comes back open, hibernated, with no program, as the act left it. Unless
-        // the session host that survived still runs its program (a crash between the mark and
-        // the program's end): the mark is stale, and the chat is reattached hot.
+        // #7634): it comes back open, hibernated, with no program, as the act left it, where
+        // [`Self::comes_back_asleep`] says so. Every other is started, or reattached, hot.
         let (asleep, coming): (Vec<Coming>, Vec<Coming>) = coming
             .into_iter()
-            .partition(|one| one.chat.hibernated.is_some() && !self.left_running(&one.chat));
+            .partition(|one| self.comes_back_asleep(&one.chat));
         for one in asleep {
             self.put_back_asleep(one);
         }
         lock(&self.coming).extend(coming);
+    }
+
+    /// **Whether `chat`, as a launch reads it, comes back hibernated** (SC-4e, #7634): its record
+    /// marks it, it runs on this machine, and the session host that survived answered that its
+    /// program is gone. A chat on a pool or a runner of its own is hot whatever its mark says
+    /// (#7877: only this machine's chats hibernate). A host that still runs the program (a crash
+    /// between the mark and the program's end) makes the mark stale, and one that cannot say yet
+    /// what it runs leaves the chat hot too: a reattach or a start finds its program, where
+    /// putting it asleep would leave a running program no window shows.
+    fn comes_back_asleep(&self, chat: &Chat) -> bool {
+        let Some(number) = chat.number.filter(|_| chat.hibernated.is_some()) else {
+            return false;
+        };
+        let workspace = workspace_at_start(Some(&self.project), chat.cwd.as_deref());
+        let routed = self
+            .sessions
+            .pool_for(workspace.as_deref(), chat.runs_on.as_ref())
+            .is_some()
+            || chat
+                .identity
+                .id
+                .as_deref()
+                .and_then(|id| self.own_runner_of(id))
+                .is_some();
+        !routed && self.sessions.left_known(number) == Some(false) && !self.left_running(chat)
     }
 
     /// **Chat `one` comes back hibernated** (SC-4e, #7634): open under its number with no

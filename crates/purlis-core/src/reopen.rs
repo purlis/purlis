@@ -386,6 +386,9 @@ pub struct Hibernation {
 /// **What hibernated a chat whose hibernation outlives a restart** (SC-4e, #7634): the causes
 /// of ADR 0076 §2 a relaunch keeps hibernated. A chat that quit hibernated (`quit`, `grace`)
 /// is not marked: it follows SC-20 as it is (spec #1391, ruling 3).
+///
+/// The record spells each in kebab case (`host-crash`); the window's own `hibernation::By`,
+/// which its bindings carry, spells the same cause in snake case (`host_crash`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum HibernatedBy {

@@ -231,6 +231,25 @@ fn a_project_s_open_takes_every_screen_where_no_record_says_which_chat_is_hibern
     assert_eq!(kept(&root, CHAT), None);
 }
 
+#[test]
+fn a_project_s_open_keeps_every_screen_to_its_age_where_the_record_cannot_be_read_7945() {
+    // #7945's review: a garbled record is not "none hibernated". Which chat is hibernated is
+    // not known, so no screen goes but by its age, as `retention::returning` keeps a task's.
+    let (_dir, root) = project();
+    keep(&root, CHAT, "a").unwrap();
+    keep(&root, OTHER, "b").unwrap();
+    let record = crate::reopen::path(&root);
+    std::fs::create_dir_all(record.parent().unwrap()).unwrap();
+    std::fs::write(&record, "{ not a record").unwrap();
+    assert!(crate::reopen::read_strictly(&root).is_err(), "it read");
+
+    assert_eq!(on_open(&root, SystemTime::now()), 0);
+    assert_eq!(kept(&root, CHAT).as_deref(), Some("a"));
+    assert_eq!(kept(&root, OTHER).as_deref(), Some("b"));
+    let later = SystemTime::now() + crate::retention::KEEP_FOR + Duration::from_secs(60);
+    assert_eq!(on_open(&root, later), 2, "an old one is kept still");
+}
+
 /// A snapshot as the engine takes it with `history` lines above a screen of `rows`, each line
 /// `width` bytes and its own colour: `None` is all `lines` of it.
 fn engine(lines: u32, rows: u32, width: usize) -> impl FnMut(Option<u32>) -> Option<String> {

@@ -2580,11 +2580,24 @@ impl Held {
                 .take(),
         );
         // The last record, after any written behind the window, and the writer ends with it.
+        // **A chat whose hibernation is still in flight is not marked** (SC-4e, #7634): its act
+        // wrote the mark, and the quit's end of every program ends its act before it can settle
+        // or back out, whose unmark would come after this last write. A chat that quit is not
+        // marked (spec #1391, ruling 3): it comes back hot.
         self.chats.write_last(|record| {
-            self.recorded.write_last(reopen::Record {
+            let mut record = reopen::Record {
                 relaunch_after_update: to_update,
                 ..record.clone()
-            });
+            };
+            for chat in &mut record.chats {
+                if chat
+                    .number
+                    .is_some_and(|number| self.hibernated.in_flight(number))
+                {
+                    chat.hibernated = None;
+                }
+            }
+            self.recorded.write_last(record);
         });
         // A task that had finished is left out of the next launch's put back, so its screen is
         // kept now, while its session still shows it (#6305).
@@ -5821,8 +5834,12 @@ impl Planes {
                             let resumable = resumable && !with_the_runner && !pool_forgotten;
                             // **Hibernated by its host's end, and marked so** (SC-4e, #7634;
                             // #2278): not failed, and a restart keeps it hibernated, with its
-                            // Resume and no kept screen.
-                            if left_in == crate::hostlost::LeftIn::Hibernated && resumable {
+                            // Resume and no kept screen. Not a chat on a pool, a task owing its
+                            // report or a chat with a task open: those reopen as they did.
+                            if left_in == crate::hostlost::LeftIn::Hibernated
+                                && resumable
+                                && held.chats.takes_a_host_crash_mark(session)
+                            {
                                 held.chats.mark_hibernated(
                                     session,
                                     Some(crate::hibernation::mark_of(
@@ -7223,8 +7240,10 @@ impl Latched<'_> {
         if self.held.hibernated.failed(self.session) {
             return true;
         }
-        // Hot after all: its mark goes, so a restart does not read it hibernated (SC-4e).
+        // Hot after all: its mark goes, on disk now as it came, so a crash from here does not
+        // bring it back hibernated (SC-4e).
         self.held.chats.mark_hibernated(self.session, None);
+        self.held.recorded.flush();
         if let Some(id) = self.id {
             purlis_core::hibernatedscreens::forget(self.held.root(), id);
         }
