@@ -1417,17 +1417,27 @@ export const TheAddWasNotTaken: Story = {
   args: { step: MET, shown: shown(MET), adding: ADDING },
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Trust and create the pool" }));
+    const add = canvas.getByRole("button", { name: "Trust and create the pool" });
+    // Pressed from the keyboard, not with `userEvent.click`: that one draws the button under a
+    // pointer that is not there, until the engine's own pointer moves, which WebKit does when it
+    // will (#7853).
+    add.focus();
+    await expect(add).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
     await expect(
       await canvas.findByText("the disk on build-box is full", undefined, SETTLES),
     ).toBeVisible();
-    // The press is over: the button is back (it is disabled and `aria-busy` while the add runs),
-    // so the picture is not of a frame WebKit drew before it (#7238).
-    await waitFor(
-      () => expect(canvas.getByRole("button", { name: "Trust and create the pool" })).toBeEnabled(),
-      SETTLES,
-    );
+    // The press is over: the button is back (it is unavailable and `aria-busy` while the add
+    // runs), so the picture is not of a frame WebKit drew before it (#7238).
+    await waitFor(() => expect(add).toHaveAttribute("aria-busy", "false"), SETTLES);
+    await expect(add).not.toHaveAttribute("aria-disabled");
     await expect(canvas.queryByText("Connected")).toBeNull();
     await expect(canvas.queryByText(/is ready to run your chats/)).toBeNull();
+    // The focus stays on the button pressed, its ring drawn, and nothing is drawn under a pointer.
+    // Natively disabled while the add ran, WebKit took the focus from it or not, so the picture
+    // had the ring or not (#7853's run 45934794896).
+    await expect(add).toHaveFocus();
+    await expect(add).toHaveAttribute("data-focus-visible");
+    await expect(canvasElement.querySelector("[data-hovered]")).toBeNull();
   },
 };
