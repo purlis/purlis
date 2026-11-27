@@ -53,6 +53,11 @@ const environment = theRunsEnvironment(plane, {
   // The agent the job's ssh signs in to the other machine with (#6266, tests/remote-docker/up.sh),
   // as a person's window has their own.
   ...(process.env.SSH_AUTH_SOCK ? { SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK } : {}),
+  // The image the fixture's dind holds (tests/remote-docker/up.sh), which the `e2e` build offers a
+  // new pool as its own (#7780), so Connect's one press of Trust and create the pool can be walked.
+  ...(process.env.PURLIS_E2E_REMOTE_POOL_IMAGE
+    ? { PURLIS_E2E_REMOTE_POOL_IMAGE: process.env.PURLIS_E2E_REMOTE_POOL_IMAGE }
+    : {}),
 });
 // The kubeconfig the job's kind cluster was made in (#4494), where a person's own is: kubectl's
 // default, in the home the app is given. The window's kubectl is never handed `KUBECONFIG`

@@ -13,6 +13,7 @@ import {
   tabsAdded,
   theStepSays,
   trustTheMachineOnTheMergedPage,
+  typeTheTeamsImage,
   watchTheTabs,
 } from "../poolsetup.js";
 import { closeTheViewTabsOpenedSince, runFromThePalette, tabNames } from "../reach.js";
@@ -79,14 +80,7 @@ describe("Pool setup on Docker on another machine, over TLS", () => {
     const name = await $("aria/Name");
     await name.waitForDisplayed();
     await name.setValue(POOL);
-    const image = await $("aria/Image, by digest");
-    if (!(await image.isDisplayed().catch(() => false))) {
-      const options = await $("aria/Options");
-      if ((await options.getAttribute("aria-expanded")) !== "true") await options.click();
-      await press("My team's own image");
-    }
-    await image.waitForDisplayed();
-    await image.setValue(IMAGE);
+    await typeTheTeamsImage(IMAGE);
     await press("Create the pool");
 
     await on("Sign-ins", MAKING);

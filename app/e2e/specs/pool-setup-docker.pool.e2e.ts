@@ -12,6 +12,7 @@ import {
   pressTheOneOf,
   tabsAdded,
   theStepSays,
+  typeTheTeamsImage,
   watchTheTabs,
 } from "../poolsetup.js";
 import { closeTheViewTabsOpenedSince, runFromThePalette, tabNames } from "../reach.js";
@@ -57,15 +58,7 @@ describe("Pool setup on Docker", () => {
     const name = await $("aria/Name");
     await name.waitForDisplayed();
     await name.setValue(POOL);
-    const image = await $("aria/Image, by digest");
-    if (!(await image.isDisplayed().catch(() => false))) {
-      // This build names an image of its own: the team's is chosen under Options.
-      const options = await $("aria/Options");
-      if ((await options.getAttribute("aria-expanded")) !== "true") await options.click();
-      await press("My team's own image");
-    }
-    await image.waitForDisplayed();
-    await image.setValue(IMAGE);
+    await typeTheTeamsImage(IMAGE);
     await press("Create the pool");
 
     // Sign-ins, once the pool and its runner are made: the project's profile, ticked for it,

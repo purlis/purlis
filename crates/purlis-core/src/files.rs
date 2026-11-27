@@ -40,7 +40,7 @@ use crate::youreditor::{Checked, Editor, NotLaunched};
 
 mod find;
 // What the plane root's files leave out (issue 1916).
-mod kept;
+pub(crate) mod kept;
 pub use find::{Finder, Found, Hit, Named, Place, branches, find};
 use kept::Kept;
 // One folder outside any branch, read whole: a skill's (#5183).

@@ -297,6 +297,10 @@ pub(crate) fn checked_or_opened_again<D>(
 /// **`docker`, as pool `pool` on another machine runs it, pointed at `socket`** (#6269): Docker's
 /// client for a Docker; for a Podman, this machine's `podman`, reading the files its check reads
 /// there over the pool's pinned SSH. Nothing is opened or contacted.
+///
+/// It keeps what the pin's check reads of the engine through it for the container's check on the
+/// same link (#7862, T6 Q2): a cold link reads the daemon's options once, in the pin's
+/// `docker info`.
 fn pointed(
     docker: &Docker,
     ssh: &Path,
@@ -305,6 +309,7 @@ fn pointed(
     socket: PathBuf,
     settings_in: &Path,
 ) -> Result<Docker, Finding> {
+    let docker = &docker.clone().keeping_what_its_pin_said();
     Ok(match &remote.pin.engine {
         super::EnginePin::Podman { .. } => {
             let podman = super::podman_here().ok_or_else(|| Finding::NeedsPodman {
