@@ -71,7 +71,13 @@ fn a_refused_request_is_answered_403_and_nothing_is_sent_to_the_forge() {
     );
     let reply = plain(&w, merge.as_bytes());
     assert_eq!(reply.status, 403, "{}", reply.text());
-    assert!(reply.text().contains("Merge"), "{}", reply.text());
+    // It says what was blocked, on which repo, and why (#7779).
+    assert!(
+        reply.text().contains("A merge on `github.com/acme/app`")
+            && reply.text().contains("`guards.merge`"),
+        "{}",
+        reply.text()
+    );
     // A wrong sentinel, another repo, an unknown host.
     for request in [
         "GET /user HTTP/1.1\r\nHost: api.github.localhost\r\nAuthorization: token not-the-sentinel\r\n\r\n".to_string(),

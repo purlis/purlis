@@ -18,12 +18,14 @@
 //! [`QUIET_LIMIT`] of the fault, [`told_within`]); nothing started waits past three minutes
 //! ([`START_LIMIT`]); and where a state has a name, it is the name. **Each of the five is asserted
 //! by one case, and each is train A's (#7187, on `main`)** and reads the state through
-//! [`seam::state_named`] from what the kept link told (Refused, of a pool with no chat, through
-//! [`seam::pool_state_named`]; Runner gone and Pool forgotten are still `#[ignore]`d, see their
-//! reasons): Unreachable by the 90 s drop
-//! (`a_90_second_drop_is_named_unreachable_while_it_lasts`), Refused by the registry down
-//! (`a_registry_that_is_down_names_the_pool_refused`), Host key changed by case 3, Runner gone by
-//! case 4, Pool forgotten by case 7.
+//! [`seam::state_named`] from what the kept link told (of a pool with no chat, through
+//! [`seam::pool_state_named`] from what its check found; Pool forgotten is still `#[ignore]`d,
+//! see its reason): Unreachable by the 90 s drop
+//! (`a_90_second_drop_is_named_unreachable_while_it_lasts`), by the killed runner's retries
+//! (case 4) and by the registry down (case 9, #7661), Host key changed by case 3,
+//! Pool forgotten by case 7. Runner gone is a container removed outside purlis, which the
+//! systemd rig's runner has none of: case 4 checks its outage rules and that its host's end is
+//! Unreachable, and the app's tests hold the name Runner gone (see the case).
 //!
 //! **Faults** are `tests/remote-faults/faults.sh`'s, put on the rig's containers and taken off by
 //! `restore`, which every test runs before it starts and again as it ends, however it ends: a
@@ -31,10 +33,11 @@
 //! `--retries 0` and one at a time, and a flake is a lifecycle bug (ruling 6; a quarantine needs
 //! a linked issue and expires in 7 days).
 //!
-//! **What is not wired yet.** Train A (#7187) is on `main`, and its cases that the link tells
-//! are lifted; the browsers' are train D's (#7190). A case that needs them is `#[ignore]`d with
-//! its reason and reads the state through [`seam`]. **Train D's ignores are lifted when it
-//! merges** (`cargo test -p purlis-core --test it -- --ignored a_live_remote_chat`).
+//! **What is not wired yet.** Trains A (#7187) and D (#7190) are on `main`, and the cases the
+//! link tells are lifted. What is left is the app's: Forget, and the browsers on a pool's runner
+//! (`app/src-tauri`), which purlis-core cannot reach, and the systemd rig has no pool and no
+//! browser engine. A case that needs them is `#[ignore]`d with its reason and reads the state
+//! through [`seam`] (`cargo test -p purlis-core --test it -- --ignored a_live_remote_chat`).
 //!
 //! It needs the systemd runner fixture, `SSH_RUNNER_SYSTEMD_TEST_ROUTE`,
 //! `SSH_RUNNER_SYSTEMD_TEST_MACHINE` and `SSH_RUNNER_TEST_PURLIS` (`tests/ssh-runner/up-systemd.sh`),
@@ -431,11 +434,12 @@ async fn a_chat(rig: &Rig, client: &Client, tag: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------------------------
-// What is train A's and train D's: read through here, so the rest of a case is real now.
+// What is the app's or the rig's: read through here, so the rest of a case is real now.
 // ---------------------------------------------------------------------------------------------
 
-/// **Reads of what is not on `main`.** Each function says what to put there when its train
-/// merges; until then a case that calls one is `#[ignore]`d with the train's name.
+/// **Reads of what purlis-core cannot reach.** Trains A and D are on `main`; what is left here is
+/// the app's (Forget, runner browsers) or the rig's (a second runner machine), and a case that
+/// calls one of these is `#[ignore]`d saying which (#7662).
 mod seam {
     use super::Rig;
     use crate::support::outage::Told;
@@ -444,8 +448,7 @@ mod seam {
     /// The name of the state the link is in, as the window words it, read from the last thing
     /// the kept link told (#7187, train A): the `Down`'s `host_key_changed` (or `key_changed`),
     /// `gone` and `refused` fields, else `Unreachable` for a link that is down and retried.
-    /// `Runner gone` of an ssh runner and `Pool forgotten` end a chat in the app, not the link,
-    /// so their cases stay `#[ignore]`d.
+    /// `Pool forgotten` ends a chat in the app, not the link, so its case stays `#[ignore]`d.
     pub fn state_named(told: &[(Duration, Told)]) -> String {
         match told.last() {
             Some((
@@ -467,50 +470,53 @@ mod seam {
     }
 
     /// The name of the state a pool is in, as the window words it, for a pool with no chat of its
-    /// own: `Refused` where its image cannot be fetched or its sign-in is turned away.
-    ///
-    /// Train A: as [`state_named`], read from the pool's `RemoteState`.
-    pub fn pool_state_named(_pool: &str) -> String {
-        todo!("needs #7187 train A: the pool's RemoteState, as the window names it")
+    /// own: read from what its check found, through train A's `Finding::remote_state` (#7187),
+    /// the core's `RemoteState`, which the window's `LinkState` mirrors.
+    pub fn pool_state_named(found: &purlis_core::sshroute::connect::Finding) -> String {
+        use purlis_core::sshroute::connect::RemoteState;
+        match found.remote_state() {
+            RemoteState::Unreachable => "Unreachable",
+            RemoteState::Refused => "Refused",
+            RemoteState::HostKeyChanged => "Host key changed",
+        }
+        .to_owned()
     }
 
     /// A second runner on another machine of the rig, with its own host, for the cases that need
     /// two. The rig has one (`tests/ssh-runner/up-systemd.sh`'s); a second machine there is the
     /// rig's follow-up.
     pub fn a_second_runner(_rig: &Rig) -> Rig {
-        todo!("needs a second runner machine in the rig (up-systemd.sh) and #7190 train D")
+        todo!("needs a second runner machine in the rig (up-systemd.sh) (#7662)")
     }
 
     /// The pool forgotten on this machine, as Forget does, and what it lists as left there.
     ///
-    /// Train A: `Forget works in every state and lists what may be left`; call it on the pool the
-    /// chat runs on and return the listed leftovers.
+    /// The app's Forget (`HostedSessions::pool_removed`, #7187), which lists what may be left:
+    /// call it on the pool the chat runs on and return the listed leftovers.
     pub fn forget_the_pool(_rig: &Rig) -> Vec<String> {
-        todo!(
-            "needs #7187 train A: Forget on the pool, with the list of what is left on the machine"
-        )
+        todo!("the app's: Forget on the pool, with the list of what is left on the machine (#7662)")
     }
 
     /// A browser opened on the runner, by the chat that owns it, and its state as the view says it.
     ///
-    /// Train D: the runner browser of `purlis_core::browser` on a pool (#7190).
+    /// The app's runner browser on a pool (`app/src-tauri/src/chatbrowsers.rs`, #7190).
     pub fn open_a_browser(_rig: &Rig, _chat: &str) -> String {
-        todo!("needs #7190 train D: a browser on a pool's runner")
+        todo!("the app's: a browser on a pool's runner (#7662)")
     }
 
     /// The browser's state: `Open`, a reason it is down, or `Pool forgotten`.
     pub fn browser_state(_rig: &Rig, _browser: &str) -> String {
-        todo!("needs #7190 train D: the browser's view state")
+        todo!("the app's: the browser's view state (#7662)")
     }
 
     /// The person takes over the browser; whether control was kept, or the reason it was not.
     pub fn take_over(_rig: &Rig, _browser: &str) -> Result<(), String> {
-        todo!("needs #7190 train D: takeover of a runner's browser")
+        todo!("the app's: takeover of a runner's browser (#7662)")
     }
 
     /// Whether the browser's page is the page it was (its URL and title).
     pub fn page_of(_rig: &Rig, _browser: &str) -> String {
-        todo!("needs #7190 train D: the page a runner browser shows")
+        todo!("the app's: the page a runner browser shows (#7662)")
     }
 }
 
@@ -718,9 +724,17 @@ fn a_host_key_changed_under_a_live_chat_is_not_retried_and_the_chat_comes_back_a
     rt.shutdown_timeout(Duration::from_secs(5));
 }
 
+/// Case 4, the runner killed (#7662): the systemd machine's host is killed outright, systemd
+/// starts it again, and the chat it ran is ended inside the limit, never "Reconnecting…" for ever,
+/// and the next chat starts on the new host.
+///
+/// **Not named Runner gone here**: Runner gone is a runner's container removed outside purlis
+/// (CONTEXT.md), which an ssh runner has none of. Its host's end ends its chats as a host crash
+/// does (ADR 0068 §3, `app/src-tauri/src/hostlost.rs`), and the app, not the link, says so; the
+/// window's Runner gone is held by `a_runner_removed_outside_purlis_ends_its_chats_and_says_so`
+/// in `app/src-tauri/src/hostedsessions/tests.rs`.
 #[test]
-#[ignore = "Runner gone of an ssh runner is told by the app's chat-end path, not the link (`Down::gone` is a Docker runner's): read it where the app does"]
-fn a_killed_runner_ends_its_chat_as_runner_gone_never_reconnecting_for_ever_and_the_next_chat_starts_a_new_host()
+fn a_killed_runner_host_ends_its_chat_never_reconnecting_for_ever_and_the_next_chat_starts_a_new_host()
  {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
@@ -732,7 +746,7 @@ fn a_killed_runner_ends_its_chat_as_runner_gone_never_reconnecting_for_ever_and_
         let fault_at = rig.fault(&["kill-runner"]);
         kept.until_down(fault_at, QUIET_LIMIT).await;
         told_within(&kept.told(), fault_at, QUIET_LIMIT);
-        // Not "Reconnecting…" for ever: inside the limit the chat is ended, by name.
+        // Not "Reconnecting…" for ever: the chat is ended inside the limit.
         let deadline = Instant::now() + START_LIMIT;
         let after = kept
             .until_working(START_LIMIT, "the host started again")
@@ -744,9 +758,36 @@ fn a_killed_runner_ends_its_chat_as_runner_gone_never_reconnecting_for_ever_and_
             assert!(Instant::now() < deadline, "the chat was never ended");
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
-        assert_eq!(seam::state_named(&kept.told()), "Runner gone");
-        // The next chat starts a new host's chat, inside the limit.
+        // A host's crash is a fault waiting can mend: every Down from the fault until the link
+        // is back is named Unreachable, retried, never refused, gone or a changed key. The
+        // first is the held link's end, which is always plain; the retries' dials after it are
+        // the ones that could say otherwise.
+        let told = kept.told();
+        let first_down = told
+            .iter()
+            .position(|(at, what)| *at >= fault_at && matches!(what, Told::Down { .. }))
+            .expect("until_down saw it");
+        let down_at = told[first_down].0;
+        let back = first_up_after(&told, down_at);
+        assert!(
+            back.is_some_and(|back| down_at - fault_at + back <= START_LIMIT),
+            "the link came back inside the limit, to the host systemd started again: {told:?}"
+        );
+        for end in first_down..told.len() {
+            match &told[end].1 {
+                Told::Up => break,
+                Told::Down { .. } => {
+                    assert_eq!(seam::state_named(&told[..=end]), "Unreachable", "{told:?}")
+                }
+            }
+        }
+        // The next chat starts a new host's chat, inside the limit. A new host holds nothing yet:
+        // the app holds the project again on the new link before it starts a chat, as here.
         let began = Instant::now();
+        after
+            .hold_project(PROJECT, "")
+            .await
+            .expect("the new host holds the project");
         let next = typing_chat(&after, "killed-next").await;
         assert!(
             began.elapsed() <= START_LIMIT,
@@ -805,7 +846,7 @@ fn an_app_restart_reattaches_each_chat_to_its_own_pool() {
 }
 
 #[test]
-#[ignore = "Pool forgotten and Forget's list are the app's (app/src-tauri hostlost.rs), not reachable from purlis-core, and the rig is not a pool"]
+#[ignore = "Forget and its list are the app's (HostedSessions::pool_removed, app/src-tauri), which purlis-core cannot call, and the systemd rig is a runner with no pool to forget (#7662)"]
 fn a_pool_forgotten_during_a_chat_ends_it_as_pool_forgotten_and_lists_what_is_left_on_the_machine()
 {
     purlis_core::unsteered!();
@@ -937,31 +978,19 @@ fn a_half_open_link_is_found_within_the_stated_bound_and_the_chat_survives_it() 
 // Case 9, on the Docker pool: the registry down.
 // ---------------------------------------------------------------------------------------------
 
+/// The registry inside dind goes down under a Docker pool; the check fails inside its budget as
+/// image unreachable, names the pool `Unreachable` as the window words it (train A, #7187), and
+/// leaves no runner container. A registry that is down is a fault waiting can mend, not one the
+/// person must act on (#7661). One case, one rig run: the fault step is near its time budget.
 #[test]
-fn a_registry_that_is_down_fails_the_check_within_its_budget_as_image_unreachable_and_leaves_no_container()
+fn a_registry_that_is_down_fails_the_check_within_its_budget_as_image_unreachable_names_the_pool_unreachable_and_leaves_no_container()
  {
     purlis_core::unsteered!();
-    a_registry_that_is_down(false);
-}
-
-/// Case 9's other half, the state the window names for it: Refused (train A, #7187).
-#[test]
-#[ignore = "A maps Finding::ImageUnreachable to RemoteState::Unreachable, the case says Refused: one of them is wrong (#7187)"]
-fn a_registry_that_is_down_names_the_pool_refused() {
-    purlis_core::unsteered!();
-    a_registry_that_is_down(true);
-}
-
-/// The registry inside dind goes down under a Docker pool; the check fails inside its budget as
-/// image unreachable and leaves no runner container; with `names_the_state`, the pool is also
-/// named `Refused`, as the window words it.
-fn a_registry_that_is_down(names_the_state: bool) {
     use purlis_core::dockerpool::{Docker, Image};
     use purlis_core::poolsetup::doctoring;
     use purlis_core::runners::{Pool, Remote, Set};
     use purlis_core::sshroute::{EnginePin, Pin, forward};
 
-    purlis_core::unsteered!();
     let found = (|| {
         Some((
             std::env::var("REMOTE_DOCKER_TEST_ROUTE").ok()?,
@@ -1045,9 +1074,6 @@ fn a_registry_that_is_down(names_the_state: bool) {
     let took = began.elapsed();
     forward::let_go("regdown");
     let finding = found.expect_err("doctor finds the registry down");
-    if names_the_state {
-        assert_eq!(seam::pool_state_named("regdown"), "Refused");
-    }
     assert!(
         matches!(finding, connect::Finding::ImageUnreachable { .. }),
         "image unreachable, not another finding: {finding:?}"
@@ -1073,6 +1099,12 @@ fn a_registry_that_is_down(names_the_state: bool) {
         "",
         "a failed check leaves no runner container"
     );
+    // Last, so a wrong name does not hide the checks above.
+    assert_eq!(
+        seam::pool_state_named(&finding),
+        "Unreachable",
+        "{finding:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1080,7 +1112,7 @@ fn a_registry_that_is_down(names_the_state: bool) {
 // ---------------------------------------------------------------------------------------------
 
 #[test]
-#[ignore = "needs #7190 train D: browsers on a pool's runner"]
+#[ignore = "train D's runner browsers are the app's (app/src-tauri chatbrowsers.rs), which purlis-core cannot open, and the systemd rig's machine has no browser engine (tests/ssh-runner/systemd.Dockerfile) (#7662)"]
 fn b1_a_browsers_link_drops_and_returns_the_view_says_why_and_the_page_comes_back() {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
@@ -1111,7 +1143,7 @@ fn b1_a_browsers_link_drops_and_returns_the_view_says_why_and_the_page_comes_bac
 }
 
 #[test]
-#[ignore = "needs #7190 train D: takeover of a runner's browser"]
+#[ignore = "train D's runner browsers are the app's (app/src-tauri chatbrowsers.rs), which purlis-core cannot open, and the systemd rig's machine has no browser engine (tests/ssh-runner/systemd.Dockerfile); takeover is the app's too (#7662)"]
 fn b2_a_takeover_during_a_drop_keeps_control_or_the_view_says_why() {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
@@ -1141,7 +1173,7 @@ fn b2_a_takeover_during_a_drop_keeps_control_or_the_view_says_why() {
 }
 
 #[test]
-#[ignore = "needs #7190 train D and #7187 train A: a browser ends as Pool forgotten"]
+#[ignore = "train D's runner browsers are the app's (app/src-tauri chatbrowsers.rs), which purlis-core cannot open, and the systemd rig's machine has no browser engine (tests/ssh-runner/systemd.Dockerfile); Forget is the app's too (HostedSessions::pool_removed) and the rig has no pool (#7662)"]
 fn b3_a_pool_forgotten_with_a_browser_open_ends_it_as_pool_forgotten() {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
@@ -1159,7 +1191,7 @@ fn b3_a_pool_forgotten_with_a_browser_open_ends_it_as_pool_forgotten() {
 }
 
 #[test]
-#[ignore = "needs #7190 train D: a quit leaves a runner's browser running and purlis reattaches"]
+#[ignore = "train D's runner browsers are the app's (app/src-tauri chatbrowsers.rs), which purlis-core cannot open, and the systemd rig's machine has no browser engine (tests/ssh-runner/systemd.Dockerfile); a browser that outlives the window is the app's too, and only after a crash (app/src-tauri/src/hostedsessions/tests/browsers_back.rs, #2025): a quit ends every browser (#2022), so B4's premise is to be checked (#7816) (#7662)"]
 fn b4_an_app_quit_with_a_runner_browser_open_leaves_it_running_and_purlis_reattaches() {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
@@ -1195,7 +1227,7 @@ fn b4_an_app_quit_with_a_runner_browser_open_leaves_it_running_and_purlis_reatta
 }
 
 #[test]
-#[ignore = "needs #7190 train D: browsers on a pool's runner, and a second runner machine in the rig (follow-up on up-systemd.sh)"]
+#[ignore = "train D's runner browsers are the app's (app/src-tauri chatbrowsers.rs), which purlis-core cannot open, and the systemd rig's machine has no browser engine (tests/ssh-runner/systemd.Dockerfile); and the rig has one runner machine, not the two this needs (up-systemd.sh) (#7662)"]
 fn b5_two_runners_that_start_browsers_at_once_run_them_in_parallel() {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
@@ -1231,6 +1263,41 @@ fn b5_two_runners_that_start_browsers_at_once_run_them_in_parallel() {
         kept_other.task.abort();
     });
     rt.shutdown_timeout(Duration::from_secs(5));
+}
+
+/// The seam names a pool's state from what its check found, as the window does (#7661): a
+/// registry that is down is a fault waiting can mend, so Unreachable; a machine that answers and
+/// says no is Refused.
+#[test]
+fn a_pools_state_is_named_from_what_its_check_found_as_the_window_words_it() {
+    purlis_core::unsteered!();
+    use purlis_core::sshroute::connect::Finding;
+    let host = || "box".to_owned();
+    for (found, named) in [
+        (
+            Finding::ImageUnreachable {
+                host: host(),
+                registry: "registry.invalid".into(),
+            },
+            "Unreachable",
+        ),
+        (
+            Finding::NoAnswer {
+                host: host(),
+                port: 22,
+            },
+            "Unreachable",
+        ),
+        (Finding::SignInRefused { host: host() }, "Refused"),
+        (
+            Finding::ContextMoved {
+                name: "there".into(),
+            },
+            "Refused",
+        ),
+    ] {
+        assert_eq!(seam::pool_state_named(&found), named, "{found:?}");
+    }
 }
 
 #[test]

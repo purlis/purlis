@@ -166,6 +166,83 @@ const APPROVAL: &[&str] = &[
 
 const RELEASE: &[&str] = &["releases", "tags", "tag"];
 
+/// The words of the routes that appear only in the write rows, the read arms and the prefix of a
+/// repo's routes, besides those of the lists and patterns above: with them, [`is_route_word`].
+const ROUTE_WORDS: &[&str] = &[
+    "repos",
+    "api",
+    "v3",
+    "v4",
+    "projects",
+    "graphql",
+    "user",
+    "search",
+    "pulls",
+    "issues",
+    "comments",
+    "replies",
+    "labels",
+    "milestones",
+    "update-branch",
+    "requested_reviewers",
+    "merge_requests",
+    "rebase",
+    "notes",
+    "discussions",
+    "uploads",
+    "forks",
+    "fork",
+    "compare",
+    "branches",
+    "contents",
+    "readme",
+    "languages",
+    "contributors",
+    "check-runs",
+    "check-suites",
+    "statuses",
+    "status",
+    "git",
+    "refs",
+    "trees",
+    "blobs",
+    "commits",
+    "matching-refs",
+    "ref",
+    "actions",
+    "runs",
+    "jobs",
+    "artifacts",
+    "workflows",
+    "repository",
+    "files",
+    "tree",
+];
+
+/// **Whether `segment` is a word of the route vocabulary** (#7779): a word one of the forge's
+/// routes above is written with, which a refusal may show as it is. Any other segment the chat
+/// sent is chat-chosen text, and is never shown.
+pub(super) fn is_route_word(segment: &str) -> bool {
+    let segment = segment.to_ascii_lowercase();
+    let word = segment.as_str();
+    let listed = [ROUTE_WORDS, RULESET, ADMIN, MERGE, APPROVAL, RELEASE]
+        .iter()
+        .any(|list| list.contains(&word));
+    let patterned = [
+        RULE_READS,
+        GITLAB_RULE_READS,
+        CI_WRITES,
+        GITLAB_CI_WRITES,
+        GITHUB_READS,
+        GITLAB_READS,
+        DEPENDABOT_READS,
+    ]
+    .iter()
+    .flat_map(|rows| rows.iter())
+    .any(|pattern| pattern.contains(&word));
+    !matches!(word, "*" | "#") && (listed || patterned)
+}
+
 fn any(names: &[String], list: &[&str]) -> bool {
     names.iter().any(|n| list.contains(&n.as_str()))
 }
@@ -188,6 +265,89 @@ fn merge_class(kind: Kind, method: &str, rel: &[String]) -> Option<Class> {
     rows.iter()
         .any(|(m, pattern)| *m == method && matches(rel, pattern))
         .then_some(Class::MergeWrite)
+}
+
+/// **Whether `guards.merge` = `log` or `off` would let `method` on `rel` through** (#7779): one of
+/// [`merge_class`]'s routes, which accepting the project's policy can open. Any other merge stays
+/// refused whatever is accepted.
+pub(super) fn opens_a_merge(kind: Kind, method: &str, rel: &[String]) -> bool {
+    merge_class(kind, method, rel).is_some()
+}
+
+/// A merge, a release or tag, or a fork, read from **the act's own route** (#7779), never from a
+/// segment's name: a label named `merge` is not a merge. `holdable`: the route of an act the
+/// person's press can perform ([`crate::heldact::recognise`]'s), in its exact form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ActRoute {
+    Merge { holdable: bool },
+    ReleaseOrTag { holdable: bool },
+    Fork,
+}
+
+/// The act `method` on `rel` is by its route, if it is one ([`ActRoute`]).
+pub(super) fn act_route(kind: Kind, method: &str, rel: &[String]) -> Option<ActRoute> {
+    // Read as the recogniser reads it: a decoded `/` is a break.
+    let rel: Vec<String> = rel
+        .iter()
+        .flat_map(|s| s.split('/'))
+        .map(str::to_owned)
+        .collect();
+    let is =
+        |methods: &[&str], pattern: &[&str]| methods.contains(&method) && matches(&rel, pattern);
+    // `pattern` and at least one segment after it.
+    let under = |methods: &[&str], pattern: &[&str]| {
+        methods.contains(&method)
+            && rel.len() > pattern.len()
+            && matches(&rel[..pattern.len()], pattern)
+    };
+    const EDITS: &[&str] = &["PUT", "PATCH", "DELETE"];
+    let act = match kind {
+        Kind::GitHub => {
+            if is(&["PUT"], &["pulls", "#", "merge"]) {
+                ActRoute::Merge { holdable: true }
+            } else if is(&["POST"], &["merges"]) {
+                ActRoute::Merge { holdable: false }
+            } else if is(&["POST"], &["releases"]) {
+                ActRoute::ReleaseOrTag { holdable: true }
+            } else if under(EDITS, &["releases"])
+                || under(&["POST"], &["releases", "*"])
+                || under(EDITS, &["git", "refs", "tags"])
+            {
+                ActRoute::ReleaseOrTag { holdable: false }
+            } else if is(&["POST"], &["forks"]) {
+                ActRoute::Fork
+            } else {
+                return None;
+            }
+        }
+        Kind::GitLab => {
+            if is(&["PUT"], &["merge_requests", "#", "merge"])
+                || is(&["POST", "PUT"], &["merge_trains", "merge_requests", "#"])
+            {
+                ActRoute::Merge { holdable: true }
+            } else if is(
+                &["POST", "PUT"],
+                &["merge_requests", "#", "merge_when_pipeline_succeeds"],
+            ) || is(
+                &["POST"],
+                &["merge_requests", "#", "cancel_merge_when_pipeline_succeeds"],
+            ) {
+                ActRoute::Merge { holdable: false }
+            } else if is(&["POST"], &["repository", "tags"]) || is(&["POST"], &["releases"]) {
+                ActRoute::ReleaseOrTag { holdable: true }
+            } else if under(&["DELETE"], &["repository", "tags"])
+                || under(EDITS, &["releases"])
+                || under(&["POST"], &["releases", "*"])
+            {
+                ActRoute::ReleaseOrTag { holdable: false }
+            } else if is(&["POST"], &["fork"]) {
+                ActRoute::Fork
+            } else {
+                return None;
+            }
+        }
+    };
+    Some(act)
 }
 
 /// The refusal a route earns by its name, if it earns one. `merging`: `guards.merge` lets a merge

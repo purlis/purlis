@@ -184,7 +184,12 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
     let outcome = w.proxy.handle(&w.chat, &inbound);
     match outcome {
         Outcome::Refused(refusal) => {
-            let said = (refusal == Refusal::Pinned).then(|| w.proxy.pin_said(&rh.host, rh.port));
+            // The pin's own sentence, or what was blocked and why (#7779).
+            let said = if refusal == Refusal::Pinned {
+                Some(w.proxy.pin_said(&rh.host, rh.port))
+            } else {
+                w.proxy.refused_said(&w.chat, &rh, &headers, refusal)
+            };
             if git_refused(
                 &mut framed.stream,
                 &rh.method,
@@ -350,10 +355,11 @@ fn refused<W: Write>(out: &mut W, refusal: Refusal) -> io::Result<()> {
     refused_saying(out, refusal, None)
 }
 
-/// [`refused`], with the pin's own sentence where the refusal is the pin's (who set it, and that
-/// signing in does not change it): `said` is [`ForgeProxy::pin_said`]'s.
+/// [`refused`], with the refusal's own sentence where it has one: the pin's (who set it, and that
+/// signing in does not change it, [`ForgeProxy::pin_said`]), the check a malformed request
+/// failed, or what was blocked and why ([`ForgeProxy::refused_said`]).
 fn refused_saying<W: Write>(out: &mut W, refusal: Refusal, said: Option<String>) -> io::Result<()> {
-    if let (Refusal::Pinned | Refusal::MalformedRequest, Some(said)) = (refusal, &said) {
+    if let (false, Some(said)) = (refusal == Refusal::NoSentinel, &said) {
         return write_answer(out, 403, &message(said));
     }
     // A request with no credential at all is **challenged**, not refused outright: `git` sends its

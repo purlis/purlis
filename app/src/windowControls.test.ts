@@ -128,6 +128,9 @@ const UNLINKED: Readonly<Record<string, string>> = {
   "crates/purlis-core/src/forge/readiness.rs: Save": ELSEWHERE,
   "crates/purlis-core/src/forge/readiness.rs: Save application": ELSEWHERE,
   "crates/purlis-core/src/forge/readiness.rs: Save changes": ELSEWHERE,
+  // A chat's `purlis save --pull` in a project that saves through a pull request (#6846); the
+  // refusal also raises the person's Inbox row, as the chat's refused update does.
+  "crates/purlis-core/src/gitbroker.rs: Update": CHAT,
   // A merge refused for want of a press asked once more, or for a ruleset that changed, is shown
   // on the merge row and its pane, beside the Merge it names (Q269).
   "crates/purlis-core/src/mergehold.rs: Merge": BESIDE,

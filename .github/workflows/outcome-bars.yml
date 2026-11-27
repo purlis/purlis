@@ -95,6 +95,33 @@ jobs:
         shell: bash
         run: |
           echo "**Built on a self-hosted runner** ($RUNNER_NAME, $RUNNER_OS $RUNNER_ARCH): these outcome bars' times are this machine's, not macos-latest's, which their guards were set on (docs/updating.md)." >> "$GITHUB_STEP_SUMMARY"
+      # **The window the bars drive has to paint** (#7738): WebKit runs no `requestAnimationFrame`
+      # for a window behind the lock screen, on a display asleep or on a Mac with no display, and
+      # the Library draws its rows a screen a frame. On the benchmark Mac's first run (45897228656)
+      # the first screen was drawn and nothing after it, for all three harnesses. Before the build,
+      # so a locked Mac fails in seconds and not after it: only what macOS says for certain fails
+      # the job (the runner's user is not on the console, or its screen is locked); the rest is
+      # said. No sudo: `ioreg`, `pmset -g` and `system_profiler` read.
+      - name: A self-hosted Mac's window can be painted
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -uo pipefail
+          mine=$(ioreg -n Root -d1 | grep '"IOConsoleUsers"' | tr '{' '\n' | grep -F "\"kCGSSessionUserNameKey\"=\"$USER\"" || true)
+          displays=$(system_profiler SPDisplaysDataType 2>/dev/null | grep -c 'Resolution:' || true)
+          displaysleep=$(pmset -g 2>/dev/null | awk '$1 == "displaysleep" { print $2 }')
+          echo "$USER's session: ${mine:-none}"
+          echo "displays: $displays; display sleep after: ${displaysleep:-unknown} min (0 is never)"
+          said="docs/updating.md, \"The outcome bars on a self-hosted Mac\""
+          case "$mine" in
+            "") echo "::error title=No session::$USER has no login session on this Mac, so the app's window is drawn nowhere ($said)"; exit 1 ;;
+            *'"CGSSessionScreenIsLocked"=Yes'*) echo "::error title=Screen locked::$USER's screen is locked, so WebKit paints no frame of the app's window ($said)"; exit 1 ;;
+            *'"kCGSSessionOnConsoleKey"=Yes'*) ;;
+            *) echo "::error title=Not on the console::$USER's session is not the one on the display, so the app's window is drawn nowhere ($said)"; exit 1 ;;
+          esac
+          [ "$displays" = 0 ] && echo "::warning title=No display::system_profiler lists no display: without one (or a dummy one) WebKit paints no frame ($said)"
+          [ -n "$displaysleep" ] && [ "$displaysleep" != 0 ] && echo "::notice title=Display sleep::the display sleeps after $displaysleep min; the bars keep it awake with caffeinate, but a Mac that locks as it sleeps locks between runs ($said)"
+          exit 0
       # **A persistent runner starts from nothing**, as `release.yml`'s build does: a self-hosted Mac
       # keeps its workspace between jobs, so the folder is emptied before the checkout, and only
       # rust-cache's and sccache's own restores (as on a hosted runner) bring a build back.
@@ -273,6 +300,19 @@ jobs:
         run: |
           said=$(sccache --show-stats 2>&1 | head -30 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           echo "::notice title=sccache (macOS, ${{ matrix.specs && format('part {0}', matrix.shard) || matrix.sandbox && 'the sandbox runs' || 'the single-app runs' }})::${said:-sccache said nothing}"
+      # **The display stays awake while the bars run** (#7738): `caffeinate -u` declares the user
+      # active, which turns a display that went off back on and keeps it from idle sleep, and
+      # `-d -i` hold the display and the machine awake, for up to the job's 130 minutes. A
+      # display asleep paints no frame of the window. The last step stops it. It cannot unlock a
+      # locked screen: that is the Mac's setting (docs/updating.md).
+      - name: A self-hosted Mac keeps its display awake for the bars
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          nohup caffeinate -d -i -u -t 7800 >/dev/null 2>&1 &
+          echo $! > "$RUNNER_TEMP/job-home/caffeinate.pid"
+          echo "caffeinate: pid $!"
       # What GitHub's macOS image is busy with around each harness's bars (#4351), to read beside
       # their numbers. Spotlight went off before the build. Nothing waits for the runner: waiting
       # brought L10 no gain (the person's ruling of 2026-11-05).
@@ -353,4 +393,5 @@ jobs:
         run: |
           set -uo pipefail
           sccache --stop-server >/dev/null 2>&1 || true
+          [ -f "$RUNNER_TEMP/job-home/caffeinate.pid" ] && kill "$(cat "$RUNNER_TEMP/job-home/caffeinate.pid")" 2>/dev/null || true
           rm -rf "$RUNNER_TEMP/job-home"

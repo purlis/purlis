@@ -2575,8 +2575,16 @@ pub enum Answer {
     /// would stand once it heard the asking line. `false` for a chat the app holds no fact for.
     Attended { attended: bool },
     /// **How each family runs for the asking chat** ([`Ask::Policy`], Q308): `family=mode` pairs,
-    /// as [`crate::enforcement::Resolved::spelled`] writes them.
-    Policy { spelled: String },
+    /// as [`crate::enforcement::Resolved::spelled`] writes them, and **the families of those
+    /// enforced only because this machine's acceptance of the project's policy is Broken or
+    /// Waiting** ([`crate::enforcement::Resolved::unaccepted`], ADR 0130 §7), by their keys: a
+    /// refusal by one names the unaccepted policy as its cause. Absent from an older app, which
+    /// leaves every refusal its own words.
+    Policy {
+        spelled: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        unaccepted: Vec<String>,
+    },
     /// **The commits a remote's branches and tags are at** ([`Ask::RemoteRefs`], #7302), full
     /// object ids as `ls-remote` names them.
     RemoteRefs { tips: Vec<String> },

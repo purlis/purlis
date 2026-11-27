@@ -27,7 +27,7 @@ import {
   theMissBehind,
   whatWasOver,
 } from "./covers.js";
-import { theWindowIsDrawn } from "./drawn.js";
+import { theWindowIsDrawn, theWindowPaintsFrames } from "./drawn.js";
 import { theProjectsFoldersAreAccepted } from "./acting.js";
 import { noDialogIsLeftUp } from "./opening.js";
 import { theWindowHoldsTheRail } from "./rail.js";
@@ -245,6 +245,9 @@ export const config: WebdriverIO.Config = {
     // A press that misses is described as it misses (#5609, `covers.ts`).
     describeEveryMissedPress();
     await theWindowIsDrawn();
+    // And paints frames: a window WebKit paints none for answers every query and draws nothing
+    // that waits for a frame, so every spec would fail as its own (#7738).
+    await theWindowPaintsFrames();
     // The default window, wide enough for the project rail beside both sidebars, whatever an
     // earlier spec left (`rail.ts`, #3077). A spec that measures a narrower window, where the
     // rail hides itself to leave the work its room, sets that size itself.
