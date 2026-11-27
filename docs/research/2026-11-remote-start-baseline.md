@@ -58,8 +58,11 @@ runner's own log, another sum.
 `remote-parity` job, against `tests/remote-docker/up.sh`: `docker:dind` behind a dockerised sshd,
 with `netem delay 40ms 10ms loss 1%` on the sshd's side. It reads the spans back, **asserts each
 step of the link path emitted one** in the scenario it belongs to, prints the table and writes it
-to the job's summary. The round trip is the median of five TCP connects to the sshd (the delay is
-on the sshd's egress, so a connect is one round trip).
+to the job's summary. The round trip is the median of five `GET /_ping`s to the engine over one
+connection to the pool's forward, once a first ping has opened its ssh channel (#7832): each
+crosses the sshd and its answer leaves through the sshd's `eth0`, where the delay is. (The
+baseline below was measured with a TCP connect to the route's address instead, which reads 0 ms:
+see *The round trip the run did not see*.)
 
 Scenarios: **cold** (forward not held), **warm** (forward held, engine checked < 30 s ago),
 **runner stopped** (`docker start` first). Each is a link made as a start makes it, through the
