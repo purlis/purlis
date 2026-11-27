@@ -3907,11 +3907,13 @@ describe("Restart chat on a chat (#1428)", () => {
     expect(row({})).toBeUndefined();
   });
 
-  it("is below the line in the chat's list, first, above Hibernate, Start fresh and End…", () => {
-    expect(menuOn({ on: "chat", session: 7 }).below.slice(0, 3)).toEqual([
+  it("is below the line in the chat's list, first, above Start fresh, Hibernate and End…", () => {
+    expect(menuOn({ on: "chat", session: 7 }).below.slice(0, 4)).toEqual([
       "chat.restart:7",
-      "chat.hibernate:7",
       "chat.fresh:7",
+      // The first of the ways to stop it, which `menuModel` folds under Stop ▸ (#7877).
+      "chat.hibernate:7",
+      "chat.stop:7",
     ]);
     expect(menuOn({ on: "chat", session: 7 }).below).toContain("chat.end:7");
   });

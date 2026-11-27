@@ -418,7 +418,7 @@ describe("a menu on screen", () => {
       ).toBe(true);
   });
 
-  it("draws Hibernate greyed with the core's reason on a runner's chat (#7877)", async () => {
+  it("draws Hibernate first under Stop, greyed with the core's reason on a runner's chat (#7877)", async () => {
     const tabs = openTab(noTabs(), 7, "16", "console-developer");
     const offers = catalogued(
       catalogue(
@@ -437,9 +437,11 @@ describe("a menu on screen", () => {
     );
 
     const menu = await open();
-    const hibernate = await waitFor(() =>
-      within(menu).getByRole("menuitem", { name: "Hibernate" }),
-    );
+    // Not a row of its own: the list stays ten rows at most.
+    expect(within(menu).queryByRole("menuitem", { name: "Hibernate" })).toBeNull();
+    const sub = await openSub("Stop");
+    expect(rowsIn(sub).map(rowName)[0]).toBe("Hibernate");
+    const hibernate = await waitFor(() => within(sub).getByRole("menuitem", { name: "Hibernate" }));
     expect(hibernate).toHaveAttribute("aria-disabled", "true");
     expect(hibernate).toHaveAccessibleDescription(NOT_HIBERNATED.on_a_runner);
   });

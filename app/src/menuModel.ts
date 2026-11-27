@@ -255,8 +255,10 @@ const DRESS: Readonly<Record<string, Dress>> = {
   "chat.log": { said: SAID.chatLog, slot: "open", under: "open" },
   "needs.ignore": { said: SAID.ignore, slot: "open" },
   "chat.restart": { said: SAID.restart, midTurn: SAID.restartMidTurn, slot: "run" },
-  // It ends the program but keeps the conversation, as a restart does, so it is with what runs.
-  "chat.hibernate": { said: SAID.hibernate, slot: "run" },
+  // **The first way to stop it** (#7877): it ends the program at a turn boundary and keeps the
+  // conversation, which Restart chat picks up again, so it is under Stop ▸ and, as rule 4 has it
+  // for a row that loses nothing, in no danger colour. The list stays ten rows at most.
+  "chat.hibernate": { said: SAID.hibernate, slot: "end", under: "stop" },
   // It ends the program, so it is with what ends, as the menus' rule 4 keeps the danger colour.
   "chat.fresh": { said: SAID.startFresh, slot: "end", danger: true, warns: WARNS.fresh },
   "chat.stop": stopped(WARNS.stops),

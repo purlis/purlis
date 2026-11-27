@@ -6127,10 +6127,11 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
         ],
         below: [
           restartId(at),
-          // **Hibernate** (#7630), with what runs, as `menuModel` dresses it; greyed with its
-          // reason on a chat that may never be hibernated where it runs (#7877).
-          hibernateId(at),
           freshId(at),
+          // **Hibernate** (#7630): the first of the ways to stop it, under Stop ▸ as `menuModel`
+          // dresses it, which keeps the list ten rows at most (#7877); greyed with its reason on
+          // a chat that may never be hibernated where it runs.
+          hibernateId(at),
           stopId(at),
           stopBelowId(at),
           stopAllId(at),
