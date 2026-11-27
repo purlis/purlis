@@ -1306,6 +1306,7 @@ fn a_held_push_of_an_explicit_sha_to_a_branch_says_why_whatever_its_size() {
             repo_id: Some(ACME_APP_ID),
             branch: "ci-pr".to_owned(),
             tip: base.clone(),
+            fast_forward_only: false,
         }],
     )
     .unwrap();
