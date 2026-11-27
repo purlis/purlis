@@ -380,10 +380,8 @@ export const commands = {
 	reportConsent: __WINDOW_ONLY_RESULT,
 	keepReportConsent: __WINDOW_ONLY_RESULT,
 	reportsSent: __WINDOW_ONLY_RESULT,
-	/**  Whether the detailed remote log is on, and until when. */
-	detailedRemoteLog: () => __TAURI_INVOKE<DetailedRemoteLog>("detailed_remote_log"),
-	/**  Turns the detailed remote log on, for an hour from now, or off now. */
-	setDetailedRemoteLog: (on: boolean) => __TAURI_INVOKE<DetailedRemoteLog>("set_detailed_remote_log", { on }),
+	detailedRemoteLog: __WINDOW_ONLY,
+	setDetailedRemoteLog: __WINDOW_ONLY,
 	reportSamples: __WINDOW_ONLY_RESULT,
 	reportDrafts: __WINDOW_ONLY_RESULT,
 	editReportDraft: __WINDOW_ONLY_RESULT,
