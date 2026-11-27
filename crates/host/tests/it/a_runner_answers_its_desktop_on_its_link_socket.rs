@@ -622,7 +622,7 @@ async fn the_paired_desktop_has_the_runner_forget_its_profile() {
 }
 
 /// **A chat's start naming the settings its profile was last kept with starts only where the
-/// runner still holds them** (1.97, #7863): another digest, or a profile it does not keep, is
+/// runner still holds them** (1.99, #7863): another digest, or a profile it does not keep, is
 /// refused `profile_changed` with nothing started, so the desktop keeps the profile again. One that
 /// matches goes on to the host as any start does.
 #[tokio::test]

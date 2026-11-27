@@ -157,7 +157,7 @@ pub struct Named {
     /// runner arms it by (1.62, SK-20b #3084).
     pub plane_skills: bool,
     /// What its runner must still hold of its profile's settings, where its keep there was
-    /// skipped or can be held to (1.97, #7863), and how to keep it again where it does not.
+    /// skipped or can be held to (1.99, #7863), and how to keep it again where it does not.
     pub profile_held: Option<ProfileHeld>,
     pub alone: Vec<u16>,
     pub size: Size,
@@ -165,7 +165,7 @@ pub struct Named {
     pub asked_to_run: AskedToRun,
 }
 
-/// **What a chat's start on a runner names of its profile's settings** (1.97, #7863, ADR 0078 as
+/// **What a chat's start on a runner names of its profile's settings** (1.99, #7863, ADR 0078 as
 /// amended 2026-11-27): the digest the runner must still hold, and the keep made again where the
 /// runner refuses the start as [`purlis_session_protocol::session::PROFILE_CHANGED`], after
 /// which the chat starts.

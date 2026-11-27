@@ -93,7 +93,7 @@ pub type Holding = Arc<
 
 /// [`session::whole_settings_digest`] of what the runner holds now of the profile named, for the
 /// desktop a link proved, read off its disk then; `None` where it keeps no such profile for it
-/// (a start's `profile_held`, 1.97, #7863).
+/// (a start's `profile_held`, 1.99, #7863).
 pub type Matching = Arc<dyn Fn(&Pinned, &str) -> Result<Option<String>, String> + Send + Sync>;
 
 /// Hands a sign-in's redirect to the login waiting on the runner's loopback, and says whether it
@@ -504,7 +504,7 @@ impl PairedLink {
             })
     }
 
-    /// **A chat's start that names the settings its profile was last kept with** (1.97, #7863):
+    /// **A chat's start that names the settings its profile was last kept with** (1.99, #7863):
     /// started only where what this runner holds of that profile for the desktop the link proved,
     /// read off its disk now, comes to them; else refused [`session::PROFILE_CHANGED`], with
     /// nothing started, so the desktop keeps the profile again (ADR 0078 as amended 2026-11-27).

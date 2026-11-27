@@ -22,11 +22,11 @@
 //! **A skipped keep is never trusted on its own** (the person's ruling of 2026-11-27 on #7863):
 //! a keep is what puts the profile's settings on the runner back as this machine has them, since a
 //! chat may be able to write there (ADR 0095 as amended 2026-10-31). So only a keep that left the
-//! runner holding a digest it can be held to is remembered (session protocol 1.97,
+//! runner holding a digest it can be held to is remembered (session protocol 1.99,
 //! [`KeptThere::held`]), and the chat's start names that digest ([`held_for_a_start`]): the runner
 //! reads what it holds off its disk then and starts the chat only where it comes to it. Any drift,
 //! a settings file planted, changed or gone, refuses the start, and the profile is kept again
-//! before the chat starts. A runner before 1.97, which could not be held to it, is never
+//! before the chat starts. A runner before 1.99, which could not be held to it, is never
 //! remembered, so every start there keeps the profile as before.
 //!
 //! **What is remembered is this run's, in this process only**: never the plane, never a file
@@ -56,7 +56,7 @@ pub(super) struct RunnerNow {
 }
 
 /// **What a keep on a runner came to**: how its harness stood with the profile, and the digest of
-/// the settings the runner holds since, where it can be held to it at a start (1.97).
+/// the settings the runner holds since, where it can be held to it at a start (1.99).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct KeptThere {
     pub standing: Standing,
@@ -124,7 +124,7 @@ pub(super) fn kept_or_linked(
 }
 
 /// **What a chat's start on pool `pool` on profile `profile` names its runner must still hold**
-/// (1.97): the digest of the settings the last keep there left, where it is remembered. `None`
+/// (1.99): the digest of the settings the last keep there left, where it is remembered. `None`
 /// where nothing is, which is where that start's own readying made the keep.
 pub(super) fn held_for_a_start(pool: &str, profile: &str) -> Option<String> {
     memo()

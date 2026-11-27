@@ -81,7 +81,7 @@ pub trait ProfilesOnPools: Send + Sync {
     }
 
     /// **What a chat's start on pool `pool` on `profile` names of the settings its runner was
-    /// last made to keep** (1.97, #7863): where [`Self::ready`] skipped the keep, or made one the
+    /// last made to keep** (1.99, #7863): where [`Self::ready`] skipped the keep, or made one the
     /// runner can be held to, the digest its runner must still hold, and how to keep it again
     /// where the runner says it does not. `None` where the start is held to nothing more.
     fn held_for_a_start(

@@ -25,7 +25,7 @@ changes is when the profile link is made.
    - what is remembered was not *signed in* or *cannot tell*. A signed-out or fetching standing
      is never remembered, so a sign-in made on the runner since is seen at the next start; or
    - the keep could not leave a digest the runner can be held to: a runner before session
-     protocol 1.97, or a keep that did not replace the profile's settings whole. Such a keep is
+     protocol 1.99, or a keep that did not replace the profile's settings whole. Such a keep is
      never remembered, so every start there keeps the profile as before.
 3. **What is remembered is forgotten where the runner may no longer hold it as it was**: a keep
    that failed, a profile the runner forgot (a tidy, its removal on this machine or from the
@@ -43,7 +43,7 @@ changes is when the profile link is made.
 7. **A skipped keep is held to what the runner holds** (the person's ruling of 2026-11-27, option
    2). The keep remembered carries the digest of the profile's settings it left on the runner
    (`settings_changed.whole`, or the whole of what it sent). The chat's start names it
-   (`StartProgram.profile_held`, session protocol 1.97), and only the window or its host's relay
+   (`StartProgram.profile_held`, session protocol 1.99), and only the window or its host's relay
    may name it, as with `tools_allowed`. The runner, on the desktop's paired link, hashes the
    profile's settings as it holds them on disk, the way the desktop does, and starts the chat only
    where the two are the same. A settings file planted, changed or gone, a keep left unfinished,

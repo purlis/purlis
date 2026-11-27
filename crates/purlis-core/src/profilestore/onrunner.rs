@@ -624,7 +624,7 @@ pub fn held_for_the_desktop(
 }
 
 /// **[`wire::whole_settings_digest`] of what this runner holds now of the profile `name` it keeps
-/// for the desktop `desktop`** (1.97, #7863): read off its disk at that moment, never remembered,
+/// for the desktop `desktop`** (1.99, #7863): read off its disk at that moment, never remembered,
 /// since a chat may be able to write there (ADR 0095 as amended 2026-10-31). `None` where it keeps
 /// no such profile, or holds more of it than it tells ([`held_for_the_desktop`]), which no digest a
 /// start names can be.

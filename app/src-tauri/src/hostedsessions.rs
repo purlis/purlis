@@ -4966,7 +4966,7 @@ const NOTHING_STARTED: &[&str] = &[
 ];
 
 /// **Why a start did not begin** ([`HostedSessions::started`]), in words, and whether its runner
-/// refused it as no longer holding its profile as it was kept (1.97, #7863), which a keep made
+/// refused it as no longer holding its profile as it was kept (1.99, #7863), which a keep made
 /// again answers.
 #[derive(Debug)]
 struct NotBegun {

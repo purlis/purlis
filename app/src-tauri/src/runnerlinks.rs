@@ -882,7 +882,7 @@ pub fn left_on_a_runner_that_cannot_list(
 pub struct ProfileKept {
     pub standing: purlis_session_protocol::session::ProfileStanding,
     /// [`whole_settings_digest`](purlis_session_protocol::session::whole_settings_digest) of the
-    /// settings the keep put in place of all it held, where the runner is of 1.97 or later and
+    /// settings the keep put in place of all it held, where the runner is of 1.99 or later and
     /// so starts a chat only where it still holds them (#7863). `None` for a keep that left them
     /// as they were, and from an older runner.
     pub held: Option<String>,
@@ -932,7 +932,7 @@ async fn keep_one(
 
 /// **What a runner speaking `version` holds of a profile's settings once it keeps `sending`**
 /// (#7863): the digest of the whole, where the keep puts its staged files in place of all it held
-/// (a keep of what changed names it; one of them all is made of them), and the runner is of 1.97
+/// (a keep of what changed names it; one of them all is made of them), and the runner is of 1.99
 /// or later. `None` otherwise, so no start on it skips the keep.
 fn held_after(
     version: purlis_session_protocol::version::Version,

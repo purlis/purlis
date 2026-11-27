@@ -42,7 +42,7 @@ fn start(
     })
 }
 
-/// What a runner of 1.97 or later answers a keep that put its settings in place.
+/// What a runner of 1.99 or later answers a keep that put its settings in place.
 fn on_a_runner_that_can_be_held_to_it(standing: Standing) -> KeptThere {
     KeptThere {
         standing,
