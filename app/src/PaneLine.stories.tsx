@@ -62,13 +62,15 @@ const SPLITS: Offer[] = [
   },
 ];
 
-/** Its pane's links (#6332), under every drawn chat's and task's Open ▸, with ⇧⌘L at its end. */
+/** Its pane's links (#6332), under every drawn chat's and task's Open ▸, with ⇧⌘L at its end:
+ *  this is the focused pane, the one the key reaches (#6488). */
 const LINKS: Offer = {
   id: `chat.links:${SESSION}`,
   title: "Links in fix-login…",
   available: true,
   reason: "",
   does: { verb: "listLinks", session: SESSION },
+  keyHere: true,
 };
 
 /** The task's list, which its ⋯ opens. */

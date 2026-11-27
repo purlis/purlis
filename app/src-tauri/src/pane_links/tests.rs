@@ -106,6 +106,7 @@ fn a_hover_says_the_target_and_that_it_opens() {
     assert_eq!(
         seen,
         Some(LinkSeen {
+            unchecked: None,
             its_text: None,
             kind: KindHint::Url,
             target: "https://purlis.dev/".into(),
@@ -127,6 +128,7 @@ fn a_hover_over_another_scheme_says_why_it_won_t_open_and_so_does_one_carrying_a
             &url("ftp://x.example/")
         ),
         Some(LinkSeen {
+            unchecked: None,
             its_text: None,
             kind: KindHint::Url,
             target: "ftp://x.example/".into(),
@@ -147,10 +149,31 @@ fn a_hover_over_another_scheme_says_why_it_won_t_open_and_so_does_one_carrying_a
             &url(&["https://", "me:", "made-up", "@purlis.dev/"].concat())
         ),
         Some(LinkSeen {
+            unchecked: None,
             does: LinkDoes::Refused { .. },
             ..
         })
     ));
+}
+
+#[test]
+fn a_candidate_the_window_sends_without_a_target_or_with_a_null_one_has_none() {
+    // The window leaves `target` out for every kind but a marked link (`candidateOf`).
+    let read = |json: serde_json::Value| -> LinkCandidate {
+        serde_json::from_value(json).expect("deserialises")
+    };
+    for json in [
+        serde_json::json!({"kind": "url", "text": "https://a.example/"}),
+        serde_json::json!({"kind": "url", "text": "https://a.example/", "target": null}),
+    ] {
+        assert_eq!(read(json).target, None);
+    }
+    assert_eq!(
+        read(serde_json::json!({"kind": "osc8", "text": "here", "target": "https://a.example/"}))
+            .target
+            .as_deref(),
+        Some("https://a.example/")
+    );
 }
 
 #[test]
@@ -322,6 +345,7 @@ fn a_hover_over_a_path_to_no_file_says_nothing() {
     assert_eq!(
         seen(&Resolver::default(), &here.pane, &file("notes.md")),
         Some(LinkSeen {
+            unchecked: None,
             its_text: None,
             kind: KindHint::File,
             target: here.notes.display().to_string(),
@@ -473,6 +497,7 @@ fn a_chat_open_in_another_workspace_is_seen_by_number_and_title_with_that_worksp
     assert_eq!(
         seen_in(&links, &pane_of_652(dir.path()), &chat("chat 660"), &chats),
         Some(LinkSeen {
+            unchecked: None,
             its_text: None,
             kind: KindHint::Chat,
             target: "chat 660".into(),
@@ -490,6 +515,7 @@ fn a_chat_open_in_another_workspace_is_seen_by_number_and_title_with_that_worksp
     assert!(matches!(
         seen_in(&links, &pane_of_652(dir.path()), &chat("chat 661"), &chats),
         Some(LinkSeen {
+            unchecked: None,
             chat: Some(ChatSeen::Open {
                 number: 661,
                 workspace: None
@@ -529,6 +555,7 @@ fn its_own_number_is_this_chat_and_opening_it_shows_nothing_more() {
     assert!(matches!(
         seen_in(&links, &pane_of_652(dir.path()), &chat("chat 652"), &chats),
         Some(LinkSeen {
+            unchecked: None,
             chat: Some(ChatSeen::ThisChat { number: 652 }),
             ref shown,
             ..
@@ -644,6 +671,7 @@ fn a_file_git_ignores_in_a_clone_or_a_piece_is_no_link_as_the_editor_refuses_it(
     assert_eq!(
         seen(&resolver(), &pane, &file("debug.log")),
         Some(LinkSeen {
+            unchecked: None,
             its_text: None,
             kind: KindHint::File,
             target: "debug.log".into(),
@@ -710,6 +738,55 @@ fn a_file_git_ignores_in_a_clone_or_a_piece_is_no_link_as_the_editor_refuses_it(
         })
     );
     assert!(purlis_core::files::open(&project, branch, "src/main.rs").is_ok());
+}
+
+/// #6489: **a file in a branch whose list the reader could not read still links, and its hover
+/// says why up front**: the editor checks it when it opens, and may refuse it then.
+#[cfg(unix)]
+#[test]
+fn a_file_in_a_branch_whose_list_could_not_be_read_links_and_says_the_editor_checks_it() {
+    let here = here();
+    let project = here.pane.project.clone().expect("a project");
+    // A clone whose index gitoxide cannot read (#1130): the reader answers Unindexed.
+    let clone = project.join("workspaces/smart-ide/repos/app");
+    std::fs::create_dir_all(clone.join("src")).expect("folders");
+    std::fs::write(clone.join("src/main.rs"), "fn main() {}\n").expect("written");
+    let ran = purlis_core::forklock::output(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&clone)
+            .args(["init", "-q", "-b", "main"]),
+    )
+    .expect("git ran");
+    assert!(ran.status.success(), "git init: {ran:?}");
+    std::fs::write(clone.join(".git/index"), "DIRC not an index").expect("written");
+    let pane = Pane {
+        folder: Some(clone.clone()),
+        ..here.pane.clone()
+    };
+
+    let seen = seen(&resolver(), &pane, &file("src/main.rs:1")).expect("a link");
+    assert_eq!(
+        seen.does,
+        LinkDoes::Opens {
+            into: OpensIn::EditorTab
+        }
+    );
+    assert_eq!(
+        seen.unchecked.as_deref(),
+        Some(purlis_core::panelinks::UNCHECKED)
+    );
+    // A file in no branch is never marked.
+    let own = project.join("README.md");
+    std::fs::write(&own, "# one\n").expect("written");
+    let read = seen_of_text(&own.display().to_string(), &pane);
+    assert_eq!(read.and_then(|seen| seen.unchecked), None);
+}
+
+/// What a hover over the path `text` in `pane` shows, by the window's resolver.
+#[cfg(unix)]
+fn seen_of_text(text: &str, pane: &Pane) -> Option<LinkSeen> {
+    seen(&resolver(), pane, &file(text))
 }
 
 /// A link a program marked (OSC 8): its words, and the target it named.

@@ -775,6 +775,22 @@ export const commands = {
 	 */
 	acceptProjectPolicy: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("accept_project_policy", { plane, shown })),
 	/**
+	 *  **Your press where the seal's key is another program's: make a new key and accept the
+	 *  project's `[policy]` as it was shown** (#7714), on the project `plane` names, never the one in
+	 *  front when it lands. The old `purlis-seal` items are replaced, which macOS may ask you to
+	 *  allow; the digest is checked again once its prompt returns; then a new key seals this
+	 *  project's acceptance. Every other project accepted on this machine then needs accepting
+	 *  again. The window's alone. The window draws it in the prerequisite modal (#7719).
+	 */
+	acceptProjectPolicyWithNewKey: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("accept_project_policy_with_new_key", { plane, shown })),
+	/**
+	 *  **Your press: keep the never-dispatch pairs the window showed, sealed with the new seal key**
+	 *  (#7714, H1 of #7734's round 3), on the project `plane` names. Its own press, never a part of
+	 *  Accept: `shown` is the digest of the pairs shown ([`NeversToKeep`]), so a list that changed
+	 *  since keeps nothing. The window's alone.
+	 */
+	keepProjectNevers: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("keep_project_nevers", { plane, shown })),
+	/**
 	 *  **What the project's `[policy]` let through and logged** (Q308a: the "would have blocked"
 	 *  count, which opens the log): every chat's lines, newest first. A read, off the window's
 	 *  thread.
@@ -12369,6 +12385,11 @@ export type LinkSeen = {
 	does: LinkDoes,
 	/**  The words of a link a program marked, where they name another target than it goes to. */
 	its_text?: string | null,
+	/**
+	 *  Why the editor checks this file only as it opens (#6489): its branch could not say
+	 *  whether it offers it. None for every other link.
+	 */
+	unchecked?: string | null,
 	/**  What the chat a chat link names is: none for every other kind. */
 	chat: ChatSeen | null,
 };
@@ -13155,6 +13176,28 @@ export type NeedsYou = {
 	fix_label: string,
 	/**  What pressing it does, in a sentence. */
 	fix_does: string,
+};
+
+/**  One pair said never to: the asking persona, and the persona it never dispatches to. */
+export type NeverPair = {
+	/**  The persona that asks. */
+	asking: string,
+	/**  The persona it never dispatches to. */
+	target: string,
+};
+
+/**
+ *  **The never-dispatch list's pairs the window offers to keep after a new seal key** (#7714,
+ *  H1 of #7734's round 3): what Keep these nevers ([`keep_project_nevers`]) seals, exactly.
+ */
+export type NeversToKeep = {
+	/**  The pairs the list's file holds now, in its order: none where it holds none, or is gone. */
+	pairs: NeverPair[],
+	/**
+	 *  Their digest: what the press names, so a list that changed since it was shown keeps
+	 *  nothing.
+	 */
+	digest: string,
 };
 
 /**  A branch the window cut: the piece it is, and what git calls it (ADR 0072 §4). */
@@ -14772,6 +14815,30 @@ export type PolicyState = {
 	not_in_force: string[],
 	/**  Whether this machine keeps an acceptance whose seal does not hold, which counts as none. */
 	unsealed: boolean,
+	/**
+	 *  Whether the seal's key on this machine is another program's, most likely an earlier
+	 *  build's before an update (#7714): nothing holds, and the window offers Make a new key and
+	 *  accept ([`accept_project_policy_with_new_key`]) in place of Accept.
+	 */
+	key_foreign: boolean,
+	/**
+	 *  Whether the acceptance does not hold because purlis made a new seal key on this machine
+	 *  since it was sealed (#7714), never because something edited it: the window says so.
+	 */
+	new_key: boolean,
+	/**
+	 *  Whether purlis vouches that this project's never-dispatch list was anchored by a seal key
+	 *  it has replaced since (#7714): it reads as unread until the person keeps the pairs shown
+	 *  ([`keep_project_nevers`]). Accept never seals them.
+	 */
+	nevers_new_key: boolean,
+	/**  The pairs Keep these nevers keeps, where `nevers_new_key` and the list's file reads. */
+	nevers_to_keep: NeversToKeep | null,
+	/**
+	 *  Whether that list holds a name purlis cannot show faithfully (#7734's round 4): no pair
+	 *  is offered to keep, and the window says so.
+	 */
+	nevers_unshowable: boolean,
 	/**
 	 *  The digest of the committed text this was read from: what Accept names, so a press on a
 	 *  file that changed since it was shown accepts nothing.

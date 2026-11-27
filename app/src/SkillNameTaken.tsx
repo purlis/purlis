@@ -3,7 +3,7 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import type { ReviewClash } from "./bindings";
-import { capitalised } from "./chatEnded";
+import { capitalised } from "./textCase";
 import { Choice, SettingRow } from "./settings/components";
 import { nameProblem } from "./SkillChangeDialogs";
 import { TextField } from "./ui/field/Field";

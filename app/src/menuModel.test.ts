@@ -28,6 +28,7 @@ import {
   type EntryDrawn,
   type MenuDrawn,
 } from "./menuModel";
+import { menuRowKey } from "./keys/registry";
 import { memoryKey } from "./memories";
 import { SAID, SUBMENU, WARNS } from "./menuWords";
 import { terminalGroup, terminalRows } from "./terminalRows";
@@ -538,13 +539,32 @@ describe("a chat's list (#4753)", () => {
       rows.filter((row) => row.keys !== undefined).map((row) => [row.said, row.keys]),
     );
 
-    // Move…'s key picks the chat up from its row or its pane (#4764).
+    // Move…'s key picks the chat up from its row or its pane (#4764). Its Links in this pane…
+    // says none: its tab is behind, where ⇧⌘L reaches no terminal (#6488).
     expect(keys).toEqual({
       "Rename chat…": "F2",
       "Move…": expect.stringMatching(/^(⌘⇧M|Ctrl\+Shift\+M)$/),
-      // The list of its pane's links, the registry's `pane.links` (#6332).
-      "Links in this pane…": expect.stringMatching(/^(⇧⌘L|Ctrl\+Shift\+L)$/),
     });
+  });
+
+  it("draws ⇧⌘L only on the focused pane's Links row: the key opens the focused terminal's list (#6488)", () => {
+    // Chat 12 split beside chat 9 in the tab in front, and focused; chat 7's tab is behind.
+    const split = world({ tabs: splitFocusedPane(world().tabs, "row", 12) }).offers;
+    const linksKey = (session: number) => {
+      const row = rowsOf(menuOf({ on: "chat", session }, split)).find(
+        (one) => one.said === "Links in this pane…",
+      );
+      if (row === undefined) throw new Error(`no Links row on chat ${session}'s list`);
+      return row.keys;
+    };
+
+    // The list's own key, the registry's `pane.links` (#6332).
+    expect(linksKey(12)).toMatch(/^(⇧⌘L|Ctrl\+Shift\+L)$/);
+    expect(linksKey(9)).toBeUndefined();
+    expect(linksKey(7)).toBeUndefined();
+    // The registry draws it on no chat's row: only the catalogue knows which pane has focus.
+    expect(menuRowKey("chat.links:12", true)).toBeUndefined();
+    expect(menuRowKey("chat.links:12", false)).toBeUndefined();
   });
 
   it("says Restart waits for the turn while its chat is mid-turn, and names no chat doing it", () => {
