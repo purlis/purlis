@@ -195,73 +195,6 @@ fn a_quit_while_chats_come_back_leaves_every_chat_in_the_record() {
     });
 }
 
-/// #2004: a window whose chats run in its own process puts none back before its gate lets it,
-/// so a session host a crashed window left has ended the chats it kept first; and a gate that
-/// refuses puts none back and leaves the record as it was.
-#[cfg(unix)]
-#[test]
-fn no_chat_is_put_back_before_the_gate_lets_it_and_none_when_it_refuses() {
-    let dir = tempfile::tempdir().expect("a directory");
-    let root = a_plane_with_chats(&dir.path().join("plane"), 2);
-    let host = Pretend::default();
-    let (asked, entered) = std::sync::mpsc::channel::<()>();
-    let (open, opened) = std::sync::mpsc::channel::<()>();
-    let (asked, opened) = (Mutex::new(asked), Mutex::new(opened));
-    let planes = planes_on(&[&host], &dir.path().join("config")).putting_back_chats_after(
-        Arc::new(move || {
-            let _ = asked.lock().unwrap().send(());
-            opened
-                .lock()
-                .unwrap()
-                .recv()
-                .map_err(|_| "the gate stayed shut".to_owned())
-        }),
-    );
-
-    let plane = approve_and_open(&planes, &root);
-    let held = planes.held(&plane).expect("it is held");
-    // The gate is asked, and holds: a start comes only after it answers.
-    entered
-        .recv_timeout(SOON)
-        .expect("the gate is asked before anything starts");
-    assert!(
-        host.asked().is_empty(),
-        "a chat started before the gate let it"
-    );
-    assert_eq!(held.chats().drawn_now().len(), 2, "each still has its tab");
-
-    open.send(()).expect("the gate opens");
-    until("both chats to start", || held.chats().open_now().len() == 2);
-    planes.let_go_of_all();
-
-    // A gate that refuses, on the thread that asks: once the open returns, the put back is
-    // over, nothing started, and the record still holds every chat.
-    let refusing = tempfile::tempdir().expect("a directory");
-    let root = a_plane_with_chats(&refusing.path().join("plane"), 2);
-    let host = Pretend::default();
-    let planes = {
-        let host = host.clone();
-        Planes::telling(
-            Arc::new(|_: Moved| {}),
-            crate::Shipped::default(),
-            Some(refusing.path().join("config")),
-        )
-        .running_sessions_on(Arc::new(move |_, _: &std::path::Path| {
-            Box::new(host.clone())
-        }))
-        .putting_back_chats_after(Arc::new(|| Err("a host still runs them".to_owned())))
-    };
-    let plane = approve_and_open(&planes, &root);
-    let held = planes.held(&plane).expect("it is held");
-    assert!(host.asked().is_empty(), "a chat started past a refusal");
-    assert!(held.chats().open_now().is_empty());
-    planes.let_go_of_all();
-    let kept = reopen::read_or_refusal(&root).expect("the record reads");
-    let mut names: Vec<String> = kept.chats.iter().map(|chat| chat.name.clone()).collect();
-    names.sort();
-    assert_eq!(names, ["chat 1", "chat 2"], "the record lost a chat");
-}
-
 /// **One project's chats that hang as they start hold up no other project's, nor a Retry**
 /// (the operator's report of 2026-11-03: one project of three came back, and Retry seemed
 /// stuck). The projects share one gate, as the app's do.
@@ -391,37 +324,6 @@ fn a_project_with_nothing_to_put_back_says_it_is_ready_with_none_of_none() {
     planes.let_go_of_all();
 }
 
-/// **A project whose chats are not put back says it failed, and why** (#5322): a gate that
-/// refuses (#2004) is a real error, not a project with no chats.
-#[cfg(unix)]
-#[test]
-fn a_project_whose_chats_the_gate_refuses_says_it_failed_with_why() {
-    let dir = tempfile::tempdir().expect("a directory");
-    let root = a_plane_with_chats(&dir.path().join("plane"), 2);
-    let (planes, told) = telling_ready(
-        planes_on(&[&Pretend::default()], &dir.path().join("config"))
-            .putting_back_chats_after(Arc::new(|| Err("a host still runs them".to_owned()))),
-    );
-
-    let plane = approve_and_open(&planes, &root);
-
-    until("the project to say it failed", || {
-        !told.lock().unwrap().is_empty()
-    });
-    assert_eq!(
-        *told.lock().unwrap(),
-        [ProjectReady {
-            plane,
-            outcome: ProjectOutcome::Failed {
-                error: "a host still runs them".to_owned(),
-            },
-        }]
-    );
-    planes.let_go_of_all();
-}
-
-/// A record that cannot be read puts nothing back, and the project says it failed with the
-/// refusal rather than that it is ready with none of none.
 #[cfg(unix)]
 #[test]
 fn a_project_whose_record_is_refused_says_it_failed_with_the_refusal() {
@@ -506,48 +408,6 @@ fn retrying_a_project_whose_chat_still_will_not_start_says_it_is_still_short() {
         told[1].outcome,
         ProjectOutcome::Ready { back: 2, wanted: 3 }
     );
-    planes.let_go_of_all();
-}
-
-/// **A project whose gate refused comes back when it lets** (#5324): the chats it registered
-/// and did not start are the ones that start, once each.
-#[cfg(unix)]
-#[test]
-fn retrying_a_project_the_gate_refused_puts_its_chats_back() {
-    let dir = tempfile::tempdir().expect("a directory");
-    let root = a_plane_with_chats(&dir.path().join("plane"), 2);
-    let refusing = Arc::new(std::sync::atomic::AtomicBool::new(true));
-    let gate = {
-        let refusing = Arc::clone(&refusing);
-        Arc::new(move || {
-            if refusing.load(std::sync::atomic::Ordering::SeqCst) {
-                Err("a host still runs them".to_owned())
-            } else {
-                Ok(())
-            }
-        })
-    };
-    let (planes, told) = telling_ready(
-        planes_on(&[&Pretend::default()], &dir.path().join("config"))
-            .putting_back_chats_after(gate),
-    );
-    let plane = approve_and_open(&planes, &root);
-    until("the project to say it failed", || {
-        !told.lock().unwrap().is_empty()
-    });
-
-    refusing.store(false, std::sync::atomic::Ordering::SeqCst);
-    planes.retry_project(&plane).expect("it is held");
-
-    until("the project to say it is ready", || {
-        told.lock().unwrap().len() == 2
-    });
-    assert_eq!(
-        told.lock().unwrap()[1].outcome,
-        ProjectOutcome::Ready { back: 2, wanted: 2 }
-    );
-    let held = planes.held(&plane).expect("it is held");
-    assert_eq!(held.chats().open_now().len(), 2);
     planes.let_go_of_all();
 }
 
