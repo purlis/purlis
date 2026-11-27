@@ -442,12 +442,26 @@ pub fn prepare(wrap: &Wrap, cwd: &Path) {
     super::codex::replace(&state, doc.to_string().as_bytes(), 0o600);
 }
 
+/// **What a project's entry in Claude Code's state file says about MCP servers**, beside its own
+/// servers: which it turned on or off (`enabledMcpServers`, `disabledMcpServers`, read for the
+/// folder as a chat starts), and the older `.mcp.json` approvals, which Claude Code 2.1.332 moves
+/// into the folder's `.claude/settings.local.json` as it starts. Each is absent by default.
+pub const PROJECT_MCP_CHOICES: [&str; 5] = [
+    "enabledMcpServers",
+    "disabledMcpServers",
+    "enableAllProjectMcpServers",
+    "enabledMcpjsonServers",
+    "disabledMcpjsonServers",
+];
+
 /// **`servers` as the user-scope MCP servers in the state file `state`** (#3846), and no
-/// project's own (ruled 2026-11-08), with what else it holds as it is. A chat can add a server to
-/// its folder's entry, which every later chat in that folder would start, so each keep takes them
-/// out, as it puts the desktop's user-scope ones back. `None` sent leaves the user-scope ones as
-/// they are. No servers and no file is left as it is, and a link, or a file purlis cannot read, is
-/// left alone, for Claude Code to say so.
+/// project's own (ruled 2026-11-08), nor any project's [`PROJECT_MCP_CHOICES`], with what else it
+/// holds as it is. A chat can add a server to its folder's entry, or turn one on or off there,
+/// which every later chat in that folder would follow, so each keep takes them out, as it puts the
+/// desktop's user-scope ones back: the desktop sends no choice for a runner's folders, so each is
+/// Claude Code's default again. `None` sent leaves the user-scope ones as they are. No servers and
+/// no file is left as it is, and a link, or a file purlis cannot read, is left alone, for Claude
+/// Code to say so.
 pub fn keep_mcp_servers(state: &Path, servers: Option<&serde_json::Value>) {
     let empty =
         servers.is_none_or(|servers| servers.as_object().is_none_or(serde_json::Map::is_empty));
@@ -489,7 +503,9 @@ pub fn keep_mcp_servers(state: &Path, servers: Option<&serde_json::Value>) {
     {
         for project in projects.values_mut() {
             if let Some(project) = project.as_object_mut() {
-                changed |= project.remove("mcpServers").is_some();
+                for key in std::iter::once("mcpServers").chain(PROJECT_MCP_CHOICES) {
+                    changed |= project.remove(key).is_some();
+                }
             }
         }
     }
