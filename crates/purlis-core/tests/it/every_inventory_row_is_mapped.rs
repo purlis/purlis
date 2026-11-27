@@ -746,6 +746,24 @@ fn a_later_row_naming_an_issue_outside_the_committed_m80_list_fails_the_mapping_
 }
 
 #[test]
+fn an_approval_for_one_m80_issue_does_not_approve_the_row_for_another() {
+    purlis_core::unsteered!();
+    let mut known = known_with_one_approval();
+    known.later_issues = later_issues(
+        "# M80\n7755\tChats as resources: lineage\n7760\tChats as resources: browsers and ports\n",
+    );
+    let map = line("Ports #P1", "not-a-chat-decision", "")
+        + &line("Ports #P2", "later:7755", "approved:The person");
+    assert_eq!(
+        check(SMALL, &map, &known),
+        [
+            "Ports #P2: no line of docs/research/policy-later-approvals.md approves later:7755 \
+             for it by \"The person\""
+        ]
+    );
+}
+
+#[test]
 fn a_row_with_two_targets_is_mapped_by_its_sub_rows() {
     purlis_core::unsteered!();
     let known = known_with_one_approval();

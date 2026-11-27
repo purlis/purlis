@@ -131,6 +131,10 @@ export const DOCS_READ_BY_RUST = [
   "docs/research/policy-inventory.md",
   "docs/research/policy-inventory-map.tsv",
   "docs/research/policy-ask-kinds.tsv",
+  // The M80 issue list and the person's approvals of its later: rows (#7746): an edit to either
+  // alone changes what the same test accepts.
+  "docs/research/policy-later-issues.txt",
+  "docs/research/policy-later-approvals.md",
   // `it/every_inventory_row_maps_to_exactly_one_family` holds every row of #6970 to one family.
   "docs/policy-inventory-families.md",
 ];
