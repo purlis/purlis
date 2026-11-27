@@ -683,7 +683,10 @@ pub async fn forget_docker_pool(
 /// [`forget_docker_pool`] under `config`, before the window lets go of the pool: forgotten, and
 /// [`let_go_of`]. What stays on its machine, as the core says it.
 #[cfg(unix)]
-fn forgotten_here(config: &std::path::Path, name: &str) -> Result<String, String> {
+fn forgotten_here(
+    config: &std::path::Path,
+    name: &str,
+) -> Result<Vec<purlis_core::pools::LeftThere>, String> {
     let left = purlis_core::pools::forget_untrusted(config, name)
         .map_err(|why| refused_said(&why.to_string()))?;
     let_go_of(config, name);
@@ -708,7 +711,7 @@ fn gone_from_here(
     held: &[std::sync::Arc<crate::planes::Held>],
     config: &std::path::Path,
     name: &str,
-    left: &str,
+    left: &[purlis_core::pools::LeftThere],
 ) -> Option<String> {
     let logins_kept = crate::chatbrowsers::forget_pool_logins_in(held, name).err();
     // Its browsers first, while their links stand: each is stopped on its machine where that
@@ -723,9 +726,27 @@ fn gone_from_here(
     if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(app) {
         links_end_once_gone(&host.connection(), config, name, true);
     }
-    let said = (!left.is_empty()).then(|| crate::devices::shown_safely(left));
     // What stays, said together: a login opt-in the store could not take out is one of them.
-    said_together([said, browsers_left, logins_kept])
+    said_together([stays_said(left), browsers_left, logins_kept])
+}
+
+/// **What stays on the machine of a pool forgotten here, as the window says it** (#7873); `None`
+/// where nothing does. Each part from elsewhere (the machine's name, the runner's, its container
+/// and volume) is shown safely on its own ([`crate::devices::shown_safely`]), and the sentence is
+/// made of the parts so shown: never cut as a whole, so the machine's name and the commands that
+/// remove what stays there are always in it, however long the names are.
+fn stays_said(left: &[purlis_core::pools::LeftThere]) -> Option<String> {
+    let safe = |text: &str| crate::devices::shown_safely(text);
+    let shown: Vec<purlis_core::pools::LeftThere> = left
+        .iter()
+        .map(|one| purlis_core::pools::LeftThere {
+            runner: safe(&one.runner),
+            container: safe(&one.container),
+            volume: safe(&one.volume),
+            host: safe(&one.host),
+        })
+        .collect();
+    (!shown.is_empty()).then(|| purlis_core::pools::left_said(&shown))
 }
 
 /// What stays after a pool is removed or forgotten, said as one: each line there is, one after
