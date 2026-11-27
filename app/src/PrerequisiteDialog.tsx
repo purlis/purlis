@@ -127,7 +127,7 @@ export function whyOf(entry: PolicyPrerequisite): string {
  */
 export function consequenceOf(row: PolicyWaiting): string {
   if (row.family === "sandbox")
-    return row.committed === "off" ? "chats run with no sandbox" : "chats run with the floor only";
+    return row.committed === "off" ? "chats run with no sandbox" : "chats run in the Basic sandbox";
   if (row.accepted === "held") return "chats merge through the forge route";
   if (row.accepted === "protected") return "chats may push to that branch through the forge route";
   if (row.accepted === "denied" && row.committed === "allowed")

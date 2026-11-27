@@ -466,7 +466,7 @@ describe("the prerequisite modal", () => {
       "what it would refuse runs, and is logged.",
       "what it would refuse runs, and is not logged.",
       "chats merge through the forge route.",
-      "chats run with the floor only.",
+      "chats run in the Basic sandbox.",
       "chats run with no sandbox.",
       "that dispatch is no longer refused.",
       "a chat may push the branch of a task it dispatched once that task ends.",
