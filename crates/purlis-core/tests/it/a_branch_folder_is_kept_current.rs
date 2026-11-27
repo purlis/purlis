@@ -1702,3 +1702,92 @@ fn a_push_on_a_config_git_will_not_read_says_so_rather_than_no_remote() {
     assert!(said.contains("branch.other.remote"), "{said}");
     assert!(!said.contains("no remote"), "{said}");
 }
+
+/// #7875: a pull request's branch `pr` on the forge, its own commit on top of `from` there
+/// (`HEAD` or `HEAD~2` of the forge's main), and the clone's own branch of that name following
+/// it.
+fn their_pr_from(w: &World, from: &str) {
+    git(&w.theirs, &["pull", "-q", "--ff-only", "origin", "main"]);
+    git(&w.theirs, &["checkout", "-q", "-b", "pr", from]);
+    write(&w.theirs, "pr.txt", "pr\n");
+    git(&w.theirs, &["add", "pr.txt"]);
+    git(&w.theirs, &["commit", "-q", "-m", "theirs: pr"]);
+    git(&w.theirs, &["push", "-q", "origin", "HEAD:pr"]);
+    git(&w.theirs, &["checkout", "-q", "main"]);
+    git(&w.clone, &["fetch", "-q", "origin"]);
+    git(&w.clone, &["branch", "-q", "--track", "pr", "origin/pr"]);
+}
+
+/// #7875: a piece cut from `origin/main` while the clone's own `main`, checked out in the clone,
+/// is two commits behind it, so the base recorded (`main`) is not where the piece was cut.
+fn a_piece_cut_ahead_of_the_clones_main(w: &World) -> PathBuf {
+    w.they_commit("two.txt", "two\n");
+    w.they_commit("three.txt", "three\n");
+    git(&w.clone, &["fetch", "-q", "origin"]);
+    let (code, cut) = add(w, "p1", Some("origin/main"));
+    assert_eq!(code, 0, "{cut}");
+    let piece = w.piece("p1");
+    assert_eq!(
+        out(&piece, &["rev-parse", "HEAD"]),
+        out(&w.clone, &["rev-parse", "origin/main"])
+    );
+    assert_ne!(
+        out(&w.clone, &["rev-parse", "main"]),
+        out(&w.clone, &["rev-parse", "origin/main"]),
+        "the clone's main moved, so this no longer shows a cut ahead of the base recorded"
+    );
+    piece
+}
+
+#[test]
+fn a_piece_with_no_commits_moved_onto_a_branch_behind_main_lands_exactly_on_it() {
+    purlis_core::unsteered!();
+    let w = world();
+    let piece = a_piece_cut_ahead_of_the_clones_main(&w);
+    their_pr_from(&w, "HEAD~2");
+
+    let (code, said) = update(&w, "p1", &start(Some("origin/pr")), &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(
+        out(&piece, &["rev-parse", "HEAD"]),
+        out(&w.clone, &["rev-parse", "origin/pr"]),
+        "{said}"
+    );
+    assert!(!piece.join("two.txt").exists());
+    assert!(!piece.join("three.txt").exists());
+}
+
+#[test]
+fn a_piece_moved_onto_a_branch_behind_main_replays_only_its_own_commits() {
+    purlis_core::unsteered!();
+    let w = world();
+    let piece = a_piece_cut_ahead_of_the_clones_main(&w);
+    commit_in(&piece, "mine.txt", "mine.txt\n");
+    commit_in(&piece, "more.txt", "more.txt\n");
+    their_pr_from(&w, "HEAD~2");
+
+    let (code, said) = update(&w, "p1", &start(Some("origin/pr")), &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(own_commits(&piece, "origin/pr"), ["mine.txt", "more.txt"]);
+    assert_eq!(
+        out(&piece, &["rev-parse", "HEAD~2"]),
+        out(&w.clone, &["rev-parse", "origin/pr"])
+    );
+    assert!(!piece.join("two.txt").exists());
+}
+
+#[test]
+fn a_piece_with_no_commits_moved_onto_a_branch_ahead_of_main_lands_exactly_on_it() {
+    purlis_core::unsteered!();
+    let w = world();
+    let piece = a_piece_cut_ahead_of_the_clones_main(&w);
+    their_pr_from(&w, "HEAD");
+
+    let (code, said) = update(&w, "p1", &start(Some("origin/pr")), &Reach::default());
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(
+        out(&piece, &["rev-parse", "HEAD"]),
+        out(&w.clone, &["rev-parse", "origin/pr"]),
+        "{said}"
+    );
+}

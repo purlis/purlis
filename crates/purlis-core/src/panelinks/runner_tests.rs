@@ -90,6 +90,18 @@ fn fake() -> Fake {
                     path: "/w/src".into(),
                 },
             ),
+            (
+                "/home/purlis/.codex/auth.json",
+                FileRead::Kept {
+                    path: "/home/purlis/.codex/auth.json".into(),
+                },
+            ),
+            (
+                "/w/second.md",
+                FileRead::Unsure {
+                    path: "/w/second.md".into(),
+                },
+            ),
         ],
         ..Fake::default()
     }
@@ -108,6 +120,7 @@ fn on_runner() -> Pane {
         session: Some(7),
         folder: None,
         runs: Runs::OnRunner,
+        now_in: None,
     }
 }
 
@@ -256,6 +269,38 @@ fn a_binary_or_too_large_file_is_no_link_and_says_why() {
             other => panic!("{text}: expected no link, got {other:?}"),
         }
     }
+}
+
+#[test]
+fn a_file_the_runner_could_not_tell_of_says_so_and_not_that_it_is_kept() {
+    let runner = fake();
+
+    match links(&runner).hover(&file("/w/second.md"), &on_runner()) {
+        Hover::NotALink(said) => {
+            assert_eq!(said, super::RUNNER_UNSURE);
+            assert_ne!(said, super::RUNNER_KEPT);
+        }
+        other => panic!("expected no link, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_file_the_runner_keeps_is_no_link_says_why_and_never_asks() {
+    let runner = fake();
+    let links = links(&runner);
+    let text = "/home/purlis/.codex/auth.json";
+
+    match links.hover(&file(text), &on_runner()) {
+        Hover::NotALink(said) => assert_eq!(said, super::RUNNER_KEPT),
+        other => panic!("expected no link, got {other:?}"),
+    }
+    assert!(
+        !matches!(
+            links.open(&file(text), &on_runner(), &Asks::default(), None),
+            Opening::Ask { .. } | Opening::Open(_)
+        ),
+        "a kept file is never asked for or opened"
+    );
 }
 
 #[test]
