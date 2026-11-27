@@ -109,11 +109,7 @@ const detailedRemoteLog: LiveSetting = {
             aria-describedby={[ids.describedBy, `${ids.id}-until`].filter(Boolean).join(" ")}
             onChange={turn}
           />
-          <p
-            id={`${ids.id}-until`}
-            className="ui-setting-help ui-text-secondary"
-            role="status"
-          >
+          <p id={`${ids.id}-until`} className="ui-setting-help ui-text-secondary" role="status">
             {said.until === null ? "Off." : `On until ${untilSaid(said.until)}, then off.`}
           </p>
         </div>
