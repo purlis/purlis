@@ -324,14 +324,14 @@ impl LeftThere {
              {container} && docker volume rm --force {volume}"
         )
     }
-}
 
-/// What every runner of `left` leaves on its machine, said one after the other.
-pub fn left_said(left: &[LeftThere]) -> String {
-    left.iter()
-        .map(LeftThere::said)
-        .collect::<Vec<_>>()
-        .join(" ")
+    /// What every runner of `left` leaves on its machine, said one after the other.
+    pub fn all_said(left: &[LeftThere]) -> String {
+        left.iter()
+            .map(LeftThere::said)
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
 }
 
 /// `runner a`, or `runners a, b and c`, for a sentence the window shows.

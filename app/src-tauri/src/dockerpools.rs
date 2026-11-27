@@ -732,11 +732,12 @@ fn gone_from_here(
 
 /// **What stays on the machine of a pool forgotten here, as the window says it** (#7873); `None`
 /// where nothing does. Each part from elsewhere (the machine's name, the runner's, its container
-/// and volume) is shown safely on its own ([`crate::devices::shown_safely`]), and the sentence is
-/// made of the parts so shown: never cut as a whole, so the machine's name and the commands that
-/// remove what stays there are always in it, however long the names are.
+/// and volume) is shown safely on its own, up to [`MOST_PART_SHOWN`]
+/// ([`crate::devices::shown_safely_within`]), and the sentence is made of the parts so shown: it
+/// is never cut as a whole, and no part purlis keeps is long enough to be cut, so the machine's
+/// name and the commands that remove what stays there are always whole in it.
 fn stays_said(left: &[purlis_core::pools::LeftThere]) -> Option<String> {
-    let safe = |text: &str| crate::devices::shown_safely(text);
+    let safe = |text: &str| crate::devices::shown_safely_within(text, MOST_PART_SHOWN);
     let shown: Vec<purlis_core::pools::LeftThere> = left
         .iter()
         .map(|one| purlis_core::pools::LeftThere {
@@ -746,8 +747,13 @@ fn stays_said(left: &[purlis_core::pools::LeftThere]) -> Option<String> {
             host: safe(&one.host),
         })
         .collect();
-    (!shown.is_empty()).then(|| purlis_core::pools::left_said(&shown))
+    (!shown.is_empty()).then(|| purlis_core::pools::LeftThere::all_said(&shown))
 }
+
+/// The most characters of one part of Forget's answer the window is shown ([`stays_said`]): a
+/// machine's name, the longest part, is at most 253 characters, as a route holds it (a DNS name's
+/// limit); a container's id is 64, and a runner's name and its volume's fewer than this.
+const MOST_PART_SHOWN: usize = 253;
 
 /// What stays after a pool is removed or forgotten, said as one: each line there is, one after
 /// the other; none where there is none.

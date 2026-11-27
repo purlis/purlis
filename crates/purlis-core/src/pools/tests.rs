@@ -5391,7 +5391,7 @@ fn a_pool_on_a_machine_no_longer_trusted_is_forgotten_here_and_nothing_is_sent_t
     on_another_machine(config.path());
     std::fs::write(fake.file_path("log"), "").unwrap();
 
-    let left = left_said(&forget_untrusted(config.path(), "first").unwrap());
+    let left = LeftThere::all_said(&forget_untrusted(config.path(), "first").unwrap());
 
     assert_eq!(fake.file("log"), "", "nothing was run");
     assert!(left.contains("build-box"), "{left}");
@@ -5423,7 +5423,7 @@ fn a_pool_forgotten_here_says_its_machine_still_lists_this_one_as_its_runners_pe
     a_pool_added(config.path(), &fake, &desktop());
     on_another_machine(config.path());
 
-    let left = left_said(&forget_untrusted(config.path(), "first").unwrap());
+    let left = LeftThere::all_said(&forget_untrusted(config.path(), "first").unwrap());
 
     assert!(
         left.contains("build-box still lists this machine as the runner's peer"),
@@ -5466,7 +5466,7 @@ fn a_pool_whose_key_changed_is_forgotten_from_what_was_found_even_once_its_machi
     // build-box answers nothing now: no name of it resolves, and no Docker is handed in to reach.
     std::fs::write(fake.file_path("log"), "").unwrap();
 
-    let left = left_said(
+    let left = LeftThere::all_said(
         &forget_where_untrusted(config.path(), "first", true, &[key_changed_of("first")])
             .expect("a change was found of it")
             .unwrap(),
