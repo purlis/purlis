@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795770696834,
+  "lastUpdate": 1795771520253,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -57456,6 +57456,48 @@ window.BENCHMARK_DATA = {
             "value": 101.016751,
             "unit": "ms",
             "extra": "median of 5 runs: 99.241, 100.126, 101.017, 101.668, 102.347 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e2c453d5762e59b62b3b8f58d8f2bab79c9f45bf",
+          "message": "Pool setup e2e: walk the one press of Trust and create the pool (#7780) (#7826)\n\n* Pool setup e2e: walk the one press of Trust and create the pool (#7780)\n\nThe e2e build alone offers a new pool the image its scenario run names\n(PURLIS_E2E_REMOTE_POOL_IMAGE, poolfollow::scenario_image, gated by the\napp's e2e feature as chatevents::interval is). Every other build never\nreads the variable, pinned by a test that runs in the default build.\n\nThe remote Docker pool spec walks the one press beside the two steps,\nsharing the walk in poolsetup.ts; the pool run passes the variable to the app.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CVN7ZGAVFNQ0PHZC38N5EY\nPurlis-Persona: steward\n\n* Pool setup e2e: review fixes for the one-press walk (#7780)\n\nThe scenario image is offered only where it is an image by digest; the\nsecond walk closes the first walk's tabs before it starts; the doc no\nlonger links a constant only the e2e build has.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CVN7ZGAVFNQ0PHZC38N5EY\nPurlis-Persona: steward\n\n* Pool setup e2e: choose My team's own image by its row (#7780)\n\nWith the scenario build offering an image, the Pool step hides the Image\nbox behind My team's own image, a radio whose input React Aria draws\nhidden: the four specs' press of it could never succeed (that branch had\nnever run), and every pool spec failed behind the first. One helper,\ntypeTheTeamsImage, presses the radio's row as pickTheMachine does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8CVN7ZGAVFNQ0PHZC38N5EY\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T08:40:47Z",
+          "tree_id": "fd877a78a61a13dd89b16fd36b4a12532c423352",
+          "url": "https://github.com/purlis/purlis/commit/e2c453d5762e59b62b3b8f58d8f2bab79c9f45bf"
+        },
+        "date": 1795771513975,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6846190000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.669, 0.679, 0.685, 0.687, 0.694 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.362808,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.303, 16.363, 16.363, 16.655, 16.768 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2612965,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.789, 101.805, 102.261, 102.269, 103.270 ms"
           }
         ]
       }
