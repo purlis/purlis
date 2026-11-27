@@ -218,13 +218,13 @@ impl Cause {
 /// **The id of one Start the person pressed** (#7864): made by the window as the start begins,
 /// carried on every step of it, and over the link in the start it asks for
 /// (`StartProgram::start`, session protocol 1.98), so the runner's `harness_spawn` line names it
-/// too and the two logs join up. Letters and digits alone: [`StartId::parse`] takes nothing else,
+/// too and the two logs join up. A ULID's shape alone: [`StartId::parse`] takes nothing else,
 /// whoever sent it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct StartId(Arc<str>);
 
-/// The fewest and most characters a start's id has.
-const START_ID_LENGTH: std::ops::RangeInclusive<usize> = 8..=64;
+/// How many characters a start's id has: a ULID's.
+const START_ID_LENGTH: usize = 26;
 
 /// Crockford's base32, as a ULID spells one.
 const BASE32: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -250,10 +250,11 @@ impl StartId {
         StartId(spelled.into())
     }
 
-    /// `said` as a start's id, where it has the shape of one: 8 to 64 ASCII letters and digits.
-    /// Anything else is none, so a peer cannot write a host or a path into a line by it.
+    /// `said` as a start's id, where it has the shape of one [`StartId::mint`] makes: 26
+    /// characters of Crockford's base32. Anything else is none, so a peer cannot write a host,
+    /// a path or a token (a hex one, a cloud key) into a line by it.
     pub fn parse(said: &str) -> Option<StartId> {
-        (START_ID_LENGTH.contains(&said.len()) && said.bytes().all(|b| b.is_ascii_alphanumeric()))
+        (said.len() == START_ID_LENGTH && said.bytes().all(|b| BASE32.contains(&b)))
             .then(|| StartId(said.into()))
     }
 
@@ -410,6 +411,15 @@ impl Context {
         Context {
             start: StartId::parse(said),
             ..current()
+        }
+    }
+
+    /// These steps, for no Start: for work begun inside a Start that outlives it, as a kept
+    /// link does, whose every later redial is for no Start at all.
+    pub fn without_start(self) -> Context {
+        Context {
+            start: None,
+            ..self
         }
     }
 

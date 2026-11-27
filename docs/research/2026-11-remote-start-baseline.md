@@ -57,8 +57,8 @@ them through.
 
 **Nested steps overlap, so a sum counts them twice. Sum the rows with no `parent`.** A step
 begun while another one runs names it as its `parent` (a `Context` carries that across the thread
-or task a step hands work to; a parent that has ended is named no more): `container_check` is inside `link_check`, and so are `engine_pin_check` and `ssh_forward_open` where the link's check opens the forward (they have no parent where the caller builds the link's route first, and in the parity rig, which calls `through()` itself); `link_check`, `link_prepare`,
-`link_handshake` and `link_exec_spawn` are inside a `first_link` where one made the link;
+or task a step hands work to; a parent that has ended is named no more): `container_check` is inside `link_check`, and so are `engine_pin_check` and `ssh_forward_open` where the link's check opens the forward (they have no parent where the caller builds the link's route first, and in the parity rig, which calls `through()` itself); each try of a kept link is a `link_dial`, and `link_check`, `link_prepare`,
+`link_handshake` and `link_exec_spawn` are inside it (#7864); `link_dial` is inside a `first_link` where one made the link;
 `first_link` is inside `profile_ready` where that made it; `runner_start` is inside
 `container_check`; `browser_engine_download` is inside `browser_engine_prepare` (a background update's download, from `update`, has no parent: it is its own row, not part of a start). `first_link` is written for every one-off link `on_one_link_within` makes (profile keeps, a repository listing, unpair), not for starts alone: read it under `profile_ready` for a start. A `docker` call
 is at `debug` and names none: it is inside whichever step made it and is never part of a sum.

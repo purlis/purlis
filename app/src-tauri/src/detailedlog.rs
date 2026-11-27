@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Settings › Diagnostics' **Detailed remote log for one hour** (#7864): the window's two
-//! commands over `purlis_core::detailedlog`'s switch, and the timer that turns it off when its
-//! hour is up whether or not a window asks.
+//! commands over `purlis_core::detailedlog`'s switch, and the watcher that turns it off when its
+//! hour is up by the wall clock, whether or not a window asks.
 
-use purlis_core::detailedlog::{self, Detailed, LASTS};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use purlis_core::detailedlog::{self, Detailed};
 
 /// What the switch says, as the window reads it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
@@ -40,14 +42,45 @@ pub fn set_detailed_remote_log(on: bool) -> DetailedRemoteLog {
         return switch.turn_off().into();
     }
     let said = switch.turn_on(jiff::Timestamp::now());
-    // Asked once its hour is up, it turns itself off. A timer of an earlier turn-on that wakes
-    // first finds the hour not up yet and changes nothing.
-    let lasts = std::time::Duration::try_from(LASTS).unwrap_or_default();
+    watch_until_it_is_off();
+    said.into()
+}
+
+/// How often the watcher reads the wall clock while the switch is on.
+const LOOKS_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Whether a watcher runs.
+static WATCHING: AtomicBool = AtomicBool::new(false);
+
+/// **Turns the switch off once its hour is up, whether or not a window asks**: one thread that
+/// reads the wall clock every minute while it is on. Not one sleep of an hour: a sleep's clock
+/// stops while the machine sleeps, and the hour is the person's clock's.
+fn watch_until_it_is_off() {
+    if WATCHING.swap(true, Ordering::SeqCst) {
+        return;
+    }
     let _ = std::thread::Builder::new()
         .name("purlis-detailed-log".into())
-        .spawn(move || {
-            std::thread::sleep(lasts + std::time::Duration::from_secs(1));
-            let _ = detailedlog::this_process().at(jiff::Timestamp::now());
+        .spawn(|| {
+            loop {
+                std::thread::sleep(LOOKS_EVERY);
+                if detailedlog::this_process()
+                    .at(jiff::Timestamp::now())
+                    .until
+                    .is_some()
+                {
+                    continue;
+                }
+                WATCHING.store(false, Ordering::SeqCst);
+                // Turned on again between the look and the store: watch on, unless another
+                // watcher has started since.
+                let on_again = detailedlog::this_process()
+                    .at(jiff::Timestamp::now())
+                    .until
+                    .is_some();
+                if !on_again || WATCHING.swap(true, Ordering::SeqCst) {
+                    return;
+                }
+            }
         });
-    said.into()
 }

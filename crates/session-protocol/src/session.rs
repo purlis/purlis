@@ -638,8 +638,8 @@ use crate::view::{Limits, Views};
 /// [`FileRead::NotThere`] for a kept file, and a window asks a host to read a file
 /// only from this version ([`KNOWS_KEPT_FILES`]).
 ///
-/// 1.98 has a window name the Start a start is for ([`StartProgram::start`], #7864): an id of
-/// letters and digits the window made as the person pressed Start, which the host writes on its
+/// 1.98 has a window name the Start a start is for ([`StartProgram::start`], #7864): a ULID-shaped
+/// id the window made as the person pressed Start, which the host writes on its
 /// `harness_spawn` line in its own diagnostic log, so the window's lines and the runner's join
 /// up. A host before 1.98 ignores the field, and its line names no start; nothing else changes on
 /// either side.
@@ -2375,7 +2375,7 @@ pub struct StartProgram {
     pub link_frames: Option<crate::browsing::LinkFrames>,
     /// The id of the Start the person pressed (1.98, #7864): the window makes one as the start
     /// begins and names it on each step of it in its own diagnostic log, and the host names it on
-    /// its `harness_spawn` line, so the two logs' lines join up. Letters and digits alone
+    /// its `harness_spawn` line, so the two logs' lines join up. A ULID's shape alone
     /// ([`crate::steps::StartId::parse`]): a host writes one of any other shape nowhere. A host
     /// before 1.98 ignores it, as it ignores any field it does not know, and a start without one
     /// starts as before. Never read to decide anything.

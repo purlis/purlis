@@ -217,28 +217,44 @@ pub fn keep_linked<C: Connector>(
     let woken = std::sync::Arc::clone(&wake);
     // The steps the caller is inside, so a link made for a step names it (`steps`, #7182): a step
     // that has ended is named no more, so one kept past it, linking again, is inside nothing.
-    tokio::spawn(crate::steps::current().future(async move {
+    // The Start it was made for is named until the link first comes up (#7864): a redial after
+    // that is for no Start, and joins no Start's lines.
+    let made_for = crate::steps::current();
+    tokio::spawn(made_for.clone().without_start().future(async move {
         let mut ups: u64 = 0;
         // Each try since the link was last up, for its `link_dial` line (#7864).
         let tries = std::sync::atomic::AtomicU32::new(0);
+        let came_up = std::sync::atomic::AtomicBool::new(false);
         let dial = || async {
             let attempt = tries.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-            let mut step = crate::steps::begin(crate::steps::Name::LinkDial).attempt(attempt);
-            let io = connector.connect().await.map_err(|why| Down {
-                // A connector's own check that the far end's key is no longer the one
-                // it was paired with (a cluster runner's, #3292) is a changed key too.
-                key_changed: why
-                    .get_ref()
-                    .is_some_and(|inner| inner.is::<KeyNoLongerHeld>()),
-                gone: why.get_ref().is_some_and(|inner| inner.is::<FarEndGone>()),
-                refused: why
-                    .get_ref()
-                    .is_some_and(|inner| inner.is::<FarEndRefused>()),
-                host_key_changed: why
-                    .get_ref()
-                    .is_some_and(|inner| inner.is::<FarEndHostKeyChanged>()),
-                why: format!("the connector did not connect: {why}"),
-            });
+            let begun = || crate::steps::begin(crate::steps::Name::LinkDial).attempt(attempt);
+            let mut step = if came_up.load(std::sync::atomic::Ordering::Relaxed) {
+                begun()
+            } else {
+                made_for.run(begun)
+            };
+            // The connector's steps and the handshake's are inside the dial: a sum of the rows with
+            // no parent counts each try once.
+            let inside = step.context();
+            let io = inside
+                .clone()
+                .future(connector.connect())
+                .await
+                .map_err(|why| Down {
+                    // A connector's own check that the far end's key is no longer the one
+                    // it was paired with (a cluster runner's, #3292) is a changed key too.
+                    key_changed: why
+                        .get_ref()
+                        .is_some_and(|inner| inner.is::<KeyNoLongerHeld>()),
+                    gone: why.get_ref().is_some_and(|inner| inner.is::<FarEndGone>()),
+                    refused: why
+                        .get_ref()
+                        .is_some_and(|inner| inner.is::<FarEndRefused>()),
+                    host_key_changed: why
+                        .get_ref()
+                        .is_some_and(|inner| inner.is::<FarEndHostKeyChanged>()),
+                    why: format!("the connector did not connect: {why}"),
+                });
             let io = match io {
                 Ok(io) => io,
                 Err(down) => {
@@ -246,7 +262,9 @@ pub fn keep_linked<C: Connector>(
                     return Err(down);
                 }
             };
-            let linked = connect_kept(io, handshake, &ours, &answering, liveness).await;
+            let linked = inside
+                .future(connect_kept(io, handshake, &ours, &answering, liveness))
+                .await;
             let handshake_cause = match &linked {
                 Err(super::LinkRefused::TimedOut) => crate::steps::Cause::TimedOut,
                 _ => crate::steps::Cause::Handshake,
@@ -261,6 +279,7 @@ pub fn keep_linked<C: Connector>(
             match &linked {
                 Ok(_) => {
                     tries.store(0, std::sync::atomic::Ordering::Relaxed);
+                    came_up.store(true, std::sync::atomic::Ordering::Relaxed);
                     step.done();
                 }
                 Err(down) => step.found(cause_of(down, handshake_cause)),

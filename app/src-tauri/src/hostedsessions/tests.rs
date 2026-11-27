@@ -4511,7 +4511,7 @@ fn a_start_asked_of_a_host_names_the_start_this_window_made() {
     use purlis_session_protocol::steps::{StartId, starting};
     let id = StartId::parse("01JD3Q4M0R8W2ZK7A6F1B9CXYE").unwrap();
     let _held = starting(id);
-    let asked = named_by_its_start(StartProgram::of(
+    let asked = with_this_threads_start(StartProgram::of(
         "01J9PRJCT00000000000000000",
         session::ProgramKind::Harness,
     ));
@@ -4520,7 +4520,7 @@ fn a_start_asked_of_a_host_names_the_start_this_window_made() {
 
 #[test]
 fn a_start_outside_any_start_names_none() {
-    let asked = named_by_its_start(StartProgram::of(
+    let asked = with_this_threads_start(StartProgram::of(
         "01J9PRJCT00000000000000000",
         session::ProgramKind::Harness,
     ));

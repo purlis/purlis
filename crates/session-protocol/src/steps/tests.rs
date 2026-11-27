@@ -548,3 +548,69 @@ fn a_start_held_names_its_id_until_it_is_let_go_of() {
     );
     assert!(!line_of(&out, "code_send").contains("start"), "{out}");
 }
+
+#[test]
+fn a_start_id_is_a_ulids_shape_and_nothing_a_token_could_be() {
+    // A peer's id is written to the runner's log only where it is one the window could have
+    // made: 26 characters of Crockford's base32. A hex token, a cloud key or a word is not.
+    assert!(StartId::parse("01JD3Q4M0R8W2ZK7A6F1B9CXYE").is_some());
+    for not_one in [
+        concat!("AK", "IAIOSFODNN7EXAMPLE"),
+        "0123456789abcdef0123456789abcdef01234567",
+        "01jd3q4m0r8w2zk7a6f1b9cxye",
+        "01JD3Q4M0R8W2ZK7A6F1B9CXYI",
+        "01JD3Q4M0R8W2ZK7A6F1B9CXY",
+        "buildhost",
+    ] {
+        assert_eq!(StartId::parse(not_one), None, "{not_one}");
+    }
+}
+
+#[test]
+fn the_contract_pins_every_field_a_line_may_carry() {
+    let id = StartId::parse("01JD3Q4M0R8W2ZK7A6F1B9CXYE").unwrap();
+    let out = said_while(|| {
+        let _held = starting(id);
+        let parent = begin(Name::FirstLink);
+        parent.inside(|| {
+            let _ = begin_in(Name::LinkDial, "lab")
+                .attempt(2)
+                .because(Cause::Unreachable);
+        });
+        parent.done();
+    });
+    let line = line_of(&out, "link_dial");
+    // The event's own fields, after its message (the span's `step{…}` before it is not one).
+    let fields: Vec<&str> = line
+        .rsplit_once(") ")
+        .map_or("", |(_, fields)| fields)
+        .split_whitespace()
+        .filter_map(|word| word.split_once('=').map(|(name, _)| name))
+        .collect();
+    assert_eq!(
+        fields,
+        [
+            "step", "outcome", "ms", "pool", "parent", "cause", "attempt", "start"
+        ],
+        "{line}"
+    );
+    assert!(
+        line.contains(
+            "(pool: lab, parent: first_link, cause: unreachable, attempt: 2, start: 01JD3Q4M0R8W2ZK7A6F1B9CXYE)"
+        ),
+        "{line}"
+    );
+}
+
+#[test]
+fn a_context_for_later_work_names_no_start() {
+    let id = StartId::parse("01JD3Q4M0R8W2ZK7A6F1B9CXYE").unwrap();
+    let out = said_while(|| {
+        let later = {
+            let _held = starting(id);
+            current().without_start()
+        };
+        later.run(|| begin(Name::LinkDial).done());
+    });
+    assert!(!line_of(&out, "link_dial").contains("start"), "{out}");
+}
