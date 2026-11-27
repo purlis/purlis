@@ -48,6 +48,28 @@ const CREATE: &str = "mutation PullRequestCreate($input: CreatePullRequestInput!
 const UPDATE_BRANCH: &str = "mutation PullRequestUpdateBranch($input: UpdatePullRequestBranchInput!) { \
     updatePullRequestBranch(input: $input) { pullRequest { id } } }";
 
+/// The pull request `gh pr update-branch <number>` reads first, captured from gh 2.69.0 off the
+/// chat's own route.
+const FIND_BY_NUMBER: &str = "query PullRequestByNumber($owner: String!, $repo: String!, $pr_number: Int!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $pr_number) {id,number,headRefName,headRefOid,headRepositoryOwner{id,login,...on User{name}},mergeable}
+    }
+  }";
+
+/// What gh 2.69.0 asks next, `api.ComparePullRequestBaseBranchWith`: how far the head is behind
+/// its base (#7957). It was refused as `GraphqlOtherRepo`, because `Ref` had no `compare`.
+const COMPARE: &str = "query ComparePullRequestBaseBranchWith($owner: String!, $repo: String!, $pullRequestNumber: Int!, $headRef: String!) {
+\t\trepository(owner: $owner, name: $repo) {
+\t\t\tpullRequest(number: $pullRequestNumber) {
+\t\t\t\tbaseRef {
+\t\t\t\t\tcompare (headRef: $headRef) {
+\t\t\t\t\t\taheadBy, behindBy, status
+\t\t\t\t\t}
+\t\t\t\t}
+\t\t\t}
+\t\t}
+\t}";
+
 fn scene() -> Scene {
     // The pull request's head is what update-branch writes to: here a branch of the chat's repo
     // that the chat made (its tip is `1` * 40, as the pull request's head is).
@@ -179,4 +201,62 @@ fn an_update_method_that_is_not_one_of_the_two_enum_values_is_still_read_as_text
         "pullRequestId": "PR_kwDO_app", "updateMethod": "/merge"}});
     let out = send(&s, UPDATE_BRANCH, body);
     assert!(is_refused(&out, Refusal::MergeCommand), "{out:?}");
+}
+
+#[test]
+fn every_document_gh_pr_update_branch_sends_on_the_chats_pull_request_is_answered() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let out = send(
+        &s,
+        FIND_BY_NUMBER,
+        serde_json::json!({"owner": "acme", "repo": "app", "pr_number": 7}),
+    );
+    assert!(matches!(out, Outcome::Forward(_)), "{out:?}");
+    let out = send(
+        &s,
+        COMPARE,
+        serde_json::json!({"owner": "acme", "repo": "app", "pullRequestNumber": 7, "headRef": "fix"}),
+    );
+    assert!(matches!(out, Outcome::Forward(_)), "{out:?}");
+    let out = send(
+        &s,
+        UPDATE_BRANCH,
+        serde_json::json!({"input": {"pullRequestId": "PR_kwDO_app", "expectedHeadOid": "1".repeat(40)}}),
+    );
+    assert!(matches!(out, Outcome::Forward(_)), "{out:?}");
+}
+
+#[test]
+fn the_compare_of_another_repos_pull_request_is_refused() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let out = send(
+        &s,
+        COMPARE,
+        serde_json::json!({"owner": "acme", "repo": "other", "pullRequestNumber": 7, "headRef": "fix"}),
+    );
+    assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{out:?}");
+}
+
+#[test]
+fn a_comparison_shows_its_counts_and_nothing_it_holds() {
+    purlis_core::unsteered!();
+    let s = scene();
+    // The commits between the two sides, and either side's target, may reach a fork's content.
+    for inner in [
+        "commits(first: 5) { nodes { oid message } }",
+        "baseTarget { oid }",
+        "headTarget { oid }",
+        "id",
+    ] {
+        let q = format!(
+            "query{{ repository(owner:\"acme\", name:\"app\"){{ defaultBranchRef{{ compare(headRef:\"someone:fix\"){{ {inner} }} }} }} }}"
+        );
+        let out = send(&s, &q, serde_json::json!({}));
+        assert!(
+            is_refused(&out, Refusal::GraphqlOtherRepo),
+            "{inner}: {out:?}"
+        );
+    }
 }

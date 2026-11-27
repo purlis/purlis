@@ -159,7 +159,7 @@ impl Scene {
         objects: impl ObjectRepo + 'static,
         tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
     ) -> Self {
-        Self::build_tuned(TokenKind::Oauth, objects, false, &[], tune)
+        Self::build_tuned(TokenKind::Oauth, objects, false, &[], None, tune)
     }
 
     /// As [`Scene::tuned`], with chat-a's github.com repo (`Acme/App`) holding a tip of its own,
@@ -169,11 +169,23 @@ impl Scene {
         own: &[(&str, &str)],
         tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
     ) -> Self {
-        Self::build_tuned(TokenKind::Oauth, objects, false, own, tune)
+        Self::build_tuned(TokenKind::Oauth, objects, false, own, None, tune)
+    }
+
+    /// As [`Scene::tuned_owning`], with chat-a's github.com repo (`Acme/App`) known by the numeric
+    /// id `id`, as the forge's own read records it.
+    pub fn owning_with_github_id(
+        objects: impl ObjectRepo + 'static,
+        own: &[(&str, &str)],
+        id: u64,
+    ) -> Self {
+        Self::build_tuned(TokenKind::Oauth, objects, false, own, Some(id), |proxy| {
+            proxy
+        })
     }
 
     fn build(token_kind: TokenKind, objects: Objects, ghes: bool) -> Self {
-        Self::build_tuned(token_kind, objects, ghes, &[], |proxy| proxy)
+        Self::build_tuned(token_kind, objects, ghes, &[], None, |proxy| proxy)
     }
 
     fn build_tuned(
@@ -181,6 +193,7 @@ impl Scene {
         objects: impl ObjectRepo + 'static,
         ghes: bool,
         own: &[(&str, &str)],
+        github_id: Option<u64>,
         tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
     ) -> Self {
         let asked = Arc::new(AtomicUsize::new(0));
@@ -194,12 +207,16 @@ impl Scene {
         let proxy = tune(proxy);
         let a = ChatId::new("chat-a");
         let b = ChatId::new("chat-b");
+        let mut app = AllowedRepo::new(Kind::GitHub, "github.com", 443, "Acme/App", "main")
+            .unwrap()
+            .with_node_id("R_acme_app")
+            .with_own_branches(own)
+            .with_protected_branches(&["release"]);
+        if let Some(id) = github_id {
+            app = app.with_forge_id(purlis_core::forge::proxy::ForgeRepoId::for_a_test(id));
+        }
         let mut a_repos = vec![
-            AllowedRepo::new(Kind::GitHub, "github.com", 443, "Acme/App", "main")
-                .unwrap()
-                .with_node_id("R_acme_app")
-                .with_own_branches(own)
-                .with_protected_branches(&["release"]),
+            app,
             AllowedRepo::new(Kind::GitLab, "gitlab.com", 443, "group/proj", "main")
                 .unwrap()
                 .with_forge_id(purlis_core::forge::proxy::ForgeRepoId::for_a_test(42))

@@ -336,7 +336,11 @@ const GITHUB: Table = &[
     ("Ref", &["id", "name", "prefix"], &[
         ("target", Obj("GitObject")),
         ("associatedPullRequests", Conn("PullRequestRef")),
+        // `gh pr update-branch` asks how far the head is behind its base first (#7957): the
+        // counts and the status alone, never the commits or either side's target.
+        ("compare", Obj("Comparison")),
     ]),
+    ("Comparison", &["aheadBy", "behindBy", "status"], &[]),
     ("GitObject", &["id", "oid", "abbreviatedOid"], &[]),
     ("Commit", &[
         "id", "oid", "abbreviatedOid", "message", "messageHeadline", "messageBody",

@@ -812,16 +812,19 @@ impl ChatPolicy {
                     .iter()
                     .filter(|r| r.kind == kind && r.serves(&host, head.port))
                     .find(|r| repo_matches(r, &named))
-                    .map(|repo| (repo, rel))
+                    .map(|repo| (repo, named, rel))
             });
         let (repo, shown, rel) = match named {
-            Some((repo, rel)) => {
+            Some((repo, named_as, rel)) => {
                 // The words before the repo, and the repo as placeholders: the recorded repo is
                 // named apart, never the chat's spelling of it.
                 let before = segments.len() - rel.len();
-                let (words, placeholders): (usize, &[&str]) = match kind {
-                    Kind::GitHub => (before.saturating_sub(2), &["{owner}", "{repo}"]),
-                    Kind::GitLab => (before.saturating_sub(1), &["{project}"]),
+                let (words, placeholders): (usize, &[&str]) = match (kind, &named_as) {
+                    (Kind::GitHub, RestRepo::Id(_)) => (before.saturating_sub(1), &["{id}"]),
+                    (Kind::GitHub, RestRepo::Path(_)) => {
+                        (before.saturating_sub(2), &["{owner}", "{repo}"])
+                    }
+                    (Kind::GitLab, _) => (before.saturating_sub(1), &["{project}"]),
                 };
                 let shown = segments[..words]
                     .iter()
@@ -1585,11 +1588,19 @@ fn rest_path(
             let path = github_path(owner, repo)?;
             Ok(Some((RestRepo::Path(path), segments[3..].to_vec())))
         }
+        // api.github.com/repositories/{id}/…: the same repo by its numeric id, the form GitHub's
+        // own `Link` header names the next page by (#7958). Read as `/repos/{owner}/{repo}/…`.
+        (Kind::GitHub, ["repositories", id, ..]) if on_api_host => {
+            Ok(Some((github_id(id)?, segments[2..].to_vec())))
+        }
         (Kind::GitHub, _) if on_api_host => Err(Refusal::NotOnList),
         // GHES: {host}/api/v3/repos/{owner}/{repo}/…
         (Kind::GitHub, ["api", "v3", "repos", owner, repo, ..]) if host != "github.com" => {
             let path = github_path(owner, repo)?;
             Ok(Some((RestRepo::Path(path), segments[5..].to_vec())))
+        }
+        (Kind::GitHub, ["api", "v3", "repositories", id, ..]) if host != "github.com" => {
+            Ok(Some((github_id(id)?, segments[4..].to_vec())))
         }
         (Kind::GitHub, ["api", "v3", ..]) if host != "github.com" => Err(Refusal::NotOnList),
         // GitLab: {host}/api/v4/projects/{id}/…
@@ -1611,6 +1622,18 @@ fn rest_path(
         (Kind::GitLab, ["api", ..]) => Err(Refusal::NotOnList),
         _ => Ok(None),
     }
+}
+
+/// A GitHub repo's numeric id as a REST path names it: digits only, in the one spelling GitHub
+/// writes (no leading zero), else no repo of the chat's. It matches only the id the forge's own
+/// read recorded ([`AllowedRepo::forge_id`]).
+fn github_id(id: &str) -> Result<RestRepo, Refusal> {
+    if id.is_empty() || id.starts_with('0') || !id.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(Refusal::OtherRepo);
+    }
+    id.parse::<u64>()
+        .map(RestRepo::Id)
+        .map_err(|_| Refusal::OtherRepo)
 }
 
 fn github_path(owner: &str, repo: &str) -> Result<String, Refusal> {
