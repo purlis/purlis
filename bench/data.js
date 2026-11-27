@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795809626825,
+  "lastUpdate": 1795821287236,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58086,6 +58086,48 @@ window.BENCHMARK_DATA = {
             "value": 101.85958600000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.034, 101.792, 101.860, 101.948, 102.337 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "462f4d5a226b3bb57c418eeacea3e94972bb2200",
+          "message": "FS-G2: core spawn-count gate, counted through the one door (#7892) (#7941)\n\n* FS-G2: core spawn-count gate (#7892)\n\nA counting scope in purlis_core::forklock::counting, carried by the thread and\nby the app's one door to its blocking thread, counts the programs a piece of\nwork starts and its reads of the sandbox manifest and locks. It replaces\nprofiles::GIT_ASKS. inboxupdates and reportdrafts now answer through the one\ndoor in lib.rs.\n\noff_the_main_thread.rs gains a production answer_class table classing every\nregistered command; costs.rs checks each appears once and agrees with its\nsource. counts.rs drives 23 window reads on two fixtures, cold and warm: Model\nreads start nothing, Git reads start exactly their recorded ceiling, and a\nburst of sandbox_state asks reads the project at most twice.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8DZZ9TFR5BKW6RRVM50KTPT\nPurlis-Persona: steward\n\n* FS-G2: class project_prerequisites, which main added, as Unmeasured\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8DZZ9TFR5BKW6RRVM50KTPT\nPurlis-Persona: steward\n\n* FS-G2 review: carry the count into every scoped fan-out, close the class test's holes\n\n- Every scoped fan-out on a read path in purlis-core carries the counting\n  scope (planegit staged_blobs, staleclone, repolist, dockerpool, extension\n  events, projectindex writer, forgedeny, egress providers, files compare and\n  search, doctor profiles, repocmd discover and clone). Tests show a program\n  started in staged_blobs' and each_at_most's threads is counted (red without\n  the carry). standings' read behind runs on the clock after the answer and\n  is documented as deliberately not carried.\n- The class-versus-source test finds a command's fn however far below its\n  attribute, and every registered command must be found in source.\n- off_the_window is defined once, the door: the local wrappers in\n  reportdrafts and inboxupdates are inlined. No Model or Git command reaches a\n  raw spawn_blocking in its body or a helper of its file it calls (red on\n  both mutations).\n- A counted start records its argv, printed by the gate test. No config\n  listing is kept inside a counting scope, so no count turns on SETTLED; a\n  test shows team-off counts unchanged once git's files are 2.5 s old.\n- Nits: the burst asserts exactly one read's manifest reads; Relaxed tallies;\n  CEILINGS documented as exact counts.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8ENWAKRPA176DRWBKWDS85B\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T22:12:49Z",
+          "tree_id": "c7fdd52293b1c34f5ac4cef7980e2a5f8558520e",
+          "url": "https://github.com/purlis/purlis/commit/462f4d5a226b3bb57c418eeacea3e94972bb2200"
+        },
+        "date": 1795821281080,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7087939999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.685, 0.698, 0.709, 0.709, 0.710 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7200055,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.584, 16.625, 16.720, 16.729, 16.730 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5378345,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.449, 101.480, 101.538, 101.662, 102.421 ms"
           }
         ]
       }
