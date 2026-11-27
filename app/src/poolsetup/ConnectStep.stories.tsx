@@ -1423,10 +1423,13 @@ export const TheAddWasNotTaken: Story = {
     ).toBeVisible();
     // The press is over: the button is back (it is disabled and `aria-busy` while the add runs),
     // so the picture is not of a frame WebKit drew before it (#7238).
-    await waitFor(
-      () => expect(canvas.getByRole("button", { name: "Trust and create the pool" })).toBeEnabled(),
-      SETTLES,
-    );
+    const main = canvas.getByRole("button", { name: "Trust and create the pool" });
+    await waitFor(() => expect(main).toBeEnabled(), SETTLES);
+    // The picture is of what the refusal says, not of where the focus went: WebKit sometimes
+    // draws a ring on the button the pointer pressed once it is enabled again (stories run
+    // 45946014493, one theme of twelve), so the focus leaves the page before it is taken.
+    (main.ownerDocument.activeElement as HTMLElement | null)?.blur();
+    await waitFor(() => expect(main).not.toHaveAttribute("data-focus-visible"), SETTLES);
     await expect(canvas.queryByText("Connected")).toBeNull();
     await expect(canvas.queryByText(/is ready to run your chats/)).toBeNull();
   },

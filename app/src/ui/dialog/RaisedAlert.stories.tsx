@@ -11,7 +11,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useEffect, useState } from "react";
 import { expect, waitFor, within } from "storybook/test";
-import { expectFocusInSight, pictureNow, untilFocused } from "../../stories.testkit";
+import {
+  expectFocusInSight,
+  pictureNow,
+  untilFocused,
+  untilSeenInDialog,
+} from "../../stories.testkit";
 import { SETTLE_MS } from "../../noticeSettle";
 import { RAISED_ALERT_CHANGED, RAISED_ALERT_TOO_SOON, RaisedAlert } from "./RaisedAlert";
 
@@ -106,7 +111,11 @@ export const RaisedByTheApp: Story = {
     );
     expectFocusInSight();
     await userEvent.click(page.getByRole("button", { name: "Accept" }));
-    await expect(within(alert).getByRole("status")).toHaveTextContent(RAISED_ALERT_TOO_SOON);
+    const why = within(alert).getByRole("status");
+    await expect(why).toHaveTextContent(RAISED_ALERT_TOO_SOON);
+    // The press just made is still being drawn on Accept: its picture waits for the dialog to
+    // settle, as WebKit took it mid-change in one theme and not the next (stories run 45946014493).
+    await untilSeenInDialog(why);
     await pictureNow();
     await settles();
     await userEvent.keyboard("{Escape}");
