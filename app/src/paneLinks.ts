@@ -326,7 +326,7 @@ function indentOf(line: IBufferLine, nothing: DrawsNothing): number {
  * a list item. A short fixed set, so a row opening with any other character and a blank hangs
  * nothing.
  */
-const MARKERS = new Set(["⏺", "•", "●", "◦", "▪", "‣", "-", "*", "+"]);
+const MARKERS = new Set([..."\u23FA\u2022\u25CF\u25E6\u25AA\u2023\u002D\u002A\u002B"]);
 
 /**
  * **The hanging indent of `line`, the first row of a line** (#7930): the blank cells it starts
@@ -395,9 +395,20 @@ function goesOnAfter(pane: Terminal, row: number, nothing: DrawsNothing): number
  *  the link on the row before. */
 const STARTS_A_LINK = new RegExp(String.raw`^(?:${SCHEME}|~\/|\.{1,2}\/)`, "u");
 
-/** `line` with its first `indent` characters, the blank cells it starts with, left out. */
+/**
+ * `line` with the blank cells it starts with, its first `indent` columns, left out: the
+ * characters of its first row's cells left of column `indent`, however many each holds (a
+ * combining mark, a wide character's two columns).
+ */
 function unindented(line: Wrapped, indent: number): Wrapped {
-  return { ...line, text: line.text.slice(indent), cells: line.cells.slice(indent) };
+  let cut = 0;
+  while (
+    cut < line.cells.length &&
+    line.cells[cut].y === line.first &&
+    line.cells[cut].x < indent
+  )
+    cut += 1;
+  return { ...line, text: line.text.slice(cut), cells: line.cells.slice(cut) };
 }
 
 /** `before` and `after`, the lines either side of a line break the program wrote at the pane's
@@ -462,7 +473,7 @@ function lineAt(pane: Terminal, y: number, nothing: DrawsNothing): Wrapped | und
       start.cutBefore || start.first === 0
         ? undefined
         : goesOnAfter(pane, start.first - 1, nothing);
-    if (indent === undefined || STARTS_A_LINK.test(start.text.slice(indent))) break;
+    if (indent === undefined || STARTS_A_LINK.test(unindented(start, indent).text)) break;
     const before = wrappedAt(pane, start.first - 1);
     if (before === undefined) break;
     rows += rowsIn(before);

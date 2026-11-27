@@ -525,6 +525,33 @@ describe("a link the program broke over rows at the pane's width", () => {
     expect(resolved()).toEqual([{ kind: "url", text: url }]);
   });
 
+  it.each([
+    ["an ideographic space", "\u3000", "\u3000", "defg rest", "defg"],
+    ["an ideographic space before wide words", "\u3000", "\u3000", "漢字 rest", "漢字"],
+    ["a wide Hangul filler under a list item's dash", "- ", "\u3164", "evil rest", "evil"],
+    [
+      "concealed cells holding combining marks under a list item's dash",
+      "- ",
+      "\u001b[8ma\u0301b\u0301\u001b[28m",
+      "rest more",
+      "rest",
+    ],
+  ])(
+    "is one link that takes every word past an indent of %s",
+    async (_, first, indent, next, taken) => {
+      const { term, drawn } = await opened();
+      // Each indent is two columns wide.
+      const head = upTo(COLS - 2, "https://a.example/", "p");
+      await write(term, `${first}${head}\r\n${indent}${next}`);
+
+      hover(drawn, 3, 1);
+
+      await waitFor(() =>
+        expect(resolved()).toContainEqual({ kind: "url", text: `${head}${taken}`, joined: true }),
+      );
+    },
+  );
+
   it("is one link where a wide character fills its row's last column", async () => {
     const { term, drawn } = await opened();
     // Two cells each: the row ends on the second half of the last one.
