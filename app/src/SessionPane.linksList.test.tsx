@@ -237,6 +237,17 @@ describe("Links in this pane…", () => {
     expect(within(dialog).getAllByRole("option")[0]).toHaveAccessibleName("https://a.example/one");
   });
 
+  it("lists a link the program broke at the pane's edge whole, and once (#7819)", async () => {
+    onAMac();
+    const term = await opened();
+    const head = `https://a.example/${"x".repeat(80 - 18)}`;
+    await write(term, `${head}\r\ntail and https://c.example/three`);
+    press(LIST_KEY_MAC);
+    const dialog = await screen.findByRole("dialog", { name: "Links in this pane" });
+    await waitFor(() => expect(within(dialog).getAllByRole("option")).toHaveLength(2));
+    expect(within(dialog).getAllByRole("option")[1]).toHaveAccessibleName(`${head}tail`);
+  });
+
   it("lists only what is on screen, not the history scrolled past", async () => {
     onAMac();
     const term = await opened();
