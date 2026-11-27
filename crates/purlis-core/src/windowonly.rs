@@ -97,8 +97,8 @@ impl Control {
                 format!(
                     "{branch} in {repo} on {host} is not a branch this chat made through purlis. \
                      {whose}. Allow records this chat as its owner at the commit the forge has \
-                     on it when you press, and then it can replace the branch's history, not \
-                     only add to it. Keep blocked leaves the push refused."
+                     on it when you press, and then it can add to the branch's history. Keep \
+                     blocked leaves the push refused."
                 )
             }
         }
@@ -461,6 +461,7 @@ pub fn let_chat_push(
             repo_id: Some(*repo_id),
             branch: branch.clone(),
             tip: tip.clone(),
+            fast_forward_only: false,
         }],
         Some(crate::forge::createdbranches::Via::Allow),
     )

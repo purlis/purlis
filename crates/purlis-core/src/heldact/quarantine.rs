@@ -769,6 +769,28 @@ impl Quarantine {
         if found.ok() { Ok(()) } else { Err(None) }
     }
 
+    /// **Whether commit `descendant` descends from `ancestor`** (or is it), by git's own
+    /// `merge-base --is-ancestor` over the objects here: the base fetched from the forge and the
+    /// pack the chat pushed. `Err` where git could not answer, which is no answer at all.
+    pub fn descends(&self, ancestor: &HeadSha, descendant: &HeadSha) -> Result<bool, String> {
+        let asked = git::run(
+            &self.path,
+            &[
+                "merge-base",
+                "--is-ancestor",
+                ancestor.as_str(),
+                descendant.as_str(),
+            ],
+            git::READ,
+        )
+        .map_err(|why| why.to_string())?;
+        match asked.code {
+            Some(0) => Ok(true),
+            Some(1) => Ok(false),
+            _ => Err(first_line(&asked.err, "git could not compare the commits")),
+        }
+    }
+
     /// **The trees of the quarantine**, and no other repository's.
     pub fn trees(&self) -> GitTrees {
         GitTrees::of_trusted_store(&self.path)
