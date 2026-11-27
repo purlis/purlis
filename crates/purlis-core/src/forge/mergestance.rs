@@ -51,6 +51,14 @@ pub trait MergeStance: Send + Sync {
 
     /// A merge of `repo` on `host` was forwarded for chat `chat` under `log`: record it.
     fn forwarded(&self, chat: &str, host: &str, repo: &str);
+
+    /// **Whether merges are held only because this machine has not accepted the project's
+    /// policy** (Broken or Waiting; ADR 0130 §7): the committed `[policy]` lets them through and
+    /// what this person accepted does not. A refused merge then says so (#7779), and names no
+    /// family to loosen.
+    fn unaccepted(&self) -> bool {
+        false
+    }
 }
 
 /// Every merge is held: for a run with no policy to read (a test, a stub).
@@ -71,6 +79,7 @@ type Record = Box<dyn Fn(&str, &str) + Send + Sync>;
 pub struct PolicyMergeStance {
     mode: Box<dyn Fn() -> Mode + Send + Sync>,
     record: Record,
+    unaccepted: Box<dyn Fn() -> bool + Send + Sync>,
 }
 
 /// How `guards.merge` runs for a chat on the route: `live`, no looser than the chat's `chain`
@@ -90,6 +99,27 @@ fn merge_mode(
     run.mode(Family::GuardsMerge)
 }
 
+/// **Whether merges are held for a chat of `chain` only because this machine has not accepted the
+/// project's policy** (ADR 0130 §7), with `now` the policy in force ([`enforcement::in_force`])
+/// and `committed` what the project's file says ([`enforcement::committed`]):
+///
+/// - where merges are opted in and accepted, `guards.merge` is enforced only by the acceptance
+///   ([`enforcement::Resolved::unaccepted`]), never by the chain, the file or a lock;
+/// - where they are not ([`enforcement::Resolved::merges_opted_in`]), the committed file opts in
+///   and lets them through, and the acceptance of it is what is missing.
+fn merges_unaccepted(
+    now: &enforcement::Resolved,
+    committed: &enforcement::Resolved,
+    chain: Option<&str>,
+) -> bool {
+    let run = now.clone().for_chat(chain);
+    if run.merges_opted_in() {
+        run.mode(Family::GuardsMerge) == Mode::Enforce && run.unaccepted(Family::GuardsMerge)
+    } else {
+        merge_mode(committed, chain, committed) != Mode::Enforce
+    }
+}
+
 impl PolicyMergeStance {
     /// The stance of the chat whose dispatch chain's strictest policy is `chain`
     /// ([`crate::reopen::HandedFrom::policy`], `None` for a chat nobody dispatched), in the project
@@ -104,7 +134,9 @@ impl PolicyMergeStance {
     pub fn of(root: &Path, chain: Option<&str>) -> Self {
         let for_mode: PathBuf = root.to_path_buf();
         let for_log = for_mode.clone();
+        let for_unaccepted = for_mode.clone();
         let chain = chain.map(str::to_owned);
+        let unaccepted_chain = chain.clone();
         let started = enforcement::at_start(root).for_chat(chain.as_deref());
         Self {
             mode: Box::new(move || {
@@ -123,6 +155,13 @@ impl PolicyMergeStance {
                     Some(said),
                 );
             }),
+            unaccepted: Box::new(move || {
+                merges_unaccepted(
+                    &enforcement::in_force(&for_unaccepted),
+                    &enforcement::committed(&for_unaccepted),
+                    unaccepted_chain.as_deref(),
+                )
+            }),
         }
     }
 
@@ -134,6 +173,7 @@ impl PolicyMergeStance {
         Self {
             mode: Box::new(mode),
             record: Box::new(record),
+            unaccepted: Box::new(|| false),
         }
     }
 }
@@ -147,6 +187,10 @@ impl MergeStance for PolicyMergeStance {
         // The log's one free field names the repo as `host/owner/repo`: where it happened, never
         // what the request said.
         (self.record)(chat, &format!("{host}/{repo}"));
+    }
+
+    fn unaccepted(&self) -> bool {
+        (self.unaccepted)()
     }
 }
 
@@ -412,5 +456,30 @@ template = \"watch\"\n",
         let accepted_nothing = enforcement::Resolved::strict();
         assert!(!not_accepted.stricter(&accepted_nothing).merges_opted_in());
         assert!(!spelled.stricter(&accepted_nothing).merges_opted_in());
+    }
+
+    #[test]
+    fn merges_are_unaccepted_where_the_committed_file_lets_them_through_and_the_acceptance_does_not()
+     {
+        let text = |mode: &str| format!("[policy]\nguards.merge = \"{mode}\"\n");
+        let log = enforcement::committed_for_test(&text("log"));
+        let enforce = enforcement::committed_for_test(&text("enforce"));
+        let watch = enforcement::committed_for_test("");
+        let now = enforcement::in_force_for_test;
+        // Waiting: the file opts in, this machine accepted nothing of it.
+        assert!(merges_unaccepted(&now(&log, &watch), &log, None));
+        // Broken: what a broken acceptance counts as lets nothing through.
+        let broken = enforcement::broken_accepted();
+        assert!(merges_unaccepted(&now(&log, &broken), &log, None));
+        // Waiting, opted in on both sides: the file loosened `guards.merge` and the acceptance
+        // still enforces it, which `Resolved::unaccepted` says.
+        assert!(merges_unaccepted(&now(&log, &enforce), &log, None));
+        // Accepted, the acceptance is not the cause.
+        assert!(!merges_unaccepted(&now(&log, &log), &log, None));
+        // A file that enforces merges on its own merits, or never opted in, holds them whatever
+        // was accepted.
+        assert!(!merges_unaccepted(&now(&enforce, &enforce), &enforce, None));
+        assert!(!merges_unaccepted(&now(&watch, &watch), &watch, None));
+        assert!(!merges_unaccepted(&now(&watch, &broken), &watch, None));
     }
 }

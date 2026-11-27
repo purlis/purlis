@@ -115,6 +115,29 @@ impl SentinelRegistry {
             .remove(chat);
     }
 
+    /// **Whether `headers` prove `chat`** as [`Self::check`] would pass them, and changing nothing:
+    /// no miss is counted and no lockout starts or ends. For what a refusal already decided is
+    /// told (#7779), never for a decision.
+    pub(crate) fn proves(&self, chat: &ChatId, headers: &[(String, String)]) -> bool {
+        let presented = presented_credentials(headers);
+        let map = self.by_chat.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(entry) = map.get(chat) else {
+            return false;
+        };
+        if entry
+            .locked_at
+            .is_some_and(|at| at.elapsed() < self.lockout)
+            || presented.is_empty()
+        {
+            return false;
+        }
+        let mut all_own = true;
+        for value in &presented {
+            all_own &= bool::from(value.as_bytes().ct_eq(entry.sentinel.0.as_bytes()));
+        }
+        all_own
+    }
+
     /// Whether every credential `headers` carry is `chat`'s sentinel, and at least one is there.
     /// A header holding anything else (another chat's sentinel, a real token, nonsense) refuses
     /// the request: it is not guessed which one the chat meant.
