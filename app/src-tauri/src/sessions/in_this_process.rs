@@ -1107,7 +1107,7 @@ mod tests {
             std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
-                    "sessions::tests::an_app_started_with_op_tokens_starts_chats_without_them",
+                    "sessions::in_this_process::tests::an_app_started_with_op_tokens_starts_chats_without_them",
                     "--nocapture",
                     "--test-threads=1",
                 ])
@@ -1243,7 +1243,7 @@ mod tests {
             std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
-                    "sessions::tests::an_app_started_with_credentials_starts_chats_from_its_keep_list",
+                    "sessions::in_this_process::tests::an_app_started_with_credentials_starts_chats_from_its_keep_list",
                     "--nocapture",
                     "--test-threads=1",
                 ])
@@ -1333,7 +1333,7 @@ mod tests {
             std::process::Command::new(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
-                    "sessions::tests::an_app_launched_from_a_pinned_chat_starts_each_chat_where_charter_put_it",
+                    "sessions::in_this_process::tests::an_app_launched_from_a_pinned_chat_starts_each_chat_where_charter_put_it",
                     "--nocapture",
                     "--test-threads=1",
                 ])
