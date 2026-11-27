@@ -43,6 +43,7 @@ use super::scrub::{
 };
 use super::upstream::{UpstreamRequest, UpstreamResponse};
 use super::{PushRead, PushUpdate, PushVerdict, Wiring};
+use crate::forge::proxy::git;
 use crate::forge::proxy::{framing_is_unambiguous, header_names_are_plain, normal};
 
 /// Where a request arrived.
@@ -230,12 +231,15 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
         Outcome::Forward(forwarded) => {
             // A push is checked for CI files before any of it goes on (ADR 0128 D8.3): the
             // listener forwards only what the gate lets through.
-            if forwarded.class == Class::GitPush {
+            // git's probe ahead of a large push names no ref and holds no object: there is nothing
+            // for the gate to read, and the push it announces is checked when it comes (#7878).
+            if forwarded.class == Class::GitPush && !git::is_probe(&body) {
                 let Some(push) = read_push(&forwarded, rh.port, &body) else {
-                    return write_answer(
+                    return gate_refused(
                         &mut framed.stream,
-                        403,
-                        &message("purlis could not read this push, so it was not sent"),
+                        &rh.target,
+                        &body,
+                        "purlis could not read this push, so it was not sent",
                     );
                 };
                 match w.push.check(&w.chat, &push) {
@@ -344,8 +348,8 @@ fn git_refused<W: Write>(
 
 /// **A push the gate refused or held, answered in git's own words** (#7486): `200` with a
 /// report-status naming `why` for each ref, which git prints as `! [remote rejected] <ref>
-/// (<why>)` and exits non-zero on. A push whose commands do not read is answered `403` with `why`
-/// in the body, as before.
+/// (<why>)` and exits non-zero on; for a push whose refs cannot be repeated, `why` in its unpack
+/// status (#7878).
 fn gate_refused<W: Write>(out: &mut W, target: &str, body: &[u8], why: &str) -> io::Result<()> {
     if gitsay::call_of("POST", target) == Some(gitsay::Call::ReceivePack)
         && gitsay::answer(out, &gitsay::Call::ReceivePack, body, why)?
@@ -949,9 +953,22 @@ mod tests {
     }
 
     #[test]
-    fn a_push_whose_commands_do_not_read_is_still_a_403_with_the_reason() {
-        let said = answered_with("/o/r.git/git-receive-pack", b"0000", "purlis: no");
-        assert!(said.starts_with("HTTP/1.1 403"), "{said}");
-        assert!(said.contains("purlis: no"), "{said}");
+    fn a_push_whose_commands_do_not_read_is_refused_in_gits_unpack_status_with_the_reason() {
+        // git prints `error: remote unpack failed: <reason>` and exits non-zero, where a `403`
+        // read to it as "the remote end hung up unexpectedly" and "Everything up-to-date" (#7878).
+        let said = answered_with("/o/r.git/git-receive-pack", b"0000PACK", "purlis: no");
+        assert!(said.starts_with("HTTP/1.1 200"), "{said}");
+        assert!(said.ends_with("0016unpack purlis: no\n0000"), "{said}");
+    }
+
+    #[test]
+    fn gits_probe_is_known_from_a_push() {
+        assert!(git::is_probe(b"0000"));
+        for body in [&b"00000000"[..], b"0000PACK", b"", b"0004"] {
+            assert!(!git::is_probe(body), "{body:?}");
+        }
+        assert!(!git::is_probe(&push_of(&[&format!(
+            "{ZERO} {TIP} refs/heads/a"
+        )])));
     }
 }
