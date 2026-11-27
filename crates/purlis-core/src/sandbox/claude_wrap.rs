@@ -457,8 +457,8 @@ pub const PROJECT_MCP_CHOICES: [&str; 5] = [
 /// (#7863): its user-scope servers are `servers` where those are given, no project has servers
 /// of its own, and no project makes a choice of them ([`PROJECT_MCP_CHOICES`]). An empty list is
 /// no list, as it starts nothing, so a project's `mcpServers: {}`, `enabledMcpjsonServers: []` or
-/// `enableAllProjectMcpServers: false`, which Claude Code writes itself, is as kept. A state file that is no plain file of JSON is never
-/// as kept, as no keep can read it.
+/// `enableAllProjectMcpServers: false`, which Claude Code writes itself, is as kept. A state file
+/// that is no plain file of JSON is never as kept, as no keep can read it.
 #[must_use]
 pub fn mcp_servers_as_kept(state: &Path, servers: Option<&serde_json::Value>) -> bool {
     let doc = match std::fs::symlink_metadata(state) {
