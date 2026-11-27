@@ -2112,3 +2112,20 @@ fn the_7833_programs_other_families_rows_reach_by_chance_each_have_a_row_of_thei
         assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
     }
 }
+
+/// Rows that were there before #7833 and that a row it added now reaches by a form of their name
+/// as well: ucspi-tcp's `tcpserver` and `tcpclient` reach s6-networking's `s6-tcpserver` and
+/// `s6-tcpclient` by their last part, and libslack's `daemon` reaches `start-stop-daemon` and
+/// OpenRC's `supervise-daemon`. Their `run_grants` tests pass through either row, so a give-back
+/// of the forms (#7825) must not take them with it: each keeps a row of its own.
+#[test]
+fn the_rows_a_7833_rows_form_also_reaches_are_each_kept_as_a_row_of_their_own() {
+    for name in [
+        "s6-tcpserver",
+        "s6-tcpclient",
+        "start-stop-daemon",
+        "supervise-daemon",
+    ] {
+        assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
+    }
+}

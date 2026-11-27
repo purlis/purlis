@@ -2531,7 +2531,10 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // `ubic-admin`, `reflex`, s6-overlay's `with-contenv` and `cloud-init-per` run the commands
     // they are handed; `transactional-update run` and `shell` a command or a shell; `fcrontab`
     // and `incrontab` hand a daemon a table of commands; `logrotate` runs a file's `prerotate`
-    // and `postrotate` scripts; and `lefthook` and `husky` a repository's hooks.
+    // and `postrotate` scripts; and `lefthook` and `husky` a repository's hooks. (`daemon`
+    // reaches `start-stop-daemon` and `supervise-daemon` by their last part too, and `tcpserver`
+    // and `tcpclient` below reach `s6-tcpserver` and `s6-tcpclient`: each keeps a row of its own,
+    // and a unit test pins them.)
     "tini",
     "catatonit",
     "daemonize",
