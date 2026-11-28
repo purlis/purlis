@@ -2984,7 +2984,7 @@ fn a_running_runner_is_only_checked() {
 }
 
 /// How many of the fake's logged runs began with `words`.
-fn runs_of(fake: &FakeDocker, words: &str) -> usize {
+pub(crate) fn runs_of(fake: &FakeDocker, words: &str) -> usize {
     fake.file("log")
         .lines()
         .filter(|line| line.starts_with(words))
@@ -3061,8 +3061,13 @@ fn a_containers_check_reads_its_daemon_container_and_home_at_once() {
 
 /// The stand-in's `docker info --format '{{json .}}'`, as a Docker of id `engine` with `options`
 /// as its daemon's security options prints it.
-fn info_of(engine: &str, options: &serde_json::Value) -> String {
+pub(crate) fn info_of(engine: &str, options: &serde_json::Value) -> String {
     serde_json::json!({ "ID": engine, "SecurityOptions": options, "ServerErrors": [] }).to_string()
+}
+
+/// What the pin check of an engine found to be the pinned one reads and hands on (#7922).
+fn pin_checked(docker: &Docker) -> String {
+    docker.keep_for_the_daemon_check(docker.engine_id_read().expect("the engine answers"))
 }
 
 /// **On a cold link, the daemon's options are the pin's own `docker info`'s** (#7862, T6 Q2): the
@@ -3081,7 +3086,7 @@ fn a_cold_links_container_check_takes_the_daemon_from_the_pins_docker_info() {
         ),
     );
     let docker = fake.docker().keeping_what_its_pin_said();
-    assert_eq!(docker.engine_id_said().as_deref(), Ok("ENGINE"));
+    assert_eq!(pin_checked(&docker), "ENGINE");
     assert_eq!(
         docker.resumed(&made()).map(|resumed| resumed.started),
         Ok(false)
@@ -3107,7 +3112,7 @@ fn a_daemon_the_pins_docker_info_finds_without_the_builtin_profile_is_refused() 
         ),
     );
     let docker = fake.docker().keeping_what_its_pin_said();
-    assert_eq!(docker.engine_id_said().as_deref(), Ok("ENGINE"));
+    assert_eq!(pin_checked(&docker), "ENGINE");
     let refused = docker.resumed(&made()).map(|_| ()).unwrap_err();
     assert_eq!(
         refused,
@@ -3130,9 +3135,53 @@ fn a_docker_not_pointed_at_a_pool_keeps_nothing_its_info_said() {
         ),
     );
     let docker = fake.docker();
-    assert_eq!(docker.engine_id_said().as_deref(), Ok("ENGINE"));
+    assert_eq!(pin_checked(&docker), "ENGINE");
     assert!(docker.check(&made()).is_err(), "{}", fake.file("log"));
     assert!(runs_of(&fake, "info ") > 1, "{}", fake.file("log"));
+}
+
+/// **What the pin's `docker info` said stands for a few seconds, never longer** (#7922): on a link
+/// the daemon's check follows the pin's within milliseconds, so what was read five seconds ago is
+/// read again. The clock is the one handed in: `before` is read before the info is kept and
+/// `after` after, so the bound is met on either side whatever the machine's speed.
+/// Seen red: with the 30 s it had, what was read five seconds ago was taken.
+#[test]
+fn what_the_pins_docker_info_said_is_taken_up_to_its_few_seconds_and_never_after() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set(
+        "info",
+        &info_of(
+            "ENGINE",
+            &serde_json::json!(["name=seccomp,profile=builtin"]),
+        ),
+    );
+    let docker = fake.docker().keeping_what_its_pin_said();
+    let five_seconds = std::time::Duration::from_secs(5);
+
+    let before = std::time::Instant::now();
+    assert_eq!(pin_checked(&docker), "ENGINE");
+    assert_eq!(
+        docker
+            .pin_said
+            .take_security_options_at(before + PIN_SAID_FOR),
+        Some(serde_json::json!(["name=seccomp,profile=builtin"])),
+        "taken at its bound"
+    );
+
+    assert_eq!(pin_checked(&docker), "ENGINE");
+    let after = std::time::Instant::now();
+    let late = after + PIN_SAID_FOR + std::time::Duration::from_millis(1);
+    assert_eq!(docker.pin_said.take_security_options_at(late), None);
+
+    assert_eq!(pin_checked(&docker), "ENGINE");
+    let after = std::time::Instant::now();
+    assert_eq!(
+        docker
+            .pin_said
+            .take_security_options_at(after + five_seconds),
+        None,
+        "read five seconds ago"
+    );
 }
 
 /// What the step guard wrote while `then` ran (#7182), at `debug` so a `docker` call is there too.

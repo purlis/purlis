@@ -677,6 +677,64 @@ impl Failing {
 mod tests {
     use super::*;
 
+    /// **Two links' `docker`s, each pointed at its pool's forward, never share what their pins
+    /// said** (#7922): [`pointed`], which every [`docker_of`] result is made with, gives each its
+    /// own slot, even from a `docker` that already keeps one, so one link's pin check never hands
+    /// its `docker info` to another link's daemon check.
+    /// Seen red: with `keeping_what_its_pin_said` keeping a slot it was handed, the second link's
+    /// check took the first's options and ran no `docker info` of its own.
+    #[test]
+    fn two_links_pointed_at_a_forward_never_share_what_their_pins_said() {
+        use crate::dockerpool::tests::{FakeDocker, info_of, inspected, made, runs_of};
+        let fake = FakeDocker::new(&inspected());
+        fake.set(
+            "info",
+            &info_of(
+                "PINNED",
+                &serde_json::json!(["name=seccomp,profile=builtin"]),
+            ),
+        );
+        let remote = Remote {
+            route: crate::sshroute::Route::parse("ssh://me@box").unwrap(),
+            pin: crate::sshroute::Pin {
+                host_key: crate::sshroute::HostKey::parse(
+                    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n",
+                )
+                .unwrap(),
+                engine: crate::sshroute::EnginePin::Docker("PINNED".into()),
+            },
+        };
+        let here = tempfile::tempdir().unwrap();
+        let link = |docker: &Docker| {
+            pointed(
+                docker,
+                Path::new("/usr/bin/ssh"),
+                "far",
+                &remote,
+                here.path().join("forward.sock"),
+                here.path(),
+            )
+            .unwrap()
+        };
+        // Already keeping: the slot it holds is never handed to a link.
+        let base = fake.docker().keeping_what_its_pin_said();
+        let first = link(&base);
+        let second = link(&base);
+        assert_eq!(
+            connect::engine_holds(&first, &remote.route, &remote.pin),
+            Ok(())
+        );
+        let read = runs_of(&fake, "info ");
+        // The second link's check reads the daemon itself, here as the whole info it can't pass.
+        assert!(second.check(&made()).is_err(), "{}", fake.file("log"));
+        assert!(runs_of(&fake, "info ") > read, "{}", fake.file("log"));
+        assert!(base.check(&made()).is_err(), "{}", fake.file("log"));
+        // The first link's is still its own.
+        let read = runs_of(&fake, "info ");
+        assert!(first.check(&made()).is_ok(), "{}", fake.file("log"));
+        assert_eq!(runs_of(&fake, "info "), read, "{}", fake.file("log"));
+    }
+
     fn silent() -> Finding {
         Finding::EngineSilent {
             host: "box".to_owned(),

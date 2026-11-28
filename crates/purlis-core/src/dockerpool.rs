@@ -2771,11 +2771,21 @@ pub struct Docker {
 
 /// **What a pool's pin check read of its engine, handed on once** (#7862, T6 Q2): the engine's
 /// check before a link reads all of `docker info` (ADR 0123 §3), the daemon's security options
-/// with it, and the container's check that follows on the same link takes those from it rather
-/// than asking the engine again. It is not a cache: only the first check after the pin check
-/// takes it, only within [`PIN_SAID_FOR`], and every check after that reads the daemon again. Held
-/// only by a `docker` pointed at a pool's SSH forward ([`Docker::keeping_what_its_pin_said`]);
-/// its clones share it, so one check takes it whichever of them makes it.
+/// with it, and the daemon's check that follows on the same link takes those from it rather
+/// than asking the engine again. It is kept only once the engine is found to be the pinned one
+/// ([`Docker::keep_for_the_daemon_check`], #7922).
+///
+/// It is not a cache: only the first daemon check after the pin check takes it, only within
+/// [`PIN_SAID_FOR`], and every check after that reads the daemon again. Whichever check of the
+/// `docker` that [`crate::sshroute::pool::docker_of`] gave comes first takes it: the container
+/// check of a link ([`Docker::check`], [`Docker::resumed`]), the daemon check before a runner is
+/// made ([`Docker::make_for`]), or one of the drain's checks of several runners on one docker,
+/// made at once (`draining_to_ask_on` in the app's `runnerlinks.rs`), where the others read the
+/// daemon themselves.
+///
+/// Held only by a `docker` pointed at a pool's SSH forward ([`Docker::keeping_what_its_pin_said`]),
+/// each made so with a slot of its own: two `docker_of` results never share it. Clones of one
+/// share it, so one check takes it whichever of them makes it.
 ///
 /// It is not part of what a `docker` is: two that differ only in it are equal.
 #[derive(Clone, Default)]
@@ -2784,9 +2794,37 @@ struct PinSaid(Option<std::sync::Arc<std::sync::Mutex<Option<Said>>>>);
 /// What a pin check read, and when.
 type Said = (std::time::Instant, serde_json::Value);
 
-/// How long what a pin check read is handed on for: the time its engine is taken as the pinned
-/// one over the same forward ([`crate::sshroute::pool::ENGINE_CHECKED_FOR`]).
-const PIN_SAID_FOR: std::time::Duration = std::time::Duration::from_secs(30);
+/// **An engine as a pin check read it** ([`Docker::engine_id_read`], [`Docker::engine_pin_read`]),
+/// with what its `docker info` said to hand on: only [`Docker::keep_for_the_daemon_check`] keeps that, once the
+/// engine is found to be the pinned one (#7922).
+pub(crate) struct PinRead<T> {
+    pub(crate) engine: T,
+    info: Option<serde_json::Value>,
+}
+
+impl<T> PinRead<T> {
+    /// What was read, said another way, with the same `docker info` to hand on.
+    pub(crate) fn map<U>(self, f: impl FnOnce(T) -> U) -> PinRead<U> {
+        PinRead {
+            engine: f(self.engine),
+            info: self.info,
+        }
+    }
+
+    /// [`PinRead::map`], where saying it another way can fail.
+    pub(crate) fn try_map<U, E>(self, f: impl FnOnce(T) -> Result<U, E>) -> Result<PinRead<U>, E> {
+        Ok(PinRead {
+            engine: f(self.engine)?,
+            info: self.info,
+        })
+    }
+}
+
+/// **How long what a pin check read is handed on for** (#7922): a few seconds. On a link the
+/// daemon's check follows the pin's `docker info` within milliseconds; a check later than this
+/// reads the daemon itself, so a `docker_of` result held a while never checks against old
+/// options.
+const PIN_SAID_FOR: std::time::Duration = std::time::Duration::from_secs(3);
 
 impl PinSaid {
     fn slot(&self) -> Option<std::sync::MutexGuard<'_, Option<Said>>> {
@@ -2807,8 +2845,13 @@ impl PinSaid {
     /// none was kept, it is older than [`PIN_SAID_FOR`], or it prints no list of them (a
     /// Podman's), and the check reads the daemon as it always did.
     fn take_security_options(&self) -> Option<serde_json::Value> {
+        self.take_security_options_at(std::time::Instant::now())
+    }
+
+    /// [`PinSaid::take_security_options`], taken at `now`: a test's clock, or the machine's.
+    fn take_security_options_at(&self, now: std::time::Instant) -> Option<serde_json::Value> {
         let (at, info) = self.slot()?.take()?;
-        if at.elapsed() > PIN_SAID_FOR {
+        if now.saturating_duration_since(at) > PIN_SAID_FOR {
             return None;
         }
         info.get("SecurityOptions")
@@ -4568,15 +4611,20 @@ impl Docker {
     /// prints its client's half and exits 0 when the server half fails, so an empty id is read
     /// with the server's own errors, never taken as an engine.
     pub fn engine_id_said(&self) -> Result<String, Refused> {
+        self.engine_id_read().map(|read| read.engine)
+    }
+
+    /// [`Docker::engine_id_said`], with what its `docker info` said, for [`Docker::keep_for_the_daemon_check`].
+    pub(crate) fn engine_id_read(&self) -> Result<PinRead<String>, Refused> {
         let printed = self.read(
             &["info".into(), "--format".into(), "{{json .}}".into()],
             MOST_INSPECTED,
         )?;
-        let id = engine_id_in(&printed)?;
-        if let Ok(info) = serde_json::from_str(printed.trim()) {
-            self.pin_said.keep(info);
-        }
-        Ok(id)
+        let said = engine_id_in(&printed)?;
+        Ok(PinRead {
+            engine: said,
+            info: serde_json::from_str(printed.trim()).ok(),
+        })
     }
 
     /// **Which engine this `docker` reaches, for a pin** (#6269, ADR 0123 §3): a Podman (this
@@ -4584,14 +4632,38 @@ impl Docker {
     /// Podman reached by Docker's client said as such, since its id is drawn anew at every ask
     /// and its containers are not written as the check measured Podman's.
     pub fn engine_pin_said(&self) -> Result<EngineSaid, Refused> {
+        self.engine_pin_read().map(|read| read.engine)
+    }
+
+    /// **`read`'s engine, found to be the pinned one, handing on what its `docker info` said**
+    /// (#7862, #7922, [`PinSaid`]): called only once the pin is found to hold, so what an engine
+    /// that is not the pinned one said is never kept. It keeps nothing where this `docker` keeps
+    /// nothing ([`Docker::keeping_what_its_pin_said`]).
+    pub(crate) fn keep_for_the_daemon_check<T>(&self, read: PinRead<T>) -> T {
+        if let Some(info) = read.info {
+            self.pin_said.keep(info);
+        }
+        read.engine
+    }
+
+    /// [`Docker::engine_pin_said`], with what its `docker info` said of a Docker, for
+    /// [`Docker::keep_for_the_daemon_check`]. A Podman's says nothing to hand on.
+    pub(crate) fn engine_pin_read(&self) -> Result<PinRead<EngineSaid>, Refused> {
         let printed = self.read(
             &["info".into(), "--format".into(), "{{json .}}".into()],
             MOST_INSPECTED,
         )?;
         let info: serde_json::Value = serde_json::from_str(printed.trim())
             .map_err(|_| refused("docker info did not answer JSON"))?;
+        let nothing_kept = |said| PinRead {
+            engine: said,
+            info: None,
+        };
         if let Some(podman) = crate::sshroute::EnginePin::podman_in(&info) {
-            return podman.map(EngineSaid::Pin).map_err(refused);
+            return podman
+                .map(EngineSaid::Pin)
+                .map(nothing_kept)
+                .map_err(refused);
         }
         let id = engine_id_in(&printed)?;
         // Asked, not guessed: a Docker pin taken from a Podman would hold for no ask after.
@@ -4604,10 +4676,12 @@ impl Docker {
             MOST_INSPECTED,
         )?;
         if is_podman_engine(&components) {
-            return Ok(EngineSaid::PodmanOverDocker);
+            return Ok(nothing_kept(EngineSaid::PodmanOverDocker));
         }
-        self.pin_said.keep(info);
-        Ok(EngineSaid::Pin(crate::sshroute::EnginePin::Docker(id)))
+        Ok(PinRead {
+            engine: EngineSaid::Pin(crate::sshroute::EnginePin::Docker(id)),
+            info: Some(info),
+        })
     }
 
     /// **`made`'s home volume's `CreatedAt`, exactly as Docker printed it** (#4167): the same
