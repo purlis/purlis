@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795857747523,
+  "lastUpdate": 1795858720333,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58716,6 +58716,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9144515,
             "unit": "ms",
             "extra": "median of 5 runs: 101.115, 101.896, 101.914, 102.055, 102.071 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "04b375292c384151d7b7413ef1147eb79e88f358",
+          "message": "Pool sign-in reads Claude Code's page on a line of its own, says a quiet runner after 30 s, and logs its steps (#7939) (#7942)\n\n* Pool sign-in reads Claude Code's page on a line of its own, says a quiet runner after 30 s, and logs its steps (#7939)\n\nClaude Code (2.1.332, by its own code) prints its sign-in page on the line\nafter \"If the browser didn't open, visit:\"; the driver matched it only on\nthe same line, so the strip waited at Step 1 until the 180 s page limit.\nClaude's words now take a page on a line of its own, still only one of its\nown authorize pages.\n\nThe strip says after 30 s at a step where purlis waits on the runner\n(starting, open, checking) that the runner has not answered, with Try\nagain (#7187). The log names a sign-in's steps profile_sign_in_start,\nprofile_sign_in_address and profile_sign_in_done, listed once in\nsteps::sign_in for #7864's Name::ALL.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8EGQAZDVGM55CE3B973CMK5\nPurlis-Persona: steward\n\n* Pool sign-in: quiet lines say what happens next, no Try again at the check, stories for both (#7939)\n\nReview: Try again at the check would end a check that may yet say signed\nin, so it offers none; the start's line says purlis stops at 3 minutes and\nshows what the runner printed, rather than guessing. The 30 s is said from\nits constant, and pool_sign_in_next times each step under one lock.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8EGQAZDVGM55CE3B973CMK5\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n* Pool sign-in: an honest quiet line at the open page, a page alone only right after its words (#7939, #7942's review)\n\n- At \"open\" the strip says the runner has not asked for the code yet, and that purlis stops\n  waiting at 1 minute; the start's line says 3 minutes. Both come from the core's own\n  PAGE_WITHIN and NEXT_WITHIN, exported as POOL_SIGN_IN_PAGE_WITHIN_SECS and\n  POOL_SIGN_IN_NEXT_WITHIN_SECS. Story QuietAtThePage.\n- An address on a line of its own is read only on the line right after the words before a\n  page (Words::page_below: Claude Code's \"visit:\" and \"Sign in at:\", Codex's \"navigate to this\n  URL to authenticate:\"), on the same output. Any other address alone is passed over and ends\n  nothing. One right after the words that is not the login's page cannot be followed, said at\n  once, as on the same line, so the strip never waits 3 minutes on a page that came.\n- A line cut at MOST_PARTIAL (16 KiB, no line break) is never read for a page: what is left of\n  it may be a page cut short.\n- Own-line versions of the refused pages (a user before the host, other letters, punycode,\n  javascript:, a link whose words differ from its target, two addresses, unterminated\n  escapes), each asserting nothing opens.\n- The PR's two quiet-line tests checked /has not answered/, which never appears; they now\n  check /runner has not/. Notice.guard lists the quiet status line (4 live regions).\n\nThe check step's wait is bounded, so it keeps its message: keep_on's every step has a limit\n(ssh RUN_WITHIN, the forward FORWARD_WITHIN, a cluster's vouch VOUCHED_NOW_WITHIN, the first\nlink FIRST_LINK_WITHIN, then the keep all_kept_within, at least 600 s).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8EMTQTAB5VESB0MZMN3S79H\nPurlis-Persona: steward\n\n* Pool sign-in: no part of a cut line is read for a page; the held Codex stand-in prints its words first (#7942's review)\n\n- After a cut at MOST_PARTIAL, what follows it up to its line break is the same line: it is\n  never read for a page, and never sets the words before one on the next line (Driven::cut).\n- purlis-cli's a_held_login_that_waits_for_the_browser_is_noted_while_it_runs: its stand-in\n  Codex prints 'navigate to this URL to authenticate:' before its page, as Codex 0.163.0 does,\n  so the page alone is read under the rule a page alone now has.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8EMTQTAB5VESB0MZMN3S79H\nPurlis-Persona: steward\n\n* stories: QuietAtThePage baselines drawn by #7942's stories run (run 46055927857)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8EMTQTAB5VESB0MZMN3S79H\nPurlis-Persona: steward\n\n* stories: baselines drawn in the pinned image\n\nBy the update-baselines label (.github/workflows/stories-baselines.yml).\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-28T08:38:27Z",
+          "tree_id": "a7cd5a57905b8f29eda8708b721553ff0a5c784a",
+          "url": "https://github.com/purlis/purlis/commit/04b375292c384151d7b7413ef1147eb79e88f358"
+        },
+        "date": 1795858712357,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5609850000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.545, 0.546, 0.561, 0.562, 0.628 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2460655,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.146, 16.240, 16.246, 16.267, 16.270 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.9428315,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.249, 100.448, 100.943, 101.172, 102.820 ms"
           }
         ]
       }
