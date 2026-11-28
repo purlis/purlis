@@ -5167,6 +5167,13 @@ export type ChatRestart = {
 	notices: string[],
 	not_yet: string | null,
 	/**
+	 *  **Asked again at the chat's next pause** (#7950): the restart, at a pause, waited on the
+	 *  person's answer to what the project needs, while the chat ran on and could start a turn,
+	 *  so it was not made. Still owed, and the window asks for it again once the chat is at a
+	 *  pause, which may be now.
+	 */
+	ask_again: boolean,
+	/**
 	 *  **What its pane typed while it was hibernated, which no program read** (SC-4d, #7633):
 	 *  handed back with the woken run, for its pane to show unsent. Never typed into it: its
 	 *  delivery is SC-4j's (#7639). None where nothing was typed, or the chat was not woken.
