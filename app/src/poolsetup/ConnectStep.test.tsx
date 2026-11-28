@@ -441,6 +441,136 @@ describe("ConnectStep", () => {
     expect(props.changed).not.toHaveBeenCalled();
   });
 
+  it("waits for the runner image before Trust and create the pool, and never says the build names none while it is still being read (#7871)", async () => {
+    const IMAGE = "ghcr.io/purlis/runner@sha256:" + "c".repeat(64);
+    let offer: (image: unknown) => void = () => {};
+    const calls = core({
+      runner_image_of_this_version: () =>
+        new Promise((resolve) => {
+          offer = resolve;
+        }),
+      pool_setup_trust: () => shown(step({ state: "done" })),
+      pool_setup_trust_and_create: () => ({
+        shown: shown(step({ state: "done" })),
+        breaks: [],
+        refused: null,
+      }),
+    });
+    const trusting = step({
+      next: {
+        id: "trust-machine",
+        label: "Trust this machine",
+        does: "Keeps this key for the pool.",
+        command: null,
+        url: null,
+      },
+      machine: {
+        route: "ssh://sam@build-box",
+        identity: null,
+        host: "build-box",
+        key: { algorithm: "ssh-ed25519", fingerprint: FINGERPRINT },
+        known: null,
+        trusted: null,
+        now: null,
+        engine: null,
+        over: "ssh",
+        tls: null,
+        ca: null,
+        trusted_ca: null,
+        ca_now: null,
+        context: null,
+      },
+    });
+    const adding = {
+      making: false,
+      set: vi.fn(),
+      typed: "lab",
+      type: vi.fn(),
+      chosen: NOTHING_CHOSEN,
+      choose: vi.fn(),
+    };
+    const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
+    render(
+      <ConnectStep step={trusting} shown={shown(trusting)} plane="p" adding={adding} {...props} />,
+    );
+    await waitFor(() =>
+      expect(calls.some((call) => call.cmd === "runner_image_of_this_version")).toBe(true),
+    );
+    const create = screen.getByRole("button", { name: "Trust and create the pool" });
+    expect(create).toBeDisabled();
+    expect(screen.getByText(/Reading the runner image/)).toBeInTheDocument();
+    await userEvent.click(create);
+    expect(screen.queryByText(/names no runner image/)).not.toBeInTheDocument();
+    expect(calls.some((call) => call.cmd === "pool_setup_trust_and_create")).toBe(false);
+
+    // Trust this machine only needs no image, so it works while the image is read.
+    await userEvent.click(screen.getByRole("button", { name: "Trust this machine only" }));
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_trust",
+        args: { plane: "p", fingerprint: FINGERPRINT },
+      }),
+    );
+
+    offer({ state: "ours", image: IMAGE });
+    await waitFor(() => expect(create).toBeEnabled());
+    expect(screen.queryByText(/Reading the runner image/)).not.toBeInTheDocument();
+    await userEvent.click(create);
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        cmd: "pool_setup_trust_and_create",
+        args: expect.objectContaining({ adding: expect.objectContaining({ image: IMAGE }) }),
+      }),
+    );
+    expect(screen.queryByText(/names no runner image/)).not.toBeInTheDocument();
+  });
+
+  it("says the build names no runner image only once purlis has said it names none (#7871)", async () => {
+    const calls = core({ runner_image_of_this_version: () => ({ state: "none_named" }) });
+    const trusting = step({
+      next: {
+        id: "trust-machine",
+        label: "Trust this machine",
+        does: "Keeps this key for the pool.",
+        command: null,
+        url: null,
+      },
+      machine: {
+        route: "ssh://sam@build-box",
+        identity: null,
+        host: "build-box",
+        key: { algorithm: "ssh-ed25519", fingerprint: FINGERPRINT },
+        known: null,
+        trusted: null,
+        now: null,
+        engine: null,
+        over: "ssh",
+        tls: null,
+        ca: null,
+        trusted_ca: null,
+        ca_now: null,
+        context: null,
+      },
+    });
+    const adding = {
+      making: false,
+      set: vi.fn(),
+      typed: "lab",
+      type: vi.fn(),
+      chosen: NOTHING_CHOSEN,
+      choose: vi.fn(),
+    };
+    const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
+    render(
+      <ConnectStep step={trusting} shown={shown(trusting)} plane="p" adding={adding} {...props} />,
+    );
+    const create = screen.getByRole("button", { name: "Trust and create the pool" });
+    await waitFor(() => expect(create).toBeEnabled());
+    await userEvent.click(create);
+    expect(await screen.findByText(/names no runner image/)).toBeInTheDocument();
+    expect(calls.some((call) => call.cmd === "pool_setup_trust_and_create")).toBe(false);
+  });
+
   it("draws each check line's time, and what a slow one waited on", () => {
     core();
     draw(

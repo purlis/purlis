@@ -1365,6 +1365,9 @@ export const SendToYourAdmin: Story = {
   },
 };
 
+/** How long a press may take to settle: WebKit draws the next frame late in a busy run (as Select's own stories). */
+const SETTLES = { timeout: 3_000 };
+
 /** What the Connect page of a new pool is given: the pool's name and Options, kept by the tab. */
 const ADDING = {
   making: false,
@@ -1392,12 +1395,12 @@ export const NameThePoolBesideTheKey: Story = {
     await userEvent.tab();
     await expect(canvas.getByRole("radio", { name: /Others might/ })).toHaveFocus();
     await expectFocusInSight();
-    await expect(canvas.getByRole("button", { name: "Trust and create the pool" })).toBeVisible();
+    const add = canvas.getByRole("button", { name: "Trust and create the pool" });
+    await expect(add).toBeVisible();
+    // It waits for the runner image this build offers, then is there to press (#7871).
+    await waitFor(() => expect(add).toBeEnabled(), SETTLES);
   },
 };
-
-/** How long a press may take to settle: WebKit draws the next frame late in a busy run (as Select's own stories). */
-const SETTLES = { timeout: 3_000 };
 
 /** The add was not taken: the page says why, and never says the machine is connected. */
 export const TheAddWasNotTaken: Story = {
@@ -1418,6 +1421,8 @@ export const TheAddWasNotTaken: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     const add = canvas.getByRole("button", { name: "Trust and create the pool" });
+    // Pressed once the runner image is offered: before, it waits for it, unavailable (#7871).
+    await waitFor(() => expect(add).toBeEnabled(), SETTLES);
     // Pressed from the keyboard, not with `userEvent.click`: that one draws the button under a
     // pointer that is not there, until the engine's own pointer moves, which WebKit does when it
     // will (#7853).

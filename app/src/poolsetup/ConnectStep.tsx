@@ -710,6 +710,7 @@ function ConfirmCa({
         reserve={["Trust this machine", "Trust and create the pool", "Continue"]}
         icon={<KeyRound aria-hidden size={16} />}
         pressing={busy}
+        busy={merged?.reading}
         onMain={() =>
           merged && onTrustAndCreate ? onTrustAndCreate(ca.fingerprint) : onTrust(ca.fingerprint)
         }
@@ -775,6 +776,7 @@ function Confirm({
         reserve={["Trust this machine", "Trust and create the pool", "Continue"]}
         icon={<KeyRound aria-hidden size={16} />}
         pressing={busy}
+        busy={merged?.reading}
         onMain={() =>
           merged && onTrustAndCreate ? onTrustAndCreate(key.fingerprint) : onTrust(key.fingerprint)
         }
@@ -949,7 +951,8 @@ export function ConnectStep({
   const naming = adding?.typed ?? shown.name ?? "";
   /** **Trust and create the pool** (#7191): every check from first contact to a linked runner. */
   const trustAndCreate = (fingerprint: string) => {
-    if (!adding) return;
+    // Until purlis has said which image it offers, there is nothing to say it names none (#7871).
+    if (!adding || offered === undefined) return;
     const named = offered && "image" in offered ? offered.image : undefined;
     const team = adding.chosen.image === "team" || named === undefined;
     const using = team ? adding.chosen.team.trim() : (named ?? "");
@@ -981,7 +984,14 @@ export function ConnectStep({
     });
   };
   const merged: Merged | undefined = newPool
-    ? { name: naming, recommended, onName: adding.type, owned, onOwned: setOwned }
+    ? {
+        name: naming,
+        recommended,
+        onName: adding.type,
+        owned,
+        onOwned: setOwned,
+        reading: offered === undefined,
+      }
     : undefined;
   const trust = (fingerprint: string) => {
     setPressing("trusting");
