@@ -36,16 +36,115 @@ export function thisWindow(): string {
   return internals?.metadata?.currentWindow?.label ?? MAIN;
 }
 
-/** Listens for `event` in this window: what the core sends every window, and what it sends
- *  this one. Never what it sends another window. Its stop never fails: see {@link quietly}.
- *  Each call is counted for the frame it is made in, so a stall can name the event, once,
- *  and how many of the window's listeners it called (`slowLog.ts`). */
-export function listen<T>(event: string, handler: EventCallback<T>): Promise<UnlistenFn> {
-  const counted: EventCallback<T> = (heard) => {
-    listenerCalled(event);
-    return handler(heard);
+type Heard = Parameters<EventCallback<unknown>>[0];
+
+/** One part's handler. Its own object, so a handler given twice is two parts. */
+type Part = { handler: EventCallback<unknown> };
+
+/** What the window listens for under one event's name. */
+type Listening = {
+  parts: Set<Part>;
+  /** The core's listener, once it is there: this window's one for the event. */
+  listened: Promise<UnlistenFn>;
+  /** The bridge and the window it was asked through: one changed is a listener of no use. */
+  bridge: unknown;
+  target: string;
+};
+
+/**
+ * **One Tauri listener per event, however many of the window's parts listen for it** (FS-W1,
+ * #7909): the window's event hub, by event name. The first part to listen for an event has the
+ * core listen for it; each part after joins that listener; the last part's stop has the core stop
+ * it. Before it, each part had a listener of its own: 219 for 75 events at 50 chats, each asked
+ * for and stopped again as a chat's notices were mounted anew (`windowAsks.cost.test.tsx`).
+ */
+const listening = new Map<string, Listening>();
+
+/**
+ * **The bridge to the core, by the one it registers each listener's callback with.** It is the
+ * same for the life of a real window. A stand-in core (`mockIPC`) brings a bridge of its own, and
+ * a listener asked through the last one is never called through it: a part listening then is
+ * given a listener of the new one's, as each part listened apart before the hub (#7909).
+ */
+function bridge(): unknown {
+  return (globalThis as { __TAURI_INTERNALS__?: { transformCallback?: unknown } })
+    .__TAURI_INTERNALS__?.transformCallback;
+}
+
+/**
+ * Calls each part listening for `event` with what the core said, each though another threw. Each
+ * call is counted for the frame it is made in, so a stall can name the event, once, and how many
+ * of the window's listeners it called (`slowLog.ts`).
+ */
+function heardBy(event: string, parts: Set<Part>) {
+  return (heard: Heard) => {
+    for (const part of [...parts]) {
+      // A part stopped by one called before it is not called.
+      if (!parts.has(part)) continue;
+      listenerCalled(event);
+      try {
+        void part.handler(heard);
+      } catch (error) {
+        // Reported as the window reports an error nobody caught (`windowErrors.ts`), which is
+        // what a listener's throw was before the hub; the other parts are still called.
+        reportError(error);
+      }
+    }
   };
-  return listenAnywhere<T>(event, counted, { target: thisWindow() }).then(quietly);
+}
+
+/** The window's listening for `event` now: the one there, or one asked for now. */
+function listeningFor(event: string): Listening {
+  const target = thisWindow();
+  const now = bridge();
+  const there = listening.get(event);
+  if (there !== undefined && there.bridge === now && there.target === target) return there;
+  const parts = new Set<Part>();
+  const listened = listenAnywhere<unknown>(event, heardBy(event, parts), { target }).then(quietly);
+  const asked: Listening = { parts, listened, bridge: now, target };
+  listening.set(event, asked);
+  // A refused listen is forgotten, so the next part asks again.
+  listened.catch(() => {
+    if (listening.get(event) === asked) listening.delete(event);
+  });
+  return asked;
+}
+
+/**
+ * The last part of `asked` has stopped: the core's listener is stopped once this task is done,
+ * unless a part has listened again by then. A notice mounted again for another chat stops and
+ * listens in one commit; it keeps the listener there, and misses nothing said between.
+ */
+function letGo(event: string, asked: Listening): void {
+  queueMicrotask(() => {
+    if (asked.parts.size > 0) return;
+    if (listening.get(event) === asked) listening.delete(event);
+    // A listen still being asked is stopped as it answers.
+    asked.listened.then(
+      (unlisten) => unlisten(),
+      () => {},
+    );
+  });
+}
+
+/** Listens for `event` in this window: what the core sends every window, and what it sends
+ *  this one. Never what it sends another window. It answers once the window's one listener for
+ *  `event` is there, and its stop never fails: see {@link quietly}. */
+export function listen<T>(event: string, handler: EventCallback<T>): Promise<UnlistenFn> {
+  const asked = listeningFor(event);
+  const part: Part = { handler: handler as EventCallback<unknown> };
+  asked.parts.add(part);
+  const stop: UnlistenFn = () => {
+    if (!asked.parts.delete(part)) return;
+    if (asked.parts.size === 0) letGo(event, asked);
+  };
+  return asked.listened.then(
+    () => stop,
+    (error: unknown) => {
+      asked.parts.delete(part);
+      throw error;
+    },
+  );
 }
 
 /**

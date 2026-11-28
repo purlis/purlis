@@ -93,8 +93,18 @@ function asksIn(asked: readonly Asked[]): Asks {
   return out;
 }
 
+/**
+ * **The events a window asked the core to listen for more than once**, by how many times: none,
+ * since the window holds one listener per event however many of its parts listen (`here.ts`, W1,
+ * #7909).
+ */
+const listenedMoreThanOnce = (listens: Asks): Asks =>
+  Object.fromEntries(Object.entries(listens).filter(([, times]) => times !== 1));
+
 /** What a window holds and asks, each by its name. */
 type Measured = {
+  /** How many times it asked the core to listen, by event, as it loaded. */
+  listensOnLoad: Asks;
   /** The Tauri listeners it holds, by event, once it has settled. */
   listeners: Asks;
   /** What it asks as it is focused again. */
@@ -112,11 +122,13 @@ type Measured = {
 };
 
 /**
- * **What the window holds and asks now: the baseline** (2026-11-28, on main at 15eab6a312).
+ * **What the window holds and asks now: the baseline** (2026-11-28, on main at 15eab6a312; the
+ * listeners, a pane given a chat and a chat started lowered by W1, #7909).
  *
- * - **Listeners:** 219 over 75 events. `plane-changed` is held 24 times, `chat-events` 7 and
- *   `asks-changed` 5, and two events once for each chat open and once more (51 each at 50 chats,
- *   {@link PER_CHAT}). W1 (#7909) brings each event to 1.
+ * - **Listeners:** 75, one for each of 75 events: the window's one listener per event
+ *   (`here.ts`, W1). Before it, 219: `plane-changed` was held 24 times, `chat-events` 7,
+ *   `asks-changed` 5, and two events once for each chat open and once more (51 each at 50
+ *   chats).
  * - **A focus:** 16 asks, among them the asks, the saving rows, the alerts and the sandbox's
  *   standing, `sandbox_state` four times.
  * - **`plane-changed`:** each kind reads what holds its answer. `settings` costs 19 asks
@@ -126,44 +138,46 @@ type Measured = {
  *   (`finishRows.ts`), the asks, the signings and the window's word to the others. On screen, the
  *   chat in the pane, 6: the same four and the gauge twice, at once and a moment later
  *   (`ChatGauge.tsx`).
- * - **A pane given another chat** (a press on its tab): 33 asks. The terminal is kept and the
- *   chat's notices are mounted anew, by the chat (`ChatNotices`, #1486): ten listens, each after
- *   the last chat's unlisten, and 13 reads of the notices' own, the slow log's trivial per-chat
- *   reads (`chat_hibernated` twice), and the gauge twice.
- * - **A chat started** from a split: 70 asks, the picker's reads, the start, and two panes'
- *   notices, the new chat's and the first chat's, which the split mounts again beside it.
+ * - **A pane given another chat** (a press on its tab): 13 asks. The terminal is kept and the
+ *   chat's notices are mounted anew, by the chat (`ChatNotices`, #1486): the reads of the
+ *   notices' own, the slow log's trivial per-chat reads (`chat_hibernated` twice), and the gauge
+ *   twice. Before W1, 33: each notice's ten listens and ten unlistens too, which the window's
+ *   one listener per event keeps through the notices' remount.
+ * - **A chat started** from a split: 40 asks, the picker's reads, the start, and two panes'
+ *   notices, the new chat's and the first chat's, which the split mounts again beside it. Before
+ *   W1, 70: the 30 more were the notices' 20 listens and 10 unlistens.
  */
-const BASELINE: Measured = {
+const BASELINE: Omit<Measured, "listensOnLoad"> = {
   listeners: {
     "artifact-pins-moved": 1,
-    "asks-changed": 5,
+    "asks-changed": 1,
     "asks-notified": 1,
-    "branch-changed": 2,
+    "branch-changed": 1,
     "browser-ask-ended": 1,
     "chat-browsers-ended": 1,
-    "chat-browsers-listed": 2,
-    "chat-events": 7,
-    "chat-hibernation-changed": 3,
+    "chat-browsers-listed": 1,
+    "chat-events": 1,
+    "chat-hibernation-changed": 1,
     "chat-input-refused": 1,
     "chat-lost-with-the-host": 1,
     "chat-mcp-failed": 1,
     "chat-move": 1,
     "chat-project-settings-changed": 1,
     "chat-restored": 1,
-    "chat-sandbox-blocked": 2,
+    "chat-sandbox-blocked": 1,
     "chat-stop": 1,
-    "chat-vault-refused": 51,
-    "chats-reconnecting": 3,
+    "chat-vault-refused": 1,
+    "chats-reconnecting": 1,
     "cluster-pool-added": 1,
     "dispatch-arrival": 1,
     "dispatch-away-changed": 1,
-    "dispatch-grant-needed": 51,
+    "dispatch-grant-needed": 1,
     "editor-tab-opened": 1,
     "engine-download": 1,
     "engine-sandbox-needed": 1,
-    "extension-heard": 2,
-    "files-changed": 2,
-    "files-unwatched": 2,
+    "extension-heard": 1,
+    "files-changed": 1,
+    "files-unwatched": 1,
     "forge-sign-in-ended": 1,
     "forge-sign-in-trouble": 1,
     "fresh-runners-kept": 1,
@@ -176,7 +190,7 @@ const BASELINE: Measured = {
     "notes-asked": 1,
     "notes-handed": 1,
     "open-plane": 1,
-    "plane-changed": 24,
+    "plane-changed": 1,
     "plane-closed": 1,
     "pool-mints-without-asking": 1,
     "pool-pin-changed": 1,
@@ -184,7 +198,7 @@ const BASELINE: Measured = {
     "pool-sign-in-confirm": 1,
     "prerequisites-changed": 1,
     "press-here": 1,
-    "project-ready": 2,
+    "project-ready": 1,
     "projects-arrived": 1,
     "quiet-changed": 1,
     "quit-asked": 1,
@@ -330,22 +344,6 @@ const BASELINE: Measured = {
     task_quiet: 1,
     tasks_sharing_a_folder: 1,
     window_layout: 1,
-    "plugin:event|listen asks-changed": 1,
-    "plugin:event|listen chat-hibernation-changed": 2,
-    "plugin:event|listen chat-input-refused": 1,
-    "plugin:event|listen chat-lost-with-the-host": 1,
-    "plugin:event|listen chat-mcp-failed": 1,
-    "plugin:event|listen dispatch-arrival": 1,
-    "plugin:event|listen plane-changed": 2,
-    "plugin:event|listen task-quiet": 1,
-    "plugin:event|unlisten asks-changed": 1,
-    "plugin:event|unlisten chat-hibernation-changed": 2,
-    "plugin:event|unlisten chat-input-refused": 1,
-    "plugin:event|unlisten chat-lost-with-the-host": 1,
-    "plugin:event|unlisten chat-mcp-failed": 1,
-    "plugin:event|unlisten dispatch-arrival": 1,
-    "plugin:event|unlisten plane-changed": 2,
-    "plugin:event|unlisten task-quiet": 1,
   },
   chatStart: {
     asks_waiting: 1,
@@ -375,33 +373,8 @@ const BASELINE: Measured = {
     vault_refusals: 1,
     window_layout: 1,
     "plugin:event|emit window-said": 1,
-    "plugin:event|listen asks-changed": 2,
-    "plugin:event|listen chat-hibernation-changed": 4,
-    "plugin:event|listen chat-input-refused": 2,
-    "plugin:event|listen chat-lost-with-the-host": 2,
-    "plugin:event|listen chat-mcp-failed": 2,
-    "plugin:event|listen chat-vault-refused": 1,
-    "plugin:event|listen dispatch-arrival": 1,
-    "plugin:event|listen dispatch-grant-needed": 1,
-    "plugin:event|listen plane-changed": 3,
-    "plugin:event|listen task-quiet": 2,
-    "plugin:event|unlisten asks-changed": 1,
-    "plugin:event|unlisten chat-hibernation-changed": 2,
-    "plugin:event|unlisten chat-input-refused": 1,
-    "plugin:event|unlisten chat-lost-with-the-host": 1,
-    "plugin:event|unlisten chat-mcp-failed": 1,
-    "plugin:event|unlisten dispatch-arrival": 1,
-    "plugin:event|unlisten plane-changed": 2,
-    "plugin:event|unlisten task-quiet": 1,
   },
 };
-
-/**
- * **The listeners the window holds once for each chat it has open**, by event: the project
- * view's `useRefusedAmong` and `useHeldAmong` (`PlaneView.tsx`) listen once for each of its
- * chats, beside the asks' own. A chat more is one more of each; W1 (#7909) ends them.
- */
-const PER_CHAT: Asks = { "chat-vault-refused": 1, "dispatch-grant-needed": 1 };
 
 const WORKSPACES = 2;
 
@@ -461,6 +434,7 @@ async function asksFor(chats: number): Promise<Measured> {
   act(() => move(1, "working", 1));
   await askedAll(asked, FOLLOWED_FOR.pane);
   const held = listeners();
+  const listensOnLoad = asksIn(asked.filter((one) => one.cmd === "plugin:event|listen"));
 
   /** The asks the moment started, every one of them answered, the last `after` it. */
   const measured = async (
@@ -518,6 +492,7 @@ async function asksFor(chats: number): Promise<Measured> {
   expect(chatStart.start_chat, "starts sent for the chat").toBe(1);
 
   return {
+    listensOnLoad,
     listeners: held,
     focus,
     planeChanged: planeChangedAsks,
@@ -532,6 +507,9 @@ describe("what the window listens for and asks the core", () => {
   it("holds the listeners and sends the asks the baseline says for each moment, at 50 chats", async () => {
     const atFifty = await asksFor(50);
     // Each apart, so a red run names the one that moved.
+    expect
+      .soft(listenedMoreThanOnce(atFifty.listensOnLoad), "events listened for more than once")
+      .toEqual({});
     expect.soft(atFifty.listeners, "listeners held").toEqual(BASELINE.listeners);
     expect.soft(atFifty.focus, "a focus").toEqual(BASELINE.focus);
     for (const kind of KINDS)
@@ -548,20 +526,15 @@ describe("what the window listens for and asks the core", () => {
     expect.soft(atFifty.chatStart, "a chat started").toEqual(BASELINE.chatStart);
   }, 300_000);
 
-  it("holds and asks no more with more chats, but for the listeners held for each chat", async () => {
+  it("holds and asks no more with more chats", async () => {
     const atTen = await asksFor(10);
     cleanup();
     clearMocks();
     const atFifty = await asksFor(50);
-    // What each moment asks is the same at 50 chats as at 10.
-    expect({ ...atFifty, listeners: {} }).toEqual({ ...atTen, listeners: {} });
-    // The listeners held grow by PER_CHAT for each chat more, and by nothing else.
-    const events = new Set([...Object.keys(atTen.listeners), ...Object.keys(atFifty.listeners)]);
-    const grown: Asks = {};
-    for (const event of events) {
-      const more = (atFifty.listeners[event] ?? 0) - (atTen.listeners[event] ?? 0);
-      if (more !== 0) grown[event] = more / (50 - 10);
-    }
-    expect(grown, "listeners more for each chat more").toEqual(PER_CHAT);
+    // What the window holds, and what each moment asks, is the same at 50 chats as at 10: before
+    // W1 (#7909), the project view held one listener more of two events for each chat more. The
+    // listens of each load apart: a module's own listener (`quiet-changed`), made once as it is
+    // first loaded, is asked for as the first window loads and held for the page's life.
+    expect({ ...atFifty, listensOnLoad: {} }).toEqual({ ...atTen, listensOnLoad: {} });
   }, 600_000);
 });

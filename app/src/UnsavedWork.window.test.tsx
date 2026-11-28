@@ -83,7 +83,9 @@ function core(restore: string[], chats: Record<string, OpenChat[]> = {}) {
     asked.push({ cmd, args: given });
     if (cmd === "plugin:event|listen") {
       const { event, handler } = given as unknown as { event: string; handler: number };
-      listeners.set(event, [...(listeners.get(event) ?? []), handler]);
+      // Listening once the window has had the answer, as `listen`'s own promise is: a part
+      // Strict Mode let go of is stopped by then, and not called (`here.ts`, #7909).
+      setTimeout(() => listeners.set(event, [...(listeners.get(event) ?? []), handler]));
       return 1;
     }
     const plane = (given.plane as string | undefined) ?? "";

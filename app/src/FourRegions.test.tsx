@@ -28,6 +28,7 @@ import { tipOf } from "./ui/tooltip/tooltip.testkit";
 import { selectNamed } from "./ui/select/select.testkit";
 import { SCOPE_LABEL } from "./Inbox";
 import { rowName } from "./menus.testkit";
+import { countReactsCommits, renderedBy } from "./reactCommits.testkit";
 
 /**
  * **The window is four regions** (ADR 0038), against the whole app, because three of
@@ -36,21 +37,12 @@ import { rowName } from "./menus.testkit";
  */
 
 /**
- * **How often `PlaneView` renders** (#1160): counted where it calls `usePlaneChanged` for the
- * instructions a chat started on, which it does once per render and nothing else does at all.
- * The hook itself is the real one.
+ * **How often `PlaneView` is drawn** (#1160): G1a's count of each component's draws by its name
+ * (`reactCommits.testkit.ts`), which counts what React committed and nothing the component
+ * calls.
  */
-const planeViewRenders = vi.hoisted(() => ({ count: 0 }));
-vi.mock("./planeChanged", async (importOriginal) => {
-  const real = await importOriginal<typeof import("./planeChanged")>();
-  return {
-    ...real,
-    usePlaneChanged: (...args: Parameters<typeof real.usePlaneChanged>) => {
-      if (args[1] === real.INSTRUCTIONS) planeViewRenders.count += 1;
-      return real.usePlaneChanged(...args);
-    },
-  };
-});
+countReactsCommits();
+const planeViewDraws = () => renderedBy.get("PlaneView") ?? 0;
 
 vi.mock("./SessionPane", () => ({
   SessionPane: ({ session }: { session: number }) => (
@@ -2590,8 +2582,8 @@ describe("a write the panels draw, and the window around them (#1160)", () => {
     const memory = await screen.findByRole("tabpanel", { name: "Memory" });
     await within(memory).findByText("The deploy key rotates");
     await settle();
-    expect(planeViewRenders.count).toBeGreaterThan(0);
-    const before = planeViewRenders.count;
+    expect(planeViewDraws()).toBeGreaterThan(0);
+    const before = planeViewDraws();
     const asks = asked.length;
 
     memories = [...memories, { slug: "m2", title: "The train leaves at noon" }];
@@ -2600,7 +2592,7 @@ describe("a write the panels draw, and the window around them (#1160)", () => {
     expect(await within(memory).findByText("The train leaves at noon")).toBeInTheDocument();
     await settle();
     // Before #1160 it was 4: drawn once for the count and once for the answer, each twice.
-    expect(planeViewRenders.count - before).toBe(0);
+    expect(planeViewDraws() - before).toBe(0);
     // And no git reader: the plane read alone.
     expect(asked.slice(asks).map((one) => one.cmd)).not.toContain("workspace_repos");
     expect(asked.slice(asks).map((one) => one.cmd)).not.toContain("worktree_list");
@@ -2614,7 +2606,7 @@ describe("a write the panels draw, and the window around them (#1160)", () => {
     await userEvent.click(within(lowerRight()).getByRole("tab", { name: "Sessions" }));
     const sessions = await screen.findByRole("tabpanel", { name: "Sessions" });
     await settle();
-    const before = planeViewRenders.count;
+    const before = planeViewDraws();
 
     records = [{ slug: "2026-10-10-1650-ship", title: "Shipped the train" }];
     await alphaChanged();
@@ -2623,7 +2615,7 @@ describe("a write the panels draw, and the window around them (#1160)", () => {
     await settle();
     // Before #1160 it was twice: once for the count, once for the answer. Then once, for the
     // palette's `session.open` rows; those are built beside the panels now (`sessionOffers`).
-    expect(planeViewRenders.count - before).toBe(0);
+    expect(planeViewDraws() - before).toBe(0);
     // And the new record's rows reach the palette all the same.
     await userEvent.keyboard("{F2}");
     const palette = await screen.findByRole("dialog", { name: "Command palette" });
@@ -2647,7 +2639,7 @@ describe("a write the panels draw, and the window around them (#1160)", () => {
     const memory = await screen.findByRole("tabpanel", { name: "Memory" });
     await within(memory).findByText("The deploy key rotates");
     await settle();
-    const before = planeViewRenders.count;
+    const before = planeViewDraws();
 
     // A memory of a persona: every workspace's panels and the root's (`planechange.rs`), and an
     // answer here that says what it said before.
@@ -2658,7 +2650,7 @@ describe("a write the panels draw, and the window around them (#1160)", () => {
     });
     await settle();
     await settle();
-    expect(planeViewRenders.count - before).toBe(0);
+    expect(planeViewDraws() - before).toBe(0);
   });
 });
 
