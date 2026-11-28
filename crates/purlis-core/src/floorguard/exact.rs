@@ -384,6 +384,9 @@ fn never_executes(base: &str, argv: &[String], env: &[String]) -> bool {
     if NAMES_ONLY.contains(&base) {
         return true;
     }
+    if matches!(base, "purlis" | "charter") {
+        return commits_only_paths(argv, env);
+    }
     if base != "git" {
         return false;
     }
@@ -420,6 +423,16 @@ fn never_executes(base: &str, argv: &[String], env: &[String]) -> bool {
         _ => false,
     };
     !rest.any(runs)
+}
+
+/// Whether `argv` (`purlis …` or `charter …`) is `purlis worktree commit`, whose words after the
+/// subcommand are its options (`-m`, `-a`, `--amend`) and the paths it hands git to stage
+/// (#7880): it runs none of them, so `tests/fakes/glab` is a file. Only where `worktree commit`
+/// are the first two words, as git's subcommand must be first ([`never_executes`]): a flag
+/// before them may take a value, and the real subcommand is then another. Not with an
+/// assignment in front, which may reach the git it runs (`GIT_EDITOR`, `GIT_SSH_COMMAND`).
+fn commits_only_paths(argv: &[String], env: &[String]) -> bool {
+    env.is_empty() && matches!(argv, [_, noun, verb, ..] if noun == "worktree" && verb == "commit")
 }
 
 /// **The general wrapper rule** (#7423, rounds 7, 8 and 11). The program placed is not a forge
