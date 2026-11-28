@@ -9847,6 +9847,7 @@ fn no_chat_purlis_cannot_grant_the_socket_gets_a_wrapper() {
 /// The file the chat's commands read pins sccache's config to purlis's empty file, drops every
 /// other `SCCACHE_*` variable the command inherited, and sets the wrapper, the folder and the
 /// socket: a command that sources it reaches no team cache and no dist scheduler.
+#[cfg(target_os = "macos")]
 #[test]
 fn the_compile_cache_script_pins_its_config_and_drops_every_inherited_sccache_variable() {
     let (_dir, sccache) = program_outside_temp("bin/sccache");
