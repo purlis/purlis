@@ -142,14 +142,8 @@ pub enum NotRested {
     LineComing,
     /// A task it dispatched is still running, or has not reported.
     TaskOpen,
-    /// A task it dispatched has reported, or ended, and its row is still open (the operator's
-    /// Hibernate refuses it until a tell wakes a task, SC-4j, #7639).
-    FinishedTaskOpen,
     /// It is a dispatched task, and its parent waits on its report.
     ReportOwed,
-    /// It is a dispatched task (the operator's Hibernate refuses one until a tell wakes it,
-    /// SC-4j, #7639).
-    IsATask,
     /// It is a remote chat purlis only watches.
     Observed,
     /// It runs on a runner.
@@ -195,24 +189,16 @@ pub fn rested(facts: &Facts) -> Result<(), NotRested> {
 /// **Whether the operator may hibernate a chat by hand** (SC-4a, #7630), and if not, why: the
 /// reasons [`rested`] gives, but for two that only hold back the app (the looked-at clock, and a
 /// harness whose own work purlis cannot see, on which a by-hand one is warned of instead, SC-4i,
-/// #7638), and with two refusals it keeps until the act can wait on them: any open task of its
-/// own (SC-4j, #7639), said as [`NotRested::FinishedTaskOpen`] once its report is not owed, and
-/// being a task at all (SC-4j). Own work is refused, as [`rested`] does, unless the caller has
-/// asked the person first ([`by_hand_ending_its_own_work`], SC-4d, #7633).
+/// #7638). **A parent whose tasks have all ended and reported, and a task whose report is not
+/// owed, may be hibernated** (SC-4j, #7639): a parent's tell wakes a hibernated task, and a wait
+/// on one answers at once. Own work is refused, as [`rested`] does, unless the caller has asked
+/// the person first ([`by_hand_ending_its_own_work`], SC-4d, #7633).
 pub fn by_hand(facts: &Facts) -> Result<(), NotRested> {
     rested(&Facts {
         reports_its_own_work: true,
         looked_at: false,
         ..facts.clone()
-    })?;
-    // Every task is over here, or `rested` said `TaskOpen`: none still owes its report.
-    if !facts.tasks.is_empty() {
-        return Err(NotRested::FinishedTaskOpen);
-    }
-    if facts.as_a_task.is_some() {
-        return Err(NotRested::IsATask);
-    }
-    Ok(())
+    })
 }
 
 /// The kinds of chat never hibernated: observed, a runner's, a child run.

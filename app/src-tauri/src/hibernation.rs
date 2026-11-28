@@ -65,9 +65,7 @@ pub enum Why {
     OwnWork,
     LineComing,
     TaskOpen,
-    FinishedTaskOpen,
     ReportOwed,
-    IsATask,
     Observed,
     OnARunner,
     ChildRun,
@@ -87,9 +85,7 @@ impl From<NotRested> for Why {
             NotRested::OwnWork => Self::OwnWork,
             NotRested::LineComing => Self::LineComing,
             NotRested::TaskOpen => Self::TaskOpen,
-            NotRested::FinishedTaskOpen => Self::FinishedTaskOpen,
             NotRested::ReportOwed => Self::ReportOwed,
-            NotRested::IsATask => Self::IsATask,
             NotRested::Observed => Self::Observed,
             NotRested::OnARunner => Self::OnARunner,
             NotRested::ChildRun => Self::ChildRun,
@@ -149,8 +145,12 @@ struct Held {
     /// cause.
     exited: bool,
     /// What the pane typed into it once it was hibernated, kept, never sent to a program that is
-    /// gone: the chat's unsent text (SC-4d, #7633). Delivered after the wake by SC-4j (#7639).
+    /// gone: the chat's unsent text (SC-4d, #7633), delivered to its woken run once that run is
+    /// heard from (SC-4j, #7639).
     unsent: Vec<u8>,
+    /// Why the last wake asked of it on its own was refused (SC-4j, #7639): said beside its
+    /// unsent text until a wake takes.
+    not_woken: Option<String>,
     /// The own work its hibernation ends, as its record held it at the intent: what the wake
     /// line names (SC-4d, #7633), never the record as it reads at the wake.
     own: crate::chats::Own,
@@ -177,6 +177,9 @@ pub enum Typed {
     Dropped,
     /// It already holds [`MOST_UNSENT_BYTES`]: not kept, and the pane says so.
     Full,
+    /// The chat was woken as this run, which has been handed what was held: sent to it
+    /// (SC-4j, #7639). What a pane still showing the hibernated run types after the wake.
+    Woken(u32),
 }
 
 /// **The chats of a project that are hibernated, or being hibernated, by session**, in memory
@@ -188,9 +191,14 @@ pub struct Hibernated {
     /// The chats woken whose new run has not drawn yet, by its session, each with the ULID its
     /// kept screen is under: that screen goes once the run draws ([`Self::drawn`]).
     woken: Mutex<HashMap<u32, String>>,
-    /// What the panes of chats woken typed while they were hibernated, by the woken run's
-    /// session, until the window takes it ([`Self::handed_back`]).
-    handed: Mutex<HashMap<u32, Vec<u8>>>,
+    /// **What the panes of chats woken typed while they were hibernated**, by the woken run's
+    /// session, until that run is first heard from ([`Self::heard_from`], SC-4j, #7639): then it
+    /// is typed into it, after its wake line, in the order it was typed.
+    to_deliver: Mutex<HashMap<u32, Vec<u8>>>,
+    /// Each chat woken, by its hibernated run's session: the run it woke as. A second caller of
+    /// the same wake ([`crate::planes::Held::wake`]) is answered this run, and a key a pane
+    /// still showing the hibernated run sends goes to it.
+    woken_as: Mutex<HashMap<u32, u32>>,
 }
 
 impl Hibernated {
@@ -238,6 +246,7 @@ impl Hibernated {
                 ended: false,
                 exited: false,
                 unsent: Vec::new(),
+                not_woken: None,
                 own: crate::chats::Own::default(),
             },
         );
@@ -286,7 +295,20 @@ impl Hibernated {
     /// The act holds the chat's lane from its latch to its end, so what a pane sends meanwhile
     /// waits behind it and comes here only once the act is done: held by a hibernated chat, or
     /// sent to the program an aborted act left running.
+    ///
+    /// **A chat already woken** (SC-4j, #7639) takes what its hibernated run's pane types as its
+    /// woken run's: held behind what it was typed while hibernated until that run is heard from,
+    /// and sent to it after.
     pub fn takes_input(&self, session: u32, bytes: &[u8], answering: bool) -> Typed {
+        if let Some(woken) = self.woken_as(session) {
+            if let Some(waiting) = self.delivering().get_mut(&woken) {
+                if !answering {
+                    waiting.extend_from_slice(bytes);
+                }
+                return Typed::Held { shown: false };
+            }
+            return Typed::Woken(woken);
+        }
         let mut all = self.held();
         let Some(held) = all.get_mut(&session).filter(|held| held.intended) else {
             return Typed::Send;
@@ -310,6 +332,23 @@ impl Hibernated {
             .get(&session)
             .filter(|held| held.settled && !held.unsent.is_empty())
             .map(|held| String::from_utf8_lossy(&held.unsent).into_owned())
+    }
+
+    /// A wake of hibernated chat `session` asked on its own was refused, for `why`: said on its
+    /// pane beside what it holds (SC-4j, #7639).
+    pub fn not_woken(&self, session: u32, why: &str) {
+        if let Some(held) = self.held().get_mut(&session) {
+            held.not_woken = Some(why.to_owned());
+        }
+    }
+
+    /// Why the last wake of hibernated chat `session` asked on its own was refused, where one
+    /// was.
+    pub fn why_not_woken(&self, session: u32) -> Option<String> {
+        self.held()
+            .get(&session)
+            .filter(|held| held.settled)
+            .and_then(|held| held.not_woken.clone())
     }
 
     /// The host answered that chat `session`'s program ended as a hibernation: it is
@@ -382,13 +421,15 @@ impl Hibernated {
     /// It was ended another way, or is closed.
     pub fn forget(&self, session: u32) {
         self.held().remove(&session);
-        self.handed().remove(&session);
+        self.delivering().remove(&session);
+        // The hibernated run is closed in its woken run's place as it wakes: what it woke as is
+        // kept until that run closes.
+        self.woken_as_now().retain(|_, woken| *woken != session);
     }
 
     /// **Hibernated chat `session` is awake as `woken`**: forgotten, and what its pane typed
-    /// while it was hibernated is handed back to the window for the woken run's pane, unsent
-    /// ([`Self::handed_back`], SC-4d, #7633). It is never typed into the woken program: when and
-    /// how it is delivered is SC-4j's (#7639).
+    /// while it was hibernated is kept for the woken run, to be typed into it once that run is
+    /// heard from ([`Self::heard_from`], SC-4j, #7639).
     pub fn awake(&self, session: u32, woken: u32) {
         let unsent = self
             .held()
@@ -396,20 +437,35 @@ impl Hibernated {
             .map(|held| held.unsent)
             .unwrap_or_default();
         if !unsent.is_empty() {
-            self.handed().insert(woken, unsent);
+            self.delivering().insert(woken, unsent);
         }
+        self.woken_as_now().insert(session, woken);
     }
 
-    /// What the pane of hibernated chat `woken`'s earlier run typed that no program read, once:
-    /// the window takes it with the woken run, and its pane shows it unsent.
-    pub fn handed_back(&self, woken: u32) -> Option<String> {
-        self.handed()
-            .remove(&woken)
-            .map(|unsent| String::from_utf8_lossy(&unsent).into_owned())
+    /// The run hibernated chat `session` was woken as, where it was.
+    pub fn woken_as(&self, session: u32) -> Option<u32> {
+        self.woken_as_now().get(&session).copied()
     }
 
-    fn handed(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<u8>>> {
-        self.handed.lock().unwrap_or_else(PoisonError::into_inner)
+    /// **Woken run `woken` was heard from** (SC-4j, #7639): its harness has its conversation
+    /// and reads its input, so what its pane typed while it was hibernated, and after, is
+    /// handed over now, once. `None` for every other run.
+    pub fn heard_from(&self, woken: u32) -> Option<Vec<u8>> {
+        let mut delivering = self.delivering();
+        if delivering.is_empty() {
+            return None;
+        }
+        delivering.remove(&woken)
+    }
+
+    fn delivering(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<u8>>> {
+        self.to_deliver
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn woken_as_now(&self) -> std::sync::MutexGuard<'_, HashMap<u32, u32>> {
+        self.woken_as.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -584,6 +640,11 @@ pub struct ChatHibernation {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[specta(optional)]
     pub unsent: Option<String>,
+    /// Why purlis could not wake it when its pane typed into it or a tell reached it, in the
+    /// core's words (SC-4j, #7639): what it holds stays unsent. Absent where nothing was refused.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub not_woken: Option<String>,
 }
 
 /// Chat `session`, where it is hibernated.
@@ -599,6 +660,7 @@ pub fn chat_hibernated(
     Ok(hibernated.of(session).map(|by| ChatHibernation {
         by,
         unsent: hibernated.unsent(session),
+        not_woken: hibernated.why_not_woken(session),
     }))
 }
 
@@ -661,6 +723,7 @@ pub async fn hibernate_chat(
             plane,
             session,
             hibernated: true,
+            woken: None,
         },
     );
     Ok(Hibernation::Hibernated)
@@ -677,6 +740,12 @@ pub struct Changed {
     pub session: u32,
     /// Whether it is hibernated now.
     pub hibernated: bool,
+    /// **The run it was woken as**, where purlis woke it on its own: a message typed in its
+    /// pane, or a parent's tell (SC-4j, #7639). The window draws that run in its place, as
+    /// after a Resume. Absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[specta(optional)]
+    pub woken: Option<u32>,
 }
 
 #[cfg(test)]
@@ -764,7 +833,7 @@ mod tests {
     }
 
     #[test]
-    fn a_woken_chat_is_handed_back_what_was_typed_once_under_its_new_number() {
+    fn a_woken_run_is_handed_what_was_typed_once_it_is_heard_from_and_what_follows_after() {
         let hibernated = Hibernated::default();
         assert!(hibernated.latch_and_intend(3, By::Operator));
         assert!(hibernated.settle(3));
@@ -774,18 +843,30 @@ mod tests {
         );
         hibernated.awake(3, 7);
         assert_eq!(hibernated.of(3), None, "it is awake");
-        assert_eq!(hibernated.handed_back(3), None);
-        assert_eq!(hibernated.handed_back(7).as_deref(), Some("hello"));
-        assert_eq!(hibernated.handed_back(7), None, "handed back once");
+        assert_eq!(hibernated.woken_as(3), Some(7));
+        // Its old pane types on before the woken run is heard from: behind what it held.
+        assert_eq!(
+            hibernated.takes_input(3, b" there", false),
+            Typed::Held { shown: false }
+        );
+        assert_eq!(hibernated.heard_from(3), None, "not the woken run");
+        assert_eq!(
+            hibernated.heard_from(7).as_deref(),
+            Some(&b"hello there"[..])
+        );
+        assert_eq!(hibernated.heard_from(7), None, "handed over once");
+        assert_eq!(hibernated.takes_input(3, b"!", false), Typed::Woken(7));
 
         assert!(hibernated.latch_and_intend(4, By::Operator));
         assert!(hibernated.settle(4));
         hibernated.awake(4, 8);
         assert_eq!(
-            hibernated.handed_back(8),
+            hibernated.heard_from(8),
             None,
             "nothing typed, nothing handed"
         );
+        hibernated.forget(8);
+        assert_eq!(hibernated.woken_as(4), None, "the woken run is closed");
     }
 
     #[test]
@@ -933,9 +1014,7 @@ mod tests {
             OwnWork,
             LineComing,
             TaskOpen,
-            FinishedTaskOpen,
             ReportOwed,
-            IsATask,
             Observed,
             OnARunner,
             ChildRun,

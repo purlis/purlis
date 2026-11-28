@@ -384,8 +384,12 @@ fn seen(held: &Held, chat: u32) -> Seen {
         .iter()
         .any(|open| open.session == chat);
     let glance = held.board().glance(chat);
+    // **A hibernated chat has not ended** (SC-4j, #7639; ADR 0076 as amended 2026-11-25): its
+    // program rests and its conversation is kept, so no *ended without a report* is said of it,
+    // a tell to it is not refused as finished, and a wake brings it back.
+    let hibernated = held.hibernated().of(chat).is_some() || held.hibernated().in_flight(chat);
     Seen {
-        ended: !open || matches!(glance.state, State::Done | State::Failed),
+        ended: !hibernated && (!open || matches!(glance.state, State::Done | State::Failed)),
         heard: glance.state != State::Unknown,
         // A turn the board heard begin, which has shown the person no prompt: a prompt mid-turn
         // moves the board to waiting, with `asking` set until the turn ends.
@@ -1670,8 +1674,11 @@ pub(crate) mod woke_later {
 
 /// A chat a delivery wakes: typed the line, where it takes one now.
 enum Wake {
-    Told(u32),
     ToldOrSettled(u32),
+    /// A parent's tell landed for it: a hibernated task is woken to read it (SC-4j, #7639).
+    Tell(u32),
+    /// What its pane typed while it was hibernated is typed into its woken run (SC-4j, #7639).
+    Typed(u32, Vec<u8>),
 }
 
 thread_local! {
@@ -1699,10 +1706,31 @@ fn woken(held: &Held, wake: Wake) {
 /// Wakes the chat `wake` names, now.
 fn wake_now(held: &Held, wake: Wake) {
     match wake {
-        Wake::Told(chat) => {
-            tell_the_chat(held, chat);
-        }
         Wake::ToldOrSettled(chat) => told_or_settled(held, chat),
+        Wake::Tell(chat) => told_or_woken(held, chat),
+        Wake::Typed(chat, bytes) => {
+            if let Err(why) = held.type_in_turn(chat, &bytes) {
+                tracing::warn!(
+                    "purlis: woken chat {chat} was not typed what its pane held ({why})"
+                );
+            }
+        }
+    }
+}
+
+/// **A tell landed for chat `chat`** (SC-4j, #7639; ADR 0076 as amended 2026-11-25): a
+/// hibernated task, or one being hibernated, is woken, and the tell follows it to its woken
+/// run (`followed`), which is told it once it takes a line, after its wake line. One that is
+/// not, or whose act of hibernation gave way, is told it now. A wake that is refused leaves
+/// the tell waiting for the next one.
+fn told_or_woken(held: &Held, chat: u32) {
+    let hibernated = held.hibernated();
+    if hibernated.of(chat).is_none() && !hibernated.in_flight(chat) {
+        tell_the_chat(held, chat);
+        return;
+    }
+    if held.wake_on_its_own(chat).is_none() && held.hibernated().of(chat).is_none() {
+        tell_the_chat(held, chat);
     }
 }
 
@@ -1748,7 +1776,7 @@ fn tell_numbered(
     held.tasks().ledger().landed(to, Landed::FollowUp);
     // One more message on the task's dispatch record (#1452), now that it is kept.
     crate::dispatches::message(held, to, &message);
-    woken(held, Wake::Told(to));
+    woken(held, Wake::Tell(to));
     Ok((name, number))
 }
 
@@ -2604,12 +2632,18 @@ pub fn wait(held: &Weak<Held>, asked: &Asked, connection: u64) -> Answer {
         }
         let seen = seen(&held, of);
         let hung_up = held.hooks().asker_gone(connection);
+        // **A hibernated task sends nothing until it is woken** (SC-4j, #7639): answered at
+        // once, never waited out. Not an end: no *ended without a report* is said of it.
+        let hibernated = held.hibernated().of(of).is_some();
         let mut ledger = tasks.ledger();
-        let ended = ledger.waited(of, &from, seen).or_else(|| {
-            (hung_up || Instant::now() >= until).then(|| Waited::Running {
-                state: ledger.state(of, &from, seen).say(),
-            })
-        });
+        let ended = ledger
+            .waited(of, &from, seen)
+            .or_else(|| hibernated.then_some(Waited::Hibernated))
+            .or_else(|| {
+                (hung_up || Instant::now() >= until).then(|| Waited::Running {
+                    state: ledger.state(of, &from, seen).say(),
+                })
+            });
         if let Some(what) = ended {
             drop(ledger);
             // A report the app no longer holds in memory, after a restart or once a turn read
@@ -3319,6 +3353,11 @@ fn end_look_after(held: &Held, task: u32, after: Duration, looked: Looked) {
 /// questions of tasks it dispatched, and a message from the chat that dispatched it. Answers
 /// whether a line was typed.
 fn tell_the_chat(held: &Held, chat: u32) -> bool {
+    // **A hibernated chat has no program to type into** (SC-4j, #7639): what was left for it
+    // stays, for the run it wakes as. A report never wakes it; a tell does (`told_or_woken`).
+    if held.hibernated().of(chat).is_some() || held.hibernated().in_flight(chat) {
+        return false;
+    }
     // A chat the person is stopping, or its own chat cancelling, is typed that stop's one line
     // and no other.
     if held.stopping().in_its_last_turn(chat) {
@@ -3367,6 +3406,11 @@ pub fn heard(held: &Held, report: &Report) {
 fn heard_now(held: &Held, report: &Report) {
     // A chat a Reopen started was heard from: its harness brought the conversation back.
     reopen_settled(held, report.chat, false);
+    // A woken chat was heard from: its harness reads its input, so what its pane typed while
+    // it was hibernated is typed into it now, after its wake line (SC-4j, #7639).
+    if let Some(typed) = held.hibernated().heard_from(report.chat) {
+        woken(held, Wake::Typed(report.chat, typed));
+    }
     // The app hears from it, so what it queued while the app did not answer is delivered
     // now (#3902). One look at a folder where it queued nothing.
     deliver_queued(held, report.chat, None);

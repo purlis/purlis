@@ -1206,22 +1206,24 @@ impl Held {
         let work = move || {
             use crate::hibernation::Typed;
             // **Held, never lost** (SC-4d, #7633): a chat being hibernated past its intent, or
-            // hibernated, has no program to read it. Kept as its unsent text, and its pane
-            // told; the terminal's answer to that program is dropped with it.
+            // hibernated, has no program to read it. Kept as its unsent text; the terminal's
+            // answer to that program is dropped with it.
             match held.hibernated.takes_input(session, &bytes, answering) {
                 Typed::Send => {}
-                Typed::Held { shown } => {
-                    if shown {
-                        (held.hibernation_told)(crate::hibernation::Changed {
-                            plane: held.id.clone(),
-                            session,
-                            hibernated: true,
-                        });
-                    }
+                // **And typing in a hibernated chat wakes it** (SC-4j, #7639): what it held is
+                // typed into the woken run once that run is heard from. A wake that is refused
+                // leaves it held, and its pane says why.
+                Typed::Held { shown: true } => {
+                    held.wake_on_its_own(session);
                     return Ok(());
                 }
-                Typed::Dropped => return Ok(()),
+                Typed::Held { shown: false } | Typed::Dropped => return Ok(()),
                 Typed::Full => return Err(crate::hibernation::HOLDS_NO_MORE.to_owned()),
+                // A pane still showing the hibernated run: its keys are the woken run's.
+                Typed::Woken(woken) => {
+                    held.queue_operator_input(woken, bytes);
+                    return Ok(());
+                }
             }
             held.linked(session)?;
             held.chats.sessions().input(session, &bytes)
@@ -1958,7 +1960,7 @@ impl Held {
             return Err(crate::hibernation::STILL_HIBERNATING.to_owned());
         }
         if self.hibernated.of(session).is_some() {
-            return self.wake_chat(session, size).map(Restarted::Started);
+            return self.wake(session, Some(size)).map(Restarted::Started);
         }
         if when == When::AtAPause && self.board().glance(session).own_work {
             return Ok(Restarted::NotYet(WAITS_ON_ITS_OWN_WORK));
@@ -2112,6 +2114,50 @@ impl Held {
             Some(_) => purlis_core::rested::by_hand_ending_its_own_work(&facts),
         };
         may.map_err(crate::hibernation::Refused::Not)
+    }
+
+    /// **Wakes hibernated chat `session`, whoever asks** (SC-4j, #7639): the person's Resume, a
+    /// message typed in its pane, or a parent's tell. **One `wake` run however many ask**: taken
+    /// in the chat's lane, so a caller behind an act of hibernation waits for it, and a caller
+    /// behind a wake is answered the run that wake began. `size` is the pane's, where the
+    /// caller has one; otherwise the chat's last.
+    pub fn wake(&self, session: u32, size: Option<Size>) -> Result<u32, String> {
+        self.lanes.in_turn(session, || {
+            if let Some(woken) = self.hibernated.woken_as(session) {
+                return Ok(woken);
+            }
+            let size = size.unwrap_or_else(|| self.chats.last_size(session));
+            self.wake_chat(session, size)
+        })
+    }
+
+    /// [`Self::wake`] by purlis on its own, for a message typed in the chat's pane or a
+    /// parent's tell (SC-4j, #7639): the window is told the run it woke as, to draw in its
+    /// place. A wake that is refused (the kill switch, a start that fails) leaves it hibernated
+    /// with what it holds, and its pane says why. Answers the run it woke as.
+    pub(crate) fn wake_on_its_own(&self, session: u32) -> Option<u32> {
+        match self.wake(session, None) {
+            Ok(woken) => {
+                (self.hibernation_told)(crate::hibernation::Changed {
+                    plane: self.id.clone(),
+                    session,
+                    hibernated: false,
+                    woken: Some(woken),
+                });
+                Some(woken)
+            }
+            Err(why) => {
+                tracing::info!("purlis: hibernated chat {session} was not woken ({why})");
+                self.hibernated.not_woken(session, &why);
+                (self.hibernation_told)(crate::hibernation::Changed {
+                    plane: self.id.clone(),
+                    session,
+                    hibernated: self.hibernated.of(session).is_some(),
+                    woken: None,
+                });
+                None
+            }
+        }
     }
 
     /// Wakes hibernated chat `session` (SC-4a, #7630): a new `wake` run on its conversation,

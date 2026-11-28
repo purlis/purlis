@@ -6,12 +6,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import {
-  HIBERNATION_CHANGED,
-  HibernatedNotice,
-  UnsentNotice,
-  unsentHandedBack,
-} from "./HibernatedNotice";
+import { HIBERNATION_CHANGED, HibernatedNotice } from "./HibernatedNotice";
 import type { ChatHibernation } from "./bindings";
 
 /**
@@ -92,31 +87,17 @@ describe("what the person typed into a hibernated chat (SC-4d, #7633)", () => {
       await emit(HIBERNATION_CHANGED, { plane: PLANE, session: 7, hibernated: true });
     });
     expect(await screen.findByRole("status", { name: "Hibernated" })).toHaveTextContent(
-      "What you typed since was not sent, and is kept until you resume it: go on",
+      "What you typed since was not sent, and is kept until it wakes: go on",
     );
   });
 
-  it("survives its Resume: the woken pane shows it, unsent, until it is put away", async () => {
-    core(null);
-    render(<UnsentNotice plane={PLANE} session={8} />);
-    expect(screen.queryByRole("status", { name: "Not sent" })).toBeNull();
-    // What the core hands back with the woken run, chat 8 in chat 7's place.
-    act(() => unsentHandedBack(PLANE, 8, "go on\r"));
-    const said = await screen.findByRole("status", { name: "Not sent" });
+  it("says why typing in it did not wake it, beside what it keeps (SC-4j, #7639)", async () => {
+    core({ by: "operator", unsent: "go on\r", not_woken: "the kill switch is thrown" });
+    render(<HibernatedNotice plane={PLANE} session={7} onResume={() => {}} />);
+    const said = await screen.findByRole("status", { name: "Hibernated" });
     expect(said).toHaveTextContent(
-      "This chat was hibernated when you typed this, so it was not sent: go on Type it again if you still want it.",
+      "What you typed since was not sent, and is kept until it wakes: go on purlis could not wake it: the kill switch is thrown",
     );
-    await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
-    expect(screen.queryByRole("status", { name: "Not sent" })).toBeNull();
-  });
-
-  it("is shown on no other chat's pane", async () => {
-    core(null);
-    render(<UnsentNotice plane={PLANE} session={9} />);
-    act(() => unsentHandedBack(PLANE, 10, "elsewhere"));
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(screen.queryByRole("status", { name: "Not sent" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Resume" })).toBeVisible();
   });
 });

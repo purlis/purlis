@@ -24,11 +24,8 @@ export const NOT_HIBERNATED: Record<Why, string> = {
     "Not hibernated: purlis is about to type a line into this chat, such as a task's report. Hibernate it once that turn ends.",
   task_open:
     "Not hibernated: a task this chat dispatched is still running or has not reported. Wait for its report.",
-  finished_task_open:
-    "Not hibernated: a task this chat dispatched has finished, but is still open. Close it first.",
   report_owed:
     "Not hibernated: this chat is a task, and the chat that dispatched it is waiting on its report.",
-  is_a_task: "Not hibernated: this chat is a dispatched task.",
   observed: "Not hibernated: this chat is only watched here, not run by purlis.",
   on_a_runner: "Not hibernated: this chat runs on a runner, not on this machine.",
   child_run: "Not hibernated: this is a sub-agent of a chat, not a chat of its own.",

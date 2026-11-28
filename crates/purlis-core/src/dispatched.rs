@@ -279,6 +279,10 @@ pub enum Waited {
     /// The task asks this chat a question and is paused on it (#1442). A wait is answered with
     /// a question once; the wait after the answer waits on for the report.
     Asks { question: String },
+    /// **The task is hibernated** (SC-4j, #7639; ADR 0076 as amended 2026-11-25): its program
+    /// rests and its conversation is kept, so nothing would end the wait. Answered at once; a
+    /// tell wakes it.
+    Hibernated,
 }
 
 /// **The chat number of a task whose number is not known to be its own** (#1485, #3900,

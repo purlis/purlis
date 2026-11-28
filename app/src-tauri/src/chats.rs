@@ -3370,10 +3370,7 @@ impl Chats {
                 return Err(why);
             }
         };
-        let size = lock(&self.sizes).get(&session).copied().unwrap_or(Size {
-            columns: 80,
-            rows: 24,
-        });
+        let size = self.last_size(session);
         lock(&self.replacing).insert(session);
         // Said while its program still runs, so its end is written `superseded` (ADR 0076
         // §2) wherever the event log is written, before its close is heard there.
@@ -4202,6 +4199,15 @@ impl Chats {
                 Err(why)
             }
         }
+    }
+
+    /// The size chat `session`'s pane last told it, or a terminal's default: what a start that
+    /// no pane asked for (a wake by a tell, SC-4j, #7639) is drawn at.
+    pub fn last_size(&self, session: u32) -> Size {
+        lock(&self.sizes).get(&session).copied().unwrap_or(Size {
+            columns: 80,
+            rows: 24,
+        })
     }
 
     /// Wakes hibernated chat `session` (SC-4a, #7630): the same chat on its conversation, in

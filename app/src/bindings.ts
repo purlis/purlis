@@ -1283,6 +1283,11 @@ export const commands = {
 	 *  unsent text, held in memory, never lost (SC-4d, #7633). Absent where it typed nothing.
 	 */
 	unsent?: string | null,
+	/**
+	 *  Why purlis could not wake it when its pane typed into it or a tell reached it, in the
+	 *  core's words (SC-4j, #7639): what it holds stays unsent. Absent where nothing was refused.
+	 */
+	not_woken?: string | null,
 } | null, string>(__TAURI_INVOKE("chat_hibernated", { plane, session })),
 	/**
 	 *  **What hibernated chat `session` showed as it was hibernated** (SC-4b, #7631): what its pane
@@ -8388,6 +8393,11 @@ export type ChatHibernation_Deserialize = {
 	 *  unsent text, held in memory, never lost (SC-4d, #7633). Absent where it typed nothing.
 	 */
 	unsent?: string | null,
+	/**
+	 *  Why purlis could not wake it when its pane typed into it or a tell reached it, in the
+	 *  core's words (SC-4j, #7639): what it holds stays unsent. Absent where nothing was refused.
+	 */
+	not_woken?: string | null,
 };
 
 /**  Chat `session` as the window reads its hibernation. */
@@ -8398,6 +8408,11 @@ export type ChatHibernation_Serialize = {
 	 *  unsent text, held in memory, never lost (SC-4d, #7633). Absent where it typed nothing.
 	 */
 	unsent?: string | null,
+	/**
+	 *  Why purlis could not wake it when its pane typed into it or a tell reached it, in the
+	 *  core's words (SC-4j, #7639): what it holds stays unsent. Absent where nothing was refused.
+	 */
+	not_woken?: string | null,
 };
 
 /**  A chat's Chat log: whether purlis knows the chat, and its rows. */
@@ -8609,12 +8624,6 @@ export type ChatRestart = {
 	 */
 	notices: string[],
 	not_yet: string | null,
-	/**
-	 *  **What its pane typed while it was hibernated, which no program read** (SC-4d, #7633):
-	 *  handed back with the woken run, for its pane to show unsent. Never typed into it: its
-	 *  delivery is SC-4j's (#7639). None where nothing was typed, or the chat was not woken.
-	 */
-	unsent: string | null,
 };
 
 /**  **What the chat a `chat 641` link names is**, for its hover's second line. */
@@ -22378,7 +22387,7 @@ export type WhatChanged = {
  *  [`NotRested`], one value for one reason, whose words are the window's
  *  (`app/src/hibernationWords.ts`, `docs/ui-copy.md`).
  */
-export type Why = "working" | "asking" | "paused" | "hibernated" | "ended" | "cannot_resume" | "cannot_see_its_own_work" | "own_work" | "line_coming" | "task_open" | "finished_task_open" | "report_owed" | "is_a_task" | "observed" | "on_a_runner" | "child_run" | "looked_at";
+export type Why = "working" | "asking" | "paused" | "hibernated" | "ended" | "cannot_resume" | "cannot_see_its_own_work" | "own_work" | "line_coming" | "task_open" | "report_owed" | "observed" | "on_a_runner" | "child_run" | "looked_at";
 
 /**
  *  A tint holds `token`, tinted, at least `distance` from `from` in OKLab, `from` as the tint

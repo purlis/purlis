@@ -3,6 +3,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { HIBERNATED_SCREEN_LABEL, HibernatedOr, NONE_KEPT } from "./HibernatedScreen";
 import type { ChatHibernation } from "./bindings";
@@ -30,11 +31,19 @@ afterEach(() => {
 const PLANE = "/home/dev/plane";
 const BY_YOU: ChatHibernation = { by: "operator" };
 
+/** What the pane sent the core, as a live pane's keys are sent: every `send_input`, in order. */
+let sent: { session: number; text: string }[] = [];
+
 /** A core where chat 7 is `held`, and its kept screen is `kept`. */
 function core(held: ChatHibernation | null, kept: string | null) {
-  mockIPC((cmd) => {
+  sent = [];
+  mockIPC((cmd, args) => {
     if (cmd === "chat_hibernated") return held;
     if (cmd === "hibernated_chat_screen") return kept;
+    if (cmd === "send_input") {
+      const { session, text } = args as { session: number; text: string };
+      sent.push({ session, text });
+    }
     return null;
   });
 }
@@ -56,6 +65,24 @@ describe("a hibernated chat's pane", () => {
       expect(within(region).getAllByText(/Deployed to staging/).length).toBeGreaterThan(0),
     );
     expect(screen.queryByTestId("live-terminal")).toBeNull();
+  });
+
+  it("sends what is typed on it to the core, which wakes the chat (SC-4j, #7639)", async () => {
+    core(BY_YOU, "Deployed to staging.\r\n");
+    pane();
+    const region = await screen.findByRole("region", { name: HIBERNATED_SCREEN_LABEL });
+    await waitFor(() =>
+      expect(within(region).getAllByText(/Deployed to staging/).length).toBeGreaterThan(0),
+    );
+    region.focus();
+    await userEvent.keyboard("go{Enter}");
+    await vi.waitFor(() =>
+      expect(sent).toEqual([
+        { session: 7, text: "g" },
+        { session: 7, text: "o" },
+        { session: 7, text: "\r" },
+      ]),
+    );
   });
 
   it("says no copy was kept where none was", async () => {

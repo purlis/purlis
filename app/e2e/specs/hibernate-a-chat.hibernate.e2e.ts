@@ -10,8 +10,8 @@ import { minimiseNoticesExpandedHere } from "../reach.js";
 import { NOT_HIBERNATED } from "../../src/hibernationWords.ts";
 
 /**
- * **Hibernate a chat from its row, see what it showed, then Resume it** (SC-4a, #7630; SC-4b,
- * #7631), through the real binary, the real session host and a stand-in harness that reports
+ * **Hibernate a chat from its row, see what it showed, then Resume it, or type to wake it**
+ * (SC-4a, #7630; SC-4b, #7631; SC-4j, #7639), through the real binary, the real session host and a stand-in harness that reports
  * through `charter hook` and names its conversation: nothing here reads the pane's text to decide
  * anything but that the harness got to the end of its turn and that its kept screen shows it. The
  * band and the kept screen are asked for by their roles, and the band's button by its name.
@@ -158,5 +158,23 @@ describe("hibernating a chat and resuming it", () => {
     await (await band.$("button=Resume")).click();
     await untilTheBandGoes();
     expect(await theStart(startsBefore + 3)).toContain(`-s ${SCENARIO_CONVERSATION}`);
+  });
+
+  it("wakes when the person types on its kept screen, and draws the woken run in its place", async () => {
+    // SC-4j (#7639): typing in a hibernated pane wakes the chat, with no Resume pressed.
+    await untilTheTurnEnds();
+    await fromThePalette("Hibernate chat");
+    await theBand();
+    const kept = await $(KEPT_SCREEN);
+    await kept.waitForExist({ timeout: 30_000, timeoutMsg: "no kept screen was drawn" });
+    await kept.click();
+    await browser.keys(["g", "o"]);
+
+    await untilTheBandGoes();
+    await browser.waitUntil(async () => !(await $(KEPT_SCREEN).isExisting()), {
+      timeout: 30_000,
+      timeoutMsg: "the kept screen stayed once typing woke the chat",
+    });
+    expect(await theStart(startsBefore + 4)).toContain(`-s ${SCENARIO_CONVERSATION}`);
   });
 });

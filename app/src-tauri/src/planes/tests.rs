@@ -7608,11 +7608,12 @@ fn a_second_resume_of_a_hibernated_chat_starts_no_second_program() {
         (one.join().expect("one"), two.join().expect("two"))
     });
 
-    let started: Vec<_> = [&one, &two]
-        .into_iter()
-        .filter(|done| matches!(done, Ok(Restarted::Started(_))))
-        .collect();
-    assert_eq!(started.len(), 1, "{one:?} {two:?}");
+    // One wake (SC-4j, #7639): the second press, behind the first in the chat's lane, is
+    // answered the run the first began.
+    let (Ok(Restarted::Started(first)), Ok(Restarted::Started(second))) = (&one, &two) else {
+        panic!("both presses are answered the woken run: {one:?} {two:?}");
+    };
+    assert_eq!(first, second, "one run");
     let wakes = own_run_lines(&logs)
         .into_iter()
         .filter(|(kind, _, said)| kind == "run.started" && said == "wake")
@@ -8979,6 +8980,17 @@ fn a_chat_heard_at_rest(
     own_work: purlis_core::ownwork::Said,
     profiled: bool,
 ) -> u32 {
+    a_chat_heard_at_rest_from(held, dir, own_work, profiled, None)
+}
+
+/// [`a_chat_heard_at_rest`], started by the chat its record names in `from`: a dispatched task.
+fn a_chat_heard_at_rest_from(
+    held: &Held,
+    dir: &Path,
+    own_work: purlis_core::ownwork::Said,
+    profiled: bool,
+    from: Option<purlis_core::reopen::HandedFrom>,
+) -> u32 {
     use purlis_core::state::Event::{SessionStart, Stop, UserPromptSubmit};
     let beside = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/hibernate-stand-ins");
     std::fs::create_dir_all(&beside).expect("a folder for the stand-in");
@@ -8988,6 +9000,7 @@ fn a_chat_heard_at_rest(
     let here = dir.join("plane/workspaces/alpha");
     std::fs::create_dir_all(&here).expect("a folder of the project");
     chat.cwd = Some(here);
+    chat.from = from;
     if profiled {
         // Added to what is there: the sandbox this setup turned off stays off.
         let local = held.root().join(purlis_core::profiles::LOCAL_FILE);
@@ -9150,23 +9163,13 @@ fn a_prompt_typed_before_the_intent_leaves_the_chat_hot_and_reaches_its_program(
 }
 
 #[test]
-fn a_prompt_typed_after_the_intent_is_held_shown_and_handed_back_unsent_as_the_chat_wakes() {
-    // SC-4d (#7633): past the intent the program is ending, so what the pane types is kept, in
-    // the app's memory, as the hibernated chat's unsent text: its pane is told, reads it, and
-    // takes it back with the woken run, never typed into either program. Its delivery after the
-    // wake is SC-4j's (#7639).
+fn a_prompt_typed_after_the_intent_is_held_then_wakes_the_chat_and_reaches_its_woken_run_once() {
+    // SC-4d (#7633) and SC-4j (#7639): past the intent the program is ending, so what the pane
+    // types is held, never sent to the program that is going. Once the act is done it wakes the
+    // chat, and the woken run is typed it once it is heard from, never before.
     let dir = tempfile::tempdir().expect("a directory");
     let host = Pretend::default();
-    let told: Arc<Mutex<Vec<(u32, bool)>>> = Arc::default();
-    let telling = Arc::clone(&told);
-    let (_planes, _logs, held) = hibernating_on_with(&host, dir.path(), |planes| {
-        planes.telling_hibernation_changes(Arc::new(move |changed: crate::hibernation::Changed| {
-            telling
-                .lock()
-                .expect("the log")
-                .push((changed.session, changed.hibernated));
-        }))
-    });
+    let (_planes, logs, held) = hibernating_on(&host, dir.path());
     let session = a_chat_heard_at_rest(
         &held,
         dir.path(),
@@ -9179,41 +9182,24 @@ fn a_prompt_typed_after_the_intent_is_held_shown_and_handed_back_unsent_as_the_c
     });
 
     held.hibernate_chat(session).expect("it hibernates");
+    held.lanes.in_turn(session, || {});
 
-    assert_eq!(
-        held.hibernated().of(session),
-        Some(crate::hibernation::By::Operator)
-    );
-    assert!(
-        becomes(|| held.hibernated().unsent(session).as_deref() == Some("go on")),
-        "{:?}",
-        held.hibernated().unsent(session)
-    );
-    assert!(
-        becomes(|| told.lock().expect("the log").contains(&(session, true))),
-        "its pane was never told to read it again: {:?}",
-        told.lock().expect("the log")
-    );
-    the_pane_sends(&held, session, b" and on\r");
-    assert!(
-        becomes(|| held.hibernated().unsent(session).as_deref() == Some("go on and on\r")),
-        "{:?}",
-        held.hibernated().unsent(session)
-    );
-
-    let woken = held.wake_chat(session, STARTING).expect("it wakes");
-
-    assert_eq!(
-        held.hibernated().handed_back(woken).as_deref(),
-        Some("go on and on\r"),
-        "the woken run's pane takes it back"
-    );
-    assert_eq!(held.hibernated().handed_back(woken), None, "once");
+    let woken = held.hibernated().woken_as(session).unwrap_or_else(|| {
+        panic!(
+            "typing never woke it: {:?}",
+            held.hibernated().why_not_woken(session)
+        )
+    });
+    assert_eq!(wake_runs(&logs), 1, "one wake run");
     assert!(
         host.typed(session).is_empty(),
         "never sent to a program that is gone"
     );
-    assert!(host.typed(woken).is_empty(), "nor typed into the woken one");
+    assert!(host.typed(woken).is_empty(), "not before its run is heard");
+
+    heard_from_the_woken_run(&held, woken);
+
+    assert_eq!(host.typed(woken), [b"go on".to_vec()]);
 }
 
 #[test]
@@ -9236,6 +9222,8 @@ fn a_hibernated_chat_holds_what_its_pane_types_up_to_its_bound_and_says_so_past_
         false,
     );
     held.hibernate_chat(session).expect("it hibernates");
+    // Typing wakes a hibernated chat (SC-4j, #7639): refused here, so what it types is held.
+    host.refuses(Some("no start in this test"));
 
     let most = vec![b'a'; crate::hibernation::MOST_UNSENT_BYTES];
     the_pane_sends(&held, session, &most);
@@ -9617,4 +9605,333 @@ fn a_woken_chat_whose_hibernation_ended_nothing_is_started_with_no_wake_line() {
     );
     let started = started_with_last(&host);
     assert!(!started.contains("purlis: this chat was"), "{started:?}");
+}
+
+// ---- SC-4j (#7639): typing, or a parent's tell, wakes a hibernated chat ----------------------
+
+/// What the window was told of a chat's hibernation: the chat, whether it is hibernated, and the
+/// run it woke as.
+type Told = (u32, bool, Option<u32>);
+
+/// How many `wake` runs the log at `logs` has begun.
+fn wake_runs(logs: &Path) -> usize {
+    own_run_lines(logs)
+        .into_iter()
+        .filter(|(kind, _, said)| kind == "run.started" && said == "wake")
+        .count()
+}
+
+/// Woken run `woken`'s harness takes its conversation, as the socket hears it, and every chat
+/// that report wakes has been woken: a harness slow to be ready is ready only now.
+fn heard_from_the_woken_run(held: &Held, woken: u32) {
+    heard(
+        held,
+        woken,
+        purlis_core::state::Event::SessionStart,
+        purlis_core::state::Detail::default(),
+    );
+    crate::dispatched::woke_later::settled();
+    held.lanes.in_turn(woken, || {});
+}
+
+/// A dispatched task of chat `asker`'s, heard at rest, whose parent waits on no report (`report`
+/// is not `Due`): one the person may hibernate (SC-4j, #7639). `Again` is a task that reported
+/// `blocked`, which is still told; `Nothing` is a task nobody asked a report of.
+fn a_task_heard_at_rest(
+    held: &Held,
+    dir: &Path,
+    asker: u32,
+    report: purlis_core::reopen::Owed,
+) -> u32 {
+    a_chat_heard_at_rest_from(
+        held,
+        dir,
+        purlis_core::ownwork::Said::default(),
+        false,
+        Some(purlis_core::reopen::HandedFrom {
+            id: None,
+            chat: asker,
+            name: "asker".to_owned(),
+            workspace: purlis_core::active::Place::PlaneRoot,
+            report,
+            mode: purlis_core::dispatchdecision::Mode::Task,
+            depth: 1,
+            root: None,
+            above: None,
+            by_person: false,
+            long: false,
+            policy: None,
+        }),
+    )
+}
+
+#[test]
+fn typing_in_a_hibernated_pane_wakes_it_once_and_its_woken_run_reads_it_once_after_its_wake_line() {
+    // SC-4j (#7639): the typed text wakes the chat, one `wake` run however many keys, and is
+    // typed into the woken run once that run is heard from, after the wake line it was started
+    // with, in the order it was typed: what its old pane typed after the wake included.
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let told: Arc<Mutex<Vec<Told>>> = Arc::default();
+    let telling = Arc::clone(&told);
+    let (_planes, logs, held) = hibernating_on_with(&host, dir.path(), |planes| {
+        planes.telling_hibernation_changes(Arc::new(move |changed: crate::hibernation::Changed| {
+            telling.lock().expect("the log").push((
+                changed.session,
+                changed.hibernated,
+                changed.woken,
+            ));
+        }))
+    });
+    let session = a_chat_heard_at_rest(
+        &held,
+        dir.path(),
+        purlis_core::ownwork::Said {
+            shells: 1,
+            lapses_in: Some(3600),
+            ..purlis_core::ownwork::Said::default()
+        },
+        true,
+    );
+    its_own_shell(&held, session, "bg-1", "npm run watch");
+    held.hibernate_chat_ending_its_own_work(session, &["bg-1".to_owned()])
+        .expect("it hibernates");
+
+    the_pane_sends(&held, session, b"go ");
+    the_pane_sends(&held, session, b"on\r");
+    held.lanes.in_turn(session, || {});
+
+    let woken = held.hibernated().woken_as(session).unwrap_or_else(|| {
+        panic!(
+            "typing never woke it: {:?}",
+            held.hibernated().why_not_woken(session)
+        )
+    });
+    assert_ne!(woken, session, "a new run");
+    assert_eq!(wake_runs(&logs), 1, "one wake run for every key");
+    assert!(
+        started_with_last(&host).contains("npm run watch"),
+        "its wake line is what its run was started with: {}",
+        started_with_last(&host)
+    );
+    assert!(
+        told.lock()
+            .expect("the log")
+            .contains(&(session, false, Some(woken))),
+        "the window was never told the run to draw: {:?}",
+        told.lock().expect("the log")
+    );
+    assert!(host.typed(woken).is_empty(), "typed before it was ready");
+
+    heard_from_the_woken_run(&held, woken);
+    assert_eq!(host.typed(woken), [b"go on\r".to_vec()], "once, in order");
+
+    heard(
+        &held,
+        woken,
+        purlis_core::state::Event::UserPromptSubmit,
+        purlis_core::state::Detail::default(),
+    );
+    crate::dispatched::woke_later::settled();
+    the_pane_sends(&held, session, b"more\r");
+    held.lanes.in_turn(session, || {});
+    held.lanes.in_turn(woken, || {});
+    assert_eq!(
+        host.typed(woken),
+        [b"go on\r".to_vec(), b"more\r".to_vec()],
+        "not again, and what its old pane types now is the woken run's"
+    );
+    assert!(host.typed(session).is_empty());
+}
+
+#[test]
+fn a_wake_the_host_refuses_keeps_what_was_typed_unsent_with_why_and_a_later_resume_delivers_it() {
+    // SC-4j (#7639): a refused wake leaves the chat hibernated, and what its pane typed stays as
+    // its unsent text, with the reason its pane says. Resume, once a start is let through, is
+    // the same one wake, and its run reads what was held.
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, logs, held) = hibernating_on(&host, dir.path());
+    let session = a_chat_heard_at_rest(
+        &held,
+        dir.path(),
+        purlis_core::ownwork::Said::default(),
+        false,
+    );
+    held.hibernate_chat(session).expect("it hibernates");
+    host.refuses(Some("the kill switch is thrown"));
+
+    the_pane_sends(&held, session, b"go on\r");
+    held.lanes.in_turn(session, || {});
+
+    assert_eq!(
+        held.hibernated().of(session),
+        Some(crate::hibernation::By::Operator),
+        "still hibernated"
+    );
+    assert_eq!(held.hibernated().woken_as(session), None);
+    assert_eq!(wake_runs(&logs), 0);
+    assert_eq!(
+        held.hibernated().unsent(session).as_deref(),
+        Some("go on\r")
+    );
+    let why = held
+        .hibernated()
+        .why_not_woken(session)
+        .expect("its pane says why");
+    assert!(why.contains("the kill switch is thrown"), "{why}");
+
+    host.refuses(None);
+    let Restarted::Started(woken) = held
+        .restart_chat(session, STARTING, When::Now)
+        .expect("Resume wakes it")
+    else {
+        panic!("not started");
+    };
+    assert_eq!(wake_runs(&logs), 1);
+    heard_from_the_woken_run(&held, woken);
+    assert_eq!(host.typed(woken), [b"go on\r".to_vec()]);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_tell_to_a_hibernated_task_wakes_it_and_its_woken_run_is_told_once_it_takes_a_line() {
+    // SC-4j (#7639; ADR 0076 as amended 2026-11-25): a task whose report is not owed may be
+    // hibernated by hand. A tell to it is not refused as finished: it is queued, which the
+    // parent is answered, and wakes the task, whose woken run is told it once, after its wake.
+    use purlis_core::dispatched::What;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, logs, held) = hibernating_on(&host, dir.path());
+    let asker = a_chat_heard_at_rest(
+        &held,
+        dir.path(),
+        purlis_core::ownwork::Said::default(),
+        false,
+    );
+    let task = a_task_heard_at_rest(&held, dir.path(), asker, purlis_core::reopen::Owed::Again);
+    held.hibernate_chat(task)
+        .expect("a task nobody waits on hibernates");
+
+    let said = asks_after(
+        &held,
+        asker,
+        What::Tell {
+            to: task,
+            text: "Also check staging.".to_owned(),
+        },
+    );
+    assert!(
+        matches!(
+            &said,
+            purlis_core::hookwire::Answer::Task(answered)
+                if matches!(**answered, purlis_core::dispatched::Answered::Sent { .. })
+        ),
+        "{said:?}"
+    );
+    crate::dispatched::woke_later::settled();
+
+    let woken = held.hibernated().woken_as(task).expect("the tell woke it");
+    assert_eq!(wake_runs(&logs), 1, "one wake run");
+    assert!(
+        host.typed(task).is_empty(),
+        "nothing typed into a program gone"
+    );
+    assert!(host.typed(woken).is_empty(), "nothing before it is ready");
+    assert_eq!(
+        purlis_core::dispatchtalk::take(held.root(), woken).len(),
+        1,
+        "the tell follows it to its woken run"
+    );
+
+    heard_from_the_woken_run(&held, woken);
+    let line = purlis_core::dispatched::nudge(&[purlis_core::dispatched::Landed::FollowUp]);
+    assert!(
+        becomes(|| host.typed(woken).len() == 1),
+        "{:?}",
+        host.typed(woken)
+    );
+    assert!(
+        String::from_utf8_lossy(&host.typed(woken)[0]).contains(&line),
+        "{:?}",
+        host.typed(woken)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_tell_the_host_cannot_wake_a_task_for_stays_queued_for_its_next_wake() {
+    // SC-4j (#7639): a refused wake loses no tell, and types it into no program that is gone.
+    use purlis_core::dispatched::What;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, logs, held) = hibernating_on(&host, dir.path());
+    let asker = a_chat_heard_at_rest(
+        &held,
+        dir.path(),
+        purlis_core::ownwork::Said::default(),
+        false,
+    );
+    let task = a_task_heard_at_rest(&held, dir.path(), asker, purlis_core::reopen::Owed::Again);
+    held.hibernate_chat(task).expect("it hibernates");
+    host.refuses(Some("the kill switch is thrown"));
+
+    asks_after(
+        &held,
+        asker,
+        What::Tell {
+            to: task,
+            text: "Also check staging.".to_owned(),
+        },
+    );
+    crate::dispatched::woke_later::settled();
+
+    assert_eq!(
+        held.hibernated().of(task),
+        Some(crate::hibernation::By::Operator)
+    );
+    assert_eq!(wake_runs(&logs), 0);
+    assert!(host.typed(task).is_empty());
+    assert!(
+        held.tasks().ledger().waits_on(task),
+        "the tell is still waiting for it"
+    );
+}
+
+#[test]
+fn a_wait_on_a_hibernated_task_answers_at_once_that_it_is_hibernated() {
+    // SC-4j (#7639; ruling 7): nothing would end the wait, so it is answered at once, and not
+    // as an end. Asked to wait as long as a wait may: a wait that waited would not answer here.
+    use purlis_core::dispatched::{Answered, Asked, Waited, What};
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let asker = a_chat_heard_at_rest(
+        &held,
+        dir.path(),
+        purlis_core::ownwork::Said::default(),
+        false,
+    );
+    let task = a_task_heard_at_rest(&held, dir.path(), asker, purlis_core::reopen::Owed::Nothing);
+    held.hibernate_chat(task).expect("it hibernates");
+
+    let waited = crate::dispatched::wait(
+        &Arc::downgrade(&held),
+        &Asked {
+            chat: asker,
+            what: What::Wait {
+                of: task,
+                within_secs: 1,
+            },
+        },
+        0,
+    );
+
+    let purlis_core::hookwire::Answer::Task(answered) = waited else {
+        panic!("{waited:?}");
+    };
+    let Answered::Waited { what, .. } = *answered else {
+        panic!("{answered:?}");
+    };
+    assert_eq!(what, Waited::Hibernated);
 }

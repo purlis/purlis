@@ -1727,6 +1727,12 @@ pub fn wait(of: u32, within: Option<u32>) -> Result<String, CliError> {
         Waited::Ended => {
             format!("{SAYS} '{name}' (chat {of}) failed: its chat ended without a report.")
         }
+        Waited::Hibernated => format!(
+            "{SAYS} '{name}' (chat {of}) is hibernated: its program rests and its conversation \
+             is kept, so it sends nothing until it is woken. `purlis dispatch tell {of} \
+             \"<text>\"` wakes it and it reads the message; its report reaches this chat as \
+             context when it lands."
+        ),
     })
 }
 

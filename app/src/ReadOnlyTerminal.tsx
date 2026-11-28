@@ -99,6 +99,19 @@ export interface ReadOnlyTerminalProps {
   /** What a `chat 641` link ⌘-clicked shows (#6217, `PaneLinkChats.tsx`). A saved screen is in
    *  no project, so the core links no chat in it; a story stands a core in that does. */
   onChat?: (go: ChatGo, place: LinkPlace) => void;
+  /**
+   * **What a key typed on the screen sends**, where the screen takes typing: a hibernated
+   * chat's, whose typing wakes it (SC-4j, #7639). A character, or Enter as a return. None for
+   * a screen that is only read.
+   */
+  onTyped?: (text: string) => void;
+}
+
+/** What a key pressed on a screen that takes typing types: a character, or Enter's return. */
+function typedBy(event: KeyboardEvent<HTMLElement>): string | undefined {
+  if (event.ctrlKey || event.metaKey || event.altKey) return undefined;
+  if (event.key === "Enter") return "\r";
+  return event.key.length === 1 ? event.key : undefined;
 }
 
 /**
@@ -142,6 +155,7 @@ export function ReadOnlyTerminal({
   still = false,
   links,
   onChat,
+  onTyped,
 }: ReadOnlyTerminalProps) {
   const noteId = useId();
   const holder = useRef<HTMLDivElement>(null);
@@ -248,6 +262,11 @@ export function ReadOnlyTerminal({
       setCopy(undefined);
       // A clipboard that refuses the words is said, never left silent.
       out.writeText(now.pane.getSelection()).catch(() => setCopy(COPY_REFUSED));
+    } else if (onTyped !== undefined) {
+      const typed = typedBy(event);
+      if (typed === undefined) return;
+      event.preventDefault();
+      onTyped(typed);
     }
   };
   const closeFind = () => {

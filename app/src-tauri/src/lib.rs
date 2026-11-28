@@ -2710,10 +2710,6 @@ struct ChatRestart {
     /// runs in it again.
     notices: Vec<String>,
     not_yet: Option<String>,
-    /// **What its pane typed while it was hibernated, which no program read** (SC-4d, #7633):
-    /// handed back with the woken run, for its pane to show unsent. Never typed into it: its
-    /// delivery is SC-4j's (#7639). None where nothing was typed, or the chat was not woken.
-    unsent: Option<String>,
 }
 
 /// **Restarts chat `session`**: the same chat on its conversation, started again with the
@@ -2750,13 +2746,11 @@ async fn restart_chat(
                 chat: Some(drawn(&held, started)?),
                 notices: held.chats().start_notes(started),
                 not_yet: None,
-                unsent: held.hibernated().handed_back(started),
             }),
             planes::Restarted::NotYet(why) => Ok(ChatRestart {
                 chat: None,
                 notices: Vec::new(),
                 not_yet: Some(why.to_owned()),
-                unsent: None,
             }),
         }
     })
