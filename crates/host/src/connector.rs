@@ -152,7 +152,8 @@ impl CommandConnector {
     /// One connection: checked, prepared and run.
     async fn connected(self) -> std::io::Result<Connected> {
         let checked = self.before_each.clone();
-        let check = purlis_session_protocol::steps::begin("link_check");
+        let check =
+            purlis_session_protocol::steps::begin(purlis_session_protocol::steps::Name::LinkCheck);
         // What the check runs (the container's, the engine's, the forward's) is inside it.
         let inside = check.context();
         let checked = tokio::task::spawn_blocking(move || inside.run(|| checked()))
@@ -177,7 +178,9 @@ impl CommandConnector {
         let prepared = match self.prepare.clone() {
             Some(prepare) => {
                 // Timed only where there is something to prepare.
-                let step = purlis_session_protocol::steps::begin("link_prepare");
+                let step = purlis_session_protocol::steps::begin(
+                    purlis_session_protocol::steps::Name::LinkPrepare,
+                );
                 let inside = step.context();
                 let prepared = tokio::task::spawn_blocking(move || inside.run(|| prepare()))
                     .await
@@ -188,7 +191,9 @@ impl CommandConnector {
             }
             None => None,
         };
-        let spawn = purlis_session_protocol::steps::begin("link_exec_spawn");
+        let spawn = purlis_session_protocol::steps::begin(
+            purlis_session_protocol::steps::Name::LinkExecSpawn,
+        );
         let mut command = tokio::process::Command::new(&self.program);
         let held = prepared.map(|prepared| {
             command.envs(prepared.env);

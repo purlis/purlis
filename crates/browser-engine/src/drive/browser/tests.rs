@@ -4633,3 +4633,57 @@ fn many_stand_in_browsers_dropped_leave_no_threads_behind() {
         std::thread::sleep(Duration::from_millis(20));
     }
 }
+
+/// What `purlis::step` has written in this binary, `then` run first.
+///
+/// The binary's one subscriber, set once, as `a_connector_is_a_command_checked_before_each_
+/// connection.rs` does in the host's tests: `tracing` caches whether a step is wanted across
+/// threads, and the other tests running beside this one with none would starve a scoped one.
+/// Other tests' lines land in it too, so a check of it is "some line".
+fn step_lines_after(then: impl FnOnce()) -> String {
+    #[derive(Clone, Default)]
+    struct Said(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Said {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Said {
+        type Writer = Said;
+        fn make_writer(&'a self) -> Said {
+            self.clone()
+        }
+    }
+    static SAID: std::sync::OnceLock<Said> = std::sync::OnceLock::new();
+    let said = SAID
+        .get_or_init(|| {
+            let said = Said::default();
+            let _ = tracing::subscriber::set_global_default(
+                tracing_subscriber::fmt()
+                    .with_writer(said.clone())
+                    .with_ansi(false)
+                    .with_max_level(tracing::Level::INFO)
+                    .finish(),
+            );
+            said
+        })
+        .clone();
+    then();
+    String::from_utf8_lossy(&said.0.lock().unwrap()).into_owned()
+}
+
+#[test]
+fn a_browser_times_its_first_page_as_a_step_of_the_contract() {
+    // #7864: `browser_first_page`, from the engine answering until its first page is attached
+    // and its frames are known.
+    let out = step_lines_after(|| drop(browser()));
+    assert!(
+        out.lines()
+            .any(|line| line.contains("purlis: step browser_first_page done after")),
+        "{out}"
+    );
+}

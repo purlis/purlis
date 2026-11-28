@@ -1167,13 +1167,22 @@ fn a_start_on_a_remote_pool_times_each_of_its_steps() {
         for line in steps.iter().filter(|line| line.name == "runner_start") {
             assert_eq!(line.parent.as_deref(), Some("container_check"), "{out}");
         }
+        // Each try of the kept link is a `link_dial` (#7864), and its check and handshake are
+        // inside it: the dial is the row to sum.
         for name in ["link_check", "link_handshake"] {
             for line in steps.iter().filter(|line| line.name == name) {
                 assert_eq!(
-                    line.parent, None,
-                    "{label}: {name} is a link's own step here: {out}"
+                    line.parent.as_deref(),
+                    Some("link_dial"),
+                    "{label}: {name} is inside the link's dial: {out}"
                 );
             }
+        }
+        for line in steps.iter().filter(|line| line.name == "link_dial") {
+            assert_eq!(
+                line.parent, None,
+                "{label}: link_dial is a link's own step here: {out}"
+            );
         }
         assert!(
             steps

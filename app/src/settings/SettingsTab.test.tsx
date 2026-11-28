@@ -68,6 +68,7 @@ describe("the Settings tab, at the You level", () => {
       "Chats list",
       "Attention",
       "Reports",
+      "Diagnostics",
       "This machine",
       "Browsers",
       "Pools",

@@ -2477,7 +2477,10 @@ impl Browser {
             )
             .map_err(refusal)?;
         // The engine starts with a page: it is the current one once it is attached and its
-        // frames are known.
+        // frames are known. Timed as the browser's first page (#7864).
+        let step = purlis_session_protocol::steps::begin(
+            purlis_session_protocol::steps::Name::BrowserFirstPage,
+        );
         let deadline = Instant::now() + limits.settle_within;
         let mut state = lock(&inner.state);
         let ready = |state: &State| {
@@ -2494,7 +2497,18 @@ impl Browser {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .0;
         }
+        let (was_ready, ended) = (ready(&state), state.ended);
         drop(state);
+        if was_ready {
+            step.done();
+        } else if ended {
+            // The engine ended before its first page was there: a refusal, said by its cause.
+            let _refused = step.because(purlis_session_protocol::steps::Cause::Ended);
+        } else {
+            // The wait ran out; the page may still come, and the browser goes on as before.
+            step.because(purlis_session_protocol::steps::Cause::TimedOut)
+                .gave_up();
+        }
         Ok(Self {
             inner,
             ledger: Ledger::new(limits.answers_kept),

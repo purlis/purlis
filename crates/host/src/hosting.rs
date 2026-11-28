@@ -2354,7 +2354,18 @@ impl Hosting {
         self.let_through(&start, peer)?;
         a_note_that_fits(start.note.as_ref())?;
         let _starting = self.starting(&start)?;
-        let step = purlis_session_protocol::steps::begin("harness_spawn");
+        // Named by the Start the window says it is for (1.98, #7864), where it has an id's shape,
+        // so this line in the runner's log joins the window's.
+        let step = purlis_session_protocol::steps::begin(
+            purlis_session_protocol::steps::Name::HarnessSpawn,
+        )
+        .of_start(
+            start
+                .start
+                .as_deref()
+                .and_then(purlis_session_protocol::steps::StartId::parse)
+                .as_ref(),
+        );
         let start = ids_of(start, peer.scope());
         let size = Size {
             columns: start.cols.unwrap_or(80),

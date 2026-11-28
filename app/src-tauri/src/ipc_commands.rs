@@ -110,6 +110,8 @@ macro_rules! app_commands {
                 reportconsent::report_consent,
                 reportconsent::keep_report_consent,
                 reportconsent::reports_sent,
+                detailedlog::detailed_remote_log,
+                detailedlog::set_detailed_remote_log,
                 reportconsent::report_samples,
                 reportdrafts::report_drafts,
                 reportdrafts::edit_report_draft,

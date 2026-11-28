@@ -1568,7 +1568,8 @@ fn steps_said_while(then: impl FnOnce()) -> String {
 }
 
 /// The outcome the line of step `name` says, in `out`.
-fn outcome_of<'a>(out: &'a str, name: &str) -> Option<&'a str> {
+fn outcome_of(out: &str, name: purlis_session_protocol::steps::Name) -> Option<&str> {
+    let name = name.as_str();
     out.lines().find_map(|line| {
         line.split_once(&format!("purlis: step {name} "))?
             .1

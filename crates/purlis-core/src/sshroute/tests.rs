@@ -1071,6 +1071,26 @@ fn a_machine_whose_key_is_not_the_pinned_one_is_a_changed_key_and_nothing_else_i
     }
 }
 
+#[test]
+fn the_detailed_remote_log_never_makes_ssh_verbose() {
+    // #7864: Settings › Diagnostics' detailed remote log raises purlis's own steps alone; ssh's
+    // verbose output never joins the log.
+    let route = Route::parse("ssh://me@box/var/run/docker.sock").unwrap();
+    let before = forward_args(&route, "build", Path::new("/k"), Path::new("/s")).unwrap();
+    let now = jiff::Timestamp::now();
+    crate::detailedlog::this_process().turn_on(now);
+    let args = forward_args(&route, "build", Path::new("/k"), Path::new("/s")).unwrap();
+    crate::detailedlog::this_process().turn_off();
+    assert_eq!(args, before);
+    assert_eq!(option(&args, "LogLevel"), Some("ERROR"));
+    assert!(
+        !args
+            .iter()
+            .any(|arg| arg.starts_with("-v") || arg == "-d" || arg.contains("DEBUG")),
+        "{args:?}"
+    );
+}
+
 /// **An engine that is not the pinned one hands nothing on to the container's check** (#7922):
 /// the pin check keeps what its `docker info` said only once that engine is found to be the
 /// pinned one, so the daemon's check that follows on the same `docker` reads the daemon itself.

@@ -758,7 +758,10 @@ fn on_one_link_within<T>(
         .build()
         .map_err(|why| format!("the link could not be started: {why}"))?;
     runtime.block_on(async move {
-        let step = purlis_session_protocol::steps::begin_in("first_link", &to.pool);
+        let step = purlis_session_protocol::steps::begin_in(
+            purlis_session_protocol::steps::Name::FirstLink,
+            &to.pool,
+        );
         // The link's task is begun inside the step, so what it runs names it its parent.
         let mut links = step.inside(|| to.keep());
         // A link made anew: the connector's check of the container, `docker exec` of the

@@ -360,6 +360,28 @@ fn under_the_cli_only_charters_warnings_reach_the_terminal() {
 }
 
 #[test]
+fn under_the_cli_a_refused_step_stays_off_the_terminal_and_a_service_still_writes_it() {
+    // #7864: a refused step is a warning in the log, but a command's terminal is its answer
+    // (ADR 0046), so the step contract's lines never join it. A runner's journal keeps them.
+    let line = "purlis: step link_dial refused after 2210 ms (pool: lab, cause: refused)";
+    let screen = Screen::default();
+    let seen = screen.clone();
+    tracing::subscriber::with_default(terminal_only(move || seen.clone()), || {
+        tracing::warn!(target: "purlis::step", "{line}");
+    });
+    assert_eq!(screen.said(), "");
+
+    let journal = Screen::default();
+    let seen = journal.clone();
+    let (subscriber, widening) = terminal_widening(move || seen.clone());
+    tracing::subscriber::with_default(subscriber, || {
+        widening.reload(what_a_log_keeps()).unwrap();
+        tracing::warn!(target: "purlis::step", "{line}");
+    });
+    assert_eq!(journal.said(), format!("{line}\n"));
+}
+
+#[test]
 fn an_event_that_spells_a_secret_through_its_escapes_is_redacted() {
     let tail = &crate::secretshape::escaped::token()[1..];
     for event in [

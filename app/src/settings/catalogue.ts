@@ -10,8 +10,17 @@ export const REPORTS_ALSO: readonly string[] = [
   "telemetry",
   "error reporting",
   "bug report",
-  "diagnostics",
   "privacy",
+];
+
+/** What else a person calls You › Diagnostics (#7864): the palette and the filter find it by each. */
+export const DIAGNOSTICS_ALSO: readonly string[] = [
+  "log",
+  "logs",
+  "debug",
+  "verbose",
+  "remote log",
+  "troubleshooting",
 ];
 
 /** What else a person calls You › Attention (#6019), as its builder lists them. */
@@ -28,7 +37,7 @@ export const ATTENTION_ALSO: readonly string[] = [
  * **Every Settings group by its address and its label, without building a level** (#1201).
  *
  * A group's id and label live inside its level's builder (`you.tsx`, `project.ts`,
- * `workspace.tsx`, and the pages `dispatch.tsx`, `GrantedList.tsx`, `thisMachine.tsx`, `browserLimits.tsx`, `pools.tsx`, `notifications.tsx`, `accounts.tsx`, `profiles.tsx`, `previews.tsx` and `skillsSummary.tsx` add),
+ * `workspace.tsx`, and the pages `dispatch.tsx`, `GrantedList.tsx`, `thisMachine.tsx`, `diagnostics.tsx`, `browserLimits.tsx`, `pools.tsx`, `notifications.tsx`, `accounts.tsx`, `profiles.tsx`, `previews.tsx` and `skillsSummary.tsx` add),
  * which needs the level's files read before it can say anything. The palette lists one row per
  * group before anything is read, so it reads this list instead. `catalogue.test.ts` reads the
  * builders' sources and fails on a group this list lacks, misnames or keeps after it went.
@@ -59,6 +68,7 @@ export const SETTINGS_GROUPS: Readonly<
     { id: "you.chats", label: "Chats list" },
     { id: "you.notifications", label: "Attention", also: ATTENTION_ALSO },
     { id: "you.reports", label: "Reports", also: REPORTS_ALSO },
+    { id: "you.diagnostics", label: "Diagnostics", also: DIAGNOSTICS_ALSO },
     { id: "you.machine", label: "This machine" },
     { id: "you.machine.browsers", label: "Browsers" },
     { id: "you.machine.pools", label: "Pools" },
