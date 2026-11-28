@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795846911283,
+  "lastUpdate": 1795847908178,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58590,6 +58590,48 @@ window.BENCHMARK_DATA = {
             "value": 102.239408,
             "unit": "ms",
             "extra": "median of 5 runs: 101.239, 101.523, 102.239, 102.576, 102.710 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e0b2d412876b65e2cfd7133951db64dc1b761932",
+          "message": "Run grant: execline's programs, terminals, cron daemons, runtimes and tracers of #7964 refused (#7989)\n\n* Run grant: execline's other programs and the chain loaders of #7964 refused\n\nThe rest of execline's programs (backtick, withstdinas, export, importas,\nelglob, forbacktickx, forstdin, loopwhilex, trap, tryexec, piperw, the fd*\nprograms, heredoc, multisubstitute, define, runblock, shift, wait, case,\nenvfile, getpid, getcwd, posix-cd, posix-umask and the rest) run the\nprogram after them; homeof is kept with them on the conservative side.\nucspi-tcp's rblsmtpd and fixcrio, busybox's udpsvd and s6-networking's\ns6-tcpserver4d and s6-tcpserver6d run the program after them too. Source\nout of reach, so refused on what each is for. run_grants test seen red\nfirst.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8G5EQE4A4N3DJE25MKCJNSM\nPurlis-Persona: steward\n\n* Run grant: the terminals and multiplexers of #7964 refused\n\nxterm, kitty, alacritty, wezterm, gnome-terminal, konsole and zellij run\nthe command they are handed in the window or pane they open, and byobu is\ntmux's or screen's front-end. Refused whole, as screen and tmux are:\nsource out of reach. run_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8G5EQE4A4N3DJE25MKCJNSM\nPurlis-Persona: steward\n\n* Run grant: the remote runners, agents and configuration runners of #7964 refused\n\nlima, multipass and orbctl run a command in a VM; pssh, pdsh and clush on\nthe hosts they are named; chef-client and chef-solo run a cookbook's\nrecipes, cf-agent (cfagent) a policy's commands, buildkite-agent a\npipeline's steps, Concourse's fly a task (fly.io's fly loses its Allow\nwith it), drone a pipeline and garden a project's actions. Source out of\nreach, so refused whole on what each is for. run_grants test seen red\nfirst.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8G5EQE4A4N3DJE25MKCJNSM\nPurlis-Persona: steward\n\n* Run grant: the cron daemons and runners of #7964 refused\n\nfcron, bcron, dcron, cronie's crond, supercronic, ofelia, mcron and jobber\nrun the commands of a table they are handed; snooze and runwhen's rw-*\nprograms the program after them at a time; cronitor exec the command it\nwraps. Source out of reach, so refused whole on what each is for.\nrun_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8G5EQE4A4N3DJE25MKCJNSM\nPurlis-Persona: steward\n\n* Run grant: the interpreters and runtimes of #7964 refused\n\nkotlin, scala, groovy, clojure, boot, elixir, erl, escript, ghc, runghc,\ncrystal, nim, v, dart, tcc, mono, wasmtime, wasmer, wasm3, qjs, jsc, d8,\nhermes, rhino, jjs and frida each run the code, script or module they are\nhanded. Refused on NOT_FOR_A_RUN_GRANT, not REFUSED_NAMES, so a persona can\nstill declare one. Source out of reach. run_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8G5EQE4A4N3DJE25MKCJNSM\nPurlis-Persona: steward\n\n* Run grant: the tracers of #7964 refused\n\nbpftrace, trace-cmd, uftrace, sysdig and cset run the command after them\nto trace it, as strace and ltrace do; bpftrace's programs can call\nsystem() and sysdig's chisels are Lua. Source out of reach, so refused\nwhole. run_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8G5EQE4A4N3DJE25MKCJNSM\nPurlis-Persona: steward\n\n* Run grant: the build and version managers and compiler wrappers of #7964 refused\n\nrebar3, sdk, nvm, esy, ocamlfind, air, modd and watchman run a project's\nhooks or the commands they are handed; bundler, read in macOS's Bundler\n1.17.2, evaluates the Gemfile as Ruby and execs what bundler exec names;\nccmake, cpack, buck, muon and samu run a project's build files; icerun,\niceccd and distccd the compiler commands they are handed. run_grants test\nseen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8G5EQE4A4N3DJE25MKCJNSM\nPurlis-Persona: steward\n\n* Run grant: the package managers and installers of #7964 refused\n\nupgradepkg, xbps-reconfigure, the AUR helpers pikaur, trizen, aura, pamac\nand yaourt, and pacstrap run a package's scripts or a PKGBUILD. arch-chroot\nwas refused only by REFUSED_NAMES' arch and chroot meeting its forms, so it\nhas a row of its own, pinned by a unit test seen red first. run_grants test\nseen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8G5EQE4A4N3DJE25MKCJNSM\nPurlis-Persona: steward\n\n* Run grant: buck2, which the new buck row also reaches, pinned as a row of its own\n\n#7964's buck row reaches #7833's buck2 by its unversioned form, so buck2's\nrun_grants test passes through either row. A unit test pins buck2's own\nrow (seen red with it taken off). The interpreters' row comment no longer\nsays jshell and irb are off REFUSED_NAMES: they are on it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8G5EQE4A4N3DJE25MKCJNSM\nPurlis-Persona: steward\n\n* ADR 0112 amendment and Security fragment for #7964\n\nThe amendment records what is refused by family, why each is refused\nunread but bundler (read in macOS's Bundler 1.17.2), why none took a\ncommand_flags row, why the runtimes go on NOT_FOR_A_RUN_GRANT and not\nREFUSED_NAMES, that nothing #7964 names is left offered, the chance reaches\ngiven rows of their own (arch-chroot, buck2), and what the new rows' forms\ncost, measured on this machine's 1,723 programs. Other families are filed\nas #7988.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8G5EQE4A4N3DJE25MKCJNSM\nPurlis-Persona: steward\n\n* Run grant: #7964's run_grants tests formatted as rustfmt packs them\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8G5EQE4A4N3DJE25MKCJNSM\nPurlis-Persona: steward\n\n* Run grant: #7964's code review: macOS's wait read, buck's reach and runwhen named\n\nFrom the pre-PR review. macOS's /usr/bin/wait is on the search path and\nreadable: FreeBSD's sh wrapper for the shell's wait builtin, harmless, and\nit loses its Allow with execline's wait, which the row is for; the ADR\nrecords it as a cost and says which refused tools are on the machine. The\nbuck row's comment says it reaches buck2, the cron test's doc comment names\nrunwhen, the execline comment lists every row under it, and the\ninterpreters' comment cites #7964's amendment, not a date two share.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8G5EQE4A4N3DJE25MKCJNSM\nPurlis-Persona: steward\n\n* Run grant: review round 1 of #7989: rw-min and rw-max set apart, sdk's reason, hermes's cost\n\nFrom the review. runwhen's rw-min and rw-max, given nothing to run by its\nmanual, are kept with the family on the conservative side, in the row\ncomment, the test's doc comment and the ADR alike. SDKMAN's sdk is refused\nfor the install hooks it downloads and the editor its config opens, not\nfor a command it runs. The ADR and the fragment name the IBC relayer\nhermes, macOS's wait and GNU's gv among the costs, and the in-family\nreaches are examples. The cron test's doc comment is rewrapped.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8G5EQE4A4N3DJE25MKCJNSM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T05:59:32Z",
+          "tree_id": "312a7f642eb04f953d00fea6c5ca52be297e4d6c",
+          "url": "https://github.com/purlis/purlis/commit/e0b2d412876b65e2cfd7133951db64dc1b761932"
+        },
+        "date": 1795847902525,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6754425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.667, 0.671, 0.675, 0.690, 0.691 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.470706,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.406, 16.421, 16.471, 16.599, 16.775 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2855845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.978, 101.391, 102.286, 102.372, 102.701 ms"
           }
         ]
       }
