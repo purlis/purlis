@@ -4576,3 +4576,10 @@ fn the_terminal_sharers_and_recorders_of_8037_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The guest's converter #8037 names: libguestfs's `virt-v2v`, whose `--run` runs a script in
+/// the guest it converts.
+#[test]
+fn the_guests_converter_of_8037_is_offered_no_run_grant() {
+    refused_as_running_others("virt-v2v");
+}

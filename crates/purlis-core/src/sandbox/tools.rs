@@ -3318,6 +3318,9 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "termtosvg",
     "terminalizer",
     "t-rec",
+    // The guest's converter #8037 names, refused whole, as libguestfs's `virt-customize` is:
+    // `virt-v2v`'s `--run` runs a script in the guest it converts.
+    "virt-v2v",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
