@@ -110,6 +110,10 @@ const UNLINKED: Readonly<Record<string, string>> = {
   // list matches; its reader is the chat that calls the tool.
   "crates/purlis-core/src/chattools.rs: Chats tree has them": CHAT,
   "crates/purlis-core/src/chattools.rs: Update": CHAT,
+  // The core says what Seal these nevers does (#7852) where it also names where it stands,
+  // Settings › Project › Policy; a Go to waits on the policy Notice taking one.
+  "crates/purlis-core/src/dispatchnever.rs: Seal these nevers":
+    "names Settings › Project › Policy as where the press stands; its Go to waits on that Notice (#7852)",
   "crates/purlis-core/src/dispatchplace.rs: Discard": CHAT,
   "crates/purlis-core/src/dispatchplace.rs: Merge": CHAT,
   "crates/purlis-core/src/doctor/clones.rs: Trust these clones": TRUST_THESE,

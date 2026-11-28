@@ -18,7 +18,7 @@ const NOTICED_WITHIN: Duration = Duration::from_secs(120);
 const BACK_WITHIN: Duration = Duration::from_secs(300);
 
 /// Waits up to `within` for `done`, asking every 20 ms so a short dim is not missed.
-pub(super) fn until(within: Duration, what: &str, done: impl Fn() -> bool) {
+pub(crate) fn until(within: Duration, what: &str, done: impl Fn() -> bool) {
     let deadline = Instant::now() + within;
     while !done() {
         assert!(Instant::now() < deadline, "{what}");

@@ -36,7 +36,7 @@ import { standingOf, waitingOnYou, type QuestionsHeld } from "./taskQuestions";
 import { machineChanged } from "./settings/thisMachine";
 import { MAIN, thisWindow } from "./windows";
 import { clearedHere, keptOutside, letGoHere } from "./notesClearedEverywhere";
-import { frontTabIs } from "./slowLog";
+import { frontTabIs, useMarkedOnChange } from "./slowLog";
 import { createPortal } from "react-dom";
 import {
   AsLastShown,
@@ -584,6 +584,7 @@ import { RunnerLinkDownNotice } from "./RunnerLinkDownNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
 import { ProjectPolicyNotice } from "./ProjectPolicyNotice";
+import { PrerequisiteDialog } from "./PrerequisiteDialog";
 import { PolicyWatchAnnounced } from "./PolicyWatchAnnounced";
 import { ProjectPresetsNotice } from "./ProjectPresetsNotice";
 import { PersonaHostsNotice } from "./PersonaHostsNotice";
@@ -1157,6 +1158,8 @@ export const PlaneView = memo(function PlaneView({
   const inFrontTab = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront];
   const frontTabName = inFrontTab === undefined ? undefined : tabNameOf(inFrontTab);
   useEffect(() => (inFront ? frontTabIs(frontTabName) : undefined), [inFront, frontTabName]);
+  // Another tab brought to the front of the window costs a frame: the stall log marks it.
+  useMarkedOnChange("tab-switch", inFront ? tabs.inFront : undefined);
   const signingOutIn = useSignOutTerminals(tabs, plane);
   // **A pane closed for good lets its band's memory go** (#3167): a pane's number is never
   // used again, so one gone from every tab is gone for good.
@@ -7736,6 +7739,12 @@ export const PlaneView = memo(function PlaneView({
   const restartingNow = useRef(new Set<number>());
   /** The chats a restart is under way for, which each one's pane says while it is. */
   const [restartsRunning, setRestartsRunning] = useState<readonly number[]>([]);
+  /** Counts the restarts the core said to ask again (#7950): each one drives the owed list
+   *  again, so a chat already at a pause is restarted now and one mid-turn at its next pause. */
+  const [restartsAskedAgain, askRestartsAgain] = useState(0);
+  /** The chats those were for: one that reports no state has no pause to wait for, and the
+   *  person pressed for it, so it is asked again at once, as their press was. */
+  const askedAgain = useRef(new Set<number>());
   useEffect(() => {
     let gone = false;
     void commands
@@ -7780,6 +7789,7 @@ export const PlaneView = memo(function PlaneView({
       if (restartingNow.current.has(session)) return;
       restartingNow.current.add(session);
       setRestartsRunning((running) => [...running, session]);
+      let again = false;
       const failed = (why: string) => {
         setOwedRestarts((owed) => owed.filter((one) => one !== session));
         setRestartNotYet((was) => withoutKey(was, session));
@@ -7805,12 +7815,17 @@ export const PlaneView = memo(function PlaneView({
             // Said on its pane in the core's sentence, so a press is never answered by nothing.
             const why = done.data.not_yet ?? NOT_YET;
             setRestartNotYet((was) => (was[session] === why ? was : { ...was, [session]: why }));
+            // It waited on the person's answer to what the project needs while the chat ran on
+            // (#7950): asked again now, at a pause only, once this ask is no longer under way.
+            again = done.data.ask_again === true;
+            if (again) askedAgain.current.add(session);
           }
         })
         .catch((err: unknown) => failed(`purlis could not restart the chat: ${String(err)}`))
         .finally(() => {
           restartingNow.current.delete(session);
           setRestartsRunning((running) => running.filter((one) => one !== session));
+          if (again) askRestartsAgain((asked) => asked + 1);
         });
     },
     [plane, chatRestarted],
@@ -7967,7 +7982,14 @@ export const PlaneView = memo(function PlaneView({
     const drive = () => {
       const states = chats.store.statesFor(chats.plane);
       const due = restartsDue(owedRestarts, states);
-      for (const session of due.restart) restartOwed(session);
+      for (const session of askedAgain.current) {
+        if (!owedRestarts.includes(session)) askedAgain.current.delete(session);
+        else if (stateOf(states, session) === "unknown") due.restart.push(session);
+      }
+      for (const session of due.restart) {
+        askedAgain.current.delete(session);
+        restartOwed(session);
+      }
       // Dropped only once the core, which hears the program itself end, owes it nothing: a
       // hook can say the session ended while its program runs on ({@link owedAfterEnded}).
       if (due.ended.length > 0)
@@ -7986,7 +8008,7 @@ export const PlaneView = memo(function PlaneView({
     };
     drive();
     return chats.store.subscribe(drive);
-  }, [owedRestarts, chats, plane, restartOwed]);
+  }, [owedRestarts, chats, plane, restartOwed, restartsAskedAgain]);
   /**
    * The state of each chat owed a restart, by session (#1888): the pane's words follow the
    * chat's state as well as the owed list, so a chat owed a restart before it said it was
@@ -8233,13 +8255,26 @@ export const PlaneView = memo(function PlaneView({
    *  `session.rs`'s `KNOWS_HIBERNATE` does: a harness that resumes by id, on a host that can
    *  hibernate it. Never a shell, a chat in this process, or one on an older host. A chat the
    *  picker started is in the sidebar's rows only, so those are read too, as `glances` does. */
-  const hibernatable = useCallback(
+  const rowOf = useCallback(
     (session: number) =>
       [
         ...(sidebar ? [...sidebar.workspaces.flatMap((ws) => ws.chats), ...sidebar.unfiled] : []),
         ...reopened,
-      ].find((one) => one.session === session)?.hibernates === true,
+      ].find((one) => one.session === session),
     [reopened, sidebar],
+  );
+  const hibernatable = useCallback(
+    (session: number) => rowOf(session)?.hibernates === true,
+    [rowOf],
+  );
+  /** Why a chat's Hibernate row is greyed (#7877): the core's typed reason, today a runner's
+   *  chat, whose link refuses the act, in the words a refusal says. */
+  const hibernateGreyed = useCallback(
+    (session: number) => {
+      const why = rowOf(session)?.hibernate_greyed;
+      return why == null ? undefined : NOT_HIBERNATED[why];
+    },
+    [rowOf],
   );
   /** Hibernates chat `session` by hand (#7630): where it may not be, the core says why as a
    *  typed reason (#7632), and its words are said on the chat's pane; where the act could not be
@@ -8534,6 +8569,16 @@ export const PlaneView = memo(function PlaneView({
         .chatsThatWouldNotStart(plane)
         .then((trouble) => {
           if (trouble.status === "ok") setWouldNotStart(trouble.data ?? []);
+        })
+        .catch(() => undefined);
+      // A chat put back from the session host is owed a restart as it comes back, after this
+      // view first read the list, where its program holds the old app's forge route (#7962).
+      void commands
+        .owedRestarts(plane)
+        .then((owed) => {
+          if (owed.status !== "ok" || !Array.isArray(owed.data)) return;
+          const core: readonly number[] = owed.data;
+          setOwedRestarts((was) => core.reduce((all, one) => withRestartOwed(all, one), was));
         })
         .catch(() => undefined);
     }).catch(() => undefined);
@@ -10151,6 +10196,7 @@ export const PlaneView = memo(function PlaneView({
             planeUpdated: planeUpdates,
             restartable,
             hibernatable,
+            hibernateGreyed,
             movesTo,
             movesOnceAPoolIsSetUp: movesOnceSetUp,
             movesWith: movesWithChat,
@@ -10230,6 +10276,7 @@ export const PlaneView = memo(function PlaneView({
       planeUpdates,
       restartable,
       hibernatable,
+      hibernateGreyed,
       movesTo,
       movesOnceSetUp,
       movesWithChat,
@@ -12200,6 +12247,12 @@ export const PlaneView = memo(function PlaneView({
       {/* **A loosening of the project's `[policy]`** (Q308a): reaches each person only on their
           one Accept; a value it could not read is said beside it, enforced meanwhile. */}
       <ProjectPolicyNotice plane={plane} />
+      {/* **What the project needs from you before its chats can work** (ADR 0130 §4): each open
+          prerequisite raised as an alert of the dialog family, one at a time. */}
+      <PrerequisiteDialog
+        plane={plane}
+        onOpenPolicy={() => openSettingsAt({ group: "project.policy" })}
+      />
       {/* **Blocks are off by default** (Q308a): the upgrade to `watch`, said once on this
           machine, in a project that names no policy. */}
       <PolicyWatchAnnounced plane={plane} />

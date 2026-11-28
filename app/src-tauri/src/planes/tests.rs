@@ -7432,6 +7432,14 @@ fn a_named_report(
 /// window test's stand-in is, because the board adopts its first report; a Claude Code report
 /// must carry its program's pid (ADR 0024), which a pretend program has none of.
 fn a_chat_at_rest(held: &Held, dir: &Path) -> u32 {
+    let session = a_codex_chat(held, dir);
+    comes_to_rest(held, session);
+    session
+}
+
+/// A Codex chat started on the pretend host, a harness that resumes by its id, before any of its
+/// hooks has reported: one whose row may offer Hibernate.
+fn a_codex_chat(held: &Held, dir: &Path) -> u32 {
     // A program that is there, outside the project and outside every temp folder, as a start
     // sandboxed at full asks (`sandbox::program::temp_roots`): under the build's own `target`.
     // The pretend host never runs it. The chat works in a folder of the project, to be confined
@@ -7455,7 +7463,6 @@ fn a_chat_at_rest(held: &Held, dir: &Path) -> u32 {
         Some(purlis_core::harness::Harness::Codex),
         "not a harness that resumes by id, so nothing below is evidence"
     );
-    comes_to_rest(held, session);
     session
 }
 
@@ -7809,6 +7816,44 @@ fn a_dispatched_task_is_refused_by_hand_with_its_typed_reason() {
         crate::hibernation::Refused::Not(purlis_core::rested::NotRested::ReportOwed)
     );
     assert_eq!(held.hibernated().of(session), None);
+}
+
+#[test]
+fn a_chat_here_whose_host_can_hibernate_it_is_offered_hibernate() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_codex_chat(&held, dir.path());
+
+    assert_eq!(
+        crate::hibernation::offered(&held, session),
+        crate::hibernation::Offer::Hibernate
+    );
+}
+
+#[test]
+fn a_chat_on_a_pools_runner_is_offered_hibernate_greyed_as_on_a_runner_and_refused_so() {
+    // #7877: its host would be asked through a `remote-link` link, which lacks
+    // `Power::Reattach`; no grant is widened, so the row says why it is greyed.
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let session = a_codex_chat(&held, dir.path());
+    host.runs_on_pool(session, "builds");
+
+    assert_eq!(
+        crate::hibernation::offered(&held, session),
+        crate::hibernation::Offer::Greyed(purlis_core::rested::NotRested::OnARunner)
+    );
+    assert_eq!(
+        held.hibernate_chat(session).unwrap_err(),
+        crate::hibernation::Refused::Not(purlis_core::rested::NotRested::OnARunner)
+    );
+    assert_eq!(
+        host.hibernated(),
+        Vec::<u32>::new(),
+        "the host was asked nothing"
+    );
 }
 
 #[test]
@@ -9605,6 +9650,1185 @@ fn a_woken_chat_whose_hibernation_ended_nothing_is_started_with_no_wake_line() {
     );
     let started = started_with_last(&host);
     assert!(!started.contains("purlis: this chat was"), "{started:?}");
+}
+
+// ----- a hibernated chat across a restart (SC-4e, #7634) -----
+
+/// A Codex chat as a quit recorded it, numbered `number`, with its id and a conversation to
+/// resume, hibernated as `hibernated` says: what a restart puts back. Codex, as
+/// [`a_chat_at_rest`]'s is: a harness that resumes by id. Its stand-in program is kept as long
+/// as the test runs.
+fn a_codex_chat_recorded(
+    dir: &Path,
+    number: u32,
+    hibernated: Option<purlis_core::reopen::HibernatedBy>,
+) -> purlis_core::reopen::Chat {
+    let beside = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/hibernate-stand-ins");
+    std::fs::create_dir_all(&beside).expect("a folder for the stand-in");
+    let beside = tempfile::tempdir_in(&beside).expect("a folder of its own");
+    let codex = stand_in::program(beside.path(), "codex", "#!/bin/sh\nexit 0\n");
+    std::mem::forget(beside);
+    let here = dir.join("plane/workspaces/alpha");
+    std::fs::create_dir_all(&here).expect("a folder of the project");
+    purlis_core::reopen::Chat {
+        program: codex.display().to_string(),
+        name: format!("codex {number}"),
+        cwd: Some(here),
+        number: Some(number),
+        resume: Some(
+            purlis_core::harness::SessionId::new(format!(
+                "11111111-2222-4333-8444-5555555555{number:02}"
+            ))
+            .expect("a conversation"),
+        ),
+        identity: purlis_core::reopen::Identity {
+            id: Some(purlis_core::reopen::mint()),
+            ..Default::default()
+        },
+        hibernated: hibernated.map(|by| purlis_core::reopen::Hibernation {
+            by,
+            at: 1_700_000_000,
+        }),
+        ..Default::default()
+    }
+}
+
+/// [`hibernating_on`], its record put back, empty: from here the record of open chats is
+/// written, as it is only once a launch has put one back (`Records::allow`). Without it nothing
+/// reaches the disk, and a test of what a restart reads would read nothing.
+fn recording_on(host: &Pretend, dir: &Path) -> (Planes, PathBuf, Arc<Held>) {
+    let (planes, logs, held) = hibernating_on(host, dir);
+    held.reopen(STARTING, Ok(reopen::Record::default()), Choice::ReopenAll);
+    (planes, logs, held)
+}
+
+/// The marks the record holds once what was handed to its writer is on disk, by chat number.
+fn marks_written(held: &Held) -> Vec<(u32, Option<purlis_core::reopen::HibernatedBy>)> {
+    held.recorded.flush();
+    marks_on_disk(held.root())
+}
+
+/// The marks the record on disk holds, by chat number.
+fn marks_on_disk(root: &Path) -> Vec<(u32, Option<purlis_core::reopen::HibernatedBy>)> {
+    let mut marks: Vec<_> = reopen::read_or_refusal(root)
+        .expect("the record reads")
+        .chats
+        .into_iter()
+        .filter_map(|chat| Some((chat.number?, chat.hibernated.map(|mark| mark.by))))
+        .collect();
+    marks.sort_unstable_by_key(|(number, _)| *number);
+    marks
+}
+
+#[test]
+fn a_restart_keeps_hibernated_chats_hibernated_visible_or_not_and_reopens_the_hot_one_beside_them()
+{
+    use crate::hibernation::By;
+    use purlis_core::reopen::HibernatedBy;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let root = held.root().to_path_buf();
+    // In front as the person quit, and hibernated by them.
+    let visible = purlis_core::reopen::Chat {
+        active: true,
+        ..a_codex_chat_recorded(dir.path(), 1, Some(HibernatedBy::Operator))
+    };
+    // Hibernated by its host's end: no kept screen, and not reopened by itself (#2278).
+    let crashed = a_codex_chat_recorded(dir.path(), 2, Some(HibernatedBy::HostCrash));
+    // Hot, with a background shell the restart ends: it reopens told so.
+    let own = purlis_core::ownwork::OwnWork {
+        shells: 1,
+        ..purlis_core::ownwork::OwnWork::default()
+    };
+    let hot = purlis_core::reopen::Chat {
+        own_work: Some(own),
+        ..a_codex_chat_recorded(dir.path(), 3, None)
+    };
+    let record = reopen::Record {
+        chats: vec![visible.clone(), crashed.clone(), hot.clone()],
+        dealt: 3,
+        ..Default::default()
+    };
+    reopen::write(&root, &record).expect("the record is written");
+
+    held.reopen(STARTING, Ok(record), Choice::ReopenAll);
+
+    assert_eq!(
+        host.asked()
+            .into_iter()
+            .map(|(number, _)| number)
+            .collect::<Vec<_>>(),
+        [3],
+        "only the hot chat is given a reopen"
+    );
+    assert_eq!(held.hibernated().of(1), Some(By::Operator));
+    assert_eq!(held.hibernated().of(2), Some(By::HostCrash));
+    assert_eq!(held.hibernated().of(3), None);
+    assert_eq!(held.hibernated().now(), [1, 2]);
+    assert!(
+        is_open(&held, 1) && is_open(&held, 2) && is_open(&held, 3),
+        "open {:?}, not started {:?}",
+        held.chats()
+            .open_now()
+            .iter()
+            .map(|open| open.session)
+            .collect::<Vec<_>>(),
+        held.chats().would_not_start()
+    );
+    assert_eq!(
+        held.chats().front(),
+        Some(1),
+        "the one in front is still in front"
+    );
+    assert_eq!(
+        crate::hibernation::screen_of(&held, 2),
+        None,
+        "a host crash kept no screen"
+    );
+    // Its wake line is the launch's as before (#5747), told where it starts on a profile, which
+    // `tools/relaunch.mjs` checks on Linux.
+    assert_eq!(
+        marks_written(&held),
+        [
+            (1, Some(HibernatedBy::Operator)),
+            (2, Some(HibernatedBy::HostCrash)),
+            (3, None)
+        ],
+        "the next restart would not read them so"
+    );
+}
+
+#[test]
+fn a_chat_put_back_hibernated_is_woken_by_resume_on_its_conversation_and_its_mark_goes() {
+    use purlis_core::reopen::HibernatedBy;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let root = held.root().to_path_buf();
+    let asleep = a_codex_chat_recorded(dir.path(), 4, Some(HibernatedBy::Operator));
+    let record = reopen::Record {
+        chats: vec![asleep.clone()],
+        dealt: 4,
+        ..Default::default()
+    };
+    reopen::write(&root, &record).expect("the record is written");
+    held.reopen(STARTING, Ok(record), Choice::ReopenAll);
+    assert!(host.asked().is_empty(), "it was reopened");
+
+    let Restarted::Started(woken) = held
+        .restart_chat(4, STARTING, When::Now)
+        .expect("Resume wakes it")
+    else {
+        panic!("Resume did not wake it at once");
+    };
+
+    assert_eq!(
+        host.asked()
+            .into_iter()
+            .map(|(number, _)| number)
+            .collect::<Vec<_>>(),
+        [woken]
+    );
+    assert_eq!(
+        held.chats()
+            .recorded_chat(woken)
+            .and_then(|chat| chat.resume),
+        asleep.resume,
+        "it resumes the same conversation"
+    );
+    assert!(is_open(&held, woken) && !is_open(&held, 4));
+    assert_eq!(held.hibernated().of(4), None);
+    assert_eq!(marks_written(&held), [(woken, None)]);
+}
+
+#[test]
+fn a_mark_whose_program_still_runs_under_the_surviving_host_is_stale_and_the_chat_comes_back_hot() {
+    // A crash between the mark and the program's end: the host that survived still runs it.
+    use purlis_core::reopen::HibernatedBy;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let root = held.root().to_path_buf();
+    let marked = a_codex_chat_recorded(dir.path(), 5, Some(HibernatedBy::Operator));
+    host.leaves_running(5, None);
+    let record = reopen::Record {
+        chats: vec![marked],
+        dealt: 5,
+        ..Default::default()
+    };
+    reopen::write(&root, &record).expect("the record is written");
+
+    held.reopen(STARTING, Ok(record), Choice::ReopenAll);
+
+    assert_eq!(host.reattached(), [5], "its program was not taken back");
+    assert_eq!(held.hibernated().of(5), None);
+    assert!(is_open(&held, 5));
+    assert_eq!(marks_written(&held), [(5, None)], "the stale mark stayed");
+}
+
+#[test]
+fn hibernating_writes_its_mark_to_disk_before_the_program_ends_and_keeps_it_once_hibernated() {
+    use purlis_core::reopen::HibernatedBy;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = recording_on(&host, dir.path());
+    let root = held.root().to_path_buf();
+    let session = a_chat_at_rest(&held, dir.path());
+    assert_eq!(
+        marks_written(&held),
+        [(session, None)],
+        "marked before the act"
+    );
+    let as_it_ends = Arc::new(Mutex::new(Vec::new()));
+    host.as_it_hibernates({
+        let as_it_ends = Arc::clone(&as_it_ends);
+        let root = root.clone();
+        move || *as_it_ends.lock().unwrap() = marks_on_disk(&root)
+    });
+
+    held.hibernate_chat(session).expect("it hibernates");
+
+    assert_eq!(
+        *as_it_ends.lock().unwrap(),
+        [(session, Some(HibernatedBy::Operator))],
+        "the program ended before its mark was on disk"
+    );
+    assert_eq!(
+        marks_written(&held),
+        [(session, Some(HibernatedBy::Operator))]
+    );
+}
+
+#[test]
+fn an_act_that_aborts_after_its_mark_takes_the_mark_back() {
+    use purlis_core::reopen::HibernatedBy;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = recording_on(&host, dir.path());
+    let root = held.root().to_path_buf();
+    let session = a_chat_at_rest(&held, dir.path());
+    let as_it_ends = Arc::new(Mutex::new(Vec::new()));
+    host.as_it_hibernates({
+        let as_it_ends = Arc::clone(&as_it_ends);
+        let root = root.clone();
+        move || *as_it_ends.lock().unwrap() = marks_on_disk(&root)
+    });
+    host.hibernates_none(Some("the host said no"));
+
+    assert!(held.hibernate_chat(session).is_err(), "it hibernated");
+
+    assert_eq!(
+        *as_it_ends.lock().unwrap(),
+        [(session, Some(HibernatedBy::Operator))]
+    );
+    assert_eq!(held.hibernated().of(session), None);
+    assert_eq!(
+        marks_written(&held),
+        [(session, None)],
+        "a hot chat would come back hibernated"
+    );
+}
+
+#[test]
+fn a_quit_while_the_act_is_in_flight_leaves_no_mark_and_the_next_launch_reopens_the_chat_hot() {
+    // #7945's review: the act's mark is on disk before the program ends, and a quit that ends
+    // every program before the act settles or backs out writes the last record with it. A chat
+    // that quit is not marked (spec #1391, ruling 3); one the act had settled keeps its mark.
+    use purlis_core::reopen::HibernatedBy;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (planes, _told) = planes_on(&host);
+    let plane = planes.open(&a_plane(&dir.path().join("plane")));
+    let held = planes.held(&plane).expect("it is held");
+    held.reopen(STARTING, Ok(reopen::Record::default()), Choice::ReopenAll);
+    let start = || {
+        held.chats()
+            .start(&one_chat_on("/nowhere/a-harness").chats[0], STARTING)
+            .expect("the host starts it")
+    };
+    let (in_flight, asleep) = (start(), start());
+    let operator = || {
+        Some(crate::hibernation::mark_of(
+            crate::hibernation::By::Operator,
+        ))
+    };
+    for session in [in_flight, asleep] {
+        assert!(
+            held.hibernated()
+                .latch_and_intend(session, crate::hibernation::By::Operator)
+        );
+        held.chats().mark_hibernated(session, operator());
+    }
+    assert!(held.hibernated().settle(asleep), "it was not in flight");
+    assert_eq!(
+        marks_written(&held),
+        [
+            (in_flight, Some(HibernatedBy::Operator)),
+            (asleep, Some(HibernatedBy::Operator))
+        ],
+        "the act's marks were never on disk, so nothing below is evidence"
+    );
+
+    planes.let_go_of_all();
+
+    assert_eq!(
+        marks_on_disk(plane.root()),
+        [(in_flight, None), (asleep, Some(HibernatedBy::Operator))],
+        "the next launch would give the chat that quit mid-act no reopen"
+    );
+}
+
+#[test]
+fn a_chat_its_host_s_end_left_at_rest_is_marked_hibernated_by_the_host_crash_and_not_failed() {
+    use purlis_core::reopen::HibernatedBy;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = recording_on(&host, dir.path());
+    let session = a_chat_at_rest(&held, dir.path());
+
+    host.program_ends_with_its_host(session);
+
+    assert!(
+        becomes(|| held.lost_with_the_host().of(session).is_some()),
+        "its host's end was never heard"
+    );
+    assert_eq!(
+        held.lost_with_the_host()
+            .of(session)
+            .map(|lost| lost.left_in),
+        Some(crate::hostlost::LeftIn::Hibernated)
+    );
+    assert_eq!(
+        marks_written(&held),
+        [(session, Some(HibernatedBy::HostCrash))],
+        "the next restart would reopen it"
+    );
+}
+
+#[test]
+fn a_pool_chat_its_host_s_end_left_at_rest_is_not_marked_hibernated() {
+    // #7945's review, in line with #7877: only this machine's chats hibernate, so a chat on a
+    // pool's runner keeps the reopen it had.
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = recording_on(&host, dir.path());
+    let session = a_chat_at_rest(&held, dir.path());
+    host.runs_on_pool(session, "builders");
+
+    host.program_ends_with_its_host(session);
+
+    assert!(
+        becomes(|| held.lost_with_the_host().of(session).is_some()),
+        "its host's end was never heard, so nothing below is evidence"
+    );
+    assert_eq!(
+        marks_written(&held),
+        [(session, None)],
+        "the next restart would keep a pool's chat hibernated"
+    );
+}
+
+#[test]
+fn a_host_crash_marks_neither_a_task_owing_its_report_nor_its_idle_asker_and_both_reopen() {
+    // #7945's review: a task still owing its report is told to carry on at the next launch
+    // (#1513) and its report is delivered; its asker, waiting on it, reopens with it.
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = recording_on(&host, dir.path());
+    let asker = a_chat_at_rest(&held, dir.path());
+    let task = a_chat_at_rest(&held, dir.path());
+    held.chats().handed_from_for_tests(
+        task,
+        purlis_core::reopen::HandedFrom {
+            id: None,
+            chat: asker,
+            name: "lead".to_owned(),
+            workspace: purlis_core::active::Place::PlaneRoot,
+            report: purlis_core::reopen::Owed::Due,
+            mode: purlis_core::reopen::Mode::Task,
+            depth: 1,
+            root: None,
+            above: None,
+            by_person: false,
+            long: false,
+            policy: None,
+        },
+    );
+    assert_eq!(
+        held.chats()
+            .tasks_of(asker)
+            .into_iter()
+            .map(|(number, _)| number)
+            .collect::<Vec<_>>(),
+        [task],
+        "not a task of its asker, so nothing below is evidence"
+    );
+
+    host.program_ends_with_its_host(asker);
+    host.program_ends_with_its_host(task);
+
+    assert!(
+        becomes(|| held.lost_with_the_host().of(asker).is_some()
+            && held.lost_with_the_host().of(task).is_some()),
+        "their host's end was never heard, so nothing below is evidence"
+    );
+    assert_eq!(
+        marks_written(&held),
+        [(asker, None), (task, None)],
+        "the next restart would keep one of them hibernated"
+    );
+}
+
+#[test]
+fn a_mark_on_a_chat_a_pool_runs_is_read_hot_at_a_restart() {
+    // #7945's review, in line with #7877: a pool's chat is not hibernated across a restart.
+    use purlis_core::reopen::HibernatedBy;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let root = held.root().to_path_buf();
+    host.on_pool("builders");
+    let marked = a_codex_chat_recorded(dir.path(), 6, Some(HibernatedBy::Operator));
+    let record = reopen::Record {
+        chats: vec![marked],
+        dealt: 6,
+        ..Default::default()
+    };
+    reopen::write(&root, &record).expect("the record is written");
+
+    held.reopen(STARTING, Ok(record), Choice::ReopenAll);
+
+    assert_eq!(held.hibernated().of(6), None, "it came back hibernated");
+    assert!(
+        !held
+            .chats()
+            .marked_hibernated()
+            .iter()
+            .any(|(n, _)| *n == 6),
+        "it was put back asleep"
+    );
+}
+
+#[test]
+fn a_mark_whose_host_cannot_say_yet_what_it_runs_is_read_hot_at_a_restart() {
+    // #7945's review: only a host's answer that the program is gone puts a marked chat back
+    // asleep. One that cannot say yet may still run it: the chat is put back hot, to be found.
+    use purlis_core::reopen::HibernatedBy;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let (_planes, _logs, held) = hibernating_on(&host, dir.path());
+    let root = held.root().to_path_buf();
+    host.cannot_say_what_it_left();
+    let marked = a_codex_chat_recorded(dir.path(), 7, Some(HibernatedBy::Operator));
+    let record = reopen::Record {
+        chats: vec![marked],
+        dealt: 7,
+        ..Default::default()
+    };
+    reopen::write(&root, &record).expect("the record is written");
+
+    held.reopen(STARTING, Ok(record), Choice::ReopenAll);
+
+    assert_eq!(held.hibernated().of(7), None, "it came back hibernated");
+    assert!(
+        !held
+            .chats()
+            .marked_hibernated()
+            .iter()
+            .any(|(n, _)| *n == 7),
+        "it was put back asleep"
+    );
+}
+
+/// **A Claude Code chat at rest** on the pretend host (SC-4g, #7636): its turn ended in the
+/// conversation purlis chose for it, on a harness that resumes by id and reports its own work,
+/// with nothing of its own out. Rested in every fact but time. Its reports are handed to the
+/// board, not sent over the plane's socket, so no hook is heard and nothing pokes the gate:
+/// the test reads it.
+fn a_claude_chat_resting(held: &Held, dir: &Path, name: &str) -> u32 {
+    use purlis_core::state::Event::{SessionStart, Stop, UserPromptSubmit};
+    let beside = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/hibernate-stand-ins");
+    std::fs::create_dir_all(&beside).expect("a folder for the stand-in");
+    let beside = tempfile::tempdir_in(&beside).expect("a folder of its own");
+    let claude = stand_in::claude_code(beside.path(), "claude", "#!/bin/sh\nexit 0\n");
+    let mut chat = one_chat_on(&claude.display().to_string()).chats.remove(0);
+    chat.name = name.to_owned();
+    let here = dir.join("plane/workspaces/alpha");
+    std::fs::create_dir_all(&here).expect("a folder of the project");
+    chat.cwd = Some(here);
+    let session = held
+        .chats()
+        .start(&chat, STARTING)
+        .expect("the host starts it");
+    std::mem::forget(beside);
+    assert_eq!(
+        held.chats().harness(session),
+        Some(purlis_core::harness::Harness::ClaudeCode),
+        "not a harness that reports its own work, so nothing below is evidence"
+    );
+    let conversation = held
+        .board()
+        .conversation(session)
+        .expect("purlis chose its conversation");
+    for event in [SessionStart, UserPromptSubmit, Stop] {
+        held.hooks()
+            .board()
+            .reported(&purlis_core::hookwire::Report {
+                chat: session,
+                event,
+                conversation: purlis_core::hookwire::Conversation::Named(conversation.clone()),
+                pid: Some(5000 + session),
+                agent: None,
+                detail: purlis_core::state::Detail::default(),
+            });
+    }
+    assert_eq!(
+        purlis_core::rested::rested(&crate::hibernation::facts_of(held, session, false)),
+        Ok(()),
+        "it never came to rest: {:?}",
+        crate::hibernation::facts_of(held, session, false)
+    );
+    session
+}
+
+/// A project on the pretend host whose gate reads `clock` and a hot target of `target`, with
+/// no chat on screen.
+fn gated_on(
+    host: &Pretend,
+    dir: &Path,
+    clock: &Arc<crate::autohibernate::HeldClock>,
+    target: u32,
+) -> (Planes, PathBuf, Arc<Held>) {
+    let clock: Arc<dyn crate::autohibernate::Clock> = clock.clone();
+    hibernating_on_with(host, dir, |planes| planes.gating_on(clock, target))
+}
+
+/// Nothing on screen: no chat is in front.
+fn nothing_on_screen(held: &Held) {
+    held.chats().bring_to_front(None);
+    assert_eq!(held.chats().looked_at(), Vec::<u32>::new());
+}
+
+#[test]
+fn under_the_target_a_day_rested_hibernates_nothing_and_arms_nothing() {
+    use crate::autohibernate::Read;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 2);
+    let one = a_claude_chat_resting(&held, dir.path(), "one");
+    let two = a_claude_chat_resting(&held, dir.path(), "two");
+    nothing_on_screen(&held);
+
+    assert_eq!(planes.gate().read(), Read::Nothing);
+    clock.advance(std::time::Duration::from_secs(24 * 60 * 60));
+    assert_eq!(planes.gate().read(), Read::Nothing);
+
+    assert_eq!(planes.gate().armed(), None);
+    assert_eq!(held.hibernated().of(one), None);
+    assert_eq!(held.hibernated().of(two), None);
+    assert_eq!(host.hibernated(), Vec::<u32>::new());
+}
+
+#[test]
+fn over_the_target_the_longest_rested_chat_goes_first_for_idle_one_at_a_time_to_the_target() {
+    use crate::autohibernate::{AFTER, Clock, Read};
+    const MINUTE: std::time::Duration = std::time::Duration::from_secs(60);
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 1);
+    let first = a_claude_chat_resting(&held, dir.path(), "first");
+    let second = a_claude_chat_resting(&held, dir.path(), "second");
+    let third = a_claude_chat_resting(&held, dir.path(), "third");
+    nothing_on_screen(&held);
+    let start = clock.now();
+
+    // Read once: every chat rests from now, and exactly one deadline is armed.
+    assert_eq!(planes.gate().read(), Read::Armed(start + AFTER));
+    assert_eq!(planes.gate().armed(), Some(start + AFTER));
+    // The person types in two of them: the third has rested longest, then the first.
+    held.looked().typed(first, start + MINUTE);
+    held.looked().typed(second, start + 2 * MINUTE);
+    clock.advance(AFTER + 5 * MINUTE);
+
+    let plane = held.plane_id().clone();
+    assert_eq!(
+        planes.gate().read(),
+        Read::Hibernated((plane.clone(), third))
+    );
+    assert_eq!(planes.gate().read(), Read::Hibernated((plane, first)));
+    assert_eq!(
+        planes.gate().read(),
+        Read::Nothing,
+        "it stops at the target"
+    );
+
+    assert_eq!(
+        held.hibernated().of(third),
+        Some(crate::hibernation::By::Idle)
+    );
+    assert_eq!(
+        held.hibernated().of(first),
+        Some(crate::hibernation::By::Idle)
+    );
+    assert_eq!(held.hibernated().of(second), None);
+    assert_eq!(host.hibernated(), [third, first]);
+    assert_eq!(planes.gate().armed(), None);
+}
+
+#[test]
+fn a_chat_on_screen_is_never_hibernated_by_the_gate() {
+    use crate::autohibernate::Read;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 1);
+    let looked_at = a_claude_chat_resting(&held, dir.path(), "looked-at");
+    let other = a_claude_chat_resting(&held, dir.path(), "other");
+    held.chats().bring_to_front(Some(looked_at));
+    assert_eq!(held.chats().looked_at(), [looked_at]);
+
+    assert!(matches!(planes.gate().read(), Read::Armed(_)));
+    clock.advance(std::time::Duration::from_secs(24 * 60 * 60));
+    assert_eq!(
+        planes.gate().read(),
+        Read::Hibernated((held.plane_id().clone(), other))
+    );
+    assert_eq!(planes.gate().read(), Read::Nothing);
+    assert_eq!(held.hibernated().of(looked_at), None);
+}
+
+#[test]
+fn a_task_is_skipped_and_the_next_longest_rested_chat_goes() {
+    // Until SC-4j (#7639) the act refuses a task, so the gate never picks one: it is skipped,
+    // and the next goes.
+    use crate::autohibernate::{Clock, Read};
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 1);
+    let asker = a_claude_chat_resting(&held, dir.path(), "asker");
+    let task = a_claude_chat_resting(&held, dir.path(), "task");
+    held.chats().handed_from_for_tests(
+        task,
+        purlis_core::reopen::HandedFrom {
+            id: None,
+            chat: asker,
+            name: "asker".to_owned(),
+            workspace: purlis_core::active::Place::PlaneRoot,
+            report: purlis_core::reopen::Owed::Sent,
+            mode: purlis_core::dispatchdecision::Mode::Task,
+            depth: 1,
+            root: None,
+            above: None,
+            by_person: false,
+            long: false,
+            policy: None,
+        },
+    );
+    let plain = a_claude_chat_resting(&held, dir.path(), "plain");
+    nothing_on_screen(&held);
+    // The task has rested longest; the asker has a task open, and is not rested.
+    assert!(matches!(planes.gate().read(), Read::Armed(_)));
+    held.looked()
+        .typed(plain, clock.now() + std::time::Duration::from_secs(60));
+    clock.advance(std::time::Duration::from_secs(24 * 60 * 60));
+
+    assert_eq!(
+        planes.gate().read(),
+        Read::Hibernated((held.plane_id().clone(), plain))
+    );
+    assert_eq!(held.hibernated().of(task), None);
+    assert_eq!(held.hibernated().of(asker), None);
+}
+
+#[test]
+fn the_app_s_own_hibernation_moves_its_run_to_hibernated_for_idle() {
+    // The first producer of `Cause::Idle` (ADR 0076 §2): where the window writes the log.
+    let dir = tempfile::tempdir().expect("a directory");
+    let logs = dir.path().join("events");
+    let events = an_event_log(&logs);
+    let host = Pretend::default();
+    let (planes, _told) = planes_on(&host);
+    let planes = planes.recording_events(Some(events.clone()));
+    let plane = planes.open(&a_plane(&dir.path().join("plane")));
+    let held = planes.held(&plane).expect("it is held");
+    let session = held
+        .chats()
+        .start(&one_chat_on("/nowhere/a-harness").chats[0], STARTING)
+        .expect("the host starts it");
+    let (run, _) = a_chat_with_sub_agents(&events, plane.root(), session, &[]);
+    assert!(
+        held.hibernated()
+            .latch_and_intend(session, crate::hibernation::By::Idle)
+    );
+
+    host.program_ends(
+        session,
+        purlis_core::session::Exit::Signal("Terminated".to_owned()),
+    );
+
+    assert_eq!(
+        own_run_lines(&logs),
+        [
+            ("run.started".to_owned(), run.clone(), "start".to_owned()),
+            ("run.moved".to_owned(), run, "hibernated | idle".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn the_app_s_act_reads_the_looked_at_clock_and_the_count_again() {
+    use crate::hibernation::Refused;
+    use purlis_core::rested::NotRested;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (_planes, _logs, held) = gated_on(&host, dir.path(), &clock, 1);
+    let session = a_claude_chat_resting(&held, dir.path(), "one");
+    nothing_on_screen(&held);
+
+    assert_eq!(
+        held.hibernate_chat_idle(session, &|| true),
+        Err(Refused::Not(NotRested::LookedAt)),
+        "it has not rested its time"
+    );
+    clock.advance(crate::autohibernate::AFTER);
+    assert_eq!(
+        held.hibernate_chat_idle(session, &|| false),
+        Err(Refused::Said(crate::hibernation::AT_THE_TARGET.to_owned()))
+    );
+    assert_eq!(held.hibernated().of(session), None);
+    assert_eq!(held.hibernate_chat_idle(session, &|| true), Ok(()));
+    assert_eq!(
+        held.hibernated().of(session),
+        Some(crate::hibernation::By::Idle)
+    );
+}
+
+/// Chat `session`'s harness reports `events`, in its own conversation, to the board.
+fn it_reports(held: &Held, session: u32, events: &[purlis_core::state::Event]) {
+    let conversation = held
+        .board()
+        .conversation(session)
+        .expect("purlis chose its conversation");
+    for &event in events {
+        held.hooks()
+            .board()
+            .reported(&purlis_core::hookwire::Report {
+                chat: session,
+                event,
+                conversation: purlis_core::hookwire::Conversation::Named(conversation.clone()),
+                pid: Some(5000 + session),
+                agent: None,
+                detail: purlis_core::state::Detail::default(),
+            });
+    }
+}
+
+const GATE_MINUTE: std::time::Duration = std::time::Duration::from_secs(60);
+const GATE_HOUR: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+#[test]
+fn a_chat_refused_while_working_is_tried_again_once_its_turn_ends() {
+    use crate::autohibernate::Read;
+    use crate::hibernation::Refused;
+    use purlis_core::rested::NotRested;
+    use purlis_core::state::Event::{Stop, UserPromptSubmit};
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 0);
+    let session = a_claude_chat_resting(&held, dir.path(), "one");
+    nothing_on_screen(&held);
+    assert!(matches!(planes.gate().read(), Read::Armed(_)));
+    clock.advance(crate::autohibernate::AFTER + GATE_MINUTE);
+    let chat = (held.plane_id().clone(), session);
+
+    // A turn began as the act read it again: refused for its facts, which are read again.
+    it_reports(&held, session, &[UserPromptSubmit]);
+    assert_eq!(
+        planes
+            .gate()
+            .refused(chat.clone(), 1, &Refused::Not(NotRested::Working)),
+        Read::Refused(chat.clone())
+    );
+    assert_eq!(planes.gate().read(), Read::Nothing, "working");
+    it_reports(&held, session, &[Stop]);
+    planes.gate().pass();
+
+    assert_eq!(host.hibernated(), [session], "tried again at rest");
+}
+
+#[test]
+fn a_chat_refused_for_a_look_is_not_kept_refused() {
+    use crate::autohibernate::Read;
+    use crate::hibernation::Refused;
+    use purlis_core::rested::NotRested;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 0);
+    let session = a_claude_chat_resting(&held, dir.path(), "one");
+    nothing_on_screen(&held);
+    assert!(matches!(planes.gate().read(), Read::Armed(_)));
+    clock.advance(crate::autohibernate::AFTER + GATE_MINUTE);
+    let chat = (held.plane_id().clone(), session);
+    assert_eq!(
+        planes
+            .gate()
+            .refused(chat.clone(), 1, &Refused::Not(NotRested::LookedAt)),
+        Read::Refused(chat.clone())
+    );
+    assert_eq!(
+        planes.gate().read(),
+        Read::Nothing,
+        "passed over in this pass"
+    );
+
+    planes.gate().pass();
+
+    assert_eq!(
+        host.hibernated(),
+        [session],
+        "the clock delays a look, not a memo"
+    );
+}
+
+#[test]
+fn a_chat_rested_longest_under_the_target_goes_first_once_one_more_opens() {
+    use crate::autohibernate::Clock as _;
+    use crate::autohibernate::Read;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 2);
+    let first = a_claude_chat_resting(&held, dir.path(), "first");
+    let second = a_claude_chat_resting(&held, dir.path(), "second");
+    nothing_on_screen(&held);
+    // Under the target: nothing, but both are on the clock from now.
+    assert_eq!(planes.gate().read(), Read::Nothing);
+    held.looked().typed(second, clock.now() + GATE_MINUTE);
+    clock.advance(5 * GATE_HOUR);
+
+    let third = a_claude_chat_resting(&held, dir.path(), "third");
+    nothing_on_screen(&held);
+
+    assert_eq!(
+        planes.gate().read(),
+        Read::Hibernated((held.plane_id().clone(), first)),
+        "not one never shown whose clock started now"
+    );
+    assert_eq!(held.hibernated().of(third), None);
+}
+
+#[test]
+fn a_chat_the_host_will_not_hibernate_is_passed_over_and_the_next_goes() {
+    use crate::autohibernate::Clock as _;
+    use crate::autohibernate::Read;
+    use purlis_core::state::Event::{Stop, UserPromptSubmit};
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 0);
+    let stuck = a_claude_chat_resting(&held, dir.path(), "stuck");
+    let next = a_claude_chat_resting(&held, dir.path(), "next");
+    nothing_on_screen(&held);
+    assert!(matches!(planes.gate().read(), Read::Armed(_)));
+    held.looked().typed(next, clock.now() + GATE_MINUTE);
+    clock.advance(GATE_HOUR);
+    host.hibernates_not(stuck, Some("the host is busy"));
+
+    planes.gate().pass();
+    assert_eq!(host.hibernated(), [next], "the one behind it goes");
+
+    // Not tried again on the next poke, a keystroke, while its facts read the same.
+    host.hibernates_not(stuck, None);
+    planes.gate().pass();
+    assert_eq!(host.hibernated(), [next]);
+
+    // A turn begins and ends: a fact changed, and it is tried once at rest again.
+    it_reports(&held, stuck, &[UserPromptSubmit]);
+    assert_eq!(planes.gate().read(), Read::Nothing, "working");
+    it_reports(&held, stuck, &[Stop]);
+    planes.gate().pass();
+    assert_eq!(host.hibernated(), [next, stuck]);
+}
+
+#[test]
+fn a_chat_whose_tasks_have_all_finished_may_go() {
+    use crate::autohibernate::Read;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 0);
+    let asker = a_claude_chat_resting(&held, dir.path(), "asker");
+    let task = a_claude_chat_resting(&held, dir.path(), "task");
+    held.chats().handed_from_for_tests(
+        task,
+        purlis_core::reopen::HandedFrom {
+            id: None,
+            chat: asker,
+            name: "asker".to_owned(),
+            workspace: purlis_core::active::Place::PlaneRoot,
+            report: purlis_core::reopen::Owed::Sent,
+            mode: purlis_core::dispatchdecision::Mode::Task,
+            depth: 1,
+            root: None,
+            above: None,
+            by_person: false,
+            long: false,
+            policy: None,
+        },
+    );
+    nothing_on_screen(&held);
+    assert_eq!(
+        planes.gate().read(),
+        Read::Nothing,
+        "a task open: neither may go, so nothing is armed"
+    );
+    clock.advance(GATE_HOUR);
+    assert_eq!(planes.gate().read(), Read::Nothing);
+
+    held.close_chat(task).expect("the task closes");
+    nothing_on_screen(&held);
+
+    assert_eq!(
+        planes.gate().read(),
+        Read::Hibernated((held.plane_id().clone(), asker))
+    );
+}
+
+#[test]
+fn a_woken_chat_rests_the_full_time_again() {
+    use crate::autohibernate::Clock as _;
+    use crate::autohibernate::{AFTER, Read};
+    use purlis_core::state::Event::{SessionStart, Stop, UserPromptSubmit};
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 0);
+    let session = a_claude_chat_resting(&held, dir.path(), "one");
+    nothing_on_screen(&held);
+    assert!(matches!(planes.gate().read(), Read::Armed(_)));
+    clock.advance(GATE_HOUR);
+    assert_eq!(
+        planes.gate().read(),
+        Read::Hibernated((held.plane_id().clone(), session))
+    );
+
+    let woken = held.wake_chat(session, STARTING).expect("it wakes");
+    it_reports(&held, woken, &[SessionStart, UserPromptSubmit, Stop]);
+    nothing_on_screen(&held);
+    let now = clock.now();
+
+    assert_eq!(planes.gate().read(), Read::Armed(now + AFTER));
+}
+
+#[test]
+fn the_hot_count_is_every_project_s() {
+    use crate::autohibernate::Clock as _;
+    use crate::autohibernate::Read;
+    let dir = tempfile::tempdir().expect("a directory");
+    let other = tempfile::tempdir().expect("another directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 1);
+    let root = a_plane(&other.path().join("plane"));
+    crate::sandboxing::no_sandbox_here_for_tests(&root);
+    let second = planes.held(&planes.open(&root)).expect("it is held");
+    let here = a_claude_chat_resting(&held, dir.path(), "here");
+    let there = a_claude_chat_resting(&second, other.path(), "there");
+    nothing_on_screen(&held);
+    nothing_on_screen(&second);
+    assert_eq!(crate::diagnostics::hot_in(&held), 1);
+    assert_eq!(crate::diagnostics::hot_in(&second), 1);
+
+    assert!(
+        matches!(planes.gate().read(), Read::Armed(_)),
+        "two over one"
+    );
+    second.looked().typed(there, clock.now() + GATE_MINUTE);
+    clock.advance(GATE_HOUR);
+
+    assert_eq!(
+        planes.gate().read(),
+        Read::Hibernated((held.plane_id().clone(), here))
+    );
+    assert_eq!(planes.gate().read(), Read::Nothing, "at the target");
+    assert_eq!(
+        crate::diagnostics::hot_in(&held),
+        0,
+        "a hibernated chat is not hot"
+    );
+}
+
+#[test]
+fn the_gate_s_thread_reads_on_a_poke_and_at_nothing_else() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 0);
+    let session = a_claude_chat_resting(&held, dir.path(), "one");
+    nothing_on_screen(&held);
+    let _thread = planes.gate().start().expect("its thread starts");
+    // Its first pass, on the pokes the opening made, arms the deadline.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while planes.gate().armed().is_none() {
+        assert!(std::time::Instant::now() < deadline, "it never read");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    // Its deadline taken away: a wait the held clock has passed, woken spuriously, would read.
+    planes.gate().disarm();
+    clock.advance(GATE_HOUR);
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    assert_eq!(host.hibernated(), Vec::<u32>::new(), "nothing poked it");
+
+    held.poke_the_gate();
+
+    while host.hibernated().is_empty() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the poke was not read"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(host.hibernated(), [session]);
+}
+
+/// Over a target of one, `stuck` and `other` rested an hour, `stuck` the longer: the host will
+/// not hibernate `stuck`, so `other` goes and the device is at its target.
+fn one_refused_and_the_device_at_its_target(
+    host: &Pretend,
+    planes: &Planes,
+    held: &Held,
+    dir: &Path,
+    clock: &crate::autohibernate::HeldClock,
+) -> u32 {
+    use crate::autohibernate::Clock as _;
+    use crate::autohibernate::Read;
+    let stuck = a_claude_chat_resting(held, dir, "stuck");
+    let other = a_claude_chat_resting(held, dir, "other");
+    nothing_on_screen(held);
+    assert!(matches!(planes.gate().read(), Read::Armed(_)));
+    held.looked().typed(other, clock.now() + GATE_MINUTE);
+    clock.advance(GATE_HOUR);
+    host.hibernates_not(stuck, Some("the host is busy"));
+    planes.gate().pass();
+    assert_eq!(host.hibernated(), [other]);
+    assert_eq!(planes.gate().read(), Read::Nothing, "at the target");
+    host.hibernates_not(stuck, None);
+    stuck
+}
+
+#[test]
+fn a_refusal_lets_go_once_the_device_is_at_its_target() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 1);
+    let stuck = one_refused_and_the_device_at_its_target(&host, &planes, &held, dir.path(), &clock);
+    let other = host.hibernated()[0];
+
+    // Over it again, with no turn taken: the refused chat is tried anew.
+    a_claude_chat_resting(&held, dir.path(), "third");
+    nothing_on_screen(&held);
+    planes.gate().pass();
+
+    assert_eq!(host.hibernated(), [other, stuck]);
+}
+
+#[test]
+fn a_chat_refused_that_takes_a_turn_at_the_target_is_tried_again_over_it() {
+    use purlis_core::state::Event::{Stop, UserPromptSubmit};
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 1);
+    let stuck = one_refused_and_the_device_at_its_target(&host, &planes, &held, dir.path(), &clock);
+    let other = host.hibernated()[0];
+    it_reports(&held, stuck, &[UserPromptSubmit, Stop]);
+
+    a_claude_chat_resting(&held, dir.path(), "third");
+    nothing_on_screen(&held);
+    planes.gate().pass();
+
+    assert_eq!(host.hibernated(), [other, stuck]);
+}
+
+#[test]
+fn a_refused_chat_that_took_a_turn_no_read_saw_is_tried_again() {
+    use crate::autohibernate::Read;
+    use purlis_core::state::Event::{Stop, UserPromptSubmit};
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 0);
+    let stuck = a_claude_chat_resting(&held, dir.path(), "stuck");
+    nothing_on_screen(&held);
+    assert!(matches!(planes.gate().read(), Read::Armed(_)));
+    clock.advance(GATE_HOUR);
+    host.hibernates_not(stuck, Some("the host is busy"));
+    planes.gate().pass();
+    host.hibernates_not(stuck, None);
+    planes.gate().pass();
+    assert_eq!(host.hibernated(), Vec::<u32>::new(), "kept refused");
+
+    // A whole turn between two reads, its begin and end read as one poke: its facts read as
+    // they did, but it has begun one more turn.
+    it_reports(&held, stuck, &[UserPromptSubmit, Stop]);
+    planes.gate().pass();
+
+    assert_eq!(host.hibernated(), [stuck]);
+}
+
+#[test]
+fn a_refusal_the_act_could_not_do_lapses_after_the_rest_time() {
+    use crate::autohibernate::Clock as _;
+    use crate::autohibernate::{AFTER, Read};
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 0);
+    let stuck = a_claude_chat_resting(&held, dir.path(), "stuck");
+    nothing_on_screen(&held);
+    assert!(matches!(planes.gate().read(), Read::Armed(_)));
+    clock.advance(GATE_HOUR);
+    host.hibernates_not(stuck, Some("the host is busy"));
+    let refused_at = clock.now();
+    planes.gate().pass();
+    assert_eq!(
+        planes.gate().armed(),
+        Some(refused_at + AFTER),
+        "its lapse is the one deadline"
+    );
+    host.hibernates_not(stuck, None);
+
+    clock.advance(AFTER - GATE_MINUTE);
+    planes.gate().pass();
+    assert_eq!(host.hibernated(), Vec::<u32>::new(), "not lapsed yet");
+    clock.advance(GATE_MINUTE);
+    planes.gate().pass();
+
+    assert_eq!(host.hibernated(), [stuck]);
+}
+
+#[test]
+fn a_runner_s_and_a_pool_s_chat_are_open_and_not_hot() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (_planes, _logs, held) = gated_on(&host, dir.path(), &clock, 99);
+    a_claude_chat_resting(&held, dir.path(), "here");
+    let pooled = a_claude_chat_resting(&held, dir.path(), "pooled");
+    let remote = a_claude_chat_resting(&held, dir.path(), "remote");
+    host.runs_on_pool(pooled, "builders");
+    held.chats().on_a_runner_for_tests(remote, "build-box");
+
+    assert_eq!(crate::diagnostics::counted_in(&held), (3, 1));
+    assert_eq!(crate::diagnostics::hot_in(&held), 1);
 }
 
 // ---- SC-4j (#7639): typing, or a parent's tell, wakes a hibernated chat ----------------------

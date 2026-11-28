@@ -15,6 +15,7 @@ fn marked(text: &str, target: &str) -> Candidate {
         kind: Kind::Osc8,
         text: text.to_owned(),
         target: Some(target.to_owned()),
+        joined: false,
     }
 }
 
@@ -286,6 +287,7 @@ fn a_mark_with_no_target_or_an_unreadable_one_is_refused() {
         kind: Kind::Osc8,
         text: "Click here".into(),
         target: None,
+        joined: false,
     };
     refused(links.open(&none, &here(), &Asks::default(), None));
     for target in ["", "not an address", "https://pur lis.dev/", "https://"] {

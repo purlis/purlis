@@ -277,9 +277,15 @@ pub const MOST_SHOWN: usize = 200;
 /// dropped), no address's user or password (`ssh://me:pw@host` is `ssh://…@host`), and at most
 /// [`MOST_SHOWN`] characters, then `…`.
 pub fn shown_safely(text: &str) -> String {
+    shown_safely_within(text, MOST_SHOWN)
+}
+
+/// [`shown_safely`], at most `most` characters, then `…`: for a part of a sentence the window
+/// must never cut, such as a machine's name, which may be longer than [`MOST_SHOWN`] (#7873).
+pub fn shown_safely_within(text: &str, most: usize) -> String {
     // Read no further than a cap can use: a megabyte of text costs no more than its start.
-    let start: String = text.chars().take(MOST_SHOWN * 8).collect();
-    let cut = text.chars().nth(MOST_SHOWN * 8).is_some();
+    let start: String = text.chars().take(most * 8).collect();
+    let cut = text.chars().nth(most * 8).is_some();
     let one_line: String = start
         .chars()
         // Every blank parts two words, as a space does.
@@ -309,8 +315,8 @@ pub fn shown_safely(text: &str) -> String {
         }
         out.push_str(word);
     }
-    if out.chars().count() > MOST_SHOWN {
-        let mut capped: String = out.chars().take(MOST_SHOWN).collect();
+    if out.chars().count() > most {
+        let mut capped: String = out.chars().take(most).collect();
         capped.push('…');
         return capped;
     }

@@ -60,7 +60,7 @@ pub enum PrerequisiteState {
 }
 
 /// Why the policy prerequisite is open.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum PolicyReason {
     /// An acceptance was kept on this machine, and what is here now is not it: the project's
@@ -87,6 +87,9 @@ pub struct PolicyPrerequisite {
     /// Whether the acceptance broke because purlis replaced its seal key on this machine
     /// (#7714), never because something edited it.
     pub after_new_key: bool,
+    /// Whether nothing was ever kept on this machine for the project: under Waiting, the chats
+    /// keep the shipped `watch` until the press, and the window says so.
+    pub nothing_kept: bool,
     /// The project's policy as it stands, from the same read: the waiting rows among it.
     pub policy: PolicyState,
 }
@@ -120,6 +123,7 @@ impl Prerequisite {
                 digest: policy.digest.clone(),
                 needs_new_key: policy.needs_new_key,
                 after_new_key: policy.after_new_key,
+                nothing_kept: policy.nothing_kept,
                 policy: crate::policypress::state_of_standing(policy.standing.clone()),
             }),
         }
@@ -152,6 +156,119 @@ pub async fn project_prerequisites(
         Ok(Prerequisites::of(plane, &kept.current(&root)))
     })
     .await
+}
+
+/// **What the window showed when the person gave the answer that grants nothing**: the entry as
+/// it was drawn, so the answer is kept against what the person saw, never against what is there
+/// by the time it lands.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ShownPrerequisite {
+    /// The policy prerequisite, with the digest and the reasons it was shown with.
+    Policy {
+        digest: String,
+        reasons: Vec<PolicyReason>,
+    },
+}
+
+impl ShownPrerequisite {
+    fn into_core(self) -> core::Shown {
+        match self {
+            Self::Policy { digest, reasons } => core::Shown::Policy {
+                digest,
+                reasons: reasons
+                    .into_iter()
+                    .map(|reason| match reason {
+                        PolicyReason::Broken => core::Reason::Broken,
+                        PolicyReason::Waiting => core::Reason::Waiting,
+                    })
+                    .collect(),
+            },
+        }
+    }
+}
+
+/// **The answer that grants nothing**: "Work in strict mode" under Broken, "Keep my current
+/// rules" under Waiting (ADR 0130 §6). Kept in the app's memory for this run, against what was
+/// `shown`, and never written anywhere; the entry then reads deferred, a start the person made
+/// in the project and held on it starts, under the policy in force, and every window is told the
+/// new list. It grants nothing, so a linked page may give it too; Accept stays the window's.
+#[tauri::command]
+#[specta::specta]
+pub async fn defer_project_prerequisite(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    shown: ShownPrerequisite,
+) -> Result<Prerequisites, String> {
+    let held = planes.held(&plane)?;
+    let (root, kept) = (held.root().to_path_buf(), held.prerequisites());
+    crate::off_the_window(READING, move || Ok(deferred(plane, &root, &kept, shown))).await
+}
+
+/// [`defer_project_prerequisite`] on the project `plane` at `root`, whose list `kept` holds.
+fn deferred(
+    plane: PlaneId,
+    root: &Path,
+    kept: &core::Kept,
+    shown: ShownPrerequisite,
+) -> Prerequisites {
+    Prerequisites::of(plane, &kept.defer(root, shown.into_core()))
+}
+
+/// How a start [`hold_start`] let go got past the hold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Passed {
+    /// At once: nothing was open, or the start is not one the person makes.
+    AtOnce,
+    /// Once the person answered what was open: what the start was asked against (a chat's
+    /// pause, say) may have moved meanwhile (#7950).
+    AfterTheirAnswer,
+}
+
+/// **Holds a start the person makes (`made`) in the project `held` holds, while a prerequisite
+/// is open** (ADR 0130 §5), until they answer in the window. Every other start passes at once,
+/// under the policy in force: the core judges which ([`core::Starter::of`]). Made before the
+/// start is readied, so a start an Accept released is readied under what was accepted. The
+/// person's Cancel on a start in the project (`cancel`, [`crate::hostedsessions`]) ends the
+/// wait, and the start is refused, saying what is still open. Says whether it waited.
+pub(crate) fn hold_start(
+    held: &crate::planes::Held,
+    made: &purlis_core::sandbox::Made,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<Passed, String> {
+    use std::sync::atomic::Ordering;
+    let root = held.root();
+    match held.prerequisites().hold(
+        root,
+        core::Starter::of(made),
+        None,
+        &|| cancel.load(Ordering::SeqCst),
+        |why| {
+            tracing::info!(
+                "purlis: a chat started in {} waits for the person: {why}",
+                root.display()
+            );
+        },
+    ) {
+        core::Held::AtOnce => Ok(Passed::AtOnce),
+        core::Held::Released => Ok(Passed::AfterTheirAnswer),
+        core::Held::Stopped { why } | core::Held::RanOut { why } => {
+            Err(format!("purlis did not start the chat: {why}."))
+        }
+    }
+}
+
+/// [`hold_start`], ended by the person's Cancel on any start in the project: for a start of the
+/// window's that has no Cancel of its own.
+pub(crate) fn hold_a_start(
+    held: &crate::planes::Held,
+    made: &purlis_core::sandbox::Made,
+) -> Result<Passed, String> {
+    hold_start(
+        held,
+        made,
+        &crate::hostedsessions::a_cancellable_start(held.root()),
+    )
 }
 
 /// What the commands here name their work, off the window's thread.

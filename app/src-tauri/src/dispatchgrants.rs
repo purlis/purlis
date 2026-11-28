@@ -541,7 +541,11 @@ impl Store {
     /// put a limit before a question to the person. Reading it grants nothing; the entry
     /// points below are still what a dispatch starts by.
     pub fn in_force_for(&self, root: &Path, asking: &Asking, works_in: Option<&str>) -> InForce {
-        InForce::read(root, self.chat_pairs(asking.id.as_deref(), works_in)).for_task_in(works_in)
+        // The chat's own grants are read after the nevers, as every other grant is (#7952's
+        // round 2): Seal these nevers clears them before the nevers read.
+        let mut read = InForce::read(root, Vec::new());
+        read.chat = self.chat_pairs(asking.id.as_deref(), works_in);
+        read.for_task_in(works_in)
     }
 
     /// [`Store::request_in`], for a task at the project's root: what the tests of everything
@@ -751,6 +755,53 @@ impl Store {
     /// ([`crate::handoff::answered`] calls this on every arm).
     pub fn end_once(&self, id: u32) {
         lock(&self.once).retain(|one| one.id != id);
+    }
+
+    /// **Every grant made for one chat of this project, and every one start the person allowed,
+    /// cleared** (#7852): Seal these nevers' share of clearing the project's dispatch grants on
+    /// this machine, beside those its file keeps
+    /// ([`purlis_core::sandbox::local::clear_dispatch_grants`]). What a chat's tab kept blocked
+    /// stays, as it only refuses, and so do the dispatches waiting on the person, who are asked.
+    pub fn clear_grants(&self) {
+        lock(&self.chat).clear();
+        lock(&self.once).clear();
+    }
+
+    /// A grant made for the chat `chat` of `asking` to `target`, and one start allowed for it:
+    /// what a test of a clear begins with.
+    #[cfg(test)]
+    pub(crate) fn a_grant_for_one_chat_for_this_test(
+        &self,
+        chat: &str,
+        asking: &str,
+        target: &str,
+    ) {
+        let pair = ChatPair {
+            asking: Some(asking.to_owned()),
+            target: target.to_owned(),
+        };
+        lock(&self.chat)
+            .entry(chat.to_owned())
+            .or_default()
+            .push(ChatMade {
+                pair: pair.clone(),
+                works_in: None,
+                at: 0,
+                chat: chat.to_owned(),
+            });
+        lock(&self.once).push(Once {
+            id: 1,
+            whose: Whose::Id(chat.to_owned()),
+            pair,
+            works_in: None,
+            brief: dispatchgrant::shown_brief("a brief"),
+        });
+    }
+
+    /// Whether any grant made for one chat, or one start allowed, is held.
+    #[cfg(test)]
+    pub(crate) fn holds_a_grant_for_this_test(&self) -> bool {
+        lock(&self.chat).values().any(|made| !made.is_empty()) || !lock(&self.once).is_empty()
     }
 
     /// **The person took something back for `asking` to `target`** (`None`: every target, for

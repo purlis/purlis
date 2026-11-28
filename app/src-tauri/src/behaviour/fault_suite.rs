@@ -123,18 +123,18 @@ fn engines_on(runner: &OnTheRunner) -> usize {
 }
 
 /// What a view of `program` was told of its link, in order, and how many frames it drew.
-struct Viewed {
+pub(crate) struct Viewed {
     told: Arc<Mutex<Vec<(Instant, Reconnection)>>>,
     frames: Arc<Mutex<Vec<Instant>>>,
     /// When it was opened.
-    since: Instant,
+    pub(crate) since: Instant,
     /// Whether it was told it ended for good: an empty frame.
     ended: Arc<std::sync::atomic::AtomicBool>,
     watching: crate::browsers::BrowserWatching,
 }
 
 impl Viewed {
-    fn told_since(&self, since: Instant) -> Vec<Reconnection> {
+    pub(crate) fn told_since(&self, since: Instant) -> Vec<Reconnection> {
         self.told
             .lock()
             .expect("what was told")
@@ -148,17 +148,37 @@ impl Viewed {
         self.ended.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    fn drew_since(&self, since: Instant) -> bool {
-        self.frames
+    /// Whether it drew a frame at all. Its first can come before `watch` answers, while the
+    /// window asks the host who drives it, so no moment taken after is the one to count from.
+    pub(crate) fn drew(&self) -> bool {
+        !self.frames.lock().expect("the frames").is_empty()
+    }
+
+    /// Whether it drew a frame since it was last told Reconnected (#7955). A stream drawn
+    /// again tells Reconnected with its first frame, before the frame is handed over, and a page
+    /// that does not change draws nothing after it: counted from when the view was told, not
+    /// from when a caller noticed, that frame is not missed.
+    pub(crate) fn drew_again(&self) -> bool {
+        let back = self
+            .told
             .lock()
-            .expect("the frames")
+            .expect("what was told")
             .iter()
-            .any(|at| *at >= since)
+            .rev()
+            .find(|(_, said)| *said == Reconnection::Reconnected)
+            .map(|(at, _)| *at);
+        back.is_some_and(|back| {
+            self.frames
+                .lock()
+                .expect("the frames")
+                .iter()
+                .any(|at| *at >= back)
+        })
     }
 }
 
 /// A focused view of `program`, as the window draws one.
-fn a_view_of(browsers: &WindowBrowsers, program: &str) -> Viewed {
+pub(crate) fn a_view_of(browsers: &WindowBrowsers, program: &str) -> Viewed {
     let told: Arc<Mutex<Vec<(Instant, Reconnection)>>> = Arc::default();
     let frames: Arc<Mutex<Vec<Instant>>> = Arc::default();
     let ended: Arc<std::sync::atomic::AtomicBool> = Arc::default();
@@ -196,9 +216,8 @@ fn a_view_of(browsers: &WindowBrowsers, program: &str) -> Viewed {
 /// **Case 7: a pool forgotten during a chat ends it as Pool forgotten, and Forget lists what is
 /// left on the machine** (#7187, CONTEXT.md *Pool forgotten*): the chat ends within the quiet
 /// limit, as Pool forgotten and not with its runner, and Forget's answer names the runner's
-/// container and home volume that stay on the pool's machine, and the machine. Asserted on the
-/// core's words before the window cuts them: the window's are cut at 200 characters, before the
-/// machine's name (#7873).
+/// container and home volume that stay on the pool's machine, and the machine, as the window
+/// shows it.
 mod a_pool_forgotten_during_a_chat_ends_it_as_pool_forgotten_and_lists_what_is_left_on_the_machine {
     use super::*;
 
@@ -219,19 +238,15 @@ mod a_pool_forgotten_during_a_chat_ends_it_as_pool_forgotten_and_lists_what_is_l
             .expect("the pool is on another machine");
 
         let began = Instant::now();
-        let forgotten = crate::dockerpools::forget_on(
+        let left = crate::dockerpools::forget_on(
             &machine.config,
             &pool,
             &[],
             Err(&"no browser in this case".to_owned()),
             target.host.as_deref(),
         )
-        .expect("Forget works on a pool in any state");
-        assert!(
-            forgotten.said.is_some(),
-            "the window says what stays on the machine"
-        );
-        let left = forgotten.left;
+        .expect("Forget works on a pool in any state")
+        .expect("the window says what stays on the machine");
 
         let forgot = began.elapsed();
         assert!(forgot <= QUIET_LIMIT, "Forget took {forgot:?}");
@@ -249,6 +264,15 @@ mod a_pool_forgotten_during_a_chat_ends_it_as_pool_forgotten_and_lists_what_is_l
         for named in [made.container.as_str(), volume.as_str(), host.as_str()] {
             assert!(left.contains(named), "Forget's list names {named}: {left}");
         }
+        // The commands that remove what stays are whole in what the window shows (#7873).
+        let commands = format!(
+            "docker container rm --force {} && docker volume rm --force {volume}",
+            made.container.as_str()
+        );
+        assert!(
+            left.contains(&commands),
+            "Forget's list says {commands}: {left}"
+        );
     }
 }
 
@@ -266,10 +290,7 @@ mod b1_a_browsers_link_drops_and_returns_the_view_says_why_and_the_page_comes_ba
         let (browsers, _said) = the_windows_browsers(&target);
         let program = a_browser_on_the_runner(&target, &browsers);
         let view = a_view_of(&browsers, &program);
-        let began = Instant::now();
-        until(START_LIMIT, "the browser draws its page", || {
-            view.drew_since(began)
-        });
+        until(START_LIMIT, "the browser draws its page", || view.drew());
 
         let dropped = the_link_drops(&target);
         until(
@@ -284,9 +305,10 @@ mod b1_a_browsers_link_drops_and_returns_the_view_says_why_and_the_page_comes_ba
             view.told_since(dropped)
                 .ends_with(&[Reconnection::Reconnected])
         });
-        let back = Instant::now();
+        // Counted from when the view was told it is back: the frame that told it may be the
+        // only one (#7955).
         until(START_LIMIT, "the same browser draws again", || {
-            view.drew_since(back)
+            view.drew_again()
         });
         assert_eq!(
             browsers.pool_of(&program).as_deref(),
@@ -370,8 +392,7 @@ mod b3_a_pool_forgotten_with_a_browser_open_ends_it_as_pool_forgotten {
             Ok(&browsers),
             target.host.as_deref(),
         )
-        .expect("Forget works on a pool in any state")
-        .said;
+        .expect("Forget works on a pool in any state");
 
         let one_left = crate::browsers::left_on_the_machine(1).expect("said of one");
         assert!(

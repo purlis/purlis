@@ -392,16 +392,6 @@ fn two_clones_of_one_project_in_one_window_both_start_chats() {
 }
 
 #[test]
-fn chats_run_in_the_host_unless_the_switch_is_set_to_zero() {
-    // #2004: the session host is the default, and `0` is the way back to the window's own
-    // process until #2005 deletes it.
-    assert!(!switched_on(Some("0")));
-    for on in [None, Some(""), Some("1"), Some("true"), Some("no")] {
-        assert!(switched_on(on), "{on:?}");
-    }
-}
-
-#[test]
 fn a_chat_its_profile_hands_credentials_is_never_started_in_the_host() {
     // #2036: what a profile hands its chat is set on a program the window starts, and never
     // goes over the link.
@@ -3115,6 +3105,25 @@ fn on_a_runner() -> (
     let (dir, root) = a_project();
     let sessions = HostedSessions::on_a_runner(connection, &root);
     (sessions, confines, runs, dir, runtime)
+}
+
+/// **A chat in the window's own host can be hibernated; one on a runner cannot** (#7877): a
+/// runner refuses `hibernate` from the `remote-link` link it is reached by, which lacks
+/// `Power::Reattach`, so its chat is never offered the act.
+#[test]
+fn a_chat_here_can_be_hibernated_and_one_on_a_runner_cannot() {
+    let here = hosted();
+    let id = here
+        .sessions
+        .open(None, &a_shell("read line"), &|_| {})
+        .expect("it starts here");
+    assert!(here.sessions.can_hibernate(id));
+
+    let (sessions, _confines, _runs, _dir, _runtime) = on_a_runner();
+    let id = sessions
+        .open(None, &a_shell("read line"), &|_| {})
+        .expect("it starts on the runner");
+    assert!(!sessions.can_hibernate(id));
 }
 
 /// **A harness chat on a runner is started there by its names, and its proxy's asks reach the

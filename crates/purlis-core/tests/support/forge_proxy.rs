@@ -159,7 +159,7 @@ impl Scene {
         objects: impl ObjectRepo + 'static,
         tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
     ) -> Self {
-        Self::build_tuned(TokenKind::Oauth, objects, false, &[], tune)
+        Self::build_tuned(TokenKind::Oauth, objects, false, &[], &[], tune)
     }
 
     /// As [`Scene::tuned`], with chat-a's github.com repo (`Acme/App`) holding a tip of its own,
@@ -169,11 +169,33 @@ impl Scene {
         own: &[(&str, &str)],
         tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
     ) -> Self {
-        Self::build_tuned(TokenKind::Oauth, objects, false, own, tune)
+        Self::build_tuned(TokenKind::Oauth, objects, false, own, &[], tune)
+    }
+
+    /// As [`Scene::tuned_owning`], with chat-a's github.com repo (`Acme/App`) known by the numeric
+    /// id `id`, as the forge's own read records it.
+    pub fn owning_with_github_id(
+        objects: impl ObjectRepo + 'static,
+        own: &[(&str, &str)],
+        id: u64,
+    ) -> Self {
+        Self::with_github_ids(objects, own, false, &[("github.com", id)], |proxy| proxy)
+    }
+
+    /// As [`Scene::tuned_owning`], with each GitHub repo of chat-a's on a host of `ids` known by
+    /// that numeric id, as the forge's own read records it, and with the GHES repo where `ghes`.
+    pub fn with_github_ids(
+        objects: impl ObjectRepo + 'static,
+        own: &[(&str, &str)],
+        ghes: bool,
+        ids: &[(&str, u64)],
+        tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
+    ) -> Self {
+        Self::build_tuned(TokenKind::Oauth, objects, ghes, own, ids, tune)
     }
 
     fn build(token_kind: TokenKind, objects: Objects, ghes: bool) -> Self {
-        Self::build_tuned(token_kind, objects, ghes, &[], |proxy| proxy)
+        Self::build_tuned(token_kind, objects, ghes, &[], &[], |proxy| proxy)
     }
 
     fn build_tuned(
@@ -181,6 +203,7 @@ impl Scene {
         objects: impl ObjectRepo + 'static,
         ghes: bool,
         own: &[(&str, &str)],
+        github_ids: &[(&str, u64)],
         tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
     ) -> Self {
         let asked = Arc::new(AtomicUsize::new(0));
@@ -194,12 +217,20 @@ impl Scene {
         let proxy = tune(proxy);
         let a = ChatId::new("chat-a");
         let b = ChatId::new("chat-b");
+        let with_id =
+            |repo: AllowedRepo, host: &str| match github_ids.iter().find(|(h, _)| *h == host) {
+                Some((_, id)) => {
+                    repo.with_forge_id(purlis_core::forge::proxy::ForgeRepoId::for_a_test(*id))
+                }
+                None => repo,
+            };
+        let app = AllowedRepo::new(Kind::GitHub, "github.com", 443, "Acme/App", "main")
+            .unwrap()
+            .with_node_id("R_acme_app")
+            .with_own_branches(own)
+            .with_protected_branches(&["release"]);
         let mut a_repos = vec![
-            AllowedRepo::new(Kind::GitHub, "github.com", 443, "Acme/App", "main")
-                .unwrap()
-                .with_node_id("R_acme_app")
-                .with_own_branches(own)
-                .with_protected_branches(&["release"]),
+            with_id(app, "github.com"),
             AllowedRepo::new(Kind::GitLab, "gitlab.com", 443, "group/proj", "main")
                 .unwrap()
                 .with_forge_id(purlis_core::forge::proxy::ForgeRepoId::for_a_test(42))
@@ -207,7 +238,10 @@ impl Scene {
             AllowedRepo::new(Kind::GitLab, GITLAB_SELF, 8443, "grp/sub/proj", "main").unwrap(),
         ];
         if ghes {
-            a_repos.push(AllowedRepo::new(Kind::GitHub, GHES, 443, "acme/app", "trunk").unwrap());
+            a_repos.push(with_id(
+                AllowedRepo::new(Kind::GitHub, GHES, 443, "acme/app", "trunk").unwrap(),
+                GHES,
+            ));
         }
         let advertised: Vec<(String, String)> = a_repos
             .iter()

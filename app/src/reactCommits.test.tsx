@@ -1,10 +1,10 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState } from "react";
+import { Profiler, memo, useState } from "react";
 import { act, render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { countReactsCommits, counts } from "./reactCommits.testkit";
+import { countReactsCommits, counts, drawnIn, renderedIn } from "./reactCommits.testkit";
 
 countReactsCommits();
 
@@ -32,5 +32,48 @@ describe("the commit counter the cost tests hold their budgets with (#5043)", ()
 
     unmount();
     expect(counts.unmounted).toBe(1);
+  });
+});
+
+/** Held, so it is drawn again only when its props move. */
+const Part = memo(function Part({ n }: { n: number }) {
+  return <span>{n}</span>;
+});
+
+/** Two of one component, each in a measured region of its own, and one outside both. */
+function TwoRegions() {
+  const [n, setN] = useState(0);
+  return (
+    <>
+      <button type="button" onClick={() => setN(n + 1)}>
+        more
+      </button>
+      <Profiler id="left" onRender={() => {}}>
+        <Part n={n} />
+      </Profiler>
+      <Profiler id="right" onRender={() => {}}>
+        <Profiler id="inner" onRender={() => {}}>
+          <Part n={0} />
+        </Profiler>
+      </Profiler>
+      <Part n={n} />
+    </>
+  );
+}
+
+describe("draws counted by the measured region they are in (#7894)", () => {
+  it("counts a component in the nearest region around it, and only where it was drawn", () => {
+    renderedIn.clear();
+    const { getByRole, unmount } = render(<TwoRegions />);
+    expect(drawnIn("left", "Part")).toBe(1);
+    expect(drawnIn("inner", "Part")).toBe(1);
+    expect(drawnIn("right", "Part")).toBe(0);
+
+    renderedIn.clear();
+    act(() => getByRole("button").click());
+    // The left one's props moved; the inner one's did not, and it is not drawn again.
+    expect(drawnIn("left", "Part")).toBe(1);
+    expect(drawnIn("inner", "Part")).toBe(0);
+    unmount();
   });
 });

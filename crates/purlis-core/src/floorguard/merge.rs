@@ -876,13 +876,15 @@ fn lone_api_call(call: &str, name: &str, quoted: bool) -> bool {
 fn digit_bound_name(cmd: &str) -> Option<String> {
     use std::cell::RefCell;
     thread_local! {
-        static LAST: RefCell<Option<(String, Option<String>)>> = const { RefCell::new(None) };
+        static LAST: RefCell<Option<(String, bool, Option<String>)>> = const { RefCell::new(None) };
     }
+    // Kept with the reading it was found on ([`crate::shellseg::braces_off`]).
+    let old_way = crate::shellseg::braces_off();
     if let Some(name) = LAST.with(|last| {
         last.borrow()
             .as_ref()
-            .filter(|(text, _)| text == cmd)
-            .map(|(_, name)| name.clone())
+            .filter(|(text, braces, _)| text == cmd && *braces == old_way)
+            .map(|(.., name)| name.clone())
     }) {
         return name;
     }
@@ -906,7 +908,7 @@ fn digit_bound_name(cmd: &str) -> Option<String> {
         .map(|m| m.as_str())
         .filter(|name| digit_bound(cmd, name))
         .map(str::to_owned);
-    LAST.with(|last| *last.borrow_mut() = Some((cmd.to_owned(), name.clone())));
+    LAST.with(|last| *last.borrow_mut() = Some((cmd.to_owned(), old_way, name.clone())));
     name
 }
 

@@ -376,34 +376,39 @@ impl Page<'_> {
         let (ask, asked) = mpsc::channel::<(usize, String)>();
         let asked = Mutex::new(asked);
         let (tell, told) = mpsc::channel::<(usize, Read)>();
+        // What each reader starts counts where this thread's does (#7892).
+        let counting = &crate::forklock::counting::carried();
         let (ended, panicked) = std::thread::scope(|scope| {
             let ask = ask;
             let mut readers_of_page = Vec::new();
             for _ in 0..readers() {
                 let (asked, tell, watch) = (&asked, tell.clone(), &watch);
                 readers_of_page.push(scope.spawn(move || {
-                    loop {
-                        let next = asked.lock().map(|asked| asked.recv());
-                        let Ok(Ok((seq, path))) = next else { return };
-                        let read = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            file_hits(self.matcher, self.at, held, kept, path, watch)
-                        }));
-                        match read {
-                            Ok(read) => {
-                                if tell.send((seq, read)).is_err() {
-                                    return;
+                    counting.within(|| {
+                        loop {
+                            let next = asked.lock().map(|asked| asked.recv());
+                            let Ok(Ok((seq, path))) = next else { return };
+                            let read =
+                                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                    file_hits(self.matcher, self.at, held, kept, path, watch)
+                                }));
+                            match read {
+                                Ok(read) => {
+                                    if tell.send((seq, read)).is_err() {
+                                        return;
+                                    }
+                                }
+                                // A reader that panicked still answers its file, as cut, and ends
+                                // the page, so nobody waits on it; its panic is then raised on the
+                                // caller's thread.
+                                Err(panic) => {
+                                    let _ = tell.send((seq, Read::Cut(Cut::Stop)));
+                                    watch.over.store(true, Ordering::Relaxed);
+                                    std::panic::resume_unwind(panic);
                                 }
                             }
-                            // A reader that panicked still answers its file, as cut, and ends
-                            // the page, so nobody waits on it; its panic is then raised on the
-                            // caller's thread.
-                            Err(panic) => {
-                                let _ = tell.send((seq, Read::Cut(Cut::Stop)));
-                                watch.over.store(true, Ordering::Relaxed);
-                                std::panic::resume_unwind(panic);
-                            }
                         }
-                    }
+                    })
                 }));
             }
             drop(tell);

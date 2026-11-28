@@ -415,6 +415,7 @@ export const commands = {
 	acceptProjectPolicy: __WINDOW_ONLY_RESULT,
 	acceptProjectPolicyWithNewKey: __WINDOW_ONLY_RESULT,
 	keepProjectNevers: __WINDOW_ONLY_RESULT,
+	sealUnvouchedProjectNevers: __WINDOW_ONLY_RESULT,
 	/**
 	 *  **What the project's `[policy]` let through and logged** (Q308a: the "would have blocked"
 	 *  count, which opens the log): every chat's lines, newest first. A read, off the window's
@@ -426,6 +427,14 @@ export const commands = {
 	 *  asks. Evaluated first where it never was. Off the window's thread.
 	 */
 	projectPrerequisites: (plane: PlaneId) => typedError<Prerequisites, string>(__TAURI_INVOKE("project_prerequisites", { plane })),
+	/**
+	 *  **The answer that grants nothing**: "Work in strict mode" under Broken, "Keep my current
+	 *  rules" under Waiting (ADR 0130 §6). Kept in the app's memory for this run, against what was
+	 *  `shown`, and never written anywhere; the entry then reads deferred, a start the person made
+	 *  in the project and held on it starts, under the policy in force, and every window is told the
+	 *  new list. It grants nothing, so a linked page may give it too; Accept stays the window's.
+	 */
+	deferProjectPrerequisite: (plane: PlaneId, shown: ShownPrerequisite) => typedError<Prerequisites, string>(__TAURI_INVOKE("defer_project_prerequisite", { plane, shown })),
 	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
 	 *  (#1362): `null` for a chat that holds its own.
@@ -565,11 +574,6 @@ export const commands = {
 	 *  unsent text, held in memory, never lost (SC-4d, #7633). Absent where it typed nothing.
 	 */
 	unsent?: string | null,
-	/**
-	 *  Why purlis could not wake it when its pane typed into it or a tell reached it, in the
-	 *  core's words (SC-4j, #7639): what it holds stays unsent. Absent where nothing was refused.
-	 */
-	not_woken?: string | null,
 } | null, string>(__TAURI_INVOKE("chat_hibernated", { plane, session })),
 	hibernatedChatScreen: __WINDOW_ONLY_RESULT,
 	/**  The chats of `plane` that are hibernated: what the window reads its rows by as it opens. */
@@ -3384,6 +3388,15 @@ export type AnswerPath =
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
+/**  How long `n` answers to `command` of class `class` took: the median and 99th percentile. */
+export type AnswerSpread = {
+	command: string,
+	class: string,
+	n: number,
+	p50_ms: number,
+	p99_ms: number,
+};
+
 /**
  *  One memory in a store's `archive/`, as the window's archive tab lists it and reads it
  *  (KN-4): read-only, so it carries no text to check a save against.
@@ -4554,7 +4567,17 @@ export type BusyChat = {
 /**  How a chat that is hibernated was put to rest. */
 export type By = 
 /**  The person did, from its row. */
-"operator";
+"operator" | 
+/**
+ *  The app did, by itself, for a rested chat while the device was over its hot target
+ *  (SC-4g, #7636), or read back from the record at a restart (SC-4e, #7634).
+ */
+"idle" | 
+/**
+ *  Its session host ended while it rested at a turn's end (#2278), read back from the
+ *  record at a restart (SC-4e, #7634): it has no kept screen.
+ */
+"host_crash";
 
 /**
  *  A harness the operator started by hand in a shell tab, as the window draws its banner.
@@ -4942,11 +4965,6 @@ export type ChatHibernation_Deserialize = {
 	 *  unsent text, held in memory, never lost (SC-4d, #7633). Absent where it typed nothing.
 	 */
 	unsent?: string | null,
-	/**
-	 *  Why purlis could not wake it when its pane typed into it or a tell reached it, in the
-	 *  core's words (SC-4j, #7639): what it holds stays unsent. Absent where nothing was refused.
-	 */
-	not_woken?: string | null,
 };
 
 /**  Chat `session` as the window reads its hibernation. */
@@ -4957,11 +4975,6 @@ export type ChatHibernation_Serialize = {
 	 *  unsent text, held in memory, never lost (SC-4d, #7633). Absent where it typed nothing.
 	 */
 	unsent?: string | null,
-	/**
-	 *  Why purlis could not wake it when its pane typed into it or a tell reached it, in the
-	 *  core's words (SC-4j, #7639): what it holds stays unsent. Absent where nothing was refused.
-	 */
-	not_woken?: string | null,
 };
 
 /**  A chat's Chat log: whether purlis knows the chat, and its rows. */
@@ -5173,6 +5186,19 @@ export type ChatRestart = {
 	 */
 	notices: string[],
 	not_yet: string | null,
+	/**
+	 *  **Asked again at the chat's next pause** (#7950): the restart, at a pause, waited on the
+	 *  person's answer to what the project needs, while the chat ran on and could start a turn,
+	 *  so it was not made. Still owed, and the window asks for it again once the chat is at a
+	 *  pause, which may be now.
+	 */
+	ask_again: boolean,
+	/**
+	 *  **What its pane typed while it was hibernated, which no program read** (SC-4d, #7633):
+	 *  handed back with the woken run, for its pane to show unsent. Never typed into it: its
+	 *  delivery is SC-4j's (#7639). None where nothing was typed, or the chat was not woken.
+	 */
+	unsent: string | null,
 };
 
 /**  **What the chat a `chat 641` link names is**, for its hover's second line. */
@@ -5826,7 +5852,8 @@ export type DiagnosticsHere = {
 	open: number,
 	/**
 	 *  The open chats whose run has a process (the glossary's **hot chat**): `starting`,
-	 *  `working`, `input-required` or `paused`. A queued or hibernated run is open, not hot.
+	 *  `working`, `input-required` or `paused`, on this device. A queued or hibernated run is
+	 *  open, not hot, and so is a runner's or a pool's chat, whose program runs elsewhere.
 	 */
 	hot: number,
 	/**  The device's RAM class and its hot target. */
@@ -8904,6 +8931,11 @@ export type LinkCandidate = {
 	kind: KindHint,
 	text: string,
 	target?: string | null,
+	/**
+	 *  Whether the pane read the words across a line break the program wrote at its edge
+	 *  (#7819): a web address read so asks before it opens. Left out, it is not.
+	 */
+	joined?: boolean | null,
 };
 
 /**  **What ⌘-click on a link would do**, said on its hover. */
@@ -10214,6 +10246,12 @@ export type OpenChat = {
 	 *  a shell, a harness that cannot, or a host that would refuse it.
 	 */
 	hibernates?: boolean | null,
+	/**
+	 *  Why its row's Hibernate is greyed, where it is (#7877): one of the core's reasons it may
+	 *  not be hibernated (SC-4c, #7632), today `on_a_runner` alone, whose link refuses the act.
+	 *  `null` for a chat offered Hibernate, and for one offered none.
+	 */
+	hibernate_greyed?: Why | null,
 	/**  The persona it adopted. */
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */
@@ -11414,6 +11452,11 @@ export type PolicyPrerequisite = {
 	 *  (#7714), never because something edited it.
 	 */
 	after_new_key: boolean,
+	/**
+	 *  Whether nothing was ever kept on this machine for the project: under Waiting, the chats
+	 *  keep the shipped `watch` until the press, and the window says so.
+	 */
+	nothing_kept: boolean,
 	/**  The project's policy as it stands, from the same read: the waiting rows among it. */
 	policy: PolicyState,
 };
@@ -11479,9 +11522,17 @@ export type PolicyState = {
 	nevers_to_keep: NeversToKeep | null,
 	/**
 	 *  Whether that list holds a name purlis cannot show faithfully (#7734's round 4): no pair
-	 *  is offered to keep, and the window says so.
+	 *  is offered to keep or to seal, and the window says so.
 	 */
 	nevers_unshowable: boolean,
+	/**
+	 *  Whether this project's never-dispatch list reads as unread because a list of a replaced
+	 *  seal key that purlis cannot vouch for names it, and no keychain item can be named to
+	 *  delete (#7852): the window offers Seal these nevers ([`seal_unvouched_project_nevers`]).
+	 */
+	nevers_unvouched: boolean,
+	/**  The pairs Seal these nevers seals, where `nevers_unvouched` and the list's file reads. */
+	nevers_to_seal: NeversToKeep | null,
 	/**
 	 *  The digest of the committed text this was read from: what Accept names, so a press on a
 	 *  file that changed since it was shown accepts nothing.
@@ -15654,6 +15705,15 @@ export type ShownPage = {
 };
 
 /**
+ *  **What the window showed when the person gave the answer that grants nothing**: the entry as
+ *  it was drawn, so the answer is kept against what the person saw, never against what is there
+ *  by the time it lands.
+ */
+export type ShownPrerequisite = 
+/**  The policy prerequisite, with the digest and the reasons it was shown with. */
+{ kind: "policy"; digest: string; reasons: PolicyReason[] };
+
+/**
  *  **What attaching would send**, shown to the person before anything goes, and handed back
  *  unchanged to [`attach_browser_proof`].
  */
@@ -16996,15 +17056,19 @@ export type SlowMoment =
 /**  An answer to `command` that took `ms`, asked at `at`, while `hot` chats were working. */
 { kind: "answer"; command: string; ms: number; at: number | null; hot: number } | 
 /**
- *  A gap of `ms` between two of the window's frames, seen at `at`, while `hot` chats were
- *  working, with the tab in front (`front`) and whether a view of a chat was opening, and
- *  what the window's thread did in that frame, the top five of each (felt speed round 4,
- *  H9): the regions whose React commits took longest (`react`), the core's events handled
- *  (`events`) and answers handled (`answers`) by name and count, and the scripts the webview
- *  said made the frame long (`scripts`). `dark`: the thread answered all through the gap,
- *  so the webview withheld its frames (a locked screen, a display asleep, a window covered).
+ *  A gap of `ms` between two of the frames of the window labelled `window`, seen at `at`,
+ *  while `hot` chats were working, with the tab in front (`front`) and whether a view of a
+ *  chat was opening, and what the window's thread did in that frame (felt speed round 4,
+ *  H9; #7891): `render_ms`, what React's renders of the measured regions took of the gap,
+ *  and the top five of each, the regions whose renders took longest by their own time
+ *  (`react`), the core's events handled, each once (`events`), the calls of their listeners
+ *  (`listeners`), the answers handled (`answers`) and what happened that costs a frame
+ *  (`marks`), by name and count.
+ *  `dark`: the thread answered all through the gap, so the webview withheld its frames (a
+ *  locked screen, a display asleep, or a window covered whole that WebKit did not report as
+ *  hidden).
  */
-{ kind: "stall"; ms: number; at: number | null; hot: number; front: string | null; opening: boolean; dark: boolean; react: StallTook[]; events: StallCounted[]; answers: StallCounted[]; scripts: StallTook[] } | 
+{ kind: "stall"; ms: number; at: number | null; window: string; hot: number; front: string | null; opening: boolean; dark: boolean; render_ms: number; react: StallRendered[]; events: StallCounted[]; listeners: StallCounted[]; answers: StallCounted[]; marks: StallCounted[] } | 
 /**
  *  The core's main thread ran a ping `ms` after it was asked to at `at`, busy with the
  *  command `running` when the wait was noticed (`crate::mainwatch`). The core writes it; the
@@ -17021,7 +17085,25 @@ export type SlowMoment =
  *  phases it passed through in the order it ran them (H12). The core writes it; the window
  *  only reads it back.
  */
-{ kind: "opening"; ms: number; at: number | null; hot: number; phases: StallTook[] };
+{ kind: "opening"; ms: number; at: number | null; hot: number; phases: StallTook[] } | 
+/**
+ *  The window labelled `window` was visible (`visible`) or not at `at`: once as it starts
+ *  watching, then at each `visibilitychange` (#7891). On macOS WebKit fires one for a window
+ *  minimised or hidden, and, by its occlusion handling, for one covered whole, which is
+ *  unverified until checked by hand; what WebKitGTK on Linux reports is not known.
+ */
+{ kind: "visibility"; at: number | null; window: string; visible: boolean } | 
+/**
+ *  The core's answer to `command` of class `class`, asked at `at`: `queued_ms` waiting for
+ *  a thread, then `work_ms` doing it (#7893). The core writes it; the window only reads it
+ *  back.
+ */
+{ kind: "answer_span"; command: string; class: string; queued_ms: number; work_ms: number; at: number | null } | 
+/**
+ *  How long the core's answers to each command took from `since` to `at` (#7893). The core
+ *  writes it; the window only reads it back.
+ */
+{ kind: "answer_summary"; at: number | null; since: number | null; commands: AnswerSpread[] };
 
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
 export type SlowStart = {
@@ -17187,13 +17269,25 @@ export type StaleRemote = {
 	pushes_kept: string[],
 };
 
-/**  Something the window handled `n` times in a stalled frame, by name. */
+/**  Something the window handled or did `n` times in a stalled frame, by name. */
 export type StallCounted = {
 	name: string,
 	n: number,
 };
 
-/**  Something the window's thread did in a stalled frame, by name, and how long it took there. */
+/**
+ *  A region of the window React rendered in a stalled frame, by name: `ms` with the regions
+ *  inside it, `self_ms` its own body's, and `commits`, how many of React's commits in the frame
+ *  rendered anything inside it.
+ */
+export type StallRendered = {
+	name: string,
+	ms: number,
+	self_ms: number,
+	commits: number,
+};
+
+/**  A phase of an opening, by name, and how long it took. */
 export type StallTook = {
 	name: string,
 	ms: number,
@@ -18936,7 +19030,7 @@ export type WhatChanged = {
  *  [`NotRested`], one value for one reason, whose words are the window's
  *  (`app/src/hibernationWords.ts`, `docs/ui-copy.md`).
  */
-export type Why = "working" | "asking" | "paused" | "hibernated" | "ended" | "cannot_resume" | "cannot_see_its_own_work" | "own_work" | "line_coming" | "task_open" | "report_owed" | "observed" | "on_a_runner" | "child_run" | "looked_at";
+export type Why = "working" | "asking" | "paused" | "hibernated" | "ended" | "cannot_resume" | "cannot_see_its_own_work" | "own_work" | "line_coming" | "task_open" | "finished_task_open" | "report_owed" | "is_a_task" | "observed" | "on_a_runner" | "child_run" | "looked_at";
 
 /**
  *  A tint holds `token`, tinted, at least `distance` from `from` in OKLab, `from` as the tint

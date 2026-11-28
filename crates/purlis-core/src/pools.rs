@@ -227,7 +227,7 @@ pub fn forget_where_untrusted(
     name: &str,
     elsewhere: bool,
     found: &[crate::poolsetup::pinchange::PinChange],
-) -> Option<Result<String, Refused>> {
+) -> Option<Result<Vec<LeftThere>, Refused>> {
     if !found.iter().any(|change| change.pool == name) {
         return None;
     }
@@ -245,7 +245,7 @@ pub fn forget_where_untrusted(
 /// containers and homes stay there, and this machine stays listed as their peer in those homes.
 /// What stays, and the commands that remove it on that machine, are answered. Refused for a pool
 /// on this machine.
-pub fn forget_untrusted(config_root: &Path, name: &str) -> Result<String, Refused> {
+pub fn forget_untrusted(config_root: &Path, name: &str) -> Result<Vec<LeftThere>, Refused> {
     let locked = runners::lock(config_root);
     let pool = runners::pools(config_root)?
         .into_iter()
@@ -268,16 +268,12 @@ pub fn forget_untrusted(config_root: &Path, name: &str) -> Result<String, Refuse
     let mut left = Vec::new();
     for kept in &of_it {
         runners::forget_locked(config_root, kept.name(), &locked)?;
-        let (id, volume) = (kept.made.container.as_str(), kept.made.runner.volume());
-        // The runner keeps its peers in its home, so this machine is listed there until the
-        // volume goes.
-        left.push(format!(
-            "Runner {}'s container {id} and its home volume {volume} stay on {host}, with \
-             everything chats left in them, and {host} still lists this machine as the runner's \
-             peer. To remove them, run this on {host}: docker container rm --force {id} && \
-             docker volume rm --force {volume}",
-            kept.name()
-        ));
+        left.push(LeftThere {
+            runner: kept.name().to_owned(),
+            container: kept.made.container.as_str().to_owned(),
+            volume: kept.made.runner.volume(),
+            host: host.clone(),
+        });
     }
     runners::forget_pool_locked(config_root, name, &locked)?;
     crate::machine::update(config_root, |store| {
@@ -291,7 +287,51 @@ pub fn forget_untrusted(config_root: &Path, name: &str) -> Result<String, Refuse
              be set back to this machine: {why}"
         ))
     })?;
-    Ok(left.join(" "))
+    Ok(left)
+}
+
+/// **What a pool forgotten here leaves on its machine, of one of its runners** (#6270, #7873):
+/// the runner's container and home volume, and the machine that holds them. Kept apart, not as
+/// one sentence, so whoever shows it makes each part safe on its own and never cuts the machine's
+/// name, or the commands, out of the whole ([`LeftThere::said`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeftThere {
+    /// The runner's name.
+    pub runner: String,
+    /// Its container's id.
+    pub container: String,
+    /// Its home volume.
+    pub volume: String,
+    /// The machine that holds them, as its pool reaches it.
+    pub host: String,
+}
+
+impl LeftThere {
+    /// What stays, and the commands that remove it on its machine, as the window says it.
+    pub fn said(&self) -> String {
+        let LeftThere {
+            runner,
+            container,
+            volume,
+            host,
+        } = self;
+        // The runner keeps its peers in its home, so this machine is listed there until the
+        // volume goes.
+        format!(
+            "Runner {runner}'s container {container} and its home volume {volume} stay on \
+             {host}, with everything chats left in them, and {host} still lists this machine as \
+             the runner's peer. To remove them, run this on {host}: docker container rm --force \
+             {container} && docker volume rm --force {volume}"
+        )
+    }
+
+    /// What every runner of `left` leaves on its machine, said one after the other.
+    pub fn all_said(left: &[LeftThere]) -> String {
+        left.iter()
+            .map(LeftThere::said)
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
 }
 
 /// `runner a`, or `runners a, b and c`, for a sentence the window shows.

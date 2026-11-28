@@ -119,6 +119,21 @@ fn never_alone_raises_none_and_nothing_kept_with_a_policy_looser_than_watch_is_w
 }
 
 #[test]
+fn waiting_says_whether_nothing_was_kept_so_the_window_names_the_shipped_default() {
+    let _home = OwnConfigHome::new();
+    let never = plane(OPEN);
+    assert!(the_policy(&evaluate(never.path())).nothing_kept);
+
+    let kept = accepted(WATCH);
+    std::fs::write(kept.path().join("charter.toml"), OPEN).expect("loosened");
+    assert!(!the_policy(&evaluate(kept.path())).nothing_kept);
+
+    let broken = accepted(WATCH);
+    unseal(broken.path());
+    assert!(!the_policy(&evaluate(broken.path())).nothing_kept);
+}
+
+#[test]
 fn broken_and_waiting_together_are_one_entry_with_both_reasons() {
     let _home = OwnConfigHome::new();
     let root = accepted(WATCH);
@@ -494,4 +509,459 @@ fn two_open_prerequisites_come_in_the_cores_order_as_one_list() {
     STAND_IN.with(|on| on.set(false));
     let kinds: Vec<Kind> = list.entries().iter().map(Prerequisite::kind).collect();
     assert_eq!(kinds, vec![Kind::Policy, Kind::StandIn]);
+}
+
+/// What a start held on its own thread was told it waits on, and how its hold ends.
+struct Holding {
+    told: std::sync::mpsc::Receiver<String>,
+    ended: std::thread::JoinHandle<Held>,
+}
+
+impl Holding {
+    /// A start `starter` makes in the project at `root`, held by `kept` on a thread of its own
+    /// for at most `within`.
+    fn start(kept: &Arc<Kept>, root: &Path, starter: Starter, within: Option<Duration>) -> Self {
+        let (tell, told) = std::sync::mpsc::channel();
+        let (kept, root) = (Arc::clone(kept), root.to_path_buf());
+        let ended = std::thread::spawn(move || {
+            kept.hold(&root, starter, within, &|| false, |why| {
+                let _ = tell.send(why.to_owned());
+            })
+        });
+        Self { told, ended }
+    }
+
+    /// **Held before**: it is told why within a few seconds, and has not started a moment later.
+    fn is_held(&self) -> String {
+        let why = self
+            .told
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the held start is told why it waits");
+        std::thread::sleep(Duration::from_millis(250));
+        assert!(!self.ended.is_finished(), "it waits: {why}");
+        why
+    }
+
+    /// How it ended, within a few seconds of being told.
+    fn ended(self) -> Held {
+        let by = Instant::now() + Duration::from_secs(5);
+        while !self.ended.is_finished() {
+            assert!(Instant::now() < by, "the held start never ended");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        self.ended.join().expect("the hold ends")
+    }
+}
+
+/// A plane whose acceptance of `committed` was kept and no longer holds: Broken.
+fn broken(committed: &str) -> tempfile::TempDir {
+    let root = accepted(committed);
+    unseal(root.path());
+    root
+}
+
+/// What the window shows for the policy prerequisite of `list`.
+fn shown(list: &List) -> Shown {
+    let policy = the_policy(list);
+    Shown::Policy {
+        digest: policy.digest.clone(),
+        reasons: policy.reasons.clone(),
+    }
+}
+
+/// The policy in force for the project at `root`, as [`enforcement::ENV`] spells it.
+fn in_force(root: &Path) -> String {
+    enforcement::in_force(root).spelled()
+}
+
+/// Strict mode: what a project runs under where its acceptance is Broken.
+fn strict_mode() -> String {
+    enforcement::broken_accepted().spelled()
+}
+
+const SAID: &str = "'s policy needs your answer in the purlis window on this machine";
+
+#[test]
+fn a_chat_the_person_starts_from_the_window_is_held_says_why_and_is_released_by_the_answer_that_grants_nothing()
+ {
+    // ADR 0130 §5, §6: held before, released after, under the policy in force.
+    let _home = OwnConfigHome::new();
+    let root = broken(WATCH);
+    let kept = Arc::new(Kept::new(Heard::default().told()));
+    let list = kept.evaluate(root.path());
+    let start = Holding::start(
+        &kept,
+        root.path(),
+        Starter::of(&crate::sandbox::Made::Window),
+        None,
+    );
+    let why = start.is_held();
+    assert!(why.ends_with(SAID), "{why}");
+    let project = root.path().file_name().expect("named").to_string_lossy();
+    assert!(why.starts_with(&*project), "names the project: {why}");
+
+    let after = kept.defer(root.path(), shown(&list));
+    assert_eq!(the_policy(&after).state, State::Deferred);
+    assert_eq!(start.ended(), Held::Released);
+    assert_eq!(in_force(root.path()), strict_mode(), "it starts strict");
+}
+
+#[test]
+fn a_cli_start_is_held_as_a_window_start_is_and_runs_out_saying_why_where_nobody_answers() {
+    // ADR 0130 §5, §8: a chat the person starts from the CLI waits too, for as long as its
+    // caller gives it (90 seconds with a terminal, #7721).
+    let _home = OwnConfigHome::new();
+    let root = broken(WATCH);
+    let kept = Arc::new(Kept::new(Heard::default().told()));
+    let list = kept.evaluate(root.path());
+
+    let unanswered = Holding::start(
+        &kept,
+        root.path(),
+        Starter::Person,
+        Some(Duration::from_millis(300)),
+    );
+    let Held::RanOut { why } = unanswered.ended() else {
+        panic!("it runs out");
+    };
+    assert!(why.ends_with(SAID), "{why}");
+
+    let answered = Holding::start(
+        &kept,
+        root.path(),
+        Starter::Person,
+        Some(Duration::from_secs(90)),
+    );
+    answered.is_held();
+    kept.defer(root.path(), shown(&list));
+    assert_eq!(answered.ended(), Held::Released);
+    assert_eq!(in_force(root.path()), strict_mode());
+}
+
+#[test]
+fn a_start_its_caller_stops_while_held_says_what_is_still_open() {
+    let _home = OwnConfigHome::new();
+    let root = broken(WATCH);
+    let kept = Kept::new(Heard::default().told());
+    let held = kept.hold(root.path(), Starter::Person, None, &|| true, |_| {});
+    let Held::Stopped { why } = held else {
+        panic!("stopped: {held:?}");
+    };
+    assert!(why.ends_with(SAID), "{why}");
+}
+
+#[test]
+fn a_restored_chat_a_scheduled_start_and_a_loop_start_do_not_wait_and_start_under_the_policy_in_force()
+ {
+    // ADR 0130 §5. Each is made by the app on its own, from its record ([`Made::Relaunch`]): a
+    // chat put back at a project's open, and one woken for its schedule or its loop.
+    let _home = OwnConfigHome::new();
+    let root = broken(WATCH);
+    let kept = Kept::new(Heard::default().told());
+    assert!(kept.evaluate(root.path()).holds(), "open");
+    let starter = Starter::of(&crate::sandbox::Made::Relaunch);
+    assert_eq!(starter, Starter::App);
+    let held = kept.hold(
+        root.path(),
+        starter,
+        None,
+        &|| panic!("never waits"),
+        |why| panic!("never told: {why}"),
+    );
+    assert_eq!(held, Held::AtOnce);
+    assert_eq!(in_force(root.path()), strict_mode());
+}
+
+#[test]
+fn regression_guard_a_running_chats_dispatched_task_starts_at_once_under_the_policy_in_force() {
+    // A regression guard (#7724): a dispatched task never waited on the person, and passes
+    // without the hold. ADR 0130 §5 keeps it so while a prerequisite is open.
+    let _home = OwnConfigHome::new();
+    let root = broken(WATCH);
+    let kept = Kept::new(Heard::default().told());
+    assert!(kept.evaluate(root.path()).holds(), "open");
+    let dispatched = crate::sandbox::Made::Asked {
+        how: crate::sandbox::Asking::Dispatch,
+        above: Some(vec![None]),
+    };
+    let held = kept.hold(
+        root.path(),
+        Starter::of(&dispatched),
+        None,
+        &|| panic!("never waits"),
+        |why| panic!("never told: {why}"),
+    );
+    assert_eq!(held, Held::AtOnce);
+    assert_eq!(in_force(root.path()), strict_mode());
+}
+
+#[test]
+fn a_chat_a_running_chat_hands_work_to_starts_at_once_and_a_pool_or_runner_chat_the_person_starts_is_held()
+ {
+    // ADR 0130 §5: a handoff a running chat makes starts as a dispatched task does, strict
+    // under Broken. A pool or runner chat the person starts is made as a local one is, in the
+    // window ([`Made::Window`]): where it runs is no part of who started it.
+    let _home = OwnConfigHome::new();
+    let root = broken(WATCH);
+    let kept = Arc::new(Kept::new(Heard::default().told()));
+    let list = kept.evaluate(root.path());
+    let handed = crate::sandbox::Made::Asked {
+        how: crate::sandbox::Asking::Handoff,
+        above: Some(vec![None]),
+    };
+    let held = kept.hold(
+        root.path(),
+        Starter::of(&handed),
+        None,
+        &|| panic!("never waits"),
+        |why| panic!("never told: {why}"),
+    );
+    assert_eq!(held, Held::AtOnce);
+    assert_eq!(in_force(root.path()), strict_mode());
+
+    let on_a_pool = Holding::start(
+        &kept,
+        root.path(),
+        Starter::of(&crate::sandbox::Made::Window),
+        None,
+    );
+    on_a_pool.is_held();
+    kept.defer(root.path(), shown(&list));
+    assert_eq!(on_a_pool.ended(), Held::Released);
+}
+
+#[test]
+fn the_answer_is_dropped_when_the_digest_changes_and_the_prerequisite_is_open_again() {
+    let _home = OwnConfigHome::new();
+    let root = broken(WATCH);
+    let kept = Kept::new(Heard::default().told());
+    let list = kept.evaluate(root.path());
+    assert!(!kept.defer(root.path(), shown(&list)).holds(), "answered");
+
+    std::fs::write(root.path().join("charter.toml"), STRICT).expect("another policy");
+    let after = kept.evaluate(root.path());
+    let entry = the_policy(&after);
+    assert_ne!(entry.digest, the_policy(&list).digest, "the digest moved");
+    assert_eq!(entry.reasons, vec![Reason::Broken], "the reason did not");
+    assert_eq!(entry.state, State::Open);
+    assert!(after.holds());
+}
+
+#[test]
+fn the_answer_is_dropped_when_the_reason_changes_from_waiting_to_broken_and_waiting() {
+    let _home = OwnConfigHome::new();
+    let root = accepted(WATCH);
+    std::fs::write(root.path().join("charter.toml"), OPEN).expect("loosened");
+    let kept = Kept::new(Heard::default().told());
+    let list = kept.evaluate(root.path());
+    assert_eq!(the_policy(&list).reasons, vec![Reason::Waiting]);
+    assert!(!kept.defer(root.path(), shown(&list)).holds(), "answered");
+
+    unseal(root.path());
+    let after = kept.evaluate(root.path());
+    let entry = the_policy(&after);
+    assert_eq!(entry.reasons, vec![Reason::Broken, Reason::Waiting]);
+    assert_eq!(
+        entry.digest,
+        the_policy(&list).digest,
+        "the digest did not move"
+    );
+    assert_eq!(entry.state, State::Open);
+}
+
+#[test]
+fn a_change_back_to_a_digest_already_answered_this_run_does_not_reopen_it() {
+    let _home = OwnConfigHome::new();
+    let root = broken(WATCH);
+    let kept = Kept::new(Heard::default().told());
+    let list = kept.evaluate(root.path());
+    kept.defer(root.path(), shown(&list));
+    std::fs::write(root.path().join("charter.toml"), STRICT).expect("another policy");
+    assert!(
+        kept.evaluate(root.path()).holds(),
+        "open for the new digest"
+    );
+
+    std::fs::write(root.path().join("charter.toml"), WATCH).expect("back");
+    let back = kept.evaluate(root.path());
+    assert_eq!(the_policy(&back).digest, the_policy(&list).digest);
+    assert_eq!(the_policy(&back).state, State::Deferred);
+    assert!(!back.holds());
+}
+
+#[test]
+fn an_answer_for_a_digest_and_reasons_the_list_never_held_is_not_kept() {
+    // The answer is served on a link (ADR 0130 §8): one against a pair nobody was shown, such
+    // as the digest of a policy not committed yet, defers nothing when that policy lands.
+    let _home = OwnConfigHome::new();
+    let root = broken(WATCH);
+    let kept = Kept::new(Heard::default().told());
+    let list = kept.evaluate(root.path());
+    std::fs::write(root.path().join("charter.toml"), STRICT).expect("another policy");
+    let not_yet = digest_of(root.path());
+    std::fs::write(root.path().join("charter.toml"), WATCH).expect("back");
+    assert_ne!(not_yet, the_policy(&list).digest);
+
+    let answered = kept.defer(
+        root.path(),
+        Shown::Policy {
+            digest: not_yet.clone(),
+            reasons: vec![Reason::Broken],
+        },
+    );
+    assert_eq!(the_policy(&answered).state, State::Open, "nothing answered");
+
+    std::fs::write(root.path().join("charter.toml"), STRICT).expect("it lands");
+    let landed = kept.evaluate(root.path());
+    assert_eq!(the_policy(&landed).digest, not_yet);
+    assert_eq!(the_policy(&landed).state, State::Open);
+    assert!(landed.holds());
+}
+
+#[test]
+fn answers_for_pairs_never_held_keep_nothing_and_the_real_answer_still_holds() {
+    // What a link sends is unchecked, and kept for the app's whole run: it must not grow.
+    let _home = OwnConfigHome::new();
+    let root = broken(WATCH);
+    let kept = Kept::new(Heard::default().told());
+    let list = kept.evaluate(root.path());
+    for n in 0..200 {
+        kept.defer(
+            root.path(),
+            Shown::Policy {
+                digest: format!("{n:064x}"),
+                reasons: vec![Reason::Broken],
+            },
+        );
+    }
+    let answers = kept.answered.lock().expect("answers").len();
+    assert!(answers <= ANSWERS_KEPT_AT_MOST, "{answers} kept");
+    assert!(!kept.defer(root.path(), shown(&list)).holds(), "answered");
+}
+
+#[test]
+fn the_pairs_a_list_held_are_bounded_and_the_oldest_goes_first_asked_again() {
+    let pair = |n: usize| (format!("{n:064x}"), vec![Reason::Waiting]);
+    let mut answers = Answers::default();
+    assert!(!answers.held(pair(0)));
+    assert!(answers.answer(&pair(0)), "held, so kept");
+    assert!(answers.held(pair(0)), "answered");
+    for n in 1..ANSWERS_KEPT_AT_MOST * 4 {
+        answers.held(pair(n));
+    }
+    assert_eq!(answers.len(), ANSWERS_KEPT_AT_MOST);
+    assert!(!answers.answer(&pair(0)), "the oldest went");
+    assert!(!answers.held(pair(0)), "and is asked again");
+}
+
+/// Every file under `dir`, with what it holds.
+fn files_under(dir: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    let mut files = BTreeMap::new();
+    let mut folders = vec![dir.to_path_buf()];
+    while let Some(folder) = folders.pop() {
+        let Ok(entries) = std::fs::read_dir(&folder) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                folders.push(path);
+            } else {
+                files.insert(path.clone(), std::fs::read(&path).unwrap_or_default());
+            }
+        }
+    }
+    files
+}
+
+#[test]
+fn after_a_restart_no_answer_is_kept_and_nothing_of_it_is_on_disk() {
+    let _home = OwnConfigHome::new();
+    let root = broken(WATCH);
+    let machine = crate::sandbox::local::path(root.path())
+        .ancestors()
+        .nth(2)
+        .expect("this machine's folder")
+        .to_path_buf();
+    let before = (files_under(root.path()), files_under(&machine));
+    let kept = Kept::new(Heard::default().told());
+    let list = kept.evaluate(root.path());
+    assert!(!kept.defer(root.path(), shown(&list)).holds(), "answered");
+    assert_eq!(
+        (files_under(root.path()), files_under(&machine)),
+        before,
+        "the answer writes nothing"
+    );
+
+    // A new app state: the list a restarted app holds.
+    let restarted = Kept::new(Heard::default().told());
+    let again = restarted.evaluate(root.path());
+    assert_eq!(the_policy(&again).state, State::Open);
+    assert!(again.holds());
+}
+
+#[test]
+fn a_process_that_is_not_the_app_given_the_apps_answer_runs_under_the_policy_in_force_the_app_runs()
+{
+    // ADR 0130 §5, §6: the answer that grants nothing changes no policy, so a hook or a CLI
+    // process a chat runs, told the app's answer (`hookwire::Ask::Policy`), applies what the app
+    // does.
+    let _home = OwnConfigHome::new();
+    let root = broken(WATCH);
+    let kept = Kept::new(Heard::default().told());
+    let list = kept.evaluate(root.path());
+    kept.defer(root.path(), shown(&list));
+    let the_apps = enforcement::in_force(root.path());
+    assert_eq!(the_apps.spelled(), strict_mode());
+
+    enforcement::set_in_the_app_for_this_test(false);
+    enforcement::answered_by_the_app(Some(the_apps.clone()));
+    let here = in_force(root.path());
+    enforcement::set_in_the_app_for_this_test(true);
+    assert_eq!(here, the_apps.spelled());
+}
+
+#[test]
+fn under_broken_loose_or_not_the_answer_that_grants_nothing_releases_the_held_start_strict_and_is_kept_against_its_reasons()
+ {
+    // ADR 0130 §3: under Broken the reason is `broken` alone, and `waiting` joins it where the
+    // committed policy is looser than `watch`.
+    for (committed, reasons) in [
+        (OPEN, vec![Reason::Broken, Reason::Waiting]),
+        (WATCH, vec![Reason::Broken]),
+    ] {
+        let _home = OwnConfigHome::new();
+        let root = broken(WATCH);
+        std::fs::write(root.path().join("charter.toml"), committed).expect("committed");
+        let kept = Arc::new(Kept::new(Heard::default().told()));
+        let list = kept.evaluate(root.path());
+        assert_eq!(the_policy(&list).reasons, reasons, "{committed}");
+
+        let start = Holding::start(&kept, root.path(), Starter::Person, None);
+        start.is_held();
+        // An answer shown for other reasons is not this one's.
+        let other = if reasons.len() == 2 {
+            vec![Reason::Broken]
+        } else {
+            vec![Reason::Broken, Reason::Waiting]
+        };
+        let after = kept.defer(
+            root.path(),
+            Shown::Policy {
+                digest: the_policy(&list).digest.clone(),
+                reasons: other,
+            },
+        );
+        assert!(
+            after.holds(),
+            "kept against what it was shown for: {committed}"
+        );
+        assert!(!start.ended.is_finished(), "still held: {committed}");
+
+        let after = kept.defer(root.path(), shown(&list));
+        assert_eq!(the_policy(&after).state, State::Deferred);
+        assert_eq!(the_policy(&after).reasons, reasons);
+        assert_eq!(start.ended(), Held::Released, "{committed}");
+        assert_eq!(in_force(root.path()), strict_mode(), "{committed}");
+    }
 }

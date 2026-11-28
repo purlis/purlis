@@ -2210,6 +2210,18 @@ fn try_on(
     use purlis_core::poolsetup::{self, Here, trying};
     use purlis_core::reopen::Chat;
 
+    // A runner chat the person starts waits as a local one does while a prerequisite of the
+    // project is open (ADR 0130 §5), before the pool or a profile is read, so what it tries is
+    // what is there once they answer. Try it's own Cancel ends the wait, as it ends the try.
+    if let Err(why) =
+        crate::prerequisites::hold_start(held, &purlis_core::sandbox::Made::Window, &trying_now.1)
+    {
+        return Ok(if trying_now.cancelled() {
+            CANCELLED
+        } else {
+            failed(why, None)
+        });
+    }
     let root = held.root().to_path_buf();
     let here = Here {
         config,
