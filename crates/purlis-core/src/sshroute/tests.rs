@@ -1070,3 +1070,75 @@ fn a_machine_whose_key_is_not_the_pinned_one_is_a_changed_key_and_nothing_else_i
         }
     }
 }
+
+/// **An engine that is not the pinned one hands nothing on to the container's check** (#7922):
+/// the pin check keeps what its `docker info` said only once that engine is found to be the
+/// pinned one, so the daemon's check that follows on the same `docker` reads the daemon itself.
+/// Seen red: the other engine's info kept before the match, and the check taking its options
+/// without a `docker info` of its own.
+#[test]
+fn an_engine_that_is_not_the_pinned_one_hands_nothing_on_to_the_container_check() {
+    use crate::dockerpool::tests::{FakeDocker, inspected, made};
+    let fake = FakeDocker::new(&inspected());
+    fake.set(
+        "info",
+        &serde_json::json!({
+            "ID": "ANOTHER",
+            "SecurityOptions": ["name=seccomp,profile=builtin"],
+            "ServerErrors": [],
+        })
+        .to_string(),
+    );
+    let docker = fake.docker().keeping_what_its_pin_said();
+    let route = Route::parse("ssh://me@box").unwrap();
+    let pin = Pin {
+        host_key: key(),
+        engine: EnginePin::Docker("PINNED".into()),
+    };
+    assert!(matches!(
+        connect::engine_holds(&docker, &route, &pin),
+        Err(connect::Finding::EngineChanged { .. })
+    ));
+    let infos = || {
+        fake.file("log")
+            .lines()
+            .filter(|line| line.starts_with("info "))
+            .count()
+    };
+    assert_eq!(infos(), 1, "{}", fake.file("log"));
+    // The check reads the daemon itself, here as the whole info it can't pass.
+    assert!(docker.check(&made()).is_err(), "{}", fake.file("log"));
+    assert!(infos() > 1, "{}", fake.file("log"));
+}
+
+/// **The pinned engine's `docker info` is handed on to the container's check** (#7862, #7922):
+/// kept once the pin is found to hold, so a cold link reads the daemon's options once. A guard
+/// that the keep after the match is still made.
+#[test]
+fn the_pinned_engines_docker_info_is_handed_on_to_the_container_check() {
+    use crate::dockerpool::tests::{FakeDocker, inspected, made};
+    let fake = FakeDocker::new(&inspected());
+    fake.set(
+        "info",
+        &serde_json::json!({
+            "ID": "PINNED",
+            "SecurityOptions": ["name=seccomp,profile=builtin", "name=cgroupns"],
+            "ServerErrors": [],
+        })
+        .to_string(),
+    );
+    let docker = fake.docker().keeping_what_its_pin_said();
+    let route = Route::parse("ssh://me@box").unwrap();
+    let pin = Pin {
+        host_key: key(),
+        engine: EnginePin::Docker("PINNED".into()),
+    };
+    assert_eq!(connect::engine_holds(&docker, &route, &pin), Ok(()));
+    assert!(docker.check(&made()).is_ok(), "{}", fake.file("log"));
+    let infos = fake
+        .file("log")
+        .lines()
+        .filter(|line| line.starts_with("info "))
+        .count();
+    assert_eq!(infos, 1, "{}", fake.file("log"));
+}
