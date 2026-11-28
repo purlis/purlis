@@ -27,13 +27,25 @@ the same issue's create, comment and update. The refusal named nobody who could 
   deprecation warning, as the issue of that id whatever its repo. An id in another repo, or one
   the forge can't place (it no longer reads that form, it could not be reached), refuses the
   write as another repo's.
-- **The body is exactly the row's keys**, a JSON object, each id a positive integer or its
-  digits; anything else is a malformed request. `replace_parent` is refused whatever it says: it
+- **The body is exactly the row's keys**, a JSON object, each id a positive JSON integer, the
+  type GitHub's schema gives it (`gh api -F`, never `-f`); anything else is a malformed request. `replace_parent` is refused whatever it says: it
   takes the sub-issue from its parent, which can be another repo's issue.
 - **A refusal no setting can lift names who can**: "No setting can allow it: only purlis's
   maintainers can, by changing purlis." A floor act already names the person, on the forge.
 
+## What it accepts
+
+- **An id's place is the run's cached answer**, the same one every GraphQL write tied to an id
+  reads (D3e). An issue the person moves to another repo of the same owner during the run can
+  still be linked from the chat's issue until the run ends. Moving an issue is the person's act,
+  and the link it allows is to an issue of the same owner, which GitHub requires anyway.
+- **An id the forge could not place is refused as another repo's**, as an unplaced GraphQL id
+  is; the chat may try again.
+
 ## Not decided here
 
-GitLab's relations (its links and work-item hierarchy) and GitHub's GraphQL relation mutations
-(`addSubIssue`, `addBlockedBy` and theirs) stay refused until a chat needs them.
+- **The relations' reads stay refused** (`GET issues/{n}/sub_issues` and the dependency lists):
+  they return other repos' titles. A chat reads a map's children through `gh issue view`'s
+  GraphQL, which D3e answers for the repo, until a repo-scoped read is decided.
+- GitLab's relations (its links and work-item hierarchy) and GitHub's GraphQL relation mutations
+  (`addSubIssue`, `addBlockedBy` and theirs) stay refused until a chat needs them.

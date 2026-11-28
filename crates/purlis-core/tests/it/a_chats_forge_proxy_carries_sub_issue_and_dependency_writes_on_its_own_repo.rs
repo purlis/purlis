@@ -87,25 +87,14 @@ fn each_sub_issue_and_dependency_write_on_the_chats_own_repo_is_carried_as_an_is
             other => panic!("{method} {target} {body}: not carried: {other:?}"),
         }
     }
-    for (method, target, body) in [
-        (
-            "PATCH",
-            "/repos/acme/app/issues/5/sub_issues/priority",
-            serde_json::json!({ "sub_issue_id": OWN, "before_id": OWN_TOO }),
-        ),
-        // `gh api -f` sends the id as a string.
-        (
-            "POST",
-            "/repos/acme/app/issues/5/dependencies/blocked_by",
-            serde_json::json!({ "issue_id": OWN_TOO.to_string() }),
-        ),
-    ] {
-        let out = send(&s, method, target, body.clone());
-        assert!(
-            matches!(out, Outcome::Forward(_)),
-            "{method} {target} {body}: {out:?}"
-        );
-    }
+    // Moved before another sub-issue rather than after one.
+    let out = send(
+        &s,
+        "PATCH",
+        "/repos/acme/app/issues/5/sub_issues/priority",
+        serde_json::json!({ "sub_issue_id": OWN, "before_id": OWN_TOO }),
+    );
+    assert!(matches!(out, Outcome::Forward(_)), "{out:?}");
 }
 
 #[test]
@@ -207,11 +196,27 @@ fn a_relation_write_with_a_body_the_route_cannot_read_as_ids_is_refused() {
             sub_issues,
             serde_json::json!({ "sub_issue_id": OWN, "replace_parent": false }),
         ),
-        // A string id with a leading zero, which a forge may read in another base.
+        // An id as a string (`gh api -f`), however it is spelled: GitHub's schema has an integer.
+        (
+            "POST",
+            blocked_by,
+            serde_json::json!({ "issue_id": "1001" }),
+        ),
+        (
+            "POST",
+            blocked_by,
+            serde_json::json!({ "issue_id": "+1001" }),
+        ),
         (
             "POST",
             blocked_by,
             serde_json::json!({ "issue_id": "01001" }),
+        ),
+        // A removal by path whose id has a leading zero.
+        (
+            "DELETE",
+            "/repos/acme/app/issues/5/dependencies/blocked_by/01001",
+            serde_json::Value::Null,
         ),
         // A removal by path carries no body.
         (

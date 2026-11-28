@@ -985,19 +985,20 @@ fn relation_write(kind: Kind, method: &str, rel: &[String]) -> Option<&'static R
         .flatten()
 }
 
-/// An issue's numeric id as a body gives it: a JSON integer, or the digits of one as a string
-/// (`gh api -f`), above zero and with no leading zero a forge could read as another base.
+/// An issue's numeric id as a body gives it: a JSON integer above zero, the type GitHub's
+/// schema gives it (`gh api -F`). A string is refused, so no reading of signs, bases or spaces is
+/// the route's to get wrong.
 fn issue_id_of(value: &serde_json::Value) -> Option<u64> {
-    let id = match value {
-        serde_json::Value::Number(n) => n.as_u64()?,
-        serde_json::Value::String(s)
-            if !s.starts_with('0') && !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) =>
-        {
-            s.parse().ok()?
-        }
-        _ => return None,
-    };
-    (id > 0).then_some(id)
+    value.as_u64().filter(|id| *id > 0)
+}
+
+/// The issue id a path segment is: the digits [`matches`]'s `#` took, above zero, with no
+/// leading zero.
+fn issue_id_in_path(segment: &str) -> Option<u64> {
+    (!segment.starts_with('0') && segment.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| segment.parse().ok())
+        .flatten()
+        .filter(|id| *id > 0)
 }
 
 /// The GraphQL node id GitHub reads issue `id` by: `05:Issue<id>` in base64, its node ids'
@@ -1028,7 +1029,7 @@ fn check_relation(
     if row.route.last() == Some(&"#") {
         ids.push(
             rel.last()
-                .and_then(|s| issue_id_of(&serde_json::Value::String(s.clone())))
+                .and_then(|s| issue_id_in_path(s))
                 .ok_or(Refusal::MalformedRequest)?,
         );
     }
