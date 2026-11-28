@@ -563,12 +563,14 @@ pub(crate) fn keep_mcp_servers_within(
     Ok(())
 }
 
-/// **How long purlis waits for Claude Code's lock on the state file** (#7947). Its holders, Claude
-/// Code and purlis, hold it for one read and one write, a few milliseconds, so a lock still held
-/// after this is a save that is stuck or a lock left by a holder that stopped; the keep fails in
-/// words, and once such a lock is [`STATE_LOCK_STALE`] the next one takes it over, as Claude Code
-/// does. Short, as the desktop's profile commands wait behind a keep.
-pub(crate) const STATE_LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
+/// **How long purlis waits for Claude Code's lock on the state file** (#7947): past the
+/// [`STATE_LOCK_STALE`] mark, so that a lock a holder left as it stopped is always taken over
+/// within one wait, and only a holder still touching its lock outlasts it, for the keep to fail
+/// in words. Claude Code 2.1.332 leaves one now and then: one run of `claude auth status` in three
+/// on a new config folder exited with its `.claude.json.lock` still there, and the standing purlis
+/// asks of a runner runs it. A wait shorter than the stale mark failed the chat started next.
+pub(crate) const STATE_LOCK_WAIT: std::time::Duration =
+    STATE_LOCK_STALE.saturating_add(std::time::Duration::from_secs(2));
 
 /// **When a lock on the state file is stale**: not touched for this long. It is the default of the
 /// `proper-lockfile` package Claude Code 2.1.332 locks the file with, whose holder touches the lock

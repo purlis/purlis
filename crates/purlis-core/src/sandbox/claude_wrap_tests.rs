@@ -822,3 +822,26 @@ fn readying_a_chat_waits_for_the_state_files_lock_and_loses_no_update() {
     assert_eq!(doc["hasCompletedOnboarding"], true, "{doc}");
     assert!(!lock.exists(), "readying let go of the lock");
 }
+
+/// **A lock its holder left as it stopped is waited out within one wait** (#7947), however
+/// lately it was left: Claude Code 2.1.332 sometimes exits with its lock still there, and the
+/// next chat's start must not give up before the lock is stale. Here it was left 6 s ago, so it
+/// turns stale in 4 s, inside the wait.
+#[test]
+fn a_lock_left_by_a_holder_that_stopped_is_waited_out_and_taken_over() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let (state, lock, _) = a_state_file_to_keep(dir.path());
+    std::fs::create_dir(&lock).expect("a lock left behind");
+    let lately = std::time::SystemTime::now() - std::time::Duration::from_secs(6);
+    std::fs::File::open(&lock)
+        .and_then(|folder| folder.set_modified(lately))
+        .expect("the lock was left lately");
+
+    claude_wrap::keep_mcp_servers(&state, None).expect("the keep waits the lock out");
+
+    assert_eq!(
+        std::fs::read_to_string(&state).expect("it reads"),
+        r#"{"numStartups":4}"#
+    );
+    assert!(!lock.exists(), "the keep let go of the lock it took over");
+}
