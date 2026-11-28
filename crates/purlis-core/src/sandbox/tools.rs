@@ -3117,6 +3117,25 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // the program after it to trace its heap.
     "stap",
     "heaptrack",
+    // The build and version managers and the cron siblings #7988 names, refused whole on what each
+    // is for: rebar 2's `rebar` runs a project's hooks and plugins, as `rebar3` does (and reaches
+    // the `rebar3` row by its unversioned form, so `rebar3` keeps a row of its own, which a unit
+    // test pins); `nimble` runs a package's NimScript tasks, Crystal's `shards` its `postinstall`,
+    // D's `dub` its build's commands, `flutter` a project's build and the app `flutter run` starts,
+    // `mill` a build's Scala, `ghcup run` the command after it, and tj's `n` the command its `exec`
+    // and `run` are handed under a Node version (#7988's comment); then jobber's `jobberrunner`,
+    // which runs a jobfile's commands, and bcron's `bcrontab`, which installs the table `bcron`
+    // runs, as `crontab` does.
+    "rebar",
+    "nimble",
+    "shards",
+    "dub",
+    "flutter",
+    "mill",
+    "ghcup",
+    "n",
+    "jobberrunner",
+    "bcrontab",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

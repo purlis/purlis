@@ -4347,3 +4347,25 @@ fn the_tracers_of_7988_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The build and version managers and the cron siblings #7988 names, each of which runs a project's
+/// hooks, a build's code, a table's commands or the command it is handed: rebar 2's `rebar`,
+/// `nimble`, `shards`, `dub`, `flutter`, `mill`, `ghcup`, tj's `n`, jobber's `jobberrunner` and
+/// bcron's `bcrontab`.
+#[test]
+fn the_build_and_version_managers_and_cron_siblings_of_7988_are_offered_no_run_grant() {
+    for name in [
+        "rebar",
+        "nimble",
+        "shards",
+        "dub",
+        "flutter",
+        "mill",
+        "ghcup",
+        "n",
+        "jobberrunner",
+        "bcrontab",
+    ] {
+        refused_as_running_others(name);
+    }
+}

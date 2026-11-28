@@ -2155,3 +2155,11 @@ fn the_lxc_programs_which_the_lxc_row_also_reaches_are_kept_as_rows_of_their_own
     for name in ["lxc-attach", "lxc-execute", "lxc-init"] {
         assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
     }
+
+/// `rebar3`, a row of #7964's, is reached as well by #7988's `rebar` row, by its unversioned
+/// form. Its `run_grants` test passes through either row, so a give-back of the forms (#7825)
+/// must not take it with them: it keeps a row of its own.
+#[test]
+fn rebar3_which_the_rebar_row_also_reaches_is_kept_as_a_row_of_its_own() {
+    assert!(super::NOT_FOR_A_RUN_GRANT.contains(&"rebar3"));
+}
