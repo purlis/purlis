@@ -245,6 +245,53 @@ pub struct Hibernated {
     /// the same wake ([`crate::planes::Held::wake`]) is answered this run, and a key a pane
     /// still showing the hibernated run sends goes to it.
     woken_as: Mutex<HashMap<u32, u32>>,
+    /// What woken runs never read, handed back to the person ([`Self::hand_back`]).
+    returned: Mutex<Vec<Returned>>,
+}
+
+/// What a woken run never read, by the sessions whose pane may show it: the woken run's, and
+/// the hibernated run's it woke from, where that is known.
+#[derive(Debug)]
+struct Returned {
+    sessions: [Option<u32>; 2],
+    back: HandedBack,
+}
+
+/// **What a woken chat's pane typed that its woken run never read** (SC-4j, #7639), handed back
+/// to the person with why.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct HandedBack {
+    /// What was typed, as typed.
+    pub text: String,
+    /// Why it was not sent, as a sentence.
+    pub why: String,
+}
+
+/// Why what a woken chat's pane typed was handed back: its woken run ended first.
+pub const WOKEN_RUN_ENDED: &str = "Its new run ended before it was ready to read it.";
+
+/// **Joins `bytes` to held text `unsent`**, a Backspace (DEL or BS) taking back the character
+/// held before it: false, and nothing joined, where that would hold more than
+/// [`MOST_UNSENT_BYTES`].
+fn hold(unsent: &mut Vec<u8>, bytes: &[u8]) -> bool {
+    let mut next = unsent.clone();
+    for &byte in bytes {
+        if byte == 0x7f || byte == 0x08 {
+            // Back past a character's continuation bytes, to the byte it began with.
+            while let Some(last) = next.pop() {
+                if last & 0xc0 != 0x80 {
+                    break;
+                }
+            }
+        } else {
+            next.push(byte);
+        }
+    }
+    if next.len() > MOST_UNSENT_BYTES {
+        return false;
+    }
+    *unsent = next;
+    true
 }
 
 impl Hibernated {
@@ -365,14 +412,26 @@ impl Hibernated {
     /// **A chat already woken** (SC-4j, #7639) takes what its hibernated run's pane types as its
     /// woken run's: held behind what it was typed while hibernated until that run is heard from,
     /// and sent to it after.
+    ///
+    /// **So does the woken run's own pane** until that run is heard from: the window draws the
+    /// woken run in the hibernated one's place as soon as it is told of the wake, and a key typed
+    /// there must not reach the harness before what was held, or `fix the bug⏎` could arrive as
+    /// `ug⏎` then `fix the b`.
+    ///
+    /// A Backspace takes back the character held before it, as the harness's own line would.
     pub fn takes_input(&self, session: u32, bytes: &[u8], answering: bool) -> Typed {
-        if let Some(woken) = self.woken_as(session) {
-            if let Some(waiting) = self.delivering().get_mut(&woken) {
-                if !answering {
-                    waiting.extend_from_slice(bytes);
-                }
-                return Typed::Held { shown: false };
+        let woken = self.woken_as(session);
+        if let Some(waiting) = self.delivering().get_mut(&woken.unwrap_or(session)) {
+            if answering {
+                return Typed::Dropped;
             }
+            return if hold(waiting, bytes) {
+                Typed::Held { shown: false }
+            } else {
+                Typed::Full
+            };
+        }
+        if let Some(woken) = woken {
             return Typed::Woken(woken);
         }
         let mut all = self.held();
@@ -382,10 +441,9 @@ impl Hibernated {
         if answering {
             return Typed::Dropped;
         }
-        if held.unsent.len().saturating_add(bytes.len()) > MOST_UNSENT_BYTES {
+        if !hold(&mut held.unsent, bytes) {
             return Typed::Full;
         }
-        held.unsent.extend_from_slice(bytes);
         Typed::Held {
             shown: held.settled,
         }
@@ -490,13 +548,17 @@ impl Hibernated {
         now
     }
 
-    /// It was ended another way, or is closed.
-    pub fn forget(&self, session: u32) {
+    /// It was ended another way, or is closed. **A woken run that ends before it is heard from**
+    /// (SC-4j, #7639) never read what its pane held: that is handed back to the person
+    /// ([`Self::hand_back`], [`WOKEN_RUN_ENDED`]), and this answers true, for the window to be
+    /// told.
+    pub fn forget(&self, session: u32) -> bool {
         self.held().remove(&session);
-        self.delivering().remove(&session);
+        let handed = self.ended_unheard(session);
         // The hibernated run is closed in its woken run's place as it wakes: what it woke as is
         // kept until that run closes.
         self.woken_as_now().retain(|_, woken| *woken != session);
+        handed
     }
 
     /// **Hibernated chat `session` is awake as `woken`**: forgotten, and what its pane typed
@@ -519,15 +581,74 @@ impl Hibernated {
         self.woken_as_now().get(&session).copied()
     }
 
+    /// **Run `session`'s program ended**: where it is a woken run not yet heard from, what its
+    /// pane held is handed back to the person ([`Self::hand_back`], [`WOKEN_RUN_ENDED`]). True
+    /// where it was, for the window to be told.
+    pub fn ended_unheard(&self, session: u32) -> bool {
+        let undelivered = self.delivering().remove(&session);
+        undelivered.is_some_and(|bytes| self.hand_back(session, bytes, WOKEN_RUN_ENDED))
+    }
+
+    /// Whether woken run `woken` holds what its pane typed, still to be handed to it.
+    pub fn holds_for(&self, woken: u32) -> bool {
+        self.delivering().contains_key(&woken)
+    }
+
     /// **Woken run `woken` was heard from** (SC-4j, #7639): its harness has its conversation
     /// and reads its input, so what its pane typed while it was hibernated, and after, is
-    /// handed over now, once. `None` for every other run.
+    /// handed over now, once. `None` for every other run. Taken in the run's turn in its lane
+    /// ([`crate::planes::Held::deliver_held`]), so a key queued before it joins it and one
+    /// queued after follows it.
     pub fn heard_from(&self, woken: u32) -> Option<Vec<u8>> {
         let mut delivering = self.delivering();
         if delivering.is_empty() {
             return None;
         }
         delivering.remove(&woken)
+    }
+
+    /// **What woken run `woken`'s pane held was never read** (SC-4j, #7639), for `why`: its run
+    /// ended before it was heard from, or typing it in was refused. Handed back to the person,
+    /// unsent, on the woken run's pane and on the hibernated run's, whichever the window still
+    /// draws, until the window takes it ([`Self::take_handed_back`]), as a refused wake keeps it
+    /// on the band. False where it held nothing a person typed.
+    ///
+    /// Kept in memory only, as what a hibernated chat holds is: an app that quits between the
+    /// wake and the woken run's first hook loses it.
+    pub fn hand_back(&self, woken: u32, bytes: Vec<u8>, why: &str) -> bool {
+        let text = String::from_utf8_lossy(&bytes).into_owned();
+        if text.trim().is_empty() {
+            return false;
+        }
+        let old = self
+            .woken_as_now()
+            .iter()
+            .find(|(_, was)| **was == woken)
+            .map(|(old, _)| *old);
+        let mut returned = self.returned();
+        returned.retain(|back| !back.sessions.contains(&Some(woken)));
+        returned.push(Returned {
+            sessions: [Some(woken), old],
+            back: HandedBack {
+                text,
+                why: why.to_owned(),
+            },
+        });
+        true
+    }
+
+    /// What was handed back to chat `session`'s pane, unsent, once: the window keeps it on that
+    /// pane until it is put away.
+    pub fn take_handed_back(&self, session: u32) -> Option<HandedBack> {
+        let mut returned = self.returned();
+        let at = returned
+            .iter()
+            .position(|back| back.sessions.contains(&Some(session)))?;
+        Some(returned.remove(at).back)
+    }
+
+    fn returned(&self) -> std::sync::MutexGuard<'_, Vec<Returned>> {
+        self.returned.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn delivering(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<u8>>> {
@@ -767,6 +888,19 @@ pub fn chat_hibernated(
     }))
 }
 
+/// **What chat `session`'s pane typed that its woken run never read** (SC-4j, #7639), handed
+/// to the window once, which keeps it on the pane until it is put away. None where nothing was
+/// handed back.
+#[tauri::command]
+#[specta::specta]
+pub fn chat_unsent_handed_back(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    session: u32,
+) -> Result<Option<HandedBack>, String> {
+    Ok(planes.held(&plane)?.hibernated().take_handed_back(session))
+}
+
 /// **What hibernated chat `session` showed as it was hibernated** (SC-4b, #7631): what its pane
 /// draws read-only with Resume. Null where it is not hibernated, has no id, or nothing was
 /// kept: a missing, corrupt or oversize file reads as none kept.
@@ -933,6 +1067,45 @@ mod tests {
             Some(MOST_UNSENT_BYTES),
             "what was held stays"
         );
+    }
+
+    #[test]
+    fn what_a_woken_run_holds_before_it_is_heard_from_stops_at_the_most_a_chat_holds() {
+        // SC-4j review: keys held for a woken run, under either number, are bounded as a
+        // hibernated chat's are.
+        let hibernated = Hibernated::default();
+        assert!(hibernated.latch_and_intend(3, By::Operator));
+        assert!(hibernated.settle(3));
+        assert_eq!(
+            hibernated.takes_input(3, b"go", false),
+            Typed::Held { shown: true }
+        );
+        hibernated.awake(3, 7);
+        let most = vec![b'a'; MOST_UNSENT_BYTES - 2];
+        assert_eq!(
+            hibernated.takes_input(7, &most, false),
+            Typed::Held { shown: false }
+        );
+        assert_eq!(hibernated.takes_input(7, b"!", false), Typed::Full);
+        assert_eq!(hibernated.takes_input(3, b"!", false), Typed::Full);
+        assert_eq!(
+            hibernated.takes_input(7, b"\x1b[I", true),
+            Typed::Dropped,
+            "the terminal's answer is no one's typing"
+        );
+        assert_eq!(
+            hibernated.heard_from(7).map(|held| held.len()),
+            Some(MOST_UNSENT_BYTES)
+        );
+    }
+
+    #[test]
+    fn a_backspace_takes_back_a_whole_character_and_nothing_before_what_is_held() {
+        let mut held = "café".as_bytes().to_vec();
+        assert!(hold(&mut held, b"\x7f"));
+        assert_eq!(held, b"caf");
+        assert!(hold(&mut held, b"\x08\x7f\x7f\x7fx"));
+        assert_eq!(held, b"x");
     }
 
     #[test]

@@ -1270,8 +1270,12 @@ impl Held {
                 // **And typing in a hibernated chat wakes it** (SC-4j, #7639): what it held is
                 // typed into the woken run once that run is heard from. A wake that is refused
                 // leaves it held, and its pane says why.
+                // Once refused, only a line sent asks again: not every key while the cause of the
+                // refusal likely still holds (the person's Resume is there besides).
                 Typed::Held { shown: true } => {
-                    held.wake_on_its_own(session);
+                    if held.hibernated.why_not_woken(session).is_none() || bytes.contains(&b'\r') {
+                        held.wake_on_its_own(session);
+                    }
                     return Ok(());
                 }
                 Typed::Held { shown: false } | Typed::Dropped => return Ok(()),
@@ -1900,7 +1904,11 @@ impl Held {
         {
             purlis_core::hibernatedscreens::forget(self.root(), &id);
         }
-        self.hibernated.forget(session);
+        // A woken run that ends before it is heard from never read what its pane held: that is
+        // handed back to the person (SC-4j, #7639).
+        if self.hibernated.forget(session) {
+            self.tell_handed_back(session);
+        }
         // Its id, read before it goes: its dispatch grant for "this chat" ends where its
         // sandbox grants do, when no session of the chat is left open (#1437, D-1348-1).
         let id = self
@@ -2040,7 +2048,9 @@ impl Held {
         if self.hibernated.in_flight(session) {
             return Err(crate::hibernation::STILL_HIBERNATING.to_owned());
         }
-        if self.hibernated.of(session).is_some() {
+        // A Resume just after purlis woke it on its own (a key, a tell) is answered the run it
+        // woke as, never a restart of the run it woke from (SC-4j, #7639).
+        if self.hibernated.of(session).is_some() || self.hibernated.woken_as(session).is_some() {
             return self.wake(session, Some(size)).map(Restarted::Started);
         }
         if when == When::AtAPause && self.board().glance(session).own_work {
@@ -2271,6 +2281,48 @@ impl Held {
         }
     }
 
+    /// **Woken run `woken` is handed what its pane typed while it was hibernated, and after**
+    /// (SC-4j, #7639): taken and typed in one turn in its lane, so a key queued before this
+    /// joins it and one queued after follows it. Typing it in that is refused, or a lane too busy
+    /// to take it, hands it back to the person with why ([`crate::hibernation::Hibernated::hand_back`]):
+    /// never only a log line.
+    pub(crate) fn deliver_held(&self, woken: u32) {
+        let typed =
+            self.lanes
+                .in_turn_within(woken, crate::inputlanes::A_TURN_WAITS_AT_MOST, || {
+                    let bytes = self.hibernated.heard_from(woken)?;
+                    let typed = self.chats.sessions().input(woken, &bytes);
+                    typed.err().map(|why| (bytes, why))
+                });
+        let (bytes, why) = match typed {
+            Ok(None) => return,
+            Ok(Some(failed)) => failed,
+            Err(busy) => match self.hibernated.heard_from(woken) {
+                Some(bytes) => (bytes, busy),
+                None => return,
+            },
+        };
+        tracing::warn!("purlis: woken chat {woken} was not typed what its pane held ({why})");
+        let why = format!(
+            "purlis could not type it in: {}.",
+            why.trim_end_matches('.')
+        );
+        if self.hibernated.hand_back(woken, bytes, &why) {
+            self.tell_handed_back(woken);
+        }
+    }
+
+    /// The window is told chat `session`'s pane was handed back what its woken run never read,
+    /// to read it there ([`crate::hibernation::chat_unsent_handed_back`]).
+    fn tell_handed_back(&self, session: u32) {
+        (self.hibernation_told)(crate::hibernation::Changed {
+            plane: self.id.clone(),
+            session,
+            hibernated: false,
+            woken: None,
+        });
+    }
+
     /// Whether the app may hibernate chat `session` by itself now (SC-4g, #7636): rested, by
     /// the looked-at clock too; one the act by hand accepts; and the device over its target.
     fn may_hibernate_idle(
@@ -2294,8 +2346,9 @@ impl Held {
     /// Wakes hibernated chat `session` (SC-4a, #7630): a new `wake` run on its conversation,
     /// in the old one's place, the hibernated run ending `completed | superseded` as it begins
     /// (ADR 0076 as amended 2026-11-25). Refused for a chat that is not hibernated, or is still
-    /// being hibernated. A second Resume while one wakes it is refused by the wake's claim, and
-    /// one after it finds the chat awake: one wake however many presses.
+    /// being hibernated. Every caller comes through [`Self::wake`], in the chat's lane, which
+    /// answers a caller after the first the run that one woke it as: one wake however many
+    /// presses, keys and tells (SC-4j, #7639).
     pub fn wake_chat(&self, session: u32, size: Size) -> Result<u32, String> {
         if self.hibernated.in_flight(session) {
             return Err(crate::hibernation::STILL_HIBERNATING.to_owned());
@@ -2314,7 +2367,8 @@ impl Held {
         let ended = self.hibernated.ended_of_its_own(session);
         let started = self.chats.wake(session, size, &ended)?;
         // Forgotten before its end here, which would otherwise end its run a second time. What
-        // its pane typed while it was hibernated goes to the woken run's pane, unsent.
+        // its pane typed while it was hibernated is typed into the woken run once that run is
+        // heard from (SC-4j, #7639), and handed back to the person if it never is.
         self.hibernated.awake(session, started);
         // A woken chat is not rested again for the full time (SC-4g, #7636): its new number's
         // clock starts now.
@@ -5885,6 +5939,13 @@ impl Planes {
                 .when_one_ends(Arc::new(move |session, exit| {
                     // A curation prompt still waiting is for a chat that is gone: never typed.
                     typed.forget(session);
+                    // **A woken run whose program ended before it was heard from** (SC-4j,
+                    // #7639) never read what its pane held: that is handed back to the person.
+                    if hibernated.ended_unheard(session)
+                        && let Some(held) = me.get().and_then(std::sync::Weak::upgrade)
+                    {
+                        held.tell_handed_back(session);
+                    }
                     // **Its runner went, after its program had ended with its host** (#4421):
                     // nothing ended now, so only this is new. No Resume now, and a task that
                     // waited to be resumed reports, whatever stopped it reporting as it ended.

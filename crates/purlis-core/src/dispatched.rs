@@ -218,6 +218,13 @@ pub enum Answered {
         /// A follow-up's instruction number (#3904).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         instruction: Option<u32>,
+        /// **A tell to a hibernated task that purlis could not wake** (SC-4j, #7639): why its
+        /// last wake was refused, in the app's words. The tell is kept and waits for the task's
+        /// next wake, so the asking chat is told it was not read now, rather than to wait on a
+        /// task that cannot answer. A tell's own wake is tried once it is answered (#5772), so
+        /// the first one refused is said by the next tell, and by a wait on the task.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        not_woken: Option<String>,
     },
     /// One follow-up went to every live task of this chat (#3904): instruction `instruction`,
     /// and what became of it at each.
@@ -281,8 +288,11 @@ pub enum Waited {
     Asks { question: String },
     /// **The task is hibernated** (SC-4j, #7639; ADR 0076 as amended 2026-11-25): its program
     /// rests and its conversation is kept, so nothing would end the wait. Answered at once; a
-    /// tell wakes it.
-    Hibernated,
+    /// tell wakes it, unless the last wake asked of it was refused, for `not_woken`.
+    Hibernated {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        not_woken: Option<String>,
+    },
 }
 
 /// **The chat number of a task whose number is not known to be its own** (#1485, #3900,

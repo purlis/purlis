@@ -475,6 +475,7 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
             "put_away_lost_chat",
             // Whether the person hibernated a chat (#7630): in memory.
             "chat_hibernated",
+            "chat_unsent_handed_back",
             "hibernated_chats",
             // Which chats are reconnecting to their runner (#2496): in memory.
             "chats_reconnecting",

@@ -85,6 +85,25 @@ describe("a hibernated chat's pane", () => {
     );
   });
 
+  it("sends a Backspace, which takes back what was typed, and a paste, as typed", async () => {
+    core(BY_YOU, "Deployed to staging.\r\n");
+    pane();
+    const region = await screen.findByRole("region", { name: HIBERNATED_SCREEN_LABEL });
+    await waitFor(() =>
+      expect(within(region).getAllByText(/Deployed to staging/).length).toBeGreaterThan(0),
+    );
+    region.focus();
+    await userEvent.keyboard("x{Backspace}");
+    await userEvent.paste("fix the\nbug");
+    await vi.waitFor(() =>
+      expect(sent).toEqual([
+        { session: 7, text: "x" },
+        { session: 7, text: "\u007f" },
+        { session: 7, text: "fix the\rbug" },
+      ]),
+    );
+  });
+
   it("says no copy was kept where none was", async () => {
     core(BY_YOU, null);
     pane();

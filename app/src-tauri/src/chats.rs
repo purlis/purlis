@@ -4232,7 +4232,10 @@ impl Chats {
             }
             // **The hibernated run ends `completed | superseded` as the wake begins** (ADR 0076
             // as amended 2026-11-25): said before the `wake` run starts, so the log reads in the
-            // order it happened. Its program is gone, so no end of it is heard to say so.
+            // order it happened. Its program is gone, so no end of it is heard to say so. A start
+            // that fails after this leaves that end in the log while the chat stays hibernated:
+            // the start writes its own beginning, so this cannot wait for it without the log
+            // reading out of order (SC-4j review, left open).
             self.superseded(session);
             // **Told what the hibernation ended** (SC-4d, #7633; ADR 0068 amended 2026-11-08):
             // the own work the person was asked about, each piece by name. None for a chat

@@ -133,6 +133,7 @@ pub(crate) const ANSWER_CLASSES: &[(Class, &[&str])] = &[
             "chat_order",
             "chat_skill_runs",
             "chat_states",
+            "chat_unsent_handed_back",
             "chats_noticed",
             "chats_reconnecting",
             "chats_that_would_not_start",
