@@ -112,10 +112,9 @@ pub fn cover(action: &str, facts: &Facts) -> Option<Cover> {
         }
         "push" | "clone" | "merge" | "land" | "release" | "tag" | "save" | "authenticate"
         | "mint" | "record" | "propose" | "dispatch-to" | "use" | "request" | "store"
-        | "reveal" | "inherit" | "browse" | "fill" | "log-in" | "upload" | "download" | "load"
-        | "enter" | "run" | "mount" | "start" | "offload" | "forward" | "report" | "promote" => {
-            Closed(Host)
-        }
+        | "reveal" | "inherit" | "browse" | "close" | "fill" | "log-in" | "upload" | "download"
+        | "load" | "enter" | "run" | "mount" | "start" | "offload" | "forward" | "report"
+        | "promote" => Closed(Host),
         // Every forge operation is the forge route's, which alone holds the person's sign-in
         // (ADR 0128, D3).
         operation if crate::policy::family_of(operation) == Some("guards.forge") => Closed(Host),
