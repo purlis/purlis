@@ -2814,6 +2814,197 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "s6-setsid",
     "s6-svscanboot",
     "nodemon",
+    // The rest of execline's programs #7964 names, whose source was out of reach, refused on what
+    // each is for, as `execlineb` and the rest of #7833's are: each runs the program after it once
+    // it has set a variable, a descriptor, a signal or a loop up (`backtick`, `withstdinas`,
+    // `export`, `unexport`, `importas`, `elglob`, `forbacktickx`, `forstdin`, `loopwhilex`,
+    // `trap`, `tryexec`, `piperw`, `fdclose`, `fdblock`, `fdswap`, `fdreserve`, `heredoc`,
+    // `multisubstitute`, `multidefine`, `define`, `runblock`, `shift`, `wait`, `case`, `envfile`,
+    // `getpid`, `getcwd`, `posix-cd` and `posix-umask`), and `homeof`, which prints a home
+    // folder, is kept with them on the conservative side. (macOS's own `/usr/bin/wait` runs only
+    // the shell's `wait` builtin, read in source, and loses its Allow with execline's.) Then the
+    // chain loaders of #7964's comment: ucspi-tcp's `rblsmtpd` and `fixcrio`, busybox's `udpsvd`,
+    // and s6-networking's `s6-tcpserver4d` and `s6-tcpserver6d`, each of which runs the program
+    // after it.
+    "backtick",
+    "withstdinas",
+    "export",
+    "unexport",
+    "importas",
+    "elglob",
+    "forbacktickx",
+    "forstdin",
+    "loopwhilex",
+    "trap",
+    "tryexec",
+    "piperw",
+    "fdclose",
+    "fdblock",
+    "fdswap",
+    "fdreserve",
+    "heredoc",
+    "multisubstitute",
+    "multidefine",
+    "define",
+    "runblock",
+    "shift",
+    "wait",
+    "case",
+    "envfile",
+    "getpid",
+    "getcwd",
+    "homeof",
+    "posix-cd",
+    "posix-umask",
+    "rblsmtpd",
+    "fixcrio",
+    "udpsvd",
+    "s6-tcpserver4d",
+    "s6-tcpserver6d",
+    // The terminals and multiplexers #7964 names, refused whole on what each is for, as
+    // `screen` and `tmux` are: each runs the command it is handed in the window or the pane
+    // it opens (`xterm -e`, `kitty`, `alacritty -e`, `wezterm start`, `gnome-terminal --`,
+    // `konsole -e`, `zellij run`), and `byobu` is `tmux`'s or `screen`'s front-end.
+    "xterm",
+    "kitty",
+    "alacritty",
+    "wezterm",
+    "gnome-terminal",
+    "konsole",
+    "zellij",
+    "byobu",
+    // The remote and VM runners and the agents and configuration runners #7964 names,
+    // refused whole on what each is for: `lima` and `multipass exec` run a command in a VM
+    // and `orbctl run` in OrbStack's; `pssh`, `pdsh` and `clush` run one on the hosts they
+    // are named; `chef-client` and `chef-solo` run a cookbook's recipes, CFEngine's
+    // `cf-agent` (`cfagent`) a policy's commands, `buildkite-agent` a pipeline's steps,
+    // Concourse's `fly execute` a task (fly.io's `fly` loses its Allow with it), `drone
+    // exec` a pipeline and `garden` a project's actions.
+    "lima",
+    "multipass",
+    "orbctl",
+    "pssh",
+    "pdsh",
+    "clush",
+    "chef-client",
+    "chef-solo",
+    "cf-agent",
+    "cfagent",
+    "buildkite-agent",
+    "fly",
+    "drone",
+    "garden",
+    // The cron daemons and runners #7964 names, refused whole on what each is for, as
+    // `crontab` and `anacron` are: `fcron`, `bcron`, `dcron`, cronie's `crond`,
+    // `supercronic`, `ofelia`, `mcron` and `jobber` run the commands of a table or a file
+    // they are handed; `snooze` and runwhen's programs (`runwhen` itself, `rw-add`,
+    // `rw-match` and `rw-sleep`, by the names its documentation gives) run the program after
+    // them at a time, and its `rw-min` and `rw-max`, given nothing to run by its manual, are
+    // kept with them on the conservative side; and `cronitor exec` runs the command it wraps.
+    "fcron",
+    "bcron",
+    "dcron",
+    "crond",
+    "supercronic",
+    "ofelia",
+    "mcron",
+    "jobber",
+    "snooze",
+    "runwhen",
+    "rw-add",
+    "rw-match",
+    "rw-sleep",
+    "rw-min",
+    "rw-max",
+    "cronitor",
+    // The interpreters and runtimes #7964 names beside REFUSED_NAMES' own, refused on this
+    // list and not on that one, so a persona may still declare one in a reviewed line (ADR 0112's
+    // amendment for #7964): each runs the code, the script or the module it is handed.
+    // `kotlin`, `scala`, `groovy`, `clojure`, `boot`, `elixir`, `erl`, `escript`, `ghc`
+    // (`-e`, and Template Haskell in any build), `runghc`, `crystal`, `nim`, `v`, `dart`,
+    // `tcc` (`-run`), `mono`, the WebAssembly runtimes `wasmtime`, `wasmer` and `wasm3`,
+    // the JavaScript engines `qjs`, `jsc`, `d8`, `hermes`, `rhino` and `jjs`, and `frida`,
+    // which spawns the program it is named and runs a script in it.
+    "kotlin",
+    "scala",
+    "groovy",
+    "clojure",
+    "boot",
+    "elixir",
+    "erl",
+    "escript",
+    "ghc",
+    "runghc",
+    "crystal",
+    "nim",
+    "v",
+    "dart",
+    "tcc",
+    "mono",
+    "wasmtime",
+    "wasmer",
+    "wasm3",
+    "qjs",
+    "jsc",
+    "d8",
+    "hermes",
+    "rhino",
+    "jjs",
+    "frida",
+    // The tracers #7964 names, refused whole on what each is for, as `strace` and `ltrace`
+    // are: each runs the command after it to trace it, `bpftrace -c` (whose programs can
+    // also call `system()`), `trace-cmd record`, `uftrace`, `sysdig` (whose chisels are Lua
+    // it runs) and `cset proc --exec`.
+    "bpftrace",
+    "trace-cmd",
+    "uftrace",
+    "sysdig",
+    "cset",
+    // The build and version managers, builders and compiler wrappers #7964 and its comment name,
+    // refused whole: `rebar3` runs a project's `rebar.config` hooks, `nvm exec` the command after
+    // it, and SDKMAN's `sdk` the install hooks it downloads and the editor its `config` opens, each
+    // where it is a file of its own, `bundler` (where it is a file of its own beside `bundle`:
+    // macOS's, Bundler 1.17.2, evaluates the Gemfile as Ruby at `bundler/dsl.rb:47` and `exec`s the
+    // command `bundler exec` names at `bundler/cli/exec.rb:50-53`), `esy` and `ocamlfind` the build
+    // commands they are handed, the reloaders `air` and `modd` the commands their settings name,
+    // and `watchman` those its triggers name; CMake's `ccmake` and `cpack` (`ctest` and `cmake` are
+    // refused), Buck 1's `buck`, `muon` (meson's twin) and `samu` (ninja's) run a project's build
+    // files; and icecream's `icerun` and `iceccd` and `distccd` run the compiler commands they are
+    // handed. (`buck` reaches #7833's `buck2` by its unversioned form too: `buck2` keeps a row of
+    // its own, and a unit test pins it.)
+    "rebar3",
+    "sdk",
+    "nvm",
+    "bundler",
+    "esy",
+    "ocamlfind",
+    "air",
+    "modd",
+    "watchman",
+    "ccmake",
+    "cpack",
+    "buck",
+    "muon",
+    "samu",
+    "icerun",
+    "iceccd",
+    "distccd",
+    // The package managers and installers #7964's comment names, refused whole, as
+    // `pacman`, `installpkg` and `xbps-install` are: Slackware's `upgradepkg` runs a
+    // package's `doinst.sh`, `xbps-reconfigure` its `INSTALL` script, the AUR helpers
+    // `pikaur`, `trizen`, `aura`, `pamac` and `yaourt` build a `PKGBUILD`, and Arch's
+    // `pacstrap` runs `pacman` into a new root. `arch-chroot`, which runs the command after
+    // it in one, is refused already by REFUSED_NAMES' `arch` and `chroot` meeting its forms
+    // by chance, so it has a row of its own (a unit test pins it).
+    "upgradepkg",
+    "xbps-reconfigure",
+    "pikaur",
+    "trizen",
+    "aura",
+    "pamac",
+    "yaourt",
+    "pacstrap",
+    "arch-chroot",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

@@ -2129,3 +2129,19 @@ fn the_rows_a_7833_rows_form_also_reaches_are_each_kept_as_a_row_of_their_own() 
         assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
     }
 }
+
+/// `arch-chroot` (#7964's comment) runs the command after it in a new root, and REFUSED_NAMES'
+/// `arch` and `chroot` reach it only by meeting a form of its name by chance. A give-back of the
+/// forms (#7825) must not take it with them, so it is refused by a row of its own.
+#[test]
+fn arch_chroot_which_refused_names_reach_by_chance_has_a_row_of_its_own() {
+    assert!(super::NOT_FOR_A_RUN_GRANT.contains(&"arch-chroot"));
+}
+
+/// `buck2`, a row of #7833's, is reached as well by #7964's `buck` row, as Buck 1 is its own
+/// version's name. Its `run_grants` test passes through either row, so a give-back of the forms
+/// (#7825) must not take it with them: it keeps a row of its own.
+#[test]
+fn buck2_which_the_buck_row_also_reaches_is_kept_as_a_row_of_its_own() {
+    assert!(super::NOT_FOR_A_RUN_GRANT.contains(&"buck2"));
+}
