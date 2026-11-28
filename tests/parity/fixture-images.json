@@ -3,30 +3,50 @@
     "remote-docker-sshd": {
       "dockerfile": "tests/remote-docker/sshd.Dockerfile",
       "context": "tests/remote-docker",
-      "files": ["sshd-entrypoint.sh"],
+      "files": [
+        "sshd-entrypoint.sh"
+      ],
       "buildArgs": {},
-      "image": null
+      "image": {
+        "ref": "ghcr.io/purlis/purlis-parity-remote-docker-sshd@sha256:6778224bc4a007e85f48cffaf8c57260b8ce935fb5639211441b90cd69ef16a4",
+        "source": "sha256:8ec6a58020b35b6ed00c4b8ec7b659eb148768a59d57ae164837e20b871a7eca"
+      }
     },
     "remote-podman-sshd": {
       "dockerfile": "tests/remote-docker/sshd.Dockerfile",
       "context": "tests/remote-docker",
-      "files": ["sshd-entrypoint.sh"],
-      "buildArgs": { "POOL_UID": "1001" },
-      "image": null
+      "files": [
+        "sshd-entrypoint.sh"
+      ],
+      "buildArgs": {
+        "POOL_UID": "1001"
+      },
+      "image": {
+        "ref": "ghcr.io/purlis/purlis-parity-remote-podman-sshd@sha256:870cebe13215cc3946d3b0ee2e939b808aad5a6b157ad829271b71713e77e30f",
+        "source": "sha256:9fc6190ee018a67c06adecca486e815961ec60a8a0895e8594941728faddf5a9"
+      }
     },
     "ssh-runner-sshd": {
       "dockerfile": "tests/ssh-runner/sshd.Dockerfile",
       "context": "tests/ssh-runner",
-      "files": ["sshd-entrypoint.sh"],
+      "files": [
+        "sshd-entrypoint.sh"
+      ],
       "buildArgs": {},
-      "image": null
+      "image": {
+        "ref": "ghcr.io/purlis/purlis-parity-ssh-runner-sshd@sha256:ec253d0c286621a03eeefc48237e7c3c7c05e679ed65dfc0edd862c3e8afccf3",
+        "source": "sha256:d8a063347e90af9f286314caa2ba89cc186f4088fc0e2e498e7fc2a94faae535"
+      }
     },
     "ssh-runner-systemd": {
       "dockerfile": "tests/ssh-runner/systemd.Dockerfile",
       "context": "tests/ssh-runner",
       "files": [],
       "buildArgs": {},
-      "image": null
+      "image": {
+        "ref": "ghcr.io/purlis/purlis-parity-ssh-runner-systemd@sha256:b99a1a2c2f7a6ed4298ae08dc69011ebd8497cd6fb1ea3badbd77a265ceeb239",
+        "source": "sha256:03cfb82201f09bb6789c68a65a03521bc41b09884cd861f8383b53d95f22ef24"
+      }
     }
   }
 }
