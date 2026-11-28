@@ -2988,11 +2988,15 @@ fn staged_blobs(root: &Path, paths: &[&String]) -> Vec<Option<String>> {
     };
     let readers = std::thread::available_parallelism().map_or(1, |n| n.get().min(READERS));
     let chunk = paths.len().div_ceil(readers).max(1);
+    // What each reader starts counts where this thread's does (#7892).
+    let counting = &crate::forklock::counting::carried();
     std::thread::scope(|scope| {
         let handles: Vec<_> = paths
             .chunks(chunk)
             .map(|part| {
-                let reader = scope.spawn(move || part.iter().map(|p| show(p)).collect::<Vec<_>>());
+                let reader = scope.spawn(move || {
+                    counting.within(|| part.iter().map(|p| show(p)).collect::<Vec<_>>())
+                });
                 (part.len(), reader)
             })
             .collect();

@@ -25,9 +25,8 @@
 //! Saving at quit is not the worker's: the app is exiting, so [`at_quit`] runs it bounded,
 //! for every held plane at once.
 //!
-//! **Where the worker runs is where the project's chats run** ([`Saver`]): in the window's own
-//! process, or, behind the start-time switch, in the session host (`crate::hostsaving`, #2002),
-//! which runs this same worker and tells the window what each look did. Exactly one runs for a
+//! **Where the worker runs is where the project's chats run** ([`Saver`]): in the session host
+//! (`crate::hostsaving`, #2002, #2005), which runs this same worker and tells the window what each look did. Exactly one runs for a
 //! project at any time: the window starts none of its own while its chats run in the host.
 //!
 //! **Workspace repos too, but only those that ask** (charter-app#299): a repo whose

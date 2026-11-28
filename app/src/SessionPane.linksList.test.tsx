@@ -46,6 +46,9 @@ const CELL = 17;
 const measuring = (el: HTMLElement) => el.classList.contains("xterm-char-measure-element");
 
 let invoked: { cmd: string; args: Record<string, unknown> }[] = [];
+
+/** The files the core finds on the disk, by the words a pane prints for them. */
+let files: string[] = [];
 let opens: unknown;
 
 const FTP = "purlis opens only http and https addresses, so it will not open this ftp: one";
@@ -53,6 +56,7 @@ const FTP = "purlis opens only http and https addresses, so it will not open thi
 beforeEach(() => {
   made.length = 0;
   invoked = [];
+  files = [];
   opens = { answer: "opened", kind: "url", target: "https://a.example/one" };
   vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (
     this: HTMLElement,
@@ -78,14 +82,21 @@ beforeEach(() => {
               shown: one.text,
               does: { does: "opens", into: "browser" },
             }
-          : one.text.startsWith("ftp://")
+          : files.includes(one.text)
             ? {
-                kind: "url",
-                target: one.text,
+                kind: "file",
+                target: `/planes/one/${one.text}`,
                 shown: one.text,
-                does: { does: "refused", reason: FTP },
+                does: { does: "opens", into: "editor-tab" },
               }
-            : null,
+            : one.text.startsWith("ftp://")
+              ? {
+                  kind: "url",
+                  target: one.text,
+                  shown: one.text,
+                  does: { does: "refused", reason: FTP },
+                }
+              : null,
       );
     }
     if (cmd === "pane_link_open") return opens;
@@ -235,6 +246,46 @@ describe("Links in this pane…", () => {
     const dialog = await screen.findByRole("dialog", { name: "Links in this pane" });
     await waitFor(() => expect(within(dialog).getAllByRole("option")).toHaveLength(2));
     expect(within(dialog).getAllByRole("option")[0]).toHaveAccessibleName("https://a.example/one");
+  });
+
+  it("lists a link the program broke at the pane's edge whole, and once (#7819)", async () => {
+    onAMac();
+    const term = await opened();
+    const head = `https://a.example/${"x".repeat(80 - "https://a.example/".length)}`;
+    const rest = "/three.html?page=2";
+    await write(term, `${head}\r\n${rest} and https://c.example/three`);
+    press(LIST_KEY_MAC);
+    const dialog = await screen.findByRole("dialog", { name: "Links in this pane" });
+    await waitFor(() => expect(within(dialog).getAllByRole("option")).toHaveLength(2));
+    expect(within(dialog).getAllByRole("option")[1]).toHaveAccessibleName(`${head}${rest}`);
+  });
+
+  it("lists an address at the edge and a word straight after it on the next row as one address, the cost ADR 0132 names", async () => {
+    onAMac();
+    const term = await opened();
+    const head = `https://a.example/${"x".repeat(80 - "https://a.example/".length)}`;
+    await write(term, `${head}\r\ntail and more`);
+    press(LIST_KEY_MAC);
+    const dialog = await screen.findByRole("dialog", { name: "Links in this pane" });
+    await waitFor(() => expect(within(dialog).getAllByRole("option")).toHaveLength(1));
+    expect(within(dialog).getAllByRole("option")[0]).toHaveAccessibleName(`${head}tail`);
+  });
+
+  it("lists each row's own file where paths joined at the edge name none, each once (#7819)", async () => {
+    onAMac();
+    const one = `src/${"a".repeat(80 - "src/".length - ".rs".length)}.rs`;
+    const two = `lib/${"b".repeat(80 - "lib/".length - ".rs".length)}.rs`;
+    files = [one, two];
+    const term = await opened();
+    await write(term, `${one}\r\nNext, then\r\n${two}\r\nNext, then\r\n${one}`);
+    press(LIST_KEY_MAC);
+    const dialog = await screen.findByRole("dialog", { name: "Links in this pane" });
+    await waitFor(() => expect(within(dialog).getAllByRole("option")).toHaveLength(2));
+    const names = within(dialog)
+      .getAllByRole("option")
+      .map((option) => option.getAttribute("aria-label") ?? option.textContent);
+    expect(names.map((name) => name?.includes(one))).toEqual([true, false]);
+    expect(names.map((name) => name?.includes(two))).toEqual([false, true]);
   });
 
   it("lists only what is on screen, not the history scrolled past", async () => {

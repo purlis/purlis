@@ -26,6 +26,7 @@ import {
 } from "./actions";
 import { Menued, useNoBrowserMenu } from "./Menus";
 import { rowName } from "./menus.testkit";
+import { NOT_HIBERNATED } from "./hibernationWords";
 import { TIP_AFTER_MS } from "./ui/menu/MenuTip";
 import { noTabs, openTab, openView, selectTab, splitFocusedPane } from "./tabs";
 import { TOOLTIP_CLOSE_DELAY } from "./ui/tooltip/Tooltip";
@@ -415,6 +416,53 @@ describe("a menu on screen", () => {
         row.getAttribute("data-variant") === "danger" ||
           row.getAttribute("aria-disabled") === "true",
       ).toBe(true);
+  });
+
+  it("draws Hibernate first under Stop, greyed with the core's reason on a runner's chat (#7877)", async () => {
+    const tabs = openTab(noTabs(), 7, "16", "console-developer");
+    const offers = catalogued(
+      catalogue(
+        now({
+          tabs,
+          hibernateGreyed: (session) => (session === 7 ? NOT_HIBERNATED.on_a_runner : undefined),
+          // Listed, so it has the ways to stop it that Hibernate leads.
+          listed: [
+            {
+              session: 7,
+              name: NAME,
+              persona: null,
+              workspace: "beta",
+              shell: false,
+              parent: null,
+              mode: null,
+              from: null,
+              tab: true,
+              branch: null,
+              report: null,
+              outcome: null,
+              asking: null,
+              harness: "claude",
+            },
+          ],
+        }),
+      ),
+    );
+    render(
+      <Menued on={{ on: "chat", session: 7 }} offers={offers} onPress={() => {}}>
+        <span data-testid="tab" tabIndex={0}>
+          {NAME}
+        </span>
+      </Menued>,
+    );
+
+    const menu = await open();
+    // Not a row of its own: the list stays ten rows at most.
+    expect(within(menu).queryByRole("menuitem", { name: "Hibernate" })).toBeNull();
+    const sub = await openSub("Stop");
+    expect(rowsIn(sub).map(rowName)[0]).toBe("Hibernate");
+    const hibernate = await waitFor(() => within(sub).getByRole("menuitem", { name: "Hibernate" }));
+    expect(hibernate).toHaveAttribute("aria-disabled", "true");
+    expect(hibernate).toHaveAccessibleDescription(NOT_HIBERNATED.on_a_runner);
   });
 
   it("keeps every row's description: its note, or why it cannot run", async () => {

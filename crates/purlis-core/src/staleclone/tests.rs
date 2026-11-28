@@ -690,3 +690,15 @@ fn a_clone_whose_config_includes_another_file_is_read_in_full_each_time() {
 
     assert!(gits_in(&clone) > before, "an included file is not stamped");
 }
+
+/// What each clone's read starts on its own thread counts in the scope that asked (#7892).
+#[test]
+#[cfg(unix)]
+fn what_the_clone_reads_start_on_their_threads_counts_where_the_look_does() {
+    let ((), tally) = crate::forklock::counting::counted(|| {
+        each_at_most(&[1, 2, 3, 4, 5], 2, |_| {
+            crate::forklock::status(&mut std::process::Command::new("true")).expect("true runs")
+        });
+    });
+    assert_eq!(tally.started, 5);
+}

@@ -87,6 +87,9 @@ pub struct PolicyPrerequisite {
     /// Whether the acceptance broke because purlis replaced its seal key on this machine
     /// (#7714), never because something edited it.
     pub after_new_key: bool,
+    /// Whether nothing was ever kept on this machine for the project: under Waiting, the chats
+    /// keep the shipped `watch` until the press, and the window says so.
+    pub nothing_kept: bool,
     /// The project's policy as it stands, from the same read: the waiting rows among it.
     pub policy: PolicyState,
 }
@@ -120,6 +123,7 @@ impl Prerequisite {
                 digest: policy.digest.clone(),
                 needs_new_key: policy.needs_new_key,
                 after_new_key: policy.after_new_key,
+                nothing_kept: policy.nothing_kept,
                 policy: crate::policypress::state_of_standing(policy.standing.clone()),
             }),
         }
