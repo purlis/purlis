@@ -17,15 +17,6 @@ const NOTICED_WITHIN: Duration = Duration::from_secs(120);
 /// and loss, a failed try's wait among them.
 const BACK_WITHIN: Duration = Duration::from_secs(300);
 
-/// Waits up to `within` for `done`, asking every 20 ms so a short dim is not missed.
-pub(crate) fn until(within: Duration, what: &str, done: impl Fn() -> bool) {
-    let deadline = Instant::now() + within;
-    while !done() {
-        assert!(Instant::now() < deadline, "{what}");
-        std::thread::sleep(Duration::from_millis(20));
-    }
-}
-
 /// **This pool's SSH connection ends, as a lost connection ends it**: its ssh is killed outright.
 /// Only this pool's: the job's other tests run beside it over connections of their own. When.
 pub(super) fn the_link_drops(target: &Target) -> Instant {
@@ -57,12 +48,12 @@ fn in_a_remote_docker_pool() {
 
     the_link_drops(&target);
 
-    until(
+    until_within(
         NOTICED_WITHIN,
         "the chat reads as reconnecting once its connection is killed",
         || target.sessions.reconnecting().contains(&id),
     );
-    until(BACK_WITHIN, "the chat comes back by itself", || {
+    until_within(BACK_WITHIN, "the chat comes back by itself", || {
         !target.sessions.reconnecting().contains(&id)
     });
 
