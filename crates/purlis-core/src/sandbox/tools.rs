@@ -2817,10 +2817,12 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // The rest of execline's programs #7964 names, whose source was out of reach, refused on what
     // each is for, as `execlineb` and the rest of #7833's are: each runs the program after it once
     // it has set a variable, a descriptor, a signal or a loop up (`backtick`, `withstdinas`,
-    // `export`, `importas`, `elglob`, `forbacktickx`, `forstdin`, `loopwhilex`, `trap`, `tryexec`,
-    // `piperw`, the `fd*` programs, `heredoc`, `multisubstitute`, `define`, `runblock`, `shift`,
-    // `wait`, `case`, `envfile`, `getpid`, `getcwd`, `posix-cd`, `posix-umask` and the rest), and
-    // `homeof`, which prints a home folder, is kept with them on the conservative side. Then the
+    // `export`, `unexport`, `importas`, `elglob`, `forbacktickx`, `forstdin`, `loopwhilex`,
+    // `trap`, `tryexec`, `piperw`, `fdclose`, `fdblock`, `fdswap`, `fdreserve`, `heredoc`,
+    // `multisubstitute`, `multidefine`, `define`, `runblock`, `shift`, `wait`, `case`, `envfile`,
+    // `getpid`, `getcwd`, `posix-cd` and `posix-umask`), and `homeof`, which prints a home
+    // folder, is kept with them on the conservative side. (macOS's own `/usr/bin/wait` runs only
+    // the shell's `wait` builtin, read in source, and loses its Allow with execline's.) Then the
     // chain loaders of #7964's comment: ucspi-tcp's `rblsmtpd` and `fixcrio`, busybox's `udpsvd`,
     // and s6-networking's `s6-tcpserver4d` and `s6-tcpserver6d`, each of which runs the program
     // after it.
@@ -2915,8 +2917,8 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "rw-max",
     "cronitor",
     // The interpreters and runtimes #7964 names beside REFUSED_NAMES' own, refused on this
-    // list and not on that one, so a persona may still declare one in a reviewed line (ADR 0112,
-    // amended 2026-11-28): each runs the code, the script or the module it is handed.
+    // list and not on that one, so a persona may still declare one in a reviewed line (ADR 0112's
+    // amendment for #7964): each runs the code, the script or the module it is handed.
     // `kotlin`, `scala`, `groovy`, `clojure`, `boot`, `elixir`, `erl`, `escript`, `ghc`
     // (`-e`, and Template Haskell in any build), `runghc`, `crystal`, `nim`, `v`, `dart`,
     // `tcc` (`-run`), `mono`, the WebAssembly runtimes `wasmtime`, `wasmer` and `wasm3`,
@@ -2967,7 +2969,8 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // `watchman` those its triggers name; CMake's `ccmake` and `cpack` (`ctest` and `cmake`
     // are refused), Buck 1's `buck`, `muon` (meson's twin) and `samu` (ninja's) run a
     // project's build files; and icecream's `icerun` and `iceccd` and `distccd` run the
-    // compiler commands they are handed.
+    // compiler commands they are handed. (`buck` reaches #7833's `buck2` by its unversioned
+    // form too: `buck2` keeps a row of its own, and a unit test pins it.)
     "rebar3",
     "sdk",
     "nvm",

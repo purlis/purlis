@@ -9,9 +9,10 @@ families as #7964, and whose review's round 1 added the siblings in #7964's comm
 
 As in the amendment before this one, the source of these tools was out of reach: from the
 sandbox that did it, `gh` reaches only `purlis/purlis`, and a plain fetch of any other host was
-refused. Of the tools refused here, only `bundler`, `jjs` and `jsc` are on the machine. `jjs` is
-macOS's compiled Java stub and `jsc` JavaScriptCore's compiled shell, judged by what they are
-for. `bundler` is Ruby, and it was read where macOS keeps it:
+refused. Of the tools refused here, three have a file of that name on the machine's search
+path: `bundler`, `jjs` and `wait`; JavaScriptCore's `jsc` is there too, off the search path, in
+its framework's `Helpers`. `jjs` is macOS's compiled Java stub and `jsc` a compiled shell, judged
+by what they are for. `bundler` and `wait` are scripts, and were read where macOS keeps them:
 
 - **`bundler`** is macOS's `/usr/bin/bundler`, a RubyGems stub that loads Bundler 1.17.2
   (`/System/Library/Frameworks/Ruby.framework/Versions/2.6/usr/lib/ruby/2.6.0/bundler`). Its
@@ -19,6 +20,11 @@ for. `bundler` is Ruby, and it was read where macOS keeps it:
   every command that reads the bundle does, and `bundler exec` hands its command to
   `Kernel.exec` (`bundler/cli/exec.rb:50-53`). So `bundler` runs the project's code under nearly
   every subcommand, and is refused whole, as `bundle` already is.
+- **`wait`** is macOS's `/usr/bin/wait`, FreeBSD's four-line `/bin/sh` script that runs
+  ``builtin `echo ${0##*/} | tr …` ${1+"$@"}``: the shell's own `wait` builtin, which runs
+  nothing it is handed. It is harmless, and not the program the row is for: execline's `wait`
+  waits for the processes it is named, then runs the program after them. One name is both, so
+  the row stays, and macOS's `wait` loses its Allow with execline's: a cost, below.
 
 Every other tool is refused whole, on `NOT_FOR_A_RUN_GRANT`, on what the tool is for, as its
 manual describes it, and not on a line of its source. That is the conservative side: a refusal
@@ -116,9 +122,9 @@ within their own families.
 These rows refuse more than they name, through their first and last parts and the rest of
 `name_forms`. The extra cost is an Allow and nothing else. A probe of `not_for_a_run_grant` over
 the 1,723 program names on the machine that did this (`/usr/bin`, `/bin`, `/usr/sbin`, `/sbin`,
-`/usr/local/bin`, `/opt/homebrew/bin` and `/opt/homebrew/sbin`) found none newly refused but the
-ones named here. Short and common words cost the most elsewhere. These are examples, not a
-complete list:
+`/usr/local/bin`, `/opt/homebrew/bin` and `/opt/homebrew/sbin`) found none newly refused beyond
+the names of the rows themselves, of which `wait` is the one harmless program. Short and common
+words cost the most elsewhere. These are examples, not a complete list:
 
 - `case`, `wait`, `trap`, `shift`, `define`, `export`, `boot`, `air`, `fly`, `sdk`, `nvm`, `v`,
   `nim`, `erl`, `tcc`, `mono`, `dart`, `cset` and `pdsh` reach every `<word>-<name>` and
@@ -128,6 +134,9 @@ complete list:
   viewer, which runs nothing it is handed, loses its Allow by `v`.
 - `fly` is Concourse's, and fly.io's command line, also named `fly`, loses its Allow with it;
   its other name `flyctl` stays offered.
+- macOS's `/usr/bin/wait`, read above, runs nothing it is handed and loses its Allow by
+  execline's `wait`, the one name on the machine's search path these rows take from a harmless
+  program.
 - `homeof`, and runwhen's `rw-min` and `rw-max`, are refused with their families on the
   conservative side, though their manuals give them nothing to run.
 

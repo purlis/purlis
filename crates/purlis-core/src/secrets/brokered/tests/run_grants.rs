@@ -4101,7 +4101,8 @@ fn the_remote_runners_agents_and_configuration_runners_of_7964_are_offered_no_ru
 /// The cron daemons and runners #7964 names, each of which runs the commands of a table it is
 /// handed, or the program after it at a time: `fcron`, `bcron`, `dcron`, cronie's `crond`,
 /// `supercronic`, `ofelia`, `mcron` and `jobber` a table's or a file's commands; `snooze` and
-/// runwhen's `rw-add`, `rw-match`, `rw-sleep`, `rw-min` and `rw-max` the program after them;
+/// runwhen's programs (`runwhen`, `rw-add`, `rw-match`, `rw-sleep`, `rw-min` and `rw-max`) the
+/// program after them;
 /// and `cronitor exec` the command it wraps.
 #[test]
 fn the_cron_daemons_and_runners_of_7964_are_offered_no_run_grant() {
