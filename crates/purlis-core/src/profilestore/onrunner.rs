@@ -981,7 +981,7 @@ pub fn kept_for_the_desktop(
     keep_mcp_servers_of(
         &record,
         checked.as_ref().map_or(&[], |checked| checked.files()),
-    );
+    )?;
     super::made::loaded_unsent_cleared(&record)?;
     Ok(standing_for_the_wire(standing(&record, look)))
 }
@@ -990,10 +990,11 @@ pub fn kept_for_the_desktop(
 /// writes it (#3846), and takes out every project's own (ruled 2026-11-08), every project's
 /// [`PROJECT_MCP_CHOICES`](crate::sandbox::claude_wrap::PROJECT_MCP_CHOICES) and the
 /// [`ACCOUNT_CHOICES`](crate::sandbox::claude_wrap::ACCOUNT_CHOICES) (both ruled 2026-11-27). None
-/// sent leaves the user-scope ones as they are.
-fn keep_mcp_servers_of(record: &MachineProfile, files: &[(String, Vec<u8>)]) {
+/// sent leaves the user-scope ones as they are. It fails in words where Claude Code keeps the file
+/// locked past [`STATE_LOCK_WAIT`](crate::sandbox::claude_wrap::STATE_LOCK_WAIT) (#7947).
+fn keep_mcp_servers_of(record: &MachineProfile, files: &[(String, Vec<u8>)]) -> Result<(), String> {
     if record.harness != "claude" {
-        return;
+        return Ok(());
     }
     let servers = files
         .iter()
@@ -1002,7 +1003,7 @@ fn keep_mcp_servers_of(record: &MachineProfile, files: &[(String, Vec<u8>)]) {
     crate::sandbox::claude_wrap::keep_mcp_servers(
         &super::sent::claude_state_file(record),
         servers.as_ref().and_then(|doc| doc.get("mcpServers")),
-    );
+    )
 }
 
 /// **The name of each profile this runner, with `homes` its store, keeps for the desktop

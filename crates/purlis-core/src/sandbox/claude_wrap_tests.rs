@@ -735,3 +735,58 @@ fn a_claude_code_chats_own_temporary_folder_is_made_where_claude_code_roots_its_
         "{rooted:?} is past what Claude Code roots its sandbox's $TMPDIR in"
     );
 }
+
+/// A state file holding a computer-use choice a keep takes out, with its lock's folder.
+fn a_state_file_to_keep(dir: &Path) -> (PathBuf, PathBuf, String) {
+    let state = dir.join(claude_wrap::STATE_FILE);
+    let planted = r#"{"computerUseChoices":{"org-1:account-1":"on"},"numStartups":4}"#;
+    std::fs::write(&state, planted).expect("its state");
+    (
+        state.clone(),
+        dir.join(".claude.json.lock"),
+        planted.to_owned(),
+    )
+}
+
+/// **A keep fails in words, and leaves the state file as it was, while Claude Code keeps its
+/// lock on it past the wait** (#7947): the lock is Claude Code's, so it stays.
+#[test]
+fn a_keep_fails_in_words_while_claude_code_holds_the_state_files_lock() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let (state, lock, planted) = a_state_file_to_keep(dir.path());
+    std::fs::create_dir(&lock).expect("Claude Code's lock");
+
+    let kept =
+        claude_wrap::keep_mcp_servers_within(&state, None, std::time::Duration::from_millis(200));
+
+    let why = kept.expect_err("the keep fails");
+    assert!(why.contains("locked for 0.2 s"), "{why}");
+    assert!(why.contains("try again"), "{why}");
+    assert_eq!(std::fs::read_to_string(&state).expect("it reads"), planted);
+    assert!(lock.is_dir(), "Claude Code's lock stays");
+}
+
+/// **A lock no one has touched for the stale mark is taken over** (#7947), as Claude Code's
+/// `proper-lockfile` takes it over: it was left by a Claude Code that stopped, and would otherwise
+/// fail every keep.
+#[test]
+fn a_keep_takes_over_a_stale_lock_on_the_state_file() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let (state, lock, _) = a_state_file_to_keep(dir.path());
+    std::fs::create_dir(&lock).expect("a lock left behind");
+    let long_ago = std::time::SystemTime::now()
+        - claude_wrap::STATE_LOCK_STALE
+        - std::time::Duration::from_secs(5);
+    std::fs::File::open(&lock)
+        .and_then(|folder| folder.set_modified(long_ago))
+        .expect("the lock is old");
+
+    claude_wrap::keep_mcp_servers_within(&state, None, std::time::Duration::from_millis(200))
+        .expect("the keep takes the lock over");
+
+    assert_eq!(
+        std::fs::read_to_string(&state).expect("it reads"),
+        r#"{"numStartups":4}"#
+    );
+    assert!(!lock.exists(), "the keep let go of the lock it took over");
+}

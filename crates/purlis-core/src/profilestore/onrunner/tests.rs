@@ -2897,6 +2897,43 @@ fn a_keep_sets_the_computer_use_choice_back_to_its_default() {
     assert_eq!(doc, kept);
 }
 
+/// **A keep takes the lock Claude Code takes for its state file, so neither loses the other's
+/// update** (#7947). Claude Code 2.1.332 saves the file under a `<state>.lock` folder it makes,
+/// reading the file again once it holds it. Here a writer does the same: it takes the lock, reads,
+/// and writes what it read with a key of its own a little later. A keep started meanwhile waits
+/// for the lock and reads what the writer left, so the writer's key and the keep's reset both
+/// stay; a keep that wrote without the lock had its reset undone by the writer's save.
+#[test]
+fn a_keep_waits_for_claude_codes_lock_on_the_state_file_and_loses_no_update() {
+    let dir = tempfile::tempdir().unwrap();
+    let (there, keep_again) = a_kept_state_file(dir.path());
+    let kept: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&there).unwrap()).unwrap();
+    let mut planted = kept.clone();
+    planted["computerUseChoices"] = serde_json::json!({"org-1:account-1": "on"});
+    fs::write(&there, planted.to_string()).unwrap();
+
+    let lock = PathBuf::from(format!("{}.lock", there.display()));
+    fs::create_dir(&lock).unwrap();
+    let read_under_the_lock: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&there).unwrap()).unwrap();
+    std::thread::scope(|scope| {
+        scope.spawn(&keep_again);
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        let mut saved = read_under_the_lock;
+        saved["numStartups"] = 5.into();
+        fs::write(&there, saved.to_string()).unwrap();
+        fs::remove_dir(&lock).unwrap();
+    });
+
+    let doc: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&there).unwrap()).unwrap();
+    let mut both = kept;
+    both["numStartups"] = 5.into();
+    assert_eq!(doc, both);
+    assert!(!lock.exists(), "the keep let go of the lock");
+}
+
 /// **A runner before 1.66 is sent no such file**, which it would refuse with all the settings.
 #[test]
 fn a_runner_that_keeps_no_servers_is_sent_none() {
