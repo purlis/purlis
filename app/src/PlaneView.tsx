@@ -80,6 +80,7 @@ import {
 import {
   catalogue,
   catalogued,
+  besideTheFront,
   endId,
   freshId,
   ignoreId,
@@ -209,6 +210,8 @@ import {
   type PanelsField,
   type WorkspacePanels,
 } from "./workspacePanels";
+import { CatalogueRegion, CatalogueRows } from "./catalogueRows";
+import { useHeldWhileSame } from "./heldWhileSame";
 import { useTaskBranchActs } from "./taskBranchActs";
 import {
   heardFrom,
@@ -9325,15 +9328,19 @@ export const PlaneView = memo(function PlaneView({
   /** The chats working in the focused workspace, which is what the explorer files under the
    *  spots they are working at. The plane's own answer, like everything else about where a
    *  chat is: nothing on the plane records a chat, so the directory it works in is it. */
-  const workspaceChats = useMemo(
-    () =>
-      (sidebar?.workspaces.find((ws) => ws.name === ofWorkspace)?.chats ?? []).map((chat) => ({
-        // Named as the Chats list names it (`shownName`, #1484), never by the harness's own
-        // name, which is a number (charter-app#254): a task with no tab too.
-        ...chat,
-        name: shownName(tabs, chat),
-      })),
-    [ofWorkspace, sidebar, tabs],
+  // Held while it says the same (FS-W2, #7910): a press on a tab names every chat as before, and
+  // the explorer, which draws them, is not drawn again for it.
+  const workspaceChats = useHeldWhileSame(
+    useMemo(
+      () =>
+        (sidebar?.workspaces.find((ws) => ws.name === ofWorkspace)?.chats ?? []).map((chat) => ({
+          // Named as the Chats list names it (`shownName`, #1484), never by the harness's own
+          // name, which is a number (charter-app#254): a task with no tab too.
+          ...chat,
+          name: shownName(tabs, chat),
+        })),
+      [ofWorkspace, sidebar, tabs],
+    ),
   );
 
   /**
@@ -9405,12 +9412,17 @@ export const PlaneView = memo(function PlaneView({
   const listRows = useRowsUntilRead(chatRows, finishedSettled);
   /** Each persona's chats, by number (#3341): what a persona's row in the Personas view reads
    *  its state from. */
-  const personaChats = useMemo(() => {
-    const of = new Map<string, number[]>();
-    for (const row of listRows)
-      if (row.persona !== null) of.set(row.persona, [...(of.get(row.persona) ?? []), row.session]);
-    return of;
-  }, [listRows]);
+  // Held while it says the same (FS-W2, #7910): the rows are made anew for a press on a tab, and
+  // the Personas view, which reads this, is not drawn again for it.
+  const personaChats = useHeldWhileSame(
+    useMemo(() => {
+      const of = new Map<string, number[]>();
+      for (const row of listRows)
+        if (row.persona !== null)
+          of.set(row.persona, [...(of.get(row.persona) ?? []), row.session]);
+      return of;
+    }, [listRows]),
+  );
   /** The personas each workspace's chats ran as (#3483), kept after a chat closes (#3566): the
    *  Personas view's In this workspace, with the ones the workspace's session records name. */
   const chatPersonasIn = useWorkedHere(plane, listRows);
@@ -10269,6 +10281,14 @@ export const PlaneView = memo(function PlaneView({
    * `actions.catalogued` has the table and the method.
    */
   const found = useMemo(() => catalogued(offers), [offers]);
+  /**
+   * **The same catalogue as a store** (FS-W2, #7910): the views beside the tabs (Changes, the
+   * panels, the explorer) read the rows they draw out of it by id (`catalogueRows.ts`), so a
+   * catalogue made anew for a press on a tab, which moves only the tabs' and panes' rows, draws
+   * none of them. Held as the view's catalogue is committed, before anything is painted.
+   */
+  const [catalogueHeld] = useState(() => new CatalogueRows(found));
+  useLayoutEffect(() => catalogueHeld.hold(found), [catalogueHeld, found]);
 
   const by = useCallback((id: string) => found.get(id), [found]);
   /** The strip's `+` list (#5292): the catalogue's rows marked for it. */
@@ -10555,7 +10575,29 @@ export const PlaneView = memo(function PlaneView({
     byNow.current = by;
     pressNow.current = press;
   }, [by, press]);
-  const pressTaskEnd = useCallback((offer: Offer) => pressNow.current(offer), []);
+  /** `press`, as one function for the life of the view: what a tab chip's menu and the views
+   *  beside the tabs press (FS-W2, #7910), which a press that moved with the tabs would draw. */
+  const pressHeld = useCallback((offer: Offer) => pressNow.current(offer), []);
+  /**
+   * **What the explorer opens and goes to**, as one function each for the life of the view, as
+   * `pressHeld` is (FS-W2, #7910): `showView` and `focusWorkspace` are made anew with the tabs,
+   * and handed as they are they drew the explorer for a press on a tab.
+   */
+  const showViewNow = useRef(showView);
+  const focusWorkspaceNow = useRef(focusWorkspace);
+  useEffect(() => {
+    showViewNow.current = showView;
+    focusWorkspaceNow.current = focusWorkspace;
+  }, [showView, focusWorkspace]);
+  const openPieceFile = useCallback(
+    (place: Place, path: string) =>
+      showViewNow.current(pieceFileView(place, path), pieceFileTitle(place, path)),
+    [],
+  );
+  const goToWorkspace = useCallback(
+    (workspace: string) => focusWorkspaceNow.current(workspace),
+    [],
+  );
   /**
    * **Chat `session`'s Chat log, opened showing `filter`** (R-226): the press of its own row in
    * the chat's list (`chat.log:<session>`), so every entry point opens it as that row does. One
@@ -10757,7 +10799,7 @@ export const PlaneView = memo(function PlaneView({
           dragging={isDragging}
           onShow={showPickedIn(at)}
           ends={taskEndsOf}
-          onPress={pressTaskEnd}
+          onPress={pressHeld}
           onPlace={placeFromChip}
           placeOf={placeRowFromChip}
           used={usedFromChip}
@@ -10781,7 +10823,7 @@ export const PlaneView = memo(function PlaneView({
       nameOf,
       placeFromChip,
       placeRowFromChip,
-      pressTaskEnd,
+      pressHeld,
       showPickedIn,
       stopAllOf,
       taskEndsOf,
@@ -12609,36 +12651,40 @@ export const PlaneView = memo(function PlaneView({
                       workspace={ofWorkspace}
                       equal={FOR_THE_GIT_SIDE}
                       draw={(state) => (
-                        <Explorer
-                          // Files, of the workspace the strip is on: Repos and branches is the Panel's
-                          // Repos view (#1737), and the strip is where a workspace is selected (qw358).
-                          part="explorer"
-                          plane={plane}
-                          workspace={ofWorkspace}
-                          live={ofWorkspace !== undefined && liveOf(ofWorkspace)}
-                          state={state}
-                          chats={workspaceChats}
-                          spot={spot}
-                          onPick={pickSpot}
-                          offers={found}
-                          onPress={press}
-                          onOpenFile={(place, path) =>
-                            showView(pieceFileView(place, path), pieceFileTitle(place, path))
-                          }
-                          focus={cockpit}
-                          onFocus={setFocusedBranch}
-                          cloning={cloning}
-                          onReadAgain={rereadPanels}
-                          onAddToChat={setAddingToChat}
-                          // A workspace's repo pressed in the plane root's files (issue 1916).
-                          onGoToWorkspace={focusWorkspace}
-                          // The Skills view's Show in Explorer (#3266).
-                          reveal={explorerReveal}
-                          // Search contents (#3343): Search on the filter's scope, with its words.
-                          onSearchContents={searchContents}
-                          onSearchKey={keepExplorerSearchKey}
-                          // Files dropped from the file manager on the workspace's own (#5378).
-                          onDropFiles={workspaceWrites.drop}
+                        <CatalogueRegion
+                          store={catalogueHeld}
+                          reads={besideTheFront}
+                          draw={(rows) => (
+                            <Explorer
+                              // Files, of the workspace the strip is on: Repos and branches is the Panel's
+                              // Repos view (#1737), and the strip is where a workspace is selected (qw358).
+                              part="explorer"
+                              plane={plane}
+                              workspace={ofWorkspace}
+                              live={ofWorkspace !== undefined && liveOf(ofWorkspace)}
+                              state={state}
+                              chats={workspaceChats}
+                              spot={spot}
+                              onPick={pickSpot}
+                              offers={rows}
+                              onPress={pressHeld}
+                              onOpenFile={openPieceFile}
+                              focus={cockpit}
+                              onFocus={setFocusedBranch}
+                              cloning={cloning}
+                              onReadAgain={rereadPanels}
+                              onAddToChat={setAddingToChat}
+                              // A workspace's repo pressed in the plane root's files (issue 1916).
+                              onGoToWorkspace={goToWorkspace}
+                              // The Skills view's Show in Explorer (#3266).
+                              reveal={explorerReveal}
+                              // Search contents (#3343): Search on the filter's scope, with its words.
+                              onSearchContents={searchContents}
+                              onSearchKey={keepExplorerSearchKey}
+                              // Files dropped from the file manager on the workspace's own (#5378).
+                              onDropFiles={workspaceWrites.drop}
+                            />
+                          )}
                         />
                       )}
                     />
@@ -12651,21 +12697,27 @@ export const PlaneView = memo(function PlaneView({
                       workspace={ofWorkspace}
                       equal={FOR_THE_GIT_SIDE}
                       draw={(state) => (
-                        <Explorer
-                          part="repos"
-                          plane={plane}
-                          workspace={ofWorkspace}
-                          live={ofWorkspace !== undefined && liveOf(ofWorkspace)}
-                          state={state}
-                          chats={workspaceChats}
-                          spot={spot}
-                          onPick={pickSpot}
-                          offers={found}
-                          onPress={press}
-                          focus={cockpit}
-                          onFocus={setFocusedBranch}
-                          cloning={cloning}
-                          onReadAgain={rereadPanels}
+                        <CatalogueRegion
+                          store={catalogueHeld}
+                          reads={besideTheFront}
+                          draw={(rows) => (
+                            <Explorer
+                              part="repos"
+                              plane={plane}
+                              workspace={ofWorkspace}
+                              live={ofWorkspace !== undefined && liveOf(ofWorkspace)}
+                              state={state}
+                              chats={workspaceChats}
+                              spot={spot}
+                              onPick={pickSpot}
+                              offers={rows}
+                              onPress={pressHeld}
+                              focus={cockpit}
+                              onFocus={setFocusedBranch}
+                              cloning={cloning}
+                              onReadAgain={rereadPanels}
+                            />
+                          )}
                         />
                       )}
                     />
@@ -12700,13 +12752,19 @@ export const PlaneView = memo(function PlaneView({
                       workspace={ofWorkspace}
                       equal={FOR_THE_GIT_SIDE}
                       draw={(state) => (
-                        <ChangesView
-                          workspace={ofWorkspace}
-                          state={state}
-                          offers={found}
-                          onPress={press}
-                          columns={facts.columns}
-                          cloning={cloning}
+                        <CatalogueRegion
+                          store={catalogueHeld}
+                          reads={besideTheFront}
+                          draw={(rows) => (
+                            <ChangesView
+                              workspace={ofWorkspace}
+                              state={state}
+                              offers={rows}
+                              onPress={pressHeld}
+                              columns={facts.columns}
+                              cloning={cloning}
+                            />
+                          )}
                         />
                       )}
                     />
@@ -12812,25 +12870,31 @@ export const PlaneView = memo(function PlaneView({
                         store={workspacePanels}
                         workspace={ofWorkspace}
                         draw={(state) => (
-                          <Panels
-                            view={view}
-                            workspace={ofWorkspace}
-                            state={state}
-                            offers={found}
-                            onPress={press}
-                            contributed={contributed}
-                            shownRow={shownRow}
-                            onShowRow={setShownRow}
-                            vaults={vaults}
-                            onAddTodo={edits.addTodo}
-                            atRoot={focused === OUTSIDE}
-                            rootPanels={rootPanels?.contributed}
-                            personaChats={personaChats}
-                            chatPersonasHere={
-                              ofWorkspace === undefined
-                                ? undefined
-                                : chatPersonasIn.get(ofWorkspace)
-                            }
+                          <CatalogueRegion
+                            store={catalogueHeld}
+                            reads={besideTheFront}
+                            draw={(rows) => (
+                              <Panels
+                                view={view}
+                                workspace={ofWorkspace}
+                                state={state}
+                                offers={rows}
+                                onPress={pressHeld}
+                                contributed={contributed}
+                                shownRow={shownRow}
+                                onShowRow={setShownRow}
+                                vaults={vaults}
+                                onAddTodo={edits.addTodo}
+                                atRoot={focused === OUTSIDE}
+                                rootPanels={rootPanels?.contributed}
+                                personaChats={personaChats}
+                                chatPersonasHere={
+                                  ofWorkspace === undefined
+                                    ? undefined
+                                    : chatPersonasIn.get(ofWorkspace)
+                                }
+                              />
+                            )}
                           />
                         )}
                       />,

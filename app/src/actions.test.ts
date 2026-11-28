@@ -73,6 +73,8 @@ import {
   besideId,
 } from "./actions";
 import { ASK_LOCKED_ID, askId, askRows, chatLinksId, inPalette, usingSkillId } from "./actions";
+import { besideTheFront } from "./actions";
+import { dequal } from "dequal/lite";
 import { NO_LINK_FOLLOWED, listedMemoryOffers, memoryMoveId, moveRows } from "./actions";
 import { PUBLISHED_WITH_THE_PROJECT } from "./memoryMoves";
 import { sessionOffers } from "./actions";
@@ -5327,5 +5329,43 @@ describe("Links in this pane… on the ⋯ menu and in the palette (#6332)", () 
   it("is no row of a chat no pane draws, whose screen there is none of", () => {
     const offers = catalogue(now({ tabs, listed: [{ session: 9, name: "away 9" } as ListedChat] }));
     expect(by(offers, chatLinksId(9))).toBeUndefined();
+  });
+});
+
+describe("the rows a press on a tab moves (FS-W2, #7910)", () => {
+  /** Three chats' tabs, the second split, each chat in a branch folder. */
+  const three = splitFocusedPane(
+    openTab(openTab(openTab(noTabs(), 7, "3", "steward"), 8, "sh"), 9, "4", "devops"),
+    "row",
+    10,
+  );
+  const rowsWith = (tabs: Tabs) =>
+    catalogued(
+      catalogue(
+        now({
+          tabs,
+          plane: "/plane",
+          worktreeOf: () => PIECE,
+          askable: () => true,
+          listed: [7, 8, 9, 10].map((session) => listed(session)),
+        }),
+      ),
+    );
+
+  it("are the rows of the front alone, so a view beside the tabs reads none that moved", () => {
+    const before = rowsWith(selectTab(three, 1));
+    const after = rowsWith(selectTab(three, 3));
+    const moved = [...new Set([...before.keys(), ...after.keys()])].filter(
+      (id) => !dequal(before.get(id), after.get(id)),
+    );
+    // The press moved rows, or nothing here is held.
+    expect(moved.length).toBeGreaterThan(0);
+    expect(moved.filter(besideTheFront)).toEqual([]);
+  });
+
+  it("leaves the rows about a chat or the project to the views beside the tabs", () => {
+    const rows = [...rowsWith(three).keys()];
+    for (const id of ["chat.new", "charter.quit", "chat.log:9", "chat.rename:7"])
+      expect(rows.filter(besideTheFront)).toContain(id);
   });
 });

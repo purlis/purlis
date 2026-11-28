@@ -6452,6 +6452,29 @@ export function catalogued(offers: readonly Offer[]): Catalogued {
 }
 
 /**
+ * **Whether a row says which tab or pane is in front** (FS-W2, #7910): the tab strip's and the
+ * panes' own rows, a chat's *Links in this pane…* (its key works in the pane in front alone,
+ * #6488), a chat's Branch rows (about the chat in front, #4851), the tab's Tasks and Focus mode.
+ * A press on a tab moves these rows, and no other (`actions.test.ts` holds it).
+ *
+ * A view that draws none of them, such as the Changes view, the panels and the explorer, reads
+ * the catalogue without them (`catalogueRows.ts`) and is not drawn again for a tab.
+ */
+function ofTheFront(id: string): boolean {
+  return (
+    id.startsWith("tab.") ||
+    id.startsWith("pane.") ||
+    id.startsWith("chat.links:") ||
+    id.startsWith("chat.branch.") ||
+    id === TAB_TASKS_ID ||
+    id === FOCUS_MODE_ID
+  );
+}
+
+/** Every row but the ones {@link ofTheFront}: what a view beside the tabs reads. */
+export const besideTheFront = (id: string): boolean => !ofTheFront(id);
+
+/**
  * The rows a context menu on that item draws: the catalogue's own offers, in menu order.
  *
  * **A row the catalogue does not have is dropped rather than invented**, which is `Doer`'s

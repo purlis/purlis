@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import {
   CircleCheck,
   CircleDashed,
@@ -104,8 +104,12 @@ import { Tree, TreeRow } from "./ui/tree/Tree";
  * are in two regions — ADR 0038 names that as the visible crack in its own rule — and the
  * least dishonest way to have them in both is to make each answer its own question: on the
  * left a piece is a thing you pick, here it is a branch that exists and may be unwired.
+ *
+ * **Drawn only when a prop moves** (`memo`, FS-W2 #7910): a press on a tab moves none, since
+ * the catalogue's rows come from its store (`catalogueRows.ts`) and the presses are the view's
+ * own for its life.
  */
-export function ChangesView({
+export const ChangesView = memo(function ChangesView({
   workspace,
   state,
   offers,
@@ -235,7 +239,7 @@ export function ChangesView({
       </p>
     </section>
   );
-}
+});
 
 /** What every row is drawn with: the clone menu's catalogue. */
 type At = {

@@ -68,6 +68,7 @@ const PARTS = {
   Inbox: ["asks", "updates", "notices"],
   ChangesView: ["changes"],
   Panels: ["personas", "vaults", "memory", "todos", "sessions"],
+  Explorer: ["explorer", "repos"],
 } as const;
 
 /** Each part as `[region, name]`. */
@@ -87,10 +88,16 @@ const draws = (): Draws =>
 const each = (times: number): Draws =>
   Object.fromEntries(EVERY_PART.map(([region, name]) => [`${region} ${name}`, times]));
 
+/** Each of the parts `named` drawn `times` times, in every region it is drawn in. */
+const parts = (times: number, ...named: (keyof typeof PARTS)[]): Draws =>
+  Object.fromEntries(
+    named.flatMap((name) => PARTS[name].map((region) => [`${region} ${name}`, times])),
+  );
+
 /**
- * **What each part draws now: the baseline** (2026-11-28, on main at #7924). Every part is
- * drawn again for a tab and three times for a settings change, though neither moves what
- * most of them show; a chat's state moving draws none of them.
+ * **What each part draws now: the baseline** (2026-11-28, on main at #7924; lowered by FS-W2,
+ * #7910). Before FS-W2 every part was drawn again for a tab and three times for a settings
+ * change, though neither moves what most of them show; a chat's state moving draws none of them.
  *
  * **The settings change's three**, traced commit by commit (2026-11-28): the `PlaneView` that
  * heard `plane-changed`, as it is told; the `App` the project's settings reads answer into
@@ -103,8 +110,26 @@ const each = (times: number): Draws =>
  * come in the order their reads are chained, whatever the runner's speed.
  */
 const BASELINE = {
-  tab: each(1),
-  settings: each(3),
+  /**
+   * **The side views a tab does not move draw nothing for it** (FS-W2, #7910): the Changes view,
+   * the panels and the explorer read the catalogue's rows by id, out of its store
+   * (`catalogueRows.ts`), and only rows about the tabs and panes move for a press on a tab. The
+   * view, the Chats list and the Inbox still draw once: the view holds the tabs, and props of
+   * the other two still move with them.
+   */
+  tab: { ...each(1), ...parts(0, "ChangesView", "Panels", "Explorer") },
+  /**
+   * The same three commits draw the view, the Chats list and the Inbox, and no longer the side
+   * views, which are drawn only when a prop of theirs moves (FS-W2, #7910). **What still draws
+   * them once:** the panels, for the extensions on in the workspace, read again for a settings
+   * change and handed down as a new list (`contributed`); the explorer, for its file icons'
+   * read (`useFileIcons`, `projectTheme.ts`), which answers again for one.
+   */
+  settings: {
+    ...each(3),
+    ...parts(0, "ChangesView"),
+    ...parts(1, "Panels", "Explorer"),
+  },
   move: each(0),
 };
 
