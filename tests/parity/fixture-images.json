@@ -1,0 +1,32 @@
+{
+  "fixtures": {
+    "remote-docker-sshd": {
+      "dockerfile": "tests/remote-docker/sshd.Dockerfile",
+      "context": "tests/remote-docker",
+      "files": ["sshd-entrypoint.sh"],
+      "buildArgs": {},
+      "image": null
+    },
+    "remote-podman-sshd": {
+      "dockerfile": "tests/remote-docker/sshd.Dockerfile",
+      "context": "tests/remote-docker",
+      "files": ["sshd-entrypoint.sh"],
+      "buildArgs": { "POOL_UID": "1001" },
+      "image": null
+    },
+    "ssh-runner-sshd": {
+      "dockerfile": "tests/ssh-runner/sshd.Dockerfile",
+      "context": "tests/ssh-runner",
+      "files": ["sshd-entrypoint.sh"],
+      "buildArgs": {},
+      "image": null
+    },
+    "ssh-runner-systemd": {
+      "dockerfile": "tests/ssh-runner/systemd.Dockerfile",
+      "context": "tests/ssh-runner",
+      "files": [],
+      "buildArgs": {},
+      "image": null
+    }
+  }
+}

@@ -198,6 +198,15 @@ A test that needs a rig (an sshd, a dind, a systemd machine: `tests/remote-docke
 jobs set, a missing fixture fails the test. Never write `let Some(fixture) = fixture() else { return }`
 around an `std::env::var(...).ok()?`: put the lookup behind `fixture_or_skip`.
 
+The rigs' machine images are pulled by digest, not built in the job (#7983):
+`tests/parity/fixture-images.json` pins each one beside the source it was built from, and
+`node tools/fixture-images.mjs prepare-all` pulls them (or builds one whose files your change moved
+past its pin, with a warning) before any `up.sh` runs. A change to a fixture's Dockerfile or the
+files it copies is published by `.github/workflows/parity-fixture-images.yml` once it is on main,
+which then proposes the new pins in a pull request (`parity-fixture-images/pins`) for a person to
+merge. Never write a digest into the manifest by hand: `fixture-images.mjs pin` records the source
+with it.
+
 The fault suite is `crates/purlis-core/tests/it/a_live_remote_chat_survives_the_faults_that_define_trust.rs`:
 fifteen cases, one test each, each putting a fault under a live chat with
 `tests/remote-faults/faults.sh` (`drop`, `blackhole`, `slow`, `restart-sshd`, `rotate-hostkey`,
