@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795861158295,
+  "lastUpdate": 1795862295728,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58884,6 +58884,48 @@ window.BENCHMARK_DATA = {
             "value": 101.3640295,
             "unit": "ms",
             "extra": "median of 5 runs: 101.130, 101.200, 101.364, 102.338, 102.818 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "df03833513de505a879d8f249712f507f7cd9426",
+          "message": "Run grant: the terminals, VM runners, compilers, interpreters and builders of #7988 refused (#8019)\n\n* Run grant: the terminals and tmux session runners of #7988 refused\n\nkitty's kitten, xfce4-terminal, mate-terminal, terminator, tilix, foot\nand footclient, urxvt and rxvt, suckless st, ghostty, Debian's\nx-terminal-emulator, lxterminal, qterminal, terminology, GNOME Console's\nkgx and ptyxis run the command they are handed in the window they open,\nas xterm and kitty do. tmuxinator and tmuxp run the commands of a YAML\nfile in tmux's panes, and tmate is tmux's fork. Source out of reach, so\nrefused whole on what each is for. run_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GGXCW2CZV4CMZZF0RRQPSV\nPurlis-Persona: steward\n\n* Run grant: the VM and container runners of #7988 refused\n\nOrbStack's orb (orbctl's other name), Parallels' prlctl, UTM's utmctl,\ntart and VirtualBox's VBoxManage run a command in a VM's guest; lxc and\nincus in a container; virsh drives libvirt's guests; qemu reaches every\nqemu-system-* by its first part; wsl runs one in a WSL distribution.\nThe lxc row reaches the rows lxc-attach, lxc-execute and lxc-init by\ntheir first part, so a unit test pins each as a row of its own (seen red\nwith them taken off). Source out of reach, so refused whole. run_grants\ntest seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GGXCW2CZV4CMZZF0RRQPSV\nPurlis-Persona: steward\n\n* Run grant: the compilers and shells of #7988 that run code refused\n\nrunhaskell (runghc's twin) runs a Haskell file and ghci code; kotlinc\nruns a script; scalac's macros and plugins run as it compiles; groovysh\nand Elixir's iex are shells; clj is clojure's REPL front-end; erlc runs\nparse transforms; jbang runs a Java file. QuickJS's qjsc, qjs's\ncompiler, is kept with them on the conservative side. On\nNOT_FOR_A_RUN_GRANT, not REFUSED_NAMES, as #7964's runtimes are. Source\nout of reach. run_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GGXCW2CZV4CMZZF0RRQPSV\nPurlis-Persona: steward\n\n* Run grant: the interpreters and runtimes of #7988 refused\n\nFrom #7988's comment: babashka's bb and nbb, janet, fennel, moon, Chez's\nchez, scheme and petite, CHICKEN's csi (the C# REPL's name too), Gambit's\ngsi, chibi-scheme, ecl, ccl, abcl, kawa and lfe; jython, jruby,\ntruffleruby, graalpy, mruby, ocamlrun, utop, tclkit, expectk, F#'s fsi,\nscriptcs, planck and lumo; and gleam, roc, odin and hare, whose run\nbuilds and runs a program. Each runs the code it is handed. On\nNOT_FOR_A_RUN_GRANT, not REFUSED_NAMES, as #7964's runtimes are. Source\nout of reach. run_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GGXCW2CZV4CMZZF0RRQPSV\nPurlis-Persona: steward\n\n* Run grant: the tracers of #7988 refused\n\nSystemTap's stap -c runs the command it traces, and stap -g embeds C in\nthe kernel; heaptrack runs the program after it to trace its heap.\nRefused whole, as strace and bpftrace are: source out of reach.\nrun_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GGXCW2CZV4CMZZF0RRQPSV\nPurlis-Persona: steward\n\n* Run grant: the build and version managers and cron siblings of #7988 refused\n\nrebar 2's rebar runs a project's hooks and plugins, as rebar3 does;\nnimble a package's NimScript tasks, shards its postinstall, dub its\nbuild's commands, flutter a project's build, mill a build's Scala, ghcup\nrun the command after it, and tj's n the command its exec and run are\nhanded. jobber's jobberrunner runs a jobfile's commands and bcron's\nbcrontab installs a table bcron runs. The rebar row reaches the rebar3\nrow by its unversioned form, so a unit test pins rebar3 as a row of its\nown (seen red with it taken off). Source out of reach, so refused whole.\nrun_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GGXCW2CZV4CMZZF0RRQPSV\nPurlis-Persona: steward\n\n* Run grant: the configuration, proxy and notifier runners of #7988 refused\n\npyinfra runs a deploy file's Python and the commands it names on the\nhosts it is handed; mitmproxy, mitmdump and mitmweb load the Python\nscript their -s names; terminal-notifier -execute runs a shell command\nwhen its notification is clicked. Source out of reach, so refused whole.\nrun_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GGXCW2CZV4CMZZF0RRQPSV\nPurlis-Persona: steward\n\n* Run grant: #7988's lxc pin closed, and the tracers' test packed as rustfmt packs it\n\nThe lxc pin's closing brace had landed after #7964's buck2 pin, so the\ntests module did not parse from the VM runners' commit on. Put back where\nit belongs, and the tracers' two names are on one line, as rustfmt packs\nthem.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GGXCW2CZV4CMZZF0RRQPSV\nPurlis-Persona: steward\n\n* ADR 0112 amendment and Security fragment for #7988\n\nThe amendment records what is refused by family, that none of #7988's\nprograms could be read (none on this Mac's search path, upstream out of\nreach), why none took a command_flags row, why the compilers and runtimes\ngo on NOT_FOR_A_RUN_GRANT and not REFUSED_NAMES, that nothing #7988 names\nis left offered, the rows the new ones reach (lxc-attach, lxc-execute,\nlxc-init, rebar3, each pinned), and what the new rows' forms cost: none\nnewly refused on this machine's 1,723 programs, and examples elsewhere\n(gst-* by st, gn by n, qemu-img by qemu, lxc-ls by lxc). Other families\nare filed as #8017.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GGXCW2CZV4CMZZF0RRQPSV\nPurlis-Persona: steward\n\n* Run grant: #7988's code review: ptyxis apart from GNOME Console, qjsc's reason, the forms' reach\n\nFrom the pre-PR review. ptyxis is its own terminal, not GNOME Console's.\nqjsc is refused because it runs the C compiler to build what it makes,\nkept with its family on the conservative side, and the ADR no longer calls\nit a program that runs nothing. The fragment and the ADR say the g<name>,\n<name>-<word> and <word>-<name> forms reach the one-word rows: a row with a\ndash in it is reached only by its own parts.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GGXCW2CZV4CMZZF0RRQPSV\nPurlis-Persona: steward\n\n* Run grant: review of #8019: ptyxis set apart, tmate as tmux's fork, chibi-scheme's reach named\n\nFrom the dispatched review. The terminals' row comment no longer reads\nptyxis as GNOME Console's, the fragment lists tmate under tmux's session\nrunners and fork, and the ADR names scheme's reach of chibi-scheme, within\nthe interpreters' own family, so it needs no pin.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GGXCW2CZV4CMZZF0RRQPSV\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T09:40:41Z",
+          "tree_id": "ac3fb09e86b556a38c2d455766686a44bca96c5d",
+          "url": "https://github.com/purlis/purlis/commit/df03833513de505a879d8f249712f507f7cd9426"
+        },
+        "date": 1795862286942,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6829270000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.678, 0.680, 0.683, 0.692, 0.693 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.669895,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.377, 16.578, 16.670, 16.674, 16.762 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.918184,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.751, 101.627, 101.918, 102.044, 103.204 ms"
           }
         ]
       }
