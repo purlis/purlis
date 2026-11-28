@@ -4583,3 +4583,13 @@ fn the_terminal_sharers_and_recorders_of_8037_are_offered_no_run_grant() {
 fn the_guests_converter_of_8037_is_offered_no_run_grant() {
     refused_as_running_others("virt-v2v");
 }
+
+/// The interpreters and shells #8037 names, each of which runs the code or the script it is
+/// handed: Gambit's compiler `gsc`, whose `-e` runs code as `gsi`'s does, Hissp's `hissp` and
+/// `lissp`, and the shells `ion` and `oil`.
+#[test]
+fn the_interpreters_and_shells_of_8037_are_offered_no_run_grant() {
+    for name in ["gsc", "hissp", "lissp", "ion", "oil"] {
+        refused_as_running_others(name);
+    }
+}

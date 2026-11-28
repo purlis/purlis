@@ -3321,6 +3321,15 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // The guest's converter #8037 names, refused whole, as libguestfs's `virt-customize` is:
     // `virt-v2v`'s `--run` runs a script in the guest it converts.
     "virt-v2v",
+    // The interpreters and shells #8037 names, refused on this list and not on REFUSED_NAMES, as
+    // #7964's, #7988's and #8017's are: each runs the code or the script it is handed. Gambit's
+    // compiler `gsc` (its `-e` runs code, as `gsi`'s does), Hissp's `hissp` and `lissp`, the
+    // name its documentation gives its command line, and the shells `ion` and `oil`.
+    "gsc",
+    "hissp",
+    "lissp",
+    "ion",
+    "oil",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
