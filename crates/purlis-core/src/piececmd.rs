@@ -561,6 +561,8 @@ fn remove_as(
     // folder holds is lost with it, so it goes without `--force`, and the branch stays unless
     // `--delete-branch` asks it to go (ADR 0110). Uncommitted work still refuses it.
     // Where the forge could not be asked, a refusal says so (#5439).
+    // Read before the judge, so a commit made after it keeps the branch (#8048).
+    let tip = worktree::standing::tip_of_piece(plane, ws, repo, piece);
     let read = if force {
         Read::Neither
     } else {
@@ -655,7 +657,9 @@ fn remove_as(
                     )
                 )
                 && removed.branch.as_deref().is_some_and(|branch| {
-                    worktree::standing::drop_carried(plane, ws, repo, branch)
+                    tip.as_deref().is_some_and(|tip| {
+                        worktree::standing::drop_carried(plane, ws, repo, branch, tip)
+                    })
                 });
             if delete_branch && dropped {
                 if let Some(b) = &removed.branch {
@@ -744,6 +748,8 @@ fn branch_of_a_gone_folder(
         ));
         Some(1)
     };
+    // Read before the judge, so a commit made after it keeps the branch (#8048).
+    let tip = worktree::standing::tip(plane, ws, repo, &branch);
     if let Some(crate::dispatchplace::InFolder::Task(record)) =
         crate::dispatchplace::held_in_folder(plane, ws, repo, piece)
         && record.running()
@@ -764,7 +770,10 @@ fn branch_of_a_gone_folder(
                 .into(),
         ));
     }
-    if worktree::standing::drop_carried(plane, ws, repo, &branch) {
+    if tip
+        .as_deref()
+        .is_some_and(|tip| worktree::standing::drop_carried(plane, ws, repo, &branch, tip))
+    {
         say(Say::Done(
             format!("Deleted branch {branch}, whose folder was already gone ({why})").into(),
         ));

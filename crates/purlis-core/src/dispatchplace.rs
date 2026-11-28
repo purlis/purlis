@@ -1759,6 +1759,11 @@ pub fn discard_as_shown(
         if !as_shown(&risk, &seal) {
             return Err(NotDone::Changed);
         }
+        // Read before the judge, so a commit made after it keeps the branch (#8048).
+        let tip = tree
+            .branch
+            .as_deref()
+            .and_then(|branch| standing::tip(root, ws, repo, branch));
         // Read while its folder is there, which the reading needs (ADR 0110).
         let carried = tree.branch.as_deref().is_some_and(|branch| {
             matches!(
@@ -1772,7 +1777,15 @@ pub fn discard_as_shown(
                 let gone = tree.branch.as_deref().is_some_and(|branch| {
                     standing::drop_if_merged(root, &tree.workspace, &tree.repo, branch)
                         || (carried
-                            && standing::drop_carried(root, &tree.workspace, &tree.repo, branch))
+                            && tip.as_deref().is_some_and(|tip| {
+                                standing::drop_carried(
+                                    root,
+                                    &tree.workspace,
+                                    &tree.repo,
+                                    branch,
+                                    tip,
+                                )
+                            }))
                 });
                 if gone {
                     Discarded::BranchGone
