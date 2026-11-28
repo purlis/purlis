@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795876896428,
+  "lastUpdate": 1795878128242,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -59136,6 +59136,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6060655,
             "unit": "ms",
             "extra": "median of 5 runs: 101.090, 101.226, 101.606, 101.680, 102.516 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "75849f22a0a5d02017e2a770c4c58ea3333408d4",
+          "message": "CI: fixture pins pushed as a branch, pin checks tightened; benchmarks writers push with fetch-rebase-retry (#8009, #8014) (#8040)\n\n* Parity fixture images: the pin job pushes the pins' branch and names its link, and the review's follow-ups (#8009)\n\nThe first run on main built, pushed and checked all four images, then went red opening the\npins' pull request: GitHub Actions may not open pull requests in this repository.\n\n- The pin job pushes `parity-fixture-images/pins` and prints its compare link as a notice and\n  in the run's summary; a person opens the pull request, which starts its checks. It no longer\n  holds `pull-requests: write`, and the commit's message is the pull request's title and body.\n- It replaces the branch only over this workflow's own commit, with `--force-with-lease` on the\n  head it saw; a person's commit there stops the run by name.\n- `prepare()` refuses a pin that is not by digest, and `pinRefusal` ties each pin to its own\n  fixture's package, in `prepare()`, `withPin()` and the test of the committed pins.\n- A fallback build is tried three times, as a pull is, and says a package mirror could not be\n  reached only when apk or apt said so.\n- The digest is read once, in `build`, with its one-manifest check, and handed to `publish`\n  beside the file.\n- `prepare-all` builds the Podman sshd with this account's uid where the pin's is another, so a\n  rig run under another uid works again; up.sh's comment and error say so.\n- `parity-fixture-images.yml` is in image-workflows' `PUBLISHING`.\n- `tools/workflow-jobs.mjs`'s `jobLines` replaces four copies of a job reader.\n- ADR 0123's amendment and ci.yml say that one missing fixture skips all four machines and both\n  suites, and why the gate stays one step; the amendment names ADR 0068's runner machines.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8H0HT74288AFYX9F03HG6NB\nPurlis-Persona: steward\n\n* Benchmarks branch: the three record jobs push through one fetch-rebase-retry (#8014)\n\nci.yml's bench-record, stress.yml's stress-record and budget-run.yml's budget-record each pushed\na point to `benchmarks` through github-action-benchmark, unordered across workflows, relying on\na retry of the action's that was never shown to cover a non-fast-forward.\n\n- One repo-wide concurrency group would not do: GitHub keeps one pending run per group, so a\n  third writer cancels the one waiting and its point is lost.\n- So the action commits with `auto-push: false`, and `tools/benchmarks-push.sh` pushes: on a\n  rejection it fetches the branch, rebases the point onto it and tries again, five times. Each\n  writer keeps its own `<dir>/data.js`, so the rebase is clean; two points of one data set at\n  once are one error naming the file, and the first stays.\n- `tools/benchmarks-push.test.mjs` runs the script against a real local remote, and checks that\n  every github-action-benchmark step in the workflows writes `benchmarks`, does not push, and\n  is followed by the script.\n- budget-run.yml's comment no longer claims the action's retry.\n- `Reconnect::Drawn` records #7979 item 4's decision (kept as it is, #8011) where it is raised.\n- CONTEXT.md's term is \"Performance budget run\".\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8H0HT74288AFYX9F03HG6NB\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T13:31:00Z",
+          "tree_id": "c3afdd9a5063ab7e556e7f4dffd48402d4b72f6f",
+          "url": "https://github.com/purlis/purlis/commit/75849f22a0a5d02017e2a770c4c58ea3333408d4"
+        },
+        "date": 1795878119763,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6942785,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.675, 0.690, 0.694, 0.699, 0.699 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.599525999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.411, 16.518, 16.600, 16.684, 16.862 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.98621399999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.392, 101.791, 101.986, 102.159, 102.937 ms"
           }
         ]
       }
