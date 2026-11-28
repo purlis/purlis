@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795835734883,
+  "lastUpdate": 1795836367524,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58464,6 +58464,48 @@ window.BENCHMARK_DATA = {
             "value": 102.06381149999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.227, 101.840, 102.064, 102.634, 102.690 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8dcd5faf681a1e469ff38a2474d80bc971ad6951",
+          "message": "Run grant: the supervisors, chain loaders, installers and builders of #7833 refused (#7967)\n\n* Run grant: the supervisors, init systems, queues and schedulers of #7833 refused\n\ntini, catatonit, daemonize and libslack's daemon run the program after\nthem; pm2, supervisord and startpar the scripts they are handed; runit,\ndinit, shepherd, perp and runscript a folder's services; s6-svscanctl,\ns6-instance-create, s6-sudoc, s6-notifywhenup, s6-fdholder-daemon and\ns6-linux-init-shutdownd start or run what a chat wrote; the Procfile\nrunners, the command queues, with-contenv, cloud-init-per,\ntransactional-update, fcrontab, incrontab, logrotate, lefthook and husky\nrun the commands they are handed. Source out of reach, so refused on what\neach is for. run_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8F7RC3GDY3TG91K72DD0YY1\nPurlis-Persona: steward\n\n* Run grant: the chain loaders and command runners of #7833 refused\n\nucspi-tcp's tcpserver and kin, busybox's tcpsvd, s6-networking's\ns6-tcpserverd and TLS runners, execline's execlineb and the programs of\nits the review named, perp's chain loaders, moreutils' pee, mispipe, vipe\nand vidir, sensible-utils, run-mailcap and its names, the jails,\ncontainers and VMs that run a command inside, setarch's other names,\nutil-linux's coresched, enosys, setpgid and scriptlive, perf, gpg-agent,\ndbus-launch, startx, xinit, keyctl, opam, ip, run-one's other names and\nthe compiler wrappers ccache, sccache, distcc, pump and icecc each run\nthe command after them or one its settings name. Source out of reach, so\nrefused on what each is for. run_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8F7RC3GDY3TG91K72DD0YY1\nPurlis-Persona: steward\n\n* Run grant: the package managers and installers of #7833 refused\n\npacman, apk, macOS's installer, emerge, ebuild, xbps-install, opkg, pkg,\nslackpkg, installpkg, yay, paru, urpmi, pkgin, pkg_add, pkcon, the apt\nfront-ends, fink, zef, rakubrew, unattended-upgrade, debi, debpkg,\ncheckinstall, alien and installkernel run a package's scripts; dnf5's\ndaemon and yum-utils' yumdb, repo-rss, verifytree, show-installed and\nshow-changed-rco load plugins as yum does; salt-call, puppet and rex run a\nstate or a manifest; needrestart evaluates its -c file as Perl and\netckeeper runs its hooks. debconf-apt-progress is pinned as refused by its\nown family's debconf row. run_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8F7RC3GDY3TG91K72DD0YY1\nPurlis-Persona: steward\n\n* Run grant: the build, test and packaging tools of #7833 refused, and dh_<name> by its stem\n\nDebian's dh_<name> helpers run a build system or debian/rules as dh does,\nand no form reaches them as name_forms splits on '-': a dh_ stem refuses\nthem as pt- and git- do. debootstrap, mmdebstrap, autopkgtest, piuparts,\nmk-build-deps, equivs-build, quilt, debspawn, uscan, cvs- and\nsvn-buildpackage, dput, dupload, rpkg, mockchain, osc, build, kiwi,\nkiwi-ng, koji, portmirror, the Perl builders, pp (its -x, read in macOS's\nPAR::Packer 1.050), plx, twiggy, corona, meson, scons, ctest and buck2 run\na package's or project's code. pbuilder-dist and cowbuilder-dist are\npinned as refused by their own family's rows. run_grants test seen red\nfirst.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8F7RC3GDY3TG91K72DD0YY1\nPurlis-Persona: steward\n\n* Run grant: the programs of #7833 that other families' rows reach by chance, by rows of their own\n\nREFUSED_NAMES' rc reaches s6-rc, update-rc.d, invoke-rc.d, rc-service and\nrc-status; the service row update-service; envdir, setsid and svscanboot\nreach s6-envdir, s6-setsid and s6-svscanboot; and the node prefix\nnodemon. Each runs or starts what it is handed, so each has a row of its\nown that a give-back of the forms (#7825) cannot take with it, pinned by\na unit test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8F7RC3GDY3TG91K72DD0YY1\nPurlis-Persona: steward\n\n* Run grant: the rows a #7833 row's form also reaches pinned as rows of their own\n\ntcpserver and tcpclient reach s6-tcpserver and s6-tcpclient by their last\npart, and daemon reaches start-stop-daemon and supervise-daemon, so those\nrows' run_grants tests pass through either row. A unit test pins all four\n(seen red with start-stop-daemon taken off), and the comment says so.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8F7RC3GDY3TG91K72DD0YY1\nPurlis-Persona: steward\n\n* ADR 0112 amendment and Security fragment for #7833\n\nThe amendment records what is refused by family, why each is refused\nunread but pp (read in macOS's PAR::Packer 1.050), why none took a\ncommand_flags row, what is left offered and why, the chance reaches given\nrows of their own, and what the new rows' forms cost. Other families are\nfiled as #7964.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8F7RC3GDY3TG91K72DD0YY1\nPurlis-Persona: steward\n\n* Run grant: review round 1 of #7967: the g<name> cost named, a doc comment rewrapped\n\nFrom the review: name_forms strips a GNU g, so perf, edit, rex, pp and ip\nalso refuse gperf, gedit, grex, gpp and gip; the ADR's cost section names\nit. not_for_a_run_grant's doc comment is wrapped to 100 columns.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8F7RC3GDY3TG91K72DD0YY1\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T02:43:29Z",
+          "tree_id": "bd668c5add1459eeb52024b6bc9e1ad44cb58e4e",
+          "url": "https://github.com/purlis/purlis/commit/8dcd5faf681a1e469ff38a2474d80bc971ad6951"
+        },
+        "date": 1795836359508,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.698107,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.696, 0.698, 0.698, 0.714, 0.733 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.496706500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.190, 16.435, 16.497, 16.563, 16.587 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.2338675,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.923, 101.092, 101.234, 101.588, 102.075 ms"
           }
         ]
       }
