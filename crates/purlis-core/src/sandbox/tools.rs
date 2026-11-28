@@ -3223,6 +3223,60 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // runs the command its `-c` names under `ktrace trace` and `ktrace artrace`, by its manual,
     // and stops tracing when it exits; the copy on macOS is a binary, with no source to read.
     "ktrace",
+    // The terminals #8031 names beside #7988's and #8017's, refused whole on what each is for, as
+    // `xterm` and `kitty` are: xterm's wrappers `uxterm`, `lxterm` and `koi8rxterm` `exec` xterm
+    // with what they are handed (none of them is reached by the `xterm` row, as no form splits a
+    // name that has no `-` in it); PuTTY's `pterm`, `termite`, `zutty`, `mrxvt` and `wterm` run
+    // the command they are handed in the window they open, most of them by `-e`; `kmscon`, a
+    // terminal on the kernel's console, runs the one after its `-l` on the console it takes; and
+    // `waveterm` and `extraterm` run the commands their blocks and sessions are handed.
+    "uxterm",
+    "lxterm",
+    "koi8rxterm",
+    "pterm",
+    "termite",
+    "kmscon",
+    "zutty",
+    "mrxvt",
+    "wterm",
+    "waveterm",
+    "extraterm",
+    // The terminal sharers and recorders #8031 names, refused whole on what each is for: `ttyd`
+    // and `gotty` run the command after them and serve its terminal over HTTP, and, with `-W`
+    // (`ttyd`) or `-w` (`gotty`), let whoever opens the page type into it; `asciinema rec -c`
+    // runs the command it records (and, without `-c`, the shell its settings name); and `vhs`
+    // runs the commands of the tape file it is handed in a terminal of its own.
+    "ttyd",
+    "gotty",
+    "asciinema",
+    "vhs",
+    // The VM and sandbox runners #8031 names beside #8017's, refused whole on what each is for, as
+    // `lima` and `multipass` are: libguestfs's `virt-builder` runs the command its
+    // `--run-command` names in the disk image it builds, and `virt-rescue` opens a shell in a
+    // guest's disk; gVisor's `runsc` is an OCI runtime, which runs a container's process as
+    // `runc` does (`runsc do` runs the command after it); Kata Containers' `kata-runtime` runs a
+    // container in a VM, and its `exec` opens a shell in the guest; and `cloud-hypervisor` and
+    // FreeBSD's `bhyve` boot the guest they are handed.
+    "virt-builder",
+    "virt-rescue",
+    "runsc",
+    "kata-runtime",
+    "cloud-hypervisor",
+    "bhyve",
+    // The interpreters and installers #8031 names, refused on this list and not on REFUSED_NAMES,
+    // as #7964's runtimes are: Gerbil's compiler `gxc` runs a module's macros as it compiles it,
+    // as `gsi` runs Gambit's; CHICKEN's `chicken-install` runs an egg's setup as it installs it,
+    // as `csi` runs Scheme; and Hy's `hy` runs the Lisp it is handed as Python. `hy` is a short
+    // row, so it reaches every `hy-<word>`, `<word>-hy` and `ghy` as well.
+    "gxc",
+    "chicken-install",
+    "hy",
+    // Helix, the editor #8031 names, refused whole, as `vim` and `emacs` are: its `:sh`, `:pipe`
+    // and `:insert-output` run a shell command. `hx` is its program, and `helix` the name some
+    // systems install it as. `hx` is a short row, so it reaches every `hx-<word>`, `<word>-hx`
+    // and `ghx` as well, and a hex viewer that is also called `hx`.
+    "hx",
+    "helix",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

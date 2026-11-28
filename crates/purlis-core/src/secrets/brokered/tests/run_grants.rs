@@ -4470,3 +4470,74 @@ fn the_interpreters_of_8017_are_offered_no_run_grant() {
 fn the_tracer_of_8017_is_offered_no_run_grant() {
     refused_as_running_others("ktrace");
 }
+
+/// The terminals #8031 names beside #7988's and #8017's, each of which runs the command it is
+/// handed in the window or on the console it opens: xterm's wrappers `uxterm`, `lxterm` and
+/// `koi8rxterm`, which `exec` xterm with what they are handed; PuTTY's `pterm`; `termite`;
+/// `kmscon`, on the kernel's console; `zutty`; `mrxvt`; `wterm`; and `waveterm` and `extraterm`.
+#[test]
+fn the_terminals_of_8031_are_offered_no_run_grant() {
+    for name in [
+        "uxterm",
+        "lxterm",
+        "koi8rxterm",
+        "pterm",
+        "termite",
+        "kmscon",
+        "zutty",
+        "mrxvt",
+        "wterm",
+        "waveterm",
+        "extraterm",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The terminal sharers and recorders #8031 names, each of which runs a command it is handed:
+/// `ttyd` and `gotty` run the command after them and serve its terminal over HTTP, `asciinema rec
+/// -c` runs the command it records (and, without `-c`, the shell its settings name), and `vhs`
+/// runs a tape file's commands.
+#[test]
+fn the_terminal_sharers_and_recorders_of_8031_are_offered_no_run_grant() {
+    for name in ["ttyd", "gotty", "asciinema", "vhs"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The VM and sandbox runners #8031 names beside #8017's, each of which runs a command in a
+/// guest, a container or a machine it starts: libguestfs's `virt-builder` (`--run-command`) and
+/// `virt-rescue` (a shell in a guest's disk), gVisor's `runsc`, Kata Containers' `kata-runtime`,
+/// `cloud-hypervisor` and FreeBSD's `bhyve`.
+#[test]
+fn the_vm_and_sandbox_runners_of_8031_are_offered_no_run_grant() {
+    for name in [
+        "virt-builder",
+        "virt-rescue",
+        "runsc",
+        "kata-runtime",
+        "cloud-hypervisor",
+        "bhyve",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The interpreters and installers #8031 names, each of which runs code it is handed: Gerbil's
+/// compiler `gxc`, whose macros run as it compiles, CHICKEN's `chicken-install`, which runs an
+/// egg's setup as it installs it, and Hy's `hy`, a Lisp that runs as Python.
+#[test]
+fn the_interpreters_and_installers_of_8031_are_offered_no_run_grant() {
+    for name in ["gxc", "chicken-install", "hy"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// Helix, the editor #8031 names, whose `:sh`, `:pipe` and `:insert-output` run a shell command:
+/// `hx`, and `helix`, the name some systems install it as.
+#[test]
+fn helix_the_editor_with_a_shell_of_8031_is_offered_no_run_grant() {
+    for name in ["hx", "helix"] {
+        refused_as_running_others(name);
+    }
+}
