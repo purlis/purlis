@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795830682465,
+  "lastUpdate": 1795830794486,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58254,6 +58254,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8228165,
             "unit": "ms",
             "extra": "median of 5 runs: 100.925, 101.641, 101.823, 102.063, 102.597 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ca8bc8d51d43792fcbc56d489e86856702fec1aa",
+          "message": "FS-G1a: window draw counts per tab, settings change and chat move (#7894) (#7977)\n\n* FS-G1a: the window's main parts' draws, counted by name and region, per tab, settings change and chat move (#7894)\n\nThe cost-test kit counts each draw in the measured region around it (renderedIn,\ndrawnIn), so the Inbox's three parts and the Panels' five are read apart.\nwindowDraws.cost.test.tsx holds PlaneView, ChatsSection, Inbox, ChangesView and\nPanels to the baseline at 50 chats (tab 1, settings 3, move 0 each), with beats\nand clocks held, and to the same counts at 10 chats.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8FMEJM927XSW54K2C9KC82H\nPurlis-Persona: steward\n\n* FS-G1a review: each moment owns its asks read, every 0 has a witness, the settings 3 traced (#7894)\n\nWait past ASKS_SETTLE_MS after the priming move and inside each measured\nmoment, so a chat move's or settings change's asks re-read lands in its own\nmoment. Assert every [region, name] drew at mount, the tab press selected the\ntab, and the move and the settings change each read the asks once. The\nscaling test measures 10 and 50 itself. The settings count of 3 is traced\nin a comment beside BASELINE.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8FQ3ESZDP361E2KT63W0XV3\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T00:58:11Z",
+          "tree_id": "9d6aeca5274ec0e78074d213fd6c757a2a9ef391",
+          "url": "https://github.com/purlis/purlis/commit/ca8bc8d51d43792fcbc56d489e86856702fec1aa"
+        },
+        "date": 1795830786353,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7053,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.682, 0.695, 0.705, 0.708, 0.716 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5944135,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.476, 16.503, 16.594, 16.711, 16.765 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7748085,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.408, 101.603, 101.775, 101.814, 102.723 ms"
           }
         ]
       }
