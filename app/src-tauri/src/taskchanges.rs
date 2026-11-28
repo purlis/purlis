@@ -561,6 +561,7 @@ pub(crate) fn merge(held: &Held, id: &str, seen: &BranchMerge) -> Result<TaskMer
     let tidied = dispatchplace::tidy_recorded(
         held.root(),
         &record,
+        &crate::dispatches::tidy_open_chats(held),
         &isolation,
         purlis_core::finished::Forges::asking(&ask),
     );

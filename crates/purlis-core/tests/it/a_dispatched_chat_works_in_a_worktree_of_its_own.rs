@@ -851,6 +851,7 @@ fn a_merged_folder_goes_and_its_branch_stays_where_git_will_not_delete_it() {
     let tidied = dispatchplace::tidy_recorded(
         &f.plane,
         &dispatchrecord::read(&f.plane, &record).unwrap(),
+        &dispatchplace::Open::nobody(),
         &Isolated::default(),
         Forges::none(),
     );
@@ -1085,6 +1086,91 @@ fn recorded_as(
 }
 
 #[test]
+fn tidy_at_a_close_or_a_merge_keeps_a_finished_folder_another_live_chat_stands_in_or_holds() {
+    purlis_core::unsteered!();
+    // Review of #8015, decision #7992: never a folder a live chat holds. A task's chat closed and
+    // its folder is finished, but another chat still works in it: tidy at the close, and at the
+    // person's merge, keeps it, as tidy at a project's open does.
+    let f = support::plane_with_clone("api");
+    let iso = Isolated::default();
+    let other = purlis_core::piececlaim::Live {
+        id: "01OTHERCHAT00000000000000".to_owned(),
+        chat: Some(12),
+        back: true,
+    };
+
+    let stood_id = dispatchrecord::mint();
+    let stood = cut_for(&f, "stood in", &stood_id);
+    let stood_record = recorded_as(&f.plane, &stood_id, &stood, 7, true);
+    let standing_in = dispatchplace::Open {
+        live: Some(vec![other.clone()]),
+        stand_at: vec![stood.path.join("src")],
+    };
+    assert_eq!(
+        dispatchplace::tidy_recorded(
+            &f.plane,
+            &dispatchrecord::read(&f.plane, &stood_record).unwrap(),
+            &standing_in,
+            &iso,
+            Forges::none(),
+        ),
+        Tidied::Kept
+    );
+    assert!(stood.path.is_dir(), "a live chat stands in it");
+
+    let held_id = dispatchrecord::mint();
+    let held = cut_for(&f, "held", &held_id);
+    let held_record = recorded_as(&f.plane, &held_id, &held, 8, true);
+    let at = worktree::Located {
+        workspace: held.workspace.clone(),
+        repo: held.repo.clone(),
+        piece: held.piece.clone(),
+    };
+    let who = purlis_core::pieces::Who {
+        session: Some("12".into()),
+        persona: Some("steward".into()),
+        chat: Some(other.id.clone()),
+        host: "box".into(),
+        log: "box".into(),
+    };
+    purlis_core::piececlaim::take(
+        &f.plane,
+        &at,
+        &who,
+        Some(std::slice::from_ref(&other)),
+        purlis_core::piececlaim::Act::Commit,
+        jiff::Timestamp::now(),
+    )
+    .unwrap();
+    let holding = dispatchplace::Open {
+        live: Some(vec![other.clone()]),
+        stand_at: Vec::new(),
+    };
+    let tidy = |open: &dispatchplace::Open| {
+        dispatchplace::tidy_recorded(
+            &f.plane,
+            &dispatchrecord::read(&f.plane, &held_record).unwrap(),
+            open,
+            &iso,
+            Forges::none(),
+        )
+    };
+    assert_eq!(tidy(&holding), Tidied::Kept);
+    assert!(held.path.is_dir(), "a live chat holds it");
+    // Nor where no app said which chats are open: a held folder is kept (fail closed).
+    let unknown = dispatchplace::Open {
+        live: None,
+        stand_at: Vec::new(),
+    };
+    assert_eq!(tidy(&unknown), Tidied::Kept);
+    assert!(held.path.is_dir());
+
+    // Once that chat has gone, the same folder goes.
+    assert_eq!(tidy(&dispatchplace::Open::nobody()), Tidied::Removed);
+    assert!(held.path.symlink_metadata().is_err());
+}
+
+#[test]
 fn opening_the_project_takes_away_only_the_merged_worktrees_of_dispatches_that_ended() {
     purlis_core::unsteered!();
     let f = support::plane_with_clone("api");
@@ -1105,6 +1191,7 @@ fn opening_the_project_takes_away_only_the_merged_worktrees_of_dispatches_that_e
     let went = dispatchplace::tidy_all(
         &f.plane,
         |record| record.worker.chat.chat == 9,
+        &dispatchplace::Open::nobody(),
         &iso,
         Forges::none(),
     );
@@ -1142,6 +1229,7 @@ fn opening_the_project_takes_away_only_the_merged_worktrees_of_dispatches_that_e
         dispatchplace::tidy_all(
             &f.plane,
             |record| record.worker.chat.chat == 9,
+            &dispatchplace::Open::nobody(),
             &iso,
             Forges::none()
         ),

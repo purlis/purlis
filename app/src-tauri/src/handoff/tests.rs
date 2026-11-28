@@ -5762,7 +5762,11 @@ fn a_discard_asks_first_is_refused_while_a_chat_is_open_and_removes_what_was_sho
     // Its chat closed. Its branch is not merged, so purlis leaves it listed.
     let _ = held.close_chat(chat);
     assert_eq!(
-        crate::dispatches::tidy_closed(held.root(), &dispatch),
+        crate::dispatches::tidy_closed(
+            held.root(),
+            &dispatch,
+            &crate::dispatches::tidy_open_chats(&held),
+        ),
         purlis_core::dispatchplace::Tidied::Kept
     );
     let listed = crate::dispatches::worktree_row(
@@ -6156,7 +6160,11 @@ fn closing_a_worktree_task_s_chat_takes_its_worktree_away_once_its_branch_is_mer
 
     // While its chat is open, the app has nothing to look at.
     assert_eq!(
-        crate::dispatches::tidy_closed(held.root(), &dispatch),
+        crate::dispatches::tidy_closed(
+            held.root(),
+            &dispatch,
+            &crate::dispatches::tidy_open_chats(&held),
+        ),
         purlis_core::dispatchplace::Tidied::Kept,
         "a running dispatch's worktree is never looked at"
     );
@@ -6173,7 +6181,11 @@ fn closing_a_worktree_task_s_chat_takes_its_worktree_away_once_its_branch_is_mer
         Some(dispatch.as_str())
     );
     assert_eq!(
-        crate::dispatches::tidy_closed(held.root(), &dispatch),
+        crate::dispatches::tidy_closed(
+            held.root(),
+            &dispatch,
+            &crate::dispatches::tidy_open_chats(&held),
+        ),
         purlis_core::dispatchplace::Tidied::Removed
     );
     assert!(folder.symlink_metadata().is_err(), "its folder is gone");

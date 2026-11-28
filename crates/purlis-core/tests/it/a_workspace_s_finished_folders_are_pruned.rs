@@ -733,7 +733,7 @@ fn the_explorer_s_remove_takes_a_task_folder_inside_a_merged_requests_head() {
 }
 
 #[test]
-fn the_explorer_s_remove_takes_a_squash_landed_folder_and_still_refuses_one_ahead() {
+fn the_explorer_s_remove_takes_a_squash_carried_folder_and_still_refuses_one_ahead() {
     purlis_core::unsteered!();
     let f = support::plane_with_clone("api");
     let carried = plain(&f, "carried");

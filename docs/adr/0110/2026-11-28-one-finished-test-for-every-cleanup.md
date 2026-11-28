@@ -30,9 +30,10 @@ amendment lets the first go; the second still keeps the folder (decision 3).
    reason everywhere.
    - **Tidy** takes away an ended task's folder where it is finished (`finished::as_it_stands`:
      its files, its commits, the forge, the links into it) and it holds no git state of its own
-     (#1472). Each guard it had stays: the task has ended, no chat holds the folder or stands in
-     it, the folder is still on the branch purlis cut, and its git runs in a checked clone and
-     folder. A folder on its base goes with its branch, as before. One carried, found in
+     (#1472). Each guard it had stays: the task has ended, no open chat holds the folder by
+     its claim or stands in it (read at a chat's close and a task's merge as at a project's
+     open), the folder is still on the branch purlis cut, and its git runs in a checked clone
+     and folder. A folder on its base goes with its branch, as before. One carried, found in
      history, or inside a request's head (one merged, or one closed with its head on origin, as
      §1 reads it since #4500) goes and **its branch stays**: tidy deletes a branch
      only where `git branch -d` does. `prune` deletes such a branch later, as one whose folder is
@@ -64,12 +65,13 @@ amendment lets the first go; the second still keeps the folder (decision 3).
   repo knows which of its ignored folders its build writes, so it will declare them (#8013), and
   purlis does not guess from paths.
 - **Tidy keeps branches for now; deleting them is deferred, not refused.** Wayfinder decision
-  #7992 (operator, 2026-11-28) settles that after a merge the folder goes and the landed branch
-  is deleted, and that a branch is kept only while it has not landed. This amendment does the
-  first half: the folder goes. Deleting the landed branch from a close, an open or the timer,
-  where the person asked for nothing at that moment, belongs with the rest of that lifecycle, so
-  it is deferred to the folder-lifecycle tickets of map #7990, which carry #7992 out. Until they
-  land, `prune` deletes such a branch where it loses nothing, when the person or a chat runs it.
+  #7992 (operator, 2026-11-28) settles that after a merge the folder goes and its branch, on
+  its base or carried there, is deleted, and that a branch is kept only while it is neither.
+  This amendment does the first half: the folder goes. Deleting such a branch from a close, an
+  open or the timer, where the person asked for nothing at that moment, belongs with the rest of
+  that lifecycle, so it is deferred to the folder-lifecycle tickets of map #7990, which carry
+  #7992 out. Until they are done, `prune` deletes such a branch where it loses nothing, when
+  the person or a chat runs it.
 
 ## Considered and not taken
 

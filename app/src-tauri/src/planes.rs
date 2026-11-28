@@ -1904,10 +1904,13 @@ impl Held {
         // A worktree whose branch is merged goes with its chat (#1453). On a thread of its
         // own, which holds no lock of this app's: it reads the dispatch's record and runs git,
         // and neither a close nor the thread that hears a program end waits for it.
+        // The chats still open are read here, after this one has gone: one that stands in the
+        // folder or holds it keeps it (decision #7992).
         if let Some(id) = worktree {
             let root = self.root.clone();
+            let open = crate::dispatches::tidy_open_chats(self);
             std::thread::spawn(move || {
-                crate::dispatches::tidy_closed(&root, &id);
+                crate::dispatches::tidy_closed(&root, &id, &open);
             });
         }
         closed

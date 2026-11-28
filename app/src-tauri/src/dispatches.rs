@@ -623,11 +623,31 @@ pub(crate) fn worktree_to_look_at(held: &Held, session: u32) -> Option<String> {
     (!in_use).then_some(record.id)
 }
 
+/// **The chats open now, as a tidy reads them** (decision #7992: never a folder a live chat
+/// holds): each a branch folder's claim is judged against ([`crate::gitbroker::live_chats`]),
+/// and the folder each open chat stands in.
+pub(crate) fn tidy_open_chats(held: &Held) -> purlis_core::dispatchplace::Open {
+    purlis_core::dispatchplace::Open {
+        live: Some(crate::gitbroker::live_chats(held)),
+        stand_at: held
+            .chats()
+            .open_now()
+            .into_iter()
+            .filter_map(|chat| chat.cwd)
+            .collect(),
+    }
+}
+
 /// Chat `session` is closed, and dispatch `id` was what it worked on: where its worktree's
 /// branch is merged, the worktree is taken away and its record says so
 /// (`purlis_core::dispatchplace::tidy_recorded`). Anything else leaves it listed, with
-/// Discard. Runs git, so the app calls it off the thread that closed the chat.
-pub(crate) fn tidy_closed(root: &Path, id: &str) -> purlis_core::dispatchplace::Tidied {
+/// Discard, as is one a chat still `open` stands in or holds. Runs git, so the app calls it off
+/// the thread that closed the chat.
+pub(crate) fn tidy_closed(
+    root: &Path,
+    id: &str,
+    open: &purlis_core::dispatchplace::Open,
+) -> purlis_core::dispatchplace::Tidied {
     match dispatchrecord::read(root, id) {
         Some(record) => {
             // A folder inside a merged request's head is finished too (ADR 0110, amended
@@ -637,6 +657,7 @@ pub(crate) fn tidy_closed(root: &Path, id: &str) -> purlis_core::dispatchplace::
             purlis_core::dispatchplace::tidy_recorded(
                 root,
                 &record,
+                open,
                 &crate::gitbroker::isolation(),
                 purlis_core::finished::Forges::asking(&ask),
             )
