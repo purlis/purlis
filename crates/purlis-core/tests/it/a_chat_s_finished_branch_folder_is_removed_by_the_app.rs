@@ -669,6 +669,20 @@ fn logs_that_are_not_only_a_build_s_and_a_folder_named_as_a_tracked_one_still_ke
             "logs/findings.csv",
             "`logs/`",
         ),
+        // Named as a tracked folder, in no package.
+        (
+            "scratch/docs/\n",
+            &["docs/spec.md"][..],
+            "scratch/docs/spec.md",
+            "`scratch/docs/`",
+        ),
+        // Holding a page the tracked folder does not have.
+        (
+            "out/docs/\n",
+            &["docs/spec.md"][..],
+            "out/docs/notes.md",
+            "`out/docs/`",
+        ),
         // An editor's settings in a package are the person's, though the top's are tracked
         // and say the same.
         (
@@ -693,6 +707,9 @@ fn logs_that_are_not_only_a_build_s_and_a_folder_named_as_a_tracked_one_still_ke
             "`packages/api/config/`",
         ),
     ] {
+        // From the third on, each is a case a rule matching folders to tracked ones by path
+        // had to read (#8002, #8008): the last it removed, the others it had to carve out. Each
+        // stays here so such a rule cannot come back unseen.
         let (world, lane) = holding(rules, tracked, &[file]);
         let (answer, said) = world.removed(&world.workspace(), "lane", false);
         assert!(

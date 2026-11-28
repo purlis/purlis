@@ -858,10 +858,9 @@ const REGENERATED_AT: [&str; 3] = [
 /// those with a closing slash): a `.env`, or a `results/`, is the task's. `target/`, `dist/` and
 /// `.astro/` are names a person could use too, as is `node_modules/`, so each counts only beside
 /// the manifest of the build that writes it, or, for `node_modules/`, holding nothing but
-/// Vite's cache. A `logs/` counts beside a `package.json` holding only logs (#7406). A folder
-/// named as a tracked one is not a build's copy by that alone: its path cannot tell a build's
-/// copy from the person's own files (#8008), so a repo is to declare those (#8013). None counts
-/// with a repository inside it.
+/// Vite's cache. A `logs/` counts beside a `package.json` holding only logs (#7406). Nothing
+/// else counts, a build's copy of a tracked folder included (ADR 0110, amended 2026-11-28;
+/// a repo will declare such folders, #8013). None counts with a repository inside it.
 fn regenerated(folder: &Path, path: &str) -> bool {
     let Some(dir) = path.strip_suffix('/') else {
         return false;
