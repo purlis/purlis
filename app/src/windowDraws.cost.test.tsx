@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { clearMocks } from "@tauri-apps/api/mocks";
 import { aWindow, rootOf, settled } from "./projectSwitch.testkit";
+import { SETTLE_MS as ASKS_SETTLE_MS } from "./asks";
 import { keepTheirOrder } from "./commandOrder";
 import { countReactsCommits, drawnIn, renderedIn } from "./reactCommits.testkit";
 import { stripNamed } from "./test-strips";
@@ -90,6 +91,16 @@ const each = (times: number): Draws =>
  * **What each part draws now: the baseline** (2026-11-28, on main at #7924). Every part is
  * drawn again for a tab and three times for a settings change, though neither moves what
  * most of them show; a chat's state moving draws none of them.
+ *
+ * **The settings change's three**, traced commit by commit (2026-11-28): the `PlaneView` that
+ * heard `plane-changed`, as it is told; the `App` the project's settings reads answer into
+ * (`project_lives_here` to `ask_persona_offer`, which answer together and are one commit); and
+ * the `App` the sandbox's `chats_level_why` answers into, asked only once `chats_on_older_sandbox`
+ * has answered (`SandboxChanged.tsx`, #5207), so always a commit of its own. The theme's read
+ * (`theme_in_force`) commits `App` again but draws none of these parts, and the asks' read 50 ms
+ * later answers what it did before and draws nothing. Nothing in it waits on a clock: no frame is
+ * watched in a test, so `whenDrawing` (`planeChanged.ts`) tells at once, and the core's answers
+ * come in the order their reads are chained, whatever the runner's speed.
  */
 const BASELINE = {
   tab: each(1),
@@ -99,18 +110,36 @@ const BASELINE = {
 
 const WORKSPACES = 2;
 
+/**
+ * Past the wait after which a chat's move or a settings change has the asks read again
+ * (`asks.ts`), which is longer than the one `settled` looks for: each moment owns the read it
+ * starts, and none lands in the next.
+ */
+async function asksReadAgain(asked: Parameters<typeof settled>[0]): Promise<void> {
+  await act(async () => {
+    await new Promise((done) => setTimeout(done, ASKS_SETTLE_MS * 4));
+  });
+  await settled(asked);
+}
+
 /** What each of the three costs the parts of a window holding `chats` chats. */
 async function drawsFor(chats: number): Promise<typeof BASELINE> {
   const plane = rootOf(0);
+  renderedIn.clear();
   const { asked, planeChanged, chatMoved } = await aWindow({
     projects: 1,
     chats,
     workspaces: WORKSPACES,
   });
+  // Each part is drawn where the table looks for it, so a 0 below is a part not drawn again,
+  // never a part, or a region, under another name.
+  for (const [region, name] of EVERY_PART)
+    expect(drawnIn(region, name), `${region} ${name} at mount`).toBeGreaterThan(0);
   const tabs = within(stripNamed("Tabs")).getAllByRole("tab");
   // The load is there: a tab for each chat of the workspace in front, and one pane on screen.
   expect(tabs).toHaveLength(chats / WORKSPACES);
   expect(screen.getAllByTestId("pane")).toHaveLength(1);
+  expect(tabs[1]).toHaveAttribute("aria-selected", "false");
   const move = (state: string, at: number) =>
     chatMoved({
       plane,
@@ -125,27 +154,32 @@ async function drawsFor(chats: number): Promise<typeof BASELINE> {
     });
   // The chat is heard of once before, so what is counted is a move, not its first word.
   act(() => move("working", 0));
-  await settled(asked);
+  await asksReadAgain(asked);
 
-  const measured = async (moment: () => Promise<void> | void): Promise<Draws> => {
+  /** The moment's draws, and how many times it read the asks. */
+  const measured = async (moment: () => Promise<void> | void) => {
     renderedIn.clear();
+    const from = asked.length;
     await moment();
-    await settled(asked);
-    return draws();
+    await asksReadAgain(asked);
+    const asksRead = asked.slice(from).filter((one) => one.cmd === "asks_waiting").length;
+    return { draws: draws(), asksRead };
   };
-  return {
-    tab: await measured(() => act(() => void fireEvent.click(tabs[1]))),
-    settings: await measured(() => planeChanged(plane, "settings")),
-    move: await measured(() => act(() => move("idle", 1))),
-  };
+  const tab = await measured(() => act(() => void fireEvent.click(tabs[1])));
+  // The press reached the strip: the tab pressed is the one in front.
+  expect(tabs[1]).toHaveAttribute("aria-selected", "true");
+  const settings = await measured(() => planeChanged(plane, "settings"));
+  const moved = await measured(() => act(() => move("idle", 1)));
+  // The move reached the window: it read the project's asks again, once (as
+  // `chatMoved.cost.test.tsx` holds), and the settings change did too, in its own moment.
+  expect(moved.asksRead, "asks read for the move").toBe(1);
+  expect(settings.asksRead, "asks read for the settings change").toBe(1);
+  return { tab: tab.draws, settings: settings.draws, move: moved.draws };
 }
-
-/** The counts at the fixed load, measured once for both tests. */
-let atFifty: typeof BASELINE | undefined;
 
 describe("what the window's main parts draw", () => {
   it("draws each part as the baseline says for a tab, a settings change and a chat's move, at 50 chats", async () => {
-    atFifty = await drawsFor(50);
+    const atFifty = await drawsFor(50);
     // Each moment apart, so a red run names the one that moved.
     expect.soft(atFifty.tab, "a press on another tab").toEqual(BASELINE.tab);
     expect.soft(atFifty.settings, "a settings change").toEqual(BASELINE.settings);
@@ -154,11 +188,9 @@ describe("what the window's main parts draw", () => {
 
   it("draws each part no more often with more chats", async () => {
     const atTen = await drawsFor(10);
-    if (atFifty === undefined) {
-      cleanup();
-      clearMocks();
-      atFifty = await drawsFor(50);
-    }
+    cleanup();
+    clearMocks();
+    const atFifty = await drawsFor(50);
     expect(atFifty).toEqual(atTen);
-  }, 300_000);
+  }, 600_000);
 });
