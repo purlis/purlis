@@ -380,6 +380,8 @@ export const commands = {
 	reportConsent: __WINDOW_ONLY_RESULT,
 	keepReportConsent: __WINDOW_ONLY_RESULT,
 	reportsSent: __WINDOW_ONLY_RESULT,
+	detailedRemoteLog: __WINDOW_ONLY,
+	setDetailedRemoteLog: __WINDOW_ONLY,
 	reportSamples: __WINDOW_ONLY_RESULT,
 	reportDrafts: __WINDOW_ONLY_RESULT,
 	editReportDraft: __WINDOW_ONLY_RESULT,
@@ -5806,6 +5808,12 @@ export type DeletesCutShort = {
 	settled: string[],
 	/**  Neither finished nor put back: tried again the next time the studio opens. */
 	unsettled: string[],
+};
+
+/**  What the switch says, as the window reads it. */
+export type DetailedRemoteLog = {
+	/**  When it turns itself off, in RFC 3339, while it is on; `null` while it is off. */
+	until: string | null,
 };
 
 /**  What Diagnostics says of the device's RAM class (ADR 0082 §3). */

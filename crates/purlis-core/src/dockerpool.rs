@@ -4662,7 +4662,9 @@ impl Docker {
     /// started here is inspected again once it runs; the daemon and the volume are not read again.
     /// Nothing is checked differently, and the check runs whole on every link.
     pub fn resumed(&self, made: &Made) -> Result<Resumed, Refused> {
-        let step = purlis_session_protocol::steps::begin("container_check");
+        let step = purlis_session_protocol::steps::begin(
+            purlis_session_protocol::steps::Name::ContainerCheck,
+        );
         let read = self.read_for_check(made, None, None);
         let inspected = match &read.container {
             Ok(inspected) => inspected,
@@ -4681,8 +4683,10 @@ impl Docker {
         let volume = read.volume;
         let id = made.container.as_str().to_owned();
         {
-            let started =
-                purlis_session_protocol::steps::begin("runner_start").under("container_check");
+            let started = purlis_session_protocol::steps::begin(
+                purlis_session_protocol::steps::Name::RunnerStart,
+            )
+            .under(purlis_session_protocol::steps::Name::ContainerCheck);
             started.ended(self.run(&["start".to_owned(), id.clone()], None, MOST_INSPECTED))?;
         }
         // Started here and not as it was made once it runs: it is stopped again, and not linked.

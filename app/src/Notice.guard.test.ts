@@ -909,6 +909,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "(#2527); the cards, the group's buttons and the options' choices are " +
       "the way on",
   },
+  "settings/diagnostics.tsx": {
+    count: 1,
+    why:
+      "Diagnostics' detailed remote log line under its switch, when the hour it is on for ends " +
+      "(#7864): a live value said as the switch turns, the switch itself being the way on",
+  },
   "settings/thisMachine.tsx": {
     count: 1,
     why: "This machine's read refusal, standing in for its list inside Settings (ST-2; NO-7, #1232)",

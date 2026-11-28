@@ -658,7 +658,9 @@ impl Engines {
         // (every `?` and early return, which drop the guard), a cancel, or a download. The
         // person's own Chrome, and an engine already installed, are only looked for, so they write
         // nothing.
-        let step = purlis_session_protocol::steps::begin("browser_engine_prepare");
+        let step = purlis_session_protocol::steps::begin(
+            purlis_session_protocol::steps::Name::BrowserEnginePrepare,
+        );
         if let EngineChoice::Machine(path) = &settings.engine {
             if !path.is_file() {
                 return Err(Refused::MachineChrome(path.clone()));
@@ -817,7 +819,9 @@ impl Engines {
             return Ok((program, false));
         }
         // Only a download is timed: an engine already installed answers above.
-        let step = purlis_session_protocol::steps::begin("browser_engine_download");
+        let step = purlis_session_protocol::steps::begin(
+            purlis_session_protocol::steps::Name::BrowserEngineDownload,
+        );
         let downloaded = self.download(download, &home, program, fetch);
         if matches!(downloaded, Err(Refused::Download(_))) && fetch.cancelled() {
             step.cancelled();

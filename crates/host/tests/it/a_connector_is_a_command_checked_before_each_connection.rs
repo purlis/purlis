@@ -224,11 +224,11 @@ async fn a_links_check_and_what_it_runs_name_the_steps_they_are_inside() {
         "/bin/cat",
         Vec::new(),
         Arc::new(|| {
-            steps::begin("container_check").done();
+            steps::begin(steps::Name::ContainerCheck).done();
             Err(NotChecked::Refused("no".to_owned()))
         }),
     );
-    let first = steps::begin("first_link");
+    let first = steps::begin(steps::Name::FirstLink);
     let mut links = first.inside(|| {
         hostlink::keep_linked(
             connector,
@@ -250,11 +250,13 @@ async fn a_links_check_and_what_it_runs_name_the_steps_they_are_inside() {
     let some = |name: &str, inside: &str| {
         out.lines().any(|line| {
             line.contains(&format!("purlis: step {name} "))
-                && line.contains(&format!("(parent: {inside})"))
+                && line.contains(&format!("parent: {inside}"))
         })
     };
     assert!(some("container_check", "link_check"), "{out}");
-    assert!(some("link_check", "first_link"), "{out}");
+    // Each try is a `link_dial` inside the one-off link, holding its check (#7864).
+    assert!(some("link_check", "link_dial"), "{out}");
+    assert!(some("link_dial", "first_link"), "{out}");
     assert!(
         out.lines().any(|line| line.contains("purlis: step first_link done")
             && !line.contains("(parent:")),
