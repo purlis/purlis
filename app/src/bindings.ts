@@ -1307,6 +1307,17 @@ export const commands = {
 	not_woken?: string | null,
 } | null, string>(__TAURI_INVOKE("chat_hibernated", { plane, session })),
 	/**
+	 *  **What chat `session`'s pane typed that its woken run never read** (SC-4j, #7639), handed
+	 *  to the window once, which keeps it on the pane until it is put away. None where nothing was
+	 *  handed back.
+	 */
+	chatUnsentHandedBack: (plane: PlaneId, session: number) => typedError<{
+	/**  What was typed, as typed. */
+	text: string,
+	/**  Why it was not sent, as a sentence. */
+	why: string,
+} | null, string>(__TAURI_INVOKE("chat_unsent_handed_back", { plane, session })),
+	/**
 	 *  **What hibernated chat `session` showed as it was hibernated** (SC-4b, #7631): what its pane
 	 *  draws read-only with Resume. Null where it is not hibernated, has no id, or nothing was
 	 *  kept: a missing, corrupt or oversize file reads as none kept.
@@ -11622,6 +11633,17 @@ export type Handed =
 { kind: "typed"; text: string } | 
 /**  Put on the clipboard instead, with the sentence saying why. */
 { kind: "copied"; text: string; why: string };
+
+/**
+ *  **What a woken chat's pane typed that its woken run never read** (SC-4j, #7639), handed back
+ *  to the person with why.
+ */
+export type HandedBack = {
+	/**  What was typed, as typed. */
+	text: string,
+	/**  Why it was not sent, as a sentence. */
+	why: string,
+};
 
 /**
  *  Where a chat another chat started came from, as the window draws it: its note, and its

@@ -10301,9 +10301,9 @@ fn a_chat_on_screen_is_never_hibernated_by_the_gate() {
 }
 
 #[test]
-fn a_task_is_skipped_and_the_next_longest_rested_chat_goes() {
-    // Until SC-4j (#7639) the act refuses a task, so the gate never picks one: it is skipped,
-    // and the next goes.
+fn a_task_whose_report_is_not_owed_is_no_longer_skipped_and_goes_when_it_rested_longest() {
+    // SC-4j (#7639): a tell wakes a hibernated task and a wait on one answers at once, so the
+    // act takes a task whose report is not owed, and the gate picks it as it picks any chat.
     use crate::autohibernate::{Clock, Read};
     let dir = tempfile::tempdir().expect("a directory");
     let host = Pretend::default();
@@ -10330,18 +10330,20 @@ fn a_task_is_skipped_and_the_next_longest_rested_chat_goes() {
     );
     let plain = a_claude_chat_resting(&held, dir.path(), "plain");
     nothing_on_screen(&held);
-    // The task has rested longest; the asker has a task open, and is not rested.
+    // The task has rested longest: the asker and the plain chat were looked at since.
     assert!(matches!(planes.gate().read(), Read::Armed(_)));
     held.looked()
         .typed(plain, clock.now() + std::time::Duration::from_secs(60));
+    held.looked()
+        .typed(asker, clock.now() + std::time::Duration::from_secs(60));
     clock.advance(std::time::Duration::from_secs(24 * 60 * 60));
 
     assert_eq!(
         planes.gate().read(),
-        Read::Hibernated((held.plane_id().clone(), plain))
+        Read::Hibernated((held.plane_id().clone(), task))
     );
-    assert_eq!(held.hibernated().of(task), None);
     assert_eq!(held.hibernated().of(asker), None);
+    assert_eq!(held.hibernated().of(plain), None);
 }
 
 #[test]
@@ -10584,20 +10586,18 @@ fn a_chat_whose_tasks_have_all_finished_may_go() {
         },
     );
     nothing_on_screen(&held);
-    assert_eq!(
-        planes.gate().read(),
-        Read::Nothing,
-        "a task open: neither may go, so nothing is armed"
+    // SC-4j (#7639): its task has reported and its row is open, which no longer holds either
+    // back: a tell wakes a hibernated task, and the asker owes nothing.
+    assert!(
+        matches!(planes.gate().read(), Read::Armed(_)),
+        "both may go, so the gate is armed"
     );
     clock.advance(GATE_HOUR);
-    assert_eq!(planes.gate().read(), Read::Nothing);
-
-    held.close_chat(task).expect("the task closes");
-    nothing_on_screen(&held);
 
     assert_eq!(
         planes.gate().read(),
-        Read::Hibernated((held.plane_id().clone(), asker))
+        Read::Hibernated((held.plane_id().clone(), asker)),
+        "the asker, rested longest, goes while its finished task is still open"
     );
 }
 
@@ -10867,12 +10867,13 @@ fn a_task_heard_at_rest(
     asker: u32,
     report: purlis_core::reopen::Owed,
 ) -> u32 {
-    a_chat_heard_at_rest_from(
-        held,
-        dir,
-        purlis_core::ownwork::Said::default(),
-        false,
-        Some(purlis_core::reopen::HandedFrom {
+    // Started as a chat and then given its task's record, as the gate's tests do: a dispatched
+    // start runs sandboxed whatever the project says (the dispatch floor), and these tests are
+    // about its hibernation, not its sandbox.
+    let task = a_chat_heard_at_rest(held, dir, purlis_core::ownwork::Said::default(), false);
+    held.chats().handed_from_for_tests(
+        task,
+        purlis_core::reopen::HandedFrom {
             id: None,
             chat: asker,
             name: "asker".to_owned(),
@@ -10881,12 +10882,15 @@ fn a_task_heard_at_rest(
             mode: purlis_core::dispatchdecision::Mode::Task,
             depth: 1,
             root: None,
-            above: None,
+            // Its asking chat, on no persona: the chain is read whole, at the project's own
+            // level, which these tests turn off, so its woken run starts as the asker would.
+            above: Some(vec![None]),
             by_person: false,
             long: false,
             policy: None,
-        }),
-    )
+        },
+    );
+    task
 }
 
 #[test]
@@ -11349,12 +11353,20 @@ fn a_tell_whose_wake_is_refused_answers_the_parent_why_and_so_does_a_wait_on_it(
     let again = tell().expect("the next tell says it was not read");
     assert!(again.contains("the kill switch is thrown"), "{again}");
 
+    // A wait on a task whose report nobody is owed (one that reported earlier answers that it
+    // did), whose wake typing in its pane asked for was refused.
+    host.refuses(None);
+    let quiet = a_task_heard_at_rest(&held, dir.path(), asker, purlis_core::reopen::Owed::Nothing);
+    held.hibernate_chat(quiet).expect("it hibernates");
+    host.refuses(Some("the kill switch is thrown"));
+    the_pane_sends(&held, quiet, b"go on\r");
+    held.lanes.in_turn(quiet, || {});
     let waited = crate::dispatched::wait(
         &Arc::downgrade(&held),
         &Asked {
             chat: asker,
             what: What::Wait {
-                of: task,
+                of: quiet,
                 within_secs: 1,
             },
         },
