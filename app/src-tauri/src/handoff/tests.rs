@@ -6174,12 +6174,15 @@ fn closing_a_worktree_task_s_chat_takes_its_worktree_away_once_its_branch_is_mer
         "and the asking chat's own close looks at no worktree"
     );
 
-    // Its chat closes: its dispatch ends, and the merged worktree goes with it.
+    // Its chat closes: its dispatch ends, and the merged worktree goes with it. The order is
+    // the window's: the dispatch ends, the chat is closed, and only then is the tidy asked
+    // which chats are still open, so the closed chat's own folder is not one of them.
     crate::dispatches::ended(&held, chat);
     assert_eq!(
         crate::dispatches::worktree_to_look_at(&held, chat).as_deref(),
         Some(dispatch.as_str())
     );
+    held.chats().close(chat).unwrap();
     assert_eq!(
         crate::dispatches::tidy_closed(
             held.root(),
