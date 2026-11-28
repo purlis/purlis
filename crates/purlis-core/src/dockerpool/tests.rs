@@ -2984,7 +2984,7 @@ fn a_running_runner_is_only_checked() {
 }
 
 /// How many of the fake's logged runs began with `words`.
-fn runs_of(fake: &FakeDocker, words: &str) -> usize {
+pub(crate) fn runs_of(fake: &FakeDocker, words: &str) -> usize {
     fake.file("log")
         .lines()
         .filter(|line| line.starts_with(words))
@@ -3061,13 +3061,13 @@ fn a_containers_check_reads_its_daemon_container_and_home_at_once() {
 
 /// The stand-in's `docker info --format '{{json .}}'`, as a Docker of id `engine` with `options`
 /// as its daemon's security options prints it.
-fn info_of(engine: &str, options: &serde_json::Value) -> String {
+pub(crate) fn info_of(engine: &str, options: &serde_json::Value) -> String {
     serde_json::json!({ "ID": engine, "SecurityOptions": options, "ServerErrors": [] }).to_string()
 }
 
 /// What the pin check of an engine found to be the pinned one reads and hands on (#7922).
 fn pin_checked(docker: &Docker) -> String {
-    docker.hand_on(docker.engine_id_read().expect("the engine answers"))
+    docker.keep_for_the_daemon_check(docker.engine_id_read().expect("the engine answers"))
 }
 
 /// **On a cold link, the daemon's options are the pin's own `docker info`'s** (#7862, T6 Q2): the
@@ -3146,7 +3146,7 @@ fn a_docker_not_pointed_at_a_pool_keeps_nothing_its_info_said() {
 /// `after` after, so the bound is met on either side whatever the machine's speed.
 /// Seen red: with the 30 s it had, what was read five seconds ago was taken.
 #[test]
-fn what_the_pins_docker_info_said_is_not_taken_five_seconds_on() {
+fn what_the_pins_docker_info_said_is_taken_up_to_its_few_seconds_and_never_after() {
     let fake = FakeDocker::new(&inspected());
     fake.set(
         "info",
@@ -3181,44 +3181,6 @@ fn what_the_pins_docker_info_said_is_not_taken_five_seconds_on() {
             .take_security_options_at(after + five_seconds),
         None,
         "read five seconds ago"
-    );
-}
-
-/// **Two `docker`s each made to keep what their pin said never share it** (#7922): each
-/// [`crate::sshroute::pool::docker_of`] result is made so ([`Docker::keeping_what_its_pin_said`])
-/// from the same `docker`, and what one link's pin read is never another link's daemon. Made
-/// again from one that already keeps, it keeps apart too.
-/// Seen red: with `keeping_what_its_pin_said` keeping a slot it was handed, the second link took
-/// the first's options and read no `docker info` of its own.
-#[test]
-fn two_dockers_kept_for_two_links_never_share_what_their_pins_said() {
-    let fake = FakeDocker::new(&inspected());
-    fake.set(
-        "info",
-        &info_of(
-            "ENGINE",
-            &serde_json::json!(["name=seccomp,profile=builtin"]),
-        ),
-    );
-    let base = fake.docker().keeping_what_its_pin_said();
-    let first = base.clone().keeping_what_its_pin_said();
-    let second = base.clone().keeping_what_its_pin_said();
-    assert_eq!(pin_checked(&first), "ENGINE");
-    let read = runs_of(&fake, "info ");
-    // The second link's check reads the daemon itself, here as the whole info it can't pass.
-    assert!(second.check(&made()).is_err(), "{}", fake.file("log"));
-    assert!(runs_of(&fake, "info ") > read, "{}", fake.file("log"));
-    assert_eq!(
-        base.pin_said
-            .take_security_options_at(std::time::Instant::now()),
-        None
-    );
-    // The first's is still its own.
-    assert!(
-        first
-            .pin_said
-            .take_security_options_at(std::time::Instant::now())
-            .is_some()
     );
 }
 

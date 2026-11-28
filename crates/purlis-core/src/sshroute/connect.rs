@@ -792,13 +792,13 @@ pub fn engine_holds(
                 })?
         }
     };
-    if read.said == pin.engine {
+    if read.engine == pin.engine {
         // Only the pinned engine's `docker info` is handed on to the daemon's check (#7922).
-        docker.hand_on(read);
+        docker.keep_for_the_daemon_check(read);
         step.done();
         return Ok(());
     }
-    let now = read.said;
+    let now = read.engine;
     // A pin that changed is a finding the check made: the check itself is refused.
     Err(Finding::EngineChanged {
         host: route.host().to_owned(),

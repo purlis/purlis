@@ -2773,7 +2773,7 @@ pub struct Docker {
 /// check before a link reads all of `docker info` (ADR 0123 §3), the daemon's security options
 /// with it, and the daemon's check that follows on the same link takes those from it rather
 /// than asking the engine again. It is kept only once the engine is found to be the pinned one
-/// ([`Docker::hand_on`], #7922).
+/// ([`Docker::keep_for_the_daemon_check`], #7922).
 ///
 /// It is not a cache: only the first daemon check after the pin check takes it, only within
 /// [`PIN_SAID_FOR`], and every check after that reads the daemon again. Whichever check of the
@@ -2795,10 +2795,10 @@ struct PinSaid(Option<std::sync::Arc<std::sync::Mutex<Option<Said>>>>);
 type Said = (std::time::Instant, serde_json::Value);
 
 /// **An engine as a pin check read it** ([`Docker::engine_id_read`], [`Docker::engine_pin_read`]),
-/// with what its `docker info` said to hand on: only [`Docker::hand_on`] keeps that, once the
+/// with what its `docker info` said to hand on: only [`Docker::keep_for_the_daemon_check`] keeps that, once the
 /// engine is found to be the pinned one (#7922).
 pub(crate) struct PinRead<T> {
-    pub(crate) said: T,
+    pub(crate) engine: T,
     info: Option<serde_json::Value>,
 }
 
@@ -2806,7 +2806,7 @@ impl<T> PinRead<T> {
     /// What was read, said another way, with the same `docker info` to hand on.
     pub(crate) fn map<U>(self, f: impl FnOnce(T) -> U) -> PinRead<U> {
         PinRead {
-            said: f(self.said),
+            engine: f(self.engine),
             info: self.info,
         }
     }
@@ -2814,7 +2814,7 @@ impl<T> PinRead<T> {
     /// [`PinRead::map`], where saying it another way can fail.
     pub(crate) fn try_map<U, E>(self, f: impl FnOnce(T) -> Result<U, E>) -> Result<PinRead<U>, E> {
         Ok(PinRead {
-            said: f(self.said)?,
+            engine: f(self.engine)?,
             info: self.info,
         })
     }
@@ -4611,10 +4611,10 @@ impl Docker {
     /// prints its client's half and exits 0 when the server half fails, so an empty id is read
     /// with the server's own errors, never taken as an engine.
     pub fn engine_id_said(&self) -> Result<String, Refused> {
-        self.engine_id_read().map(|read| read.said)
+        self.engine_id_read().map(|read| read.engine)
     }
 
-    /// [`Docker::engine_id_said`], with what its `docker info` said, for [`Docker::hand_on`].
+    /// [`Docker::engine_id_said`], with what its `docker info` said, for [`Docker::keep_for_the_daemon_check`].
     pub(crate) fn engine_id_read(&self) -> Result<PinRead<String>, Refused> {
         let printed = self.read(
             &["info".into(), "--format".into(), "{{json .}}".into()],
@@ -4622,7 +4622,7 @@ impl Docker {
         )?;
         let said = engine_id_in(&printed)?;
         Ok(PinRead {
-            said,
+            engine: said,
             info: serde_json::from_str(printed.trim()).ok(),
         })
     }
@@ -4632,22 +4632,22 @@ impl Docker {
     /// Podman reached by Docker's client said as such, since its id is drawn anew at every ask
     /// and its containers are not written as the check measured Podman's.
     pub fn engine_pin_said(&self) -> Result<EngineSaid, Refused> {
-        self.engine_pin_read().map(|read| read.said)
+        self.engine_pin_read().map(|read| read.engine)
     }
 
     /// **`read`'s engine, found to be the pinned one, handing on what its `docker info` said**
     /// (#7862, #7922, [`PinSaid`]): called only once the pin is found to hold, so what an engine
     /// that is not the pinned one said is never kept. It keeps nothing where this `docker` keeps
     /// nothing ([`Docker::keeping_what_its_pin_said`]).
-    pub(crate) fn hand_on<T>(&self, read: PinRead<T>) -> T {
+    pub(crate) fn keep_for_the_daemon_check<T>(&self, read: PinRead<T>) -> T {
         if let Some(info) = read.info {
             self.pin_said.keep(info);
         }
-        read.said
+        read.engine
     }
 
     /// [`Docker::engine_pin_said`], with what its `docker info` said of a Docker, for
-    /// [`Docker::hand_on`]. A Podman's says nothing to hand on.
+    /// [`Docker::keep_for_the_daemon_check`]. A Podman's says nothing to hand on.
     pub(crate) fn engine_pin_read(&self) -> Result<PinRead<EngineSaid>, Refused> {
         let printed = self.read(
             &["info".into(), "--format".into(), "{{json .}}".into()],
@@ -4655,7 +4655,10 @@ impl Docker {
         )?;
         let info: serde_json::Value = serde_json::from_str(printed.trim())
             .map_err(|_| refused("docker info did not answer JSON"))?;
-        let nothing_kept = |said| PinRead { said, info: None };
+        let nothing_kept = |said| PinRead {
+            engine: said,
+            info: None,
+        };
         if let Some(podman) = crate::sshroute::EnginePin::podman_in(&info) {
             return podman
                 .map(EngineSaid::Pin)
@@ -4676,7 +4679,7 @@ impl Docker {
             return Ok(nothing_kept(EngineSaid::PodmanOverDocker));
         }
         Ok(PinRead {
-            said: EngineSaid::Pin(crate::sshroute::EnginePin::Docker(id)),
+            engine: EngineSaid::Pin(crate::sshroute::EnginePin::Docker(id)),
             info: Some(info),
         })
     }
