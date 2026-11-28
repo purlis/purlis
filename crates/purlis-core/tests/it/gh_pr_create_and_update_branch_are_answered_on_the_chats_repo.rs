@@ -48,6 +48,28 @@ const CREATE: &str = "mutation PullRequestCreate($input: CreatePullRequestInput!
 const UPDATE_BRANCH: &str = "mutation PullRequestUpdateBranch($input: UpdatePullRequestBranchInput!) { \
     updatePullRequestBranch(input: $input) { pullRequest { id } } }";
 
+/// The pull request `gh pr update-branch <number>` reads first, captured from gh 2.69.0 off the
+/// chat's own route.
+const FIND_BY_NUMBER: &str = "query PullRequestByNumber($owner: String!, $repo: String!, $pr_number: Int!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $pr_number) {id,number,headRefName,headRefOid,headRepositoryOwner{id,login,...on User{name}},mergeable}
+    }
+  }";
+
+/// What gh 2.69.0 asks next, `api.ComparePullRequestBaseBranchWith`: how far the head is behind
+/// its base (#7957). It was refused as `GraphqlOtherRepo`, because `Ref` had no `compare`.
+const COMPARE: &str = "query ComparePullRequestBaseBranchWith($owner: String!, $repo: String!, $pullRequestNumber: Int!, $headRef: String!) {
+\t\trepository(owner: $owner, name: $repo) {
+\t\t\tpullRequest(number: $pullRequestNumber) {
+\t\t\t\tbaseRef {
+\t\t\t\t\tcompare (headRef: $headRef) {
+\t\t\t\t\t\taheadBy, behindBy, status
+\t\t\t\t\t}
+\t\t\t\t}
+\t\t\t}
+\t\t}
+\t}";
+
 fn scene() -> Scene {
     // The pull request's head is what update-branch writes to: here a branch of the chat's repo
     // that the chat made (its tip is `1` * 40, as the pull request's head is).
@@ -179,4 +201,238 @@ fn an_update_method_that_is_not_one_of_the_two_enum_values_is_still_read_as_text
         "pullRequestId": "PR_kwDO_app", "updateMethod": "/merge"}});
     let out = send(&s, UPDATE_BRANCH, body);
     assert!(is_refused(&out, Refusal::MergeCommand), "{out:?}");
+}
+
+#[test]
+fn every_document_gh_pr_update_branch_sends_on_the_chats_pull_request_is_answered() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let out = send(
+        &s,
+        FIND_BY_NUMBER,
+        serde_json::json!({"owner": "acme", "repo": "app", "pr_number": 7}),
+    );
+    assert!(matches!(out, Outcome::Forward(_)), "{out:?}");
+    let out = send(
+        &s,
+        COMPARE,
+        serde_json::json!({"owner": "acme", "repo": "app", "pullRequestNumber": 7, "headRef": "fix"}),
+    );
+    assert!(matches!(out, Outcome::Forward(_)), "{out:?}");
+    let out = send(
+        &s,
+        UPDATE_BRANCH,
+        serde_json::json!({"input": {"pullRequestId": "PR_kwDO_app", "expectedHeadOid": "1".repeat(40)}}),
+    );
+    assert!(matches!(out, Outcome::Forward(_)), "{out:?}");
+}
+
+#[test]
+fn a_compare_under_a_repository_that_is_not_the_chats_is_refused_at_that_repository() {
+    purlis_core::unsteered!();
+    let s = scene();
+    // Refused at `repository(owner:, name:)`, before `compare` is read: what `compare` may be
+    // given is pinned by the tests below.
+    let out = send(
+        &s,
+        COMPARE,
+        serde_json::json!({"owner": "acme", "repo": "other", "pullRequestNumber": 7, "headRef": "fix"}),
+    );
+    assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{out:?}");
+}
+
+/// A `compare` of the chat's repo's default branch given `args`, under the variable
+/// declarations `decl` and the variables `vars`.
+fn compare_of(s: &Scene, decl: &str, args: &str, vars: serde_json::Value) -> Outcome {
+    // No argument at all is written without parentheses, which GraphQL does not allow empty.
+    let args = if args.is_empty() {
+        String::new()
+    } else {
+        format!("({args})")
+    };
+    let q = format!(
+        "query Q{decl} {{ repository(owner:\"acme\", name:\"app\") {{ defaultBranchRef {{ compare{args} {{ aheadBy behindBy status }} }} }} }}"
+    );
+    send(s, &q, vars)
+}
+
+#[test]
+fn a_compare_with_a_branch_of_the_chats_repo_is_answered() {
+    purlis_core::unsteered!();
+    let s = scene();
+    for head in [
+        "fix",
+        "acme:fix",
+        "Acme:fix",
+        "acme/app:fix",
+        "refs/heads/fix",
+    ] {
+        let literal = compare_of(&s, "", &format!("headRef: {head:?}"), serde_json::json!({}));
+        assert!(
+            matches!(literal, Outcome::Forward(_)),
+            "{head}: {literal:?}"
+        );
+        let held = compare_of(
+            &s,
+            "($h: String!)",
+            "headRef: $h",
+            serde_json::json!({"h": head}),
+        );
+        assert!(matches!(held, Outcome::Forward(_)), "{head}: {held:?}");
+    }
+    // A default the request does not override is the value.
+    let defaulted = compare_of(
+        &s,
+        "($h: String = \"fix\")",
+        "headRef: $h",
+        serde_json::json!({}),
+    );
+    assert!(matches!(defaulted, Outcome::Forward(_)), "{defaulted:?}");
+}
+
+#[test]
+fn a_compare_with_a_head_in_another_owner_is_refused() {
+    purlis_core::unsteered!();
+    let s = scene();
+    // ADR 0128 D3d: a compare that names a head in another owner reaches that fork's objects.
+    for head in [
+        "someone:fix",
+        "someone/app:fix",
+        "acme/other:fix",
+        "acmes:fix",
+        "acme:fix:more",
+        "main...someone:fix",
+    ] {
+        let literal = compare_of(&s, "", &format!("headRef: {head:?}"), serde_json::json!({}));
+        assert!(
+            is_refused(&literal, Refusal::GraphqlOtherRepo),
+            "{head}: {literal:?}"
+        );
+        let held = compare_of(
+            &s,
+            "($h: String!)",
+            "headRef: $h",
+            serde_json::json!({"h": head}),
+        );
+        assert!(
+            is_refused(&held, Refusal::GraphqlOtherRepo),
+            "{head}: {held:?}"
+        );
+        let defaulted = compare_of(
+            &s,
+            &format!("($h: String = {head:?})"),
+            "headRef: $h",
+            serde_json::json!({}),
+        );
+        assert!(
+            is_refused(&defaulted, Refusal::GraphqlOtherRepo),
+            "{head}: {defaulted:?}"
+        );
+    }
+}
+
+#[test]
+fn a_compare_whose_head_cannot_be_read_as_one_string_is_refused() {
+    purlis_core::unsteered!();
+    let s = scene();
+    for (decl, args, vars) in [
+        // Given twice: the forge reads one of them by its own rule.
+        (
+            "",
+            "headRef: \"fix\", headRef: \"someone:fix\"",
+            serde_json::json!({}),
+        ),
+        (
+            "",
+            "headRef: \"someone:fix\", headRef: \"fix\"",
+            serde_json::json!({}),
+        ),
+        // Not given at all, or not one string.
+        ("", "", serde_json::json!({})),
+        ("($h: String!)", "headRef: $h", serde_json::json!({})),
+        ("($h: String!)", "headRef: $h", serde_json::json!({"h": 5})),
+        (
+            "($h: String!)",
+            "headRef: $h",
+            serde_json::json!({"h": ["someone:fix"]}),
+        ),
+        (
+            "($h: String)",
+            "headRef: $h",
+            serde_json::json!({"h": null}),
+        ),
+        (
+            "",
+            "headRef: $undeclared",
+            // The value is read wherever the document takes it from.
+            serde_json::json!({"undeclared": "someone:fix"}),
+        ),
+        // An argument `compare` does not have.
+        (
+            "",
+            "headRef: \"fix\", baseRef: \"someone:main\"",
+            serde_json::json!({}),
+        ),
+    ] {
+        let out = compare_of(&s, decl, args, vars.clone());
+        assert!(
+            is_refused(&out, Refusal::GraphqlOtherRepo),
+            "{decl} {args} {vars}: {out:?}"
+        );
+    }
+}
+
+#[test]
+fn a_compare_on_a_pull_requests_head_is_refused_whatever_it_is_given() {
+    purlis_core::unsteered!();
+    let s = scene();
+    // A pull request's head may be a ref in a fork, whose `compare` reads that fork.
+    let under_pull = |inner: &str| {
+        format!(
+            "query {{ repository(owner:\"acme\", name:\"app\") {{ pullRequest(number: 7) {{ {inner} }} }} }}"
+        )
+    };
+    for q in [
+        under_pull("headRef { compare(headRef: \"fix\") { aheadBy } }"),
+        under_pull("headRef { ... on Ref { compare(headRef: \"fix\") { aheadBy } } }"),
+        under_pull("headRef { ...R }")
+            + " fragment R on Ref { compare(headRef: \"fix\") { aheadBy } }",
+    ] {
+        let out = send(&s, &q, serde_json::json!({}));
+        assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{q}: {out:?}");
+    }
+    // What a pull request's head is read for still is, a fragment on `Ref` included.
+    for q in [
+        under_pull("headRef { name target { oid } }"),
+        under_pull("headRef { ...N }") + " fragment N on Ref { name }",
+        under_pull("baseRef { compare(headRef: \"fix\") { aheadBy } }"),
+    ] {
+        let out = send(&s, &q, serde_json::json!({}));
+        assert!(matches!(out, Outcome::Forward(_)), "{q}: {out:?}");
+    }
+}
+
+#[test]
+fn a_comparison_shows_its_counts_and_nothing_it_holds() {
+    purlis_core::unsteered!();
+    let s = scene();
+    // The comparison's counts and status are read, so the refusals below are its fields'.
+    let counts = compare_of(&s, "", "headRef: \"fix\"", serde_json::json!({}));
+    assert!(matches!(counts, Outcome::Forward(_)), "{counts:?}");
+    // The commits between the two sides, and either side's target, may reach a fork's content.
+    for inner in [
+        "commits(first: 5) { nodes { oid message } }",
+        "baseTarget { oid }",
+        "headTarget { oid }",
+        "id",
+    ] {
+        let q = format!(
+            "query{{ repository(owner:\"acme\", name:\"app\"){{ defaultBranchRef{{ compare(headRef:\"fix\"){{ {inner} }} }} }} }}"
+        );
+        let out = send(&s, &q, serde_json::json!({}));
+        assert!(
+            is_refused(&out, Refusal::GraphqlOtherRepo),
+            "{inner}: {out:?}"
+        );
+    }
 }

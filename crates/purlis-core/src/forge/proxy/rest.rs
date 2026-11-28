@@ -170,6 +170,7 @@ const RELEASE: &[&str] = &["releases", "tags", "tag"];
 /// repo's routes, besides those of the lists and patterns above: with them, [`is_route_word`].
 const ROUTE_WORDS: &[&str] = &[
     "repos",
+    "repositories",
     "api",
     "v3",
     "v4",
