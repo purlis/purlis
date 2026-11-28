@@ -45,6 +45,7 @@ fn a_main_thread_held_past_the_budget_is_a_core_stall_naming_the_command_that_he
         &sink,
         Duration::from_millis(5),
         STALLED,
+        std::thread::sleep,
     );
 
     let stalls: Vec<Slow> = seen.try_iter().collect();
@@ -68,6 +69,7 @@ fn a_main_thread_that_runs_each_ping_at_once_is_no_stall() {
         &sink,
         Duration::from_millis(5),
         STALLED,
+        std::thread::sleep,
     );
 
     assert_eq!(seen.try_iter().count(), 0);
@@ -153,6 +155,7 @@ fn a_main_thread_waiting_on_a_lock_another_thread_holds_is_a_core_stall_naming_t
         &sink,
         Duration::from_millis(5),
         STALLED,
+        std::thread::sleep,
     );
     holder.join().unwrap();
 
@@ -181,4 +184,87 @@ fn what_the_main_thread_runs_is_told_outermost_first_and_taken_off_as_each_ends(
         assert_eq!(running.now().as_deref(), Some("window event: resized"));
     });
     assert_eq!(running.now(), None);
+}
+
+/// What `f` logs on this thread, through a subscriber of the app's own diagnostic kind.
+fn logged(f: impl FnOnce()) -> String {
+    #[derive(Clone, Default)]
+    struct Logged(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Logged {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let logged = Logged::default();
+    let to = logged.clone();
+    tracing::subscriber::with_default(
+        tracing_subscriber::fmt()
+            .with_writer(move || to.clone())
+            .finish(),
+        f,
+    );
+    String::from_utf8(logged.0.lock().unwrap().clone()).unwrap()
+}
+
+#[test]
+fn a_watch_that_hears_a_ping_late_says_so_and_does_not_take_its_own_lateness_for_a_stall() {
+    // FS-M1a (#7893): the main thread ran the ping at once; the watch itself was held up for
+    // 300 ms before it heard it, as on a machine too busy to run it.
+    static RUNNING: Running = Running::new();
+    let (sink, seen) = mpsc::channel();
+    let handed = AtomicUsize::new(0);
+    let said = logged(|| {
+        watch(
+            |ping| {
+                if handed.fetch_add(1, Ordering::SeqCst) > 0 {
+                    return false;
+                }
+                ping();
+                std::thread::sleep(Duration::from_millis(300));
+                true
+            },
+            &RUNNING,
+            &sink,
+            Duration::from_millis(5),
+            STALLED,
+            std::thread::sleep,
+        );
+    });
+    assert_eq!(seen.try_iter().count(), 0, "the main thread was never late");
+    assert!(
+        said.contains("the main thread's watch heard a ping") && said.contains("ms late"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_watch_that_wakes_late_from_its_sleep_says_so() {
+    static RUNNING: Running = Running::new();
+    let (sink, _seen) = mpsc::channel();
+    let said = logged(|| {
+        watch(
+            a_main_thread(&RUNNING, "send_input", Duration::ZERO, 2),
+            &RUNNING,
+            &sink,
+            Duration::from_millis(5),
+            STALLED,
+            |every| std::thread::sleep(every + STALLED + Duration::from_millis(20)),
+        );
+    });
+    assert!(said.contains("the main thread's watch woke"), "{said}");
+    let quiet = logged(|| {
+        watch(
+            a_main_thread(&RUNNING, "send_input", Duration::ZERO, 2),
+            &RUNNING,
+            &sink,
+            Duration::from_millis(5),
+            STALLED,
+            std::thread::sleep,
+        );
+    });
+    assert_eq!(quiet, "", "a watch on time says nothing");
 }

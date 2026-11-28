@@ -78,10 +78,6 @@
 /// The costs tests fail on a registered command missing here or listed twice, and on a class the
 /// command's own source contradicts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the answer spans of FS-M1a (#7893) carry it")
-)]
 pub(crate) enum Class {
     /// Answered on the window's own thread: the costs tests' `SYNCHRONOUS` says why it may.
     Window,
@@ -101,10 +97,6 @@ pub(crate) enum Class {
 }
 
 /// Every command the window can invoke, by its class ([`answer_class`]).
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the answer spans of FS-M1a (#7893) carry it")
-)]
 pub(crate) const ANSWER_CLASSES: &[(Class, &[&str])] = &[
     (
         Class::Window,
@@ -1056,17 +1048,35 @@ pub(crate) const ANSWER_CLASSES: &[(Class, &[&str])] = &[
     ),
 ];
 
+impl Class {
+    /// Its name in an answer's span and in the slow log (FS-M1a, #7893).
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Class::Window => "window",
+            Class::Model => "model",
+            Class::Git => "git",
+            Class::Unmeasured => "unmeasured",
+            Class::Uncounted => "uncounted",
+        }
+    }
+}
+
 /// The class `command` answers in ([`Class`]). A name the app does not register is
-/// [`Class::Uncounted`]: nothing counts it.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the answer spans of FS-M1a (#7893) carry it")
-)]
+/// [`Class::Uncounted`]: nothing counts it. Looked up in a table made once, since every command
+/// the window sends asks it on the main thread ([`crate::mainwatch::timed`]).
 pub(crate) fn answer_class(command: &str) -> Class {
-    ANSWER_CLASSES
-        .iter()
-        .find(|(_, commands)| commands.contains(&command))
-        .map_or(Class::Uncounted, |(class, _)| *class)
+    static BY_NAME: std::sync::OnceLock<std::collections::HashMap<&str, Class>> =
+        std::sync::OnceLock::new();
+    BY_NAME
+        .get_or_init(|| {
+            ANSWER_CLASSES
+                .iter()
+                .flat_map(|(class, commands)| commands.iter().map(|command| (*command, *class)))
+                .collect()
+        })
+        .get(command)
+        .copied()
+        .unwrap_or(Class::Uncounted)
 }
 
 /// A test's hold on the work a command hands off the window (#1949): while a gate named for the
@@ -1160,6 +1170,10 @@ mod lane_writes;
 #[cfg(test)]
 #[path = "off_the_main_thread/tests/startup.rs"]
 mod startup;
+
+#[cfg(test)]
+#[path = "off_the_main_thread/tests/spans.rs"]
+mod spans;
 
 #[cfg(test)]
 pub(crate) mod tests;
