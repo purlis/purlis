@@ -315,8 +315,8 @@ pub fn on_open(plane: &Path, now: SystemTime) -> Swept {
     // A task's kept screen goes with its record and at the record's age (#6214), whatever the
     // record of open chats says: no screen outlives what it was kept for.
     crate::chatscreens::on_open(plane, now);
-    // A hibernated chat's kept screen goes unless a hibernated chat names it (#7631): until
-    // SC-4e (#7634) makes hibernation durable, none is hibernated as a project opens.
+    // A hibernated chat's kept screen goes unless the record holds its chat hibernated (#7631,
+    // SC-4e #7634).
     crate::hibernatedscreens::on_open(plane, now);
     // A closed chat's record goes at a dispatch record's age (#6304).
     crate::chatrecords::sweep(plane, now);

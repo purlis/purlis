@@ -105,6 +105,7 @@ fn chat(text: &str) -> Candidate {
         kind: Kind::Chat,
         text: text.to_owned(),
         target: None,
+        joined: false,
     }
 }
 

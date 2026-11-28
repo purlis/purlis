@@ -129,6 +129,7 @@ fn file(text: &str) -> Candidate {
         kind: Kind::File,
         text: text.to_owned(),
         target: None,
+        joined: false,
     }
 }
 

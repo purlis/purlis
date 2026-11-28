@@ -361,11 +361,15 @@ pub fn deliver(
             offers: Vec::new(),
         };
     }
+    // What each extension's thread starts counts where this one does (#7892).
+    let counting = &crate::forklock::counting::carried();
     std::thread::scope(|scope| {
         let asked: Vec<_> = hearing
             .iter()
             .map(|(id, name)| {
-                let told = scope.spawn(move || executor.tell(config_root, choices, id, event));
+                let told = scope.spawn(move || {
+                    counting.within(|| executor.tell(config_root, choices, id, event))
+                });
                 (name, told)
             })
             .collect();
