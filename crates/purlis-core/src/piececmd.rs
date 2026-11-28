@@ -859,8 +859,8 @@ const REGENERATED_AT: [&str; 3] = [
 /// `.astro/` are names a person could use too, as is `node_modules/`, so each counts only beside
 /// the manifest of the build that writes it, or, for `node_modules/`, holding nothing but
 /// Vite's cache. A `logs/` counts beside a `package.json` holding only logs, and a build's
-/// copy of a tracked folder ([`copies_a_tracked_folder`], #7406) wherever it stands. None counts
-/// with a repository inside it.
+/// copy of a tracked folder ([`copies_a_tracked_folder`], #7406) only inside a package. None
+/// counts with a repository inside it.
 fn regenerated(folder: &Path, path: &str) -> bool {
     let Some(dir) = path.strip_suffix('/') else {
         return false;
@@ -925,12 +925,14 @@ fn holds_only_logs(dir: &Path) -> bool {
 
 /// **Whether the ignored folder `dir` of `folder` is a build's copy of the tracked folder
 /// named `name` at the folder's top** (#7406): a site's build copies `docs/` into
-/// `site/src/content/docs/docs/` page for page, and may rewrite each page as it does. Every
-/// file under it has a tracked file at the same path under `name/`, so nothing in it is lost
-/// that the next build does not write again. A file of its own, a link or anything else that is
-/// not a plain file is not a copy; nor is `name/` itself.
+/// `site/src/content/docs/docs/` page for page, and may rewrite each page as it does. It counts
+/// only inside a package, below the top, and only where its files are exactly the tracked files
+/// under `name/`, every one of them at the same path, so nothing in it is lost that the next
+/// build does not write again. A file of its own, a link or anything else that is not a plain
+/// file is not a copy; nor is part of the tracked folder, nor `name/` itself, nor a dot-folder:
+/// `.vscode/` and its kind are a tool's or the person's, which no build copies (#8002).
 fn copies_a_tracked_folder(folder: &Path, dir: &str, name: &str) -> bool {
-    if dir == name || !inside_a_package(folder, dir) {
+    if dir == name || name.starts_with('.') || !inside_a_package(folder, dir) {
         return false;
     }
     let Some(tracked) = worktree::git::run(folder, &["ls-files", "-z", "--", name], {
@@ -951,6 +953,7 @@ fn copies_a_tracked_folder(folder: &Path, dir: &str, name: &str) -> bool {
     let top = folder.join(dir);
     let mut to_read = vec![top.clone()];
     let mut read = 0;
+    let mut copied = 0;
     while let Some(next) = to_read.pop() {
         let Ok(entries) = std::fs::read_dir(&next) else {
             return false;
@@ -978,12 +981,14 @@ fn copies_a_tracked_folder(folder: &Path, dir: &str, name: &str) -> bool {
                     if !tracked.contains(&rel) {
                         return false;
                     }
+                    copied += 1;
                 }
                 _ => return false,
             }
         }
     }
-    true
+    // Every file read is a distinct tracked path, so as many as are tracked is all of them.
+    copied == tracked.len()
 }
 
 /// Whether every entry of `dir` is a folder named `name`: an empty one is too.

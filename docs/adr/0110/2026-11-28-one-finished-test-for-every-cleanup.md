@@ -45,9 +45,12 @@ writes, and `site/src/content/docs/docs/`, which the site's build copies from `d
    `Cargo.toml` is:
    - a `logs/` folder beside a `package.json` that holds only `*.log` files;
    - an ignored folder inside a package (under a folder below the top that holds a
-     `package.json`), named as a tracked folder at the top of the repo, every file of which has
-     a tracked file at the same path under that folder: `site/src/content/docs/docs/spec.md`
-     beside a tracked `docs/spec.md`. A file of its own, or a link, keeps the folder. A file is
+     `package.json`), not a dot-folder, named as a tracked folder at the top of the repo, whose
+     files are exactly that folder's tracked files, each at the same path:
+     `site/src/content/docs/docs/spec.md` beside a tracked `docs/spec.md`. A file of its own, a
+     link, or only part of the tracked folder keeps the folder; so does a dot-folder such as
+     `packages/web/.vscode/`, which is a tool's or the person's even where the top's tracked
+     `.vscode/` holds the same files. A file is
      matched by its path, not its contents, since a build may rewrite each page, so a copy in
      no package (`scratch/docs/`) keeps the folder: an edited copy there may be the task's.
 
@@ -59,9 +62,13 @@ writes, and `site/src/content/docs/docs/`, which the site's build copies from `d
   request merged.
 - **A copy loses nothing.** Each file of a copied folder is made from a tracked file of the same
   name, so the next build writes it again; a page of its own is the task's and keeps the folder.
-- **Tidy keeps branches where git would.** Deleting a carried branch from a close or an open,
-  where the person asked for nothing, is a larger change than letting its folder go. `prune`
-  already deletes such a branch where it loses nothing, when the person or a chat runs it.
+- **Tidy keeps branches for now; deleting them is deferred, not refused.** Wayfinder decision
+  #7992 (operator, 2026-11-28) settles that after a merge the folder goes and the landed branch
+  is deleted, and that a branch is kept only while it has not landed. This amendment does the
+  first half: the folder goes. Deleting the landed branch from a close, an open or the timer,
+  where the person asked for nothing at that moment, belongs with the rest of that lifecycle, so
+  it is deferred to the folder-lifecycle tickets of map #7990, which carry #7992 out. Until they
+  land, `prune` deletes such a branch where it loses nothing, when the person or a chat runs it.
 
 ## Considered and not taken
 

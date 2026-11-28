@@ -663,6 +663,21 @@ fn logs_that_are_not_only_a_build_s_and_a_copy_with_a_page_of_its_own_still_keep
             "out/docs/notes.md",
             "`out/docs/`",
         ),
+        // An editor's settings in a package are the person's, though the top's are tracked
+        // and say the same: a dot-folder is a tool's or the person's, never a build's copy.
+        (
+            "packages/web/.vscode/\n",
+            &["packages/web/package.json", ".vscode/settings.json"][..],
+            "packages/web/.vscode/settings.json",
+            "`packages/web/.vscode/`",
+        ),
+        // Part of the tracked folder is not a build's copy of it: a build copies all of it.
+        (
+            "site/docs/\n",
+            &["site/package.json", "docs/spec.md", "docs/adr/0110-a.md"][..],
+            "site/docs/spec.md",
+            "`site/docs/`",
+        ),
     ] {
         let (world, lane) = holding(rules, tracked, &[file]);
         let (answer, said) = world.removed(&world.workspace(), "lane", false);
