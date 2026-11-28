@@ -3147,6 +3147,29 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "mitmdump",
     "mitmweb",
     "terminal-notifier",
+    // The terminals #8017 names beside #7964's and #7988's, refused whole on what each is for, as
+    // `xterm` and `kitty` are: `rio`, `contour`, `cool-retro-term`, `sakura`, the drop-down
+    // terminals `guake`, `tilda` and `yakuake`, Eterm's `eterm` (its program is `Eterm`, and every
+    // form is lowercased), `aterm`, `mlterm`, `roxterm`, COSMIC's `cosmic-term`,
+    // `blackbox-terminal`, `deepin-terminal`, `hyper`, `tabby` and `warp-terminal` each run the
+    // command they are handed, or the shell their settings name, in the window they open.
+    "rio",
+    "contour",
+    "cool-retro-term",
+    "sakura",
+    "guake",
+    "tilda",
+    "yakuake",
+    "eterm",
+    "aterm",
+    "mlterm",
+    "roxterm",
+    "cosmic-term",
+    "blackbox-terminal",
+    "deepin-terminal",
+    "hyper",
+    "tabby",
+    "warp-terminal",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

@@ -4382,3 +4382,33 @@ fn the_configuration_proxy_and_notifier_runners_of_7988_are_offered_no_run_grant
         refused_as_running_others(name);
     }
 }
+
+/// The terminals #8017 names beside #7964's and #7988's, each of which runs the command it is
+/// handed, or the shell its settings name, in the window it opens: `rio`, `contour`,
+/// `cool-retro-term`, `sakura`, the drop-down terminals `guake`, `tilda` and `yakuake`, Eterm's
+/// `eterm`, `aterm`, `mlterm`, `roxterm`, COSMIC's `cosmic-term`, `blackbox-terminal`,
+/// `deepin-terminal`, `hyper`, `tabby` and `warp-terminal`.
+#[test]
+fn the_terminals_of_8017_are_offered_no_run_grant() {
+    for name in [
+        "rio",
+        "contour",
+        "cool-retro-term",
+        "sakura",
+        "guake",
+        "tilda",
+        "yakuake",
+        "eterm",
+        "aterm",
+        "mlterm",
+        "roxterm",
+        "cosmic-term",
+        "blackbox-terminal",
+        "deepin-terminal",
+        "hyper",
+        "tabby",
+        "warp-terminal",
+    ] {
+        refused_as_running_others(name);
+    }
+}
