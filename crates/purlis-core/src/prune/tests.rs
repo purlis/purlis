@@ -146,7 +146,7 @@ fn the_links_of_every_folder_are_read_saying_the_work_is_alive() {
         true
     });
     let links = alive::within(Some(&pulse), || crate::finished::links(&plane, "alpha"));
-    assert!(links.is_empty(), "{links:?}");
+    assert_eq!(links, Ok(Vec::new()));
     assert!(
         !said.lock().unwrap().is_empty(),
         "nothing was said while the links were read"

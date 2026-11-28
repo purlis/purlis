@@ -33,7 +33,11 @@ amendment lets the first go; the second still keeps the folder (decision 3).
      (#1472). Each guard it had stays: the task has ended, no open chat holds the folder by
      its claim or stands in it (read at a chat's close and a task's merge as at a project's
      open), the folder is still on the branch purlis cut, and its git runs in a checked clone
-     and folder. A folder on its base goes with its branch, as before. One carried, found in
+     and folder. A chat whose program has ended no longer holds a folder by its claim, but
+     while it is open it still keeps the folder it stands in. What tidy cannot read keeps the
+     folder (fail closed): a claim log of the workspace that cannot be read, an open chat with
+     no id a claim could name, or a folder of the workspace whose links `git status` cannot
+     list. A claim or a link nobody could read is not taken as none. A folder on its base goes with its branch, as before. One carried, found in
      history, or inside a request's head (one merged, or one closed with its head on origin, as
      §1 reads it since #4500) goes and **its branch stays**: tidy deletes a branch
      only where `git branch -d` does. `prune` deletes such a branch later, as one whose folder is

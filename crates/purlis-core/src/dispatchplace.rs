@@ -2315,12 +2315,14 @@ pub fn merge(
 /// What a look at a finished worktree did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tidied {
-    /// It was finished and its branch on its base: its folder and branch are gone.
+    /// Its folder was finished and its branch on its base: `git branch -d` deleted the branch,
+    /// and the folder and the branch are gone.
     Removed,
-    /// It was finished and its folder is gone; git would not delete the branch (it was
-    /// carried, inside a request's head, or on a base the clone is not on), so the branch stays.
+    /// Its folder was finished and is gone, and its branch stays: `git branch -d` would not
+    /// delete it, as it was carried, inside a request's head, or on a base the clone is not on.
     FolderRemoved,
-    /// It stays: not finished, not readable, its task still running, or a chat holds it.
+    /// The folder stays: it is not finished, its task still runs, an open chat stands in it or
+    /// holds it by its claim, or what would say otherwise could not be read.
     Kept,
 }
 
@@ -2357,7 +2359,7 @@ pub fn tidy(
 
 /// Every link between the branch folders of `ws` ([`crate::finished::links`]), read as the
 /// project's own git reads, outside any one folder's check: each folder is read in its own.
-fn links_of(root: &Path, ws: &str, isolation: &git::Isolated) -> Vec<crate::finished::Link> {
+fn links_of(root: &Path, ws: &str, isolation: &git::Isolated) -> crate::finished::Links {
     git::isolated(isolation, || crate::finished::links(root, ws))
 }
 
@@ -2369,8 +2371,12 @@ fn tidy_linked(
     tree: &Tree,
     isolation: &git::Isolated,
     forges: crate::finished::Forges<'_>,
-    links: &[crate::finished::Link],
+    links: &crate::finished::Links,
 ) -> Tidied {
+    // A folder that could not be read may link into this one.
+    let Ok(links) = links else {
+        return Tidied::Kept;
+    };
     let Some(branch) = tree.branch.as_deref() else {
         return Tidied::Kept;
     };
@@ -2423,14 +2429,21 @@ fn tidy_linked(
     .unwrap_or(Tidied::Kept)
 }
 
-/// **The chats open as a tidy looks**: what a finished folder is still held by. Each live chat
-/// a branch folder's claim is judged against ([`crate::piececlaim::held_open`]; `None` where no
-/// app said which are open, and a held folder is then kept), and the folder each open chat
-/// stands in.
+/// **The chats open as a tidy looks**: what a finished folder is still held by. What cannot be
+/// read of them keeps a folder (fail closed): a tidy takes a folder only where every chat open
+/// is known not to hold it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenChats {
+    /// Each live chat a branch folder's claim is judged against
+    /// ([`crate::piececlaim::held_open`]), by its id. `None` where no app said which chats are
+    /// open: a claimed folder is then kept.
     pub live: Option<Vec<crate::piececlaim::Live>>,
+    /// The folder each open chat stands in, its working directory: a folder holding one of
+    /// these is kept, whatever the chat's claim says, an ended chat's still open included.
     pub stand_at: Vec<PathBuf>,
+    /// Whether an open chat has no id, so that no claim could be matched to it: every folder is
+    /// then kept.
+    pub unnamed: bool,
 }
 
 impl OpenChats {
@@ -2439,17 +2452,20 @@ impl OpenChats {
         Self {
             live: Some(Vec::new()),
             stand_at: Vec::new(),
+            unnamed: false,
         }
     }
 
-    /// Whether an open chat stands in the folder of `tree`, or holds it by its claim.
+    /// Whether an open chat stands in the folder of `tree`, or holds it by its claim, or what
+    /// would say so cannot be read.
     fn holds(&self, root: &Path, tree: &Tree) -> bool {
         let at = worktree::Located {
             workspace: tree.workspace.clone(),
             repo: tree.repo.clone(),
             piece: tree.piece.clone(),
         };
-        self.stand_at.iter().any(|cwd| tree.holds(root, cwd))
+        self.unnamed
+            || self.stand_at.iter().any(|cwd| tree.holds(root, cwd))
             || crate::piececlaim::held_open(root, &at, None, self.live.as_deref()).is_some()
     }
 }
@@ -2476,7 +2492,7 @@ fn tidy_recorded_with(
     open: &OpenChats,
     isolation: &git::Isolated,
     forges: crate::finished::Forges<'_>,
-    links: &mut dyn FnMut(&str) -> Vec<crate::finished::Link>,
+    links: &mut dyn FnMut(&str) -> crate::finished::Links,
 ) -> Tidied {
     if record.running() || standing(root, record) != Some(Standing::Kept) {
         return Tidied::Kept;
@@ -2509,7 +2525,7 @@ pub fn tidy_all(
     forges: crate::finished::Forges<'_>,
 ) -> usize {
     // Each workspace's links, read once (on review): a `git status` of every folder in it.
-    let mut read: std::collections::HashMap<String, Vec<crate::finished::Link>> =
+    let mut read: std::collections::HashMap<String, crate::finished::Links> =
         std::collections::HashMap::new();
     dispatchrecord::list(root)
         .iter()
@@ -2564,6 +2580,7 @@ pub fn tidy_at_open(
 ) -> usize {
     // The chats it brings back hold what they claimed, as the live chats do at a close: none
     // has come back yet, so none is read as running.
+    // One with no id could hold any folder, so every folder is kept.
     let open = OpenChats {
         live: Some(
             at_open
@@ -2579,6 +2596,7 @@ pub fn tidy_at_open(
                 .collect(),
         ),
         stand_at: at_open.stand_at.clone(),
+        unnamed: at_open.live.iter().any(|chat| chat.id.is_none()),
     };
     tidy_all(
         root,

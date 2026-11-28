@@ -6174,36 +6174,32 @@ fn closing_a_worktree_task_s_chat_takes_its_worktree_away_once_its_branch_is_mer
         "and the asking chat's own close looks at no worktree"
     );
 
-    // Its chat closes: its dispatch ends, and the merged worktree goes with it. The order is
-    // the window's: the dispatch ends, the chat is closed, and only then is the tidy asked
-    // which chats are still open, so the closed chat's own folder is not one of them.
-    crate::dispatches::ended(&held, chat);
+    // Its chat closes, for real: its dispatch ends, the chat goes, and only then are the chats
+    // still open read (decision #7992), so its own folder is not held by it. The tidy runs on a
+    // thread of its own, so the folder is waited for.
+    held.close_chat(chat).expect("it closes");
     assert_eq!(
-        crate::dispatches::worktree_to_look_at(&held, chat).as_deref(),
-        Some(dispatch.as_str())
+        eventually(|| folder.symlink_metadata().is_err().then_some(())),
+        Some(()),
+        "its folder is gone"
     );
-    held.chats().close(chat).unwrap();
-    assert_eq!(
-        crate::dispatches::tidy_closed(
-            held.root(),
-            &dispatch,
-            &crate::dispatches::tidy_open_chats(&held),
-        ),
-        purlis_core::dispatchplace::Tidied::Removed
-    );
-    assert!(folder.symlink_metadata().is_err(), "its folder is gone");
     assert_eq!(git(&clone, &["branch", "--list", &branch]), "");
     assert!(
         clone.join("fix.txt").is_file(),
         "the work is where it was merged"
     );
-    let record = purlis_core::dispatchrecord::read(held.root(), &dispatch).expect("kept");
+    let record = eventually(|| {
+        purlis_core::dispatchrecord::read(held.root(), &dispatch).filter(|record| {
+            crate::dispatches::worktree_row(held.root(), record)
+                .is_some_and(|listed| listed.standing == "merged")
+        })
+    })
+    .expect("its record says merged");
     assert_eq!(
         crate::dispatches::worktree_row(held.root(), &record)
             .map(|listed| (listed.standing, listed.discard)),
         Some(("merged".to_owned(), false))
     );
-    let _ = held.close_chat(chat);
 }
 
 // ----- the wiring: limits, grant, profile and lineage (#1436, #1437, #1439) -----

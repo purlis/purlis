@@ -6,4 +6,5 @@
   only holds what a build wrote (`target/`, `node_modules/`, `dist/`), is taken away when its
   chat closes. The explorer's Remove takes a folder that a squash merge carried, or that sits
   inside a merged pull request's head, without asking for force. A package's `logs/` no longer
-  keeps a folder (#5476, #7406).
+  keeps a folder (#5476, #7406). A folder another open chat works in is kept, and so is every
+  folder of a project whose claims or links purlis cannot read.

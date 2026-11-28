@@ -812,17 +812,49 @@ fn a_merged_task_folder_another_folder_links_into_is_kept_by_the_tidy() {
     let f = support::plane_with_clone("api");
     let iso = Isolated::default();
     let shared = cut(&f, "shares its install");
-    f.commit(&shared.path, "landed");
+    f.commit(&shared.path, "merged-work");
     support::git(&f.clone, &["merge", "-q", "--ff-only", &shared.branch]);
     let linking = cut(&f, "links to it");
-    std::os::unix::fs::symlink(shared.path.join("landed"), linking.path.join("landed-link"))
-        .unwrap();
+    std::os::unix::fs::symlink(
+        shared.path.join("merged-work"),
+        linking.path.join("merged-work-link"),
+    )
+    .unwrap();
 
     assert_eq!(
         dispatchplace::tidy(&f.plane, &tree(&shared), &iso, Forges::none()),
         Tidied::Kept
     );
-    assert!(shared.path.join("landed").is_file());
+    assert!(shared.path.join("merged-work").is_file());
+}
+
+#[test]
+fn a_merged_task_folder_is_kept_while_another_folder_s_links_cannot_be_read() {
+    purlis_core::unsteered!();
+    // Review of #8015: a link nobody could read is not "no link". Another folder of the
+    // workspace that git cannot read may link into this one, so tidy keeps it.
+    let f = support::plane_with_clone("api");
+    let iso = Isolated::default();
+    let merged = cut(&f, "merged");
+    f.commit(&merged.path, "merged-work");
+    support::git(&f.clone, &["merge", "-q", "--ff-only", &merged.branch]);
+    let unreadable = cut(&f, "cannot be read");
+    let dot_git = unreadable.path.join(".git");
+    let pointer = std::fs::read_to_string(&dot_git).unwrap();
+    std::fs::write(&dot_git, "gitdir: /nowhere/at/all\n").unwrap();
+
+    assert_eq!(
+        dispatchplace::tidy(&f.plane, &tree(&merged), &iso, Forges::none()),
+        Tidied::Kept
+    );
+    assert!(merged.path.join("merged-work").is_file());
+
+    // Once that folder reads again and links nowhere, the merged one goes.
+    std::fs::write(&dot_git, pointer).unwrap();
+    assert_eq!(
+        dispatchplace::tidy(&f.plane, &tree(&merged), &iso, Forges::none()),
+        Tidied::Removed
+    );
 }
 
 #[test]
@@ -1107,6 +1139,7 @@ fn tidy_at_a_close_or_a_merge_keeps_a_finished_folder_another_live_chat_stands_i
     let standing_in = dispatchplace::OpenChats {
         live: Some(vec![other.clone()]),
         stand_at: vec![stood.path.join("src")],
+        unnamed: false,
     };
     assert_eq!(
         dispatchplace::tidy_recorded(
@@ -1147,6 +1180,7 @@ fn tidy_at_a_close_or_a_merge_keeps_a_finished_folder_another_live_chat_stands_i
     let holding = dispatchplace::OpenChats {
         live: Some(vec![other.clone()]),
         stand_at: Vec::new(),
+        unnamed: false,
     };
     let tidy = |open: &dispatchplace::OpenChats| {
         dispatchplace::tidy_recorded(
@@ -1163,6 +1197,7 @@ fn tidy_at_a_close_or_a_merge_keeps_a_finished_folder_another_live_chat_stands_i
     let unknown = dispatchplace::OpenChats {
         live: None,
         stand_at: Vec::new(),
+        unnamed: false,
     };
     assert_eq!(tidy(&unknown), Tidied::Kept);
     assert!(held.path.is_dir());
@@ -1173,11 +1208,61 @@ fn tidy_at_a_close_or_a_merge_keeps_a_finished_folder_another_live_chat_stands_i
 }
 
 #[test]
+fn tidy_keeps_every_finished_folder_of_a_workspace_whose_claims_or_open_chats_cannot_all_be_read() {
+    purlis_core::unsteered!();
+    // Review of #8015: a claim nobody could read is not "no claim". Where a claim log of the
+    // workspace cannot be read, or an open chat has no id a claim could name, tidy keeps the
+    // workspace's folders.
+    use std::os::unix::fs::PermissionsExt;
+    let f = support::plane_with_clone("api");
+    let iso = Isolated::default();
+    let id = dispatchrecord::mint();
+    let finished = cut_for(&f, "finished", &id);
+    let record = recorded_as(&f.plane, &id, &finished, 7, true);
+    let tidy = |open: &dispatchplace::OpenChats| {
+        dispatchplace::tidy_recorded(
+            &f.plane,
+            &dispatchrecord::read(&f.plane, &record).unwrap(),
+            open,
+            &iso,
+            Forges::none(),
+        )
+    };
+
+    // An open chat with no id.
+    let unnamed = dispatchplace::OpenChats {
+        unnamed: true,
+        ..dispatchplace::OpenChats::nobody()
+    };
+    assert_eq!(tidy(&unnamed), Tidied::Kept);
+    assert!(finished.path.is_dir(), "a chat with no id may hold it");
+
+    // Another device's claim log that cannot be read.
+    let logs = purlis_core::pieces::dir_for(&f.plane, &finished.workspace);
+    std::fs::create_dir_all(&logs).unwrap();
+    let log = logs.join("another-device.jsonl");
+    std::fs::write(&log, "").unwrap();
+    std::fs::set_permissions(&log, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&log).is_ok() {
+        return; // Run as a user every file is readable to: nothing to show.
+    }
+    assert_eq!(tidy(&dispatchplace::OpenChats::nobody()), Tidied::Kept);
+    assert!(
+        finished.path.is_dir(),
+        "the claim it cannot read may hold it"
+    );
+
+    // Once it reads, and holds nothing, the folder goes.
+    std::fs::set_permissions(&log, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert_eq!(tidy(&dispatchplace::OpenChats::nobody()), Tidied::Removed);
+}
+
+#[test]
 fn opening_the_project_takes_away_only_the_merged_worktrees_of_dispatches_that_ended() {
     purlis_core::unsteered!();
     let f = support::plane_with_clone("api");
     let iso = Isolated::default();
-    // Three tasks that committed nothing, so each has "landed": what differs is its dispatch.
+    // Three tasks that committed nothing, so each is on its base: what differs is its dispatch.
     let [ended_id, running_id, reopened_id, forged_id] = [(); 4].map(|()| dispatchrecord::mint());
     let ended = cut_for(&f, "ended", &ended_id);
     let running = cut_for(&f, "still running", &running_id);

@@ -392,25 +392,44 @@ pub fn folders(plane: &Path, ws: &str) -> Result<Listed, String> {
     Ok(listed)
 }
 
+/// **The links between a workspace's branch folders** ([`links`]), or each folder (or repo) it
+/// could not read for them, named. A link in a folder nobody could read is still a link, so
+/// what decides a folder is finished keeps it when this is an `Err` (fail closed).
+pub type Links = Result<Vec<Link>, Vec<String>>;
+
 /// **Every link between the branch folders of `ws`**, of every repo: a symbolic link git
 /// lists as untracked or ignored in one folder whose target is inside another. A folder links
 /// into itself as it likes. An untracked folder is read file by file; an ignored one is not
-/// read into, so a link inside it (a `node_modules/.bin`) is not one.
-pub fn links(plane: &Path, ws: &str) -> Vec<Link> {
-    let folders: Vec<(Folder, PathBuf)> = folders(plane, ws)
-        .map(|listed| listed.folders)
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|(_, gone)| !gone)
-        .filter_map(|(folder, _)| {
-            let path = worktree::path_for(plane, ws, &folder.repo, &folder.piece).ok()?;
-            Some((folder, std::fs::canonicalize(path).ok()?))
-        })
+/// read into, so a link inside it (a `node_modules/.bin`) is not one. `Err` names every folder
+/// and repo that could not be read, and the workspace where it could not be listed at all.
+pub fn links(plane: &Path, ws: &str) -> Links {
+    let listed = folders(plane, ws).map_err(|why| vec![format!("the workspace ({why})")])?;
+    let mut unread: Vec<String> = listed
+        .unread
+        .iter()
+        .map(|(repo, why)| format!("{repo} ({why})"))
         .collect();
+    let mut folders: Vec<(Folder, PathBuf)> = Vec::new();
+    for (folder, gone) in listed.folders {
+        if gone {
+            continue;
+        }
+        match worktree::path_for(plane, ws, &folder.repo, &folder.piece)
+            .ok()
+            .and_then(|path| std::fs::canonicalize(path).ok())
+        {
+            Some(real) => folders.push((folder, real)),
+            None => unread.push(folder.named()),
+        }
+    }
     let mut found = Vec::new();
     // Each folder's `git status`, read several at once and said alive after each (#5439).
     let targets = each_at_once(&folders, |(_, at)| link_targets(at));
     for ((from, _), targets) in folders.iter().zip(targets) {
+        let Some(targets) = targets else {
+            unread.push(from.named());
+            continue;
+        };
         for target in targets {
             if let Some((into, _)) = folders
                 .iter()
@@ -424,15 +443,19 @@ pub fn links(plane: &Path, ws: &str) -> Vec<Link> {
             }
         }
     }
+    if !unread.is_empty() {
+        unread.sort();
+        return Err(unread);
+    }
     found.sort_by(|a, b| (&a.from, &a.into).cmp(&(&b.from, &b.into)));
     found.dedup();
-    found
+    Ok(found)
 }
 
 /// Where each link `git status` names as untracked or ignored in the folder at `at` points,
-/// resolved; a link that points nowhere is left out.
-fn link_targets(at: &Path) -> Vec<PathBuf> {
-    let Ok(seen) = git::run(
+/// resolved; a link that points nowhere is left out. `None` where git could not say.
+fn link_targets(at: &Path) -> Option<Vec<PathBuf>> {
+    let seen = git::run(
         at,
         &[
             "status",
@@ -442,27 +465,34 @@ fn link_targets(at: &Path) -> Vec<PathBuf> {
             "--ignored=matching",
         ],
         git::READ,
-    ) else {
-        return Vec::new();
-    };
-    if !seen.ok() {
-        return Vec::new();
-    }
-    seen.out
-        .split('\0')
-        .filter_map(|entry| {
-            entry
-                .strip_prefix("?? ")
-                .or_else(|| entry.strip_prefix("!! "))
-        })
-        .filter(|path| !path.ends_with('/'))
-        .map(|path| at.join(path))
-        .filter(|path| {
-            path.symlink_metadata()
-                .is_ok_and(|meta| meta.file_type().is_symlink())
-        })
-        .filter_map(|path| std::fs::canonicalize(path).ok())
-        .collect()
+    )
+    .ok()
+    .filter(git::Run::ok)?;
+    Some(
+        seen.out
+            .split('\0')
+            .filter_map(|entry| {
+                entry
+                    .strip_prefix("?? ")
+                    .or_else(|| entry.strip_prefix("!! "))
+            })
+            .filter(|path| !path.ends_with('/'))
+            .map(|path| at.join(path))
+            .filter(|path| {
+                path.symlink_metadata()
+                    .is_ok_and(|meta| meta.file_type().is_symlink())
+            })
+            .filter_map(|path| std::fs::canonicalize(path).ok())
+            .collect(),
+    )
+}
+
+/// Why a folder is kept where [`links`] could not read `unread`, as a clause.
+pub fn unread_links(unread: &[String]) -> String {
+    format!(
+        "purlis could not read whether another folder links into it ({} could not be read)",
+        unread.join(", ")
+    )
 }
 
 /// The folders of `links` that link into `folder`, named, sorted.
@@ -487,8 +517,9 @@ pub fn as_it_stands(
     forge: Forge<'_>,
 ) -> Result<Commits, NotFinished> {
     let commits = own(plane, ws, repo, piece, forge)?;
+    let links = links(plane, ws).map_err(|unread| NotFinished::Unread(unread_links(&unread)))?;
     let by = linking_into(
-        &links(plane, ws),
+        &links,
         &Folder {
             repo: repo.to_owned(),
             piece: piece.to_owned(),

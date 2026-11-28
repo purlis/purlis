@@ -121,7 +121,16 @@ pub fn prune(
         }
     }
     // Links are read across the whole workspace: a folder of another repo may link in too.
-    let links = finished::links(plane, ws);
+    // Where a folder could not be read, it may link into any other, so none that is still
+    // there goes; one already gone has nothing to link into.
+    let links = finished::links(plane, ws).unwrap_or_else(|unread| {
+        let why = finished::unread_links(&unread);
+        let (gone, there): (Vec<Candidate>, Vec<Candidate>) =
+            candidates.drain(..).partition(|one| one.gone);
+        kept.extend(there.into_iter().map(|one| (one.folder, why.clone())));
+        candidates = gone;
+        Vec::new()
+    });
     let mut remaining: Vec<Folder> = listed
         .folders
         .iter()

@@ -589,8 +589,18 @@ pub fn seen_path(plane: &Path, ws: &str, repo: &str, piece: Option<&str>) -> Pat
 /// workspace that is a link holds nothing, so a link a chat plants never shows another
 /// workspace's pieces as this one's.
 pub fn events(plane: &Path, ws: &str) -> Vec<Value> {
+    events_read(plane, ws).0
+}
+
+/// [`events`], and what of workspace `ws`'s piece logs could not be read to give them, each by
+/// its path in the workspace (`pieces/<log>`, or `pieces/` where the folder could not be
+/// listed). A claim in a log
+/// that is not read is still a claim, so what decides that nothing holds a folder reads this
+/// (fail closed); a log that is a link, or gone since it was listed, is not unread.
+pub(crate) fn events_read(plane: &Path, ws: &str) -> (Vec<Value>, Vec<String>) {
+    let (texts, unread) = logs(plane, ws);
     let mut out: Vec<Value> = Vec::new();
-    for text in logs(plane, ws) {
+    for text in texts {
         for raw in text.lines() {
             let Ok(obj) = serde_json::from_str::<Value>(raw) else {
                 continue;
@@ -605,29 +615,43 @@ pub fn events(plane: &Path, ws: &str) -> Vec<Value> {
     // `sorted(out, key=lambda e: e.get("ts") or "")` — a STABLE sort by the timestamp string,
     // so lines with no `ts` keep the order they were read in rather than being dropped.
     out.sort_by_key(ts_key);
-    out
+    (out, unread)
 }
 
 /// The text of every `*.jsonl` log in workspace `ws`'s `pieces/`, by file name, so one device's
-/// log is read whole before the next (`sorted(d.glob("*.jsonl"))`). One that cannot be read is
-/// left out.
-fn logs(plane: &Path, ws: &str) -> Vec<String> {
+/// log is read whole before the next (`sorted(d.glob("*.jsonl"))`), and the path of each that
+/// could not be read, as [`events_read`] names it. No `pieces/` is no log.
+fn logs(plane: &Path, ws: &str) -> (Vec<String>, Vec<String>) {
+    let folder = || format!("{DIR_NAME}/");
+    let mut texts = Vec::new();
+    let mut unread = Vec::new();
     #[cfg(unix)]
     {
-        let Ok(Some(held)) = crate::held::files::folder(plane, ws, &[DIR_NAME], false) else {
-            return Vec::new();
+        let held = match crate::held::files::folder(plane, ws, &[DIR_NAME], false) {
+            Ok(Some(held)) => held,
+            Ok(None) => return (texts, unread),
+            Err(_) => return (texts, vec![folder()]),
         };
-        held.files()
-            .unwrap_or_default()
+        let Ok(names) = held.files() else {
+            return (texts, vec![folder()]);
+        };
+        for name in names
             .into_iter()
             .filter(|name| name.ends_with(".jsonl") && name.len() > ".jsonl".len())
-            .filter_map(|name| crate::held::files::read(&held, &name).ok().flatten())
-            .collect()
+        {
+            match crate::held::files::read(&held, &name) {
+                Ok(Some(text)) => texts.push(text),
+                Ok(None) => {}
+                Err(_) => unread.push(format!("{DIR_NAME}/{name}")),
+            }
+        }
     }
     #[cfg(not(unix))]
     {
-        let Ok(reader) = std::fs::read_dir(dir_for(plane, ws)) else {
-            return Vec::new();
+        let reader = match std::fs::read_dir(dir_for(plane, ws)) {
+            Ok(reader) => reader,
+            Err(why) if why.kind() == std::io::ErrorKind::NotFound => return (texts, unread),
+            Err(_) => return (texts, vec![folder()]),
         };
         let mut files: Vec<PathBuf> = reader
             .filter_map(Result::ok)
@@ -635,11 +659,19 @@ fn logs(plane: &Path, ws: &str) -> Vec<String> {
             .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
             .collect();
         files.sort();
-        files
-            .into_iter()
-            .filter_map(|file| std::fs::read_to_string(file).ok())
-            .collect()
+        for file in files {
+            match std::fs::read_to_string(&file) {
+                Ok(text) => texts.push(text),
+                Err(why) if why.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => unread.push(format!(
+                    "{DIR_NAME}/{}",
+                    file.file_name()
+                        .map_or_else(String::new, |name| name.to_string_lossy().into_owned())
+                )),
+            }
+        }
     }
+    (texts, unread)
 }
 
 /// Python's truthiness for the two shapes that reach these fields: a non-empty string, a
