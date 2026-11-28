@@ -4525,3 +4525,12 @@ fn the_interpreters_and_installers_of_8031_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// Helix, the editor #8031 names, whose `:sh` and `:pipe` run a shell command: `hx`, and `helix`,
+/// the name some systems install it as.
+#[test]
+fn helix_the_editor_with_a_shell_of_8031_is_offered_no_run_grant() {
+    for name in ["hx", "helix"] {
+        refused_as_running_others(name);
+    }
+}
