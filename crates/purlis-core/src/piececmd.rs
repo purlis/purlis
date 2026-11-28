@@ -858,7 +858,9 @@ const REGENERATED_AT: [&str; 3] = [
 /// those with a closing slash): a `.env`, or a `results/`, is the task's. `target/`, `dist/` and
 /// `.astro/` are names a person could use too, as is `node_modules/`, so each counts only beside
 /// the manifest of the build that writes it, or, for `node_modules/`, holding nothing but
-/// Vite's cache. None counts with a repository inside it.
+/// Vite's cache. A `logs/` counts beside a `package.json` holding only logs, and a build's
+/// copy of a tracked folder ([`copies_a_tracked_folder`], #7406) wherever it stands. None counts
+/// with a repository inside it.
 fn regenerated(folder: &Path, path: &str) -> bool {
     let Some(dir) = path.strip_suffix('/') else {
         return false;
@@ -879,12 +881,91 @@ fn regenerated(folder: &Path, path: &str) -> bool {
         // its own, beside no manifest, which holds nothing else (#4500).
         "node_modules" => beside("package.json") || holds_only(&folder.join(dir), ".vite"),
         "target" => beside("Cargo.toml"),
-        _ => REGENERATED_AT.iter().any(|end| {
-            dir.strip_suffix(end)
-                .is_some_and(|before| before.is_empty() || before.ends_with('/'))
-        }),
+        // What a package's runs log, its e2e runner's above all (#7406): logs and nothing else.
+        "logs" => beside("package.json") && holds_only_logs(&folder.join(dir)),
+        _ => {
+            REGENERATED_AT.iter().any(|end| {
+                dir.strip_suffix(end)
+                    .is_some_and(|before| before.is_empty() || before.ends_with('/'))
+            }) || copies_a_tracked_folder(folder, dir, name)
+        }
     };
     named && !may_hold_a_repository(&folder.join(dir))
+}
+
+/// Whether every entry of `dir` is a file named `*.log`: an empty one is too.
+fn holds_only_logs(dir: &Path) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|entries| {
+        entries.into_iter().all(|entry| {
+            entry.is_ok_and(|entry| {
+                entry.file_type().is_ok_and(|kind| kind.is_file())
+                    && entry.file_name().to_string_lossy().ends_with(".log")
+            })
+        })
+    })
+}
+
+/// **Whether the ignored folder `dir` of `folder` is a build's copy of the tracked folder
+/// named `name` at the folder's top** (#7406): a site's build copies `docs/` into
+/// `site/src/content/docs/docs/` page for page, and may rewrite each page as it does. Every
+/// file under it has a tracked file at the same path under `name/`, so nothing in it is lost
+/// that the next build does not write again. A file of its own, a link or anything else that is
+/// not a plain file is not a copy; nor is `name/` itself.
+fn copies_a_tracked_folder(folder: &Path, dir: &str, name: &str) -> bool {
+    if dir == name {
+        return false;
+    }
+    let Some(tracked) = worktree::git::run(folder, &["ls-files", "-z", "--", name], {
+        worktree::git::READ
+    })
+    .ok()
+    .filter(worktree::git::Run::ok)
+    .map(|run| {
+        run.out
+            .split('\0')
+            .filter_map(|path| path.strip_prefix(name)?.strip_prefix('/'))
+            .map(str::to_owned)
+            .collect::<std::collections::BTreeSet<String>>()
+    })
+    .filter(|tracked| !tracked.is_empty()) else {
+        return false;
+    };
+    let top = folder.join(dir);
+    let mut to_read = vec![top.clone()];
+    let mut read = 0;
+    while let Some(next) = to_read.pop() {
+        let Ok(entries) = std::fs::read_dir(&next) else {
+            return false;
+        };
+        for entry in entries {
+            read += 1;
+            let Ok(entry) = entry else {
+                return false;
+            };
+            if read > MOST_READ_FOR_A_REPOSITORY {
+                return false;
+            }
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => to_read.push(entry.path()),
+                Ok(kind) if kind.is_file() => {
+                    let path = entry.path();
+                    let Some(rel) = path
+                        .strip_prefix(&top)
+                        .ok()
+                        .and_then(|rel| rel.to_str())
+                        .map(|rel| rel.replace(std::path::MAIN_SEPARATOR, "/"))
+                    else {
+                        return false;
+                    };
+                    if !tracked.contains(&rel) {
+                        return false;
+                    }
+                }
+                _ => return false,
+            }
+        }
+    }
+    true
 }
 
 /// Whether every entry of `dir` is a folder named `name`: an empty one is too.

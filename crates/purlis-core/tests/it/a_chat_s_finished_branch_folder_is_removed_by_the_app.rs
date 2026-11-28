@@ -610,6 +610,65 @@ fn what_only_the_harness_or_a_build_regenerates_does_not_keep_a_folder() {
 }
 
 #[test]
+fn a_build_s_logs_and_a_copy_of_a_tracked_folder_do_not_keep_a_folder() {
+    purlis_core::unsteered!();
+    // #7406: the e2e run writes `app/logs/`, and the site's build copies `docs/` into
+    // `site/src/content/docs/docs/`, a page for a page: each kept a finished folder.
+    let (world, lane) = holding(
+        "logs/\nsite/src/content/docs/docs/\n",
+        &[
+            "app/package.json",
+            "site/package.json",
+            "docs/spec.md",
+            "docs/adr/0110-a.md",
+        ],
+        &[
+            "app/logs/wdio-2026-11-01.log",
+            "app/logs/charter.2026-11-01.log",
+            "site/src/content/docs/docs/spec.md",
+            "site/src/content/docs/docs/adr/0110-a.md",
+        ],
+    );
+
+    let (answer, said) = world.removed(&world.workspace(), "lane", false);
+
+    assert!(matches!(answer, Answer::Said { code: 0, .. }), "{said}");
+    assert!(!lane.exists(), "{said}");
+}
+
+#[test]
+fn logs_that_are_not_only_a_build_s_and_a_copy_with_a_page_of_its_own_still_keep_a_folder() {
+    purlis_core::unsteered!();
+    for (rules, tracked, file, named) in [
+        // Not beside a package's manifest.
+        ("logs/\n", &["README.md"][..], "logs/run.log", "`logs/`"),
+        // Beside one, but holding more than logs.
+        (
+            "logs/\n",
+            &["package.json"][..],
+            "logs/findings.csv",
+            "`logs/`",
+        ),
+        // A page the tracked folder does not have is the task's own.
+        (
+            "out/docs/\n",
+            &["docs/spec.md"][..],
+            "out/docs/notes.md",
+            "`out/docs/`",
+        ),
+    ] {
+        let (world, lane) = holding(rules, tracked, &[file]);
+        let (answer, said) = world.removed(&world.workspace(), "lane", false);
+        assert!(
+            matches!(answer, Answer::Said { code: 1, .. }),
+            "{file}: {said}"
+        );
+        assert!(said.contains(named), "{file}: {said}");
+        assert!(lane.join(file).is_file(), "{file}");
+    }
+}
+
+#[test]
 fn an_ignored_file_a_person_might_want_still_keeps_a_folder_beside_regenerated_ones() {
     purlis_core::unsteered!();
     let (world, lane) = holding(
