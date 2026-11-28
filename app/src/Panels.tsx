@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useHeldStill, useHeldWhile, type HeldBy } from "./heldStill";
 import { useLentMemoryStores } from "./MemoryEdits";
 import { useReadOnlySaid } from "./ReadOnlyLine";
@@ -77,8 +77,12 @@ import { Segment, SegmentedControl } from "./ui/choice/Radio";
  * because ADR 0038 says nothing in this region may compete with it — and then it left the
  * region altogether, for the title bar: this region is one project's and one workspace's, and
  * the queue is every project's. `NeedsYou.NeedsYouMenu` is where it is.
+ *
+ * **Drawn only when a prop moves** (`memo`, FS-W2 #7910): a press on a tab moves none, since
+ * the catalogue's rows it reads are held while they say the same (`besideRows`, `PlaneView.tsx`)
+ * and the presses are the view's own for its life.
  */
-export function Panels({
+export const Panels = memo(function Panels({
   view,
   workspace,
   state,
@@ -243,7 +247,7 @@ export function Panels({
       )}
     </div>
   );
-}
+});
 
 /** Which of purlis's own panels each of the right side's views shows, by the panel's key. */
 const OWN_PANELS: Partial<Record<OwnViewId, string>> = {

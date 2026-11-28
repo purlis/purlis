@@ -776,21 +776,30 @@ pub fn engine_holds(
         host: route.host().to_owned(),
         said: why.0,
     };
-    let now = match &pin.engine {
-        EnginePin::Docker(_) => EnginePin::Docker(docker.engine_id_said().map_err(silent)?),
-        EnginePin::Podman { .. } => match docker.engine_pin_said().map_err(silent)? {
-            crate::dockerpool::EngineSaid::Pin(now) => now,
-            crate::dockerpool::EngineSaid::PodmanOverDocker => {
-                return Err(Finding::NeedsPodman {
-                    host: route.host().to_owned(),
-                });
-            }
-        },
+    let read = match &pin.engine {
+        EnginePin::Docker(_) => docker
+            .engine_id_read()
+            .map_err(silent)?
+            .map(EnginePin::Docker),
+        EnginePin::Podman { .. } => {
+            docker
+                .engine_pin_read()
+                .map_err(silent)?
+                .try_map(|said| match said {
+                    crate::dockerpool::EngineSaid::Pin(now) => Ok(now),
+                    crate::dockerpool::EngineSaid::PodmanOverDocker => Err(Finding::NeedsPodman {
+                        host: route.host().to_owned(),
+                    }),
+                })?
+        }
     };
-    if now == pin.engine {
+    if read.engine == pin.engine {
+        // Only the pinned engine's `docker info` is handed on to the daemon's check (#7922).
+        docker.keep_for_the_daemon_check(read);
         step.done();
         return Ok(());
     }
+    let now = read.engine;
     // A pin that changed is a finding the check made: the check itself is refused.
     Err(Finding::EngineChanged {
         host: route.host().to_owned(),
