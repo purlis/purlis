@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795868165666,
+  "lastUpdate": 1795869817018,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -59010,6 +59010,48 @@ window.BENCHMARK_DATA = {
             "value": 102.814785,
             "unit": "ms",
             "extra": "median of 5 runs: 100.971, 102.275, 102.815, 103.236, 104.167 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c812bc6e7a7133da81f718b161c63bbadb675117",
+          "message": "FS-W2: the action catalogue stops churning (#7910) (#8027)\n\n* FS-W2: the action catalogue stops churning (#7910)\n\nThe view's catalogue is held in a small external store (catalogueRows.ts),\nand the Changes view, the panels and the explorer read the rows they draw\nout of it by id through useSyncExternalStoreWithSelector, compared row by\nrow. A press on a tab moves only the tabs' and panes' rows (actions.test\nholds which), so the map those views are handed stays the same. With the\npress, the explorer's two callbacks and two derived lists held for the\nview's life, and the three views memoised, a tab switch draws none of them.\n\nwindowDraws.cost.test: tab 1 -> 0 for ChangesView, the five Panels and\nboth Explorer regions; settings 3 -> 0 for ChangesView, 3 -> 1 for Panels\nand Explorer (their own extension and file-icon reads).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GJKEZYZZK4WNZ7N96T1KGM\nPurlis-Persona: steward\n\n* FS-W2 fix round: side views' rows held by value in PlaneView, not a store (#7910)\n\nThe catalogue rows the Changes view, the panels and the explorer read are\nderived once in PlaneView's render (besideRows) and handed down with their\nother props, so a workspace switch or a finished clone no longer draws each\nof them a second time with the old rows. The selector store\n(catalogueRows.ts) had no reader left and is removed.\n\nwindowDraws.cost.test.tsx gains a workspace-switch moment; actions.test.ts\nchecks every pair of fronts, a shell tab and a pane focus included;\nuseHeldWhileSame memoises its comparison on the last input; the changelog\nfragment says the result.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GP6FYA8NXJDKQN5EX32W5W\nPurlis-Persona: steward\n\n* FS-W2 fix round 2: side views' rows held as an ordered list; away-and-back steady (#7910)\n\n- besideRows holds the filtered entries, not the Map: dequal ignores a Map's\n  order, and moveRows, curateRows and handedTo read in catalogue order. Moved\n  to useBesideRows (besideRows.ts) with a test of a reorder, red with the\n  Map held.\n- awayAndBack.cost: the reads after a git move start at zero (as in\n  planeViewDraws.cost), and counting starts past the gauge's second read\n  after mount (AFTER_A_MOVE_MS), which fell either side of it on a cold\n  first case.\n- windowDraws.cost: the explorer's third draw on a workspace switch traced to\n  useBranchFolders; why only a workspace visited before is measured.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GVG3BV7RGC0X3B9A3E2H66\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T12:02:27Z",
+          "tree_id": "ba7096f6f794858fd108d0ca59653e5fca798493",
+          "url": "https://github.com/purlis/purlis/commit/c812bc6e7a7133da81f718b161c63bbadb675117"
+        },
+        "date": 1795869810601,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.698069,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.689, 0.697, 0.698, 0.699, 0.725 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.500132,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.259, 16.366, 16.500, 16.567, 16.658 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.5601235,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.376, 101.530, 101.560, 101.819, 101.851 ms"
           }
         ]
       }
