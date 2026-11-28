@@ -2892,6 +2892,28 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "fly",
     "drone",
     "garden",
+    // The cron daemons and runners #7964 names, refused whole on what each is for, as
+    // `crontab` and `anacron` are: `fcron`, `bcron`, `dcron`, cronie's `crond`,
+    // `supercronic`, `ofelia`, `mcron` and `jobber` run the commands of a table or a file
+    // they are handed; `snooze` and runwhen's programs (`runwhen` itself, `rw-add`,
+    // `rw-match`, `rw-sleep`, `rw-min` and `rw-max`, by the names its documentation gives)
+    // run the program after them at a time; and `cronitor exec` runs the command it wraps.
+    "fcron",
+    "bcron",
+    "dcron",
+    "crond",
+    "supercronic",
+    "ofelia",
+    "mcron",
+    "jobber",
+    "snooze",
+    "runwhen",
+    "rw-add",
+    "rw-match",
+    "rw-sleep",
+    "rw-min",
+    "rw-max",
+    "cronitor",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
