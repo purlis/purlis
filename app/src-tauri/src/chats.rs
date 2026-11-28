@@ -1643,6 +1643,14 @@ fn no_conversation(session: u32) -> String {
 pub const SANDBOXED_AGAIN: &str = "This chat ran without the sandbox until this restart. It runs \
                                    in the sandbox now, because that choice lasts for one start.";
 
+/// What a chat put back after an app restart is told when it is started again on its
+/// conversation to be handed a forge route (#7962): its program's route went with the app that
+/// started it, so its own git and gh were refused until now.
+#[cfg(feature = "forge-wiring")]
+pub const A_NEW_FORGE_ROUTE: &str = "⬢ purlis: started again on this conversation \
+    because purlis restarted, and the forge route this chat's git and gh used went with it. It \
+    has a new route now, so git push and gh reach the forge again.";
+
 /// **A grant reserved for one chat and not kept yet** ([`Chats::reserve_grant`], #2454): it
 /// is held by nothing but this, so no start, no Granted list, no live ask and no later Allow
 /// sees it until [`Chats::commit_grant`] keeps it, once its audit is written. Dropped, it was
@@ -6754,7 +6762,17 @@ impl Chats {
         }
         #[cfg(feature = "forge-wiring")]
         if let Some(route) = route {
+            // **A chat put back whose program holds the old app's sentinel** (#7962; ADR 0128,
+            // amended 2026-11-27): its own git and gh are refused until a start hands it a route,
+            // so it is owed a restart on its conversation, which the window takes at its next
+            // pause. One with no conversation to resume is not: a restart would refuse it.
+            let owes_a_route = route.leaves_its_program_without_a_route()
+                && harness.is_some()
+                && chat.resume.is_some();
             route.commit(session);
+            if owes_a_route {
+                self.owe_restart(session, A_NEW_FORGE_ROUTE.to_owned());
+            }
         }
         Ok((session, failed))
     }
