@@ -3034,6 +3034,25 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "tmuxinator",
     "tmuxp",
     "tmate",
+    // The VM and container runners #7988 names, refused whole on what each is for, as `lima`,
+    // `multipass` and `orbctl` are: OrbStack's `orb`, `orbctl`'s other name, runs a command in its
+    // Linux machine; Parallels' `prlctl exec`, UTM's `utmctl exec`, `tart exec` and VirtualBox's
+    // `VBoxManage guestcontrol run` run one in a VM's guest; `lxc exec` and `incus exec` in a
+    // container; `virsh` drives libvirt's guests, its QEMU agent's commands among them; `qemu`
+    // reaches every `qemu-system-*` by its first part, and the user-mode `qemu-<arch>`, which runs
+    // a program built for another CPU; and `wsl` runs a command in a WSL distribution. The `lxc`
+    // row also reaches the rows `lxc-attach`, `lxc-execute` and `lxc-init` by their first part, so
+    // each keeps a row of its own (a unit test pins them).
+    "orb",
+    "prlctl",
+    "utmctl",
+    "tart",
+    "vboxmanage",
+    "lxc",
+    "incus",
+    "virsh",
+    "qemu",
+    "wsl",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

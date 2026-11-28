@@ -2145,3 +2145,13 @@ fn arch_chroot_which_refused_names_reach_by_chance_has_a_row_of_its_own() {
 fn buck2_which_the_buck_row_also_reaches_is_kept_as_a_row_of_its_own() {
     assert!(super::NOT_FOR_A_RUN_GRANT.contains(&"buck2"));
 }
+}
+
+/// `lxc-attach`, `lxc-execute` and `lxc-init`, rows of their own, are reached as well by
+/// #7988's `lxc` row, by their first part. Each one's `run_grants` test passes through either
+/// row, so a give-back of the forms (#7825) must not take them with it: each keeps its row.
+#[test]
+fn the_lxc_programs_which_the_lxc_row_also_reaches_are_kept_as_rows_of_their_own() {
+    for name in ["lxc-attach", "lxc-execute", "lxc-init"] {
+        assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
+    }

@@ -4241,3 +4241,28 @@ fn the_terminals_and_tmux_session_runners_of_7988_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The VM and container runners #7988 names, each of which runs a command in a machine or a
+/// container it reaches: OrbStack's `orb`, Parallels' `prlctl exec`, UTM's `utmctl exec`, `tart
+/// exec`, VirtualBox's `VBoxManage guestcontrol run` (by either spelling), `lxc exec`, `incus
+/// exec`, `virsh`, every `qemu-system-*` by its first part, and `wsl`.
+#[test]
+fn the_vm_and_container_runners_of_7988_are_offered_no_run_grant() {
+    for name in [
+        "orb",
+        "prlctl",
+        "utmctl",
+        "tart",
+        "VBoxManage",
+        "vboxmanage",
+        "lxc",
+        "incus",
+        "virsh",
+        "qemu",
+        "qemu-system-x86_64",
+        "qemu-system-aarch64",
+        "wsl",
+    ] {
+        refused_as_running_others(name);
+    }
+}
