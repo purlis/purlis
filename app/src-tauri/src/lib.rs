@@ -5201,6 +5201,15 @@ pub fn run() {
             {
                 let handle = app.handle().clone();
                 let gate = app.state::<planes::Planes>().gate().clone();
+                // The class read, from `Reading` to `Known`: the gate reads its target now. Told
+                // before the target is, so a read that ends in between is not missed.
+                let poked = std::sync::Arc::downgrade(&gate);
+                app.state::<diagnostics::Device>()
+                    .telling_known(std::sync::Arc::new(move || {
+                        if let Some(gate) = poked.upgrade() {
+                            gate.poke();
+                        }
+                    }));
                 gate.reads_its_target(std::sync::Arc::new(move || {
                     match handle.state::<diagnostics::Device>().class() {
                         diagnostics::DeviceClass::Known { hot_target, .. } => Some(hot_target),
@@ -5209,7 +5218,7 @@ pub fn run() {
                         }
                     }
                 }));
-                gate.start();
+                drop(gate.start());
             }
 
             // The working directory, resolved ONCE, to decide which plane the first window

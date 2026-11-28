@@ -85,9 +85,10 @@ impl Clock for HeldClock {
     }
 }
 
-/// **One project's looked-at clock**, by chat. A chat it has not read before rests from that
-/// first read, never earlier ([`Self::rests_since`]): so the app's start, and the project's
-/// opening in it, set every clock to now.
+/// **One project's looked-at clock**, by chat. Every chat open is put on it as it is seen open
+/// ([`Self::open`]), at every read of the gate, under the target as over it, and a chat it has
+/// not read before rests from that first read, never earlier ([`Self::rests_since`]): so the
+/// app's start, and the project's opening in it, set every clock to now.
 #[derive(Debug, Default)]
 pub struct LookedAt {
     looks: Mutex<Looks>,
@@ -144,9 +145,25 @@ impl LookedAt {
         }
     }
 
-    /// The person typed in chat `session`: a look at it.
-    pub fn typed(&self, session: u32, now: Instant) {
-        self.looks().since.insert(session, now);
+    /// The person typed in chat `session`: a look at it. Answers whether that changed what the
+    /// gate reads: not for a chat already being looked at, whose rest has not begun.
+    pub fn typed(&self, session: u32, now: Instant) -> bool {
+        let mut looks = self.looks();
+        looks.since.insert(session, now);
+        !looks.looking.contains(&session)
+    }
+
+    /// **The chats open now**, `open`: each one the clock has not seen before starts resting
+    /// `now`, so the app's start, a project's opening, a chat's opening or restore and a
+    /// woken chat's new number each set its clock to now, read under the target as over it;
+    /// one no longer open is forgotten.
+    pub fn open(&self, now: Instant, open: &[u32]) {
+        let mut looks = self.looks();
+        looks.since.retain(|session, _| open.contains(session));
+        looks.looking.retain(|session| open.contains(session));
+        for &session in open {
+            looks.since.entry(session).or_insert(now);
+        }
     }
 
     /// **Since when chat `session` has rested**: `None` while it is being looked at. A chat
@@ -232,31 +249,91 @@ pub type Target = Arc<dyn Fn() -> Option<u32> + Send + Sync>;
 pub enum Read {
     Nothing,
     Hibernated(Chat),
-    /// The act refused it: skipped until a fact of it changes.
+    /// The act refused it: passed over for the rest of this pass, and, unless it was refused
+    /// for a look the clock will count, until a fact of it changes.
     Refused(Chat),
     Armed(Instant),
 }
 
-/// **The gate**, one for the device.
-pub struct Gate {
+/// **What the gate's thread waits on**: a poke, the one deadline, or the gate's end. The thread
+/// holds this, and the gate only weakly, so it ends once the gate goes ([`Gate::start`]).
+struct Signal {
     clock: Arc<dyn Clock>,
-    target: Mutex<Option<Target>>,
-    projects: Mutex<Weak<Projects>>,
     /// The one deadline, where one is armed.
     deadline: Mutex<Option<Instant>>,
-    /// Something it reads changed since it last read.
-    poked: Mutex<bool>,
-    woken: Condvar,
-    /// The chats the act refused, with the facts it was refused on: not tried again while they
-    /// read the same.
+    woken: Mutex<Woken>,
+    wake: Condvar,
+}
+
+#[derive(Debug, Default)]
+struct Woken {
+    /// Something the gate reads changed since it last read.
+    poked: bool,
+    /// The gate is gone.
+    stopped: bool,
+}
+
+impl Signal {
+    fn tell(&self, how: impl FnOnce(&mut Woken)) {
+        how(&mut lock(&self.woken));
+        self.wake.notify_all();
+    }
+
+    /// **Waits for a poke, or for the deadline to pass**: with none armed, for a poke alone.
+    /// Answers `false` once the gate is gone.
+    fn wait(&self) -> bool {
+        let mut woken = lock(&self.woken);
+        loop {
+            if woken.stopped {
+                return false;
+            }
+            if woken.poked {
+                woken.poked = false;
+                return true;
+            }
+            let Some(deadline) = *lock(&self.deadline) else {
+                woken = self
+                    .wake
+                    .wait(woken)
+                    .unwrap_or_else(PoisonError::into_inner);
+                continue;
+            };
+            let left = deadline.saturating_duration_since(self.clock.now());
+            if left.is_zero() {
+                return true;
+            }
+            woken = self
+                .wake
+                .wait_timeout(woken, left)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+    }
+}
+
+/// **The gate**, one for the device.
+pub struct Gate {
+    signal: Arc<Signal>,
+    target: Mutex<Option<Target>>,
+    projects: Mutex<Weak<Projects>>,
+    /// The chats the act refused, with their facts read again after the refusal: not tried
+    /// again while they read the same.
     refused: Mutex<HashMap<Chat, Facts>>,
+    /// The chats refused in this pass ([`Self::pass`]): not tried again in it.
+    passed_over: Mutex<HashSet<Chat>>,
 }
 
 impl std::fmt::Debug for Gate {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Gate")
-            .field("deadline", &self.deadline)
+            .field("deadline", &self.signal.deadline)
             .finish_non_exhaustive()
+    }
+}
+
+impl Drop for Gate {
+    fn drop(&mut self) {
+        self.signal.tell(|woken| woken.stopped = true);
     }
 }
 
@@ -269,19 +346,22 @@ impl Gate {
     /// to read one ([`Self::reads_its_target`]).
     pub fn on(clock: Arc<dyn Clock>) -> Self {
         Self {
-            clock,
+            signal: Arc::new(Signal {
+                clock,
+                deadline: Mutex::new(None),
+                woken: Mutex::new(Woken::default()),
+                wake: Condvar::new(),
+            }),
             target: Mutex::new(None),
             projects: Mutex::new(Weak::new()),
-            deadline: Mutex::new(None),
-            poked: Mutex::new(false),
-            woken: Condvar::new(),
             refused: Mutex::new(HashMap::new()),
+            passed_over: Mutex::new(HashSet::new()),
         }
     }
 
     /// What it tells the time by.
     pub fn now(&self) -> Instant {
-        self.clock.now()
+        self.signal.clock.now()
     }
 
     /// The projects it reads: the registry's own.
@@ -298,55 +378,42 @@ impl Gate {
     /// The deadline armed, where one is.
     #[cfg(test)]
     pub fn armed(&self) -> Option<Instant> {
-        *lock(&self.deadline)
+        *lock(&self.signal.deadline)
+    }
+
+    fn arm(&self, deadline: Option<Instant>) {
+        *lock(&self.signal.deadline) = deadline;
     }
 
     /// **Something it reads may have changed**: a turn ended or began, a chat opened, closed,
-    /// came on screen or left it, a window gained or lost the focus, a key was typed. Only
-    /// marked here, never read on the caller's thread, which may hold a lock the read takes:
-    /// the gate's own thread reads ([`Self::start`]).
+    /// came on screen or left it, a window gained or lost the focus, a key was typed, the
+    /// device's class was read. Only marked here, never read on the caller's thread, which may
+    /// hold a lock the read takes: the gate's own thread reads ([`Self::start`]).
     pub fn poke(&self) {
-        *lock(&self.poked) = true;
-        self.woken.notify_all();
+        self.signal.tell(|woken| woken.poked = true);
     }
 
-    /// **Starts its thread**: it waits for a poke or its deadline, and reads, one chat at a
-    /// time, until a read hibernates nothing.
-    pub fn start(self: &Arc<Self>) {
+    /// **Starts its thread**: it waits for a poke or its deadline, and makes a pass
+    /// ([`Self::pass`]). It holds the gate only while it reads, and ends once the gate goes.
+    pub fn start(self: &Arc<Self>) -> Option<std::thread::JoinHandle<()>> {
         let gate = Arc::downgrade(self);
-        let _ = std::thread::Builder::new()
+        let signal = Arc::clone(&self.signal);
+        std::thread::Builder::new()
             .name("purlis-hibernate-gate".into())
             .spawn(move || {
-                loop {
+                while signal.wait() {
                     let Some(gate) = gate.upgrade() else { return };
-                    gate.wait();
-                    while matches!(gate.read(), Read::Hibernated(_) | Read::Refused(_)) {}
+                    gate.pass();
                 }
-            });
+            })
+            .ok()
     }
 
-    /// Waits for a poke, or for the deadline to pass: with none armed, for a poke alone.
-    fn wait(&self) {
-        let mut poked = lock(&self.poked);
-        while !*poked {
-            let Some(deadline) = *lock(&self.deadline) else {
-                poked = self
-                    .woken
-                    .wait(poked)
-                    .unwrap_or_else(PoisonError::into_inner);
-                continue;
-            };
-            let left = deadline.saturating_duration_since(self.clock.now());
-            if left.is_zero() {
-                return;
-            }
-            poked = self
-                .woken
-                .wait_timeout(poked, left)
-                .unwrap_or_else(PoisonError::into_inner)
-                .0;
-        }
-        *poked = false;
+    /// **One pass**: reads, one chat at a time, until a read neither hibernates nor is refused.
+    /// A chat refused in it is passed over for the rest of it.
+    pub fn pass(&self) {
+        lock(&self.passed_over).clear();
+        while matches!(self.read(), Read::Hibernated(_) | Read::Refused(_)) {}
     }
 
     fn projects(&self) -> Vec<Arc<Held>> {
@@ -356,9 +423,13 @@ impl Gate {
             .unwrap_or_default()
     }
 
-    /// **How many chats are hot on this device**: every project's ([`hot_in`]).
+    /// **How many chats are hot on this device**: every project's
+    /// ([`crate::diagnostics::hot_in`], what Diagnostics counts).
     pub fn hot(&self) -> u32 {
-        self.projects().iter().map(|held| hot_in(held)).sum()
+        self.projects()
+            .iter()
+            .map(|held| crate::diagnostics::hot_in(held))
+            .sum()
     }
 
     /// Whether the device has more hot chats than its target now.
@@ -370,37 +441,13 @@ impl Gate {
     }
 
     /// **Reads once**, and does what [`choose`] says: hibernates one chat, or arms its one
-    /// deadline, or neither.
+    /// deadline, or neither. Every chat open is put on its project's clock first, under the
+    /// target as over it, so the one rested longest is the one whose clock started first.
     pub fn read(&self) -> Read {
-        let target = lock(&self.target).clone().and_then(|target| target());
         let projects = self.projects();
-        let hot = projects.iter().map(|held| hot_in(held)).sum();
-        let Some(target) = target.filter(|target| hot > *target) else {
-            *lock(&self.deadline) = None;
-            return Read::Nothing;
-        };
-        let now = self.clock.now();
-        let mut candidates = Vec::new();
-        let mut facts_of = HashMap::new();
+        let now = self.now();
         for held in &projects {
             held.look_again(now);
-            for session in held.chats().sessions_open() {
-                let facts = crate::hibernation::facts_of(held, session, false);
-                if purlis_core::rested::rested(&facts).is_err()
-                    || purlis_core::rested::by_hand(&facts).is_err()
-                {
-                    continue;
-                }
-                let chat = (held.plane_id().clone(), session);
-                if lock(&self.refused).get(&chat) == Some(&facts) {
-                    continue;
-                }
-                let Some(since) = held.looked().rests_since(session, now) else {
-                    continue;
-                };
-                facts_of.insert(chat.clone(), facts);
-                candidates.push(Candidate { chat, since });
-            }
         }
         // Only the facts of chats still open are kept: a closed one cannot come back.
         lock(&self.refused).retain(|chat, _| {
@@ -408,17 +455,54 @@ impl Gate {
                 held.plane_id() == &chat.0 && held.chats().sessions_open().contains(&chat.1)
             })
         });
+        let target = lock(&self.target).clone().and_then(|target| target());
+        let hot = projects
+            .iter()
+            .map(|held| crate::diagnostics::hot_in(held))
+            .sum();
+        let Some(target) = target.filter(|target| hot > *target) else {
+            self.arm(None);
+            return Read::Nothing;
+        };
+        let mut candidates = Vec::new();
+        for held in &projects {
+            for session in held.chats().sessions_open() {
+                let facts = crate::hibernation::facts_of(held, session, false);
+                let chat = (held.plane_id().clone(), session);
+                // A refusal is kept only while its facts read the same: one read that finds
+                // any changed (a turn began) lets it go, so it is tried once at rest again.
+                let refused = {
+                    let mut refused = lock(&self.refused);
+                    if refused.get(&chat).is_some_and(|then| *then != facts) {
+                        refused.remove(&chat);
+                    }
+                    refused.contains_key(&chat)
+                };
+                if purlis_core::rested::rested(&facts).is_err()
+                    || purlis_core::rested::by_hand(&facts).is_err()
+                {
+                    continue;
+                }
+                if refused || lock(&self.passed_over).contains(&chat) {
+                    continue;
+                }
+                let Some(since) = held.looked().rests_since(session, now) else {
+                    continue;
+                };
+                candidates.push(Candidate { chat, since });
+            }
+        }
         match choose(hot, target, &candidates, now, AFTER) {
             Choice::Nothing => {
-                *lock(&self.deadline) = None;
+                self.arm(None);
                 Read::Nothing
             }
             Choice::ArmFor(deadline) => {
-                *lock(&self.deadline) = Some(deadline);
+                self.arm(Some(deadline));
                 Read::Armed(deadline)
             }
             Choice::Hibernate(chat) => {
-                *lock(&self.deadline) = None;
+                self.arm(None);
                 let Some(held) = projects.iter().find(|held| held.plane_id() == &chat.0) else {
                     return Read::Nothing;
                 };
@@ -427,52 +511,41 @@ impl Gate {
                         held.tell_hibernated(chat.1);
                         Read::Hibernated(chat)
                     }
-                    // A reason of the core's: skipped while its facts read the same.
-                    Err(crate::hibernation::Refused::Not(why)) => {
-                        tracing::info!(
-                            "purlis: chat {} was not hibernated by itself ({why:?})",
-                            chat.1
-                        );
-                        if let Some(facts) = facts_of.remove(&chat) {
-                            lock(&self.refused).insert(chat.clone(), facts);
-                        }
-                        Read::Refused(chat)
-                    }
-                    // The act could not be done now (under way already, being stopped, or the
-                    // device at its target): read again on the next poke.
-                    Err(crate::hibernation::Refused::Said(said)) => {
-                        tracing::info!(
-                            "purlis: chat {} was not hibernated by itself ({said})",
-                            chat.1
-                        );
-                        Read::Nothing
-                    }
+                    Err(why) => self.refused(held, chat, &why),
                 }
             }
         }
     }
-}
 
-/// **How many of `held`'s chats are hot**: open, with a harness, run on this machine, and with a
-/// program (starting, working, at a turn's end, asking or paused); not one hibernated.
-pub fn hot_in(held: &Held) -> u32 {
-    let board = held.board();
-    let chats = held.chats();
-    let hot = chats
-        .sessions_open()
-        .into_iter()
-        .filter(|&session| {
-            chats.harness(session).is_some()
-                && held.hibernated().of(session).is_none()
-                && chats.runner_of(session).is_none()
-                && chats.pool_of(session).is_none()
-                && !matches!(
-                    board.glance(session).state,
-                    purlis_core::state::State::Done | purlis_core::state::State::Failed
-                )
-        })
-        .count();
-    u32::try_from(hot).unwrap_or(u32::MAX)
+    /// **The act refused `chat`** for `why`. At the target, or with the app quitting, the pass
+    /// ends. Any other refusal passes it over for the rest of the pass, and the next goes; and,
+    /// except a look the clock will count anyway, keeps the facts read of it **after** the
+    /// refusal, so it is tried again once they change (a turn that began has ended), never on
+    /// each keystroke while they read the same.
+    pub(crate) fn refused(
+        &self,
+        held: &Held,
+        chat: Chat,
+        why: &crate::hibernation::Refused,
+    ) -> Read {
+        use crate::hibernation::Refused;
+        tracing::info!(
+            "purlis: chat {} was not hibernated by itself ({why:?})",
+            chat.1
+        );
+        if let Refused::Said(said) = why
+            && (said == crate::hibernation::AT_THE_TARGET
+                || said == crate::planes::QUIT_AS_IT_HIBERNATED)
+        {
+            return Read::Nothing;
+        }
+        lock(&self.passed_over).insert(chat.clone());
+        if *why != Refused::Not(purlis_core::rested::NotRested::LookedAt) {
+            let facts = crate::hibernation::facts_of(held, chat.1, false);
+            lock(&self.refused).insert(chat.clone(), facts);
+        }
+        Read::Refused(chat)
+    }
 }
 
 #[cfg(test)]

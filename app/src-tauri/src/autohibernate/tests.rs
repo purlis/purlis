@@ -162,3 +162,76 @@ fn the_clock_reads_an_instant_and_nothing_else() {
     held.advance(MINUTE);
     assert_eq!(typed_on_instant(&*held), before + MINUTE);
 }
+
+#[test]
+fn every_chat_open_goes_on_the_clock_when_seen_open_and_a_closed_one_is_forgotten() {
+    let clock = LookedAt::default();
+    let start = Instant::now();
+    clock.open(start, &[1, 2]);
+    clock.open(start + DAY, &[1, 2, 3]);
+    assert_eq!(
+        clock.rests_since(1, start + 2 * DAY),
+        Some(start),
+        "seen open first"
+    );
+    assert_eq!(clock.rests_since(3, start + 2 * DAY), Some(start + DAY));
+    clock.open(start + DAY, &[1, 3]);
+    clock.open(start + 2 * DAY, &[1, 2, 3]);
+    assert_eq!(
+        clock.rests_since(2, start + 3 * DAY),
+        Some(start + 2 * DAY),
+        "a number closed and opened again is a new chat"
+    );
+}
+
+#[test]
+fn a_key_typed_in_a_chat_being_looked_at_changes_nothing_the_gate_reads() {
+    let clock = LookedAt::default();
+    let start = Instant::now();
+    clock.on_screen(start, [(3, 0)]);
+    assert!(!clock.typed(3, start + MINUTE), "being looked at");
+    assert!(clock.typed(4, start + MINUTE), "resting");
+}
+
+/// A gate on the machine's own clock, with no projects.
+fn a_bare_gate() -> Arc<Gate> {
+    Arc::new(Gate::on(Arc::new(Monotonic)))
+}
+
+#[test]
+fn the_gate_wakes_on_a_poke() {
+    let gate = a_bare_gate();
+    gate.poke();
+    assert!(gate.signal.wait(), "poked before it waited");
+    let signal = Arc::clone(&gate.signal);
+    let waiting = std::thread::spawn(move || signal.wait());
+    std::thread::sleep(Duration::from_millis(20));
+    gate.poke();
+    assert!(waiting.join().expect("it waited"));
+}
+
+#[test]
+fn the_gate_wakes_at_its_deadline_with_no_poke() {
+    let gate = a_bare_gate();
+    let began = Instant::now();
+    gate.arm(Some(began + Duration::from_millis(30)));
+    assert!(gate.signal.wait());
+    assert!(
+        began.elapsed() >= Duration::from_millis(30),
+        "not before it"
+    );
+    assert!(began.elapsed() < Duration::from_secs(10));
+}
+
+#[test]
+fn the_gate_s_thread_ends_once_the_gate_goes() {
+    let gate = a_bare_gate();
+    let thread = gate.start().expect("its thread starts");
+    gate.poke();
+    drop(gate);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !thread.is_finished() {
+        assert!(Instant::now() < deadline, "it went on waiting");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}

@@ -14,7 +14,7 @@ use purlis_core::ramclass::RamClass;
 use purlis_core::state::State;
 use purlis_core::state::run::{Reason, RunState};
 
-use crate::planes::Planes;
+use crate::planes::{Held, Planes};
 
 /// How far reading the machine's memory has come.
 #[derive(Debug, Clone, Copy)]
@@ -41,7 +41,13 @@ pub struct Device {
     reading: Arc<Mutex<Reading>>,
     stand_in: Mutex<Option<RamClass>>,
     read: Reader,
+    /// Told once the class is known, read or stood in: the gate of automatic hibernation
+    /// reads a target only then (SC-4g, #7636).
+    known: Arc<Mutex<Option<Known>>>,
 }
+
+/// What is told once the device's class is known.
+type Known = Arc<dyn Fn() + Send + Sync>;
 
 impl Default for Device {
     fn default() -> Self {
@@ -64,6 +70,19 @@ impl Device {
             reading: Arc::new(Mutex::new(Reading::NotAsked)),
             stand_in: Mutex::new(None),
             read,
+            known: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Tells `known` each time the class becomes known: a read that says, or a stand-in.
+    pub fn telling_known(&self, known: Known) {
+        *self.known.lock().unwrap_or_else(PoisonError::into_inner) = Some(known);
+    }
+
+    fn tell_known(known: &Mutex<Option<Known>>) {
+        let known = known.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        if let Some(known) = known {
+            known();
         }
     }
 
@@ -82,10 +101,14 @@ impl Device {
         };
         *reading = Reading::UnderWay;
         let (read, into) = (Arc::clone(&self.read), Arc::clone(&self.reading));
+        let known = Arc::clone(&self.known);
         std::thread::spawn(move || {
             let got = read();
             *into.lock().unwrap_or_else(PoisonError::into_inner) =
                 got.map_or(Reading::Unread, Reading::Read);
+            if got.is_some() {
+                Self::tell_known(&known);
+            }
         });
         said
     }
@@ -101,6 +124,7 @@ impl Device {
     pub fn stand_in(&self, gigabytes: Option<u64>) {
         *self.stand_in.lock().unwrap_or_else(PoisonError::into_inner) =
             gigabytes.map(|gigabytes| RamClass::of_gigabytes(Some(gigabytes)));
+        Self::tell_known(&self.known);
     }
 }
 
@@ -173,24 +197,52 @@ pub fn diagnostics_here(
     planes: tauri::State<'_, Planes>,
     device: tauri::State<'_, Device>,
 ) -> DiagnosticsHere {
-    let runs = planes.every_held().into_iter().flat_map(|held| {
-        held.chats()
-            .open_now()
-            .into_iter()
-            .filter(|open| open.harness.is_some())
-            .map(|open| run_of(held.board().glance(open.session).state))
-            .collect::<Vec<_>>()
-    });
-    here(purlis_core::adopt::system(), runs, device.class())
+    let (open, hot) = planes
+        .every_held()
+        .iter()
+        .map(|held| counted_in(held))
+        .fold((0, 0), |(open, hot), (more, hotter)| {
+            (open + more, hot + hotter)
+        });
+    here(purlis_core::adopt::system(), (open, hot), device.class())
 }
 
-/// The answer, out of the system's name, each open chat's current run and the device's class.
-fn here(
-    os: String,
-    runs: impl IntoIterator<Item = RunState>,
-    device: DeviceClass,
-) -> DiagnosticsHere {
-    let (open, hot) = counted(runs);
+/// **Chat `session`'s current run, as far as this device's hot count goes**: `None` for a
+/// shell tab, and for a runner's or a pool's chat, whose program does not use this device's
+/// memory; `hibernated` for one hibernated; else what its board state stands for.
+fn current_run(held: &Held, session: u32) -> Option<RunState> {
+    let chats = held.chats();
+    if chats.harness(session).is_none()
+        || chats.runner_of(session).is_some()
+        || chats.pool_of(session).is_some()
+    {
+        return None;
+    }
+    if held.hibernated().of(session).is_some() {
+        return Some(RunState::Hibernated);
+    }
+    Some(run_of(held.board().glance(session).state))
+}
+
+/// The open and hot chats of `held` that count on this device ([`current_run`]).
+fn counted_in(held: &Held) -> (u32, u32) {
+    counted(
+        held.chats()
+            .sessions_open()
+            .into_iter()
+            .filter_map(|session| current_run(held, session)),
+    )
+}
+
+/// **How many of `held`'s chats are hot on this device**: one count for Diagnostics and the gate
+/// of automatic hibernation (SC-4g, #7636), so both agree on "over the target". A runner's or a
+/// pool's chat, a hibernated one and a shell tab are not counted.
+pub fn hot_in(held: &Held) -> u32 {
+    counted_in(held).1
+}
+
+/// The answer, out of the system's name, the open and hot chats, and the device's class.
+fn here(os: String, (open, hot): (u32, u32), device: DeviceClass) -> DiagnosticsHere {
     DiagnosticsHere {
         os,
         open,
@@ -287,7 +339,7 @@ mod tests {
     fn the_answer_carries_the_class_the_target_and_the_count() {
         let answer = here(
             "Darwin".into(),
-            [RunState::Working, RunState::Completed],
+            counted([RunState::Working, RunState::Completed]),
             known(16),
         );
         assert_eq!(

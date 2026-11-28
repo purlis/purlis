@@ -1070,8 +1070,10 @@ impl Held {
     }
 
     /// **What is on screen may have changed** (SC-4g, #7636): the looked-at clock is told the
-    /// chats on screen now, each with the window showing it, and the gate is poked.
+    /// chats open now, which starts the clock of one it has not seen, and the chats on screen,
+    /// each with the window showing it; the gate is poked where a look changed.
     pub fn look_again(&self, now: std::time::Instant) {
+        self.looked.open(now, &self.chats.sessions_open());
         let on_screen = self
             .chats
             .looked_at()
@@ -1362,9 +1364,11 @@ impl Held {
     fn operator_typing(&self, session: u32, bytes: &[u8]) {
         if !crate::curation::only_the_terminal_answering(bytes) {
             self.typed.operator_sent(session);
-            // A key the person typed is a look at it (SC-4g, #7636).
-            self.looked.typed(session, self.gate.now());
-            self.gate.poke();
+            // A key the person typed is a look at it (SC-4g, #7636): the gate is poked only where
+            // that changed what it reads, not for each key typed in a chat being looked at.
+            if self.looked.typed(session, self.gate.now()) {
+                self.gate.poke();
+            }
         }
         if self
             .closing
@@ -1667,6 +1671,11 @@ impl Held {
         // a line it is typed one now, the lock let go; and it is looked at as a chat that may
         // have nothing left to wait on (#1491). Nothing where nothing waits for it.
         self.told_of_a_close(above);
+        // Its clock goes with it, and there is one hot chat fewer (SC-4g, #7636).
+        if closed.is_ok() {
+            self.looked.forget(session);
+            self.gate.poke();
+        }
         closed
     }
 
@@ -2230,9 +2239,12 @@ impl Held {
         // Forgotten before its end here, which would otherwise end its run a second time. What
         // its pane typed while it was hibernated goes to the woken run's pane, unsent.
         self.hibernated.awake(session, started);
-        // A woken chat is not rested again for the full time (SC-4g, #7636): its new number
-        // rests from the clock's first read of it.
+        // A woken chat is not rested again for the full time (SC-4g, #7636): its new number's
+        // clock starts now.
         self.looked.forget(session);
+        self.looked
+            .open(self.gate.now(), &self.chats.sessions_open());
+        self.gate.poke();
         // Its kept screen stays until the new run has drawn (SC-4b, #7631).
         if let Some(id) = id {
             self.hibernated.woke(started, id);
@@ -4809,6 +4821,8 @@ impl Planes {
             return id;
         }
         open.insert(id.clone(), Arc::clone(&held));
+        // A project opened: its chats go on their clocks at the gate's next read (SC-4g, #7636).
+        self.hibernate_gate.poke();
         id
     }
 
@@ -6349,7 +6363,8 @@ impl Planes {
     }
 
     /// A gate reading `clock` and a hot target of `target`, in place of the app's: a test's,
-    /// set before a project is opened, and never started on a thread of its own.
+    /// set before a project is opened, and started on a thread of its own only where the test
+    /// starts it.
     #[cfg(test)]
     pub fn gating_on(mut self, clock: Arc<dyn crate::autohibernate::Clock>, target: u32) -> Self {
         let gate = crate::autohibernate::Gate::on(clock);
@@ -7353,7 +7368,7 @@ impl Drop for Latched<'_> {
 
 /// Why a hibernation did not take when purlis began to quit as it acted (SC-4d, #7633): the
 /// quit ends the chat as it ends every chat.
-const QUIT_AS_IT_HIBERNATED: &str =
+pub(crate) const QUIT_AS_IT_HIBERNATED: &str =
     "Not hibernated: purlis is quitting, and keeps this chat as it keeps the rest.";
 
 #[path = "planes/tab_windows.rs"]
