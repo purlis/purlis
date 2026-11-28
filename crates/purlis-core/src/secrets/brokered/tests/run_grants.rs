@@ -4497,3 +4497,21 @@ fn the_terminal_sharers_and_recorders_of_8031_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The VM and sandbox runners #8031 names beside #8017's, each of which runs a command in a
+/// guest, a container or a machine it starts: libguestfs's `virt-builder` (`--run-command`) and
+/// `virt-rescue` (a shell in a guest's disk), gVisor's `runsc`, `kata-runtime`,
+/// `cloud-hypervisor` and FreeBSD's `bhyve`.
+#[test]
+fn the_vm_and_sandbox_runners_of_8031_are_offered_no_run_grant() {
+    for name in [
+        "virt-builder",
+        "virt-rescue",
+        "runsc",
+        "kata-runtime",
+        "cloud-hypervisor",
+        "bhyve",
+    ] {
+        refused_as_running_others(name);
+    }
+}

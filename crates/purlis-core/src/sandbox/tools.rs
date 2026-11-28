@@ -3250,6 +3250,18 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "gotty",
     "asciinema",
     "vhs",
+    // The VM and sandbox runners #8031 names beside #8017's, refused whole on what each is for, as
+    // `virt-customize` and `firecracker` are: libguestfs's `virt-builder` runs the command its
+    // `--run-command` names in the disk image it builds, and `virt-rescue` opens a shell in a
+    // guest's disk; gVisor's `runsc` and `kata-runtime` are OCI runtimes, which run a
+    // container's process as `runc` does (`runsc do` runs the command after it); and
+    // `cloud-hypervisor` and FreeBSD's `bhyve` boot the guest they are handed.
+    "virt-builder",
+    "virt-rescue",
+    "runsc",
+    "kata-runtime",
+    "cloud-hypervisor",
+    "bhyve",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
