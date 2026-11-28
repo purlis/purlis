@@ -4543,9 +4543,10 @@ fn helix_the_editor_with_a_shell_of_8031_is_offered_no_run_grant() {
 }
 
 /// The editors #8037 names beside `vim`, `emacs` and Helix, each of which runs a shell command,
-/// a task or a plugin's code it is handed: Kakoune's `kak`, `micro`, `vis`, `mg`, `jed`, `joe`,
-/// `lite-xl` and `pulsar`, the front-ends `neovide` and `mvim`, and the editors with an
-/// integrated terminal and tasks, `code`, `codium`, `subl`, `zed` and `lapce`.
+/// a task or a plugin's code it is handed, or starts an editor that does: Kakoune's `kak`,
+/// `micro`, `vis`, `mg`, `jed`, `joe`, `lite-xl` and `pulsar`, the front-ends `neovide` and
+/// `mvim`, and the editors with an integrated terminal and tasks, `code`, `codium`, `subl`, `zed`
+/// and `lapce`.
 #[test]
 fn the_editors_with_a_shell_or_tasks_of_8037_are_offered_no_run_grant() {
     for name in [

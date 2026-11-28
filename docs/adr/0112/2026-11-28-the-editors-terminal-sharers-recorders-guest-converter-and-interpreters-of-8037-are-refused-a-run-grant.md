@@ -8,19 +8,18 @@ before either, or one of #8038's.
 
 ## Not read in source, and why each is refused all the same
 
-Three of the programs #8037 names have a file of that name on the search path of the machine
-that did this (`/usr/bin`, `/bin`, `/usr/sbin`, `/sbin`, `/usr/local/bin`, `/opt/homebrew/bin`,
+Three of the programs #8037 names have a file of that name on the search path of the machine that
+did this (`/usr/bin`, `/bin`, `/usr/sbin`, `/sbin`, `/usr/local/bin`, `/opt/homebrew/bin`,
 `~/.cargo/bin` and the rest of its `PATH`, 1,750 names in all): macOS's own `/usr/bin/mg` and
-`/usr/bin/vis`, and `/usr/local/bin/zed`, a link to the CLI inside `Zed.app`. All three are
-compiled binaries, so each was judged by what it says of itself: `mg(1)` and `vis(1)` on that
-machine, and `zed --help`. None of the others is on that machine or in its Cargo registry (Zed,
-Lapce, `ion`, `t-rec` and `sshx` are Rust). Their upstream source was out of reach: from the
-sandbox that did it, `gh` reaches only `purlis/purlis`, and a plain fetch of any other host is
-refused. So every one is refused whole, on `NOT_FOR_A_RUN_GRANT`, on what the tool is for, as its
-manual describes it, and not on a line of its source. That is the conservative side (delegated:
-recommended path): a refusal only takes away an Allow on a run's notice, and a persona can still
-declare any of them as a tool in a reviewed line. Reading each in source, to cite its lines or
-give an Allow back, is #7825.
+`/usr/bin/vis`, and `/usr/local/bin/zed`, a link to the CLI inside `Zed.app`. All three are compiled
+binaries, so each was judged by what it says of itself: `mg(1)` and `vis(1)` on that machine, and
+`zed --help`. None of the others is on that machine or in its Cargo registry (Zed, Lapce, Neovide,
+`ion`, `t-rec` and `sshx` are Rust). Their upstream source was out of reach: from the sandbox that
+did it, `gh` reaches only `purlis/purlis`, and a plain fetch of any other host is refused. So every
+one is refused whole, on `NOT_FOR_A_RUN_GRANT`, on what the tool is for, as its manual describes it,
+and not on a line of its source. That is the conservative side (delegated: recommended path): a
+refusal only takes away an Allow on a run's notice, and a persona can still declare any of them as a
+tool in a reviewed line. Reading each in source, to cite its lines or give an Allow back, is #7825.
 
 Before any row went in, a probe of `not_for_a_run_grant` (a unit test over `name_forms`,
 `NOT_FOR_A_RUN_GRANT`, `REFUSED_NAMES` and `REFUSED_PREFIXES`, with #8038's rows applied) found
@@ -42,22 +41,24 @@ everyday use of the editor. What it can cost is another program that shares the 
   to a VS Code elsewhere. No narrower row: its macOS CLI is a script inside the app, and the app
   is not on the machine. Its forms reach `code-<word>`: VS Code's own `code-insiders` and
   `code-oss`, and Coder's `code-server`, which serves VS Code with its terminal in a browser.
-  They also reach `<word>-code` (`claude-code`, for one), `gcode`, `gnucode` and `code2`.
-- **`mg`** (delegated: recommended path: refused whole). On the machine, as Apple ships it.
+  They also reach `<word>-code`, `gcode`, `gnucode` and `code2`.
+- **`mg`** (delegated: recommended path: refused whole). Short rather than a word, and no
+  other program of that name is known. On the machine, as Apple ships it.
   `mg(1)` there lists `shell-command` (`M-!`) and `shell-command-on-region` (`M-|`), and a `-b
   file` that "execute[s] the mg commands found in the specified file", and `-u file`, a startup
   file in place of `~/.mg`. A row refusing `-b` and `-u` might be enough, since a granted run has
   no stdin to type `M-!` into, but proving that takes mg's source, and Apple's copy is a binary
   with OpenBSD's source out of reach. It loses its Allow on every Mac.
 - **`micro`** (delegated: recommended path: refused whole). A common word, and also the name of
-  go-micro's command line, which runs the services it is handed. Neither is on the machine. The
-  editor's `run` runs a shell command and its plugins are Lua. No source in reach. Its forms
-  reach `micro-<word>`, `<word>-micro` and `gmicro`.
+  the Micro platform's command line, which runs the services it is handed. Neither is on the
+  machine. The editor's `run` runs a shell command and its plugins are Lua. No source in reach.
+  Its forms reach `micro-<word>`, `<word>-micro` and `gmicro`.
 - **`zed`** (delegated: recommended path: refused whole). On the machine. Its `--help` there
-  offers `--zed <ZED>`, a "custom path to Zed.app or the zed binary", which the CLI starts, so it
+  offers `--zed <ZED>`, a "[c]ustom path to Zed.app or the zed binary", which the CLI starts, so it
   runs the program it is handed, and `--dev-container`, which opens the project in a container.
   The editor also has tasks and a terminal. ZFS's event daemon is also called `zed`, and runs the
-  scripts in its folder. It is not on the machine and is refused by the same row. No source in
+  scripts in its folder, and so is Brim's `zed` data tool. Neither is on the machine, and both
+  are refused by the same row. No source in
   reach. Its forms reach `zed-<word>`, `<word>-zed` and `gzed`.
 - **`subl`** (delegated: recommended path: refused whole). Not a common word, and not on the
   machine. Sublime Text's build systems run commands, its plugins are Python, and `subl
@@ -66,16 +67,21 @@ everyday use of the editor. What it can cost is another program that shares the 
   program: macOS's `/usr/bin/vis` is BSD's filter that "display[s] non-printable characters in a
   visual format", by its `vis(1)`, and runs nothing. The editor `vis` runs a shell command by `:!`
   and filters through one by `:|`. A row is a name, and cannot tell the two apart, so the filter
-  loses its Allow with the editor's row. That costs little: a filter of bytes is never the reason
+  loses its Allow with the editor's row. No narrower row: no source of either is in reach, and
+  `vis(1)` is the filter's. That costs little: a filter of bytes is never the reason
   a run is handed a key. Giving it back by where it is found, and not by its name, is #7825's to
   decide. Its forms reach the editor's own `vis-<word>` helpers, and `gvis`.
 - **The other short rows**, `kak`, `jed`, `joe`, `gsc`, `ion` and `oil` (delegated: recommended
-  path: refused whole): none is a common word other tools use, none is on the machine, and no
-  source is in reach. Each reaches its `<name>-<word>`, `<word>-<name>`, `g<name>`, `gnu<name>`
-  and versioned forms, `kak-lsp`, `jed-script` and `gion` among them.
+  path: refused whole): none is on the machine, and no source is in reach. Three share a name
+  with something else: `joe` is also a generator of `.gitignore` files, the Ion window manager's
+  `ion3` reaches the `ion` row by its versioned form, and `oil` is an everyday word. Each of those
+  loses its Allow with the row. Each row reaches its `<name>-<word>`, `<word>-<name>`,
+  `g<name>`, `gnu<name>` and versioned forms. Some of those run code too, such as `kak-lsp`,
+  which starts the language servers its settings name, and `jed-script`, which runs S-Lang, so
+  refusing them is no cost.
 
-No name here was left offered: for none of them would a refusal break common everyday use, and
-each runs a command or code it is handed, by its manual.
+No name here was left offered (delegated: recommended path): for none of them would a refusal break
+common everyday use, and each runs a command or code it is handed, by its manual.
 
 ## A refusal of the whole tool, not a row of `command_flags`
 
@@ -98,12 +104,13 @@ what #8037 asks for, and leaves a persona able to declare one in a reviewed line
 
 - **Editors with a shell or tasks**, as `vim`, `emacs` and #8038's Helix are: Kakoune's `kak`
   runs the shell of its `%sh{}` blocks and the commands its `-e` names; `micro` runs a shell
-  command by its `run` and plugins in Lua; `vis` runs one by `:!`; `mg` runs one by
+  command by its `run` and plugins in Lua; `vis` runs one by `:!` and filters through one by
+  `:|`; `mg` runs one by
   `shell-command`, and the mg commands of the file its `-b` names; `jed` and `joe` run shell
   commands of their own; `lite-xl` and `pulsar` run plugins in Lua and JavaScript; `neovide` and
   MacVim's `mvim` start `nvim` and `vim`; and `code`, VSCodium's `codium`, Sublime Text's
   `subl`, `zed` and `lapce` each have an integrated terminal, tasks or build systems, and
-  extensions that run as they open a folder.
+  extensions that run as they open a folder. `zed`'s `--zed` also names the program it starts.
 - **Terminal sharers**: `upterm`, `sshx`, `tty-share`, `teleconsole` and `wetty` run a shell or
   the command they are handed and share its terminal with whoever joins, as #8038's `ttyd` and
   `gotty` do.
@@ -133,19 +140,20 @@ row, so no unit test pins one.
 ## What the name forms cost
 
 These rows refuse more than they name, through their first and last parts and the rest of
-`name_forms`. The extra cost is an Allow and nothing else. A probe of `not_for_a_run_grant` over
-the machine's 1,750 program names, before and after the rows went in, found three newly refused,
-`mg`, `vis` and `zed`, each a row itself, and nothing reached by a form. So #7825 has nothing
-from this machine to add beyond macOS's `vis` filter, weighed above. Elsewhere, the short rows
-cost the most. These are examples, not a complete list:
+`name_forms` (delegated: recommended path). The extra cost is an Allow and nothing else. A probe of
+`not_for_a_run_grant` over the machine's 1,750 program names, before and after the rows went in,
+found three newly refused, `mg`, `vis` and `zed`, each a row itself, and nothing reached by a form.
+So #7825 has nothing from this machine to add beyond macOS's `vis` filter, weighed above. Elsewhere,
+the short rows cost the most. These are examples, not a complete list:
 
 - Every one-word row reaches every `<word>-<name>` and `<name>-<word>`, every `g<name>` and
   `gnu<name>`, as the forms strip a GNU prefix from the name they check, never from a row, and
   its versioned forms. The common words and short rows weighed above (`code`, `mg`, `micro`,
   `vis`, `zed`, `kak`, `jed`, `joe`, `gsc`, `ion`, `oil`) are the likeliest to meet another
   program's name this way.
-- A name that is two programs loses its Allow for both: macOS's `vis` filter, and ZFS's `zed`
-  daemon.
+- A name that is two programs loses its Allow for both: macOS's `vis` filter, ZFS's `zed`
+  daemon and Brim's `zed`, the `.gitignore` generator `joe`, and the Ion window manager's
+  `ion3`.
 - A row with a dash in it (`lite-xl`, `tty-share`, `t-rec`, `virt-v2v`) is reached only by its
   own name, its stem before a `.`, its versions, and its name with a `g` or `gnu` in front.
 
@@ -162,3 +170,12 @@ went in, are filed as #8047 rather than added here: more editors with a shell, a
 with a shell (`mc`, `mcedit`, `ranger`, `nnn`, `lf`, `yazi`, `vifm`), more shells (`ysh`,
 `oils-for-unix`, `hilbish`, `ngs`), and libguestfs's `virt-v2v-in-place`, which takes `--run` as
 `virt-v2v` does and which no form of the `virt-v2v` row reaches.
+
+The review of #8049 found more of the same kinds still offered, and they are filed on #8047 too:
+interpreters (`ipython`, `ipython3`, `jupyter`, `bpython`, `ptpython`, `ptipython`, `pry`,
+`octave`, `sage`, `maxima`, `swipl`, `gforth`, `pike`, `regina`, and Hy's `hyc` and `hy2py`),
+editors (`zeditor`, `sublime_text`, `sublime`, `openvscode-server`, `atom`, `apm`, `lite`,
+`pragtical`, `kakoune`, `xjed`, `jove`, `mle`, `uemacs`, `xemacs`, `acme`, `sam`, `ecode`,
+`positron`, `void`, `trae`, `kiro`), terminal sharers and recorders (`shellinaboxd`, `xpra`,
+`svg-term`, `byzanz-record`, `ttystudio`), libguestfs's `virt-dib`, and the shells `loksh`,
+`posh` and `scsh`.
