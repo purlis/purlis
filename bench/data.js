@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795839240221,
+  "lastUpdate": 1795846911283,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58548,6 +58548,48 @@ window.BENCHMARK_DATA = {
             "value": 101.35328150000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.281, 101.322, 101.353, 101.820, 103.680 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a163f9f348161222676ab0ce7a47055839eb7b1f",
+          "message": "SC-4g: over the hot target, the longest-rested chat is hibernated for me (#7636) (#7974)\n\n* SC-4g: over the hot target, the longest-rested chat is hibernated for idle (#7636)\n\nThe looked-at clock (Instant only), the gate's one decision and its one\ndeadline, and the act's idle mode: rested by the clock and every other\nfact, accepted by the act by hand, and the device still over its target,\nread before the latch and again after the intent. The window-written\nrun.moved carries cause idle.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8F831DMQ8NXYD2GH1HDP3AX\nPurlis-Persona: steward\n\n* SC-4g: bindings for By::Idle, fmt and clippy (#7636)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8F831DMQ8NXYD2GH1HDP3AX\nPurlis-Persona: steward\n\n* SC-4g review: refusals keep the facts read after them, every open chat on the clock, a refused chat passed over (#7636)\n\n- A refused chat keeps the facts read after the refusal, and a read that finds\n  them changed lets it go; a refusal for a look is never kept.\n- Every chat open goes on its project's looked-at clock at every read, under\n  the target too, and at a wake; a closed one is forgotten.\n- A refusal other than at-the-target or a quit passes the chat over for the\n  pass, so the next goes, and is not retried on each keystroke.\n- The gate's thread waits on a Signal and holds the gate only weakly: it ends\n  once the gate goes.\n- One hot count, diagnostics::hot_in, for Diagnostics and the gate.\n- A keystroke pokes only where it changed what the gate reads; the device's\n  class becoming known pokes the gate.\n- Tests: the thread, deadline wake and poke, refusals and their retry, tasks\n  open and finished, a woken chat, two projects.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8FMMD1ZBP4K47MRC43RF0KB\nPurlis-Persona: steward\n\n* SC-4g review 2: a refusal keyed on turns begun, let go at the target and after AFTER; open counts every chat (#7636)\n\n- The gate keeps only a refusal the act could not do (Refused::Said), keyed on the chat's\n  count of turns begun (read before the act) and the instant it was refused. It lets go once\n  the chat begins a turn, whenever a read finds the device at or under its target, or AFTER\n  after it was refused; that lapse is folded into the gate's one deadline. Refused::Not is\n  never kept: the facts gate candidacy at every read.\n- Diagnostics' open counts every chat with a harness again; only hot leaves out a runner's\n  or a pool's chat (bindings regenerated for the hot field's doc).\n- Gate::start answers the spawn's error, and the app logs it.\n- The gate's thread test takes its deadline away, so a spurious wake cannot read.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8FW9GY5PPN4QT9HDGAH6J1F\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T05:36:28Z",
+          "tree_id": "1154b4a03cb9b41bd0fdee62dde70c4e959b3464",
+          "url": "https://github.com/purlis/purlis/commit/a163f9f348161222676ab0ce7a47055839eb7b1f"
+        },
+        "date": 1795846903955,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.698985,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.676, 0.688, 0.699, 0.705, 0.708 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.612271999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.369, 16.403, 16.612, 16.714, 16.746 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.239408,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.239, 101.523, 102.239, 102.576, 102.710 ms"
           }
         ]
       }
