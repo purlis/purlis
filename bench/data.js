@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795832399696,
+  "lastUpdate": 1795833752480,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58380,6 +58380,48 @@ window.BENCHMARK_DATA = {
             "value": 101.91685849999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.498, 101.679, 101.917, 102.499, 102.653 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c226aab5823ea3f4fd63b557cf8614aa33267719",
+          "message": "Fault suite B1: count the redraw from when the view was told it is back (#7955) (#7978)\n\nB1 in a remote Docker pool failed on main twice in about 13 runs, at both of its\ndraw waits, after the full 180 s. Neither was a short budget. It was a missed\nsignal in the test's own clock: it stamped a moment after the event it waited\non, then counted only frames at or after that moment.\n\n- The redraw. A stream drawn again after a drop raises Reconnect::Drawn with\n  its first frame, which tells the view Reconnected, and only then hands the\n  frame over (hostedsessions.rs, draw_frames_from). B1 noticed Reconnected on\n  its next 20 ms poll and only then took 'back', after the frame. A page that\n  does not change draws nothing more, so no frame ever came after 'back'.\n- The first draw. The view's first frame can come during watch(), while it asks\n  the host over SSH who drives the browser, before B1 took 'began'.\n\nViewed now answers drew() (any frame) and drew_again() (a frame since it was\ntold Reconnected, as stamped inside the tell, before the frame is handed over).\nA new test in browsers::hosted runs the fault suite's own view against the\nstand-in host in that order. With the old clock it failed 10 of 10 times, the\nframe 20 to 30 ms before 'back'. Now it passes 20 of 20.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8FQBZ9J1MTZM35G16W2HNVW\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T02:01:55Z",
+          "tree_id": "faa981fae0be4245eca664881b19b2f9693670b8",
+          "url": "https://github.com/purlis/purlis/commit/c226aab5823ea3f4fd63b557cf8614aa33267719"
+        },
+        "date": 1795833745381,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5634110000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.555, 0.562, 0.563, 0.573, 0.574 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.382461499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.236, 16.319, 16.382, 16.405, 16.450 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.187901,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.735, 101.174, 101.188, 102.123, 103.015 ms"
           }
         ]
       }
