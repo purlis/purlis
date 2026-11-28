@@ -132,7 +132,10 @@ export const ForeignKey: Story = {
   args: { entry: { ...WAITING, reasons: ["broken"], needs_new_key: true } },
   play: async () => {
     const { page } = await opened("Work in strict mode");
-    await expect(page.getByRole("button", { name: "Make a new key and accept" })).toBeVisible();
+    // Waited for, not read once: the drawing pass of #7981's run found it still opening.
+    await waitFor(() =>
+      expect(page.getByRole("button", { name: "Make a new key and accept" })).toBeVisible(),
+    );
     await pictureNow();
   },
 };
