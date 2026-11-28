@@ -2791,9 +2791,10 @@ pub struct Docker {
 #[derive(Clone, Default)]
 struct PinSaid {
     slot: Option<std::sync::Arc<std::sync::Mutex<Option<Said>>>>,
-    /// The clock keeping and taking read: the machine's, or a test's stopped one
+    /// A test's stopped clock, read by keeping and taking in place of the machine's
     /// ([`Docker::with_pin_clock_stopped_at`]), so no test of the hand-off waits on the
-    /// machine's speed.
+    /// machine's speed. Not in a build that ships.
+    #[cfg(test)]
     stopped_at: Option<std::time::Instant>,
 }
 
@@ -2833,8 +2834,14 @@ impl<T> PinRead<T> {
 const PIN_SAID_FOR: std::time::Duration = std::time::Duration::from_secs(3);
 
 impl PinSaid {
+    #[cfg(test)]
     fn now(&self) -> std::time::Instant {
         self.stopped_at.unwrap_or_else(std::time::Instant::now)
+    }
+
+    #[cfg(not(test))]
+    fn now(&self) -> std::time::Instant {
+        std::time::Instant::now()
     }
 
     fn slot(&self) -> Option<std::sync::MutexGuard<'_, Option<Said>>> {
@@ -3192,6 +3199,7 @@ impl Docker {
     pub(crate) fn keeping_what_its_pin_said(mut self) -> Docker {
         self.pin_said = PinSaid {
             slot: Some(std::sync::Arc::default()),
+            #[cfg(test)]
             stopped_at: self.pin_said.stopped_at,
         };
         self
