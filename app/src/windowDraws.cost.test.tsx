@@ -8,7 +8,7 @@ import { aWindow, rootOf, settled } from "./projectSwitch.testkit";
 import { SETTLE_MS as ASKS_SETTLE_MS } from "./asks";
 import { keepTheirOrder } from "./commandOrder";
 import { countReactsCommits, drawnIn, renderedIn } from "./reactCommits.testkit";
-import { stripNamed } from "./test-strips";
+import { goToWorkspace, openAllWorkspaces, stripNamed, workspaceInFront } from "./test-strips";
 
 keepTheirOrder();
 
@@ -68,6 +68,7 @@ const PARTS = {
   Inbox: ["asks", "updates", "notices"],
   ChangesView: ["changes"],
   Panels: ["personas", "vaults", "memory", "todos", "sessions"],
+  Explorer: ["explorer", "repos"],
 } as const;
 
 /** Each part as `[region, name]`. */
@@ -87,10 +88,16 @@ const draws = (): Draws =>
 const each = (times: number): Draws =>
   Object.fromEntries(EVERY_PART.map(([region, name]) => [`${region} ${name}`, times]));
 
+/** Each of the parts `named` drawn `times` times, in every region it is drawn in. */
+const parts = (times: number, ...named: (keyof typeof PARTS)[]): Draws =>
+  Object.fromEntries(
+    named.flatMap((name) => PARTS[name].map((region) => [`${region} ${name}`, times])),
+  );
+
 /**
- * **What each part draws now: the baseline** (2026-11-28, on main at #7924). Every part is
- * drawn again for a tab and three times for a settings change, though neither moves what
- * most of them show; a chat's state moving draws none of them.
+ * **What each part draws now: the baseline** (2026-11-28, on main at #7924; lowered by FS-W2,
+ * #7910). Before FS-W2 every part was drawn again for a tab and three times for a settings
+ * change, though neither moves what most of them show; a chat's state moving draws none of them.
  *
  * **The settings change's three**, traced commit by commit (2026-11-28): the `PlaneView` that
  * heard `plane-changed`, as it is told; the `App` the project's settings reads answer into
@@ -102,10 +109,50 @@ const each = (times: number): Draws =>
  * watched in a test, so `whenDrawing` (`planeChanged.ts`) tells at once, and the core's answers
  * come in the order their reads are chained, whatever the runner's speed.
  */
-const BASELINE = {
-  tab: each(1),
-  settings: each(3),
+const BASELINE: Record<"tab" | "settings" | "move" | "workspace", Draws> = {
+  /**
+   * **The side views a tab does not move draw nothing for it** (FS-W2, #7910): the Changes view,
+   * the panels and the explorer read the catalogue's rows by id, without the rows about the tabs
+   * and panes (`besideRows`, `PlaneView.tsx`), and only those move for a press on a tab. The
+   * view, the Chats list and the Inbox still draw once: the view holds the tabs, and props of
+   * the other two still move with them.
+   */
+  tab: { ...each(1), ...parts(0, "ChangesView", "Panels", "Explorer") },
+  /**
+   * The same three commits draw the view, the Chats list and the Inbox, and no longer the side
+   * views, which are drawn only when a prop of theirs moves (FS-W2, #7910). **What still draws
+   * them once:** the panels, for the extensions on in the workspace, read again for a settings
+   * change and handed down as a new list (`contributed`); the explorer, for its file icons'
+   * read (`useFileIcons`, `projectTheme.ts`), which answers again for one.
+   */
+  settings: {
+    ...each(3),
+    ...parts(0, "ChangesView"),
+    ...parts(1, "Panels", "Explorer"),
+  },
   move: each(0),
+  /**
+   * **A press on a workspace visited before** (FS-W2, #7910): the view, the Chats list and the
+   * Inbox draw with the view's two commits for it, and the panels and the Changes view once,
+   * with the first: what they read moves in the draw that moves their workspace, since the
+   * catalogue's rows they read are made in that draw (`besideRows`, `PlaneView.tsx`). Filled in
+   * after it, as a store was, those rows drew each side view once more, with the new workspace
+   * and the old rows. The explorer's own part draws once more than its Repos part, for a read of
+   * its own: its files tree reads the new workspace's open folders (`useBranchFolders`,
+   * `branchFolders.ts`), and that read's answer is the third draw. The Repos part draws no files,
+   * so it reads no folder (`tops` in `Explorer.tsx`). Traced 2026-11-28 by the props and hook
+   * values each draw moved: the first moves the workspace's props, the last only `reads`.
+   *
+   * Only a workspace visited before is measured, on purpose: a workspace's first reads are kept
+   * for the test run, so a first switch would cost the 10-chat window less than the 50-chat one
+   * that ran before it, and the two would disagree for a reason that is not the window's.
+   */
+  workspace: {
+    ...each(2),
+    ...parts(1, "ChangesView", "Panels"),
+    "explorer Explorer": 3,
+    "repos Explorer": 2,
+  },
 };
 
 const WORKSPACES = 2;
@@ -174,7 +221,25 @@ async function drawsFor(chats: number): Promise<typeof BASELINE> {
   // `chatMoved.cost.test.tsx` holds), and the settings change did too, in its own moment.
   expect(moved.asksRead, "asks read for the move").toBe(1);
   expect(settings.asksRead, "asks read for the settings change").toBe(1);
-  return { tab: tab.draws, settings: settings.draws, move: moved.draws };
+  // Each workspace is visited once before, so what is counted is a switch, not a workspace's
+  // first reads, which are kept for the run and would leave a second window's count lower. The
+  // title bar's list of workspaces is opened before too, so the press alone is counted.
+  expect(workspaceInFront(), "the workspace in front before").toBe("w0");
+  await goToWorkspace("w1");
+  await asksReadAgain(asked);
+  await goToWorkspace("w0");
+  await asksReadAgain(asked);
+  expect(workspaceInFront(), "back in the first workspace").toBe("w0");
+  await openAllWorkspaces();
+  const workspace = await measured(() => goToWorkspace("w1"));
+  // The press reached the window: the other workspace is the one in front.
+  expect(workspaceInFront(), "the workspace in front after").toBe("w1");
+  return {
+    tab: tab.draws,
+    settings: settings.draws,
+    move: moved.draws,
+    workspace: workspace.draws,
+  };
 }
 
 describe("what the window's main parts draw", () => {
@@ -184,6 +249,7 @@ describe("what the window's main parts draw", () => {
     expect.soft(atFifty.tab, "a press on another tab").toEqual(BASELINE.tab);
     expect.soft(atFifty.settings, "a settings change").toEqual(BASELINE.settings);
     expect.soft(atFifty.move, "a chat's state moving").toEqual(BASELINE.move);
+    expect.soft(atFifty.workspace, "a press on another workspace").toEqual(BASELINE.workspace);
   }, 300_000);
 
   it("draws each part no more often with more chats", async () => {
