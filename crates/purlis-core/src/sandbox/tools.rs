@@ -3304,6 +3304,20 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "subl",
     "zed",
     "lapce",
+    // The terminal sharers #8037 names, refused whole on what each is for: `upterm`, `sshx`,
+    // `tty-share`, `teleconsole` and `wetty` each run a shell or the command they are handed and
+    // share its terminal with whoever joins. And the terminal recorders, as `asciinema` is:
+    // `ttyrec`, `termtosvg`, `terminalizer` and `t-rec` each run the shell or the command they
+    // record.
+    "upterm",
+    "sshx",
+    "tty-share",
+    "teleconsole",
+    "wetty",
+    "ttyrec",
+    "termtosvg",
+    "terminalizer",
+    "t-rec",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

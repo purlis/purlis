@@ -4555,3 +4555,24 @@ fn the_editors_with_a_shell_or_tasks_of_8037_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The terminal sharers #8037 names, each of which runs a shell or the command it is handed and
+/// shares its terminal: `upterm`, `sshx`, `tty-share`, `teleconsole` and `wetty`; and the
+/// terminal recorders, each of which runs the shell or the command it records: `ttyrec`,
+/// `termtosvg`, `terminalizer` and `t-rec`.
+#[test]
+fn the_terminal_sharers_and_recorders_of_8037_are_offered_no_run_grant() {
+    for name in [
+        "upterm",
+        "sshx",
+        "tty-share",
+        "teleconsole",
+        "wetty",
+        "ttyrec",
+        "termtosvg",
+        "terminalizer",
+        "t-rec",
+    ] {
+        refused_as_running_others(name);
+    }
+}
