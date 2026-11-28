@@ -626,8 +626,8 @@ pub(crate) fn worktree_to_look_at(held: &Held, session: u32) -> Option<String> {
 /// **The chats open now, as a tidy reads them** (decision #7992: never a folder a live chat
 /// holds): each a branch folder's claim is judged against ([`crate::gitbroker::live_chats`]),
 /// and the folder each open chat stands in.
-pub(crate) fn tidy_open_chats(held: &Held) -> purlis_core::dispatchplace::Open {
-    purlis_core::dispatchplace::Open {
+pub(crate) fn tidy_open_chats(held: &Held) -> purlis_core::dispatchplace::OpenChats {
+    purlis_core::dispatchplace::OpenChats {
         live: Some(crate::gitbroker::live_chats(held)),
         stand_at: held
             .chats()
@@ -646,7 +646,7 @@ pub(crate) fn tidy_open_chats(held: &Held) -> purlis_core::dispatchplace::Open {
 pub(crate) fn tidy_closed(
     root: &Path,
     id: &str,
-    open: &purlis_core::dispatchplace::Open,
+    open: &purlis_core::dispatchplace::OpenChats,
 ) -> purlis_core::dispatchplace::Tidied {
     match dispatchrecord::read(root, id) {
         Some(record) => {

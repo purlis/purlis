@@ -764,7 +764,7 @@ fn a_task_folder_inside_a_merged_requests_head_is_taken_away_and_its_branch_kept
     // squash-merged: neither on its base nor carried, yet nothing is lost (#5439).
     let f = support::plane_with_clone("api");
     let iso = Isolated::default();
-    let lane = cut(&f, "lands through a request");
+    let lane = cut(&f, "merges through a request");
     f.commit(&lane.path, "one");
     support::git(&f.clone, &["branch", "-q", "pr-head", &lane.branch]);
     let head_tree = f.workspace().join("pr-head-tree");
@@ -851,7 +851,7 @@ fn a_merged_folder_goes_and_its_branch_stays_where_git_will_not_delete_it() {
     let tidied = dispatchplace::tidy_recorded(
         &f.plane,
         &dispatchrecord::read(&f.plane, &record).unwrap(),
-        &dispatchplace::Open::nobody(),
+        &dispatchplace::OpenChats::nobody(),
         &Isolated::default(),
         Forges::none(),
     );
@@ -1102,7 +1102,9 @@ fn tidy_at_a_close_or_a_merge_keeps_a_finished_folder_another_live_chat_stands_i
     let stood_id = dispatchrecord::mint();
     let stood = cut_for(&f, "stood in", &stood_id);
     let stood_record = recorded_as(&f.plane, &stood_id, &stood, 7, true);
-    let standing_in = dispatchplace::Open {
+    // The chat stands below the folder's top, in a folder that is there (git ignores an empty one).
+    std::fs::create_dir_all(stood.path.join("src")).unwrap();
+    let standing_in = dispatchplace::OpenChats {
         live: Some(vec![other.clone()]),
         stand_at: vec![stood.path.join("src")],
     };
@@ -1142,11 +1144,11 @@ fn tidy_at_a_close_or_a_merge_keeps_a_finished_folder_another_live_chat_stands_i
         jiff::Timestamp::now(),
     )
     .unwrap();
-    let holding = dispatchplace::Open {
+    let holding = dispatchplace::OpenChats {
         live: Some(vec![other.clone()]),
         stand_at: Vec::new(),
     };
-    let tidy = |open: &dispatchplace::Open| {
+    let tidy = |open: &dispatchplace::OpenChats| {
         dispatchplace::tidy_recorded(
             &f.plane,
             &dispatchrecord::read(&f.plane, &held_record).unwrap(),
@@ -1158,7 +1160,7 @@ fn tidy_at_a_close_or_a_merge_keeps_a_finished_folder_another_live_chat_stands_i
     assert_eq!(tidy(&holding), Tidied::Kept);
     assert!(held.path.is_dir(), "a live chat holds it");
     // Nor where no app said which chats are open: a held folder is kept (fail closed).
-    let unknown = dispatchplace::Open {
+    let unknown = dispatchplace::OpenChats {
         live: None,
         stand_at: Vec::new(),
     };
@@ -1166,7 +1168,7 @@ fn tidy_at_a_close_or_a_merge_keeps_a_finished_folder_another_live_chat_stands_i
     assert!(held.path.is_dir());
 
     // Once that chat has gone, the same folder goes.
-    assert_eq!(tidy(&dispatchplace::Open::nobody()), Tidied::Removed);
+    assert_eq!(tidy(&dispatchplace::OpenChats::nobody()), Tidied::Removed);
     assert!(held.path.symlink_metadata().is_err());
 }
 
@@ -1191,7 +1193,7 @@ fn opening_the_project_takes_away_only_the_merged_worktrees_of_dispatches_that_e
     let went = dispatchplace::tidy_all(
         &f.plane,
         |record| record.worker.chat.chat == 9,
-        &dispatchplace::Open::nobody(),
+        &dispatchplace::OpenChats::nobody(),
         &iso,
         Forges::none(),
     );
@@ -1229,7 +1231,7 @@ fn opening_the_project_takes_away_only_the_merged_worktrees_of_dispatches_that_e
         dispatchplace::tidy_all(
             &f.plane,
             |record| record.worker.chat.chat == 9,
-            &dispatchplace::Open::nobody(),
+            &dispatchplace::OpenChats::nobody(),
             &iso,
             Forges::none()
         ),

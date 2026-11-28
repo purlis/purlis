@@ -836,7 +836,7 @@ fn a_record_whose_worktree_names_climb_is_no_tree_purlis_acts_on() {
             tidy_recorded(
                 &root,
                 &record,
-                &Open::nobody(),
+                &OpenChats::nobody(),
                 &git::Isolated::default(),
                 crate::finished::Forges::none()
             ),
@@ -869,7 +869,7 @@ fn a_record_names_only_the_worktree_purlis_cut_for_that_dispatch() {
             tidy_recorded(
                 &root,
                 &another,
-                &Open::nobody(),
+                &OpenChats::nobody(),
                 &git::Isolated::default(),
                 crate::finished::Forges::none()
             ),
@@ -1542,7 +1542,7 @@ fn a_running_dispatch_s_worktree_is_never_looked_at() {
         tidy_recorded(
             &root,
             &running,
-            &Open::nobody(),
+            &OpenChats::nobody(),
             &git::Isolated::default(),
             crate::finished::Forges::none()
         ),

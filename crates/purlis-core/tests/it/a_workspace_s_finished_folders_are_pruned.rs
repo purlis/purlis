@@ -692,7 +692,7 @@ fn the_explorer_s_remove_takes_a_folder_inside_a_merged_requests_head_and_keeps_
 fn the_explorer_s_remove_takes_a_task_folder_inside_a_merged_requests_head() {
     purlis_core::unsteered!();
     let f = support::plane_with_clone("api");
-    let cut = task_folder(&f, "lands through a request", true);
+    let cut = task_folder(&f, "merges through a request", true);
     f.commit(&cut.path, "one");
     git(&f.clone, &["branch", "-q", "pr-head", &cut.branch]);
     let head_tree = f.workspace().join("pr-head-tree");

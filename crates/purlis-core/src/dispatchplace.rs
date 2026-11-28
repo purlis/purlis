@@ -2428,12 +2428,12 @@ fn tidy_linked(
 /// app said which are open, and a held folder is then kept), and the folder each open chat
 /// stands in.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Open {
+pub struct OpenChats {
     pub live: Option<Vec<crate::piececlaim::Live>>,
     pub stand_at: Vec<PathBuf>,
 }
 
-impl Open {
+impl OpenChats {
     /// No chat open: nothing holds a folder but its files, commits and links.
     pub fn nobody() -> Self {
         Self {
@@ -2460,7 +2460,7 @@ impl Open {
 pub fn tidy_recorded(
     root: &Path,
     record: &Record,
-    open: &Open,
+    open: &OpenChats,
     isolation: &git::Isolated,
     forges: crate::finished::Forges<'_>,
 ) -> Tidied {
@@ -2473,7 +2473,7 @@ pub fn tidy_recorded(
 fn tidy_recorded_with(
     root: &Path,
     record: &Record,
-    open: &Open,
+    open: &OpenChats,
     isolation: &git::Isolated,
     forges: crate::finished::Forges<'_>,
     links: &mut dyn FnMut(&str) -> Vec<crate::finished::Link>,
@@ -2504,7 +2504,7 @@ fn tidy_recorded_with(
 pub fn tidy_all(
     root: &Path,
     in_use: impl Fn(&Record) -> bool,
-    open: &Open,
+    open: &OpenChats,
     isolation: &git::Isolated,
     forges: crate::finished::Forges<'_>,
 ) -> usize {
@@ -2564,7 +2564,7 @@ pub fn tidy_at_open(
 ) -> usize {
     // The chats it brings back hold what they claimed, as the live chats do at a close: none
     // has come back yet, so none is read as running.
-    let open = Open {
+    let open = OpenChats {
         live: Some(
             at_open
                 .live
