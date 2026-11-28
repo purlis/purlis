@@ -361,7 +361,7 @@ const DOCKER_POOL_IMAGE: &str = "DOCKER_POOL_TEST_IMAGE";
 /// so an image that went missing never passes as nothing run.
 const PARITY: &str = "PURLIS_PARITY";
 
-mod fault_suite;
+pub(crate) mod fault_suite;
 #[path = "behaviour/tests/fresh_runner.rs"]
 mod fresh_runner;
 #[path = "behaviour/tests/on_a_cluster_pool.rs"]
@@ -371,7 +371,7 @@ mod pool_setup;
 mod pool_setup_try;
 mod remote_logins;
 mod runs_on_order;
-mod ssh_reconnect;
+pub(crate) mod ssh_reconnect;
 
 /// **A chat on a Docker pool's runner** (#2045, spec #2041): a pool added on this machine as
 /// the window adds one ([`a_pool_on`]). The window speaks to its own host, which relays to the
