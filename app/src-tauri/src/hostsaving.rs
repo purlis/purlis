@@ -4,7 +4,7 @@
 //! A project's watcher and auto-save, run in the session host (#2002): the host's
 //! [`purlis_host::Save`] for the window's binary.
 //!
-//! **The same code as the window's.** With the start-time switch on (`crate::hostedsessions`),
+//! **The same code as the window's.** Wherever chats run in the host (`crate::hostedsessions`),
 //! the window asks its host to save each project it opens, and starts no auto-save of its own:
 //! the host runs the plane's watch ([`crate::planewatch::Watch::in_the_host`]) and the same
 //! worker ([`crate::autosave::Worker`]), in the window's own binary started again as the host,
