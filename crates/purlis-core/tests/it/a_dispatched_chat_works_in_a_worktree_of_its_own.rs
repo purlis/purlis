@@ -1213,7 +1213,6 @@ fn tidy_keeps_every_finished_folder_of_a_workspace_whose_claims_or_open_chats_ca
     // Review of #8015: a claim nobody could read is not "no claim". Where a claim log of the
     // workspace cannot be read, or an open chat has no id a claim could name, tidy keeps the
     // workspace's folders.
-    use std::os::unix::fs::PermissionsExt;
     let f = support::plane_with_clone("api");
     let iso = Isolated::default();
     let id = dispatchrecord::mint();
@@ -1237,15 +1236,12 @@ fn tidy_keeps_every_finished_folder_of_a_workspace_whose_claims_or_open_chats_ca
     assert_eq!(tidy(&unnamed), Tidied::Kept);
     assert!(finished.path.is_dir(), "a chat with no id may hold it");
 
-    // Another device's claim log that cannot be read.
+    // Another device's claim log that cannot be read: bytes that are not text, which no one
+    // reads as a log, root included.
     let logs = purlis_core::pieces::dir_for(&f.plane, &finished.workspace);
     std::fs::create_dir_all(&logs).unwrap();
     let log = logs.join("another-device.jsonl");
-    std::fs::write(&log, "").unwrap();
-    std::fs::set_permissions(&log, std::fs::Permissions::from_mode(0o000)).unwrap();
-    if std::fs::read(&log).is_ok() {
-        return; // Run as a user every file is readable to: nothing to show.
-    }
+    std::fs::write(&log, [0xff, 0xfe, b'\n']).unwrap();
     assert_eq!(tidy(&dispatchplace::OpenChats::nobody()), Tidied::Kept);
     assert!(
         finished.path.is_dir(),
@@ -1253,7 +1249,7 @@ fn tidy_keeps_every_finished_folder_of_a_workspace_whose_claims_or_open_chats_ca
     );
 
     // Once it reads, and holds nothing, the folder goes.
-    std::fs::set_permissions(&log, std::fs::Permissions::from_mode(0o644)).unwrap();
+    std::fs::write(&log, "").unwrap();
     assert_eq!(tidy(&dispatchplace::OpenChats::nobody()), Tidied::Removed);
 }
 

@@ -594,9 +594,9 @@ pub fn events(plane: &Path, ws: &str) -> Vec<Value> {
 
 /// [`events`], and what of workspace `ws`'s piece logs could not be read to give them, each by
 /// its path in the workspace (`pieces/<log>`, or `pieces/` where the folder could not be
-/// listed). A claim in a log
-/// that is not read is still a claim, so what decides that nothing holds a folder reads this
-/// (fail closed); a log that is a link, or gone since it was listed, is not unread.
+/// listed). A claim in a log that is not read is still a claim, so what decides that nothing
+/// holds a folder reads this (fail closed); a log that is a link, or gone since it was listed,
+/// is not unread.
 pub(crate) fn events_read(plane: &Path, ws: &str) -> (Vec<Value>, Vec<String>) {
     let (texts, unread) = logs(plane, ws);
     let mut out: Vec<Value> = Vec::new();
@@ -653,12 +653,17 @@ fn logs(plane: &Path, ws: &str) -> (Vec<String>, Vec<String>) {
             Err(why) if why.kind() == std::io::ErrorKind::NotFound => return (texts, unread),
             Err(_) => return (texts, vec![folder()]),
         };
-        let mut files: Vec<PathBuf> = reader
-            .filter_map(Result::ok)
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
-            .collect();
+        let mut files: Vec<PathBuf> = Vec::new();
+        for entry in reader {
+            match entry {
+                Ok(entry) => files.push(entry.path()),
+                Err(_) => return (texts, vec![folder()]),
+            }
+        }
+        files.retain(|p| p.extension().is_some_and(|e| e == "jsonl"));
         files.sort();
+        // A log that is a link holds nothing, as on unix (#1082).
+        files.retain(|p| p.symlink_metadata().is_ok_and(|meta| !meta.is_symlink()));
         for file in files {
             match std::fs::read_to_string(&file) {
                 Ok(text) => texts.push(text),

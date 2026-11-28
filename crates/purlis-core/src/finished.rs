@@ -490,9 +490,19 @@ fn link_targets(at: &Path) -> Option<Vec<PathBuf>> {
 /// Why a folder is kept where [`links`] could not read `unread`, as a clause.
 pub fn unread_links(unread: &[String]) -> String {
     format!(
-        "purlis could not read whether another folder links into it ({} could not be read)",
-        unread.join(", ")
+        "another folder may link into it, and purlis could not read {}: check git can read \
+         them, then try again",
+        quoted(unread)
     )
+}
+
+/// `paths`, each in backticks, joined: what a refusal names.
+pub(crate) fn quoted(paths: &[String]) -> String {
+    paths
+        .iter()
+        .map(|path| format!("`{path}`"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// The folders of `links` that link into `folder`, named, sorted.

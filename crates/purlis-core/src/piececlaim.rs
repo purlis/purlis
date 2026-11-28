@@ -255,13 +255,9 @@ pub fn held_open(
     let (events, unread) = pieces::events_read(plane, &at.workspace);
     if !unread.is_empty() {
         return Some(format!(
-            "purlis could not read the workspace's claims ({}), so a chat may still hold it: \
-             check those files can be read, then try again",
-            unread
-                .iter()
-                .map(|path| format!("`{path}`"))
-                .collect::<Vec<_>>()
-                .join(", ")
+            "a chat may hold it, and purlis could not read the workspace's claims in {}: check \
+             those files can be read, then try again",
+            crate::finished::quoted(&unread)
         ));
     }
     let holder = holder_in(plane, at, &events)?;
