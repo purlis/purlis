@@ -278,8 +278,8 @@ import { onAMac } from "./tabKeys";
  * nowhere (D-86a).
  *
  * **Drawn only when a prop moves** (`memo`, FS-W2 #7910): a press on a tab moves none, since
- * the catalogue's rows come from its store (`catalogueRows.ts`) and the presses are the view's
- * own for its life.
+ * the catalogue's rows it reads are held while they say the same (`besideRows`, `PlaneView.tsx`)
+ * and the presses are the view's own for its life.
  */
 export const Explorer = memo(function Explorer({
   plane,

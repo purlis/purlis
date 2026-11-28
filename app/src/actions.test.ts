@@ -74,7 +74,7 @@ import {
 } from "./actions";
 import { ASK_LOCKED_ID, askId, askRows, chatLinksId, inPalette, usingSkillId } from "./actions";
 import { besideTheFront } from "./actions";
-import { dequal } from "dequal/lite";
+import { dequal } from "dequal";
 import { NO_LINK_FOLLOWED, listedMemoryOffers, memoryMoveId, moveRows } from "./actions";
 import { PUBLISHED_WITH_THE_PROJECT } from "./memoryMoves";
 import { sessionOffers } from "./actions";
@@ -96,6 +96,7 @@ import {
   openPreview,
   openView,
   selectTab,
+  focusPane,
   panesOf,
   setPinned,
   showIn,
@@ -5333,7 +5334,7 @@ describe("Links in this pane… on the ⋯ menu and in the palette (#6332)", () 
 });
 
 describe("the rows a press on a tab moves (FS-W2, #7910)", () => {
-  /** Three chats' tabs, the second split, each chat in a branch folder. */
+  /** Three tabs: a chat's, a shell's, and a chat's split with a fourth chat, which is focused. */
   const three = splitFocusedPane(
     openTab(openTab(openTab(noTabs(), 7, "3", "steward"), 8, "sh"), 9, "4", "devops"),
     "row",
@@ -5347,20 +5348,36 @@ describe("the rows a press on a tab moves (FS-W2, #7910)", () => {
           plane: "/plane",
           worktreeOf: () => PIECE,
           askable: () => true,
-          listed: [7, 8, 9, 10].map((session) => listed(session)),
+          listed: [7, 8, 9, 10].map((session) =>
+            session === 8 ? { ...listed(session), shell: true } : listed(session),
+          ),
         }),
       ),
     );
+  /** Each tab in front, and the split one with each of its panes focused. */
+  const split = panesOf(three, 3).map(({ pane }) => pane);
+  const fronts: [string, Tabs][] = [
+    ["the first chat's tab", selectTab(three, 1)],
+    ["the shell's tab", selectTab(three, 2)],
+    ...split.map((pane): [string, Tabs] => [`the split, pane ${pane}`, focusPane(three, pane)]),
+  ];
 
   it("are the rows of the front alone, so a view beside the tabs reads none that moved", () => {
-    const before = rowsWith(selectTab(three, 1));
-    const after = rowsWith(selectTab(three, 3));
-    const moved = [...new Set([...before.keys(), ...after.keys()])].filter(
-      (id) => !dequal(before.get(id), after.get(id)),
-    );
-    // The press moved rows, or nothing here is held.
-    expect(moved.length).toBeGreaterThan(0);
-    expect(moved.filter(besideTheFront)).toEqual([]);
+    // The split has two panes, each its own front, or the focus inside it is not checked.
+    expect(split).toHaveLength(2);
+    expect(new Set(fronts.map(([, tabs]) => tabs)).size).toBe(fronts.length);
+    for (const [from, before] of fronts)
+      for (const [to, after] of fronts) {
+        if (before === after) continue;
+        const was = rowsWith(before);
+        const is = rowsWith(after);
+        const moved = [...new Set([...was.keys(), ...is.keys()])].filter(
+          (id) => !dequal(was.get(id), is.get(id)),
+        );
+        // The press moved rows, or nothing here is held.
+        expect(moved.length, `${from} to ${to}`).toBeGreaterThan(0);
+        expect(moved.filter(besideTheFront), `${from} to ${to}`).toEqual([]);
+      }
   });
 
   it("leaves the rows about a chat or the project to the views beside the tabs", () => {

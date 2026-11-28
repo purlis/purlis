@@ -6458,7 +6458,7 @@ export function catalogued(offers: readonly Offer[]): Catalogued {
  * A press on a tab moves these rows, and no other (`actions.test.ts` holds it).
  *
  * A view that draws none of them, such as the Changes view, the panels and the explorer, reads
- * the catalogue without them (`catalogueRows.ts`) and is not drawn again for a tab.
+ * the catalogue without them (`besideRows`, `PlaneView.tsx`) and is not drawn again for a tab.
  */
 function ofTheFront(id: string): boolean {
   return (

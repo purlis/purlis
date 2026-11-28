@@ -106,8 +106,8 @@ import { Tree, TreeRow } from "./ui/tree/Tree";
  * left a piece is a thing you pick, here it is a branch that exists and may be unwired.
  *
  * **Drawn only when a prop moves** (`memo`, FS-W2 #7910): a press on a tab moves none, since
- * the catalogue's rows come from its store (`catalogueRows.ts`) and the presses are the view's
- * own for its life.
+ * the catalogue's rows it reads are held while they say the same (`besideRows`, `PlaneView.tsx`)
+ * and the presses are the view's own for its life.
  */
 export const ChangesView = memo(function ChangesView({
   workspace,

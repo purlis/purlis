@@ -79,8 +79,8 @@ import { Segment, SegmentedControl } from "./ui/choice/Radio";
  * the queue is every project's. `NeedsYou.NeedsYouMenu` is where it is.
  *
  * **Drawn only when a prop moves** (`memo`, FS-W2 #7910): a press on a tab moves none, since
- * the catalogue's rows come from its store (`catalogueRows.ts`) and the presses are the view's
- * own for its life.
+ * the catalogue's rows it reads are held while they say the same (`besideRows`, `PlaneView.tsx`)
+ * and the presses are the view's own for its life.
  */
 export const Panels = memo(function Panels({
   view,

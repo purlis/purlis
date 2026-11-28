@@ -8,7 +8,7 @@ import { aWindow, rootOf, settled } from "./projectSwitch.testkit";
 import { SETTLE_MS as ASKS_SETTLE_MS } from "./asks";
 import { keepTheirOrder } from "./commandOrder";
 import { countReactsCommits, drawnIn, renderedIn } from "./reactCommits.testkit";
-import { stripNamed } from "./test-strips";
+import { goToWorkspace, openAllWorkspaces, stripNamed, workspaceInFront } from "./test-strips";
 
 keepTheirOrder();
 
@@ -109,11 +109,11 @@ const parts = (times: number, ...named: (keyof typeof PARTS)[]): Draws =>
  * watched in a test, so `whenDrawing` (`planeChanged.ts`) tells at once, and the core's answers
  * come in the order their reads are chained, whatever the runner's speed.
  */
-const BASELINE = {
+const BASELINE: Record<"tab" | "settings" | "move" | "workspace", Draws> = {
   /**
    * **The side views a tab does not move draw nothing for it** (FS-W2, #7910): the Changes view,
-   * the panels and the explorer read the catalogue's rows by id, out of its store
-   * (`catalogueRows.ts`), and only rows about the tabs and panes move for a press on a tab. The
+   * the panels and the explorer read the catalogue's rows by id, without the rows about the tabs
+   * and panes (`besideRows`, `PlaneView.tsx`), and only those move for a press on a tab. The
    * view, the Chats list and the Inbox still draw once: the view holds the tabs, and props of
    * the other two still move with them.
    */
@@ -131,6 +131,21 @@ const BASELINE = {
     ...parts(1, "Panels", "Explorer"),
   },
   move: each(0),
+  /**
+   * **A press on a workspace visited before** (FS-W2, #7910): the view, the Chats list and the
+   * Inbox draw with the view's two commits for it, and the panels and the Changes view once,
+   * with the first: what they read moves in the draw that moves their workspace, since the
+   * catalogue's rows they read are made in that draw (`besideRows`, `PlaneView.tsx`). Filled in
+   * after it, as a store was, those rows drew each side view once more, with the new workspace
+   * and the old rows. The explorer's own part draws once more than its Repos part, for a read of
+   * its own, not traced here.
+   */
+  workspace: {
+    ...each(2),
+    ...parts(1, "ChangesView", "Panels"),
+    "explorer Explorer": 3,
+    "repos Explorer": 2,
+  },
 };
 
 const WORKSPACES = 2;
@@ -199,7 +214,25 @@ async function drawsFor(chats: number): Promise<typeof BASELINE> {
   // `chatMoved.cost.test.tsx` holds), and the settings change did too, in its own moment.
   expect(moved.asksRead, "asks read for the move").toBe(1);
   expect(settings.asksRead, "asks read for the settings change").toBe(1);
-  return { tab: tab.draws, settings: settings.draws, move: moved.draws };
+  // Each workspace is visited once before, so what is counted is a switch, not a workspace's
+  // first reads, which are kept for the run and would leave a second window's count lower. The
+  // title bar's list of workspaces is opened before too, so the press alone is counted.
+  expect(workspaceInFront(), "the workspace in front before").toBe("w0");
+  await goToWorkspace("w1");
+  await asksReadAgain(asked);
+  await goToWorkspace("w0");
+  await asksReadAgain(asked);
+  expect(workspaceInFront(), "back in the first workspace").toBe("w0");
+  await openAllWorkspaces();
+  const workspace = await measured(() => goToWorkspace("w1"));
+  // The press reached the window: the other workspace is the one in front.
+  expect(workspaceInFront(), "the workspace in front after").toBe("w1");
+  return {
+    tab: tab.draws,
+    settings: settings.draws,
+    move: moved.draws,
+    workspace: workspace.draws,
+  };
 }
 
 describe("what the window's main parts draw", () => {
@@ -209,6 +242,7 @@ describe("what the window's main parts draw", () => {
     expect.soft(atFifty.tab, "a press on another tab").toEqual(BASELINE.tab);
     expect.soft(atFifty.settings, "a settings change").toEqual(BASELINE.settings);
     expect.soft(atFifty.move, "a chat's state moving").toEqual(BASELINE.move);
+    expect.soft(atFifty.workspace, "a press on another workspace").toEqual(BASELINE.workspace);
   }, 300_000);
 
   it("draws each part no more often with more chats", async () => {
