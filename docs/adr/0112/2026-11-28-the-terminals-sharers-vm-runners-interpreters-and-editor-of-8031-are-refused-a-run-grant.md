@@ -1,9 +1,10 @@
 # Amended 2026-11-28: the terminals, sharers, VM runners, interpreters and editor of #8031 are refused a Run grant
 
 Decided under the operator's standing order to take the recommended path (#8031), recorded here
-as delegated decisions (delegated: recommended path). It follows the amendment for #8017
-(#8033, open when this was written), whose closing filed these families as #8031. Nothing here
-depends on #8033's rows: each comparison below names a row that was on `main` before either.
+as delegated decisions (delegated: recommended path). It follows *the terminals, tmux session
+managers, VM runners, interpreters and tracer of #8017 are refused a Run grant* (2026-11-28,
+#8033), whose closing filed these families as #8031. Each comparison below names a row that was
+on `main` before either.
 
 ## Not read in source, and why each is refused all the same
 

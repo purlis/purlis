@@ -4408,24 +4408,6 @@ fn the_terminals_of_8017_are_offered_no_run_grant() {
         "hyper",
         "tabby",
         "warp-terminal",
-/// The terminals #8031 names beside #7988's and #8017's, each of which runs the command it is
-/// handed in the window or on the console it opens: xterm's wrappers `uxterm`, `lxterm` and
-/// `koi8rxterm`, which `exec` xterm with what they are handed; PuTTY's `pterm`; `termite`;
-/// `kmscon`, on the kernel's console; `zutty`; `mrxvt`; `wterm`; and `waveterm` and `extraterm`.
-#[test]
-fn the_terminals_of_8031_are_offered_no_run_grant() {
-    for name in [
-        "uxterm",
-        "lxterm",
-        "koi8rxterm",
-        "pterm",
-        "termite",
-        "kmscon",
-        "zutty",
-        "mrxvt",
-        "wterm",
-        "waveterm",
-        "extraterm",
     ] {
         refused_as_running_others(name);
     }
@@ -4488,6 +4470,30 @@ fn the_interpreters_of_8017_are_offered_no_run_grant() {
 fn the_tracer_of_8017_is_offered_no_run_grant() {
     refused_as_running_others("ktrace");
 }
+
+/// The terminals #8031 names beside #7988's and #8017's, each of which runs the command it is
+/// handed in the window or on the console it opens: xterm's wrappers `uxterm`, `lxterm` and
+/// `koi8rxterm`, which `exec` xterm with what they are handed; PuTTY's `pterm`; `termite`;
+/// `kmscon`, on the kernel's console; `zutty`; `mrxvt`; `wterm`; and `waveterm` and `extraterm`.
+#[test]
+fn the_terminals_of_8031_are_offered_no_run_grant() {
+    for name in [
+        "uxterm",
+        "lxterm",
+        "koi8rxterm",
+        "pterm",
+        "termite",
+        "kmscon",
+        "zutty",
+        "mrxvt",
+        "wterm",
+        "waveterm",
+        "extraterm",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
 /// The terminal sharers and recorders #8031 names, each of which runs a command it is handed:
 /// `ttyd` and `gotty` run the command after them and serve its terminal over HTTP, `asciinema rec
 /// -c` runs the command it records (and, without `-c`, the shell its settings name), and `vhs`
