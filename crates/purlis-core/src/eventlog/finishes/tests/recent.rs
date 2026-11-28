@@ -83,6 +83,9 @@ enum Op {
     Write { chat: usize, sub: bool, what: What },
     /// The live file cut back to the end of its line before last.
     Shrink,
+    /// The same, and the log opened again, so it reads where its live file ends now and grows it
+    /// again without sealing it.
+    ShrinkAndReopen,
     /// The records of chat 1 let go of, as a project's close does.
     Forget,
     /// Both chats asked, and the answer held to the whole log's.
@@ -118,6 +121,7 @@ fn op() -> impl Strategy<Value = Op> {
         12 => (0..2usize, proptest::bool::weighted(0.25), what())
             .prop_map(|(chat, sub, what)| Op::Write { chat, sub, what }),
         1 => Just(Op::Shrink),
+        1 => Just(Op::ShrinkAndReopen),
         1 => Just(Op::Forget),
         3 => Just(Op::Ask),
     ]
@@ -206,6 +210,12 @@ fn held_to_the_whole_log(ops: &[Op], cap: usize) -> Result<(), TestCaseError> {
                 written(&mut log, *sub, *what);
             }
             Op::Shrink => shrunk(dir.path()),
+            Op::ShrinkAndReopen => {
+                let chat = log.chat;
+                drop(log);
+                shrunk(dir.path());
+                log = small(dir.path(), chat);
+            }
             Op::Forget => recent.forget(&[OTHER]),
             Op::Ask => {
                 let said = recent.finishes(dir.path(), &CHATS, 0).unwrap();
@@ -443,6 +453,92 @@ fn past_its_cap_the_files_asked_least_recently_are_let_go_of() {
     assert!(
         recent.kept().contains(&oldest),
         "the file asked last is kept"
+    );
+}
+
+#[test]
+fn a_line_torn_after_its_event_then_cut_and_written_over_is_never_in_an_answer() {
+    // FS-C2 review (#8030): a last line with no end that parsed was kept, and the offset moved
+    // past it; the log cut it back and wrote a longer line over it, and the next ask read from
+    // the middle of that line, kept the event cut and missed the one written.
+    use std::io::Write;
+    let dir = tempfile::tempdir().unwrap();
+    let mut written = Turns::in_dir(dir.path(), CHAT);
+    written.started("claude").prompt();
+    drop(written);
+    let path = live(dir.path());
+    let last = crate::eventlog::read(dir.path()).unwrap().pop().unwrap();
+    let torn = Event {
+        seq: last.seq + 1,
+        ulid: ulid::Ulid::generate().to_string(),
+        kind: "hook.stop".to_owned(),
+        body: serde_json::json!({}),
+        ..last
+    };
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    serde_json::to_writer(&mut file, &torn).unwrap();
+    file.flush().unwrap();
+    drop(file);
+    let recent = Recent::default();
+    let said = recent.finishes(dir.path(), &[CHAT], 0).unwrap();
+    assert_eq!(said[CHAT], finishes_in(dir.path(), CHAT).unwrap());
+    assert_eq!(said[CHAT].len(), 1, "the premise: the torn stop was read");
+    let before = std::fs::metadata(&path).unwrap().len();
+    // The log cuts the torn line back as it opens, and writes over it.
+    Turns::in_dir(dir.path(), CHAT).block(&"x".repeat(400), None);
+    assert!(
+        std::fs::metadata(&path).unwrap().len() > before,
+        "the premise: the line written over is longer"
+    );
+    let said = recent.finishes(dir.path(), &[CHAT], 0).unwrap();
+    assert_eq!(said[CHAT], finishes_in(dir.path(), CHAT).unwrap());
+    assert!(
+        said[CHAT].is_empty(),
+        "the stop cut back is still in the answer"
+    );
+}
+
+#[test]
+fn a_parse_in_flight_under_the_cap_is_shared_not_done_again() {
+    // FS-C2 review (#8030): an entry was made as asked least recently of all, and the cap let go
+    // of it first while its parse was held, freeing nothing; the next ask of its file made
+    // another and parsed it again.
+    let parsing = tempfile::tempdir().unwrap();
+    Turns::in_dir(parsing.path(), CHAT)
+        .started("claude")
+        .prompt()
+        .block(PUSH, None)
+        .stop();
+    let others = tempfile::tempdir().unwrap();
+    sealed_turns(others.path(), OTHER, 4);
+    let path = live(parsing.path());
+    let recent = std::sync::Arc::new(Recent::with_cap(1));
+    let (began, release) = recent.hold_parse_of(&path);
+    let ask = || {
+        let (recent, dir) = (recent.clone(), parsing.path().to_path_buf());
+        std::thread::spawn(move || recent.finishes(&dir, &[CHAT], 0).unwrap())
+    };
+    let first = ask();
+    began
+        .recv_timeout(Duration::from_secs(60))
+        .expect("the first ask parses");
+    // Another log's files, past the cap, while the parse is held.
+    recent.finishes(others.path(), &[OTHER], 0).unwrap();
+    let second = ask();
+    while recent.waits_for(&path) < 2 && !second.is_finished() {
+        std::thread::yield_now();
+    }
+    release.send(()).unwrap();
+    let (first, second) = (first.join().unwrap(), second.join().unwrap());
+    assert_eq!(first, second);
+    assert_eq!(first[CHAT], finishes_in(parsing.path(), CHAT).unwrap());
+    assert_eq!(
+        recent.parsed_of(&path),
+        1,
+        "the file in flight was parsed again"
     );
 }
 

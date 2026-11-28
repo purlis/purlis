@@ -25,9 +25,17 @@
 //! **The stat stays under the file's lock** (an invariant): a file's stamp is read only while its
 //! lock is held, so an ask that waited for another's parse stats the file as it is once that
 //! parse is done, and no answer is made from a file as it was before its ask. A file is parsed
-//! again only when it is not what it was kept at. One that only grew (the same file, longer) has
-//! just what it gained parsed, from the end of the last whole line it was parsed to; one that
-//! shrank, or is another file (its length, modified time and identity), is parsed whole.
+//! again only when it is not what it was kept at. One that only grew (the same file, no shorter
+//! than what was parsed, and its last whole line parsed still there as it was) has just what it
+//! gained parsed, from the end of that line; one that shrank, or is another file (its length,
+//! modified time and identity), is parsed whole. The stamp is taken from the file as opened, so a
+//! seal between the stat and the read cannot pair the new file with the old one's offset.
+//!
+//! **A last line with no end is never kept** (an invariant): what is kept, and the offset, end at
+//! the last whole line. A last line that is an event with no end yet is in the answer of the ask
+//! that read it, as [`crate::eventlog::read`] reads it, and read again by the next ask: a write
+//! torn after its event and before its end is cut back by the log ([`crate::eventlog::Log`]) and
+//! written over, and what was written over is never in an answer after.
 //!
 //! **What is let go**: a file gone from the log (pruned, or the live file not yet written); the
 //! records of the chats of a project closed ([`Recent::forget`]); and, past a cap on the bytes
@@ -42,7 +50,7 @@ use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 
 use super::{Finish, Record, fold, needs_older};
 use crate::eventlog::Event;
@@ -85,6 +93,9 @@ struct Indexed {
     stamp: Stamp,
     /// How far the file is parsed: the end of its last whole line.
     offset: u64,
+    /// Where that line starts and what it was, so a file cut back and written again past it is
+    /// told from one that grew; none where no whole line is parsed.
+    last_line: Option<(u64, u64)>,
     /// Its newest event's number, of any chat: what the live file's repeats of a seal are told by.
     last_seq: Option<u64>,
     /// Each chat's records, in the order written.
@@ -142,14 +153,26 @@ fn file_id(_: &std::fs::Metadata) -> Option<u64> {
     None
 }
 
-/// The stamp of `path`, or none where it is not there (the live file before its first event, or
-/// a segment pruned since). Any other failure is the ask's, as it is [`crate::eventlog::read`]'s.
-fn stamp(path: &Path) -> io::Result<Option<Stamp>> {
-    match std::fs::metadata(path) {
-        Ok(meta) => Ok(Some(Stamp::of(&meta))),
+/// `path` opened and its stamp, taken from the file opened; or none where it is not there (the
+/// live file before its first event, or a segment pruned since). Any other failure is the ask's,
+/// as it is [`crate::eventlog::read`]'s.
+fn opened(path: &Path) -> io::Result<Option<(std::fs::File, Stamp)>> {
+    match std::fs::File::open(path) {
+        Ok(file) => {
+            let stamp = Stamp::of(&file.metadata()?);
+            Ok(Some((file, stamp)))
+        }
         Err(why) if why.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(why) => Err(why),
     }
+}
+
+/// What a line was, to tell it from another.
+fn line_hash(line: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    line.hash(&mut hasher);
+    hasher.finish()
 }
 
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -232,6 +255,9 @@ impl Recent {
     /// **Lets go of the records of `chats`** in every file kept: a project closed, whose chats
     /// are asked of no more. An ask of one of them after reads each file that held its records
     /// whole again.
+    ///
+    /// It takes each file's lock in turn, so it waits for any parse in progress: call it off the
+    /// window's thread.
     pub fn forget(&self, chats: &[&str]) {
         let entries: Vec<(PathBuf, Arc<Mutex<Entry>>)> = locked(&self.files)
             .iter()
@@ -248,23 +274,25 @@ impl Recent {
                     file.forgotten.insert((*chat).to_owned());
                 }
             }
-            let bytes = file.bytes;
-            drop(held);
+            // Under the file's lock, so a later ask's count is never overwritten by this one.
             if let Some(slot) = locked(&self.files).get_mut(&path)
                 && Arc::ptr_eq(&slot.entry, &entry)
             {
-                slot.bytes = bytes;
+                slot.bytes = file.bytes;
             }
+            drop(held);
         }
     }
 
-    /// The entry of `path`, made where there is none: the map's lock is held for this alone.
+    /// The entry of `path`, made where there is none (as asked now, so the cap does not take it
+    /// first): the map's lock is held for this alone.
     fn entry(&self, path: &Path) -> Arc<Mutex<Entry>> {
+        let tick = self.ticks.fetch_add(1, Ordering::Relaxed);
         let mut files = locked(&self.files);
         let slot = files.entry(path.to_path_buf()).or_insert_with(|| Slot {
             entry: Arc::default(),
             bytes: 0,
-            used: 0,
+            used: tick,
         });
         Arc::clone(&slot.entry)
     }
@@ -282,7 +310,7 @@ impl Recent {
         self.seen.waiting_for(path);
         let mut held = locked(&entry);
         // Under the file's lock: see the module's invariant.
-        let Some(stamp) = stamp(path)? else {
+        let Some((opened, stamp)) = opened(path)? else {
             drop(held);
             self.let_go_of(path, &entry);
             return Ok(At::Gone);
@@ -290,37 +318,56 @@ impl Recent {
         if since.is_some_and(|since| stamp.modified.is_some_and(|written| written < since)) {
             return Ok(At::Older);
         }
-        let file = self.brought_up_to_date(&mut held, path, &stamp, chats)?;
-        let taken = Taken {
+        let (file, tail) = self.brought_up_to_date(&mut held, opened, path, &stamp, chats)?;
+        let mut taken = Taken {
             last_seq: file.last_seq,
             chats: chats
                 .iter()
                 .map(|chat| file.chats.get(*chat).map(Arc::clone))
                 .collect(),
         };
-        let bytes = file.bytes;
+        // A last line with no end, in this answer only.
+        if let Some(event) = tail {
+            taken.last_seq = Some(event.seq);
+            let asked = event
+                .chat
+                .as_deref()
+                .and_then(|chat| chats.iter().position(|one| *one == chat));
+            if let (Some(at), Some(record)) = (asked, Record::of(&event)) {
+                let mut records = taken.chats[at].as_deref().cloned().unwrap_or_default();
+                records.push(record);
+                taken.chats[at] = Some(Arc::new(records));
+            }
+        }
+        // Under the file's lock, so a later ask's count is never overwritten by this one.
+        self.used(path, &entry, file.bytes);
         drop(held);
-        self.used(path, &entry, bytes);
         Ok(At::Taken(taken))
     }
 
-    /// Makes what is kept of `path` what `stamp` says it is now, reading as little as that takes.
+    /// Makes what is kept of `path` (opened as `opened`) what `stamp` says it is now, reading as
+    /// little as that takes; and answers its last line where that has no end and is an event.
     fn brought_up_to_date<'a>(
         &self,
         held: &'a mut Entry,
+        mut opened: std::fs::File,
         path: &Path,
         stamp: &Stamp,
         chats: &[&str],
-    ) -> io::Result<&'a Indexed> {
+    ) -> io::Result<(&'a Indexed, Option<Event>)> {
         let from = match &held.file {
             // One of the chats asked was let go of here: the file is read whole for it.
             Some(one) if chats.iter().any(|chat| one.forgotten.contains(*chat)) => None,
-            Some(one) if one.stamp == *stamp => {
-                return Ok(held.file.as_ref().expect("the file is kept"));
+            // As it was kept, to its end: nothing to read.
+            Some(one) if one.stamp == *stamp && one.offset == stamp.len => {
+                return Ok((held.file.as_ref().expect("the file is kept"), None));
             }
-            // The same file, longer: only what it gained.
+            // The same file, no shorter, with its last whole line parsed as it was: what follows.
             Some(one)
-                if stamp.id.is_some() && one.stamp.id == stamp.id && one.stamp.len < stamp.len =>
+                if stamp.id.is_some()
+                    && one.stamp.id == stamp.id
+                    && one.offset <= stamp.len
+                    && still_there(&mut opened, one.last_line, one.offset)? =>
             {
                 Some(one.offset)
             }
@@ -334,6 +381,7 @@ impl Recent {
             _ => Indexed {
                 stamp: *stamp,
                 offset: 0,
+                last_line: None,
                 last_seq: None,
                 chats: HashMap::new(),
                 forgotten: HashSet::new(),
@@ -341,7 +389,7 @@ impl Recent {
             },
         };
         let mut lines = 0;
-        let offset = read_from(path, from.unwrap_or(0), |event| {
+        let read = read_from(&mut opened, from.unwrap_or(0), |event| {
             lines += 1;
             file.last_seq = Some(event.seq);
             let Some(chat) = event.chat.as_deref() else {
@@ -363,10 +411,13 @@ impl Recent {
         #[cfg(test)]
         self.seen.parsed_lines(lines);
         #[cfg(not(test))]
-        let _ = lines;
+        let _ = (lines, path);
         file.stamp = *stamp;
-        file.offset = offset;
-        Ok(held.file.insert(file))
+        file.offset = read.offset;
+        if read.last_line.is_some() {
+            file.last_line = read.last_line;
+        }
+        Ok((held.file.insert(file), read.tail))
     }
 
     /// `entry` of `path` was just asked and keeps `bytes`: past the cap, the files asked least
@@ -383,8 +434,14 @@ impl Recent {
         }
         let mut kept: usize = files.values().map(|slot| slot.bytes).sum();
         while kept > self.cap {
+            // Never one that frees nothing, nor one being read: an ask waiting for its parse
+            // would be orphaned, and the next ask of it would parse it again.
             let Some(oldest) = files
                 .iter()
+                .filter(|(_, slot)| {
+                    slot.bytes > 0
+                        && !matches!(slot.entry.try_lock(), Err(TryLockError::WouldBlock))
+                })
                 .min_by_key(|(_, slot)| slot.used)
                 .map(|(path, _)| path.clone())
             else {
@@ -407,11 +464,24 @@ impl Recent {
         }
     }
 
-    /// Lets go of every file of the log in `dir` that is neither its live file nor in `sealed`.
+    /// Lets go of every file of the log in `dir` that is neither its live file nor in `sealed`,
+    /// nor there now: one sealed after `sealed` was listed is another ask's to keep.
     fn let_go_of_gone(&self, dir: &Path, live: &Path, sealed: &[PathBuf]) {
-        locked(&self.files).retain(|path, _| {
-            path.parent() != Some(dir) || path == live || sealed.iter().any(|one| one == path)
-        });
+        let unlisted: Vec<(PathBuf, Arc<Mutex<Entry>>)> = locked(&self.files)
+            .iter()
+            .filter(|(path, _)| {
+                path.parent() == Some(dir)
+                    && path.as_path() != live
+                    && !sealed.iter().any(|one| one == *path)
+            })
+            .map(|(path, slot)| (path.clone(), Arc::clone(&slot.entry)))
+            .collect();
+        // Outside the map's lock: it is never held across a read of the disk.
+        for (path, entry) in unlisted {
+            if !path.exists() {
+                self.let_go_of(&path, &entry);
+            }
+        }
     }
 }
 
@@ -433,39 +503,61 @@ fn records_of<'a>(
     )
 }
 
-/// Hands `each` the events in `path` from byte `from`, a line that is not one skipped, as
-/// [`crate::eventlog::read`] reads a file, and answers where the last whole line ends: a last line
-/// with no end that is not an event is half written, and is left to be read once it is whole.
-/// Nothing for a file that is not there.
-fn read_from(path: &Path, from: u64, mut each: impl FnMut(Event)) -> io::Result<u64> {
+/// Whether the line that `last_line` says ended at `offset` is still there as it was: a file
+/// cut back and written again over it is not the file that grew. Nothing to check before the
+/// first whole line.
+fn still_there(
+    file: &mut std::fs::File,
+    last_line: Option<(u64, u64)>,
+    offset: u64,
+) -> io::Result<bool> {
     use std::io::{Read, Seek, SeekFrom};
-    let mut file = match std::fs::File::open(path) {
-        Ok(file) => file,
-        Err(why) if why.kind() == io::ErrorKind::NotFound => return Ok(0),
-        Err(why) => return Err(why),
+    let Some((start, hash)) = last_line else {
+        return Ok(offset == 0);
     };
+    let mut line = vec![0; usize::try_from(offset - start).map_err(io::Error::other)?];
+    file.seek(SeekFrom::Start(start))?;
+    match file.read_exact(&mut line) {
+        Ok(()) => Ok(line.last() == Some(&b'\n') && line_hash(&line) == hash),
+        Err(why) if why.kind() == io::ErrorKind::UnexpectedEof => Ok(false),
+        Err(why) => Err(why),
+    }
+}
+
+/// What [`read_from`] read.
+struct Read {
+    /// The end of the last whole line.
+    offset: u64,
+    /// Where that line starts and its hash, where a whole line was read.
+    last_line: Option<(u64, u64)>,
+    /// The last line, where it has no end and is an event.
+    tail: Option<Event>,
+}
+
+/// Hands `each` the events in `file` from byte `from` to its last whole line, a line that is not
+/// one skipped, as [`crate::eventlog::read`] reads a file. A last line with no end is not handed
+/// on, nor read past: where it is an event it is answered as the tail, for one answer only.
+fn read_from(file: &mut std::fs::File, from: u64, mut each: impl FnMut(Event)) -> io::Result<Read> {
+    use std::io::{Read as _, Seek, SeekFrom};
     file.seek(SeekFrom::Start(from))?;
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)?;
     let mut done = 0;
+    let mut last_line = None;
     let mut rest = bytes.as_slice();
-    while !rest.is_empty() {
-        let (line, whole) = match rest.iter().position(|byte| *byte == b'\n') {
-            Some(end) => (&rest[..end], true),
-            None => (rest, false),
-        };
-        let event = serde_json::from_slice::<Event>(line).ok();
-        if event.is_none() && !whole {
-            break;
-        }
-        if let Some(event) = event {
+    while let Some(end) = rest.iter().position(|byte| *byte == b'\n') {
+        if let Ok(event) = serde_json::from_slice::<Event>(&rest[..end]) {
             each(event);
         }
-        let used = line.len() + usize::from(whole);
-        done += used;
-        rest = &rest[used..];
+        last_line = Some((from + done as u64, line_hash(&rest[..=end])));
+        done += end + 1;
+        rest = &rest[end + 1..];
     }
-    Ok(from + done as u64)
+    Ok(Read {
+        offset: from + done as u64,
+        last_line,
+        tail: serde_json::from_slice::<Event>(rest).ok(),
+    })
 }
 
 #[cfg(test)]
@@ -484,8 +576,8 @@ pub(super) mod tests {
     /// What the asks of a [`Recent`] read, and a parse a test holds.
     #[derive(Debug, Default)]
     pub(in crate::eventlog::finishes) struct Seen {
-        /// Files parsed whole.
-        parsed: AtomicUsize,
+        /// Files parsed whole, a path each time.
+        parsed: Mutex<Vec<PathBuf>>,
         /// Lines parsed in all.
         lines: AtomicUsize,
         /// Times an ask came to a file's lock, by the file.
@@ -501,7 +593,7 @@ pub(super) mod tests {
 
         pub(super) fn parsing(&self, path: &Path, whole: bool) {
             if whole {
-                self.parsed.fetch_add(1, Ordering::SeqCst);
+                locked(&self.parsed).push(path.to_path_buf());
             }
             let mut hold = locked(&self.hold);
             if hold.as_ref().is_some_and(|(held, ..)| held == path) {
@@ -520,7 +612,15 @@ pub(super) mod tests {
     impl Recent {
         /// Files parsed whole.
         pub(in crate::eventlog::finishes) fn parsed(&self) -> usize {
-            self.seen.parsed.load(Ordering::SeqCst)
+            locked(&self.seen.parsed).len()
+        }
+
+        /// Times `path` was parsed whole.
+        pub(in crate::eventlog::finishes) fn parsed_of(&self, path: &Path) -> usize {
+            locked(&self.seen.parsed)
+                .iter()
+                .filter(|one| *one == path)
+                .count()
         }
 
         /// Lines parsed in all.

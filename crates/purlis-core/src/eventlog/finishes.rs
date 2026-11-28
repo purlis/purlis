@@ -269,21 +269,22 @@ impl Record {
         })
     }
 
-    /// About how many bytes it holds, its own and what it points to: what [`Recent`]'s cap
-    /// counts.
+    /// About how many bytes it holds, its own and what it points to (each string's capacity):
+    /// what [`Recent`]'s cap counts. The maps and `Arc`s that hold records are not counted, so
+    /// what a [`Recent`] takes may be up to about twice its cap.
     pub(super) fn bytes(&self) -> usize {
         let held = match &self.step {
-            Step::Started(harness) => harness.len(),
+            Step::Started(harness) => harness.capacity(),
             Step::Prompt | Step::Answered(_) | Step::RunEnded(None) => 0,
-            Step::TurnEnded(ending) | Step::RunEnded(Some(ending)) => ending.ulid.len(),
+            Step::TurnEnded(ending) | Step::RunEnded(Some(ending)) => ending.ulid.capacity(),
             Step::Blocked(None) | Step::CameBack(None) => 0,
             Step::Blocked(Some(block)) => {
                 std::mem::size_of::<Block>()
-                    + block.tool.len()
-                    + block.args.as_ref().map_or(0, String::len)
+                    + block.tool.capacity()
+                    + block.args.as_ref().map_or(0, String::capacity)
                     + block.target.as_ref().map_or(0, |_| TARGET_CHARS)
             }
-            Step::CameBack(Some((tool, args))) => tool.len() + args.len(),
+            Step::CameBack(Some((tool, args))) => tool.capacity() + args.capacity(),
         };
         std::mem::size_of::<Self>() + held
     }
