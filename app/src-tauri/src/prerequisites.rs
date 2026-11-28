@@ -211,17 +211,27 @@ fn deferred(
     Prerequisites::of(plane, &kept.defer(root, shown.into_core()))
 }
 
+/// How a start [`hold_start`] let go got past the hold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Passed {
+    /// At once: nothing was open, or the start is not one the person makes.
+    AtOnce,
+    /// Once the person answered what was open: what the start was asked against (a chat's
+    /// pause, say) may have moved meanwhile (#7950).
+    AfterTheirAnswer,
+}
+
 /// **Holds a start the person makes (`made`) in the project `held` holds, while a prerequisite
 /// is open** (ADR 0130 §5), until they answer in the window. Every other start passes at once,
 /// under the policy in force: the core judges which ([`core::Starter::of`]). Made before the
 /// start is readied, so a start an Accept released is readied under what was accepted. The
 /// person's Cancel on a start in the project (`cancel`, [`crate::hostedsessions`]) ends the
-/// wait, and the start is refused, saying what is still open.
+/// wait, and the start is refused, saying what is still open. Says whether it waited.
 pub(crate) fn hold_start(
     held: &crate::planes::Held,
     made: &purlis_core::sandbox::Made,
     cancel: &std::sync::atomic::AtomicBool,
-) -> Result<(), String> {
+) -> Result<Passed, String> {
     use std::sync::atomic::Ordering;
     let root = held.root();
     match held.prerequisites().hold(
@@ -236,7 +246,8 @@ pub(crate) fn hold_start(
             );
         },
     ) {
-        core::Held::AtOnce | core::Held::Released => Ok(()),
+        core::Held::AtOnce => Ok(Passed::AtOnce),
+        core::Held::Released => Ok(Passed::AfterTheirAnswer),
         core::Held::Stopped { why } | core::Held::RanOut { why } => {
             Err(format!("purlis did not start the chat: {why}."))
         }
@@ -248,7 +259,7 @@ pub(crate) fn hold_start(
 pub(crate) fn hold_a_start(
     held: &crate::planes::Held,
     made: &purlis_core::sandbox::Made,
-) -> Result<(), String> {
+) -> Result<Passed, String> {
     hold_start(
         held,
         made,

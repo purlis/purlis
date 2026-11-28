@@ -823,7 +823,7 @@ pub(crate) fn reopen(
     // the record or anything else is read, so every check below and the launch are what is
     // there once they answer (ADR 0130 §5).
     let started = crate::prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)
-        .and_then(|()| match dispatchrecord::read(held.root(), id) {
+        .and_then(|_| match dispatchrecord::read(held.root(), id) {
             Some(record) if record.cleared => Err(
                 "That task was reopened or cleared already, so there is no row to reopen."
                     .to_owned(),

@@ -439,7 +439,10 @@ fn the_answer_that_grants_nothing_marks_the_entry_deferred_releases_a_held_start
     };
     assert_eq!(after.state, PrerequisiteState::Deferred);
     until("the held start released", || start.is_finished());
-    assert_eq!(start.join().expect("the hold ends"), Ok(()));
+    assert_eq!(
+        start.join().expect("the hold ends"),
+        Ok(Passed::AfterTheirAnswer)
+    );
     until("the event after the answer", || {
         heard.lock().expect("heard").iter().any(|told| {
             matches!(
@@ -619,7 +622,11 @@ fn the_starts_the_person_does_not_make_start_at_once_while_a_prerequisite_is_ope
         purlis_core::sandbox::Made::Unnamed,
     ] {
         let began = Instant::now();
-        assert_eq!(hold_start(&held, &made, &never), Ok(()), "{made:?}");
+        assert_eq!(
+            hold_start(&held, &made, &never),
+            Ok(Passed::AtOnce),
+            "{made:?}"
+        );
         assert!(began.elapsed() < Duration::from_secs(1), "{made:?} waited");
     }
 }
@@ -705,4 +712,75 @@ fn the_starts_that_hold_are_these_and_no_others() {
             "poolsetuptab.rs: try_on",
         ]
     );
+}
+
+/// The person's answer that grants nothing, to the policy prerequisite of the project `held`
+/// holds as it is now: what releases a start held on it.
+fn answer_the_policy(id: &PlaneId, held: &crate::planes::Held) {
+    let kept = held.prerequisites();
+    let shown = Prerequisites::of(id.clone(), &kept.current(held.root()));
+    let [Prerequisite::Policy(policy)] = shown.list.as_slice() else {
+        panic!("the policy prerequisite alone: {shown:?}");
+    };
+    deferred(
+        id.clone(),
+        held.root(),
+        &kept,
+        ShownPrerequisite::Policy {
+            digest: policy.digest.clone(),
+            reasons: policy.reasons.clone(),
+        },
+    );
+}
+
+#[test]
+fn a_restart_at_a_pause_that_waited_on_the_person_is_not_made_yet_and_is_asked_again() {
+    // #7950 round 3: while the restart waited, the chat ran on and could start a turn, so the
+    // pause it was asked at may be gone by the answer. It is not restarted then: the window
+    // asks again at the chat's next pause, which the core cannot tell from here.
+    let (_root, _planes, id, held) = an_open_project();
+    let restart = {
+        let held = Arc::clone(&held);
+        std::thread::spawn(move || {
+            crate::restarted(&held, 999, SIZE, crate::planes::When::AtAPause)
+        })
+    };
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!restart.is_finished(), "the restart waits");
+    answer_the_policy(&id, &held);
+    until("the held restart released", || restart.is_finished());
+    let answered = restart
+        .join()
+        .expect("the hold ends")
+        .expect("not refused: chat 999 was never read");
+    assert!(answered.chat.is_none());
+    assert!(answered.ask_again);
+    assert_eq!(
+        answered.not_yet.as_deref(),
+        Some(crate::planes::WAITS_FOR_ITS_NEXT_PAUSE)
+    );
+}
+
+#[test]
+fn a_restart_now_that_waited_and_one_at_a_pause_that_did_not_go_ahead() {
+    // Restart now is the person's word to cut the turn, so a wait changes nothing; a restart at
+    // a pause that passed at once is asked at the pause it is made at. Both reach the core's
+    // restart, which owes chat 999 nothing.
+    let (_root, _planes, id, held) = an_open_project();
+    let restart = {
+        let held = Arc::clone(&held);
+        std::thread::spawn(move || crate::restarted(&held, 999, SIZE, crate::planes::When::Now))
+    };
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!restart.is_finished(), "Restart now waits");
+    answer_the_policy(&id, &held);
+    until("the held restart released", || restart.is_finished());
+    let owed_nothing = "purlis did not restart chat 999: it is owed no restart.";
+    assert_eq!(
+        restart.join().expect("the hold ends").err().as_deref(),
+        Some(owed_nothing)
+    );
+    // The entry is deferred now, so the next start passes at once.
+    let at_once = crate::restarted(&held, 999, SIZE, crate::planes::When::AtAPause);
+    assert_eq!(at_once.err().as_deref(), Some(owed_nothing));
 }

@@ -97,6 +97,11 @@ pub const WAITS_ON_A_PERMISSION_PROMPT: &str =
 pub const WAITS_WHILE_YOU_STOP_IT: &str =
     "You are stopping this chat, so it is not restarted while that runs.";
 
+/// Why a restart at a pause that waited on the person's answer to what the project needs is
+/// not made yet (#7950): the chat ran on meanwhile, so it restarts at its next pause.
+pub const WAITS_FOR_ITS_NEXT_PAUSE: &str =
+    "It kept working while the project waited on your answer, so it restarts at its next pause.";
+
 /// Why a restart at a pause waits while the chat waits on its own work (#5753).
 pub const WAITS_ON_ITS_OWN_WORK: &str = "It has work of its own running in the background. It restarts once that work is done and \
      its turn ends.";

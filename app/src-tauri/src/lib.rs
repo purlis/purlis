@@ -2756,6 +2756,11 @@ struct ChatRestart {
     /// runs in it again.
     notices: Vec<String>,
     not_yet: Option<String>,
+    /// **Asked again at the chat's next pause** (#7950): the restart, at a pause, waited on the
+    /// person's answer to what the project needs, while the chat ran on and could start a turn,
+    /// so it was not made. Still owed, and the window asks for it again once the chat is at a
+    /// pause, which may be now.
+    ask_again: bool,
     /// **What its pane typed while it was hibernated, which no program read** (SC-4d, #7633):
     /// handed back with the woken run, for its pane to show unsent. Never typed into it: its
     /// delivery is SC-4j's (#7639). None where nothing was typed, or the chat was not woken.
@@ -2799,25 +2804,38 @@ async fn restart_chat(
 
 /// [`restart_chat`]'s work, off the window. The person's Restart is a chat they start: it waits
 /// while a prerequisite of the project is open, before the chat is read or its pause looked at
-/// (ADR 0130 §5).
+/// (ADR 0130 §5). A restart at a pause that waited is not made (#7950): the chat ran on and
+/// could start a turn meanwhile, and nothing here can tell, so it stays owed and the window asks
+/// again at a pause. Restart now goes ahead.
 fn restarted(
     held: &planes::Held,
     session: u32,
     size: Size,
     when: planes::When,
 ) -> Result<ChatRestart, String> {
-    prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)?;
+    let passed = prerequisites::hold_a_start(held, &purlis_core::sandbox::Made::Window)?;
+    if when == planes::When::AtAPause && passed == prerequisites::Passed::AfterTheirAnswer {
+        return Ok(ChatRestart {
+            chat: None,
+            notices: Vec::new(),
+            not_yet: Some(planes::WAITS_FOR_ITS_NEXT_PAUSE.to_owned()),
+            ask_again: true,
+            unsent: None,
+        });
+    }
     match held.restart_chat(session, size, when)? {
         planes::Restarted::Started(started) => Ok(ChatRestart {
             chat: Some(drawn(held, started)?),
             notices: held.chats().start_notes(started),
             not_yet: None,
+            ask_again: false,
             unsent: held.hibernated().handed_back(started),
         }),
         planes::Restarted::NotYet(why) => Ok(ChatRestart {
             chat: None,
             notices: Vec::new(),
             not_yet: Some(why.to_owned()),
+            ask_again: false,
             unsent: None,
         }),
     }

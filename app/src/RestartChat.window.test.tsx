@@ -118,6 +118,10 @@ const WAITING: Moved = { ...RUNNING, state: "waiting", moved_at: 2, sequence: 2 
 /** The project's settings changed on disk, as the core's watcher says it. */
 const SETTINGS_CHANGED = { plane: PLANE, changes: null, answers: [{ answer: "settings" }] };
 
+/** The core's sentence for a restart at a pause that waited on the person's answer. */
+const WAITED =
+  "It kept working while the project waited on your answer, so it restarts at its next pause.";
+
 type Core = {
   /** What `chats_on_older_sandbox` answers, read at each ask. */
   older: OlderSandbox | null;
@@ -129,6 +133,9 @@ type Core = {
   notYet?: string;
   /** What the restart waits for before it answers, where a test holds it open. */
   held?: Promise<void>;
+  /** The person's answer to what the project needs, which the next restart waits on and then
+   *  answers not yet and to ask again (#7950). */
+  waited?: Promise<void>;
   /** Chat 4's tasks, which the sidebar lists beside it. */
   tasks?: (typeof CHAT)[];
   /** The chats the core owes a restart when the view is drawn (`owed_restarts`). */
@@ -168,6 +175,11 @@ function core(now: Core) {
       if (cmd === "restart_chat") {
         if (now.refused !== undefined) throw new Error(now.refused);
         if (now.notYet !== undefined) return { chat: null, notices: [], not_yet: now.notYet };
+        if (now.waited !== undefined)
+          return now.waited.then(() => {
+            now.waited = undefined;
+            return { chat: null, notices: [], not_yet: WAITED, ask_again: true };
+          });
         const restarted = () => {
           // Restarted, so it is on the sandbox the project has now.
           now.older = null;
@@ -411,6 +423,59 @@ describe("Restart chat on a chat's tab", () => {
 
     expect(await screen.findByText("session 9")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText(notYet)).toBeNull());
+  });
+
+  // #7950 round 3: the chat ran on while the restart waited on the person's answer to what the
+  // project needs, so the core does not restart it then, and the window asks again at a pause.
+  it("asks again at once after a restart waited on the person's answer, the chat still at its pause", async () => {
+    let answer: () => void = () => undefined;
+    const waited = new Promise<void>((resolve) => (answer = resolve));
+    const { asked } = await aChat({ waited });
+    await act(() => moved(WAITING));
+
+    await userEvent.click(within(await chatMenu()).getByRole("menuitem", { name: "Restart" }));
+    await waitFor(() => expect(asked("restart_chat")).toEqual(RESTARTED));
+
+    await act(async () => answer());
+
+    await waitFor(() => expect(asked("restart_chat")).toEqual([...RESTARTED, ...RESTARTED]));
+    expect(await screen.findByText("session 9")).toBeInTheDocument();
+  });
+
+  it("restarts a chat that started a turn while its restart waited on the person only at its next pause", async () => {
+    let answer: () => void = () => undefined;
+    const waited = new Promise<void>((resolve) => (answer = resolve));
+    const { asked } = await aChat({ waited });
+    await act(() => moved(WAITING));
+
+    await userEvent.click(within(await chatMenu()).getByRole("menuitem", { name: "Restart" }));
+    await waitFor(() => expect(asked("restart_chat")).toEqual(RESTARTED));
+    await act(() => moved({ ...RUNNING, moved_at: 3, sequence: 3 }));
+
+    await act(async () => answer());
+    await settled();
+
+    expect(asked("restart_chat")).toEqual(RESTARTED);
+    expect(screen.getByText("session 4")).toBeInTheDocument();
+
+    await act(() => moved({ ...WAITING, moved_at: 4, sequence: 4 }));
+
+    await waitFor(() => expect(asked("restart_chat")).toEqual([...RESTARTED, ...RESTARTED]));
+    expect(await screen.findByText("session 9")).toBeInTheDocument();
+  });
+
+  it("asks again at once after a restart waited on the person for a chat that reports no state: the person pressed for it", async () => {
+    let answer: () => void = () => undefined;
+    const waited = new Promise<void>((resolve) => (answer = resolve));
+    const { asked } = await aChat({ waited });
+
+    await userEvent.click(within(await chatMenu()).getByRole("menuitem", { name: "Restart" }));
+    await waitFor(() => expect(asked("restart_chat")).toEqual(RESTARTED));
+
+    await act(async () => answer());
+
+    await waitFor(() => expect(asked("restart_chat")).toEqual([...RESTARTED, ...RESTARTED]));
+    expect(await screen.findByText("session 9")).toBeInTheDocument();
   });
 
   it("says on the new run's tab that a chat which ran without the sandbox runs in it again", async () => {
