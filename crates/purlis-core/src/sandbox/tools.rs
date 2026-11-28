@@ -3226,10 +3226,10 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // The terminals #8031 names beside #7988's and #8017's, refused whole on what each is for, as
     // `xterm` and `kitty` are: xterm's wrappers `uxterm`, `lxterm` and `koi8rxterm` `exec` xterm
     // with what they are handed (none of them is reached by the `xterm` row, as no form splits a
-    // name that has no `-` in it); PuTTY's `pterm`, `termite`, `kmscon` (a terminal on the
-    // kernel's console), `zutty`, `mrxvt` and `wterm` run the command they are handed in the
-    // window they open, most of them by `-e`; and `waveterm` and `extraterm` run the commands
-    // their blocks and sessions are handed.
+    // name that has no `-` in it); PuTTY's `pterm`, `termite`, `zutty`, `mrxvt` and `wterm` run
+    // the command they are handed in the window they open, most of them by `-e`; `kmscon`, a
+    // terminal on the kernel's console, runs the one after its `-l` on the console it takes; and
+    // `waveterm` and `extraterm` run the commands their blocks and sessions are handed.
     "uxterm",
     "lxterm",
     "koi8rxterm",
@@ -3242,10 +3242,10 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "waveterm",
     "extraterm",
     // The terminal sharers and recorders #8031 names, refused whole on what each is for: `ttyd`
-    // and `gotty` run the command after them and serve its terminal over HTTP, where whoever
-    // opens the page types into it; `asciinema rec -c` runs the command it records (and, without
-    // `-c`, the shell its settings name); and `vhs` runs the commands of the tape file it is
-    // handed in a terminal of its own.
+    // and `gotty` run the command after them and serve its terminal over HTTP, and, with `-W`
+    // (`ttyd`) or `-w` (`gotty`), let whoever opens the page type into it; `asciinema rec -c`
+    // runs the command it records (and, without `-c`, the shell its settings name); and `vhs`
+    // runs the commands of the tape file it is handed in a terminal of its own.
     "ttyd",
     "gotty",
     "asciinema",
@@ -3253,9 +3253,10 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // The VM and sandbox runners #8031 names beside #8017's, refused whole on what each is for, as
     // `lima` and `multipass` are: libguestfs's `virt-builder` runs the command its
     // `--run-command` names in the disk image it builds, and `virt-rescue` opens a shell in a
-    // guest's disk; gVisor's `runsc` and `kata-runtime` are OCI runtimes, which run a
-    // container's process as `runc` does (`runsc do` runs the command after it); and
-    // `cloud-hypervisor` and FreeBSD's `bhyve` boot the guest they are handed.
+    // guest's disk; gVisor's `runsc` is an OCI runtime, which runs a container's process as
+    // `runc` does (`runsc do` runs the command after it); Kata Containers' `kata-runtime` runs a
+    // container in a VM, and its `exec` opens a shell in the guest; and `cloud-hypervisor` and
+    // FreeBSD's `bhyve` boot the guest they are handed.
     "virt-builder",
     "virt-rescue",
     "runsc",

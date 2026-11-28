@@ -43,18 +43,21 @@ able to declare one in a reviewed line. Moving one to `REFUSED_NAMES` is its own
 ## What is refused
 
 - **Terminals**, as `xterm` and `kitty` are: xterm's wrappers `uxterm`, `lxterm` and
-  `koi8rxterm` `exec` xterm with what they are handed; PuTTY's `pterm`, `termite`, `kmscon` (a
-  terminal on the kernel's console), `zutty`, `mrxvt` and `wterm` run the command they are handed
-  in the window they open; and `waveterm` and `extraterm` run the commands their blocks and
+  `koi8rxterm` `exec` xterm with what they are handed; PuTTY's `pterm`, `termite`, `zutty`,
+  `mrxvt` and `wterm` run the command they are handed in the window they open; `kmscon`, a
+  terminal on the kernel's console, runs the one after its `-l` on the console it takes; and
+  `waveterm` and `extraterm` run the commands their blocks and
   sessions are handed. No form of the wrappers reaches the `xterm` row: `name_forms` splits only
   on `-`, and none of them has one.
 - **Terminal sharers and recorders**: `ttyd` and `gotty` run the command after them and serve
-  its terminal over HTTP; `asciinema rec -c` runs the command it records; and `vhs` runs the
+  its terminal over HTTP, which whoever opens the page can type into with `-W` (`ttyd`) or `-w`
+  (`gotty`); `asciinema rec -c` runs the command it records; and `vhs` runs the
   commands of a tape file.
 - **VM and sandbox runners**, as `lima` and `multipass` are: libguestfs's
   `virt-builder` runs the command its `--run-command` names in the image it builds, and
-  `virt-rescue` opens a shell in a guest's disk; gVisor's `runsc` and `kata-runtime` are OCI
-  runtimes, which run a container's process as `runc` does; and `cloud-hypervisor` and FreeBSD's
+  `virt-rescue` opens a shell in a guest's disk; gVisor's `runsc` is an OCI runtime, which runs a
+  container's process as `runc` does; Kata Containers' `kata-runtime` runs a container in a VM,
+  and its `exec` opens a shell in the guest; and `cloud-hypervisor` and FreeBSD's
   `bhyve` boot the guest they are handed.
 - **Interpreters and installers**: Gerbil's compiler `gxc` runs a module's macros as it compiles
   it, CHICKEN's `chicken-install` runs an egg's setup as it installs it, and Hy's `hy` runs Lisp

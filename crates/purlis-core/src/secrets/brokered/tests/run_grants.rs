@@ -4409,9 +4409,9 @@ fn the_terminals_of_8017_are_offered_no_run_grant() {
         "tabby",
         "warp-terminal",
 /// The terminals #8031 names beside #7988's and #8017's, each of which runs the command it is
-/// handed in the window it opens: xterm's wrappers `uxterm`, `lxterm` and `koi8rxterm`, which
-/// `exec` xterm with what they are handed; PuTTY's `pterm`; `termite`; `kmscon`; `zutty`;
-/// `mrxvt`; `wterm`; and `waveterm` and `extraterm`.
+/// handed in the window or on the console it opens: xterm's wrappers `uxterm`, `lxterm` and
+/// `koi8rxterm`, which `exec` xterm with what they are handed; PuTTY's `pterm`; `termite`;
+/// `kmscon`, on the kernel's console; `zutty`; `mrxvt`; `wterm`; and `waveterm` and `extraterm`.
 #[test]
 fn the_terminals_of_8031_are_offered_no_run_grant() {
     for name in [
@@ -4501,7 +4501,7 @@ fn the_terminal_sharers_and_recorders_of_8031_are_offered_no_run_grant() {
 
 /// The VM and sandbox runners #8031 names beside #8017's, each of which runs a command in a
 /// guest, a container or a machine it starts: libguestfs's `virt-builder` (`--run-command`) and
-/// `virt-rescue` (a shell in a guest's disk), gVisor's `runsc`, `kata-runtime`,
+/// `virt-rescue` (a shell in a guest's disk), gVisor's `runsc`, Kata Containers' `kata-runtime`,
 /// `cloud-hypervisor` and FreeBSD's `bhyve`.
 #[test]
 fn the_vm_and_sandbox_runners_of_8031_are_offered_no_run_grant() {
