@@ -42,7 +42,11 @@ pub struct Change {
 /// **The browser sites the committed file lists that policy lets reach a browser**, in file
 /// order: none where the project's chats are not sandboxed.
 pub fn committed(root: &Path, locks: &Locks) -> Vec<Host> {
-    let plane = Plane::read(root);
+    committed_of(&Plane::read(root), locks)
+}
+
+/// [`committed`], from the project's manifest read as `plane` (#7900).
+fn committed_of(plane: &Plane, locks: &Locks) -> Vec<Host> {
     if plane.in_force(locks).is_none() {
         return Vec::new();
     }
@@ -60,8 +64,7 @@ pub fn committed(root: &Path, locks: &Locks) -> Vec<Host> {
 }
 
 /// Every site the committed file lists, policy or not, where the project's chats are sandboxed.
-fn listed(root: &Path, locks: &Locks) -> Vec<String> {
-    let plane = Plane::read(root);
+fn listed(plane: &Plane, locks: &Locks) -> Vec<String> {
     if plane.in_force(locks).is_none() {
         return Vec::new();
     }
@@ -84,18 +87,23 @@ pub fn in_force(root: &Path, locks: &Locks) -> Vec<Host> {
 /// **What the Notice of the project's browser sites tells**: the sites added and never shown
 /// here, and those shown and taken out since. `None` when there is neither.
 pub fn changed(root: &Path, locks: &Locks) -> Option<Change> {
+    changed_of(root, &Plane::read(root), locks)
+}
+
+/// [`changed`], with the project's manifest read as `plane` (#7900).
+pub fn changed_of(root: &Path, plane: &Plane, locks: &Locks) -> Option<Change> {
     // Where policy leaves out everyone in the project, nothing of it is told: none reaches.
     if locks.scope_removed(Level::Project).is_some() {
         return None;
     }
     // Nor where the project's sandbox is not in force, where none counts (#2691): a site seen
     // here is not told as taken out, and stays seen for when it counts again.
-    Plane::read(root).in_force(locks)?;
-    let now: Vec<String> = committed(root, locks)
+    plane.in_force(locks)?;
+    let now: Vec<String> = committed_of(plane, locks)
         .iter()
         .map(ToString::to_string)
         .collect();
-    let listed = listed(root, locks);
+    let listed = listed(plane, locks);
     let seen = super::local::browser_sites_seen(root);
     let added: Vec<String> = now
         .iter()

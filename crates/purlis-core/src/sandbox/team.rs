@@ -173,7 +173,12 @@ const GIT_WAIT: Duration = Duration::from_secs(5);
 /// Where the project's file does not turn the sandbox off, an answer kept for an earlier off is
 /// let go: purlis saw that off leave, so an off that comes back is asked again.
 pub fn team_off(root: &Path) -> TeamOff {
-    if !Team::of(root).off {
+    team_off_of(root, &super::Plane::read(root))
+}
+
+/// [`team_off`], with the project's manifest read as `plane` (#7900).
+pub fn team_off_of(root: &Path, plane: &super::Plane) -> TeamOff {
+    if !plane.team().off {
         if super::local::team_off_answer(root).is_some() {
             // Best effort: where this machine's file cannot be written from here, the window's
             // next read lets it go.
@@ -598,7 +603,8 @@ impl Bound {
 /// sandbox where the project turned it on, the floor where it has not, or no sandbox once the
 /// person accepted the team's off.
 pub fn allowed_levels(root: &Path) -> Bound {
-    allowed_levels_under(root, &policy::Locks::of(root))
+    let plane = super::Plane::read(root);
+    allowed_levels_of(root, &plane, &policy::Locks::of_plane(&plane))
 }
 
 /// **The bound for a project not made yet**, as setup's Protection row shows it (Q241): this
@@ -621,15 +627,23 @@ pub fn allowed_levels_for_a_new_project() -> Bound {
 /// team's off is a loosening like any other: it reaches the person on their Accept, which is the
 /// sandbox family's press.
 pub fn allowed_levels_under(root: &Path, locks: &policy::Locks) -> Bound {
+    allowed_levels_of(root, &super::Plane::read(root), locks)
+}
+
+/// [`allowed_levels_under`], with the project's manifest read as `plane` (#7900): what an answer
+/// that read the manifest and the locks once passes down.
+pub fn allowed_levels_of(root: &Path, plane: &super::Plane, locks: &policy::Locks) -> Bound {
     if let Some(why) = locks.opt_out_refused() {
         return Bound::full(why);
     }
     // An answer kept for an off the file no longer says is let go, so an off that comes back is
     // asked again (#2156).
-    if !Team::of(root).off && super::local::team_off_answer(root).is_some() {
+    if !plane.team().off && super::local::team_off_answer(root).is_some() {
         let _ = super::local::forget_team_off(root);
     }
-    let level = crate::enforcement::sandbox_level(root, || level_of(as_the_file_says(root, locks)));
+    let level = crate::enforcement::sandbox_level(root, || {
+        level_of(as_the_file_says_of(root, plane, locks))
+    });
     Bound {
         default: choice_of(level),
         ..Bound::local(false)
@@ -661,11 +675,15 @@ pub fn level_of(choice: Choice) -> crate::enforcement::SandboxLevel {
 /// floor otherwise. What a process that is not the app never runs looser than
 /// ([`crate::enforcement::sandbox_level`]).
 pub fn as_the_file_says(root: &Path, locks: &policy::Locks) -> Choice {
-    let plane = super::Plane::read(root);
+    as_the_file_says_of(root, &super::Plane::read(root), locks)
+}
+
+/// [`as_the_file_says`], with the project's manifest read as `plane` (#7900).
+pub fn as_the_file_says_of(root: &Path, plane: &super::Plane, locks: &policy::Locks) -> Choice {
     if plane.in_force(locks).is_some() && !plane.team().off {
         return Choice::On;
     }
-    if matches!(team_off(root), TeamOff::Accepted(_)) {
+    if matches!(team_off_of(root, plane), TeamOff::Accepted(_)) {
         Choice::Off
     } else {
         Choice::Floor

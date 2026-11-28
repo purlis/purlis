@@ -229,11 +229,13 @@ const MEASURED: &[(&str, Ask)] = &[
 /// count, not a bound**: the gate fails on fewer as on more, so a change that lowers one lowers
 /// it here, and one that raises one says why in its pull request.
 const CEILINGS: &[(&str, [Starts; 2])] = &[
-    // The sandbox's state: the local file's `git status` and the hardened runner's reads of the
-    // folder before it; a committed off reads the manifest's history too.
+    // The sandbox's state (#7900, FS-C1a): git asked once whether the local file is ignored,
+    // which is one `git status` and the hardened runner's listing of the folder's config before
+    // it (a listing is never kept where a count is taken); a committed off reads the manifest's
+    // history three times, once for the team's off and twice for the level it bounds.
     (
         "sandbox_state",
-        [Starts { cold: 4, warm: 4 }, Starts { cold: 9, warm: 9 }],
+        [Starts { cold: 2, warm: 2 }, Starts { cold: 9, warm: 9 }],
     ),
     (
         "sandbox_network",
@@ -244,6 +246,31 @@ const CEILINGS: &[(&str, [Starts; 2])] = &[
         [Starts { cold: 3, warm: 3 }, Starts { cold: 2, warm: 2 }],
     ),
 ];
+
+/// **What a read reads of the project's sandbox manifest and the sandbox's locks**, on each
+/// fixture (`[sandbox on, team off committed]`), the same cold and warm (#7900, FS-C1a). Each
+/// is an exact count, as [`CEILINGS`] are: read once and passed down to everything that asks.
+const READS: &[(&str, [Reads; 2])] = &[(
+    "sandbox_state",
+    [Reads { plane: 1, locks: 1 }, Reads { plane: 1, locks: 1 }],
+)];
+
+/// What one ask read of the manifest ([`Tally::plane_reads`]) and of the locks
+/// ([`Tally::locks_reads`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Reads {
+    plane: usize,
+    locks: usize,
+}
+
+impl Reads {
+    fn of(tally: &Tally) -> Self {
+        Self {
+            plane: tally.plane_reads,
+            locks: tally.locks_reads,
+        }
+    }
+}
 
 /// A ceiling's two columns: the programs started by the first ask, and by the one straight
 /// after it.
@@ -317,6 +344,18 @@ fn every_measured_read_starts_no_more_programs_than_its_class_allows() {
                 cold: cold.started,
                 warm: warm.started,
             };
+            if let Some((_, reads)) = READS.iter().find(|(name, _)| name == command) {
+                let at = usize::from(*fixture == Fixture::TeamOffCommitted);
+                for (when, tally) in [("cold", cold), ("warm", warm)] {
+                    if Reads::of(tally) != reads[at] {
+                        wrong.push(format!(
+                            "{command} read {:?} {when} on {fixture:?}; its ceiling is {:?}",
+                            Reads::of(tally),
+                            reads[at]
+                        ));
+                    }
+                }
+            }
             match class {
                 Class::Model if started != (Starts { cold: 0, warm: 0 }) => wrong.push(format!(
                     "{command} is Model, and started {started:?} on {fixture:?}"
@@ -381,6 +420,15 @@ fn a_class_held_to_a_count_is_measured_and_only_git_has_ceilings() {
     assert!(
         not_git.is_empty(),
         "a ceiling for a read that is not Git: {not_git:?}"
+    );
+    let reads_unceiled: Vec<&str> = READS
+        .iter()
+        .map(|(name, _)| *name)
+        .filter(|name| !CEILINGS.iter().any(|(ceiled, _)| ceiled == name))
+        .collect();
+    assert!(
+        reads_unceiled.is_empty(),
+        "reads held to a count for a read with no ceiling of its starts: {reads_unceiled:?}"
     );
 }
 

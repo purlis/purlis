@@ -3719,13 +3719,22 @@ pub struct Besides {
 /// [`Besides`] for the project at `root`, read as `plane`, on `machine`: nothing where no
 /// sandbox is in force ([`Plane::in_force`]).
 pub fn besides(root: &Path, plane: &Plane, machine: &Machine) -> Besides {
-    let locks = policy::Locks::of(root);
-    let Some(policy) = plane.in_force(&locks) else {
+    besides_under(root, plane, &policy::Locks::of_plane(plane), machine)
+}
+
+/// [`besides`], under `locks`, the locks the caller read beside `plane` (#7900).
+pub fn besides_under(
+    root: &Path,
+    plane: &Plane,
+    locks: &policy::Locks,
+    machine: &Machine,
+) -> Besides {
+    let Some(policy) = plane.in_force(locks) else {
         return Besides::default();
     };
     Besides {
-        folders: granted_folders(root, machine, &grant::Grants::default(), &locks).len(),
-        ..counted_hosts(&granted_hosts(&policy, root, &[], &[], &locks))
+        folders: granted_folders(root, machine, &grant::Grants::default(), plane, locks).len(),
+        ..counted_hosts(&granted_hosts(&policy, root, &[], &[], locks))
     }
 }
 
@@ -3787,6 +3796,7 @@ fn granted_folders(
     root: &Path,
     machine: &Machine,
     chat: &grant::Grants,
+    plane: &Plane,
     locks: &policy::Locks,
 ) -> Vec<PathBuf> {
     if locks.forbids_write_grants() {
@@ -3803,7 +3813,10 @@ fn granted_folders(
     if locks.keeps_scope(grant::Level::You) {
         writes.extend(local::granted_writes(root));
     }
-    grant::still_grantable(&writes, &grant::Ground::of(root, root, machine).place())
+    grant::still_grantable(
+        &writes,
+        &grant::Ground::under(root, root, machine, plane, locks).place(),
+    )
 }
 
 /// One grant this machine keeps that an administrator's policy holds: it reaches no chat
@@ -4522,7 +4535,8 @@ impl Compiled {
     /// sockets and system services stay as a person granted them (the operator's ruling Q1 on
     /// #2071): a socket can reach what the floor denies. The certificate check is on.
     pub fn floor(root: &Path, machine: &Machine, chat: &grant::Grants) -> Self {
-        let locks = policy::Locks::of(root);
+        let plane = Plane::read(root);
+        let locks = policy::Locks::of_plane(&plane);
         let mut denied = Denied::of(root, machine);
         // The person's own credentials (ruling Q325): held at the floor only where the project's
         // policy enforces `secrets.credential_files` (`team`, `strict`, or the key itself), so
@@ -4558,7 +4572,7 @@ impl Compiled {
         let (kept_sockets, kept_services) = kept_in_scope(root, &locks);
         sockets.extend(kept_sockets);
         services.extend(kept_services);
-        let writable = granted_folders(root, machine, chat, &locks);
+        let writable = granted_folders(root, machine, chat, &plane, &locks);
         // Services on this Mac (qw384), as the full sandbox grants them.
         let mut ports: Vec<(u16, reach::By)> = chat
             .ports
@@ -4755,7 +4769,8 @@ impl Compiled {
             }
         }
         let denied = Denied::of(root, machine);
-        let writable = granted_folders(root, machine, chat, &locks);
+        // The floor of the ground judged from the manifest on disk, as before #7900.
+        let writable = granted_folders(root, machine, chat, &Plane::read(root), &locks);
         // Sockets and services: this chat's, then yours for this project on this machine
         // (D-sock-2), then yours for every project on it (R2), never a committed file's. Each
         // is judged again below for this project, whichever level kept it, **and against the

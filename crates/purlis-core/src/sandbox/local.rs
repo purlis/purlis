@@ -706,10 +706,15 @@ pub enum Answer {
 /// sandbox is unknown, and every chat in it is refused until it is fixed.
 pub fn offer_due(root: &Path) -> bool {
     let plane = Plane::read(root);
+    offer_due_of(root, &plane, &super::policy::Locks::of_plane(&plane))
+}
+
+/// [`offer_due`], with the project's manifest read as `plane` and its locks as `locks` (#7900).
+pub fn offer_due_of(root: &Path, plane: &Plane, locks: &super::policy::Locks) -> bool {
     crate::names::has_manifest(root)
         && !plane.unreadable()
         && !plane.leaves_the_level_to_each_person()
-        && plane.in_force(&super::policy::Locks::of(root)).is_none()
+        && plane.in_force(locks).is_none()
         && read(root).offer.is_empty()
 }
 
@@ -844,10 +849,19 @@ pub struct HostsChange {
 /// one back in, is a change to what chats reach, and is told as one.
 pub fn hosts_changed(root: &Path) -> Option<HostsChange> {
     let plane = Plane::read(root);
+    hosts_changed_of(root, &plane, &super::policy::Locks::of_plane(&plane))
+}
+
+/// [`hosts_changed`], with the project's manifest read as `plane` and its locks as `locks`
+/// (#7900).
+pub fn hosts_changed_of(
+    root: &Path,
+    plane: &Plane,
+    locks: &super::policy::Locks,
+) -> Option<HostsChange> {
     // Only the hosts a chat reaches: none an administrator's policy locks out (#1423).
-    let locks = super::policy::Locks::of(root);
-    plane.in_force(&locks)?;
-    let now = plane.granted_hosts(&locks);
+    plane.in_force(locks)?;
+    let now = plane.granted_hosts(locks);
     // A host never holds a space: an entry that does is an older purlis's `<host> for <persona>
     // chats`, from before a persona's hosts were asked for apart (D-1362-7), and is no host of
     // the project's to say was taken away.
@@ -914,12 +928,18 @@ const CERTIFICATE_CHECKS_TITLE: &str = "Certificate checks";
 /// that differs is told once — a narrowed one too, so that turning a preset back on later is
 /// a change from what was seen.
 pub fn presets_changed(root: &Path) -> Option<PresetsChange> {
-    let locks = super::policy::Locks::of(root);
-    presets_change(
-        &Plane::read(root),
-        &locks,
-        read(root).presets_seen.as_deref(),
-    )
+    let plane = Plane::read(root);
+    presets_changed_of(root, &plane, &super::policy::Locks::of_plane(&plane))
+}
+
+/// [`presets_changed`], with the project's manifest read as `plane` and its locks as `locks`
+/// (#7900).
+pub fn presets_changed_of(
+    root: &Path,
+    plane: &Plane,
+    locks: &super::policy::Locks,
+) -> Option<PresetsChange> {
+    presets_change(plane, locks, read(root).presets_seen.as_deref())
 }
 
 /// [`presets_changed`] of `plane` under `locks`, where this machine last showed `seen`.
