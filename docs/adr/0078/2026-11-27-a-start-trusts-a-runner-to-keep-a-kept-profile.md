@@ -61,16 +61,17 @@ changes is when the profile link is made.
    `mcp-servers.json` names, where it keeps one, and in which no project has servers of its own or a
    choice of them (`enabledMcpServers`, `disabledMcpServers`, `enabledMcpjsonServers`,
    `disabledMcpjsonServers`, or `enableAllProjectMcpServers` on; an empty list, which starts
-   nothing, counts as none). Anything else, a settings file planted, changed, gone or with its mode
-   changed among them, and a keep left unfinished or a profile kept for another desktop, refuses the
-   start as `profile_changed`, and nothing starts. The desktop then forgets what it remembered,
-   keeps the profile in full, and starts the chat once more, naming nothing. A keep that fails there
-   is why the chat did not start. That profile is then never remembered on that runner again until
-   the app restarts, so a difference no keep puts right (a state file no keep can read) costs one
-   refused start, never one at every start. A profile whose harness makes again, as it starts,
-   something a keep clears (Codex's own skills, opencode's `package.json` and `node_modules`) is
-   never remembered at all: no runner that ran a chat of it could prove the profile as a keep leaves
-   it, so every start there keeps it, as before.
+   nothing, counts as none), nor any account a computer-use choice (`computerUseChoices`). Anything
+   else, a settings file planted, changed, gone or with its mode changed among them, and a keep left
+   unfinished or a profile kept for another desktop, refuses the start as `profile_changed`, and
+   nothing starts. The desktop then forgets what it remembered, keeps the profile in full, and
+   starts the chat once more, naming nothing. A keep that fails there is why the chat did not start.
+   That profile is then never remembered on that runner again until the app restarts, so a
+   difference no keep puts right (a state file no keep can read) costs one refused start, never one
+   at every start. A profile whose harness makes again, as it starts, something a keep clears
+   (Codex's own skills, opencode's `package.json` and `node_modules`) is never remembered at all: no
+   runner that ran a chat of it could prove the profile as a keep leaves it, so every start there
+   keeps it, as before.
 
 ## What stays of ADR 0095 as amended 2026-10-31
 

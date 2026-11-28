@@ -3376,3 +3376,30 @@ fn a_projects_mcp_choice_a_chat_left_on_a_runner_is_never_held_as_kept() {
         assert_eq!(held(), None, "{key}");
     }
 }
+
+/// **A computer-use choice a chat left on a runner is never held as kept** (#7863, as #7953's keep
+/// takes it out): an account's `computerUseChoices` entry beside the projects has the next start
+/// keep the profile. None, or an empty one, is no choice and is held as kept.
+#[test]
+fn a_computer_use_choice_a_chat_left_on_a_runner_is_never_held_as_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let as_kept = Some(whole_kept(&in_batches(&kept).unwrap()));
+    let held = || held_whole_for_the_desktop(&runner, DESKTOP, &kept.name).unwrap();
+    let there = super::super::sent::claude_state_file(&record);
+    let with_choices = |choices: serde_json::Value| {
+        let mut doc: serde_json::Value = fs::read_to_string(&there)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
+        doc["computerUseChoices"] = choices;
+        fs::write(&there, doc.to_string()).unwrap();
+    };
+    assert_eq!(held(), as_kept);
+
+    with_choices(serde_json::json!({}));
+    assert_eq!(held(), as_kept, "no choice made");
+
+    with_choices(serde_json::json!({"org-1:account-1": "on"}));
+    assert_eq!(held(), None, "a choice made on the runner");
+}
