@@ -178,7 +178,12 @@ test("the fixture images are pushed only from main, by jobs that run no pull req
   const writers = [...all].filter(([, body]) => body.some((l) => /: write$/.test(l.trim())));
   assert.deepEqual(writers.map(([name]) => name).sort(), ["pin", "publish"]);
   for (const [name, body] of writers) {
-    assert.ok(body.includes("    if: needs.plan.outputs.publish == 'true'"), `${name} runs where plan does not publish`);
+    assert.ok(
+      body.includes(
+        "    if: needs.plan.outputs.publish == 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')",
+      ),
+      `${name} runs where plan does not publish, or off a push or dispatch on main`,
+    );
     // No checkout of anything but main's commit: `plan`'s sha, which is the push's own.
     for (const line of body.filter((l) => l.trim().startsWith("ref:"))) {
       assert.equal(line.trim(), "ref: ${{ needs.plan.outputs.sha }}", name);
