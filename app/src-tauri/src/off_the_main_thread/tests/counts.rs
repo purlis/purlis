@@ -10,7 +10,10 @@
 //!   one the door carries to the blocking thread ([`crate::off_the_window`]). Tauri's invoke
 //!   would run the body on a runtime thread the scope never reaches.
 //! - **Starts and warm**: cold is the first ask of a project the app has just opened; warm is the
-//!   same ask again at once, with whatever the first kept.
+//!   same ask again at once, with whatever the first kept. **The warm column runs with git's
+//!   config-listing cache off** (`purlis_core::worktree::git`'s `listing`): a scope that counts
+//!   neither keeps a listing nor is handed one, since whether one is kept turns on the clock, so
+//!   warm counts every listing again and is no lower than the app's own second ask.
 //! - **Per fixture**: a project whose sandbox is on, with a local settings file beside its
 //!   manifest, which makes the sandbox's state ask git (`sandbox on`); and one whose committed
 //!   manifest turns the sandbox off for the team, which makes it read git's history
@@ -227,7 +230,8 @@ const MEASURED: &[(&str, Ask)] = &[
 /// **Each Git-class read's ceiling**: the programs it starts, cold and warm, on each fixture
 /// (`[sandbox on, team off committed]`). Recorded on 2026-11-27 (#7892). **Each is an exact
 /// count, not a bound**: the gate fails on fewer as on more, so a change that lowers one lowers
-/// it here, and one that raises one says why in its pull request.
+/// it here, and one that raises one says why in its pull request. Warm is counted with the
+/// config-listing cache off ([module docs](self)).
 const CEILINGS: &[(&str, [Starts; 2])] = &[
     // The sandbox's state: the local file's `git status` and the hardened runner's reads of the
     // folder before it; a committed off reads the manifest's history too.

@@ -113,7 +113,10 @@ pub fn install() {
         Ok(file) => (Some(file), None),
         Err(why) => (None, Some(why)),
     };
-    if tracing::subscriber::set_global_default(subscriber_to(file, std::io::stderr)).is_ok() {
+    // The core's answers, read from their spans into the slow log (FS-M1a, #7893).
+    let subscriber =
+        subscriber_to(file, std::io::stderr).with(crate::slowlog::answers::installed());
+    if tracing::subscriber::set_global_default(subscriber).is_ok() {
         redaction_made_ready_beside_the_launch();
         if let Some(why) = missing {
             tracing::warn!(
@@ -272,6 +275,19 @@ pub fn inform_on_purpose() {
     tracing::info!("purlis: an info line purlis-core raised on purpose, for a test");
 }
 
+/// **A named timeout expired** (FS-M1a, #7893): `name`, this code's own word for what waited,
+/// gave up after `after`. Written to this log at `info`, so a slow moment the slow log holds can
+/// be matched to the deadline that ended it: on 2026-11-27 a 30 s wait could have been git's
+/// read or the session host's answer, and nothing said which.
+pub fn expired(name: &'static str, after: std::time::Duration) {
+    tracing::info!(
+        timeout = name,
+        after_ms = u64::try_from(after.as_millis()).unwrap_or(u64::MAX),
+        "purlis: a timeout expired: {name}, after {} ms",
+        after.as_millis()
+    );
+}
+
 /// The file in `dir` that today's events go to.
 ///
 /// **Blocking, on purpose.** `tracing-appender`'s non-blocking writer hands lines to a thread
@@ -292,7 +308,7 @@ fn daily_file(dir: &Path) -> std::io::Result<RollingFileAppender> {
 fn subscriber_to(
     file: Option<RollingFileAppender>,
     screen: impl for<'a> MakeWriter<'a> + Send + Sync + 'static,
-) -> impl tracing::Subscriber + Send + Sync {
+) -> impl tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a> + Send + Sync {
     tracing_subscriber::registry()
         .with(what_a_log_keeps())
         .with(file.map(|file| {

@@ -20,6 +20,9 @@
 //!   the core received it. An answer's `at` (asked) beside its command's `at` (received) is its
 //!   time in line; its `ms` here is its work there.
 //!
+//! And the core's answers, read from their spans ([`answers`], FS-M1a): each answer that took
+//! 200 ms or longer, and an hourly summary of every answer by command.
+//!
 //! # Where it lives
 //!
 //! [`FILE`] in the app's log folder ([`crate::applog`]'s, beside `panics.log` and the
@@ -412,6 +415,17 @@ pub fn recent_in(file: &Path) -> Vec<Slow> {
         .filter_map(|line| serde_json::from_str(line).ok())
         .collect()
 }
+
+/// Milliseconds since 1970 by this machine's clock; 0 before then.
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| {
+            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+        })
+}
+
+pub mod answers;
 
 #[cfg(test)]
 mod tests;
