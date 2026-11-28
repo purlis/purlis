@@ -80,7 +80,6 @@ import {
 import {
   catalogue,
   catalogued,
-  besideTheFront,
   endId,
   freshId,
   ignoreId,
@@ -211,6 +210,7 @@ import {
   type WorkspacePanels,
 } from "./workspacePanels";
 import { useHeldWhileSame } from "./heldWhileSame";
+import { useBesideRows } from "./besideRows";
 import { useTaskBranchActs } from "./taskBranchActs";
 import {
   heardFrom,
@@ -10281,16 +10281,12 @@ export const PlaneView = memo(function PlaneView({
    */
   const found = useMemo(() => catalogued(offers), [offers]);
   /**
-   * **The rows the views beside the tabs read** (FS-W2, #7910): the catalogue without the rows
-   * about the tabs and panes (`besideTheFront`), which the Changes view, the panels and the
-   * explorer look up by id. Held while it says the same, so a catalogue made anew for a press on
-   * a tab draws none of them. Made here, in the draw, and handed down with their other props, so
-   * it moves in the same draw as they do (a workspace switched, a clone finished) and is made
-   * once for every view that reads it.
+   * **The rows the views beside the tabs read** (FS-W2, #7910), which the Changes view, the
+   * panels and the explorer look up by id (`useBesideRows`). Made here, in the draw, and handed
+   * down with their other props, so it moves in the same draw as they do (a workspace switched, a
+   * clone finished) and is made once for every view that reads it.
    */
-  const besideRows = useHeldWhileSame(
-    useMemo(() => new Map([...found].filter(([id]) => besideTheFront(id))), [found]),
-  );
+  const besideRows = useBesideRows(found);
 
   const by = useCallback((id: string) => found.get(id), [found]);
   /** The strip's `+` list (#5292): the catalogue's rows marked for it. */

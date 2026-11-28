@@ -138,7 +138,14 @@ const BASELINE: Record<"tab" | "settings" | "move" | "workspace", Draws> = {
    * catalogue's rows they read are made in that draw (`besideRows`, `PlaneView.tsx`). Filled in
    * after it, as a store was, those rows drew each side view once more, with the new workspace
    * and the old rows. The explorer's own part draws once more than its Repos part, for a read of
-   * its own, not traced here.
+   * its own: its files tree reads the new workspace's open folders (`useBranchFolders`,
+   * `branchFolders.ts`), and that read's answer is the third draw. The Repos part draws no files,
+   * so it reads no folder (`tops` in `Explorer.tsx`). Traced 2026-11-28 by the props and hook
+   * values each draw moved: the first moves the workspace's props, the last only `reads`.
+   *
+   * Only a workspace visited before is measured, on purpose: a workspace's first reads are kept
+   * for the test run, so a first switch would cost the 10-chat window less than the 50-chat one
+   * that ran before it, and the two would disagree for a reason that is not the window's.
    */
   workspace: {
     ...each(2),

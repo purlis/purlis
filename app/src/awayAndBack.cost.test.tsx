@@ -9,6 +9,7 @@ import { aWindow, rootOf, settled } from "./projectSwitch.testkit";
 import { keepTheirOrder } from "./commandOrder";
 import { countReactsCommits, counts } from "./reactCommits.testkit";
 import { STOPPED_MS, watchTheFrames } from "./whenDrawing";
+import { AFTER_A_MOVE_MS } from "./ChatGauge";
 
 keepTheirOrder();
 countReactsCommits();
@@ -26,6 +27,17 @@ vi.mock("./whileShown", async (actual) => ({
   ...(await actual<typeof import("./whileShown")>()),
   everyWhileShown: () => () => {},
   aBeatSince: () => false,
+}));
+
+// The reads that follow a move of the git standing start apart on the wall clock
+// (`afterGitMoved.ts`): on return the owed one waits 1.5 s, and then the alerts and the stale
+// repos later still, past what this test waits for (two dark frames, 1.4 s, then `settled`). So a
+// slow runner counted some of them in one case and not the other. At zero every one lands inside
+// the window measured, in both cases, as `planeViewDraws.cost.test.tsx` holds them: the
+// `workspace_saving` read now counts in every case, and `alerts_everywhere` and `stale_clones`
+// where they did not count at all.
+vi.mock("./afterGitMoved", () => ({
+  AFTER_GIT_MOVED_MS: { planeSaving: 0, workspaceSaving: 0, alerts: 0, staleClones: 0 },
 }));
 
 afterEach(() => {
@@ -101,7 +113,12 @@ async function away(how: How, minutes: number): Promise<Away> {
 
   // As the window watches its frames (`main.tsx`), through the engine's frames above.
   const stopWatching = watchTheFrames();
-  await act(() => new Promise((done) => setTimeout(done, 100)));
+  // The gauge reads a chat's usage as its pane opens and again `AFTER_A_MOVE_MS` later, on the
+  // wall clock from the mount (`ChatGauge.tsx`). Counted from 100 ms after a cold first mount
+  // (the case run first takes about twice as long to mount), that second read fell before the
+  // count on a slow runner and inside it on a quick one, so the one minute away read once fewer
+  // than the ten. Both reads of the opening are behind us before anything is counted.
+  await act(() => new Promise((done) => setTimeout(done, AFTER_A_MOVE_MS + 100)));
 
   Object.assign(counts, { rendered: 0, mounted: 0, unmounted: 0, commits: 0 });
   const from = core.asked.length;
