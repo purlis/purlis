@@ -623,6 +623,141 @@ pub fn held_for_the_desktop(
     Ok(wire::settings_held_page(held, after))
 }
 
+pub use super::made::a_skip_can_be_proven;
+
+/// **[`held_digest`] of what this runner holds now of the profile `name` it keeps for the desktop
+/// `desktop`**, its settings' contents and modes (1.99, #7863): read off its disk at that moment,
+/// never remembered, since a chat may be able to write there (ADR 0095 as amended 2026-10-31).
+/// `None` where it keeps no such profile, or holds more of it than it tells
+/// ([`held_for_the_desktop`]), which no digest a start names can be.
+pub fn held_whole_for_the_desktop(
+    homes: &Homes,
+    desktop: &str,
+    name: &str,
+) -> Result<Option<String>, String> {
+    let Some(record) = kept_record(homes, desktop, name)? else {
+        return Ok(None);
+    };
+    held_whole(&record)
+}
+
+/// [`held_whole_for_the_desktop`] of the record `record`. **Held only where a keep would leave
+/// its settings' contents and modes as they are** (the person's ruling of 2026-11-27 on #7863):
+/// `None`, so the profile is kept again, wherever anything a keep removes or rewrites is there or
+/// differs. That is a file past a read's limits, an entry a read leaves out inside a listed
+/// folder (a link, a hidden, credential-shaped or not-text name, a skill's `node_modules`,
+/// `__pycache__` or `venv`), anything a keep clears that no desktop sends
+/// ([`super::made::loaded_unsent_found`]), and, for Claude Code, a state file whose MCP servers
+/// are not those a keep writes there ([`crate::sandbox::claude_wrap::mcp_servers_as_kept`]). A
+/// file or folder whose mode is not the one a keep writes is held, but under a digest no keep
+/// names ([`held_digest`]).
+fn held_whole(record: &MachineProfile) -> Result<Option<String>, String> {
+    let read = held_files(record)?;
+    if !read.left_behind.is_empty()
+        || !read.skipped.is_empty()
+        || !read.unread_listed.is_empty()
+        || super::made::loaded_unsent_found(record)
+        || !mcp_servers_as_kept(record, &read.files)
+    {
+        return Ok(None);
+    }
+    let Some(off) = modes_not_as_kept(&read) else {
+        return Ok(None);
+    };
+    let whole = whole_of_files(
+        read.files
+            .iter()
+            .map(|(path, bytes)| (path.as_str(), bytes.as_slice())),
+    );
+    Ok(Some(held_digest(&whole, &off)))
+}
+
+/// The mode a keep writes each settings file with, and each folder it makes for them.
+#[cfg(unix)]
+const KEPT_FILE_MODE: rustix::fs::Mode = rustix::fs::Mode::RUSR.union(rustix::fs::Mode::WUSR);
+#[cfg(unix)]
+const KEPT_FOLDER_MODE: rustix::fs::Mode = rustix::fs::Mode::RWXU;
+
+/// **The mode of each of `read`'s files, and of each folder they are in under the settings
+/// folder, that is not the one a keep writes** (#7863), by its path; `None` where one was not
+/// read. A folder that holds no file is not among them: it holds nothing a chat could load.
+#[cfg(unix)]
+fn modes_not_as_kept(read: &super::made::SettingsRead) -> Option<BTreeMap<&str, u64>> {
+    let mut off = BTreeMap::new();
+    for (path, _) in &read.files {
+        let folders = path
+            .match_indices('/')
+            .map(|(at, _)| (&path[..at], KEPT_FOLDER_MODE));
+        for (at, kept) in std::iter::once((path.as_str(), KEPT_FILE_MODE)).chain(folders) {
+            // Only the bits a keep sets: a folder made in a setgid one inherits its setgid bit.
+            let mode = *read.modes.get(at)? & rustix::fs::Mode::from_raw_mode(0o777);
+            if mode != kept {
+                off.insert(at, u64::from(mode.bits()));
+            }
+        }
+    }
+    Some(off)
+}
+
+/// No modes are read where no settings are.
+#[cfg(not(unix))]
+fn modes_not_as_kept(_read: &super::made::SettingsRead) -> Option<BTreeMap<&str, u64>> {
+    None
+}
+
+/// **What a start names of a profile's settings, and what a runner holds of them** (1.99,
+/// #7863): `whole`, the [`wire::whole_settings_digest`] of their paths and contents, with the
+/// mode of each file or folder among them that is not the one a keep writes (`off`, by path). A
+/// desktop names none, since a keep writes each file `0600` and each folder `0700`, so a mode
+/// changed on a runner since moves what it holds off what any start names.
+fn held_digest(whole: &str, off: &BTreeMap<&str, u64>) -> String {
+    use sha2::Digest as _;
+    let mut held = sha2::Sha256::new();
+    held.update(b"purlis profile held 1\0");
+    held.update(whole.as_bytes());
+    for (path, mode) in off {
+        held.update((path.len() as u64).to_le_bytes());
+        held.update(path.as_bytes());
+        held.update(mode.to_le_bytes());
+    }
+    crate::extension::hex(&held.finalize())
+}
+
+/// **[`held_digest`] of the settings `to_keep` has a runner hold** (#7863): what a runner that
+/// kept it holds, contents and modes, as [`held_whole_for_the_desktop`] reads it, until
+/// something there changes. Of a keep of what changed, its [`wire::ChangedSettings::whole`],
+/// which the keep is refused unless it comes to (ADR 0095 as amended 2026-10-31, item 3); of one
+/// of them all, the files it sends.
+#[must_use]
+pub fn whole_kept(to_keep: &ToKeep) -> String {
+    let whole = match &to_keep.profile.settings_changed {
+        Some(changed) => changed.whole.clone(),
+        None => {
+            let mut files = BTreeMap::<&str, Vec<u8>>::new();
+            for piece in to_keep.batches.iter().flat_map(|batch| &batch.pieces) {
+                files
+                    .entry(piece.path.as_str())
+                    .or_default()
+                    .extend_from_slice(&piece.bytes);
+            }
+            whole_of_files(files.iter().map(|(path, bytes)| (*path, bytes.as_slice())))
+        }
+    };
+    held_digest(&whole, &BTreeMap::new())
+}
+
+/// [`wire::whole_settings_digest`] of `files`, each by its path and bytes.
+fn whole_of_files<'a>(files: impl Iterator<Item = (&'a str, &'a [u8])>) -> String {
+    let digests: Vec<(&str, String)> = files
+        .map(|(path, bytes)| (path, wire::settings_digest(bytes)))
+        .collect();
+    wire::whole_settings_digest(
+        digests
+            .iter()
+            .map(|(path, digest)| (*path, digest.as_str())),
+    )
+}
+
 /// The record of the profile `name` this runner keeps for `desktop`, with settings of its own.
 fn kept_record(homes: &Homes, desktop: &str, name: &str) -> Result<Option<MachineProfile>, String> {
     Ok(super::list(homes.config_root())?
@@ -986,6 +1121,27 @@ pub fn kept_for_the_desktop(
     Ok(standing_for_the_wire(standing(&record, look)))
 }
 
+/// Whether `record`'s state file holds the MCP servers a keep of `files` would leave there
+/// ([`keep_mcp_servers_of`]): always, for a harness other than Claude Code.
+fn mcp_servers_as_kept(record: &MachineProfile, files: &[(String, Vec<u8>)]) -> bool {
+    if record.harness != "claude" {
+        return true;
+    }
+    let servers = mcp_servers_in(files);
+    crate::sandbox::claude_wrap::mcp_servers_as_kept(
+        &super::sent::claude_state_file(record),
+        servers.as_ref().and_then(|doc| doc.get("mcpServers")),
+    )
+}
+
+/// The document of the MCP servers among `files`, as a keep reads it.
+fn mcp_servers_in(files: &[(String, Vec<u8>)]) -> Option<serde_json::Value> {
+    files
+        .iter()
+        .find(|(path, _)| path == super::sent::MCP_SERVERS_FILE)
+        .and_then(|(_, bytes)| serde_json::from_slice::<serde_json::Value>(bytes).ok())
+}
+
 /// Puts the MCP servers among `files`, kept for `record`, into its state file, where only purlis
 /// writes it (#3846), and takes out every project's own (ruled 2026-11-08), every project's
 /// [`PROJECT_MCP_CHOICES`](crate::sandbox::claude_wrap::PROJECT_MCP_CHOICES) and the
@@ -995,10 +1151,7 @@ fn keep_mcp_servers_of(record: &MachineProfile, files: &[(String, Vec<u8>)]) {
     if record.harness != "claude" {
         return;
     }
-    let servers = files
-        .iter()
-        .find(|(path, _)| path == super::sent::MCP_SERVERS_FILE)
-        .and_then(|(_, bytes)| serde_json::from_slice::<serde_json::Value>(bytes).ok());
+    let servers = mcp_servers_in(files);
     crate::sandbox::claude_wrap::keep_mcp_servers(
         &super::sent::claude_state_file(record),
         servers.as_ref().and_then(|doc| doc.get("mcpServers")),

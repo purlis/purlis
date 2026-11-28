@@ -462,6 +462,55 @@ pub const PROJECT_MCP_CHOICES: [&str; 5] = [
 /// default, and with none Claude Code asks again.
 pub const ACCOUNT_CHOICES: [&str; 1] = ["computerUseChoices"];
 
+/// **Whether [`keep_mcp_servers`] would leave the state file `state` loading what it would**
+/// (#7863): its user-scope servers are `servers` where those are given, no project has servers
+/// of its own, no project makes a choice of them ([`PROJECT_MCP_CHOICES`]), and no account has
+/// made one of [`ACCOUNT_CHOICES`]. An empty list is no list, as it starts nothing, so a project's
+/// `mcpServers: {}`, `enabledMcpjsonServers: []` or `enableAllProjectMcpServers: false`, which
+/// Claude Code writes itself, is as kept, as is `computerUseChoices: {}`. A state file that is no
+/// plain file of JSON is never as kept, as no keep can read it.
+#[must_use]
+pub fn mcp_servers_as_kept(state: &Path, servers: Option<&serde_json::Value>) -> bool {
+    let doc = match std::fs::symlink_metadata(state) {
+        Ok(found) if found.is_file() => match std::fs::read_to_string(state)
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        {
+            Some(doc) if doc.is_object() => doc,
+            _ => return false,
+        },
+        Ok(_) => return false,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
+        Err(_) => return false,
+    };
+    let loads = |list: Option<&serde_json::Value>| match list {
+        None => None,
+        Some(serde_json::Value::Object(map)) if map.is_empty() => None,
+        Some(other) => Some(other.clone()),
+    };
+    let users_as_kept =
+        servers.is_none_or(|servers| loads(doc.get("mcpServers")) == loads(Some(servers)));
+    let no_projects_own = doc
+        .get("projects")
+        .and_then(serde_json::Value::as_object)
+        .is_none_or(|projects| {
+            projects.values().all(|project| {
+                loads(project.get("mcpServers")).is_none()
+                    && PROJECT_MCP_CHOICES
+                        .iter()
+                        .all(|key| match project.get(*key) {
+                            None | Some(serde_json::Value::Bool(false)) => true,
+                            Some(serde_json::Value::Array(list)) => list.is_empty(),
+                            Some(_) => false,
+                        })
+            })
+        });
+    let no_account_choice = ACCOUNT_CHOICES
+        .iter()
+        .all(|key| loads(doc.get(*key)).is_none());
+    users_as_kept && no_projects_own && no_account_choice
+}
+
 /// **`servers` as the user-scope MCP servers in the state file `state`** (#3846), and no
 /// project's own (ruled 2026-11-08), nor any project's [`PROJECT_MCP_CHOICES`], nor any of
 /// [`ACCOUNT_CHOICES`] (ruled 2026-11-27), with what else it

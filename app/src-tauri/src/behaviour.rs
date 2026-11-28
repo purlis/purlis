@@ -2350,6 +2350,7 @@ fn named(first_message: &str, without_sandbox: bool) -> crate::host::Named {
         asked_to_run: crate::host::AskedToRun::default(),
         tools_allowed: None,
         plane_skills: false,
+        profile_held: None,
         chat: None,
         run: None,
         profile: Some("work".to_owned()),

@@ -1238,6 +1238,19 @@ fn serve(suspends_after: Option<std::time::Duration>, as_a_service: bool) -> Exi
                 after,
             )
         }),
+        // And whether it holds one as a start names it, read off its disk now, so a start is
+        // refused where a settings file there changed since it was kept (#7863).
+        matching: std::sync::Arc::new(|desktop, profile| {
+            let homes = purlis_core::profilestore::Homes::here().ok_or_else(|| {
+                "this runner has no data home its profiles are in, or it is inside a project"
+                    .to_owned()
+            })?;
+            purlis_core::profilestore::onrunner::held_whole_for_the_desktop(
+                &homes,
+                &desktop.device,
+                profile,
+            )
+        }),
         // A sign-in's redirect, carried from the desktop's browser to the login listening here
         // (#4044). The login's answer stays here.
         delivering: std::sync::Arc::new(|target| {

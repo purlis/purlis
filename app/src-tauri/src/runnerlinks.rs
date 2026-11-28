@@ -885,10 +885,16 @@ pub fn left_on_a_runner_that_cannot_list(
     )
 }
 
-/// **A profile a runner kept**: whether it is signed in there.
+/// **A profile a runner kept**: whether it is signed in there, and what it holds of its
+/// settings since.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileKept {
     pub standing: purlis_session_protocol::session::ProfileStanding,
+    /// [`whole_kept`](purlis_core::profilestore::onrunner::whole_kept) of the settings the keep
+    /// put in place of all it held, where the runner is of 1.99 or later and
+    /// so starts a chat only where it still holds them (#7863). `None` for a keep that left them
+    /// as they were, and from an older runner.
+    pub held: Option<String>,
 }
 
 /// What a runner answered each profile it was asked to keep: [`ProfileKept`], or why it was not
@@ -912,6 +918,7 @@ async fn keep_one(
     sending: purlis_core::profilestore::onrunner::ToKeep,
     answer: std::time::Duration,
 ) -> Result<ProfileKept, String> {
+    let held = held_after(client.version(), &sending);
     let late = |_| ANSWER_LATE.to_owned();
     for batch in sending.batches {
         tokio::time::timeout(answer, client.stage_profile_settings(batch))
@@ -929,7 +936,23 @@ async fn keep_one(
         .await
         .map_err(|_| late.to_owned())?
         .map_err(|why| refused_by_the_runner(&why))?;
-    Ok(ProfileKept { standing })
+    Ok(ProfileKept { standing, held })
+}
+
+/// **What a runner speaking `version` holds of a profile's settings once it keeps `sending`**
+/// (#7863): [`whole_kept`](purlis_core::profilestore::onrunner::whole_kept), where the keep puts
+/// its staged files in place of all it held and the runner is of 1.99 or later. `None`
+/// otherwise, so no start on it skips the keep.
+fn held_after(
+    version: purlis_session_protocol::version::Version,
+    sending: &purlis_core::profilestore::onrunner::ToKeep,
+) -> Option<String> {
+    if version < purlis_session_protocol::session::KNOWS_PROFILE_HELD
+        || sending.profile.settings_staged.is_none()
+    {
+        return None;
+    }
+    Some(purlis_core::profilestore::onrunner::whole_kept(sending))
 }
 
 /// The most pages of what it holds a runner is asked for: more than the most files it holds take

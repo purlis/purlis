@@ -189,6 +189,10 @@ pub struct Allowed {
     /// What else it loads from its settings folder, by name, which is never sent: a runner keeps
     /// none ([`loaded_unsent_cleared`]).
     pub loaded_unsent: &'static [&'static str],
+    /// Whether the harness makes some of [`Self::loaded_unsent`] again itself as it starts, so a
+    /// runner that ran a chat of it never holds the profile as a keep leaves it, and a start there
+    /// always keeps it ([`a_skip_can_be_proven`], #7863).
+    pub remakes_loaded_unsent: bool,
     /// The files a desktop sends a runner that no import copies: read to send and kept there.
     pub sent_only: &'static [&'static str],
 }
@@ -203,6 +207,8 @@ pub const ALLOWED: [Allowed; 3] = [
         folders: &["agents", "commands", "output-styles", "skills"],
         // `hooks`: never loaded by itself, but where a sent setting's hook commonly points.
         loaded_unsent: &["hooks", "rules"],
+        // Claude Code makes neither `hooks` nor `rules` itself.
+        remakes_loaded_unsent: false,
         sent_only: &[super::sent::MCP_SERVERS_FILE],
     },
     Allowed {
@@ -217,6 +223,8 @@ pub const ALLOWED: [Allowed; 3] = [
             "rules",
             "skills",
         ],
+        // Codex installs its own system skills under `skills` as it starts.
+        remakes_loaded_unsent: true,
         sent_only: &[],
     },
     Allowed {
@@ -238,6 +246,8 @@ pub const ALLOWED: [Allowed; 3] = [
             "package.json",
             "node_modules",
         ],
+        // opencode makes `package.json` and `node_modules` again as it starts.
+        remakes_loaded_unsent: true,
         sent_only: &[],
     },
 ];
@@ -903,6 +913,8 @@ enum Sink<'a> {
         left_behind: &'a mut Vec<(String, u64)>,
         /// Whether a file is read at all.
         wanted: &'a dyn Fn(&str) -> bool,
+        /// The mode of each file read and each folder walked, by its path ([`SettingsRead::modes`]).
+        modes: &'a mut std::collections::BTreeMap<String, rustix::fs::Mode>,
     },
     /// What each whole holds, read from no file ([`settings_measured`]).
     Measure {
@@ -998,6 +1010,7 @@ fn entry(
                 most_files,
                 left_behind,
                 wanted,
+                modes,
             } => {
                 if !wanted(shown) {
                     return Ok(());
@@ -1019,6 +1032,7 @@ fn entry(
                 }
                 *so_far += bytes.len();
                 files.push((shown.to_owned(), bytes));
+                modes.insert(shown.to_owned(), Mode::from_raw_mode(stat.st_mode));
             }
             Sink::Measure { wholes, files } => {
                 let whole = wholes.entry(whole_of(shown).to_owned()).or_default();
@@ -1042,8 +1056,12 @@ fn entry(
             .push(format!("{shown}: more than {DEEPEST} folders deep"));
         return Ok(());
     }
-    if let Sink::Disk { folder } = &place.into {
-        private_dir_within(folder, to)?;
+    match &mut place.into {
+        Sink::Disk { folder } => private_dir_within(folder, to)?,
+        Sink::Memory { modes, .. } => {
+            modes.insert(shown.to_owned(), Mode::from_raw_mode(stat.st_mode));
+        }
+        Sink::Measure { .. } => {}
     }
     // What a runner has no use for goes no further, as a chat's start pays for all it sends.
     let to_a_runner = !matches!(place.into, Sink::Disk { .. });
@@ -1053,6 +1071,12 @@ fn entry(
     while let Some(one) = listing.read() {
         let one = one?;
         let Ok(text) = one.file_name().to_str() else {
+            // No read takes it in and no import copies it, so a keep, which replaces the folder
+            // whole, takes it away: said, so no runner holds the folder as kept (#7863).
+            place.copied.skipped.push(format!(
+                "{shown}/{}: a name that is not text",
+                one.file_name().to_string_lossy()
+            ));
             continue;
         };
         if text != "." && text != ".." {
@@ -1112,6 +1136,10 @@ pub struct SettingsRead {
     pub skipped: Vec<String>,
     /// Those of [`Self::skipped`] that the list names itself ([`Copied::unread_listed`]).
     pub unread_listed: Vec<String>,
+    /// The permission bits of each file of [`Self::files`] and of each folder walked, by its
+    /// path, as `fstat` read them (#7863).
+    #[cfg(unix)]
+    pub modes: std::collections::BTreeMap<String, rustix::fs::Mode>,
 }
 
 /// **The settings files `kind`'s settings folder `config` holds, as an import reads them**
@@ -1130,6 +1158,7 @@ pub fn settings_read(
 ) -> Result<SettingsRead, String> {
     let mut files = Vec::new();
     let mut left_behind = Vec::new();
+    let mut modes = std::collections::BTreeMap::new();
     let walked = settings_walked(
         kind,
         config,
@@ -1140,11 +1169,13 @@ pub fn settings_read(
             most_files,
             left_behind: &mut left_behind,
             wanted,
+            modes: &mut modes,
         },
     )?;
     Ok(SettingsRead {
         files,
         left_behind,
+        modes,
         skipped: walked.skipped,
         unread_listed: walked.unread_listed,
     })
@@ -1614,17 +1645,7 @@ pub fn loaded_unsent_cleared(record: &MachineProfile) -> Result<(), String> {
     };
     let config = &record.folders.config;
     let dest = settings_dest(allowed, config);
-    // Neither the settings folder nor one between it and the profile's config folder, that folder
-    // itself among them, is a link: what it names, elsewhere, stays, and the keep is refused,
-    // naming the link and what to do (ruled 2026-11-08).
-    let linked = [config.as_path()]
-        .into_iter()
-        .chain(
-            dest.ancestors()
-                .take_while(|above| above.starts_with(config)),
-        )
-        .find(|at| std::fs::symlink_metadata(at).is_ok_and(|found| found.file_type().is_symlink()));
-    if let Some(linked) = linked {
+    if let Some(linked) = linked_on_the_way(config, &dest) {
         return Err(format!(
             "this runner did not keep the profile '{}': {} is a link to another folder, and \
              purlis clears a profile's settings only in a folder of its own, so what the link \
@@ -1647,6 +1668,43 @@ pub fn loaded_unsent_cleared(record: &MachineProfile) -> Result<(), String> {
                 crate::rewrite::os_words(&e)
             )
         })
+}
+
+/// **Whether a runner can ever show it holds a profile of harness `kind` as a keep leaves it**
+/// (#7863): not where the harness makes again, as it starts, something a keep clears
+/// ([`Allowed::remakes_loaded_unsent`]), nor for a harness purlis does not ship.
+#[must_use]
+pub fn a_skip_can_be_proven(kind: &str) -> bool {
+    harness_of(kind).is_ok_and(|(_, allowed)| !allowed.remakes_loaded_unsent)
+}
+
+/// **Whether a keep would find anything of `record`'s to clear** ([`loaded_unsent_cleared`], #7863):
+/// an entry it removes is there, or a link on the way to its settings folder refuses the keep. A
+/// harness purlis does not ship has nothing to clear.
+pub fn loaded_unsent_found(record: &MachineProfile) -> bool {
+    let Ok((_, allowed)) = harness_of(&record.harness) else {
+        return false;
+    };
+    let config = &record.folders.config;
+    let dest = settings_dest(allowed, config);
+    linked_on_the_way(config, &dest).is_some()
+        || allowed
+            .loaded_unsent
+            .iter()
+            .any(|name| std::fs::symlink_metadata(dest.join(name)).is_ok())
+}
+
+/// The settings folder `dest`, or a folder between it and the profile's config folder `config`,
+/// that folder itself among them, that is a link: what it names, elsewhere, stays, and a keep is
+/// refused, naming the link and what to do (ruled 2026-11-08).
+fn linked_on_the_way<'a>(config: &'a Path, dest: &'a Path) -> Option<&'a Path> {
+    [config]
+        .into_iter()
+        .chain(
+            dest.ancestors()
+                .take_while(|above| above.starts_with(config)),
+        )
+        .find(|at| std::fs::symlink_metadata(at).is_ok_and(|found| found.file_type().is_symlink()))
 }
 
 /// A file name that may hold a sign-in, which an import never copies from a settings folder.

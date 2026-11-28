@@ -53,6 +53,8 @@ use purlis_core::profilestore::{self, onrunner};
 
 use crate::runnerlinks::{Machine, ToARunner};
 
+mod kept_until_restart;
+
 /// **Readies a chat's profile on the pool's runner it starts on** (#2049): what a start on a
 /// pool asks before it is sent there.
 pub trait ProfilesOnPools: Send + Sync {
@@ -70,6 +72,26 @@ pub trait ProfilesOnPools: Send + Sync {
         profile: &str,
     ) -> Result<(), String> {
         self.ready(root, pool, profile)
+    }
+
+    /// [`Self::ready`], **asked again after the runner refused the start as signed out** (#4233):
+    /// what was remembered of its keep there is not trusted, so the keep is made again (#7863).
+    fn ready_again(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+        self.ready(root, pool, profile)
+    }
+
+    /// [`Self::ready`], **for a chat's start on pool `pool`, with what that start names of the
+    /// settings its runner was made to keep** (1.99, #7863): where the keep was skipped, or made
+    /// so the runner can be held to it, the digest its runner must still hold, carried from that
+    /// very decision, and how to keep it again where the runner says it does not. `None` where
+    /// the start is held to nothing more.
+    fn ready_for_a_start(
+        &self,
+        root: &Path,
+        pool: &str,
+        profile: &str,
+    ) -> Result<Option<crate::host::ProfileHeld>, String> {
+        self.ready(root, pool, profile).map(|()| None)
     }
 
     /// [`Self::ready`], for a chat that moves to pool `pool`'s runner (#2048): said of the move,
@@ -95,16 +117,70 @@ impl Linked {
     }
 }
 
-impl ProfilesOnPools for Linked {
-    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+impl Linked {
+    /// **Readies `profile` on pool `pool`'s runner** ([`ProfilesOnPools::ready`]), with the
+    /// digest a start names its runner must still hold, as the skip, or the keep, decided it
+    /// (#7863): never read again from what is remembered, which another chat may forget meanwhile.
+    fn readied(&self, root: &Path, pool: &str, profile: &str) -> Result<Option<String>, String> {
         let _readying = Readying::of(pool, profile);
         let yours = yours(&self.config, pool);
         chosen_by_a_chat(&yours, &self.config, root, pool, profile);
         tidy_once(&yours, &self.config, root, pool);
-        // A chat's start is what wakes a suspended runner (#2051), so its keep does too.
+        let held = std::cell::RefCell::new(None);
+        // A chat's start is what wakes a suspended runner (#2051), so its keep does too. A runner
+        // that holds the profile as it is since it last started is not linked to (#7863).
         onrunner::ready_on(&self.config, root, pool, profile, &|kept| {
-            keep_on_as(yours.clone(), &self.config, pool, kept, Waking::Yes)
-        })
+            let readied = keep_unless_held(&yours, &self.config, pool, kept)?;
+            *held.borrow_mut() = readied.held;
+            Ok(readied.standing)
+        })?;
+        Ok(held.into_inner())
+    }
+}
+
+/// **What a start on pool `pool` on `profile` names of its settings**: `digest`, and, where its
+/// runner refuses it as not holding them, the profile readied again by `ready`, after which that
+/// runner is kept on at every start until the app restarts (#7863).
+fn held_at_start(
+    digest: String,
+    pool: &str,
+    profile: &str,
+    ready: impl Fn(&str, &str) -> Result<(), String> + Send + Sync + 'static,
+) -> crate::host::ProfileHeld {
+    let (pool, profile) = (pool.to_owned(), profile.to_owned());
+    crate::host::ProfileHeld::new(digest, move || {
+        // A runner that did not hold it as kept is kept on at every start from now on.
+        kept_until_restart::refused_as_changed(&pool, &profile);
+        ready(&pool, &profile)
+    })
+}
+
+impl ProfilesOnPools for Linked {
+    fn ready(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+        self.readied(root, pool, profile).map(drop)
+    }
+
+    fn ready_again(&self, root: &Path, pool: &str, profile: &str) -> Result<(), String> {
+        kept_until_restart::forget(pool, profile);
+        self.ready(root, pool, profile)
+    }
+
+    fn ready_for_a_start(
+        &self,
+        root: &Path,
+        pool: &str,
+        profile: &str,
+    ) -> Result<Option<crate::host::ProfileHeld>, String> {
+        let Some(digest) = self.readied(root, pool, profile)? else {
+            return Ok(None);
+        };
+        let (linked, root) = (Linked::at(self.config.clone()), root.to_path_buf());
+        Ok(Some(held_at_start(
+            digest,
+            pool,
+            profile,
+            move |pool, profile| linked.ready(&root, pool, profile),
+        )))
     }
 
     fn ready_on_its_own_runner(
@@ -137,6 +213,7 @@ impl ProfilesOnPools for Linked {
         let yours = yours(&self.config, pool);
         chosen_by_a_chat(&yours, &self.config, root, pool, profile);
         tidy_once(&yours, &self.config, root, pool);
+        // A move's start names no settings for its runner to hold, so its keep is always made.
         onrunner::ready_to_move_on(&self.config, pool, profile, &|kept| {
             keep_on_as(yours.clone(), &self.config, pool, kept, Waking::Yes)
         })
@@ -323,6 +400,8 @@ static APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
 /// **Every project's wait for profile `name` on pool `pool` goes, and each is told** (#4228), so
 /// no other open project keeps drawing its Ask.
 fn let_go_everywhere(pool: &str, name: &str) {
+    // Forgotten on the runner, or off the pool: its next start there keeps it again (#7863).
+    kept_until_restart::forget(pool, name);
     let_go_telling(pool, name, |went| {
         if let Some(app) = APP.get().cloned() {
             // On a thread of its own: a tidy runs inside a chat's start, and telling takes the
@@ -871,6 +950,18 @@ fn keep_on_as(
     kept: &onrunner::Kept,
     waking: Waking,
 ) -> Result<Option<Standing>, String> {
+    keep_on_as_told(yours, config, pool, kept, waking).map(|told| told.map(|there| there.standing))
+}
+
+/// [`keep_on_as`], with what the runner holds of the profile's settings since, where it can be
+/// held to it at a start (#7863).
+fn keep_on_as_told(
+    yours: Result<Yours, String>,
+    config: &Path,
+    pool: &str,
+    kept: &onrunner::Kept,
+    waking: Waking,
+) -> Result<Option<kept_until_restart::KeptThere>, String> {
     let Ok(yours) = yours else {
         return Ok(None);
     };
@@ -883,8 +974,48 @@ fn keep_on_as(
     said.into_iter()
         .next()
         .unwrap_or_else(|| Err("the runner did not answer".into()))
-        .map(|kept| Some(onrunner::standing_on_the_wire(kept.standing)))
+        .map(|kept| {
+            Some(kept_until_restart::KeptThere {
+                standing: onrunner::standing_on_the_wire(kept.standing),
+                held: kept.held,
+            })
+        })
         .map_err(|why| late_said(pool, &kept.limits, why))
+}
+
+/// **Has pool `pool`'s runner keep `kept`, waking it, unless it holds it as it is since it last
+/// started** ([`kept_until_restart::kept_or_linked`], #7863): what a chat's start there keeps it
+/// by. A start after a skipped keep names what the runner must still hold
+/// ([`ProfilesOnPools::ready_for_a_start`]).
+fn keep_unless_held(
+    yours: &Result<Yours, String>,
+    config: &Path,
+    pool: &str,
+    kept: &onrunner::Kept,
+) -> Result<kept_until_restart::Readied, String> {
+    kept_until_restart::kept_or_linked(&|| runner_now(yours, config, pool), pool, kept, |kept| {
+        keep_on_as_told(yours.clone(), config, pool, kept, Waking::Yes)
+    })
+}
+
+/// **Pool `pool`'s runner as Docker says it is now** ([`kept_until_restart::RunnerNow`]), where
+/// `yours` showed it a Docker pool's and it runs: what a remembered keep there is held to
+/// (#7863). `None` for a cluster pool's, which is linked to at each start, and wherever Docker
+/// could not say, so the keep is made.
+fn runner_now(
+    yours: &Result<Yours, String>,
+    config: &Path,
+    pool: &str,
+) -> Option<kept_until_restart::RunnerNow> {
+    let Ok(Yours::Docker(_)) = yours else {
+        return None;
+    };
+    let runner = purlis_core::runners::runner_for(config, pool).ok()?;
+    let ran = Machine::here(config).ok()?.ran(&runner).ok()?;
+    ran.running.then(|| kept_until_restart::RunnerNow {
+        device: runner.pinned.device.clone(),
+        started: ran.started,
+    })
 }
 
 /// `why` a runner kept no profile, with the limits of pool `pool` it was kept off by, its settings'
@@ -2276,6 +2407,8 @@ pub async fn pool_sign_out(pool: String, name: String) -> Result<Option<String>,
         let kept = onrunner::Kept::of(&record)?;
         // A watcher of a sign-in in a shell ends: the profile is being signed out.
         crate::signinwatch::signing_out(&pool, &name, || ());
+        // Its next start there asks the runner again how it stands (#7863).
+        kept_until_restart::forget(&pool, &name);
         let mut draining = Vec::new();
         match &yours {
             Yours::Docker(_) => {

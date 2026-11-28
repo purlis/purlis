@@ -2362,6 +2362,7 @@ pub(crate) fn by_its_names() -> Named {
         chat: None,
         run: None,
         profile: Some("work".to_owned()),
+        profile_held: None,
         persona: Some("steward".to_owned()),
         workspace: None,
         resume: None,
@@ -4512,4 +4513,90 @@ fn a_runner_gone_ends_its_chats_where_a_changed_key_leaves_them_dimmed() {
     heard(Reconnect::Started("again".into()));
     heard(Reconnect::KeyChanged);
     assert_eq!(dimmed.lock().unwrap().chats.len(), 2);
+}
+
+/// What a start came to, what each try named and whether it was the first, and the keeps taken.
+type BegunOnARunner = (Result<u32, NotBegun>, Vec<(Option<String>, bool)>, usize);
+
+/// A start [`begun_as_kept`] is given, and a runner that answers it as `answers` says in turn:
+/// what each try named, and how many keeps it took.
+fn begun_on_a_runner(
+    held: Option<&str>,
+    keep: Result<(), String>,
+    mut answers: Vec<Result<u32, NotBegun>>,
+) -> BegunOnARunner {
+    let keeps = Arc::new(Mutex::new(0));
+    let held = held.map(|digest| {
+        let keeps = Arc::clone(&keeps);
+        crate::host::ProfileHeld::new(digest.to_owned(), move || {
+            *keeps.lock().unwrap() += 1;
+            keep.clone()
+        })
+    });
+    let mut tries = Vec::new();
+    answers.reverse();
+    let begun = begun_as_kept(
+        StartProgram::of("/p", ProgramKind::Harness),
+        held.as_ref(),
+        |start, first| {
+            tries.push((start.profile_held, first));
+            answers.pop().expect("no more tries than answers")
+        },
+    );
+    let keeps = *keeps.lock().unwrap();
+    (begun, tries, keeps)
+}
+
+fn refused_as_changed() -> NotBegun {
+    NotBegun {
+        why: "the runner no longer holds the profile as kept".to_owned(),
+        profile_changed: true,
+    }
+}
+
+#[test]
+fn a_start_on_a_runner_still_holding_the_profile_as_kept_starts_once_and_keeps_nothing() {
+    let (begun, tries, keeps) = begun_on_a_runner(Some("as-kept"), Ok(()), vec![Ok(7)]);
+    assert_eq!(begun.ok(), Some(7));
+    assert_eq!(tries, vec![(Some("as-kept".to_owned()), true)]);
+    assert_eq!(keeps, 0);
+}
+
+#[test]
+fn a_start_refused_as_its_settings_changed_on_the_runner_keeps_the_profile_again_then_starts() {
+    let (begun, tries, keeps) = begun_on_a_runner(
+        Some("as-kept"),
+        Ok(()),
+        vec![Err(refused_as_changed()), Ok(7)],
+    );
+    assert_eq!(begun.ok(), Some(7));
+    assert_eq!(
+        tries,
+        vec![(Some("as-kept".to_owned()), true), (None, false)],
+        "the second try names nothing: the keep just put the settings back",
+    );
+    assert_eq!(keeps, 1);
+}
+
+#[test]
+fn a_keep_again_that_fails_starts_nothing() {
+    let (begun, tries, keeps) = begun_on_a_runner(
+        Some("as-kept"),
+        Err("the runner went away".to_owned()),
+        vec![Err(refused_as_changed())],
+    );
+    assert_eq!(
+        begun.err().map(String::from).as_deref(),
+        Some("the runner went away")
+    );
+    assert_eq!(tries.len(), 1);
+    assert_eq!(keeps, 1);
+}
+
+#[test]
+fn a_start_naming_nothing_held_is_tried_once_whatever_the_runner_says() {
+    let (begun, tries, keeps) = begun_on_a_runner(None, Ok(()), vec![Err(refused_as_changed())]);
+    assert!(begun.is_err());
+    assert_eq!(tries, vec![(None, true)]);
+    assert_eq!(keeps, 0);
 }

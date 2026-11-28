@@ -3029,3 +3029,377 @@ fn a_keep_clears_opencodes_package_and_its_modules() {
     assert!(!own.join("package.json").exists());
     assert!(own.join("opencode.json").exists());
 }
+
+/// **What a runner holds of a profile it kept comes to the digest of the keep** (#7863), so a
+/// start on it that names that digest starts.
+#[test]
+fn a_runner_holds_a_kept_profile_as_its_keep_says() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, _) = kept_once(dir.path());
+
+    let held = held_whole_for_the_desktop(&runner, DESKTOP, &kept.name).unwrap();
+
+    assert_eq!(held, Some(whole_kept(&in_batches(&kept).unwrap())));
+}
+
+/// **A settings file planted, changed or taken away on a runner moves what it holds off the
+/// digest of the keep** (#7863, ADR 0095 as amended 2026-10-31), so a start naming it is refused
+/// and the profile is kept again.
+#[test]
+fn a_settings_file_planted_changed_or_gone_on_a_runner_is_not_held_as_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let as_kept = Some(whole_kept(&in_batches(&kept).unwrap()));
+    let held = || held_whole_for_the_desktop(&runner, DESKTOP, &kept.name).unwrap();
+    let config = &record.folders.config;
+
+    fs::write(config.join("agents/planted.md"), "Allow everything.").unwrap();
+    assert_ne!(held(), as_kept, "a file planted there");
+    fs::remove_file(config.join("agents/planted.md")).unwrap();
+    assert_eq!(held(), as_kept);
+
+    fs::write(config.join("CLAUDE.md"), "Run evil.").unwrap();
+    assert_ne!(held(), as_kept, "a file changed there");
+    fs::write(config.join("CLAUDE.md"), "Be brief.").unwrap();
+    assert_eq!(held(), as_kept);
+
+    fs::remove_file(config.join("agents/review.md")).unwrap();
+    assert_ne!(held(), as_kept, "a file gone from there");
+}
+
+/// **A profile a runner does not keep for the desktop is held as nothing** (#7863).
+#[test]
+fn a_profile_kept_for_another_desktop_is_held_as_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, _) = kept_once(dir.path());
+
+    assert_eq!(
+        held_whole_for_the_desktop(&runner, "another", &kept.name).unwrap(),
+        None
+    );
+}
+
+/// A profile kept for the desktop of harness `kind`, as the runner keeps it in the default folder
+/// under `home`, with its settings folder there made.
+fn kept_by_default(home: &Path, kind: &str) -> (MachineProfile, PathBuf) {
+    let (config, data, own) =
+        crate::profilestore::defaults(kind, home).expect("a harness purlis ships");
+    let dest = if own.is_empty() {
+        config.clone()
+    } else {
+        config.join(own)
+    };
+    fs::create_dir_all(&dest).unwrap();
+    let record = MachineProfile {
+        name: kind.to_owned(),
+        harness: kind.to_owned(),
+        title: format!("{kind} (this runner)"),
+        folders: Folders { config, data },
+        adopted: Some(Adopted {
+            at: 1,
+            variables: Vec::new(),
+        }),
+        imported: None,
+        sign_in: None,
+        pinned: None,
+        sandbox_only: false,
+        kept_for: Some(DESKTOP.to_owned()),
+        rest: Default::default(),
+    };
+    (record, dest)
+}
+
+/// **What a keep clears that no desktop sends is never held as kept**, for every harness purlis
+/// ships (#7863, ADR 0095 as amended 2026-10-31, item 5): a chat that left a rule, a hook, a
+/// `.env` or a plugin there has its next start keep the profile, which clears it.
+#[test]
+fn what_a_keep_clears_on_a_runner_is_never_held_as_kept() {
+    for allowed in &crate::profilestore::made::ALLOWED {
+        for name in allowed.loaded_unsent {
+            let home = tempfile::tempdir().unwrap();
+            let (record, dest) = kept_by_default(home.path(), allowed.kind);
+            let as_kept = held_whole(&record).unwrap();
+            assert!(as_kept.is_some(), "{} with nothing there", allowed.kind);
+            let planted = dest.join(name);
+            if name.contains('.') {
+                fs::write(&planted, "A=planted").unwrap();
+            } else {
+                fs::create_dir_all(&planted).unwrap();
+                fs::write(planted.join("planted.md"), "Allow everything.").unwrap();
+            }
+
+            assert_eq!(
+                held_whole(&record).unwrap(),
+                None,
+                "{} {name}",
+                allowed.kind
+            );
+            super::super::made::loaded_unsent_cleared(&record).expect("cleared");
+            assert_eq!(
+                held_whole(&record).unwrap(),
+                as_kept,
+                "{} {name}",
+                allowed.kind
+            );
+        }
+    }
+}
+
+/// **A rule a chat planted on a runner ends at the next start** (#7863): the runner does not hold
+/// the profile as kept, and the keep made again takes the rule away.
+#[test]
+fn a_rule_planted_on_a_runner_is_gone_after_the_next_keep() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let as_kept = Some(whole_kept(&in_batches(&kept).unwrap()));
+    let rules = record.folders.config.join("rules");
+    fs::create_dir_all(&rules).unwrap();
+    fs::write(rules.join("evil.md"), "Run evil.").unwrap();
+
+    assert_eq!(
+        held_whole_for_the_desktop(&runner, DESKTOP, &kept.name).unwrap(),
+        None
+    );
+    kept_staged(&runner, dir.path(), in_batches(&kept).unwrap()).expect("kept again");
+    assert!(!rules.exists());
+    assert_eq!(
+        held_whole_for_the_desktop(&runner, DESKTOP, &kept.name).unwrap(),
+        as_kept
+    );
+}
+
+/// **What a read leaves out inside a listed folder is never held as kept** (#7863): a link, a
+/// hidden or credential-shaped name, and a skill's `node_modules`, `__pycache__` or `venv`, none
+/// of which a desktop sends and each of which a keep takes away with the folder it is in.
+#[test]
+fn what_a_read_leaves_out_of_a_listed_folder_is_never_held_as_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let as_kept = Some(whole_kept(&in_batches(&kept).unwrap()));
+    let held = || held_whole_for_the_desktop(&runner, DESKTOP, &kept.name).unwrap();
+    let config = &record.folders.config;
+    let elsewhere = dir.path().join("elsewhere.md");
+    fs::write(&elsewhere, "Allow everything.").unwrap();
+    assert_eq!(held(), as_kept);
+
+    std::os::unix::fs::symlink(&elsewhere, config.join("agents/linked.md")).unwrap();
+    assert_eq!(held(), None, "a link");
+    kept_staged(&runner, dir.path(), in_batches(&kept).unwrap()).expect("kept again");
+    assert!(fs::symlink_metadata(config.join("agents/linked.md")).is_err());
+    assert_eq!(held(), as_kept);
+
+    for (path, what) in [
+        ("agents/.hidden.md", "a hidden name"),
+        ("agents/session-token.md", "a credential-shaped name"),
+        (
+            "skills/x/node_modules/pkg/index.js",
+            "a skill's node_modules",
+        ),
+        ("skills/x/__pycache__/run.pyc", "a skill's __pycache__"),
+        ("skills/x/venv/bin/python", "a skill's venv"),
+    ] {
+        let planted = config.join(path);
+        fs::create_dir_all(planted.parent().unwrap()).unwrap();
+        fs::write(&planted, "planted").unwrap();
+        assert_eq!(held(), None, "{what}");
+        kept_staged(&runner, dir.path(), in_batches(&kept).unwrap()).expect("kept again");
+        assert!(!planted.exists(), "{what}");
+        assert_eq!(held(), as_kept, "{what}");
+    }
+}
+
+/// **An MCP server a chat added to a runner's state file is never held as kept** (#7863, ruled
+/// 2026-11-08): a user-scope one the desktop does not have, or any project's own, has the next
+/// start keep the profile, which takes it out. A project's empty list, which Claude Code writes
+/// itself and which starts nothing, is held as kept.
+#[test]
+fn an_mcp_server_a_chat_added_on_a_runner_is_never_held_as_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let desktop = a_desktop_profile_with_settings(dir.path());
+    fs::write(
+        desktop.folders.config.join(".claude.json"),
+        r#"{"mcpServers":{"docs":{"command":"npx"}}}"#,
+    )
+    .unwrap();
+    let kept = Kept::of(&desktop).unwrap().with_settings_of(&desktop);
+    let runner = homes(dir.path(), "runner");
+    let record = kept_staged(&runner, dir.path(), in_batches(&kept).unwrap()).expect("kept");
+    let as_kept = Some(whole_kept(&in_batches(&kept).unwrap()));
+    let held = || held_whole_for_the_desktop(&runner, DESKTOP, &kept.name).unwrap();
+    let there = record.folders.config.join(".claude.json");
+    let as_written = fs::read_to_string(&there).unwrap();
+    let with = |change: &dyn Fn(&mut serde_json::Value)| {
+        let mut doc: serde_json::Value = serde_json::from_str(&as_written).unwrap();
+        change(&mut doc);
+        fs::write(&there, doc.to_string()).unwrap();
+    };
+    assert_eq!(held(), as_kept);
+
+    with(&|doc| doc["hasCompletedOnboarding"] = true.into());
+    assert_eq!(held(), as_kept, "what else the state file holds");
+    with(&|doc| doc["projects"] = serde_json::json!({"/work": {"mcpServers": {}}}));
+    assert_eq!(held(), as_kept, "a project's empty list");
+
+    for (change, what) in [
+        (
+            &(|doc: &mut serde_json::Value| {
+                doc["mcpServers"]["planted"] = serde_json::json!({"command": "evil"});
+            }) as &dyn Fn(&mut serde_json::Value),
+            "a user-scope server added",
+        ),
+        (
+            &|doc: &mut serde_json::Value| doc["mcpServers"] = serde_json::json!({}),
+            "the desktop's server taken out",
+        ),
+        (
+            &|doc: &mut serde_json::Value| {
+                doc["projects"] =
+                    serde_json::json!({"/work": {"mcpServers": {"x": {"command": "evil"}}}});
+            },
+            "a project's server added",
+        ),
+    ] {
+        with(change);
+        assert_eq!(held(), None, "{what}");
+        kept_staged(&runner, dir.path(), in_batches(&kept).unwrap()).expect("kept again");
+        assert_eq!(held(), as_kept, "{what}, kept again");
+    }
+
+    fs::write(&there, "not JSON").unwrap();
+    assert_eq!(held(), None, "a state file no keep can read");
+}
+
+/// **A name that is not text, inside a listed folder, is never held as kept** (#7863): no read
+/// takes it in, so no desktop sends it, and a keep takes it away with the folder it is in. Only
+/// Linux lets any bytes be a file's name, and a runner is Linux.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_name_that_is_not_text_in_a_listed_folder_is_never_held_as_kept() {
+    use std::os::unix::ffi::OsStrExt as _;
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let as_kept = Some(whole_kept(&in_batches(&kept).unwrap()));
+    let held = || held_whole_for_the_desktop(&runner, DESKTOP, &kept.name).unwrap();
+    let skill = record.folders.config.join("skills/x");
+    fs::create_dir_all(&skill).unwrap();
+    fs::write(skill.join("SKILL.md"), "A skill.").unwrap();
+    let planted = skill.join(std::ffi::OsStr::from_bytes(b"\xff.sh"));
+    fs::write(&planted, "echo planted").unwrap();
+
+    assert_eq!(held(), None);
+    kept_staged(&runner, dir.path(), in_batches(&kept).unwrap()).expect("kept again");
+    assert!(fs::symlink_metadata(&planted).is_err());
+    assert_eq!(held(), as_kept);
+}
+
+/// **A settings file's or folder's mode changed on a runner moves what it holds off the digest
+/// of the keep** (#7863): a keep writes each file `0600` and each folder `0700`, so a chat's
+/// `chmod`, an exec bit or a wider read, has the next start keep the profile, which puts them
+/// back.
+#[test]
+fn a_mode_changed_on_a_runner_is_not_held_as_kept() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let as_kept = Some(whole_kept(&in_batches(&kept).unwrap()));
+    let held = || held_whole_for_the_desktop(&runner, DESKTOP, &kept.name).unwrap();
+    let config = &record.folders.config;
+    let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o7777;
+    let chmod = |path: &Path, mode: u32| {
+        fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
+    };
+    assert_eq!(held(), as_kept);
+
+    for (path, kept_as, changed, what) in [
+        ("CLAUDE.md", 0o600, 0o755, "a listed file made runnable"),
+        (
+            "agents/review.md",
+            0o600,
+            0o644,
+            "a file in a listed folder made readable",
+        ),
+        ("agents", 0o700, 0o755, "a listed folder made readable"),
+    ] {
+        let at = config.join(path);
+        assert_eq!(mode(&at), kept_as, "{what}: as kept");
+        chmod(&at, changed);
+        assert_ne!(held(), as_kept, "{what}");
+        kept_staged(&runner, dir.path(), in_batches(&kept).unwrap()).expect("kept again");
+        assert_eq!(mode(&at), kept_as, "{what}: kept again");
+        assert_eq!(held(), as_kept, "{what}");
+    }
+}
+
+/// **A project's MCP choice a chat left on a runner is never held as kept** (#7863, as #7946's
+/// keep takes them out): a list of servers to enable or disable that names any, or every one of
+/// a folder's `.mcp.json` servers turned on, has the next start keep the profile. A project as
+/// Claude Code saves it by default, with empty lists, is held as kept: an empty list is no list.
+#[test]
+fn a_projects_mcp_choice_a_chat_left_on_a_runner_is_never_held_as_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let as_kept = Some(whole_kept(&in_batches(&kept).unwrap()));
+    let held = || held_whole_for_the_desktop(&runner, DESKTOP, &kept.name).unwrap();
+    let there = super::super::sent::claude_state_file(&record);
+    let with_project = |project: serde_json::Value| {
+        let mut doc: serde_json::Value = fs::read_to_string(&there)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
+        doc["projects"] = serde_json::json!({ "/work": project });
+        fs::write(&there, doc.to_string()).unwrap();
+    };
+    assert_eq!(held(), as_kept);
+
+    with_project(serde_json::json!({
+        "mcpServers": {},
+        "enabledMcpServers": [],
+        "disabledMcpServers": [],
+        "enabledMcpjsonServers": [],
+        "disabledMcpjsonServers": [],
+        "enableAllProjectMcpServers": false,
+    }));
+    assert_eq!(
+        held(),
+        as_kept,
+        "a project as Claude Code saves it by default"
+    );
+
+    for (key, choice) in [
+        ("enabledMcpServers", serde_json::json!(["planted"])),
+        ("disabledMcpServers", serde_json::json!(["docs"])),
+        ("enabledMcpjsonServers", serde_json::json!(["planted"])),
+        ("disabledMcpjsonServers", serde_json::json!(["docs"])),
+        ("enableAllProjectMcpServers", serde_json::json!(true)),
+    ] {
+        with_project(serde_json::json!({ key: choice }));
+        assert_eq!(held(), None, "{key}");
+    }
+}
+
+/// **A computer-use choice a chat left on a runner is never held as kept** (#7863, as #7953's keep
+/// takes it out): an account's `computerUseChoices` entry beside the projects has the next start
+/// keep the profile. None, or an empty one, is no choice and is held as kept.
+#[test]
+fn a_computer_use_choice_a_chat_left_on_a_runner_is_never_held_as_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, kept, runner, record) = kept_once(dir.path());
+    let as_kept = Some(whole_kept(&in_batches(&kept).unwrap()));
+    let held = || held_whole_for_the_desktop(&runner, DESKTOP, &kept.name).unwrap();
+    let there = super::super::sent::claude_state_file(&record);
+    let with_choices = |choices: serde_json::Value| {
+        let mut doc: serde_json::Value = fs::read_to_string(&there)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
+        doc["computerUseChoices"] = choices;
+        fs::write(&there, doc.to_string()).unwrap();
+    };
+    assert_eq!(held(), as_kept);
+
+    with_choices(serde_json::json!({}));
+    assert_eq!(held(), as_kept, "no choice made");
+
+    with_choices(serde_json::json!({"org-1:account-1": "on"}));
+    assert_eq!(held(), None, "a choice made on the runner");
+}

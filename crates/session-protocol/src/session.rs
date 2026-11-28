@@ -637,9 +637,27 @@ use crate::view::{Limits, Views};
 /// tell text, and a piece its own bytes alone. A window before 1.97 is answered
 /// [`FileRead::NotThere`] for a kept file, and a window asks a host to read a file
 /// only from this version ([`KNOWS_KEPT_FILES`]).
+///
+/// 1.98 is #7864's (#7920), which lands beside 1.99.
+///
+/// 1.99 has a chat's start on a runner name the settings its profile was last kept with
+/// ([`StartProgram::profile_held`], #7863, ADR 0078 as amended 2026-11-27): the runner reads what
+/// it holds of that profile for the desktop its link proved off its disk then, and starts the chat
+/// only where that comes to the digest named; else it refuses [`PROFILE_CHANGED`] and starts
+/// nothing, so the desktop keeps the profile again and starts it after. Named only by the window
+/// or its host's relay. A host before 1.99 ignores the field, so a desktop names it, and skips the
+/// keep before a start, only to a runner of 1.99 or later ([`KNOWS_PROFILE_HELD`]).
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 97,
+    minor: 99,
+};
+
+/// The version that first starts a chat only where its profile's settings are as they were kept
+/// ([`StartProgram::profile_held`], #7863): a desktop skips no keep before a start on a host
+/// before.
+pub const KNOWS_PROFILE_HELD: Version = Version {
+    major: 1,
+    minor: 99,
 };
 
 /// The version that first hibernates a chat's program ([`Command::Hibernate`], #7630): none is
@@ -1041,6 +1059,12 @@ pub const NO_LOGIN_FORM_ON_CLEAN_LOAD: &str = "no_login_form_on_clean_load";
 /// browser, and what it held is as it was. Its `why` says why, and what to do.
 pub const LOGIN_NOT_RUN: &str = "login_not_run";
 
+/// What a runner holds of the profile a start names is not what the start says it was last kept
+/// with (1.99, #7863, [`StartProgram::profile_held`]): a settings file there changed, came or went
+/// since. Nothing was started. Its desktop keeps the profile again, which puts its settings back,
+/// and starts the chat after.
+pub const PROFILE_CHANGED: &str = "profile_changed";
+
 /// Every refusal code this version says. A later minor may add one; a client treats one it
 /// does not know as a refusal and shows its `why`.
 pub const REFUSALS: &[&str] = &[
@@ -1063,6 +1087,7 @@ pub const REFUSALS: &[&str] = &[
     KEY_CHANGED,
     NO_ENGINE_SANDBOX,
     PROGRAMS_NOT_KNOWN,
+    PROFILE_CHANGED,
 ];
 
 /// A command, as the client sends it. Unknown fields are ignored, so a later minor may add
@@ -2296,6 +2321,13 @@ pub struct StartProgram {
     /// The profile it runs on, or none (1.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
+    /// The digest of the settings that profile was last kept with on the runner that starts it,
+    /// their contents ([`whole_settings_digest`]) with their modes (1.99, #7863): the runner
+    /// starts it only where what it holds of the profile, read off its disk then, comes to this,
+    /// and refuses [`PROFILE_CHANGED`] otherwise. None where the desktop kept the profile for
+    /// this start, and the runner holds it to nothing more.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_held: Option<String>,
     /// The size its terminal starts at, in columns and rows (1.2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cols: Option<u16>,
@@ -2375,6 +2407,7 @@ impl StartProgram {
             number: None,
             persona: None,
             profile: None,
+            profile_held: None,
             cols: None,
             rows: None,
             resume: None,
@@ -4397,6 +4430,18 @@ async fn refused<H: Host>(command: &Command, peer: &Peer, host: &H) -> Option<Re
             why: format!(
                 "what the person allowed of a persona's tools is named by purlis's window, or \
                  its host's relay, only, and this link is `{scope}`"
+            ),
+        });
+    }
+    if let Command::StartProgram(start) = command
+        && start.profile_held.is_some()
+        && !scope.may(Power::Confine)
+    {
+        return Some(Refusal {
+            code: NOT_ALLOWED.into(),
+            why: format!(
+                "the settings a chat's profile was last kept with are named by purlis's window, \
+                 or its host's relay, only, and this link is `{scope}`"
             ),
         });
     }

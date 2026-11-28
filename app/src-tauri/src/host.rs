@@ -155,10 +155,48 @@ pub struct Named {
     /// Whether the plane's skills reach it, as this window read the Skill studio's flag: what a
     /// runner arms it by (1.62, SK-20b #3084).
     pub plane_skills: bool,
+    /// What its runner must still hold of its profile's settings, where its keep there was
+    /// skipped or can be held to (1.99, #7863), and how to keep it again where it does not.
+    pub profile_held: Option<ProfileHeld>,
     pub alone: Vec<u16>,
     pub size: Size,
     /// Marked as its program is asked to run there (#4781), shared with whoever started it.
     pub asked_to_run: AskedToRun,
+}
+
+/// **What a chat's start on a runner names of its profile's settings** (1.99, #7863, ADR 0078 as
+/// amended 2026-11-27): the digest the runner must still hold, and the keep made again where the
+/// runner refuses the start as [`purlis_session_protocol::session::PROFILE_CHANGED`], after
+/// which the chat starts.
+#[derive(Clone)]
+pub struct ProfileHeld {
+    pub digest: String,
+    keep_again: std::sync::Arc<dyn Fn() -> Result<(), String> + Send + Sync>,
+}
+
+impl ProfileHeld {
+    pub fn new(
+        digest: String,
+        keep_again: impl Fn() -> Result<(), String> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            digest,
+            keep_again: std::sync::Arc::new(keep_again),
+        }
+    }
+
+    /// The profile kept on the runner again, its settings put back as this machine has them.
+    pub fn keep_again(&self) -> Result<(), String> {
+        (self.keep_again)()
+    }
+}
+
+impl std::fmt::Debug for ProfileHeld {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProfileHeld")
+            .field("digest", &self.digest)
+            .finish_non_exhaustive()
+    }
 }
 
 /// **Whether a start's program was asked to run** (#4781): marked before the host's answer, so
