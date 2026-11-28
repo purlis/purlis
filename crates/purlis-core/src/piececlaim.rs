@@ -36,7 +36,10 @@
 //! The claim and the check are made under one lock, an advisory lock on a file beside the
 //! workspace's piece log taken by the app and by the command line alike, so of two chats
 //! writing at once in a free folder one takes it and the other is refused, whichever process
-//! each runs in. The log lives in the workspace, which chats
+//! each runs in. The lock covers the check and the line only, never the work: a removal is
+//! judged and its free folder claimed under it, and removed outside it (#8024). The file names
+//! its holder while it is held, so a taker that waited too long says who kept it, and a removal
+//! that loses the race once tries once more. The log lives in the workspace, which chats
 //! may write: this keeps two chats from writing one folder by accident, which is what happened,
 //! and is not a wall against a chat set on going through it.
 
@@ -149,6 +152,13 @@ fn holder(plane: &Path, at: &Located) -> Option<Holder> {
             // The folder is gone, and its claim with it (#3879): only while it is gone, so a
             // line written into the log by hand lets no live folder's holder go.
             Some("removed") if gone => held = None,
+            // A chat letting go of the claim it took for a removal that did not happen, or
+            // of its own claim once its folder went (#8024): its own claim only.
+            Some("released")
+                if chat.is_some() && chat.as_deref() == held.as_ref().map(|h| h.id.as_str()) =>
+            {
+                held = None;
+            }
             Some("done" | "abandoned") => {
                 let the_persons = chat.is_none() && text(&e, "session").is_none();
                 let the_holders =
@@ -280,35 +290,132 @@ fn lock_path(plane: &Path, ws: &str) -> PathBuf {
 /// How long a check-and-claim waits on another's: a check and one appended line.
 const A_CLAIM_WAITS_AT_MOST: Duration = Duration::from_secs(5);
 
+/// Workspace `ws`'s claim lock, held. The line naming its holder is emptied before the lock is
+/// let go of (the field is dropped after this guard's own `drop`).
+#[derive(Debug)]
+pub(crate) struct Claims(crate::filelock::Held);
+
+impl Drop for Claims {
+    fn drop(&mut self) {
+        // Best-effort: a line left behind names a holder that has gone, until the next taker
+        // writes its own over it.
+        let _ = self.0.set_len(0);
+    }
+}
+
 /// Takes workspace `ws`'s claim lock, or says why not. The file is opened through no link.
-pub(crate) fn locked(plane: &Path, ws: &str) -> Result<crate::filelock::Held, String> {
+pub(crate) fn locked(plane: &Path, ws: &str) -> Result<Claims, String> {
+    hold(plane, ws, None, A_CLAIM_WAITS_AT_MOST).map_err(not_held)
+}
+
+/// The sentence a lock that could not be held is refused in.
+fn not_held(why: std::io::Error) -> String {
+    format!("purlis could not hold the branch folder claims ({why})")
+}
+
+/// Takes workspace `ws`'s claim lock for `by` (where a chat asks), waiting `wait` at most, and
+/// writes in it who holds it (#8024); a wait that ends names who held it, and since when.
+fn hold(plane: &Path, ws: &str, by: Option<&Who>, wait: Duration) -> std::io::Result<Claims> {
+    use std::io::{Read, Seek, SeekFrom, Write};
     let path = lock_path(plane, ws);
-    let opened = (|| -> std::io::Result<std::fs::File> {
-        crate::contain::writable(plane, &path).map_err(std::io::Error::other)?;
-        std::fs::create_dir_all(pieces::dir_for(plane, ws))?;
-        let mut open = std::fs::OpenOptions::new();
-        open.create(true).truncate(false).read(true).write(true);
-        // Never waits to open: a FIFO a chat planted at the path opens at once, rather than
-        // holding the broker until a reader comes, and is refused below. `flock` takes no
-        // notice of the flag, so it stays.
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            open.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK);
-        }
-        let file = open.open(&path)?;
-        if !file.metadata()?.file_type().is_file() {
+    crate::contain::writable(plane, &path).map_err(std::io::Error::other)?;
+    std::fs::create_dir_all(pieces::dir_for(plane, ws))?;
+    let mut open = std::fs::OpenOptions::new();
+    open.create(true).truncate(false).read(true).write(true);
+    // Never waits to open: a FIFO a chat planted at the path opens at once, rather than
+    // holding the broker until a reader comes, and is refused below. `flock` takes no
+    // notice of the flag, so it stays.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK);
+    }
+    let file = open.open(&path)?;
+    let meta = file.metadata()?;
+    if !meta.file_type().is_file() {
+        return Err(std::io::Error::other(
+            "what is at its lock's place is not a plain file",
+        ));
+    }
+    // A hard link would have the holder's line written over another file, and emptied.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if meta.nlink() != 1 {
             return Err(std::io::Error::other(
-                "what is at its lock's place is not a plain file",
+                "what is at its lock's place is a hard link to another file",
             ));
         }
-        Ok(file)
-    })();
-    opened
-        .and_then(|file| {
-            crate::filelock::lock_within(file, A_CLAIM_WAITS_AT_MOST, "the branch folder claims")
+    }
+    let reader = file.try_clone()?;
+    match crate::filelock::lock_within(file, wait, "the branch folder claims") {
+        Ok(held) => {
+            let mut line = serde_json::json!({
+                "pid": std::process::id(),
+                "since": Timestamp::now().to_string(),
+            });
+            if let Some(chat) = by.and_then(|by| by.session.as_deref()?.parse::<u32>().ok()) {
+                line["chat"] = chat.into();
+            }
+            // Best-effort: who holds it is only ever said, never judged by.
+            let mut on: &std::fs::File = &held;
+            let _ = on
+                .set_len(0)
+                .and_then(|()| on.seek(SeekFrom::Start(0)))
+                .and_then(|_| on.write_all(line.to_string().as_bytes()));
+            Ok(Claims(held))
+        }
+        Err(why) if why.kind() == std::io::ErrorKind::TimedOut => {
+            let mut said = Vec::new();
+            let mut from: &std::fs::File = &reader;
+            let read = from
+                .seek(SeekFrom::Start(0))
+                .and_then(|_| from.take(512).read_to_end(&mut said));
+            let holder = read
+                .ok()
+                .and_then(|_| holder_said(&said, Timestamp::now()))
+                .map(|holder| format!("; {holder}"))
+                .unwrap_or_default();
+            Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("{why}{holder}"),
+            ))
+        }
+        Err(why) => Err(why),
+    }
+}
+
+/// Who the line in the claim lock says last took it, and how long before `now`, or `None` where
+/// it names nobody. Only the last holder it names: a killed holder leaves its line, and an older
+/// binary writes none. The file is in the workspace, which chats may write, so only what reads as a
+/// number or a timestamp is said: no text from it reaches the person.
+fn holder_said(line: &[u8], now: Timestamp) -> Option<String> {
+    let line: Value = serde_json::from_slice(line).ok()?;
+    let number = |key: &str| {
+        line.get(key)
+            .and_then(Value::as_u64)
+            .and_then(|n| u32::try_from(n).ok())
+    };
+    let who = match (number("chat"), number("pid")) {
+        (Some(chat), Some(pid)) => format!("chat {chat} (process {pid})"),
+        (Some(chat), None) => format!("chat {chat}"),
+        (None, Some(pid)) => format!("process {pid}"),
+        (None, None) => return None,
+    };
+    let held = line
+        .get("since")
+        .and_then(Value::as_str)
+        .and_then(|since| since.parse::<Timestamp>().ok())
+        .and_then(|since| now.duration_since(since).try_into().ok())
+        .map(|held: Duration| {
+            if held < Duration::from_secs(1) {
+                format!(", which took them {} ms ago", held.as_millis())
+            } else {
+                format!(", which took them {} s ago", held.as_secs())
+            }
         })
-        .map_err(|why| format!("purlis could not hold the branch folder claims ({why})"))
+        .unwrap_or_default();
+    Some(format!("the last holder their lock names is {who}{held}"))
 }
 
 /// **The check every brokered write of a branch folder makes first** (#3901): `Ok` where `who`
@@ -366,7 +473,8 @@ pub fn take_telling(
             act.word()
         ))
     };
-    let _one_at_a_time = locked(plane, &at.workspace).map_err(refused)?;
+    let _one_at_a_time = hold(plane, &at.workspace, Some(who), A_CLAIM_WAITS_AT_MOST)
+        .map_err(|why| refused(not_held(why)))?;
     match writer(plane, at, who.chat.as_deref(), live, act) {
         Writer::Yours => Ok(()),
         Writer::Refused(why) => {
@@ -408,16 +516,35 @@ pub enum Judged<'a> {
     ByAChat(Option<&'a [Live]>),
 }
 
-/// **A branch folder's removal, held to its claim** (#3879): `remove` is run, under the
-/// workspace's claim lock, only where `judged` lets `who` have the folder; a removal that
-/// answers `0` ends the folder's claim, whoever held it, by a `removed` line. Else the refusal,
-/// in the words a commit, an update or a push is refused in.
+/// **A branch folder's removal, held to its claim** (#3879): `remove` is run only where
+/// `judged` lets `who` have the folder, judged under the workspace's claim lock and, for a chat
+/// in a folder no live chat holds, claimed for it there; `remove` itself runs outside the lock
+/// (#8024). A removal that answers `0` ends the folder's claim, whoever held it, by a `removed`
+/// line. One that answers otherwise lets go, by a `released` line, of the claim this call took,
+/// and keeps one the chat held before it. Else the refusal, in the words a commit, an update or
+/// a push is refused in.
+///
+/// A process killed between the claim and those lines leaves the folder claimed by its chat:
+/// it clears when that chat ends, or by `purlis worktree done` in the folder.
 pub fn removing(
     plane: &Path,
     at: &Located,
     who: &Who,
     judged: Judged<'_>,
     now: Timestamp,
+    remove: impl FnOnce() -> u8,
+) -> Result<u8, String> {
+    removing_within(plane, at, who, judged, now, A_CLAIM_WAITS_AT_MOST, remove)
+}
+
+/// [`removing`], each take of the claim lock waiting `wait` at most.
+fn removing_within(
+    plane: &Path,
+    at: &Located,
+    who: &Who,
+    judged: Judged<'_>,
+    now: Timestamp,
+    wait: Duration,
     remove: impl FnOnce() -> u8,
 ) -> Result<u8, String> {
     let refused = |why: String| {
@@ -427,26 +554,77 @@ pub fn removing(
             at.repo, at.piece
         )
     };
-    let _one_at_a_time = locked(plane, &at.workspace).map_err(refused)?;
-    if let Judged::ByAChat(live) = judged
-        && let Writer::Refused(why) = writer(plane, at, who.chat.as_deref(), live, Act::Remove)
+    // A take that loses the race once tries once more before refusing (#8024).
+    let take_the_lock = || {
+        hold(plane, &at.workspace, Some(who), wait)
+            .or_else(|why| match why.kind() {
+                std::io::ErrorKind::TimedOut => hold(plane, &at.workspace, Some(who), wait),
+                _ => Err(why),
+            })
+            .map_err(not_held)
+    };
+    // Under the lock only the judging and the claim (#8024): the removal itself, with its git
+    // and its forge's answer, runs outside it. A chat that removes a folder no live chat holds
+    // takes it first, as any write does, so no second chat writes there while it goes.
+    let mut claimed_here = false;
+    let mut held_before = false;
     {
-        return Err(why);
+        let _one_at_a_time = take_the_lock().map_err(refused)?;
+        if let Judged::ByAChat(live) = judged {
+            match writer(plane, at, who.chat.as_deref(), live, Act::Remove) {
+                Writer::Refused(why) => return Err(why),
+                Writer::Free if who.chat.is_some() => {
+                    pieces::record(
+                        plane,
+                        &at.workspace,
+                        Event::Claimed,
+                        &at.repo,
+                        &at.piece,
+                        None,
+                        who,
+                        now,
+                    )
+                    .ok_or_else(|| {
+                        refused("purlis could not record that this chat works there".to_owned())
+                    })?;
+                    claimed_here = true;
+                }
+                Writer::Yours => held_before = true,
+                Writer::Free => {}
+            }
+        }
     }
     let code = remove();
-    if code == 0 {
-        // Best-effort: the folder is gone either way, and a claim on a folder that is not
-        // there holds nothing a later cut of the same name could not take back.
-        let _ = pieces::record(
+    // A `released` line lets go of this chat's own claim: the one this call took, where the
+    // removal did not happen (a claim the chat held before the call stays its own); and, once
+    // the folder is gone, any it held, so it does not come back with a folder cut again under
+    // the name.
+    let release = claimed_here || (held_before && code == 0);
+    if code != 0 && !release {
+        return Ok(code);
+    }
+    // Best-effort: where a line is not written the folder stays held until its chat declares
+    // it done or ends. Under the lock where it can be had; a `removed` line only ever lets a
+    // holder go while the folder is gone, and a `released` one only its own chat's claim, so
+    // one appended amid another's check makes that check no less careful.
+    let _one_at_a_time = take_the_lock().ok();
+    let line = |event| {
+        pieces::record(
             plane,
             &at.workspace,
-            Event::Removed,
+            event,
             &at.repo,
             &at.piece,
             None,
             who,
             now,
-        );
+        )
+    };
+    if code == 0 {
+        let _ = line(Event::Removed);
+    }
+    if release {
+        let _ = line(Event::Released);
     }
     Ok(code)
 }

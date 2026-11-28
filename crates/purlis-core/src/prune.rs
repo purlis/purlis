@@ -61,6 +61,8 @@ struct Candidate {
     commits: Commits,
     /// Its folder is already gone, and only git's record of it is left.
     gone: bool,
+    /// The commit its branch was at before it was judged: the one its branch is deleted at.
+    tip: Option<String>,
 }
 
 /// **Prunes `asked.ws`**, saying what went and what stayed. `0` where every finished folder
@@ -102,20 +104,24 @@ pub fn prune(
         .filter(|(folder, _)| asked.repo.is_none_or(|repo| repo == folder.repo))
         .collect();
     let judged = finished::each_at_once(&in_scope, |(folder, gone)| {
-        if *gone {
+        // Read before the judge, so a commit made after it keeps the branch (#8048).
+        let tip = standing::tip_of_piece(plane, ws, &folder.repo, &folder.piece);
+        let judged = if *gone {
             gone_folder(plane, ws, folder, asked.forge)
         } else if asker.stands_in == Some(folder) {
             Err("this chat stands in it".to_owned())
         } else {
             why_kept(plane, ws, folder, asker, asked.forge)
-        }
+        };
+        (tip, judged)
     });
-    for ((folder, gone), judged) in in_scope.into_iter().zip(judged) {
+    for ((folder, gone), (tip, judged)) in in_scope.into_iter().zip(judged) {
         match judged {
             Ok(commits) => candidates.push(Candidate {
                 folder: folder.clone(),
                 commits,
                 gone: *gone,
+                tip,
             }),
             Err(why) => kept.push((folder.clone(), why)),
         }
@@ -222,29 +228,36 @@ fn branches(
             }
         };
         let judged = finished::each_at_once(&found, |branch| {
+            // Read before the judge, so a commit made after it keeps the branch (#8048).
+            let tip = standing::tip(plane, ws, repo, branch);
             if let Some(InFolder::Task(record)) =
                 dispatchplace::held_in_folder(plane, ws, repo, branch)
                 && record.running()
             {
-                return Some(Err(format!(
-                    "its task '{}' has not ended",
-                    crate::shown::short(&record.task.unwrap_or(record.worker.chat.name))
-                )));
+                return Some((
+                    tip,
+                    Err(format!(
+                        "its task '{}' has not ended",
+                        crate::shown::short(&record.task.unwrap_or(record.worker.chat.name))
+                    )),
+                ));
             }
             finished::branch_only(plane, ws, repo, branch, asked.forge)
-                .map(|judged| judged.map_err(|why| why.why()))
+                .map(|judged| (tip, judged.map_err(|why| why.why())))
         });
         for (branch, judged) in found.iter().zip(judged) {
+            let Some((tip, judged)) = judged else {
+                continue;
+            };
             let commits = match judged {
-                None => continue,
-                Some(Err(why)) => {
+                Err(why) => {
                     stayed += 1;
                     say(Say::Info(
                         format!("Kept branch {branch} of {repo}: {why}").into(),
                     ));
                     continue;
                 }
-                Some(Ok(commits)) => commits,
+                Ok(commits) => commits,
             };
             let why = commits.why_its_branch_goes();
             if asked.dry_run {
@@ -255,7 +268,10 @@ fn branches(
                 ));
                 continue;
             }
-            let drop = || standing::drop_carried(plane, ws, repo, branch);
+            let drop = || {
+                tip.as_deref()
+                    .is_some_and(|tip| standing::drop_carried(plane, ws, repo, branch, tip))
+            };
             let dropped = if asker.brokered {
                 let held = worktree::git::isolation().unwrap_or_default();
                 crate::gitbroker::in_a_checked_clone(plane, ws, repo, &held, drop)
@@ -440,7 +456,10 @@ fn remove_one(
                                 | Commits::InMergedRequest(_)
                                 | Commits::InClosedRequestOnOrigin(_)
                         ))
-                    && standing::drop_carried(plane, ws, repo, branch));
+                    && one
+                        .tip
+                        .as_deref()
+                        .is_some_and(|tip| standing::drop_carried(plane, ws, repo, branch, tip)));
             if gone {
                 lines.push(Say::Done(format!("Deleted branch {branch}").into()));
             } else if delete {

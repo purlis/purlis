@@ -273,14 +273,43 @@ pub fn drop_if_merged(plane: &Path, ws: &str, repo: &str, branch: &str) -> bool 
 /// never finds a squash-landed branch merged; or inside a merged request's head, or on its base
 /// with its folder gone (#5439). git takes the branch's section of the clone's config with it. The local branch only; a remote branch
 /// is the forge's. Whether it went.
-pub fn drop_carried(plane: &Path, ws: &str, repo: &str, branch: &str) -> bool {
+///
+/// **Only at `judged`**, the commit [`tip`] read before it was judged so: a branch that has
+/// moved since (a chat's commit amid the removal) holds what the judge never read, and stays
+/// (#8048).
+pub fn drop_carried(plane: &Path, ws: &str, repo: &str, branch: &str, judged: &str) -> bool {
     if name::branch_name_ok(branch).is_err() {
         return false;
     }
     let Ok(clone) = clone_dir(plane, ws, repo) else {
         return false;
     };
+    if tip(plane, ws, repo, branch).as_deref() != Some(judged) {
+        return false;
+    }
     git::run(&clone, &["branch", "-D", "--", branch], git::READ).is_ok_and(|seen| seen.ok())
+}
+
+/// The commit `branch` of `repo`'s clone is at, or `None` where git does not say.
+pub fn tip(plane: &Path, ws: &str, repo: &str, branch: &str) -> Option<String> {
+    name::branch_name_ok(branch).ok()?;
+    let clone = clone_dir(plane, ws, repo).ok()?;
+    let at = format!("{}^{{commit}}", name::as_ref(branch));
+    git::run(&clone, &["rev-parse", "--verify", "-q", &at], git::READ)
+        .ok()
+        .filter(git::Run::ok)
+        .map(|run| run.out.trim().to_owned())
+        .filter(|sha| !sha.is_empty())
+}
+
+/// The commit the branch git records the folder `piece` of `repo` on is at, or `None`.
+pub fn tip_of_piece(plane: &Path, ws: &str, repo: &str, piece: &str) -> Option<String> {
+    let branch = super::list(plane, ws, repo)
+        .ok()?
+        .into_iter()
+        .find(|p| p.piece == piece)?
+        .branch?;
+    tip(plane, ws, repo, &branch)
 }
 
 /// Whether a piece's branch has landed in the branch it was cut from.

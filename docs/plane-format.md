@@ -2902,7 +2902,7 @@ file `memstore.write` could have written in its new store.
 | Field | Type | Required / default | Meaning | Status | Source |
 |---|---|---|---|---|---|
 | `ts` | string | required | UTC ISO-8601 seconds | stable | `charter/pieces.py:105` |
-| `event` | string | required | `claimed` / `done` / `abandoned` | stable | `charter/pieces.py:64` |
+| `event` | string | required | `claimed` / `done` / `abandoned`; purlis adds `removed` (#3879) and `released` (#8024) | stable | `charter/pieces.py:64`, `pieces::Event` |
 | `repo` | string | required | clone the worktree belongs to | stable | `charter/pieces.py:107` |
 | `piece` | string | required | the worktree/piece name | stable | `charter/pieces.py:108` |
 | `session` | string or null | required key | `session.current()` at write time | stable | `charter/pieces.py:109` |
@@ -2920,12 +2920,29 @@ file `memstore.write` could have written in its new store.
 - a `done` or `abandoned` line releases the holder only when it is the holder's own (its `chat`
   is the holder's) or the person's (it has neither `chat` nor a `session`). Any other chat's,
   and one with a `session` but no `chat`, releases nothing;
+- a `removed` line releases the holder only while the folder is gone;
+- a `released` line releases the holder only when it is the holder's own (its `chat` is the
+  holder's). A chat's removal writes one for the claim it took when the removal did not happen
+  (a claim the chat held before it stays), and for its own claim once the folder has gone, so
+  that claim does not hold a folder cut again under the name. It is not a declaration: it says
+  nothing of whether the piece is done;
 - the holder is also released when the app has its chat neither open with its program running
   nor still coming back after a restart; that is the app's, not a line's.
 
+A process killed between a removal's claim and its `removed` or `released` line leaves the
+folder claimed by its chat: it clears when that chat ends, or by `purlis worktree done` in the
+folder.
+
 The check and the claim a brokered write makes hold an advisory lock on
-`workspaces/<ws>/pieces/.claims.lock`, an empty file, taken by the app and the command line
-alike.
+`workspaces/<ws>/pieces/.claims.lock`, taken by the app and the command line alike, and only
+for the check and the line it appends: a removal is judged, and a free folder claimed, under
+it, and the folder is removed outside it (#8024). While it is held the file holds one JSON
+object naming its holder, `{"pid": 4242, "chat": 12, "since": "2026-11-28T12:00:00Z"}` (`chat`
+only where a chat asked), written by each taker over the last and emptied before it lets go.
+It is read only to name the last holder it records in a refusal from a taker that waited too
+long (a killed holder leaves its line, and an older binary writes none); a field that does not
+read as a number or a timestamp is left out of the refusal. A lock file that is not a plain
+file, or that has another hard link, is refused.
 
 ### `workspaces/<ws>/pieces/seen/<repo>.json` and `pieces/seen/<repo>/<piece>.json`
 

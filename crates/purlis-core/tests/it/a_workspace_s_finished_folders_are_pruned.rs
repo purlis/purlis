@@ -174,6 +174,31 @@ fn a_squash_landed_folder_goes_and_its_branch_with_it() {
 }
 
 #[test]
+fn a_squash_landed_branch_that_moved_since_it_was_judged_is_kept() {
+    purlis_core::unsteered!();
+    // #8048 round 2: a chat's commit between the judge and `git branch -D` was left dangling.
+    let f = support::plane_with_clone("api");
+    let lane = plain(&f, "lane");
+    f.commit(&lane, "one");
+    git(&f.clone, &["merge", "-q", "--squash", "lane"]);
+    git(&f.clone, &["commit", "-q", "-m", "squashed lane"]);
+    let judged = sha(&f.clone, "refs/heads/lane");
+    f.commit(&lane, "after the judge");
+    let moved = sha(&f.clone, "refs/heads/lane");
+    gone_by_hand(&f, &lane);
+
+    assert!(!purlis_core::worktree::standing::drop_carried(
+        &f.plane, &f.ws, &f.repo, "lane", &judged
+    ));
+    assert_eq!(sha(&f.clone, "refs/heads/lane"), moved);
+    // At the tip it was judged at, it goes.
+    assert!(purlis_core::worktree::standing::drop_carried(
+        &f.plane, &f.ws, &f.repo, "lane", &moved
+    ));
+    assert!(!has_branch(&f.clone, "lane"));
+}
+
+#[test]
 fn a_folder_on_no_branch_at_a_commit_of_its_base_goes() {
     purlis_core::unsteered!();
     let f = support::plane_with_clone("api");
