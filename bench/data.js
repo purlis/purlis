@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795873171452,
+  "lastUpdate": 1795876896428,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -59094,6 +59094,48 @@ window.BENCHMARK_DATA = {
             "value": 108.957068,
             "unit": "ms",
             "extra": "median of 5 runs: 104.652, 104.744, 108.957, 113.624, 113.666 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "0028492a208f26573ac1aabc833444ed8ea2b7ae",
+          "message": "Fix main: the prerequisite modal's Chromium story baselines (#8044)\n\n* Fix main: the prerequisite modal's story file says where its baselines come from\n\nMain is red on stories (chromium): PrerequisiteDialog has WebKit baselines only. A ready\npull request's stories run is WebKit's alone (ready gate, #7335), so #7929's runs never drew\nChromium's. This commit gives this PR a stories run; Chromium's pictures follow from a run\nwith the update-baselines label, which the person puts on.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8FZNJGCN1TCT3H946GH32GX\nPurlis-Persona: steward\n\n* Prerequisite modal story: Foreign Key waits for its granting answer to be visible\n\n#7981's labelled stories run (46124614211) drew Chromium's pictures, but its drawing pass\nfailed Foreign Key in purlis_light and purlis-classic_light: a one-time toBeVisible read the\nbutton while the dialog was still opening (the first pass found it visible in all twelve\ncells). A failed drawing pass keeps no baselines, so the check now waits.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8FZNJGCN1TCT3H946GH32GX\nPurlis-Persona: steward\n\n* Story baselines: the prerequisite modal's five stories in Chromium, drawn by #7981's stories run\n\nRun 46146631002, with the update-baselines label, drew them. Its workflow committed them\nas 2dddc5bf, a bot commit that leaves this pull request's checks at action_required, so the\nsame 60 files, byte for byte (each checked against its blob hash), go in as this commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8FZNJGCN1TCT3H946GH32GX\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T13:51:17Z",
+          "tree_id": "a7a147f75122bafb106921725177d989b0dde4fd",
+          "url": "https://github.com/purlis/purlis/commit/0028492a208f26573ac1aabc833444ed8ea2b7ae"
+        },
+        "date": 1795876888793,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.36100849999999995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.338, 0.349, 0.361, 0.371, 0.379 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3379265,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.326, 16.337, 16.338, 16.338, 16.445 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6060655,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.090, 101.226, 101.606, 101.680, 102.516 ms"
           }
         ]
       }
