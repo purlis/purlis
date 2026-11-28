@@ -339,6 +339,7 @@ impl Hibernated {
                 ended: true,
                 exited: false,
                 unsent: Vec::new(),
+                not_woken: None,
                 own,
             },
         );
