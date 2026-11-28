@@ -159,11 +159,17 @@ test("the record job keeps no token in its checkout, and pushes with one only wh
   assert.match(made, /TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
   assert.match(made, /git -c "http\.https:\/\/github\.com\/\.extraheader=AUTHORIZATION: basic \$auth" push origin/);
   assert.doesNotMatch(made, /git config|x-access-token:\$\{\{/);
-  // github-action-benchmark pushes with the token it is handed, as its own remote's.
+  // github-action-benchmark commits and pushes nothing (#8014); `tools/benchmarks-push.sh` pushes,
+  // with the token as its own commands' header, never written to `.git/config`.
   for (const step of recordSteps().filter((s) => s.includes("github-action-benchmark@"))) {
     assert.match(step, /github-token: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
-    assert.match(step, /auto-push: true/);
+    assert.match(step, /auto-push: false/);
   }
+  const push = recordSteps().find((s) => s.includes("run: tools/benchmarks-push.sh"));
+  assert.match(push, /TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
+  const script = readFileSync(new URL("./benchmarks-push.sh", import.meta.url), "utf8");
+  assert.match(script, /git -c "http\.https:\/\/github\.com\/\.extraheader=AUTHORIZATION: basic \$auth" "\$@"/);
+  assert.doesNotMatch(script, /git config|remote set-url/);
 });
 
 test("no record job waits in a group, where a third would replace the one waiting and lose its point", () => {
