@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795879530993,
+  "lastUpdate": 1795881323628,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -59304,6 +59304,48 @@ window.BENCHMARK_DATA = {
             "value": 100.91658699999999,
             "unit": "ms",
             "extra": "median of 5 runs: 99.628, 100.476, 100.917, 101.564, 102.347 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cfe2f3bc9631bdd2e2fc8d28962759412bdce8ff",
+          "message": "Fix #8045: TaskOwnTab test waits for the tasks menu's own landing before focusing a line (#8050)\n\nA press opens the tasks menu with the keyboard, which TabChip moves to the\nfirst task (talk) one animation frame after the menu is drawn. The test\nfocused sweep's line as soon as the menu was found. When that came before\nthe frame, Ctrl+Enter (and later Alt+Enter) went to talk, and the third tab\ncame up as talk. open() now waits with Testing Library's waitFor for that\nlanding, as ChatTasksMenu.window.test.tsx's menuOpenOn does.\n\nWhole file: 7 of 20 runs red before, 50 of 50 green after.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8H95HQHXZQZZXN53CG95SWK\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T15:25:43Z",
+          "tree_id": "e68f1322bce43d9c330454e947f5533979861bac",
+          "url": "https://github.com/purlis/purlis/commit/cfe2f3bc9631bdd2e2fc8d28962759412bdce8ff"
+        },
+        "date": 1795881317689,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.424232,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.410, 0.421, 0.424, 0.434, 0.438 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.565507,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.509, 16.562, 16.566, 16.600, 16.684 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2989485,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.304, 102.116, 102.299, 102.534, 103.372 ms"
           }
         ]
       }
