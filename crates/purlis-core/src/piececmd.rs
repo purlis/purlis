@@ -893,6 +893,24 @@ fn regenerated(folder: &Path, path: &str) -> bool {
     named && !may_hold_a_repository(&folder.join(dir))
 }
 
+/// Whether `dir`, a folder of the branch folder `folder`, is under a folder below the top that
+/// holds a `package.json`.
+fn inside_a_package(folder: &Path, dir: &str) -> bool {
+    let mut at = Path::new(dir).parent();
+    while let Some(parent) = at.filter(|parent| !parent.as_os_str().is_empty()) {
+        if folder
+            .join(parent)
+            .join("package.json")
+            .symlink_metadata()
+            .is_ok_and(|meta| meta.is_file())
+        {
+            return true;
+        }
+        at = parent.parent();
+    }
+    false
+}
+
 /// Whether every entry of `dir` is a file named `*.log`: an empty one is too.
 fn holds_only_logs(dir: &Path) -> bool {
     std::fs::read_dir(dir).is_ok_and(|entries| {
@@ -912,7 +930,7 @@ fn holds_only_logs(dir: &Path) -> bool {
 /// that the next build does not write again. A file of its own, a link or anything else that is
 /// not a plain file is not a copy; nor is `name/` itself.
 fn copies_a_tracked_folder(folder: &Path, dir: &str, name: &str) -> bool {
-    if dir == name {
+    if dir == name || !inside_a_package(folder, dir) {
         return false;
     }
     let Some(tracked) = worktree::git::run(folder, &["ls-files", "-z", "--", name], {

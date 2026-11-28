@@ -752,6 +752,41 @@ fn the_explorer_s_remove_takes_a_squash_landed_folder_and_still_refuses_one_ahea
     assert!(ahead.is_dir(), "{refused}");
 }
 
+#[test]
+fn the_explorer_s_remove_leaves_a_carried_folder_a_chat_holds_or_another_links_into_to_git() {
+    purlis_core::unsteered!();
+    // Past git's guard only where nothing else keeps it: a chat at work in it, or a folder
+    // that needs it, is left to git's guard, which refuses a carried branch.
+    let f = support::plane_with_clone("api");
+    let held = plain(&f, "held");
+    f.commit(&held, "one");
+    git(&f.clone, &["merge", "-q", "--squash", "held"]);
+    git(&f.clone, &["commit", "-q", "-m", "squashed held"]);
+    let holder = Who::here(None, Some("9".to_owned()), None).for_chat(Some("chat-id-9".to_owned()));
+    pieces::record(
+        &f.plane,
+        &f.ws,
+        Event::Claimed,
+        &f.repo,
+        "held",
+        None,
+        &holder,
+        jiff::Timestamp::now(),
+    )
+    .unwrap();
+    let linked = plain(&f, "linked");
+    f.commit(&linked, "two");
+    git(&f.clone, &["merge", "-q", "--squash", "linked"]);
+    git(&f.clone, &["commit", "-q", "-m", "squashed linked"]);
+    let linking = plain(&f, "linking");
+    std::os::unix::fs::symlink(linked.join("two"), linking.join("two-link")).unwrap();
+
+    assert!(removed_from_the_explorer(&f, "held", Forge::none()).is_err());
+    assert!(held.is_dir());
+    assert!(removed_from_the_explorer(&f, "linked", Forge::none()).is_err());
+    assert!(linked.is_dir());
+}
+
 /// The clone's config lines for `branch`, as `git config --get-regexp` prints them.
 fn branch_config(clone: &Path, branch: &str) -> String {
     let mut git = std::process::Command::new("git");

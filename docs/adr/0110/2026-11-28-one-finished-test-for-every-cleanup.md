@@ -32,19 +32,24 @@ writes, and `site/src/content/docs/docs/`, which the site's build copies from `d
      (#1472). Each guard it had stays: the task has ended, no chat holds the folder or stands in
      it, the folder is still on the branch purlis cut, and its git runs in a checked clone and
      folder. A folder on its base goes with its branch, as before. One carried, found in
-     history, or inside a request's head goes and **its branch stays**: tidy deletes a branch
+     history, or inside a request's head (one merged, or one closed with its head on origin, as
+     §1 reads it since #4500) goes and **its branch stays**: tidy deletes a branch
      only where `git branch -d` does. `prune` deletes such a branch later, as one whose folder is
      gone (amended 2026-11-06).
    - **The explorer's Remove** removes a finished folder past git's guard: a task's folder, as
-     before, and a plain one. The window still deletes no branch, `--force` is never passed on
-     the person's behalf, and a folder that is not finished is removed as git removes it, or
-     refused, as before.
+     before, and a plain one that no chat holds (read as a terminal reads it, with no word of
+     which chats are open) and no other folder links into. The window still deletes no branch,
+     `--force` is never passed on the person's behalf, and a folder that is not finished, or a
+     plain one a chat holds, is removed as git removes it, or refused, as before.
 2. **A build's logs and a build's copy of a tracked folder are a build's**, as `target/` beside
    `Cargo.toml` is:
    - a `logs/` folder beside a `package.json` that holds only `*.log` files;
-   - an ignored folder named as a tracked folder at the top of the repo, every file of which has
+   - an ignored folder inside a package (under a folder below the top that holds a
+     `package.json`), named as a tracked folder at the top of the repo, every file of which has
      a tracked file at the same path under that folder: `site/src/content/docs/docs/spec.md`
-     beside a tracked `docs/spec.md`. A file of its own, or a link, keeps the folder.
+     beside a tracked `docs/spec.md`. A file of its own, or a link, keeps the folder. A file is
+     matched by its path, not its contents, since a build may rewrite each page, so a copy in
+     no package (`scratch/docs/`) keeps the folder: an edited copy there may be the task's.
 
 ## Why
 

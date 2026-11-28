@@ -649,6 +649,13 @@ fn logs_that_are_not_only_a_build_s_and_a_copy_with_a_page_of_its_own_still_keep
             "logs/findings.csv",
             "`logs/`",
         ),
+        // Copies by name, but in no package a build writes: an edited copy may be the task's.
+        (
+            "scratch/docs/\n",
+            &["docs/spec.md"][..],
+            "scratch/docs/spec.md",
+            "`scratch/docs/`",
+        ),
         // A page the tracked folder does not have is the task's own.
         (
             "out/docs/\n",

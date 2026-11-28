@@ -1345,9 +1345,20 @@ pub fn remove_from_the_explorer(
         forge,
     )? {
         ExplorerRead::Finished(commits) => Some(commits),
-        // A plain folder's own reading; links into it are not read, as git's guard never did.
+        // A plain folder goes past git's guard only where nothing else keeps it: a chat that
+        // holds it (asked as a terminal asks, with no word of which chats are open) or a
+        // folder that links into it leaves it to git's guard, as before.
         ExplorerRead::NotATask if !force => {
-            crate::finished::own(root, workspace, repo, piece, forge).ok()
+            let at = worktree::Located {
+                workspace: workspace.to_owned(),
+                repo: repo.to_owned(),
+                piece: piece.to_owned(),
+            };
+            if crate::piececlaim::held_open(root, &at, None, None).is_some() {
+                None
+            } else {
+                crate::finished::as_it_stands(root, workspace, repo, piece, forge).ok()
+            }
         }
         ExplorerRead::NotATask | ExplorerRead::Goes => None,
     };
@@ -2314,7 +2325,8 @@ pub enum Tidied {
 }
 
 /// **Takes `tree` away where its folder is finished** (ADR 0110, amended 2026-11-28), by the
-/// one test every cleanup reads ([`crate::finished::as_it_stands`]), and only then:
+/// one test every cleanup reads ([`crate::finished::own`] and the links into it,
+/// [`crate::finished::linking_into`]), and only then:
 ///
 /// - the folder is still on the branch purlis cut; and
 /// - it is finished by its files, commits and links: nothing uncommitted, every commit on its
@@ -2339,6 +2351,26 @@ pub fn tidy(
     isolation: &git::Isolated,
     forges: crate::finished::Forges<'_>,
 ) -> Tidied {
+    let links = links_of(root, &tree.workspace, isolation);
+    tidy_linked(root, tree, isolation, forges, &links)
+}
+
+/// Every link between the branch folders of `ws` ([`crate::finished::links`]), read as the
+/// project's own git reads, outside any one folder's check: each folder is read in its own.
+fn links_of(root: &Path, ws: &str, isolation: &git::Isolated) -> Vec<crate::finished::Link> {
+    git::isolated(isolation, || crate::finished::links(root, ws))
+}
+
+/// [`tidy`], with the links of `tree`'s workspace already read: [`tidy_all`] reads them once
+/// for each workspace, not once for each folder. Links read before a removal can only keep a
+/// folder that a fresh read would let go.
+fn tidy_linked(
+    root: &Path,
+    tree: &Tree,
+    isolation: &git::Isolated,
+    forges: crate::finished::Forges<'_>,
+    links: &[crate::finished::Link],
+) -> Tidied {
     let Some(branch) = tree.branch.as_deref() else {
         return Tidied::Kept;
     };
@@ -2358,9 +2390,16 @@ pub fn tidy(
         if !on_its_branch {
             return Tidied::Kept;
         }
-        let Ok(commits) = crate::finished::as_it_stands(root, ws, repo, piece, forge) else {
+        let Ok(commits) = crate::finished::own(root, ws, repo, piece, forge) else {
             return Tidied::Kept;
         };
+        let folder = crate::finished::Folder {
+            repo: repo.clone(),
+            piece: piece.clone(),
+        };
+        if !crate::finished::linking_into(links, &folder).is_empty() {
+            return Tidied::Kept;
+        }
         // Nor git state of the folder's own (#1472): a ref only it has, its own settings, a
         // commit only its HEAD's history holds. The person is asked, by Discard.
         let own_kept = standing::at_risk(root, ws, repo, piece)
@@ -2392,13 +2431,26 @@ pub fn tidy_recorded(
     isolation: &git::Isolated,
     forges: crate::finished::Forges<'_>,
 ) -> Tidied {
+    tidy_recorded_with(root, record, isolation, forges, &mut |ws| {
+        links_of(root, ws, isolation)
+    })
+}
+
+/// [`tidy_recorded`], reading the links of a workspace by `links`.
+fn tidy_recorded_with(
+    root: &Path,
+    record: &Record,
+    isolation: &git::Isolated,
+    forges: crate::finished::Forges<'_>,
+    links: &mut dyn FnMut(&str) -> Vec<crate::finished::Link>,
+) -> Tidied {
     if record.running() || standing(root, record) != Some(Standing::Kept) {
         return Tidied::Kept;
     }
     let Some(tree) = Tree::of(record) else {
         return Tidied::Kept;
     };
-    let tidied = tidy(root, &tree, isolation, forges);
+    let tidied = tidy_linked(root, &tree, isolation, forges, &links(&tree.workspace));
     let how = match tidied {
         Tidied::Removed => Some(Removed::Merged),
         Tidied::FolderRemoved => Some(Removed::MergedBranchKept),
@@ -2418,10 +2470,19 @@ pub fn tidy_all(
     isolation: &git::Isolated,
     forges: crate::finished::Forges<'_>,
 ) -> usize {
+    // Each workspace's links, read once (on review): a `git status` of every folder in it.
+    let mut read: std::collections::HashMap<String, Vec<crate::finished::Link>> =
+        std::collections::HashMap::new();
     dispatchrecord::list(root)
         .iter()
         .filter(|record| record.place.worktree.is_some() && !in_use(record))
-        .filter(|record| tidy_recorded(root, record, isolation, forges) != Tidied::Kept)
+        .filter(|record| {
+            tidy_recorded_with(root, record, isolation, forges, &mut |ws| {
+                read.entry(ws.to_owned())
+                    .or_insert_with(|| links_of(root, ws, isolation))
+                    .clone()
+            }) != Tidied::Kept
+        })
         .count()
 }
 
