@@ -176,6 +176,43 @@ describe("the window's one listener per event", () => {
     for (const stop of stops) stop();
   });
 
+  it("does not call a part another part stopped while the core's word was being handed out", async () => {
+    const core = aCore();
+    const heard: string[] = [];
+    let stopTwo: () => void = () => {};
+    const [one, two] = await Promise.all([
+      listen("chat-events", () => {
+        heard.push("one");
+        stopTwo();
+      }),
+      listen("chat-events", () => void heard.push("two")),
+    ]);
+    stopTwo = two;
+
+    core.says("chat-events", null);
+
+    expect(heard).toEqual(["one"]);
+    one();
+  });
+
+  it("calls a part that listened while the core's word was being handed out only from the next word", async () => {
+    const core = aCore();
+    const heard: string[] = [];
+    const later: Promise<() => void>[] = [];
+    const first = await listen("chat-events", () => {
+      heard.push("first");
+      if (later.length === 0) later.push(listen("chat-events", () => void heard.push("later")));
+    });
+
+    core.says("chat-events", null);
+    const stopLater = await later[0];
+    core.says("chat-events", null);
+
+    expect(heard).toEqual(["first", "first", "later"]);
+    first();
+    stopLater();
+  });
+
   it("stops the core's listener once the last part stops, and not before", async () => {
     const core = aCore();
     const [one, two] = await Promise.all([

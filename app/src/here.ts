@@ -86,8 +86,13 @@ function heardBy(event: string, parts: Set<Part>) {
         void part.handler(heard);
       } catch (error) {
         // Reported as the window reports an error nobody caught (`windowErrors.ts`), which is
-        // what a listener's throw was before the hub; the other parts are still called.
-        reportError(error);
+        // what a listener's throw was before the hub; the other parts are still called. A WebKit
+        // before macOS 12.3 has no `reportError`: there it is thrown from a task of its own.
+        if (typeof reportError === "function") reportError(error);
+        else
+          setTimeout(() => {
+            throw error;
+          });
       }
     }
   };
@@ -119,7 +124,7 @@ function letGo(event: string, asked: Listening): void {
   queueMicrotask(() => {
     if (asked.parts.size > 0) return;
     if (listening.get(event) === asked) listening.delete(event);
-    // A listen still being asked is stopped as it answers.
+    // A part is handed its stop only once the listen has answered, so `listened` is answered here.
     asked.listened.then(
       (unlisten) => unlisten(),
       () => {},
