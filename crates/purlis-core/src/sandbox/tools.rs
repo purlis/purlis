@@ -3147,6 +3147,82 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "mitmdump",
     "mitmweb",
     "terminal-notifier",
+    // The terminals #8017 names beside #7964's and #7988's, refused whole on what each is for, as
+    // `xterm` and `kitty` are: `rio`, `contour`, `cool-retro-term`, `sakura`, the drop-down
+    // terminals `guake`, `tilda` and `yakuake`, Eterm's `eterm` (its program is `Eterm`, and every
+    // form is lowercased), `aterm`, `mlterm`, `roxterm`, COSMIC's `cosmic-term`,
+    // `blackbox-terminal`, `deepin-terminal`, `hyper`, `tabby` and `warp-terminal` each run the
+    // command they are handed, or the shell their settings name, in the window they open.
+    "rio",
+    "contour",
+    "cool-retro-term",
+    "sakura",
+    "guake",
+    "tilda",
+    "yakuake",
+    "eterm",
+    "aterm",
+    "mlterm",
+    "roxterm",
+    "cosmic-term",
+    "blackbox-terminal",
+    "deepin-terminal",
+    "hyper",
+    "tabby",
+    "warp-terminal",
+    // The tmux session managers #8017 names beside `tmuxinator` and `tmuxp`, refused whole on
+    // what each is for: `teamocil`, `smug`, `sesh` and `tmuxifier` run the commands of a layout
+    // file in the panes they open, and `mux`, a name `tmuxinator` is often installed or aliased
+    // as, by #8017's account, is kept with them on the conservative side.
+    "teamocil",
+    "smug",
+    "sesh",
+    "tmuxifier",
+    "mux",
+    // The VM and container runners #8017 names beside #7964's and #7988's, refused whole on what
+    // each is for, as `lima`, `lxc` and `virsh` are: libguestfs's `virt-customize`
+    // (`--run-command`) and `virt-sysprep` run a command in a guest's disk image and `guestfish`
+    // runs one there by its `command` and `sh`; `virt-install` installs and boots a guest;
+    // `crictl exec` runs a command in a container, and the runtime `youki` runs one, as `runc`
+    // and `crun` do; `firecracker`, `vfkit`, `hyperkit` and `xhyve` boot the guest they are
+    // handed, and `krunvm` runs a command in a micro-VM; `lxd` is the daemon `lxc` drives;
+    // VirtualBox's `VBoxHeadless` (its row is `vboxheadless`, as every form is lowercased) starts
+    // a VM; and Parallels' `prlsrvctl`, which sets up the server `prlctl` drives, is kept with
+    // them on the conservative side.
+    "virt-customize",
+    "virt-sysprep",
+    "guestfish",
+    "virt-install",
+    "crictl",
+    "youki",
+    "firecracker",
+    "vfkit",
+    "krunvm",
+    "hyperkit",
+    "xhyve",
+    "lxd",
+    "vboxheadless",
+    "prlsrvctl",
+    // The interpreters #8017 names, refused on this list and not on REFUSED_NAMES, as #7964's and
+    // #7988's are: each runs the code or the script it is handed. `newlisp`, `picolisp`, Gerbil's
+    // `gxi` and `gerbil`, CHICKEN's compiler `csc` (`csi` is refused; `csc` is also the C#
+    // compiler's name, whose analyzers and source generators run as it compiles), the shell
+    // `murex`, Ammonite's `amm` and `ammonite`, and coursier's `cs` and `coursier` (`cs launch`
+    // runs what it fetches).
+    "newlisp",
+    "picolisp",
+    "gxi",
+    "gerbil",
+    "csc",
+    "murex",
+    "amm",
+    "ammonite",
+    "cs",
+    "coursier",
+    // The tracer #8017 names, refused whole, as `strace` and `bpftrace` are: macOS's own `ktrace`
+    // runs the command its `-c` names under `ktrace trace` and `ktrace artrace`, by its manual,
+    // and stops tracing when it exits; the copy on macOS is a binary, with no source to read.
+    "ktrace",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

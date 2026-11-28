@@ -10,10 +10,10 @@
   as a tool (#7988).
 - **A run's notice offers no Allow for more compilers, shells, interpreters and runtimes**
   (`runhaskell`, `ghci`, `kotlinc`, `scalac`, `groovysh`, `clj`, `iex`, `erlc`, `qjsc`, `jbang`,
-  `bb`, `nbb`, `janet`, `fennel`, `moon`, `chez`, `scheme`, `csi`, `gsi`, `ecl`, `ccl`, `abcl`,
-  `kawa`, `lfe`, `jython`, `jruby`, `truffleruby`, `graalpy`, `mruby`, `ocamlrun`, `utop`,
-  `tclkit`, `expectk`, `fsi`, `scriptcs`, `planck`, `lumo`, `gleam`, `roc`, `odin`, `hare` and
-  others), **for more build and version managers** (`rebar`, `nimble`, `shards`, `dub`, `flutter`,
+  `bb`, `nbb`, `janet`, `fennel`, `moon`, `chez`, `scheme`, `petite`, `csi`, `gsi`,
+  `chibi-scheme`, `ecl`, `ccl`, `abcl`, `kawa`, `lfe`, `jython`, `jruby`, `truffleruby`,
+  `graalpy`, `mruby`, `ocamlrun`, `utop`, `tclkit`, `expectk`, `fsi`, `scriptcs`, `planck`,
+  `lumo`, `gleam`, `roc`, `odin`, `hare`), **for more build and version managers** (`rebar`, `nimble`, `shards`, `dub`, `flutter`,
   `mill`, `ghcup`, `n`), **for cron's siblings** (`jobberrunner`, `bcrontab`) **or for
   configuration and proxy runners** (`pyinfra`, `mitmproxy`, `mitmdump`, `mitmweb`,
   `terminal-notifier`). Each runs the code, the build or the script it is handed. A persona can

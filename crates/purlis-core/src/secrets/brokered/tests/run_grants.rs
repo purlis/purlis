@@ -4382,3 +4382,91 @@ fn the_configuration_proxy_and_notifier_runners_of_7988_are_offered_no_run_grant
         refused_as_running_others(name);
     }
 }
+
+/// The terminals #8017 names beside #7964's and #7988's, each of which runs the command it is
+/// handed, or the shell its settings name, in the window it opens: `rio`, `contour`,
+/// `cool-retro-term`, `sakura`, the drop-down terminals `guake`, `tilda` and `yakuake`, Eterm's
+/// `eterm`, `aterm`, `mlterm`, `roxterm`, COSMIC's `cosmic-term`, `blackbox-terminal`,
+/// `deepin-terminal`, `hyper`, `tabby` and `warp-terminal`.
+#[test]
+fn the_terminals_of_8017_are_offered_no_run_grant() {
+    for name in [
+        "rio",
+        "contour",
+        "cool-retro-term",
+        "sakura",
+        "guake",
+        "tilda",
+        "yakuake",
+        "Eterm",
+        "aterm",
+        "mlterm",
+        "roxterm",
+        "cosmic-term",
+        "blackbox-terminal",
+        "deepin-terminal",
+        "hyper",
+        "tabby",
+        "warp-terminal",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The tmux session managers #8017 names beside `tmuxinator` and `tmuxp`, each of which runs the
+/// commands of a layout file in the panes it opens: `teamocil`, `smug`, `sesh` and `tmuxifier`,
+/// and `mux`, a name `tmuxinator` is often installed or aliased as.
+#[test]
+fn the_tmux_session_managers_of_8017_are_offered_no_run_grant() {
+    for name in ["teamocil", "smug", "sesh", "tmuxifier", "mux"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The VM and container runners #8017 names beside #7964's and #7988's, each of which runs a
+/// command or boots a guest: libguestfs's `virt-customize --run-command`, `virt-sysprep` and
+/// `guestfish` in a guest's disk image, `virt-install`, `crictl exec`, the runtime `youki`,
+/// `firecracker`, `vfkit`, `krunvm`, `hyperkit`, `xhyve`, `lxd`, VirtualBox's `VBoxHeadless`,
+/// and Parallels' `prlsrvctl`, kept with them on the conservative side.
+#[test]
+fn the_vm_and_container_runners_of_8017_are_offered_no_run_grant() {
+    for name in [
+        "virt-customize",
+        "virt-sysprep",
+        "guestfish",
+        "virt-install",
+        "crictl",
+        "youki",
+        "firecracker",
+        "vfkit",
+        "krunvm",
+        "hyperkit",
+        "xhyve",
+        "lxd",
+        "VBoxHeadless",
+        "prlsrvctl",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The interpreters #8017 names, each of which runs the code or the script it is handed:
+/// `newlisp`, `picolisp`, Gerbil's `gxi` and `gerbil`, CHICKEN's compiler `csc` (also the C#
+/// compiler's name, whose analyzers and source generators run as it compiles), the shell
+/// `murex`, Ammonite's `amm` and `ammonite`, and coursier's `cs` and `coursier`, whose `launch`
+/// runs what it fetches.
+#[test]
+fn the_interpreters_of_8017_are_offered_no_run_grant() {
+    for name in [
+        "newlisp", "picolisp", "gxi", "gerbil", "csc", "murex", "amm", "ammonite", "cs", "coursier",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The tracer #8017 names: macOS's `ktrace`, which runs the command its `-c` names under
+/// `ktrace trace` and `ktrace artrace`, to trace it.
+#[test]
+fn the_tracer_of_8017_is_offered_no_run_grant() {
+    refused_as_running_others("ktrace");
+}
