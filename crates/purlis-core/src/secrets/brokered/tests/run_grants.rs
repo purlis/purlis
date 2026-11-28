@@ -4408,6 +4408,24 @@ fn the_terminals_of_8017_are_offered_no_run_grant() {
         "hyper",
         "tabby",
         "warp-terminal",
+/// The terminals #8031 names beside #7988's and #8017's, each of which runs the command it is
+/// handed in the window it opens: xterm's wrappers `uxterm`, `lxterm` and `koi8rxterm`, which
+/// `exec` xterm with what they are handed; PuTTY's `pterm`; `termite`; `kmscon`; `zutty`;
+/// `mrxvt`; `wterm`; and `waveterm` and `extraterm`.
+#[test]
+fn the_terminals_of_8031_are_offered_no_run_grant() {
+    for name in [
+        "uxterm",
+        "lxterm",
+        "koi8rxterm",
+        "pterm",
+        "termite",
+        "kmscon",
+        "zutty",
+        "mrxvt",
+        "wterm",
+        "waveterm",
+        "extraterm",
     ] {
         refused_as_running_others(name);
     }

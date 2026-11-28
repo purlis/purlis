@@ -3223,6 +3223,24 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // runs the command its `-c` names under `ktrace trace` and `ktrace artrace`, by its manual,
     // and stops tracing when it exits; the copy on macOS is a binary, with no source to read.
     "ktrace",
+    // The terminals #8031 names beside #7988's and #8017's, refused whole on what each is for, as
+    // `xterm` and `kitty` are: xterm's wrappers `uxterm`, `lxterm` and `koi8rxterm` `exec` xterm
+    // with what they are handed (none of them is reached by the `xterm` row, as no form splits a
+    // name that has no `-` in it); PuTTY's `pterm`, `termite`, `kmscon` (a terminal on the
+    // kernel's console), `zutty`, `mrxvt` and `wterm` run the command they are handed in the
+    // window they open, most of them by `-e`; and `waveterm` and `extraterm` run the commands
+    // their blocks and sessions are handed.
+    "uxterm",
+    "lxterm",
+    "koi8rxterm",
+    "pterm",
+    "termite",
+    "kmscon",
+    "zutty",
+    "mrxvt",
+    "wterm",
+    "waveterm",
+    "extraterm",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
