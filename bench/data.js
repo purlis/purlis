@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795866184470,
+  "lastUpdate": 1795868165666,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58968,6 +58968,48 @@ window.BENCHMARK_DATA = {
             "value": 102.122569,
             "unit": "ms",
             "extra": "median of 5 runs: 101.793, 102.060, 102.123, 102.293, 102.571 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "36f51fac0b3f0839a1e94f35b1f04237c0145cbf",
+          "message": "Run grant: the terminals, tmux session managers, VM runners, interpreters and tracer of #8017 refused (#8033)\n\n* Run grant: the terminals of #8017 refused\n\nrio, contour, cool-retro-term, sakura, guake, tilda, yakuake, eterm,\naterm, mlterm, roxterm, cosmic-term, blackbox-terminal, deepin-terminal,\nhyper, tabby and warp-terminal run the command they are handed, or the\nshell their settings name, in the window they open. Refused whole, as\nxterm and kitty are: source out of reach. run_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GK6A8B5FDTMWN85M56TZKE\nPurlis-Persona: steward\n\n* Run grant: the tmux session managers of #8017 refused\n\nteamocil, smug, sesh and tmuxifier run the commands of a layout file in\nthe panes they open, and mux is a name tmuxinator is often installed or\naliased as. Refused whole, as tmuxinator and tmuxp are: source out of\nreach. run_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GK6A8B5FDTMWN85M56TZKE\nPurlis-Persona: steward\n\n* Run grant: the VM and container runners of #8017 refused\n\nlibguestfs's virt-customize (--run-command), virt-sysprep and guestfish\nrun a command in a guest's disk image; virt-install installs and boots a\nguest; crictl exec runs one in a container and the runtime youki as runc\ndoes; firecracker, vfkit, hyperkit and xhyve boot the guest they are\nhanded and krunvm runs a command in a micro-VM; lxd is the daemon lxc\ndrives; VBoxHeadless starts a VM; Parallels' prlsrvctl is kept with them\non the conservative side. Refused whole: source out of reach. run_grants\ntest seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GK6A8B5FDTMWN85M56TZKE\nPurlis-Persona: steward\n\n* Run grant: the interpreters of #8017 refused\n\nnewlisp, picolisp, Gerbil's gxi and gerbil, CHICKEN's compiler csc (the\nC# compiler's name too, whose analyzers run as it compiles), the shell\nmurex, Ammonite's amm and ammonite, and coursier's cs and coursier (cs\nlaunch runs what it fetches) run the code or the script they are handed.\nRefused on NOT_FOR_A_RUN_GRANT, as #7964's and #7988's runtimes are.\nrun_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GK6A8B5FDTMWN85M56TZKE\nPurlis-Persona: steward\n\n* Run grant: the tracer of #8017 refused\n\nmacOS's own ktrace runs the command its -c names under ktrace trace and\nktrace artrace, by its manual, and stops tracing when it exits. Refused\nwhole, as strace and bpftrace are: the macOS copy is a binary, with no\nsource to read. run_grants test seen red first: without the row, an ask\nwas opened for the person, as /usr/bin/ktrace is on this Mac.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GK6A8B5FDTMWN85M56TZKE\nPurlis-Persona: steward\n\n* ADR 0112 amendment and Security fragment for #8017\n\nThe families of #8017 refused whole, on what each is for, as #7964's and\n#7988's were (delegated: recommended path): source out of reach, and\nmacOS's ktrace a binary judged by its manual. No row reaches another by\nchance, and no program on this Mac's PATH is newly refused beside ktrace\nitself. The leads found beside the list are filed as #8031.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GK6A8B5FDTMWN85M56TZKE\nPurlis-Persona: steward\n\n* Run grant: #8017's interpreters test formatted as rustfmt packs it\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GK6A8B5FDTMWN85M56TZKE\nPurlis-Persona: steward\n\n* Run grant: #8017's code review: heading, csc, Eterm, mux and the forms' cost\n\nThe amendment's heading says no program was read in source, as ktrace's\nmacOS copy is a binary. csc's row comment and test say its analyzers and\nsource generators run, as the ADR does. The terminals' test hands Eterm\nas its program is spelled, so the lowercased row is what refuses it. mux\nis kept on the conservative side, on #8017's account. The forms' cost\nsays every row reaches g, gnu and versioned forms, and drops hyper's\nunnamed second program.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GK6A8B5FDTMWN85M56TZKE\nPurlis-Persona: steward\n\n* Run grant: review of #8033: lxd's real cost, one \"cost the most\", a comma\n\nlxd-to-incus is refused already by #8019's incus row, so the lxd row's\ncost names lxd-agent and lxd-user, which only it reaches. The short rows'\nbullet no longer repeats its section's lead, and mux's row comment has\nthe comma the ADR has.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GK6A8B5FDTMWN85M56TZKE\nPurlis-Persona: steward\n\n* Run grant: #8019's fragment names petite and chibi-scheme, and no \"others\"\n\nNit 2 of #8017's comment, from the review of #8019: the interpreters'\nlist in #7988's Security fragment left out petite and chibi-scheme and\nended \"and others\". It now lists every row the change refuses.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GK6A8B5FDTMWN85M56TZKE\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T11:31:43Z",
+          "tree_id": "370510c972f728018235e7198d7aadbc845f2814",
+          "url": "https://github.com/purlis/purlis/commit/36f51fac0b3f0839a1e94f35b1f04237c0145cbf"
+        },
+        "date": 1795868155025,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5644480000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.552, 0.557, 0.564, 0.578, 0.584 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.230491,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.170, 16.219, 16.230, 16.292, 16.383 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.814785,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.971, 102.275, 102.815, 103.236, 104.167 ms"
           }
         ]
       }
