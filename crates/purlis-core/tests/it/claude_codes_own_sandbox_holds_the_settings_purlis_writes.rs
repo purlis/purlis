@@ -1664,3 +1664,192 @@ mod a_guard_that_fails {
         case(Guard::Read, DIES, &under("open"), true);
     }
 }
+
+/// **A chat's compile cache, run by the real Claude Code and the real sccache** (#7935): a
+/// project that declares `compile-cache = "sccache"` starts a full-sandbox Claude Code chat as a
+/// start starts one ([`sandbox::Applied::confine`], then [`sandbox::Applied::line`], whose file
+/// read before each command starts the chat's own server), and the stand-in's two Bash calls each
+/// build one small crate into a target folder of its own. The first then stops the server, which
+/// leaves its socket behind, as one that went idle does; the second must start it again over that
+/// socket and find the first build's crate in the cache. Before #7935 the first compile failed
+/// with "Operation not permitted": sccache's own start binds a socket the sandbox refuses.
+///
+/// **`#[ignore]`d, and skipped without `PURLIS_SCCACHE`**, the sccache to hand the chat (one
+/// owned as a program, as [`sandbox::compile_cache::resolved`] takes one, such as Homebrew's),
+/// so CI's Claude Code step, which has none it may hand, passes it by. With it set, it is red
+/// without `PURLIS_CLAUDE_CODE`. macOS only: Claude Code's own sandbox runs nowhere else. Run it
+/// outside any sandbox, since a sandbox cannot be started inside another:
+/// `PURLIS_SCCACHE=$(command -v sccache) PURLIS_CLAUDE_CODE=$(command -v claude) cargo test -p
+/// purlis-core --test it -- a_chats_compile_cache --ignored --nocapture`.
+#[cfg(target_os = "macos")]
+mod a_chats_compile_cache {
+    use super::*;
+
+    /// The manifest of a project whose chats build through the compile cache.
+    const MANIFEST: &str = "[sandbox]\nmode = \"on\"\n\
+        egress = [\"model-providers\", \"forge\", \"toolchains\"]\n\
+        compile-cache = \"sccache\"\n";
+
+    /// What each Bash call runs: says what the chat's commands were handed, builds a crate of
+    /// no dependencies with the cargo `$1` and the rustc `$2` into the target folder `$3`, and
+    /// then says what the server counted, or, given `$4`, stops it.
+    const STEP: &str = r#"echo "uds=${SCCACHE_SERVER_UDS:-none}"
+echo "wrapper=${RUSTC_WRAPPER:-none}"
+crate="$TMPDIR/probe-crate"
+mkdir -p "$crate/src"
+printf '[package]\nname = "probe"\nversion = "0.1.0"\nedition = "2021"\n' > "$crate/Cargo.toml"
+echo 'pub fn answer() -> u32 { 42 }' > "$crate/src/lib.rs"
+CARGO_HOME="$TMPDIR/cargo-home" CARGO_INCREMENTAL=0 RUSTC="$2" \
+  "$1" build --offline --manifest-path "$crate/Cargo.toml" --target-dir "$TMPDIR/$3" 2>&1 \
+  && echo built=yes || echo built=no
+if [ -n "${4:-}" ]; then "$RUSTC_WRAPPER" --stop-server >/dev/null 2>&1; fi
+"$RUSTC_WRAPPER" --show-stats 2>&1
+"#;
+
+    /// The sysroot of the toolchain this test was built by, whose `cargo` and `rustc` the chat
+    /// runs by their paths: a rustup proxy would look for its home in the chat's.
+    fn sysroot() -> PathBuf {
+        let out = purlis_core::forklock::output(Command::new("rustc").args(["--print", "sysroot"]))
+            .expect("rustc ran");
+        PathBuf::from(String::from_utf8_lossy(&out.stdout).trim())
+    }
+
+    /// The number a line of `--show-stats` gives for `what`, as `Cache hits`.
+    fn counted(said: &str, what: &str) -> Option<u64> {
+        said.lines()
+            .find_map(|line| line.trim().strip_prefix(what)?.trim().parse().ok())
+    }
+
+    #[test]
+    #[ignore = "runs the real Claude Code and sccache, named by PURLIS_CLAUDE_CODE and PURLIS_SCCACHE"]
+    fn a_chats_first_build_starts_its_own_sccache_server_and_a_stale_socket_does_not_stop_it() {
+        purlis_core::unsteered!();
+        let Some(sccache) = std::env::var_os("PURLIS_SCCACHE").map(PathBuf::from) else {
+            return;
+        };
+        let program = std::env::var_os("PURLIS_CLAUDE_CODE")
+            .map(PathBuf::from)
+            .expect("PURLIS_CLAUDE_CODE names no Claude Code: this case runs the real one");
+        let scratch = tempfile::tempdir().expect("a folder");
+        let at = scratch.path().canonicalize().expect("a real folder");
+        let (home, tmp, root) = (at.join("home"), at.join("tmp"), at.join("project"));
+        for folder in [&home.join(".claude"), &tmp] {
+            fs::create_dir_all(folder).expect("a folder");
+        }
+        lay_out(&root, MANIFEST);
+        let sccache = sccache.canonicalize().expect("the sccache named");
+        let path = format!(
+            "{}:/usr/bin:/bin",
+            sccache.parent().expect("its folder").display()
+        );
+        let machine = Machine {
+            env: purlis_core::secrets::Env::of(&[("PATH", &path)]),
+            home: Some(home.clone()),
+            os: Os::this(),
+        };
+        let decided = sandbox::decide(Harness::ClaudeCode, &root, &machine, &|_| true, None, None)
+            .expect("decided")
+            .expect("a sandbox in force");
+        let Decided::Sandboxed(mut applied) = decided else {
+            panic!("not sandboxed: {decided:?}");
+        };
+        applied.answered(SUPPORTED);
+        let Form::ClaudeCode(compiled) = applied.form_in(Some(&root)) else {
+            panic!("not Claude Code's settings");
+        };
+        compiled.make_empty();
+        let armed = json!({
+            "sandbox": compiled.sandbox,
+            "permissions": { "deny": compiled.deny },
+        });
+        let screened = purlis_core::harness::claude::project::screen_with(Some(&root), None);
+        let confinement = applied.confine().expect("started").expect("a proxy");
+        let line = applied
+            .line(
+                sandbox::Words {
+                    program: program.display().to_string(),
+                    command: Vec::new(),
+                    armed: vec!["--settings".to_owned(), armed.to_string()],
+                    charters: Vec::new(),
+                },
+                &sandbox::At {
+                    cwd: Some(&root),
+                    hook_socket: None,
+                    confinement: Some(&confinement),
+                    no_opt_out: false,
+                    purlis: None,
+                },
+            )
+            .expect("a line");
+        let socket = sandbox::compile_cache::socket_in(confinement.tmp().expect("its temp folder"));
+        let settings = line
+            .args
+            .iter()
+            .position(|word| word == "--settings")
+            .and_then(|flag| line.args.get(flag + 1))
+            .expect("its settings");
+        let file = at.join("claude.json");
+        fs::write(&file, settings).expect("the settings");
+        let step = at.join("step.sh");
+        fs::write(&step, STEP).expect("the step");
+        let bin = sysroot().join("bin");
+        let command = |target: &str, stop: bool| {
+            format!(
+                "/bin/sh '{}' '{}' '{}' {target}{}",
+                step.display(),
+                bin.join("cargo").display(),
+                bin.join("rustc").display(),
+                if stop { " stop" } else { "" }
+            )
+        };
+        let env: Vec<(&str, &Path)> = line
+            .env
+            .iter()
+            .map(|(key, value)| (key.as_str(), Path::new(value)))
+            .collect();
+        let results = Arc::new(Mutex::new(Vec::new()));
+        let stand_in = Steps {
+            commands: vec![command("one", true), command("two", false)],
+            results: results.clone(),
+        };
+        let (status, said) = started(
+            &program,
+            &home,
+            &tmp,
+            &root,
+            &file,
+            &screened.setting_sources(),
+            "a chat's compile cache",
+            &env,
+            stand_in,
+        );
+        let results = results.lock().expect("results").clone();
+        // The server the chat started outlives it: stopped here, by its socket.
+        let _ = purlis_core::forklock::output(
+            Command::new(&sccache)
+                .arg("--stop-server")
+                .env("SCCACHE_SERVER_UDS", &socket),
+        );
+        let [first, second] = results.as_slice() else {
+            panic!("not both calls came back ({status}):\n{said}\n{results:?}");
+        };
+        for (step, result) in [("first", first), ("second", second)] {
+            assert!(
+                result.contains(&format!("uds={}", socket.display())),
+                "{step}: the chat's commands were not handed its socket:\n{result}"
+            );
+            assert!(
+                !result.contains("Operation not permitted"),
+                "{step}: sccache was refused:\n{result}"
+            );
+            assert!(
+                result.lines().any(|line| line.trim() == "built=yes"),
+                "{step}: the crate did not build:\n{result}"
+            );
+        }
+        assert!(
+            counted(second, "Cache hits").is_some_and(|hits| hits > 0),
+            "the second build found nothing in the cache:\n{second}"
+        );
+    }
+}
