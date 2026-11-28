@@ -4369,3 +4369,19 @@ fn the_build_and_version_managers_and_cron_siblings_of_7988_are_offered_no_run_g
         refused_as_running_others(name);
     }
 }
+
+/// The configuration, proxy and notifier runners #7988 names, each of which runs code or a command
+/// it is handed: `pyinfra` (a deploy file's Python), `mitmproxy`, `mitmdump` and `mitmweb` (the
+/// script `-s` names), and `terminal-notifier` (`-execute`).
+#[test]
+fn the_configuration_proxy_and_notifier_runners_of_7988_are_offered_no_run_grant() {
+    for name in [
+        "pyinfra",
+        "mitmproxy",
+        "mitmdump",
+        "mitmweb",
+        "terminal-notifier",
+    ] {
+        refused_as_running_others(name);
+    }
+}

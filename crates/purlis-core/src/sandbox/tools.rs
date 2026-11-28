@@ -3136,6 +3136,16 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "n",
     "jobberrunner",
     "bcrontab",
+    // The configuration, proxy and notifier runners #7988 names, refused whole on what each is for:
+    // `pyinfra` runs a deploy file's Python and the commands it names on the hosts it is handed;
+    // `mitmproxy`, `mitmdump` and `mitmweb` load the Python script their `-s` names; and, from
+    // #7988's comment, `terminal-notifier -execute` runs a shell command when its notification is
+    // clicked.
+    "pyinfra",
+    "mitmproxy",
+    "mitmdump",
+    "mitmweb",
+    "terminal-notifier",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
