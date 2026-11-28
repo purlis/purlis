@@ -45,7 +45,7 @@ what #7988 asks for, and leaves a persona able to declare one in a reviewed line
 
 - **Terminals**, as `xterm` and `kitty` are: `xfce4-terminal`, `mate-terminal`, `terminator`,
   `tilix`, `foot`, `urxvt`, `rxvt`, suckless `st`, `ghostty`, `lxterminal`, `qterminal`,
-  `terminology`, and GNOME Console's `kgx` and `ptyxis` run the command they are handed in the
+  `terminology`, GNOME Console's `kgx`, and `ptyxis` run the command they are handed in the
   window they open; `footclient` has a `foot` server open one, kitty's `kitten` has the running
   kitty launch one, and Debian's `x-terminal-emulator` is whichever terminal the system names.
 - **tmux's session runners and fork**: `tmuxinator` and `tmuxp` run the commands of a YAML file
@@ -58,8 +58,9 @@ what #7988 asks for, and leaves a persona able to declare one in a reviewed line
   built for another CPU; and `wsl` runs a command in a WSL distribution.
 - **Compilers and shells that run code**: `runhaskell`, `ghci`, `kotlinc`, `scalac` (macros and
   compiler plugins), `groovysh`, `clj`, Elixir's `iex`, `erlc` (parse transforms) and `jbang`,
-  which runs the Java file it is handed. QuickJS's `qjsc`, `qjs`'s compiler, is kept with them
-  on the conservative side: by its manual it compiles and runs nothing itself.
+  which runs the Java file it is handed. QuickJS's `qjsc`, `qjs`'s compiler, runs the C compiler
+  to build what it makes and runs none of the code it compiles; it is kept with them on the
+  conservative side.
 - **Interpreters and runtimes** (#7988's comment): babashka's `bb` and `nbb`, `janet`, `fennel`,
   MoonScript's `moon`, Chez Scheme's `chez`, `scheme` and `petite`, CHICKEN's `csi` (the C#
   REPL's name too, which runs C#), Gambit's `gsi`, `chibi-scheme`, `ecl`, `ccl`, `abcl`, `kawa`,
@@ -101,14 +102,14 @@ These are examples, not a complete list:
 - `st`, `n`, `bb`, `orb`, `moon`, `foot`, `tart`, `mill`, `dub`, `roc`, `hare`, `odin`, `csi`,
   `gsi`, `ecl`, `ccl`, `iex`, `clj` and `scheme` reach every `<word>-<name>` and `<name>-<word>`:
   stlink's `st-flash` and `st-info` by `st`, for example.
-- the GNU `g` the forms strip reaches every `g<name>` of these rows: GStreamer's
+- the GNU `g` the forms strip reaches every `g<name>` of the one-word rows: GStreamer's
   `gst-launch-1.0`, `gst-inspect-1.0` and the rest lose their Allow by `st`, and Google's `gn`,
   a build generator, by `n`.
 - `qemu` reaches QEMU's disk and image tools, `qemu-img`, `qemu-nbd` and `qemu-io`, which run no
   guest; and `lxc` reaches the rest of LXC's `lxc-*` programs, `lxc-ls` and `lxc-info` among
   them, which list and report.
-- `qjsc` is refused with its family on the conservative side, though its manual gives it
-  nothing to run.
+- `qjsc` is refused with its family on the conservative side, though the one program it runs
+  is the C compiler.
 
 Which of these to give back, and how to do it without giving back the ones that run code, is
 part of #7825.

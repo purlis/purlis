@@ -20,4 +20,4 @@
 - **Programs that share a form of these names lose their Allow with them**, for example GStreamer's
   `gst-*` programs (by `st`), Google's `gn` (by `n`), QEMU's `qemu-img` and `qemu-nbd` (by
   `qemu`), LXC's `lxc-ls` and `lxc-info` (by `lxc`), and every `<name>-<word>`, `<word>-<name>`
-  and `g<name>` of these rows. Giving the harmless ones back is its own change (#7825).
+  and `g<name>` of the one-word rows. Giving the harmless ones back is its own change (#7825).

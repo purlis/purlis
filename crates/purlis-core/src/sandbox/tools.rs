@@ -3007,7 +3007,7 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "arch-chroot",
     // The terminals #7988 names beside #7964's, refused whole on what each is for, as `xterm` and
     // `kitty` are: `xfce4-terminal`, `mate-terminal`, `terminator`, `tilix`, `foot`, `urxvt` and
-    // `rxvt`, suckless `st`, `ghostty`, `lxterminal`, `qterminal`, `terminology`, and GNOME
+    // `rxvt`, suckless `st`, `ghostty`, `lxterminal`, `qterminal`, `terminology`, GNOME
     // Console's `kgx` and `ptyxis` each run the command they are handed in the window they open,
     // most of them by `-e` as `xterm` does; `footclient` has a `foot` server open one, kitty's
     // `kitten` has the running kitty launch one (`kitten @ launch`), and Debian's
@@ -3059,7 +3059,8 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // runs a Kotlin script; `scalac`'s macros and compiler plugins run as it compiles; `groovysh`
     // and Elixir's `iex` are shells; `clj` is `clojure`'s REPL front-end; `erlc` runs a module's
     // parse transforms; and `jbang` runs the Java file it is handed. QuickJS's `qjsc`, `qjs`'s
-    // compiler, is kept with them on the conservative side.
+    // compiler, runs the C compiler to build what it makes, and is kept with them on the
+    // conservative side.
     "runhaskell",
     "ghci",
     "kotlinc",
