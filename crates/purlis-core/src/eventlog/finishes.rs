@@ -27,11 +27,14 @@
 //! never heard to come back, so a block of it stays unresolved unless allowed. Both err toward
 //! saying a block stopped the turn. **A turn that never ends** (no `hook.stop`, or a
 //! `hook.stopfailure`) gets no finish, and its blocks are seen in the Chat log only (Q263).
-//! Nothing is kept: the finishes are read from the log each time.
+//! Nothing is kept on disk: the finishes are a fold of the log's events, which [`Recent`] keeps
+//! read in memory, as compact records of each chat's, while the log's files do not change.
 
 use std::io;
 use std::path::Path;
-use std::sync::PoisonError;
+
+mod recent;
+pub use recent::Recent;
 
 use super::stops::{
     self, Answer, AskAnswered, AskGroup, Block, Qualifier, Source, TARGET_CHARS, Target,
@@ -174,104 +177,194 @@ impl Turn {
     }
 }
 
+/// **What one event of a chat's says to the fold**, read off its body once: the event's kind as
+/// [`fold`] tells it apart, and only what [`fold`] and [`needs_older`] read of it. An event that
+/// says nothing to either is none ([`Record::of`]). What [`Recent`] keeps of a file in place of its
+/// events, so no body is kept (FS-C2, #7902).
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct Record {
+    /// The event's number in its device's log: what a repeat of a sealed event is told by.
+    seq: u64,
+    step: Step,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum Step {
+    /// `run.started`, of the chat's own run or a sub-agent's: the harness its body names, or
+    /// `unknown`.
+    Started(String),
+    /// The chat's own prompt (`hook.userpromptsubmit`).
+    Prompt,
+    /// The chat's own turn ended (`hook.stop`).
+    TurnEnded(Ending),
+    /// The chat's own run ended: how, where it ended failed.
+    RunEnded(Option<Ending>),
+    /// A block, where it reads back.
+    Blocked(Option<Box<Block>>),
+    /// An ask answered: its group, where it was allowed.
+    Answered(Option<AskGroup>),
+    /// A call that came back: its tool, as a block writes it, and its arguments, where it names
+    /// both.
+    CameBack(Option<(String, String)>),
+}
+
+/// The event that ended a finish, as the finish names it.
+#[derive(Debug, Clone, PartialEq)]
+struct Ending {
+    ulid: String,
+    at_ms: Option<u64>,
+}
+
+impl Record {
+    /// What `event` says to the fold, told apart in the order [`fold`] always read an event in.
+    pub(super) fn of(event: &Event) -> Option<Self> {
+        use serde::Deserialize as _;
+        let own = event.parent_run.is_none();
+        let ending = || Ending {
+            ulid: event.ulid.clone(),
+            at_ms: super::written_at_ms(&event.ulid),
+        };
+        let step = match event.kind.as_str() {
+            // As the Chat log reads it (`chatlog::rows`): the latest start's word.
+            "run.started" => Step::Started(
+                event
+                    .body
+                    .get("harness")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or(super::UNKNOWN)
+                    .to_owned(),
+            ),
+            PROMPT if own => Step::Prompt,
+            TURN_ENDED if own => Step::TurnEnded(ending()),
+            "run.ended" if own => Step::RunEnded(
+                (event.body.get("state").and_then(serde_json::Value::as_str) == Some("failed"))
+                    .then(ending),
+            ),
+            // Every block the marker's tally reads back (`chatlog::Tally`), whoever blocked it
+            // and however much its report is worth (Q280).
+            stops::BLOCK => Step::Blocked(Block::deserialize(&event.body).ok().map(Box::new)),
+            stops::ASK_ANSWERED => Step::Answered(match AskAnswered::deserialize(&event.body) {
+                Ok(AskAnswered {
+                    ask,
+                    answer: Answer::Allowed,
+                    ..
+                }) => Some(ask),
+                _ => None,
+            }),
+            kind if came_back(kind) => {
+                let word = |field: &str| event.body.get(field).and_then(serde_json::Value::as_str);
+                Step::CameBack(match (word("tool"), word("args")) {
+                    // As a block writes its tool: one short line (`stops::line_tool`).
+                    (Some(tool), Some(args)) => Some((
+                        crate::shown::readable(tool, TARGET_CHARS),
+                        args.to_owned(),
+                    )),
+                    _ => None,
+                })
+            }
+            _ => return None,
+        };
+        Some(Self {
+            seq: event.seq,
+            step,
+        })
+    }
+
+    /// About how many bytes it holds, its own and what it points to: what [`Recent`]'s cap
+    /// counts.
+    pub(super) fn bytes(&self) -> usize {
+        let held = match &self.step {
+            Step::Started(harness) => harness.len(),
+            Step::Prompt | Step::Answered(_) | Step::RunEnded(None) => 0,
+            Step::TurnEnded(ending) | Step::RunEnded(Some(ending)) => ending.ulid.len(),
+            Step::Blocked(None) | Step::CameBack(None) => 0,
+            Step::Blocked(Some(block)) => {
+                std::mem::size_of::<Block>()
+                    + block.tool.len()
+                    + block.args.as_ref().map_or(0, String::len)
+                    + block.target.as_ref().map_or(0, |_| TARGET_CHARS)
+            }
+            Step::CameBack(Some((tool, args))) => tool.len() + args.len(),
+        };
+        std::mem::size_of::<Self>() + held
+    }
+
+    pub(super) fn seq(&self) -> u64 {
+        self.seq
+    }
+}
+
 /// **The finishes of chat `chat` among `events`**, oldest first, each with its turn's
 /// unresolved blocks ([`Finish::blocked`]); a failed run counts none, since its row is a
 /// failure already.
 pub fn finishes(events: &[Event], chat: &str) -> Vec<Finish> {
-    finishes_among(events.iter(), chat)
+    fold(
+        events
+            .iter()
+            .filter(|event| event.chat.as_deref() == Some(chat))
+            .filter_map(Record::of)
+            .collect::<Vec<_>>()
+            .iter(),
+    )
 }
 
-/// [`finishes`] of `events` in the order they come, which may be several files' one after the
-/// other.
-fn finishes_among<'a>(events: impl Iterator<Item = &'a Event>, chat: &str) -> Vec<Finish> {
+/// **The finishes one chat's records say**, in the order they come, which may be several files'
+/// one after the other.
+fn fold<'a>(records: impl Iterator<Item = &'a Record>) -> Vec<Finish> {
     let mut out = Vec::new();
     let mut turn = Turn::default();
-    let mut harness = super::UNKNOWN.to_owned();
-    for event in events.filter(|event| event.chat.as_deref() == Some(chat)) {
-        if event.kind == "run.started" {
-            // As the Chat log reads it (`chatlog::rows`): the latest start's word.
-            harness = event
-                .body
-                .get("harness")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or(super::UNKNOWN)
-                .to_owned();
-        }
-        let own = event.parent_run.is_none();
-        let ended = |how, blocked, unresolved| Finish {
-            seq: event.seq,
-            ulid: event.ulid.clone(),
-            at_ms: super::written_at_ms(&event.ulid),
+    let mut harness = super::UNKNOWN;
+    for record in records {
+        let ended = |how, blocked, unresolved, ending: &Ending| Finish {
+            seq: record.seq,
+            ulid: ending.ulid.clone(),
+            at_ms: ending.at_ms,
             how,
             blocked,
             unresolved,
         };
-        match event.kind.as_str() {
-            PROMPT if own => turn = Turn::default(),
-            TURN_ENDED if own => {
-                out.push(ended(How::Finished, turn.count(), turn.named()));
+        match &record.step {
+            Step::Started(word) => harness = word,
+            Step::Prompt => turn = Turn::default(),
+            Step::TurnEnded(ending) => {
+                out.push(ended(How::Finished, turn.count(), turn.named(), ending));
                 turn = Turn::default();
             }
-            "run.ended" if own => {
-                if event.body.get("state").and_then(serde_json::Value::as_str) == Some("failed") {
-                    out.push(ended(How::Failed, 0, Vec::new()));
+            Step::RunEnded(failed) => {
+                if let Some(ending) = failed {
+                    out.push(ended(How::Failed, 0, Vec::new(), ending));
                 }
                 turn = Turn::default();
             }
-            stops::BLOCK => {
-                // Every block the marker's tally reads back (`chatlog::Tally`), whoever blocked it
-                // and however much its report is worth (Q280).
-                if let Ok(block) = serde_json::from_value::<Block>(event.body.clone()) {
-                    turn.blocked(block, &harness);
-                }
-            }
-            stops::ASK_ANSWERED => {
-                if let Ok(AskAnswered {
-                    ask,
-                    answer: Answer::Allowed,
-                    ..
-                }) = serde_json::from_value(event.body.clone())
-                {
-                    turn.allowed(ask);
-                }
-            }
-            kind if came_back(kind) => {
-                let word = |field: &str| event.body.get(field).and_then(serde_json::Value::as_str);
-                if let (Some(tool), Some(args)) = (word("tool"), word("args")) {
-                    // As a block writes its tool: one short line (`stops::line_tool`).
-                    turn.came_back(&crate::shown::readable(tool, TARGET_CHARS), args);
-                }
-            }
-            _ => {}
+            Step::Blocked(Some(block)) => turn.blocked((**block).clone(), harness),
+            Step::Answered(Some(ask)) => turn.allowed(*ask),
+            Step::CameBack(Some((tool, args))) => turn.came_back(tool, args),
+            Step::Blocked(None) | Step::Answered(None) | Step::CameBack(None) => {}
         }
     }
     out
 }
 
-/// **Whether the turn or the run of `chat` that its first events in `events` belong to began
-/// before them**: its first event that depends on what came earlier is not preceded by what
-/// settles it. A block, an Allow, a call that came back or a turn's end needs the prompt that
-/// began its turn (or the run's end that cleared it); a block needs, besides, the run's start
-/// that names the chat's harness. With neither missing, nothing before `events` can change
-/// what [`finishes_among`] answers of `chat`.
-fn needs_older<'a>(events: impl Iterator<Item = &'a Event>, chat: &str) -> bool {
+/// **Whether the turn or the run of the chat that its first `records` belong to began before
+/// them**: its first record that depends on what came earlier is not preceded by what settles
+/// it. A block, an Allow, a call that came back or a turn's end needs the prompt that began its
+/// turn (or the run's end that cleared it); a block needs, besides, the run's start that names
+/// the chat's harness. With neither missing, nothing before `records` can change what [`fold`]
+/// answers of the chat.
+fn needs_older<'a>(records: impl Iterator<Item = &'a Record>) -> bool {
     let (mut started, mut reset) = (false, false);
-    for event in events.filter(|event| event.chat.as_deref() == Some(chat)) {
-        let own = event.parent_run.is_none();
-        let settled = match event.kind.as_str() {
-            "run.started" => {
+    for record in records {
+        let settled = match record.step {
+            Step::Started(_) => {
                 started = true;
                 true
             }
-            PROMPT | "run.ended" if own => {
+            Step::Prompt | Step::RunEnded(_) => {
                 reset = true;
                 true
             }
-            TURN_ENDED if own => reset,
-            stops::BLOCK => started && reset,
-            stops::ASK_ANSWERED => reset,
-            kind if came_back(kind) => reset,
-            _ => true,
+            Step::Blocked(_) => started && reset,
+            Step::TurnEnded(_) | Step::Answered(_) | Step::CameBack(_) => reset,
         };
         if !settled {
             return true;
@@ -283,273 +376,8 @@ fn needs_older<'a>(events: impl Iterator<Item = &'a Event>, chat: &str) -> bool 
     false
 }
 
-/// **The log's recent files, parsed once and kept while they do not change** (felt speed round 5,
-/// H15). The window asks for finishes as each chat's turn ends, and each ask used to read and
-/// parse the whole log (30 days) for it: with about fifty chats that was a storm of parses of
-/// 100 MB, and the commands beside it waited on the cores it took.
-///
-/// An ask reads the live file, which it reads first (as [`super::read_back`] does, so a file
-/// sealed meanwhile is listed after, never missed), and every sealed file written to since
-/// `since`. **Then, for each asked chat, the older ones until its first turn and its run's start
-/// are in what was read** ([`needs_older`]), so a turn that began before the window keeps its
-/// early blocks and a block its harness, and the answer is the whole log's for every turn the
-/// window reaches. A chat that began no turn the window reaches reads nothing older.
-///
-/// A file is parsed again only when it is not what it was kept at: **stat'ed once the ask holds
-/// the lock**, so no answer is made from a file as it was before its ask. One that only grew (the
-/// same file, longer) has just what it gained parsed, from the end of the last whole line it was
-/// parsed to; one that shrank, or is another file (its length, modified time and identity), is
-/// parsed whole. The lock is held while a file is parsed, so asks that come meanwhile share that
-/// parse and wait for it, as asks of a [`crate::burst`] do.
-///
-/// In memory and in this process only: nothing is written, so there is no store to give a tier
-/// (ADR 0069).
-#[derive(Debug, Default)]
-pub struct Recent {
-    files: std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, KeptFile>>,
-    /// Files parsed whole, for a test that must know a kept one was not.
-    #[cfg(test)]
-    parsed: std::sync::atomic::AtomicUsize,
-    /// Lines parsed in all, for a test that must know a kept file was not parsed again.
-    #[cfg(test)]
-    lines: std::sync::atomic::AtomicUsize,
-}
-
-/// What a file was when it was read: what tells it is not the same file, nor the same length.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Stamp {
-    len: u64,
-    modified: Option<std::time::SystemTime>,
-    /// Which file it is where the platform says (its inode), so one put in its place is seen.
-    id: Option<u64>,
-}
-
-impl Stamp {
-    fn of(meta: &std::fs::Metadata) -> Self {
-        Self {
-            len: meta.len(),
-            modified: meta.modified().ok(),
-            id: file_id(meta),
-        }
-    }
-}
-
-#[cfg(unix)]
-fn file_id(meta: &std::fs::Metadata) -> Option<u64> {
-    use std::os::unix::fs::MetadataExt;
-    Some(meta.ino())
-}
-
-#[cfg(not(unix))]
-fn file_id(_: &std::fs::Metadata) -> Option<u64> {
-    None
-}
-
-/// The stamp of `path`, or none where it is not there (the live file before its first event, or
-/// a segment pruned since). Any other failure is the ask's, as it is [`super::read`]'s.
-fn stamp(path: &Path) -> io::Result<Option<Stamp>> {
-    match std::fs::metadata(path) {
-        Ok(meta) => Ok(Some(Stamp::of(&meta))),
-        Err(why) if why.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(why) => Err(why),
-    }
-}
-
-/// Kept pieces of events, each with the number its events must pass to count, if any.
-type Chunks = Vec<(std::sync::Arc<Vec<Event>>, Option<u64>)>;
-
-/// The events of `chunks` that count, in order.
-fn events_of(chunks: &Chunks) -> impl Iterator<Item = &Event> {
-    chunks.iter().flat_map(|(piece, after)| {
-        piece
-            .iter()
-            .filter(move |event| after.is_none_or(|seq| event.seq > seq))
-    })
-}
-
-#[derive(Debug)]
-struct KeptFile {
-    stamp: Stamp,
-    /// How far the file is parsed: the end of its last whole line.
-    offset: u64,
-    /// Its events: the file as first parsed, then each piece it gained.
-    chunks: Vec<std::sync::Arc<Vec<Event>>>,
-}
-
-impl Recent {
-    #[cfg(test)]
-    fn parsed(&self) -> usize {
-        self.parsed.load(std::sync::atomic::Ordering::SeqCst)
-    }
-
-    #[cfg(test)]
-    fn lines(&self) -> usize {
-        self.lines.load(std::sync::atomic::Ordering::SeqCst)
-    }
-
-    /// **The finishes of each of `chats`** in the log in `dir`, oldest first, as [`finishes_in`]
-    /// answers them from the whole log, for every turn that ends at or after `since` seconds
-    /// since 1970 (and others the files read happen to hold).
-    pub fn finishes(
-        &self,
-        dir: &Path,
-        chats: &[&str],
-        since: u64,
-    ) -> io::Result<std::collections::HashMap<String, Vec<Finish>>> {
-        let mut kept = self.files.lock().unwrap_or_else(PoisonError::into_inner);
-        // The live file first: a seal after it is read leaves its events in a segment listed below
-        // (and dropped as the repeat they are), where one before would leave them in neither.
-        let live_path = dir.join(super::FILE);
-        let live = stamp(&live_path)?;
-        if let Some(live) = &live {
-            self.bring_up_to_date(&mut kept, &live_path, live)?;
-        }
-        // Newest first.
-        let mut sealed = Vec::new();
-        for (_, path) in super::segments(dir)?.into_iter().rev() {
-            if let Some(stamp) = stamp(&path)? {
-                sealed.push((path, stamp));
-            }
-        }
-        let since = std::time::UNIX_EPOCH + std::time::Duration::from_secs(since);
-        let mut taken = sealed
-            .iter()
-            .take_while(|(_, stamp)| stamp.modified.is_none_or(|written| written >= since))
-            .count();
-        let chunks = loop {
-            for (path, stamp) in &sealed[..taken] {
-                self.bring_up_to_date(&mut kept, path, stamp)?;
-            }
-            let chunks = Self::in_order(&kept, &live_path, &sealed[..taken]);
-            let more = taken < sealed.len()
-                && chats
-                    .iter()
-                    .any(|chat| needs_older(events_of(&chunks), chat));
-            if !more {
-                break chunks;
-            }
-            taken += 1;
-        };
-        kept.retain(|path, _| {
-            *path == live_path || sealed[..taken].iter().any(|(one, _)| one == path)
-        });
-        drop(kept);
-        Ok(chats
-            .iter()
-            .map(|chat| ((*chat).to_owned(), finishes_among(events_of(&chunks), chat)))
-            .collect())
-    }
-
-    /// The kept events of the files in `sealed` (newest first) and the live file, oldest first,
-    /// each piece with the number its events must pass to count: the live file's pieces repeat
-    /// what was sealed meanwhile (the live file was read before it was sealed), so only an event
-    /// newer than the newest sealed one counts.
-    fn in_order(
-        kept: &std::collections::HashMap<std::path::PathBuf, KeptFile>,
-        live: &Path,
-        sealed: &[(std::path::PathBuf, Stamp)],
-    ) -> Chunks {
-        let pieces = |path: &Path| -> Vec<std::sync::Arc<Vec<Event>>> {
-            kept.get(path)
-                .map(|one| one.chunks.clone())
-                .unwrap_or_default()
-        };
-        let mut out = Chunks::new();
-        for (path, _) in sealed.iter().rev() {
-            out.extend(pieces(path).into_iter().map(|piece| (piece, None)));
-        }
-        let newest = out
-            .iter()
-            .filter_map(|(piece, _)| piece.last().map(|event| event.seq))
-            .max();
-        out.extend(pieces(live).into_iter().map(|piece| (piece, newest)));
-        out
-    }
-
-    /// Makes what is kept of `path` what `stamp` says it is now, reading as little as that takes.
-    fn bring_up_to_date(
-        &self,
-        kept: &mut std::collections::HashMap<std::path::PathBuf, KeptFile>,
-        path: &Path,
-        stamp: &Stamp,
-    ) -> io::Result<()> {
-        let from = match kept.get(path) {
-            Some(one) if one.stamp == *stamp => return Ok(()),
-            // The same file, longer: only what it gained.
-            Some(one)
-                if stamp.id.is_some() && one.stamp.id == stamp.id && one.stamp.len < stamp.len =>
-            {
-                Some(one.offset)
-            }
-            _ => None,
-        };
-        let (events, offset) = read_from(path, from.unwrap_or(0))?;
-        #[cfg(test)]
-        {
-            if from.is_none() {
-                self.parsed
-                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            }
-            self.lines
-                .fetch_add(events.len(), std::sync::atomic::Ordering::SeqCst);
-        }
-        let events = std::sync::Arc::new(events);
-        match (from, kept.get_mut(path)) {
-            (Some(_), Some(one)) => {
-                one.stamp = *stamp;
-                one.offset = offset;
-                one.chunks.push(events);
-            }
-            _ => {
-                kept.insert(
-                    path.to_path_buf(),
-                    KeptFile {
-                        stamp: *stamp,
-                        offset,
-                        chunks: vec![events],
-                    },
-                );
-            }
-        }
-        Ok(())
-    }
-}
-
-/// The events in `path` from byte `from`, a line that is not one skipped, as [`super::read`]
-/// reads a file, and where the last whole line ends: a last line with no end that is not an
-/// event is half written, and is left to be read once it is whole. None for a file that is not
-/// there.
-fn read_from(path: &Path, from: u64) -> io::Result<(Vec<Event>, u64)> {
-    use std::io::{Read, Seek, SeekFrom};
-    let mut file = match std::fs::File::open(path) {
-        Ok(file) => file,
-        Err(why) if why.kind() == io::ErrorKind::NotFound => return Ok((Vec::new(), 0)),
-        Err(why) => return Err(why),
-    };
-    file.seek(SeekFrom::Start(from))?;
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)?;
-    let mut events = Vec::new();
-    let mut done = 0;
-    let mut rest = bytes.as_slice();
-    while !rest.is_empty() {
-        let (line, whole) = match rest.iter().position(|byte| *byte == b'\n') {
-            Some(end) => (&rest[..end], true),
-            None => (rest, false),
-        };
-        let event = serde_json::from_slice::<Event>(line).ok();
-        if event.is_none() && !whole {
-            break;
-        }
-        events.extend(event);
-        let used = line.len() + usize::from(whole);
-        done += used;
-        rest = &rest[used..];
-    }
-    Ok((events, from + done as u64))
-}
-
-/// [`finishes`] of the log in `dir`, read through [`super::read`].
+/// [`finishes`] of the log in `dir`, read through [`super::read`]: what [`Recent`] answers, from the
+/// whole log at once.
 pub fn finishes_in(dir: &Path, chat: &str) -> io::Result<Vec<Finish>> {
     Ok(finishes(&super::read(dir)?, chat))
 }

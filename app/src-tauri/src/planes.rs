@@ -3095,7 +3095,15 @@ impl Closing {
     /// and every window drawing it told. Only then may it be opened again.
     pub(crate) fn finish(self) {
         let _one_at_a_time = self.one_at_a_time.enter(LETTING_GO_WAITS);
+        let logged: Vec<String> = self
+            .held
+            .chats()
+            .logged_names()
+            .into_iter()
+            .map(|(chat, _)| chat)
+            .collect();
         self.held.let_go(false, TaskScreens::KeepNow);
+        crate::finishedturns::project_closed(&logged);
         crate::chatlisting::project_closed(&self.plane);
         (self.released)(&self.held.root);
         (self.closed)(&self.plane);

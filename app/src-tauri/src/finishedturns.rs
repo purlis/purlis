@@ -126,10 +126,17 @@ fn turns_of(finishes: Vec<Finish>, session: u32, since: u64) -> Vec<FinishedTurn
         .collect()
 }
 
-/// The log's recent files, kept parsed while they do not change (H15): every ask of every chat
-/// shares them, where each used to parse the whole log.
+/// The log's files, kept indexed by chat while they do not change (H15, #7902): every ask of
+/// every chat shares them, where each used to parse the whole log.
 static RECENT: std::sync::LazyLock<finishes::Recent> =
     std::sync::LazyLock::new(finishes::Recent::default);
+
+/// **A project closed**: what is kept of its chats' finishes is let go of (#7902). Asked again,
+/// once the project opens again, they are read again.
+pub(crate) fn project_closed(chats: &[String]) {
+    let chats: Vec<&str> = chats.iter().map(String::as_str).collect();
+    RECENT.forget(&chats);
+}
 
 /// **Each asked chat's finishes in the last day** (R-241, R-178): its turns that ended and its
 /// own runs that ended failed, each with its turn's blocks still unresolved at its end, from

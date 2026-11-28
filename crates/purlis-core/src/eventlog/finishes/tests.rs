@@ -579,8 +579,8 @@ fn a_file_that_is_gone_from_the_log_is_not_kept() {
     std::fs::remove_file(&files[0]).unwrap();
     let said = recent.finishes(dir.path(), &[CHAT], 0).unwrap();
     assert_eq!(said[CHAT], finishes_in(dir.path(), CHAT).unwrap());
-    let kept = recent.files.lock().unwrap();
-    assert!(!kept.contains_key(&files[0]), "the pruned segment is kept");
+    let kept = recent.kept();
+    assert!(!kept.contains(&files[0]), "the pruned segment is kept");
     assert_eq!(
         kept.len(),
         files.len(),
@@ -692,3 +692,6 @@ fn a_live_file_that_shrank_is_read_whole_again() {
     let said = recent.finishes(dir.path(), &[CHAT], 0).unwrap();
     assert_eq!(said[CHAT], finishes_in(dir.path(), CHAT).unwrap());
 }
+
+#[path = "tests/recent.rs"]
+mod recent;

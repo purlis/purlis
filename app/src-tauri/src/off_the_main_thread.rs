@@ -1154,6 +1154,10 @@ mod costs;
 mod counts;
 
 #[cfg(test)]
+#[path = "off_the_main_thread/tests/held_open.rs"]
+mod held_open;
+
+#[cfg(test)]
 #[path = "off_the_main_thread/tests/lane_writes.rs"]
 mod lane_writes;
 
