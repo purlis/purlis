@@ -3251,7 +3251,7 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "asciinema",
     "vhs",
     // The VM and sandbox runners #8031 names beside #8017's, refused whole on what each is for, as
-    // `virt-customize` and `firecracker` are: libguestfs's `virt-builder` runs the command its
+    // `lima` and `multipass` are: libguestfs's `virt-builder` runs the command its
     // `--run-command` names in the disk image it builds, and `virt-rescue` opens a shell in a
     // guest's disk; gVisor's `runsc` and `kata-runtime` are OCI runtimes, which run a
     // container's process as `runc` does (`runsc do` runs the command after it); and
@@ -3264,7 +3264,7 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "bhyve",
     // The interpreters and installers #8031 names, refused on this list and not on REFUSED_NAMES,
     // as #7964's runtimes are: Gerbil's compiler `gxc` runs a module's macros as it compiles it,
-    // as `gxi` runs its code; CHICKEN's `chicken-install` runs an egg's setup as it installs it,
+    // as `gsi` runs Gambit's; CHICKEN's `chicken-install` runs an egg's setup as it installs it,
     // as `csi` runs Scheme; and Hy's `hy` runs the Lisp it is handed as Python. `hy` is a short
     // row, so it reaches every `hy-<word>`, `<word>-hy` and `ghy` as well.
     "gxc",

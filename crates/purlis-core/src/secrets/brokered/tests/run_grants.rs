@@ -4490,7 +4490,8 @@ fn the_tracer_of_8017_is_offered_no_run_grant() {
 }
 /// The terminal sharers and recorders #8031 names, each of which runs a command it is handed:
 /// `ttyd` and `gotty` run the command after them and serve its terminal over HTTP, `asciinema rec
-/// -c` runs the command it records, and `vhs` runs a tape file's commands.
+/// -c` runs the command it records (and, without `-c`, the shell its settings name), and `vhs`
+/// runs a tape file's commands.
 #[test]
 fn the_terminal_sharers_and_recorders_of_8031_are_offered_no_run_grant() {
     for name in ["ttyd", "gotty", "asciinema", "vhs"] {
@@ -4526,8 +4527,8 @@ fn the_interpreters_and_installers_of_8031_are_offered_no_run_grant() {
     }
 }
 
-/// Helix, the editor #8031 names, whose `:sh` and `:pipe` run a shell command: `hx`, and `helix`,
-/// the name some systems install it as.
+/// Helix, the editor #8031 names, whose `:sh`, `:pipe` and `:insert-output` run a shell command:
+/// `hx`, and `helix`, the name some systems install it as.
 #[test]
 fn helix_the_editor_with_a_shell_of_8031_is_offered_no_run_grant() {
     for name in ["hx", "helix"] {

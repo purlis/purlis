@@ -1,9 +1,9 @@
 # Amended 2026-11-28: the terminals, sharers, VM runners, interpreters and editor of #8031 are refused a Run grant
 
 Decided under the operator's standing order to take the recommended path (#8031), recorded here
-as delegated decisions (delegated: recommended path). It follows *the terminals, tmux session
-managers, VM runners, interpreters and tracer of #8017 are refused a Run grant* (2026-11-28),
-whose closing filed these families as #8031.
+as delegated decisions (delegated: recommended path). It follows the amendment for #8017
+(#8033, open when this was written), whose closing filed these families as #8031. Nothing here
+depends on #8033's rows: each comparison below names a row that was on `main` before either.
 
 ## Not read in source, and why each is refused all the same
 
@@ -51,7 +51,7 @@ able to declare one in a reviewed line. Moving one to `REFUSED_NAMES` is its own
 - **Terminal sharers and recorders**: `ttyd` and `gotty` run the command after them and serve
   its terminal over HTTP; `asciinema rec -c` runs the command it records; and `vhs` runs the
   commands of a tape file.
-- **VM and sandbox runners**, as #8017's `virt-customize` and `firecracker` are: libguestfs's
+- **VM and sandbox runners**, as `lima` and `multipass` are: libguestfs's
   `virt-builder` runs the command its `--run-command` names in the image it builds, and
   `virt-rescue` opens a shell in a guest's disk; gVisor's `runsc` and `kata-runtime` are OCI
   runtimes, which run a container's process as `runc` does; and `cloud-hypervisor` and FreeBSD's
@@ -83,13 +83,14 @@ the machine's 1,750 program names, before and after the rows went in, found none
 so #7825 has nothing from this machine to add. Elsewhere, the short rows cost the most. These are
 examples, not a complete list:
 
-- `hy`, `hx` and `vhs` reach every `<word>-<name>` and `<name>-<word>`, and the `g` the forms
-  strip reaches `ghy`, `ghx` and `gvhs`.
+- Every one-word row (`ttyd`, `gotty`, `runsc`, `bhyve`, `pterm`, `wterm`, `zutty`, `gxc` and
+  the rest) reaches every `<word>-<name>` and `<name>-<word>`, and every `g<name>` and
+  `gnu<name>`, as the forms strip a GNU prefix from the name they check, never from a row. The
+  short ones, `hy`, `hx` and `vhs`, are the likeliest to meet another program's name this way.
 - `hx` is also the name of a hex viewer, which runs nothing it is handed, and is refused with
   Helix by its name.
-- `gxc` reaches nothing more than its own builds, as its `g`-less form, `xc`, is no row; and a
-  row with a dash in it (`virt-builder`, `kata-runtime`, `chicken-install`) is reached only by
-  its own name, its versions and its `g`-less form.
+- A row with a dash in it (`virt-builder`, `kata-runtime`, `chicken-install`) is reached only by
+  its own name, its stem before a `.`, its versions, and its name with a `g` or `gnu` in front.
 
 Which of these to give back, and how to do it without giving back the ones that run code, is
 part of #7825.
