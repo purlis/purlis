@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795858720333,
+  "lastUpdate": 1795860156264,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58758,6 +58758,48 @@ window.BENCHMARK_DATA = {
             "value": 100.9428315,
             "unit": "ms",
             "extra": "median of 5 runs: 100.249, 100.448, 100.943, 101.172, 102.820 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9ca33bd3937e9d59938a89a47ce4434962c613aa",
+          "message": "FS-C1a: sandbox_state asks git once and reads Plane and Locks once (#7900) (#7987)\n\n* FS-C1a: sandbox_state asks git once and reads Plane and Locks once (#7900)\n\nsandbox_state's read now runs inside git_asked_once and planted::read_once,\nand reads the project's manifest and the sandbox's locks once, passing them\ndown to everything that judges them: Locks::of_plane, and an _of/_under\nvariant of each helper it called (offer_due, hosts_changed, presets_changed,\nbrowser_sites::changed, besides, services::awaiting, Ground and SocketGround,\nteam_off, allowed_levels, as_the_file_says, personal::in_force and base).\nEach root-only entry point stays and delegates, so every other caller\nanswers as before.\n\nThe G2 gate (counts.rs) gains a READS ceiling for sandbox_state, and its\nstart ceiling moves with sandbox on from 4 to 2: one ask of git, which is\nthe hardened runner's config listing and one git status, since nothing is\nkept where a count is taken. Reads with sandbox on go from 26 manifest and\n10 locks reads to 1 and 1; with team off committed from 28 and 10 to 1 and\n1, its 9 starts (the off's history, read three times) recorded unchanged.\nEach ceiling was seen red by a mutation: no git_asked_once (4 starts), one\nhelper reading the manifest again (2 and 2 reads), the locks read again\n(1 and 2 reads).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8FS572CHQJ3X0W6MZJVSXTV\nPurlis-Persona: steward\n\n* FS-C1a: changelog fragment for the faster sandbox state (#7900)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8FS572CHQJ3X0W6MZJVSXTV\nPurlis-Persona: steward\n\n* FS-C1a: a level of yours reads the manifest and locks once too; one _read_as suffix (#7900)\n\nsandbox_state judged a level of yours through sandbox::your_level, which read\nthe manifest again. your_level_read_as takes the Plane and Locks the state\nread; your_level delegates. The counts gate holds the path with a level of\nyours on both fixtures (seen red: plane 2 without the threading).\n\nEvery variant taking the manifest and locks as read is now *_read_as;\nallowed_levels_under keeps its locks-only meaning. Docs for besides, the\nlocks count, state_of and the changelog say one git ask, at most 2 starts.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8G6VEJD1BTYEETE3GT2GNK8\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T08:40:45Z",
+          "tree_id": "147fbf72f63789a8de0193db12f9871e6ffb0ebd",
+          "url": "https://github.com/purlis/purlis/commit/9ca33bd3937e9d59938a89a47ce4434962c613aa"
+        },
+        "date": 1795860147402,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.687413,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.680, 0.683, 0.687, 0.692, 0.693 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6456845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.558, 16.608, 16.646, 16.657, 16.711 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.31704500000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.458, 101.224, 101.317, 101.740, 102.200 ms"
           }
         ]
       }
