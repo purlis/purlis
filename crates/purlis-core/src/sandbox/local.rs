@@ -706,11 +706,11 @@ pub enum Answer {
 /// sandbox is unknown, and every chat in it is refused until it is fixed.
 pub fn offer_due(root: &Path) -> bool {
     let plane = Plane::read(root);
-    offer_due_of(root, &plane, &super::policy::Locks::of_plane(&plane))
+    offer_due_read_as(root, &plane, &super::policy::Locks::of_plane(&plane))
 }
 
 /// [`offer_due`], with the project's manifest read as `plane` and its locks as `locks` (#7900).
-pub fn offer_due_of(root: &Path, plane: &Plane, locks: &super::policy::Locks) -> bool {
+pub fn offer_due_read_as(root: &Path, plane: &Plane, locks: &super::policy::Locks) -> bool {
     crate::names::has_manifest(root)
         && !plane.unreadable()
         && !plane.leaves_the_level_to_each_person()
@@ -849,12 +849,12 @@ pub struct HostsChange {
 /// one back in, is a change to what chats reach, and is told as one.
 pub fn hosts_changed(root: &Path) -> Option<HostsChange> {
     let plane = Plane::read(root);
-    hosts_changed_of(root, &plane, &super::policy::Locks::of_plane(&plane))
+    hosts_changed_read_as(root, &plane, &super::policy::Locks::of_plane(&plane))
 }
 
 /// [`hosts_changed`], with the project's manifest read as `plane` and its locks as `locks`
 /// (#7900).
-pub fn hosts_changed_of(
+pub fn hosts_changed_read_as(
     root: &Path,
     plane: &Plane,
     locks: &super::policy::Locks,
@@ -929,12 +929,12 @@ const CERTIFICATE_CHECKS_TITLE: &str = "Certificate checks";
 /// a change from what was seen.
 pub fn presets_changed(root: &Path) -> Option<PresetsChange> {
     let plane = Plane::read(root);
-    presets_changed_of(root, &plane, &super::policy::Locks::of_plane(&plane))
+    presets_changed_read_as(root, &plane, &super::policy::Locks::of_plane(&plane))
 }
 
 /// [`presets_changed`], with the project's manifest read as `plane` and its locks as `locks`
 /// (#7900).
-pub fn presets_changed_of(
+pub fn presets_changed_read_as(
     root: &Path,
     plane: &Plane,
     locks: &super::policy::Locks,

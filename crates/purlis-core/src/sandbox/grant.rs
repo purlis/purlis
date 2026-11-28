@@ -431,7 +431,7 @@ impl Ground {
     /// folders refused.
     pub fn of(root: &Path, chat: &Path, machine: &super::Machine) -> Self {
         let plane = super::Plane::read(root);
-        Self::under(
+        Self::read_as(
             root,
             chat,
             machine,
@@ -442,7 +442,7 @@ impl Ground {
 
     /// [`Self::of`], with the project's manifest read as `plane` and its locks as `locks`
     /// (#7900).
-    pub fn under(
+    pub fn read_as(
         root: &Path,
         chat: &Path,
         machine: &super::Machine,

@@ -315,11 +315,15 @@ pub fn in_force(root: &Path) -> Personal {
 }
 
 /// [`in_force`], with the project's manifest read as `plane` and its locks as `locks` (#7900).
-pub fn in_force_of(root: &Path, plane: &super::Plane, locks: &super::policy::Locks) -> Personal {
+pub fn in_force_read_as(
+    root: &Path,
+    plane: &super::Plane,
+    locks: &super::policy::Locks,
+) -> Personal {
     honoured_over(
         &of(root),
         &super::local::confirmed_levels(root),
-        base_of(root, plane, locks),
+        base_read_as(root, plane, locks),
     )
 }
 
@@ -335,17 +339,17 @@ pub fn waiting(root: &Path) -> Vec<Awaiting> {
 /// it counts as the full one.
 pub fn base(root: &Path) -> Choice {
     let plane = super::Plane::read(root);
-    base_of(root, &plane, &super::policy::Locks::of_plane(&plane))
+    base_read_as(root, &plane, &super::policy::Locks::of_plane(&plane))
 }
 
 /// [`base`], with the project's manifest read as `plane` and its locks as `locks` (#7900).
-pub fn base_of(root: &Path, plane: &super::Plane, locks: &super::policy::Locks) -> Choice {
+pub fn base_read_as(root: &Path, plane: &super::Plane, locks: &super::policy::Locks) -> Choice {
     if plane.unreadable() || plane.missing() {
         return Choice::On;
     }
     // The team's bound, which holds the project's `policy = "never"` and an administrator's
     // policy as the full sandbox, and is the full one where the project turned it on.
-    super::team::allowed_levels_of(root, plane, locks).clamp(None)
+    super::team::allowed_levels_read_as(root, plane, locks).clamp(None)
 }
 
 /// Settings' Confirm of `shown`, the level the row showed for the slot: recorded as yours only

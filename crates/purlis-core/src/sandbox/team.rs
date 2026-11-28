@@ -173,11 +173,11 @@ const GIT_WAIT: Duration = Duration::from_secs(5);
 /// Where the project's file does not turn the sandbox off, an answer kept for an earlier off is
 /// let go: purlis saw that off leave, so an off that comes back is asked again.
 pub fn team_off(root: &Path) -> TeamOff {
-    team_off_of(root, &super::Plane::read(root))
+    team_off_read_as(root, &super::Plane::read(root))
 }
 
 /// [`team_off`], with the project's manifest read as `plane` (#7900).
-pub fn team_off_of(root: &Path, plane: &super::Plane) -> TeamOff {
+pub fn team_off_read_as(root: &Path, plane: &super::Plane) -> TeamOff {
     if !plane.team().off {
         if super::local::team_off_answer(root).is_some() {
             // Best effort: where this machine's file cannot be written from here, the window's
@@ -604,7 +604,7 @@ impl Bound {
 /// person accepted the team's off.
 pub fn allowed_levels(root: &Path) -> Bound {
     let plane = super::Plane::read(root);
-    allowed_levels_of(root, &plane, &policy::Locks::of_plane(&plane))
+    allowed_levels_read_as(root, &plane, &policy::Locks::of_plane(&plane))
 }
 
 /// **The bound for a project not made yet**, as setup's Protection row shows it (Q241): this
@@ -618,7 +618,8 @@ pub fn allowed_levels_for_a_new_project() -> Bound {
     }
 }
 
-/// [`allowed_levels`] under `locks`, the locks a start already read.
+/// [`allowed_levels`] under `locks`, the locks a start already read: only the locks are handed
+/// in, and the manifest is read here ([`allowed_levels_read_as`] takes both as read).
 ///
 /// **The default is the project's sandbox level** (the follow-up's item 1,
 /// [`crate::enforcement::sandbox_level`]): its `[sandbox] mode` where it names one, else its
@@ -627,12 +628,12 @@ pub fn allowed_levels_for_a_new_project() -> Bound {
 /// team's off is a loosening like any other: it reaches the person on their Accept, which is the
 /// sandbox family's press.
 pub fn allowed_levels_under(root: &Path, locks: &policy::Locks) -> Bound {
-    allowed_levels_of(root, &super::Plane::read(root), locks)
+    allowed_levels_read_as(root, &super::Plane::read(root), locks)
 }
 
-/// [`allowed_levels_under`], with the project's manifest read as `plane` (#7900): what an answer
-/// that read the manifest and the locks once passes down.
-pub fn allowed_levels_of(root: &Path, plane: &super::Plane, locks: &policy::Locks) -> Bound {
+/// [`allowed_levels_under`], with the project's manifest read as `plane` as well as its locks as
+/// `locks` (#7900): what an answer that read the manifest and the locks once passes down.
+pub fn allowed_levels_read_as(root: &Path, plane: &super::Plane, locks: &policy::Locks) -> Bound {
     if let Some(why) = locks.opt_out_refused() {
         return Bound::full(why);
     }
@@ -642,7 +643,7 @@ pub fn allowed_levels_of(root: &Path, plane: &super::Plane, locks: &policy::Lock
         let _ = super::local::forget_team_off(root);
     }
     let level = crate::enforcement::sandbox_level(root, || {
-        level_of(as_the_file_says_of(root, plane, locks))
+        level_of(as_the_file_says_read_as(root, plane, locks))
     });
     Bound {
         default: choice_of(level),
@@ -675,15 +676,19 @@ pub fn level_of(choice: Choice) -> crate::enforcement::SandboxLevel {
 /// floor otherwise. What a process that is not the app never runs looser than
 /// ([`crate::enforcement::sandbox_level`]).
 pub fn as_the_file_says(root: &Path, locks: &policy::Locks) -> Choice {
-    as_the_file_says_of(root, &super::Plane::read(root), locks)
+    as_the_file_says_read_as(root, &super::Plane::read(root), locks)
 }
 
 /// [`as_the_file_says`], with the project's manifest read as `plane` (#7900).
-pub fn as_the_file_says_of(root: &Path, plane: &super::Plane, locks: &policy::Locks) -> Choice {
+pub fn as_the_file_says_read_as(
+    root: &Path,
+    plane: &super::Plane,
+    locks: &policy::Locks,
+) -> Choice {
     if plane.in_force(locks).is_some() && !plane.team().off {
         return Choice::On;
     }
-    if matches!(team_off_of(root, plane), TeamOff::Accepted(_)) {
+    if matches!(team_off_read_as(root, plane), TeamOff::Accepted(_)) {
         Choice::Off
     } else {
         Choice::Floor
