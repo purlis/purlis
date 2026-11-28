@@ -45,6 +45,7 @@ the calls inside the steps.
 | `code_send` | `hostedsessions.rs::send_code` | the bundle of the project's code sent to the runner, and its take there (#7864) |
 | `browser_first_page` | `browser-engine`'s `drive::Browser` | from the engine answering until its first page is attached and its frames known (#7864) |
 | `view_first_frame` | `hostedsessions.rs::draw_into` | from a view's stream being drawn until its first chunk or frame is; `cancelled` where the person closes it first (#7864) |
+| `profile_sign_in_start`, `profile_sign_in_address`, `profile_sign_in_done` | `poolprofiles.rs`, `profilestore/sign_in/driven.rs` | a profile's sign-in on a pool's runner (#7939): from Sign in until its login is started; until its page or device code is told to the window; until the runner says it is signed in |
 
 **These names are a contract since #7864** (decided in #7189): they are listed once, in
 `purlis_session_protocol::steps::Name::ALL`, which a test pins. Renaming one is a breaking change

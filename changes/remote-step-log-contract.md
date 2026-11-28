@@ -9,7 +9,8 @@
 
 - **The remote start's step lines are a contract** (#7864). Their names are fixed, and a rename
   from now on is a breaking change, said here. New steps: `link_dial`, `code_send`,
-  `hold_project`, `browser_first_page` and `view_first_frame`. A `refused` step is now a warning;
+  `hold_project`, `browser_first_page` and `view_first_frame`, and a pool sign-in's
+  `profile_sign_in_start`, `profile_sign_in_address` and `profile_sign_in_done` join them. A `refused` step is now a warning;
   `done`, `cancelled` and `gave_up` stay at info. Each line's elapsed time is the `ms` field
   (was `elapsed_ms`), and a line may also carry `cause`, `attempt` and `start`, the id of the
   Start the person pressed, which the runner's `harness_spawn` line carries too (session

@@ -282,7 +282,7 @@ fn line_of<'a>(out: &'a str, name: &str) -> &'a str {
 #[test]
 fn the_contract_names_every_top_level_step_and_a_rename_fails_here() {
     // #7864: the step names are a contract. The baseline's top-level steps (#7835's table) and
-    // the five #7189 added. Renaming one is a breaking change, with a changelog line: this list
+    // the five #7189 added, and a pool sign-in's three (#7939). Renaming one is a breaking change, with a changelog line: this list
     // changes on purpose only.
     let named: Vec<&str> = Name::ALL.iter().map(|name| name.as_str()).collect();
     assert_eq!(
@@ -308,6 +308,9 @@ fn the_contract_names_every_top_level_step_and_a_rename_fails_here() {
             "browser_engine_start",
             "browser_first_page",
             "view_first_frame",
+            "profile_sign_in_start",
+            "profile_sign_in_address",
+            "profile_sign_in_done",
         ]
     );
     // Each is a name of its own, in the shape a filter or a grep finds.
