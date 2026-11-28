@@ -240,15 +240,19 @@ pub struct YourLevel {
 }
 
 /// [`YourLevel`] for the project at `root`: read through the one seam a start reads it through
-/// (`sandbox::your_level`), for a chat you start in the window on no persona.
-fn yours_of(root: &std::path::Path, locks: &sandbox::policy::Locks) -> Option<YourLevel> {
+/// (`sandbox::your_level_read_as`), for a chat you start in the window on no persona.
+fn yours_of(
+    root: &std::path::Path,
+    plane: &sandbox::Plane,
+    locks: &sandbox::policy::Locks,
+) -> Option<YourLevel> {
     // Only a level of yours: where you chose none, the project's own is said, or the team's.
-    sandbox::personal::in_force(root).level?;
+    sandbox::personal::in_force_read_as(root, plane, locks).level?;
     // As a start takes it, within the team's bound: a floor the project's `never` or a policy
     // keeps at the full sandbox is said as the full sandbox, which a full project says itself.
-    let level = sandbox::your_level(root, None, locks, &sandbox::Made::Window)?;
+    let level = sandbox::your_level_read_as(root, None, plane, locks, &sandbox::Made::Window)?;
     // The project's own level is the project's to say, however you came to it.
-    if level == sandbox::personal::base(root) {
+    if level == sandbox::personal::base_read_as(root, plane, locks) {
         return None;
     }
     let confirmed = sandbox::local::confirmed_levels(root).level == Some(level);
@@ -609,54 +613,80 @@ pub struct PresetsChanged {
     pub now: Vec<String>,
 }
 
+/// **The project's sandbox as the window shows it**, read once (#7900, FS-C1a): one git ask
+/// (at most 2 program starts) whether the local file is ignored
+/// ([`purlis_core::profiles::git_asked_once`]), each walk of the plane made once
+/// ([`sandbox::planted::read_once`]), and the manifest and the locks read once and passed down
+/// to everything that judges them, the level a start would take for a level of yours included
+/// ([`sandbox::your_level_read_as`]). The window asks on every plane change, and every read had
+/// read them again: about 25 reads of the manifest, 10 of the locks and two git asks each.
 fn state_of(root: &std::path::Path) -> SandboxState {
     state_on(root, sandbox::Os::this())
 }
 
 /// [`state_of`] on `os`.
 fn state_on(root: &std::path::Path, os: sandbox::Os) -> SandboxState {
-    let plane = sandbox::Plane::read(root);
-    let locks = sandbox::policy::Locks::of(root);
+    purlis_core::profiles::git_asked_once(|| {
+        sandbox::planted::read_once(|| {
+            let plane = sandbox::Plane::read(root);
+            let locks = sandbox::policy::Locks::of_plane(&plane);
+            state_read_as(root, os, &plane, &locks)
+        })
+    })
+}
+
+/// [`state_on`], from the project's manifest read as `plane` and its locks as `locks`.
+fn state_read_as(
+    root: &std::path::Path,
+    os: sandbox::Os,
+    plane: &sandbox::Plane,
+    locks: &sandbox::policy::Locks,
+) -> SandboxState {
     // The project's own, or the one an administrator's policy requires (D-1423-1).
-    let on = plane.in_force(&locks).is_some();
-    let manifest = manifest_said(root, &plane);
+    let on = plane.in_force(locks).is_some();
+    let manifest = manifest_said(root, plane);
     SandboxState {
         on,
         // Taking the offer writes the manifest, which would put a new one in place of the gone
         // or unreadable one: nothing is offered until it is restored.
-        offer: manifest.is_none() && sandbox::local::offer_due(root),
+        offer: manifest.is_none() && sandbox::local::offer_due_read_as(root, plane, locks),
         said: on.then(|| sandbox::local::tally(root).said()),
         never: never_here(os),
-        hosts_changed: sandbox::local::hosts_changed(root).map(|change| HostsChanged {
-            added: change.added,
-            removed: change.removed,
-            now: change.now,
-        }),
-        browser_sites_changed: sandbox::browser_sites::changed(root, &locks).map(|change| {
-            BrowserSitesChanged {
+        hosts_changed: sandbox::local::hosts_changed_read_as(root, plane, locks).map(|change| {
+            HostsChanged {
                 added: change.added,
                 removed: change.removed,
+                now: change.now,
             }
         }),
-        presets_changed: sandbox::local::presets_changed(root).map(|change| PresetsChanged {
-            added: change.added,
-            removed: change.removed,
-            widens: change.widens,
-            now: change.now,
-        }),
-        presets: presets_of(&plane, &locks),
-        persona_hosts: persona_hosts_of(root, &plane, &locks),
-        besides: sandbox::besides(root, &plane, &sandbox::Machine::this()).into(),
-        policy: SandboxPolicy::of(&locks),
+        browser_sites_changed: sandbox::browser_sites::changed_read_as(root, plane, locks).map(
+            |change| BrowserSitesChanged {
+                added: change.added,
+                removed: change.removed,
+            },
+        ),
+        presets_changed: sandbox::local::presets_changed_read_as(root, plane, locks).map(
+            |change| PresetsChanged {
+                added: change.added,
+                removed: change.removed,
+                widens: change.widens,
+                now: change.now,
+            },
+        ),
+        presets: presets_of(plane, locks),
+        persona_hosts: persona_hosts_of(root, plane, locks),
+        besides: sandbox::besides_read_as(root, plane, locks, &sandbox::Machine::this()).into(),
+        policy: SandboxPolicy::of(locks),
         manifest,
-        certificate_check: plane.in_force(&locks).map(|policy| {
-            CertificateCheck::of(sandbox::CertificateChecks::of(&policy, &locks), os)
-        }),
-        expects: sandbox::services::awaiting(root, &sandbox::Machine::this()).map(Into::into),
+        certificate_check: plane
+            .in_force(locks)
+            .map(|policy| CertificateCheck::of(sandbox::CertificateChecks::of(&policy, locks), os)),
+        expects: sandbox::services::awaiting_read_as(root, plane, locks, &sandbox::Machine::this())
+            .map(Into::into),
         forge_replaced: sandbox::tools::replaced::told(root).map(Into::into),
-        team_off: TeamOffState::of(sandbox::team::team_off(root)),
-        level_held: sandbox::team::allowed_levels(root).why,
-        yours: yours_of(root, &locks),
+        team_off: TeamOffState::of(sandbox::team::team_off_read_as(root, plane)),
+        level_held: sandbox::team::allowed_levels_read_as(root, plane, locks).why,
+        yours: yours_of(root, plane, locks),
     }
 }
 
