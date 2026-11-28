@@ -1,0 +1,332 @@
+/* Copyright 2026 Purlis */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/* PROTOTYPE (#7997, never merged): places the Repos view prototype's pieces. Tokens only. */
+
+.rvp-stage {
+  display: grid;
+  gap: var(--space-4);
+  justify-items: start;
+  padding: var(--space-6) var(--space-6) calc(var(--space-8) * 2);
+  background: var(--surface-base);
+  min-block-size: 100vh;
+  box-sizing: border-box;
+}
+
+.rvp-window {
+  display: flex;
+  border: var(--panel-border-width) solid var(--border-subtle);
+}
+
+.rvp-frame {
+  display: grid;
+  min-inline-size: 0;
+}
+
+.rvp-frame > [data-scope="panel"] {
+  min-block-size: 0;
+}
+
+.rvp-scroll {
+  block-size: 100%;
+  overflow: auto;
+  outline: none;
+}
+
+.rvp-view {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-4);
+  min-inline-size: 0;
+}
+
+/* ── shared ── */
+
+.rvp-mid {
+  display: flex;
+  min-inline-size: 0;
+  white-space: nowrap;
+}
+.rvp-mid-head {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-inline-size: 0;
+}
+.rvp-mid-tail {
+  flex: none;
+}
+
+.rvp-mark {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+.rvp-mark > svg {
+  inline-size: 0.95rem;
+  block-size: 0.95rem;
+}
+.rvp-mark[data-tone="failed"] {
+  color: var(--state-failed);
+}
+.rvp-mark[data-tone="waiting"] {
+  color: var(--state-waiting);
+}
+.rvp-mark[data-tone="success"] {
+  color: var(--state-success);
+}
+.rvp-mark[data-tone="accent"] {
+  color: var(--accent-base);
+}
+
+.rvp-tip {
+  display: grid;
+  gap: var(--space-1);
+}
+.rvp-tip code {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+
+.rvp-trail {
+  display: inline-flex;
+  gap: var(--space-4);
+  align-items: baseline;
+  white-space: nowrap;
+}
+.rvp-owner {
+  max-inline-size: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rvp-num,
+.rvp-age {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+.rvp-num {
+  min-inline-size: 3.6rem;
+}
+.rvp-age {
+  min-inline-size: 1.8rem;
+}
+
+.rvp-facts {
+  display: inline-flex;
+  gap: var(--space-4);
+  align-items: center;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.rvp-branch {
+  font-family: var(--font-mono);
+}
+
+.rvp-repo-icon {
+  inline-size: 1rem;
+  block-size: 1rem;
+  color: var(--text-muted);
+  flex: none;
+}
+
+.rvp-disk {
+  margin-inline-start: auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.rvp-none {
+  margin: var(--space-2) var(--space-3);
+}
+
+.rvp-spacer {
+  flex: 1;
+}
+
+.rvp-removed {
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-2) calc(var(--space-7) + var(--space-2));
+  list-style: none;
+  display: grid;
+  gap: var(--space-1);
+}
+.rvp-removed li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: var(--space-4);
+  align-items: baseline;
+}
+
+/* ── A ── */
+
+.rvp-repo {
+  display: grid;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+.rvp-repo + .rvp-repo {
+  margin-block-start: var(--space-4);
+  padding-block-start: var(--space-3);
+  border-block-start: var(--separator-width) solid var(--border-subtle);
+}
+.rvp-repo-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  min-inline-size: 0;
+  flex-wrap: wrap;
+  row-gap: var(--space-1);
+}
+.rvp-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.rvp-group-head[data-tone="waiting"] .rvp-count {
+  color: var(--state-waiting);
+}
+.rvp-count {
+  margin-inline-start: var(--space-3);
+  color: var(--text-muted);
+  font-weight: var(--font-weight-regular);
+  font-variant-numeric: tabular-nums;
+}
+.rvp-group-head > :last-child:not(:first-child) {
+  margin-inline-start: auto;
+}
+
+/* ── B ── */
+
+.rvp-b-heads {
+  display: grid;
+  gap: var(--space-2);
+}
+.rvp-b-head {
+  display: grid;
+  grid-template-columns: auto auto 1fr minmax(8rem, 15rem);
+  align-items: center;
+  gap: var(--space-4);
+  padding-inline: var(--space-3);
+}
+.rvp-b-name {
+  white-space: nowrap;
+}
+.rvp-b-meter {
+  min-inline-size: 0;
+}
+.rvp-b-disk {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  justify-content: space-between;
+  padding-inline: var(--space-3);
+}
+.rvp-free[data-tone="waiting"] {
+  color: var(--state-waiting);
+  font-weight: var(--font-weight-strong);
+}
+.rvp-b-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  padding-inline: var(--space-2);
+}
+.rvp-b-cellname {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  min-inline-size: 0;
+}
+
+/* ── C ── */
+
+.rvp-c-repos {
+  display: grid;
+  gap: var(--space-1);
+}
+.rvp-c-repo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding-inline: var(--space-3);
+  min-inline-size: 0;
+  flex-wrap: wrap;
+}
+.rvp-c-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: var(--space-3);
+  padding-inline: var(--space-2);
+}
+.rvp-c-tile {
+  block-size: auto;
+  min-block-size: 2.75rem;
+  justify-content: start;
+}
+.rvp-c-big {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-strong);
+  font-variant-numeric: tabular-nums;
+  margin-inline-end: var(--space-3);
+}
+.rvp-c-small {
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-regular);
+}
+.rvp-c-tile[data-tone="waiting"] .rvp-c-big {
+  color: var(--state-waiting);
+}
+.rvp-c-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-inline: var(--space-3);
+  min-block-size: var(--size-control);
+}
+
+/* ── the Repos icon, amber under disk pressure (a family tone to add if this wins) ── */
+
+.rvp-repos-icon {
+  display: inline-flex;
+}
+.rvp-repos-icon[data-pressure] {
+  color: var(--state-waiting);
+}
+
+/* ── the log and the floating switcher: not part of the design ── */
+
+.rvp-log {
+  min-block-size: 4.5rem;
+  max-inline-size: 760px;
+  font-family: var(--font-mono);
+}
+
+.rvp-switcher {
+  position: fixed;
+  inset-block-end: var(--space-6);
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  background: var(--surface-overlay);
+  border: var(--panel-border-width) solid var(--border-strong);
+  box-shadow: var(--elevation-overlay);
+  z-index: 10;
+}
+.rvp-switcher-label {
+  min-inline-size: 9.5rem;
+  text-align: center;
+  font-weight: var(--font-weight-strong);
+  color: var(--text-primary);
+}
+.rvp-switcher-sep {
+  inline-size: var(--separator-width);
+  align-self: stretch;
+  background: var(--border-subtle);
+  margin-inline: var(--space-2);
+}
