@@ -623,14 +623,45 @@ pub(crate) fn worktree_to_look_at(held: &Held, session: u32) -> Option<String> {
     (!in_use).then_some(record.id)
 }
 
+/// **The chats open now, as a tidy reads them** (decision #7992: never a folder a live chat
+/// holds): each a branch folder's claim is judged against ([`crate::gitbroker::live_chats`]),
+/// the folder each open chat stands in, and whether a live one has no id its claim could be
+/// matched by, which keeps every folder.
+pub(crate) fn tidy_open_chats(held: &Held) -> purlis_core::dispatchplace::OpenChats {
+    let open = held.chats().open_now();
+    purlis_core::dispatchplace::OpenChats {
+        live: Some(crate::gitbroker::live_chats(held)),
+        unnamed: open.iter().any(|chat| {
+            crate::handoff::still_working(held, chat.session)
+                && held.chats().id_of(chat.session).is_none()
+        }),
+        stand_at: open.into_iter().filter_map(|chat| chat.cwd).collect(),
+    }
+}
+
 /// Chat `session` is closed, and dispatch `id` was what it worked on: where its worktree's
 /// branch is merged, the worktree is taken away and its record says so
 /// (`purlis_core::dispatchplace::tidy_recorded`). Anything else leaves it listed, with
-/// Discard. Runs git, so the app calls it off the thread that closed the chat.
-pub(crate) fn tidy_closed(root: &Path, id: &str) -> purlis_core::dispatchplace::Tidied {
+/// Discard, as is one a chat still `open` stands in or holds. Runs git, so the app calls it off
+/// the thread that closed the chat.
+pub(crate) fn tidy_closed(
+    root: &Path,
+    id: &str,
+    open: &purlis_core::dispatchplace::OpenChats,
+) -> purlis_core::dispatchplace::Tidied {
     match dispatchrecord::read(root, id) {
         Some(record) => {
-            purlis_core::dispatchplace::tidy_recorded(root, &record, &crate::gitbroker::isolation())
+            // A folder inside a merged request's head is finished too (ADR 0110, amended
+            // 2026-11-28), so the forge is asked, as the window asks it.
+            let caller = purlis_core::forge::Caller::window();
+            let ask = purlis_core::finished::merged::of_every_workspace(root, &caller);
+            purlis_core::dispatchplace::tidy_recorded(
+                root,
+                &record,
+                open,
+                &crate::gitbroker::isolation(),
+                purlis_core::finished::Forges::asking(&ask),
+            )
         }
         None => purlis_core::dispatchplace::Tidied::Kept,
     }
@@ -650,7 +681,14 @@ pub(crate) fn tidy_opened(root: &Path, at_open: &purlis_core::dispatchplace::AtO
             .is_some_and(|tree| tree.removed.is_none())
     });
     if any {
-        purlis_core::dispatchplace::tidy_at_open(root, at_open, &crate::gitbroker::isolation());
+        let caller = purlis_core::forge::Caller::window();
+        let ask = purlis_core::finished::merged::of_every_workspace(root, &caller);
+        purlis_core::dispatchplace::tidy_at_open(
+            root,
+            at_open,
+            &crate::gitbroker::isolation(),
+            purlis_core::finished::Forges::asking(&ask),
+        );
     }
 }
 

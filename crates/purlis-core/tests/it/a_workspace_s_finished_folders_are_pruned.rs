@@ -656,6 +656,137 @@ fn a_task_folder_inside_a_merged_head_is_finished_for_its_removal() {
     assert_eq!(kept(Forge::asking(&forge)), None);
 }
 
+/// The explorer's Remove of `piece`, never forced, as the window asks it.
+fn removed_from_the_explorer(
+    f: &support::Fixture,
+    piece: &str,
+    forge: Forge<'_>,
+) -> Result<(), String> {
+    purlis_core::dispatchplace::remove_from_the_explorer(
+        &f.plane,
+        &f.ws,
+        &f.repo,
+        piece,
+        false,
+        || false,
+        forge,
+    )
+}
+
+#[test]
+fn the_explorer_s_remove_takes_a_folder_inside_a_merged_requests_head_and_keeps_its_branch() {
+    purlis_core::unsteered!();
+    // #5476: `remove` and `prune` took it, and the window ran into git's own guard.
+    let f = support::plane_with_clone("api");
+    let (lane, head) = a_lane_inside_a_merged_head(&f);
+    let forge = merged_at(&head);
+
+    let removed = removed_from_the_explorer(&f, "lane", Forge::asking(&forge));
+
+    assert_eq!(removed, Ok(()));
+    assert!(!lane.exists());
+    assert!(has_branch(&f.clone, "lane"), "the window deletes no branch");
+}
+
+#[test]
+fn the_explorer_s_remove_takes_a_task_folder_inside_a_merged_requests_head() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("api");
+    let cut = task_folder(&f, "merges through a request", true);
+    f.commit(&cut.path, "one");
+    git(&f.clone, &["branch", "-q", "pr-head", &cut.branch]);
+    let head_tree = f.workspace().join("pr-head-tree");
+    let at = head_tree.to_str().unwrap();
+    git(&f.clone, &["worktree", "add", "-q", at, "pr-head"]);
+    std::fs::write(head_tree.join("one"), "one, reviewed\n").unwrap();
+    f.commit(&head_tree, "two");
+    let head = sha(&head_tree, "HEAD");
+    git(&f.clone, &["merge", "-q", "--squash", "pr-head"]);
+    git(&f.clone, &["commit", "-q", "-m", "squashed request 7"]);
+    git(&f.clone, &["worktree", "remove", "--force", at]);
+    git(&f.clone, &["branch", "-q", "-D", "pr-head"]);
+    let branch = cut.branch.clone();
+    let forge = move |_: &str, asked: &str| {
+        if asked == branch {
+            Request::Merged {
+                number: 7,
+                head: head.clone(),
+                head_ref: "refs/pull/7/head".to_owned(),
+            }
+        } else {
+            Request::NotMerged
+        }
+    };
+
+    let offline = removed_from_the_explorer(&f, &cut.piece, Forge::none());
+    assert!(offline.is_err(), "not finished without the forge");
+    assert!(cut.path.is_dir());
+
+    let removed = removed_from_the_explorer(&f, &cut.piece, Forge::asking(&forge));
+
+    assert_eq!(removed, Ok(()));
+    assert!(!cut.path.exists());
+    assert!(
+        has_branch(&f.clone, &cut.branch),
+        "the window deletes no branch"
+    );
+}
+
+#[test]
+fn the_explorer_s_remove_takes_a_squash_carried_folder_and_still_refuses_one_ahead() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("api");
+    let carried = plain(&f, "carried");
+    f.commit(&carried, "one");
+    git(&f.clone, &["merge", "-q", "--squash", "carried"]);
+    git(&f.clone, &["commit", "-q", "-m", "squashed carried"]);
+    let ahead = plain(&f, "ahead");
+    f.commit(&ahead, "only-here");
+
+    assert_eq!(
+        removed_from_the_explorer(&f, "carried", Forge::none()),
+        Ok(())
+    );
+    assert!(!carried.exists());
+    let refused = removed_from_the_explorer(&f, "ahead", Forge::none()).unwrap_err();
+    assert!(ahead.is_dir(), "{refused}");
+}
+
+#[test]
+fn the_explorer_s_remove_leaves_a_carried_folder_a_chat_holds_or_another_links_into_to_git() {
+    purlis_core::unsteered!();
+    // Past git's guard only where nothing else keeps it: a chat at work in it, or a folder
+    // that needs it, is left to git's guard, which refuses a carried branch.
+    let f = support::plane_with_clone("api");
+    let held = plain(&f, "held");
+    f.commit(&held, "one");
+    git(&f.clone, &["merge", "-q", "--squash", "held"]);
+    git(&f.clone, &["commit", "-q", "-m", "squashed held"]);
+    let holder = Who::here(None, Some("9".to_owned()), None).for_chat(Some("chat-id-9".to_owned()));
+    pieces::record(
+        &f.plane,
+        &f.ws,
+        Event::Claimed,
+        &f.repo,
+        "held",
+        None,
+        &holder,
+        jiff::Timestamp::now(),
+    )
+    .unwrap();
+    let linked = plain(&f, "linked");
+    f.commit(&linked, "two");
+    git(&f.clone, &["merge", "-q", "--squash", "linked"]);
+    git(&f.clone, &["commit", "-q", "-m", "squashed linked"]);
+    let linking = plain(&f, "linking");
+    std::os::unix::fs::symlink(linked.join("two"), linking.join("two-link")).unwrap();
+
+    assert!(removed_from_the_explorer(&f, "held", Forge::none()).is_err());
+    assert!(held.is_dir());
+    assert!(removed_from_the_explorer(&f, "linked", Forge::none()).is_err());
+    assert!(linked.is_dir());
+}
+
 /// The clone's config lines for `branch`, as `git config --get-regexp` prints them.
 fn branch_config(clone: &Path, branch: &str) -> String {
     let mut git = std::process::Command::new("git");

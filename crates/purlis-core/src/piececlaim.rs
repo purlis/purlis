@@ -120,6 +120,11 @@ struct Holder {
 ///   `chat` is the holder's) or the person's (it has neither `chat` nor `session`). One from
 ///   any other chat, or with a `session` and no `chat`, releases nothing.
 fn holder(plane: &Path, at: &Located) -> Option<Holder> {
+    holder_in(plane, at, &pieces::events(plane, &at.workspace))
+}
+
+/// [`holder`], by the workspace's piece log lines `events`, already read.
+fn holder_in(plane: &Path, at: &Located, events: &[Value]) -> Option<Holder> {
     let text = |e: &Value, key: &str| {
         e.get(key)
             .and_then(Value::as_str)
@@ -129,20 +134,20 @@ fn holder(plane: &Path, at: &Located) -> Option<Holder> {
     let mut held: Option<Holder> = None;
     let gone = crate::worktree::path_for(plane, &at.workspace, &at.repo, &at.piece)
         .is_ok_and(|folder| folder.symlink_metadata().is_err());
-    for e in pieces::events(plane, &at.workspace) {
-        if text(&e, "piece").as_deref() != Some(at.piece.as_str())
-            || text(&e, "repo").unwrap_or_default() != at.repo
+    for e in events {
+        if text(e, "piece").as_deref() != Some(at.piece.as_str())
+            || text(e, "repo").unwrap_or_default() != at.repo
         {
             continue;
         }
-        let chat = text(&e, "chat");
-        match text(&e, "event").as_deref() {
+        let chat = text(e, "chat");
+        match text(e, "event").as_deref() {
             Some("claimed") => {
                 if let Some(id) = chat {
                     held = Some(Holder {
                         id,
-                        number: text(&e, "session").and_then(|n| n.parse().ok()),
-                        persona: text(&e, "persona"),
+                        number: text(e, "session").and_then(|n| n.parse().ok()),
+                        persona: text(e, "persona"),
                     });
                 }
             }
@@ -150,7 +155,7 @@ fn holder(plane: &Path, at: &Located) -> Option<Holder> {
             // line written into the log by hand lets no live folder's holder go.
             Some("removed") if gone => held = None,
             Some("done" | "abandoned") => {
-                let the_persons = chat.is_none() && text(&e, "session").is_none();
+                let the_persons = chat.is_none() && text(e, "session").is_none();
                 let the_holders =
                     chat.is_some() && chat.as_deref() == held.as_ref().map(|h| h.id.as_str());
                 if the_persons || the_holders {
@@ -238,13 +243,24 @@ pub fn writer(
 /// claim names a chat that has declared neither `done` nor `abandoned` and is open among
 /// `live`, the asking chat (`me`) included; or `live` is `None`, no app having said which chats
 /// are open, and a held folder is kept (fail closed). A chat not open here holds nothing.
+///
+/// Where a piece log of the workspace cannot be read, any folder of it may be claimed there,
+/// so every one is kept (fail closed).
 pub fn held_open(
     plane: &Path,
     at: &Located,
     me: Option<&str>,
     live: Option<&[Live]>,
 ) -> Option<String> {
-    let holder = holder(plane, at)?;
+    let (events, unread) = pieces::events_read(plane, &at.workspace);
+    if !unread.is_empty() {
+        return Some(format!(
+            "a chat may hold it, and purlis could not read the workspace's claims in {}: check \
+             those files can be read, then try again",
+            crate::finished::quoted(&unread)
+        ));
+    }
+    let holder = holder_in(plane, at, &events)?;
     let chat = |number: Option<u32>| match number {
         Some(number) => format!("chat {number}"),
         None => "a chat".to_owned(),

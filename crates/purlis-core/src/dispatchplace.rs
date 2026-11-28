@@ -1151,7 +1151,7 @@ pub fn kept_from_removal(
                 .unwrap_or(record.worker.chat.name.clone());
             let tab = "Changes tab in the purlis window";
             match finished_for_its_task(root, workspace, repo, piece, &record, force, forge) {
-                Some(Ok(())) => return None,
+                Some(Ok(_)) => return None,
                 Some(Err(why)) if !goes => return Some(not_finished(&task, piece, &why, tab)),
                 _ => {}
             }
@@ -1202,7 +1202,7 @@ fn finished_for_its_task(
     record: &Record,
     force: bool,
     forge: crate::finished::Forge<'_>,
-) -> Option<Result<(), String>> {
+) -> Option<Result<crate::finished::Commits, String>> {
     let there = worktree::path_for(root, workspace, repo, piece)
         .is_ok_and(|folder| folder.symlink_metadata().is_ok());
     if force || !there {
@@ -1212,9 +1212,7 @@ fn finished_for_its_task(
         return Some(Err("its task has not ended".to_owned()));
     }
     Some(
-        crate::finished::as_it_stands(root, workspace, repo, piece, forge)
-            .map(|_| ())
-            .map_err(|why| why.why()),
+        crate::finished::as_it_stands(root, workspace, repo, piece, forge).map_err(|why| why.why()),
     )
 }
 
@@ -1251,10 +1249,47 @@ pub fn kept_from_the_explorer(
     no_discard_there: impl FnOnce() -> bool,
     forge: crate::finished::Forge<'_>,
 ) -> Option<String> {
-    let (held, goes) = if merging {
-        (held_in_folder(root, workspace, repo, piece)?, false)
+    explorer_reads(
+        root,
+        workspace,
+        repo,
+        piece,
+        merging,
+        force,
+        no_discard_there,
+        forge,
+    )
+    .err()
+}
+
+/// What [`kept_from_the_explorer`] reads of `piece`, where it does not keep it.
+enum ExplorerRead {
+    /// A task's folder that is finished, and how its commits stand.
+    Finished(crate::finished::Commits),
+    /// A folder the dispatch store does not hold: git's guard and the finished test say.
+    NotATask,
+    /// A task's folder a removal goes on with all the same ([`holding`]).
+    Goes,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn explorer_reads(
+    root: &Path,
+    workspace: &str,
+    repo: &str,
+    piece: &str,
+    merging: bool,
+    force: bool,
+    no_discard_there: impl FnOnce() -> bool,
+    forge: crate::finished::Forge<'_>,
+) -> Result<ExplorerRead, String> {
+    let held = if merging {
+        held_in_folder(root, workspace, repo, piece).map(|held| (held, false))
     } else {
-        holding(root, workspace, repo, piece, no_discard_there)?
+        holding(root, workspace, repo, piece, no_discard_there)
+    };
+    let Some((held, goes)) = held else {
+        return Ok(ExplorerRead::NotATask);
     };
     if let InFolder::Task(record) = &held
         && !merging
@@ -1264,17 +1299,17 @@ pub fn kept_from_the_explorer(
             .clone()
             .unwrap_or(record.worker.chat.name.clone());
         match finished_for_its_task(root, workspace, repo, piece, record, force, forge) {
-            Some(Ok(())) => return None,
+            Some(Ok(commits)) => return Ok(ExplorerRead::Finished(commits)),
             Some(Err(why)) if !goes => {
-                return Some(not_finished(&task, piece, &why, "Changes tab"));
+                return Err(not_finished(&task, piece, &why, "Changes tab"));
             }
             _ => {}
         }
     }
     if goes {
-        return None;
+        return Ok(ExplorerRead::Goes);
     }
-    Some(match held {
+    Err(match held {
         InFolder::Unread(id) => unread_holds(root, &id, piece, "try again", merging),
         InFolder::Task(record) => left_to_its_task(
             &record.task.unwrap_or(record.worker.chat.name),
@@ -1282,6 +1317,58 @@ pub fn kept_from_the_explorer(
             merging,
         ),
     })
+}
+
+/// **The explorer's Remove of `piece`** (#5476, ADR 0110 as amended 2026-11-28): what
+/// [`kept_from_the_explorer`] keeps is refused in its words. A finished folder, a task's or a
+/// plain one, goes past git's guard where [`crate::finished`] reads its commits as safe and git
+/// does not (carried, found in history, inside a request's head), as `purlis worktree remove`
+/// takes it. Anything else is removed as git removes it, `force` only where the person said so.
+/// The window never deletes a branch.
+pub fn remove_from_the_explorer(
+    root: &Path,
+    workspace: &str,
+    repo: &str,
+    piece: &str,
+    force: bool,
+    no_discard_there: impl FnOnce() -> bool,
+    forge: crate::finished::Forge<'_>,
+) -> Result<(), String> {
+    let commits = match explorer_reads(
+        root,
+        workspace,
+        repo,
+        piece,
+        false,
+        force,
+        no_discard_there,
+        forge,
+    )? {
+        ExplorerRead::Finished(commits) => Some(commits),
+        // A plain folder goes past git's guard only where nothing else keeps it: a chat that
+        // holds it (asked as a terminal asks, with no word of which chats are open) or a
+        // folder that links into it leaves it to git's guard, as before.
+        ExplorerRead::NotATask if !force => {
+            let at = worktree::Located {
+                workspace: workspace.to_owned(),
+                repo: repo.to_owned(),
+                piece: piece.to_owned(),
+            };
+            if crate::piececlaim::held_open(root, &at, None, None).is_some() {
+                None
+            } else {
+                crate::finished::as_it_stands(root, workspace, repo, piece, forge).ok()
+            }
+        }
+        ExplorerRead::NotATask | ExplorerRead::Goes => None,
+    };
+    let removed = match commits {
+        Some(commits) if !commits.git_sees_it_safe() => {
+            worktree::remove_keeping_branch(root, workspace, repo, piece)
+        }
+        _ => worktree::remove(root, workspace, repo, piece, force, false),
+    };
+    removed.map(|_| ()).map_err(|refusal| refusal.in_window())
 }
 
 /// What [`held_in_folder`] finds in `piece`, and whether a removal of it goes on all the same:
@@ -2228,60 +2315,110 @@ pub fn merge(
 /// What a look at a finished worktree did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tidied {
-    /// Its branch had landed where it was cut from, and its folder and branch are gone.
+    /// Its folder was finished and its branch on its base: `git branch -d` deleted the branch,
+    /// and the folder and the branch are gone.
     Removed,
-    /// Its branch had landed and its folder is gone; git would not delete the branch (the
-    /// clone is not on the branch it landed in, or it was squashed in), so the branch stays.
+    /// Its folder was finished and is gone, and its branch stays: `git branch -d` would not
+    /// delete it, as it was carried, inside a request's head, or on a base the clone is not on.
     FolderRemoved,
-    /// It stays: not merged, not readable, or holding something that is not committed.
+    /// The folder stays: it is not finished, its task still runs, an open chat stands in it or
+    /// holds it by its claim, or what would say otherwise could not be read.
     Kept,
 }
 
-/// **Takes `tree` away where its branch is merged and its folder holds nothing else**, and
-/// only then:
+/// **Takes `tree` away where its folder is finished** (ADR 0110, amended 2026-11-28), by the
+/// one test every cleanup reads ([`crate::finished::own`] and the links into it,
+/// [`crate::finished::linking_into`]), and only then:
 ///
-/// - every commit of the branch purlis cut is in the branch it was cut from
-///   ([`standing::landed`]), or every file it changed reads there as it has it, as a squash
-///   merge leaves it: then the folder goes and the branch stays, since git does not find it
-///   merged and it is the one place those commits are (#1472); and
-/// - the folder holds no uncommitted path **and no ignored one that is not purlis's own
-///   layer** (D-1453-10 as amended in review, M4). git's safe removal does not count ignored
-///   files and deletes them, and what a task leaves there may be all it produced: a results
-///   folder, a database file, a `.env` it wrote to run tests; and
+/// - the folder is still on the branch purlis cut; and
+/// - it is finished by its files, commits and links: nothing uncommitted, every commit on its
+///   base, carried there, found in its history or inside a request's head the forge names
+///   (`forges`), no ignored path but what a build or the harness writes and purlis's own layer,
+///   and no other folder links into it; and
 /// - the folder holds no git state of its own ([`standing::OwnGit`], #1472): a ref only it has,
 ///   its own `config.worktree`, a commit only its HEAD's reflog holds. git deletes them with
 ///   the folder, and nothing else counts them.
 ///
+/// A folder on its base goes with its branch where `git branch -d` deletes it. Any other goes
+/// and its branch stays: git does not find it merged, and `purlis worktree prune` deletes it
+/// later where that loses nothing. Its task's end and the chats that hold it are the caller's
+/// to read ([`tidy_recorded`], [`tidy_all`]).
+///
 /// Anything else leaves it exactly as it is, listed with Discard, where the person is shown
-/// what is in it. A branch nothing was committed on has landed by the first rule, so a task
-/// that left nothing at all leaves no folder behind once its chat is closed.
-pub fn tidy(root: &Path, tree: &Tree, isolation: &git::Isolated) -> Tidied {
-    let (Some(branch), Some(folder)) = (tree.branch.as_deref(), tree.folder(root)) else {
+/// what is in it. A branch nothing was committed on is on its base, so a task that left nothing
+/// at all leaves no folder behind once its chat is closed.
+pub fn tidy(
+    root: &Path,
+    tree: &Tree,
+    isolation: &git::Isolated,
+    forges: crate::finished::Forges<'_>,
+) -> Tidied {
+    let links = links_of(root, &tree.workspace, isolation);
+    tidy_linked(root, tree, isolation, forges, &links)
+}
+
+/// Every link between the branch folders of `ws` ([`crate::finished::links`]), read as the
+/// project's own git reads, outside any one folder's check: each folder is read in its own.
+fn links_of(root: &Path, ws: &str, isolation: &git::Isolated) -> crate::finished::Links {
+    git::isolated(isolation, || crate::finished::links(root, ws))
+}
+
+/// [`tidy`], with the links of `tree`'s workspace already read: [`tidy_all`] reads them once
+/// for each workspace, not once for each folder. Links read before a removal can only keep a
+/// folder that a fresh read would let go.
+fn tidy_linked(
+    root: &Path,
+    tree: &Tree,
+    isolation: &git::Isolated,
+    forges: crate::finished::Forges<'_>,
+    links: &crate::finished::Links,
+) -> Tidied {
+    // A folder that could not be read may link into this one.
+    let Ok(links) = links else {
         return Tidied::Kept;
     };
+    let Some(branch) = tree.branch.as_deref() else {
+        return Tidied::Kept;
+    };
+    if tree.folder(root).is_none() {
+        return Tidied::Kept;
+    }
     let (ws, repo, piece) = (&tree.workspace, &tree.repo, &tree.piece);
+    let ask = |repo: &str, branch: &str| forges.ask(ws, repo, branch);
+    let forge = crate::finished::Forge::asking(&ask);
     crate::gitbroker::in_a_checked_folder(root, ws, repo, piece, isolation, || {
-        let carried = match standing::landed(root, ws, repo, piece, branch) {
-            standing::Landed::Yes { .. } => false,
-            // Squashed or rebased in (#1472): the folder goes, the branch stays.
-            standing::Landed::Carried { .. } => true,
-            _ => return Tidied::Kept,
-        };
-        let Ok(Some(risk)) = standing::at_risk(root, ws, repo, piece) else {
-            return Tidied::Kept;
-        };
-        let risk = without_purlis_own(&folder, risk);
-        let clean = |paths: &Option<Vec<String>>| paths.as_ref().is_some_and(Vec::is_empty);
-        // Nor git state of the folder's own (#1472): a ref only it has, its own settings, a
-        // commit only its HEAD's history holds. The person is asked, by Discard.
-        let own_kept = risk.own.as_ref().is_none_or(|own| !own.is_empty());
-        if !clean(&risk.changes) || !clean(&risk.ignored) || own_kept {
+        // A folder its chat switched to another branch is not the branch purlis cut.
+        let on_its_branch = worktree::list(root, ws, repo).is_ok_and(|found| {
+            found
+                .iter()
+                .any(|p| &p.piece == piece && p.branch.as_deref() == Some(branch))
+        });
+        if !on_its_branch {
             return Tidied::Kept;
         }
-        let removed = if carried {
-            worktree::remove_keeping_branch(root, ws, repo, piece)
-        } else {
+        let Ok(commits) = crate::finished::own(root, ws, repo, piece, forge) else {
+            return Tidied::Kept;
+        };
+        let folder = crate::finished::Folder {
+            repo: repo.clone(),
+            piece: piece.clone(),
+        };
+        if !crate::finished::linking_into(links, &folder).is_empty() {
+            return Tidied::Kept;
+        }
+        // Nor git state of the folder's own (#1472): a ref only it has, its own settings, a
+        // commit only its HEAD's history holds. The person is asked, by Discard.
+        let own_kept = standing::at_risk(root, ws, repo, piece)
+            .ok()
+            .flatten()
+            .is_none_or(|risk| risk.own.as_ref().is_none_or(|own| !own.is_empty()));
+        if own_kept {
+            return Tidied::Kept;
+        }
+        let removed = if commits.git_sees_it_safe() {
             worktree::remove(root, ws, repo, piece, false, true)
+        } else {
+            worktree::remove_keeping_branch(root, ws, repo, piece)
         };
         match removed {
             Ok(removed) if removed.branch_deleted => Tidied::Removed,
@@ -2292,16 +2429,81 @@ pub fn tidy(root: &Path, tree: &Tree, isolation: &git::Isolated) -> Tidied {
     .unwrap_or(Tidied::Kept)
 }
 
+/// **The chats open as a tidy looks**: what a finished folder is still held by. What cannot be
+/// read of them keeps a folder (fail closed): a tidy takes a folder only where every chat open
+/// is known not to hold it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenChats {
+    /// Each live chat a branch folder's claim is judged against
+    /// ([`crate::piececlaim::held_open`]), by its id. `None` where no app said which chats are
+    /// open: a claimed folder is then kept.
+    pub live: Option<Vec<crate::piececlaim::Live>>,
+    /// The folder each open chat stands in, its working directory: a folder holding one of
+    /// these is kept, whatever the chat's claim says, an ended chat's still open included.
+    pub stand_at: Vec<PathBuf>,
+    /// Whether an open chat has no id, so that no claim could be matched to it: every folder is
+    /// then kept.
+    pub unnamed: bool,
+}
+
+impl OpenChats {
+    /// No chat open: nothing holds a folder but its files, commits and links.
+    pub fn nobody() -> Self {
+        Self {
+            live: Some(Vec::new()),
+            stand_at: Vec::new(),
+            unnamed: false,
+        }
+    }
+
+    /// Whether an open chat stands in the folder of `tree`, or holds it by its claim, or what
+    /// would say so cannot be read.
+    fn holds(&self, root: &Path, tree: &Tree) -> bool {
+        let at = worktree::Located {
+            workspace: tree.workspace.clone(),
+            repo: tree.repo.clone(),
+            piece: tree.piece.clone(),
+        };
+        self.unnamed
+            || self.stand_at.iter().any(|cwd| tree.holds(root, cwd))
+            || crate::piececlaim::held_open(root, &at, None, self.live.as_deref()).is_some()
+    }
+}
+
 /// [`tidy`] for the dispatch `record`, and its record marked where the worktree went. Only for
-/// a dispatch that has ended: a running chat's folder is never looked at.
-pub fn tidy_recorded(root: &Path, record: &Record, isolation: &git::Isolated) -> Tidied {
+/// a dispatch that has ended, and a folder no chat `open` stands in or holds: a running or a
+/// live chat's folder is never taken (decision #7992).
+pub fn tidy_recorded(
+    root: &Path,
+    record: &Record,
+    open: &OpenChats,
+    isolation: &git::Isolated,
+    forges: crate::finished::Forges<'_>,
+) -> Tidied {
+    tidy_recorded_with(root, record, open, isolation, forges, &mut |ws| {
+        links_of(root, ws, isolation)
+    })
+}
+
+/// [`tidy_recorded`], reading the links of a workspace by `links`.
+fn tidy_recorded_with(
+    root: &Path,
+    record: &Record,
+    open: &OpenChats,
+    isolation: &git::Isolated,
+    forges: crate::finished::Forges<'_>,
+    links: &mut dyn FnMut(&str) -> crate::finished::Links,
+) -> Tidied {
     if record.running() || standing(root, record) != Some(Standing::Kept) {
         return Tidied::Kept;
     }
     let Some(tree) = Tree::of(record) else {
         return Tidied::Kept;
     };
-    let tidied = tidy(root, &tree, isolation);
+    if open.holds(root, &tree) {
+        return Tidied::Kept;
+    }
+    let tidied = tidy_linked(root, &tree, isolation, forges, &links(&tree.workspace));
     let how = match tidied {
         Tidied::Removed => Some(Removed::Merged),
         Tidied::FolderRemoved => Some(Removed::MergedBranchKept),
@@ -2315,11 +2517,26 @@ pub fn tidy_recorded(root: &Path, record: &Record, isolation: &git::Isolated) ->
 
 /// [`tidy_recorded`] for every ended dispatch of the project whose worktree `in_use` does not
 /// answer for: what the app runs when it opens a project. How many went.
-pub fn tidy_all(root: &Path, in_use: impl Fn(&Record) -> bool, isolation: &git::Isolated) -> usize {
+pub fn tidy_all(
+    root: &Path,
+    in_use: impl Fn(&Record) -> bool,
+    open: &OpenChats,
+    isolation: &git::Isolated,
+    forges: crate::finished::Forges<'_>,
+) -> usize {
+    // Each workspace's links, read once (on review): a `git status` of every folder in it.
+    let mut read: std::collections::HashMap<String, crate::finished::Links> =
+        std::collections::HashMap::new();
     dispatchrecord::list(root)
         .iter()
         .filter(|record| record.place.worktree.is_some() && !in_use(record))
-        .filter(|record| tidy_recorded(root, record, isolation) != Tidied::Kept)
+        .filter(|record| {
+            tidy_recorded_with(root, record, open, isolation, forges, &mut |ws| {
+                read.entry(ws.to_owned())
+                    .or_insert_with(|| links_of(root, ws, isolation))
+                    .clone()
+            }) != Tidied::Kept
+        })
         .count()
 }
 
@@ -2355,15 +2572,38 @@ pub fn at_open(root: &Path) -> Option<AtOpen> {
 /// [`tidy_all`] as the app runs it once a project is opened, against the chats `at_open`
 /// brought back. A worktree is in use where one of them is its dispatch's persona chat, as
 /// [`dispatchrecord::settle_on_open`] reads it, or stands in its folder.
-pub fn tidy_at_open(root: &Path, at_open: &AtOpen, isolation: &git::Isolated) -> usize {
+pub fn tidy_at_open(
+    root: &Path,
+    at_open: &AtOpen,
+    isolation: &git::Isolated,
+    forges: crate::finished::Forges<'_>,
+) -> usize {
+    // The chats it brings back hold what they claimed, as the live chats do at a close: none
+    // has come back yet, so none is read as running.
+    // One with no id could hold any folder, so every folder is kept.
+    let open = OpenChats {
+        live: Some(
+            at_open
+                .live
+                .iter()
+                .filter_map(|chat| {
+                    Some(crate::piececlaim::Live {
+                        id: chat.id.clone()?,
+                        chat: chat.number,
+                        back: false,
+                    })
+                })
+                .collect(),
+        ),
+        stand_at: at_open.stand_at.clone(),
+        unnamed: at_open.live.iter().any(|chat| chat.id.is_none()),
+    };
     tidy_all(
         root,
-        |record| {
-            at_open.live.iter().any(|chat| chat.is(&record.worker.chat))
-                || Tree::of(record)
-                    .is_some_and(|tree| at_open.stand_at.iter().any(|cwd| tree.holds(root, cwd)))
-        },
+        |record| at_open.live.iter().any(|chat| chat.is(&record.worker.chat)),
+        &open,
         isolation,
+        forges,
     )
 }
 

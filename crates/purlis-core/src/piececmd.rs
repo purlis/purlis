@@ -858,7 +858,9 @@ const REGENERATED_AT: [&str; 3] = [
 /// those with a closing slash): a `.env`, or a `results/`, is the task's. `target/`, `dist/` and
 /// `.astro/` are names a person could use too, as is `node_modules/`, so each counts only beside
 /// the manifest of the build that writes it, or, for `node_modules/`, holding nothing but
-/// Vite's cache. None counts with a repository inside it.
+/// Vite's cache. A `logs/` counts beside a `package.json` holding only logs (#7406). Nothing
+/// else counts, a build's copy of a tracked folder included (ADR 0110, amended 2026-11-28;
+/// a repo will declare such folders, #8013). None counts with a repository inside it.
 fn regenerated(folder: &Path, path: &str) -> bool {
     let Some(dir) = path.strip_suffix('/') else {
         return false;
@@ -879,12 +881,26 @@ fn regenerated(folder: &Path, path: &str) -> bool {
         // its own, beside no manifest, which holds nothing else (#4500).
         "node_modules" => beside("package.json") || holds_only(&folder.join(dir), ".vite"),
         "target" => beside("Cargo.toml"),
+        // What a package's runs log, its e2e runner's above all (#7406): logs and nothing else.
+        "logs" => beside("package.json") && holds_only_logs(&folder.join(dir)),
         _ => REGENERATED_AT.iter().any(|end| {
             dir.strip_suffix(end)
                 .is_some_and(|before| before.is_empty() || before.ends_with('/'))
         }),
     };
     named && !may_hold_a_repository(&folder.join(dir))
+}
+
+/// Whether every entry of `dir` is a file named `*.log`: an empty one is too.
+fn holds_only_logs(dir: &Path) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|entries| {
+        entries.into_iter().all(|entry| {
+            entry.is_ok_and(|entry| {
+                entry.file_type().is_ok_and(|kind| kind.is_file())
+                    && entry.file_name().to_string_lossy().ends_with(".log")
+            })
+        })
+    })
 }
 
 /// Whether every entry of `dir` is a folder named `name`: an empty one is too.

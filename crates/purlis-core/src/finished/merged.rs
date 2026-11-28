@@ -75,6 +75,45 @@ impl<'a> Forge<'a> {
     }
 }
 
+/// How the forge is asked of a branch of any workspace's repo, given the workspace, the repo
+/// and the branch: for a reading that spans the workspaces of a project, as the taking away of
+/// ended tasks' folders does ([`crate::dispatchplace::tidy_all`]).
+#[derive(Clone, Copy)]
+pub struct Forges<'a>(&'a (dyn Fn(&str, &str, &str) -> Request + Sync));
+
+impl std::fmt::Debug for Forges<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Forges")
+    }
+}
+
+impl<'a> Forges<'a> {
+    /// The forges `ask` answers, given a workspace, a repo of it and a branch of that.
+    pub fn asking(ask: &'a (dyn Fn(&str, &str, &str) -> Request + Sync)) -> Self {
+        Self(ask)
+    }
+
+    /// No forge: every ask is [`Request::Unasked`], as [`Forge::none`].
+    pub fn none() -> Forges<'static> {
+        static NONE: fn(&str, &str, &str) -> Request =
+            |_, _, _| Request::Unasked("no forge was asked".to_owned());
+        Forges(&NONE)
+    }
+
+    /// What the forge says of `branch` of `repo` in `ws`.
+    pub fn ask(&self, ws: &str, repo: &str, branch: &str) -> Request {
+        (self.0)(ws, repo, branch)
+    }
+}
+
+/// The forge of each clone of every workspace of the plane, as [`of_the_plane`] asks it.
+pub fn of_every_workspace<'a>(
+    plane: &'a Path,
+    caller: &'a Caller,
+) -> impl Fn(&str, &str, &str) -> Request + Sync + 'a {
+    move |ws, repo, branch| of_the_plane(plane, ws, caller)(repo, branch)
+}
+
 /// The forge of each clone of `ws`, as its `origin` names it and the plane declares it,
 /// asked as `caller`.
 pub fn of_the_plane<'a>(

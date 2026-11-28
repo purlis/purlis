@@ -461,10 +461,21 @@ fn remove_piece(
     force: bool,
 ) -> Result<(), String> {
     let _turn = turn(plane, workspace, repo)?;
-    not_a_task_s(plane, workspace, repo, piece, false, force)?;
-    worktree::remove(plane, workspace, repo, piece, force, false)
-        .map(|_| ())
-        .map_err(|refusal| refusal.in_window())
+    // The finished test `purlis worktree remove` reads, past git's guard where it finds nothing
+    // lost (#5476); the window deletes no branch.
+    purlis_core::dispatchplace::remove_from_the_explorer(
+        plane,
+        workspace,
+        repo,
+        piece,
+        force,
+        || no_discard_there(plane, workspace, repo),
+        purlis_core::finished::Forge::asking(&purlis_core::finished::merged::of_the_plane(
+            plane,
+            workspace,
+            &purlis_core::forge::Caller::window(),
+        )),
+    )
 }
 
 /// Declare a piece done, from its row (charter#368).
