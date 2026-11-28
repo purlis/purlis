@@ -4136,32 +4136,9 @@ fn the_cron_daemons_and_runners_of_7964_are_offered_no_run_grant() {
 #[test]
 fn the_interpreters_and_runtimes_of_7964_are_offered_no_run_grant() {
     for name in [
-        "kotlin",
-        "scala",
-        "groovy",
-        "clojure",
-        "boot",
-        "elixir",
-        "erl",
-        "escript",
-        "ghc",
-        "runghc",
-        "crystal",
-        "nim",
-        "v",
-        "dart",
-        "tcc",
-        "mono",
-        "wasmtime",
-        "wasmer",
-        "wasm3",
-        "qjs",
-        "jsc",
-        "d8",
-        "hermes",
-        "rhino",
-        "jjs",
-        "frida",
+        "kotlin", "scala", "groovy", "clojure", "boot", "elixir", "erl", "escript", "ghc",
+        "runghc", "crystal", "nim", "v", "dart", "tcc", "mono", "wasmtime", "wasmer", "wasm3",
+        "qjs", "jsc", "d8", "hermes", "rhino", "jjs", "frida",
     ] {
         refused_as_running_others(name);
     }
@@ -4172,13 +4149,7 @@ fn the_interpreters_and_runtimes_of_7964_are_offered_no_run_grant() {
 /// `uftrace`, `sysdig` (its chisels are Lua) and `cset proc --exec`.
 #[test]
 fn the_tracers_of_7964_are_offered_no_run_grant() {
-    for name in [
-        "bpftrace",
-        "trace-cmd",
-        "uftrace",
-        "sysdig",
-        "cset",
-    ] {
+    for name in ["bpftrace", "trace-cmd", "uftrace", "sysdig", "cset"] {
         refused_as_running_others(name);
     }
 }
