@@ -70,8 +70,14 @@ pub struct PolicyState {
     /// The pairs Keep these nevers keeps, where `nevers_new_key` and the list's file reads.
     pub nevers_to_keep: Option<NeversToKeep>,
     /// Whether that list holds a name purlis cannot show faithfully (#7734's round 4): no pair
-    /// is offered to keep, and the window says so.
+    /// is offered to keep or to seal, and the window says so.
     pub nevers_unshowable: bool,
+    /// Whether this project's never-dispatch list reads as unread because a list of a replaced
+    /// seal key that purlis cannot vouch for names it, and no keychain item can be named to
+    /// delete (#7852): the window offers Seal these nevers ([`seal_unvouched_project_nevers`]).
+    pub nevers_unvouched: bool,
+    /// The pairs Seal these nevers seals, where `nevers_unvouched` and the list's file reads.
+    pub nevers_to_seal: Option<NeversToKeep>,
     /// The digest of the committed text this was read from: what Accept names, so a press on a
     /// file that changed since it was shown accepts nothing.
     pub digest: String,
@@ -114,6 +120,18 @@ const PROTECTED_ROW: &str = "protected branch";
 /// file. Only reads: the core alone resolves the policy, and nothing here keeps anything.
 fn state_of(root: &std::path::Path) -> PolicyState {
     state_of_standing(enforcement::standing(root))
+}
+
+/// The pairs a nevers press shows, as the window is told them.
+fn nevers_shown(kept: purlis_core::dispatchnever::ToKeep) -> NeversToKeep {
+    NeversToKeep {
+        pairs: kept
+            .pairs
+            .into_iter()
+            .map(|(asking, target)| NeverPair { asking, target })
+            .collect(),
+        digest: kept.digest,
+    }
 }
 
 /// [`state_of`], of a read already made: what the prerequisite list hands on of the same read
@@ -191,15 +209,10 @@ pub(crate) fn state_of_standing(standing: enforcement::Standing) -> PolicyState 
         key_foreign: standing.key_foreign,
         new_key: standing.new_key,
         nevers_new_key: standing.nevers_new_key,
-        nevers_to_keep: standing.nevers_to_keep.map(|kept| NeversToKeep {
-            pairs: kept
-                .pairs
-                .into_iter()
-                .map(|(asking, target)| NeverPair { asking, target })
-                .collect(),
-            digest: kept.digest,
-        }),
+        nevers_to_keep: standing.nevers_to_keep.map(nevers_shown),
         nevers_unshowable: standing.nevers_unshowable,
+        nevers_unvouched: standing.nevers_unvouched,
+        nevers_to_seal: standing.nevers_to_seal.map(nevers_shown),
         digest: standing.digest,
         template: standing.said.template.word().to_owned(),
         template_default: !standing.said.template_said,
@@ -477,6 +490,58 @@ fn nevers_kept(root: &std::path::Path, shown: &str) -> Result<PolicyState, Strin
     Ok(state_of(root))
 }
 
+/// **Your press: seal the never-dispatch pairs the window showed, where purlis cannot vouch for
+/// the list that keeps them unread, and clear this project's dispatch grants** (#7852, the
+/// person's ruling of 2026-11-27), on the project `plane` names. `shown` is the digest of the
+/// pairs shown, so a list that changed since seals nothing. Every grant on this machine goes, the
+/// grants made for one chat included, so every dispatch across personas asks again until you
+/// grant it. The window's alone: it says purlis cannot vouch the list is whole.
+#[tauri::command]
+#[specta::specta]
+pub async fn seal_unvouched_project_nevers(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    shown: String,
+) -> Result<PolicyState, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window(READING_POLICY, move || {
+        nevers_sealed(held.root(), &shown, held.dispatch_grants())
+    })
+    .await
+}
+
+/// [`seal_unvouched_project_nevers`] on the project at `root`, whose grants made for one chat
+/// `store` holds, off the window's thread. Those go once the core's checks pass, with its
+/// file's grants and **before the seal** (#7952's round 2): no moment has the nevers read while
+/// a grant made for one chat still counts.
+fn nevers_sealed(
+    root: &std::path::Path,
+    shown: &str,
+    store: &crate::dispatchgrants::Store,
+) -> Result<PolicyState, String> {
+    nevers_sealed_by(
+        root,
+        shown,
+        store,
+        purlis_core::dispatchnever::seal_shown_unvouched,
+    )
+}
+
+/// The core's sealing press, with what it clears beside its file's grants.
+type Sealer = fn(&std::path::Path, &str, &dyn Fn()) -> std::io::Result<()>;
+
+/// [`nevers_sealed`], by `seal`: the core's press, or a test's.
+fn nevers_sealed_by(
+    root: &std::path::Path,
+    shown: &str,
+    store: &crate::dispatchgrants::Store,
+    seal: Sealer,
+) -> Result<PolicyState, String> {
+    seal(root, shown, &|| store.clear_grants())
+        .map_err(|why| format!("purlis could not seal your never-dispatch list: {why}"))?;
+    Ok(state_of(root))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -521,6 +586,7 @@ mod tests {
             "accept_project_policy",
             "accept_project_policy_with_new_key",
             "keep_project_nevers",
+            "seal_unvouched_project_nevers",
         ] {
             assert!(purlis_session_protocol::ui::window_only(press), "{press}");
             assert!(
@@ -800,6 +866,51 @@ mod tests {
         });
         let sessions: Vec<Option<u32>> = log.lines.iter().map(|line| line.session).collect();
         assert_eq!(sessions, [Some(12), None]);
+    }
+
+    #[test]
+    fn seal_these_nevers_clears_the_grants_made_for_one_chat_before_the_seal() {
+        // #7952's round 2, L1: the core hands the press the grants the app holds in memory to
+        // clear once its checks pass, before it seals, so no moment has the nevers read while a
+        // grant made for one chat still counts.
+        fn sealer(_: &std::path::Path, _: &str, clear_also: &dyn Fn()) -> std::io::Result<()> {
+            clear_also();
+            Ok(())
+        }
+        let dir = plane("");
+        let store = crate::dispatchgrants::Store::default();
+        store.a_grant_for_one_chat_for_this_test("chat-1", "steward", "ops");
+        nevers_sealed_by(dir.path(), "shown", &store, sealer).expect("sealed");
+        assert!(!store.holds_a_grant_for_this_test());
+    }
+
+    #[test]
+    fn a_seal_refused_before_the_clear_keeps_the_grants_made_for_one_chat() {
+        // #7952's round 2: a press the core refuses before it clears leaves the store as it was,
+        // and the person is told what was refused.
+        fn sealer(_: &std::path::Path, _: &str, _: &dyn Fn()) -> std::io::Result<()> {
+            Err(std::io::Error::other("the list changed since it was shown"))
+        }
+        let dir = plane("");
+        let store = crate::dispatchgrants::Store::default();
+        store.a_grant_for_one_chat_for_this_test("chat-1", "steward", "ops");
+        let why = nevers_sealed_by(dir.path(), "shown", &store, sealer).expect_err("refused");
+        assert!(why.contains("changed since it was shown"), "{why}");
+        assert!(store.holds_a_grant_for_this_test());
+    }
+
+    #[test]
+    fn the_seal_press_hands_the_core_the_store_to_clear() {
+        // #7952's round 2, L3: `nevers_sealed` is the core's press with the store's clear, never
+        // a press that seals and forgets the grants held in memory. Outside the app the core
+        // refuses before any clear, so the store keeps its grant: this pins the wiring, the
+        // core's own tests pin the order.
+        let dir = plane("");
+        let store = crate::dispatchgrants::Store::default();
+        store.a_grant_for_one_chat_for_this_test("chat-1", "steward", "ops");
+        let why = nevers_sealed(dir.path(), "shown", &store).expect_err("not the app");
+        assert!(why.contains("only purlis's window can seal"), "{why}");
+        assert!(store.holds_a_grant_for_this_test());
     }
 
     #[test]

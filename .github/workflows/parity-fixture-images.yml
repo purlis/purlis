@@ -1,0 +1,295 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: parity fixture images
+
+# **The remote parity job's other machines, built once and pulled by digest** (#7983). The
+# sshd beside dind, rootless Podman's sshd, the machine without Docker and the machine that boots
+# systemd (`tests/remote-docker/sshd.Dockerfile`, `tests/ssh-runner/sshd.Dockerfile` and
+# `systemd.Dockerfile`) install their packages from Alpine's CDN and Ubuntu's mirror. Built in
+# every run of `remote-parity`, one fetch that failed there (CI run 46096382707) failed the job
+# and, through the fixtures it left missing, eleven fault tests. So each is built here, from
+# main, pushed to the organisation's registry as a public package, and pinned by digest in
+# `tests/parity/fixture-images.json` beside the source it was built from; `remote-parity` pulls
+# the pinned digest (`tools/fixture-images.mjs prepare-all`) and asks no mirror for anything.
+#
+# Three ways in, and what each makes:
+#
+#   a push to `main`        -> each fixture whose pin is missing or behind its files: built,
+#                              pushed tagged `sha-<commit>`, checked to pull without signing in,
+#                              and its new pin proposed in one pull request
+#                              (`parity-fixture-images/pins`), which a person merges.
+#   `workflow_dispatch`     -> the same, run on `main` only; on any other branch, built only.
+#   a pull request          -> the same builds, pushed nowhere, with a read-only token.
+#
+# **No pull request's code holds anything that writes.** `build`, the one job that runs on a
+# pull request, holds `contents: read`. `publish` (`packages: write`) and `pin` (`contents:
+# write`, `pull-requests: write`) run only where `plan` says this run publishes, which only a
+# push to `main` or a run by hand on `main` does, and check out nothing but that commit. No job
+# restores or saves a cache.
+#
+# The pins a publish proposes change `tests/parity/fixture-images.json`, which is not among the
+# paths below, so merging them starts no publish of its own.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - tests/remote-docker/sshd.Dockerfile
+      - tests/remote-docker/sshd-entrypoint.sh
+      - tests/ssh-runner/sshd.Dockerfile
+      - tests/ssh-runner/sshd-entrypoint.sh
+      - tests/ssh-runner/systemd.Dockerfile
+      - tools/fixture-images.mjs
+      - .github/workflows/parity-fixture-images.yml
+  pull_request:
+    paths:
+      - tests/remote-docker/sshd.Dockerfile
+      - tests/remote-docker/sshd-entrypoint.sh
+      - tests/ssh-runner/sshd.Dockerfile
+      - tests/ssh-runner/sshd-entrypoint.sh
+      - tests/ssh-runner/systemd.Dockerfile
+      - tests/parity/fixture-images.json
+      - tools/fixture-images.mjs
+      - .github/workflows/parity-fixture-images.yml
+  workflow_dispatch:
+
+# One publish at a time, never cancelled once started; a pull request's run is grouped by its
+# ref and superseded by its next push.
+concurrency:
+  group: parity-fixture-images-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+jobs:
+  plan:
+    name: what this run makes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
+      sha: ${{ steps.plan.outputs.sha }}
+      fixtures: ${{ steps.plan.outputs.fixtures }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$REF" = refs/heads/main ] && { [ "$EVENT" = push ] || [ "$EVENT" = workflow_dispatch ]; }; then
+            publish=true
+          else
+            publish=false
+          fi
+          fixtures=$(node tools/fixture-images.mjs stale)
+          sha=$(git rev-parse HEAD)
+          {
+            echo "publish=$publish"
+            echo "sha=$sha"
+            echo "fixtures=$fixtures"
+          } >> "$GITHUB_OUTPUT"
+          echo "Fixture images of \`$sha\` to make: $fixtures, $([ "$publish" = true ] && echo 'built, pushed and proposed as pins' || echo 'built, pushed nowhere')." >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: build (${{ matrix.fixture }})
+    needs: plan
+    if: needs.plan.outputs.fixtures != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        fixture: ${{ fromJSON(needs.plan.outputs.fixtures) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      FIXTURE: ${{ matrix.fixture }}
+      PUBLISH: ${{ needs.plan.outputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      # The build context is the Dockerfile and the files it copies, and nothing else, so the
+      # image is made of what its pin's source names.
+      - name: The fixture's context and build arguments
+        id: context
+        run: |
+          set -euo pipefail
+          node tools/fixture-images.mjs stage "$FIXTURE" "$RUNNER_TEMP/context"
+          ls -la "$RUNNER_TEMP/context"
+          {
+            echo "file=$RUNNER_TEMP/context/$(jq -r --arg f "$FIXTURE" '.fixtures[$f].dockerfile | split("/") | last' tests/parity/fixture-images.json)"
+            echo "args<<EOF"
+            node tools/fixture-images.mjs build-args "$FIXTURE"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the fixture's image into a file
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ runner.temp }}/context
+          file: ${{ steps.context.outputs.file }}
+          build-args: ${{ steps.context.outputs.args }}
+          platforms: linux/amd64
+          provenance: false
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.plan.outputs.sha }}
+            org.opencontainers.image.title=purlis parity fixture ${{ matrix.fixture }}
+            org.opencontainers.image.licenses=Apache-2.0
+          outputs: type=docker,name=fixture:candidate,dest=${{ runner.temp }}/fixture.tar
+      # The file's one manifest names the image by its digest; that is the digest pushed.
+      - name: Name the file's digest
+        run: |
+          set -euo pipefail
+          digest=$(tar -xOf "$RUNNER_TEMP/fixture.tar" index.json \
+            | jq -r '.manifests | if length == 1 then .[0].digest else error("the file holds \(length) manifests") end')
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] \
+            || { echo "::error::the file's manifest is '$digest'"; exit 1; }
+          echo "$FIXTURE: $digest" | tee -a "$GITHUB_STEP_SUMMARY"
+      - if: env.PUBLISH == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fixture-${{ matrix.fixture }}
+          path: ${{ runner.temp }}/fixture.tar
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    name: push (${{ matrix.fixture }})
+    needs: [plan, build]
+    if: needs.plan.outputs.publish == 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    strategy:
+      fail-fast: false
+      matrix:
+        fixture: ${{ fromJSON(needs.plan.outputs.fixtures) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/purlis-parity-${{ matrix.fixture }}
+      SHA: ${{ needs.plan.outputs.sha }}
+      FIXTURE: ${{ matrix.fixture }}
+    # No checkout: this job runs nothing of the repository's, only skopeo on the file `build`
+    # made from main's commit.
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: fixture-${{ matrix.fixture }}
+          path: ${{ runner.temp }}
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # skopeo sends the file as it is, and `--preserve-digests` refuses to change its digest.
+      - name: Push the file, tagged with its commit
+        id: push
+        run: |
+          set -euo pipefail
+          digest=$(tar -xOf "$RUNNER_TEMP/fixture.tar" index.json | jq -r '.manifests[0].digest')
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::the file's manifest is '$digest'"; exit 1; }
+          skopeo copy --preserve-digests "oci-archive:$RUNNER_TEMP/fixture.tar" "docker://$IMAGE:sha-$SHA"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      # The parity job pulls without signing in, from a fork's pull request too, so a package
+      # that is not public is a pin nobody can use. A new package starts private: make it public
+      # in its settings and re-run this job.
+      - name: It pulls by digest without signing in
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if ! skopeo inspect --raw --no-creds "docker://$IMAGE@$DIGEST" > "$RUNNER_TEMP/manifest.json"; then
+            echo "::error::$IMAGE cannot be pulled without signing in: make the package public in its settings (https://github.com/orgs/${GITHUB_REPOSITORY_OWNER}/packages/container/purlis-parity-$FIXTURE/settings) and re-run this job"
+            exit 1
+          fi
+          served="sha256:$(sha256sum "$RUNNER_TEMP/manifest.json" | cut -d' ' -f1)"
+          [ "$served" = "$DIGEST" ] || { echo "::error::the registry serves $served for $DIGEST"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/pin"
+          echo "$IMAGE@$DIGEST" > "$RUNNER_TEMP/pin/$FIXTURE"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pin-${{ matrix.fixture }}
+          path: ${{ runner.temp }}/pin/${{ matrix.fixture }}
+          if-no-files-found: error
+          retention-days: 7
+
+  # The new pins, proposed in one pull request a person merges, once every image pushed and
+  # pulls without signing in. Until then the parity job builds the fixtures it has no current
+  # pin for, as it did before, and says so.
+  pin:
+    name: propose the pins
+    needs: [plan, publish]
+    if: needs.plan.outputs.publish == 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          # The token reaches git for the push alone, never the checkout's config.
+          persist-credentials: false
+      # Only `publish` uploads `pin-*` in this workflow.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: pin-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/pins
+      - name: Write the pins and propose them
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          BRANCH=parity-fixture-images/pins
+          shopt -s nullglob
+          pinned=()
+          for file in "$RUNNER_TEMP"/pins/*; do
+            name=$(basename "$file")
+            node tools/fixture-images.mjs pin "$name" "$(cat "$file")"
+            pinned+=("$name")
+          done
+          if [ "${#pinned[@]}" -eq 0 ] || git diff --quiet -- tests/parity/fixture-images.json; then
+            echo "no new pin to propose"
+            exit 0
+          fi
+          title="Parity fixture images: pin ${pinned[*]} by digest"
+          {
+            echo "The fixture images of \`$SHA\`, built and pushed by $RUN_URL, each checked to pull"
+            echo "by digest without signing in. Merging this makes \`remote-parity\` pull them instead of"
+            echo "building them from Alpine's CDN and Ubuntu's mirror (#7983)."
+            echo
+            echo '```diff'
+            git diff -- tests/parity/fixture-images.json
+            echo '```'
+          } > "$RUNNER_TEMP/body.md"
+          git switch -C "$BRANCH"
+          git commit -q -m "$title" -- tests/parity/fixture-images.json
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push --force origin "HEAD:refs/heads/$BRANCH"
+          existing="$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --head "$BRANCH" --base main --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          fi

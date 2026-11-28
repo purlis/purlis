@@ -36,7 +36,7 @@ import { standingOf, waitingOnYou, type QuestionsHeld } from "./taskQuestions";
 import { machineChanged } from "./settings/thisMachine";
 import { MAIN, thisWindow } from "./windows";
 import { clearedHere, keptOutside, letGoHere } from "./notesClearedEverywhere";
-import { frontTabIs } from "./slowLog";
+import { frontTabIs, useMarkedOnChange } from "./slowLog";
 import { createPortal } from "react-dom";
 import {
   AsLastShown,
@@ -209,6 +209,8 @@ import {
   type PanelsField,
   type WorkspacePanels,
 } from "./workspacePanels";
+import { useHeldWhileSame } from "./heldWhileSame";
+import { useBesideRows } from "./besideRows";
 import { useTaskBranchActs } from "./taskBranchActs";
 import {
   heardFrom,
@@ -584,6 +586,7 @@ import { RunnerLinkDownNotice } from "./RunnerLinkDownNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
 import { ProjectPolicyNotice } from "./ProjectPolicyNotice";
+import { PrerequisiteDialog } from "./PrerequisiteDialog";
 import { PolicyWatchAnnounced } from "./PolicyWatchAnnounced";
 import { ProjectPresetsNotice } from "./ProjectPresetsNotice";
 import { PersonaHostsNotice } from "./PersonaHostsNotice";
@@ -1156,6 +1159,8 @@ export const PlaneView = memo(function PlaneView({
   const inFrontTab = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront];
   const frontTabName = inFrontTab === undefined ? undefined : tabNameOf(inFrontTab);
   useEffect(() => (inFront ? frontTabIs(frontTabName) : undefined), [inFront, frontTabName]);
+  // Another tab brought to the front of the window costs a frame: the stall log marks it.
+  useMarkedOnChange("tab-switch", inFront ? tabs.inFront : undefined);
   const signingOutIn = useSignOutTerminals(tabs, plane);
   // **A pane closed for good lets its band's memory go** (#3167): a pane's number is never
   // used again, so one gone from every tab is gone for good.
@@ -7711,6 +7716,12 @@ export const PlaneView = memo(function PlaneView({
   const restartingNow = useRef(new Set<number>());
   /** The chats a restart is under way for, which each one's pane says while it is. */
   const [restartsRunning, setRestartsRunning] = useState<readonly number[]>([]);
+  /** Counts the restarts the core said to ask again (#7950): each one drives the owed list
+   *  again, so a chat already at a pause is restarted now and one mid-turn at its next pause. */
+  const [restartsAskedAgain, askRestartsAgain] = useState(0);
+  /** The chats those were for: one that reports no state has no pause to wait for, and the
+   *  person pressed for it, so it is asked again at once, as their press was. */
+  const askedAgain = useRef(new Set<number>());
   useEffect(() => {
     let gone = false;
     void commands
@@ -7755,6 +7766,7 @@ export const PlaneView = memo(function PlaneView({
       if (restartingNow.current.has(session)) return;
       restartingNow.current.add(session);
       setRestartsRunning((running) => [...running, session]);
+      let again = false;
       const failed = (why: string) => {
         setOwedRestarts((owed) => owed.filter((one) => one !== session));
         setRestartNotYet((was) => withoutKey(was, session));
@@ -7785,12 +7797,17 @@ export const PlaneView = memo(function PlaneView({
             // Said on its pane in the core's sentence, so a press is never answered by nothing.
             const why = done.data.not_yet ?? NOT_YET;
             setRestartNotYet((was) => (was[session] === why ? was : { ...was, [session]: why }));
+            // It waited on the person's answer to what the project needs while the chat ran on
+            // (#7950): asked again now, at a pause only, once this ask is no longer under way.
+            again = done.data.ask_again === true;
+            if (again) askedAgain.current.add(session);
           }
         })
         .catch((err: unknown) => failed(`purlis could not restart the chat: ${String(err)}`))
         .finally(() => {
           restartingNow.current.delete(session);
           setRestartsRunning((running) => running.filter((one) => one !== session));
+          if (again) askRestartsAgain((asked) => asked + 1);
         });
     },
     [plane, chatRestarted],
@@ -7907,7 +7924,14 @@ export const PlaneView = memo(function PlaneView({
     const drive = () => {
       const states = chats.store.statesFor(chats.plane);
       const due = restartsDue(owedRestarts, states);
-      for (const session of due.restart) restartOwed(session);
+      for (const session of askedAgain.current) {
+        if (!owedRestarts.includes(session)) askedAgain.current.delete(session);
+        else if (stateOf(states, session) === "unknown") due.restart.push(session);
+      }
+      for (const session of due.restart) {
+        askedAgain.current.delete(session);
+        restartOwed(session);
+      }
       // Dropped only once the core, which hears the program itself end, owes it nothing: a
       // hook can say the session ended while its program runs on ({@link owedAfterEnded}).
       if (due.ended.length > 0)
@@ -7926,7 +7950,7 @@ export const PlaneView = memo(function PlaneView({
     };
     drive();
     return chats.store.subscribe(drive);
-  }, [owedRestarts, chats, plane, restartOwed]);
+  }, [owedRestarts, chats, plane, restartOwed, restartsAskedAgain]);
   /**
    * The state of each chat owed a restart, by session (#1888): the pane's words follow the
    * chat's state as well as the owed list, so a chat owed a restart before it said it was
@@ -8173,13 +8197,26 @@ export const PlaneView = memo(function PlaneView({
    *  `session.rs`'s `KNOWS_HIBERNATE` does: a harness that resumes by id, on a host that can
    *  hibernate it. Never a shell, a chat in this process, or one on an older host. A chat the
    *  picker started is in the sidebar's rows only, so those are read too, as `glances` does. */
-  const hibernatable = useCallback(
+  const rowOf = useCallback(
     (session: number) =>
       [
         ...(sidebar ? [...sidebar.workspaces.flatMap((ws) => ws.chats), ...sidebar.unfiled] : []),
         ...reopened,
-      ].find((one) => one.session === session)?.hibernates === true,
+      ].find((one) => one.session === session),
     [reopened, sidebar],
+  );
+  const hibernatable = useCallback(
+    (session: number) => rowOf(session)?.hibernates === true,
+    [rowOf],
+  );
+  /** Why a chat's Hibernate row is greyed (#7877): the core's typed reason, today a runner's
+   *  chat, whose link refuses the act, in the words a refusal says. */
+  const hibernateGreyed = useCallback(
+    (session: number) => {
+      const why = rowOf(session)?.hibernate_greyed;
+      return why == null ? undefined : NOT_HIBERNATED[why];
+    },
+    [rowOf],
   );
   /** Hibernates chat `session` by hand (#7630): where it may not be, the core says why as a
    *  typed reason (#7632), and its words are said on the chat's pane; where the act could not be
@@ -8474,6 +8511,16 @@ export const PlaneView = memo(function PlaneView({
         .chatsThatWouldNotStart(plane)
         .then((trouble) => {
           if (trouble.status === "ok") setWouldNotStart(trouble.data ?? []);
+        })
+        .catch(() => undefined);
+      // A chat put back from the session host is owed a restart as it comes back, after this
+      // view first read the list, where its program holds the old app's forge route (#7962).
+      void commands
+        .owedRestarts(plane)
+        .then((owed) => {
+          if (owed.status !== "ok" || !Array.isArray(owed.data)) return;
+          const core: readonly number[] = owed.data;
+          setOwedRestarts((was) => core.reduce((all, one) => withRestartOwed(all, one), was));
         })
         .catch(() => undefined);
     }).catch(() => undefined);
@@ -9255,15 +9302,19 @@ export const PlaneView = memo(function PlaneView({
   /** The chats working in the focused workspace, which is what the explorer files under the
    *  spots they are working at. The plane's own answer, like everything else about where a
    *  chat is: nothing on the plane records a chat, so the directory it works in is it. */
-  const workspaceChats = useMemo(
-    () =>
-      (sidebar?.workspaces.find((ws) => ws.name === ofWorkspace)?.chats ?? []).map((chat) => ({
-        // Named as the Chats list names it (`shownName`, #1484), never by the harness's own
-        // name, which is a number (charter-app#254): a task with no tab too.
-        ...chat,
-        name: shownName(tabs, chat),
-      })),
-    [ofWorkspace, sidebar, tabs],
+  // Held while it says the same (FS-W2, #7910): a press on a tab names every chat as before, and
+  // the explorer, which draws them, is not drawn again for it.
+  const workspaceChats = useHeldWhileSame(
+    useMemo(
+      () =>
+        (sidebar?.workspaces.find((ws) => ws.name === ofWorkspace)?.chats ?? []).map((chat) => ({
+          // Named as the Chats list names it (`shownName`, #1484), never by the harness's own
+          // name, which is a number (charter-app#254): a task with no tab too.
+          ...chat,
+          name: shownName(tabs, chat),
+        })),
+      [ofWorkspace, sidebar, tabs],
+    ),
   );
 
   /**
@@ -9335,12 +9386,17 @@ export const PlaneView = memo(function PlaneView({
   const listRows = useRowsUntilRead(chatRows, finishedSettled);
   /** Each persona's chats, by number (#3341): what a persona's row in the Personas view reads
    *  its state from. */
-  const personaChats = useMemo(() => {
-    const of = new Map<string, number[]>();
-    for (const row of listRows)
-      if (row.persona !== null) of.set(row.persona, [...(of.get(row.persona) ?? []), row.session]);
-    return of;
-  }, [listRows]);
+  // Held while it says the same (FS-W2, #7910): the rows are made anew for a press on a tab, and
+  // the Personas view, which reads this, is not drawn again for it.
+  const personaChats = useHeldWhileSame(
+    useMemo(() => {
+      const of = new Map<string, number[]>();
+      for (const row of listRows)
+        if (row.persona !== null)
+          of.set(row.persona, [...(of.get(row.persona) ?? []), row.session]);
+      return of;
+    }, [listRows]),
+  );
   /** The personas each workspace's chats ran as (#3483), kept after a chat closes (#3566): the
    *  Personas view's In this workspace, with the ones the workspace's session records name. */
   const chatPersonasIn = useWorkedHere(plane, listRows);
@@ -10091,6 +10147,7 @@ export const PlaneView = memo(function PlaneView({
             planeUpdated: planeUpdates,
             restartable,
             hibernatable,
+            hibernateGreyed,
             movesTo,
             movesOnceAPoolIsSetUp: movesOnceSetUp,
             movesWith: movesWithChat,
@@ -10169,6 +10226,7 @@ export const PlaneView = memo(function PlaneView({
       planeUpdates,
       restartable,
       hibernatable,
+      hibernateGreyed,
       movesTo,
       movesOnceSetUp,
       movesWithChat,
@@ -10195,6 +10253,13 @@ export const PlaneView = memo(function PlaneView({
    * `actions.catalogued` has the table and the method.
    */
   const found = useMemo(() => catalogued(offers), [offers]);
+  /**
+   * **The rows the views beside the tabs read** (FS-W2, #7910), which the Changes view, the
+   * panels and the explorer look up by id (`useBesideRows`). Made here, in the draw, and handed
+   * down with their other props, so it moves in the same draw as they do (a workspace switched, a
+   * clone finished) and is made once for every view that reads it.
+   */
+  const besideRows = useBesideRows(found);
 
   const by = useCallback((id: string) => found.get(id), [found]);
   /** The strip's `+` list (#5292): the catalogue's rows marked for it. */
@@ -10481,7 +10546,29 @@ export const PlaneView = memo(function PlaneView({
     byNow.current = by;
     pressNow.current = press;
   }, [by, press]);
-  const pressTaskEnd = useCallback((offer: Offer) => pressNow.current(offer), []);
+  /** `press`, as one function for the life of the view: what a tab chip's menu and the views
+   *  beside the tabs press (FS-W2, #7910), which a press that moved with the tabs would draw. */
+  const pressHeld = useCallback((offer: Offer) => pressNow.current(offer), []);
+  /**
+   * **What the explorer opens and goes to**, as one function each for the life of the view, as
+   * `pressHeld` is (FS-W2, #7910): `showView` and `focusWorkspace` are made anew with the tabs,
+   * and handed as they are they drew the explorer for a press on a tab.
+   */
+  const showViewNow = useRef(showView);
+  const focusWorkspaceNow = useRef(focusWorkspace);
+  useEffect(() => {
+    showViewNow.current = showView;
+    focusWorkspaceNow.current = focusWorkspace;
+  }, [showView, focusWorkspace]);
+  const openPieceFile = useCallback(
+    (place: Place, path: string) =>
+      showViewNow.current(pieceFileView(place, path), pieceFileTitle(place, path)),
+    [],
+  );
+  const goToWorkspace = useCallback(
+    (workspace: string) => focusWorkspaceNow.current(workspace),
+    [],
+  );
   /**
    * **Chat `session`'s Chat log, opened showing `filter`** (R-226): the press of its own row in
    * the chat's list (`chat.log:<session>`), so every entry point opens it as that row does. One
@@ -10683,7 +10770,7 @@ export const PlaneView = memo(function PlaneView({
           dragging={isDragging}
           onShow={showPickedIn(at)}
           ends={taskEndsOf}
-          onPress={pressTaskEnd}
+          onPress={pressHeld}
           onPlace={placeFromChip}
           placeOf={placeRowFromChip}
           used={usedFromChip}
@@ -10707,7 +10794,7 @@ export const PlaneView = memo(function PlaneView({
       nameOf,
       placeFromChip,
       placeRowFromChip,
-      pressTaskEnd,
+      pressHeld,
       showPickedIn,
       stopAllOf,
       taskEndsOf,
@@ -12136,6 +12223,12 @@ export const PlaneView = memo(function PlaneView({
       {/* **A loosening of the project's `[policy]`** (Q308a): reaches each person only on their
           one Accept; a value it could not read is said beside it, enforced meanwhile. */}
       <ProjectPolicyNotice plane={plane} />
+      {/* **What the project needs from you before its chats can work** (ADR 0130 §4): each open
+          prerequisite raised as an alert of the dialog family, one at a time. */}
+      <PrerequisiteDialog
+        plane={plane}
+        onOpenPolicy={() => openSettingsAt({ group: "project.policy" })}
+      />
       {/* **Blocks are off by default** (Q308a): the upgrade to `watch`, said once on this
           machine, in a project that names no policy. */}
       <PolicyWatchAnnounced plane={plane} />
@@ -12536,18 +12629,16 @@ export const PlaneView = memo(function PlaneView({
                           chats={workspaceChats}
                           spot={spot}
                           onPick={pickSpot}
-                          offers={found}
-                          onPress={press}
-                          onOpenFile={(place, path) =>
-                            showView(pieceFileView(place, path), pieceFileTitle(place, path))
-                          }
+                          offers={besideRows}
+                          onPress={pressHeld}
+                          onOpenFile={openPieceFile}
                           focus={cockpit}
                           onFocus={setFocusedBranch}
                           cloning={cloning}
                           onReadAgain={rereadPanels}
                           onAddToChat={setAddingToChat}
                           // A workspace's repo pressed in the plane root's files (issue 1916).
-                          onGoToWorkspace={focusWorkspace}
+                          onGoToWorkspace={goToWorkspace}
                           // The Skills view's Show in Explorer (#3266).
                           reveal={explorerReveal}
                           // Search contents (#3343): Search on the filter's scope, with its words.
@@ -12576,8 +12667,8 @@ export const PlaneView = memo(function PlaneView({
                           chats={workspaceChats}
                           spot={spot}
                           onPick={pickSpot}
-                          offers={found}
-                          onPress={press}
+                          offers={besideRows}
+                          onPress={pressHeld}
                           focus={cockpit}
                           onFocus={setFocusedBranch}
                           cloning={cloning}
@@ -12619,8 +12710,8 @@ export const PlaneView = memo(function PlaneView({
                         <ChangesView
                           workspace={ofWorkspace}
                           state={state}
-                          offers={found}
-                          onPress={press}
+                          offers={besideRows}
+                          onPress={pressHeld}
                           columns={facts.columns}
                           cloning={cloning}
                         />
@@ -12732,8 +12823,8 @@ export const PlaneView = memo(function PlaneView({
                             view={view}
                             workspace={ofWorkspace}
                             state={state}
-                            offers={found}
-                            onPress={press}
+                            offers={besideRows}
+                            onPress={pressHeld}
                             contributed={contributed}
                             shownRow={shownRow}
                             onShowRow={setShownRow}

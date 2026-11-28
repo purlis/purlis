@@ -439,6 +439,7 @@ impl Plane {
     /// The plane at `root`. No file says nothing. A file that cannot be read, or is not TOML,
     /// is [`Self::unreadable`]: it may say `[sandbox]`, so it never reads as saying nothing.
     pub fn read(root: &Path) -> Self {
+        crate::forklock::counting::note_a_plane_read();
         match read_plane_file(&crate::names::manifest(root)) {
             Ok(text) => Self::of(text.as_deref()),
             Err(()) => Self {
@@ -3713,15 +3714,27 @@ pub struct Besides {
 }
 
 /// [`Besides`] for the project at `root`, read as `plane`, on `machine`: nothing where no
-/// sandbox is in force ([`Plane::in_force`]).
+/// sandbox is in force ([`Plane::in_force`]). The locks (their `policy = "never"`) and the
+/// ground's floor are judged from `plane` too, not from the manifest on disk (#7900). Outside
+/// tests it is read through [`besides_read_as`] by the sandbox's state in Settings, which
+/// passes the manifest it read from disk, so nothing it shows moved.
 pub fn besides(root: &Path, plane: &Plane, machine: &Machine) -> Besides {
-    let locks = policy::Locks::of(root);
-    let Some(policy) = plane.in_force(&locks) else {
+    besides_read_as(root, plane, &policy::Locks::of_plane(plane), machine)
+}
+
+/// [`besides`], with the project's manifest read as `plane` and its locks as `locks` (#7900).
+pub fn besides_read_as(
+    root: &Path,
+    plane: &Plane,
+    locks: &policy::Locks,
+    machine: &Machine,
+) -> Besides {
+    let Some(policy) = plane.in_force(locks) else {
         return Besides::default();
     };
     Besides {
-        folders: granted_folders(root, machine, &grant::Grants::default(), &locks).len(),
-        ..counted_hosts(&granted_hosts(&policy, root, &[], &[], &locks))
+        folders: granted_folders(root, machine, &grant::Grants::default(), plane, locks).len(),
+        ..counted_hosts(&granted_hosts(&policy, root, &[], &[], locks))
     }
 }
 
@@ -3783,6 +3796,7 @@ fn granted_folders(
     root: &Path,
     machine: &Machine,
     chat: &grant::Grants,
+    plane: &Plane,
     locks: &policy::Locks,
 ) -> Vec<PathBuf> {
     if locks.forbids_write_grants() {
@@ -3799,7 +3813,10 @@ fn granted_folders(
     if locks.keeps_scope(grant::Level::You) {
         writes.extend(local::granted_writes(root));
     }
-    grant::still_grantable(&writes, &grant::Ground::of(root, root, machine).place())
+    grant::still_grantable(
+        &writes,
+        &grant::Ground::read_as(root, root, machine, plane, locks).place(),
+    )
 }
 
 /// One grant this machine keeps that an administrator's policy holds: it reaches no chat
@@ -4518,7 +4535,8 @@ impl Compiled {
     /// sockets and system services stay as a person granted them (the operator's ruling Q1 on
     /// #2071): a socket can reach what the floor denies. The certificate check is on.
     pub fn floor(root: &Path, machine: &Machine, chat: &grant::Grants) -> Self {
-        let locks = policy::Locks::of(root);
+        let plane = Plane::read(root);
+        let locks = policy::Locks::of_plane(&plane);
         let mut denied = Denied::of(root, machine);
         // The person's own credentials (ruling Q325): held at the floor only where the project's
         // policy enforces `secrets.credential_files` (`team`, `strict`, or the key itself), so
@@ -4554,7 +4572,7 @@ impl Compiled {
         let (kept_sockets, kept_services) = kept_in_scope(root, &locks);
         sockets.extend(kept_sockets);
         services.extend(kept_services);
-        let writable = granted_folders(root, machine, chat, &locks);
+        let writable = granted_folders(root, machine, chat, &plane, &locks);
         // Services on this Mac (qw384), as the full sandbox grants them.
         let mut ports: Vec<(u16, reach::By)> = chat
             .ports
@@ -4751,7 +4769,8 @@ impl Compiled {
             }
         }
         let denied = Denied::of(root, machine);
-        let writable = granted_folders(root, machine, chat, &locks);
+        // The floor of the ground judged from the manifest on disk, as before #7900.
+        let writable = granted_folders(root, machine, chat, &Plane::read(root), &locks);
         // Sockets and services: this chat's, then yours for this project on this machine
         // (D-sock-2), then yours for every project on it (R2), never a committed file's. Each
         // is judged again below for this project, whichever level kept it, **and against the
@@ -8713,12 +8732,25 @@ pub fn your_level(
     locks: &policy::Locks,
     made: &Made,
 ) -> Option<personal::Choice> {
-    let in_force = personal::in_force(root);
+    your_level_read_as(root, persona, &Plane::read(root), locks, made)
+}
+
+/// [`your_level`], with the project's manifest read as `plane` and its locks as `locks`
+/// (#7900): everything it judges, your level, the team's bound and the project's own level,
+/// judges them, so an answer that read them once reads them no more here.
+pub fn your_level_read_as(
+    root: &Path,
+    persona: Option<&str>,
+    plane: &Plane,
+    locks: &policy::Locks,
+    made: &Made,
+) -> Option<personal::Choice> {
+    let in_force = personal::in_force_read_as(root, plane, locks);
     // What the team's policy and this machine's let a person choose here, and the level of a
     // chat whose person chose none: the project's own — the full sandbox where it turned it on,
     // the floor where it has not, no sandbox once they accepted the team's off (#2071 PR C).
     // Every level below is read through it, the chain's included.
-    let bound = team::allowed_levels_under(root, locks);
+    let bound = team::allowed_levels_read_as(root, plane, locks);
     let held = |level| bounded(level, &bound);
     let own = held(in_force.for_persona(persona));
     let not_off = |level: Option<personal::Choice>| level.filter(|l| *l != personal::Choice::Off);
@@ -8726,7 +8758,7 @@ pub fn your_level(
     let unset = bound.default;
     // A start that does not say how it was made, or whose chain purlis cannot read whole, is
     // never read as a shorter chain: never `off`, and never below the project's own level.
-    let unread = || not_off(own).map(|level| level.min(personal::base(root)));
+    let unread = || not_off(own).map(|level| level.min(personal::base_read_as(root, plane, locks)));
     match made {
         Made::Unnamed | Made::Asked { above: None, .. } => unread(),
         Made::Asked {

@@ -152,11 +152,28 @@ pub fn sweep(root: &Path, named: impl Fn(&str) -> bool, now: SystemTime) -> usiz
         .count()
 }
 
-/// **The sweep at a project's open** ([`sweep`]): until SC-4e (#7634) makes the hibernated
-/// state durable, no chat is hibernated as a project opens, so no screen is named and every one
-/// goes. SC-4e makes this read the reopen record's `hibernated` key.
+/// **The sweep at a project's open** ([`sweep`]): a screen is kept where the record of open
+/// chats holds its chat hibernated ([`crate::reopen::Chat::hibernated`], SC-4e, #7634), and
+/// every other goes. With no record at all, no chat is hibernated, and every screen goes.
+/// **Where the record is there and cannot be read**, which chats are hibernated is not known:
+/// every screen is kept to its age, as `retention::returning` keeps every task's and
+/// `secrets::handedto::on_open` every chat's names, since a garbled record read as "none
+/// hibernated" would delete what a hibernated chat wakes to.
 pub fn on_open(root: &Path, now: SystemTime) -> usize {
-    sweep(root, |_| false, now)
+    let hibernated: Vec<String> = match crate::reopen::read_strictly(root) {
+        Ok(record) => record
+            .map(|record| {
+                record
+                    .chats
+                    .into_iter()
+                    .filter(|chat| chat.hibernated.is_some())
+                    .filter_map(|chat| chat.identity.id)
+                    .collect()
+            })
+            .unwrap_or_default(),
+        Err(_) => return sweep(root, |_| true, now),
+    };
+    sweep(root, |id| hibernated.iter().any(|one| one == id), now)
 }
 
 /// **The screen `take` gives, fitted to [`MOST_BYTES`]**: `take(None)` is the engine's whole

@@ -1094,6 +1094,10 @@ export type Now = {
   /** Whether a chat has a Hibernate row (SC-4a, #7630): not a shell, which has no conversation
    *  to pick up. Whether it may be hibernated now is the core's answer, in words, when pressed. */
   hibernatable?: (session: number) => boolean;
+  /** Why a chat's Hibernate row is greyed, in the window's words, where it is (#7877): a chat
+   *  that may never be hibernated where it runs, such as a runner's, whose link refuses the act.
+   *  Nothing for a chat offered Hibernate, or offered no row. */
+  hibernateGreyed?: (session: number) => string | undefined;
   /** Where a chat can move (#2048): each pool it may move to, or `null` for this machine, for a
    *  chat on a pool's runner. Nothing for a chat that does not move. */
   movesTo?: (session: number) => readonly (string | null)[];
@@ -4908,7 +4912,9 @@ function chatRows(now: Now): Offer[] {
 
     // **Hibernate** (SC-4a, #7630): the chat's program ends at a turn boundary and its
     // conversation is kept; Restart chat is its Resume. Where it may not be hibernated the core
-    // says why, in words, when it is pressed.
+    // says why, in words, when it is pressed. A chat that may never be hibernated where it runs
+    // has the row greyed, with the core's reason (#7877).
+    const hibernateGreyed = now.hibernateGreyed?.(session);
     if (now.hibernatable?.(session) ?? false)
       offers.push({
         ...can(
@@ -4919,6 +4925,8 @@ function chatRows(now: Now): Offer[] {
         ),
         note: HIBERNATE_NOTE,
       });
+    else if (hibernateGreyed !== undefined)
+      offers.push(cannot(hibernateId(session), `Hibernate chat ${name}`, hibernateGreyed, name));
 
     // **Start fresh** (NO-3, charter#369): for a chat the project's instructions changed under
     // since it started, and greyed with its reason for any other chat with a conversation. It
@@ -6075,6 +6083,10 @@ export function menuOn(what: MenuOn): { above: string[]; below: string[] } {
         below: [
           restartId(at),
           freshId(at),
+          // **Hibernate** (#7630): the first of the ways to stop it, under Stop ▸ as `menuModel`
+          // dresses it, which keeps the list ten rows at most (#7877); greyed with its reason on
+          // a chat that may never be hibernated where it runs.
+          hibernateId(at),
           stopId(at),
           stopBelowId(at),
           stopAllId(at),
@@ -6393,6 +6405,29 @@ export type Catalogued = ReadonlyMap<string, Offer>;
 export function catalogued(offers: readonly Offer[]): Catalogued {
   return new Map(offers.map((offer) => [offer.id, offer]));
 }
+
+/**
+ * **Whether a row says which tab or pane is in front** (FS-W2, #7910): the tab strip's and the
+ * panes' own rows, a chat's *Links in this pane…* (its key works in the pane in front alone,
+ * #6488), a chat's Branch rows (about the chat in front, #4851), the tab's Tasks and Focus mode.
+ * A press on a tab moves these rows, and no other (`actions.test.ts` holds it).
+ *
+ * A view that draws none of them, such as the Changes view, the panels and the explorer, reads
+ * the catalogue without them (`besideRows`, `PlaneView.tsx`) and is not drawn again for a tab.
+ */
+function ofTheFront(id: string): boolean {
+  return (
+    id.startsWith("tab.") ||
+    id.startsWith("pane.") ||
+    id.startsWith("chat.links:") ||
+    id.startsWith("chat.branch.") ||
+    id === TAB_TASKS_ID ||
+    id === FOCUS_MODE_ID
+  );
+}
+
+/** Every row but the ones {@link ofTheFront}: what a view beside the tabs reads. */
+export const besideTheFront = (id: string): boolean => !ofTheFront(id);
 
 /**
  * The rows a context menu on that item draws: the catalogue's own offers, in menu order.

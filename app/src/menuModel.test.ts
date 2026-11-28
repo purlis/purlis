@@ -578,6 +578,38 @@ describe("a chat's list (#4753)", () => {
     expect(restart?.danger).toBe(false);
   });
 
+  it("draws Hibernate as the first way to stop a chat, under Stop, in no danger colour (#7877)", () => {
+    const menu = menuOf({ on: "chat", session: 7 }, world({ hibernatable: () => true }).offers);
+    const top = menu.groups.flatMap((group) => group.entries);
+    const stop = top.find((entry) => entry.kind === "sub" && entry.key === "stop");
+    if (stop?.kind !== "sub") throw new Error("no Stop ▸");
+
+    expect(rowsOf(stop).map((row) => row.said)).toEqual([
+      SAID.hibernate,
+      "Stop",
+      "Stop and everything below it",
+      "Stop all tasks",
+    ]);
+    expect(rowsOf(stop)[0].danger).toBe(false);
+    expect(rowsOf(stop)[0].warns).toBeUndefined();
+    // It takes no row of its own: the list is no longer for it.
+    expect(top.length).toBe(
+      menuOf({ on: "chat", session: 7 }, offers).groups.flatMap((g) => g.entries).length,
+    );
+  });
+
+  it("keeps Hibernate a row after Restart on a task, which has no Stop ▸ to hold it (#7877)", () => {
+    const menu = menuOf({ on: "chat", session: 11 }, world({ hibernatable: () => true }).offers);
+    const top = menu.groups.flatMap((group) => group.entries);
+
+    expect(top.some((entry) => entry.kind === "sub" && entry.key === "stop")).toBe(false);
+    const run = menu.groups.find((group) =>
+      group.entries.some((entry) => entry.kind === "row" && entry.said === SAID.restart),
+    );
+    const said = run?.entries.map((entry) => (entry.kind === "row" ? entry.said : entry.key));
+    expect(said?.indexOf(SAID.hibernate)).toBeGreaterThan(said?.indexOf(SAID.restart) ?? -1);
+  });
+
   it("greys Start fresh with its reason until the instructions change, then colours it", () => {
     const quiet = rowsOf(menuOf({ on: "chat", session: 7 }, offers)).find(
       (row) => row.said === SAID.startFresh,

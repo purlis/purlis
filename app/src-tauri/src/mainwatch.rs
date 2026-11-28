@@ -19,16 +19,20 @@ use std::sync::{Mutex, OnceLock, mpsc};
 use std::thread::ThreadId;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use purlis_core::slowlog::Slow;
+use purlis_core::slowlog::{Kind, Slow};
 
 /// How often the main thread is pinged.
 pub(crate) const EVERY: Duration = Duration::from_millis(100);
 
-/// A ping this late, or later, is a core stall: the window's own budget for a freeze.
-pub(crate) const STALLED: Duration = Duration::from_millis(200);
+/// A ping this late, or later, is a core stall: the window's own budget for a freeze, and the
+/// slow log's threshold for a core stall.
+pub(crate) const STALLED: Duration =
+    Duration::from_millis(Kind::CoreStall.keeping().from_ms as u64);
 
-/// A command that holds the main thread this long, or longer, is written down.
-pub(crate) const HELD_LONG: Duration = Duration::from_millis(100);
+/// A command that holds the main thread this long, or longer, is written down: the slow log's
+/// threshold for a core command.
+pub(crate) const HELD_LONG: Duration =
+    Duration::from_millis(Kind::CoreCommand.keeping().from_ms as u64);
 
 /// What the main thread is running, outermost first: a window command, a window event, a menu
 /// click, and, inside it, the lock it waits on. Empty when nothing of purlis's is running there.
@@ -103,6 +107,7 @@ pub(crate) fn start<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
                 &sink,
                 EVERY,
                 STALLED,
+                std::thread::sleep,
             );
         });
     if let Err(err) = spawned {
@@ -117,8 +122,32 @@ pub(crate) fn timed<R: tauri::Runtime>(
 ) -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
     move |invoke| {
         let name = invoke.message.command().to_owned();
-        command(&name, || handler(invoke))
+        command(&name, || answered_here(&name, || handler(invoke)))
     }
+}
+
+/// **A synchronous command's answer, in its span** (FS-M1a, #7893): `run`, the window command
+/// `command`, inside an `answer{command, class}` span when its class is
+/// [`Class::Window`](crate::off_the_main_thread::Class::Window), which answers here and waits
+/// for no other thread (`queued_ms` 0), with how long it took (`work_ms`). Any other command's
+/// handler only hands its work on: the door's span tells its answer
+/// ([`crate::answer`]).
+pub(crate) fn answered_here<T>(command: &str, run: impl FnOnce() -> T) -> T {
+    use crate::off_the_main_thread::{Class, answer_class};
+    if answer_class(command) != Class::Window {
+        return run();
+    }
+    let span = tracing::info_span!(
+        "answer",
+        command,
+        class = Class::Window.name(),
+        queued_ms = 0_u64,
+        work_ms = tracing::field::Empty,
+    );
+    let began = Instant::now();
+    let answer = span.in_scope(run);
+    span.record("work_ms", millis(began.elapsed()));
+    answer
 }
 
 /// **Runs the window command `command`**, timed and named while it runs when this is the main
@@ -219,34 +248,43 @@ fn held<T>(
 /// **Pings the main thread every `every`** through `ping`, which hands it what to run and says
 /// whether it could, and sends a core stall to `sink` for each ping that ran `stalled` or
 /// more late. Returns once `ping` cannot hand a ping over, or nothing is left to send to.
+///
+/// **Its own lateness apart** (FS-M1a, #7893): a ping's time is from its asking to when it ran
+/// on the main thread, by the main thread's own clock, so a watch that was itself held up (a
+/// machine too busy to run it) does not make a stall of it; and each time the watch heard a
+/// ping, or woke from `sleep`, `stalled` or more after it should have, the diagnostic log says
+/// so. A core stall beside such a line was a busy machine, not only a busy main thread.
 pub(crate) fn watch(
     ping: impl Fn(Box<dyn FnOnce() + Send>) -> bool,
     running: &Running,
     sink: &mpsc::Sender<Slow>,
     every: Duration,
     stalled: Duration,
+    sleep: impl Fn(Duration),
 ) {
     loop {
-        let (ran, landed) = mpsc::sync_channel::<()>(1);
+        let (ran, landed) = mpsc::sync_channel::<Instant>(1);
         let at = now_ms();
         let asked = Instant::now();
         if !ping(Box::new(move || {
-            let _ = ran.send(());
+            let _ = ran.send(Instant::now());
         })) {
             return;
         }
         let mut seen_running = None;
-        match landed.recv_timeout(stalled) {
-            Ok(()) => {}
+        let ran_at = match landed.recv_timeout(stalled) {
+            Ok(ran_at) => ran_at,
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 seen_running = running.now();
-                if landed.recv().is_err() {
-                    return;
+                match landed.recv() {
+                    Ok(ran_at) => ran_at,
+                    Err(_) => return,
                 }
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => return,
-        }
-        let late = asked.elapsed();
+        };
+        watch_late("heard a ping", ran_at.elapsed(), stalled);
+        let late = ran_at.saturating_duration_since(asked);
         if late >= stalled
             && sink
                 .send(Slow::CoreStall {
@@ -258,7 +296,21 @@ pub(crate) fn watch(
         {
             return;
         }
-        std::thread::sleep(every);
+        let slept_at = Instant::now();
+        sleep(every);
+        watch_late("woke", slept_at.elapsed().saturating_sub(every), stalled);
+    }
+}
+
+/// The watch did `what` `late` after it should have: written to the diagnostic log when that is
+/// `stalled` or more.
+fn watch_late(what: &str, late: Duration, stalled: Duration) {
+    if late >= stalled {
+        tracing::info!(
+            late_ms = millis(late),
+            "purlis: the main thread's watch {what} {} ms late; the machine was busy",
+            millis(late)
+        );
     }
 }
 
@@ -272,7 +324,7 @@ fn now_ms() -> u64 {
 }
 
 /// `took` in whole milliseconds, at most `u32::MAX` (49 days).
-fn millis(took: Duration) -> u32 {
+pub(crate) fn millis(took: Duration) -> u32 {
     u32::try_from(took.as_millis()).unwrap_or(u32::MAX)
 }
 

@@ -232,3 +232,27 @@ fn lfs_is_not_carried_because_its_answer_hands_back_credentials() {
         assert!(is_refused(&out, Refusal::Lfs), "{target}: {out:?}");
     }
 }
+
+/// Before a push larger than its post buffer, git sends a probe: the same request, with a body of
+/// one flush packet and no command (#7878). It moves nothing, so it is let through; refused, git
+/// never sends the push itself, and the person reads "the remote end hung up unexpectedly".
+#[test]
+fn gits_probe_before_a_large_push_moves_nothing_and_is_let_through() {
+    purlis_core::unsteered!();
+    let s = Scene::new();
+    let probe = s.send(
+        "POST",
+        "github.com",
+        "/acme/app.git/git-receive-pack",
+        b"0000",
+    );
+    assert!(matches!(probe, Outcome::Forward(_)), "{probe:?}");
+    // Only a lone flush packet is a probe: anything else that holds no command is refused.
+    for body in [&b"00000000"[..], b"0000PACK", b"", b"0004"] {
+        let out = s.send("POST", "github.com", "/acme/app.git/git-receive-pack", body);
+        assert!(
+            is_refused(&out, Refusal::BodyUnreadable),
+            "{body:?}: {out:?}"
+        );
+    }
+}

@@ -218,6 +218,8 @@ pub fn for_a_reopen(chat: &crate::reopen::Chat) -> crate::reopen::Chat {
         own_pieces: _,
         mid_turn: _,
         kept_tmp: _,
+        // Its last run's: a Reopen starts the chat hot.
+        hibernated: _,
     } = chat.clone();
     let crate::reopen::Identity {
         id,

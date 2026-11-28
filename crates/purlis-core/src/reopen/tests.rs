@@ -3348,3 +3348,73 @@ fn the_numbers_a_chat_had_are_written_and_read_back() {
     let read = read_or_refusal(plane.path()).unwrap();
     assert_eq!(read.chats[0].earlier, [702, 715]);
 }
+
+#[test]
+fn a_hibernated_chat_keeps_its_cause_and_time_across_a_relaunch_7634() {
+    let plane = tempfile::tempdir().unwrap();
+    let asleep = Chat {
+        hibernated: Some(Hibernation {
+            by: HibernatedBy::Operator,
+            at: 1_700_000_000,
+        }),
+        ..claude("ide.7", Some(ID))
+    };
+    let crashed = Chat {
+        hibernated: Some(Hibernation {
+            by: HibernatedBy::HostCrash,
+            at: 1_700_000_001,
+        }),
+        ..claude("ide.8", Some(ID))
+    };
+    write(
+        plane.path(),
+        &Record {
+            chats: vec![asleep.clone(), crashed.clone(), claude("ide.9", Some(ID))],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let text = fs::read_to_string(path(plane.path())).unwrap();
+    let on_disk: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        on_disk["chats"][0]["hibernated"],
+        serde_json::json!({"cause": "operator", "at": 1_700_000_000_u64}),
+        "{text}"
+    );
+    assert_eq!(on_disk["chats"][1]["hibernated"]["cause"], "host-crash");
+    assert!(on_disk["chats"][2].get("hibernated").is_none(), "{text}");
+    let back = read(plane.path()).chats;
+    assert_eq!(back[0], asleep);
+    assert_eq!(back[1], crashed);
+    assert_eq!(back[2].hibernated, None);
+}
+
+#[test]
+fn a_record_without_the_key_or_with_one_that_does_not_read_whole_is_not_hibernated_7634() {
+    for hibernated in [
+        None,
+        Some(r#""operator""#),
+        Some(r#"{"cause": "operator"}"#),
+        Some(r#"{"cause": "napping", "at": 5}"#),
+        Some(r#"{"cause": "idle", "at": -1}"#),
+    ] {
+        let plane = tempfile::tempdir().unwrap();
+        let file = path(plane.path());
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        let key = hibernated
+            .map(|value| format!(r#", "hibernated": {value}"#))
+            .unwrap_or_default();
+        std::fs::write(
+            &file,
+            format!(
+                r#"{{"version": 1, "at": 0, "chats": [{{"program": "claude", "name": "3"{key}}}]}}"#
+            ),
+        )
+        .unwrap();
+
+        let back = read(plane.path()).chats;
+        assert_eq!(back.len(), 1, "{hibernated:?}");
+        assert_eq!(back[0].hibernated, None, "{hibernated:?}");
+    }
+}

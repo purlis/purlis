@@ -55,9 +55,15 @@ pub fn placed(
 }
 
 /// Stages what `placed` holds and commits it with `message`, and answers the new commit, or
-/// why not. What was staged stays staged where the commit stops, as with git itself.
+/// why not. Named paths are committed alone, and anything else already staged stays staged;
+/// `--all` commits the whole index. What was staged stays staged where the commit stops, as
+/// with git itself.
 pub fn commit(placed: &Placed, message: &str) -> Result<Vec<Say>, String> {
-    let top = &placed.top;
+    made(&placed.top, &placed.stage, message)
+}
+
+/// [`commit`], of `stage` in the branch folder at `top`.
+fn made(top: &Path, stage: &Stage, message: &str) -> Result<Vec<Say>, String> {
     super::trailers_ok(message)?;
     // Before any git is chosen: on a Mac without developer tools `/usr/bin/git` is a stub that
     // opens the system's install dialog (#1813).
@@ -65,51 +71,127 @@ pub fn commit(placed: &Placed, message: &str) -> Result<Vec<Say>, String> {
     let branch = read(top, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok_or(
         "this folder is not on a branch (a detached HEAD), so there is no branch to commit on",
     )?;
-    let staging = match &placed.stage {
-        Stage::Tracked => ran(top, &["add", "--update"], None),
-        Stage::Paths(paths) => ran(
-            top,
-            &[
-                "--literal-pathspecs",
-                "add",
-                "--all",
-                "--pathspec-from-file=-",
-                "--pathspec-file-nul",
-            ],
-            Some(paths.join("\0").into_bytes()),
-        ),
+    let after = match stage {
+        Stage::Tracked => tracked(top, message)?,
+        Stage::Paths(paths) => alone(top, paths, message)?,
     };
-    if !staging? {
-        return Err("git did not stage that, as it says above: nothing was committed".to_owned());
-    }
-    if ran(top, &["diff", "--cached", "--quiet"], None)? {
-        return Err(
-            "there is nothing to commit: no named path differs from the branch's last commit"
-                .to_owned(),
-        );
-    }
-    let made = ran(
-        top,
-        &["commit", "--quiet", "--cleanup=whitespace", "--file=-"],
-        Some(message.as_bytes().to_vec()),
-    )?;
-    if !made {
-        return Err(
-            "git did not make the commit, as it says above: what was named stays staged".to_owned(),
-        );
-    }
     let id = read(top, &["rev-parse", "HEAD"]).unwrap_or_default();
     let files = read(top, &["show", "--format=", "--name-only", "HEAD"])
         .unwrap_or_default()
         .lines()
         .count();
-    Ok(vec![Say::Done(
+    let done = Say::Done(
         format!(
             "committed {id} on {branch}: {}",
             counted(files, "file", "files")
         )
         .into(),
-    )])
+    );
+    Ok(std::iter::once(done).chain(after).collect())
+}
+
+/// Where git reads the named paths: its standard input, each literal and ended by a NUL, so
+/// that no number of them meets the system's limit on a command's arguments.
+const NAMES_ON_STDIN: [&str; 2] = ["--pathspec-from-file=-", "--pathspec-file-nul"];
+
+const NOTHING: &str =
+    "there is nothing to commit: no named path differs from the branch's last commit";
+
+const NOT_MADE: &str = "git did not make the commit, as it says above: what was named stays staged";
+
+/// `--all`: every change to a tracked file is staged, and the whole index is committed.
+fn tracked(top: &Path, message: &str) -> Result<Option<Say>, String> {
+    if !ran(top, &["add", "--update"], None, Stdio::inherit())? {
+        return Err("git did not stage that, as it says above: nothing was committed".to_owned());
+    }
+    if ran(
+        top,
+        &["diff", "--cached", "--quiet"],
+        None,
+        Stdio::inherit(),
+    )? {
+        return Err(NOTHING.to_owned());
+    }
+    let commit = ["commit", "--quiet", "--cleanup=whitespace", "--file=-"];
+    if !ran(
+        top,
+        &commit,
+        Some(message.as_bytes().to_vec()),
+        Stdio::inherit(),
+    )? {
+        return Err(NOT_MADE.to_owned());
+    }
+    Ok(None)
+}
+
+/// Named paths are committed alone, as `git commit -- <paths>` does: what else was staged
+/// before stays staged and out of the commit (#7928).
+fn alone(top: &Path, paths: &[String], message: &str) -> Result<Option<Say>, String> {
+    // Git refuses a commit of some paths while it is concluding something, and only once they
+    // are staged: say so first, and how to conclude it.
+    concludes_nothing(top)?;
+    let names = paths.join("\0").into_bytes();
+    let with_names = |args: &[&'static str]| -> Vec<&'static str> {
+        [&["--literal-pathspecs"][..], args, &NAMES_ON_STDIN].concat()
+    };
+    let staging = with_names(&["add", "--all"]);
+    if !ran(top, &staging, Some(names.clone()), Stdio::inherit())? {
+        return Err("git did not stage that, as it says above: nothing was committed".to_owned());
+    }
+    // A dry run of the same commit says whether there is one to make. It runs no hook and
+    // leaves the index as it was.
+    let dry = with_names(&["commit", "--dry-run", "--short"]);
+    if !ran(top, &dry, Some(names.clone()), Stdio::null())? {
+        return Err(NOTHING.to_owned());
+    }
+    // The names are on standard input, so the message is read from a file of its own.
+    let mut file = tempfile::NamedTempFile::new().map_err(|e| {
+        format!("the message could not be written for git ({e}): nothing was committed")
+    })?;
+    file.write_all(message.as_bytes()).map_err(|e| {
+        format!("the message could not be written for git ({e}): nothing was committed")
+    })?;
+    let message_at = format!("--file={}", file.path().display());
+    let commit = [
+        &with_names(&["commit", "--quiet", "--cleanup=whitespace"])[..],
+        &[message_at.as_str()],
+    ]
+    .concat();
+    if !ran(top, &commit, Some(names.clone()), Stdio::inherit())? {
+        return Err(NOT_MADE.to_owned());
+    }
+    // A hook that restages a named path puts its content in the commit but leaves the folder's
+    // index as it was before the hook: the named paths are staged again as they were committed.
+    let restage = with_names(&["reset", "--quiet"]);
+    if ran(top, &restage, Some(names), Stdio::inherit()).unwrap_or(false) {
+        return Ok(None);
+    }
+    Ok(Some(Say::Warn(
+        "git could not stage the named paths as they were committed, as it says above: \
+         `git status` may show them as changed"
+            .into(),
+    )))
+}
+
+/// Why a commit of named paths cannot be made in the folder at `top` now: it is in the middle
+/// of a merge, a cherry-pick or a revert, which only a commit of the whole index concludes.
+fn concludes_nothing(top: &Path) -> Result<(), String> {
+    let git_dir = read(top, &["rev-parse", "--absolute-git-dir"])
+        .ok_or("git could not say where this folder's repository is: nothing was committed")?;
+    for (entry, what) in [
+        ("MERGE_HEAD", "a merge"),
+        ("CHERRY_PICK_HEAD", "a cherry-pick"),
+        ("REVERT_HEAD", "a revert"),
+    ] {
+        if std::fs::symlink_metadata(Path::new(&git_dir).join(entry)).is_ok() {
+            return Err(format!(
+                "this folder is in the middle of {what}, which a commit of named paths cannot \
+                 conclude: commit with --all to conclude it, or finish or abort it first. \
+                 Nothing was committed"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Git in the branch folder at `top`, in this process's own environment.
@@ -127,10 +209,11 @@ fn read(top: &Path, args: &[&str]) -> Option<String> {
     (out.status.success() && !said.is_empty()).then_some(said)
 }
 
-/// Whether `args` succeeded, its output this process's own and `input` on its standard input.
-fn ran(top: &Path, args: &[&str], input: Option<Vec<u8>>) -> Result<bool, String> {
+/// Whether `args` succeeded, its standard output `stdout`, its errors this process's own and
+/// `input` on its standard input.
+fn ran(top: &Path, args: &[&str], input: Option<Vec<u8>>, stdout: Stdio) -> Result<bool, String> {
     let mut git = at(top);
-    git.args(args).stdin(if input.is_some() {
+    git.args(args).stdout(stdout).stdin(if input.is_some() {
         Stdio::piped()
     } else {
         Stdio::null()
@@ -142,3 +225,6 @@ fn ran(top: &Path, args: &[&str], input: Option<Vec<u8>>) -> Result<bool, String
     }
     Ok(child.wait().map_err(could_not)?.success())
 }
+
+#[cfg(test)]
+mod tests;

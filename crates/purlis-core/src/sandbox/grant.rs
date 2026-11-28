@@ -430,6 +430,25 @@ impl Ground {
     /// themselves as the allowlist; and the folders on `PATH`, every harness's own home and temp
     /// folders refused.
     pub fn of(root: &Path, chat: &Path, machine: &super::Machine) -> Self {
+        let plane = super::Plane::read(root);
+        Self::read_as(
+            root,
+            chat,
+            machine,
+            &plane,
+            &super::policy::Locks::of_plane(&plane),
+        )
+    }
+
+    /// [`Self::of`], with the project's manifest read as `plane` and its locks as `locks`
+    /// (#7900).
+    pub fn read_as(
+        root: &Path,
+        chat: &Path,
+        machine: &super::Machine,
+        plane: &super::Plane,
+        locks: &super::policy::Locks,
+    ) -> Self {
         let mut denied = super::Denied::of(root, machine).paths;
         denied.extend(super::seatbelt::keychains(machine.home.as_deref()));
         let homes = super::Homes::of(machine);
@@ -449,8 +468,7 @@ impl Ground {
         // At the floor (#2071, the operator's ruling SO-10) a folder the floor holds, the
         // person's `PATH` and the packages it leads to, is a block like any other, whose Allow
         // lets the chat write it: allowed here, and no longer refused for being on `PATH`.
-        let locks = super::policy::Locks::of(root);
-        let floor = super::Plane::read(root).in_force(&locks).is_none();
+        let floor = plane.in_force(locks).is_none();
         let floor_held = super::floor_held(root, machine, &[]);
         if floor {
             refused

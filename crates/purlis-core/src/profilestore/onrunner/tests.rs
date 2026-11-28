@@ -2776,6 +2776,127 @@ fn a_keep_takes_out_the_mcp_servers_a_chat_added_to_a_project() {
     );
 }
 
+/// The runner's state file for a kept profile, after a first keep with the desktop's servers, and
+/// a keep of the same profile again.
+fn a_kept_state_file(dir: &Path) -> (PathBuf, impl Fn()) {
+    let desktop = a_desktop_profile_with_settings(dir);
+    fs::write(
+        desktop.folders.config.join(".claude.json"),
+        r#"{"mcpServers":{"docs":{"command":"npx"}}}"#,
+    )
+    .unwrap();
+    let runner = homes(dir, "runner");
+    let keep = {
+        let dir = dir.to_owned();
+        move || {
+            let sent = in_batches(&Kept::of(&desktop).unwrap().with_settings_of(&desktop)).unwrap();
+            kept_staged(&runner, &dir, sent).expect("it is kept")
+        }
+    };
+    let record = keep();
+    (record.folders.config.join(".claude.json"), move || {
+        keep();
+    })
+}
+
+/// **A keep sets each project's MCP choices in the runner's state file back to Claude Code's
+/// defaults** (ADR 0095, amended 2026-10-31 and 2026-11-27): the servers a chat turned on or off for its folder
+/// (`enabledMcpServers`, `disabledMcpServers`), and the older `.mcp.json` approvals
+/// (`enableAllProjectMcpServers`, `enabledMcpjsonServers`, `disabledMcpjsonServers`) that Claude
+/// Code 2.1.332 moves into a folder's settings as it starts. The desktop sends no choices for a
+/// runner's folders, so none stays.
+#[test]
+fn a_keep_sets_each_projects_mcp_choices_back_to_the_defaults() {
+    let dir = tempfile::tempdir().unwrap();
+    let (there, keep_again) = a_kept_state_file(dir.path());
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&there).unwrap()).unwrap();
+    doc["projects"] = serde_json::json!({
+        "/work/a": {
+            "hasTrustDialogAccepted": true,
+            "enabledMcpServers": ["computer-use"],
+            "disabledMcpServers": ["docs"],
+            "enableAllProjectMcpServers": true,
+            "enabledMcpjsonServers": ["planted"],
+            "disabledMcpjsonServers": ["guard"],
+        },
+        "/work/b": {"disabledMcpServers": []},
+    });
+    fs::write(&there, doc.to_string()).unwrap();
+
+    keep_again();
+
+    let doc: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&there).unwrap()).unwrap();
+    for key in [
+        "enabledMcpServers",
+        "disabledMcpServers",
+        "enableAllProjectMcpServers",
+        "enabledMcpjsonServers",
+        "disabledMcpjsonServers",
+    ] {
+        assert_eq!(doc["projects"]["/work/a"].get(key), None, "{key}: {doc}");
+    }
+    assert_eq!(doc["projects"]["/work/b"], serde_json::json!({}), "{doc}");
+}
+
+/// **What else the runner's state file holds is as it was after a keep**: every other key of a
+/// project's entry, every key beside the projects, and a project entry that is not an object.
+#[test]
+fn a_keep_leaves_the_rest_of_the_state_file_as_it_was() {
+    let dir = tempfile::tempdir().unwrap();
+    let (there, keep_again) = a_kept_state_file(dir.path());
+    let rest = serde_json::json!({
+        "hasCompletedOnboarding": true,
+        "numStartups": 4,
+        "userID": "of-the-runner",
+        "enableAllProjectMcpServers": true,
+        "mcpServers": {"docs": {"command": "npx"}},
+        "projects": {
+            "/work/a": {
+                "allowedTools": ["Bash(ls)"],
+                "mcpContextUris": ["file:///x"],
+                "hasTrustDialogAccepted": true,
+                "hasClaudeMdExternalIncludesApproved": false,
+                "lastCost": 0.25,
+                "lastSessionId": "s-1",
+            },
+            "/work/c": "not an entry",
+        },
+    });
+    let mut planted = rest.clone();
+    planted["projects"]["/work/a"]["disabledMcpServers"] = serde_json::json!(["docs"]);
+    planted["projects"]["/work/a"]["enabledMcpjsonServers"] = serde_json::json!(["planted"]);
+    fs::write(&there, planted.to_string()).unwrap();
+
+    keep_again();
+
+    let doc: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&there).unwrap()).unwrap();
+    assert_eq!(doc, rest);
+}
+
+/// **A keep sets Claude Code's computer-use choice in the runner's state file back to its
+/// default** (ADR 0095, amended 2026-11-27): `computerUseChoices`, which Claude Code 2.1.332 keeps
+/// beside the projects, keyed by organisation and account, as `"on"` or `"off"`, and asks again
+/// for where the account has none. Nothing else in the file changes.
+#[test]
+fn a_keep_sets_the_computer_use_choice_back_to_its_default() {
+    let dir = tempfile::tempdir().unwrap();
+    let (there, keep_again) = a_kept_state_file(dir.path());
+    let kept: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&there).unwrap()).unwrap();
+    let mut planted = kept.clone();
+    planted["computerUseChoices"] = serde_json::json!({"org-1:account-1": "on"});
+    fs::write(&there, planted.to_string()).unwrap();
+
+    keep_again();
+
+    let doc: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&there).unwrap()).unwrap();
+    assert_eq!(doc, kept);
+}
+
 /// **A runner before 1.66 is sent no such file**, which it would refuse with all the settings.
 #[test]
 fn a_runner_that_keeps_no_servers_is_sent_none() {

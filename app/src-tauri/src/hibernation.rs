@@ -11,10 +11,12 @@
 //! abilities and the app's own records ([`facts_of`]), and answered by the core's
 //! [`purlis_core::rested::by_hand`], whose reasons the automatic path reads too (SC-4c, #7632).
 //!
-//! This is the tracer: one chat, by hand, in memory. **Nothing is automatic, and the flag does
-//! not survive a restart** (SC-4e, #7634). What a ruling on the spec could change sits in two
-//! places: the core's [`purlis_core::rested`], the one pure answer to *may it be hibernated*,
-//! and [`Hibernated`], the one place that says which chats are.
+//! This is the tracer: one chat, by hand. **Nothing is automatic.** The flag survives a restart
+//! as its chat's mark in the record of open chats (SC-4e, #7634): written with the act's intent,
+//! before the program ends, taken back where the act aborts, and read at the next launch, which
+//! gives a chat it marks no reopen ([`Hibernated::asleep`]). What a ruling on the spec could
+//! change sits in two places: the core's [`purlis_core::rested`], the one pure answer to *may
+//! it be hibernated*, and [`Hibernated`], the one place that says which chats are.
 //!
 //! **What it showed is kept** (SC-4b, #7631): as it is hibernated, its screen and scrollback are
 //! taken from the session host, fitted to 1 MiB, masked and kept
@@ -44,6 +46,11 @@ pub const ALREADY_HIBERNATING: &str =
 /// program would start beside the one ending.
 pub const STILL_HIBERNATING: &str =
     "Not resumed: purlis is still hibernating this chat. Resume it once it is hibernated.";
+
+/// Why the app's own hibernation of a rested chat did not take: the device is no longer over
+/// its hot target (SC-4g, #7636). Logged, never said: the person asked for nothing.
+pub const AT_THE_TARGET: &str =
+    "Not hibernated: the device is no longer over its target of hot chats.";
 
 /// Why a hibernation did not take: the chat's program ended another way as it ended.
 pub const ENDED_ANOTHER_WAY: &str =
@@ -130,6 +137,44 @@ pub enum Hibernation {
 pub enum By {
     /// The person did, from its row.
     Operator,
+    /// The app did, by itself, for a rested chat while the device was over its hot target
+    /// (SC-4g, #7636), or read back from the record at a restart (SC-4e, #7634).
+    Idle,
+    /// Its session host ended while it rested at a turn's end (#2278), read back from the
+    /// record at a restart (SC-4e, #7634): it has no kept screen.
+    HostCrash,
+}
+
+impl From<purlis_core::reopen::HibernatedBy> for By {
+    fn from(by: purlis_core::reopen::HibernatedBy) -> Self {
+        use purlis_core::reopen::HibernatedBy;
+        match by {
+            HibernatedBy::Idle => Self::Idle,
+            HibernatedBy::Operator => Self::Operator,
+            HibernatedBy::HostCrash => Self::HostCrash,
+        }
+    }
+}
+
+impl From<By> for purlis_core::reopen::HibernatedBy {
+    fn from(by: By) -> Self {
+        match by {
+            By::Idle => Self::Idle,
+            By::Operator => Self::Operator,
+            By::HostCrash => Self::HostCrash,
+        }
+    }
+}
+
+/// **The mark the record of open chats keeps for a chat hibernated by `by` now** (SC-4e,
+/// #7634): what a restart reads it back hibernated by.
+pub fn mark_of(by: By) -> purlis_core::reopen::Hibernation {
+    purlis_core::reopen::Hibernation {
+        by: by.into(),
+        at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs()),
+    }
 }
 
 /// One chat's hibernation, from the person's press until it is woken or ended another way.
@@ -179,9 +224,10 @@ pub enum Typed {
     Full,
 }
 
-/// **The chats of a project that are hibernated, or being hibernated, by session**, in memory
-/// (SC-4e makes it durable). The one answer to *is it hibernated*: the program-end path, the
-/// pane, the row and the wake read it here.
+/// **The chats of a project that are hibernated, or being hibernated, by session**, in memory;
+/// the record of open chats carries each one's mark across a restart (SC-4e, #7634). The one
+/// answer to *is it hibernated*: the program-end path, the pane, the row and the wake read it
+/// here.
 #[derive(Debug, Default)]
 pub struct Hibernated {
     held: Mutex<HashMap<u32, Held>>,
@@ -270,6 +316,25 @@ impl Hibernated {
             .unwrap_or_default()
     }
 
+    /// **Chat `session` comes back hibernated by `by`** (SC-4e, #7634): a restart read its
+    /// record's mark and found no program of it running, so it is hibernated as one the act
+    /// settled, its program gone, and `own` what its hibernation ended of its own work, as its
+    /// record held it: what its wake tells it.
+    pub fn asleep(&self, session: u32, by: By, own: crate::chats::Own) {
+        self.held().insert(
+            session,
+            Held {
+                by,
+                intended: true,
+                settled: true,
+                ended: true,
+                exited: false,
+                unsent: Vec::new(),
+                own,
+            },
+        );
+    }
+
     /// [`Self::latch`] then [`Self::intend`]: a test's chat whose hibernation is in flight.
     #[cfg(test)]
     pub fn latch_and_intend(&self, session: u32, by: By) -> bool {
@@ -352,6 +417,12 @@ impl Hibernated {
             held.ended = true;
             true
         })
+    }
+
+    /// Who latched chat `session`'s hibernation, settled or not: the cause its run moves to
+    /// `hibernated` for (SC-4g, #7636).
+    pub fn latched_by(&self, session: u32) -> Option<By> {
+        self.held().get(&session).map(|held| held.by)
     }
 
     /// How chat `session` is hibernated, once the host has answered.
@@ -547,22 +618,53 @@ pub fn facts_of(held: &crate::planes::Held, session: u32, looked_at: bool) -> Fa
         tasks,
         as_a_task,
         observed: false,
-        on_a_runner: held.chats().runner_of(session).is_some()
-            || held.chats().pool_of(session).is_some(),
+        on_a_runner: on_a_runner(held, session),
         child_run: false,
         looked_at,
     }
 }
 
+/// Whether chat `session` runs on a runner: its own fresh one, or a pool's (local or remote).
+/// Such a chat's host is reached through a `remote-link` link, which a runner refuses
+/// `hibernate` from (it lacks `Power::Reattach`, #7877).
+fn on_a_runner(held: &crate::planes::Held, session: u32) -> bool {
+    held.chats().runner_of(session).is_some() || held.chats().pool_of(session).is_some()
+}
+
+/// **What chat `session`'s row offers of Hibernate** ([`offered`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Offer {
+    /// No row: its harness cannot pick a conversation up by its id, or its session host cannot
+    /// hibernate it (one before protocol 1.96, or the in-process host).
+    None,
+    /// A Hibernate row the person may press.
+    Hibernate,
+    /// A Hibernate row greyed, with the core's reason it may never be hibernated where it runs
+    /// (#7877): a runner's chat, whose link refuses the act.
+    Greyed(NotRested),
+}
+
 /// **Whether chat `session`'s row offers Hibernate** (#7630): its harness picks a conversation
 /// up by its id, and its session host can hibernate it (protocol 1.96; never the in-process
-/// host). Whether it may be hibernated now is [`purlis_core::rested::by_hand`]'s answer, said when it
-/// is pressed.
-pub fn offered(held: &crate::planes::Held, session: u32) -> bool {
-    held.chats()
+/// host). A chat on a runner is offered it greyed, with [`NotRested::OnARunner`] (#7877): no
+/// grant of a runner's link is widened for it. Whether it may be hibernated now is
+/// [`purlis_core::rested::by_hand`]'s answer, said when it is pressed.
+pub fn offered(held: &crate::planes::Held, session: u32) -> Offer {
+    if !held
+        .chats()
         .harness(session)
         .is_some_and(purlis_core::harness::Harness::resumes_by_id)
-        && held.chats().sessions().can_hibernate(session)
+    {
+        return Offer::None;
+    }
+    if on_a_runner(held, session) {
+        return Offer::Greyed(NotRested::OnARunner);
+    }
+    if held.chats().sessions().can_hibernate(session) {
+        Offer::Hibernate
+    } else {
+        Offer::None
+    }
 }
 
 /// The chats of `plane` that are hibernated: what the window reads its rows by as it opens.

@@ -189,8 +189,25 @@ pub fn branch_write(cmd: &str, cwd: &str, root: &str) -> BranchWrites {
 /// [`branch_write`], with `cdpath` saying whether the chat's shell may have a `CDPATH`: asked
 /// only of a bare relative `cd`, and once a line.
 fn branch_write_where(cmd: &str, cwd: &str, root: &str, cdpath: &dyn Fn() -> bool) -> BranchWrites {
-    let (found, unplaced) = found(cmd, cwd, root, Unplaced::Name, cdpath, writes_the_branch);
-    BranchWrites { found, unplaced }
+    // Read twice where a `${…}` held a blank or an operator, and every write either reading
+    // finds named, each checked against its own folder's claim
+    // ([`crate::shellseg::on_both_readings`], #7709, rounds 5 and 6).
+    crate::shellseg::on_both_readings(
+        || {
+            let (found, unplaced) =
+                found(cmd, cwd, root, Unplaced::Name, cdpath, writes_the_branch);
+            BranchWrites { found, unplaced }
+        },
+        |mut first, old| {
+            for write in old.found {
+                if !first.found.contains(&write) {
+                    first.found.push(write);
+                }
+            }
+            first.unplaced = first.unplaced.or(old.unplaced);
+            first
+        },
+    )
 }
 
 /// The start files a chat's shell may read before it runs a line, each in a folder of
@@ -565,7 +582,7 @@ fn found<T: Clone>(
     // Whether the line's own words were read for a shell fed on its standard input: once is
     // enough, however many such shells the line has.
     let mut line_read = false;
-    let exported = shellwrap::exported_env(&argvs);
+    let exported = shellwrap::exported_env_shared(&argvs);
     // A relative `cd` is looked for along `CDPATH` first, where the shell has one: one the
     // line sets, or one `cdpath` says the shell may have. Asked once, and only of a bare `cd`.
     let cdpath_here = std::cell::OnceCell::new();
@@ -600,7 +617,8 @@ fn found<T: Clone>(
             too_many_if_a_move_failed = false;
         }};
     }
-    for (segment, before) in segments.iter().zip(exported.iter()) {
+    for (i, segment) in segments.iter().enumerate() {
+        let before = exported.before(i);
         if segment.before.as_deref().is_some_and(|op| op != "&&") {
             if too_many_if_a_move_failed {
                 out_of_sight!();
@@ -687,7 +705,7 @@ fn found<T: Clone>(
         let Some((sub, post)) = rest.split_first() else {
             continue;
         };
-        let mut env = before.clone();
+        let mut env = before.to_vec();
         env.extend(call.env.iter().cloned());
         let direct = wanted(sub, post);
         // git runs its own command by its name whatever an alias says; any other name is an

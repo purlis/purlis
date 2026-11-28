@@ -3686,3 +3686,787 @@ fn the_dnf_and_yum_utilities_and_svscanboot_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The supervisors, init systems, queues and schedulers #7833 names, refused on what each is for:
+/// `tini`, `catatonit`, `daemonize` and libslack's `daemon` run the program after them; `pm2
+/// start` and `supervisord -c` run the scripts and `[program:x]` commands they are handed;
+/// sysvinit's `startpar` the init scripts it is named; runit's `runit` its stage scripts and
+/// `runsvchdir` switches the folder `runsvdir` runs; `dinit`, GNU Shepherd's `shepherd` and
+/// OpenRC's old `runscript` run the services of a folder or file they are named, and `dinitctl`
+/// and `herd` start them; perp's `perpd` and `perpboot` supervise a folder's services, and its
+/// `tinylog` is `multilog`'s twin; s6's `s6-svscanctl` has a running `s6-svscan` start what a
+/// chat wrote into its folder, `s6-instance-create` starts a service, `s6-sudoc` hands
+/// `s6-sudod` a command line, `s6-notifywhenup` runs the program after it, `s6-fdholder-daemon`
+/// runs `s6-fdholderd` under `s6-ipcserver`'s access rules (`s6-fdholderd` kept with it), and
+/// `s6-linux-init-shutdownd` runs the `rc.shutdown` of the folder its `-c` names; the Procfile
+/// runners (`overmind`, `foreman`, `honcho`, `hivemind`, `goreman`), the queues (`pueue`,
+/// `pueued`, `tsp`, `nq`), `ubic-admin`, `reflex`, s6-overlay's `with-contenv` and
+/// `cloud-init-per` run the commands they are handed; `transactional-update run` and `shell`
+/// run a command or a shell; `fcrontab` and `incrontab` hand a daemon a table of commands;
+/// `logrotate` runs a file's `prerotate` and `postrotate` scripts; and `lefthook` and `husky`
+/// run a repository's hooks.
+#[test]
+fn the_supervisors_init_systems_queues_and_schedulers_of_7833_are_offered_no_run_grant() {
+    for name in [
+        "tini",
+        "catatonit",
+        "daemonize",
+        "daemon",
+        "pm2",
+        "supervisord",
+        "startpar",
+        "runit",
+        "runsvchdir",
+        "dinit",
+        "dinitctl",
+        "shepherd",
+        "herd",
+        "runscript",
+        "perpd",
+        "perpboot",
+        "tinylog",
+        "s6-svscanctl",
+        "s6-instance-create",
+        "s6-sudoc",
+        "s6-notifywhenup",
+        "s6-fdholder-daemon",
+        "s6-fdholderd",
+        "s6-linux-init-shutdownd",
+        "overmind",
+        "foreman",
+        "honcho",
+        "hivemind",
+        "goreman",
+        "pueue",
+        "pueued",
+        "tsp",
+        "nq",
+        "ubic-admin",
+        "reflex",
+        "with-contenv",
+        "cloud-init-per",
+        "transactional-update",
+        "fcrontab",
+        "incrontab",
+        "logrotate",
+        "lefthook",
+        "husky",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The chain loaders and command runners #7833 names, each of which runs the command, the
+/// program or the shell after it, or one its settings name: ucspi-tcp's `tcpserver`,
+/// `tcpclient`, `recordio` and `argv0`, busybox's `tcpsvd`, s6-networking's `s6-tcpserverd`,
+/// `s6-ucspitlsc` and `s6-ucspitlsd` and the older `s6-tcpserver4-socketbinder` and
+/// `s6-tcpserver6-socketbinder`; execline's `execlineb` and the programs of its that run the
+/// program after them; perp's `runuid`, `runlimit`, `runlock` and `runenv`; moreutils' `pee`,
+/// `mispipe`, `vipe` and `vidir` (`$EDITOR`), and sensible-utils' `sensible-editor`,
+/// `sensible-pager` and `sensible-browser`; mime-support's `run-mailcap` and its `see`, `edit`,
+/// `print` and `compose` (a mailcap entry's command); the jails, containers and VMs (`nsjail`,
+/// `minijail0`, `cgexec`, `lxc-attach`, `lxc-execute`, `schroot`, `dchroot`, `newgrp`,
+/// SELinux's `newrole` and `sandbox`, `distrobox`, `toolbox`, `snap`, `guix`, `apptainer`,
+/// `singularity`, `runc`, `crun`, `ctr`, `limactl`, `colima`, `ip netns exec`); `setarch`'s other
+/// names; util-linux's `coresched`, `enosys`, `setpgid` and `scriptlive`; `catchsegv`,
+/// `pseudo`, `datefudge`, `limitcpu`, `torify`, `tsocks`, `autoexpect`, `cronic`, `sem`,
+/// `dtach`, `abduco`, `perf`, `gpg-agent --daemon`, `dbus-launch`, `startx`, `xinit`,
+/// `keyctl session`, `opam exec`, `xvfb-maybe` and run-one's other names; and the compiler
+/// wrappers `ccache`, `sccache`, `distcc`, its `pump`, and `icecc`.
+#[test]
+fn the_chain_loaders_and_command_runners_of_7833_are_offered_no_run_grant() {
+    for name in [
+        "tcpserver",
+        "tcpclient",
+        "recordio",
+        "argv0",
+        "tcpsvd",
+        "s6-tcpserverd",
+        "s6-ucspitlsc",
+        "s6-ucspitlsd",
+        "s6-tcpserver4-socketbinder",
+        "s6-tcpserver6-socketbinder",
+        "execlineb",
+        "fdmove",
+        "redirfd",
+        "background",
+        "foreground",
+        "pipeline",
+        "if",
+        "ifelse",
+        "emptyenv",
+        "forx",
+        "runuid",
+        "runlimit",
+        "runlock",
+        "runenv",
+        "pee",
+        "mispipe",
+        "vipe",
+        "vidir",
+        "sensible-editor",
+        "sensible-pager",
+        "sensible-browser",
+        "run-mailcap",
+        "see",
+        "edit",
+        "print",
+        "compose",
+        "nsjail",
+        "minijail0",
+        "cgexec",
+        "lxc-attach",
+        "lxc-execute",
+        "schroot",
+        "dchroot",
+        "newgrp",
+        "newrole",
+        "sandbox",
+        "distrobox",
+        "toolbox",
+        "snap",
+        "guix",
+        "apptainer",
+        "singularity",
+        "runc",
+        "crun",
+        "ctr",
+        "limactl",
+        "colima",
+        "ip",
+        "linux32",
+        "linux64",
+        "i386",
+        "x86_64",
+        "uname26",
+        "coresched",
+        "enosys",
+        "setpgid",
+        "scriptlive",
+        "catchsegv",
+        "pseudo",
+        "datefudge",
+        "limitcpu",
+        "torify",
+        "tsocks",
+        "autoexpect",
+        "cronic",
+        "sem",
+        "dtach",
+        "abduco",
+        "perf",
+        "gpg-agent",
+        "dbus-launch",
+        "startx",
+        "xinit",
+        "keyctl",
+        "opam",
+        "xvfb-maybe",
+        "run-one-constantly",
+        "run-one-until-success",
+        "run-one-until-failure",
+        "ccache",
+        "sccache",
+        "distcc",
+        "pump",
+        "icecc",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The package managers and installers #7833 names, each of which runs a package's install
+/// scripts, a build script or plugins: `pacman -U`, `apk add`, macOS's `installer -pkg`,
+/// Gentoo's `emerge` and `ebuild`, `xbps-install`, `opkg`, FreeBSD's `pkg`, `slackpkg`,
+/// `installpkg`, `yay` and `paru` (`makepkg`), `urpmi`, `pkgin`, `pkg_add`, `pkcon install`,
+/// the apt front-ends `nala`, `gdebi`, `wajig`, `aptdcon` and `tasksel`, `fink`, Raku's `zef`
+/// and `rakubrew`, `unattended-upgrade`, `debi` and `debpkg` (`dpkg -i`), `checkinstall` (the
+/// install command it is handed), `alien --scripts` and `installkernel`; dnf5's
+/// `dnf5daemon-server` and `dnf5daemon-client` and yum-utils' `yumdb`, `repo-rss`,
+/// `verifytree`, `show-installed` and `show-changed-rco`, which load plugins as `dnf` and `yum`
+/// do; the configuration managers `salt-call`, `puppet` and `rex`, which run a state or a
+/// manifest; `needrestart`, whose `-c` file is Perl it evaluates, and `etckeeper`, which runs
+/// its hook folders and `vcs` commands. `debconf-apt-progress` is refused by `debconf`'s row,
+/// its own family's, and stays so.
+#[test]
+fn the_package_managers_and_installers_of_7833_are_offered_no_run_grant() {
+    for name in [
+        "pacman",
+        "apk",
+        "installer",
+        "emerge",
+        "ebuild",
+        "xbps-install",
+        "opkg",
+        "pkg",
+        "slackpkg",
+        "installpkg",
+        "yay",
+        "paru",
+        "urpmi",
+        "pkgin",
+        "pkg_add",
+        "pkcon",
+        "nala",
+        "gdebi",
+        "wajig",
+        "aptdcon",
+        "tasksel",
+        "fink",
+        "zef",
+        "rakubrew",
+        "unattended-upgrade",
+        "debi",
+        "debpkg",
+        "checkinstall",
+        "alien",
+        "installkernel",
+        "dnf5daemon-server",
+        "dnf5daemon-client",
+        "yumdb",
+        "repo-rss",
+        "verifytree",
+        "show-installed",
+        "show-changed-rco",
+        "salt-call",
+        "puppet",
+        "rex",
+        "needrestart",
+        "etckeeper",
+        "debconf-apt-progress",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The build, test and packaging tools #7833 names, each of which runs a package's build system,
+/// tests, maintainer scripts, hooks or the code it is pointed at: Debian's `dh_<name>` helpers,
+/// by their stem, as `dh` is refused; `debootstrap`, `mmdebstrap`, `autopkgtest`, `piuparts`,
+/// `mk-build-deps`, `equivs-build`, `quilt shell`, `debspawn`, `uscan`, `cvs-buildpackage`,
+/// `svn-buildpackage`, `dput` and `dupload` (their hook commands); `rpkg`, `mockchain`,
+/// openSUSE's `osc` and obs-build's `build`, `kiwi` and `kiwi-ng` (an image's `config.sh`) and
+/// `koji` (plugins from the path its settings name); MacPorts' `portmirror`; the Perl builders
+/// `cpan2dist`, `cpan2deb`, `cpanspec`, `cpan2rpm` and `pinto`, PAR's `pp`, whose `-x` runs the
+/// script, `plx`, and the PSGI servers `twiggy` and `corona`; and `meson`, `scons`, `ctest` and
+/// `buck2`, which run a project's build files or tests. `pbuilder-dist` and `cowbuilder-dist`
+/// are refused by `pbuilder`'s and `cowbuilder`'s rows, their own family's, and stay so.
+#[test]
+fn the_build_test_and_packaging_tools_of_7833_are_offered_no_run_grant() {
+    for name in [
+        "dh_auto_build",
+        "dh_auto_test",
+        "dh_install",
+        "dh_strip_nondeterminism",
+        "debootstrap",
+        "mmdebstrap",
+        "autopkgtest",
+        "piuparts",
+        "mk-build-deps",
+        "equivs-build",
+        "quilt",
+        "debspawn",
+        "uscan",
+        "cvs-buildpackage",
+        "svn-buildpackage",
+        "dput",
+        "dupload",
+        "rpkg",
+        "mockchain",
+        "osc",
+        "build",
+        "kiwi",
+        "kiwi-ng",
+        "koji",
+        "portmirror",
+        "cpan2dist",
+        "cpan2deb",
+        "cpanspec",
+        "cpan2rpm",
+        "pinto",
+        "pp",
+        "plx",
+        "twiggy",
+        "corona",
+        "meson",
+        "scons",
+        "ctest",
+        "buck2",
+        "pbuilder-dist",
+        "cowbuilder-dist",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The rest of execline's programs #7964 names, each a chain loader that runs the program after
+/// it once it has set a variable, a descriptor, a signal or a loop up (`backtick`, `withstdinas`,
+/// `export`, `unexport`, `importas`, `elglob`, `forbacktickx`, `forstdin`, `loopwhilex`, `trap`,
+/// `tryexec`, `piperw`, `fdclose`, `fdblock`, `fdswap`, `fdreserve`, `heredoc`,
+/// `multisubstitute`, `multidefine`, `define`, `runblock`, `shift`, `wait`, `case`, `envfile`,
+/// `getpid`, `getcwd`, `posix-cd`, `posix-umask`), with `homeof`, kept with them on the
+/// conservative side; and the chain loaders of #7964's comment: ucspi-tcp's `rblsmtpd` and
+/// `fixcrio`, busybox's `udpsvd`, and s6-networking's `s6-tcpserver4d` and `s6-tcpserver6d`,
+/// each of which runs the program after it.
+#[test]
+fn execlines_other_programs_and_the_chain_loaders_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "backtick",
+        "withstdinas",
+        "export",
+        "unexport",
+        "importas",
+        "elglob",
+        "forbacktickx",
+        "forstdin",
+        "loopwhilex",
+        "trap",
+        "tryexec",
+        "piperw",
+        "fdclose",
+        "fdblock",
+        "fdswap",
+        "fdreserve",
+        "heredoc",
+        "multisubstitute",
+        "multidefine",
+        "define",
+        "runblock",
+        "shift",
+        "wait",
+        "case",
+        "envfile",
+        "getpid",
+        "getcwd",
+        "homeof",
+        "posix-cd",
+        "posix-umask",
+        "rblsmtpd",
+        "fixcrio",
+        "udpsvd",
+        "s6-tcpserver4d",
+        "s6-tcpserver6d",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The terminals and multiplexers #7964 names, each of which runs the command it is handed in
+/// the window or the pane it opens: `xterm -e`, `kitty`, `alacritty -e`, `wezterm start`,
+/// `gnome-terminal --`, `konsole -e`, `zellij run` and `byobu`, which is `tmux`'s or `screen`'s
+/// front-end.
+#[test]
+fn the_terminals_and_multiplexers_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "xterm",
+        "kitty",
+        "alacritty",
+        "wezterm",
+        "gnome-terminal",
+        "konsole",
+        "zellij",
+        "byobu",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The remote and VM runners and the agents and configuration runners #7964 names, each of
+/// which runs the command, the recipe or the pipeline it is handed: `lima` and `multipass exec`
+/// in a VM, `orbctl run` in OrbStack's, and `pssh`, `pdsh` and `clush` on the hosts they are
+/// named; `chef-client` and `chef-solo` a cookbook's recipes, CFEngine's `cf-agent` (`cfagent`)
+/// a policy's commands, `buildkite-agent` a pipeline's steps, Concourse's `fly execute` a task,
+/// `drone exec` a pipeline, and `garden` a project's actions.
+#[test]
+fn the_remote_runners_agents_and_configuration_runners_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "lima",
+        "multipass",
+        "orbctl",
+        "pssh",
+        "pdsh",
+        "clush",
+        "chef-client",
+        "chef-solo",
+        "cf-agent",
+        "cfagent",
+        "buildkite-agent",
+        "fly",
+        "drone",
+        "garden",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The cron daemons and runners #7964 names, each of which runs the commands of a table it is
+/// handed, or the program after it at a time: `fcron`, `bcron`, `dcron`, cronie's `crond`,
+/// `supercronic`, `ofelia`, `mcron` and `jobber` a table's or a file's commands; `snooze` and
+/// runwhen's `runwhen`, `rw-add`, `rw-match` and `rw-sleep` the program after them, with its
+/// `rw-min` and `rw-max` kept with them on the conservative side; and `cronitor exec` the command
+/// it wraps.
+#[test]
+fn the_cron_daemons_and_runners_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "fcron",
+        "bcron",
+        "dcron",
+        "crond",
+        "supercronic",
+        "ofelia",
+        "mcron",
+        "jobber",
+        "snooze",
+        "runwhen",
+        "rw-add",
+        "rw-match",
+        "rw-sleep",
+        "rw-min",
+        "rw-max",
+        "cronitor",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The interpreters and runtimes #7964 names beside REFUSED_NAMES' own, each of which runs the
+/// code, the script or the module it is handed: `kotlin`, `scala`, `groovy`, `clojure`, `boot`,
+/// `elixir`, `erl`, `escript`, `ghc -e` (and Template Haskell in any build), `runghc`,
+/// `crystal`, `nim`, `v`, `dart`, `tcc -run`, `mono`, the WebAssembly runtimes `wasmtime`,
+/// `wasmer` and `wasm3`, the JavaScript engines `qjs`, `jsc`, `d8`, `hermes`, `rhino` and
+/// `jjs`, and `frida`, which spawns the program it is named and runs a script in it.
+#[test]
+fn the_interpreters_and_runtimes_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "kotlin", "scala", "groovy", "clojure", "boot", "elixir", "erl", "escript", "ghc",
+        "runghc", "crystal", "nim", "v", "dart", "tcc", "mono", "wasmtime", "wasmer", "wasm3",
+        "qjs", "jsc", "d8", "hermes", "rhino", "jjs", "frida",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The tracers #7964 names, each of which runs the command after it to trace it, as `strace`
+/// and `ltrace` do: `bpftrace -c` (whose programs can also run `system()`), `trace-cmd record`,
+/// `uftrace`, `sysdig` (its chisels are Lua) and `cset proc --exec`.
+#[test]
+fn the_tracers_of_7964_are_offered_no_run_grant() {
+    for name in ["bpftrace", "trace-cmd", "uftrace", "sysdig", "cset"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The build and version managers, builders and compiler wrappers #7964 and its comment name,
+/// each of which runs a project's build files, the command it wraps or what its triggers name:
+/// `rebar3`, SDKMAN's `sdk`, `nvm exec`, `bundler` (macOS's, Bundler 1.17.2, evaluates the
+/// Gemfile as Ruby and `exec`s the command `bundler exec` names), `esy`, `ocamlfind`, the
+/// reloaders `air` and `modd`, `watchman` (its triggers); CMake's `ccmake` and `cpack`, Buck
+/// 1's `buck`, `muon` and `samu`; and icecream's `icerun` and `iceccd` and `distccd`, which run
+/// the compiler commands they are handed.
+#[test]
+fn the_build_and_version_managers_and_compiler_wrappers_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "rebar3",
+        "sdk",
+        "nvm",
+        "bundler",
+        "esy",
+        "ocamlfind",
+        "air",
+        "modd",
+        "watchman",
+        "ccmake",
+        "cpack",
+        "buck",
+        "muon",
+        "samu",
+        "icerun",
+        "iceccd",
+        "distccd",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The package managers and installers #7964's comment names, each of which runs a package's
+/// scripts or a build's: Slackware's `upgradepkg`, `xbps-reconfigure` (a package's `INSTALL`
+/// script), the AUR helpers `pikaur`, `trizen`, `aura`, `pamac` and `yaourt` (a `PKGBUILD`),
+/// and Arch's `pacstrap`, which runs `pacman` into a new root, and `arch-chroot`, which runs
+/// the command after it in one.
+#[test]
+fn the_package_managers_and_installers_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "upgradepkg",
+        "xbps-reconfigure",
+        "pikaur",
+        "trizen",
+        "aura",
+        "pamac",
+        "yaourt",
+        "pacstrap",
+        "arch-chroot",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The terminals #7988 names beside #7964's, each of which runs the command it is handed in the
+/// window it opens (`xfce4-terminal`, `mate-terminal`, `terminator`, `tilix`, `foot`, `urxvt`,
+/// `rxvt`, `st`, `ghostty`, `lxterminal`, `qterminal`, `terminology`, `kgx`, `ptyxis`), or has one
+/// open it (`footclient`, kitty's `kitten`, Debian's `x-terminal-emulator`); and the tmux session
+/// runners `tmuxinator` and `tmuxp`, which run a YAML file's commands, and `tmate`, tmux's fork.
+#[test]
+fn the_terminals_and_tmux_session_runners_of_7988_are_offered_no_run_grant() {
+    for name in [
+        "kitten",
+        "xfce4-terminal",
+        "mate-terminal",
+        "terminator",
+        "tilix",
+        "foot",
+        "footclient",
+        "urxvt",
+        "rxvt",
+        "st",
+        "ghostty",
+        "x-terminal-emulator",
+        "lxterminal",
+        "qterminal",
+        "terminology",
+        "kgx",
+        "ptyxis",
+        "tmuxinator",
+        "tmuxp",
+        "tmate",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The VM and container runners #7988 names, each of which runs a command in a machine or a
+/// container it reaches: OrbStack's `orb`, Parallels' `prlctl exec`, UTM's `utmctl exec`, `tart
+/// exec`, VirtualBox's `VBoxManage guestcontrol run` (by either spelling), `lxc exec`, `incus
+/// exec`, `virsh`, every `qemu-system-*` by its first part, and `wsl`.
+#[test]
+fn the_vm_and_container_runners_of_7988_are_offered_no_run_grant() {
+    for name in [
+        "orb",
+        "prlctl",
+        "utmctl",
+        "tart",
+        "VBoxManage",
+        "vboxmanage",
+        "lxc",
+        "incus",
+        "virsh",
+        "qemu",
+        "qemu-system-x86_64",
+        "qemu-system-aarch64",
+        "wsl",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The compilers and shells #7988 names, siblings of #7964's runtimes, each of which runs code it
+/// is handed or a project's code as it compiles: `runhaskell`, `ghci`, `kotlinc` (`-script`),
+/// `scalac` (macros), `groovysh`, `clj`, Elixir's `iex`, `erlc` (parse transforms) and `jbang`; and
+/// QuickJS's `qjsc`, kept with them on the conservative side.
+#[test]
+fn the_compilers_and_shells_of_7988_that_run_code_are_offered_no_run_grant() {
+    for name in [
+        "runhaskell",
+        "ghci",
+        "kotlinc",
+        "scalac",
+        "groovysh",
+        "clj",
+        "iex",
+        "erlc",
+        "qjsc",
+        "jbang",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The interpreters and runtimes of #7988's comment, each of which runs the code or the script it
+/// is handed: the Clojure and Lisp family (`bb`, `nbb`, `janet`, `fennel`, `moon`, `chez`,
+/// `scheme`, `petite`, `csi`, `gsi`, `chibi-scheme`, `ecl`, `ccl`, `abcl`, `kawa`, `lfe`), the
+/// JVM's, GraalVM's and the others' (`jython`, `jruby`, `truffleruby`, `graalpy`, `mruby`,
+/// `ocamlrun`, `utop`, `tclkit`, `expectk`, `fsi`, `scriptcs`, `planck`, `lumo`), and the compilers
+/// whose `run` runs a program (`gleam`, `roc`, `odin`, `hare`).
+#[test]
+fn the_interpreters_and_runtimes_of_7988_are_offered_no_run_grant() {
+    for name in [
+        "bb",
+        "nbb",
+        "janet",
+        "fennel",
+        "moon",
+        "chez",
+        "scheme",
+        "petite",
+        "csi",
+        "gsi",
+        "chibi-scheme",
+        "ecl",
+        "ccl",
+        "abcl",
+        "kawa",
+        "lfe",
+        "jython",
+        "jruby",
+        "truffleruby",
+        "graalpy",
+        "mruby",
+        "ocamlrun",
+        "utop",
+        "tclkit",
+        "expectk",
+        "fsi",
+        "scriptcs",
+        "planck",
+        "lumo",
+        "gleam",
+        "roc",
+        "odin",
+        "hare",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The tracers of #7988's comment, each of which runs the command after it to trace it: SystemTap's
+/// `stap -c` (whose `-g` embeds C in the kernel) and `heaptrack`.
+#[test]
+fn the_tracers_of_7988_are_offered_no_run_grant() {
+    for name in ["stap", "heaptrack"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The build and version managers and the cron siblings #7988 names, each of which runs a project's
+/// hooks, a build's code, a table's commands or the command it is handed: rebar 2's `rebar`,
+/// `nimble`, `shards`, `dub`, `flutter`, `mill`, `ghcup`, tj's `n`, jobber's `jobberrunner` and
+/// bcron's `bcrontab`.
+#[test]
+fn the_build_and_version_managers_and_cron_siblings_of_7988_are_offered_no_run_grant() {
+    for name in [
+        "rebar",
+        "nimble",
+        "shards",
+        "dub",
+        "flutter",
+        "mill",
+        "ghcup",
+        "n",
+        "jobberrunner",
+        "bcrontab",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The configuration, proxy and notifier runners #7988 names, each of which runs code or a command
+/// it is handed: `pyinfra` (a deploy file's Python), `mitmproxy`, `mitmdump` and `mitmweb` (the
+/// script `-s` names), and `terminal-notifier` (`-execute`).
+#[test]
+fn the_configuration_proxy_and_notifier_runners_of_7988_are_offered_no_run_grant() {
+    for name in [
+        "pyinfra",
+        "mitmproxy",
+        "mitmdump",
+        "mitmweb",
+        "terminal-notifier",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The terminals #8017 names beside #7964's and #7988's, each of which runs the command it is
+/// handed, or the shell its settings name, in the window it opens: `rio`, `contour`,
+/// `cool-retro-term`, `sakura`, the drop-down terminals `guake`, `tilda` and `yakuake`, Eterm's
+/// `eterm`, `aterm`, `mlterm`, `roxterm`, COSMIC's `cosmic-term`, `blackbox-terminal`,
+/// `deepin-terminal`, `hyper`, `tabby` and `warp-terminal`.
+#[test]
+fn the_terminals_of_8017_are_offered_no_run_grant() {
+    for name in [
+        "rio",
+        "contour",
+        "cool-retro-term",
+        "sakura",
+        "guake",
+        "tilda",
+        "yakuake",
+        "Eterm",
+        "aterm",
+        "mlterm",
+        "roxterm",
+        "cosmic-term",
+        "blackbox-terminal",
+        "deepin-terminal",
+        "hyper",
+        "tabby",
+        "warp-terminal",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The tmux session managers #8017 names beside `tmuxinator` and `tmuxp`, each of which runs the
+/// commands of a layout file in the panes it opens: `teamocil`, `smug`, `sesh` and `tmuxifier`,
+/// and `mux`, a name `tmuxinator` is often installed or aliased as.
+#[test]
+fn the_tmux_session_managers_of_8017_are_offered_no_run_grant() {
+    for name in ["teamocil", "smug", "sesh", "tmuxifier", "mux"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The VM and container runners #8017 names beside #7964's and #7988's, each of which runs a
+/// command or boots a guest: libguestfs's `virt-customize --run-command`, `virt-sysprep` and
+/// `guestfish` in a guest's disk image, `virt-install`, `crictl exec`, the runtime `youki`,
+/// `firecracker`, `vfkit`, `krunvm`, `hyperkit`, `xhyve`, `lxd`, VirtualBox's `VBoxHeadless`,
+/// and Parallels' `prlsrvctl`, kept with them on the conservative side.
+#[test]
+fn the_vm_and_container_runners_of_8017_are_offered_no_run_grant() {
+    for name in [
+        "virt-customize",
+        "virt-sysprep",
+        "guestfish",
+        "virt-install",
+        "crictl",
+        "youki",
+        "firecracker",
+        "vfkit",
+        "krunvm",
+        "hyperkit",
+        "xhyve",
+        "lxd",
+        "VBoxHeadless",
+        "prlsrvctl",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The interpreters #8017 names, each of which runs the code or the script it is handed:
+/// `newlisp`, `picolisp`, Gerbil's `gxi` and `gerbil`, CHICKEN's compiler `csc` (also the C#
+/// compiler's name, whose analyzers and source generators run as it compiles), the shell
+/// `murex`, Ammonite's `amm` and `ammonite`, and coursier's `cs` and `coursier`, whose `launch`
+/// runs what it fetches.
+#[test]
+fn the_interpreters_of_8017_are_offered_no_run_grant() {
+    for name in [
+        "newlisp", "picolisp", "gxi", "gerbil", "csc", "murex", "amm", "ammonite", "cs", "coursier",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The tracer #8017 names: macOS's `ktrace`, which runs the command its `-c` names under
+/// `ktrace trace` and `ktrace artrace`, to trace it.
+#[test]
+fn the_tracer_of_8017_is_offered_no_run_grant() {
+    refused_as_running_others("ktrace");
+}

@@ -26,13 +26,16 @@
 // **This runs the checked-out head's own code**, `tools/story-baselines.mjs` among it: take the
 // baselines of someone else's pull request only in a checkout of code you would run anyway.
 //
-// It needs `gh`, signed in, `git`, `curl` and `unzip`.
+// It needs `gh`, signed in, `git` and `unzip`. The artifact comes through `gh api`, so it works
+// wherever gh does, a sandboxed chat's among them (#7879).
 import { spawnSync } from "node:child_process";
 import {
+  closeSync,
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -152,47 +155,45 @@ export class Refused extends Error {}
 /** How many times a download that broke off is resumed before the pull gives up. */
 export const ATTEMPTS = 4;
 
-/** curl's exit when the server will not resume a download from where it stopped. */
-const RANGE_REFUSED = 33;
-
 /**
- * Fetches `artifact` (as the API lists a run's artifact) into the file `to` with `curl`, resuming
- * from where an attempt stopped, up to {@link ATTEMPTS} times: `gh run download` neither resumes
- * a download that broke off nor takes an artifact that holds a path twice (#5059). gh's token
- * reaches `curl` on its standard input, never its arguments, and `curl` sends it to GitHub alone,
- * not to the storage GitHub redirects to. Answers a line for each attempt that stopped; throws
- * `Refused` naming the artifact's size and where the last attempt stopped.
+ * Fetches `artifact` (as the API lists a run's artifact, in `repo`) into the file `to` through
+ * `gh api`, resuming from where an attempt stopped with a `Range` header, up to {@link ATTEMPTS}
+ * times: `gh run download` neither resumes a download that broke off nor takes an artifact that
+ * holds a path twice (#5059). It goes through gh, never `curl` with `gh auth token`, so it works
+ * wherever gh does, a sandboxed chat's forge route among them (#7879), and no token is ever handed
+ * to another program. gh writes the zip straight into the file. Answers a line for each attempt
+ * that stopped; throws `Refused` naming the artifact's size and where the last attempt stopped.
  */
-function download({ exec, run, artifact, to }) {
+function download({ exec, repo, artifact, to }) {
   const size = artifact.size_in_bytes;
-  const token = run("gh", ["auth", "token"]);
+  const path = `repos/${repo}/actions/artifacts/${artifact.id}/zip`;
   const have = () => (existsSync(to) ? statSync(to).size : 0);
   const said = [];
   let why = "";
   let stopped = 0;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
-    const got = exec(
-      "curl",
-      [
-        "--fail",
-        "--silent",
-        "--show-error",
-        "--location",
-        "--header",
-        "@-",
-        ...(have() > 0 ? ["--continue-at", "-"] : []),
-        "--output",
-        to,
-        artifact.archive_download_url,
-      ],
-      { encoding: "utf8", input: `Authorization: Bearer ${token}\n` },
-    );
-    if (got.status === 0 && have() === size) return said;
-    why = (got.stderr || got.error?.message || `curl exited ${got.status}`).trim();
+    const from = have();
+    const file = openSync(to, from > 0 ? "a" : "w");
+    let got;
+    try {
+      got = exec("gh", ["api", ...(from > 0 ? ["-H", `Range: bytes=${from}-`] : []), path], {
+        encoding: "utf8",
+        stdio: ["ignore", file, "pipe"],
+      });
+    } finally {
+      closeSync(file);
+    }
     stopped = have();
-    // More than the whole, or a whole that does not end the download, is no artifact to resume;
-    // and where the storage does not resume one (curl's 33), the next attempt starts again.
-    if (stopped >= size || got.status === RANGE_REFUSED) rmSync(to, { force: true });
+    if (got.status === 0 && stopped === size) return said;
+    why =
+      got.status === 0
+        ? `gh api finished with ${stopped} bytes written`
+        : (got.stderr || got.error?.message || `gh exited ${got.status}`).trim();
+    // More than the whole (a store that ignored the range and sent it all again), or a whole that
+    // does not end the download, is no artifact to resume; nor is a resume that failed having
+    // written nothing (a store that refuses the range): the next attempt starts again.
+    if (stopped >= size || (from > 0 && got.status !== 0 && stopped === from))
+      rmSync(to, { force: true });
     said.push(`the download of the baselines (${size} bytes) stopped at ${stopped} bytes: ${why}`);
   }
   throw new Refused(
@@ -238,7 +239,7 @@ function unpack({ exec, run, zip, into }) {
 /**
  * Takes pull request `pr`'s baselines from its newest failed `stories` run in `repo` and writes
  * them into `root`'s `app/`, answering the lines that say what it did; throws `Refused` saying
- * why it took nothing. `exec` runs a command as `spawnSync` does (`gh`, `git`, `curl` and `unzip` here).
+ * why it took nothing. `exec` runs a command as `spawnSync` does (`gh`, `git` and `unzip` here).
  *
  * Everything it downloads, the artifact's zip among it, goes into one
  * `story-baselines-*` folder under `tmp`, which it removes when it finishes, taken or refused:
@@ -317,7 +318,7 @@ export function pull({ pr, repo = REPO, root, tmp = tmpdir(), exec = spawnSync }
   const work = mkdtempSync(join(tmp, "story-baselines-"));
   try {
     const zip = join(work, "artifact.zip");
-    const said = download({ exec, run, artifact: kept, to: zip });
+    const said = download({ exec, repo, artifact: kept, to: zip });
     const into = join(work, "artifact");
     said.push(...unpack({ exec, run, zip, into }));
     if (!existsSync(join(into, DRAWN)))

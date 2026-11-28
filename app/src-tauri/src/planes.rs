@@ -35,7 +35,9 @@ use purlis_core::reopen::Choice;
 use crate::chats::Chats;
 use crate::hooks::{self, Hooks, Moved};
 use crate::host::{ChatBoard, SessionHost};
-use crate::sessions::{Reporting, Sessions};
+use crate::sessions::Reporting;
+#[cfg(test)]
+use crate::sessions::Sessions;
 
 /// Which plane something is acting for.
 ///
@@ -96,6 +98,11 @@ pub const WAITS_ON_A_PERMISSION_PROMPT: &str =
 /// Why a restart waits while the person is stopping the chat (#1448).
 pub const WAITS_WHILE_YOU_STOP_IT: &str =
     "You are stopping this chat, so it is not restarted while that runs.";
+
+/// Why a restart at a pause that waited on the person's answer to what the project needs is
+/// not made yet (#7950): the chat ran on meanwhile, so it restarts at its next pause.
+pub const WAITS_FOR_ITS_NEXT_PAUSE: &str =
+    "It kept working while the project waited on your answer, so it restarts at its next pause.";
 
 /// Why a restart at a pause waits while the chat waits on its own work (#5753).
 pub const WAITS_ON_ITS_OWN_WORK: &str = "It has work of its own running in the background. It restarts once that work is done and \
@@ -434,6 +441,11 @@ pub struct Held {
     hibernated: Arc<crate::hibernation::Hibernated>,
     /// The window, each time a hibernated chat's unsent text changes (SC-4d, #7633).
     hibernation_told: crate::hibernation::Teller,
+    /// When each chat was last looked at or typed in (SC-4g, #7636).
+    looked: crate::autohibernate::LookedAt,
+    /// The device's gate of automatic hibernation, told what may change what it reads (SC-4g,
+    /// #7636).
+    gate: Arc<crate::autohibernate::Gate>,
     /// The dispatches waiting on the person, and the dispatch grants made for one chat
     /// (#1437).
     dispatch_grants: crate::dispatchgrants::Store,
@@ -578,8 +590,6 @@ enum PutBack {
     NotAsked,
     /// Its chats are being started: it says how it came out when that is over.
     Going,
-    /// The launch's gate refused (#2004): its chats are registered, and these start them.
-    Refused(Box<Reopening>),
     /// Its record could not be read, so nothing was registered: it is read again.
     Unread,
     /// Every chat was tried, of this many its record held.
@@ -1059,6 +1069,52 @@ impl Held {
         &self.hibernated
     }
 
+    /// When each chat was last looked at or typed in (SC-4g, #7636).
+    pub fn looked(&self) -> &crate::autohibernate::LookedAt {
+        &self.looked
+    }
+
+    /// **What is on screen may have changed** (SC-4g, #7636): the looked-at clock is told the
+    /// chats open now, which starts the clock of one it has not seen, and the chats on screen,
+    /// each with the window showing it; the gate is poked where a look changed.
+    pub fn look_again(&self, now: std::time::Instant) {
+        self.looked.open(now, &self.chats.sessions_open());
+        let on_screen = self
+            .chats
+            .looked_at()
+            .into_iter()
+            .map(|chat| (chat, self.chats.window_showing(chat).unwrap_or(0)));
+        let on_screen: Vec<_> = on_screen.collect();
+        if self.looked.on_screen(now, on_screen) {
+            self.gate.poke();
+        }
+    }
+
+    /// Window `window` of this project gained or lost the focus (SC-4g, #7636).
+    pub fn window_focused(&self, window: u32, focused: bool) {
+        self.looked.focused(window, focused);
+        self.look_again(self.gate.now());
+    }
+
+    /// The time on the looked-at clock (SC-4g, #7636): never a wall clock's.
+    pub fn looked_now(&self) -> std::time::Instant {
+        self.gate.now()
+    }
+
+    /// The gate of automatic hibernation: something it reads may have changed (SC-4g, #7636).
+    pub fn poke_the_gate(&self) {
+        self.gate.poke();
+    }
+
+    /// The window is told chat `session` is hibernated.
+    pub fn tell_hibernated(&self, session: u32) {
+        (self.hibernation_told)(crate::hibernation::Changed {
+            plane: self.id.clone(),
+            session,
+            hibernated: true,
+        });
+    }
+
     /// The dispatches waiting on the person, and the grants made for one chat (#1437).
     pub fn dispatch_grants(&self) -> &crate::dispatchgrants::Store {
         &self.dispatch_grants
@@ -1313,6 +1369,11 @@ impl Held {
     fn operator_typing(&self, session: u32, bytes: &[u8]) {
         if !crate::curation::only_the_terminal_answering(bytes) {
             self.typed.operator_sent(session);
+            // A key the person typed is a look at it (SC-4g, #7636): the gate is poked only where
+            // that changed what it reads, not for each key typed in a chat being looked at.
+            if self.looked.typed(session, self.gate.now()) {
+                self.gate.poke();
+            }
         }
         if self
             .closing
@@ -1501,6 +1562,19 @@ impl Held {
         // are now**: a conversion of those records (#1519) runs when the project is opened
         // (`Planes::open`), before this, and must stay there.
         let begun = crate::restored::begin(self, &record);
+        // **A chat its record marks hibernated comes back hibernated** (SC-4e, #7634): put back
+        // with no program by the first half, it is hibernated as the act would have left it,
+        // with what its hibernation ended of its own work for its wake line, and the window is
+        // told.
+        for (session, by) in self.chats.marked_hibernated() {
+            self.hibernated
+                .asleep(session, by.into(), self.chats.own_now(session));
+            (self.hibernation_told)(crate::hibernation::Changed {
+                plane: self.id.clone(),
+                session,
+                hibernated: true,
+            });
+        }
         Reopening {
             begun,
             arrived,
@@ -1615,6 +1689,11 @@ impl Held {
         // a line it is typed one now, the lock let go; and it is looked at as a chat that may
         // have nothing left to wait on (#1491). Nothing where nothing waits for it.
         self.told_of_a_close(above);
+        // Its clock goes with it, and there is one hot chat fewer (SC-4g, #7636).
+        if closed.is_ok() {
+            self.looked.forget(session);
+            self.gate.poke();
+        }
         closed
     }
 
@@ -1987,8 +2066,25 @@ impl Held {
     /// offered, only once the host has answered. Where the act fails the latch goes again,
     /// unless the program's end was already heard as the hibernation.
     pub fn hibernate_chat(&self, session: u32) -> Result<(), crate::hibernation::Refused> {
-        self.lanes
-            .in_turn(session, || self.hibernate_in_its_turn(session, None))
+        self.lanes.in_turn(session, || {
+            self.hibernate_in_its_turn(session, Asked::Operator(None))
+        })
+    }
+
+    /// **Hibernates rested chat `session` by the app's own hand** (SC-4g, #7636), with cause
+    /// `idle`: [`Self::hibernate_chat`]'s act, latch and all, but refused where
+    /// [`purlis_core::rested::rested`] says it is not rested by the looked-at clock or any
+    /// other fact, where the act by hand would refuse it ([`purlis_core::rested::by_hand`]),
+    /// or where `over` says the device is no longer over its hot target. All three are read
+    /// before the latch and again after the intent.
+    pub fn hibernate_chat_idle(
+        &self,
+        session: u32,
+        over: &dyn Fn() -> bool,
+    ) -> Result<(), crate::hibernation::Refused> {
+        self.lanes.in_turn(session, || {
+            self.hibernate_in_its_turn(session, Asked::Idle(over))
+        })
     }
 
     /// [`Self::hibernate_chat`], once its caller has asked the person about the chat's own work,
@@ -2001,8 +2097,9 @@ impl Held {
         session: u32,
         named: &[String],
     ) -> Result<(), crate::hibernation::Refused> {
-        self.lanes
-            .in_turn(session, || self.hibernate_in_its_turn(session, Some(named)))
+        self.lanes.in_turn(session, || {
+            self.hibernate_in_its_turn(session, Asked::Operator(Some(named)))
+        })
     }
 
     /// [`Self::hibernate_chat`] with no turn in the chat's lane: for a test of what the latch
@@ -2012,13 +2109,13 @@ impl Held {
         &self,
         session: u32,
     ) -> Result<(), crate::hibernation::Refused> {
-        self.hibernate_in_its_turn(session, None)
+        self.hibernate_in_its_turn(session, Asked::Operator(None))
     }
 
     fn hibernate_in_its_turn(
         &self,
         session: u32,
-        named: Option<&[String]>,
+        asked: Asked<'_>,
     ) -> Result<(), crate::hibernation::Refused> {
         use crate::hibernation::Refused;
         if self.stopping.is_stopping(session) {
@@ -2026,12 +2123,9 @@ impl Held {
                 .to_owned()
                 .into());
         }
-        self.may_hibernate(session, named)?;
+        self.may_hibernate(session, asked)?;
         // Step 1: the latch. A second caller finds it taken and does nothing.
-        if !self
-            .hibernated
-            .latch(session, crate::hibernation::By::Operator)
-        {
+        if !self.hibernated.latch(session, asked.by()) {
             return Err(crate::hibernation::ALREADY_HIBERNATING.to_owned().into());
         }
         let id = self
@@ -2061,6 +2155,17 @@ impl Held {
             act.back_out();
             return Err(crate::hibernation::ENDED_ANOTHER_WAY.to_owned().into());
         }
+        // **With the intent, the mark, on disk before the program ends** (SC-4e, #7634): the
+        // durable carrier, which a restart reads. A crash from here finds it: with the program
+        // still running under the surviving host it is stale and the chat hot, and with the
+        // program gone the chat hibernated. Backing out takes it back.
+        self.chats.mark_hibernated(
+            session,
+            Some(crate::hibernation::mark_of(
+                crate::hibernation::By::Operator,
+            )),
+        );
+        self.recorded.flush();
         // **What arrived before the intent aborts the act** (SC-4d, #7633): read once more now
         // that it is recorded, so nothing slips between. A key the pane typed waits in its
         // lane and is sent to the program still there (the terminal's own answers are no
@@ -2071,7 +2176,7 @@ impl Held {
         } else if self.lanes.typed_waiting(session) {
             Some(Refused::Not(purlis_core::rested::NotRested::LookedAt))
         } else {
-            self.may_hibernate(session, named).err()
+            self.may_hibernate(session, asked).err()
         };
         if let Some(why) = arrived {
             // Its program's end was already heard as the hibernation: it is one.
@@ -2100,8 +2205,12 @@ impl Held {
     fn may_hibernate(
         &self,
         session: u32,
-        named: Option<&[String]>,
+        asked: Asked<'_>,
     ) -> Result<(), crate::hibernation::Refused> {
+        let named = match asked {
+            Asked::Operator(named) => named,
+            Asked::Idle(over) => return self.may_hibernate_idle(session, over),
+        };
         // The looked-at clock holds back only the app's own hibernation.
         let facts = crate::hibernation::facts_of(self, session, false);
         let may = match named {
@@ -2112,6 +2221,26 @@ impl Held {
             Some(_) => purlis_core::rested::by_hand_ending_its_own_work(&facts),
         };
         may.map_err(crate::hibernation::Refused::Not)
+    }
+
+    /// Whether the app may hibernate chat `session` by itself now (SC-4g, #7636): rested, by
+    /// the looked-at clock too; one the act by hand accepts; and the device over its target.
+    fn may_hibernate_idle(
+        &self,
+        session: u32,
+        over: &dyn Fn() -> bool,
+    ) -> Result<(), crate::hibernation::Refused> {
+        let looked_at =
+            self.looked
+                .looked_at_within(session, self.gate.now(), crate::autohibernate::AFTER);
+        let facts = crate::hibernation::facts_of(self, session, looked_at);
+        purlis_core::rested::rested(&facts)
+            .and_then(|()| purlis_core::rested::by_hand(&facts))
+            .map_err(crate::hibernation::Refused::Not)?;
+        if !over() {
+            return Err(crate::hibernation::AT_THE_TARGET.to_owned().into());
+        }
+        Ok(())
     }
 
     /// Wakes hibernated chat `session` (SC-4a, #7630): a new `wake` run on its conversation,
@@ -2139,6 +2268,12 @@ impl Held {
         // Forgotten before its end here, which would otherwise end its run a second time. What
         // its pane typed while it was hibernated goes to the woken run's pane, unsent.
         self.hibernated.awake(session, started);
+        // A woken chat is not rested again for the full time (SC-4g, #7636): its new number's
+        // clock starts now.
+        self.looked.forget(session);
+        self.looked
+            .open(self.gate.now(), &self.chats.sessions_open());
+        self.gate.poke();
         // Its kept screen stays until the new run has drawn (SC-4b, #7631).
         if let Some(id) = id {
             self.hibernated.woke(started, id);
@@ -2556,11 +2691,24 @@ impl Held {
                 .take(),
         );
         // The last record, after any written behind the window, and the writer ends with it.
+        // **A chat whose hibernation is still in flight is not marked** (SC-4e, #7634): its act
+        // wrote the mark, and the quit's end of every program ends its act before it can settle
+        // or back out, whose unmark would come after this last write. A chat that quit is not
+        // marked (spec #1391, ruling 3): it comes back hot.
         self.chats.write_last(|record| {
-            self.recorded.write_last(reopen::Record {
+            let mut record = reopen::Record {
                 relaunch_after_update: to_update,
                 ..record.clone()
-            });
+            };
+            for chat in &mut record.chats {
+                if chat
+                    .number
+                    .is_some_and(|number| self.hibernated.in_flight(number))
+                {
+                    chat.hibernated = None;
+                }
+            }
+            self.recorded.write_last(record);
         });
         // A task that had finished is left out of the next launch's put back, so its screen is
         // kept now, while its session still shows it (#6305).
@@ -3048,7 +3196,9 @@ pub struct Planes {
     /// ([`Self::recording_behind_the_window`]). The app's own registry does; one a test makes
     /// writes it as each change is made, so what it reads next is on disk.
     records_behind: bool,
-    open: Mutex<HashMap<PlaneId, Arc<Held>>>,
+    open: Arc<Mutex<HashMap<PlaneId, Arc<Held>>>>,
+    /// The device's gate of automatic hibernation (SC-4g, #7636): it reads every project held.
+    hibernate_gate: Arc<crate::autohibernate::Gate>,
     /// Told when a handoff has opened a chat in any plane (charter-app#204).
     arrivals: crate::handoff::Arrivals,
     /// Told when any plane changes on disk (charter-app#264).
@@ -3135,8 +3285,8 @@ pub struct Planes {
     /// The kill switch (OV-1): one for every plane this process holds, so a plane opened after
     /// a stop starts nothing either.
     kill_switch: Arc<crate::killswitch::KillSwitch>,
-    /// Makes each plane's session host (FD-3): [`Sessions`] in the app, told where its chats
-    /// report.
+    /// Makes each plane's session host (FD-3): the session host the launch hands it
+    /// (`crate::hostedsessions::chats_in_the_host`), else one that refuses every start (#2005).
     hosting: Hosting,
     /// Whether the session host owns each plane's hook channel, where the window would bind
     /// it (#2000): the window then hears what the host hands on.
@@ -3167,8 +3317,6 @@ pub struct Planes {
     /// This machine's config home, where its pools are kept (#2679): `None` in a test, where
     /// no workspace runs on a pool.
     pools_in: Option<PathBuf>,
-    /// What putting back a project's chats waits on, if anything (#2004).
-    gate: Option<Gate>,
 }
 
 /// The projects an open or a close is under way for, one at a time each ([`OpenTurn`]).
@@ -3308,9 +3456,6 @@ pub struct PlaneClosed {
 /// Makes a plane's session host, given where its chats are to report and where the plane is.
 pub type Hosting = Arc<dyn Fn(Option<Reporting>, &Path) -> Box<dyn SessionHost> + Send + Sync>;
 
-/// What putting back a project's chats waits on (#2004): `Ok` to start them, or why not.
-pub type Gate = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
-
 /// Where the launch's question stands (charter-app#250): what it holds back until the
 /// operator answers, and what the answer was.
 ///
@@ -3357,10 +3502,30 @@ pub struct Waiting {
     pub views: usize,
 }
 
+/// **What a plane's chats run on until the launch hands it the session host** (#2005): nothing,
+/// every start refused with why ([`crate::host::NoHost`]). No chat runs in the window's own
+/// process (ADR 0068, Ruled 3); `crate::hostedsessions::chats_in_the_host` hands the host.
+#[cfg(not(test))]
+fn no_host_yet() -> Hosting {
+    Arc::new(|_, _: &Path| Box::new(crate::host::NoHost::default()))
+}
+
+/// In a test, a plane's chats run on the in-process stand-in the tests are written against
+/// ([`crate::sessions::Sessions`]), which only a test build has (#2005).
+#[cfg(test)]
+fn no_host_yet() -> Hosting {
+    Arc::new(|reporting, _: &Path| Box::new(Sessions::reporting_to(reporting)))
+}
+
 impl Planes {
     /// A registry holding nothing, which is what the app comes up as before a plane is
     /// opened — and stays as, perfectly happily, when there is no plane to open.
     pub fn telling(tell: Teller, shipped: crate::Shipped, config: Option<PathBuf>) -> Self {
+        let open = Arc::new(Mutex::new(HashMap::new()));
+        let hibernate_gate = Arc::new(crate::autohibernate::Gate::on(Arc::new(
+            crate::autohibernate::Monotonic,
+        )));
+        hibernate_gate.reads_projects(Arc::downgrade(&open));
         Self {
             tell,
             shipped,
@@ -3368,7 +3533,8 @@ impl Planes {
             config,
             restores_behind: false,
             records_behind: false,
-            open: Mutex::new(HashMap::new()),
+            open: Arc::clone(&open),
+            hibernate_gate,
             // Nobody to tell yet. A registry with no window still opens a handed-off chat;
             // it simply has no strip to put it on until one asks what is open.
             arrivals: Arc::new(|_| {}),
@@ -3411,7 +3577,7 @@ impl Planes {
             question_updates: Arc::new(|_, _| {}),
             asks: Arc::new(|_| {}),
             relaunching: Mutex::new(Relaunching::default()),
-            hosting: Arc::new(|reporting, _: &Path| Box::new(Sessions::reporting_to(reporting))),
+            hosting: no_host_yet(),
             hooks_in_the_host: false,
             events: None,
             sweep: Arc::new(|root| {
@@ -3424,17 +3590,7 @@ impl Planes {
             quit_waits: QUIT_WAITS_FOR_TURNS,
             network: None,
             pools_in: None,
-            gate: None,
         }
-    }
-
-    /// Puts back no project's chats before `gate` lets it (#2004): what a window whose chats run
-    /// in its own process waits on, so a session host a crashed window left ends the chats it
-    /// kept first ([`crate::sessionhost::SessionHost::before_chats_are_put_back`]). A gate that
-    /// refuses puts nothing back and leaves the record as it is, for the next launch.
-    pub fn putting_back_chats_after(mut self, gate: Gate) -> Self {
-        self.gate = Some(gate);
-        self
     }
 
     /// Starts each project's chats behind the window (`crate::restoring`): an open answers
@@ -3522,7 +3678,7 @@ impl Planes {
     }
 
     /// Runs every plane's sessions on the hosts `hosting` makes, rather than in this process:
-    /// the session host, behind the start-time switch (`crate::hostedsessions`, #1998).
+    /// the session host (`crate::hostedsessions`, #1998, #2005).
     pub fn running_sessions_on(mut self, hosting: Hosting) -> Self {
         self.hosting = hosting;
         self
@@ -4188,6 +4344,9 @@ impl Planes {
                     // A chat told to stop trying mid-turn is typed the line once it waits
                     // (Q267 amended). After a stop's: a chat now in its last turn is told nothing.
                     crate::pausing::reported(&held, report.chat);
+                    // A turn began or ended, an ask came or went: what the gate of automatic
+                    // hibernation reads may have moved (SC-4g, #7636).
+                    held.poke_the_gate();
                 }
             })
         });
@@ -4704,6 +4863,8 @@ impl Planes {
             return id;
         }
         open.insert(id.clone(), Arc::clone(&held));
+        // A project opened: its chats go on their clocks at the gate's next read (SC-4g, #7636).
+        self.hibernate_gate.poke();
         id
     }
 
@@ -4748,9 +4909,6 @@ impl Planes {
         // asked answers at once, with every chat's tab to draw, and the programs start on a
         // thread of their own. Where no thread can be had, or a test asked for it, in turn.
         //
-        // **Nothing starts before the gate lets it** (#2004), on whichever thread starts them: a
-        // gate that refuses leaves each chat registered and unstarted, and its record as it was.
-        //
         // **And the window is told how it came out, once** (#5322): ready, with how many of its
         // chats came back, or failed, with why none was put back.
         *lock_put_back(&held) = PutBack::Going;
@@ -4758,31 +4916,17 @@ impl Planes {
         self.put_back(&held, begun);
     }
 
-    /// Starts the chats `begun` registered once the gate lets it, behind the window where the
-    /// registry says so, and tells the window how that came out.
+    /// Starts the chats `begun` registered, behind the window where the registry says so, and
+    /// tells the window how that came out.
     fn put_back(&self, held: &Arc<Held>, begun: Reopening) {
-        let gate = self.gate.clone();
         let ready = Arc::clone(&self.ready);
         let put_back = move |held: &Held, begun: Reopening| {
-            let outcome = match gate.as_ref().map_or(Ok(()), |gate| gate()) {
-                Ok(()) => {
-                    let outcome = held.finish_reopen(begun, STARTING);
-                    *lock_put_back(held) = match &outcome {
-                        crate::projectready::ProjectOutcome::Ready { wanted, .. } => {
-                            PutBack::Done { wanted: *wanted }
-                        }
-                        crate::projectready::ProjectOutcome::Failed { .. } => PutBack::Unread,
-                    };
-                    outcome
+            let outcome = held.finish_reopen(begun, STARTING);
+            *lock_put_back(held) = match &outcome {
+                crate::projectready::ProjectOutcome::Ready { wanted, .. } => {
+                    PutBack::Done { wanted: *wanted }
                 }
-                Err(why) => {
-                    tracing::warn!(
-                        "purlis: plane {}: its chats are not put back: {why}",
-                        held.root().display()
-                    );
-                    *lock_put_back(held) = PutBack::Refused(Box::new(begun));
-                    crate::projectready::ProjectOutcome::Failed { error: why }
-                }
+                crate::projectready::ProjectOutcome::Failed { .. } => PutBack::Unread,
             };
             ready(crate::projectready::ProjectReady {
                 plane: held.id.clone(),
@@ -4823,7 +4967,6 @@ impl Planes {
     ///
     /// - **Its chats are still starting**: nothing more. That put back says how it came out, and
     ///   no chat starts twice.
-    /// - **The gate refused**: the chats it registered start, if it lets them now.
     /// - **Its record could not be read**: it is read again, through the trust gate an open goes
     ///   through: what it now says to run is asked about before it runs, and Retry after the
     ///   yes puts it back. The chats opened since stay, so no task is ended for not being in it.
@@ -4841,10 +4984,6 @@ impl Planes {
         let was = std::mem::replace(&mut *lock_put_back(&held), PutBack::Going);
         match was {
             PutBack::Going => Ok(nothing()),
-            PutBack::Refused(begun) => {
-                self.put_back(&held, *begun);
-                Ok(nothing())
-            }
             PutBack::Unread => {
                 let reading = machine::Contribution::read(held.root());
                 if let Some(asking) = self.asking(held.root(), reading.contributes) {
@@ -5749,10 +5888,17 @@ impl Planes {
                                 .is_some_and(|held| held.chats.recorded_chat(session).is_none()),
                         );
                         if by.is_none() {
-                            // Its run moves to `hibernated` for `operator`, where the window
-                            // writes the log: the host writes it where the host does.
+                            // Its run moves to `hibernated` for its cause, `operator` or
+                            // `idle` (SC-4g, #7636), where the window writes the log: the host
+                            // writes it where the host does.
                             if let Some(log) = events.as_ref().and_then(hooks::Events::held) {
-                                its_run_hibernates(log, &events_root, session);
+                                let cause = match hibernated.latched_by(session) {
+                                    Some(crate::hibernation::By::Idle) => {
+                                        purlis_core::state::run::Cause::Idle
+                                    }
+                                    _ => purlis_core::state::run::Cause::Operator,
+                                };
+                                its_run_hibernates(log, &events_root, session, cause);
                             }
                             return;
                         }
@@ -5795,6 +5941,21 @@ impl Planes {
                             crate::hostlost::after_the_host(state, asking, resumes_by_id, resumable)
                         {
                             let resumable = resumable && !with_the_runner && !pool_forgotten;
+                            // **Hibernated by its host's end, and marked so** (SC-4e, #7634;
+                            // #2278): not failed, and a restart keeps it hibernated, with its
+                            // Resume and no kept screen. Not a chat on a pool, a task owing its
+                            // report or a chat with a task open: those reopen as they did.
+                            if left_in == crate::hostlost::LeftIn::Hibernated
+                                && resumable
+                                && held.chats.takes_a_host_crash_mark(session)
+                            {
+                                held.chats.mark_hibernated(
+                                    session,
+                                    Some(crate::hibernation::mark_of(
+                                        crate::hibernation::By::HostCrash,
+                                    )),
+                                );
+                            }
                             lost.note(
                                 session,
                                 crate::hostlost::LostRun {
@@ -5920,6 +6081,8 @@ impl Planes {
                         // A chat being stopped whose program ended on its own has ended: the
                         // chat that asked is told, and its tab goes (#1448).
                         crate::stopping::exited(&held, session);
+                        // One hot chat fewer (SC-4g, #7636).
+                        held.poke_the_gate();
                     }
                 }));
         }
@@ -6127,6 +6290,8 @@ impl Planes {
             lost_with_the_host,
             hibernated,
             hibernation_told: Arc::clone(&self.hibernation_told),
+            looked: crate::autohibernate::LookedAt::default(),
+            gate: Arc::clone(&self.hibernate_gate),
             dispatch_grants: crate::dispatchgrants::Store::default(),
             held_dispatches: crate::handoff::HeldDispatches::default(),
             at_limits: crate::atlimit::AtLimits::default(),
@@ -6227,6 +6392,23 @@ impl Planes {
     }
 
     /// Every project this registry holds, the registry's lock let go of.
+    /// The device's gate of automatic hibernation (SC-4g, #7636).
+    pub fn gate(&self) -> &Arc<crate::autohibernate::Gate> {
+        &self.hibernate_gate
+    }
+
+    /// A gate reading `clock` and a hot target of `target`, in place of the app's: a test's,
+    /// set before a project is opened, and started on a thread of its own only where the test
+    /// starts it.
+    #[cfg(test)]
+    pub fn gating_on(mut self, clock: Arc<dyn crate::autohibernate::Clock>, target: u32) -> Self {
+        let gate = crate::autohibernate::Gate::on(clock);
+        gate.reads_projects(Arc::downgrade(&self.open));
+        gate.reads_its_target(Arc::new(move || Some(target)));
+        self.hibernate_gate = Arc::new(gate);
+        self
+    }
+
     pub fn every_held(&self) -> Vec<Arc<Held>> {
         self.map().values().map(Arc::clone).collect()
     }
@@ -6406,6 +6588,24 @@ impl Planes {
     #[track_caller]
     fn map(&self) -> MutexGuard<'_, HashMap<PlaneId, Arc<Held>>> {
         crate::mainwatch::lock(&self.open)
+    }
+}
+
+/// **Who asks for a chat's hibernation** (SC-4g, #7636): the person, having been asked about
+/// the pieces of its own work `named` where they were, or the app's gate, while `over` says
+/// the device is over its hot target.
+#[derive(Clone, Copy)]
+enum Asked<'a> {
+    Operator(Option<&'a [String]>),
+    Idle(&'a dyn Fn() -> bool),
+}
+
+impl Asked<'_> {
+    fn by(self) -> crate::hibernation::By {
+        match self {
+            Self::Operator(_) => crate::hibernation::By::Operator,
+            Self::Idle(_) => crate::hibernation::By::Idle,
+        }
     }
 }
 
@@ -7188,6 +7388,10 @@ impl Latched<'_> {
         if self.held.hibernated.failed(self.session) {
             return true;
         }
+        // Hot after all: its mark goes, on disk now as it came, so a crash from here does not
+        // bring it back hibernated (SC-4e).
+        self.held.chats.mark_hibernated(self.session, None);
+        self.held.recorded.flush();
         if let Some(id) = self.id {
             purlis_core::hibernatedscreens::forget(self.held.root(), id);
         }
@@ -7203,7 +7407,7 @@ impl Drop for Latched<'_> {
 
 /// Why a hibernation did not take when purlis began to quit as it acted (SC-4d, #7633): the
 /// quit ends the chat as it ends every chat.
-const QUIT_AS_IT_HIBERNATED: &str =
+pub(crate) const QUIT_AS_IT_HIBERNATED: &str =
     "Not hibernated: purlis is quitting, and keeps this chat as it keeps the rest.";
 
 #[path = "planes/tab_windows.rs"]

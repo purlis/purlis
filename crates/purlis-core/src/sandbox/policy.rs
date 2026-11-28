@@ -279,8 +279,16 @@ impl Locks {
     /// With the project's own `[sandbox] policy = "never"` beside them (#2071 PR C), which
     /// requires the full sandbox as [`Self::forbids_opt_out`] does, said as the project's.
     pub fn of(root: &Path) -> Self {
+        Self::of_plane(&super::Plane::read(root))
+    }
+
+    /// [`Self::of`] beside `plane`, the project's manifest as a caller already read it, which
+    /// is read for nothing but its `[sandbox] policy` (#7900): an answer that reads the manifest
+    /// once passes it down here rather than have it read again.
+    pub fn of_plane(plane: &super::Plane) -> Self {
+        crate::forklock::counting::note_a_locks_read();
         let held = Self {
-            team_never: super::team::Team::of(root).policy == super::team::Policy::Never,
+            team_never: plane.team().policy == super::team::Policy::Never,
             ..Self::of_this_machine()
         };
         // An outcome eval's shell reaches no host and writes no cache (#4476,

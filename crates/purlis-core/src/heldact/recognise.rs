@@ -124,8 +124,9 @@ pub enum Recognised {
 
 /// **The repos the person recorded for a chat** (D4), as the recogniser asks it.
 pub trait Recorded: Send + Sync {
-    /// The recorded repo `id` names on a forge of `kind`: GitHub's `owner/name`, and on GitLab a
-    /// project's path or its numeric id. `None` where `id` is not a recorded repo.
+    /// The recorded repo `id` names on a forge of `kind`: on GitHub its `owner/name` or the
+    /// numeric id the forge's read recorded for it, and on GitLab a project's path or its numeric
+    /// id. `None` where `id` is not a recorded repo.
     fn resolve(&self, kind: Kind, id: &str) -> Option<Repo>;
     /// Whether `repo` is a recorded repo.
     fn holds(&self, repo: &Repo) -> bool;
@@ -225,6 +226,12 @@ pub fn recognise(kind: Kind, call: &Call<'_>, recorded: &dyn Recorded) -> Recogn
                 ["api", "v3", "repos", owner, name, rest @ ..]
                 | ["repos", owner, name, rest @ ..] => (
                     format!("{owner}/{name}"),
+                    rest.iter().map(|part| (*part).to_owned()).collect(),
+                ),
+                // The same repo by its numeric id, as GitHub's `Link` header names it (#7958):
+                // the recorded repo whose id the forge's read gave, and no other ([`Recorded`]).
+                ["api", "v3", "repositories", id, rest @ ..] | ["repositories", id, rest @ ..] => (
+                    (*id).to_owned(),
                     rest.iter().map(|part| (*part).to_owned()).collect(),
                 ),
                 _ => return Recognised::Other,

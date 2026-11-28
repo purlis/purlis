@@ -587,6 +587,8 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "Pool setup's progress, said politely as it goes (#4480): reading what this machine has " +
       "and rechecking by itself. Nothing to do about either, so no way out.",
   },
+  // The prerequisite modal's refusal of Accept (#7719): the Keychain's, or a digest that moved.
+  "PrerequisiteDialog.tsx": { count: 1, why: ACTION },
   "poolsetup/GetHelp.tsx": {
     count: 1,
     why:
@@ -825,13 +827,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       " what a profile's Sign out said (#4043), beside its line",
   },
   "settings/PoolSignIn.tsx": {
-    count: 3,
+    count: 4,
     why:
       ACTION +
       ". A profile's sign-in on a pool's runner (#4042), inside its strip: the step it is on, said " +
       "as it changes, and the one line of what went wrong, in the core's or the runner's words; " +
       "its Try again, Cancel and Open in terminal are the way out; and whether Copy code put the " +
-      "device code on the clipboard (#4045), beside the button",
+      "device code on the clipboard (#4045), beside the button; and that the runner has said " +
+      "nothing for 30 s at a step purlis waits on (#7939), above Try again and Cancel",
   },
   "settings/oneLogin.tsx": {
     count: 4,

@@ -122,6 +122,11 @@ impl Refusal {
                 "set labels through the API's labels field, not a /label, /unlabel or /relabel line, and leave other quick actions out of the text",
             ),
             Self::LabelById => Some("name labels in the API's labels field, not by id"),
+            // A chat put back after a restart keeps the credential of a route that went with the
+            // old app (ADR 0128 D3a); the app's own git has one for it (#7694, #7878).
+            Self::UnknownChat | Self::WrongSentinel | Self::Locked => Some(
+                "this chat's forge route no longer takes its credential (purlis restarted, or the chat ended or was locked out); push with `purlis worktree push`, or start a new chat",
+            ),
             Self::GraphqlPullRequestOtherRepo => Some(
                 "if the repo is this chat's own, the REST route for the same act is answered: `gh api repos/OWNER/REPO/pulls -X POST -f title=... -f head=BRANCH -f base=main` for gh pr create, `gh api -X PUT repos/OWNER/REPO/pulls/N/update-branch` for gh pr update-branch",
             ),
@@ -807,16 +812,19 @@ impl ChatPolicy {
                     .iter()
                     .filter(|r| r.kind == kind && r.serves(&host, head.port))
                     .find(|r| repo_matches(r, &named))
-                    .map(|repo| (repo, rel))
+                    .map(|repo| (repo, named, rel))
             });
         let (repo, shown, rel) = match named {
-            Some((repo, rel)) => {
+            Some((repo, named_as, rel)) => {
                 // The words before the repo, and the repo as placeholders: the recorded repo is
                 // named apart, never the chat's spelling of it.
                 let before = segments.len() - rel.len();
-                let (words, placeholders): (usize, &[&str]) = match kind {
-                    Kind::GitHub => (before.saturating_sub(2), &["{owner}", "{repo}"]),
-                    Kind::GitLab => (before.saturating_sub(1), &["{project}"]),
+                let (words, placeholders): (usize, &[&str]) = match (kind, &named_as) {
+                    (Kind::GitHub, RestRepo::Id(_)) => (before.saturating_sub(1), &["{id}"]),
+                    (Kind::GitHub, RestRepo::Path(_)) => {
+                        (before.saturating_sub(2), &["{owner}", "{repo}"])
+                    }
+                    (Kind::GitLab, _) => (before.saturating_sub(1), &["{project}"]),
                 };
                 let shown = segments[..words]
                     .iter()
@@ -1185,6 +1193,10 @@ impl ChatPolicy {
     /// are **returned, not recorded**: they are the chat's once the forge confirms the whole push
     /// ([`Self::confirm_created`]).
     fn check_push(&self, repo: &AllowedRepo, body: &[u8]) -> Result<CheckedPush, Refusal> {
+        // git's probe moves nothing; refused, git never sends the push it announces (#7878).
+        if git::is_probe(body) {
+            return Ok(CheckedPush::default());
+        }
         let pushed = git::pushed_commands(body).map_err(|e| match e {
             PushError::Unreadable | PushError::PushCert => Refusal::BodyUnreadable,
         })?;
@@ -1576,11 +1588,19 @@ fn rest_path(
             let path = github_path(owner, repo)?;
             Ok(Some((RestRepo::Path(path), segments[3..].to_vec())))
         }
+        // api.github.com/repositories/{id}/…: the same repo by its numeric id, the form GitHub's
+        // own `Link` header names the next page by (#7958). Read as `/repos/{owner}/{repo}/…`.
+        (Kind::GitHub, ["repositories", id, ..]) if on_api_host => {
+            Ok(Some((github_id(id)?, segments[2..].to_vec())))
+        }
         (Kind::GitHub, _) if on_api_host => Err(Refusal::NotOnList),
         // GHES: {host}/api/v3/repos/{owner}/{repo}/…
         (Kind::GitHub, ["api", "v3", "repos", owner, repo, ..]) if host != "github.com" => {
             let path = github_path(owner, repo)?;
             Ok(Some((RestRepo::Path(path), segments[5..].to_vec())))
+        }
+        (Kind::GitHub, ["api", "v3", "repositories", id, ..]) if host != "github.com" => {
+            Ok(Some((github_id(id)?, segments[4..].to_vec())))
         }
         (Kind::GitHub, ["api", "v3", ..]) if host != "github.com" => Err(Refusal::NotOnList),
         // GitLab: {host}/api/v4/projects/{id}/…
@@ -1604,6 +1624,18 @@ fn rest_path(
     }
 }
 
+/// A GitHub repo's numeric id as a REST path names it: digits only, in the one spelling GitHub
+/// writes (no leading zero), else no repo of the chat's. It matches only the id the forge's own
+/// read recorded ([`AllowedRepo::forge_id`]).
+fn github_id(id: &str) -> Result<RestRepo, Refusal> {
+    if id.is_empty() || id.starts_with('0') || !id.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(Refusal::OtherRepo);
+    }
+    id.parse::<u64>()
+        .map(RestRepo::Id)
+        .map_err(|_| Refusal::OtherRepo)
+}
+
 fn github_path(owner: &str, repo: &str) -> Result<String, Refusal> {
     // `.git` is not part of an API repo name: `repo.git` is another repo.
     if repo.to_ascii_lowercase().ends_with(".git") || owner.contains('/') || repo.contains('/') {
@@ -1622,13 +1654,20 @@ impl crate::heldact::Recorded for RecordedRepos {
             crate::forge::Kind::GitLab => Kind::GitLab,
         };
         let wanted = id.to_ascii_lowercase();
+        // A GitHub id in the one spelling its REST path is read in ([`github_id`]).
+        let github_id = match github_id(id) {
+            Ok(RestRepo::Id(n)) => Some(n),
+            _ => None,
+        };
         self.0
             .iter()
             .find(|r| {
                 r.kind == kind
                     && (r.path == wanted
                         || (kind == Kind::GitLab
-                            && id.parse::<u64>().is_ok_and(|n| r.project_id == Some(n))))
+                            && id.parse::<u64>().is_ok_and(|n| r.project_id == Some(n)))
+                        || (kind == Kind::GitHub
+                            && github_id.is_some_and(|n| r.project_id == Some(n))))
             })
             .and_then(|r| crate::mergehold::Repo::try_from(r.path.clone()).ok())
     }

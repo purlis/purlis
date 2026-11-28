@@ -1,15 +1,12 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! A project's chats run in the session host, the default since #2004 (#1998).
+//! A project's chats run in the session host, and nowhere else (#1998, #2004, #2005).
 //!
-//! **One build holds both ways of running a chat, for the migration only** (spec #1974, ruled
-//! 2026-10-14): in the session host the window started ([`HostedSessions`], the default), or in
-//! the window's own process ([`crate::sessions::Sessions`]) where the start-time switch says so
-//! ([`SWITCH`] set to `0`), chosen once as the app starts ([`chats_run_in_the_host`]) and never
-//! switched while it runs. #2005 deletes the window's own path. With no host of the window's
-//! own, the window runs no chats and says why: there is no fallback to the window's own process
-//! (ADR 0068, Ruled 3).
+//! **There is one way of running a chat**: in the session host the window started
+//! ([`HostedSessions`]). The start-time switch that ran them in the window's own process was
+//! deleted with that path (#2005, spec #1974). With no host of the window's own, the window runs
+//! no chats and says why: there is no fallback to the window's own process (ADR 0068, Ruled 3).
 //!
 //! **Above the seam nothing changes.** The window composes a chat's start as it always has (its
 //! sandbox, its hooks, its `PATH`), and hands the host that start as its [`Launch`];
@@ -78,32 +75,12 @@ use crate::host::{
 use crate::reconnecting::Reconnection;
 use crate::sessions::{ENDED, STOPPED};
 
-/// The start-time switch: set to `0`, it runs this launch's chats in the window's own process,
-/// the way back while the window's own path is still built (#2004). Read once, as the app
-/// starts; internal to the migration, and gone with it (#2005, spec #1974).
-pub const SWITCH: &str = "PURLIS_CHATS_IN_THE_HOST";
+/// The start-time switch of the migration (#1998, #2004), deleted with the window's own path
+/// (#2005). It is never read to choose anything: a launch that still has it set logs once that
+/// it is ignored (`where_chats_run`), for a person who set it as the way back.
+pub const RETIRED_SWITCH: &str = "PURLIS_CHATS_IN_THE_HOST";
 
-/// Whether this launch runs its chats in the session host: the default, and anything but
-/// [`SWITCH`] set to `0`, which is the window's own process.
-pub fn chats_run_in_the_host() -> bool {
-    switched_on(purlis_core::envvar::var(SWITCH).as_deref())
-}
-
-fn switched_on(value: Option<&str>) -> bool {
-    value != Some("0")
-}
-
-/// **Whether a runner of session protocol `version` is asked for a file** (#6387, #7064): only
-/// one that keeps its own folders and sign-ins from the window ([`session::KNOWS_KEPT_FILES`]),
-/// so a runner before it, which would read them, is never asked and its chat's paths stay no
-/// link.
-pub(crate) fn runner_keeps_files_from_its_window(
-    version: purlis_session_protocol::version::Version,
-) -> bool {
-    version >= session::KNOWS_KEPT_FILES
-}
-
-/// **What a launch whose chats run in the session host makes of its planes** (#1998 to #2003):
+/// **What a launch makes of its planes** (#1998 to #2003):
 /// every project's chats run in the host `connection` reaches, over a link of each root's own;
 /// their hooks are heard through the host, which owns each project's hook channel, so nothing
 /// in the window reports anywhere (#2000); and the host writes the event log, the window
@@ -140,9 +117,8 @@ pub fn chats_in_the_host(
 
 /// Why a chat whose profile hands it credentials is not started in the session host (#2036).
 pub const NOT_HANDED_IN_THE_HOST: &str = "this chat's profile signs it in with credentials from \
-     your vault, and purlis hands those only to a chat the window starts, never over the link to \
-     the session host, so nothing was started. Start purlis with PURLIS_CHATS_IN_THE_HOST=0 to \
-     run it in the window.";
+     your vault, and purlis does not yet hand those over the link to the session host, so \
+     nothing was started. Start it on a profile that signs in through its harness.";
 
 /// Why the window's own launch of a harness is not sent to a runner (#2446): a runner composes
 /// its harness chats, with the sandbox it compiles for itself (ADR 0068, amended for #2217).
@@ -166,6 +142,11 @@ pub(crate) const ANSWER_WITHIN: Duration = Duration::from_secs(30);
 
 /// What a command no host answered in time says.
 const NOT_IN_TIME: &str = "the session host did not answer in time";
+
+/// The names the host's two deadlines go by in the diagnostic log where they expire
+/// ([`purlis_core::applog::expired`], FS-M1a #7893): its link's readiness, and its answer.
+const HOST_LINK: &str = "the session host's link";
+const HOST_ANSWER: &str = "the session host's answer";
 
 /// What a call the host did not carry out comes to: the host's own refusal where it gave one,
 /// else what went wrong on the link, in this window's words.
@@ -750,6 +731,12 @@ impl Connection {
         self.to_a_pool.as_ref().map(|(_, named)| pool_named(named))
     }
 
+    /// **The runner this connection's links reach, by the name the window keeps for it**:
+    /// `<pool>`, or `<pool>/<runner>` for a draining runner and a chat's fresh runner.
+    pub(crate) fn link_name(&self) -> Option<&str> {
+        self.to_a_pool.as_ref().map(|(_, named)| named.as_str())
+    }
+
     /// The draining runner this connection's links name, where they name one (#4271): a chat's
     /// fresh runner is named under its pool too, and never drains.
     fn draining_runner(&self) -> Option<&str> {
@@ -1058,6 +1045,7 @@ impl Connection {
             }
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
+                purlis_core::applog::expired(HOST_LINK, within);
                 return Err(no_host("the session host did not answer in time"));
             }
             state = self
@@ -1960,7 +1948,10 @@ impl HostLink {
             let why = match tokio::time::timeout(at_most, client.call(command)).await {
                 Ok(Ok(_)) => None,
                 Ok(Err(why)) => Some(refusal_of(&why).why),
-                Err(_) => Some(NOT_IN_TIME.to_owned()),
+                Err(_) => {
+                    purlis_core::applog::expired(HOST_ANSWER, at_most);
+                    Some(NOT_IN_TIME.to_owned())
+                }
             };
             if let Some(why) = why {
                 unanswered(why);
@@ -2004,7 +1995,10 @@ impl HostLink {
         });
         match answer.recv_timeout(within) {
             Ok(answered) => Some(answered.map_err(|why| refusal_of(&why))),
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                purlis_core::applog::expired(HOST_ANSWER, within);
+                None
+            }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                 Some(Err(purlis_session_protocol::session::Refusal {
                     code: String::new(),
@@ -2061,6 +2055,7 @@ impl HostLink {
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout)
                     if until.is_some_and(|until| Instant::now() >= until) =>
                 {
+                    purlis_core::applog::expired(HOST_ANSWER, within.unwrap_or_default());
                     return Err(Unanswered::Here(NOT_IN_TIME.to_owned()));
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
@@ -3834,7 +3829,7 @@ impl HostedSessions {
     }
 
     /// The number a chat opens under: `wanted` where it can still be had, else the next the
-    /// host deals (`crate::sessions::Sessions`'s rule, the host dealing).
+    /// host deals.
     fn number_for(&self, wanted: Option<u32>) -> Result<u32, String> {
         let free = wanted.filter(|wanted| *wanted > 0 && !lock(&self.running).contains_key(wanted));
         match free {
@@ -4910,16 +4905,20 @@ impl HostedSessions {
         })
     }
 
-    /// **Whether this project's chats run on a Docker pool's runner** (#6387): a pool this
-    /// machine keeps among its Docker pools, on this machine's engine or another's. A cluster
-    /// pool's runner has no adapter to read its files yet.
-    fn on_a_docker_pool(&self) -> bool {
-        let (Some(pool), Some(config)) = (self.connection.pool(), self.connection.runners_config())
-        else {
+    /// **Whether this project's chats' files are read over a link of `version` to the runner
+    /// its connection's links reach** (#6387, #6949): [`crate::runnerfiles::reads_files_over`]
+    /// of that runner, false where the window reads none there.
+    fn reads_its_runners_files_over(
+        &self,
+        version: purlis_session_protocol::version::Version,
+    ) -> bool {
+        let (Some(named), Some(config)) = (
+            self.connection.link_name(),
+            self.connection.runners_config(),
+        ) else {
             return false;
         };
-        purlis_core::runners::pools(&config)
-            .is_ok_and(|pools| pools.iter().any(|one| one.name() == pool))
+        crate::runnerfiles::reads_files_over(&config, named, version)
     }
 
     /// **The runner `link` reached, as a chat's tab names it** (#2977): [`runner_shown`], none
@@ -5377,9 +5376,12 @@ impl SessionHost for HostedSessions {
         }
     }
 
-    /// Only of a link already open, as a tab is drawn: a host before 1.96 refuses `hibernate`.
+    /// Only of a link already open, as a tab is drawn: a host before 1.96 refuses `hibernate`,
+    /// and so does a runner, from the `remote-link` link a chat on it is reached by, which lacks
+    /// `Power::Reattach` (#7877).
     fn can_hibernate(&self, id: u32) -> bool {
-        lock(&self.running).contains_key(&id)
+        !self.on_a_runner
+            && lock(&self.running).contains_key(&id)
             && self
                 .own_link(Duration::ZERO)
                 .is_ok_and(|link| link.version() >= session::KNOWS_HIBERNATE)
@@ -5405,6 +5407,10 @@ impl SessionHost for HostedSessions {
             }
         }
         Ok(())
+    }
+
+    fn asleep(&self, id: u32) {
+        lock(&self.hibernated).insert(id);
     }
 
     fn when_one_ends(&self, tell: Ends) {
@@ -5641,18 +5647,15 @@ impl SessionHost for HostedSessions {
         self.connection.fresh_runner_went();
     }
 
-    /// Only of a link already open, to a Docker pool's runner of 1.93 or later (#6387): a hover
-    /// never opens one to the runner.
-    fn reads_files_on_runner(&self, id: u32) -> bool {
-        self.runner_files_of(id).is_some()
-    }
-
+    /// Only of a link already open, to a runner of a kind the window reads files on, of a
+    /// version that reads them there ([`session::KNOWS_KEPT_FILES`], 1.97, on every kind;
+    /// #6387, #6949, #7064): a hover never opens one to the runner.
     fn runner_files_of(&self, id: u32) -> Option<crate::runnerfiles::ReadsOnRunner> {
-        if !self.kept_on_the_runner || !self.on_a_docker_pool() {
+        if !self.kept_on_the_runner {
             return None;
         }
         let link = self.own_link(Duration::ZERO).ok()?;
-        if !runner_keeps_files_from_its_window(link.version()) {
+        if !self.reads_its_runners_files_over(link.version()) {
             return None;
         }
         let program = lock(&self.running).get(&id)?.id.clone();

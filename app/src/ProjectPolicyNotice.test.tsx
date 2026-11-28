@@ -31,6 +31,8 @@ const QUIET: PolicyState = {
   nevers_new_key: false,
   nevers_to_keep: null,
   nevers_unshowable: false,
+  nevers_unvouched: false,
+  nevers_to_seal: null,
   digest: "d1",
   template: "watch",
   template_default: true,
@@ -50,6 +52,7 @@ function core(state: PolicyState, after: PolicyState = QUIET) {
     if (cmd === "project_policy_state") return state;
     if (cmd === "accept_project_policy") return after;
     if (cmd === "keep_project_nevers") return after;
+    if (cmd === "seal_unvouched_project_nevers") return after;
     return null;
   });
   return (cmd: string) => asked.filter((one) => one.cmd === cmd).map((one) => one.args);
@@ -139,6 +142,51 @@ describe("the project's policy (Q308a)", () => {
     );
     expect(screen.queryByRole("button", { name: "Keep these nevers" })).toBeNull();
     expect(screen.queryByRole("list")).toBeNull();
+  });
+
+  it("where purlis cannot vouch for the list, says so, and Seal these nevers seals exactly the pairs shown", async () => {
+    // #7852, the person's ruling: its words say purlis cannot vouch the list is whole and that
+    // something other than purlis may have changed it, and that the press clears the grants.
+    const asked = core({
+      ...QUIET,
+      nevers_unvouched: true,
+      nevers_to_seal: { pairs: [{ asking: "steward", target: "devops" }], digest: "u1" },
+    });
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() =>
+      expect(screen.getByText(/cannot vouch that your never-dispatch list is whole/)).toBeTruthy(),
+    );
+    expect(screen.getByText(/something other than purlis may have changed it/)).toBeTruthy();
+    expect(screen.getByText(/clears this project's dispatch grants on this machine/)).toBeTruthy();
+    const pairs = screen.getByRole("list", { name: "The pairs Seal these nevers seals" });
+    expect(
+      within(pairs)
+        .getAllByRole("listitem")
+        .map((one) => one.textContent),
+    ).toEqual(["steward never dispatches to devops"]);
+    expect(screen.queryByRole("button", { name: "Keep these nevers" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Seal these nevers" }));
+    await waitFor(() =>
+      expect(asked("seal_unvouched_project_nevers")).toEqual([{ plane: PLANE, shown: "u1" }]),
+    );
+    expect(asked("keep_project_nevers")).toEqual([]);
+    await waitFor(() => expect(screen.queryByRole("list")).toBeNull());
+  });
+
+  it("never offers Seal these nevers to a page that is not the window", async () => {
+    // #7852: the press clears grants and seals a list purlis cannot vouch for, so it is the
+    // window's alone, as Keep these nevers is.
+    const asked = core({
+      ...QUIET,
+      nevers_unvouched: true,
+      nevers_to_seal: { pairs: [{ asking: "steward", target: "devops" }], digest: "u1" },
+    });
+    render(<ProjectPolicyNotice plane={PLANE} canAccept={false} />);
+    await waitFor(() =>
+      expect(screen.getByText(/Seal them from purlis's own window/)).toBeTruthy(),
+    );
+    expect(screen.queryByRole("button", { name: "Seal these nevers" })).toBeNull();
+    expect(asked("seal_unvouched_project_nevers")).toEqual([]);
   });
 
   it("never offers Keep these nevers to a page that is not the window", async () => {

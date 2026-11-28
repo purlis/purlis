@@ -2,7 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import { commands, type PlaneId, type PolicyLog, type PolicyState } from "../bindings";
+import {
+  commands,
+  type NeversToKeep,
+  type PlaneId,
+  type PolicyLog,
+  type PolicyState,
+} from "../bindings";
 import { chatNumberSaid } from "../chatNumber";
 import { SETTINGS, usePlaneChanged } from "../planeChanged";
 import { holdPolicy, modeSaid, templateSaid } from "../projectPolicy";
@@ -10,8 +16,11 @@ import {
   keepNevers,
   mayAcceptPolicy,
   NEVERS_NEW_KEY_SAID,
+  NEVERS_UNVOUCHED_SAID,
   NeverPairs,
   neversToKeepSaid,
+  neversToSealSaid,
+  sealNevers,
   POLICY_ACCEPT_MEANS,
   POLICY_UNSEALED_SAID,
   waitingSaid,
@@ -99,12 +108,11 @@ export function PolicyStanding({
       .catch((err: unknown) => setSaid(`purlis could not keep your acceptance: ${String(err)}`))
       .finally(() => setBusy(false));
   };
-  const keep = () => {
-    const kept = state?.nevers_to_keep;
+  const pressNevers = (kept: NeversToKeep | null | undefined, press: typeof keepNevers) => {
     if (kept === null || kept === undefined || busy) return;
     setBusy(true);
     setSaid(undefined);
-    void keepNevers(plane, kept)
+    void press(plane, kept)
       .then((done) => {
         if (done.status !== "ok") {
           // Refused, as where the list changed since it was shown: read what stands now.
@@ -121,6 +129,8 @@ export function PolicyStanding({
       )
       .finally(() => setBusy(false));
   };
+  const keep = () => pressNevers(state?.nevers_to_keep, keepNevers);
+  const seal = () => pressNevers(state?.nevers_to_seal, sealNevers);
   return (
     <div
       id={ids.id}
@@ -168,6 +178,23 @@ export function PolicyStanding({
                   {/* It seals the pairs shown: an answer that refuses, never one that grants. */}
                   <Button isDisabled={busy} onPress={keep}>
                     Keep these nevers
+                  </Button>
+                </ButtonRow>
+              )}
+            </>
+          )}
+          {state.nevers_unvouched && !state.nevers_new_key && (
+            <>
+              <p>
+                {`${NEVERS_UNVOUCHED_SAID} ${neversToSealSaid(state.nevers_to_seal, state.nevers_unshowable)}`}
+                {!canAccept && " Seal them from purlis's own window on this machine."}
+              </p>
+              <NeverPairs kept={state.nevers_to_seal} label="The pairs Seal these nevers seals" />
+              {canAccept && state.nevers_to_seal !== null && (
+                <ButtonRow>
+                  {/* It seals the pairs shown and clears grants: it refuses, never grants. */}
+                  <Button isDisabled={busy} onPress={seal}>
+                    Seal these nevers
                   </Button>
                 </ButtonRow>
               )}

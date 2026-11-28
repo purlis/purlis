@@ -61,6 +61,7 @@ import {
   type MovedFrom,
   type Ran,
   RESTART_NOTE,
+  HIBERNATE_NOTE,
   MOVE_HERE_NOTE,
   MOVE_TO_RUNNER_NOTE,
   MOVE_ONCE_SET_UP_NOTE,
@@ -72,6 +73,8 @@ import {
   besideId,
 } from "./actions";
 import { ASK_LOCKED_ID, askId, askRows, chatLinksId, inPalette, usingSkillId } from "./actions";
+import { besideTheFront } from "./actions";
+import { dequal } from "dequal";
 import { NO_LINK_FOLLOWED, listedMemoryOffers, memoryMoveId, moveRows } from "./actions";
 import { PUBLISHED_WITH_THE_PROJECT } from "./memoryMoves";
 import { sessionOffers } from "./actions";
@@ -93,6 +96,7 @@ import {
   openPreview,
   openView,
   selectTab,
+  focusPane,
   panesOf,
   setPinned,
   showIn,
@@ -3921,12 +3925,43 @@ describe("Restart chat on a chat (#1428)", () => {
     expect(row({})).toBeUndefined();
   });
 
-  it("is below the line in the chat's list, first, above Start fresh and End…", () => {
-    expect(menuOn({ on: "chat", session: 7 }).below.slice(0, 2)).toEqual([
+  it("is below the line in the chat's list, first, above Start fresh, Hibernate and End…", () => {
+    expect(menuOn({ on: "chat", session: 7 }).below.slice(0, 4)).toEqual([
       "chat.restart:7",
       "chat.fresh:7",
+      // The first of the ways to stop it, which `menuModel` folds under Stop ▸ (#7877).
+      "chat.hibernate:7",
+      "chat.stop:7",
     ]);
     expect(menuOn({ on: "chat", session: 7 }).below).toContain("chat.end:7");
+  });
+});
+
+describe("Hibernate chat on a chat (#7630, #7877)", () => {
+  const tabs = openTab(noTabs(), 7, "one");
+  const row = (over: Partial<Now>) =>
+    catalogued(catalogue(now({ tabs, ...over }))).get("chat.hibernate:7");
+  const ON_A_RUNNER = "Not hibernated: this chat runs on a runner, not on this machine.";
+
+  it("hibernates a chat the core offers it for", () => {
+    expect(row({ hibernatable: () => true })).toMatchObject({
+      title: "Hibernate chat one",
+      available: true,
+      note: HIBERNATE_NOTE,
+    });
+  });
+
+  it("is greyed with the core's reason on a chat that may never be hibernated where it runs", () => {
+    expect(row({ hibernateGreyed: () => ON_A_RUNNER })).toMatchObject({
+      title: "Hibernate chat one",
+      available: false,
+      reason: ON_A_RUNNER,
+      does: { verb: "nothing" },
+    });
+  });
+
+  it("has no row for a chat offered neither", () => {
+    expect(row({})).toBeUndefined();
   });
 });
 
@@ -5301,5 +5336,59 @@ describe("Links in this pane… on the ⋯ menu and in the palette (#6332)", () 
   it("is no row of a chat no pane draws, whose screen there is none of", () => {
     const offers = catalogue(now({ tabs, listed: [{ session: 9, name: "away 9" } as ListedChat] }));
     expect(by(offers, chatLinksId(9))).toBeUndefined();
+  });
+});
+
+describe("the rows a press on a tab moves (FS-W2, #7910)", () => {
+  /** Three tabs: a chat's, a shell's, and a chat's split with a fourth chat, which is focused. */
+  const three = splitFocusedPane(
+    openTab(openTab(openTab(noTabs(), 7, "3", "steward"), 8, "sh"), 9, "4", "devops"),
+    "row",
+    10,
+  );
+  const rowsWith = (tabs: Tabs) =>
+    catalogued(
+      catalogue(
+        now({
+          tabs,
+          plane: "/plane",
+          worktreeOf: () => PIECE,
+          askable: () => true,
+          listed: [7, 8, 9, 10].map((session) =>
+            session === 8 ? { ...listed(session), shell: true } : listed(session),
+          ),
+        }),
+      ),
+    );
+  /** Each tab in front, and the split one with each of its panes focused. */
+  const split = panesOf(three, 3).map(({ pane }) => pane);
+  const fronts: [string, Tabs][] = [
+    ["the first chat's tab", selectTab(three, 1)],
+    ["the shell's tab", selectTab(three, 2)],
+    ...split.map((pane): [string, Tabs] => [`the split, pane ${pane}`, focusPane(three, pane)]),
+  ];
+
+  it("are the rows of the front alone, so a view beside the tabs reads none that moved", () => {
+    // The split has two panes, each its own front, or the focus inside it is not checked.
+    expect(split).toHaveLength(2);
+    expect(new Set(fronts.map(([, tabs]) => tabs)).size).toBe(fronts.length);
+    for (const [from, before] of fronts)
+      for (const [to, after] of fronts) {
+        if (before === after) continue;
+        const was = rowsWith(before);
+        const is = rowsWith(after);
+        const moved = [...new Set([...was.keys(), ...is.keys()])].filter(
+          (id) => !dequal(was.get(id), is.get(id)),
+        );
+        // The press moved rows, or nothing here is held.
+        expect(moved.length, `${from} to ${to}`).toBeGreaterThan(0);
+        expect(moved.filter(besideTheFront), `${from} to ${to}`).toEqual([]);
+      }
+  });
+
+  it("leaves the rows about a chat or the project to the views beside the tabs", () => {
+    const rows = [...rowsWith(three).keys()];
+    for (const id of ["chat.new", "charter.quit", "chat.log:9", "chat.rename:7"])
+      expect(rows.filter(besideTheFront)).toContain(id);
   });
 });

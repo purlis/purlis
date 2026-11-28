@@ -22,10 +22,12 @@ function Strip({
   step,
   onPaste,
   harness = "Claude Code",
+  quiet,
 }: {
   step: StripStep;
   onPaste: (code: string) => void;
   harness?: string;
+  quiet?: boolean;
 }) {
   const [code, setCode] = useState("");
   return (
@@ -38,6 +40,7 @@ function Strip({
         harness={harness}
         approves={harness !== "Claude Code"}
         step={step}
+        quiet={quiet}
         code={code}
         setCode={setCode}
         pasteRefused={undefined}
@@ -149,6 +152,42 @@ export const PortTaken: Story = {
 
 /** Step 3: the runner's own status check is asked. */
 export const Checking: Story = { args: { step: { at: "checking" } } };
+
+/** **The runner said nothing for 30 s as the sign-in started** (#7939): said, with Try again. */
+export const QuietRunner: Story = {
+  args: { quiet: true },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByText(/has not shown the sign-in page for 30 s/)).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Try again" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Cancel" })).toBeVisible();
+  },
+};
+
+/**
+ * **The page is open and the runner has not asked for the code after 30 s** (#7942's review):
+ * said with the core's 1 minute limit for that step, and Try again.
+ */
+export const QuietAtThePage: Story = {
+  args: { step: { at: "open", url: PAGE }, quiet: true },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByText(/has not asked for the code yet. At 1 minute/)).toBeVisible();
+    await expect(canvas.queryByText(/has not shown the sign-in page/)).toBeNull();
+    await expect(canvas.getByRole("button", { name: "Try again" })).toBeVisible();
+  },
+};
+
+/**
+ * **The runner's check said nothing for 30 s** (#7939): said, with neither Try again nor Cancel,
+ * which would end a check that may yet say signed in.
+ */
+export const QuietCheck: Story = {
+  args: { step: { at: "checking" }, quiet: true },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByText(/has not said for 30 s whether/)).toBeVisible();
+    await expect(canvas.queryByRole("button", { name: "Try again" })).toBeNull();
+    await expect(canvas.queryByRole("button", { name: "Cancel" })).toBeNull();
+  },
+};
 
 /** The runner's status check says it is signed in: Close is all that is left. */
 export const SignedIn: Story = { args: { step: { at: "signed-in" } } };

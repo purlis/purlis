@@ -2087,3 +2087,79 @@ fn the_programs_the_prove_fakeroot_and_init_rows_reach_by_chance_each_have_a_row
         assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
     }
 }
+
+/// Programs #7833 names that are refused today only because another family's row meets a form
+/// of their name by chance (rounds 13, 14, 16 and 19 of #7828's review): REFUSED_NAMES' `rc`
+/// reaches s6's `s6-rc`, `update-rc.d`, `invoke-rc.d` and OpenRC's `rc-service` and `rc-status`;
+/// the `service` row reaches daemontools' `update-service`; the `envdir`, `setsid` and
+/// `svscanboot` rows reach `s6-envdir`, `s6-setsid` and `s6-svscanboot`; and the `node` prefix
+/// reaches `nodemon`. Each runs or starts what it is handed, so a give-back of the forms (#7825)
+/// must not take it with it: each is refused by a row of its own.
+#[test]
+fn the_7833_programs_other_families_rows_reach_by_chance_each_have_a_row_of_their_own() {
+    for name in [
+        "s6-rc",
+        "update-rc.d",
+        "invoke-rc.d",
+        "rc-service",
+        "rc-status",
+        "update-service",
+        "s6-envdir",
+        "s6-setsid",
+        "s6-svscanboot",
+        "nodemon",
+    ] {
+        assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
+    }
+}
+
+/// Rows that were there before #7833 and that a row it added now reaches by a form of their name
+/// as well: ucspi-tcp's `tcpserver` and `tcpclient` reach s6-networking's `s6-tcpserver` and
+/// `s6-tcpclient` by their last part, and libslack's `daemon` reaches `start-stop-daemon` and
+/// OpenRC's `supervise-daemon`. Their `run_grants` tests pass through either row, so a give-back
+/// of the forms (#7825) must not take them with it: each keeps a row of its own.
+#[test]
+fn the_rows_a_7833_rows_form_also_reaches_are_each_kept_as_a_row_of_their_own() {
+    for name in [
+        "s6-tcpserver",
+        "s6-tcpclient",
+        "start-stop-daemon",
+        "supervise-daemon",
+    ] {
+        assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
+    }
+}
+
+/// `arch-chroot` (#7964's comment) runs the command after it in a new root, and REFUSED_NAMES'
+/// `arch` and `chroot` reach it only by meeting a form of its name by chance. A give-back of the
+/// forms (#7825) must not take it with them, so it is refused by a row of its own.
+#[test]
+fn arch_chroot_which_refused_names_reach_by_chance_has_a_row_of_its_own() {
+    assert!(super::NOT_FOR_A_RUN_GRANT.contains(&"arch-chroot"));
+}
+
+/// `buck2`, a row of #7833's, is reached as well by #7964's `buck` row, as Buck 1 is its own
+/// version's name. Its `run_grants` test passes through either row, so a give-back of the forms
+/// (#7825) must not take it with them: it keeps a row of its own.
+#[test]
+fn buck2_which_the_buck_row_also_reaches_is_kept_as_a_row_of_its_own() {
+    assert!(super::NOT_FOR_A_RUN_GRANT.contains(&"buck2"));
+}
+
+/// `lxc-attach`, `lxc-execute` and `lxc-init`, rows of their own, are reached as well by
+/// #7988's `lxc` row, by their first part. Each one's `run_grants` test passes through either
+/// row, so a give-back of the forms (#7825) must not take them with it: each keeps its row.
+#[test]
+fn the_lxc_programs_which_the_lxc_row_also_reaches_are_kept_as_rows_of_their_own() {
+    for name in ["lxc-attach", "lxc-execute", "lxc-init"] {
+        assert!(super::NOT_FOR_A_RUN_GRANT.contains(&name), "{name}");
+    }
+}
+
+/// `rebar3`, a row of #7964's, is reached as well by #7988's `rebar` row, by its unversioned
+/// form. Its `run_grants` test passes through either row, so a give-back of the forms (#7825)
+/// must not take it with them: it keeps a row of its own.
+#[test]
+fn rebar3_which_the_rebar_row_also_reaches_is_kept_as_a_row_of_its_own() {
+    assert!(super::NOT_FOR_A_RUN_GRANT.contains(&"rebar3"));
+}

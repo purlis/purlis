@@ -20,8 +20,14 @@
 //! fixed one per kind, or the sentence a held act or a pin already tells the chat (which may
 //! name the branch, tag or repo it is about, and a forge's own error): **never a token, the
 //! sentinel or a path**. It is one short line (control
-//! characters made spaces, cut at [`MOST_REASON`]). A push whose commands cannot be read, or a
-//! request that is not one of these two, is answered as it was, `403`.
+//! characters made spaces, cut at [`MOST_REASON`]).
+//!
+//! A refused push whose refs cannot be repeated (its commands do not read, or a name is not one a
+//! report can hold) is answered `200` with **`unpack <reason>`** and no ref, which git prints as
+//! `error: remote unpack failed: <reason>` and exits non-zero on (#7878). A `403` there read to git
+//! as `the remote end hung up unexpectedly`, then `Everything up-to-date`: no reason at all. Only
+//! a push whose body was never read, or a request that is not one of these two, is left to the
+//! caller (`403`).
 
 use std::io::{self, Write};
 
@@ -81,6 +87,10 @@ pub(crate) fn reason_for(refusal: Refusal) -> &'static str {
             "purlis: no sign-in for this repo; sign in under Settings › You › Accounts"
         }
         Refusal::Pinned => "purlis: an administrator turned this forge off for chats",
+        // As `Refusal::advice` says it (#7878).
+        Refusal::UnknownChat | Refusal::WrongSentinel | Refusal::Locked => {
+            "purlis: this chat's forge route no longer takes its credential (purlis restarted, or the chat ended or was locked out); push with `purlis worktree push`, or start a new chat"
+        }
         _ => "purlis: a chat may not make this request",
     }
 }
@@ -110,7 +120,7 @@ fn pkt(out: &mut Vec<u8>, data: &[u8]) {
 }
 
 /// Answers `call` with `reason` in git's words, and says whether it did. `false` leaves the
-/// answer to the caller (a push whose commands do not read is not answered here).
+/// answer to the caller: a push whose body was not read, so whose side-band is not known.
 pub(crate) fn answer<W: Write>(
     out: &mut W,
     call: &Call<'_>,
@@ -127,9 +137,11 @@ pub(crate) fn answer<W: Write>(
             (format!("application/x-{service}-advertisement"), bytes)
         }
         Call::ReceivePack => {
-            let Some(bytes) = report_status(body, &reason) else {
+            if body.is_empty() {
                 return Ok(false);
-            };
+            }
+            let bytes =
+                report_status(body, &reason).unwrap_or_else(|| unpack_refused(body, &reason));
             ("application/x-git-receive-pack-result".to_owned(), bytes)
         }
     };
@@ -160,8 +172,22 @@ fn report_status(body: &[u8], reason: &str) -> Option<Vec<u8>> {
         pkt(&mut report, format!("ng {name} {reason}\n").as_bytes());
     }
     report.extend(b"0000");
+    Some(in_side_band(body, report))
+}
+
+/// The report-status refusing the push `body` as a whole, in its unpack status: for a push whose
+/// refs cannot be repeated. git reports every ref it sent as not taken.
+fn unpack_refused(body: &[u8], reason: &str) -> Vec<u8> {
+    let mut report = Vec::new();
+    pkt(&mut report, format!("unpack {reason}\n").as_bytes());
+    report.extend(b"0000");
+    in_side_band(body, report)
+}
+
+/// `report` in the side-band the client of the push `body` asked for, or bare where it asked none.
+fn in_side_band(body: &[u8], report: Vec<u8>) -> Vec<u8> {
     if !asks_for_side_band(body) {
-        return Some(report);
+        return report;
     }
     let mut wrapped = Vec::new();
     for chunk in report.chunks(BAND_CHUNK) {
@@ -170,7 +196,7 @@ fn report_status(body: &[u8], reason: &str) -> Option<Vec<u8>> {
         pkt(&mut wrapped, &data);
     }
     wrapped.extend(b"0000");
-    Some(wrapped)
+    wrapped
 }
 
 /// Whether the first command of the push asks for either side-band capability.
@@ -316,9 +342,38 @@ mod tests {
     }
 
     #[test]
-    fn a_push_whose_commands_do_not_read_is_left_to_the_caller() {
+    fn a_push_whose_commands_do_not_read_is_refused_in_its_unpack_status() {
+        let (head, bytes) = body_of_answer(&Call::ReceivePack, b"0000PACK", "purlis: no");
+        assert!(head.starts_with("HTTP/1.1 200"));
+        assert_eq!(lines_of(&bytes), ["unpack purlis: no\n"]);
+    }
+
+    #[test]
+    fn a_push_whose_ref_it_cannot_repeat_is_refused_in_its_unpack_status_in_its_side_band() {
+        let body = push("report-status side-band-64k", &["refs/heads/a\u{7}b"]);
+        let (_, bytes) = body_of_answer(&Call::ReceivePack, &body, "purlis: no");
+        assert_eq!(bytes[4], 1, "channel 1");
+        assert_eq!(
+            lines_of(&bytes[5..bytes.len() - 4]),
+            ["unpack purlis: no\n"]
+        );
+    }
+
+    #[test]
+    fn a_hostile_reason_stays_inside_its_one_unpack_line() {
+        for reason in ["x\n0000\n", "x\r\n0000ok refs/heads/b", "\u{0}0000"] {
+            let (_, bytes) = body_of_answer(&Call::ReceivePack, b"0000PACK", reason);
+            let lines = lines_of(&bytes);
+            assert_eq!(lines.len(), 1, "{reason:?}: {lines:?}");
+            assert!(lines[0].starts_with("unpack "), "{reason:?}");
+            assert_eq!(lines[0].matches('\n').count(), 1, "{reason:?}");
+        }
+    }
+
+    #[test]
+    fn a_push_whose_body_was_not_read_is_left_to_the_caller() {
         let mut out = Vec::new();
-        assert!(!answer(&mut out, &Call::ReceivePack, b"0000", "purlis: no").unwrap());
+        assert!(!answer(&mut out, &Call::ReceivePack, b"", "purlis: no").unwrap());
         assert!(out.is_empty());
     }
 
@@ -330,6 +385,25 @@ mod tests {
             String::from_utf8(bytes).unwrap(),
             "001f# service=git-receive-pack\n00000013ERR purlis: no\n"
         );
+    }
+
+    /// A chat that purlis restarted and put back keeps its program and the credential of a route
+    /// that went with the old app (ADR 0128 D3a): git is told what still pushes for it (#7878).
+    #[test]
+    fn a_chat_whose_route_is_gone_is_told_what_pushes_for_it() {
+        for refusal in [
+            Refusal::UnknownChat,
+            Refusal::WrongSentinel,
+            Refusal::Locked,
+        ] {
+            let said = reason_for(refusal);
+            assert!(
+                said.contains("purlis worktree push") && said.contains("start a new chat"),
+                "{refusal:?}: {said}"
+            );
+            assert!(said.len() <= MOST_REASON, "{refusal:?}: {said}");
+            assert_eq!(refusal.advice(), Some(said.trim_start_matches("purlis: ")));
+        }
     }
 
     #[test]

@@ -19,7 +19,9 @@
 //! - **Never kept**: a listing with an include or a conditional include in it (what it reads can
 //!   change with no file changing, or come from a file that does not exist yet), one read from
 //!   anything but a file or the command line, one asked on a thread an isolation pins, one whose
-//!   files changed while it was read, and anything off unix.
+//!   files changed while it was read, one read where a test counts what is started
+//!   ([`crate::forklock::counting::is_counting`]), and anything off unix. Where a test counts,
+//!   none kept before is handed back either.
 //!
 //! Whatever cannot be checked is listed again. The race the listing already has, a configuration
 //! rewritten between the listing and the call, is the same with the kept one and no wider.
@@ -103,8 +105,13 @@ struct Kept {
 
 static KEPT: Mutex<Option<HashMap<Asked, Kept>>> = Mutex::new(None);
 
-/// The listing kept for `asked`, if every file it depends on is as it was.
+/// The listing kept for `asked`, if every file it depends on is as it was. None where a test
+/// counts what is started, as none is kept there ([`keep`]): a count would otherwise turn on
+/// whether an uncounted call before it kept one (#7892's review).
 pub(super) fn kept(asked: &Asked) -> Option<Vec<u8>> {
+    if crate::forklock::counting::is_counting() {
+        return None;
+    }
     let held = KEPT
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -119,6 +126,11 @@ pub(super) fn kept(asked: &Asked) -> Option<Vec<u8>> {
 /// `asked`, unless it is one that is never kept ([module docs](self)). `started` is when the
 /// listing's git was started.
 pub(super) fn keep(asked: Asked, listing: &[u8], started: SystemTime) {
+    // Whether a listing is kept turns on how long ago its files changed ([`SETTLED`]), so a
+    // count of what a read starts would move with how long a test took (#7892).
+    if crate::forklock::counting::is_counting() {
+        return;
+    }
     let (Some(stamps), Some(listing)) = (
         stamps_for(&asked, listing, started),
         without_origins(listing),
@@ -398,6 +410,17 @@ mod tests {
             kept(&case.asked()),
             Some(b"local\0filter.x.clean\ncat\0command\0core.hookspath\n\0".to_vec())
         );
+    }
+
+    #[test]
+    fn a_listing_kept_before_a_count_is_not_handed_back_inside_one() {
+        // #7892's review: a count would otherwise turn on whether an uncounted call before it
+        // kept a listing, which is the order the tests ran in.
+        let case = case();
+        case.keep();
+        assert!(kept(&case.asked()).is_some());
+        let (inside, _) = crate::forklock::counting::counted(|| kept(&case.asked()));
+        assert_eq!(inside, None);
     }
 
     #[test]

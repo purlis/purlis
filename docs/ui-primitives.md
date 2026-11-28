@@ -1762,8 +1762,8 @@ words are written once, in `app/src/menuWords.ts`; and every menu is drawn by th
    says no more than the catalogue's note for its row; the whole note is the tooltip.
 3. **Rows of one kind are one row that opens a submenu.** *Open ▸* holds the views that open in
    a tab of their own (Activity, Network); *Ask ▸* a row per persona, named by the persona
-   alone; *Stop ▸* the ways to stop a chat; *Curate ▸* and *Move to ▸* the rows the catalogue
-   decides the length of. What every row of a submenu does is said once, as the tooltip of the
+   alone; *Stop ▸* the ways to stop a chat, Hibernate first, which keeps its conversation;
+   *Curate ▸* and *Move to ▸* the rows the catalogue decides the length of. What every row of a submenu does is said once, as the tooltip of the
    row that opens it. A menu's top level is **at most ten rows in at most four groups**: the
    thing itself, what it opens or starts, how it runs, and last what ends or deletes it. A
    submenu whose rows end something (*Stop ▸*) is in that last group too, above the row that

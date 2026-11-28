@@ -22,7 +22,6 @@
 set -euo pipefail
 image=${1:?the image, by digest, in the registry here}
 image_variable=${2:?the variable to name it in}
-here=$(cd "$(dirname "$0")" && pwd)
 ssh_dir="$RUNNER_TEMP/remote-ssh"
 [ -f "$ssh_dir/id" ] || { echo "run tests/remote-docker/up.sh first: its key signs in here" >&2; exit 1; }
 uid=$(id -u)
@@ -58,8 +57,16 @@ mkdir -p "$runtime/podman"
 nohup podman system service --time=0 "unix://$socket" > "$RUNNER_TEMP/podman-service.log" 2>&1 &
 for _ in $(seq 30); do [ -S "$socket" ] && break; sleep 1; done
 [ -S "$socket" ] || { cat "$RUNNER_TEMP/podman-service.log" >&2; exit 1; }
-docker build --file "$here/../remote-docker/sshd.Dockerfile" --build-arg "POOL_UID=$uid" \
-  --tag remote-podman-sshd "$here/../remote-docker"
+# The sshd's image, pulled by digest (`tools/fixture-images.mjs prepare-all`, #7983), built with
+# `pool` at the uid `tests/parity/fixture-images.json` gives it: this account's, on a hosted
+# runner. Another uid here would not own the socket, so it is refused here, by name.
+docker image inspect remote-podman-sshd >/dev/null 2>&1 \
+  || { echo "::error::no remote-podman-sshd image here: run node tools/fixture-images.mjs prepare-all first" >&2; exit 1; }
+pool_uid=$(docker image inspect --format '{{index .Config.Labels "dev.purlis.fixture.pool-uid"}}' remote-podman-sshd)
+if [ "$pool_uid" != "$uid" ]; then
+  echo "::error::the remote-podman-sshd image's pool has uid $pool_uid and this account's is $uid: set POOL_UID in tests/parity/fixture-images.json" >&2
+  exit 1
+fi
 docker run --detach --name sshd-podman --cap-add NET_ADMIN --publish 127.0.0.1:2223:22 \
   --env "ENGINE_SOCKET=$socket" \
   --volume "$runtime/podman:$runtime/podman" \

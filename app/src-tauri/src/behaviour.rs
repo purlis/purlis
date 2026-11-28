@@ -5,10 +5,9 @@
 //! run (spec #1974, #1998). It is the gate each later step of moving chats into the session
 //! host passes: a behaviour is added here once, and every target runs it.
 //!
-//! **The targets are the two ways the start-time switch runs a chat** (`crate::hostedsessions`):
-//! in the window's own process ([`crate::sessions::Sessions`]), and in a session host the window
-//! speaks the session protocol to ([`crate::hostedsessions::HostedSessions`]). The host is a
-//! real host process (`in_a_host_process`, #2170): the window's own binary, started and
+//! **Every target is a session host**, the one place a chat runs (#2005, ADR 0068, Ruled 3):
+//! one the window speaks the session protocol to ([`crate::hostedsessions::HostedSessions`]).
+//! The host is a real host process (`in_a_host_process`, #2170): the window's own binary, started and
 //! connected to by the window's own code ([`crate::sessionhost::SessionHost`]), spoken to over
 //! its socket, with real terminals. It runs on Linux, where each test gives its host a socket
 //! and a config home of its own; the host's code over an in-memory link (`in_the_host`) runs
@@ -16,8 +15,8 @@
 //! host over the link between hosts ([`through_a_link`], #2042). Each behaviour speaks only what
 //! the window speaks to any of them, [`SessionHost`], and checks only what the window can
 //! observe: what its pane draws, what it is told, what ends. A test ends the host process it
-//! started. When the in-app path is deleted (#2005), its target goes with it, and the host's
-//! stay; Docker and a cluster join as targets of their own (spec #2041).
+//! started. The window's own process was a target until #2005 deleted that path; Docker and a
+//! cluster join as targets of their own (spec #2041).
 //!
 //! **The chat's program is the repo's fake harness** (`crates/fake-harness`), or a shell where a
 //! behaviour needs the terminal itself (its size, its line discipline) or runs `purlis hook` as
@@ -25,20 +24,17 @@
 //! first run on CI.
 //!
 //! **Each target has a project, and the window's own hooks for it** (#2000): the board and the
-//! asks the window draws Needs you and its asks from. In the window's own process the window
-//! binds the project's hook socket and issues each chat its token; in the session host, the
-//! host does both and hands each line it admits on to the window. A behaviour checks only what
-//! the window is told either way.
+//! asks the window draws Needs you and its asks from. The host binds the project's hook socket,
+//! issues each chat its token, and hands each line it admits on to the window. A behaviour
+//! checks only what the window is told.
 //!
 //! **The kill switch is each target's** (#2001): the window's own switch, kept in a config home
-//! of the test's, which in the host's target holds the host's switch too, as the app's does
-//! when chats run in the host. What the host itself does with it, across its restart and for
+//! of the test's, which holds the host's switch too, as the app's does. What the host itself does with it, across its restart and for
 //! links that are not the window's, is the host's own tests'
 //! (`crates/host/tests/it/the_kill_switch_is_held_by_the_host.rs`).
 //!
-//! **The event log has one writer on each target** (#2003): the window, holding it in a data
-//! home of the test's, or the host, holding it there while the window hands it each write and
-//! never opens it.
+//! **The event log has one writer on each target** (#2003): the host, holding it in a data home
+//! of the test's while the window hands it each write and never opens it.
 //!
 //! **To add a behaviour:** write `fn the_behaviour(target: &Target)`, and name it in the
 //! [`on_every_target!`] list at the bottom.
@@ -61,7 +57,7 @@ use crate::hooks::{Hooks, Moved};
 use crate::host::{Opening, SessionHost, Sink};
 use crate::hostedsessions::{Connection, HostLink, HostedSessions};
 use crate::killswitch::KillSwitch;
-use crate::sessions::{ENDED, Sessions};
+use crate::sessions::ENDED;
 
 const SIZE: Size = Size {
     columns: 80,
@@ -270,36 +266,7 @@ fn an_event_log(dir: &Path) -> std::io::Result<purlis_core::eventlog::Recorder> 
 /// The device every target's event log is written for.
 const DEVICE: &str = "01J9ZZDEVICE0000000000000";
 
-/// A chat in the window's own process: the switch set to `0`, the way back until #2005.
-pub(crate) fn in_the_window() -> Target {
-    let (project, root) = a_project();
-    let (hooks, moved) = hooks_of(&root, false);
-    let config = tempfile::tempdir().expect("a config home");
-    let data = tempfile::tempdir().expect("a data home");
-    hooks.record_into(crate::hooks::Events::here(
-        an_event_log(data.path()).expect("the event log"),
-    ));
-    let switch = KillSwitch::kept_in(Some(config.path().to_path_buf()));
-    let mut sessions = Sessions::reporting_to(hooks.reporting());
-    sessions.stopped_by(Arc::clone(&switch));
-    Target {
-        sessions: Box::new(sessions),
-        hooks,
-        moved,
-        root,
-        switch,
-        inherited: std::env::vars_os().collect(),
-        savers_here: 1,
-        log: data.path().to_path_buf(),
-        host: None,
-        kill_the_host: None,
-        runner: None,
-        saved_by: None,
-        _keeps: vec![Box::new(project), Box::new(config), Box::new(data)],
-    }
-}
-
-/// A chat in the session host: the default. The host's own code, serving the session protocol
+/// A chat in the session host. The host's own code, serving the session protocol
 /// over an in-memory link, its programs each in a real terminal, composed as the window's binary
 /// composes them, and its projects saved as the window's binary saves them.
 pub(crate) fn in_the_host() -> Target {
@@ -394,6 +361,7 @@ const DOCKER_POOL_IMAGE: &str = "DOCKER_POOL_TEST_IMAGE";
 /// so an image that went missing never passes as nothing run.
 const PARITY: &str = "PURLIS_PARITY";
 
+mod fault_suite;
 #[path = "behaviour/tests/fresh_runner.rs"]
 mod fresh_runner;
 #[path = "behaviour/tests/on_a_cluster_pool.rs"]
@@ -404,6 +372,115 @@ mod pool_setup_try;
 mod remote_logins;
 mod runs_on_order;
 mod ssh_reconnect;
+
+// What the fault suite's browser cases wait on and with, here and not in `fault_suite` so the
+// window's own tests can run them against the stand-in host (#7955, #7979) while the suite's
+// internals stay its own.
+
+/// Waits up to `within` for `done`, asking every 20 ms so a short dim is not missed.
+pub(crate) fn until_within(within: Duration, what: &str, done: impl Fn() -> bool) {
+    let deadline = Instant::now() + within;
+    while !done() {
+        assert!(Instant::now() < deadline, "{what}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// What a view of `program` was told of its link, in order, and how many frames it drew.
+pub(crate) struct Viewed {
+    told: Arc<Mutex<Vec<(Instant, crate::reconnecting::Reconnection)>>>,
+    frames: Arc<Mutex<Vec<Instant>>>,
+    /// When it was opened.
+    since: Instant,
+    /// Whether it was told it ended for good: an empty frame.
+    ended: Arc<std::sync::atomic::AtomicBool>,
+    watching: crate::browsers::BrowserWatching,
+}
+
+impl Viewed {
+    pub(crate) fn told_since(&self, since: Instant) -> Vec<crate::reconnecting::Reconnection> {
+        self.told
+            .lock()
+            .expect("what was told")
+            .iter()
+            .filter(|(at, _)| *at >= since)
+            .map(|(_, said)| *said)
+            .collect()
+    }
+
+    pub(crate) fn ended(&self) -> bool {
+        self.ended.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// What it was told since it was opened.
+    pub(crate) fn told_since_opened(&self) -> Vec<crate::reconnecting::Reconnection> {
+        self.told_since(self.since)
+    }
+
+    /// Whether it drew a frame at all. Its first can come before `watch` answers, while the
+    /// window asks the host who drives it, so no moment taken after is the one to count from.
+    pub(crate) fn drew_a_frame(&self) -> bool {
+        !self.frames.lock().expect("the frames").is_empty()
+    }
+
+    /// Whether it drew a frame since it was last told Reconnected (#7955). A stream drawn
+    /// again tells Reconnected with its first frame, before the frame is handed over, and a page
+    /// that does not change draws nothing after it: counted from when the view was told, not
+    /// from when a caller noticed, that frame is not missed.
+    pub(crate) fn drew_again(&self) -> bool {
+        let back = self
+            .told
+            .lock()
+            .expect("what was told")
+            .iter()
+            .rev()
+            .find(|(_, said)| *said == crate::reconnecting::Reconnection::Reconnected)
+            .map(|(at, _)| *at);
+        back.is_some_and(|back| {
+            self.frames
+                .lock()
+                .expect("the frames")
+                .iter()
+                .any(|at| *at >= back)
+        })
+    }
+}
+
+/// A focused view of `program`, as the window draws one.
+pub(crate) fn a_view_of(browsers: &crate::browsers::WindowBrowsers, program: &str) -> Viewed {
+    let told: Arc<Mutex<Vec<(Instant, crate::reconnecting::Reconnection)>>> = Arc::default();
+    let frames: Arc<Mutex<Vec<Instant>>> = Arc::default();
+    let ended: Arc<std::sync::atomic::AtomicBool> = Arc::default();
+    let (telling, drawing, ending) = (Arc::clone(&told), Arc::clone(&frames), Arc::clone(&ended));
+    let watching = browsers
+        .watch(
+            program,
+            crate::browsers::BrowserViewRole::Focused,
+            Box::new(move |_aim, image| {
+                if image.is_empty() {
+                    ending.store(true, std::sync::atomic::Ordering::SeqCst);
+                } else {
+                    drawing.lock().expect("the frames").push(Instant::now());
+                }
+            }),
+            Box::new(|_| {}),
+            Box::new(|_| {}),
+            Arc::new(move |said| {
+                telling
+                    .lock()
+                    .expect("what was told")
+                    .push((Instant::now(), said));
+            }),
+        )
+        .expect("the browser is viewed");
+    Viewed {
+        since: Instant::now(),
+        told,
+        frames,
+        ended,
+        watching,
+    }
+}
 
 /// **A chat on a Docker pool's runner** (#2045, spec #2041): a pool added on this machine as
 /// the window adds one ([`a_pool_on`]). The window speaks to its own host, which relays to the
@@ -741,10 +818,15 @@ fn a_pool_of(
     .expect("a pool")
     .on(remote);
     crate::dockerpools::add_on(machine, &pool).expect("the pool is added and its runner paired");
+    let made = purlis_core::runners::runner_for(&machine.config, &name)
+        .expect("its runner is kept")
+        .made;
     let removes = RemovesThePool {
         config: machine.config.clone(),
         docker: machine.for_pool(&name).expect("the pool's engine").docker,
         name: name.clone(),
+        container: made.container.as_str().to_owned(),
+        volume: made.runner.volume(),
     };
     (name, removes)
 }
@@ -783,10 +865,81 @@ struct RemovesThePool {
     config: PathBuf,
     docker: purlis_core::dockerpool::Docker,
     name: String,
+    /// Its runner's container and home volume, as it was made: what a pool the test forgot
+    /// leaves on its machine (#7187), removed there by name.
+    container: String,
+    volume: String,
+}
+
+/// Whether pool `name` is known to be forgotten: the pools `listed` under its config were read
+/// and it is not one of them. A list that could not be read says nothing, so it is not.
+fn known_forgotten<E>(listed: Result<Vec<String>, E>, name: &str) -> bool {
+    listed.is_ok_and(|names| !names.iter().any(|listed| listed == name))
+}
+
+#[test]
+fn a_pool_is_taken_as_forgotten_only_when_its_list_was_read_without_it() {
+    let read = |names: &[&str]| Ok::<_, ()>(names.iter().map(|&n| n.to_owned()).collect());
+    assert!(known_forgotten(read(&["other"]), "pool"));
+    assert!(!known_forgotten(read(&["other", "pool"]), "pool"));
+    assert!(!known_forgotten(
+        Err::<Vec<String>, _>("unreadable"),
+        "pool"
+    ));
+}
+
+impl RemovesThePool {
+    /// **A pool the test forgot here leaves its runner on its machine** (#7187): its container
+    /// and home volume are removed there by name, through the engine the pool was reached on.
+    /// `false` where the pool is still kept, for [`purlis_core::pools::remove_discarding`], and
+    /// where its config could not be read, so the normal removal and its diagnostics still run.
+    fn removed_as_forgotten(&self) -> bool {
+        let listed = purlis_core::runners::pools(&self.config).map(|pools| {
+            pools
+                .iter()
+                .map(|pool| pool.name().to_owned())
+                .collect::<Vec<_>>()
+        });
+        if !known_forgotten(listed, &self.name) {
+            return false;
+        }
+        let (container, volume) = (self.container.as_str(), self.volume.as_str());
+        for args in [
+            &["rm", "--force", container][..],
+            &["volume", "rm", "--force", volume][..],
+        ] {
+            let ran = self
+                .docker
+                .command()
+                .map_err(|why| why.to_string())
+                .and_then(|mut command| {
+                    purlis_core::forklock::output(command.args(args)).map_err(|why| why.to_string())
+                });
+            let said = match ran {
+                Ok(out) if out.status.success() => continue,
+                Ok(out) => String::from_utf8_lossy(&out.stderr).into_owned(),
+                Err(why) => why,
+            };
+            let said = format!(
+                "forgotten pool {}'s runner was not removed from its machine ({}): {said}",
+                self.name,
+                args.join(" ")
+            );
+            if std::thread::panicking() {
+                tracing::warn!("{said}");
+            } else {
+                panic!("{said}");
+            }
+        }
+        true
+    }
 }
 
 impl Drop for RemovesThePool {
     fn drop(&mut self) {
+        if self.removed_as_forgotten() {
+            return;
+        }
         // A behaviour that failed on the runner is read with what its host said.
         if std::thread::panicking()
             && let Ok(kept) = purlis_core::runners::runner_for(&self.config, &self.name)
@@ -1180,6 +1333,26 @@ impl OnTheRunner {
         HostStopped { runner: self, pid }
     }
 
+    /// The runner's data home: the first of its name's spellings, newest first, that is a folder
+    /// under its user's data directory, as the data home's ladder picks it (`datahome::in_base`).
+    /// Its host begins it as it starts (`datahome::begin_a_runners`), so it is there before any
+    /// browser has run on the runner, whose `browsers/` folder is made only by the first.
+    fn data_home(&self) -> PathBuf {
+        let spellings: Vec<&str> = purlis_core::names::DATA_HOME.spellings().collect();
+        let found = self.prints(&format!(
+            "for name in {}; do [ -d \"$HOME/.local/share/$name\" ] && \
+             {{ printf %s \"$HOME/.local/share/$name\"; break; }}; done; true",
+            spellings.join(" ")
+        ));
+        let found = found.trim();
+        assert!(
+            !found.is_empty(),
+            "the runner's host has begun its data home, as one of {spellings:?} under \
+             ~/.local/share"
+        );
+        PathBuf::from(found)
+    }
+
     /// Whether the process `pid` of the runner's container is there.
     fn has(&self, pid: u32) -> bool {
         let proc = format!("/proc/{pid}");
@@ -1198,20 +1371,13 @@ impl OnTheRunner {
     /// in with no key, its harness the program `program` is on this machine. A Codex profile is
     /// one for sandboxed chats only, its folder where purlis makes such a profile's (#2037), and
     /// an opencode profile one purlis made there, with its data folder beside its config folder:
-    /// under the runner's data home, in use once its first browser has started.
+    /// under the runner's data home, which its host begins as it starts, before any browser.
     fn signs_in_as(&self, harness: &str, name: &str, program: &Path) {
         use purlis_core::profilestore::{Folders, MachineProfile};
         let made_here = matches!(harness, "codex" | "opencode");
         let folder = if made_here {
-            let browsers = self.prints(&format!(
-                "ls -d \"$HOME\"/.local/share/*/{} | head -n 1",
-                purlis_core::datahome::BROWSERS
-            ));
-            let data = Path::new(browsers.trim())
-                .parent()
-                .expect("the runner's data home, where its browsers are")
-                .to_path_buf();
-            data.join(purlis_core::profilestore::DIR)
+            self.data_home()
+                .join(purlis_core::profilestore::DIR)
                 .join(name)
                 .join(purlis_core::profilestore::CONFIG)
         } else {
@@ -2324,13 +2490,11 @@ fn a_file_a_runner_chat_printed_is_read_on_its_runner(target: &Target) {
     Pane::on(target, id).shows("wrote the file");
 
     if target.runner.is_none() {
-        assert!(!target.sessions.reads_files_on_runner(id));
         assert!(target.sessions.runner_files_of(id).is_none());
         target.sessions.close(id).expect("it closes");
         std::fs::remove_file(&printed).expect("the file the chat wrote here");
         return;
     }
-    assert!(target.sessions.reads_files_on_runner(id));
     let reads = target
         .sessions
         .runner_files_of(id)
@@ -3447,73 +3611,6 @@ fn twenty_live_chats_reattach_after_the_window_is_killed_and_started_again() {
     first.ended_by_the_quit();
 }
 
-/// **The way back after a crash** (#2004): a window running its chats in the session host is
-/// killed outright, and the host keeps a chat for the grace period. The window started again
-/// with its chats in its own process (`PURLIS_CHATS_IN_THE_HOST=0`) ends that host as a quit
-/// before it puts any chat back: by the time its gate lets the chats back, the chat the host
-/// kept has ended, so its conversation never has two programs at once. Then it starts a host of
-/// its own. A host process's target only. The test ends every host it started.
-#[cfg(target_os = "linux")]
-#[test]
-fn a_window_flipped_back_after_a_crash_ends_the_chats_the_host_kept_before_it_puts_any_back() {
-    let home = tempfile::tempdir().expect("the host's home");
-    let HostHome {
-        place, inherited, ..
-    } = a_host_home(home.path());
-    let (_project, root) = a_project();
-    let marks = tempfile::tempdir().expect("a folder for the chat's process");
-    let pid_file = marks.path().join("pid");
-    let starts = {
-        let inherited = inherited.clone();
-        move || {
-            let mut command = crate::sessionhost::command(&purlis_app());
-            command.env_clear().envs(inherited.iter().cloned());
-            Ok(command)
-        }
-    };
-    let first = KilledWindow::start(&place, &root, starts.clone());
-    let script = format!("echo $$ > '{}'; exec sleep 600", pid_file.display());
-    first
-        .sessions
-        .open(None, &a_shell(&script), &|_| {})
-        .expect("the chat starts in the host");
-    until("the chat to say its process", || {
-        std::fs::read_to_string(&pid_file).is_ok_and(|said| said.ends_with('\n'))
-    });
-    let pid: i32 = std::fs::read_to_string(&pid_file)
-        .expect("its process")
-        .trim()
-        .parse()
-        .expect("a pid");
-    let first = first.killed();
-    // Running, and not a zombie waiting for its parent.
-    let alive = |pid: i32| {
-        std::fs::read_to_string(format!("/proc/{pid}/stat"))
-            .is_ok_and(|stat| stat.split_whitespace().nth(2) != Some("Z"))
-    };
-    assert!(
-        alive(pid),
-        "the host keeps the chat while no window is there"
-    );
-
-    let back = Ends(crate::sessionhost::SessionHost::default());
-    back.0.ending_a_host_it_finds();
-    purlis_core::hostsocket::make_the_folder(&place.socket).expect("the socket's folder");
-    back.0.start_at(place, starts);
-    let gate = back.0.before_chats_are_put_back(PATIENCE);
-
-    assert_eq!(gate(), Ok(()), "the window may put its chats back");
-    assert!(
-        !alive(pid),
-        "the chat the host kept still runs as the window puts chats back"
-    );
-    first.ended_by_the_quit();
-    back.0
-        .connection()
-        .wait(PATIENCE)
-        .expect("a host of the window's own serves");
-}
-
 /// **A change written while the window is gone is committed by the host process** (#2287,
 /// #2002): a window started on a real git plane has the host save it, and is killed outright
 /// (its links and the host's standard input gone, with no quit). A file then written in the
@@ -3917,7 +4014,7 @@ fn the_event_log_has_one_writer_and_each_hook_line_is_written_once(target: &Targ
 fn a_turn_is_recorded_by_its_hooks_and_its_diff_is_what_it_edited() {
     use purlis_core::files::{self, Branch};
     const CHAT: &str = "01J9CHAT0000000000000000TN";
-    let target = in_the_window();
+    let target = in_the_host();
     let folder = target.root.join("workspaces/ws/app");
     std::fs::create_dir_all(&folder).expect("the repo's folder");
     let git = |args: &[&str]| {
@@ -4142,18 +4239,13 @@ fn a_chat_ending_with_the_window_gone_still_writes_its_record_and_its_dispatch_r
 }
 
 /// Each behaviour, as a test of its own on every target. Each group after `not yet through a
-/// link` runs on the window's and the host's targets, and through a link and in a Docker pool
+/// link` runs on the host's own targets, and through a link and in a Docker pool
 /// (whose runner is reached through a link) waits for what its reason names (#2042). Each
 /// group after `not yet in a Docker pool` runs on every target but a Docker pool's, which waits
 /// for what its reason names (#2045).
 macro_rules! on_every_target {
     (@one $behaviour:ident, through_a_link: [$($link:meta)*], in_a_docker_pool: [$($docker:meta)*]) => {
         mod $behaviour {
-            #[test]
-            fn in_the_window() {
-                super::$behaviour(&super::in_the_window());
-            }
-
             #[test]
             fn in_the_host() {
                 super::$behaviour(&super::in_the_host());
@@ -4231,8 +4323,7 @@ on_every_target!(
     a_port_withdrawn_while_a_chat_runs_is_carried_no_longer,
     an_ask_raised_by_a_chats_proxy_is_answered_from_the_window,
     a_hibernated_chats_kept_screen_is_its_newest_lines_within_a_mebibyte,
-    a_hibernated_chats_kept_screen_is_an_open_alternate_screen_alone;
-    not yet through a link ("a runner refuses `hibernate` from a `remote-link` link, which lacks `Power::Reattach`"):
+    a_hibernated_chats_kept_screen_is_an_open_alternate_screen_alone,
     a_hibernated_program_that_ignores_its_signals_is_killed_and_the_act_completes;
     not yet through a link ("an opt-out is asked again on the device a chat moves to, ADR 0078 §4"):
     an_opt_out_of_a_chat_the_host_composes_is_in_its_event_log_before_it_starts;
@@ -4242,7 +4333,8 @@ on_every_target!(
 );
 
 /// Whether chat `id` of `target` can be hibernated: only a host that can is offered Hibernate
-/// (#7630), and only it pages a view's history; the window's own process does neither. Where it
+/// (#7630), and only it pages a view's history; the window's own process does neither, and a
+/// runner, through a link or in a Docker pool, refuses the act from its link (#7877). Where it
 /// cannot, the chat is closed and the skip of `case` is said, so a target that
 /// stopped hibernating is seen rather than passing silently.
 fn hibernates_here(target: &Target, id: u32, case: &str) -> bool {

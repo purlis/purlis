@@ -442,12 +442,35 @@ pub fn prepare(wrap: &Wrap, cwd: &Path) {
     super::codex::replace(&state, doc.to_string().as_bytes(), 0o600);
 }
 
+/// **What a project's entry in Claude Code's state file says about MCP servers**, beside its own
+/// servers: which it turned on or off (`enabledMcpServers`, `disabledMcpServers`, read for the
+/// folder as a chat starts), and the older `.mcp.json` approvals, which Claude Code 2.1.332 moves
+/// into the folder's `.claude/settings.local.json` as it starts. Each is absent by default. An
+/// approval already moved is not loaded by a sandboxed chat, the only kind a runner starts: a
+/// project's settings file holding it is screened out ([`crate::harness::claude::project::KEPT`]).
+pub const PROJECT_MCP_CHOICES: [&str; 5] = [
+    "enabledMcpServers",
+    "disabledMcpServers",
+    "enableAllProjectMcpServers",
+    "enabledMcpjsonServers",
+    "disabledMcpjsonServers",
+];
+
+/// **What Claude Code's state file says, beside its projects, that a chat chose on the runner**:
+/// the computer-use choice of each organisation and account (`computerUseChoices`, `"on"` or
+/// `"off"`, saved as its first-use ask is answered, in Claude Code 2.1.332). It is absent by
+/// default, and with none Claude Code asks again.
+pub const ACCOUNT_CHOICES: [&str; 1] = ["computerUseChoices"];
+
 /// **`servers` as the user-scope MCP servers in the state file `state`** (#3846), and no
-/// project's own (ruled 2026-11-08), with what else it holds as it is. A chat can add a server to
-/// its folder's entry, which every later chat in that folder would start, so each keep takes them
-/// out, as it puts the desktop's user-scope ones back. `None` sent leaves the user-scope ones as
-/// they are. No servers and no file is left as it is, and a link, or a file purlis cannot read, is
-/// left alone, for Claude Code to say so.
+/// project's own (ruled 2026-11-08), nor any project's [`PROJECT_MCP_CHOICES`], nor any of
+/// [`ACCOUNT_CHOICES`] (ruled 2026-11-27), with what else it
+/// holds as it is. A chat can add a server to its folder's entry, or turn one on or off there,
+/// which every later chat in that folder would follow, so each keep takes them out, as it puts the
+/// desktop's user-scope ones back: the desktop sends no choice for a runner's folders, so each is
+/// Claude Code's default again. `None` sent leaves the user-scope ones as they are. No servers and
+/// no file is left as it is, and a link, or a file purlis cannot read, is left alone, for Claude
+/// Code to say so.
 pub fn keep_mcp_servers(state: &Path, servers: Option<&serde_json::Value>) {
     let empty =
         servers.is_none_or(|servers| servers.as_object().is_none_or(serde_json::Map::is_empty));
@@ -483,13 +506,20 @@ pub fn keep_mcp_servers(state: &Path, servers: Option<&serde_json::Value>) {
         doc["mcpServers"] = servers.clone();
         changed = true;
     }
+    if let Some(doc) = doc.as_object_mut() {
+        for key in ACCOUNT_CHOICES {
+            changed |= doc.remove(key).is_some();
+        }
+    }
     if let Some(projects) = doc
         .get_mut("projects")
         .and_then(serde_json::Value::as_object_mut)
     {
         for project in projects.values_mut() {
             if let Some(project) = project.as_object_mut() {
-                changed |= project.remove("mcpServers").is_some();
+                for key in std::iter::once("mcpServers").chain(PROJECT_MCP_CHOICES) {
+                    changed |= project.remove(key).is_some();
+                }
             }
         }
     }
