@@ -613,7 +613,8 @@ fn what_only_the_harness_or_a_build_regenerates_does_not_keep_a_folder() {
 fn a_build_s_logs_and_a_copy_of_a_tracked_folder_do_not_keep_a_folder() {
     purlis_core::unsteered!();
     // #7406: the e2e run writes `app/logs/`, and the site's build copies `docs/` into
-    // `site/src/content/docs/docs/`, a page for a page: each kept a finished folder.
+    // `site/src/content/docs/docs/`, a page for a page: each kept a finished folder. The build
+    // copies the pages and not the picture beside them.
     let (world, lane) = holding(
         "logs/\nsite/src/content/docs/docs/\n",
         &[
@@ -621,6 +622,7 @@ fn a_build_s_logs_and_a_copy_of_a_tracked_folder_do_not_keep_a_folder() {
             "site/package.json",
             "docs/spec.md",
             "docs/adr/0110-a.md",
+            "docs/images/window.png",
         ],
         &[
             "app/logs/wdio-2026-11-01.log",
@@ -637,7 +639,7 @@ fn a_build_s_logs_and_a_copy_of_a_tracked_folder_do_not_keep_a_folder() {
 }
 
 #[test]
-fn logs_that_are_not_only_a_build_s_and_a_copy_with_a_page_of_its_own_still_keep_a_folder() {
+fn logs_that_are_not_only_a_build_s_and_a_copy_that_is_not_a_whole_build_s_still_keep_a_folder() {
     purlis_core::unsteered!();
     for (rules, tracked, file, named) in [
         // Not beside a package's manifest.

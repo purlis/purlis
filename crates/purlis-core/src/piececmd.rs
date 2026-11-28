@@ -926,11 +926,13 @@ fn holds_only_logs(dir: &Path) -> bool {
 /// **Whether the ignored folder `dir` of `folder` is a build's copy of the tracked folder
 /// named `name` at the folder's top** (#7406): a site's build copies `docs/` into
 /// `site/src/content/docs/docs/` page for page, and may rewrite each page as it does. It counts
-/// only inside a package, below the top, and only where its files are exactly the tracked files
-/// under `name/`, every one of them at the same path, so nothing in it is lost that the next
-/// build does not write again. A file of its own, a link or anything else that is not a plain
-/// file is not a copy; nor is part of the tracked folder, nor `name/` itself, nor a dot-folder:
-/// `.vscode/` and its kind are a tool's or the person's, which no build copies (#8002).
+/// only inside a package, below the top, and only where every file in it is a tracked file
+/// at the same path under `name/`, and every tracked file there of a kind it holds is in it: the
+/// site copies every page and none of the pictures beside them. Nothing in it is lost that the
+/// next build does not write again. A file of its own, a link or anything else that is not a
+/// plain file is not a copy; nor is one holding only some of a kind, nor `name/` itself, nor a
+/// dot-folder: `.vscode/` and its kind are a tool's or the person's, which no build copies
+/// (#8002).
 fn copies_a_tracked_folder(folder: &Path, dir: &str, name: &str) -> bool {
     if dir == name || name.starts_with('.') || !inside_a_package(folder, dir) {
         return false;
@@ -953,7 +955,7 @@ fn copies_a_tracked_folder(folder: &Path, dir: &str, name: &str) -> bool {
     let top = folder.join(dir);
     let mut to_read = vec![top.clone()];
     let mut read = 0;
-    let mut copied = 0;
+    let mut copied = std::collections::BTreeSet::new();
     while let Some(next) = to_read.pop() {
         let Ok(entries) = std::fs::read_dir(&next) else {
             return false;
@@ -981,14 +983,28 @@ fn copies_a_tracked_folder(folder: &Path, dir: &str, name: &str) -> bool {
                     if !tracked.contains(&rel) {
                         return false;
                     }
-                    copied += 1;
+                    copied.insert(rel);
                 }
                 _ => return false,
             }
         }
     }
-    // Every file read is a distinct tracked path, so as many as are tracked is all of them.
-    copied == tracked.len()
+    // A build copies a kind of file whole: every tracked page, if it copies pages at all.
+    let kinds: std::collections::BTreeSet<&str> = copied.iter().map(|rel| kind_of(rel)).collect();
+    tracked
+        .iter()
+        .filter(|rel| kinds.contains(kind_of(rel)))
+        .all(|rel| copied.contains(rel))
+}
+
+/// The kind of the file at `rel`, a path with `/` between its parts: what follows the last dot
+/// of its name, or nothing where its name has none (or only a leading one).
+fn kind_of(rel: &str) -> &str {
+    let name = rel.rsplit('/').next().unwrap_or(rel);
+    match name.rfind('.') {
+        Some(0) | None => "",
+        Some(at) => &name[at + 1..],
+    }
 }
 
 /// Whether every entry of `dir` is a folder named `name`: an empty one is too.

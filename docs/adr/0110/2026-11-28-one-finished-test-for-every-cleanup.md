@@ -45,14 +45,15 @@ writes, and `site/src/content/docs/docs/`, which the site's build copies from `d
    `Cargo.toml` is:
    - a `logs/` folder beside a `package.json` that holds only `*.log` files;
    - an ignored folder inside a package (under a folder below the top that holds a
-     `package.json`), not a dot-folder, named as a tracked folder at the top of the repo, whose
-     files are exactly that folder's tracked files, each at the same path:
-     `site/src/content/docs/docs/spec.md` beside a tracked `docs/spec.md`. A file of its own, a
-     link, or only part of the tracked folder keeps the folder; so does a dot-folder such as
-     `packages/web/.vscode/`, which is a tool's or the person's even where the top's tracked
-     `.vscode/` holds the same files. A file is
-     matched by its path, not its contents, since a build may rewrite each page, so a copy in
-     no package (`scratch/docs/`) keeps the folder: an edited copy there may be the task's.
+     `package.json`), not a dot-folder, named as a tracked folder at the top of the repo, each
+     of whose files is a tracked file at the same path under that folder, and which holds every
+     tracked file there of each kind (extension) it holds: `site/src/content/docs/docs/spec.md`
+     beside a tracked `docs/spec.md`, with every other tracked page, and without the pictures
+     the site does not copy. A file of its own, a link, or only some of a kind keeps the
+     folder; so does a dot-folder such as `packages/web/.vscode/`, which is a tool's or the
+     person's even where the top's tracked `.vscode/` holds the same files. A file is matched
+     by its path, not its contents, since a build may rewrite each page, so a copy in no
+     package (`scratch/docs/`) keeps the folder: an edited copy there may be the task's.
 
 ## Why
 
