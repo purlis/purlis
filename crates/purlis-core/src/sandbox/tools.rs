@@ -3218,6 +3218,10 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "ammonite",
     "cs",
     "coursier",
+    // The tracer #8017 names, refused whole, as `strace` and `bpftrace` are: macOS's own `ktrace`
+    // runs the command its `-c` names under `ktrace trace` and `ktrace artrace`, by its manual,
+    // and stops tracing when it exits; the copy on macOS is a binary, with no source to read.
+    "ktrace",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

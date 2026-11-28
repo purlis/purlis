@@ -4463,3 +4463,10 @@ fn the_interpreters_of_8017_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The tracer #8017 names: macOS's `ktrace`, which runs the command its `-c` names under
+/// `ktrace trace` and `ktrace artrace`, to trace it.
+#[test]
+fn the_tracer_of_8017_is_offered_no_run_grant() {
+    refused_as_running_others("ktrace");
+}
