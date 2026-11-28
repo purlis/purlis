@@ -610,25 +610,16 @@ fn what_only_the_harness_or_a_build_regenerates_does_not_keep_a_folder() {
 }
 
 #[test]
-fn a_build_s_logs_and_a_copy_of_a_tracked_folder_do_not_keep_a_folder() {
+fn a_package_s_logs_do_not_keep_a_folder() {
     purlis_core::unsteered!();
-    // #7406: the e2e run writes `app/logs/`, and the site's build copies `docs/` into
-    // `site/src/content/docs/docs/`, a page for a page: each kept a finished folder. The build
-    // copies the pages and not the picture beside them.
+    // #7406: the e2e run writes `app/logs/`, beside the app's `package.json`, and it kept a
+    // finished folder.
     let (world, lane) = holding(
-        "logs/\nsite/src/content/docs/docs/\n",
-        &[
-            "app/package.json",
-            "site/package.json",
-            "docs/spec.md",
-            "docs/adr/0110-a.md",
-            "docs/images/window.png",
-        ],
+        "logs/\n",
+        &["app/package.json"],
         &[
             "app/logs/wdio-2026-11-01.log",
             "app/logs/charter.2026-11-01.log",
-            "site/src/content/docs/docs/spec.md",
-            "site/src/content/docs/docs/adr/0110-a.md",
         ],
     );
 
@@ -639,7 +630,34 @@ fn a_build_s_logs_and_a_copy_of_a_tracked_folder_do_not_keep_a_folder() {
 }
 
 #[test]
-fn logs_that_are_not_only_a_build_s_and_a_copy_that_is_not_a_whole_build_s_still_keep_a_folder() {
+fn a_site_s_ignored_copy_of_a_tracked_folder_keeps_a_folder() {
+    purlis_core::unsteered!();
+    // #7406, #8008: the site's build copies `docs/` into `site/src/content/docs/docs/`, but a
+    // path cannot tell a build's copy from the person's own files, so it keeps the folder
+    // until the repo declares it regenerated (#8013).
+    let (world, lane) = holding(
+        "site/src/content/docs/docs/\n",
+        &[
+            "site/package.json",
+            "docs/spec.md",
+            "docs/adr/0110-a.md",
+            "docs/images/window.png",
+        ],
+        &[
+            "site/src/content/docs/docs/spec.md",
+            "site/src/content/docs/docs/adr/0110-a.md",
+        ],
+    );
+
+    let (answer, said) = world.removed(&world.workspace(), "lane", false);
+
+    assert!(matches!(answer, Answer::Said { code: 1, .. }), "{said}");
+    assert!(said.contains("`site/src/content/docs/docs/`"), "{said}");
+    assert!(lane.join("site/src/content/docs/docs/spec.md").is_file());
+}
+
+#[test]
+fn logs_that_are_not_only_a_build_s_and_a_folder_named_as_a_tracked_one_still_keep_a_folder() {
     purlis_core::unsteered!();
     for (rules, tracked, file, named) in [
         // Not beside a package's manifest.
@@ -651,34 +669,28 @@ fn logs_that_are_not_only_a_build_s_and_a_copy_that_is_not_a_whole_build_s_still
             "logs/findings.csv",
             "`logs/`",
         ),
-        // Copies by name, but in no package a build writes: an edited copy may be the task's.
-        (
-            "scratch/docs/\n",
-            &["docs/spec.md"][..],
-            "scratch/docs/spec.md",
-            "`scratch/docs/`",
-        ),
-        // A page the tracked folder does not have is the task's own.
-        (
-            "out/docs/\n",
-            &["docs/spec.md"][..],
-            "out/docs/notes.md",
-            "`out/docs/`",
-        ),
         // An editor's settings in a package are the person's, though the top's are tracked
-        // and say the same: a dot-folder is a tool's or the person's, never a build's copy.
+        // and say the same.
         (
             "packages/web/.vscode/\n",
             &["packages/web/package.json", ".vscode/settings.json"][..],
             "packages/web/.vscode/settings.json",
             "`packages/web/.vscode/`",
         ),
-        // Part of the tracked folder is not a build's copy of it: a build copies all of it.
+        // Part of a tracked folder, at a path a build might write.
         (
             "site/docs/\n",
             &["site/package.json", "docs/spec.md", "docs/adr/0110-a.md"][..],
             "site/docs/spec.md",
             "`site/docs/`",
+        ),
+        // A package's own ignored settings, named as the top's one tracked file (#8008): the
+        // person's, though a build's copy would have the same path.
+        (
+            "packages/api/config/\n",
+            &["packages/api/package.json", "config/default.json"][..],
+            "packages/api/config/default.json",
+            "`packages/api/config/`",
         ),
     ] {
         let (world, lane) = holding(rules, tracked, &[file]);

@@ -1,4 +1,4 @@
-# Amended (2026-11-28, #5476, #7406): one finished test for every cleanup, a build's logs and copies
+# Amended (2026-11-28, #5476, #7406): one finished test for every cleanup, and a package's logs
 
 This amends §1 (which ignored files a build writes), §3 (the explorer's Remove) and the *One
 reading for every caller* reason. It is lane 1 of the wayfinder map for one Repos view and the
@@ -20,7 +20,8 @@ Three cleanups read three different tests of whether a folder was done with:
 - **`remove` and `prune`** read `purlis_core::finished`, as §5 and the 2026-11-06 amendment say.
 
 And two folders a build writes kept a finished folder (#7406): `app/logs/`, which the e2e run
-writes, and `site/src/content/docs/docs/`, which the site's build copies from `docs/`.
+writes, and `site/src/content/docs/docs/`, which the site's build copies from `docs/`. This
+amendment lets the first go; the second still keeps the folder (decision 2).
 
 ## The decision
 
@@ -41,19 +42,16 @@ writes, and `site/src/content/docs/docs/`, which the site's build copies from `d
      which chats are open) and no other folder links into. The window still deletes no branch,
      `--force` is never passed on the person's behalf, and a folder that is not finished, or a
      plain one a chat holds, is removed as git removes it, or refused, as before.
-2. **A build's logs and a build's copy of a tracked folder are a build's**, as `target/` beside
-   `Cargo.toml` is:
-   - a `logs/` folder beside a `package.json` that holds only `*.log` files;
-   - an ignored folder inside a package (under a folder below the top that holds a
-     `package.json`), not a dot-folder, named as a tracked folder at the top of the repo, each
-     of whose files is a tracked file at the same path under that folder, and which holds every
-     tracked file there of each kind (extension) it holds: `site/src/content/docs/docs/spec.md`
-     beside a tracked `docs/spec.md`, with every other tracked page, and without the pictures
-     the site does not copy. A file of its own, a link, or only some of a kind keeps the
-     folder; so does a dot-folder such as `packages/web/.vscode/`, which is a tool's or the
-     person's even where the top's tracked `.vscode/` holds the same files. A file is matched
-     by its path, not its contents, since a build may rewrite each page, so a copy in no
-     package (`scratch/docs/`) keeps the folder: an edited copy there may be the task's.
+2. **A package's logs are a build's**, as `target/` beside `Cargo.toml` is: a `logs/` folder
+   beside a `package.json` that holds only `*.log` files.
+   - **No ignored folder counts as a build's copy of a tracked one.** A rule that matched a
+     folder's files to tracked files by path (#8002, #8008) was withdrawn before it merged: a
+     path cannot tell a build's copy from the person's own files. A top-level `config/` that
+     tracks only `default.json` would make a person's ignored `packages/api/config/default.json`
+     count as a build's, and so would a copy made by hand (`cp -r docs site/docs`). So
+     `site/src/content/docs/docs/` keeps a finished folder, as every ignored folder this
+     amendment does not name does, until a repo can declare the folders its build writes again
+     (#8013).
 
 ## Why
 
@@ -61,8 +59,10 @@ writes, and `site/src/content/docs/docs/`, which the site's build copies from `d
   to ask, and tidy and the window's removal each kept a reading of their own beside it. The
   person saw the window refuse what the terminal removed, and a task's folder stay after its
   request merged.
-- **A copy loses nothing.** Each file of a copied folder is made from a tracked file of the same
-  name, so the next build writes it again; a page of its own is the task's and keeps the folder.
+- **Keeping too much is cheap; removing too much is not.** A folder kept for a build's copy costs
+  the person one removal by hand. A person's file taken for a build's copy is gone. Only the
+  repo knows which of its ignored folders its build writes, so it says so (#8013), and purlis
+  does not guess from paths.
 - **Tidy keeps branches for now; deleting them is deferred, not refused.** Wayfinder decision
   #7992 (operator, 2026-11-28) settles that after a merge the folder goes and the landed branch
   is deleted, and that a branch is kept only while it has not landed. This amendment does the
@@ -73,9 +73,11 @@ writes, and `site/src/content/docs/docs/`, which the site's build copies from `d
 
 ## Considered and not taken
 
-- **A list of each repo's generated paths.** It would name purlis's own folders in purlis's
-  core. The copy rule reads what the repo tracks, and holds for any repo whose build copies a
-  folder.
+- **A list of each repo's generated paths in purlis's core.** It would name purlis's own folders
+  there. A repo's own declaration (#8013) holds for any repo.
+- **Match an ignored folder to a tracked one by path** (#8002, #8008). Withdrawn: it removed a
+  package's own ignored `config/default.json` where the top tracks one of that name, and a hand
+  copy of `docs/`, neither of which any build writes again.
 - **Count a folder's commits by patch** (`git cherry`). A branch rebased before its request
   merged holds commits that are copies of the head's; on 2026-11-28 every clean folder kept so
   in smart-ide still had at least one commit no merged head held by patch. Not taken until a

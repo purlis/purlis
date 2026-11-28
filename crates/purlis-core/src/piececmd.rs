@@ -858,9 +858,10 @@ const REGENERATED_AT: [&str; 3] = [
 /// those with a closing slash): a `.env`, or a `results/`, is the task's. `target/`, `dist/` and
 /// `.astro/` are names a person could use too, as is `node_modules/`, so each counts only beside
 /// the manifest of the build that writes it, or, for `node_modules/`, holding nothing but
-/// Vite's cache. A `logs/` counts beside a `package.json` holding only logs, and a build's
-/// copy of a tracked folder ([`copies_a_tracked_folder`], #7406) only inside a package. None
-/// counts with a repository inside it.
+/// Vite's cache. A `logs/` counts beside a `package.json` holding only logs (#7406). A folder
+/// named as a tracked one is not a build's copy by that alone: its path cannot tell a build's
+/// copy from the person's own files (#8008), so a repo is to declare those (#8013). None counts
+/// with a repository inside it.
 fn regenerated(folder: &Path, path: &str) -> bool {
     let Some(dir) = path.strip_suffix('/') else {
         return false;
@@ -883,32 +884,12 @@ fn regenerated(folder: &Path, path: &str) -> bool {
         "target" => beside("Cargo.toml"),
         // What a package's runs log, its e2e runner's above all (#7406): logs and nothing else.
         "logs" => beside("package.json") && holds_only_logs(&folder.join(dir)),
-        _ => {
-            REGENERATED_AT.iter().any(|end| {
-                dir.strip_suffix(end)
-                    .is_some_and(|before| before.is_empty() || before.ends_with('/'))
-            }) || copies_a_tracked_folder(folder, dir, name)
-        }
+        _ => REGENERATED_AT.iter().any(|end| {
+            dir.strip_suffix(end)
+                .is_some_and(|before| before.is_empty() || before.ends_with('/'))
+        }),
     };
     named && !may_hold_a_repository(&folder.join(dir))
-}
-
-/// Whether `dir`, a folder of the branch folder `folder`, is under a folder below the top that
-/// holds a `package.json`.
-fn inside_a_package(folder: &Path, dir: &str) -> bool {
-    let mut at = Path::new(dir).parent();
-    while let Some(parent) = at.filter(|parent| !parent.as_os_str().is_empty()) {
-        if folder
-            .join(parent)
-            .join("package.json")
-            .symlink_metadata()
-            .is_ok_and(|meta| meta.is_file())
-        {
-            return true;
-        }
-        at = parent.parent();
-    }
-    false
 }
 
 /// Whether every entry of `dir` is a file named `*.log`: an empty one is too.
@@ -921,90 +902,6 @@ fn holds_only_logs(dir: &Path) -> bool {
             })
         })
     })
-}
-
-/// **Whether the ignored folder `dir` of `folder` is a build's copy of the tracked folder
-/// named `name` at the folder's top** (#7406): a site's build copies `docs/` into
-/// `site/src/content/docs/docs/` page for page, and may rewrite each page as it does. It counts
-/// only inside a package, below the top, and only where every file in it is a tracked file
-/// at the same path under `name/`, and every tracked file there of a kind it holds is in it: the
-/// site copies every page and none of the pictures beside them. Nothing in it is lost that the
-/// next build does not write again. A file of its own, a link or anything else that is not a
-/// plain file is not a copy; nor is one holding only some of a kind, nor `name/` itself, nor a
-/// dot-folder: `.vscode/` and its kind are a tool's or the person's, which no build copies
-/// (#8002).
-fn copies_a_tracked_folder(folder: &Path, dir: &str, name: &str) -> bool {
-    if dir == name || name.starts_with('.') || !inside_a_package(folder, dir) {
-        return false;
-    }
-    let Some(tracked) = worktree::git::run(folder, &["ls-files", "-z", "--", name], {
-        worktree::git::READ
-    })
-    .ok()
-    .filter(worktree::git::Run::ok)
-    .map(|run| {
-        run.out
-            .split('\0')
-            .filter_map(|path| path.strip_prefix(name)?.strip_prefix('/'))
-            .map(str::to_owned)
-            .collect::<std::collections::BTreeSet<String>>()
-    })
-    .filter(|tracked| !tracked.is_empty()) else {
-        return false;
-    };
-    let top = folder.join(dir);
-    let mut to_read = vec![top.clone()];
-    let mut read = 0;
-    let mut copied = std::collections::BTreeSet::new();
-    while let Some(next) = to_read.pop() {
-        let Ok(entries) = std::fs::read_dir(&next) else {
-            return false;
-        };
-        for entry in entries {
-            read += 1;
-            let Ok(entry) = entry else {
-                return false;
-            };
-            if read > MOST_READ_FOR_A_REPOSITORY {
-                return false;
-            }
-            match entry.file_type() {
-                Ok(kind) if kind.is_dir() => to_read.push(entry.path()),
-                Ok(kind) if kind.is_file() => {
-                    let path = entry.path();
-                    let Some(rel) = path
-                        .strip_prefix(&top)
-                        .ok()
-                        .and_then(|rel| rel.to_str())
-                        .map(|rel| rel.replace(std::path::MAIN_SEPARATOR, "/"))
-                    else {
-                        return false;
-                    };
-                    if !tracked.contains(&rel) {
-                        return false;
-                    }
-                    copied.insert(rel);
-                }
-                _ => return false,
-            }
-        }
-    }
-    // A build copies a kind of file whole: every tracked page, if it copies pages at all.
-    let kinds: std::collections::BTreeSet<&str> = copied.iter().map(|rel| kind_of(rel)).collect();
-    tracked
-        .iter()
-        .filter(|rel| kinds.contains(kind_of(rel)))
-        .all(|rel| copied.contains(rel))
-}
-
-/// The kind of the file at `rel`, a path with `/` between its parts: what follows the last dot
-/// of its name, or nothing where its name has none (or only a leading one).
-fn kind_of(rel: &str) -> &str {
-    let name = rel.rsplit('/').next().unwrap_or(rel);
-    match name.rfind('.') {
-        Some(0) | None => "",
-        Some(at) => &name[at + 1..],
-    }
 }
 
 /// Whether every entry of `dir` is a folder named `name`: an empty one is too.
