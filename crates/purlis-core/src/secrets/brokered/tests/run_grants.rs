@@ -4208,3 +4208,36 @@ fn the_package_managers_and_installers_of_7964_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The terminals #7988 names beside #7964's, each of which runs the command it is handed in the
+/// window it opens (`xfce4-terminal`, `mate-terminal`, `terminator`, `tilix`, `foot`, `urxvt`,
+/// `rxvt`, `st`, `ghostty`, `lxterminal`, `qterminal`, `terminology`, `kgx`, `ptyxis`), or has one
+/// open it (`footclient`, kitty's `kitten`, Debian's `x-terminal-emulator`); and the tmux session
+/// runners `tmuxinator` and `tmuxp`, which run a YAML file's commands, and `tmate`, tmux's fork.
+#[test]
+fn the_terminals_and_tmux_session_runners_of_7988_are_offered_no_run_grant() {
+    for name in [
+        "kitten",
+        "xfce4-terminal",
+        "mate-terminal",
+        "terminator",
+        "tilix",
+        "foot",
+        "footclient",
+        "urxvt",
+        "rxvt",
+        "st",
+        "ghostty",
+        "x-terminal-emulator",
+        "lxterminal",
+        "qterminal",
+        "terminology",
+        "kgx",
+        "ptyxis",
+        "tmuxinator",
+        "tmuxp",
+        "tmate",
+    ] {
+        refused_as_running_others(name);
+    }
+}

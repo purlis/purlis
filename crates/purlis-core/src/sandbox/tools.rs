@@ -3005,6 +3005,35 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "yaourt",
     "pacstrap",
     "arch-chroot",
+    // The terminals #7988 names beside #7964's, refused whole on what each is for, as `xterm` and
+    // `kitty` are: `xfce4-terminal`, `mate-terminal`, `terminator`, `tilix`, `foot`, `urxvt` and
+    // `rxvt`, suckless `st`, `ghostty`, `lxterminal`, `qterminal`, `terminology`, and GNOME
+    // Console's `kgx` and `ptyxis` each run the command they are handed in the window they open,
+    // most of them by `-e` as `xterm` does; `footclient` has a `foot` server open one, kitty's
+    // `kitten` has the running kitty launch one (`kitten @ launch`), and Debian's
+    // `x-terminal-emulator` is whichever terminal the system names. Then the tmux session runners
+    // `tmuxinator` and `tmuxp`, which run the commands of a YAML file in the panes they open
+    // (`tmux` is refused), and `tmate`, tmux's fork (#7988's comment).
+    "kitten",
+    "xfce4-terminal",
+    "mate-terminal",
+    "terminator",
+    "tilix",
+    "foot",
+    "footclient",
+    "urxvt",
+    "rxvt",
+    "st",
+    "ghostty",
+    "x-terminal-emulator",
+    "lxterminal",
+    "qterminal",
+    "terminology",
+    "kgx",
+    "ptyxis",
+    "tmuxinator",
+    "tmuxp",
+    "tmate",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
