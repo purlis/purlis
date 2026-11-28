@@ -18,8 +18,8 @@ keepTheirOrder();
 /**
  * **What the window listens for, and what it asks the core for the things that happen to it
  * most** (FS-G1b, #7895, epic #7889): the Tauri listeners it holds, by event name, and the
- * commands it sends for a focus, for each kind of `plane-changed`, for a turn ending, for a
- * pane mounted and for a chat started.
+ * commands it sends for a focus, for each kind of `plane-changed`, for a turn ending off screen
+ * and on screen, for a pane mounted and for a chat started.
  *
  * The slow log of 2026-11-27 found the trivial per-chat reads all inside stalls, made where a
  * pane mounts and some fifteen notices each make a `listen` and a read of their own, and each
@@ -101,8 +101,10 @@ type Measured = {
   focus: Asks;
   /** What it asks for each kind of `plane-changed`, by the kind's name. */
   planeChanged: Record<string, Asks>;
-  /** What it asks as a chat's turn ends. */
-  turnEnd: Asks;
+  /** What it asks as a chat's turn ends in a workspace not in front: a background chat's. */
+  turnEndOffScreen: Asks;
+  /** What it asks as the turn of the chat in its pane ends: the chat on screen. */
+  turnEndOnScreen: Asks;
   /** What it asks as its pane is given another chat. */
   paneMount: Asks;
   /** What it asks as the person starts a chat. */
@@ -120,8 +122,10 @@ type Measured = {
  * - **`plane-changed`:** each kind reads what holds its answer. `settings` costs 19 asks
  *   (`sandbox_state` four times, `extensions_on` twice); `git` 5, the last 4.5 s after it; a
  *   change the core could not place 32, every reader's. Nothing on screen holds `rootPanels`.
- * - **A turn's end:** 4 asks, the finishes once (`finishRows.ts`), the asks, the signings and
- *   the window's word to the others.
+ * - **A turn's end:** off screen, a chat of the workspace not in front, 4 asks: the finishes once
+ *   (`finishRows.ts`), the asks, the signings and the window's word to the others. On screen, the
+ *   chat in the pane, 6: the same four and the gauge twice, at once and a moment later
+ *   (`ChatGauge.tsx`).
  * - **A pane given another chat** (a press on its tab): 33 asks. The terminal is kept and the
  *   chat's notices are mounted anew, by the chat (`ChatNotices`, #1486): ten listens, each after
  *   the last chat's unlisten, and 13 reads of the notices' own, the slow log's trivial per-chat
@@ -232,6 +236,9 @@ const BASELINE: Measured = {
     panels: {
       workspace_panels: 1,
     },
+    // Nothing reads `rootPanels` at this load: its reader follows it only while the plane root is
+    // in front (`usePlaneRootPanels`, `PlaneView.tsx`), and here a workspace is. Kept, so a reader
+    // that comes is seen.
     rootPanels: {},
     instructions: {
       chats_plane_updated: 1,
@@ -298,8 +305,15 @@ const BASELINE: Measured = {
       workspace_saving: 1,
     },
   },
-  turnEnd: {
+  turnEndOffScreen: {
     asks_waiting: 1,
+    finished_turns: 1,
+    signing_waiting: 1,
+    "plugin:event|emit window-said": 1,
+  },
+  turnEndOnScreen: {
+    asks_waiting: 1,
+    chat_usage: 2,
     finished_turns: 1,
     signing_waiting: 1,
     "plugin:event|emit window-said": 1,
@@ -415,7 +429,7 @@ async function askedAll(asked: Asked[], after: number): Promise<void> {
   await settled(asked);
 }
 
-/** What a window holding `chats` chats listens for, and asks for each of the five moments. */
+/** What a window holding `chats` chats listens for, and asks for each of its moments. */
 async function asksFor(chats: number): Promise<Measured> {
   const plane = rootOf(0);
   const { asked, listeners, planeChanged, chatMoved } = await aWindow({
@@ -428,10 +442,11 @@ async function asksFor(chats: number): Promise<Measured> {
   expect(tabs).toHaveLength(chats / WORKSPACES);
   expect(screen.getAllByTestId("pane")).toHaveLength(1);
   expect(tabs[1]).toHaveAttribute("aria-selected", "false");
-  const move = (state: string, at: number) =>
+  // Session 2 is in the workspace not in front, a background chat; session 1 is the pane's.
+  const move = (session: number, state: string, at: number) =>
     chatMoved({
       plane,
-      session: 2,
+      session,
       state,
       needs_you: false,
       queue: [],
@@ -440,9 +455,10 @@ async function asksFor(chats: number): Promise<Measured> {
       reports: [],
       refusals: [],
     });
-  // The chat is heard of once before, working, so what is counted is its turn ending; and the
-  // window's own pane, mounted with it, has read its gauge again.
-  act(() => move("working", 0));
+  // Each chat is heard of once before, working, so what is counted is its turn ending; and the
+  // window's own pane, moved with it, has read its gauge again.
+  act(() => move(2, "working", 0));
+  act(() => move(1, "working", 1));
   await askedAll(asked, FOLLOWED_FOR.pane);
   const held = listeners();
 
@@ -468,7 +484,9 @@ async function asksFor(chats: number): Promise<Measured> {
       movesGit(kind) ? FOLLOWED_FOR.git : FOLLOWED_FOR.asks,
     );
 
-  const turnEnd = await measured(() => act(() => move("done", 1)));
+  const turnEndOffScreen = await measured(() => act(() => move(2, "done", 2)));
+  // The pane's chat: its gauge reads at once and again a moment later (`ChatGauge.tsx`).
+  const turnEndOnScreen = await measured(() => act(() => move(1, "done", 3)), FOLLOWED_FOR.pane);
 
   Object.assign(panes, { started: 0, stopped: 0 });
   const paneMount = await measured(
@@ -490,18 +508,21 @@ async function asksFor(chats: number): Promise<Measured> {
   expect(panes, "terminals for the start").toEqual({ started: 2, stopped: 1 });
 
   // Each moment happened: the focus and the settings change read the asks, once each, as a
-  // chat's move does (`windowDraws.cost.test.tsx`); the turn's end read the finishes once
-  // (`finishRows.ts`); the start was sent once.
+  // chat's move does (`windowDraws.cost.test.tsx`); each turn's end read the finishes once
+  // (`finishRows.ts`), witnessed apart from the gauge, so a gauge that stops reading is a table's
+  // red and not this one; the start was sent once.
   expect(focus.asks_waiting, "asks read for the focus").toBe(1);
   expect(planeChangedAsks.settings.asks_waiting, "asks read for the settings change").toBe(1);
-  expect(turnEnd.finished_turns, "finishes read for the turn's end").toBe(1);
+  expect(turnEndOffScreen.finished_turns, "finishes read for the turn's end off screen").toBe(1);
+  expect(turnEndOnScreen.finished_turns, "finishes read for the turn's end on screen").toBe(1);
   expect(chatStart.start_chat, "starts sent for the chat").toBe(1);
 
   return {
     listeners: held,
     focus,
     planeChanged: planeChangedAsks,
-    turnEnd,
+    turnEndOffScreen,
+    turnEndOnScreen,
     paneMount,
     chatStart,
   };
@@ -517,7 +538,12 @@ describe("what the window listens for and asks the core", () => {
       expect
         .soft(atFifty.planeChanged[kindName(kind)], `plane-changed ${kindName(kind)}`)
         .toEqual(BASELINE.planeChanged[kindName(kind)]);
-    expect.soft(atFifty.turnEnd, "a turn's end").toEqual(BASELINE.turnEnd);
+    expect
+      .soft(atFifty.turnEndOffScreen, "a turn's end, off screen")
+      .toEqual(BASELINE.turnEndOffScreen);
+    expect
+      .soft(atFifty.turnEndOnScreen, "a turn's end, on screen")
+      .toEqual(BASELINE.turnEndOnScreen);
     expect.soft(atFifty.paneMount, "a pane mounted").toEqual(BASELINE.paneMount);
     expect.soft(atFifty.chatStart, "a chat started").toEqual(BASELINE.chatStart);
   }, 300_000);
