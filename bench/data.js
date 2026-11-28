@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795836367524,
+  "lastUpdate": 1795839240221,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58506,6 +58506,48 @@ window.BENCHMARK_DATA = {
             "value": 101.2338675,
             "unit": "ms",
             "extra": "median of 5 runs: 100.923, 101.092, 101.234, 101.588, 102.075 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "15eab6a312ba45c7e8bfa8f63bc2527485610d0c",
+          "message": "Core: hold the person's chat starts while a prerequisite is open, and keep the answer that grants nothing for the run (#7724) (#7950)\n\n* Core: hold the person's chat starts while a prerequisite is open, and keep the answer that grants nothing for the run (#7724)\n\nWhile a project's prerequisite is open, the core holds a chat the person starts in it\n(prerequisites::Kept::hold): the picker's start, a pool or runner chat among them, a resumed\nsession, a curation start, a reopened task, the pool setup's Try it and the person's ask from a\ntab. It waits until they answer or press Cancel, and is readied after, under the policy in force.\nA chat restored at open, one woken for its schedule or loop, a running chat's dispatch and its\nhandoff start at once (Starter::of).\n\nThe answer that grants nothing (Kept::defer, the defer_project_prerequisite command, which a\nlinked page may call too) is kept in memory only, against the digest and reasons shown: the entry\nreads deferred, held starts are released, and every window is told. A change of digest or reason\nopens it again; a change back to one answered this run does not; a restart forgets it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8E63RNK7WNXYZT1JMS6GB3S\nPurlis-Persona: steward\n\n* Hold every start the person presses before its checks, and keep only answers for pairs the list held (#7950 round 2)\n\nThe person's ruling of 2026-11-27: Reopen, Resume, Restart, Retry, Start\nfresh and restart without the sandbox wait while a prerequisite is open,\nas a program the person names does. Each holds before its checks and\nreads: a finished task's Reopen before its record, the ask from a tab\nbefore the policy's locks, Try it before the pool and profile, ended by\nits own Cancel. The core's defer keeps an answer only for a digest and\nreasons the list held this run, at most 32 pairs per project.\n\nTests prove each hold through its inner function, list the functions\nthat hold so a removed or misplaced one is red, and pass the at-once\nstarts.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8F7AKH2QGECEYCX0XNTD7ZM\nPurlis-Persona: steward\n\n* A restart at a pause that waited on the person is asked again at a pause (#7950)\n\nWhile an AtAPause restart waited in the prerequisite hold, the chat ran on\nand could start a turn, so the person's answer restarted it mid-turn.\nhold_start now says whether it passed at once or after the person's answer;\nan AtAPause restart that waited answers not yet with ask_again, still owed,\nand the window drives the owed list again: a chat at a pause restarts now,\none mid-turn at its next pause, and one that reports no state at once, as\nthe person's press was. Restart now goes ahead as before.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8FJFXKYK3FQN470KFHSXV5F\nPurlis-Persona: steward\n\n* Regenerate uiRpc.ts for ChatRestart.ask_again (#7950)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8FJFXKYK3FQN470KFHSXV5F\nPurlis-Persona: steward\n\n* The defer press has its answer class: defer_project_prerequisite is Unmeasured, like the other prerequisite presses (#7724)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T03:11:23Z",
+          "tree_id": "995bd9a54d018bcf0172148c40721137e900e9da",
+          "url": "https://github.com/purlis/purlis/commit/15eab6a312ba45c7e8bfa8f63bc2527485610d0c"
+        },
+        "date": 1795839232162,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6935045,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.673, 0.677, 0.694, 0.696, 0.716 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7639415,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.144, 16.568, 16.764, 16.786, 16.826 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.35328150000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.281, 101.322, 101.353, 101.820, 103.680 ms"
           }
         ]
       }
