@@ -161,6 +161,14 @@ amended 2026-11-06 and 2026-11-28).
 _Avoid_: landed (for a branch: that is a change member's word; say *on its base* or *carried*),
 merged (git's `-d` does not find a carried branch merged), clean (that is only its files)
 
+**Dormant branch**:
+A branch whose folder holds commits its base does not have, with no open pull request, no chat
+holding it, and **silent** for more than 7 days. It is not a **finished folder**: its commits may
+be nowhere else. purlis suggests it for the person to review, and never removes it by itself
+(wayfinder map #7990, decision #7991).
+_Avoid_: stale (says nothing of what it holds), abandoned (that is a piece's declaration),
+finished
+
 **Branch** (of a chat):
 What the window shows for a piece: one row per repo a chat works in, reading _`<branch>` in
 `<repo>`_. A chat working in a repo's shared clone shows the branch the clone has checked out,
