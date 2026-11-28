@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795879014905,
+  "lastUpdate": 1795879530993,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -59262,6 +59262,48 @@ window.BENCHMARK_DATA = {
             "value": 101.4373105,
             "unit": "ms",
             "extra": "median of 5 runs: 100.668, 100.691, 101.437, 102.160, 102.412 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4d759a27acdc426c848e870928a71f6a2445f450",
+          "message": "FS-W1: one listener per event per window (#8043)\n\n* FS-W1: one listener per event per window (#7909)\n\nlisten in here.ts is the window's event hub, with the same signature: the\nfirst part to listen for an event asks the core once, every later part joins\nthat listener, and the last part's stop lets it go at the end of the task, so\na notice mounted again keeps it and misses nothing. It answers once that one\nlistener is there, keeps {target: thisWindow()}, calls every part though one\nthrows (reportError, the window's error), stops a listener whose parts went\nbefore it answered, forgets a refused listen, and listens anew under a new\nbridge (a stand-in core).\n\nwindowAsks.cost: 219 listeners over 75 events -> 75, one each; a load's\nlistens per event gated at 1; a pane given a chat 33 asks -> 13, a chat\nstarted 70 -> 40; 10 and 50 chats hold the same. FourRegions counts PlaneView\nby G1a's renderedBy. Windows and UnsavedWork's stand-ins no longer count\nStrict Mode's let-go listener as a second quit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GYZD3CDNM82Q2BNDQD0BY8\nPurlis-Persona: steward\n\n* FS-W1 review: pin a part stopped or added mid-dispatch, and report a throw where reportError is missing\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M6C6C5TP048KRJ0GFF03FF20\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T14:18:39Z",
+          "tree_id": "7ba550761e763606ed482e61eac462f82ffd536a",
+          "url": "https://github.com/purlis/purlis/commit/4d759a27acdc426c848e870928a71f6a2445f450"
+        },
+        "date": 1795879522437,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.569385,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.561, 0.564, 0.569, 0.571, 0.591 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.34749,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.198, 16.275, 16.347, 16.351, 16.366 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.91658699999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.628, 100.476, 100.917, 101.564, 102.347 ms"
           }
         ]
       }
