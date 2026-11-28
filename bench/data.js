@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795847908178,
+  "lastUpdate": 1795852581556,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58632,6 +58632,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2855845,
             "unit": "ms",
             "extra": "median of 5 runs: 100.978, 101.391, 102.286, 102.372, 102.701 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a723da0018afbce4b4cfcf76571dea37109c0075",
+          "message": "Fault suite B1 proves the negative; budget series and evidence kept apart by test (#7979, #7944) (#8011)\n\n* Fault suite B1: prove the view does not count a frame from before the drop as the redraw (#7979)\n\nThe test #7978 added still passed with drew_again() replaced by drew() or by\ntrue. A new one draws a frame, drops the link, sends LinkBack and asserts the\nview has not drawn again; it fails under both of those mutations, at its\nassertion.\n\nThe view B1 waits on (Viewed, a_view_of) and its 20 ms wait (now until_within)\nmove into behaviour.rs, so fault_suite and ssh_reconnect are private again and\nViewed's since is its own: told_since_opened() answers what the tests asked of\nit. drew() is drew_a_frame(), and the #7978 test is named for what it shows.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GBZD5BFQ3KNRMN3A6ZKEA6\nPurlis-Persona: steward\n\n* Budget run: prove the series and evidence apart end to end, and take 59.94 Hz for another screen (#7944)\n\n- The command is run on a non-pinned screen too: evidence.json is written and\n  series.json is not. seriesPoints is tried on the near misses (no HiDPI,\n  59.94 Hz, a second display, no display, none read), so a looser match such\n  as startsWith('1920x1080') or evidence written to --out fails a test.\n- budget-run-workflow.test.mjs ties --out to series.json and --evidence-out to\n  evidence.json, and each file to its own data set and its own hashFiles gate;\n  swapping any pair fails it.\n- 59.94 Hz is not the pinned 60 Hz, on purpose: screenMode reads a rate to its\n  hundredths, so a Mac up in the NTSC mode records evidence, not the trend.\n- The record job has no concurrency group (a third queued job would replace\n  the waiting one and lose its point), and its checkout keeps no token: the\n  branch made once is pushed with the token as that one command's header, and\n  github-action-benchmark pushes with the token it is given.\n- The paint check points to the budget run's own docs/updating.md section and\n  is called outcome-bars.yml's; CONTEXT.md says performance budgets;\n  AT_LEAST comes from stress-bench.mjs.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GBZD5BFQ3KNRMN3A6ZKEA6\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T07:25:46Z",
+          "tree_id": "4328af1d1a725c1bf3567b30b14f2585227b0876",
+          "url": "https://github.com/purlis/purlis/commit/a723da0018afbce4b4cfcf76571dea37109c0075"
+        },
+        "date": 1795852574596,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.703103,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.698, 0.701, 0.703, 0.706, 0.709 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.734730999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.323, 16.706, 16.735, 16.758, 16.917 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6093095,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.857, 100.980, 101.609, 101.964, 102.316 ms"
           }
         ]
       }
