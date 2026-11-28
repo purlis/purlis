@@ -4457,8 +4457,7 @@ fn the_vm_and_container_runners_of_8017_are_offered_no_run_grant() {
 #[test]
 fn the_interpreters_of_8017_are_offered_no_run_grant() {
     for name in [
-        "newlisp", "picolisp", "gxi", "gerbil", "csc", "murex", "amm", "ammonite", "cs",
-        "coursier",
+        "newlisp", "picolisp", "gxi", "gerbil", "csc", "murex", "amm", "ammonite", "cs", "coursier",
     ] {
         refused_as_running_others(name);
     }
