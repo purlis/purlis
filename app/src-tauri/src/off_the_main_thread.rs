@@ -349,6 +349,7 @@ pub(crate) const ANSWER_CLASSES: &[(Class, &[&str])] = &[
             "decline_project_dispatch",
             "decline_project_dispatch_in",
             "decline_project_expects",
+            "defer_project_prerequisite",
             "device_runner",
             "devices",
             "devices_disk",
