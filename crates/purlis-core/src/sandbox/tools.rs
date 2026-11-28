@@ -3005,6 +3005,148 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "yaourt",
     "pacstrap",
     "arch-chroot",
+    // The terminals #7988 names beside #7964's, refused whole on what each is for, as `xterm` and
+    // `kitty` are: `xfce4-terminal`, `mate-terminal`, `terminator`, `tilix`, `foot`, `urxvt` and
+    // `rxvt`, suckless `st`, `ghostty`, `lxterminal`, `qterminal`, `terminology`, GNOME
+    // Console's `kgx`, and `ptyxis` each run the command they are handed in the window they open,
+    // most of them by `-e` as `xterm` does; `footclient` has a `foot` server open one, kitty's
+    // `kitten` has the running kitty launch one (`kitten @ launch`), and Debian's
+    // `x-terminal-emulator` is whichever terminal the system names. Then the tmux session runners
+    // `tmuxinator` and `tmuxp`, which run the commands of a YAML file in the panes they open
+    // (`tmux` is refused), and `tmate`, tmux's fork (#7988's comment).
+    "kitten",
+    "xfce4-terminal",
+    "mate-terminal",
+    "terminator",
+    "tilix",
+    "foot",
+    "footclient",
+    "urxvt",
+    "rxvt",
+    "st",
+    "ghostty",
+    "x-terminal-emulator",
+    "lxterminal",
+    "qterminal",
+    "terminology",
+    "kgx",
+    "ptyxis",
+    "tmuxinator",
+    "tmuxp",
+    "tmate",
+    // The VM and container runners #7988 names, refused whole on what each is for, as `lima`,
+    // `multipass` and `orbctl` are: OrbStack's `orb`, `orbctl`'s other name, runs a command in its
+    // Linux machine; Parallels' `prlctl exec`, UTM's `utmctl exec`, `tart exec` and VirtualBox's
+    // `VBoxManage guestcontrol run` run one in a VM's guest; `lxc exec` and `incus exec` in a
+    // container; `virsh` drives libvirt's guests, its QEMU agent's commands among them; `qemu`
+    // reaches every `qemu-system-*` by its first part, and the user-mode `qemu-<arch>`, which runs
+    // a program built for another CPU; and `wsl` runs a command in a WSL distribution. The `lxc`
+    // row also reaches the rows `lxc-attach`, `lxc-execute` and `lxc-init` by their first part, so
+    // each keeps a row of its own (a unit test pins them).
+    "orb",
+    "prlctl",
+    "utmctl",
+    "tart",
+    "vboxmanage",
+    "lxc",
+    "incus",
+    "virsh",
+    "qemu",
+    "wsl",
+    // The compilers and shells #7988 names that run code, siblings of the runtimes #7964 refuses,
+    // refused on this list and not on REFUSED_NAMES, as those are (ADR 0112's amendment for #7964):
+    // `runhaskell`, `runghc`'s twin, runs a Haskell file and `ghci` (`-e`) code; `kotlinc -script`
+    // runs a Kotlin script; `scalac`'s macros and compiler plugins run as it compiles; `groovysh`
+    // and Elixir's `iex` are shells; `clj` is `clojure`'s REPL front-end; `erlc` runs a module's
+    // parse transforms; and `jbang` runs the Java file it is handed. QuickJS's `qjsc`, `qjs`'s
+    // compiler, runs the C compiler to build what it makes, and is kept with them on the
+    // conservative side.
+    "runhaskell",
+    "ghci",
+    "kotlinc",
+    "scalac",
+    "groovysh",
+    "clj",
+    "iex",
+    "erlc",
+    "qjsc",
+    "jbang",
+    // The interpreters and runtimes of #7988's comment, refused on this list and not on
+    // REFUSED_NAMES, as #7964's are: each runs the code or the script it is handed. The Clojure and
+    // Lisp family: babashka's `bb` and `nbb`, `janet`, `fennel`, MoonScript's `moon`, Chez Scheme's
+    // `chez`, `scheme` and `petite`, CHICKEN's `csi` (the C# REPL's name too, which runs C#),
+    // Gambit's `gsi`, `chibi-scheme`, `ecl`, `ccl`, `abcl`, `kawa` and `lfe`. Then `jython`,
+    // `jruby`, `truffleruby`, `graalpy`, `mruby`, `ocamlrun` (OCaml's bytecode), `utop`, `tclkit`,
+    // `expectk` (`expect` is refused), F#'s `fsi`, `scriptcs`, the ClojureScript runners `planck`
+    // and `lumo`, and the compilers whose `run` builds and runs a program: `gleam`, `roc`, `odin`
+    // and `hare`.
+    "bb",
+    "nbb",
+    "janet",
+    "fennel",
+    "moon",
+    "chez",
+    "scheme",
+    "petite",
+    "csi",
+    "gsi",
+    "chibi-scheme",
+    "ecl",
+    "ccl",
+    "abcl",
+    "kawa",
+    "lfe",
+    "jython",
+    "jruby",
+    "truffleruby",
+    "graalpy",
+    "mruby",
+    "ocamlrun",
+    "utop",
+    "tclkit",
+    "expectk",
+    "fsi",
+    "scriptcs",
+    "planck",
+    "lumo",
+    "gleam",
+    "roc",
+    "odin",
+    "hare",
+    // The tracers of #7988's comment, refused whole, as `strace` and `bpftrace` are: SystemTap's
+    // `stap -c` runs the command it traces, and its `-g` embeds C in the kernel; `heaptrack` runs
+    // the program after it to trace its heap.
+    "stap",
+    "heaptrack",
+    // The build and version managers and the cron siblings #7988 names, refused whole on what each
+    // is for: rebar 2's `rebar` runs a project's hooks and plugins, as `rebar3` does (and reaches
+    // the `rebar3` row by its unversioned form, so `rebar3` keeps a row of its own, which a unit
+    // test pins); `nimble` runs a package's NimScript tasks, Crystal's `shards` its `postinstall`,
+    // D's `dub` its build's commands, `flutter` a project's build and the app `flutter run` starts,
+    // `mill` a build's Scala, `ghcup run` the command after it, and tj's `n` the command its `exec`
+    // and `run` are handed under a Node version (#7988's comment); then jobber's `jobberrunner`,
+    // which runs a jobfile's commands, and bcron's `bcrontab`, which installs the table `bcron`
+    // runs, as `crontab` does.
+    "rebar",
+    "nimble",
+    "shards",
+    "dub",
+    "flutter",
+    "mill",
+    "ghcup",
+    "n",
+    "jobberrunner",
+    "bcrontab",
+    // The configuration, proxy and notifier runners #7988 names, refused whole on what each is for:
+    // `pyinfra` runs a deploy file's Python and the commands it names on the hosts it is handed;
+    // `mitmproxy`, `mitmdump` and `mitmweb` load the Python script their `-s` names; and, from
+    // #7988's comment, `terminal-notifier -execute` runs a shell command when its notification is
+    // clicked.
+    "pyinfra",
+    "mitmproxy",
+    "mitmdump",
+    "mitmweb",
+    "terminal-notifier",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
