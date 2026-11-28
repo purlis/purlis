@@ -3179,6 +3179,30 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "sesh",
     "tmuxifier",
     "mux",
+    // The VM and container runners #8017 names beside #7964's and #7988's, refused whole on what
+    // each is for, as `lima`, `lxc` and `virsh` are: libguestfs's `virt-customize`
+    // (`--run-command`) and `virt-sysprep` run a command in a guest's disk image and `guestfish`
+    // runs one there by its `command` and `sh`; `virt-install` installs and boots a guest;
+    // `crictl exec` runs a command in a container, and the runtime `youki` runs one, as `runc`
+    // and `crun` do; `firecracker`, `vfkit`, `hyperkit` and `xhyve` boot the guest they are
+    // handed, and `krunvm` runs a command in a micro-VM; `lxd` is the daemon `lxc` drives;
+    // VirtualBox's `VBoxHeadless` (its row is `vboxheadless`, as every form is lowercased) starts
+    // a VM; and Parallels' `prlsrvctl`, which sets up the server `prlctl` drives, is kept with
+    // them on the conservative side.
+    "virt-customize",
+    "virt-sysprep",
+    "guestfish",
+    "virt-install",
+    "crictl",
+    "youki",
+    "firecracker",
+    "vfkit",
+    "krunvm",
+    "hyperkit",
+    "xhyve",
+    "lxd",
+    "vboxheadless",
+    "prlsrvctl",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

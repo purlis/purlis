@@ -4422,3 +4422,30 @@ fn the_tmux_session_managers_of_8017_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The VM and container runners #8017 names beside #7964's and #7988's, each of which runs a
+/// command or boots a guest: libguestfs's `virt-customize --run-command`, `virt-sysprep` and
+/// `guestfish` in a guest's disk image, `virt-install`, `crictl exec`, the runtime `youki`,
+/// `firecracker`, `vfkit`, `krunvm`, `hyperkit`, `xhyve`, `lxd`, VirtualBox's `VBoxHeadless`,
+/// and Parallels' `prlsrvctl`, kept with them on the conservative side.
+#[test]
+fn the_vm_and_container_runners_of_8017_are_offered_no_run_grant() {
+    for name in [
+        "virt-customize",
+        "virt-sysprep",
+        "guestfish",
+        "virt-install",
+        "crictl",
+        "youki",
+        "firecracker",
+        "vfkit",
+        "krunvm",
+        "hyperkit",
+        "xhyve",
+        "lxd",
+        "VBoxHeadless",
+        "prlsrvctl",
+    ] {
+        refused_as_running_others(name);
+    }
+}
