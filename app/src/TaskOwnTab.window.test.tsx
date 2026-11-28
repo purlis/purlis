@@ -511,18 +511,23 @@ describe("moving a task to a tab of its own", () => {
 
   it("is offered on the task's line in its tab's menu: Enter with a modifier, and a button at the line's end", async () => {
     const { asked } = await drawn(withTasks());
-    const open = async () => {
-      // By the state word on steward 1's pane head (#5341), on its tab, the strip's first.
-      await userEvent.click(within(strip()).getAllByRole("tab")[0]);
-      press(await findTasksButton("steward 1"));
-      return screen.findByRole("menu", { name: /^Tasks of steward 1/ });
-    };
     const lineOf = (menu: HTMLElement, name: string) => {
       const found = within(menu)
         .getAllByRole("menuitem")
         .find((item) => item.querySelector(".name")?.textContent === name);
       if (found === undefined) throw new Error(`the menu has no line for ${name}`);
       return found;
+    };
+    const open = async () => {
+      // By the state word on steward 1's pane head (#5341), on its tab, the strip's first.
+      await userEvent.click(within(strip()).getAllByRole("tab")[0]);
+      press(await findTasksButton("steward 1"));
+      const menu = await screen.findByRole("menu", { name: /^Tasks of steward 1/ });
+      // A press opens it with the keyboard, which lands on its first task a frame after it is
+      // drawn (#5058, #5341). A line focused before then loses the keyboard to that one, and
+      // its keys go to talk (#8045).
+      await waitFor(() => expect(document.activeElement).toBe(lineOf(menu, "talk")));
+      return menu;
     };
 
     // The keyboard: Ctrl+Enter on its line is a tab of its own, as a link opens in a new tab.
