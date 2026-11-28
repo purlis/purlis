@@ -78,22 +78,23 @@ own decision.
   pipeline; and `garden` a project's actions.
 - **Cron daemons and runners**, as `crontab` and `anacron` are: `fcron`, `bcron`, `dcron`,
   cronie's `crond`, `supercronic`, `ofelia`, `mcron` and `jobber` run the commands of a table or
-  a file; `snooze` and runwhen's programs (`runwhen`, `rw-add`, `rw-match`, `rw-sleep`, `rw-min`
-  and `rw-max`, by the names its documentation gives, refused together on the conservative side)
-  run the program after them at a time; and `cronitor` runs the command its `exec` wraps.
+  a file; `snooze` and runwhen's programs (`runwhen`, `rw-add`, `rw-match` and `rw-sleep`, by
+  the names its documentation gives) run the program after them at a time, and its `rw-min` and
+  `rw-max`, given nothing to run by its manual, are kept with them on the conservative side; and
+  `cronitor` runs the command its `exec` wraps.
 - **Interpreters and runtimes**: `kotlin`, `scala`, `groovy`, `clojure`, `boot`, `elixir`,
   `erl`, `escript`, `ghc`, `runghc`, `crystal`, `nim`, `v`, `dart`, `tcc`, `mono`, `wasmtime`,
   `wasmer`, `wasm3`, `qjs`, `jsc`, `d8`, `hermes`, `rhino`, `jjs`, and `frida`, which spawns the
   program it is named and runs a script in it.
 - **Tracers**, as `strace` and `ltrace` are: `bpftrace`, `trace-cmd`, `uftrace`, `sysdig` and
   `cset` run the command after them to trace it.
-- **Build and version managers, builders and compiler wrappers**: `rebar3`, SDKMAN's `sdk`,
-  `nvm`, `bundler`, `esy`, `ocamlfind`, the reloaders `air` and `modd`, and `watchman`, whose
-  triggers run commands; CMake's `ccmake` and `cpack` (`cmake` and `ctest` are refused), Buck 1's
-  `buck`, `muon` (meson's twin) and `samu` (ninja's); and icecream's `icerun` and `iceccd`, and
-  `distccd`, which run the compiler commands they are handed. SDKMAN's `sdk` and `nvm` are
-  usually shell functions, which a Run grant never runs; their rows refuse them where they are
-  files of their own.
+- **Build and version managers, builders and compiler wrappers**: `rebar3`; SDKMAN's `sdk`, which
+  runs the install hooks it downloads and the editor its `config` opens; `nvm`, `bundler`, `esy`,
+  `ocamlfind`, the reloaders `air` and `modd`, and `watchman`, whose triggers run commands; CMake's
+  `ccmake` and `cpack` (`cmake` and `ctest` are refused), Buck 1's `buck`, `muon` (meson's twin) and
+  `samu` (ninja's); and icecream's `icerun` and `iceccd`, and `distccd`, which run the compiler
+  commands they are handed. SDKMAN's `sdk` and `nvm` are usually shell functions, which a Run grant
+  never runs; their rows refuse them where they are files of their own.
 - **Package managers and installers**, as `pacman`, `installpkg` and `xbps-install` are:
   Slackware's `upgradepkg`, `xbps-reconfigure`, the AUR helpers `pikaur`, `trizen`, `aura`,
   `pamac` and `yaourt`, and Arch's `pacstrap`, each of which runs a package's scripts or a
@@ -113,9 +114,9 @@ chance has a row of its own and a unit test. Of the names #7964 lists, one was r
 now has a row of its own, pinned by a unit test seen red first. The new rows also reach one row
 that was there before: `buck` reaches #7833's `buck2` by its unversioned form, so `buck2`'s
 `run_grants` test passes through either row. A unit test pins `buck2`'s own row, seen red with it
-taken off. Among the new rows, `bcron`, `pamac`, `wezterm` and `watchman` reach their own
-programs (`bcron-exec`, `pamac-manager`, `wezterm-gui`, `watchman-make`) by their first part,
-within their own families.
+taken off. Among the new rows, some reach their own programs by their first part, within their
+own families, for example `bcron-exec`, `pamac-manager`, `wezterm-gui`, `watchman-make`,
+`byobu-tmux`, `frida-trace` and `mono-service`.
 
 ## What the name forms cost
 
@@ -133,7 +134,9 @@ words cost the most elsewhere. These are examples, not a complete list:
 - the GNU `g` the forms strip reaches every `g<name>` of these rows, and `gv`, GNU's PostScript
   viewer, which runs nothing it is handed, loses its Allow by `v`.
 - `fly` is Concourse's, and fly.io's command line, also named `fly`, loses its Allow with it;
-  its other name `flyctl` stays offered.
+  its other name `flyctl` stays offered. In the same way `hermes` is Meta's JavaScript engine,
+  and Informal Systems' IBC relayer, also named `hermes`, a signing command line a chat might be
+  handed a key for, loses its Allow with it.
 - macOS's `/usr/bin/wait`, read above, runs nothing it is handed and loses its Allow by
   execline's `wait`, the one name on the machine's search path these rows take from a harmless
   program.

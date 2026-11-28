@@ -20,6 +20,8 @@
   more package managers** (`upgradepkg`, `xbps-reconfigure`, `pikaur`, `trizen`, `aura`,
   `pamac`, `yaourt`, `pacstrap`, `arch-chroot`). Each runs the code, the build or the package
   scripts it is handed. A persona can still declare any of them as a tool (#7964).
-- **Programs named after these lose their Allow with them**, for example fly.io's `fly` (by
-  Concourse's), and every `<name>-<word>` and `<word>-<name>` of short rows such as `case`,
-  `wait`, `boot` and `v`. Giving the harmless ones back is its own change (#7825).
+- **Programs that share a name or a name's form with these lose their Allow with them**, for
+  example macOS's own `wait` (by execline's), fly.io's `fly` (by Concourse's), the IBC relayer
+  `hermes` (by the JavaScript engine), GNU's `gv` (by `v`), and every `<name>-<word>`,
+  `<word>-<name>` and `g<name>` of these rows. Giving the harmless ones back is its own change
+  (#7825).

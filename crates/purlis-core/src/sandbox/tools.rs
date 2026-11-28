@@ -2898,8 +2898,9 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // `crontab` and `anacron` are: `fcron`, `bcron`, `dcron`, cronie's `crond`,
     // `supercronic`, `ofelia`, `mcron` and `jobber` run the commands of a table or a file
     // they are handed; `snooze` and runwhen's programs (`runwhen` itself, `rw-add`,
-    // `rw-match`, `rw-sleep`, `rw-min` and `rw-max`, by the names its documentation gives)
-    // run the program after them at a time; and `cronitor exec` runs the command it wraps.
+    // `rw-match` and `rw-sleep`, by the names its documentation gives) run the program after
+    // them at a time, and its `rw-min` and `rw-max`, given nothing to run by its manual, are
+    // kept with them on the conservative side; and `cronitor exec` runs the command it wraps.
     "fcron",
     "bcron",
     "dcron",
@@ -2959,18 +2960,18 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "uftrace",
     "sysdig",
     "cset",
-    // The build and version managers, builders and compiler wrappers #7964 and its comment
-    // name, refused whole: `rebar3` runs a project's `rebar.config` hooks, SDKMAN's `sdk`
-    // and `nvm exec` the command after them where they are files of their own, `bundler`
-    // (where it is a file of its own beside `bundle`: macOS's, Bundler 1.17.2, evaluates
-    // the Gemfile as Ruby at `bundler/dsl.rb:47` and `exec`s the command `bundler exec`
-    // names at `bundler/cli/exec.rb:50-53`), `esy` and `ocamlfind` the build commands they
-    // are handed, the reloaders `air` and `modd` the commands their settings name, and
-    // `watchman` those its triggers name; CMake's `ccmake` and `cpack` (`ctest` and `cmake`
-    // are refused), Buck 1's `buck`, `muon` (meson's twin) and `samu` (ninja's) run a
-    // project's build files; and icecream's `icerun` and `iceccd` and `distccd` run the
-    // compiler commands they are handed. (`buck` reaches #7833's `buck2` by its unversioned
-    // form too: `buck2` keeps a row of its own, and a unit test pins it.)
+    // The build and version managers, builders and compiler wrappers #7964 and its comment name,
+    // refused whole: `rebar3` runs a project's `rebar.config` hooks, `nvm exec` the command after
+    // it, and SDKMAN's `sdk` the install hooks it downloads and the editor its `config` opens, each
+    // where it is a file of its own, `bundler` (where it is a file of its own beside `bundle`:
+    // macOS's, Bundler 1.17.2, evaluates the Gemfile as Ruby at `bundler/dsl.rb:47` and `exec`s the
+    // command `bundler exec` names at `bundler/cli/exec.rb:50-53`), `esy` and `ocamlfind` the build
+    // commands they are handed, the reloaders `air` and `modd` the commands their settings name,
+    // and `watchman` those its triggers name; CMake's `ccmake` and `cpack` (`ctest` and `cmake` are
+    // refused), Buck 1's `buck`, `muon` (meson's twin) and `samu` (ninja's) run a project's build
+    // files; and icecream's `icerun` and `iceccd` and `distccd` run the compiler commands they are
+    // handed. (`buck` reaches #7833's `buck2` by its unversioned form too: `buck2` keeps a row of
+    // its own, and a unit test pins it.)
     "rebar3",
     "sdk",
     "nvm",
