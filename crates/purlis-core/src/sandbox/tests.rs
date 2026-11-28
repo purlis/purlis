@@ -9952,8 +9952,14 @@ impl Drop for Refused {
 /// started, then its process group and its niceness, and listens on nothing.
 #[cfg(target_os = "macos")]
 fn recording_sccache(record: &StdPath) -> (tempfile::TempDir, StdPathBuf) {
+    recording_sccache_at(record, "bin/sccache")
+}
+
+/// [`recording_sccache`], at `path` under a folder outside the chat's temp folder.
+#[cfg(target_os = "macos")]
+fn recording_sccache_at(record: &StdPath, path: &str) -> (tempfile::TempDir, StdPathBuf) {
     use std::os::unix::fs::PermissionsExt;
-    let (dir, program) = program_outside_temp("bin/sccache");
+    let (dir, program) = program_outside_temp(path);
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).expect("writable");
     std::fs::write(
         &program,
@@ -10240,6 +10246,24 @@ fn a_server_that_cannot_start_holds_up_only_the_first_command() {
             .lines()
             .count(),
         2
+    );
+}
+
+/// **A wrapper whose path has a space starts all the same** (#7935, round 2's review): perl's
+/// one-word `exec` hands a path with a space to a shell, which split it and ran nothing.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_wrapper_whose_folder_has_a_space_is_started() {
+    let tmp = tempfile::tempdir().expect("a chat's temp folder");
+    let record = tmp.path().join("started");
+    let (_dir, sccache) = recording_sccache_at(&record, "my tools/sccache");
+
+    sourced_with(&sccache, tmp.path());
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    assert!(
+        std::fs::read_to_string(&record).is_ok_and(|started| started.starts_with("start=1 ")),
+        "a wrapper in a folder with a space was not started"
     );
 }
 

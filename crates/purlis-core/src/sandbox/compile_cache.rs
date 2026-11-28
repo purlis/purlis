@@ -309,7 +309,7 @@ pub fn script(program: &Path, declared: &Declared, socket: &Path) -> String {
          \x20 else\n\
          \x20   [ -S \"$SCCACHE_SERVER_UDS\" ] && /bin/rm -f \"$SCCACHE_SERVER_UDS\"\n\
          \x20   (setopt no_bg_nice 2>/dev/null; SCCACHE_START_SERVER=1 SCCACHE_NO_DAEMON=1 \
-         /usr/bin/perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV or exit 127' \"$RUSTC_WRAPPER\" \
+         /usr/bin/perl -MPOSIX -e 'POSIX::setsid(); exec {{ $ARGV[0] }} @ARGV or exit 127' \"$RUSTC_WRAPPER\" \
          </dev/null >/dev/null 2>>{log} &) 2>/dev/null\n\
          \x20   if [ ! -e {mark} ]; then\n\
          \x20     purlis_sccache_wait=0\n\
