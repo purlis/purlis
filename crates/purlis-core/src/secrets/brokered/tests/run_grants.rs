@@ -4541,3 +4541,56 @@ fn helix_the_editor_with_a_shell_of_8031_is_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The editors #8037 names beside `vim`, `emacs` and Helix, each of which runs a shell command,
+/// a task or a plugin's code it is handed, or starts an editor that does: Kakoune's `kak`,
+/// `micro`, `vis`, `mg`, `jed`, `joe`, `lite-xl` and `pulsar`, the front-ends `neovide` and
+/// `mvim`, and the editors with an integrated terminal and tasks, `code`, `codium`, `subl`, `zed`
+/// and `lapce`.
+#[test]
+fn the_editors_with_a_shell_or_tasks_of_8037_are_offered_no_run_grant() {
+    for name in [
+        "kak", "micro", "vis", "mg", "jed", "joe", "lite-xl", "pulsar", "neovide", "mvim", "code",
+        "codium", "subl", "zed", "lapce",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The terminal sharers #8037 names, each of which runs a shell or the command it is handed and
+/// shares its terminal: `upterm`, `sshx`, `tty-share`, `teleconsole` and `wetty`; and the
+/// terminal recorders, each of which runs the shell or the command it records: `ttyrec`,
+/// `termtosvg`, `terminalizer` and `t-rec`.
+#[test]
+fn the_terminal_sharers_and_recorders_of_8037_are_offered_no_run_grant() {
+    for name in [
+        "upterm",
+        "sshx",
+        "tty-share",
+        "teleconsole",
+        "wetty",
+        "ttyrec",
+        "termtosvg",
+        "terminalizer",
+        "t-rec",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The guest's converter #8037 names: libguestfs's `virt-v2v`, whose `--run` runs a script in
+/// the guest it converts.
+#[test]
+fn the_guests_converter_of_8037_is_offered_no_run_grant() {
+    refused_as_running_others("virt-v2v");
+}
+
+/// The interpreters and shells #8037 names, each of which runs the code or the script it is
+/// handed: Gambit's compiler `gsc`, whose `-e` runs code as `gsi`'s does, Hissp's `hissp` and
+/// `lissp`, and the shells `ion` and `oil`.
+#[test]
+fn the_interpreters_and_shells_of_8037_are_offered_no_run_grant() {
+    for name in ["gsc", "hissp", "lissp", "ion", "oil"] {
+        refused_as_running_others(name);
+    }
+}
