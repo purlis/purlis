@@ -3070,6 +3070,48 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "erlc",
     "qjsc",
     "jbang",
+    // The interpreters and runtimes of #7988's comment, refused on this list and not on
+    // REFUSED_NAMES, as #7964's are: each runs the code or the script it is handed. The Clojure and
+    // Lisp family: babashka's `bb` and `nbb`, `janet`, `fennel`, MoonScript's `moon`, Chez Scheme's
+    // `chez`, `scheme` and `petite`, CHICKEN's `csi` (the C# REPL's name too, which runs C#),
+    // Gambit's `gsi`, `chibi-scheme`, `ecl`, `ccl`, `abcl`, `kawa` and `lfe`. Then `jython`,
+    // `jruby`, `truffleruby`, `graalpy`, `mruby`, `ocamlrun` (OCaml's bytecode), `utop`, `tclkit`,
+    // `expectk` (`expect` is refused), F#'s `fsi`, `scriptcs`, the ClojureScript runners `planck`
+    // and `lumo`, and the compilers whose `run` builds and runs a program: `gleam`, `roc`, `odin`
+    // and `hare`.
+    "bb",
+    "nbb",
+    "janet",
+    "fennel",
+    "moon",
+    "chez",
+    "scheme",
+    "petite",
+    "csi",
+    "gsi",
+    "chibi-scheme",
+    "ecl",
+    "ccl",
+    "abcl",
+    "kawa",
+    "lfe",
+    "jython",
+    "jruby",
+    "truffleruby",
+    "graalpy",
+    "mruby",
+    "ocamlrun",
+    "utop",
+    "tclkit",
+    "expectk",
+    "fsi",
+    "scriptcs",
+    "planck",
+    "lumo",
+    "gleam",
+    "roc",
+    "odin",
+    "hare",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

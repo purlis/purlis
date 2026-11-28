@@ -4288,3 +4288,50 @@ fn the_compilers_and_shells_of_7988_that_run_code_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The interpreters and runtimes of #7988's comment, each of which runs the code or the script it
+/// is handed: the Clojure and Lisp family (`bb`, `nbb`, `janet`, `fennel`, `moon`, `chez`,
+/// `scheme`, `petite`, `csi`, `gsi`, `chibi-scheme`, `ecl`, `ccl`, `abcl`, `kawa`, `lfe`), the
+/// JVM's, GraalVM's and the others' (`jython`, `jruby`, `truffleruby`, `graalpy`, `mruby`,
+/// `ocamlrun`, `utop`, `tclkit`, `expectk`, `fsi`, `scriptcs`, `planck`, `lumo`), and the compilers
+/// whose `run` runs a program (`gleam`, `roc`, `odin`, `hare`).
+#[test]
+fn the_interpreters_and_runtimes_of_7988_are_offered_no_run_grant() {
+    for name in [
+        "bb",
+        "nbb",
+        "janet",
+        "fennel",
+        "moon",
+        "chez",
+        "scheme",
+        "petite",
+        "csi",
+        "gsi",
+        "chibi-scheme",
+        "ecl",
+        "ccl",
+        "abcl",
+        "kawa",
+        "lfe",
+        "jython",
+        "jruby",
+        "truffleruby",
+        "graalpy",
+        "mruby",
+        "ocamlrun",
+        "utop",
+        "tclkit",
+        "expectk",
+        "fsi",
+        "scriptcs",
+        "planck",
+        "lumo",
+        "gleam",
+        "roc",
+        "odin",
+        "hare",
+    ] {
+        refused_as_running_others(name);
+    }
+}
