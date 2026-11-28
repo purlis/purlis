@@ -3277,6 +3277,33 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // and `ghx` as well, and a hex viewer that is also called `hx`.
     "hx",
     "helix",
+    // The editors #8037 names beside `vim`, `emacs` and Helix, refused whole on what each is for:
+    // Kakoune's `kak` runs the shell of its `%sh{}` blocks and the commands its `-e` names;
+    // `micro` runs a shell command by its `run` and plugins in Lua; `vis` runs one by its `:!`
+    // and filters through one by `:|`; `mg` runs one by its `shell-command` and, by its manual,
+    // the mg commands of a file its `-b` names; `jed` and `joe` run shell commands of their own;
+    // `lite-xl` and `pulsar` run plugins in Lua and JavaScript; `neovide` and MacVim's `mvim`
+    // start `nvim` and `vim`; and `code`, VSCodium's `codium`, Sublime Text's `subl`, `zed` and
+    // `lapce` each have an integrated terminal, tasks or build systems, and extensions that run as
+    // they open a folder. `zed`'s `--zed` also names the program it starts, by its `--help`.
+    // `code`, `mg`, `micro`, `vis` and `zed` are common words or short rows, and what each costs
+    // is in ADR 0112's amendment for #8037: macOS's own `vis` is a filter that runs nothing, and
+    // loses its Allow with the editor's row.
+    "kak",
+    "micro",
+    "vis",
+    "mg",
+    "jed",
+    "joe",
+    "lite-xl",
+    "pulsar",
+    "neovide",
+    "mvim",
+    "code",
+    "codium",
+    "subl",
+    "zed",
+    "lapce",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
