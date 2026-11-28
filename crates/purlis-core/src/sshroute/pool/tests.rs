@@ -43,7 +43,10 @@ fn two_links_pointed_at_a_forward_never_share_what_their_pins_said() {
         .unwrap()
     };
     // Already keeping: the slot it holds is never handed to a link.
-    let base = fake.docker().keeping_what_its_pin_said();
+    let base = fake
+        .docker()
+        .with_pin_clock_stopped_at(std::time::Instant::now())
+        .keeping_what_its_pin_said();
     let first = link(&base);
     let second = link(&base);
     assert_eq!(

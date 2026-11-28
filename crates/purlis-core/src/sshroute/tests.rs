@@ -1087,7 +1087,10 @@ fn an_engine_that_is_not_the_pinned_one_hands_nothing_on_to_the_container_check(
             &serde_json::json!(["name=seccomp,profile=builtin"]),
         ),
     );
-    let docker = fake.docker().keeping_what_its_pin_said();
+    let docker = fake
+        .docker()
+        .with_pin_clock_stopped_at(std::time::Instant::now())
+        .keeping_what_its_pin_said();
     let route = Route::parse("ssh://me@box").unwrap();
     let pin = Pin {
         host_key: key(),
@@ -1119,7 +1122,10 @@ fn the_pinned_engines_docker_info_is_handed_on_to_the_container_check() {
             &serde_json::json!(["name=seccomp,profile=builtin", "name=cgroupns"]),
         ),
     );
-    let docker = fake.docker().keeping_what_its_pin_said();
+    let docker = fake
+        .docker()
+        .with_pin_clock_stopped_at(std::time::Instant::now())
+        .keeping_what_its_pin_said();
     let route = Route::parse("ssh://me@box").unwrap();
     let pin = Pin {
         host_key: key(),

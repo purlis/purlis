@@ -2789,14 +2789,20 @@ pub struct Docker {
 ///
 /// It is not part of what a `docker` is: two that differ only in it are equal.
 #[derive(Clone, Default)]
-struct PinSaid(Option<std::sync::Arc<std::sync::Mutex<Option<Said>>>>);
+struct PinSaid {
+    slot: Option<std::sync::Arc<std::sync::Mutex<Option<Said>>>>,
+    /// The clock keeping and taking read: the machine's, or a test's stopped one
+    /// ([`Docker::with_pin_clock_stopped_at`]), so no test of the hand-off waits on the
+    /// machine's speed.
+    stopped_at: Option<std::time::Instant>,
+}
 
 /// What a pin check read, and when.
 type Said = (std::time::Instant, serde_json::Value);
 
 /// **An engine as a pin check read it** ([`Docker::engine_id_read`], [`Docker::engine_pin_read`]),
-/// with what its `docker info` said to hand on: only [`Docker::keep_for_the_daemon_check`] keeps that, once the
-/// engine is found to be the pinned one (#7922).
+/// with what its `docker info` said to hand on: only [`Docker::keep_for_the_daemon_check`] keeps
+/// that, once the engine is found to be the pinned one (#7922).
 pub(crate) struct PinRead<T> {
     pub(crate) engine: T,
     info: Option<serde_json::Value>,
@@ -2827,8 +2833,12 @@ impl<T> PinRead<T> {
 const PIN_SAID_FOR: std::time::Duration = std::time::Duration::from_secs(3);
 
 impl PinSaid {
+    fn now(&self) -> std::time::Instant {
+        self.stopped_at.unwrap_or_else(std::time::Instant::now)
+    }
+
     fn slot(&self) -> Option<std::sync::MutexGuard<'_, Option<Said>>> {
-        self.0.as_ref().map(|slot| {
+        self.slot.as_ref().map(|slot| {
             slot.lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
         })
@@ -2837,7 +2847,7 @@ impl PinSaid {
     /// Keeps `info`, what `docker info --format '{{json .}}'` printed, where this is kept at all.
     fn keep(&self, info: serde_json::Value) {
         if let Some(mut slot) = self.slot() {
-            *slot = Some((std::time::Instant::now(), info));
+            *slot = Some((self.now(), info));
         }
     }
 
@@ -2845,7 +2855,7 @@ impl PinSaid {
     /// none was kept, it is older than [`PIN_SAID_FOR`], or it prints no list of them (a
     /// Podman's), and the check reads the daemon as it always did.
     fn take_security_options(&self) -> Option<serde_json::Value> {
-        self.take_security_options_at(std::time::Instant::now())
+        self.take_security_options_at(self.now())
     }
 
     /// [`PinSaid::take_security_options`], taken at `now`: a test's clock, or the machine's.
@@ -3180,7 +3190,19 @@ impl Docker {
     /// link checks the pin and then the container.
     #[must_use]
     pub(crate) fn keeping_what_its_pin_said(mut self) -> Docker {
-        self.pin_said = PinSaid(Some(std::sync::Arc::default()));
+        self.pin_said = PinSaid {
+            slot: Some(std::sync::Arc::default()),
+            stopped_at: self.pin_said.stopped_at,
+        };
+        self
+    }
+
+    /// This `docker`, its hand-off's clock stopped at `now` ([`PinSaid`]), so a test's check
+    /// after its pin check takes what the pin read however slowly the machine runs.
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn with_pin_clock_stopped_at(mut self, now: std::time::Instant) -> Docker {
+        self.pin_said.stopped_at = Some(now);
         self
     }
 
@@ -4614,15 +4636,16 @@ impl Docker {
         self.engine_id_read().map(|read| read.engine)
     }
 
-    /// [`Docker::engine_id_said`], with what its `docker info` said, for [`Docker::keep_for_the_daemon_check`].
+    /// [`Docker::engine_id_said`], with what its `docker info` said, for
+    /// [`Docker::keep_for_the_daemon_check`].
     pub(crate) fn engine_id_read(&self) -> Result<PinRead<String>, Refused> {
         let printed = self.read(
             &["info".into(), "--format".into(), "{{json .}}".into()],
             MOST_INSPECTED,
         )?;
-        let said = engine_id_in(&printed)?;
+        let id = engine_id_in(&printed)?;
         Ok(PinRead {
-            engine: said,
+            engine: id,
             info: serde_json::from_str(printed.trim()).ok(),
         })
     }

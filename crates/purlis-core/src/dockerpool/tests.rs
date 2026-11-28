@@ -3085,7 +3085,10 @@ fn a_cold_links_container_check_takes_the_daemon_from_the_pins_docker_info() {
             &serde_json::json!(["name=seccomp,profile=builtin", "name=cgroupns"]),
         ),
     );
-    let docker = fake.docker().keeping_what_its_pin_said();
+    let docker = fake
+        .docker()
+        .with_pin_clock_stopped_at(std::time::Instant::now())
+        .keeping_what_its_pin_said();
     assert_eq!(pin_checked(&docker), "ENGINE");
     assert_eq!(
         docker.resumed(&made()).map(|resumed| resumed.started),
@@ -3111,7 +3114,10 @@ fn a_daemon_the_pins_docker_info_finds_without_the_builtin_profile_is_refused() 
             &serde_json::json!(["name=seccomp,profile=unconfined"]),
         ),
     );
-    let docker = fake.docker().keeping_what_its_pin_said();
+    let docker = fake
+        .docker()
+        .with_pin_clock_stopped_at(std::time::Instant::now())
+        .keeping_what_its_pin_said();
     assert_eq!(pin_checked(&docker), "ENGINE");
     let refused = docker.resumed(&made()).map(|_| ()).unwrap_err();
     assert_eq!(
