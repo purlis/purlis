@@ -39,9 +39,10 @@
 //!
 //! **What is let go**: a file gone from the log (pruned, or the live file not yet written); the
 //! records of the chats of a project closed ([`Recent::forget`]); and, past a cap on the bytes
-//! kept ([`Recent::CAP`]), the files asked least recently. A file outside an ask's window is
-//! kept: two projects whose chats need windows of different depths no longer drop each other's
-//! files at every ask.
+//! kept ([`Recent::CAP`]), the files asked least recently. The cap is passed, for a while, by the
+//! file just asked and by files being read, which are never let go of: an ask waiting for a
+//! parse would be orphaned. A file outside an ask's window is kept: two projects whose chats need
+//! windows of different depths no longer drop each other's files at every ask.
 //!
 //! In memory and in this process only: nothing is written, so there is no store to give a tier
 //! (ADR 0069).
@@ -180,7 +181,8 @@ fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl Recent {
-    /// The most bytes of records kept by default: about a month of fifty busy chats' log.
+    /// The most bytes of records kept by default: about a month of fifty busy chats' log. The
+    /// file just asked and files being read are kept past it.
     pub const CAP: usize = 64 << 20;
 
     /// Keeping at most about `cap` bytes of records.
@@ -284,8 +286,8 @@ impl Recent {
         }
     }
 
-    /// The entry of `path`, made where there is none (as asked now, so the cap does not take it
-    /// first): the map's lock is held for this alone.
+    /// The entry of `path`, made where there is none, and marked as asked now, so the cap does
+    /// not take it first: the map's lock is held for this alone.
     fn entry(&self, path: &Path) -> Arc<Mutex<Entry>> {
         let tick = self.ticks.fetch_add(1, Ordering::Relaxed);
         let mut files = locked(&self.files);
@@ -294,6 +296,7 @@ impl Recent {
             bytes: 0,
             used: tick,
         });
+        slot.used = tick;
         Arc::clone(&slot.entry)
     }
 
@@ -351,7 +354,7 @@ impl Recent {
         &self,
         held: &'a mut Entry,
         mut opened: std::fs::File,
-        path: &Path,
+        #[cfg_attr(not(test), allow(unused_variables))] path: &Path,
         stamp: &Stamp,
         chats: &[&str],
     ) -> io::Result<(&'a Indexed, Option<Event>)> {
@@ -388,6 +391,7 @@ impl Recent {
                 bytes: 0,
             },
         };
+        #[cfg_attr(not(test), allow(unused_variables, unused_assignments))]
         let mut lines = 0;
         let read = read_from(&mut opened, from.unwrap_or(0), |event| {
             lines += 1;
@@ -410,8 +414,6 @@ impl Recent {
         })?;
         #[cfg(test)]
         self.seen.parsed_lines(lines);
-        #[cfg(not(test))]
-        let _ = (lines, path);
         file.stamp = *stamp;
         file.offset = read.offset;
         if read.last_line.is_some() {
@@ -435,7 +437,9 @@ impl Recent {
         let mut kept: usize = files.values().map(|slot| slot.bytes).sum();
         while kept > self.cap {
             // Never one that frees nothing, nor one being read: an ask waiting for its parse
-            // would be orphaned, and the next ask of it would parse it again.
+            // would be orphaned, and the next ask of it would parse it again. The file just
+            // asked is spared the same way: its caller holds its entry, so try_lock on it
+            // returns WouldBlock.
             let Some(oldest) = files
                 .iter()
                 .filter(|(_, slot)| {
@@ -525,7 +529,7 @@ fn still_there(
 }
 
 /// What [`read_from`] read.
-struct Read {
+struct ReadTo {
     /// The end of the last whole line.
     offset: u64,
     /// Where that line starts and its hash, where a whole line was read.
@@ -537,8 +541,12 @@ struct Read {
 /// Hands `each` the events in `file` from byte `from` to its last whole line, a line that is not
 /// one skipped, as [`crate::eventlog::read`] reads a file. A last line with no end is not handed
 /// on, nor read past: where it is an event it is answered as the tail, for one answer only.
-fn read_from(file: &mut std::fs::File, from: u64, mut each: impl FnMut(Event)) -> io::Result<Read> {
-    use std::io::{Read as _, Seek, SeekFrom};
+fn read_from(
+    file: &mut std::fs::File,
+    from: u64,
+    mut each: impl FnMut(Event),
+) -> io::Result<ReadTo> {
+    use std::io::{Read, Seek, SeekFrom};
     file.seek(SeekFrom::Start(from))?;
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes)?;
@@ -553,7 +561,7 @@ fn read_from(file: &mut std::fs::File, from: u64, mut each: impl FnMut(Event)) -
         done += end + 1;
         rest = &rest[end + 1..];
     }
-    Ok(Read {
+    Ok(ReadTo {
         offset: from + done as u64,
         last_line,
         tail: serde_json::from_slice::<Event>(rest).ok(),

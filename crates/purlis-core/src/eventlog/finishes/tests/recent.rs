@@ -542,6 +542,82 @@ fn a_parse_in_flight_under_the_cap_is_shared_not_done_again() {
     );
 }
 
+#[test]
+fn a_last_whole_line_cut_and_written_over_by_a_longer_one_is_read_whole_again() {
+    // FS-C2 review (#8030): the same file, grown past the offset, whose last whole line parsed
+    // is no longer there as it was, is not the file that grew.
+    let dir = tempfile::tempdir().unwrap();
+    Turns::in_dir(dir.path(), CHAT)
+        .prompt()
+        .block(PUSH, None)
+        .stop();
+    let recent = Recent::default();
+    let said = recent.finishes(dir.path(), &[CHAT], 0).unwrap();
+    assert_eq!(said[CHAT].len(), 1, "the premise: the stop was read");
+    let path = live(dir.path());
+    let before = std::fs::metadata(&path).unwrap().len();
+    let text = std::fs::read(&path).unwrap();
+    let cut = text[..text.len() - 1]
+        .iter()
+        .rposition(|b| *b == b'\n')
+        .unwrap()
+        + 1;
+    // The same inode, cut back to before its last whole line.
+    std::fs::File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_len(cut as u64)
+        .unwrap();
+    Turns::in_dir(dir.path(), CHAT).block(&"x".repeat(400), None);
+    assert!(
+        std::fs::metadata(&path).unwrap().len() > before,
+        "the premise: the file is past the old offset"
+    );
+    let said = recent.finishes(dir.path(), &[CHAT], 0).unwrap();
+    assert_eq!(said[CHAT], finishes_in(dir.path(), CHAT).unwrap());
+}
+
+#[test]
+fn a_kept_file_being_read_again_is_not_let_go_of_under_the_cap() {
+    // FS-C2 review (#8030): the in-flight test above holds a first parse, which keeps nothing
+    // yet; here the file held keeps records, so only its lock spares it.
+    let parsing = tempfile::tempdir().unwrap();
+    let mut written = Turns::in_dir(parsing.path(), CHAT);
+    written.started("claude").prompt().block(PUSH, None).stop();
+    let others = tempfile::tempdir().unwrap();
+    sealed_turns(others.path(), OTHER, 4);
+    let path = live(parsing.path());
+    let recent = std::sync::Arc::new(Recent::with_cap(1));
+    recent.finishes(parsing.path(), &[CHAT], 0).unwrap();
+    assert_eq!(recent.parsed_of(&path), 1, "the premise: the file is warm");
+    written.prompt().block(LIST, None).stop();
+    let (began, release) = recent.hold_parse_of(&path);
+    let ask = || {
+        let (recent, dir) = (recent.clone(), parsing.path().to_path_buf());
+        std::thread::spawn(move || recent.finishes(&dir, &[CHAT], 0).unwrap())
+    };
+    let first = ask();
+    began
+        .recv_timeout(Duration::from_secs(60))
+        .expect("the first ask reads what the file gained");
+    // Another log's files, past the cap, while the read is held.
+    recent.finishes(others.path(), &[OTHER], 0).unwrap();
+    let second = ask();
+    while recent.waits_for(&path) < 3 && !second.is_finished() {
+        std::thread::yield_now();
+    }
+    release.send(()).unwrap();
+    let (first, second) = (first.join().unwrap(), second.join().unwrap());
+    assert_eq!(first, second);
+    assert_eq!(first[CHAT], finishes_in(parsing.path(), CHAT).unwrap());
+    assert_eq!(
+        recent.parsed_of(&path),
+        1,
+        "the file being read was let go of and parsed whole again"
+    );
+}
+
 /// **A bench, not a gate** (#7902): fifty chats over about 100 MB of log, as the epic's slow log
 /// had it. Run by hand:
 /// `cargo test -p purlis-core --release --lib -- --ignored --nocapture fifty_chats`.
