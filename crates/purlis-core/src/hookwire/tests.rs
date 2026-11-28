@@ -598,6 +598,8 @@ fn a_git_ask_is_read_back_whole_and_names_the_chat_its_token_must_be() {
             repo: "widget".to_owned(),
             piece: "p1".to_owned(),
             act: ClaimAct::Push,
+            amend: true,
+            skip_hooks: true,
         },
     ] {
         let ask = Ask::Git(Box::new(GitAsk {

@@ -1144,6 +1144,7 @@ fn start_in(root: &Path, standing: Standing) -> Decision {
             profile: "default",
             gaps: &gaps,
         }),
+        git: None,
     };
     crate::policy::decide::in_plane(
         root,

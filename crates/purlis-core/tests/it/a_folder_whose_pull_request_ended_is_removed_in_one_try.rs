@@ -79,6 +79,7 @@ fn from_a_chat(f: &support::Fixture, piece: &str) -> (Answer, String) {
             unsandboxed: false,
             roots_git_held: false,
             policy: None,
+            decided_as: None,
             unreadable: Vec::new(),
             config: None,
             id: None,

@@ -105,6 +105,50 @@ pub struct Asker {
     /// it keeps it ([`crate::reopen::HandedFrom::policy`]): what the app does for it runs no
     /// looser (Q308a, Q308b; the review of #7113). `None` for a chat no dispatch started.
     pub policy: Option<String>,
+    /// **What the session host records of the chat**, which the project policy decides its acts
+    /// in a branch folder by (M75-25, #7034; [`crate::policy::claimedfolder`]). The app always sets
+    /// it; `None` only in a process that is not the host, which has no policy to ask and no owner
+    /// record it could verify: the one-writer mutex still holds there.
+    pub decided_as: Option<crate::policy::decide::ChatFacts>,
+}
+
+/// **The git facts of a plain git's claim** (M75-25): what the guard read of its line, for the
+/// chat's own git, never the app's. `force` is false: a commit or an update rewrites no remote,
+/// and a push's claim is not one the policy decides here ([`crate::policy::claimedfolder::action_of`]).
+fn ask_facts(work: &GitWork) -> crate::policy::decide::GitFacts {
+    let (amend, skip_hooks) = match work {
+        GitWork::WorktreeClaim {
+            amend, skip_hooks, ..
+        } => (*amend, *skip_hooks),
+        _ => (false, false),
+    };
+    crate::policy::decide::GitFacts {
+        force: false,
+        skip_hooks,
+        brokered: false,
+        amend,
+    }
+}
+
+/// **The project policy's word on `asker`'s `act` in the branch folder `at`** (M75-25, #7034),
+/// asked before the one-writer mutex is taken: what to record once it is, or the refusal.
+pub(crate) fn judged_folder(
+    root: &Path,
+    asker: &Asker,
+    at: &crate::worktree::Located,
+    act: crate::piececlaim::Act,
+    git: crate::policy::decide::GitFacts,
+) -> Result<crate::policy::claimedfolder::Cleared, String> {
+    use crate::policy::claimedfolder::{self, Asking, Cleared};
+    let Some(facts) = &asker.decided_as else {
+        return Ok(Cleared::nothing());
+    };
+    let asking = Asking {
+        chat: asker.chat,
+        id: asker.id.as_deref(),
+        facts,
+    };
+    claimedfolder::judge(root, &asking, at, act, git)
 }
 
 /// Runs `ask` for `asker` in the project at `root`, every git call reading `isolation`'s
@@ -162,13 +206,16 @@ fn isolated_answer(root: &Path, asker: &Asker, ask: &GitAsk, now: jiff::Timestam
     let mut sent = None;
     // The guard's question before plain git writes a branch folder (#3931): no git runs, so
     // none of the checks below on where git would run is asked.
-    if let GitWork::WorktreeClaim { repo, piece, act } = &ask.work {
+    if let GitWork::WorktreeClaim {
+        repo, piece, act, ..
+    } = &ask.work
+    {
         let folder = crate::worktree::Located {
             workspace: ask.workspace.clone(),
             repo: repo.clone(),
             piece: piece.clone(),
         };
-        return Answered::from(claim(root, asker, &folder, *act, now));
+        return Answered::from(claim(root, asker, &folder, *act, ask_facts(&ask.work), now));
     }
     // A workspace the ask makes is one no chat works in yet: the chat need only stand in the
     // project. Every other ask writes a workspace the chat already writes.
@@ -275,11 +322,24 @@ fn isolated_answer(root: &Path, asker: &Asker, ask: &GitAsk, now: jiff::Timestam
                 repo: repo.clone(),
                 piece: piece.clone(),
             };
+            // The project policy first (M75-25), then the mutex, which holds in every mode. The
+            // app's git runs none of the repository's hooks, and its update never forces.
+            let brokered = crate::policy::decide::GitFacts {
+                force: false,
+                skip_hooks: true,
+                brokered: true,
+                amend: false,
+            };
+            let cleared = match judged_folder(root, asker, &folder, act, brokered) {
+                Ok(cleared) => cleared,
+                Err(why) => return no(why),
+            };
             if let Err(why) =
                 crate::piececlaim::take(root, &folder, &who(asker), asker.live.as_deref(), act, now)
             {
                 return no(why);
             }
+            cleared.record(root);
             let held = git::isolation().unwrap_or_default();
             let ran = in_a_checked_folder(root, &ask.workspace, repo, piece, &held, || match &ask
                 .work
@@ -1073,6 +1133,7 @@ fn claim(
     asker: &Asker,
     at: &crate::worktree::Located,
     act: crate::hookwire::ClaimAct,
+    git: crate::policy::decide::GitFacts,
     now: jiff::Timestamp,
 ) -> Answer {
     let may = Answer::Said {
@@ -1095,9 +1156,24 @@ fn claim(
             ),
         };
     }
+    // The project policy first (M75-25, #7034): its refusal is answered as the mutex's is, the
+    // one code the guard refuses on, so a guard of any version refuses it. The mutex after it
+    // holds in every mode.
+    let cleared = match judged_folder(root, asker, at, act.act(), git) {
+        Ok(cleared) => cleared,
+        Err(why) => {
+            return Answer::Said {
+                lines: vec![Say::Fail(why.into())],
+                code: crate::hookwire::CLAIM_HELD,
+            };
+        }
+    };
     let live = asker.live.as_deref();
     match crate::piececlaim::take_telling(root, at, &who(asker), live, act.act(), now) {
-        Ok(()) => may,
+        Ok(()) => {
+            cleared.record(root);
+            may
+        }
         // The one answer the guard refuses on: another live chat holds the folder.
         Err(crate::piececlaim::Refusal::HeldByALiveChat(why)) => Answer::Said {
             lines: vec![Say::Fail(why.into())],

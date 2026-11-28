@@ -394,6 +394,7 @@ fn answered_here(
         depth: args.depth.unwrap_or(0),
         via: "hook",
         start: None,
+        git: None,
     };
     let sealed = Sealed::of(&root);
     let mut answered = match &args.policy {

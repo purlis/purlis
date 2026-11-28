@@ -18,6 +18,14 @@ forbid (principal, action == Action::"push", resource in BranchSet::"protected-b
 @id("guards-git-force-push") @level("project") @ask("you") @keep("once")
 forbid (principal, action == Action::"push", resource) when { context.force };
 
+// A branch folder another chat claimed first is not this chat's to write (M75-25, #7034; ADR 0125,
+// amended 2026-11-27): `context.owner` is the host's, from the folder's first claim, which only the
+// app seals. "none" (no record, or a lost one) is decided as today. The one-writer mutex beneath
+// it is protocol, outside every mode: this rule follows `guards.git`'s.
+@id("guards-git-claimed-folder") @level("project")
+forbid (principal, action in [Action::"commit", Action::"update", Action::"discard"], resource)
+  when { context.owner == "task" || context.owner == "asker" || context.owner == "other" };
+
 // ── sandbox ───────────────────────────────────────────────────────────────────────────────
 @id("sandbox-secret-stores") @level("project")
 forbid (principal, action in [Action::"read", Action::"write"], resource in PathSet::"secret-stores");

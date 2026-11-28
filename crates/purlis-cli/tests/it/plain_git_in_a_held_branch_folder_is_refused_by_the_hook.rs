@@ -170,6 +170,7 @@ impl Project {
                         unsandboxed: true,
                         roots_git_held: false,
                         policy: None,
+                        decided_as: None,
                         unreadable: Vec::new(),
                         config: None,
                         id: Some(ME.to_owned()),

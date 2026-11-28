@@ -49,7 +49,7 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-use purlis_core::enforcement::{Family, Mode};
+use purlis_core::enforcement::Family;
 use purlis_core::handoffguard::Caller;
 use purlis_core::toolgate::{self, Call, Launched, Plane};
 use purlis_core::toolhooks::Answer;
@@ -179,17 +179,14 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
     }
     // A11: plain git that writes a branch folder another live chat holds, from a chat that runs
     // git itself (#3931). After every refusal, because it is the one that asks the app.
-    // `guards.git` (Q308).
-    let git = policy.mode(Family::GuardsGit);
-    if git != Mode::Off
-        && let Some(found) = &found
+    // **Asked in every mode** (M75-25, #7034): the one-writer mutex is protocol, outside every
+    // family mode, and the app's answer is already `guards.git`'s mode applied, by the policy's
+    // `guards-git-claimed-folder`, which writes its own would-have-blocked line under `log`.
+    if let Some(found) = &found
         && !launched.sandboxed
         && let Some(verdict) = held_branch_folder(Path::new(&found.root), &command, &cwd)
     {
-        if git == Mode::Enforce {
-            return crate::hooks::Answered::of(Answer::Deny(verdict));
-        }
-        log_verdict(&root, chat.as_deref(), Family::GuardsGit, &verdict);
+        return crate::hooks::Answered::of(Answer::Deny(verdict));
     }
     // Nothing refused: a dispatch or a handoff that writes and shares its call with another
     // command was refused above (#3785), and nothing here asks the person.
@@ -630,6 +627,7 @@ fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate:
             shape: Some(sub),
         });
     }
+    let read = LineFacts::of(command);
     for write in writes.found {
         let Some(at) = purlis_core::worktree::locate(root, &write.folder) else {
             continue;
@@ -650,6 +648,8 @@ fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate:
             repo: at.repo.clone(),
             piece: at.piece.clone(),
             act,
+            amend: read.amend,
+            skip_hooks: read.skip_hooks,
         };
         // Refused where the app says another live chat holds the folder, and where no app, or
         // something that is not the app, answers for this chat (#6995); any other answer, a
@@ -687,6 +687,37 @@ fn held_branch_folder(root: &Path, command: &str, cwd: &str) -> Option<toolgate:
         }
     }
     None
+}
+
+/// **What a claim ask tells the app of its line** (M75-25, #7034): whether any word of it asks for
+/// an amend or skips git's hooks, the act's `context.amend` and `context.skip-hooks`. Git takes an
+/// option by any prefix that names it alone, so `--am` is `--amend` and `--no-v` is `--no-verify`,
+/// and a cluster of short flags that holds `n` (`-n`, `-anm`) is read as `--no-verify`. Read of
+/// the whole line, so a word of another command on it counts too: it says more than the git does
+/// where it errs, never less. One pass over the line's words.
+struct LineFacts {
+    amend: bool,
+    skip_hooks: bool,
+}
+
+impl LineFacts {
+    fn of(command: &str) -> Self {
+        let names = |word: &str, option: &str, shortest: usize| {
+            word.len() >= shortest && option.starts_with(word)
+        };
+        let mut read = Self {
+            amend: false,
+            skip_hooks: false,
+        };
+        for word in command.split_whitespace() {
+            let word = word.trim_matches(|c| c == '"' || c == '\'');
+            let word = word.split('=').next().unwrap_or(word);
+            read.amend |= names(word, "--amend", "--am".len());
+            read.skip_hooks |= names(word, "--no-verify", "--no-v".len())
+                || (word.starts_with('-') && !word.starts_with("--") && word.contains('n'));
+        }
+        read
+    }
 }
 
 /// The stack the guards run on: far more than any of them needs.
@@ -1015,5 +1046,31 @@ mod budget_tests {
             assert_eq!(verdict.reason, purlis_core::mergehold::REASON_UNDECIDED);
             assert!(verdict.denial.contains("no answer"), "{}", verdict.denial);
         }
+    }
+}
+
+#[cfg(test)]
+mod line_facts_tests {
+    use super::LineFacts;
+
+    /// M75-25: a claim ask's `context.amend` and `context.skip-hooks` read git's own spellings,
+    /// abbreviations and short-flag clusters included, so a line never says less than its git.
+    #[test]
+    fn a_claims_line_facts_read_gits_abbreviations_and_short_flags() {
+        let read = |line: &str| {
+            let facts = LineFacts::of(line);
+            (facts.amend, facts.skip_hooks)
+        };
+        assert_eq!(read("git commit -m 'a change'"), (false, false));
+        assert_eq!(read("git commit --amend --no-edit"), (true, false));
+        assert_eq!(read("git commit --am"), (true, false));
+        assert_eq!(read("git commit --no-verify -m x"), (false, true));
+        assert_eq!(read("git commit --no-v -m x"), (false, true));
+        assert_eq!(read("git commit -anm x"), (false, true));
+        assert_eq!(read("git commit -n -m x"), (false, true));
+        assert_eq!(read("git commit \"--amend\""), (true, false));
+        // A word that only starts like one is not it.
+        assert_eq!(read("git commit --a -m x"), (false, false));
+        assert_eq!(read("git commit --no- -m x"), (false, false));
     }
 }

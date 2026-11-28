@@ -816,6 +816,7 @@ pub fn refusal(
             profile: judged.profile,
             gaps: &gaps,
         }),
+        git: None,
     };
     // A start is judged by the rules whatever the plane's standing: the deny state only adds
     // refusals to the other actions (M75-07b, review round 5, SEC5-SF2).

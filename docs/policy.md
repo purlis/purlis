@@ -198,6 +198,14 @@ forbid (principal, action == Action::"push", resource)
   when { context.owner != "self" };
 ```
 
+**A branch folder's owner is the chat that first wrote in it.** When a chat commits, updates or
+discards work in a branch folder that no record names yet, and purlis lets it, purlis records that
+chat as the folder's owner. The shipped rule `guards-git-claimed-folder` then refuses a `commit`,
+`update` or `discard` there by any other chat (`"task"`, `"asker"` or `"other"`), and the chat is
+told the rule's name. It follows `guards.git`'s mode. It leaves `"none"` alone on purpose, so a
+folder whose record was lost is decided as before. Beneath it, one live chat at a time writes in a
+branch folder in every mode, `guards.git = "off"` included: that is how purlis works, not a rule.
+
 `context.made_by` on a forge operation reads the same words, `"none"` until purlis keeps a record
 of what a chat made. A rule on `read` or `write` can't name `owner`: the sandbox is a fixed
 profile that can't tell whose a path is, so purlis refuses the rule when it loads the policy.

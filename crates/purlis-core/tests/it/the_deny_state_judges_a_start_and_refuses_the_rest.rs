@@ -62,6 +62,7 @@ fn asker<'a>(start: Option<decide::StartFacts<'a>>) -> Asker<'a> {
         depth: 0,
         via: if start.is_some() { "start" } else { "hook" },
         start,
+        git: None,
     }
 }
 

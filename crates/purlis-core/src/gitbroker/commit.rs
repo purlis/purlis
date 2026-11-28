@@ -229,6 +229,20 @@ fn commit(
     // `standing` answers only a folder purlis cut, so one it cannot place is refused, never
     // committed in unclaimed (fail closed).
     let at = worktree::locate(root, &folder).ok_or(NOT_PLACED)?;
+    // The project policy first (M75-25, #7034), then the mutex, which holds in every mode. A
+    // brokered commit never amends, and runs none of the repository's hooks.
+    let cleared = super::judged_folder(
+        root,
+        asker,
+        &at,
+        crate::piececlaim::Act::Commit,
+        crate::policy::decide::GitFacts {
+            force: false,
+            skip_hooks: true,
+            brokered: true,
+            amend: false,
+        },
+    )?;
     crate::piececlaim::take(
         root,
         &at,
@@ -237,6 +251,7 @@ fn commit(
         crate::piececlaim::Act::Commit,
         jiff::Timestamp::now(),
     )?;
+    cleared.record(root);
     // One commit at a time in a branch folder: a second ask waits for the first.
     let lock = lock_of(&here.git_dir);
     let _held = lock

@@ -182,6 +182,7 @@ fn the_host_computes_context_owner_from_what_the_act_touches() {
         depth: 1,
         via: "hook",
         start: None,
+        git: None,
     };
     for action in [
         "read",

@@ -73,7 +73,7 @@ fn with_its_repo(held: &Held, chat: u32, action: &str, id: &str, cwd: Option<&st
 
 /// **What the app records of chat `chat`** that a decision about it is made from: none for a chat
 /// this app does not have open.
-fn facts_of(held: &Held, chat: u32) -> Option<decide::ChatFacts> {
+pub(crate) fn facts_of(held: &Held, chat: u32) -> Option<decide::ChatFacts> {
     let chats = held.chats();
     chats.workspace_of(chat).map(|workspace| decide::ChatFacts {
         workspace,
@@ -283,6 +283,7 @@ pub fn why_for_person(held: &Held, asked: &PersonWhyAsk) -> Answer {
         depth: asked.depth.unwrap_or(0),
         via: "hook",
         start: None,
+        git: None,
     };
     let sealed = Sealed::of(root);
     match &asked.policy {

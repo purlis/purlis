@@ -524,6 +524,7 @@ forbid (principal, action == Action::"exec", resource)
         depth: 0,
         via: "hook",
         start: None,
+        git: None,
     };
     let decision = purlis_core::policy::decide::in_plane(
         plane.path(),

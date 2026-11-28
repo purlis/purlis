@@ -87,6 +87,13 @@ fn asker(held: &Held, chat: u32) -> Result<Asker, Answer> {
             why: format!("chat {chat} is not one this app has open"),
         });
     };
+    // What the policy decides the chat's acts in a branch folder by (M75-25): the app's record of
+    // a chat it has open, and nothing is done for one it has no record of.
+    let Some(decided_as) = crate::decisions::facts_of(held, chat) else {
+        return Err(Answer::No {
+            why: format!("chat {chat} is not one this app has open"),
+        });
+    };
     let confines = held.chats().confines_of(chat);
     Ok(Asker {
         chat,
@@ -111,6 +118,7 @@ fn asker(held: &Held, chat: u32) -> Result<Asker, Answer> {
         id: held.chats().id_of(chat),
         live: Some(live_chats(held)),
         policy: held.chats().handed_from(chat).and_then(|from| from.policy),
+        decided_as: Some(decided_as),
     })
 }
 
@@ -267,7 +275,9 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
         GitWork::RootUpdate {} => "worktree update at the project root".to_owned(),
         GitWork::RootSave { .. } => "save the project".to_owned(),
         // Its own git's claim on a branch folder, asked by the chat's Bash guard (#3931).
-        GitWork::WorktreeClaim { repo, piece, act } => {
+        GitWork::WorktreeClaim {
+            repo, piece, act, ..
+        } => {
             format!("hold {repo} {piece} for its own git's {act:?}")
         }
     };

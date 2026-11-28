@@ -39,6 +39,7 @@ use std::str::FromStr as _;
 use std::sync::OnceLock;
 
 pub mod audit;
+pub mod claimedfolder;
 pub mod decide;
 pub mod deny_state;
 pub mod force;
