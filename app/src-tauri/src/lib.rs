@@ -2826,10 +2826,6 @@ struct ChatRestart {
     /// so it was not made. Still owed, and the window asks for it again once the chat is at a
     /// pause, which may be now.
     ask_again: bool,
-    /// **What its pane typed while it was hibernated, which no program read** (SC-4d, #7633):
-    /// handed back with the woken run, for its pane to show unsent. Never typed into it: its
-    /// delivery is SC-4j's (#7639). None where nothing was typed, or the chat was not woken.
-    unsent: Option<String>,
 }
 
 /// **Restarts chat `session`**: the same chat on its conversation, started again with the
@@ -2885,7 +2881,6 @@ fn restarted(
             notices: Vec::new(),
             not_yet: Some(planes::WAITS_FOR_ITS_NEXT_PAUSE.to_owned()),
             ask_again: true,
-            unsent: None,
         });
     }
     match held.restart_chat(session, size, when)? {
@@ -2894,14 +2889,12 @@ fn restarted(
             notices: held.chats().start_notes(started),
             not_yet: None,
             ask_again: false,
-            unsent: held.hibernated().handed_back(started),
         }),
         planes::Restarted::NotYet(why) => Ok(ChatRestart {
             chat: None,
             notices: Vec::new(),
             not_yet: Some(why.to_owned()),
             ask_again: false,
-            unsent: None,
         }),
     }
 }

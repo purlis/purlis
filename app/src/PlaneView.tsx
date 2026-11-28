@@ -240,7 +240,7 @@ import { usePlaneUpdated } from "./PlaneUpdated";
 import { useHarnessCards } from "./harnessCards";
 import { useEditorTabs, type EditorTabOpened } from "./editorTab";
 import { Notice, NoticeInCentre, NoticeOf, type NoticesDot } from "./Notice";
-import { hibernateRefused, unsentHandedBack } from "./HibernatedNotice";
+import { hibernateRefused, HIBERNATION_CHANGED } from "./HibernatedNotice";
 import { NOT_HIBERNATED } from "./hibernationWords";
 import { useAskedControl } from "./windowControls";
 import { ReadOnlyLine, ReadOnlyMendable, ReadOnlySaid, useReadOnly } from "./ReadOnlyLine";
@@ -7807,11 +7807,6 @@ export const PlaneView = memo(function PlaneView({
             setRestartTrouble((was) => withoutKey(was, session));
             setRestartNotYet((was) => withoutKey(was, session));
             chatRestarted(session, chat);
-            // A hibernated chat woken: what its pane typed while it was hibernated is shown on
-            // the woken pane, unsent (SC-4d, #7633). `?? null`: it is absent where nothing was
-            // typed.
-            const unsent = done.data.unsent ?? null;
-            if (unsent !== null) unsentHandedBack(plane, chat.session, unsent);
             // What the new run's start found to say: that a chat which ran without the
             // sandbox runs in it again. `?? []`, as a start's notices are read.
             const notes = done.data.notices ?? [];
@@ -7844,6 +7839,46 @@ export const PlaneView = memo(function PlaneView({
    * plane, as `chat-moved` is.
    */
   const redrawRescreened = useRef<(told: Rescreened) => void>(() => undefined);
+  /**
+   * **A hibernated chat the core woke on its own** (SC-4j, #7639): a message typed in its pane,
+   * or a parent's tell. The window draws the run it woke as in its place, as after a Resume.
+   */
+  const redrawWoken = useRef<(session: number, woken: number) => void>(() => undefined);
+  useEffect(() => {
+    redrawWoken.current = (session: number, woken: number) => {
+      void commands
+        .openedChats(plane)
+        .then((open) => {
+          const chat = open.status === "ok" ? open.data.find((one) => one.session === woken) : null;
+          if (chat) chatRestarted(session, chat);
+        })
+        .catch(() => undefined);
+    };
+  }, [chatRestarted, plane]);
+  useEffect(() => {
+    let gone = false;
+    let stop: (() => void) | undefined;
+    void (async () => {
+      try {
+        const unlisten = await listen<{ plane: PlaneId; session: number; woken?: number }>(
+          HIBERNATION_CHANGED,
+          (event) => {
+            const told = event.payload;
+            if (gone || told.plane !== plane || told.woken === undefined) return;
+            redrawWoken.current(told.session, told.woken);
+          },
+        );
+        if (gone) unlisten();
+        else stop = unlisten;
+      } catch {
+        // No window to listen in.
+      }
+    })();
+    return () => {
+      gone = true;
+      stop?.();
+    };
+  }, [plane]);
   useEffect(() => {
     redrawRescreened.current = (told: Rescreened) => {
       setOwedRestarts((owed) => owed.filter((one) => one !== told.session));

@@ -10539,6 +10539,7 @@ fn sent(kind: Kind, to: &str) -> Answer {
         kind,
         to: to.to_owned(),
         instruction: None,
+        not_woken: None,
     }))
 }
 
@@ -10548,6 +10549,7 @@ fn told(to: &str, number: u32) -> Answer {
         kind: Kind::FollowUp,
         to: to.to_owned(),
         instruction: Some(number),
+        not_woken: None,
     }))
 }
 

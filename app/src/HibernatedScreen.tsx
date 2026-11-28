@@ -8,6 +8,10 @@
  * of its live terminal, under the band that offers Resume (`HibernatedNotice`). Where none was
  * kept (it could not be taken or masked, or the file is missing, corrupt or too large) it says
  * so, and Resume still works.
+ *
+ * **Typing on the kept screen wakes the chat** (SC-4j, #7639): each key goes to the core as a
+ * live pane's does, which holds it, wakes the chat, and types it into the woken run once that
+ * run is ready.
  */
 import type { ReactNode } from "react";
 import { commands, type PlaneId } from "./bindings";
@@ -26,7 +30,7 @@ export const HIBERNATED_SCREEN_LABEL = "What this chat showed as it was hibernat
 
 /** What the pane says of the kept screen beside it. */
 export const HIBERNATED_SCREEN_NOTE =
-  "A copy of what this chat showed as it was hibernated. It takes no input. Resume starts it again on its conversation.";
+  "A copy of what this chat showed as it was hibernated. Typing here wakes it, and it reads what you type once it is ready.";
 
 /** What the pane says where no screen was kept. */
 export const NONE_KEPT = "No copy of this chat's screen was kept";
@@ -56,11 +60,26 @@ export function HibernatedScreen({ plane, session }: { plane: PlaneId; session: 
   const screen = useRead(() => commands.hibernatedChatScreen(plane, session), [plane, session]);
   // Not read yet, or not read at all, reads as nothing kept: Resume is the band's either way.
   if (screen.data === undefined && screen.refused === undefined) return null;
-  return <HibernatedScreenShown screen={screen.data ?? null} />;
+  return (
+    <HibernatedScreenShown
+      screen={screen.data ?? null}
+      onTyped={(text) => {
+        // Refused or not, the core says it on the pane: a send it cannot take is told there.
+        void commands.sendInput(plane, session, text).catch(() => undefined);
+      }}
+    />
+  );
 }
 
-/** The kept screen, `null` where none was kept: what the story draws. */
-export function HibernatedScreenShown({ screen }: { screen: string | null }) {
+/** The kept screen, `null` where none was kept: what the story draws. `onTyped` is where a key
+ *  typed on it goes. */
+export function HibernatedScreenShown({
+  screen,
+  onTyped,
+}: {
+  screen: string | null;
+  onTyped?: (text: string) => void;
+}) {
   return (
     <section className="view-pane view-alone" data-testid="hibernated-screen">
       {screen === null ? (
@@ -78,6 +97,7 @@ export function HibernatedScreenShown({ screen }: { screen: string | null }) {
           cols={SCREEN_COLUMNS}
           rows={SCREEN_ROWS}
           fontSize={textSizes().terminal}
+          onTyped={onTyped}
         />
       )}
     </section>

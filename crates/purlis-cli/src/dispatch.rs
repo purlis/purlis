@@ -1004,12 +1004,27 @@ fn delivered_earlier(what: &str) -> String {
     )
 }
 
-/// The app's answer to a message it delivered, as `(kind, to, instruction)`.
-fn sent_to(answered: Answered) -> Result<(String, Option<u32>), CliError> {
+/// The app's answer to a message it delivered: who it went to, as one line, its instruction
+/// number, and why a hibernated task could not be woken to read it (SC-4j, #7639).
+struct SentTo {
+    name: String,
+    instruction: Option<u32>,
+    not_woken: Option<String>,
+}
+
+/// The app's answer to a message it delivered.
+fn sent_to(answered: Answered) -> Result<SentTo, CliError> {
     match answered {
         Answered::Sent {
-            to, instruction, ..
-        } => Ok((purlis_core::personas::one_line(&to), instruction)),
+            to,
+            instruction,
+            not_woken,
+            ..
+        } => Ok(SentTo {
+            name: purlis_core::personas::one_line(&to),
+            instruction,
+            not_woken,
+        }),
         _ => Err(not_asked_for("message")),
     }
 }
@@ -1067,10 +1082,23 @@ pub fn tell(via: Via, to: u32, text: &str) -> Result<String, CliError> {
         Fate::Queued => return Ok(queued_said(&format!("follow-up to chat {to}"))),
         Fate::DeliveredEarlier => return Ok(delivered_earlier(&format!("follow-up to chat {to}"))),
     };
-    let (name, instruction) = sent_to(answered)?;
+    let SentTo {
+        name,
+        instruction,
+        not_woken,
+    } = sent_to(answered)?;
     let number = instruction
         .map(|number| format!(" {}", acknowledged_by(number)))
         .unwrap_or_default();
+    if let Some(why) = not_woken {
+        return Ok(format!(
+            "{SAYS} follow-up kept for '{name}' (chat {to}), quoted as data from this chat, but \
+             it was not read: '{name}' is hibernated and purlis could not wake it ({}). It \
+             reads the message when it is next woken, by the person's Resume on its tab or a \
+             later tell once that is fixed. Do not wait on it until then.{number}",
+            why.trim_end_matches('.')
+        ));
+    }
     Ok(format!(
         "{SAYS} follow-up sent to '{name}' (chat {to}), quoted as data from this chat. If it is \
          at rest, purlis starts its turn on it now; if it is mid-turn, it reads it when that \
@@ -1124,7 +1152,7 @@ pub fn answer(via: Via, to: u32, text: &str) -> Result<String, CliError> {
         Fate::Queued => return Ok(queued_said(&format!("answer to chat {to}"))),
         Fate::DeliveredEarlier => return Ok(delivered_earlier(&format!("answer to chat {to}"))),
     };
-    let (name, _) = sent_to(answered)?;
+    let SentTo { name, .. } = sent_to(answered)?;
     Ok(format!(
         "{SAYS} answer sent to '{name}' (chat {to}), which carries on with it."
     ))
@@ -1171,7 +1199,7 @@ pub fn note(via: Via, text: Option<&str>, ack: Option<u32>) -> Result<String, Cl
             purlis_core::personas::one_line(&to)
         ));
     }
-    let (name, _) = sent_to(answered)?;
+    let SentTo { name, .. } = sent_to(answered)?;
     let acked = ack
         .map(|number| format!(" It acknowledges instruction {number}."))
         .unwrap_or_default();
@@ -1727,6 +1755,21 @@ pub fn wait(of: u32, within: Option<u32>) -> Result<String, CliError> {
         Waited::Ended => {
             format!("{SAYS} '{name}' (chat {of}) failed: its chat ended without a report.")
         }
+        Waited::Hibernated {
+            not_woken: Some(why),
+        } => format!(
+            "{SAYS} '{name}' (chat {of}) is hibernated: its program rests and its conversation \
+             is kept, so it sends nothing until it is woken. purlis could not wake it the last \
+             time it was asked ({}). A tell to it is kept for its next wake, by the person's \
+             Resume on its tab or a later tell once that is fixed; do not wait on it until then.",
+            why.trim_end_matches('.')
+        ),
+        Waited::Hibernated { not_woken: None } => format!(
+            "{SAYS} '{name}' (chat {of}) is hibernated: its program rests and its conversation \
+             is kept, so it sends nothing until it is woken. `purlis dispatch tell {of} \
+             \"<text>\"` wakes it and it reads the message; its report reaches this chat as \
+             context when it lands."
+        ),
     })
 }
 

@@ -474,22 +474,29 @@ fn the_operators_act_refuses_each_condition_but_those_that_only_hold_the_app_bac
 }
 
 #[test]
-fn the_operators_act_still_refuses_any_open_task_of_its_own_and_being_a_task() {
-    // Conservative until a tell wakes a task (SC-4j, #7639): rested, yet refused by hand.
+fn the_operators_act_takes_a_parent_whose_tasks_reported_and_a_task_whose_report_is_not_owed() {
+    // SC-4j (#7639): a tell wakes a hibernated task and a wait on one answers at once, so the
+    // act no longer refuses a parent whose tasks are over, or a task nobody waits on.
     let a_parent = Facts {
         tasks: vec![task(TaskState::Reported(Some(Outcome::Done)))],
         ..at_rest()
     };
-    assert_eq!(rested(&a_parent), Ok(()));
-    assert_eq!(by_hand(&a_parent), Err(NotRested::FinishedTaskOpen));
+    assert_eq!(by_hand(&a_parent), Ok(()));
     let a_task = Facts {
         as_a_task: Some(AsATask {
             owes_its_report: false,
         }),
         ..at_rest()
     };
-    assert_eq!(rested(&a_task), Ok(()));
-    assert_eq!(by_hand(&a_task), Err(NotRested::IsATask));
+    assert_eq!(by_hand(&a_task), Ok(()));
+    // Its parent waits on its report: refused, as the app's own act refuses it.
+    let owed = Facts {
+        as_a_task: Some(AsATask {
+            owes_its_report: true,
+        }),
+        ..at_rest()
+    };
+    assert_eq!(by_hand(&owed), Err(NotRested::ReportOwed));
 }
 
 #[test]
@@ -520,7 +527,8 @@ fn the_operators_act_says_wait_for_its_report_only_while_the_report_is_owed() {
         ..at_rest()
     };
     assert_eq!(by_hand(&owed), Err(NotRested::TaskOpen));
-    // One that reported, or ended, with its row still open: nothing to wait for.
+    // One that reported, or ended, with its row still open: nothing to wait for, so it may
+    // be hibernated (SC-4j, #7639).
     for over in [
         task(TaskState::Reported(None)),
         task(TaskState::Ended),
@@ -533,11 +541,7 @@ fn the_operators_act_says_wait_for_its_report_only_while_the_report_is_owed() {
             tasks: vec![over],
             ..at_rest()
         };
-        assert_eq!(
-            by_hand(&facts),
-            Err(NotRested::FinishedTaskOpen),
-            "{over:?}"
-        );
+        assert_eq!(by_hand(&facts), Ok(()), "{over:?}");
     }
 }
 
@@ -588,7 +592,7 @@ fn asking_about_its_own_work_lifts_no_other_refusal() {
         },
         Facts {
             as_a_task: Some(AsATask {
-                owes_its_report: false,
+                owes_its_report: true,
             }),
             ..at_rest()
         },

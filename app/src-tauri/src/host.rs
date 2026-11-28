@@ -1161,6 +1161,8 @@ pub(crate) mod pretend {
         ends: Mutex<Option<Ends>>,
         /// Why it starts nothing, while a test has it refuse ([`Pretend::refuses`]).
         refusing: Mutex<Option<String>>,
+        /// Why it types nothing, while a test has it refuse input ([`Pretend::refuses_input`]).
+        refusing_input: Mutex<Option<String>>,
         /// The numbers it starts nothing under, and why ([`Pretend::refuses_number`]).
         refusing_numbers: Mutex<Vec<(u32, String)>>,
         /// How long each start takes ([`Pretend::takes`]).
@@ -1562,6 +1564,12 @@ pub(crate) mod pretend {
             *lock(&self.seen.refusing) = why.map(str::to_owned);
         }
 
+        /// Refuses everything typed from now with `why`, as a host whose terminal went away
+        /// does; `None` takes it again.
+        pub fn refuses_input(&self, why: Option<&str>) {
+            *lock(&self.seen.refusing_input) = why.map(str::to_owned);
+        }
+
         /// Refuses a start asked for under `number` with `why`, and starts every other: what
         /// a launch meets when one chat's program will not start and the rest do.
         pub fn refuses_number(&self, number: u32, why: &str) {
@@ -1895,6 +1903,9 @@ pub(crate) mod pretend {
         }
         fn input(&self, id: u32, bytes: &[u8]) -> Result<(), String> {
             self.here(id)?;
+            if let Some(why) = lock(&self.seen.refusing_input).clone() {
+                return Err(why);
+            }
             self.reached(format!("typed {id} {}", String::from_utf8_lossy(bytes)));
             lock(&self.seen.typed).push((id, bytes.to_vec()));
             Ok(())

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useContext, useEffect, useState, useSyncExternalStore } from "react";
-import { commands, type ChatHibernation, type PlaneId } from "./bindings";
+import { commands, type ChatHibernation, type HandedBack, type PlaneId } from "./bindings";
 import { listen } from "./here";
 import { Notice, NoticeOf } from "./Notice";
 import { HIBERNATION_CHANGED } from "./chatState";
@@ -31,23 +31,31 @@ export function HibernatedNotice({
   const hibernated = useHibernated(plane, session);
   if (hibernated === null) return null;
   return (
-    <HibernatedBand session={session} onResume={onResume} unsent={hibernated.unsent ?? undefined} />
+    <HibernatedBand
+      session={session}
+      onResume={onResume}
+      unsent={hibernated.unsent ?? undefined}
+      notWoken={hibernated.not_woken ?? undefined}
+    />
   );
 }
 
 /**
  * The band itself, for a chat known to be hibernated: what its story draws. `unsent` is what
  * its pane typed once its program was ending, which no program read (SC-4d, #7633): shown
- * here, and handed back to the pane when it is resumed ({@link UnsentNotice}).
+ * here until the chat wakes, when the woken run reads it (SC-4j, #7639). `notWoken` is the
+ * core's word on why typing in it did not wake it.
  */
 export function HibernatedBand({
   session,
   onResume,
   unsent,
+  notWoken,
 }: {
   session: number;
   onResume: () => void;
   unsent?: string;
+  notWoken?: string;
 }) {
   const offScreen = useContext(NoticeOf) !== null;
   const chat = offScreen ? "That chat" : "This chat";
@@ -64,12 +72,19 @@ export function HibernatedBand({
       {typed !== "" && (
         <>
           {" "}
-          What you typed since was not sent, and is kept until you resume it:{" "}
-          <span className="whitespace-pre-wrap">{typed}</span>
+          What you typed since was not sent, and is kept until it wakes: “
+          <span className="whitespace-pre-wrap">{typed}</span>”.
         </>
       )}
+      {notWoken !== undefined && <> purlis could not wake it: {sentence(notWoken)}</>}
     </Notice>
   );
+}
+
+/** The core's reason as the end of a sentence: with its full stop, written once. */
+function sentence(why: string): string {
+  const said = why.trim();
+  return /[.!?]$/.test(said) ? said : `${said}.`;
 }
 
 /**
@@ -79,51 +94,6 @@ export function HibernatedBand({
 function shown(typed: string): string {
   // eslint-disable-next-line no-control-regex
   return typed.replace(/[\u0000-\u001f\u007f]/g, " ").trim();
-}
-
-/** What the panes of chats woken typed while they were hibernated, by plane and session. */
-const handedBack = new Map<string, string>();
-
-/**
- * **The core handed back what chat `session`'s pane typed while it was hibernated** (SC-4d,
- * #7633), with its woken run: said on that run's pane, unsent, until put away. It is never
- * typed into the woken program: when and how it is delivered is SC-4j's (#7639).
- */
-export function unsentHandedBack(plane: PlaneId, session: number, unsent: string) {
-  if (shown(unsent) === "") return;
-  handedBack.set(keyOf(plane, session), unsent);
-  for (const tell of listeners) tell();
-}
-
-/**
- * **What the person typed into a chat while it was hibernated, on its woken pane** (SC-4d,
- * #7633): not sent, and said so, with the words, until put away with Dismiss.
- */
-export function UnsentNotice({ plane, session }: { plane: PlaneId; session: number }) {
-  const key = keyOf(plane, session);
-  const unsent = useSyncExternalStore(
-    subscribe,
-    () => handedBack.get(key),
-    () => undefined,
-  );
-  const offScreen = useContext(NoticeOf) !== null;
-  if (unsent === undefined) return null;
-  const chat = offScreen ? "That chat" : "This chat";
-  return (
-    <Notice
-      cause={`chat-unsent:${session}`}
-      at="pane"
-      label="Not sent"
-      onDismiss={() => {
-        handedBack.delete(key);
-        for (const tell of listeners) tell();
-      }}
-    >
-      {chat} was hibernated when you typed this, so it was not sent:{" "}
-      <span className="whitespace-pre-wrap">{shown(unsent)}</span> Type it again if you still want
-      it.
-    </Notice>
-  );
 }
 
 /**
@@ -165,6 +135,75 @@ export function useHibernated(plane: PlaneId, session: number): ChatHibernation 
     };
   }, [plane, session, read]);
   return hibernated;
+}
+
+/** What woken runs never read, handed back by the core, by plane and session (SC-4j, #7639). */
+const handedBack = new Map<string, HandedBack>();
+
+/**
+ * **What chat `session`'s pane typed that its woken run never read** (SC-4j, #7639): its run
+ * ended before it was ready, or typing it in was refused. The core hands it over once, read when
+ * the pane mounts and each time it says a chat's hibernation moved; the pane keeps it, unsent,
+ * until it is put away.
+ */
+export function UnsentNotice({ plane, session }: { plane: PlaneId; session: number }) {
+  const key = keyOf(plane, session);
+  useEffect(() => {
+    const take = () => {
+      void commands
+        .chatUnsentHandedBack(plane, session)
+        .then((answer) => {
+          if (answer.status !== "ok" || answer.data === null) return;
+          handedBack.set(key, answer.data);
+          for (const tell of listeners) tell();
+        })
+        .catch(() => {});
+    };
+    take();
+    let gone = false;
+    let stop: (() => void) | undefined;
+    void (async () => {
+      try {
+        const unlisten = await listen<{ plane: PlaneId; session: number }>(
+          HIBERNATION_CHANGED,
+          (event) => {
+            if (event.payload.plane === plane && event.payload.session === session) take();
+          },
+        );
+        if (gone) unlisten();
+        else stop = unlisten;
+      } catch {
+        // No window to listen in: a unit test, or a webview being torn down.
+      }
+    })();
+    return () => {
+      gone = true;
+      stop?.();
+    };
+  }, [plane, session, key]);
+  const back = useSyncExternalStore(
+    subscribe,
+    () => handedBack.get(key),
+    () => undefined,
+  );
+  const offScreen = useContext(NoticeOf) !== null;
+  if (back === undefined || shown(back.text) === "") return null;
+  const chat = offScreen ? "That chat" : "This chat";
+  return (
+    <Notice
+      cause={`chat-unsent:${session}`}
+      at="pane"
+      label="Not sent"
+      onDismiss={() => {
+        handedBack.delete(key);
+        for (const tell of listeners) tell();
+      }}
+    >
+      {chat} was woken, but what you typed while it was hibernated was not sent: “
+      <span className="whitespace-pre-wrap">{shown(back.text)}</span>”. {sentence(back.why)} Type it
+      again if you still want it.
+    </Notice>
+  );
 }
 
 /** Why a chat was not hibernated, by plane and session: what the core said when it refused. */

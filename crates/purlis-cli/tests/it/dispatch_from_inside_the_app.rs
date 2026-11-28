@@ -2109,6 +2109,7 @@ fn sent(kind: Kind, to: &str) -> Answer {
         kind,
         to: to.to_owned(),
         instruction: None,
+        not_woken: None,
     }))
 }
 

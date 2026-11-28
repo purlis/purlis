@@ -3378,10 +3378,7 @@ impl Chats {
                 return Err(why);
             }
         };
-        let size = lock(&self.sizes).get(&session).copied().unwrap_or(Size {
-            columns: 80,
-            rows: 24,
-        });
+        let size = self.last_size(session);
         lock(&self.replacing).insert(session);
         // Said while its program still runs, so its end is written `superseded` (ADR 0076
         // §2) wherever the event log is written, before its close is heard there.
@@ -4212,6 +4209,15 @@ impl Chats {
         }
     }
 
+    /// The size chat `session`'s pane last told it, or a terminal's default: what a start that
+    /// no pane asked for (a wake by a tell, SC-4j, #7639) is drawn at.
+    pub fn last_size(&self, session: u32) -> Size {
+        lock(&self.sizes).get(&session).copied().unwrap_or(Size {
+            columns: 80,
+            rows: 24,
+        })
+    }
+
     /// Wakes hibernated chat `session` (SC-4a, #7630): the same chat on its conversation, in
     /// a new run under a new number whose beginning is ADR 0066's `wake`. The caller has read
     /// that the chat is hibernated; this refuses a chat with no conversation to pick up. The old
@@ -4226,7 +4232,10 @@ impl Chats {
             }
             // **The hibernated run ends `completed | superseded` as the wake begins** (ADR 0076
             // as amended 2026-11-25): said before the `wake` run starts, so the log reads in the
-            // order it happened. Its program is gone, so no end of it is heard to say so.
+            // order it happened. Its program is gone, so no end of it is heard to say so. A start
+            // that fails after this leaves that end in the log while the chat stays hibernated:
+            // the start writes its own beginning, so this cannot wait for it without the log
+            // reading out of order (SC-4j review, left open).
             self.superseded(session);
             // **Told what the hibernation ended** (SC-4d, #7633; ADR 0068 amended 2026-11-08):
             // the own work the person was asked about, each piece by name. None for a chat
