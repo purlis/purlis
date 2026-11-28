@@ -2765,6 +2765,12 @@ jobs:
           image=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner-scenario:candidate)
           echo "image $image"
           echo "PURLIS_E2E_POOL_IMAGE=$image" >> "$GITHUB_ENV"
+      # **The other machines' images, by digest** (#7983): the sshd images the two machines below run,
+      # pulled by their pinned digest (or built, where a pin is stale), as the remote parity job does.
+      - name: The other machines' images, by digest, for Pool setup's run
+        if: matrix.pool
+        timeout-minutes: 10
+        run: node tools/fixture-images.mjs prepare-all
       # **Docker on another machine, behind an sshd, for Pool setup's walk there** (#6266): the
       # same runner image copied into docker:dind, reached over a dockerised sshd with latency
       # and loss (`tests/remote-docker/up.sh`), as the remote parity job serves it.
