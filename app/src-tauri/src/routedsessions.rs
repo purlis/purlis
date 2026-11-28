@@ -1065,6 +1065,11 @@ impl SessionHost for RoutedSessions {
         }
     }
 
+    /// Only this machine's chats are hibernated (a runner's chats are out of SC-4's scope).
+    fn asleep(&self, id: u32) {
+        self.here.asleep(id);
+    }
+
     /// Told on every host; a runner chat's end also fetches its workspace's branches back.
     fn when_one_ends(&self, tell: Ends) {
         let told: Ends = {

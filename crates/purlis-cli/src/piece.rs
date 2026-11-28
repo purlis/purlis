@@ -43,7 +43,8 @@ pub enum WorktreeCommand {
     /// repository's own hooks are not run. From a chat with no sandbox or a terminal, your own
     /// git does the same, with its hooks and signing; `[plane] refuse_unsandboxed_commit`
     /// refuses that instead. It only commits: it never amends, resets, rebases, merges or
-    /// pushes.
+    /// pushes. The commit holds exactly the paths you name: anything else already staged in
+    /// the folder stays staged and is not committed. `--all` commits every tracked change.
     Commit {
         /// The commit message. One that starts with `-` is the message too (#3927).
         #[arg(
@@ -59,7 +60,7 @@ pub enum WorktreeCommand {
         /// Never done. Taken only so that it is refused in a sentence.
         #[arg(long, hide = true)]
         amend: bool,
-        /// Paths to stage, relative to where you stand in the branch folder (or with `env -C
+        /// Paths to stage and commit, the only ones committed, relative to where you stand in the branch folder (or with `env -C
         /// <branch folder>`), or from a folder above it as `.worktrees/<repo>/<piece>/<path>`.
         #[arg(value_name = "PATH")]
         paths: Vec<String>,

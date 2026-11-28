@@ -12,7 +12,8 @@ import { recentSlowLog } from "./slowLog";
 
 /**
  * How many of the slow-answer log's entries the report carries, the newest: the core keeps up to
- * 1,000, more than a person reads in an issue or a chat takes in one paste.
+ * a few thousand, each kind to its own cap, more than a person reads in an issue or a chat takes
+ * in one paste.
  */
 export const SLOW_ENTRIES_COPIED = 200;
 

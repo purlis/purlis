@@ -3380,6 +3380,15 @@ export type AnswerPath =
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
+/**  How long `n` answers to `command` of class `class` took: the median and 99th percentile. */
+export type AnswerSpread = {
+	command: string,
+	class: string,
+	n: number,
+	p50_ms: number,
+	p99_ms: number,
+};
+
 /**
  *  One memory in a store's `archive/`, as the window's archive tab lists it and reads it
  *  (KN-4): read-only, so it carries no text to check a save against.
@@ -4550,7 +4559,17 @@ export type BusyChat = {
 /**  How a chat that is hibernated was put to rest. */
 export type By = 
 /**  The person did, from its row. */
-"operator";
+"operator" | 
+/**
+ *  The app did, by itself, for a rested chat: read back from the record at a restart
+ *  (SC-4e, #7634).
+ */
+"idle" | 
+/**
+ *  Its session host ended while it rested at a turn's end (#2278), read back from the
+ *  record at a restart (SC-4e, #7634): it has no kept screen.
+ */
+"host_crash";
 
 /**
  *  A harness the operator started by hand in a shell tab, as the window draws its banner.
@@ -8896,6 +8915,11 @@ export type LinkCandidate = {
 	kind: KindHint,
 	text: string,
 	target?: string | null,
+	/**
+	 *  Whether the pane read the words across a line break the program wrote at its edge
+	 *  (#7819): a web address read so asks before it opens. Left out, it is not.
+	 */
+	joined?: boolean | null,
 };
 
 /**  **What ⌘-click on a link would do**, said on its hover. */
@@ -16996,15 +17020,19 @@ export type SlowMoment =
 /**  An answer to `command` that took `ms`, asked at `at`, while `hot` chats were working. */
 { kind: "answer"; command: string; ms: number; at: number | null; hot: number } | 
 /**
- *  A gap of `ms` between two of the window's frames, seen at `at`, while `hot` chats were
- *  working, with the tab in front (`front`) and whether a view of a chat was opening, and
- *  what the window's thread did in that frame, the top five of each (felt speed round 4,
- *  H9): the regions whose React commits took longest (`react`), the core's events handled
- *  (`events`) and answers handled (`answers`) by name and count, and the scripts the webview
- *  said made the frame long (`scripts`). `dark`: the thread answered all through the gap,
- *  so the webview withheld its frames (a locked screen, a display asleep, a window covered).
+ *  A gap of `ms` between two of the frames of the window labelled `window`, seen at `at`,
+ *  while `hot` chats were working, with the tab in front (`front`) and whether a view of a
+ *  chat was opening, and what the window's thread did in that frame (felt speed round 4,
+ *  H9; #7891): `render_ms`, what React's renders of the measured regions took of the gap,
+ *  and the top five of each, the regions whose renders took longest by their own time
+ *  (`react`), the core's events handled, each once (`events`), the calls of their listeners
+ *  (`listeners`), the answers handled (`answers`) and what happened that costs a frame
+ *  (`marks`), by name and count.
+ *  `dark`: the thread answered all through the gap, so the webview withheld its frames (a
+ *  locked screen, a display asleep, or a window covered whole that WebKit did not report as
+ *  hidden).
  */
-{ kind: "stall"; ms: number; at: number | null; hot: number; front: string | null; opening: boolean; dark: boolean; react: StallTook[]; events: StallCounted[]; answers: StallCounted[]; scripts: StallTook[] } | 
+{ kind: "stall"; ms: number; at: number | null; window: string; hot: number; front: string | null; opening: boolean; dark: boolean; render_ms: number; react: StallRendered[]; events: StallCounted[]; listeners: StallCounted[]; answers: StallCounted[]; marks: StallCounted[] } | 
 /**
  *  The core's main thread ran a ping `ms` after it was asked to at `at`, busy with the
  *  command `running` when the wait was noticed (`crate::mainwatch`). The core writes it; the
@@ -17021,7 +17049,25 @@ export type SlowMoment =
  *  phases it passed through in the order it ran them (H12). The core writes it; the window
  *  only reads it back.
  */
-{ kind: "opening"; ms: number; at: number | null; hot: number; phases: StallTook[] };
+{ kind: "opening"; ms: number; at: number | null; hot: number; phases: StallTook[] } | 
+/**
+ *  The window labelled `window` was visible (`visible`) or not at `at`: once as it starts
+ *  watching, then at each `visibilitychange` (#7891). On macOS WebKit fires one for a window
+ *  minimised or hidden, and, by its occlusion handling, for one covered whole, which is
+ *  unverified until checked by hand; what WebKitGTK on Linux reports is not known.
+ */
+{ kind: "visibility"; at: number | null; window: string; visible: boolean } | 
+/**
+ *  The core's answer to `command` of class `class`, asked at `at`: `queued_ms` waiting for
+ *  a thread, then `work_ms` doing it (#7893). The core writes it; the window only reads it
+ *  back.
+ */
+{ kind: "answer_span"; command: string; class: string; queued_ms: number; work_ms: number; at: number | null } | 
+/**
+ *  How long the core's answers to each command took from `since` to `at` (#7893). The core
+ *  writes it; the window only reads it back.
+ */
+{ kind: "answer_summary"; at: number | null; since: number | null; commands: AnswerSpread[] };
 
 /**  What the window says about a slow launch: its line, and the relaunch that line suggests. */
 export type SlowStart = {
@@ -17187,13 +17233,25 @@ export type StaleRemote = {
 	pushes_kept: string[],
 };
 
-/**  Something the window handled `n` times in a stalled frame, by name. */
+/**  Something the window handled or did `n` times in a stalled frame, by name. */
 export type StallCounted = {
 	name: string,
 	n: number,
 };
 
-/**  Something the window's thread did in a stalled frame, by name, and how long it took there. */
+/**
+ *  A region of the window React rendered in a stalled frame, by name: `ms` with the regions
+ *  inside it, `self_ms` its own body's, and `commits`, how many of React's commits in the frame
+ *  rendered anything inside it.
+ */
+export type StallRendered = {
+	name: string,
+	ms: number,
+	self_ms: number,
+	commits: number,
+};
+
+/**  A phase of an opening, by name, and how long it took. */
 export type StallTook = {
 	name: string,
 	ms: number,

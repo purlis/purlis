@@ -6907,3 +6907,29 @@ fn only_a_file_inside_a_workspaces_artifacts_folder_is_an_artifact_s() {
         assert!(!super::in_an_artifact(path), "{path}");
     }
 }
+
+/// What the secret guard's readers start on their own threads counts in the scope that asked
+/// (#7892): a gate built on the count cannot pass while the reads it holds to a ceiling escape.
+#[test]
+fn the_staged_blob_readers_count_what_they_start_where_the_save_does() {
+    let f = Fixture::plane();
+    let paths: Vec<String> = (0..4).map(|n| format!("f{n}.txt")).collect();
+    for path in &paths {
+        std::fs::write(f.root.join(path), "text\n").unwrap();
+    }
+    let added = crate::forklock::status(
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(&f.root)
+            .arg("add")
+            .args(&paths),
+    )
+    .unwrap();
+    assert!(added.success());
+    let asked: Vec<&String> = paths.iter().collect();
+
+    let (blobs, tally) = crate::forklock::counting::counted(|| staged_blobs(&f.root, &asked));
+
+    assert_eq!(blobs, vec![Some("text\n".to_owned()); paths.len()]);
+    assert_eq!(tally.started, paths.len());
+}

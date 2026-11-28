@@ -16,10 +16,10 @@
 use std::cell::RefCell;
 use std::time::Instant;
 
-use crate::slowlog::{Slow, Took};
+use crate::slowlog::{Kind, Slow, Took};
 
-/// An opening shorter than this is not written to the slow log.
-pub const SLOW_MS: u32 = 1_000;
+/// An opening shorter than this is not written to the slow log: its kind's threshold there.
+pub const SLOW_MS: u32 = Kind::Opening.keeping().from_ms;
 
 thread_local! {
     static OPEN: RefCell<Option<Vec<Took>>> = const { RefCell::new(None) };

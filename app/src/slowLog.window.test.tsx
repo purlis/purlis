@@ -159,7 +159,7 @@ describe("a stall in the window", () => {
     stop();
 
     await waitFor(() =>
-      expect(written).toMatchObject([
+      expect(written.filter((one) => one.kind === "stall")).toMatchObject([
         { kind: "stall", ms: 450, hot: 1, front: "claude claude 4", opening: false },
       ]),
     );

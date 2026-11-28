@@ -369,27 +369,31 @@ fn clone_each(request: &Request, targets: &[Value]) -> Vec<Outcome> {
     let next = AtomicUsize::new(0);
     // A brokered clone's isolation is held per thread, so each worker takes it on (#1335), the
     // window's own clone its credential scope (#4079), and a chat waiting on the clone its pulse
-    // (#4080): with none, a worker's git would be the terminal's.
+    // (#4080): with none, a worker's git would be the terminal's. What it starts counts where this
+    // thread's does (#7892).
     let isolation = git::isolation();
     let window = forge::gitcredential::held();
     let pulse = alive::held();
+    let counting = crate::forklock::counting::carried();
     std::thread::scope(|scope| {
         for _ in 0..WORKERS.min(targets.len()) {
             scope.spawn(|| {
                 forge::gitcredential::within(window.as_ref(), || {
                     git::within(isolation.as_ref(), || {
                         alive::within(pulse.as_ref(), || {
-                            loop {
-                                let i = next.fetch_add(1, Ordering::SeqCst);
-                                let Some(record) = targets.get(i) else {
-                                    break;
-                                };
-                                alive::beat();
-                                let outcome = clone_one(request, record);
-                                if let Ok(mut slots) = slots.lock() {
-                                    slots[i] = Some(outcome);
+                            counting.within(|| {
+                                loop {
+                                    let i = next.fetch_add(1, Ordering::SeqCst);
+                                    let Some(record) = targets.get(i) else {
+                                        break;
+                                    };
+                                    alive::beat();
+                                    let outcome = clone_one(request, record);
+                                    if let Ok(mut slots) = slots.lock() {
+                                        slots[i] = Some(outcome);
+                                    }
                                 }
-                            }
+                            });
                         });
                     });
                 });

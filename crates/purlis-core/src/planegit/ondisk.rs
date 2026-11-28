@@ -1076,6 +1076,8 @@ fn hash_all(root: &Path, hashing: Vec<Hashing>) -> Vec<Blob> {
             .collect();
     }
     let isolation = git::isolation();
+    // And what it starts counts where this thread's does (#7892).
+    let counting = crate::forklock::counting::carried();
     let count = hashing.len();
     let queue = std::sync::Mutex::new(hashing.into_iter().enumerate());
     let done = std::sync::Mutex::new(Vec::with_capacity(count));
@@ -1083,19 +1085,21 @@ fn hash_all(root: &Path, hashing: Vec<Hashing>) -> Vec<Blob> {
         for _ in 0..threads {
             scope.spawn(|| {
                 git::within(isolation.as_ref(), || {
-                    loop {
-                        let next = queue
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .next();
-                        let Some((at, one)) = next else {
-                            break;
-                        };
-                        let sha = hash_one(root, one.what, &one.path);
-                        done.lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .push((at, one.path, one.mode, sha));
-                    }
+                    counting.within(|| {
+                        loop {
+                            let next = queue
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .next();
+                            let Some((at, one)) = next else {
+                                break;
+                            };
+                            let sha = hash_one(root, one.what, &one.path);
+                            done.lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .push((at, one.path, one.mode, sha));
+                        }
+                    })
                 });
             });
         }

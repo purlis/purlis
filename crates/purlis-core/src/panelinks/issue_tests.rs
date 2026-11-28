@@ -59,6 +59,7 @@ fn issue(text: &str) -> Candidate {
         kind: Kind::Issue,
         text: text.to_owned(),
         target: None,
+        joined: false,
     }
 }
 
