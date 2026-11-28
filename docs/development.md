@@ -203,8 +203,8 @@ The rigs' machine images are pulled by digest, not built in the job (#7983):
 `node tools/fixture-images.mjs prepare-all` pulls them (or builds one whose files your change moved
 past its pin, with a warning) before any `up.sh` runs. A change to a fixture's Dockerfile or the
 files it copies is published by `.github/workflows/parity-fixture-images.yml` once it is on main,
-which then proposes the new pins in a pull request (`parity-fixture-images/pins`) for a person to
-merge. Never write a digest into the manifest by hand: `fixture-images.mjs pin` records the source
+which then pushes the new pins to the branch `parity-fixture-images/pins` and names its compare
+link in the run's notices: open its pull request from there, so its checks run, and merge it. Never write a digest into the manifest by hand: `fixture-images.mjs pin` records the source
 with it.
 
 The fault suite is `crates/purlis-core/tests/it/a_live_remote_chat_survives_the_faults_that_define_trust.rs`:

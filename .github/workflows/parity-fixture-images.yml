@@ -17,18 +17,18 @@ name: parity fixture images
 #
 #   a push to `main`        -> each fixture whose pin is missing or behind its files: built,
 #                              pushed tagged `sha-<commit>`, checked to pull without signing in,
-#                              and its new pin proposed in one pull request
-#                              (`parity-fixture-images/pins`), which a person merges.
+#                              and its new pin pushed to `parity-fixture-images/pins`, whose
+#                              pull request a person opens from the run's notice, and merges.
 #   `workflow_dispatch`     -> the same, run on `main` only; on any other branch, built only.
 #   a pull request          -> the same builds, pushed nowhere, with a read-only token.
 #
 # **No pull request's code holds anything that writes.** `build`, the one job that runs on a
 # pull request, holds `contents: read`. `publish` (`packages: write`) and `pin` (`contents:
-# write`, `pull-requests: write`) run only where `plan` says this run publishes, which only a
+# write`) run only where `plan` says this run publishes, which only a
 # push to `main` or a run by hand on `main` does, and check out nothing but that commit. No job
 # restores or saves a cache.
 #
-# The pins a publish proposes change `tests/parity/fixture-images.json`, which is not among the
+# The pins a publish pushes change `tests/parity/fixture-images.json`, which is not among the
 # paths below, so merging them starts no publish of its own.
 
 on:
@@ -95,7 +95,7 @@ jobs:
             echo "sha=$sha"
             echo "fixtures=$fixtures"
           } >> "$GITHUB_OUTPUT"
-          echo "Fixture images of \`$sha\` to make: $fixtures, $([ "$publish" = true ] && echo 'built, pushed and proposed as pins' || echo 'built, pushed nowhere')." >> "$GITHUB_STEP_SUMMARY"
+          echo "Fixture images of \`$sha\` to make: $fixtures, $([ "$publish" = true ] && echo 'built, pushed and their pins pushed to a branch' || echo 'built, pushed nowhere')." >> "$GITHUB_STEP_SUMMARY"
 
   build:
     name: build (${{ matrix.fixture }})
@@ -145,21 +145,24 @@ jobs:
             org.opencontainers.image.revision=${{ needs.plan.outputs.sha }}
             org.opencontainers.image.title=purlis parity fixture ${{ matrix.fixture }}
             org.opencontainers.image.licenses=Apache-2.0
-          outputs: type=docker,name=fixture:candidate,dest=${{ runner.temp }}/fixture.tar
-      # The file's one manifest names the image by its digest; that is the digest pushed.
+          outputs: type=docker,name=fixture:candidate,dest=${{ runner.temp }}/out/fixture.tar
+      # The file's one manifest names the image by its digest; that is the digest pushed. It is
+      # read here alone, and written beside the file for `publish`, so the one-manifest check
+      # holds for the digest that is pushed and pinned.
       - name: Name the file's digest
         run: |
           set -euo pipefail
-          digest=$(tar -xOf "$RUNNER_TEMP/fixture.tar" index.json \
+          digest=$(tar -xOf "$RUNNER_TEMP/out/fixture.tar" index.json \
             | jq -r '.manifests | if length == 1 then .[0].digest else error("the file holds \(length) manifests") end')
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] \
             || { echo "::error::the file's manifest is '$digest'"; exit 1; }
+          echo "$digest" > "$RUNNER_TEMP/out/digest"
           echo "$FIXTURE: $digest" | tee -a "$GITHUB_STEP_SUMMARY"
       - if: env.PUBLISH == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fixture-${{ matrix.fixture }}
-          path: ${{ runner.temp }}/fixture.tar
+          path: ${{ runner.temp }}/out/
           if-no-files-found: error
           retention-days: 3
 
@@ -191,13 +194,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # skopeo sends the file as it is, and `--preserve-digests` refuses to change its digest.
+      # skopeo sends the file as it is, and `--preserve-digests` refuses to change its digest. The
+      # digest is the one `build` read and checked; the next step pulls by it, so a file that
+      # pushed as anything else fails there.
       - name: Push the file, tagged with its commit
         id: push
         run: |
           set -euo pipefail
-          digest=$(tar -xOf "$RUNNER_TEMP/fixture.tar" index.json | jq -r '.manifests[0].digest')
-          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::the file's manifest is '$digest'"; exit 1; }
+          digest=$(cat "$RUNNER_TEMP/digest")
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::build wrote the digest '$digest'"; exit 1; }
           skopeo copy --preserve-digests "oci-archive:$RUNNER_TEMP/fixture.tar" "docker://$IMAGE:sha-$SHA"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
       # The parity job pulls without signing in, from a fork's pull request too, so a package
@@ -223,18 +228,18 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # The new pins, proposed in one pull request a person merges, once every image pushed and
-  # pulls without signing in. Until then the parity job builds the fixtures it has no current
-  # pin for, as it did before, and says so.
+  # The new pins, pushed to one branch a person opens a pull request from, once every image
+  # pushed and pulls without signing in. GitHub Actions may not open pull requests here, and one
+  # it opened would start no checks; a person's does. Until it merges, the parity job builds the
+  # fixtures it has no current pin for, as it did before, and says so.
   pin:
-    name: propose the pins
+    name: push the pins
     needs: [plan, publish]
     if: needs.plan.outputs.publish == 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
-      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -247,11 +252,12 @@ jobs:
           pattern: pin-*
           merge-multiple: true
           path: ${{ runner.temp }}/pins
-      - name: Write the pins and propose them
+      # The branch is replaced only over this workflow's own commit, or made where there is none:
+      # a commit a person pushed there stops the run, by name, and the lease holds the head seen
+      # against one pushed meanwhile (#8009).
+      - name: Write the pins and push their branch
         env:
-          GH_TOKEN: ${{ github.token }}
           TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
           SHA: ${{ needs.plan.outputs.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           GIT_AUTHOR_NAME: github-actions[bot]
@@ -269,27 +275,33 @@ jobs:
             pinned+=("$name")
           done
           if [ "${#pinned[@]}" -eq 0 ] || git diff --quiet -- tests/parity/fixture-images.json; then
-            echo "no new pin to propose"
+            echo "no new pin to push"
             exit 0
           fi
-          title="Parity fixture images: pin ${pinned[*]} by digest"
+          # The commit's message is the pull request's title and body when it is opened from the
+          # compare page.
           {
-            echo "The fixture images of \`$SHA\`, built and pushed by $RUN_URL, each checked to pull"
-            echo "by digest without signing in. Merging this makes \`remote-parity\` pull them instead of"
-            echo "building them from Alpine's CDN and Ubuntu's mirror (#7983)."
+            echo "Parity fixture images: pin ${pinned[*]} by digest"
             echo
-            echo '```diff'
-            git diff -- tests/parity/fixture-images.json
-            echo '```'
-          } > "$RUNNER_TEMP/body.md"
+            echo "The fixture images of $SHA, built and pushed by $RUN_URL, each checked to pull"
+            echo "by digest without signing in. Merging this makes remote-parity pull them instead of"
+            echo "building them from Alpine's CDN and Ubuntu's mirror (#7983)."
+          } > "$RUNNER_TEMP/message"
           git switch -C "$BRANCH"
-          git commit -q -m "$title" -- tests/parity/fixture-images.json
+          git commit -q -F "$RUNNER_TEMP/message" -- tests/parity/fixture-images.json
           auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
           echo "::add-mask::$auth"
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push --force origin "HEAD:refs/heads/$BRANCH"
-          existing="$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')"
-          if [ -n "$existing" ]; then
-            gh pr edit "$existing" --title "$title" --body-file "$RUNNER_TEMP/body.md"
-          else
-            gh pr create --head "$BRANCH" --base main --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          git() { command git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" "$@"; }
+          seen=$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)
+          if [ -n "$seen" ]; then
+            git fetch -q --depth=1 origin "$seen"
+            by=$(git log -1 --format=%ae "$seen")
+            if [ "$by" != "$GIT_COMMITTER_EMAIL" ]; then
+              echo "::error title=The pins' branch holds a person's commit::$BRANCH's head $seen is $by's, not this workflow's: merge or delete $BRANCH, then re-run this job"
+              exit 1
+            fi
           fi
+          git push --force-with-lease="refs/heads/$BRANCH:$seen" origin "HEAD:refs/heads/$BRANCH"
+          compare="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$BRANCH?expand=1"
+          echo "::notice title=Open the pins' pull request::the new pins are on $BRANCH; open its pull request at $compare"
+          echo "The new pins of ${pinned[*]} are on \`$BRANCH\`: [open its pull request]($compare), which starts its checks." >> "$GITHUB_STEP_SUMMARY"
