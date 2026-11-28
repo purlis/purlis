@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795862295728,
+  "lastUpdate": 1795866184470,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58926,6 +58926,48 @@ window.BENCHMARK_DATA = {
             "value": 101.918184,
             "unit": "ms",
             "extra": "median of 5 runs: 100.751, 101.627, 101.918, 102.044, 103.204 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7c5e1dae31aa580c78375c5b81394abb82c8d792",
+          "message": "Parity fixture images: pin remote-docker-sshd remote-podman-sshd ssh-runner-sshd ssh-runner-systemd by digest (#8034)\n\nCo-authored-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-28T10:56:41Z",
+          "tree_id": "e14e6563d09703c1d1a55758aed38a74bd4e4544",
+          "url": "https://github.com/purlis/purlis/commit/7c5e1dae31aa580c78375c5b81394abb82c8d792"
+        },
+        "date": 1795866176059,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6865725,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.681, 0.686, 0.687, 0.703, 0.752 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.554578499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.175, 16.363, 16.555, 16.618, 16.843 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.122569,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.793, 102.060, 102.123, 102.293, 102.571 ms"
           }
         ]
       }
