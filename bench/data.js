@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795878128242,
+  "lastUpdate": 1795878736972,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -59178,6 +59178,48 @@ window.BENCHMARK_DATA = {
             "value": 101.98621399999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.392, 101.791, 101.986, 102.159, 102.937 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "32b8c6bcc32cf8288ba5fdfae9ab6bcd3888f5b7",
+          "message": "Compile cache: a sandboxed chat starts its own sccache server (#7935) (#7985)\n\n* Compile cache: a sandboxed chat starts its own sccache server (#7935)\n\nsccache's own start binds a startup-notify socket at a random path in\n$TMPDIR, which the chat's sandbox refuses (EPERM): it allows binding only\nthe chat's one SCCACHE_SERVER_UDS. A stopped server (idle timeout, stop,\nkill) leaves its socket file, so a client finding the file but no server\nfalls back on that start and fails the same way.\n\nThe file Claude Code reads before each command now asks the socket\n(nc -w 1 -U) whether a server answers; where none does, it removes a stale\nsocket, starts the server in the foreground mode (SCCACHE_NO_DAEMON, no\nnotify socket) in the background inside the sandbox, logging to\nsccache.log beside the socket, and waits up to 5s for it to answer. The\nfile is now written whenever the compile cache is on, also for a chat\nwith no ssh route, in the chat's own routes folder.\n\nCloses #7935\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8FPYCRC98Z42FYVSH60TCC1\nPurlis-Persona: steward\n\n* Start the chat's sccache server only inside its sandbox (#7935)\n\nClaude Code reads CLAUDE_ENV_FILE before a ! command too, unsandboxed: the\nfile now hands the cache and starts the server only where a write to the\ncache's config is refused with EPERM, as the chat's profile refuses it.\nIt follows no link in the chat's temp folder, skips a wrapper that is gone,\nholds up one command (not every one) when the server never answers, probes\ntwice before removing a socket, and starts the server in its own session\nwithout zsh's BG_NICE.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8G3V42S6CFRW9K5A7P28JQE\nPurlis-Persona: steward\n\n* Start a wrapper whose path has a space: perl's exec takes the program as one word (#7935, round 2's review)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* The config-pin test is macOS's alone, as the script it reads is (#7935): Refused is macOS-only\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T13:52:17Z",
+          "tree_id": "2cae9408479c6faef16fa2141bedd2cf691a559d",
+          "url": "https://github.com/purlis/purlis/commit/32b8c6bcc32cf8288ba5fdfae9ab6bcd3888f5b7"
+        },
+        "date": 1795878728806,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.564963,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.552, 0.555, 0.565, 0.575, 0.585 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.288168499999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.232, 16.235, 16.288, 16.301, 16.325 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.44791649999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.965, 101.161, 101.448, 101.967, 102.709 ms"
           }
         ]
       }
