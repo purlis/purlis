@@ -556,7 +556,14 @@ pub(crate) fn merge(held: &Held, id: &str, seen: &BranchMerge) -> Result<TaskMer
         purlis_core::shown::short(&seen.task),
         tree.repo
     );
-    let tidied = dispatchplace::tidy_recorded(held.root(), &record, &isolation);
+    let caller = purlis_core::forge::Caller::window();
+    let ask = purlis_core::finished::merged::of_every_workspace(held.root(), &caller);
+    let tidied = dispatchplace::tidy_recorded(
+        held.root(),
+        &record,
+        &isolation,
+        purlis_core::finished::Forges::asking(&ask),
+    );
     Ok(TaskMerged {
         branch: merged.branch,
         folder_removed: tidied != Tidied::Kept,

@@ -833,7 +833,12 @@ fn a_record_whose_worktree_names_climb_is_no_tree_purlis_acts_on() {
         assert_eq!(standing(&root, &record), Some(Standing::Gone));
         // Nothing is run for it, so nothing is removed and nothing is marked.
         assert_eq!(
-            tidy_recorded(&root, &record, &git::Isolated::default()),
+            tidy_recorded(
+                &root,
+                &record,
+                &git::Isolated::default(),
+                crate::finished::Forges::none()
+            ),
             Tidied::Kept
         );
     }
@@ -860,7 +865,12 @@ fn a_record_names_only_the_worktree_purlis_cut_for_that_dispatch() {
         // Listed as gone: no Discard is offered for it, and nothing is run in it.
         assert_eq!(standing(&root, &another), Some(Standing::Gone), "{piece}");
         assert_eq!(
-            tidy_recorded(&root, &another, &git::Isolated::default()),
+            tidy_recorded(
+                &root,
+                &another,
+                &git::Isolated::default(),
+                crate::finished::Forges::none()
+            ),
             Tidied::Kept
         );
     }
@@ -1527,7 +1537,12 @@ fn a_running_dispatch_s_worktree_is_never_looked_at() {
     std::fs::create_dir_all(root.join("workspaces/alpha/.worktrees/api/check-b5rc0def")).unwrap();
 
     assert_eq!(
-        tidy_recorded(&root, &running, &git::Isolated::default()),
+        tidy_recorded(
+            &root,
+            &running,
+            &git::Isolated::default(),
+            crate::finished::Forges::none()
+        ),
         Tidied::Kept
     );
     assert!(

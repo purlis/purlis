@@ -2313,51 +2313,67 @@ pub enum Tidied {
     Kept,
 }
 
-/// **Takes `tree` away where its branch is merged and its folder holds nothing else**, and
-/// only then:
+/// **Takes `tree` away where its folder is finished** (ADR 0110, amended 2026-11-28), by the
+/// one test every cleanup reads ([`crate::finished::as_it_stands`]), and only then:
 ///
-/// - every commit of the branch purlis cut is in the branch it was cut from
-///   ([`standing::landed`]), or every file it changed reads there as it has it, as a squash
-///   merge leaves it: then the folder goes and the branch stays, since git does not find it
-///   merged and it is the one place those commits are (#1472); and
-/// - the folder holds no uncommitted path **and no ignored one that is not purlis's own
-///   layer** (D-1453-10 as amended in review, M4). git's safe removal does not count ignored
-///   files and deletes them, and what a task leaves there may be all it produced: a results
-///   folder, a database file, a `.env` it wrote to run tests; and
+/// - the folder is still on the branch purlis cut; and
+/// - it is finished by its files, commits and links: nothing uncommitted, every commit on its
+///   base, carried there, found in its history or inside a request's head the forge names
+///   (`forges`), no ignored path but what a build or the harness writes and purlis's own layer,
+///   and no other folder links into it; and
 /// - the folder holds no git state of its own ([`standing::OwnGit`], #1472): a ref only it has,
 ///   its own `config.worktree`, a commit only its HEAD's reflog holds. git deletes them with
 ///   the folder, and nothing else counts them.
 ///
+/// A folder on its base goes with its branch where `git branch -d` deletes it. Any other goes
+/// and its branch stays: git does not find it merged, and `purlis worktree prune` deletes it
+/// later where that loses nothing. Its task's end and the chats that hold it are the caller's
+/// to read ([`tidy_recorded`], [`tidy_all`]).
+///
 /// Anything else leaves it exactly as it is, listed with Discard, where the person is shown
-/// what is in it. A branch nothing was committed on has landed by the first rule, so a task
-/// that left nothing at all leaves no folder behind once its chat is closed.
-pub fn tidy(root: &Path, tree: &Tree, isolation: &git::Isolated) -> Tidied {
-    let (Some(branch), Some(folder)) = (tree.branch.as_deref(), tree.folder(root)) else {
+/// what is in it. A branch nothing was committed on is on its base, so a task that left nothing
+/// at all leaves no folder behind once its chat is closed.
+pub fn tidy(
+    root: &Path,
+    tree: &Tree,
+    isolation: &git::Isolated,
+    forges: crate::finished::Forges<'_>,
+) -> Tidied {
+    let Some(branch) = tree.branch.as_deref() else {
         return Tidied::Kept;
     };
+    if tree.folder(root).is_none() {
+        return Tidied::Kept;
+    }
     let (ws, repo, piece) = (&tree.workspace, &tree.repo, &tree.piece);
+    let ask = |repo: &str, branch: &str| forges.ask(ws, repo, branch);
+    let forge = crate::finished::Forge::asking(&ask);
     crate::gitbroker::in_a_checked_folder(root, ws, repo, piece, isolation, || {
-        let carried = match standing::landed(root, ws, repo, piece, branch) {
-            standing::Landed::Yes { .. } => false,
-            // Squashed or rebased in (#1472): the folder goes, the branch stays.
-            standing::Landed::Carried { .. } => true,
-            _ => return Tidied::Kept,
-        };
-        let Ok(Some(risk)) = standing::at_risk(root, ws, repo, piece) else {
-            return Tidied::Kept;
-        };
-        let risk = without_purlis_own(&folder, risk);
-        let clean = |paths: &Option<Vec<String>>| paths.as_ref().is_some_and(Vec::is_empty);
-        // Nor git state of the folder's own (#1472): a ref only it has, its own settings, a
-        // commit only its HEAD's history holds. The person is asked, by Discard.
-        let own_kept = risk.own.as_ref().is_none_or(|own| !own.is_empty());
-        if !clean(&risk.changes) || !clean(&risk.ignored) || own_kept {
+        // A folder its chat switched to another branch is not the branch purlis cut.
+        let on_its_branch = worktree::list(root, ws, repo).is_ok_and(|found| {
+            found
+                .iter()
+                .any(|p| &p.piece == piece && p.branch.as_deref() == Some(branch))
+        });
+        if !on_its_branch {
             return Tidied::Kept;
         }
-        let removed = if carried {
-            worktree::remove_keeping_branch(root, ws, repo, piece)
-        } else {
+        let Ok(commits) = crate::finished::as_it_stands(root, ws, repo, piece, forge) else {
+            return Tidied::Kept;
+        };
+        // Nor git state of the folder's own (#1472): a ref only it has, its own settings, a
+        // commit only its HEAD's history holds. The person is asked, by Discard.
+        let own_kept = standing::at_risk(root, ws, repo, piece)
+            .ok()
+            .flatten()
+            .is_none_or(|risk| risk.own.as_ref().is_none_or(|own| !own.is_empty()));
+        if own_kept {
+            return Tidied::Kept;
+        }
+        let removed = if commits.git_sees_it_safe() {
             worktree::remove(root, ws, repo, piece, false, true)
+        } else {
+            worktree::remove_keeping_branch(root, ws, repo, piece)
         };
         match removed {
             Ok(removed) if removed.branch_deleted => Tidied::Removed,
@@ -2370,14 +2386,19 @@ pub fn tidy(root: &Path, tree: &Tree, isolation: &git::Isolated) -> Tidied {
 
 /// [`tidy`] for the dispatch `record`, and its record marked where the worktree went. Only for
 /// a dispatch that has ended: a running chat's folder is never looked at.
-pub fn tidy_recorded(root: &Path, record: &Record, isolation: &git::Isolated) -> Tidied {
+pub fn tidy_recorded(
+    root: &Path,
+    record: &Record,
+    isolation: &git::Isolated,
+    forges: crate::finished::Forges<'_>,
+) -> Tidied {
     if record.running() || standing(root, record) != Some(Standing::Kept) {
         return Tidied::Kept;
     }
     let Some(tree) = Tree::of(record) else {
         return Tidied::Kept;
     };
-    let tidied = tidy(root, &tree, isolation);
+    let tidied = tidy(root, &tree, isolation, forges);
     let how = match tidied {
         Tidied::Removed => Some(Removed::Merged),
         Tidied::FolderRemoved => Some(Removed::MergedBranchKept),
@@ -2391,11 +2412,16 @@ pub fn tidy_recorded(root: &Path, record: &Record, isolation: &git::Isolated) ->
 
 /// [`tidy_recorded`] for every ended dispatch of the project whose worktree `in_use` does not
 /// answer for: what the app runs when it opens a project. How many went.
-pub fn tidy_all(root: &Path, in_use: impl Fn(&Record) -> bool, isolation: &git::Isolated) -> usize {
+pub fn tidy_all(
+    root: &Path,
+    in_use: impl Fn(&Record) -> bool,
+    isolation: &git::Isolated,
+    forges: crate::finished::Forges<'_>,
+) -> usize {
     dispatchrecord::list(root)
         .iter()
         .filter(|record| record.place.worktree.is_some() && !in_use(record))
-        .filter(|record| tidy_recorded(root, record, isolation) != Tidied::Kept)
+        .filter(|record| tidy_recorded(root, record, isolation, forges) != Tidied::Kept)
         .count()
 }
 
@@ -2431,7 +2457,12 @@ pub fn at_open(root: &Path) -> Option<AtOpen> {
 /// [`tidy_all`] as the app runs it once a project is opened, against the chats `at_open`
 /// brought back. A worktree is in use where one of them is its dispatch's persona chat, as
 /// [`dispatchrecord::settle_on_open`] reads it, or stands in its folder.
-pub fn tidy_at_open(root: &Path, at_open: &AtOpen, isolation: &git::Isolated) -> usize {
+pub fn tidy_at_open(
+    root: &Path,
+    at_open: &AtOpen,
+    isolation: &git::Isolated,
+    forges: crate::finished::Forges<'_>,
+) -> usize {
     tidy_all(
         root,
         |record| {
@@ -2440,6 +2471,7 @@ pub fn tidy_at_open(root: &Path, at_open: &AtOpen, isolation: &git::Isolated) ->
                     .is_some_and(|tree| at_open.stand_at.iter().any(|cwd| tree.holds(root, cwd)))
         },
         isolation,
+        forges,
     )
 }
 

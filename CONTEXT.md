@@ -153,9 +153,11 @@ pull request the forge says merged; no ignored files beyond the folders only a b
 harness writes, and links; its task, if any, ended (done, failed, blocked, cancelled, stopped or
 ended without a report; working, needs you, asking and idle are not ended); no open chat that
 has declared neither `done` nor `abandoned` holds it; and no other remaining folder links into
-it. `purlis worktree remove` takes one without `--force`, a task's folder too, and `purlis
-worktree prune` removes every one, and deletes each branch purlis cut whose folder is gone
-where that loses nothing (ADR 0110, amended 2026-11-06).
+it. `purlis worktree remove` and the explorer's Remove take one without `--force`, a task's
+folder too; an ended task's folder is taken away by itself once its chat closes, its task merges
+or its project opens; and `purlis worktree prune` removes every one, and deletes each branch
+purlis cut whose folder is gone where that loses nothing. Each reads the same test (ADR 0110,
+amended 2026-11-06 and 2026-11-28).
 _Avoid_: landed (for a branch: that is a change member's word; say *on its base* or *carried*),
 merged (git's `-d` does not find a carried branch merged), clean (that is only its files)
 

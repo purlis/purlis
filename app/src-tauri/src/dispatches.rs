@@ -630,7 +630,16 @@ pub(crate) fn worktree_to_look_at(held: &Held, session: u32) -> Option<String> {
 pub(crate) fn tidy_closed(root: &Path, id: &str) -> purlis_core::dispatchplace::Tidied {
     match dispatchrecord::read(root, id) {
         Some(record) => {
-            purlis_core::dispatchplace::tidy_recorded(root, &record, &crate::gitbroker::isolation())
+            // A folder inside a merged request's head is finished too (ADR 0110, amended
+            // 2026-11-28), so the forge is asked, as the window asks it.
+            let caller = purlis_core::forge::Caller::window();
+            let ask = purlis_core::finished::merged::of_every_workspace(root, &caller);
+            purlis_core::dispatchplace::tidy_recorded(
+                root,
+                &record,
+                &crate::gitbroker::isolation(),
+                purlis_core::finished::Forges::asking(&ask),
+            )
         }
         None => purlis_core::dispatchplace::Tidied::Kept,
     }
@@ -650,7 +659,14 @@ pub(crate) fn tidy_opened(root: &Path, at_open: &purlis_core::dispatchplace::AtO
             .is_some_and(|tree| tree.removed.is_none())
     });
     if any {
-        purlis_core::dispatchplace::tidy_at_open(root, at_open, &crate::gitbroker::isolation());
+        let caller = purlis_core::forge::Caller::window();
+        let ask = purlis_core::finished::merged::of_every_workspace(root, &caller);
+        purlis_core::dispatchplace::tidy_at_open(
+            root,
+            at_open,
+            &crate::gitbroker::isolation(),
+            purlis_core::finished::Forges::asking(&ask),
+        );
     }
 }
 

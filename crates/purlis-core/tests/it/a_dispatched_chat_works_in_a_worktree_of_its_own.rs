@@ -20,6 +20,7 @@ use purlis_core::dispatchplace::{
     Where,
 };
 use purlis_core::dispatchrecord::{self, Removed};
+use purlis_core::finished::{Forges, Request};
 use purlis_core::worktree::{self, git::Isolated, standing};
 
 /// The repo of `f`'s one clone, as a dispatch from a chat standing in it resolves it.
@@ -340,7 +341,7 @@ fn a_folder_that_names_another_git_directory_is_refused_by_every_look_and_remova
     );
     // The look purlis takes by itself when a chat is closed and when the project opens.
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&cut), &isolation),
+        dispatchplace::tidy(&f.plane, &tree(&cut), &isolation, Forges::none()),
         Tidied::Kept
     );
     // And taking back a cut whose chat did not start.
@@ -364,7 +365,7 @@ fn a_folder_that_names_another_git_directory_is_refused_by_every_look_and_remova
     assert_eq!(risk.branch.as_deref(), Some(cut.branch.as_str()));
     assert_eq!(risk.changes, Some(Vec::new()));
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&cut), &isolation),
+        dispatchplace::tidy(&f.plane, &tree(&cut), &isolation, Forges::none()),
         Tidied::Removed
     );
     assert!(cut.path.symlink_metadata().is_err());
@@ -405,7 +406,7 @@ fn nothing_a_worktree_task_commits_reaches_the_branch_it_was_cut_from() {
 
     // Its chat closed, and the project was opened again: purlis looked, and merged nothing.
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&cut), &Isolated::default()),
+        dispatchplace::tidy(&f.plane, &tree(&cut), &Isolated::default(), Forges::none()),
         Tidied::Kept
     );
     assert_eq!(main_at(&f), before, "main is where it was");
@@ -553,12 +554,12 @@ fn what_purlis_itself_hid_in_the_folder_is_not_listed_as_the_task_s() {
     // layer never keeps a folder.
     support::git(&f.clone, &["merge", "-q", "--ff-only", &cut.branch]);
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&cut), &Isolated::default()),
+        dispatchplace::tidy(&f.plane, &tree(&cut), &Isolated::default(), Forges::none()),
         Tidied::Kept
     );
     std::fs::remove_dir_all(cut.path.join("out")).unwrap();
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&cut), &Isolated::default()),
+        dispatchplace::tidy(&f.plane, &tree(&cut), &Isolated::default(), Forges::none()),
         Tidied::Removed
     );
 }
@@ -637,7 +638,7 @@ fn a_worktree_whose_branch_is_merged_is_taken_away_and_one_holding_anything_else
         }
     );
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&merged), &iso),
+        dispatchplace::tidy(&f.plane, &tree(&merged), &iso, Forges::none()),
         Tidied::Removed
     );
     assert!(merged.path.symlink_metadata().is_err());
@@ -650,7 +651,7 @@ fn a_worktree_whose_branch_is_merged_is_taken_away_and_one_holding_anything_else
     support::git(&f.clone, &["merge", "-q", "--ff-only", &dirty.branch]);
     std::fs::write(dirty.path.join("scratch.txt"), "not committed\n").unwrap();
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&dirty), &iso),
+        dispatchplace::tidy(&f.plane, &tree(&dirty), &iso, Forges::none()),
         Tidied::Kept
     );
     assert_eq!(
@@ -663,7 +664,7 @@ fn a_worktree_whose_branch_is_merged_is_taken_away_and_one_holding_anything_else
     let unmerged = cut(&f, "unmerged work");
     f.commit(&unmerged.path, "pending");
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&unmerged), &iso),
+        dispatchplace::tidy(&f.plane, &tree(&unmerged), &iso, Forges::none()),
         Tidied::Kept
     );
     assert!(unmerged.path.join("pending").is_file());
@@ -671,7 +672,7 @@ fn a_worktree_whose_branch_is_merged_is_taken_away_and_one_holding_anything_else
     // A task that committed nothing and left nothing leaves nothing behind.
     let nothing = cut(&f, "only looked");
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&nothing), &iso),
+        dispatchplace::tidy(&f.plane, &tree(&nothing), &iso, Forges::none()),
         Tidied::Removed
     );
     assert!(nothing.path.symlink_metadata().is_err());
@@ -694,7 +695,7 @@ fn a_worktree_whose_branch_is_merged_is_taken_away_and_one_holding_anything_else
             "git's own dirty check sees nothing: {ignored}"
         );
         assert_eq!(
-            dispatchplace::tidy(&f.plane, &tree(&only_ignored), &iso),
+            dispatchplace::tidy(&f.plane, &tree(&only_ignored), &iso, Forges::none()),
             Tidied::Kept,
             "{ignored}"
         );
@@ -714,7 +715,7 @@ fn a_worktree_whose_branch_is_merged_is_taken_away_and_one_holding_anything_else
     std::fs::create_dir_all(merged_with_output.path.join("out")).unwrap();
     std::fs::write(merged_with_output.path.join("out/coverage.db"), "x").unwrap();
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&merged_with_output), &iso),
+        dispatchplace::tidy(&f.plane, &tree(&merged_with_output), &iso, Forges::none()),
         Tidied::Kept
     );
     assert!(merged_with_output.path.join("out/coverage.db").is_file());
@@ -727,10 +728,101 @@ fn a_worktree_whose_branch_is_merged_is_taken_away_and_one_holding_anything_else
         standing::Landed::Unknown
     );
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&moved), &iso),
+        dispatchplace::tidy(&f.plane, &tree(&moved), &iso, Forges::none()),
         Tidied::Kept
     );
     assert!(moved.path.is_dir());
+}
+
+#[test]
+fn a_merged_task_folder_that_built_is_taken_away() {
+    purlis_core::unsteered!();
+    // ADR 0110, amended 2026-11-28: the tidy reads the finished test, so what a build writes
+    // does not keep a folder for ever.
+    let f = support::plane_with_clone("api");
+    let iso = Isolated::default();
+    let built = cut(&f, "built it");
+    std::fs::write(built.path.join(".gitignore"), "target/\n").unwrap();
+    std::fs::write(built.path.join("Cargo.toml"), "[package]\n").unwrap();
+    support::git(&built.path, &["add", ".gitignore", "Cargo.toml"]);
+    support::git(&built.path, &["commit", "-q", "-m", "a crate"]);
+    support::git(&f.clone, &["merge", "-q", "--ff-only", &built.branch]);
+    std::fs::create_dir_all(built.path.join("target/debug")).unwrap();
+    std::fs::write(built.path.join("target/debug/api"), "built\n").unwrap();
+
+    assert_eq!(
+        dispatchplace::tidy(&f.plane, &tree(&built), &iso, Forges::none()),
+        Tidied::Removed
+    );
+    assert!(built.path.symlink_metadata().is_err());
+}
+
+#[test]
+fn a_task_folder_inside_a_merged_requests_head_is_taken_away_and_its_branch_kept() {
+    purlis_core::unsteered!();
+    // The request got one more commit after the folder's tip, changing its file, and was
+    // squash-merged: neither on its base nor carried, yet nothing is lost (#5439).
+    let f = support::plane_with_clone("api");
+    let iso = Isolated::default();
+    let lane = cut(&f, "lands through a request");
+    f.commit(&lane.path, "one");
+    support::git(&f.clone, &["branch", "-q", "pr-head", &lane.branch]);
+    let head_tree = f.workspace().join("pr-head-tree");
+    let at = head_tree.to_str().unwrap();
+    support::git(&f.clone, &["worktree", "add", "-q", at, "pr-head"]);
+    std::fs::write(head_tree.join("one"), "one, reviewed\n").unwrap();
+    f.commit(&head_tree, "two");
+    let head = String::from_utf8_lossy(&support::git(&head_tree, &["rev-parse", "HEAD"]).stdout)
+        .trim()
+        .to_owned();
+    support::git(&f.clone, &["merge", "-q", "--squash", "pr-head"]);
+    support::git(&f.clone, &["commit", "-q", "-m", "squashed request 7"]);
+    support::git(&f.clone, &["worktree", "remove", "--force", at]);
+    support::git(&f.clone, &["branch", "-q", "-D", "pr-head"]);
+    let branch = lane.branch.clone();
+    let ws = f.ws.clone();
+    let forge = move |asked_ws: &str, _: &str, asked: &str| {
+        if asked_ws == ws && asked == branch {
+            Request::Merged {
+                number: 7,
+                head: head.clone(),
+                head_ref: "refs/pull/7/head".to_owned(),
+            }
+        } else {
+            Request::NotMerged
+        }
+    };
+
+    assert_eq!(
+        dispatchplace::tidy(&f.plane, &tree(&lane), &iso, Forges::none()),
+        Tidied::Kept,
+        "not finished where the forge cannot be asked"
+    );
+    assert_eq!(
+        dispatchplace::tidy(&f.plane, &tree(&lane), &iso, Forges::asking(&forge)),
+        Tidied::FolderRemoved
+    );
+    assert!(lane.path.symlink_metadata().is_err());
+    assert!(has_branch(&f, &lane.branch), "git would not delete it");
+}
+
+#[test]
+fn a_merged_task_folder_another_folder_links_into_is_kept_by_the_tidy() {
+    purlis_core::unsteered!();
+    let f = support::plane_with_clone("api");
+    let iso = Isolated::default();
+    let shared = cut(&f, "shares its install");
+    f.commit(&shared.path, "landed");
+    support::git(&f.clone, &["merge", "-q", "--ff-only", &shared.branch]);
+    let linking = cut(&f, "links to it");
+    std::os::unix::fs::symlink(shared.path.join("landed"), linking.path.join("landed-link"))
+        .unwrap();
+
+    assert_eq!(
+        dispatchplace::tidy(&f.plane, &tree(&shared), &iso, Forges::none()),
+        Tidied::Kept
+    );
+    assert!(shared.path.join("landed").is_file());
 }
 
 #[test]
@@ -760,6 +852,7 @@ fn a_merged_folder_goes_and_its_branch_stays_where_git_will_not_delete_it() {
         &f.plane,
         &dispatchrecord::read(&f.plane, &record).unwrap(),
         &Isolated::default(),
+        Forges::none(),
     );
 
     assert_eq!(tidied, Tidied::FolderRemoved);
@@ -802,7 +895,7 @@ fn a_squash_merged_branch_reads_as_landed_and_its_folder_goes_while_the_branch_s
         }
     );
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&squashed), &iso),
+        dispatchplace::tidy(&f.plane, &tree(&squashed), &iso, Forges::none()),
         Tidied::FolderRemoved
     );
     assert!(
@@ -812,7 +905,9 @@ fn a_squash_merged_branch_reads_as_landed_and_its_folder_goes_while_the_branch_s
     assert!(has_branch(&f, &squashed.branch), "its branch stays");
     assert_eq!(branch_at(&f, &squashed.branch), tip, "with its commits");
 
-    // Squashed in, and the base changed one of its files again since: not carried, kept.
+    // Squashed in, and the base changed one of its files again since: not carried, but one
+    // commit on its base makes its whole change, so it is finished as `remove` and `prune` read
+    // it (ADR 0110 §1, as amended 2026-11-28): its folder goes and its branch stays.
     let changed_again = cut(&f, "changed again");
     f.commit(&changed_again.path, "shared");
     support::git(
@@ -833,10 +928,11 @@ fn a_squash_merged_branch_reads_as_landed_and_its_folder_goes_while_the_branch_s
         standing::Landed::No
     );
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&changed_again), &iso),
-        Tidied::Kept
+        dispatchplace::tidy(&f.plane, &tree(&changed_again), &iso, Forges::none()),
+        Tidied::FolderRemoved
     );
-    assert!(changed_again.path.join("shared").is_file());
+    assert!(changed_again.path.symlink_metadata().is_err());
+    assert!(has_branch(&f, &changed_again.branch), "its branch stays");
 
     // Carried, with something uncommitted in the folder: never removed.
     let dirty = cut(&f, "squashed but dirty");
@@ -845,7 +941,7 @@ fn a_squash_merged_branch_reads_as_landed_and_its_folder_goes_while_the_branch_s
     support::git(&f.clone, &["commit", "-q", "-m", "squashed three"]);
     std::fs::write(dirty.path.join("scratch.txt"), "not committed\n").unwrap();
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&dirty), &iso),
+        dispatchplace::tidy(&f.plane, &tree(&dirty), &iso, Forges::none()),
         Tidied::Kept
     );
     assert!(dirty.path.join("scratch.txt").is_file());
@@ -1006,7 +1102,12 @@ fn opening_the_project_takes_away_only_the_merged_worktrees_of_dispatches_that_e
     let anothers = cut(&f, "another's");
     recorded_as(&f.plane, &forged_id, &anothers, 6, true);
 
-    let went = dispatchplace::tidy_all(&f.plane, |record| record.worker.chat.chat == 9, &iso);
+    let went = dispatchplace::tidy_all(
+        &f.plane,
+        |record| record.worker.chat.chat == 9,
+        &iso,
+        Forges::none(),
+    );
 
     assert_eq!(went, 1);
     assert!(ended.path.symlink_metadata().is_err());
@@ -1038,7 +1139,12 @@ fn opening_the_project_takes_away_only_the_merged_worktrees_of_dispatches_that_e
     assert_eq!(stands(&running_id), Some("kept"));
     // A second look finds nothing more to do.
     assert_eq!(
-        dispatchplace::tidy_all(&f.plane, |record| record.worker.chat.chat == 9, &iso),
+        dispatchplace::tidy_all(
+            &f.plane,
+            |record| record.worker.chat.chat == 9,
+            &iso,
+            Forges::none()
+        ),
         0
     );
 }
@@ -1077,7 +1183,7 @@ fn the_person_s_merge_lands_a_task_s_branch_in_the_branch_it_was_cut_from() {
     assert!(f.clone.join("fix").is_file(), "the work is in the clone");
     // Merged and clean, so the look that follows takes its folder and branch away.
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&cut), &iso),
+        dispatchplace::tidy(&f.plane, &tree(&cut), &iso, Forges::none()),
         Tidied::Removed
     );
     assert!(cut.path.symlink_metadata().is_err());
@@ -1875,7 +1981,7 @@ fn a_merged_folder_holding_its_own_git_state_is_kept_by_the_tidy() {
     support::git(&f.clone, &["merge", "-q", "--ff-only", &amended.branch]);
 
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&amended), &iso),
+        dispatchplace::tidy(&f.plane, &tree(&amended), &iso, Forges::none()),
         Tidied::Kept
     );
     assert!(amended.path.is_dir());
@@ -1886,12 +1992,12 @@ fn a_merged_folder_holding_its_own_git_state_is_kept_by_the_tidy() {
         &["update-ref", "refs/worktree/mark", "HEAD"],
     );
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&bisecting), &iso),
+        dispatchplace::tidy(&f.plane, &tree(&bisecting), &iso, Forges::none()),
         Tidied::Kept
     );
     support::git(&bisecting.path, &["update-ref", "-d", "refs/worktree/mark"]);
     assert_eq!(
-        dispatchplace::tidy(&f.plane, &tree(&bisecting), &iso),
+        dispatchplace::tidy(&f.plane, &tree(&bisecting), &iso, Forges::none()),
         Tidied::Removed
     );
 }

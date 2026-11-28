@@ -22,7 +22,7 @@ use crate::hookwire::alive;
 use crate::worktree::{self, git, standing};
 
 pub mod merged;
-pub use merged::{Forge, Found, Request};
+pub use merged::{Forge, Forges, Found, Request};
 
 /// How a finished folder's commits stand against its base.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
