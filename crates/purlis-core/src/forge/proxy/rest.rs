@@ -218,6 +218,11 @@ const ROUTE_WORDS: &[&str] = &[
     "repository",
     "files",
     "tree",
+    "sub_issues",
+    "sub_issue",
+    "priority",
+    "dependencies",
+    "blocked_by",
 ];
 
 /// **Whether `segment` is a word of the route vocabulary** (#7779): a word one of the forge's
@@ -431,7 +436,8 @@ fn write_class(kind: Kind, method: &str, rel: &[String]) -> Option<Class> {
             ("PATCH", &["issues", "comments", "#"], Class::CommentWrite),
             ("POST", &["issues", "#", "labels"], Class::LabelWrite),
             ("DELETE", &["issues", "#", "labels", "*"], Class::LabelWrite),
-        ]),
+        ])
+        .or_else(|| relation_write(kind, method, rel).map(|_| Class::IssueWrite)),
         Kind::GitLab => allow(&[
             ("POST", &["merge_requests"], Class::PullRequestWrite),
             ("PUT", &["merge_requests", "#"], Class::PullRequestWrite),
@@ -918,6 +924,149 @@ fn check_body(
     Ok(())
 }
 
+/// **GitHub's issue relations** (#8022): a sub-issue added, removed or moved in its parent's
+/// order, and a blocking link added or removed. Each changes the issue its path names, so each is
+/// that issue's update ([`Class::IssueWrite`]), on the chat's own repo only. Each also names other
+/// issues, by GitHub's numeric id, which can be an issue of another repo of the same owner: every
+/// one is placed by [`check_relation`] before the write goes. GitLab's relations are other routes,
+/// and none is carried.
+///
+/// One relation write: its method and route, the keys whose issue id its body must carry, and
+/// those it may.
+struct Relation {
+    method: &'static str,
+    route: &'static [&'static str],
+    required: &'static [&'static str],
+    optional: &'static [&'static str],
+}
+
+const RELATION_WRITES: &[Relation] = &[
+    Relation {
+        method: "POST",
+        route: &["issues", "#", "sub_issues"],
+        required: &["sub_issue_id"],
+        optional: &[],
+    },
+    Relation {
+        method: "DELETE",
+        route: &["issues", "#", "sub_issue"],
+        required: &["sub_issue_id"],
+        optional: &[],
+    },
+    Relation {
+        method: "PATCH",
+        route: &["issues", "#", "sub_issues", "priority"],
+        required: &["sub_issue_id"],
+        optional: &["after_id", "before_id"],
+    },
+    Relation {
+        method: "POST",
+        route: &["issues", "#", "dependencies", "blocked_by"],
+        required: &["issue_id"],
+        optional: &[],
+    },
+    // The blocking issue's id is the path's last segment, and there is no body.
+    Relation {
+        method: "DELETE",
+        route: &["issues", "#", "dependencies", "blocked_by", "#"],
+        required: &[],
+        optional: &[],
+    },
+];
+
+/// The row of [`RELATION_WRITES`] `method` on `rel` is, on GitHub.
+fn relation_write(kind: Kind, method: &str, rel: &[String]) -> Option<&'static Relation> {
+    (kind == Kind::GitHub)
+        .then(|| {
+            RELATION_WRITES
+                .iter()
+                .find(|row| row.method == method && matches(rel, row.route))
+        })
+        .flatten()
+}
+
+/// An issue's numeric id as a body gives it: a JSON integer, or the digits of one as a string
+/// (`gh api -f`), above zero and with no leading zero a forge could read as another base.
+fn issue_id_of(value: &serde_json::Value) -> Option<u64> {
+    let id = match value {
+        serde_json::Value::Number(n) => n.as_u64()?,
+        serde_json::Value::String(s)
+            if !s.starts_with('0') && !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) =>
+        {
+            s.parse().ok()?
+        }
+        _ => return None,
+    };
+    (id > 0).then_some(id)
+}
+
+/// The GraphQL node id GitHub reads issue `id` by: `05:Issue<id>` in base64, its node ids'
+/// first form, which the forge still reads (with a deprecation warning) and answers with the
+/// issue, whatever repo it is in. It is asked only for the repo the answer names
+/// ([`ObjectRepo::repo_of`]); a forge that stops reading this form places nothing, and the write
+/// is refused.
+fn issue_node_id(id: u64) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.encode(format!("05:Issue{id}"))
+}
+
+/// **What a relation write may say, and that every issue it names is the chat's own** (#8022).
+/// The body is a JSON object of exactly the row's keys, each id read by [`issue_id_of`]; a form,
+/// a key the row does not name, a missing id or one that is no id is [`Refusal::MalformedRequest`].
+/// `replace_parent` is refused too, whatever it says: it moves the sub-issue from its parent,
+/// which can be another repo's issue. Then each id, the path's included, is placed by asking the
+/// forge which repo the issue is in, and one that is not the chat's, or that the forge cannot
+/// place, is [`Refusal::OtherRepo`].
+fn check_relation(
+    row: &Relation,
+    rel: &[String],
+    body: Option<&Body>,
+    repo: &AllowedRepo,
+    objects: &dyn ObjectRepo,
+) -> Result<(), Refusal> {
+    let mut ids: Vec<u64> = Vec::new();
+    if row.route.last() == Some(&"#") {
+        ids.push(
+            rel.last()
+                .and_then(|s| issue_id_of(&serde_json::Value::String(s.clone())))
+                .ok_or(Refusal::MalformedRequest)?,
+        );
+    }
+    let fields = match body {
+        None => None,
+        Some(body) if body.form.is_empty() => Some(
+            body.json
+                .as_ref()
+                .and_then(|j| j.as_object())
+                .ok_or(Refusal::MalformedRequest)?,
+        ),
+        Some(_) => return Err(Refusal::MalformedRequest),
+    };
+    for (key, value) in fields.into_iter().flatten() {
+        if !row.required.contains(&key.as_str()) && !row.optional.contains(&key.as_str()) {
+            return Err(Refusal::MalformedRequest);
+        }
+        ids.push(issue_id_of(value).ok_or(Refusal::MalformedRequest)?);
+    }
+    if row
+        .required
+        .iter()
+        .any(|key| fields.is_none_or(|f| !f.contains_key(*key)))
+    {
+        return Err(Refusal::MalformedRequest);
+    }
+    let own = |id: &u64| {
+        objects
+            .repo_of(Kind::GitHub, &repo.host, &issue_node_id(*id))
+            .is_some_and(|path| path.eq_ignore_ascii_case(&repo.path))
+    };
+    if ids.iter().all(own) {
+        Ok(())
+    } else {
+        Err(Refusal::OtherRepo)
+    }
+}
+
 /// Whether a body is no body at all: no text, or a JSON `{}`.
 fn is_empty_object(body: &Body) -> bool {
     body.form.is_empty()
@@ -958,6 +1107,9 @@ pub(crate) fn decide(
         .or_else(|| merging.then(|| merge_class(kind, method, rel)).flatten())
         .ok_or(Refusal::NotOnList)?;
     check_body(kind, method, rel, target, body, repo, merging)?;
+    if let Some(row) = relation_write(kind, method, rel) {
+        check_relation(row, rel, body, repo, objects)?;
+    }
     let writes_head = method == "PUT"
         && match kind {
             Kind::GitHub => matches(rel, &["pulls", "#", "update-branch"]),

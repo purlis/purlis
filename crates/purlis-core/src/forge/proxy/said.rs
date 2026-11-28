@@ -4,9 +4,10 @@
 //! **What a forge refusal says** (#7779; ADR 0128, amended 2026-11-27, §10): which of two kinds
 //! it is, the act, the repo and why, in words the chat and the person can both read.
 //!
-//! - **No action**: a request purlis doesn't carry, which no setting can allow. A floor act (one
-//!   of the deny-by-name lists: administration, a rule over the repo, an approval) also says what
-//!   it is, and that it's the person's to do on the forge.
+//! - **No action**: a request purlis doesn't carry, which no setting can allow: only a change to
+//!   purlis can, and the refusal says so (#8022). A floor act (one of the deny-by-name lists:
+//!   administration, a rule over the repo, an approval) also says what it is, and that it's the
+//!   person's to do on the forge.
 //! - **A known act the policy doesn't allow**: a merge, a release or tag, a fork, read from the
 //!   act's own route, with the repo and why. A merge held only because this machine has not
 //!   accepted the project's policy says so, and names no family to loosen (ADR 0130 §7), on a
@@ -181,7 +182,7 @@ pub(super) fn said(refusal: Refusal, place: &Place, merge: MergeHeld) -> Option<
     Some(match act {
         Act::Unknown => format!(
             "purlis doesn't carry this request (`{}` on `{on}`), so it was refused. No setting \
-             can allow it.",
+             can allow it: only purlis's maintainers can, by changing purlis.",
             request(place)
         ),
         Act::Floor(what, _) => format!(
