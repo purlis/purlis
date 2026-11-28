@@ -3112,6 +3112,11 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "roc",
     "odin",
     "hare",
+    // The tracers of #7988's comment, refused whole, as `strace` and `bpftrace` are: SystemTap's
+    // `stap -c` runs the command it traces, and its `-g` embeds C in the kernel; `heaptrack` runs
+    // the program after it to trace its heap.
+    "stap",
+    "heaptrack",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

@@ -4335,3 +4335,15 @@ fn the_interpreters_and_runtimes_of_7988_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The tracers of #7988's comment, each of which runs the command after it to trace it: SystemTap's
+/// `stap -c` (whose `-g` embeds C in the kernel) and `heaptrack`.
+#[test]
+fn the_tracers_of_7988_are_offered_no_run_grant() {
+    for name in [
+        "stap",
+        "heaptrack",
+    ] {
+        refused_as_running_others(name);
+    }
+}
