@@ -3203,6 +3203,21 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "lxd",
     "vboxheadless",
     "prlsrvctl",
+    // The interpreters #8017 names, refused on this list and not on REFUSED_NAMES, as #7964's and
+    // #7988's are: each runs the code or the script it is handed. `newlisp`, `picolisp`, Gerbil's
+    // `gxi` and `gerbil`, CHICKEN's compiler `csc` (`csi` is refused; `csc` is also the C#
+    // compiler's name, whose analyzers run as it compiles), the shell `murex`, Ammonite's `amm`
+    // and `ammonite`, and coursier's `cs` and `coursier` (`cs launch` runs what it fetches).
+    "newlisp",
+    "picolisp",
+    "gxi",
+    "gerbil",
+    "csc",
+    "murex",
+    "amm",
+    "ammonite",
+    "cs",
+    "coursier",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

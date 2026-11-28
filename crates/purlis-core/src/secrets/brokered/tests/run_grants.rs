@@ -4449,3 +4449,17 @@ fn the_vm_and_container_runners_of_8017_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The interpreters #8017 names, each of which runs the code or the script it is handed:
+/// `newlisp`, `picolisp`, Gerbil's `gxi` and `gerbil`, CHICKEN's compiler `csc` (also the C#
+/// compiler's name), the shell `murex`, Ammonite's `amm` and `ammonite`, and coursier's `cs` and
+/// `coursier`, whose `launch` runs what it fetches.
+#[test]
+fn the_interpreters_of_8017_are_offered_no_run_grant() {
+    for name in [
+        "newlisp", "picolisp", "gxi", "gerbil", "csc", "murex", "amm", "ammonite", "cs",
+        "coursier",
+    ] {
+        refused_as_running_others(name);
+    }
+}
