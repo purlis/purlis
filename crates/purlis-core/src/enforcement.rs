@@ -1637,6 +1637,10 @@ pub struct Standing {
     /// of the same read of the record as everything else here: then [`Self::runs`] is strict
     /// mode, and what waits is weighed against it.
     pub broken: bool,
+    /// **Whether nothing was ever kept here** ([`crate::sandbox::local::PolicyAccepted::Never`]),
+    /// of the same read of the record: then what waits is weighed against the shipped `watch`,
+    /// and the window says the chats keep that default until the press (ADR 0130 §4).
+    pub nothing_kept: bool,
     /// **Whether the committed policy is looser than the shipped `watch`** anywhere
     /// ([`Resolved::loosens`] against [`shipped`]), from the same read of `HEAD`: under Broken,
     /// what alone says the policy is Waiting too, with no read of the record that does not hold
@@ -1705,9 +1709,11 @@ pub fn standing(root: &Path) -> Standing {
     let now = Resolved::of(&settings, &locks);
     let record = crate::sandbox::local::policy_accepted_record(root);
     let broken = record == crate::sandbox::local::PolicyAccepted::Broken;
+    let nothing_kept = record == crate::sandbox::local::PolicyAccepted::Never;
     let accepted = accepted_of(root, record);
     Standing {
         broken,
+        nothing_kept,
         loosens_the_shipped: now.loosens(&shipped()),
         waiting: now.looser_than(&accepted),
         level: now.level_looser_than(&accepted),

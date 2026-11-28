@@ -72,6 +72,9 @@ pub struct Policy {
     /// Whether the acceptance broke because purlis replaced its seal key on this machine since
     /// it was sealed (#7714), never because something edited it.
     pub after_new_key: bool,
+    /// Whether nothing was ever kept on this machine for the project: Waiting is weighed against
+    /// the shipped `watch`, which the chats keep until the press.
+    pub nothing_kept: bool,
     /// The read it was found in: what waits, as [`enforcement::standing`] gives it, which the
     /// window lists.
     pub standing: Standing,
@@ -181,6 +184,7 @@ pub fn policy(root: &Path) -> Option<Policy> {
         digest: standing.digest.clone(),
         needs_new_key: standing.key_foreign,
         after_new_key: standing.broken && standing.new_key,
+        nothing_kept: standing.nothing_kept,
         standing,
     })
 }
