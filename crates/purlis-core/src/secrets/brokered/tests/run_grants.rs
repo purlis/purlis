@@ -4412,3 +4412,13 @@ fn the_terminals_of_8017_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The tmux session managers #8017 names beside `tmuxinator` and `tmuxp`, each of which runs the
+/// commands of a layout file in the panes it opens: `teamocil`, `smug`, `sesh` and `tmuxifier`,
+/// and `mux`, a name `tmuxinator` is often installed or aliased as.
+#[test]
+fn the_tmux_session_managers_of_8017_are_offered_no_run_grant() {
+    for name in ["teamocil", "smug", "sesh", "tmuxifier", "mux"] {
+        refused_as_running_others(name);
+    }
+}

@@ -3170,6 +3170,15 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "hyper",
     "tabby",
     "warp-terminal",
+    // The tmux session managers #8017 names beside `tmuxinator` and `tmuxp`, refused whole on
+    // what each is for: `teamocil`, `smug`, `sesh` and `tmuxifier` run the commands of a layout
+    // file in the panes they open, and `mux` is a name `tmuxinator` is often installed or aliased
+    // as.
+    "teamocil",
+    "smug",
+    "sesh",
+    "tmuxifier",
+    "mux",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused
