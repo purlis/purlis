@@ -53,6 +53,8 @@ export const PR_ONLY = {
     "the spike's own tests/one-login-spike tree and nothing else starts it, so no sibling can break it between a pull request's run and the queue's, and it gates no shipped code",
   "operator-image.yml":
     "a dry run of the operator image's publish, whose real run is main's, called by operator.yml after its checks pass; the queue's operator.yml run covers what the build reads",
+  "parity-fixture-images.yml":
+    "a dry run of the parity fixture images' publish, whose real run is main's; its paths are the fixtures' own files, and the queue's remote parity run builds any fixture a change moved past its pin",
   "runner-image.yml":
     "a dry run of the runner image's publish, whose real run is the release's call; nothing is published from a pull request, and the queue's ci run builds what the image holds",
   "skill-grades.yml":

@@ -1150,19 +1150,60 @@ async fn plane_sidebar(
 /// thread that draws the window (SC-2). `what` names it in the one failure this adds: the
 /// thread ending without an answer.
 ///
-/// **The app's one door for a blocking answer**: every other way a command hands work off the
-/// window's thread comes through here, and what a command's work costs is counted through it
-/// (#7892): the scope the asking thread counts in is carried to the blocking thread
-/// ([`purlis_core::forklock::counting`]), which holds nothing outside a test build.
+/// **The door for a caller not yet named** ([`answer`] with [`UNNAMED`]): FS-M1b (#7897) moves
+/// each caller to [`answer`] with its command's name, and deletes this.
 async fn off_the_window<T: Send + 'static>(
+    what: &str,
+    read: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    answer(UNNAMED, what, read).await
+}
+
+/// The command an answer through [`off_the_window`] is written under: its caller does not say
+/// yet which it is.
+const UNNAMED: &str = "unnamed";
+
+/// **The app's one door for a blocking answer**: runs `read`, the work of the window command
+/// `command`, on a blocking thread, so a command that walks the plane's files never holds the
+/// thread that draws the window (SC-2). `what` names it in the one failure this adds: the
+/// thread ending without an answer. A caller writes it `crate::answer(…)`, in this file too.
+///
+/// Every other way a command hands work off the window's thread comes through here, and so:
+///
+/// - **what it costs is counted** (#7892): the scope the asking thread counts in is carried to
+///   the blocking thread ([`purlis_core::forklock::counting`]), which holds nothing outside a
+///   test build;
+/// - **how long it took is told** (FS-M1a, #7893): an `answer{command, class}` span, its class
+///   [`off_the_main_thread::answer_class`]'s, opened as it is asked and entered on the blocking
+///   thread, where it records how long the work waited for that thread (`queued_ms`) and how
+///   long it took (`work_ms`). The slow log reads it
+///   ([`purlis_core::slowlog::answers`]); never an argument of the command.
+async fn answer<T: Send + 'static>(
+    command: &'static str,
     what: &str,
     read: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
     #[cfg(test)]
     let gate = off_the_main_thread::gate::of(what);
     let counting = purlis_core::forklock::counting::carried();
+    let class = if command == UNNAMED {
+        off_the_main_thread::Class::Unmeasured
+    } else {
+        off_the_main_thread::answer_class(command)
+    };
+    let span = tracing::info_span!(
+        "answer",
+        command,
+        class = class.name(),
+        queued_ms = tracing::field::Empty,
+        work_ms = tracing::field::Empty,
+    );
+    let asked = std::time::Instant::now();
     tauri::async_runtime::spawn_blocking(move || {
-        counting.within(|| {
+        span.record("queued_ms", mainwatch::millis(asked.elapsed()));
+        let _answering = span.enter();
+        let began = std::time::Instant::now();
+        let answered = counting.within(|| {
             purlis_core::forklock::counting::note_a_door();
             // A test holds the work here to see what the window can do while it runs (#1949).
             #[cfg(test)]
@@ -1170,7 +1211,9 @@ async fn off_the_window<T: Send + 'static>(
                 gate.wait();
             }
             read()
-        })
+        });
+        span.record("work_ms", mainwatch::millis(began.elapsed()));
+        answered
     })
     .await
     .map_err(|err| format!("{what} did not finish: {err}"))?
@@ -3734,6 +3777,16 @@ fn commands() -> Builder<tauri::Wry> {
             "TASK_SCREENS_KEPT_FOR_DAYS",
             purlis_core::retention::KEEP_FOR.as_secs() / (24 * 60 * 60),
         )
+        // How long a pool sign-in waits on its runner for its page, and then for its next step
+        // (#7939, #7942's review): the strip says each limit from the core's own number.
+        .constant(
+            "POOL_SIGN_IN_PAGE_WITHIN_SECS",
+            purlis_core::profilestore::sign_in::driven::PAGE_WITHIN.as_secs(),
+        )
+        .constant(
+            "POOL_SIGN_IN_NEXT_WITHIN_SECS",
+            purlis_core::profilestore::sign_in::driven::NEXT_WITHIN.as_secs(),
+        )
         // The one rule for a character a reader does not see (SK-51, #3202): the window marks
         // what it draws itself from the core's own tables, never from a list of its own.
         .constant(unicoderule::UNICODE_RULE, unicoderule::rule())
@@ -5476,6 +5529,8 @@ fn run_event(app: &tauri::AppHandle, event: tauri::RunEvent) {
         if matches!(event, tauri::RunEvent::Exit) {
             // First, so a restart finds the lock free (`instance.rs`).
             instance::let_go_at_exit(app);
+            // The last hour's answers, as a summary in the slow log (FS-M1a, #7893).
+            purlis_core::slowlog::answers::at_exit();
             // An extension's program still answering is killed with its whole process
             // group, so that nothing an extension was asked to run outlives the window
             // that asked (`purlis_core::executor`).

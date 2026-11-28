@@ -43,6 +43,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 use tracing::Level;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_subscriber::Layer as _;
 use tracing_subscriber::filter::{LevelFilter, Targets};
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -113,8 +114,14 @@ pub fn install() {
         Ok(file) => (Some(file), None),
         Err(why) => (None, Some(why)),
     };
-    if tracing::subscriber::set_global_default(subscriber_to(file, std::io::stderr)).is_ok() {
+    // The core's answers, read from their spans into the slow log (FS-M1a, #7893).
+    let subscriber =
+        subscriber_to(file, std::io::stderr).with(crate::slowlog::answers::installed());
+    if tracing::subscriber::set_global_default(subscriber).is_ok() {
         redaction_made_ready_beside_the_launch();
+        if let Some(why) = crate::slowlog::answers::writer_unstarted() {
+            tracing::warn!("purlis: the answer log's writer did not start: {why}");
+        }
         if let Some(why) = missing {
             tracing::warn!(
                 "purlis: no log file ({why}); what the app notices goes to standard error alone"
@@ -273,6 +280,7 @@ where
         .with_level(false)
         .with_target(false)
         .with_writer(Redacting(screen))
+        .with_filter(no_spans())
 }
 
 /// One warning, raised here on purpose so a test can watch where a core diagnostic goes in the
@@ -289,6 +297,19 @@ pub fn warn_on_purpose() {
 #[doc(hidden)]
 pub fn inform_on_purpose() {
     tracing::info!("purlis: an info line purlis-core raised on purpose, for a test");
+}
+
+/// **A named timeout expired** (FS-M1a, #7893): `name`, this code's own word for what waited,
+/// gave up after `after`. Written to this log at `info`, so a slow moment the slow log holds can
+/// be matched to the deadline that ended it: on 2026-11-27 a 30 s wait could have been git's
+/// read or the session host's answer, and nothing said which.
+pub fn expired(name: &'static str, after: std::time::Duration) {
+    tracing::info!(
+        timeout = name,
+        after_ms = u64::try_from(after.as_millis()).unwrap_or(u64::MAX),
+        "purlis: a timeout expired: {name}, after {} ms",
+        after.as_millis()
+    );
 }
 
 /// The file in `dir` that today's events go to.
@@ -311,7 +332,7 @@ fn daily_file(dir: &Path) -> std::io::Result<RollingFileAppender> {
 fn subscriber_to(
     file: Option<RollingFileAppender>,
     screen: impl for<'a> MakeWriter<'a> + Send + Sync + 'static,
-) -> impl tracing::Subscriber + Send + Sync {
+) -> impl tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a> + Send + Sync {
     let (kept, keeping) = reload::Layer::new(crate::detailedlog::kept(false));
     let _ = KEEPING.set(keeping);
     tracing_subscriber::registry()
@@ -320,8 +341,17 @@ fn subscriber_to(
             tracing_subscriber::fmt::layer()
                 .with_ansi(false)
                 .with_writer(Redacting(file))
+                .with_filter(no_spans())
         }))
         .with(terminal(screen))
+}
+
+/// **Events alone, never a span** (FS-M1a, #7893): what the fmt layers are filtered to, so an
+/// event inside the app's `answer` span reads as it did before there was one, with no
+/// `answer{…}:` scope before it, and no span's fields are formatted into a string as it opens.
+/// The answer spans are read by [`crate::slowlog::answers`] alone.
+fn no_spans<S>() -> impl tracing_subscriber::layer::Filter<S> + Send + Sync {
+    tracing_subscriber::filter::filter_fn(|meta| !meta.is_span())
 }
 
 /// A writer that holds each event whole and lets it through only once it has been asked

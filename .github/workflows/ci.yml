@@ -1050,7 +1050,7 @@ jobs:
           fi
           changed=$(git diff --name-only "$BASE" HEAD)
           echo "$changed"
-          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\.rs$|crates/purlis-core/tests/it/(a_live_remote_chat_survives_the_faults_that_define_trust|a_missing_real_infra_fixture_fails_in_ci|a_chat_moves_to_a_docker_pools_runner_and_back|a_docker_pool_runner_is_linked_through_docker_exec|a_killed_docker_exec_closes_what_it_ran_on_a_runner|code_crosses_to_a_docker_pools_runner_and_back)\.rs$|crates/purlis-core/tests/support/(outage|real_infra|remote_rig)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner|remote-faults)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
+          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\.rs$|crates/purlis-core/tests/it/(a_live_remote_chat_survives_the_faults_that_define_trust|a_missing_real_infra_fixture_fails_in_ci|a_chat_moves_to_a_docker_pools_runner_and_back|a_docker_pool_runner_is_linked_through_docker_exec|a_killed_docker_exec_closes_what_it_ran_on_a_runner|code_crosses_to_a_docker_pools_runner_and_back)\.rs$|crates/purlis-core/tests/support/(outage|real_infra|remote_rig)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner|remote-faults)/|tools/fixture-images\.mjs$|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::nothing of the host, the protocol, the sandbox or the browsers has changed; the parity suite is not run against Docker"
@@ -1191,7 +1191,7 @@ jobs:
             exit 0
           fi
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\.rs$|crates/purlis-core/tests/it/(a_live_remote_chat_survives_the_faults_that_define_trust|a_missing_real_infra_fixture_fails_in_ci|a_chat_moves_to_a_docker_pools_runner_and_back|a_docker_pool_runner_is_linked_through_docker_exec|a_killed_docker_exec_closes_what_it_ran_on_a_runner|code_crosses_to_a_docker_pools_runner_and_back)\.rs$|crates/purlis-core/tests/support/(outage|real_infra|remote_rig)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner|remote-faults)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
+          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\.rs$|crates/purlis-core/tests/it/(a_live_remote_chat_survives_the_faults_that_define_trust|a_missing_real_infra_fixture_fails_in_ci|a_chat_moves_to_a_docker_pools_runner_and_back|a_docker_pool_runner_is_linked_through_docker_exec|a_killed_docker_exec_closes_what_it_ran_on_a_runner|code_crosses_to_a_docker_pools_runner_and_back)\.rs$|crates/purlis-core/tests/support/(outage|real_infra|remote_rig)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner|remote-faults)/|tools/fixture-images\.mjs$|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::nothing of the pools or the SSH route has changed; the parity suite is not run against Docker on another machine"
@@ -1226,8 +1226,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: tests/parity/build-images.sh
-      - name: Docker on another machine, behind an sshd, with latency and loss
+      # **The other machines' images, by digest** (#7983): the sshd, rootless Podman's sshd, the
+      # machine without Docker and the machine that boots systemd, pulled by the digest
+      # `tests/parity/fixture-images.json` pins (`parity-fixture-images.yml` builds and pushes
+      # them from main), so no run asks Alpine's CDN or Ubuntu's mirror for a package. One whose
+      # files this change moved past its pin, or one not pinned yet, is built here and warns. One
+      # that can be had neither way is one error naming it and its image, and every machine and
+      # suite that needs it is skipped, rather than its tests failing as "the fixture is missing".
+      - name: The other machines' images, by digest
+        id: images
         if: steps.scope.outputs.run == 'true'
+        run: node tools/fixture-images.mjs prepare-all
+      - name: Docker on another machine, behind an sshd, with latency and loss
+        id: machine
+        if: steps.scope.outputs.run == 'true' && steps.images.outcome == 'success'
         run: tests/remote-docker/up.sh localhost:5000/purlis-runner-parity:candidate DOCKER_POOL_TEST_IMAGE
       - name: The SSH route against that machine
         if: steps.scope.outputs.run == 'true'
@@ -1264,7 +1276,8 @@ jobs:
       # Podman, the pin is its socket and graph root, a runner is made and checked there as
       # rootless Podman's measured words hold it, and another graph root is a pin change.
       - name: Rootless Podman on another machine, behind an sshd, with latency and loss
-        if: steps.scope.outputs.run == 'true'
+        id: podman
+        if: ${{ !cancelled() && steps.scope.outputs.run == 'true' && steps.machine.outcome == 'success' }}
         run: >-
           tests/remote-podman/up.sh
           "$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner-parity:candidate)"
@@ -1283,8 +1296,11 @@ jobs:
       # refused where the machine reports another digest, installed as version 1 with five chats
       # on its host, then as version 2 beside it: version 1's chats keep running and new chats
       # run on version 2.
+      # Each machine below comes up after a test above failed too, so the suites that follow it
+      # run on it and say what they find; a machine that did not come up skips what needs it.
       - name: A machine without Docker, behind an sshd, with latency and loss
-        if: steps.scope.outputs.run == 'true'
+        id: runner
+        if: ${{ !cancelled() && steps.scope.outputs.run == 'true' && steps.images.outcome == 'success' }}
         run: tests/ssh-runner/up.sh target/debug/purlis
       - name: purlis installed there over SSH, a new version beside the old
         if: steps.scope.outputs.run == 'true'
@@ -1301,7 +1317,8 @@ jobs:
       # stops itself once idle and the next install prunes it, and one with a live chat is kept
       # (#6704).
       - name: A machine that boots systemd, behind an sshd
-        if: steps.scope.outputs.run == 'true'
+        id: systemd
+        if: ${{ !cancelled() && steps.scope.outputs.run == 'true' && steps.runner.outcome == 'success' }}
         run: tests/ssh-runner/up-systemd.sh
       - name: A runner's host outlives the sign-out and comes back after a restart
         if: steps.scope.outputs.run == 'true'
@@ -1317,7 +1334,7 @@ jobs:
       # waits on train A (#7187) or D (#7190) is `#[ignore]`d with the reason; list them with
       # `cargo nextest list --run-ignored only`.
       - name: The fault suite, on the pool and the systemd machine
-        if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
+        if: ${{ !cancelled() && steps.scope.outputs.run == 'true' && steps.images.outcome == 'success' && steps.machine.outcome == 'success' && steps.systemd.outcome == 'success' }}
         # The cases one at a time, each at its worst (every wait at its limit: 3 minutes for the host
         # to answer and link, up to 3 for the link after a fault, the fault's own 90 s or reboot):
         # 1 drop 5 s 6, 1 drop 90 s 7.5, 2 sshd 6, 6 app restart 8, 8 slow link 7.5, 9 registry 2,
@@ -1337,7 +1354,7 @@ jobs:
       # rule is lifted here, for the rest of the job, for the other machine to be that machine: what
       # a runner there sees is printed first, so a refusal still to come names its cause.
       - name: The behaviour suite on its remote Docker pool target
-        if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
+        if: ${{ !cancelled() && steps.scope.outputs.run == 'true' && steps.machine.outcome == 'success' }}
         run: |
           label=$(docker exec dind docker run --rm --entrypoint sh "$DOCKER_POOL_TEST_IMAGE" -c \
             'cat /proc/self/attr/apparmor/current 2>/dev/null || cat /proc/self/attr/current' | tr -d '\0') || label="not read"
@@ -2748,6 +2765,12 @@ jobs:
           image=$(docker image inspect --format '{{index .RepoDigests 0}}' localhost:5000/purlis-runner-scenario:candidate)
           echo "image $image"
           echo "PURLIS_E2E_POOL_IMAGE=$image" >> "$GITHUB_ENV"
+      # **The other machines' images, by digest** (#7983): the sshd images the two machines below run,
+      # pulled by their pinned digest (or built, where a pin is stale), as the remote parity job does.
+      - name: The other machines' images, by digest, for Pool setup's run
+        if: matrix.pool
+        timeout-minutes: 10
+        run: node tools/fixture-images.mjs prepare-all
       # **Docker on another machine, behind an sshd, for Pool setup's walk there** (#6266): the
       # same runner image copied into docker:dind, reached over a dockerised sshd with latency
       # and loss (`tests/remote-docker/up.sh`), as the remote parity job serves it.

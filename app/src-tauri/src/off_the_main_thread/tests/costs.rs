@@ -716,7 +716,7 @@ fn commands_in_source() -> Vec<InSource> {
             let (from, signature) = lines[at + 1..]
                 .iter()
                 .enumerate()
-                .find(|(_, line)| line.contains("fn "))
+                .find(|(_, line)| !is_comment(line) && line.contains("fn "))
                 .unwrap_or_else(|| {
                     panic!(
                         "{}:{}: a command with no `fn` after it",
@@ -839,8 +839,7 @@ fn a_commands_answer_class_is_what_its_source_does() {
         if !registered.contains(&command.name.as_str()) {
             continue;
         }
-        let through_the_door =
-            command.body.contains("off_the_window") && !command.body.contains("spawn_blocking");
+        let through_the_door = through_the_door(&command.body);
         let should = if !command.asynchronous {
             "Window"
         } else if through_the_door {
@@ -884,40 +883,66 @@ fn every_registered_command_is_found_in_the_source_the_class_test_reads() {
 
 #[test]
 fn the_door_is_the_one_off_the_window_and_no_counted_command_reaches_a_raw_hand_off() {
-    // #7892: the class test trusts a body that names `off_the_window` to go through the door,
-    // so there is one of that name; and no command the gate holds to a number (Model, Git)
-    // reaches a raw `spawn_blocking`, in its own body or in a function of its file (or one it
-    // names by path) that it calls. One a helper calls in turn is not followed.
+    // #7892: the class test trusts a body that names `off_the_window` or `crate::answer` to go
+    // through the door, so there is one door, `answer` in lib.rs, and one wrapper of it, and
+    // neither is defined again (by a `fn`, a `use … as` or a `let` closure); and no command the
+    // gate holds to a number (Model, Git) reaches a raw `spawn_blocking`, in its own body or in
+    // a function it calls of its file, of one it imports by name, or by path. A function's
+    // name is never read from a comment. One a helper calls in turn is not followed.
     use crate::off_the_main_thread::{Class, answer_class};
     let lib = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("src")
         .join("lib.rs");
     let sources = sources();
-    let defined: Vec<String> = sources
-        .iter()
-        .flat_map(|(file, lines)| {
-            lines.iter().enumerate().filter_map(move |(at, line)| {
-                // The name itself, not one it begins (`off_the_window_refused` hands its work
-                // to the door, and a raw hand-off in it would be caught below).
-                let names = [
-                    "fn off_the_window<",
-                    "fn off_the_window(",
-                    "as off_the_window;",
-                ]
-                .iter()
-                .any(|named| line.contains(named))
-                    || line.contains("macro_rules! off_the_window ");
-                names.then(|| format!("{}:{}", file.display(), at + 1))
+    // Where `name` is defined, as `file:line`: a `fn`, a `macro_rules!`, a `use … as` that
+    // names something else so, or a `let` that binds a closure to it.
+    let defined = |name: &str| -> Vec<String> {
+        sources
+            .iter()
+            .flat_map(|(file, lines)| {
+                lines.iter().enumerate().filter_map(move |(at, line)| {
+                    if is_comment(line) {
+                        return None;
+                    }
+                    let names =
+                        [
+                            format!("fn {name}<"),
+                            format!("fn {name}("),
+                            format!("macro_rules! {name} "),
+                        ]
+                        .iter()
+                        .any(|named| line.contains(named.as_str()))
+                            || line.split_once(&format!("let {name} = ")).is_some_and(
+                                |(_, then)| then.starts_with('|') || then.starts_with("move |"),
+                            )
+                            || line
+                                .match_indices(&format!("as {name}"))
+                                .any(|(at, found)| {
+                                    !line[at + found.len()..]
+                                        .starts_with(|c: char| c.is_alphanumeric() || c == '_')
+                                });
+                    names.then(|| format!("{}:{}", file.display(), at + 1))
+                })
             })
-        })
-        .collect();
-    assert_eq!(defined.len(), 1, "`off_the_window` defined at {defined:?}");
+            .collect()
+    };
+    // The name itself, not one it begins (`off_the_window_refused` hands its work to the door,
+    // and a raw hand-off in it would be caught below).
+    let wrapper = defined("off_the_window");
+    assert_eq!(wrapper.len(), 1, "`off_the_window` defined at {wrapper:?}");
     assert!(
-        defined[0].starts_with(&lib.display().to_string()),
-        "{defined:?}"
+        wrapper[0].starts_with(&format!("{}:", lib.display())),
+        "{wrapper:?}"
     );
+    // `answer` is a common name for a module's own function, so the door is the one in lib.rs,
+    // and lib.rs defines no other.
+    let door: Vec<String> = defined("answer")
+        .into_iter()
+        .filter(|at| at.starts_with(&format!("{}:", lib.display())))
+        .collect();
+    assert_eq!(door.len(), 1, "`answer` defined in lib.rs at {door:?}");
 
-    let door_at: usize = defined[0].rsplit(':').next().unwrap().parse().unwrap();
+    let door_at: usize = door[0].rsplit(':').next().unwrap().parse().unwrap();
     let lib_lines = &sources
         .iter()
         .find(|(file, _)| *file == lib)
@@ -943,10 +968,29 @@ fn the_door_is_the_one_off_the_window_and_no_counted_command_reaches_a_raw_hand_
                 && (after.starts_with('(') || after.starts_with("::<"))
         })
     };
+    // Whether `file` brings `name` into scope by a `use`, so a bare call of it there is the
+    // helper's: `use crate::x::name;` or `use crate::x::{a, name};`, over several lines too.
+    let imports = |file: &Path, name: &str| {
+        let Some((_, lines)) = sources.iter().find(|(f, _)| f == file) else {
+            return false;
+        };
+        let mut in_use = false;
+        lines.iter().any(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("use ") || trimmed.starts_with("pub(crate) use ") {
+                in_use = true;
+            }
+            let named = in_use && has_word(line, name);
+            if trimmed.contains(';') {
+                in_use = false;
+            }
+            named
+        })
+    };
     let mut stray = Vec::new();
     for (file, lines) in &sources {
         for (at, line) in lines.iter().enumerate() {
-            if !line.contains("spawn_blocking") || line.trim_start().starts_with("//") {
+            if !line.contains("spawn_blocking") || is_comment(line) {
                 continue;
             }
             if *file == lib && (door_at..door_ends).contains(&at) {
@@ -964,6 +1008,9 @@ fn the_door_is_the_one_off_the_window_and_no_counted_command_reaches_a_raw_hand_
             }
             // A helper's: no command the gate counts may call it, in its file or by its path.
             let Some(helper) = lines[..=at].iter().rev().find_map(|l| {
+                if is_comment(l) {
+                    return None;
+                }
                 let name: String = l
                     .split("fn ")
                     .nth(1)?
@@ -978,7 +1025,7 @@ fn the_door_is_the_one_off_the_window_and_no_counted_command_reaches_a_raw_hand_
                 .iter()
                 .filter(counted)
                 .filter(|c| {
-                    (c.file == *file && calls(&c.body, &helper))
+                    ((c.file == *file || imports(&c.file, &helper)) && calls(&c.body, &helper))
                         || c.body.contains(&format!("::{helper}("))
                         || c.body.contains(&format!("::{helper}::<"))
                 })
@@ -1314,4 +1361,43 @@ fn what_types_into_a_chat_on_the_windows_thread_waits_on_its_lane_no_longer_than
         typed.answer.is_err(),
         "typed behind a lane that never emptied"
     );
+}
+
+/// Whether `line` is a comment, which names nothing the compiler reads.
+fn is_comment(line: &str) -> bool {
+    line.trim_start().starts_with("//")
+}
+
+/// Whether `text` holds `word` as a word: not inside a longer name.
+fn has_word(text: &str, word: &str) -> bool {
+    text.match_indices(word).any(|(at, _)| {
+        let ident = |c: char| c.is_alphanumeric() || c == '_';
+        !text[..at].chars().next_back().is_some_and(ident)
+            && !text[at + word.len()..].chars().next().is_some_and(ident)
+    })
+}
+
+/// Whether a command's `body` hands its work to the door alone: it calls `crate::answer(…)`,
+/// `answer(…)` as lib.rs names it, or its wrapper `off_the_window`, and no raw `spawn_blocking`.
+/// A method `.answer(` or a longer name ending in `answer(` is not the door.
+fn through_the_door(body: &str) -> bool {
+    let the_door = body.match_indices("answer(").any(|(at, _)| {
+        let before = body[..at].trim_end_matches("crate::");
+        !before
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.' || c == ':')
+    });
+    (body.contains("off_the_window") || the_door) && !body.contains("spawn_blocking")
+}
+
+#[test]
+fn a_bare_call_of_the_door_counts_as_through_it_and_a_method_of_that_name_does_not() {
+    assert!(through_the_door("crate::answer(\"x\", move || work())"));
+    assert!(through_the_door(
+        "let said = answer(\"x\", move || work()).await;"
+    ));
+    assert!(!through_the_door("let said = host.answer(request);"));
+    assert!(!through_the_door("let said = the_answer(request);"));
+    assert!(!through_the_door("answer(\"x\", || spawn_blocking(work))"));
 }

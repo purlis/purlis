@@ -20,6 +20,9 @@
 //!   the core received it. An answer's `at` (asked) beside its command's `at` (received) is its
 //!   time in line; its `ms` here is its work there.
 //!
+//! And the core's answers, read from their spans ([`answers`], FS-M1a): each answer that took
+//! 200 ms or longer, and an hourly summary of every answer by command.
+//!
 //! # Where it lives
 //!
 //! [`FILE`] in the app's log folder ([`crate::applog`]'s, beside `panics.log` and the
@@ -329,7 +332,8 @@ static WRITING: Mutex<()> = Mutex::new(());
 ///
 /// Appended while every kind is under its cap; once one would pass it, written again whole
 /// ([`kept`]), through a file beside it that takes its place, so a reader never finds half a
-/// log. At most a megabyte or so, and only on a slow moment.
+/// log. At most two megabytes or so (the 200 answer summaries near one of them, each held to
+/// [`answers::MOST_COMMANDS`] commands), and only on a slow moment.
 pub fn record_in(file: &Path, slow: &Slow) -> io::Result<()> {
     if !slow.worth_keeping() {
         return Ok(());
@@ -412,6 +416,17 @@ pub fn recent_in(file: &Path) -> Vec<Slow> {
         .filter_map(|line| serde_json::from_str(line).ok())
         .collect()
 }
+
+/// Milliseconds since 1970 by this machine's clock; 0 before then.
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| {
+            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+        })
+}
+
+pub mod answers;
 
 #[cfg(test)]
 mod tests;

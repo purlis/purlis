@@ -342,6 +342,8 @@ pub async fn install<R: Runtime>(app: tauri::AppHandle<R>) {
                 leaving
                     .state::<crate::planes::Planes>()
                     .let_go_of_all_to_update();
+                // The last hour's answers, which the exit event would have written (#7893).
+                purlis_core::slowlog::answers::at_exit();
             })
             .build()
             .map_err(|why| format!("purlis's updater could not be built: {why}"))?;

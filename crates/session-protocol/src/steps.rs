@@ -110,11 +110,20 @@ pub enum Name {
     BrowserFirstPage,
     /// From a view's stream being drawn until its first frame or chunk is (`hostedsessions.rs`).
     ViewFirstFrame,
+    /// A profile's sign-in on a pool's runner, from Sign in until its login is started and
+    /// driven, or refused ([`sign_in::START`], `poolprofiles.rs`).
+    ProfileSignInStart,
+    /// From the login's start until its page or device code is told to the window
+    /// ([`sign_in::ADDRESS`], `profilestore/sign_in/driven.rs`).
+    ProfileSignInAddress,
+    /// From its page, or the login's start in the runner's terminal, until the runner says it is
+    /// signed in ([`sign_in::DONE`], `profilestore/sign_in/driven.rs`).
+    ProfileSignInDone,
 }
 
 impl Name {
     /// Every step of the contract, in the order a start meets them.
-    pub const ALL: [Name; 20] = [
+    pub const ALL: [Name; 23] = [
         Name::SshForwardOpen,
         Name::EnginePinCheck,
         Name::ContainerCheck,
@@ -135,6 +144,9 @@ impl Name {
         Name::BrowserEngineStart,
         Name::BrowserFirstPage,
         Name::ViewFirstFrame,
+        Name::ProfileSignInStart,
+        Name::ProfileSignInAddress,
+        Name::ProfileSignInDone,
     ];
 
     /// The step's word, as its line says it.
@@ -160,6 +172,9 @@ impl Name {
             Name::BrowserEngineStart => "browser_engine_start",
             Name::BrowserFirstPage => "browser_first_page",
             Name::ViewFirstFrame => "view_first_frame",
+            Name::ProfileSignInStart => "profile_sign_in_start",
+            Name::ProfileSignInAddress => "profile_sign_in_address",
+            Name::ProfileSignInDone => "profile_sign_in_done",
         }
     }
 }
@@ -456,6 +471,22 @@ impl Context {
         let mut work = std::pin::pin!(work);
         std::future::poll_fn(|task| self.run(|| work.as_mut().poll(task))).await
     }
+}
+
+/// **The steps of a profile's sign-in on a pool's runner** (#7939), each a name of the contract
+/// (#7864), so a stall in a sign-in shows in the log as the step it stalled in.
+pub mod sign_in {
+    use super::Name;
+    /// From Sign in until the runner's login is started and driven, or refused.
+    pub const START: Name = Name::ProfileSignInStart;
+    /// From the login's start until its page or device code is told to the window: `refused`
+    /// where it could not be followed, failed or was stopped first.
+    pub const ADDRESS: Name = Name::ProfileSignInAddress;
+    /// From its page, or from a login's start in the runner's terminal, until the runner says it
+    /// is signed in.
+    pub const DONE: Name = Name::ProfileSignInDone;
+    /// Every step of a sign-in, in the order it meets them.
+    pub const ALL: [Name; 3] = [START, ADDRESS, DONE];
 }
 
 /// Starts timing `name`. A step begun inside another that still runs names it as its parent,
