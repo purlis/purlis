@@ -42,7 +42,9 @@
 //! unsandboxed sccache among them. A chat that reached that one would have its compiles run
 //! outside its sandbox. So purlis points the client at a unix socket in the chat's own temp folder
 //! (`SCCACHE_SERVER_UDS`), and lets the chat bind and connect to that one path. No loopback port is
-//! opened, and no chat reaches another chat's server.
+//! opened, and no chat reaches another chat's server. The file the chat's commands read starts
+//! that server itself, inside the sandbox, where none answers on the socket ([`script`], #7935):
+//! sccache's own start binds a second socket the sandbox refuses.
 //!
 //! **Where purlis can grant it.** A Claude Code chat on macOS at the full sandbox, whose sandbox
 //! grants a socket by path (`network.allowUnixSockets`) and which reads the file before each
@@ -221,12 +223,36 @@ pub fn owned_as_a_program(_real: &Path) -> bool {
     false
 }
 
+/// The name of the log the chat's own server writes, beside its socket ([`script`]).
+pub const LOG: &str = "sccache.log";
+
+/// How many times, a tenth of a second apart, a command waits for the server it started to
+/// answer on its socket ([`script`]) before it goes on without it.
+pub const WAITS: u32 = 50;
+
 /// What the file Claude Code reads before each of the chat's commands says for the compile
 /// cache: every `SCCACHE_*` variable the command inherited dropped, then the wrapper `program`,
 /// the cache's folder, its config and the chat's own server's `socket` set. Read by the chat's
 /// sandboxed commands alone, never by its harness ([`self`]).
+///
+/// **Then the chat's own server, started by the command where none answers** (#7935).
+/// sccache's client starts a missing server itself, and first binds a socket at a random path
+/// in `$TMPDIR` that the server reports back on: the sandbox lets the chat bind its one socket
+/// and no other, so that start fails with "Operation not permitted", and so does every compile.
+/// A server started in the foreground (`SCCACHE_NO_DAEMON`) reports on no socket, so the file
+/// starts one that way, in the background, inside the chat's sandbox, and waits until it
+/// answers. None is started where one answers already. **A server that stopped leaves its socket
+/// behind** (once idle for its timeout, or stopped, or killed), and a client that finds the file
+/// but no server falls back on its own start: so whether one is there is asked of the socket
+/// (`nc -U`, given a second), never of the file, and a socket nothing answers on is taken away
+/// before the start. The server writes what it reports in [`LOG`], beside its socket.
+///
+/// Two commands that start at once may each start one: the later takes the socket, and the
+/// earlier, which nothing reaches any more, ends at its idle timeout. Either runs inside the
+/// chat's sandbox, on the chat's one socket and its one cache folder, so nothing is loosened.
 pub fn script(program: &Path, declared: &Declared, socket: &Path) -> String {
     let quoted = |path: &Path| super::tunnel::sh_quoted(&path.display().to_string());
+    let log = socket.with_file_name(LOG);
     format!(
         "# The project's compile cache (Q324): rustc through sccache, its server this chat's own.\n\
          for purlis_sccache_var in $(env | sed -n 's/^\\(SCCACHE_[A-Za-z0-9_]*\\)=.*/\\1/p'); do \
@@ -236,10 +262,23 @@ pub fn script(program: &Path, declared: &Declared, socket: &Path) -> String {
          SCCACHE_DIR={}\n\
          SCCACHE_CONF={}\n\
          SCCACHE_SERVER_UDS={}\n\
-         export RUSTC_WRAPPER SCCACHE_DIR SCCACHE_CONF SCCACHE_SERVER_UDS\n",
+         export RUSTC_WRAPPER SCCACHE_DIR SCCACHE_CONF SCCACHE_SERVER_UDS\n\
+         # Its server, started here where none answers (#7935): sccache's own start binds a\n\
+         # socket the sandbox refuses. A stopped server leaves its socket, so ask the socket.\n\
+         if ! /usr/bin/nc -w 1 -U \"$SCCACHE_SERVER_UDS\" </dev/null >/dev/null 2>&1; then\n\
+         \x20 [ -S \"$SCCACHE_SERVER_UDS\" ] && rm -f \"$SCCACHE_SERVER_UDS\"\n\
+         \x20 (SCCACHE_START_SERVER=1 SCCACHE_NO_DAEMON=1 \"$RUSTC_WRAPPER\" </dev/null >/dev/null 2>>{} &) 2>/dev/null\n\
+         \x20 purlis_sccache_wait=0\n\
+         \x20 until /usr/bin/nc -w 1 -U \"$SCCACHE_SERVER_UDS\" </dev/null >/dev/null 2>&1 || \
+         [ \"$purlis_sccache_wait\" -ge {WAITS} ]; do\n\
+         \x20   sleep 0.1; purlis_sccache_wait=$((purlis_sccache_wait + 1))\n\
+         \x20 done\n\
+         \x20 unset purlis_sccache_wait\n\
+         fi\n",
         quoted(program),
         quoted(&declared.dir),
         quoted(&declared.conf),
         quoted(socket),
+        quoted(&log),
     )
 }

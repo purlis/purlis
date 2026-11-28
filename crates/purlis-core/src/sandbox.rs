@@ -5507,27 +5507,46 @@ impl Applied {
         // ssh in a Claude Code chat (#1667): its route, written where no chat writes, goes
         // first on each command's `PATH` through the one file Claude Code reads before each
         // command, never on the harness's own `PATH`. The persona's tools go before it there.
-        if let Some(route) = self.claude_ssh_route(at.confinement) {
+        // The project's compile cache (Q324), for the chat's sandboxed commands alone: in this
+        // file, never on the harness's own line ([`compile_cache`]). Written whenever the cache
+        // is on, with an ssh route or without one (#7935).
+        let compile_cache = self.compile_cache_script(at);
+        let written = if let Some(route) = self.claude_ssh_route(at.confinement) {
             let tools_first = line
                 .env
                 .iter()
                 .find(|(key, _)| key == tools::FIRST_ON_PATH)
                 .map(|(_, dir)| PathBuf::from(dir));
-            // The project's compile cache (Q324), for the chat's sandboxed commands alone: in
-            // this file, never on the harness's own line ([`compile_cache`]).
-            let compile_cache = self.compile_cache_script(at);
-            match route.write_claude_env(tools_first.as_deref(), compile_cache.as_deref()) {
-                Ok(file) => {
-                    line.env.retain(|(key, _)| key != tools::CLAUDE_ENV_FILE);
-                    line.env.push((
-                        tools::CLAUDE_ENV_FILE.to_owned(),
-                        file.display().to_string(),
-                    ));
-                }
-                Err(err) => {
-                    tracing::warn!("purlis: a chat's ssh route was not handed on ({err})");
-                }
+            Some(route.write_claude_env(tools_first.as_deref(), compile_cache.as_deref()))
+        } else {
+            compile_cache
+                .as_deref()
+                .zip(self.claude_env_folder(at.confinement))
+                .map(|(script, dir)| {
+                    tunnel::write_claude_env_in(
+                        dir,
+                        &format!(
+                            "# Written by purlis as a chat starts (#7935). Claude Code reads this \
+                             before each command\n# (CLAUDE_ENV_FILE). Edits here are overwritten.\n\
+                             {script}"
+                        ),
+                    )
+                })
+        };
+        match written {
+            Some(Ok(file)) => {
+                line.env.retain(|(key, _)| key != tools::CLAUDE_ENV_FILE);
+                line.env.push((
+                    tools::CLAUDE_ENV_FILE.to_owned(),
+                    file.display().to_string(),
+                ));
             }
+            Some(Err(err)) => {
+                tracing::warn!(
+                    "purlis: the file a chat reads before each command was not written ({err})"
+                );
+            }
+            None => {}
         }
         Ok(line)
     }
@@ -5789,6 +5808,18 @@ impl Applied {
         confinement
             .and_then(Confinement::ssh_route)
             .filter(|route| route.is_within(&tunnel::routes_folder(&self.root)))
+    }
+
+    /// **The folder a Claude Code chat with no ssh route has its `CLAUDE_ENV_FILE` written in**
+    /// (#7935): the folder of its own its route would have been written in
+    /// ([`Confinement::routed`]), only one in this project's routes folder, where no chat writes.
+    pub fn claude_env_folder<'c>(&self, confinement: Option<&'c Confinement>) -> Option<&'c Path> {
+        if !matches!(*self.form, Form::ClaudeCode(_)) {
+            return None;
+        }
+        confinement
+            .and_then(Confinement::routed)
+            .filter(|dir| dir.starts_with(tunnel::routes_folder(&self.root)))
     }
 
     /// [`Self::confine_keeping`], its proxy also telling `reached` each connection it carried
@@ -6294,13 +6325,20 @@ impl Confinement {
     /// logged.
     pub fn proxy_only_routed(serving: egress::Serving, within: &Path) -> std::io::Result<Self> {
         let mut confinement = Self::proxy_only(serving)?;
-        match tunnel::routed_in(
-            within,
-            confinement.socks_port(),
-            tools::purlis_binary().as_deref(),
-        ) {
-            Ok((dir, route)) => {
-                confinement.ssh = Some(route);
+        // The folder is kept where the route in it is not written: the file Claude Code reads
+        // before each command goes there all the same ([`Applied::claude_env_folder`], #7935).
+        match tunnel::route_folder_in(within) {
+            Ok(dir) => {
+                match tunnel::SshRoute::write(
+                    dir.path(),
+                    confinement.socks_port(),
+                    tools::purlis_binary().as_deref(),
+                ) {
+                    Ok(route) => confinement.ssh = Some(route),
+                    Err(err) => {
+                        tracing::warn!("purlis: a chat's ssh route was not written ({err})")
+                    }
+                }
                 confinement.routed = Some(Folder::Own(dir));
             }
             Err(err) => tracing::warn!("purlis: a chat's ssh route was not written ({err})"),
@@ -6424,6 +6462,12 @@ impl Confinement {
     /// Its ssh route through its SOCKS port (#1667), where it was written.
     pub fn ssh_route(&self) -> Option<&tunnel::SshRoute> {
         self.ssh.as_ref()
+    }
+
+    /// The folder of its own its ssh route is written in, where no chat writes
+    /// ([`Self::proxy_only_routed`]): there even where the route in it could not be written.
+    pub fn routed(&self) -> Option<&Path> {
+        self.routed.as_ref().map(Folder::path)
     }
 
     /// The loopback port of its proxy's HTTP side.
