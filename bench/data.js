@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795833752480,
+  "lastUpdate": 1795835734883,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58422,6 +58422,48 @@ window.BENCHMARK_DATA = {
             "value": 101.187901,
             "unit": "ms",
             "extra": "median of 5 runs: 100.735, 101.174, 101.188, 102.123, 103.015 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9f0b4f2437ff807a08af25bd6145d5c9eeb9cd3e",
+          "message": "Seal these nevers: a way out for a never-dispatch list purlis cannot vouch for (#7852) (#7952)\n\n* Seal these nevers: a way out for a never-dispatch list purlis cannot vouch for (#7852)\n\nWhere purlis's own list of an old seal key carries a project marked unvouched, Settings >\nProject > Policy shows the pairs on disk and offers Seal these nevers, the window's alone. It\nrefuses a list changed since it was shown, clears the project's dispatch grants, seals exactly\nthe shown pairs under the lock and takes the project off the list, reusing the Keep these\nnevers machinery.\n\nAlso: two stale lists purlis wrote neither of now name the keychain item to delete;\nunlist_replaced returns write_list's words instead of dropping them; the foreign-key way out\npoints at the new-key press; FOREIGN_KEY and RENEW_REFUSED no longer ask to delete the\nreplaced list.\n\nCloses #7852\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8EDXZ8BFV7YW0XWVGVRKJN6\nPurlis-Persona: steward\n\n* Seal these nevers, round 2: the clear always reseals, the in-memory grants go before the seal, a refusal after the clear says so (#7852)\n\n- clear_dispatch_grants always rewrites the sealed set, empty and anchored at a new counter,\n  so a seal hidden before the press never counts once put back (M1).\n- seal_shown_unvouched takes the app's in-memory clear and runs it after the file's clear and\n  before the seal; InForce::read reads the nevers before every grant, and the app reads a\n  chat's own grants last (L1).\n- A refusal by the check under the lock, after the clear, says the grants were cleared; the\n  press's own gate refuses first outside the app (L2).\n- Tests seed every grant list and assert each is cleared; app tests pin the store clear (L3).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8F7QZ24P3KNEKJNPNRSX33E\nPurlis-Persona: steward\n\n* The seal press has its answer class: seal_unvouched_project_nevers is Unmeasured, like keep_project_nevers and accept_project_policy (#7852)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8FQ6CGBHQH5BPD0BW55H9ZD\nPurlis-Persona: steward\n\n* windowControls: hold Seal these nevers among the controls that link nowhere yet, with its reason (#7852)\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T02:25:36Z",
+          "tree_id": "4b72afc26b7aec7f187734251a3887144cb99f85",
+          "url": "https://github.com/purlis/purlis/commit/9f0b4f2437ff807a08af25bd6145d5c9eeb9cd3e"
+        },
+        "date": 1795835726797,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7517825,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.717, 0.748, 0.752, 0.760, 0.762 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4051315,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.295, 16.304, 16.405, 16.639, 16.763 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.06381149999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.227, 101.840, 102.064, 102.634, 102.690 ms"
           }
         ]
       }
