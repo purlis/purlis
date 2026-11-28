@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795860156264,
+  "lastUpdate": 1795860221135,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58800,6 +58800,48 @@ window.BENCHMARK_DATA = {
             "value": 101.31704500000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.458, 101.224, 101.317, 101.740, 102.200 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4ef0bc4e8e36b52821fc1ebc20c10da88a190dc8",
+          "message": "CI: parity fixture images pinned by digest and pulled, so a mirror outage cannot fail the fault suite (#7983) (#8007)\n\n* ci(remote-parity): pull the other machines' images by digest, and name one cause when one cannot be had (#7983)\n\nThe sshd, rootless Podman's sshd, the machine without Docker and the\nsystemd machine were built in every remote-parity run from Alpine's CDN\nand Ubuntu's mirror; one failed fetch failed the job and left eleven\nfault tests failing as \"the fixture is missing\".\n\n- tests/parity/fixture-images.json pins each image by digest beside\n  the source it was built from (Dockerfile, copied files, build args).\n- tools/fixture-images.mjs prepare-all pulls each current pin (three\n  tries), builds one that is unpinned or stale with a warning, and names\n  a fixture that cannot be had in one ::error:: line.\n- parity-fixture-images.yml builds on pull requests with a read-only\n  token; on main only, pushes to ghcr.io/purlis/purlis-parity-<fixture>,\n  checks an anonymous pull by digest, and proposes the pins in a PR.\n- remote-parity prepares the images first; each machine comes up after\n  a failed test step too, and the fault and behaviour suites run only on\n  machines that came up.\n- ADR 0123 amendment, docs/development.md.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GBYVV1FST3YEKSSAMA6RJ0\nPurlis-Persona: steward\n\n* Fixture images: publish and pin check the event and ref themselves\n\nFrom #8007's review: the jobs holding packages: write and contents: write ran on plan's\npublish output alone. They now also require a push or dispatch on refs/heads/main, so no\noutput a PR could shape can reach them. The test holds the full condition.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* Pool setup's run prepares the fixture images too\n\nThe scenario job's Pool setup leg also brings up the remote Docker and Podman machines from\nthe sshd image, and failed on #8007 with 'no remote-docker-sshd image here'. It now runs\nfixture-images prepare-all first, as the remote parity job does.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T08:44:20Z",
+          "tree_id": "a1e87ad6c7ee187dc9fe47e1b90ed65918a5b8ea",
+          "url": "https://github.com/purlis/purlis/commit/4ef0bc4e8e36b52821fc1ebc20c10da88a190dc8"
+        },
+        "date": 1795860211069,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.709805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.696, 0.709, 0.710, 0.710, 0.725 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.651653500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.540, 16.641, 16.652, 16.679, 16.727 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8548225,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.713, 101.082, 101.855, 101.968, 103.101 ms"
           }
         ]
       }
