@@ -1650,6 +1650,12 @@ pub(crate) enum Reconnect {
     Over,
     /// The view the host numbers so drew a snapshot: a first one or a new one, which the host
     /// opens only while the link to the runner is up.
+    ///
+    /// Raised when the snapshot comes, not when its first frame is handed over (#7979 item 4,
+    /// decided in #8011): a frame that is held, over 4 MB, unreadable or not a JPEG still leaves
+    /// a view that is linked, and waiting for one would keep it reading Reconnecting, a link
+    /// fault it does not have and that never clears for a page that does not change (ADR 0076's
+    /// named causes). A frame that is not handed over is a fault of its own, if it is ever told.
     Drawn(u32),
     /// The host says the runner answered with another key than the one pinned for it
     /// (`key_changed`, #2752): it does not link to it again until it is removed and added anew.

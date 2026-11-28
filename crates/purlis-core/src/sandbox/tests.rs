@@ -9847,6 +9847,7 @@ fn no_chat_purlis_cannot_grant_the_socket_gets_a_wrapper() {
 /// The file the chat's commands read pins sccache's config to purlis's empty file, drops every
 /// other `SCCACHE_*` variable the command inherited, and sets the wrapper, the folder and the
 /// socket: a command that sources it reaches no team cache and no dist scheduler.
+#[cfg(target_os = "macos")]
 #[test]
 fn the_compile_cache_script_pins_its_config_and_drops_every_inherited_sccache_variable() {
     let (_dir, sccache) = program_outside_temp("bin/sccache");
@@ -9862,7 +9863,15 @@ fn the_compile_cache_script_pins_its_config_and_drops_every_inherited_sccache_va
         .and_then(|caches| caches.sccache)
         .expect("declared");
     let program = declared.program(&[]).expect("found");
-    let socket = StdPath::new("/tmp/charter-chat-x/claude-501/sccache.sock");
+    // A server answers on the socket, so the file starts none.
+    let tmp = tempfile::tempdir().expect("a chat's temp folder");
+    let refused = Refused::in_dir(tmp.path());
+    let declared = compile_cache::Declared {
+        conf: refused.0.clone(),
+        ..declared
+    };
+    let socket = &tmp.path().join(compile_cache::SOCKET);
+    let _server = std::os::unix::net::UnixListener::bind(socket).expect("a server");
     let file = tempfile::NamedTempFile::new().expect("a file");
     std::fs::write(
         file.path(),
@@ -9905,6 +9914,442 @@ fn the_compile_cache_script_pins_its_config_and_drops_every_inherited_sccache_va
                 .any(|line| line == format!("RUSTC_WRAPPER={}", program.display())),
             "{shell}: {env}"
         );
+    }
+}
+
+/// **A stand-in for the chat's sandbox** (#7935): the file starts the chat's server only where a
+/// write to the cache's config is refused with "Operation not permitted", as the chat's profile
+/// refuses it. An immutable file refuses it the same way, outside any sandbox. Made mutable again
+/// when dropped, so its folder can be taken away.
+#[cfg(target_os = "macos")]
+struct Refused(StdPathBuf);
+
+#[cfg(target_os = "macos")]
+impl Refused {
+    fn in_dir(dir: &StdPath) -> Self {
+        let conf = dir.join(compile_cache::CONF);
+        std::fs::write(&conf, "").expect("the config");
+        let out = crate::forklock::output(
+            std::process::Command::new("/usr/bin/chflags")
+                .args(["uchg".as_ref(), conf.as_os_str()]),
+        )
+        .expect("chflags ran");
+        assert!(out.status.success(), "{out:?}");
+        Self(conf)
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for Refused {
+    fn drop(&mut self) {
+        let _ = crate::forklock::output(
+            std::process::Command::new("/usr/bin/chflags")
+                .args(["nouchg".as_ref(), self.0.as_os_str()]),
+        );
+    }
+}
+
+/// A program that writes what it was started with to `record`, as the chat's server would be
+/// started, then its process group and its niceness, and listens on nothing.
+#[cfg(target_os = "macos")]
+fn recording_sccache(record: &StdPath) -> (tempfile::TempDir, StdPathBuf) {
+    recording_sccache_at(record, "bin/sccache")
+}
+
+/// [`recording_sccache`], at `path` under a folder outside the chat's temp folder.
+#[cfg(target_os = "macos")]
+fn recording_sccache_at(record: &StdPath, path: &str) -> (tempfile::TempDir, StdPathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+    let (dir, program) = program_outside_temp(path);
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).expect("writable");
+    std::fs::write(
+        &program,
+        format!(
+            "#!/bin/sh\necho \"start=$SCCACHE_START_SERVER no_daemon=$SCCACHE_NO_DAEMON \
+             uds=$SCCACHE_SERVER_UDS args=$#\" >> '{record}'\n\
+             /usr/bin/perl -e 'print \"group=\", getpgrp(), \" nice=\", getpriority(0, 0), \"\\n\"' \
+             >> '{record}.group'\necho reported >&2\n",
+            record = record.display()
+        ),
+    )
+    .expect("the program");
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o555)).expect("its mode");
+    (dir, program)
+}
+
+/// Where the chat's own server is asked to start: inside its sandbox ([`Refused`]), or outside it,
+/// as a command the person runs with `!` reads the file.
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Sourced {
+    Inside,
+    Outside,
+}
+
+/// The compile cache's file for the chat's socket in `tmp`, handing the program `sccache`, sourced
+/// by `shell` `inside` the chat's sandbox or outside it: how long it took, and the environment the
+/// command after it ran with.
+#[cfg(target_os = "macos")]
+fn sourced_in(
+    shell: &str,
+    sccache: &StdPath,
+    tmp: &StdPath,
+    inside: Sourced,
+) -> (std::time::Duration, String) {
+    let machine = mac_finding(sccache);
+    let applied = compiled_as(
+        Harness::ClaudeCode,
+        true,
+        StdPath::new(PROJECT),
+        &machine,
+        None,
+    );
+    let declared = caches_of(&applied)
+        .and_then(|caches| caches.sccache)
+        .expect("declared");
+    let program = declared.program(&[]).expect("found");
+    let conf = tempfile::tempdir().expect("the config's folder");
+    let refused = (inside == Sourced::Inside).then(|| Refused::in_dir(conf.path()));
+    let declared = compile_cache::Declared {
+        conf: refused.as_ref().map_or_else(
+            || {
+                // Outside the sandbox the config is the person's to write, as it is.
+                let plain = conf.path().join(compile_cache::CONF);
+                std::fs::write(&plain, "").expect("the config");
+                plain
+            },
+            |refused| refused.0.clone(),
+        ),
+        ..declared
+    };
+    let socket = tmp.join(compile_cache::SOCKET);
+    let file = conf.path().join("claude-env.sh");
+    std::fs::write(&file, compile_cache::script(&program, &declared, &socket)).expect("written");
+    let started = std::time::Instant::now();
+    let out = crate::forklock::output(
+        std::process::Command::new(shell)
+            .args(["-c", &format!(". '{}'; echo sourced; env", file.display())])
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin"),
+    )
+    .expect("ran");
+    let took = started.elapsed();
+    let said = String::from_utf8_lossy(&out.stdout).into_owned();
+    let env = said.strip_prefix("sourced\n").unwrap_or_else(|| {
+        panic!(
+            "not sourced: {said}\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        )
+    });
+    (took, env.to_owned())
+}
+
+/// [`sourced_in`] by `/bin/sh`, inside the chat's sandbox: how long it took.
+#[cfg(target_os = "macos")]
+fn sourced_with(sccache: &StdPath, tmp: &StdPath) -> std::time::Duration {
+    sourced_in("/bin/sh", sccache, tmp, Sourced::Inside).0
+}
+
+/// **The chat's own server, started by its commands where none answers** (#7935): sccache's own
+/// start binds a socket the sandbox refuses, so the file starts it in the foreground mode, which
+/// binds the chat's one socket alone. A socket a stopped server left behind is no server: it is
+/// taken away, and the server started. A server that never answers holds the command up for
+/// [`compile_cache::WAITS`] tenths of a second at most, and what it reports goes to its log.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_command_starts_the_chats_own_server_where_none_answers_and_clears_a_stale_socket() {
+    let tmp = tempfile::tempdir().expect("a chat's temp folder");
+    let record = tmp.path().join("started");
+    let (_dir, sccache) = recording_sccache(&record);
+    // A socket a stopped server left behind: bound once, by nothing now.
+    let socket = tmp.path().join(compile_cache::SOCKET);
+    drop(std::os::unix::net::UnixListener::bind(&socket).expect("a socket"));
+    assert!(socket.exists());
+
+    let took = sourced_with(&sccache, tmp.path());
+
+    assert!(!socket.exists(), "the stale socket was left");
+    let started = std::fs::read_to_string(&record).expect("the server was started");
+    assert_eq!(
+        started,
+        format!("start=1 no_daemon=1 uds={} args=0\n", socket.display())
+    );
+    assert_eq!(
+        std::fs::read_to_string(tmp.path().join(compile_cache::LOG)).expect("its log"),
+        "reported\n"
+    );
+    assert!(
+        took < std::time::Duration::from_millis(u64::from(compile_cache::WAITS) * 100 + 3_000),
+        "{took:?}"
+    );
+}
+
+/// Where a server answers on the chat's socket, the file starts none, and holds no command up.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_command_starts_no_server_where_the_chats_own_answers() {
+    let tmp = tempfile::tempdir().expect("a chat's temp folder");
+    let record = tmp.path().join("started");
+    let (_dir, sccache) = recording_sccache(&record);
+    let _server = std::os::unix::net::UnixListener::bind(tmp.path().join(compile_cache::SOCKET))
+        .expect("a server");
+
+    let took = sourced_with(&sccache, tmp.path());
+
+    assert!(!record.exists(), "a second server was started");
+    // A listener that takes no connection holds `nc` for its one second.
+    assert!(took < std::time::Duration::from_secs(3), "{took:?}");
+}
+
+/// **Outside the chat's sandbox the file starts nothing, removes nothing and hands nothing**
+/// (#7935): Claude Code reads it before a command the person runs with `!` too, unsandboxed. A
+/// server started there would run every later compile of the chat's outside its sandbox, and a
+/// chat can stop its server and wait for the next `!`. A config whose write is not refused
+/// (the person's own, or none) is outside.
+#[cfg(target_os = "macos")]
+#[test]
+fn sourced_outside_the_chats_sandbox_the_file_starts_nothing_and_hands_nothing() {
+    let tmp = tempfile::tempdir().expect("a chat's temp folder");
+    let record = tmp.path().join("started");
+    let (_dir, sccache) = recording_sccache(&record);
+    let socket = tmp.path().join(compile_cache::SOCKET);
+
+    let (took, env) = sourced_in("/bin/sh", &sccache, tmp.path(), Sourced::Outside);
+
+    assert!(!record.exists(), "a server was started outside the sandbox");
+    assert!(!tmp.path().join(compile_cache::LOG).exists());
+    assert!(
+        !env.lines()
+            .any(|line| line.starts_with("SCCACHE_") || line.starts_with("RUSTC_WRAPPER=")),
+        "{env}"
+    );
+    assert!(took < std::time::Duration::from_secs(2), "{took:?}");
+
+    // A config that is not there is no sandbox either.
+    let machine = mac_finding(&sccache);
+    let applied = compiled_as(
+        Harness::ClaudeCode,
+        true,
+        StdPath::new(PROJECT),
+        &machine,
+        None,
+    );
+    let declared = caches_of(&applied)
+        .and_then(|caches| caches.sccache)
+        .expect("declared");
+    let declared = compile_cache::Declared {
+        conf: tmp.path().join("no-such.conf"),
+        ..declared
+    };
+    let file = tmp.path().join("claude-env.sh");
+    std::fs::write(
+        &file,
+        compile_cache::script(&sccache.canonicalize().expect("real"), &declared, &socket),
+    )
+    .expect("written");
+    let out = crate::forklock::output(
+        std::process::Command::new("/bin/sh")
+            .args(["-c", &format!(". '{}'; env", file.display())])
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin"),
+    )
+    .expect("ran");
+    assert!(!record.exists(), "a server was started with no config");
+    assert!(
+        !String::from_utf8_lossy(&out.stdout).contains("RUSTC_WRAPPER="),
+        "{out:?}"
+    );
+}
+
+/// Outside the chat's sandbox a socket nothing answers on is left where it is: the file removes
+/// nothing there.
+#[cfg(target_os = "macos")]
+#[test]
+fn sourced_outside_the_chats_sandbox_the_file_removes_no_stale_socket() {
+    let tmp = tempfile::tempdir().expect("a chat's temp folder");
+    let record = tmp.path().join("started");
+    let (_dir, sccache) = recording_sccache(&record);
+    let socket = tmp.path().join(compile_cache::SOCKET);
+    drop(std::os::unix::net::UnixListener::bind(&socket).expect("a socket"));
+
+    sourced_in("/bin/sh", &sccache, tmp.path(), Sourced::Outside);
+
+    assert!(
+        socket.exists(),
+        "the socket was removed outside the sandbox"
+    );
+    assert!(!record.exists(), "a server was started outside the sandbox");
+}
+
+/// **The file follows no link in the chat's temp folder** (#7935): a chat can plant its log as a
+/// link to a file of the person's, or the folder its socket is in as a link to another chat's.
+/// The file then starts nothing and removes nothing.
+#[cfg(target_os = "macos")]
+#[test]
+fn the_file_starts_nothing_through_a_link_in_the_chats_temp_folder() {
+    let tmp = tempfile::tempdir().expect("a chat's temp folder");
+    let record = tmp.path().join("started");
+    let (_dir, sccache) = recording_sccache(&record);
+    let theirs = tempfile::tempdir().expect("a folder of someone else's");
+    let precious = theirs.path().join("precious");
+    std::fs::write(&precious, "kept\n").expect("a file");
+    std::os::unix::fs::symlink(&precious, tmp.path().join(compile_cache::LOG)).expect("a link");
+
+    sourced_with(&sccache, tmp.path());
+
+    assert!(
+        !record.exists(),
+        "a server was started through a linked log"
+    );
+    assert_eq!(std::fs::read_to_string(&precious).expect("kept"), "kept\n");
+
+    // The socket's folder, a link to another chat's.
+    let chats = tempfile::tempdir().expect("chats' temp folders");
+    let other = chats.path().join("other");
+    std::fs::create_dir(&other).expect("another chat's folder");
+    let linked = chats.path().join("linked");
+    std::os::unix::fs::symlink(&other, &linked).expect("a link");
+
+    sourced_with(&sccache, &linked);
+
+    assert!(!record.exists(), "a server was started in a linked folder");
+    assert!(
+        !other.join(compile_cache::LOG).exists(),
+        "the other chat's folder was written"
+    );
+}
+
+/// **A server that cannot start holds up the first command alone** (#7935): one that never
+/// answers marks its folder ([`compile_cache::NOT_STARTED`]), and later commands start it again
+/// without waiting, until one answers and the mark is taken away.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_server_that_cannot_start_holds_up_only_the_first_command() {
+    let tmp = tempfile::tempdir().expect("a chat's temp folder");
+    let record = tmp.path().join("started");
+    let (_dir, sccache) = recording_sccache(&record);
+    let mark = tmp.path().join(compile_cache::NOT_STARTED);
+
+    let first = sourced_with(&sccache, tmp.path());
+    assert!(
+        first >= std::time::Duration::from_millis(u64::from(compile_cache::WAITS) * 100),
+        "{first:?}"
+    );
+    assert!(mark.exists(), "no mark was left");
+
+    let second = sourced_with(&sccache, tmp.path());
+    assert!(second < std::time::Duration::from_secs(2), "{second:?}");
+    // Started again all the same, only not waited for.
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    assert_eq!(
+        std::fs::read_to_string(&record)
+            .expect("started")
+            .lines()
+            .count(),
+        2
+    );
+}
+
+/// **A wrapper whose path has a space starts all the same** (#7935, round 2's review): perl's
+/// one-word `exec` hands a path with a space to a shell, which split it and ran nothing.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_wrapper_whose_folder_has_a_space_is_started() {
+    let tmp = tempfile::tempdir().expect("a chat's temp folder");
+    let record = tmp.path().join("started");
+    let (_dir, sccache) = recording_sccache_at(&record, "my tools/sccache");
+
+    sourced_with(&sccache, tmp.path());
+    std::thread::sleep(std::time::Duration::from_millis(300));
+
+    assert!(
+        std::fs::read_to_string(&record).is_ok_and(|started| started.starts_with("start=1 ")),
+        "a wrapper in a folder with a space was not started"
+    );
+}
+
+/// The first command that finds the chat's server answering takes the mark away.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_server_that_answers_takes_the_mark_away() {
+    let tmp = tempfile::tempdir().expect("a chat's temp folder");
+    let record = tmp.path().join("started");
+    let (_dir, sccache) = recording_sccache(&record);
+    let mark = tmp.path().join(compile_cache::NOT_STARTED);
+    std::fs::write(&mark, "").expect("a mark");
+    let _server = std::os::unix::net::UnixListener::bind(tmp.path().join(compile_cache::SOCKET))
+        .expect("a server");
+
+    sourced_with(&sccache, tmp.path());
+
+    assert!(!mark.exists(), "the mark outlived a server that answers");
+    assert!(!record.exists(), "a second server was started");
+}
+
+/// **A wrapper that is gone is not handed** (#7935): `brew upgrade` takes away the Cellar path a
+/// chat was handed, and a start that cannot run would hold up every command. Its builds then go
+/// unwrapped, at once.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_wrapper_that_is_gone_is_neither_handed_nor_started() {
+    let tmp = tempfile::tempdir().expect("a chat's temp folder");
+    let (_dir, sccache) = program_outside_temp("bin/sccache");
+    let machine = mac_finding(&sccache);
+    let applied = compiled_as(
+        Harness::ClaudeCode,
+        true,
+        StdPath::new(PROJECT),
+        &machine,
+        None,
+    );
+    let declared = caches_of(&applied)
+        .and_then(|caches| caches.sccache)
+        .expect("declared");
+    let refused = Refused::in_dir(tmp.path());
+    let declared = compile_cache::Declared {
+        conf: refused.0.clone(),
+        ..declared
+    };
+    let gone = tmp.path().join("Cellar/sccache/0.1/bin/sccache");
+    let socket = tmp.path().join(compile_cache::SOCKET);
+    let file = tmp.path().join("claude-env.sh");
+    std::fs::write(&file, compile_cache::script(&gone, &declared, &socket)).expect("written");
+    let started = std::time::Instant::now();
+    let out = crate::forklock::output(
+        std::process::Command::new("/bin/sh")
+            .args(["-c", &format!(". '{}'; env", file.display())])
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin"),
+    )
+    .expect("ran");
+    assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    assert!(
+        !String::from_utf8_lossy(&out.stdout).contains("RUSTC_WRAPPER="),
+        "{out:?}"
+    );
+    assert!(!tmp.path().join(compile_cache::LOG).exists());
+}
+
+/// **The chat's server is its own process group, and runs at the command's priority** (#7935): an
+/// interrupted command takes its group down, and zsh lowers a job it starts in the background
+/// (`BG_NICE`), the server's compiles with it.
+#[cfg(target_os = "macos")]
+#[test]
+fn the_chats_server_starts_in_a_group_of_its_own_at_full_priority() {
+    for shell in ["/bin/zsh", "/bin/sh"] {
+        let tmp = tempfile::tempdir().expect("a chat's temp folder");
+        let record = tmp.path().join("started");
+        let (_dir, sccache) = recording_sccache(&record);
+
+        sourced_in(shell, &sccache, tmp.path(), Sourced::Inside);
+
+        let group = std::fs::read_to_string(tmp.path().join("started.group")).expect("recorded");
+        let ours = rustix::process::getpgrp().as_raw_nonzero().get();
+        assert!(
+            !group.contains(&format!("group={ours} ")),
+            "{shell}: {group}"
+        );
+        assert!(group.trim_end().ends_with(" nice=0"), "{shell}: {group}");
     }
 }
 
@@ -10008,6 +10453,98 @@ fn the_compile_cache_reaches_the_chats_commands_and_never_its_harness() {
             .serving_compile_cache(&socket)
             .sandbox["network"]["allowUnixSockets"]
     );
+}
+
+/// **A chat with no ssh route gets the file all the same** (#7935): it was written only beside a
+/// route, so a chat whose route was not written had its builds wrapped in no cache. Now the
+/// file goes in the folder of its own the route would have been written in, where no chat
+/// writes, and carries the compile cache.
+#[test]
+fn the_compile_cache_reaches_a_chat_with_no_ssh_route() {
+    let (_dir, sccache) = program_outside_temp("bin/sccache");
+    let person = tempfile::tempdir().expect("a home");
+    let machine = Machine {
+        home: Some(person.path().canonicalize().expect("real")),
+        ..mac_finding(&sccache)
+    };
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let cwd = root.join("w");
+    std::fs::create_dir_all(&cwd).expect("a folder");
+    let mut applied = compiled_as(Harness::ClaudeCode, true, &root, &machine, None);
+    applied.answered("2.1.296 (Claude Code)");
+    let tmp = tempfile::tempdir().expect("a chat's temp folder");
+    let routed = tunnel::route_folder_in(&tunnel::routes_folder(&root)).expect("its folder");
+    let placed = |routed: Option<StdPathBuf>| Placed {
+        http: 50_961,
+        socks: 50_962,
+        tmp: Some(tmp.path().to_path_buf()),
+        routed,
+        ssh: None,
+        left_out: Vec::new(),
+        host_name: None,
+    };
+    let Form::ClaudeCode(settings) = applied.form_in(Some(&cwd)) else {
+        panic!("compiled for Claude Code");
+    };
+    let armed = vec![
+        "--settings".to_owned(),
+        serde_json::json!({
+            "enabledPlugins": {},
+            "permissions": { "allow": [], "deny": settings.deny },
+            "sandbox": settings.sandbox,
+        })
+        .to_string(),
+    ];
+    let line_in = |confinement: &Confinement| {
+        let at = At {
+            cwd: Some(&cwd),
+            hook_socket: None,
+            confinement: Some(confinement),
+            no_opt_out: false,
+            purlis: None,
+        };
+        let line = applied
+            .line(
+                Words {
+                    program: "claude".to_owned(),
+                    command: Vec::new(),
+                    armed: armed.clone(),
+                    charters: Vec::new(),
+                },
+                &at,
+            )
+            .expect("a line");
+        line.env
+            .iter()
+            .find(|(key, _)| key == tools::CLAUDE_ENV_FILE)
+            .map(|(_, file)| StdPathBuf::from(file))
+    };
+    let confinement = Confinement::held_on_another_machine(
+        placed(Some(routed.path().to_path_buf())),
+        Box::new(NoHolder),
+    );
+    let env_file = line_in(&confinement).expect("the file read before each command");
+    assert_eq!(env_file.parent(), Some(routed.path()));
+    let declared = caches_of(&applied)
+        .and_then(|caches| caches.sccache)
+        .expect("declared");
+    let program = sccache.canonicalize().expect("real");
+    let socket = compile_cache::socket_in(tmp.path());
+    let text = std::fs::read_to_string(&env_file).expect("written");
+    assert!(
+        text.ends_with(&compile_cache::script(&program, &declared, &socket)),
+        "{text}"
+    );
+    assert!(!text.contains("PATH="), "{text}");
+    // A folder outside the routes folder, where a chat might write, is never written in.
+    let elsewhere = tempfile::tempdir().expect("a folder");
+    let confinement = Confinement::held_on_another_machine(
+        placed(Some(elsewhere.path().to_path_buf())),
+        Box::new(NoHolder),
+    );
+    assert_eq!(line_in(&confinement), None);
+    assert!(!elsewhere.path().join(tunnel::CLAUDE_ENV_NAME).exists());
 }
 
 #[derive(Debug)]

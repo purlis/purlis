@@ -1231,8 +1231,9 @@ jobs:
       # `tests/parity/fixture-images.json` pins (`parity-fixture-images.yml` builds and pushes
       # them from main), so no run asks Alpine's CDN or Ubuntu's mirror for a package. One whose
       # files this change moved past its pin, or one not pinned yet, is built here and warns. One
-      # that can be had neither way is one error naming it and its image, and every machine and
-      # suite that needs it is skipped, rather than its tests failing as "the fixture is missing".
+      # that can be had neither way is one error naming it and its image, and then every machine
+      # and both suites are skipped, not only what needs it, rather than their tests failing as
+      # "the fixture is missing" (ADR 0123, amended 2026-11-28, says why the gate is one step).
       - name: The other machines' images, by digest
         id: images
         if: steps.scope.outputs.run == 'true'
@@ -1706,11 +1707,24 @@ jobs:
           gh-pages-branch: benchmarks
           benchmark-data-dir-path: bench
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          auto-push: true
+          # Committed here and pushed by the next step, which settles a race with the other
+          # writers to the branch (#8014).
+          auto-push: false
           alert-threshold: "120%"
           fail-on-alert: false
           comment-on-alert: false
           summary-always: true
+      # **Pushed over a point another workflow's record pushed meanwhile** (#8014): stress.yml's
+      # and budget-run.yml's records write the same branch, each its own data set, and nothing
+      # orders the three. A concurrency group shared by all three would lose a point: GitHub
+      # keeps one pending run per group.
+      - name: Push the point, rebased onto any other writer's
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: tools/benchmarks-push.sh
 
   # The desktops `docs/platforms.md` lists (FR-25): the two latest macOS majors and the two
   # Ubuntu LTS releases, in two jobs with one list of steps. `macos-latest` is macOS 26 and

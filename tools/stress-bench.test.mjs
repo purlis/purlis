@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import { benchmarks, median, readSamples } from "./stress-bench.mjs";
+import { jobLines } from "./workflow-jobs.mjs";
 
 /** Looks as `stress.e2e.ts` writes them, kilobytes throughout. */
 function look(step, fields) {
@@ -182,27 +183,8 @@ test("a run with no row writes no file, so the job skips the tool", () => {
   );
 });
 
-/** `stress.yml`'s jobs, each as its own lines, by name: the file's two-space keys under `jobs:`. */
-function jobsOf(text) {
-  const jobs = {};
-  let current = null;
-  let inJobs = false;
-  for (const line of text.split("\n")) {
-    if (/^\S/.test(line)) {
-      inJobs = line.startsWith("jobs:");
-      current = null;
-      continue;
-    }
-    const key = inJobs && line.match(/^ {2}([\w-]+):\s*$/);
-    if (key) {
-      current = key[1];
-      jobs[current] = [];
-    } else if (current) {
-      jobs[current].push(line);
-    }
-  }
-  return jobs;
-}
+/** The workflow's jobs, each as its own lines (comments kept), by name. */
+const jobsOf = (text) => Object.fromEntries(jobLines(text, { comments: true }));
 
 test("only the record job can write, and only on main, never in a pull request's run", () => {
   const workflow = fileURLToPath(new URL("../.github/workflows/stress.yml", import.meta.url));

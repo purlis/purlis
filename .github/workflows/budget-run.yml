@@ -241,9 +241,11 @@ jobs:
     permissions:
       contents: write
     # **No concurrency group** (#7944): GitHub keeps one pending job per group, so a third record
-    # job queued in one would replace the one waiting and lose its point. Two at once are
-    # github-action-benchmark's to settle: it fetches the branch again and retries a push that
-    # lost the race.
+    # job queued in one would replace the one waiting and lose its point. A push that lost the
+    # race to another writer of the branch (this job's next run, ci.yml's bench-record or
+    # stress.yml's stress-record) is settled by `tools/benchmarks-push.sh`, not by the action,
+    # whose own retry of a rejected push was never shown to cover that (#8014): the action commits
+    # with `auto-push: false`, and the script fetches, rebases and pushes again.
     # No cache: the job that writes restores nothing another job saved.
     steps:
       # **The token is never left in `.git/config`** (#7944), beside the artifact this job
@@ -287,7 +289,7 @@ jobs:
           benchmark-data-dir-path: macos-max
           github-token: ${{ secrets.GITHUB_TOKEN }}
           ref: ${{ github.sha }}
-          auto-push: true
+          auto-push: false
           alert-threshold: "120%"
           fail-on-alert: false
           comment-on-alert: false
@@ -302,8 +304,19 @@ jobs:
           benchmark-data-dir-path: macos-max
           github-token: ${{ secrets.GITHUB_TOKEN }}
           ref: ${{ github.sha }}
-          auto-push: true
+          auto-push: false
           alert-threshold: "120%"
           fail-on-alert: false
           comment-on-alert: false
           summary-always: true
+      # Pushed over a point another record pushed meanwhile (#8014), with the token handed to its
+      # push and fetch alone.
+      - name: Push the point, rebased onto any other writer's
+        if: hashFiles('budget/series.json') != '' || hashFiles('budget/evidence.json') != ''
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: tools/benchmarks-push.sh

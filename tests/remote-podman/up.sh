@@ -57,14 +57,15 @@ mkdir -p "$runtime/podman"
 nohup podman system service --time=0 "unix://$socket" > "$RUNNER_TEMP/podman-service.log" 2>&1 &
 for _ in $(seq 30); do [ -S "$socket" ] && break; sleep 1; done
 [ -S "$socket" ] || { cat "$RUNNER_TEMP/podman-service.log" >&2; exit 1; }
-# The sshd's image, pulled by digest (`tools/fixture-images.mjs prepare-all`, #7983), built with
-# `pool` at the uid `tests/parity/fixture-images.json` gives it: this account's, on a hosted
-# runner. Another uid here would not own the socket, so it is refused here, by name.
+# The sshd's image, pulled by digest (`tools/fixture-images.mjs prepare-all`, #7983), whose
+# `pool` has the uid `tests/parity/fixture-images.json` gives it: a hosted runner's account's. Run
+# under another uid, `prepare-all` builds it here with this account's instead (#8009). A `pool`
+# of another uid would not own the socket, so it is refused here, by name.
 docker image inspect remote-podman-sshd >/dev/null 2>&1 \
   || { echo "::error::no remote-podman-sshd image here: run node tools/fixture-images.mjs prepare-all first" >&2; exit 1; }
 pool_uid=$(docker image inspect --format '{{index .Config.Labels "dev.purlis.fixture.pool-uid"}}' remote-podman-sshd)
 if [ "$pool_uid" != "$uid" ]; then
-  echo "::error::the remote-podman-sshd image's pool has uid $pool_uid and this account's is $uid: set POOL_UID in tests/parity/fixture-images.json" >&2
+  echo "::error::the remote-podman-sshd image's pool has uid $pool_uid and this account's is $uid: run node tools/fixture-images.mjs prepare-all as this account, which builds it with this uid" >&2
   exit 1
 fi
 docker run --detach --name sshd-podman --cap-add NET_ADMIN --publish 127.0.0.1:2223:22 \

@@ -8,8 +8,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { copiedSources, loadManifest, prepare, sourceOf, withPin } from "./fixture-images.mjs";
+import { copiedSources, loadManifest, pinRefusal, prepare, sourceOf, withPin } from "./fixture-images.mjs";
 import { refusals, triggers } from "./no-self-hosted-on-pull-request.test.mjs";
+import { jobLines } from "./workflow-jobs.mjs";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), "utf8");
@@ -127,12 +128,59 @@ test("a pinned image that will not pull is one cause, naming the fixture and its
 test("a fixture that will not build here is one cause too", () => {
   const d = docker({ build: new Error("ERROR: unable to select packages") });
   assert.throws(
-    () => prepare({ name: "remote-docker-sshd", fixture, tag: "t", readFile, docker: d.run, contextDir: "/ctx", stage: () => {} }),
+    () => prepare({ name: "remote-docker-sshd", fixture, tag: "t", readFile, docker: d.run, contextDir: "/ctx", stage: () => {}, wait: () => {} }),
     (error) =>
       /^fixture image remote-docker-sshd could not be built from tests\/remote-docker\/sshd\.Dockerfile.*unable to select packages/s.test(
         error.message,
       ),
   );
+});
+
+test("a build that fails once is tried again, as a pull is", () => {
+  let builds = 0;
+  const calls = [];
+  const run = (args) => {
+    calls.push(args[0]);
+    if (args[0] === "build" && (builds += 1) === 1) throw new Error("ERROR: fetch https://dl-cdn.alpinelinux.org/alpine/v3.20/main: temporary error (try again later)");
+    return "";
+  };
+  const said = prepare({ name: "remote-docker-sshd", fixture, tag: "t", readFile, docker: run, contextDir: "/ctx", stage: () => {}, wait: () => {} });
+  assert.equal(said.how, "built");
+  assert.deepEqual(calls, ["build", "build"]);
+});
+
+test("a build that never succeeds names a mirror only when a mirror is what failed", () => {
+  const fails = (error) => {
+    const d = docker({ build: new Error(error) });
+    try {
+      prepare({ name: "remote-docker-sshd", fixture, tag: "t", readFile, docker: d.run, contextDir: "/ctx", stage: () => {}, tries: 2, wait: () => {} });
+    } catch (thrown) {
+      assert.equal(d.calls.length, 2, "built twice, then given up");
+      return thrown.message;
+    }
+    assert.fail("it built");
+  };
+  const fetch = fails("ERROR: fetch https://dl-cdn.alpinelinux.org/alpine/v3.20/main: temporary error (try again later)");
+  assert.match(fetch, /after 2 tries/);
+  assert.match(fetch, /a package mirror could not be reached/);
+  const apt = fails("E: Failed to fetch http://archive.ubuntu.com/ubuntu/pool/main/o/openssh/x.deb  Connection timed out");
+  assert.match(apt, /a package mirror could not be reached/);
+  const own = fails("ERROR: failed to solve: process \"/bin/sh -c adduser -u 1001 pool\" did not complete successfully: exit code: 1");
+  assert.doesNotMatch(own, /mirror/);
+  assert.match(own, /did not complete successfully/);
+});
+
+test("a pool uid other than the pin's builds the image here with this account's, and says why", () => {
+  const withUid = { ...fixture, buildArgs: { POOL_UID: "1001" } };
+  const ref = `ghcr.io/purlis/purlis-parity-remote-podman-sshd@${DIGEST}`;
+  const pinned = { ...withUid, image: { ref, source: sourceOf(withUid, readFile) } };
+  const d = docker();
+  const said = prepare({ name: "remote-podman-sshd", fixture: pinned, tag: "t", readFile, docker: d.run, contextDir: "/ctx", stage: () => {}, uid: 1000 });
+  assert.equal(said.how, "built");
+  assert.match(said.notice, /this account's uid is 1000, and the pin's pool has 1001/);
+  assert.match(d.calls[0], /^build .*--build-arg POOL_UID=1000 /);
+  const same = docker();
+  assert.equal(prepare({ name: "remote-podman-sshd", fixture: pinned, tag: "t", readFile, docker: same.run, uid: 1001 }).how, "pulled");
 });
 
 test("a pin is written with the image's digest and the source it was built from", () => {
@@ -143,6 +191,35 @@ test("a pin is written with the image's digest and the source it was built from"
   assert.equal(manifest.fixtures["ssh-runner-sshd"].image, null, "the manifest read is left as it was");
   assert.throws(() => withPin(manifest, "ssh-runner-sshd", "ghcr.io/purlis/x:latest", readFile), /by digest/);
   assert.throws(() => withPin(manifest, "nope", ref, readFile), /no fixture/);
+});
+
+test("a pin that names no image by digest is refused before anything is pulled", () => {
+  for (const ref of ["ghcr.io/purlis/purlis-parity-remote-docker-sshd:latest", `ghcr.io/purlis/purlis-parity-remote-docker-sshd:x@${DIGEST}`]) {
+    const pinned = { ...fixture, image: { ref, source: sourceOf(fixture, readFile) } };
+    const d = docker();
+    assert.throws(
+      () => prepare({ name: "remote-docker-sshd", fixture: pinned, tag: "t", readFile, docker: d.run, wait: () => {} }),
+      /fixture image remote-docker-sshd \(.+\) names no image by digest/,
+    );
+    assert.deepEqual(d.calls, [], ref);
+  }
+});
+
+test("a pin names its own fixture's package, never another fixture's", () => {
+  const other = `ghcr.io/purlis/purlis-parity-ssh-runner-systemd@${DIGEST}`;
+  const pinned = { ...fixture, image: { ref: other, source: sourceOf(fixture, readFile) } };
+  const d = docker();
+  assert.throws(
+    () => prepare({ name: "remote-docker-sshd", fixture: pinned, tag: "t", readFile, docker: d.run, wait: () => {} }),
+    /purlis-parity-ssh-runner-systemd is not remote-docker-sshd's package/,
+  );
+  assert.deepEqual(d.calls, []);
+  const manifest = { fixtures: { "remote-docker-sshd": { ...fixture } } };
+  assert.throws(() => withPin(manifest, "remote-docker-sshd", other, readFile), /not remote-docker-sshd's package/);
+  // Each pin committed names its own fixture's package.
+  for (const [name, f] of Object.entries(loadManifest((p) => read(p)).fixtures)) {
+    if (f.image !== null) assert.equal(pinRefusal(name, f.image.ref), null, name);
+  }
 });
 
 // ---- The workflows ----
@@ -156,18 +233,7 @@ const workflow = (() => {
   }
 })();
 
-/** The jobs of a workflow's text, by name, each its lines with comments dropped. */
-function jobs(text) {
-  const lines = text.split("\n");
-  const out = new Map();
-  let current = null;
-  for (const line of lines.slice(lines.indexOf("jobs:") + 1)) {
-    if (/^\S/.test(line)) break;
-    if (/^ {2}[\w-]+:$/.test(line)) out.set((current = line.trim().slice(0, -1)), []);
-    else if (current && !line.trim().startsWith("#")) out.get(current).push(line);
-  }
-  return out;
-}
+const jobs = (text) => jobLines(text);
 
 test("the fixture images are pushed only from main, by jobs that run no pull request's code", () => {
   assert.deepEqual(triggers(workflow), ["push", "pull_request", "workflow_dispatch"]);
@@ -196,6 +262,30 @@ test("the fixture images are pushed only from main, by jobs that run no pull req
   assert.ok(plan.some((l) => l.startsWith("if [ \"$REF\" = refs/heads/main ] && { [ \"$EVENT\" = push ] || [ \"$EVENT\" = workflow_dispatch ]; }")));
   // The build of a pull request holds nothing that writes.
   assert.ok(all.get("build").includes("      contents: read"));
+});
+
+test("the pin job pushes the pins' branch and names its compare link, and opens no pull request", () => {
+  const pin = jobs(workflow).get("pin");
+  const text = pin.join("\n");
+  // GitHub Actions may not open pull requests in this repository, and a pull request a bot opens
+  // starts no checks: a person opens it from the link.
+  assert.ok(!/gh pr (create|edit|list)/.test(text), "the pin job opens or edits a pull request");
+  assert.ok(!pin.some((l) => l.trim() === "pull-requests: write"), "the pin job holds pull-requests: write");
+  assert.ok(text.includes("BRANCH=parity-fixture-images/pins"));
+  assert.ok(text.includes('compare="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$BRANCH?expand=1"'));
+  assert.match(text, /echo "::notice title=[^:]+::[^"]*\$compare"/, "the link is not a notice");
+  assert.match(text, /\(\$compare\)[^\n]*>> "\$GITHUB_STEP_SUMMARY"/, "the link is not in the summary");
+  // Never over a commit someone else pushed there: the push leases the head it found.
+  assert.ok(!/push --force(?!-with-lease)/.test(text), "a bare --force overwrites what a person pushed");
+  assert.match(text, /push --force-with-lease="refs\/heads\/\$BRANCH:\$seen"/);
+});
+
+test("a fixture's file is read for its digest once, where its one manifest is checked", () => {
+  const reads = workflow.split("\n").filter((l) => !l.trim().startsWith("#") && l.includes("index.json"));
+  assert.equal(reads.length, 1, reads.join("\n"));
+  assert.ok(jobs(workflow).get("build").some((l) => l.includes("index.json")), "the one read is not build's");
+  // publish takes the digest build wrote beside the file.
+  assert.ok(jobs(workflow).get("publish").join("\n").includes('digest=$(cat "$RUNNER_TEMP/digest")'));
 });
 
 test("the pins a publish writes are not a change that starts another publish", () => {

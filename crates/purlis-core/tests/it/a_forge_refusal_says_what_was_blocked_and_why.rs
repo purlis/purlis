@@ -4,8 +4,8 @@
 //! A forge refusal says what was blocked and why (#7779; ADR 0128, amended 2026-11-27, §10).
 //!
 //! It is one of two kinds, and says which: **no action**, a request purlis does not carry, which
-//! no setting can allow (a floor act also says what it is, and that it is the person's to do on
-//! the forge); or **a known act the policy doesn't allow**, read from the act's own route, which
+//! no setting can allow and only purlis's maintainers can, by changing purlis (a floor act also
+//! says what it is, and that it is the person's to do on the forge); or **a known act the policy doesn't allow**, read from the act's own route, which
 //! names the act, the repo and why. The path in the text is the route's pattern: numbers as
 //! `{n}`, any segment outside the route vocabulary as `{…}`, no query, capped, and inert. Each
 //! refusal is counted, by its kind and act, under Settings › Project › Policy, "Would have
@@ -81,7 +81,7 @@ fn said(s: &Scene, method: &str, host: &str, target: &str, refusal: Refusal) -> 
 }
 
 #[test]
-fn an_unknown_forge_request_says_no_setting_can_allow_it_and_names_the_repo() {
+fn an_unknown_forge_request_says_no_setting_can_allow_it_and_who_can_and_names_the_repo() {
     purlis_core::unsteered!();
     let s = scene();
     let text = said(
@@ -94,7 +94,8 @@ fn an_unknown_forge_request_says_no_setting_can_allow_it_and_names_the_repo() {
     assert_eq!(
         text,
         "purlis doesn't carry this request (`POST /repos/{owner}/{repo}/milestones` on \
-         `github.com/acme/app`), so it was refused. No setting can allow it."
+         `github.com/acme/app`), so it was refused. No setting can allow it: only purlis's maintainers can, by \
+         changing purlis."
     );
     let gitlab = said(
         &s,
@@ -106,7 +107,8 @@ fn an_unknown_forge_request_says_no_setting_can_allow_it_and_names_the_repo() {
     assert_eq!(
         gitlab,
         "purlis doesn't carry this request (`POST /api/v4/projects/{project}/milestones` on \
-         `gitlab.com/group/proj`), so it was refused. No setting can allow it."
+         `gitlab.com/group/proj`), so it was refused. No setting can allow it: only purlis's maintainers can, by \
+         changing purlis."
     );
 }
 
@@ -224,7 +226,8 @@ fn a_request_refused_by_a_segments_name_is_not_claimed_as_that_act() {
     assert_eq!(
         merge_label,
         "purlis doesn't carry this request (`DELETE /repos/{owner}/{repo}/issues/{n}/labels/merge` \
-         on `github.com/acme/app`), so it was refused. No setting can allow it."
+         on `github.com/acme/app`), so it was refused. No setting can allow it: only purlis's maintainers can, by \
+         changing purlis."
     );
     let release_label = said(
         &s,
@@ -515,7 +518,8 @@ fn an_unmatched_requests_unknown_segments_are_shown_as_a_placeholder_and_its_que
     assert_eq!(
         outside,
         "purlis doesn't carry this request (`POST /user/{…}` on `api.github.com`), so it was \
-         refused. No setting can allow it."
+         refused. No setting can allow it: only purlis's maintainers can, by \
+         changing purlis."
     );
 }
 

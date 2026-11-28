@@ -389,11 +389,11 @@ performance budgets, so that one machine's timings make each series. No pull req
 (ADR 0086, amended 2026-11-27).
 _Avoid_: CI Mac, runner (alone)
 
-**Budget run**:
+**Performance budget run**:
 The job on the **Benchmark Mac** that measures the window and felt rows of the **performance
 budgets** after each push to `main` and nightly, and records each as a point of its series. It judges nothing as it runs: a
 regression is detected from the series, after the merge that caused it.
-_Avoid_: benchmark (alone), perf job, bench run
+_Avoid_: budget run (alone), benchmark (alone), perf job, bench run
 
 **Gating row**:
 A performance budget's row whose series has become steady enough (five consecutive points on

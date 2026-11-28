@@ -13,8 +13,10 @@
 //
 //   node tools/fixture-images.mjs prepare-all
 //       Each fixture's image, tagged with its name for its `up.sh`: pulled by digest when its pin
-//       is current, built here otherwise. A fixture that cannot be had is one `::error::` line
-//       naming it and its image, and the command exits 1 once every fixture was tried.
+//       is current, built here otherwise (three tries either way), and built here with this
+//       account's uid where its `POOL_UID` is another. A fixture that cannot be had is one
+//       `::error::` line naming it and its image, and the command exits 1 once every fixture was
+//       tried.
 //   node tools/fixture-images.mjs stale
 //       The fixtures whose pin is missing or behind their files, as a JSON list (the publish's
 //       matrix).
@@ -67,13 +69,24 @@ export function sourceOf(fixture, readFile = repoRead) {
   return `sha256:${hash.digest("hex")}`;
 }
 
-/** The manifest with `ref` as `name`'s pin. Throws for a ref that is not by digest. */
+/**
+ * Why `ref` cannot be fixture `name`'s pin, or `null` when it can: a pin names its image by
+ * digest alone, and the image is `name`'s own package (`<registry>/<owner>/purlis-parity-<name>`),
+ * so a pin can never point one fixture at another's image.
+ */
+export function pinRefusal(name, ref) {
+  const m = /^([a-z0-9.-]+\/[a-z0-9-]+)\/([a-z0-9-]+)@sha256:[0-9a-f]{64}$/.exec(ref ?? "");
+  if (!m) return "names no image by digest; a fixture is pinned by digest alone";
+  if (m[2] !== `purlis-parity-${name}`) return `names ${m[2]}, and ${m[2]} is not ${name}'s package (purlis-parity-${name})`;
+  return null;
+}
+
+/** The manifest with `ref` as `name`'s pin. Throws for a ref `pinRefusal` refuses. */
 export function withPin(manifest, name, ref, readFile = repoRead) {
   const fixture = manifest.fixtures[name];
   if (!fixture) throw new Error(`no fixture ${name} in ${MANIFEST}`);
-  if (!/^[a-z0-9./-]+@sha256:[0-9a-f]{64}$/.test(ref)) {
-    throw new Error(`${ref} names no image by digest; a fixture is pinned by digest alone`);
-  }
+  const refused = pinRefusal(name, ref);
+  if (refused) throw new Error(`${ref} ${refused}`);
   const image = { ref, source: sourceOf(fixture, readFile) };
   return { ...manifest, fixtures: { ...manifest.fixtures, [name]: { ...fixture, image } } };
 }
@@ -101,7 +114,9 @@ const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 
 /**
  * Makes fixture `name`'s image here, tagged `tag`: `{ how, notice }`, where `how` is `pulled` or
  * `built`. `docker(args)` runs docker and returns its output or throws. Throws one message naming
- * the fixture when its image cannot be pulled or built.
+ * the fixture when its image cannot be pulled or built. A fixture whose build arguments give a
+ * `POOL_UID` is built here with `uid` instead when the two differ: its `pool` must be this
+ * account's to own rootless Podman's socket, and the pin's is a hosted runner's (#8009).
  */
 export function prepare({
   name,
@@ -113,10 +128,16 @@ export function prepare({
   wait = sleep,
   contextDir,
   stage = (f, dir) => stageFiles(f, dir, readFile),
+  uid,
 }) {
+  const pinned = fixture.buildArgs?.POOL_UID;
+  const otherUid = pinned !== undefined && uid !== undefined && String(uid) !== pinned;
   const state = pinState(fixture, readFile);
-  if (state === "current") {
+  if (state === "current" && !otherUid) {
     const { ref } = fixture.image;
+    // Checked here too, not only where a pin is written: a pin edited by hand is pulled here.
+    const refused = pinRefusal(name, ref);
+    if (refused) throw new Error(`fixture image ${name} (${ref}) ${refused}`);
     let last;
     for (let attempt = 1; attempt <= tries; attempt += 1) {
       try {
@@ -130,22 +151,37 @@ export function prepare({
     }
     throw new Error(`fixture image ${name} (${ref}) unavailable after ${tries} tries: ${said(last)}`);
   }
-  const why =
-    state === "stale"
+  const why = otherUid
+    ? `this account's uid is ${uid}, and the pin's pool has ${pinned}`
+    : state === "stale"
       ? `${fixture.dockerfile} or what it copies changed since it was pinned`
       : "it is not pinned yet";
+  const buildArgs = otherUid ? { ...fixture.buildArgs, POOL_UID: String(uid) } : (fixture.buildArgs ?? {});
   const dir = contextDir ?? mkdtempSync(join(tmpdir(), `fixture-${name}-`));
   stage(fixture, dir);
-  const args = Object.entries(fixture.buildArgs ?? {}).flatMap(([k, v]) => ["--build-arg", `${k}=${v}`]);
-  try {
-    docker(["build", "--file", join(dir, basename(fixture.dockerfile)), "--tag", tag, ...args, dir]);
-  } catch (error) {
-    throw new Error(
-      `fixture image ${name} could not be built from ${fixture.dockerfile} (built here because ${why}; a distro mirror may be down): ${said(error)}`,
-    );
+  const args = Object.entries(buildArgs).flatMap(([k, v]) => ["--build-arg", `${k}=${v}`]);
+  let last;
+  for (let attempt = 1; attempt <= tries; attempt += 1) {
+    try {
+      docker(["build", "--file", join(dir, basename(fixture.dockerfile)), "--tag", tag, ...args, dir]);
+      return { how: "built", notice: `${name}: built here from ${fixture.dockerfile}, because ${why}` };
+    } catch (error) {
+      last = error;
+      if (attempt < tries) wait(attempt * 10_000);
+    }
   }
-  return { how: "built", notice: `${name}: built here from ${fixture.dockerfile}, because ${why}` };
+  const cause = MIRROR_UNREACHED.test(String(last?.stderr || last?.message || last)) ? "; a package mirror could not be reached" : "";
+  throw new Error(
+    `fixture image ${name} could not be built from ${fixture.dockerfile} after ${tries} tries (built here because ${why}${cause}): ${said(last)}`,
+  );
 }
+
+/**
+ * What apk and apt print when a mirror did not answer, as against a build that failed on its own
+ * account: only then does the error say a mirror is the cause.
+ */
+const MIRROR_UNREACHED =
+  /fetch https?:\/\/\S+: (temporary error|network error|DNS lookup error|could not connect)|Failed to fetch https?:|Could not resolve|Temporary failure resolving|Connection (timed out|refused|reset)|Unable to connect to/i;
 
 function realDocker(args) {
   return execFileSync("docker", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
@@ -162,7 +198,7 @@ function main([command, ...rest]) {
     let failed = 0;
     for (const [name, fixture] of Object.entries(manifest.fixtures)) {
       try {
-        const { how, notice } = prepare({ name, fixture, tag: name, docker: realDocker });
+        const { how, notice } = prepare({ name, fixture, tag: name, docker: realDocker, uid: process.getuid?.() });
         console.log(how === "pulled" ? notice : `::warning title=Fixture image built here::${notice}`);
       } catch (error) {
         failed += 1;
