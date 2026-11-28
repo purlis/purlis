@@ -332,7 +332,8 @@ static WRITING: Mutex<()> = Mutex::new(());
 ///
 /// Appended while every kind is under its cap; once one would pass it, written again whole
 /// ([`kept`]), through a file beside it that takes its place, so a reader never finds half a
-/// log. At most a megabyte or so, and only on a slow moment.
+/// log. At most two megabytes or so (the 200 answer summaries near one of them, each held to
+/// [`answers::MOST_COMMANDS`] commands), and only on a slow moment.
 pub fn record_in(file: &Path, slow: &Slow) -> io::Result<()> {
     if !slow.worth_keeping() {
         return Ok(());

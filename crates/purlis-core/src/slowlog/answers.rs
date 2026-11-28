@@ -40,13 +40,19 @@ const DIGITS: u8 = 2;
 /// The longest answer the histogram tells apart, an hour; a longer one counts as an hour.
 const LONGEST_MS: u64 = 3_600_000;
 
+/// The most commands one summary line holds: the ones that answered most, so 200 summaries
+/// of about 100 bytes a command stay near a megabyte in all, however many commands the app has.
+pub const MOST_COMMANDS: usize = 50;
+
 /// How long a summary covers before the next answer writes it.
 pub const HOUR_MS: u64 = 3_600_000;
 
 /// **Every answer since the last summary**, a histogram of milliseconds per command and class.
 pub struct Spreads {
     since: u64,
-    each: BTreeMap<(String, String), hdrhistogram::Histogram<u64>>,
+    /// By command, then class: looked up by the names alone, so an answer to a command seen
+    /// before allocates nothing under the lock.
+    each: BTreeMap<String, BTreeMap<String, hdrhistogram::Histogram<u64>>>,
 }
 
 impl Spreads {
@@ -60,13 +66,16 @@ impl Spreads {
 
     /// One answer to `command` of class `class` that took `ms` in all.
     pub fn add(&mut self, command: &str, class: &str, ms: u32) {
-        let held = self
-            .each
-            .entry((command.to_owned(), class.to_owned()))
-            .or_insert_with(|| {
-                hdrhistogram::Histogram::new_with_bounds(1, LONGEST_MS, DIGITS)
-                    .expect("the bounds are fixed and valid")
-            });
+        if !self.each.contains_key(command) {
+            self.each.insert(command.to_owned(), BTreeMap::new());
+        }
+        let classes = self.each.get_mut(command).expect("inserted above");
+        if !classes.contains_key(class) {
+            let fresh = hdrhistogram::Histogram::new_with_bounds(1, LONGEST_MS, DIGITS)
+                .expect("the bounds are fixed and valid");
+            classes.insert(class.to_owned(), fresh);
+        }
+        let held = classes.get_mut(class).expect("inserted above");
         held.saturating_record(u64::from(ms).min(LONGEST_MS));
     }
 
@@ -86,19 +95,27 @@ impl Spreads {
         let ms = |held: &hdrhistogram::Histogram<u64>, at: f64| {
             u32::try_from(held.value_at_quantile(at)).unwrap_or(u32::MAX)
         };
-        Some(Slow::AnswerSummary {
-            at: now,
-            since,
-            commands: each
-                .into_iter()
-                .map(|((command, class), held)| Spread {
-                    command,
+        let mut commands: Vec<Spread> = each
+            .into_iter()
+            .flat_map(|(command, classes)| {
+                classes.into_iter().map(move |(class, held)| Spread {
+                    command: command.clone(),
                     class,
                     n: u32::try_from(held.len()).unwrap_or(u32::MAX),
                     p50_ms: ms(&held, 0.5),
                     p99_ms: ms(&held, 0.99),
                 })
-                .collect(),
+            })
+            .collect();
+        if commands.len() > MOST_COMMANDS {
+            commands.sort_by_key(|spread| std::cmp::Reverse(spread.n));
+            commands.truncate(MOST_COMMANDS);
+            commands.sort_by(|a, b| (&a.command, &a.class).cmp(&(&b.command, &b.class)));
+        }
+        Some(Slow::AnswerSummary {
+            at: now,
+            since,
+            commands,
         })
     }
 }
@@ -153,13 +170,13 @@ pub fn installed() -> AnswerSpans {
                         }
                     }
                 });
+            // Kept, not logged: this runs before the log is installed, which says it after.
             if let Err(err) = spawned {
-                tracing::warn!("the answer log's writer did not start: {err}");
+                let _ = UNSTARTED.set(err.to_string());
             }
-            let lines = Mutex::new(lines);
             let layer = AnswerSpans::writing_to(
                 move |slow| {
-                    let _ = lock(&lines).send(slow);
+                    let _ = lines.send(slow);
                 },
                 super::now_ms,
             );
@@ -172,9 +189,25 @@ pub fn installed() -> AnswerSpans {
 /// The layer [`installed`] made, once it has.
 static KEPT: OnceLock<AnswerSpans> = OnceLock::new();
 
+/// Why [`installed`]'s writer thread did not start, if it did not.
+static UNSTARTED: OnceLock<String> = OnceLock::new();
+
+/// **Why the answer log's writer did not start**, when it did not: for the log to say once it
+/// is installed, since [`installed`] runs before it is.
+pub fn writer_unstarted() -> Option<&'static str> {
+    UNSTARTED.get().map(String::as_str)
+}
+
 /// **The last summary, written as the app quits**, on the thread that quits: the writer thread
 /// may not get to it before the process ends. Nothing when no layer is installed or no answer
 /// closed since the last.
+///
+/// The app calls it from its exit event and from the Windows updater's exit, the two ways out
+/// that come after an answer; every `std::process::exit` of the app is at launch, before any.
+/// **What is lost:** an answer span's line still queued for the writer thread when the process
+/// ends, and the whole last summary on a crash or a force-quit, which run no exit code. A
+/// summary is written only by an answer or a quit, so an app left idle or in the background
+/// writes none until its next answer.
 pub fn at_exit() {
     let Some(layer) = KEPT.get() else {
         return;

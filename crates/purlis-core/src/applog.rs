@@ -43,6 +43,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 use tracing::Level;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_subscriber::Layer as _;
 use tracing_subscriber::filter::Targets;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -118,6 +119,9 @@ pub fn install() {
         subscriber_to(file, std::io::stderr).with(crate::slowlog::answers::installed());
     if tracing::subscriber::set_global_default(subscriber).is_ok() {
         redaction_made_ready_beside_the_launch();
+        if let Some(why) = crate::slowlog::answers::writer_unstarted() {
+            tracing::warn!("purlis: the answer log's writer did not start: {why}");
+        }
         if let Some(why) = missing {
             tracing::warn!(
                 "purlis: no log file ({why}); what the app notices goes to standard error alone"
@@ -257,6 +261,7 @@ where
         .with_level(false)
         .with_target(false)
         .with_writer(Redacting(screen))
+        .with_filter(no_spans())
 }
 
 /// One warning, raised here on purpose so a test can watch where a core diagnostic goes in the
@@ -315,8 +320,17 @@ fn subscriber_to(
             tracing_subscriber::fmt::layer()
                 .with_ansi(false)
                 .with_writer(Redacting(file))
+                .with_filter(no_spans())
         }))
         .with(terminal(screen))
+}
+
+/// **Events alone, never a span** (FS-M1a, #7893): what the fmt layers are filtered to, so an
+/// event inside the app's `answer` span reads as it did before there was one, with no
+/// `answer{…}:` scope before it, and no span's fields are formatted into a string as it opens.
+/// The answer spans are read by [`crate::slowlog::answers`] alone.
+fn no_spans<S>() -> impl tracing_subscriber::layer::Filter<S> + Send + Sync {
+    tracing_subscriber::filter::filter_fn(|meta| !meta.is_span())
 }
 
 /// A writer that holds each event whole and lets it through only once it has been asked

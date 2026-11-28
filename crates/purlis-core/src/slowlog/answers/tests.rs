@@ -217,3 +217,26 @@ fn a_spread_of_long_answers_is_read_within_a_hundredth() {
     assert!(within(commands[0].p50_ms, 12_345), "{commands:?}");
     assert!(within(commands[0].p99_ms, 250_000), "{commands:?}");
 }
+
+#[test]
+fn a_summary_holds_the_commands_that_answered_most_and_no_more() {
+    // The slow log's size: 200 summaries, each a bounded line, however many commands answered.
+    let mut spreads = Spreads::since(0);
+    for i in 0..MOST_COMMANDS + 10 {
+        for _ in 0..=i {
+            spreads.add(&format!("command_{i:03}"), "model", 5);
+        }
+    }
+    let Some(Slow::AnswerSummary { commands, .. }) = spreads.take(HOUR_MS) else {
+        panic!("a summary");
+    };
+    assert_eq!(commands.len(), MOST_COMMANDS);
+    let names: Vec<&str> = commands.iter().map(|c| c.command.as_str()).collect();
+    assert_eq!(
+        names.first(),
+        Some(&"command_010"),
+        "the ten quietest are left out"
+    );
+    assert_eq!(names.last(), Some(&"command_059"));
+    assert!(names.is_sorted(), "{names:?}");
+}

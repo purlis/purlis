@@ -1373,9 +1373,27 @@ fn has_word(text: &str, word: &str) -> bool {
     })
 }
 
-/// Whether a command's `body` hands its work to the door alone: it calls
-/// `crate::answer(…)` or its wrapper `off_the_window`, and no raw `spawn_blocking`.
+/// Whether a command's `body` hands its work to the door alone: it calls `crate::answer(…)`,
+/// `answer(…)` as lib.rs names it, or its wrapper `off_the_window`, and no raw `spawn_blocking`.
+/// A method `.answer(` or a longer name ending in `answer(` is not the door.
 fn through_the_door(body: &str) -> bool {
-    (body.contains("off_the_window") || body.contains("crate::answer("))
-        && !body.contains("spawn_blocking")
+    let the_door = body.match_indices("answer(").any(|(at, _)| {
+        let before = body[..at].trim_end_matches("crate::");
+        !before
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.' || c == ':')
+    });
+    (body.contains("off_the_window") || the_door) && !body.contains("spawn_blocking")
+}
+
+#[test]
+fn a_bare_call_of_the_door_counts_as_through_it_and_a_method_of_that_name_does_not() {
+    assert!(through_the_door("crate::answer(\"x\", move || work())"));
+    assert!(through_the_door(
+        "let said = answer(\"x\", move || work()).await;"
+    ));
+    assert!(!through_the_door("let said = host.answer(request);"));
+    assert!(!through_the_door("let said = the_answer(request);"));
+    assert!(!through_the_door("answer(\"x\", || spawn_blocking(work))"));
 }

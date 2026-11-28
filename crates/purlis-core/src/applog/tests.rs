@@ -395,3 +395,32 @@ fn a_named_timeout_that_expires_says_which_and_after_how_long() {
          session host's answer\" after_ms=30000\n"
     );
 }
+
+#[test]
+fn an_event_inside_an_answer_span_prints_unchanged_in_the_log_and_on_standard_error() {
+    // FS-M1a (#7893): the fmt layers never prefix an event with the answer span around it.
+    let dir = tempfile::tempdir().unwrap();
+    let screen = Screen::default();
+    let seen = screen.clone();
+    tracing::subscriber::with_default(
+        subscriber_to(Some(daily_file(dir.path()).unwrap()), move || seen.clone()),
+        || {
+            let span = tracing::info_span!(
+                "answer",
+                command = "list_chats",
+                class = "read",
+                queued_ms = 3_u64
+            );
+            let _inside = span.enter();
+            tracing::warn!("purlis: said inside an answer");
+        },
+    );
+    assert_eq!(screen.said(), "purlis: said inside an answer\n");
+    let line = logged(dir.path());
+    assert!(
+        line.trim_end()
+            .ends_with("WARN purlis_core::applog::tests: purlis: said inside an answer"),
+        "{line}"
+    );
+    assert!(!line.contains("answer{"), "{line}");
+}
