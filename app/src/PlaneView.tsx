@@ -36,7 +36,7 @@ import { standingOf, waitingOnYou, type QuestionsHeld } from "./taskQuestions";
 import { machineChanged } from "./settings/thisMachine";
 import { MAIN, thisWindow } from "./windows";
 import { clearedHere, keptOutside, letGoHere } from "./notesClearedEverywhere";
-import { frontTabIs } from "./slowLog";
+import { frontTabIs, useMarkedOnChange } from "./slowLog";
 import { createPortal } from "react-dom";
 import {
   AsLastShown,
@@ -1158,6 +1158,8 @@ export const PlaneView = memo(function PlaneView({
   const inFrontTab = tabs.inFront === undefined ? undefined : tabs.byId[tabs.inFront];
   const frontTabName = inFrontTab === undefined ? undefined : tabNameOf(inFrontTab);
   useEffect(() => (inFront ? frontTabIs(frontTabName) : undefined), [inFront, frontTabName]);
+  // Another tab brought to the front of the window costs a frame: the stall log marks it.
+  useMarkedOnChange("tab-switch", inFront ? tabs.inFront : undefined);
   const signingOutIn = useSignOutTerminals(tabs, plane);
   // **A pane closed for good lets its band's memory go** (#3167): a pane's number is never
   // used again, so one gone from every tab is gone for good.

@@ -429,16 +429,9 @@ pub trait SessionHost: Send + Sync {
         ))
     }
 
-    /// **Whether the window can read chat `id`'s files on the runner it runs on** (#6387): a
-    /// Docker pool's runner of session protocol 1.90 or later, on a link open now. False for a
-    /// chat here, and on every other kind of runner, which has no adapter yet.
-    fn reads_files_on_runner(&self, id: u32) -> bool {
-        let _ = id;
-        false
-    }
-
-    /// **Chat `id`'s files on its runner, as a pane's file links read them** (#6387): none where
-    /// [`Self::reads_files_on_runner`] is false.
+    /// **Chat `id`'s files on its runner, as a pane's file links read them** (#6387,
+    /// #6949): a runner the window reads files on, over a link open now of a session protocol
+    /// version that reads them there (`runnerfiles::reads_files_over`). None for a chat here.
     fn runner_files_of(&self, id: u32) -> Option<crate::runnerfiles::ReadsOnRunner> {
         let _ = id;
         None
@@ -679,6 +672,14 @@ pub trait SessionHost: Send + Sync {
         Err(format!(
             "purlis did not hibernate chat {id}: the host it runs in cannot do that."
         ))
+    }
+
+    /// **Holds chat `id` as hibernated with no program** (SC-4e, #7634): a restart put it back
+    /// hibernated, and started nothing, so its wake or its End closes it here as one the host
+    /// let go of as it hibernated ([`Self::hibernate`]), and asks nothing of the host. Nothing
+    /// for a host that never hibernates.
+    fn asleep(&self, id: u32) {
+        let _ = id;
     }
 
     /// Calls `tell` as each session's program ends, with the id and how it ended.
@@ -1994,6 +1995,9 @@ pub(crate) mod pretend {
                 Some((why, _)) => Err(why),
                 None => Ok(()),
             }
+        }
+        fn asleep(&self, id: u32) {
+            lock(&self.seen.hibernated).push(id);
         }
         fn stopped_by(&mut self, switch: Arc<crate::killswitch::KillSwitch>) {
             *lock(&self.seen.switch) = Some(switch);

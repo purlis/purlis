@@ -459,3 +459,20 @@ fn the_committed_protected_branches_are_the_risk_tables_and_nothing_else() {
     crate::enforcement::set_in_the_app_for_this_test(true);
     assert_eq!(got, ["m*-policy", "stable"]);
 }
+
+#[test]
+fn a_push_in_a_parameter_expansion_that_holds_a_blank_or_an_operator_is_read_the_old_way_too() {
+    // `eval` runs what `${y:-…}` gives as a line (#7709, round 5).
+    let f = facts();
+    for line in [
+        "eval ${y:-:;git push origin main;}",
+        "eval true ${y:-; git push origin main;}",
+        "timeout 5 ${y:-:;git push origin main;}",
+    ] {
+        assert_eq!(
+            class(f.of_command(line)),
+            Some(Class::ProtectedPush),
+            "{line}"
+        );
+    }
+}

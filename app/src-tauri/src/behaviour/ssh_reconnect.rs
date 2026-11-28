@@ -18,12 +18,25 @@ const NOTICED_WITHIN: Duration = Duration::from_secs(120);
 const BACK_WITHIN: Duration = Duration::from_secs(300);
 
 /// Waits up to `within` for `done`, asking every 20 ms so a short dim is not missed.
-fn until(within: Duration, what: &str, done: impl Fn() -> bool) {
+pub(super) fn until(within: Duration, what: &str, done: impl Fn() -> bool) {
     let deadline = Instant::now() + within;
     while !done() {
         assert!(Instant::now() < deadline, "{what}");
         std::thread::sleep(Duration::from_millis(20));
     }
+}
+
+/// **This pool's SSH connection ends, as a lost connection ends it**: its ssh is killed outright.
+/// Only this pool's: the job's other tests run beside it over connections of their own. When.
+pub(super) fn the_link_drops(target: &Target) -> Instant {
+    let pool = &target.runner.as_ref().expect("a pool's runner").pool;
+    let ssh = purlis_core::sshroute::forward::ssh_of(pool).expect("this process holds the forward");
+    let killed = purlis_core::forklock::status(
+        std::process::Command::new("kill").args(["-KILL", &ssh.to_string()]),
+    )
+    .expect("kill runs");
+    assert!(killed.success(), "{killed:?}");
+    Instant::now()
 }
 
 #[test]
@@ -42,15 +55,7 @@ fn in_a_remote_docker_pool() {
     let pane = Pane::on(&target, id);
     pane.shows("HARNESS-READY");
 
-    // This pool's SSH connection ends, as a lost connection ends it: its ssh is killed outright.
-    // Only this pool's: the job's other tests run beside it over connections of their own.
-    let pool = &target.runner.as_ref().expect("a pool's runner").pool;
-    let ssh = purlis_core::sshroute::forward::ssh_of(pool).expect("this process holds the forward");
-    let killed = purlis_core::forklock::status(
-        std::process::Command::new("kill").args(["-KILL", &ssh.to_string()]),
-    )
-    .expect("kill runs");
-    assert!(killed.success(), "{killed:?}");
+    the_link_drops(&target);
 
     until(
         NOTICED_WITHIN,

@@ -19,16 +19,20 @@ use std::sync::{Mutex, OnceLock, mpsc};
 use std::thread::ThreadId;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use purlis_core::slowlog::Slow;
+use purlis_core::slowlog::{Kind, Slow};
 
 /// How often the main thread is pinged.
 pub(crate) const EVERY: Duration = Duration::from_millis(100);
 
-/// A ping this late, or later, is a core stall: the window's own budget for a freeze.
-pub(crate) const STALLED: Duration = Duration::from_millis(200);
+/// A ping this late, or later, is a core stall: the window's own budget for a freeze, and the
+/// slow log's threshold for a core stall.
+pub(crate) const STALLED: Duration =
+    Duration::from_millis(Kind::CoreStall.keeping().from_ms as u64);
 
-/// A command that holds the main thread this long, or longer, is written down.
-pub(crate) const HELD_LONG: Duration = Duration::from_millis(100);
+/// A command that holds the main thread this long, or longer, is written down: the slow log's
+/// threshold for a core command.
+pub(crate) const HELD_LONG: Duration =
+    Duration::from_millis(Kind::CoreCommand.keeping().from_ms as u64);
 
 /// What the main thread is running, outermost first: a window command, a window event, a menu
 /// click, and, inside it, the lock it waits on. Empty when nothing of purlis's is running there.

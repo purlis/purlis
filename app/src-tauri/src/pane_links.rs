@@ -91,6 +91,10 @@ pub struct LinkCandidate {
     // Left out, it is `None`: serde reads a missing `Option` so with no `default`.
     #[specta(optional)]
     pub target: Option<String>,
+    /// Whether the pane read the words across a line break the program wrote at its edge
+    /// (#7819): a web address read so asks before it opens. Left out, it is not.
+    #[specta(optional)]
+    pub joined: Option<bool>,
 }
 
 impl From<LinkCandidate> for Candidate {
@@ -99,6 +103,7 @@ impl From<LinkCandidate> for Candidate {
             kind: candidate.kind.into(),
             text: candidate.text,
             target: candidate.target,
+            joined: candidate.joined.unwrap_or(false),
         }
     }
 }
@@ -147,9 +152,9 @@ fn pane_of(planes: &Planes, from: LinkFrom) -> (Pane, Option<Arc<Held>>) {
         local.then_some(at)
     });
     // A chat on a runner whose files the window can read there (#6387).
-    let on_runner = from
-        .session
-        .is_some_and(|session| here.is_none() && chats.reads_files_on_runner(session));
+    let on_runner = from.session.is_some_and(|session| {
+        here.is_none() && chats.sessions().runner_files_of(session).is_some()
+    });
     let pane = Pane {
         project: Some(held.root().to_path_buf()),
         session: from.session,
@@ -767,7 +772,7 @@ fn for_project(held: Option<&Held>, session: Option<u32>) -> (Resolver, ChatsHer
     // A runner chat's paths are read on its runner (#6387).
     if let Some(reads) = held
         .zip(session)
-        .and_then(|(held, session)| held.chats().runner_files_of(session))
+        .and_then(|(held, session)| held.chats().sessions().runner_files_of(session))
     {
         resolver = resolver.with_kind(Box::new(RunnerFile::new(Box::new(reads))));
     }
@@ -1020,7 +1025,7 @@ pub async fn pane_link_runner_file(
     let (pane, held) = pane_of(&app.state::<Planes>(), from);
     let reads = held
         .zip(session)
-        .and_then(|(held, session)| held.chats().runner_files_of(session))
+        .and_then(|(held, session)| held.chats().sessions().runner_files_of(session))
         .filter(|reads| reads.runner() == runner)
         .ok_or_else(|| crate::runnerfiles::not_reachable(&runner))?;
     let opened = app

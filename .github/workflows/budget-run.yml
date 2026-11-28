@@ -1,0 +1,296 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# **The budget run** (#7737, spec #7730, ADR 0086 as amended 2026-11-27): the window and felt rows
+# of the performance budgets of record, measured on the dedicated benchmark Mac and recorded as a
+# `macos-max` series on the `benchmarks` branch. Judged by detection after merge, never on a pull
+# request: this repository is public, and no pull request may reach a self-hosted runner.
+#
+# The tracer bullet measures one row, L2 (a tab or pane switch), with the window bench
+# (`tools/bench.mjs --only window`) on the stand-in harness, in both renderer arms. The nightly set
+# adds its rows to `tools/budget-series.mjs`'s `ROWS` and its specs to the bench step.
+#
+# Its shape is held by `tools/budget-run-workflow.test.mjs`, and that no pull request can start it
+# by `tools/no-self-hosted-on-pull-request.test.mjs`.
+
+name: budget run
+
+on:
+  # On main's push and nightly, and on nothing a pull request, the merge queue or another
+  # workflow's run can start.
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
+
+concurrency:
+  # **One measurement at a time on the Mac** comes from the Mac having one runner: a job waits for
+  # it, whichever workflow it is from. This group bounds what waits: one run of main's pushes and
+  # the newest pending one, which a newer push replaces, so a busy hour never queues a backlog; a
+  # run that started is never cancelled, so every started run yields a point. The nightly has a
+  # group of its own, so a push never replaces it: it queues behind the running one. The group is
+  # this workflow's, not shared with `outcome-bars.yml`: GitHub keeps one pending run per group, so
+  # a shared one would cancel one workflow's run for the other's on every push.
+  group: budget-run-${{ github.event_name == 'schedule' && 'nightly' || 'main' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+# `outcome-bars.yml`'s, so sccache's entries written there are hits here for the same crates.
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  CARGO_NET_RETRY: "10"
+
+jobs:
+  budget-run:
+    name: budget run (macos-max)
+    # **Only on the benchmark Mac, never on a GitHub-hosted runner.** The repository variable
+    # `BUDGET_RUN_RUNNER` is a JSON array of the Mac's labels
+    # (`["self-hosted","macOS","ARM64","purlis-bars"]`). Unset, or naming no self-hosted runner,
+    # the job does not run: a series never mixes two machines, so there is no fallback.
+    if: contains(vars.BUDGET_RUN_RUNNER, 'self-hosted')
+    runs-on: ${{ fromJSON(vars.BUDGET_RUN_RUNNER) }}
+    # A cold `dev-release` build on the Max, then the two arms' switches.
+    timeout-minutes: 120
+    steps:
+      - name: Say that these rows ran on the benchmark Mac
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          echo "**Measured on a self-hosted runner** ($RUNNER_NAME, $RUNNER_OS $RUNNER_ARCH): the budget run's \`macos-max\` series, this machine's numbers alone (ADR 0086, amended 2026-11-27)." >> "$GITHUB_STEP_SUMMARY"
+      # **The window the bench drives has to paint** (#7738): `outcome-bars.yml`'s check. Before
+      # the build, so a locked Mac fails in seconds and not after it.
+      - name: A self-hosted Mac's window can be painted
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -uo pipefail
+          mine=$(ioreg -n Root -d1 | grep '"IOConsoleUsers"' | tr '{' '\n' | grep -F "\"kCGSSessionUserNameKey\"=\"$USER\"" || true)
+          displays=$(system_profiler SPDisplaysDataType 2>/dev/null | grep -c 'Resolution:' || true)
+          displaysleep=$(pmset -g 2>/dev/null | awk '$1 == "displaysleep" { print $2 }')
+          echo "$USER's session: ${mine:-none}"
+          echo "displays: $displays; display sleep after: ${displaysleep:-unknown} min (0 is never)"
+          said="docs/updating.md, \"The outcome bars on a self-hosted Mac\""
+          case "$mine" in
+            "") echo "::error title=No session::$USER has no login session on this Mac, so the app's window is drawn nowhere ($said)"; exit 1 ;;
+            *'"CGSSessionScreenIsLocked"=Yes'*) echo "::error title=Screen locked::$USER's screen is locked, so WebKit paints no frame of the app's window ($said)"; exit 1 ;;
+            *'"kCGSSessionOnConsoleKey"=Yes'*) ;;
+            *) echo "::error title=Not on the console::$USER's session is not the one on the display, so the app's window is drawn nowhere ($said)"; exit 1 ;;
+          esac
+          [ "$displays" = 0 ] && echo "::warning title=No display::system_profiler lists no display: without one (or a dummy one) WebKit paints no frame ($said)"
+          [ -n "$displaysleep" ] && [ "$displaysleep" != 0 ] && echo "::notice title=Display sleep::the display sleeps after $displaysleep min; the bench keeps it awake with caffeinate, but a Mac that locks as it sleeps locks between runs ($said)"
+          exit 0
+      # **A persistent runner starts from nothing**, as `release.yml`'s build does.
+      - name: A self-hosted runner's workspace starts empty
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_WORKSPACE" in
+            /?*/?*) ;;
+            *) echo "::error::GITHUB_WORKSPACE is '$GITHUB_WORKSPACE', which is not a folder to empty"; exit 1 ;;
+          esac
+          find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # No story-test screenshot baselines (`**/__screenshots__/`, ~950 MB of the tree's ~1 GB):
+          # nothing here builds, runs or reads a story. A partial clone fetches only the blobs it
+          # checks out, so they are never downloaded. `fetch-depth` stays 1.
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !**/__screenshots__/
+      # **Cargo's, rustup's, npm's and the temporary folder of a persistent runner are this job's
+      # own**, as in `release.yml`'s build: under `$RUNNER_TEMP/job-home`, which the last step
+      # removes. Before the toolchain and rust-cache, which read `CARGO_HOME` and `RUSTUP_HOME`.
+      - name: A self-hosted runner's Cargo, rustup and temporary folder are this job's own
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -euo pipefail
+          home="$RUNNER_TEMP/job-home"
+          mkdir -p "$home/crate_home/bin" "$home/rustup_home" "$home/tmp" "$home/npm" "$home/cache"
+          {
+            echo "CARGO_HOME=$home/crate_home"
+            echo "RUSTUP_HOME=$home/rustup_home"
+            echo "TMPDIR=$home/tmp"
+            echo "npm_config_cache=$home/npm"
+            echo "XDG_CACHE_HOME=$home/cache"
+          } >> "$GITHUB_ENV"
+          echo "$home/crate_home/bin" >> "$GITHUB_PATH"
+          echo "job home: $home"
+      - uses: ./.github/actions/rust-toolchain
+      # The dependencies of the `dev-release` build, written by main's runs (no other ref starts
+      # this workflow).
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          key: dev-release-no-line-tables
+      # The workspace's own crates through sccache, as `outcome-bars.yml` has them; a cache that
+      # does not answer is a slower job, never a failed one.
+      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        id: sccache
+        continue-on-error: true
+        with:
+          version: v0.18.0
+      - name: Compile through sccache
+        env:
+          MODE: ${{ github.ref == 'refs/heads/main' && 'READ_WRITE' || 'READ_ONLY' }}
+          ARRIVED: ${{ steps.sccache.outcome }}
+        run: |
+          export SCCACHE_GHA_ENABLED=true SCCACHE_GHA_RW_MODE="$MODE" SCCACHE_IDLE_TIMEOUT=0
+          if sccache --start-server >/dev/null 2>&1 && sccache --show-stats >/dev/null 2>&1; then
+            {
+              echo "RUSTC_WRAPPER=sccache"
+              echo "SCCACHE_GHA_ENABLED=true"
+              echo "SCCACHE_GHA_RW_MODE=$MODE"
+              echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
+              echo "SCCACHE_IDLE_TIMEOUT=0"
+            } >> "$GITHUB_ENV"
+          elif [ "$ARRIVED" = success ]; then
+            echo "::warning title=sccache::the build cache did not answer, so this job compiles without it"
+          else
+            echo "::warning title=sccache::sccache could not be downloaded, so this job compiles without it"
+          fi
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: ./.github/actions/npm-ci
+        with:
+          directory: app
+      # **What the bench measures is the dev channel's build** (`dev-release`: release with LTO
+      # off, ADR 0092), with the `e2e` seam the window bench drives, and the stand-in harness
+      # (`fake-harness`) the bench puts in `$SHELL`: deterministic, so one day's point is
+      # comparable with the next. Without the crash handler's line tables, as the outcome bars
+      # build it: they change no code the bench times.
+      - name: Build the app, the stand-in harness and the CLI for the window bench
+        timeout-minutes: 90
+        env:
+          CARGO_PROFILE_DEV_RELEASE_DEBUG: "false"
+          CARGO_PROFILE_DEV_RELEASE_SPLIT_DEBUGINFO: "off"
+        run: >-
+          npx tauri build --no-bundle --features e2e
+          --config src-tauri/tauri.e2e.conf.json -- -p purlis-app -p fake-harness -p purlis-cli
+          --profile dev-release
+        working-directory: app
+      # **L2, a tab or pane switch**, in each renderer arm: `burst.bench.ts`'s switch test alone,
+      # ten switches to a light tab and ten to one with 5,000 lines of history. A spec that fails
+      # is kept in the results beside what it did record, and the series step says what is missing.
+      - name: L2, a tab switch, in both renderer arms
+        timeout-minutes: 30
+        run: >-
+          node tools/bench.mjs --skip-build --only window --arms dom,webgl
+          --specs burst.bench.ts --grep "tab switch" --target-dir target/dev-release
+      # **The point's metadata**: the Mac's model and its screen, read here, where the run was; the
+      # OS is in the bench's own `results.json`.
+      - name: The results as macos-max series points
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p budget
+          system_profiler SPDisplaysDataType > budget/displays.txt 2>/dev/null || true
+          results=$(find target/bench -mindepth 2 -maxdepth 2 -name results.json 2>/dev/null | sort | tail -1)
+          node tools/budget-series.mjs --results "${results:-target/bench/none.json}" \
+            --displays budget/displays.txt --model "$(sysctl -n hw.model)" --commit "$GITHUB_SHA" \
+            --out budget/series.json --evidence-out budget/evidence.json
+          if [ -n "$results" ]; then cp "$results" budget/results.json; fi
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: budget-run
+          path: budget
+          if-no-files-found: ignore
+          retention-days: 14
+      - if: failure()
+        # Evidence only: a failed upload never fails the job.
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: budget-run-logs
+          path: app/logs
+          if-no-files-found: ignore
+          retention-days: 14
+      # **Nothing of the job stays on a persistent runner** but its work folder, which the next job
+      # empties before its checkout.
+      - name: A self-hosted runner keeps no job folder
+        if: always() && runner.environment == 'self-hosted'
+        shell: bash
+        run: |
+          set -uo pipefail
+          sccache --stop-server >/dev/null 2>&1 || true
+          rm -rf "$RUNNER_TEMP/job-home"
+
+  budget-record:
+    # **The points, appended to github-action-benchmark's data on the `benchmarks` branch**, under
+    # `macos-max/`, as `stress.yml`'s `stress-record` appends its own. On a GitHub-hosted runner:
+    # the token that writes is never on the benchmark Mac. A run in the pinned screen mode goes to
+    # `budget run (macos-max)`; one in any other to `budget run (macos-max, evidence)`, a data set
+    # apart, so the trend never mixes two screen setups. Nothing here alerts: the rows' regression
+    # rules are ci-health's (#7730), and every point is evidence until then.
+    name: budget record (macos-max, main only)
+    needs: budget-run
+    if: github.ref == 'refs/heads/main' && needs.budget-run.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: budget-record
+      cancel-in-progress: false
+    # No cache: the job that writes restores nothing another job saved.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: budget-run
+          path: budget
+      # As in `stress.yml`: the tool fails when the branch does not exist yet.
+      - name: The benchmarks branch, made once
+        if: hashFiles('budget/series.json', 'budget/evidence.json') != ''
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          if ! git ls-remote --exit-code --heads origin benchmarks; then
+            empty=$(git hash-object -t tree /dev/null)
+            root=$(git commit-tree "$empty" -m "benchmarks: github-action-benchmark's data for ADR 0086's CI relative rows")
+            git push origin "$root:refs/heads/benchmarks"
+          fi
+      - if: hashFiles('budget/series.json') != ''
+        uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
+        with:
+          name: budget run (macos-max)
+          tool: customSmallerIsBetter
+          output-file-path: budget/series.json
+          gh-pages-branch: benchmarks
+          benchmark-data-dir-path: macos-max
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.sha }}
+          auto-push: true
+          alert-threshold: "120%"
+          fail-on-alert: false
+          comment-on-alert: false
+          summary-always: true
+      - if: hashFiles('budget/evidence.json') != ''
+        uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
+        with:
+          name: budget run (macos-max, evidence)
+          tool: customSmallerIsBetter
+          output-file-path: budget/evidence.json
+          gh-pages-branch: benchmarks
+          benchmark-data-dir-path: macos-max
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.sha }}
+          auto-push: true
+          alert-threshold: "120%"
+          fail-on-alert: false
+          comment-on-alert: false
+          summary-always: true
