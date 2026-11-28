@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795878736972,
+  "lastUpdate": 1795879014905,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -59220,6 +59220,48 @@ window.BENCHMARK_DATA = {
             "value": 101.44791649999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.965, 101.161, 101.448, 101.967, 102.709 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "07be122cdf6c5f6beb07bc5572ed47dcbba75d49",
+          "message": "Run grant: the terminals, sharers, VM runners, interpreters and editor of #8031 refused (#8038)\n\n* Run grant: the terminals of #8031 refused\n\nxterm's wrappers uxterm, lxterm and koi8rxterm exec xterm with what they\nare handed, and no form of theirs reaches the xterm row; PuTTY's pterm,\ntermite, kmscon, zutty, mrxvt and wterm run the command they are handed\nin the window they open; waveterm and extraterm run their blocks' and\nsessions' commands. Source out of reach, so refused whole on what each\nis for. run_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GYG59AGZM9CFPSPJW654RH\nPurlis-Persona: steward\n\n* Run grant: the terminal sharers and recorders of #8031 refused\n\nttyd and gotty run the command after them and serve its terminal over\nHTTP; asciinema rec -c runs the command it records, and the shell its\nsettings name without -c; vhs runs a tape file's commands. Source out of\nreach, so refused whole. run_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GYG59AGZM9CFPSPJW654RH\nPurlis-Persona: steward\n\n* Run grant: the VM and sandbox runners of #8031 refused\n\nlibguestfs's virt-builder runs its --run-command in the image it builds\nand virt-rescue opens a shell in a guest's disk; gVisor's runsc and\nkata-runtime are OCI runtimes, as runc is, and runsc do runs the command\nafter it; cloud-hypervisor and bhyve boot the guest they are handed.\nSource out of reach, so refused whole. run_grants test seen red first.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GYG59AGZM9CFPSPJW654RH\nPurlis-Persona: steward\n\n* Run grant: the interpreters and installers of #8031 refused\n\nGerbil's gxc runs a module's macros as it compiles it; CHICKEN's\nchicken-install runs an egg's setup as it installs it; Hy's hy runs the\nLisp it is handed as Python. On NOT_FOR_A_RUN_GRANT, not REFUSED_NAMES,\nas #7964's runtimes are. Source out of reach. run_grants test seen red\nfirst.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GYG59AGZM9CFPSPJW654RH\nPurlis-Persona: steward\n\n* Run grant: Helix, the editor with a shell of #8031, refused\n\nHelix's :sh, :pipe and :insert-output run a shell command, as vim's and\nemacs's do. hx is its program and helix the name some systems install it\nas; both refused whole. Source out of reach. run_grants test seen red\nfirst.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GYG59AGZM9CFPSPJW654RH\nPurlis-Persona: steward\n\n* ADR 0112 amendment and Security fragment for #8031\n\nThe amendment records what is refused by family, that none of #8031's\nprograms could be read (none on this Mac's search path or Cargo registry,\nupstream out of reach), why none took a command_flags row, why gxc,\nchicken-install and hy go on NOT_FOR_A_RUN_GRANT and not REFUSED_NAMES,\nthat helix is refused beside hx as the same program's other name, that no\nnew row reaches another row and so none is pinned, and what the short rows\ncost: none newly refused on this machine's 1,750 programs. Other families\nare filed as #8037.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GYG59AGZM9CFPSPJW654RH\nPurlis-Persona: steward\n\n* Run grant: #8031's code review: comparisons to rows on main, the forms' reach of every one-word row\n\nFrom the pre-PR review. The row comments and the ADR compared the VM\nrunners with virt-customize and firecracker, and gxc with gxi, rows of\n#8033 that are not on main: they now name lima, multipass and gsi. The\nADR's gxc bullet was wrong (a row's own g-less form plays no part; every\none-word row reaches its <word>-<name>, <name>-<word> and g<name>), and\nthe dashed rows' reach now names their stem and the g/gnu in front. The\nfragment says the reach is every one-word row's, and the Helix and\nsharers tests' comments match their rows.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GYG59AGZM9CFPSPJW654RH\nPurlis-Persona: steward\n\n* Run grant: review of #8038: ttyd and gotty read-only by default, kata-runtime as Kata's, kmscon on the console\n\nFrom the dispatched review. ttyd and gotty let whoever opens the page\ntype only with -W and -w; kata-runtime is Kata Containers', not gVisor's,\nand runs a container in a VM whose exec opens a shell in the guest;\nkmscon opens no window but runs the command after its -l on the console\nit takes; and the fragment's last line is wrapped at 100.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GYG59AGZM9CFPSPJW654RH\nPurlis-Persona: steward\n\n* Run grant: #8031's rows beside #8033's, merged first\n\nThe rebase onto main, where #8033 has landed, interleaved the two PRs'\nrun_grants tests; the file is now main's with #8031's five tests after\n#8017's. The amendment names #8017's, now on main, as the one it follows.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M8GYG59AGZM9CFPSPJW654RH\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T13:53:11Z",
+          "tree_id": "8307b948da6bb9f4779f28544e857aab30fcc4b3",
+          "url": "https://github.com/purlis/purlis/commit/07be122cdf6c5f6beb07bc5572ed47dcbba75d49"
+        },
+        "date": 1795879004752,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.36246199999999995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.359, 0.362, 0.362, 0.368, 0.378 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.4311705,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.290, 16.338, 16.431, 16.555, 16.966 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.4373105,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.668, 100.691, 101.437, 102.160, 102.412 ms"
           }
         ]
       }
