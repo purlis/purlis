@@ -18,6 +18,8 @@
 # the socket and the store that account owns are `pool`'s on this machine as on that one.
 FROM alpine:3.22@sha256:49340b346798875b5592e5d420241f2f9cfba5f47e62ebb1446a1b34734e898f
 ARG POOL_UID=1000
+# `tests/remote-podman/up.sh` checks it against the account whose Podman it reaches.
+LABEL dev.purlis.fixture.pool-uid=$POOL_UID
 RUN apk add --no-cache openssh-server iproute2 iptables procps \
  && adduser -D -u "$POOL_UID" -s /bin/sh pool && adduser -D -s /bin/sh outsider \
  && adduser -D -s /bin/sh nokey \

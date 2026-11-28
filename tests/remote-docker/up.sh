@@ -15,7 +15,6 @@
 set -euo pipefail
 source_image=${1:?the image to copy into the other machine}
 image_variable=${2:?the variable to name its digest there in}
-here=$(cd "$(dirname "$0")" && pwd)
 docker volume create dind-run >/dev/null
 # Its socket for the SSH route, and Docker's TLS API on 2376 for the TLS route: with no --host
 # named, dind's entrypoint serves both, the second verified against the CA it generates in
@@ -23,7 +22,9 @@ docker volume create dind-run >/dev/null
 docker run --detach --privileged --name dind --env DOCKER_TLS_CERTDIR=/certs \
   --publish 127.0.0.1:2376:2376 \
   --volume dind-run:/var/run docker:28-dind@sha256:2a232a42256f70d78e3cc5d2b5d6b3276710a0de0596c145f627ecfae90282ac
-docker build --file "$here/sshd.Dockerfile" --tag remote-docker-sshd "$here"
+# The sshd's image, pulled by digest (`tools/fixture-images.mjs prepare-all`, #7983).
+docker image inspect remote-docker-sshd >/dev/null 2>&1 \
+  || { echo "::error::no remote-docker-sshd image here: run node tools/fixture-images.mjs prepare-all first" >&2; exit 1; }
 mkdir -p "$RUNNER_TEMP/remote-ssh/authorized"
 ssh-keygen -q -t ed25519 -N '' -C remote-parity -f "$RUNNER_TEMP/remote-ssh/id"
 cp "$RUNNER_TEMP/remote-ssh/id.pub" "$RUNNER_TEMP/remote-ssh/authorized/pool"

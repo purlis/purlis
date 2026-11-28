@@ -9,10 +9,11 @@
 # repository's root once `purlis` is built: `up.sh <purlis>`.
 set -euo pipefail
 purlis=${1:?the purlis binary of this build}
-here=$(cd "$(dirname "$0")" && pwd)
 dir="$RUNNER_TEMP/ssh-runner"
 mkdir -p "$dir/authorized"
-docker build --file "$here/sshd.Dockerfile" --tag ssh-runner-sshd "$here"
+# The machine's image, pulled by digest (`tools/fixture-images.mjs prepare-all`, #7983).
+docker image inspect ssh-runner-sshd >/dev/null 2>&1 \
+  || { echo "::error::no ssh-runner-sshd image here: run node tools/fixture-images.mjs prepare-all first" >&2; exit 1; }
 ssh-keygen -q -t ed25519 -N '' -C ssh-runner -f "$dir/id"
 cp "$dir/id.pub" "$dir/authorized/runner"
 cp "$dir/id.pub" "$dir/authorized/liar"

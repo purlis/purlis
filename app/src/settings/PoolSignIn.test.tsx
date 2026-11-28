@@ -170,6 +170,65 @@ describe("Signing a profile in on a pool's runner (#4042)", () => {
     expect(calls("pool_sign_in_cancel")).toEqual([]);
   });
 
+  it("says the runner has not answered after 30 s, and Try again starts afresh (#7939)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const opened = await strip();
+      expect(within(opened).getByText(/Step 1 of 3/)).toBeInTheDocument();
+      act(() => vi.advanceTimersByTime(29_000));
+      expect(within(opened).queryByText(/runner has not/)).toBeNull();
+
+      act(() => vi.advanceTimersByTime(1_000));
+      expect(
+        await within(opened).findByText(
+          "builds's runner has not shown the sign-in page for 30 s. It may still be fetching Claude Code. At 3 minutes purlis stops waiting and shows what the runner printed, or try again now.",
+        ),
+      ).toBeVisible();
+
+      await userEvent.click(within(opened).getByRole("button", { name: "Try again" }));
+      await waitFor(() => expect(calls("pool_sign_in_start")).toHaveLength(2));
+      expect(within(opened).queryByText(/runner has not/)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says the runner has not asked for the code after 30 s at the open page, and when purlis stops (#7942)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const opened = await strip();
+      says({ at: "open", url: PAGE });
+      await within(opened).findByText(/Step 1 of 3/);
+      act(() => vi.advanceTimersByTime(29_000));
+      expect(within(opened).queryByText(/runner has not/)).toBeNull();
+
+      act(() => vi.advanceTimersByTime(1_000));
+      expect(
+        await within(opened).findByText(
+          "builds's runner has not asked for the code yet. At 1 minute purlis stops waiting and shows what the runner printed, or try again now.",
+        ),
+      ).toBeVisible();
+      expect(within(opened).queryByText(/sign-in page for 30 s/)).toBeNull();
+      expect(within(opened).getByRole("button", { name: "Try again" })).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says nothing of a wait while the person is at the page (#7939)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const opened = await strip();
+      says({ at: "open", url: PAGE });
+      says({ at: "code" });
+      await within(opened).findByRole("textbox", { name: "Paste code" });
+      act(() => vi.advanceTimersByTime(120_000));
+      expect(within(opened).queryByText(/runner has not/)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("says a refused code in the harness's words and takes another", async () => {
     const opened = await strip();
     says({ at: "open", url: PAGE });
