@@ -10,7 +10,7 @@ before either, or one of #8038's.
 
 Three of the programs #8037 names have a file of that name on the search path of the machine
 that did this (`/usr/bin`, `/bin`, `/usr/sbin`, `/sbin`, `/usr/local/bin`, `/opt/homebrew/bin`,
-`~/.cargo/bin` and the rest of its 1,750 program names): macOS's own `/usr/bin/mg` and
+`~/.cargo/bin` and the rest of its `PATH`, 1,750 names in all): macOS's own `/usr/bin/mg` and
 `/usr/bin/vis`, and `/usr/local/bin/zed`, a link to the CLI inside `Zed.app`. All three are
 compiled binaries, so each was judged by what it says of itself: `mg(1)` and `vis(1)` on that
 machine, and `zed --help`. None of the others is on that machine or in its Cargo registry (Zed,
@@ -39,9 +39,10 @@ everyday use of the editor. What it can cost is another program that shares the 
 - **`code`** (delegated: recommended path: refused whole). A common word, but no other program
   of that name was found, and none is on the machine. Visual Studio Code's `code` opens a folder
   whose tasks, integrated terminal and extensions run code, and `code tunnel` opens the machine
-  to a VS Code elsewhere. No narrower row: its macOS CLI is a script inside the app, which is not on the
-  machine. Its forms reach `code-<word>`, which is VS Code's own `code-insiders`, `code-oss` and
-  `code-server`, and `<word>-code`, `gcode` and `code2`, whatever program each is.
+  to a VS Code elsewhere. No narrower row: its macOS CLI is a script inside the app, and the app
+  is not on the machine. Its forms reach `code-<word>`: VS Code's own `code-insiders` and
+  `code-oss`, and Coder's `code-server`, which serves VS Code with its terminal in a browser.
+  They also reach `<word>-code` (`claude-code`, for one), `gcode`, `gnucode` and `code2`.
 - **`mg`** (delegated: recommended path: refused whole). On the machine, as Apple ships it.
   `mg(1)` there lists `shell-command` (`M-!`) and `shell-command-on-region` (`M-|`), and a `-b
   file` that "execute[s] the mg commands found in the specified file", and `-u file`, a startup
@@ -70,8 +71,8 @@ everyday use of the editor. What it can cost is another program that shares the 
   decide. Its forms reach the editor's own `vis-<word>` helpers, and `gvis`.
 - **The other short rows**, `kak`, `jed`, `joe`, `gsc`, `ion` and `oil` (delegated: recommended
   path: refused whole): none is a common word other tools use, none is on the machine, and no
-  source is in reach. Each reaches its `<name>-<word>`, `<word>-<name>`, `g<name>` and versioned
-  forms, `kak-lsp` and `jed-script` among them.
+  source is in reach. Each reaches its `<name>-<word>`, `<word>-<name>`, `g<name>`, `gnu<name>`
+  and versioned forms, `kak-lsp`, `jed-script` and `gion` among them.
 
 No name here was left offered: for none of them would a refusal break common everyday use, and
 each runs a command or code it is handed, by its manual.
@@ -97,12 +98,12 @@ what #8037 asks for, and leaves a persona able to declare one in a reviewed line
 
 - **Editors with a shell or tasks**, as `vim`, `emacs` and #8038's Helix are: Kakoune's `kak`
   runs the shell of its `%sh{}` blocks and the commands its `-e` names; `micro` runs a shell
-  command by its `run`; `vis` runs one by `:!`; `mg` runs one by `shell-command`, and the mg
-  commands of the file its `-b` names; `jed` and `joe` run shell commands of their own;
-  `lite-xl` and `pulsar` run plugins in Lua and JavaScript; `neovide` and MacVim's `mvim` start
-  `nvim` and `vim`; and `code`, VSCodium's `codium`, Sublime Text's `subl`, `zed` and `lapce`
-  each have an integrated terminal, tasks or build systems, and extensions that run as they open
-  a folder.
+  command by its `run` and plugins in Lua; `vis` runs one by `:!`; `mg` runs one by
+  `shell-command`, and the mg commands of the file its `-b` names; `jed` and `joe` run shell
+  commands of their own; `lite-xl` and `pulsar` run plugins in Lua and JavaScript; `neovide` and
+  MacVim's `mvim` start `nvim` and `vim`; and `code`, VSCodium's `codium`, Sublime Text's
+  `subl`, `zed` and `lapce` each have an integrated terminal, tasks or build systems, and
+  extensions that run as they open a folder.
 - **Terminal sharers**: `upterm`, `sshx`, `tty-share`, `teleconsole` and `wetty` run a shell or
   the command they are handed and share its terminal with whoever joins, as #8038's `ttyd` and
   `gotty` do.
@@ -111,9 +112,11 @@ what #8037 asks for, and leaves a persona able to declare one in a reviewed line
 - **A guest's converter**, as `virt-customize` is: libguestfs's `virt-v2v` runs the script its
   `--run` names in the guest it converts.
 - **Interpreters and shells**: Gambit's compiler `gsc`, whose `-e` runs code as `gsi`'s does;
-  Hissp's `hissp`, and `lissp`, the name its documentation gives its command line (delegated:
-  recommended path; #8037 names `hissp` only, and the same program under its other name would be
-  offered without it); and the shells `ion` and `oil`.
+  Hissp, whose command line its documentation names `lissp` (delegated: recommended path: #8037
+  names `hissp`, the package's name, which is refused too in case a system installs it so, and
+  the program by its own name would be offered without its row); and the shells `ion` and
+  `oil`. Oils' current names, `ysh` and `oils-for-unix`, are left to #8047; its `osh` is refused
+  already.
 
 ## Left offered
 
@@ -136,10 +139,11 @@ the machine's 1,750 program names, before and after the rows went in, found thre
 from this machine to add beyond macOS's `vis` filter, weighed above. Elsewhere, the short rows
 cost the most. These are examples, not a complete list:
 
-- Every one-word row reaches every `<word>-<name>` and `<name>-<word>`, and every `g<name>` and
-  `gnu<name>`, as the forms strip a GNU prefix from the name they check, never from a row.
-  `code`, `mg`, `vis`, `ion` and `oil` are the likeliest to meet another program's name this
-  way. `code` reaches `claude-code`, for one, whatever program that is.
+- Every one-word row reaches every `<word>-<name>` and `<name>-<word>`, every `g<name>` and
+  `gnu<name>`, as the forms strip a GNU prefix from the name they check, never from a row, and
+  its versioned forms. The common words and short rows weighed above (`code`, `mg`, `micro`,
+  `vis`, `zed`, `kak`, `jed`, `joe`, `gsc`, `ion`, `oil`) are the likeliest to meet another
+  program's name this way.
 - A name that is two programs loses its Allow for both: macOS's `vis` filter, and ZFS's `zed`
   daemon.
 - A row with a dash in it (`lite-xl`, `tty-share`, `t-rec`, `virt-v2v`) is reached only by its
@@ -151,4 +155,10 @@ part of #7825.
 ## Other families
 
 The leads found beside #8037's own list, each still offered by the same probe once these rows
-went in, are filed as their own issue rather than added here.
+went in, are filed as #8047 rather than added here: more editors with a shell, an eval or tasks
+(`emacsclient`, whose `--eval` runs Lisp, `nvi`, `elvis`, `zile`, `qemacs`, `ne`, `dte`, `kate`,
+`geany`, `textadept`, `cursor`, `windsurf`, `idea`, `fleet`, `nova`, `bbedit`, `mate`, `vimr`,
+`goneovim`), JOE's other names (`jmacs`, `jstar`, `jpico`, `rjoe`), Pulsar's `ppm`, file managers
+with a shell (`mc`, `mcedit`, `ranger`, `nnn`, `lf`, `yazi`, `vifm`), more shells (`ysh`,
+`oils-for-unix`, `hilbish`, `ngs`), and libguestfs's `virt-v2v-in-place`, which takes `--run` as
+`virt-v2v` does and which no form of the `virt-v2v` row reaches.

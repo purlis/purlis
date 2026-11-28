@@ -3286,9 +3286,9 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // start `nvim` and `vim`; and `code`, VSCodium's `codium`, Sublime Text's `subl`, `zed` and
     // `lapce` each have an integrated terminal, tasks or build systems, and extensions that run as
     // they open a folder. `zed`'s `--zed` also names the program it starts, by its `--help`.
-    // `code`, `mg`, `micro`, `vis` and `zed` are common words or short rows, and what each costs
-    // is in ADR 0112's amendment for #8037: macOS's own `vis` is a filter that runs nothing, and
-    // loses its Allow with the editor's row.
+    // `code`, `mg`, `micro`, `vis` and `zed` are common words, and `kak`, `jed` and `joe` short
+    // rows; what each costs is in ADR 0112's amendment for #8037. macOS's own `vis` is a filter
+    // that runs nothing, and loses its Allow with the editor's row.
     "kak",
     "micro",
     "vis",
@@ -3324,7 +3324,8 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // The interpreters and shells #8037 names, refused on this list and not on REFUSED_NAMES, as
     // #7964's, #7988's and #8017's are: each runs the code or the script it is handed. Gambit's
     // compiler `gsc` (its `-e` runs code, as `gsi`'s does), Hissp's `hissp` and `lissp`, the
-    // name its documentation gives its command line, and the shells `ion` and `oil`.
+    // name its documentation gives its command line, and the shells `ion` and `oil`. `gsc`, `ion`
+    // and `oil` are short rows; what each costs is in ADR 0112's amendment for #8037.
     "gsc",
     "hissp",
     "lissp",
