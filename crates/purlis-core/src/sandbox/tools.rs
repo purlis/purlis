@@ -3241,6 +3241,15 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "wterm",
     "waveterm",
     "extraterm",
+    // The terminal sharers and recorders #8031 names, refused whole on what each is for: `ttyd`
+    // and `gotty` run the command after them and serve its terminal over HTTP, where whoever
+    // opens the page types into it; `asciinema rec -c` runs the command it records (and, without
+    // `-c`, the shell its settings name); and `vhs` runs the commands of the tape file it is
+    // handed in a terminal of its own.
+    "ttyd",
+    "gotty",
+    "asciinema",
+    "vhs",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

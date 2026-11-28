@@ -4488,3 +4488,12 @@ fn the_interpreters_of_8017_are_offered_no_run_grant() {
 fn the_tracer_of_8017_is_offered_no_run_grant() {
     refused_as_running_others("ktrace");
 }
+/// The terminal sharers and recorders #8031 names, each of which runs a command it is handed:
+/// `ttyd` and `gotty` run the command after them and serve its terminal over HTTP, `asciinema rec
+/// -c` runs the command it records, and `vhs` runs a tape file's commands.
+#[test]
+fn the_terminal_sharers_and_recorders_of_8031_are_offered_no_run_grant() {
+    for name in ["ttyd", "gotty", "asciinema", "vhs"] {
+        refused_as_running_others(name);
+    }
+}
