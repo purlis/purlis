@@ -1690,12 +1690,14 @@ fn a_call_stopped_at_its_deadline_says_it_took_longer_than_the_deadline() {
     // A stopped git writes nothing, and a caller reading the first line of its stderr reported
     // "could not fetch" with no cause (the 120 s a push's base fetch is given).
     let dir = repo();
-    let answer = run(
-        dir.path(),
-        &["-c", "alias.hang=!sleep 30", "hang"],
-        Duration::from_secs(1),
-    )
-    .unwrap();
+    let (answer, logged) = logged(|| {
+        run(
+            dir.path(),
+            &["-c", "alias.hang=!sleep 30", "hang"],
+            Duration::from_secs(1),
+        )
+        .unwrap()
+    });
     assert_eq!(answer.code, None);
     assert_eq!(
         answer.err.lines().next(),
@@ -1703,6 +1705,37 @@ fn a_call_stopped_at_its_deadline_says_it_took_longer_than_the_deadline() {
         "{:?}",
         answer.err
     );
+    // And the diagnostic log names the deadline that ended it (FS-M1a, #7893).
+    assert!(
+        logged.contains("a timeout expired: git's deadline, after 1000 ms"),
+        "{logged}"
+    );
+}
+
+/// What `f` logs at `info` and above on this thread, beside its answer.
+fn logged<T>(f: impl FnOnce() -> T) -> (T, String) {
+    #[derive(Clone)]
+    struct Logged(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+    impl std::io::Write for Logged {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let logged = Logged(std::sync::Arc::default());
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_writer({
+            let logged = logged.clone();
+            move || logged.clone()
+        })
+        .finish();
+    let answer = tracing::subscriber::with_default(subscriber, f);
+    let said = String::from_utf8(logged.0.lock().unwrap().clone()).unwrap();
+    (answer, said)
 }
 
 #[test]

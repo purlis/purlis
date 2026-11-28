@@ -1194,6 +1194,7 @@ fn a_stop_between_two_asks_says_its_reason() {
             wait: 1,
             driving: Arc::new(driving),
             judged: None,
+            timed: driven::Timed::started(pool, true),
         });
 
     cancel_sign_ins_on(pool);

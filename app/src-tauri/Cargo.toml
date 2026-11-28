@@ -186,6 +186,9 @@ purlis-core = { workspace = true, features = ["fenced", "test-support"] }
 stand-in.workspace = true
 # An event's id at a chosen time, for the tests of a question's trail (#4567).
 ulid = "3"
+# What the app's tracing says, as a test hears it: the answer spans and the watch's own lateness
+# (FS-M1a, #7893). Already in this workspace's lockfile through the core.
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 # The UI RPC's list of commands no link serves (`session_protocol::ui::WINDOW_ONLY`, HP-6), so
 # the client generated for the link leaves out the same ones; and an in-memory link to a session
 # host, for the tests of chats run in one (#1998).

@@ -4,7 +4,7 @@
 import { useId } from "react";
 import { Radio, RadioGroup } from "../ui/choice/Radio";
 import { TextField } from "../ui/field/Field";
-import { Recommended } from "./parts";
+import { Busy, Recommended } from "./parts";
 
 /**
  * **What Connect asks beside the key, once Connect and Pool are one** (#7191, Refined 2): the
@@ -20,6 +20,11 @@ export type Merged = {
   onName: (to: string) => void;
   owned: boolean;
   onOwned: (to: boolean) => void;
+  /**
+   * The runner image this build offers is still being read (#7871): Trust and create the pool
+   * waits for it, so the page never says the build names none before purlis has said so.
+   */
+  readingImage: boolean;
 };
 
 export function MergedFields({ merged, host }: { merged: Merged; host: string }) {
@@ -54,6 +59,7 @@ export function MergedFields({ merged, host }: { merged: Merged; host: string })
           Only me, and people I trust with my logins
         </Radio>
       </RadioGroup>
+      {merged.readingImage && <Busy>Reading the runner image this build of purlis offers…</Busy>}
     </>
   );
 }

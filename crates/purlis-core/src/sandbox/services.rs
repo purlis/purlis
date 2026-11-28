@@ -312,7 +312,26 @@ impl SocketGround {
     /// The ground for a socket grant in the project at `root` on `machine`, with `writes`, the
     /// folders a person let this chat write besides.
     pub fn of(root: &Path, machine: &super::Machine, writes: &[PathBuf]) -> Self {
-        let ground = super::grant::Ground::of(root, root, machine);
+        let plane = super::Plane::read(root);
+        Self::read_as(
+            root,
+            machine,
+            writes,
+            &plane,
+            &super::policy::Locks::of_plane(&plane),
+        )
+    }
+
+    /// [`Self::of`], with the project's manifest read as `plane` and its locks as `locks`
+    /// (#7900).
+    pub fn read_as(
+        root: &Path,
+        machine: &super::Machine,
+        writes: &[PathBuf],
+        plane: &super::Plane,
+        locks: &super::policy::Locks,
+    ) -> Self {
+        let ground = super::grant::Ground::read_as(root, root, machine, plane, locks);
         let mut writable = vec![super::real(root), super::real(&std::env::temp_dir())];
         // Claude Code's own temp root, which its sandbox lets every chat of this user write.
         for temp in ["/tmp/claude", "/private/tmp/claude"] {
@@ -890,13 +909,28 @@ fn still_asked(items: &[Awaited], answered: &[super::local::Answered]) -> bool {
 /// sandboxed, where it declares nothing, and where everything it declares is allowed here
 /// already, for this project or for every project.
 pub fn awaiting(root: &Path, machine: &super::Machine) -> Option<Awaiting> {
-    let locks = super::policy::Locks::of(root);
-    super::Plane::read(root).in_force(&locks)?;
+    let plane = super::Plane::read(root);
+    awaiting_read_as(
+        root,
+        &plane,
+        &super::policy::Locks::of_plane(&plane),
+        machine,
+    )
+}
+
+/// [`awaiting`], with the project's manifest read as `plane` and its locks as `locks` (#7900).
+pub fn awaiting_read_as(
+    root: &Path,
+    plane: &super::Plane,
+    locks: &super::policy::Locks,
+    machine: &super::Machine,
+) -> Option<Awaiting> {
+    plane.in_force(locks)?;
     let declared = declared(root);
-    let ground = SocketGround::of(root, machine, &[]);
+    let ground = SocketGround::read_as(root, machine, &[], plane, locks);
     // Allowed already only where policy leaves the scope it was kept at open (#1927): one
     // held by policy reaches no chat, so it waits again and is asked about.
-    let (sockets, services) = super::kept_in_scope(root, &locks);
+    let (sockets, services) = super::kept_in_scope(root, locks);
     let none = Declared::default();
     let mut items = Vec::new();
     for written in &declared.sockets {

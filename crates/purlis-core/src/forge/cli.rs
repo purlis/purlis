@@ -330,7 +330,7 @@ fn run_found(
     git::lead(&mut cmd);
     let child = crate::forklock::spawn(&mut cmd)
         .map_err(|e| NoAnswer::Missing(format!("purlis could not run {cli}: {e}")))?;
-    let run = git::wait(child, timeout)
+    let run = git::wait(child, timeout, "the forge command line's deadline")
         .map_err(|e| NoAnswer::Missing(format!("purlis could not run {cli}: {e}")))?;
     match run.code {
         Some(code) => Ok(Reply::of(code, run.out, run.err)),

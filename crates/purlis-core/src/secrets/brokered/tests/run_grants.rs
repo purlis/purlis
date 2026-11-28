@@ -4208,3 +4208,265 @@ fn the_package_managers_and_installers_of_7964_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The terminals #7988 names beside #7964's, each of which runs the command it is handed in the
+/// window it opens (`xfce4-terminal`, `mate-terminal`, `terminator`, `tilix`, `foot`, `urxvt`,
+/// `rxvt`, `st`, `ghostty`, `lxterminal`, `qterminal`, `terminology`, `kgx`, `ptyxis`), or has one
+/// open it (`footclient`, kitty's `kitten`, Debian's `x-terminal-emulator`); and the tmux session
+/// runners `tmuxinator` and `tmuxp`, which run a YAML file's commands, and `tmate`, tmux's fork.
+#[test]
+fn the_terminals_and_tmux_session_runners_of_7988_are_offered_no_run_grant() {
+    for name in [
+        "kitten",
+        "xfce4-terminal",
+        "mate-terminal",
+        "terminator",
+        "tilix",
+        "foot",
+        "footclient",
+        "urxvt",
+        "rxvt",
+        "st",
+        "ghostty",
+        "x-terminal-emulator",
+        "lxterminal",
+        "qterminal",
+        "terminology",
+        "kgx",
+        "ptyxis",
+        "tmuxinator",
+        "tmuxp",
+        "tmate",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The VM and container runners #7988 names, each of which runs a command in a machine or a
+/// container it reaches: OrbStack's `orb`, Parallels' `prlctl exec`, UTM's `utmctl exec`, `tart
+/// exec`, VirtualBox's `VBoxManage guestcontrol run` (by either spelling), `lxc exec`, `incus
+/// exec`, `virsh`, every `qemu-system-*` by its first part, and `wsl`.
+#[test]
+fn the_vm_and_container_runners_of_7988_are_offered_no_run_grant() {
+    for name in [
+        "orb",
+        "prlctl",
+        "utmctl",
+        "tart",
+        "VBoxManage",
+        "vboxmanage",
+        "lxc",
+        "incus",
+        "virsh",
+        "qemu",
+        "qemu-system-x86_64",
+        "qemu-system-aarch64",
+        "wsl",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The compilers and shells #7988 names, siblings of #7964's runtimes, each of which runs code it
+/// is handed or a project's code as it compiles: `runhaskell`, `ghci`, `kotlinc` (`-script`),
+/// `scalac` (macros), `groovysh`, `clj`, Elixir's `iex`, `erlc` (parse transforms) and `jbang`; and
+/// QuickJS's `qjsc`, kept with them on the conservative side.
+#[test]
+fn the_compilers_and_shells_of_7988_that_run_code_are_offered_no_run_grant() {
+    for name in [
+        "runhaskell",
+        "ghci",
+        "kotlinc",
+        "scalac",
+        "groovysh",
+        "clj",
+        "iex",
+        "erlc",
+        "qjsc",
+        "jbang",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The interpreters and runtimes of #7988's comment, each of which runs the code or the script it
+/// is handed: the Clojure and Lisp family (`bb`, `nbb`, `janet`, `fennel`, `moon`, `chez`,
+/// `scheme`, `petite`, `csi`, `gsi`, `chibi-scheme`, `ecl`, `ccl`, `abcl`, `kawa`, `lfe`), the
+/// JVM's, GraalVM's and the others' (`jython`, `jruby`, `truffleruby`, `graalpy`, `mruby`,
+/// `ocamlrun`, `utop`, `tclkit`, `expectk`, `fsi`, `scriptcs`, `planck`, `lumo`), and the compilers
+/// whose `run` runs a program (`gleam`, `roc`, `odin`, `hare`).
+#[test]
+fn the_interpreters_and_runtimes_of_7988_are_offered_no_run_grant() {
+    for name in [
+        "bb",
+        "nbb",
+        "janet",
+        "fennel",
+        "moon",
+        "chez",
+        "scheme",
+        "petite",
+        "csi",
+        "gsi",
+        "chibi-scheme",
+        "ecl",
+        "ccl",
+        "abcl",
+        "kawa",
+        "lfe",
+        "jython",
+        "jruby",
+        "truffleruby",
+        "graalpy",
+        "mruby",
+        "ocamlrun",
+        "utop",
+        "tclkit",
+        "expectk",
+        "fsi",
+        "scriptcs",
+        "planck",
+        "lumo",
+        "gleam",
+        "roc",
+        "odin",
+        "hare",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The tracers of #7988's comment, each of which runs the command after it to trace it: SystemTap's
+/// `stap -c` (whose `-g` embeds C in the kernel) and `heaptrack`.
+#[test]
+fn the_tracers_of_7988_are_offered_no_run_grant() {
+    for name in ["stap", "heaptrack"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The build and version managers and the cron siblings #7988 names, each of which runs a project's
+/// hooks, a build's code, a table's commands or the command it is handed: rebar 2's `rebar`,
+/// `nimble`, `shards`, `dub`, `flutter`, `mill`, `ghcup`, tj's `n`, jobber's `jobberrunner` and
+/// bcron's `bcrontab`.
+#[test]
+fn the_build_and_version_managers_and_cron_siblings_of_7988_are_offered_no_run_grant() {
+    for name in [
+        "rebar",
+        "nimble",
+        "shards",
+        "dub",
+        "flutter",
+        "mill",
+        "ghcup",
+        "n",
+        "jobberrunner",
+        "bcrontab",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The configuration, proxy and notifier runners #7988 names, each of which runs code or a command
+/// it is handed: `pyinfra` (a deploy file's Python), `mitmproxy`, `mitmdump` and `mitmweb` (the
+/// script `-s` names), and `terminal-notifier` (`-execute`).
+#[test]
+fn the_configuration_proxy_and_notifier_runners_of_7988_are_offered_no_run_grant() {
+    for name in [
+        "pyinfra",
+        "mitmproxy",
+        "mitmdump",
+        "mitmweb",
+        "terminal-notifier",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The terminals #8017 names beside #7964's and #7988's, each of which runs the command it is
+/// handed, or the shell its settings name, in the window it opens: `rio`, `contour`,
+/// `cool-retro-term`, `sakura`, the drop-down terminals `guake`, `tilda` and `yakuake`, Eterm's
+/// `eterm`, `aterm`, `mlterm`, `roxterm`, COSMIC's `cosmic-term`, `blackbox-terminal`,
+/// `deepin-terminal`, `hyper`, `tabby` and `warp-terminal`.
+#[test]
+fn the_terminals_of_8017_are_offered_no_run_grant() {
+    for name in [
+        "rio",
+        "contour",
+        "cool-retro-term",
+        "sakura",
+        "guake",
+        "tilda",
+        "yakuake",
+        "Eterm",
+        "aterm",
+        "mlterm",
+        "roxterm",
+        "cosmic-term",
+        "blackbox-terminal",
+        "deepin-terminal",
+        "hyper",
+        "tabby",
+        "warp-terminal",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The tmux session managers #8017 names beside `tmuxinator` and `tmuxp`, each of which runs the
+/// commands of a layout file in the panes it opens: `teamocil`, `smug`, `sesh` and `tmuxifier`,
+/// and `mux`, a name `tmuxinator` is often installed or aliased as.
+#[test]
+fn the_tmux_session_managers_of_8017_are_offered_no_run_grant() {
+    for name in ["teamocil", "smug", "sesh", "tmuxifier", "mux"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The VM and container runners #8017 names beside #7964's and #7988's, each of which runs a
+/// command or boots a guest: libguestfs's `virt-customize --run-command`, `virt-sysprep` and
+/// `guestfish` in a guest's disk image, `virt-install`, `crictl exec`, the runtime `youki`,
+/// `firecracker`, `vfkit`, `krunvm`, `hyperkit`, `xhyve`, `lxd`, VirtualBox's `VBoxHeadless`,
+/// and Parallels' `prlsrvctl`, kept with them on the conservative side.
+#[test]
+fn the_vm_and_container_runners_of_8017_are_offered_no_run_grant() {
+    for name in [
+        "virt-customize",
+        "virt-sysprep",
+        "guestfish",
+        "virt-install",
+        "crictl",
+        "youki",
+        "firecracker",
+        "vfkit",
+        "krunvm",
+        "hyperkit",
+        "xhyve",
+        "lxd",
+        "VBoxHeadless",
+        "prlsrvctl",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The interpreters #8017 names, each of which runs the code or the script it is handed:
+/// `newlisp`, `picolisp`, Gerbil's `gxi` and `gerbil`, CHICKEN's compiler `csc` (also the C#
+/// compiler's name, whose analyzers and source generators run as it compiles), the shell
+/// `murex`, Ammonite's `amm` and `ammonite`, and coursier's `cs` and `coursier`, whose `launch`
+/// runs what it fetches.
+#[test]
+fn the_interpreters_of_8017_are_offered_no_run_grant() {
+    for name in [
+        "newlisp", "picolisp", "gxi", "gerbil", "csc", "murex", "amm", "ammonite", "cs", "coursier",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The tracer #8017 names: macOS's `ktrace`, which runs the command its `-c` names under
+/// `ktrace trace` and `ktrace artrace`, to trace it.
+#[test]
+fn the_tracer_of_8017_is_offered_no_run_grant() {
+    refused_as_running_others("ktrace");
+}

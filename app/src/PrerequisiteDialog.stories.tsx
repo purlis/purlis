@@ -6,7 +6,9 @@
  * as an alert of the dialog family, under Waiting and Broken, with a foreign seal key, on a linked
  * page, and the Notice an Accept leaves. Each is drawn, held to axe, walked by the keyboard and
  * compared with its baseline in Chromium and WebKit; the baselines are drawn by the pull
- * request's `stories` run only. The core is faked at its command boundary.
+ * request's `stories` run only, and Chromium's only when that run has the `update-baselines`
+ * label (the ready gate runs WebKit alone on a pull request). The core is faked at its command
+ * boundary.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, waitFor, within } from "storybook/test";
@@ -130,7 +132,10 @@ export const ForeignKey: Story = {
   args: { entry: { ...WAITING, reasons: ["broken"], needs_new_key: true } },
   play: async () => {
     const { page } = await opened("Work in strict mode");
-    await expect(page.getByRole("button", { name: "Make a new key and accept" })).toBeVisible();
+    // Waited for, not read once: the drawing pass of #7981's run found it still opening.
+    await waitFor(() =>
+      expect(page.getByRole("button", { name: "Make a new key and accept" })).toBeVisible(),
+    );
     await pictureNow();
   },
 };

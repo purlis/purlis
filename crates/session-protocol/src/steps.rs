@@ -132,6 +132,22 @@ impl Context {
     }
 }
 
+/// **The steps of a profile's sign-in on a pool's runner** (#7939), each named here once, so a
+/// stall in a sign-in shows in the log as the step it stalled in. When the contract's names
+/// (#7864) land, each of [`sign_in::ALL`] joins them.
+pub mod sign_in {
+    /// From Sign in until the runner's login is started and driven, or refused.
+    pub const START: &str = "profile_sign_in_start";
+    /// From the login's start until its page or device code is told to the window: `refused`
+    /// where it could not be followed, failed or was stopped first.
+    pub const ADDRESS: &str = "profile_sign_in_address";
+    /// From its page, or from a login's start in the runner's terminal, until the runner says it
+    /// is signed in.
+    pub const DONE: &str = "profile_sign_in_done";
+    /// Every step of a sign-in, in the order it meets them.
+    pub const ALL: [&str; 3] = [START, ADDRESS, DONE];
+}
+
 /// Starts timing `name`, a fixed word for the step (`ssh_forward_open`, `link_handshake`). A step
 /// begun inside another that still runs names it as its parent.
 pub fn begin(name: &'static str) -> Step {
