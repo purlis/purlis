@@ -2948,6 +2948,15 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "rhino",
     "jjs",
     "frida",
+    // The tracers #7964 names, refused whole on what each is for, as `strace` and `ltrace`
+    // are: each runs the command after it to trace it, `bpftrace -c` (whose programs can
+    // also call `system()`), `trace-cmd record`, `uftrace`, `sysdig` (whose chisels are Lua
+    // it runs) and `cset proc --exec`.
+    "bpftrace",
+    "trace-cmd",
+    "uftrace",
+    "sysdig",
+    "cset",
     // Kept offered, Allow once on the exact command alone (#5799, D-5619-7): `ssh`, `scp`,
     // `sftp`, `rsync`, `kubectl`, `psql`, `zip` and `wget` are the usual reason a chat is handed a
     // key at all. Only their forms that name a command, or a file that can, are refused

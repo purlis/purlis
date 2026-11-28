@@ -4166,3 +4166,19 @@ fn the_interpreters_and_runtimes_of_7964_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The tracers #7964 names, each of which runs the command after it to trace it, as `strace`
+/// and `ltrace` do: `bpftrace -c` (whose programs can also run `system()`), `trace-cmd record`,
+/// `uftrace`, `sysdig` (its chisels are Lua) and `cset proc --exec`.
+#[test]
+fn the_tracers_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "bpftrace",
+        "trace-cmd",
+        "uftrace",
+        "sysdig",
+        "cset",
+    ] {
+        refused_as_running_others(name);
+    }
+}
