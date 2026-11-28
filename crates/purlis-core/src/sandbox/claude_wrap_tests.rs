@@ -743,7 +743,7 @@ fn a_state_file_to_keep(dir: &Path) -> (PathBuf, PathBuf, String) {
     std::fs::write(&state, planted).expect("its state");
     (
         state.clone(),
-        dir.join(".claude.json.lock"),
+        claude_wrap::state_lock_of(&state),
         planted.to_owned(),
     )
 }
@@ -760,8 +760,8 @@ fn a_keep_fails_in_words_while_claude_code_holds_the_state_files_lock() {
         claude_wrap::keep_mcp_servers_within(&state, None, std::time::Duration::from_millis(200));
 
     let why = kept.expect_err("the keep fails");
-    assert!(why.contains("locked for 0.2 s"), "{why}");
-    assert!(why.contains("try again"), "{why}");
+    assert!(why.contains("stayed locked for 0.2 s"), "{why}");
+    assert!(why.contains("Keep the profile again"), "{why}");
     assert_eq!(std::fs::read_to_string(&state).expect("it reads"), planted);
     assert!(lock.is_dir(), "Claude Code's lock stays");
 }
@@ -789,4 +789,36 @@ fn a_keep_takes_over_a_stale_lock_on_the_state_file() {
         r#"{"numStartups":4}"#
     );
     assert!(!lock.exists(), "the keep let go of the lock it took over");
+}
+
+/// **Readying a chat waits for the lock on the state file too** (#7947), so a keep, or a Claude
+/// Code saving the file outside the wrap, and the chat's start never undo each other: a save made
+/// under the lock while the chat is readied stays beside its trust mark.
+#[test]
+fn readying_a_chat_waits_for_the_state_files_lock_and_loses_no_update() {
+    let place = place(FULL, true);
+    let home = place.home.join("work");
+    std::fs::create_dir_all(&home).expect("a folder");
+    let state = home.join(claude_wrap::STATE_FILE);
+    std::fs::write(&state, r#"{"numStartups":4}"#).expect("its state");
+    let lock = claude_wrap::state_lock_of(&state);
+    std::fs::create_dir(&lock).expect("the lock, held");
+    let wrap = wrap_of(&started(&place, &home));
+
+    std::thread::scope(|scope| {
+        let readying = scope.spawn(|| claude_wrap::prepare(&wrap, place.plane.path()));
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        assert!(
+            !readying.is_finished(),
+            "readying waits while the lock is held"
+        );
+        std::fs::write(&state, r#"{"numStartups":5}"#).expect("a save under the lock");
+        std::fs::remove_dir(&lock).expect("the lock, let go");
+    });
+
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&state).expect("it reads")).expect("JSON");
+    assert_eq!(doc["numStartups"], 5, "{doc}");
+    assert_eq!(doc["hasCompletedOnboarding"], true, "{doc}");
+    assert!(!lock.exists(), "readying let go of the lock");
 }

@@ -1,8 +1,8 @@
 ### Fixed
 
 - **A profile keep on a pool's runner no longer loses an update to Claude Code's state file.**
-  The keep now takes the lock Claude Code takes for that file, a `.claude.json.lock` folder, and
-  reads the file again under it, so a save a running chat makes at the same moment is kept, and
-  so is the keep's own reset. If Claude Code holds the lock for more than 3 s, the keep fails
-  and says so, and trying again works once the chats have saved. A lock that a stopped Claude
-  Code left behind is taken over after 10 s, as Claude Code itself does (#7947).
+  The keep, and the readying of each chat as it starts, now take the lock Claude Code takes for
+  that file, a `.claude.json.lock` folder, and read the file again under it, so neither undoes
+  the other or a save Claude Code makes at the same moment. Where the lock stays held for more
+  than 3 s the keep says so and asks to be run again, and a lock a stopped holder left behind is
+  taken over after 10 s, as Claude Code itself does (#7947).

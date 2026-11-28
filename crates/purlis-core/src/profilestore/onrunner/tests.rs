@@ -2902,7 +2902,9 @@ fn a_keep_sets_the_computer_use_choice_back_to_its_default() {
 /// reading the file again once it holds it. Here a writer does the same: it takes the lock, reads,
 /// and writes what it read with a key of its own a little later. A keep started meanwhile waits
 /// for the lock and reads what the writer left, so the writer's key and the keep's reset both
-/// stay; a keep that wrote without the lock had its reset undone by the writer's save.
+/// stay; a keep that wrote without the lock had its reset undone by the writer's save. On a
+/// runner the writer is most often purlis readying a chat ([`crate::sandbox::claude_wrap::prepare`]),
+/// which takes the same lock, as Claude Code's own saves there are refused.
 #[test]
 fn a_keep_waits_for_claude_codes_lock_on_the_state_file_and_loses_no_update() {
     let dir = tempfile::tempdir().unwrap();
@@ -2913,13 +2915,17 @@ fn a_keep_waits_for_claude_codes_lock_on_the_state_file_and_loses_no_update() {
     planted["computerUseChoices"] = serde_json::json!({"org-1:account-1": "on"});
     fs::write(&there, planted.to_string()).unwrap();
 
-    let lock = PathBuf::from(format!("{}.lock", there.display()));
+    let lock = crate::sandbox::claude_wrap::state_lock_of(&there);
     fs::create_dir(&lock).unwrap();
     let read_under_the_lock: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&there).unwrap()).unwrap();
     std::thread::scope(|scope| {
-        scope.spawn(&keep_again);
+        let keeping = scope.spawn(&keep_again);
         std::thread::sleep(std::time::Duration::from_millis(400));
+        assert!(
+            !keeping.is_finished(),
+            "the keep waits while the lock is held"
+        );
         let mut saved = read_under_the_lock;
         saved["numStartups"] = 5.into();
         fs::write(&there, saved.to_string()).unwrap();

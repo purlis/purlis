@@ -977,12 +977,15 @@ pub fn kept_for_the_desktop(
     if let Some(checked) = &checked {
         super::made::settings_kept(homes, &record, checked)?;
     }
-    // Every keep, with settings or none (a sandbox-only profile's never has any).
-    keep_mcp_servers_of(
+    // Every keep, with settings or none (a sandbox-only profile's never has any). One that
+    // finds the state file locked past the wait (#7947) still clears what was loaded and not
+    // sent, as the rest of the keep is done, and then says what was not.
+    let state_kept = keep_mcp_servers_of(
         &record,
         checked.as_ref().map_or(&[], |checked| checked.files()),
-    )?;
+    );
     super::made::loaded_unsent_cleared(&record)?;
+    state_kept?;
     Ok(standing_for_the_wire(standing(&record, look)))
 }
 
