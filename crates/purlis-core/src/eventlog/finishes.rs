@@ -255,10 +255,9 @@ impl Record {
                 let word = |field: &str| event.body.get(field).and_then(serde_json::Value::as_str);
                 Step::CameBack(match (word("tool"), word("args")) {
                     // As a block writes its tool: one short line (`stops::line_tool`).
-                    (Some(tool), Some(args)) => Some((
-                        crate::shown::readable(tool, TARGET_CHARS),
-                        args.to_owned(),
-                    )),
+                    (Some(tool), Some(args)) => {
+                        Some((crate::shown::readable(tool, TARGET_CHARS), args.to_owned()))
+                    }
                     _ => None,
                 })
             }

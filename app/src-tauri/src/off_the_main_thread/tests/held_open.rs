@@ -26,7 +26,10 @@ fn app_with(planes: Planes) -> tauri::AppHandle<MockRuntime> {
 }
 
 /// The sandbox's state of `plane`, as its command answers it.
-fn sandbox_state(app: &tauri::AppHandle<MockRuntime>, plane: &PlaneId) -> crate::sandboxing::SandboxState {
+fn sandbox_state(
+    app: &tauri::AppHandle<MockRuntime>,
+    plane: &PlaneId,
+) -> crate::sandboxing::SandboxState {
     tauri::async_runtime::block_on(crate::sandboxing::sandbox_state(app.state(), plane.clone()))
         .expect("the state")
 }
@@ -68,7 +71,10 @@ fn an_ask_of_one_project_answers_while_another_projects_open_is_held() {
     });
     // No read here takes a fraction of this: only an ask waiting on the held open gets there.
     let answer = answered.recv_timeout(Duration::from_secs(60));
-    assert!(!opening.is_finished(), "the premise: the other open is held");
+    assert!(
+        !opening.is_finished(),
+        "the premise: the other open is held"
+    );
     release.send(()).expect("released");
     opening.join().expect("the other project opens");
     answer.expect("the ask answered while another project's open was held");

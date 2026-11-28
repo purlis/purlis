@@ -208,8 +208,8 @@ impl Recent {
         }
         // Then older ones, while an asked chat's turn or run began before what was read.
         for path in rest {
-            let more = (0..chats.len())
-                .any(|chat| needs_older(records_of(live.as_ref(), &sealed, chat)));
+            let more =
+                (0..chats.len()).any(|chat| needs_older(records_of(live.as_ref(), &sealed, chat)));
             if !more {
                 break;
             }
@@ -271,7 +271,12 @@ impl Recent {
 
     /// **`path` brought up to date and its records of `chats` taken**, under its own lock; or,
     /// with `since`, nothing read where it was last written before.
-    fn at(&self, path: &Path, chats: &[&str], since: Option<std::time::SystemTime>) -> io::Result<At> {
+    fn at(
+        &self,
+        path: &Path,
+        chats: &[&str],
+        since: Option<std::time::SystemTime>,
+    ) -> io::Result<At> {
         let entry = self.entry(path);
         #[cfg(test)]
         self.seen.waiting_for(path);
@@ -473,6 +478,9 @@ pub(super) mod tests {
 
     use super::{Recent, locked};
 
+    /// A parse held: of this file, telling the test it began, until it is let go.
+    type Held = (PathBuf, mpsc::Sender<()>, mpsc::Receiver<()>);
+
     /// What the asks of a [`Recent`] read, and a parse a test holds.
     #[derive(Debug, Default)]
     pub(in crate::eventlog::finishes) struct Seen {
@@ -482,8 +490,8 @@ pub(super) mod tests {
         lines: AtomicUsize,
         /// Times an ask came to a file's lock, by the file.
         waits: Mutex<Vec<PathBuf>>,
-        /// A parse to hold: of this file, telling the test it began, until it is let go.
-        hold: Mutex<Option<(PathBuf, mpsc::Sender<()>, mpsc::Receiver<()>)>>,
+        /// A parse to hold.
+        hold: Mutex<Option<Held>>,
     }
 
     impl Seen {

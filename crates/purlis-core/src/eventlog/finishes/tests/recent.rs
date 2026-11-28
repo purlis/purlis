@@ -16,7 +16,10 @@ fn before_c2(events: &[Event], chat: &str) -> Vec<Finish> {
     let mut out = Vec::new();
     let mut turn = Turn::default();
     let mut harness = crate::eventlog::UNKNOWN.to_owned();
-    for event in events.iter().filter(|event| event.chat.as_deref() == Some(chat)) {
+    for event in events
+        .iter()
+        .filter(|event| event.chat.as_deref() == Some(chat))
+    {
         if event.kind == "run.started" {
             harness = event
                 .body
@@ -264,7 +267,10 @@ fn a_warm_ask_parses_no_line() {
 /// chat `shallow` writes only in the live file: an ask of `deep` reads older files, one of
 /// `shallow` reads only the window.
 fn deep_and_shallow(dir: &Path, deep: &str, shallow: &str) {
-    small(dir, deep).started("claude").prompt().block(PUSH, None);
+    small(dir, deep)
+        .started("claude")
+        .prompt()
+        .block(PUSH, None);
     sealed_turns(dir, "01K6CHAT000000000000000006", 6);
     age_sealed(dir);
     small(dir, deep).stop();
@@ -280,7 +286,10 @@ fn asks_of_windows_of_different_depths_in_turn_parse_nothing_again() {
     let recent = Recent::default();
     let deep = recent.finishes(dir.path(), &[CHAT], a_day_ago()).unwrap();
     assert_eq!(deep[CHAT], finishes_in(dir.path(), CHAT).unwrap());
-    assert_eq!(deep[CHAT][0].blocked, 1, "the premise: the deep ask read its turn's start");
+    assert_eq!(
+        deep[CHAT][0].blocked, 1,
+        "the premise: the deep ask read its turn's start"
+    );
     recent.finishes(dir.path(), &[OTHER], a_day_ago()).unwrap();
     let lines = recent.lines();
     for _ in 0..3 {
@@ -343,7 +352,9 @@ fn asks_of_one_file_share_its_one_parse() {
         std::thread::spawn(move || recent.finishes(&dir, &[CHAT], 0).unwrap())
     };
     let first = ask();
-    began.recv_timeout(Duration::from_secs(60)).expect("the first ask parses");
+    began
+        .recv_timeout(Duration::from_secs(60))
+        .expect("the first ask parses");
     let second = ask();
     // Until the second ask has come to the file's lock: nothing else lets it be late.
     while recent.waits_for(&path) < 2 && !second.is_finished() {
@@ -368,10 +379,20 @@ fn a_seal_during_an_ask_leaves_it_an_answer_of_the_log_as_it_was_at_some_moment(
         let (recent, dir) = (recent.clone(), dir.path().to_path_buf());
         std::thread::spawn(move || recent.finishes(&dir, &[CHAT], 0).unwrap())
     };
-    began.recv_timeout(Duration::from_secs(60)).expect("the ask reads the live file");
+    began
+        .recv_timeout(Duration::from_secs(60))
+        .expect("the ask reads the live file");
     let sealed = sealed_files(dir.path()).len();
-    written.came_back(PUSH, false).stop().prompt().block(LIST, None).stop();
-    assert!(sealed_files(dir.path()).len() > sealed, "the premise: the log sealed meanwhile");
+    written
+        .came_back(PUSH, false)
+        .stop()
+        .prompt()
+        .block(LIST, None)
+        .stop();
+    assert!(
+        sealed_files(dir.path()).len() > sealed,
+        "the premise: the log sealed meanwhile"
+    );
     release.send(()).unwrap();
     let said = asked.join().unwrap();
     let events = crate::eventlog::read(dir.path()).unwrap();
@@ -465,13 +486,32 @@ fn bench_fifty_chats_over_a_hundred_megabytes() {
     let mut turn = 0usize;
     while written < TOTAL {
         let chat = &chats[turn % CHAT_COUNT];
-        line(chat, "hook.userpromptsubmit", serde_json::json!({ "prompt": padding }), &mut segment);
-        line(chat, crate::eventlog::stops::BLOCK, serde_json::to_value(Stop::Block(Block {
-            tool: "Bash".to_owned(), source: Source::Guard, qualifier: None, target: None,
-            args: Some(PUSH.to_owned()),
-        })).unwrap(), &mut segment);
+        line(
+            chat,
+            "hook.userpromptsubmit",
+            serde_json::json!({ "prompt": padding }),
+            &mut segment,
+        );
+        line(
+            chat,
+            crate::eventlog::stops::BLOCK,
+            serde_json::to_value(Stop::Block(Block {
+                tool: "Bash".to_owned(),
+                source: Source::Guard,
+                qualifier: None,
+                target: None,
+                args: Some(PUSH.to_owned()),
+            }))
+            .unwrap(),
+            &mut segment,
+        );
         for _ in 0..6 {
-            line(chat, "hook.posttooluse-blocked", serde_json::json!({ "tool": "Read", "args": LIST, "output": padding }), &mut segment);
+            line(
+                chat,
+                "hook.posttooluse-blocked",
+                serde_json::json!({ "tool": "Read", "args": LIST, "output": padding }),
+                &mut segment,
+            );
         }
         last = line(chat, "hook.stop", serde_json::json!({}), &mut segment);
         turn += 1;
@@ -483,7 +523,10 @@ fn bench_fifty_chats_over_a_hundred_megabytes() {
         }
     }
     written += segment.len();
-    std::fs::File::create(live(dir.path())).unwrap().write_all(&segment).unwrap();
+    std::fs::File::create(live(dir.path()))
+        .unwrap()
+        .write_all(&segment)
+        .unwrap();
     let asked: Vec<&str> = chats.iter().map(String::as_str).collect();
     let timed = |what: &str, run: &mut dyn FnMut()| {
         let start = std::time::Instant::now();
@@ -491,9 +534,12 @@ fn bench_fifty_chats_over_a_hundred_megabytes() {
         println!("{what}: {:?}", start.elapsed());
     };
     println!("{} MB in {last} events, {turn} turns", written >> 20);
-    timed("before C2, one chat's finishes_in (each ask parsed this)", &mut || {
-        finishes_in(dir.path(), &chats[0]).unwrap();
-    });
+    timed(
+        "before C2, one chat's finishes_in (each ask parsed this)",
+        &mut || {
+            finishes_in(dir.path(), &chats[0]).unwrap();
+        },
+    );
     let recent = Recent::default();
     timed("cold ask of 50 chats", &mut || {
         recent.finishes(dir.path(), &asked, 0).unwrap();
@@ -507,9 +553,17 @@ fn bench_fifty_chats_over_a_hundred_megabytes() {
         recent.finishes(dir.path(), &asked[..1], 0).unwrap();
     });
     assert_eq!(recent.lines(), lines, "warm asks parse nothing");
-    let mut grown = std::fs::OpenOptions::new().append(true).open(live(dir.path())).unwrap();
+    let mut grown = std::fs::OpenOptions::new()
+        .append(true)
+        .open(live(dir.path()))
+        .unwrap();
     let mut more = Vec::new();
-    line(&chats[0], "hook.userpromptsubmit", serde_json::json!({}), &mut more);
+    line(
+        &chats[0],
+        "hook.userpromptsubmit",
+        serde_json::json!({}),
+        &mut more,
+    );
     line(&chats[0], "hook.stop", serde_json::json!({}), &mut more);
     grown.write_all(&more).unwrap();
     timed("an ask of 50 chats after a turn ended", &mut || {
