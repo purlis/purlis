@@ -487,6 +487,17 @@ fn where_a_new_chat_would_run_names_the_pools_its_workspace_has_run_on() {
 /// Writes `runners.json` under `config` with one pool, `remote`, on another machine over SSH.
 #[cfg(unix)]
 fn a_pool_on_another_machine(config: &std::path::Path) {
+    a_pool_on_machine_with_runners(config, "build-box", serde_json::json!([]));
+}
+
+/// Writes `runners.json` under `config` with one pool, `remote`, on machine `host` over SSH, and
+/// `runners` as kept.
+#[cfg(unix)]
+fn a_pool_on_machine_with_runners(
+    config: &std::path::Path,
+    host: &str,
+    runners: serde_json::Value,
+) {
     use std::os::unix::fs::PermissionsExt;
     let path = purlis_core::machine::dir(config).join(purlis_core::machine::RUNNERS_FILE);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -494,13 +505,13 @@ fn a_pool_on_another_machine(config: &std::path::Path) {
         "name": "remote",
         "kind": "remote-docker",
         "image": IMAGE,
-        "route": "ssh://me@build-box/var/run/docker.sock",
+        "route": format!("ssh://me@{host}/var/run/docker.sock"),
         "pin": {
             "hostKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n",
             "engine": "engine-b",
         },
     });
-    let text = serde_json::json!({ "version": 1, "pools": [pool], "runners": [] });
+    let text = serde_json::json!({ "version": 1, "pools": [pool], "runners": runners });
     std::fs::write(&path, text.to_string()).unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
     assert_eq!(purlis_core::runners::pools(config).unwrap().len(), 1);
@@ -538,7 +549,7 @@ fn a_pool_whose_machine_does_not_answer_is_offered_forgetting_and_forgotten_leav
     );
     assert!(
         left.is_empty(),
-        "no runner was kept, so nothing is said left: {left}"
+        "no runner was kept, so nothing is said left: {left:?}"
     );
 }
 
@@ -630,4 +641,73 @@ fn a_machine_that_answers_and_refuses_is_offered_remove_beside_forget_and_no_oth
             "{not_contacted:?} is not contacted"
         );
     }
+}
+
+/// **Forget's answer always names the machine and what stays on it** (#7873): a long host alias
+/// and long runner, container and volume names never cut the machine's name, or the commands that
+/// remove what stays there, out of what the window says.
+#[cfg(unix)]
+#[test]
+fn a_long_forget_answer_still_names_the_machine_and_what_stays_on_it() {
+    let config = tempfile::tempdir().unwrap();
+    // A machine's name as long as a route holds one.
+    let host = format!("build-box.{}.example", "n".repeat(235));
+    assert_eq!(host.len(), 253);
+    let runner = format!("remote-{}", "r".repeat(40));
+    let volume = format!("purlis-runner-{}-home", "v".repeat(80));
+    let container = "e".repeat(64);
+    a_pool_on_machine_with_runners(
+        config.path(),
+        &host,
+        serde_json::json!([{
+            "name": runner, "of": "remote", "pool": "docker", "container": container,
+            "image": IMAGE, "user": "10001:10001", "home": "/home/purlis", "home_volume": volume,
+            "device": "01JB0RUNNER0000000000000000", "key": "12".repeat(32), "paired": 1,
+        }]),
+    );
+    assert_eq!(purlis_core::runners::read(config.path()).unwrap().len(), 1);
+
+    let said = stays_said(&forgotten_here(config.path(), "remote").expect("forgotten"))
+        .expect("a runner was kept, so what stays is said");
+
+    assert!(said.contains(&format!("stay on {host}")), "{said}");
+    assert!(said.contains(&format!("run this on {host}")), "{said}");
+    assert!(
+        said.contains(&format!(
+            "docker container rm --force {container} && docker volume rm --force {volume}"
+        )),
+        "{said}"
+    );
+    assert!(!said.contains('…'), "nothing of it is cut: {said}");
+}
+
+/// **Each part of Forget's answer is still shown safely on its own** (#2052, #7873): a line end
+/// is a space, a hidden character is dropped, an address's user is hidden, and a part longer
+/// than any purlis keeps is cut, while the rest of the answer still stands.
+#[test]
+fn each_part_of_a_forget_answer_is_shown_safely_on_its_own() {
+    let left = purlis_core::pools::LeftThere {
+        runner: "night\nshift\u{202E}".to_owned(),
+        container: "c".repeat(MOST_PART_SHOWN * 2),
+        volume: "purlis-runner-v-home".to_owned(),
+        host: "ssh://me:secret@build-box".to_owned(),
+    };
+
+    let said = stays_said(&[left]).expect("one runner stays");
+
+    assert!(
+        said.starts_with("Runner night shift's container "),
+        "{said}"
+    );
+    assert!(!said.contains('\u{202E}') && !said.contains('\n'), "{said}");
+    assert!(!said.contains("secret"), "{said}");
+    assert!(
+        said.contains(&format!("{}…", "c".repeat(MOST_PART_SHOWN))),
+        "{said}"
+    );
+    assert!(!said.contains(&"c".repeat(MOST_PART_SHOWN + 1)), "{said}");
+    assert!(
+        said.contains("docker volume rm --force purlis-runner-v-home"),
+        "{said}"
+    );
 }

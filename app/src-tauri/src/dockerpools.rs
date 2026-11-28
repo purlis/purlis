@@ -677,7 +677,6 @@ pub async fn forget_docker_pool(
                 crate::browsers::browsers(&app).as_deref(),
                 host.as_deref(),
             )
-            .map(|forgotten| forgotten.said)
         })
         .await
     }
@@ -688,22 +687,10 @@ pub async fn forget_docker_pool(
     }
 }
 
-/// **What [`forget_on`] answers**: what stays on the pool's machine as the core says it, uncut,
-/// and as the window says it.
-#[cfg(unix)]
-pub(crate) struct Forgotten {
-    /// The core's words for what stays on the pool's machine, before the window cuts them
-    /// ([`crate::devices::shown_safely`]); empty where nothing does.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) left: String,
-    /// What stays, said as the window says it; `None` where nothing does.
-    pub(crate) said: Option<String>,
-}
-
 /// **[`forget_docker_pool`] under `config`, as the window does it**: pool `name` forgotten here,
 /// and let go of by the window, its `browsers` first and then `connection`'s links to it. What
-/// stays, as the core and the window say it. The behaviour suite forgets a pool through here
-/// (#7816).
+/// stays, as the window says it; `None` where nothing does. The behaviour suite forgets a pool
+/// through here (#7816).
 #[cfg(unix)]
 pub(crate) fn forget_on(
     config: &std::path::Path,
@@ -711,16 +698,18 @@ pub(crate) fn forget_on(
     held: &[std::sync::Arc<crate::planes::Held>],
     browsers: Result<&crate::browsers::WindowBrowsers, &String>,
     connection: Option<&crate::hostedsessions::Connection>,
-) -> Result<Forgotten, String> {
+) -> Result<Option<String>, String> {
     let left = forgotten_here(config, name)?;
-    let said = let_go_here(held, browsers, connection, config, name, &left);
-    Ok(Forgotten { left, said })
+    Ok(let_go_here(held, browsers, connection, config, name, &left))
 }
 
 /// [`forget_docker_pool`] under `config`, before the window lets go of the pool: forgotten, and
 /// [`let_go_of`]. What stays on its machine, as the core says it.
 #[cfg(unix)]
-fn forgotten_here(config: &std::path::Path, name: &str) -> Result<String, String> {
+fn forgotten_here(
+    config: &std::path::Path,
+    name: &str,
+) -> Result<Vec<purlis_core::pools::LeftThere>, String> {
     let left = purlis_core::pools::forget_untrusted(config, name)
         .map_err(|why| refused_said(&why.to_string()))?;
     let_go_of(config, name);
@@ -745,7 +734,7 @@ fn gone_from_here(
     held: &[std::sync::Arc<crate::planes::Held>],
     config: &std::path::Path,
     name: &str,
-    left: &str,
+    left: &[purlis_core::pools::LeftThere],
 ) -> Option<String> {
     let host = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(app)
         .map(|host| host.connection());
@@ -767,7 +756,7 @@ fn let_go_here(
     connection: Option<&crate::hostedsessions::Connection>,
     config: &std::path::Path,
     name: &str,
-    left: &str,
+    left: &[purlis_core::pools::LeftThere],
 ) -> Option<String> {
     let logins_kept = crate::chatbrowsers::forget_pool_logins_in(held, name).err();
     // Its browsers first, while their links stand: each is stopped on its machine where that
@@ -782,10 +771,34 @@ fn let_go_here(
     if let Some(connection) = connection {
         links_end_once_gone(connection, config, name, true);
     }
-    let said = (!left.is_empty()).then(|| crate::devices::shown_safely(left));
     // What stays, said together: a login opt-in the store could not take out is one of them.
-    said_together([said, browsers_left, logins_kept])
+    said_together([stays_said(left), browsers_left, logins_kept])
 }
+
+/// **What stays on the machine of a pool forgotten here, as the window says it** (#7873); `None`
+/// where nothing does. Each part from elsewhere (the machine's name, the runner's, its container
+/// and volume) is shown safely on its own, up to [`MOST_PART_SHOWN`]
+/// ([`crate::devices::shown_safely_within`]), and the sentence is made of the parts so shown: it
+/// is never cut as a whole, and no part purlis keeps is long enough to be cut, so the machine's
+/// name and the commands that remove what stays there are always whole in it.
+fn stays_said(left: &[purlis_core::pools::LeftThere]) -> Option<String> {
+    let safe = |text: &str| crate::devices::shown_safely_within(text, MOST_PART_SHOWN);
+    let shown: Vec<purlis_core::pools::LeftThere> = left
+        .iter()
+        .map(|one| purlis_core::pools::LeftThere {
+            runner: safe(&one.runner),
+            container: safe(&one.container),
+            volume: safe(&one.volume),
+            host: safe(&one.host),
+        })
+        .collect();
+    (!shown.is_empty()).then(|| purlis_core::pools::LeftThere::all_said(&shown))
+}
+
+/// The most characters of one part of Forget's answer the window is shown ([`stays_said`]): a
+/// machine's name, the longest part, is at most 253 characters, as a route holds it (a DNS name's
+/// limit); a container's id is 64, and a runner's name and its volume's fewer than this.
+const MOST_PART_SHOWN: usize = 253;
 
 /// What stays after a pool is removed or forgotten, said as one: each line there is, one after
 /// the other; none where there is none.
