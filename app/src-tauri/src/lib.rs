@@ -5218,7 +5218,12 @@ pub fn run() {
                         }
                     }
                 }));
-                drop(gate.start());
+                if let Err(why) = gate.start() {
+                    tracing::warn!(
+                        "purlis: the gate of automatic hibernation did not start ({why}): \
+                         no chat is hibernated by itself"
+                    );
+                }
             }
 
             // The working directory, resolved ONCE, to decide which plane the first window

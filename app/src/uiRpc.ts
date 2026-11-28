@@ -5831,7 +5831,8 @@ export type DiagnosticsHere = {
 	open: number,
 	/**
 	 *  The open chats whose run has a process (the glossary's **hot chat**): `starting`,
-	 *  `working`, `input-required` or `paused`. A queued or hibernated run is open, not hot.
+	 *  `working`, `input-required` or `paused`, on this device. A queued or hibernated run is
+	 *  open, not hot, and so is a runner's or a pool's chat, whose program runs elsewhere.
 	 */
 	hot: number,
 	/**  The device's RAM class and its hot target. */

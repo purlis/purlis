@@ -9925,14 +9925,15 @@ fn a_chat_refused_while_working_is_tried_again_once_its_turn_ends() {
     clock.advance(crate::autohibernate::AFTER + GATE_MINUTE);
     let chat = (held.plane_id().clone(), session);
 
-    // A turn began as the act read it again: refused, its facts read after the refusal kept.
+    // A turn began as the act read it again: refused for its facts, which are read again.
     it_reports(&held, session, &[UserPromptSubmit]);
     assert_eq!(
         planes
             .gate()
-            .refused(&held, chat.clone(), &Refused::Not(NotRested::Working)),
+            .refused(chat.clone(), 1, &Refused::Not(NotRested::Working)),
         Read::Refused(chat.clone())
     );
+    assert_eq!(planes.gate().read(), Read::Nothing, "working");
     it_reports(&held, session, &[Stop]);
     planes.gate().pass();
 
@@ -9956,7 +9957,7 @@ fn a_chat_refused_for_a_look_is_not_kept_refused() {
     assert_eq!(
         planes
             .gate()
-            .refused(&held, chat.clone(), &Refused::Not(NotRested::LookedAt)),
+            .refused(chat.clone(), 1, &Refused::Not(NotRested::LookedAt)),
         Read::Refused(chat.clone())
     );
     assert_eq!(
@@ -10157,6 +10158,8 @@ fn the_gate_s_thread_reads_on_a_poke_and_at_nothing_else() {
         assert!(std::time::Instant::now() < deadline, "it never read");
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
+    // Its deadline taken away: a wait the held clock has passed, woken spuriously, would read.
+    planes.gate().disarm();
     clock.advance(GATE_HOUR);
     std::thread::sleep(std::time::Duration::from_millis(100));
     assert_eq!(host.hibernated(), Vec::<u32>::new(), "nothing poked it");
@@ -10171,4 +10174,137 @@ fn the_gate_s_thread_reads_on_a_poke_and_at_nothing_else() {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     assert_eq!(host.hibernated(), [session]);
+}
+
+/// Over a target of one, `stuck` and `other` rested an hour, `stuck` the longer: the host will
+/// not hibernate `stuck`, so `other` goes and the device is at its target.
+fn one_refused_and_the_device_at_its_target(
+    host: &Pretend,
+    planes: &Planes,
+    held: &Held,
+    dir: &Path,
+    clock: &crate::autohibernate::HeldClock,
+) -> u32 {
+    use crate::autohibernate::Clock as _;
+    use crate::autohibernate::Read;
+    let stuck = a_claude_chat_resting(held, dir, "stuck");
+    let other = a_claude_chat_resting(held, dir, "other");
+    nothing_on_screen(held);
+    assert!(matches!(planes.gate().read(), Read::Armed(_)));
+    held.looked().typed(other, clock.now() + GATE_MINUTE);
+    clock.advance(GATE_HOUR);
+    host.hibernates_not(stuck, Some("the host is busy"));
+    planes.gate().pass();
+    assert_eq!(host.hibernated(), [other]);
+    assert_eq!(planes.gate().read(), Read::Nothing, "at the target");
+    host.hibernates_not(stuck, None);
+    stuck
+}
+
+#[test]
+fn a_refusal_lets_go_once_the_device_is_at_its_target() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 1);
+    let stuck = one_refused_and_the_device_at_its_target(&host, &planes, &held, dir.path(), &clock);
+    let other = host.hibernated()[0];
+
+    // Over it again, with no turn taken: the refused chat is tried anew.
+    a_claude_chat_resting(&held, dir.path(), "third");
+    nothing_on_screen(&held);
+    planes.gate().pass();
+
+    assert_eq!(host.hibernated(), [other, stuck]);
+}
+
+#[test]
+fn a_chat_refused_that_takes_a_turn_at_the_target_is_tried_again_over_it() {
+    use purlis_core::state::Event::{Stop, UserPromptSubmit};
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 1);
+    let stuck = one_refused_and_the_device_at_its_target(&host, &planes, &held, dir.path(), &clock);
+    let other = host.hibernated()[0];
+    it_reports(&held, stuck, &[UserPromptSubmit, Stop]);
+
+    a_claude_chat_resting(&held, dir.path(), "third");
+    nothing_on_screen(&held);
+    planes.gate().pass();
+
+    assert_eq!(host.hibernated(), [other, stuck]);
+}
+
+#[test]
+fn a_refused_chat_that_took_a_turn_no_read_saw_is_tried_again() {
+    use crate::autohibernate::Read;
+    use purlis_core::state::Event::{Stop, UserPromptSubmit};
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 0);
+    let stuck = a_claude_chat_resting(&held, dir.path(), "stuck");
+    nothing_on_screen(&held);
+    assert!(matches!(planes.gate().read(), Read::Armed(_)));
+    clock.advance(GATE_HOUR);
+    host.hibernates_not(stuck, Some("the host is busy"));
+    planes.gate().pass();
+    host.hibernates_not(stuck, None);
+    planes.gate().pass();
+    assert_eq!(host.hibernated(), Vec::<u32>::new(), "kept refused");
+
+    // A whole turn between two reads, its begin and end read as one poke: its facts read as
+    // they did, but it has begun one more turn.
+    it_reports(&held, stuck, &[UserPromptSubmit, Stop]);
+    planes.gate().pass();
+
+    assert_eq!(host.hibernated(), [stuck]);
+}
+
+#[test]
+fn a_refusal_the_act_could_not_do_lapses_after_the_rest_time() {
+    use crate::autohibernate::Clock as _;
+    use crate::autohibernate::{AFTER, Read};
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 0);
+    let stuck = a_claude_chat_resting(&held, dir.path(), "stuck");
+    nothing_on_screen(&held);
+    assert!(matches!(planes.gate().read(), Read::Armed(_)));
+    clock.advance(GATE_HOUR);
+    host.hibernates_not(stuck, Some("the host is busy"));
+    let refused_at = clock.now();
+    planes.gate().pass();
+    assert_eq!(
+        planes.gate().armed(),
+        Some(refused_at + AFTER),
+        "its lapse is the one deadline"
+    );
+    host.hibernates_not(stuck, None);
+
+    clock.advance(AFTER - GATE_MINUTE);
+    planes.gate().pass();
+    assert_eq!(host.hibernated(), Vec::<u32>::new(), "not lapsed yet");
+    clock.advance(GATE_MINUTE);
+    planes.gate().pass();
+
+    assert_eq!(host.hibernated(), [stuck]);
+}
+
+#[test]
+fn a_runner_s_and_a_pool_s_chat_are_open_and_not_hot() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (_planes, _logs, held) = gated_on(&host, dir.path(), &clock, 99);
+    a_claude_chat_resting(&held, dir.path(), "here");
+    let pooled = a_claude_chat_resting(&held, dir.path(), "pooled");
+    let remote = a_claude_chat_resting(&held, dir.path(), "remote");
+    host.runs_on_pool(pooled, "builders");
+    held.chats().on_a_runner_for_tests(remote, "build-box");
+
+    assert_eq!(crate::diagnostics::counted_in(&held), (3, 1));
+    assert_eq!(crate::diagnostics::hot_in(&held), 1);
 }

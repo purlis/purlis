@@ -7344,6 +7344,40 @@ impl Chats {
         }
     }
 
+    /// Chat `session` runs on the runner `runner`, as a confinement held on another machine
+    /// says: for a test of what is counted of a runner's chat, without a runner.
+    #[cfg(test)]
+    pub fn on_a_runner_for_tests(&self, session: u32, runner: &str) {
+        #[derive(Debug)]
+        struct Away;
+        impl purlis_core::sandbox::HeldElsewhere for Away {
+            fn id(&self) -> &str {
+                "away"
+            }
+            fn withdraw_port(&self, _: u16) -> Result<(), String> {
+                Ok(())
+            }
+            fn board(&self) -> Option<Arc<dyn purlis_core::sandbox::Board>> {
+                None
+            }
+        }
+        let confinement = purlis_core::sandbox::Confinement::held_on_another_machine(
+            purlis_core::sandbox::Placed {
+                http: 1,
+                socks: 2,
+                tmp: None,
+                routed: None,
+                ssh: None,
+                left_out: Vec::new(),
+                host_name: Some(runner.to_owned()),
+            },
+            Box::new(Away),
+        );
+        if let Some(open) = lock(&self.open).get_mut(&session) {
+            open.confinement = Some(confinement);
+        }
+    }
+
     /// The handoff `session` was opened by, where one opened it.
     pub fn handed_from(&self, session: u32) -> Option<purlis_core::reopen::HandedFrom> {
         lock(&self.open).get(&session)?.chat.from.clone()

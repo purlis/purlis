@@ -26,9 +26,13 @@
 //!
 //! **The gate picks only chats the act would accept now** ([`purlis_core::rested::by_hand`] as
 //! well as [`purlis_core::rested::rested`]): until SC-4j (#7639), a chat that is a task or has
-//! a task of its own is never picked. A chat the act still refuses is skipped, the next goes,
-//! and the refused one is not tried again until a fact read of it changes, so no refusal
-//! retried for ever starves the chats behind it.
+//! a task of its own is never picked. A chat the act still refuses is passed over for the rest
+//! of the pass and the next goes. One the act could not do for it ([`Refused::Said`]) is not
+//! tried again until it begins a turn, the device goes to its target, or [`AFTER`] has passed
+//! since, whichever comes first: so no refusal retried for ever starves the chats behind it,
+//! and none keeps a chat awake for ever either.
+//!
+//! [`Refused::Said`]: crate::hibernation::Refused::Said
 //!
 //! **Never a runner's or a pool's chat**: [`purlis_core::rested`] refuses one, and none counts
 //! toward this device's hot count, whose memory it does not use.
@@ -36,8 +40,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, Instant};
-
-use purlis_core::rested::Facts;
 
 use crate::planes::{Held, PlaneId};
 
@@ -249,8 +251,8 @@ pub type Target = Arc<dyn Fn() -> Option<u32> + Send + Sync>;
 pub enum Read {
     Nothing,
     Hibernated(Chat),
-    /// The act refused it: passed over for the rest of this pass, and, unless it was refused
-    /// for a look the clock will count, until a fact of it changes.
+    /// The act refused it: passed over for the rest of this pass, and, where the act could not
+    /// be done, kept refused ([`Refusal`]).
     Refused(Chat),
     Armed(Instant),
 }
@@ -311,14 +313,31 @@ impl Signal {
     }
 }
 
+/// **A chat the act could not hibernate** ([`crate::hibernation::Refused::Said`]): not tried
+/// again while it has begun no turn since (its board's count of turns, which only goes up), the
+/// device stays over its target, and [`AFTER`] has not passed since `at`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Refusal {
+    /// How many turns it had begun as the act was tried.
+    turns: u32,
+    /// When it was refused.
+    at: Instant,
+}
+
+impl Refusal {
+    /// When it lapses, though nothing else changed.
+    fn lapses(&self) -> Instant {
+        self.at + AFTER
+    }
+}
+
 /// **The gate**, one for the device.
 pub struct Gate {
     signal: Arc<Signal>,
     target: Mutex<Option<Target>>,
     projects: Mutex<Weak<Projects>>,
-    /// The chats the act refused, with their facts read again after the refusal: not tried
-    /// again while they read the same.
-    refused: Mutex<HashMap<Chat, Facts>>,
+    /// The chats the act could not hibernate, kept refused ([`Refusal`]).
+    refused: Mutex<HashMap<Chat, Refusal>>,
     /// The chats refused in this pass ([`Self::pass`]): not tried again in it.
     passed_over: Mutex<HashSet<Chat>>,
 }
@@ -381,6 +400,12 @@ impl Gate {
         *lock(&self.signal.deadline)
     }
 
+    /// Takes its deadline away, as a test that holds the clock past it while the thread waits.
+    #[cfg(test)]
+    pub fn disarm(&self) {
+        self.arm(None);
+    }
+
     fn arm(&self, deadline: Option<Instant>) {
         *lock(&self.signal.deadline) = deadline;
     }
@@ -395,7 +420,8 @@ impl Gate {
 
     /// **Starts its thread**: it waits for a poke or its deadline, and makes a pass
     /// ([`Self::pass`]). It holds the gate only while it reads, and ends once the gate goes.
-    pub fn start(self: &Arc<Self>) -> Option<std::thread::JoinHandle<()>> {
+    /// Answers why, where the thread could not be started.
+    pub fn start(self: &Arc<Self>) -> std::io::Result<std::thread::JoinHandle<()>> {
         let gate = Arc::downgrade(self);
         let signal = Arc::clone(&self.signal);
         std::thread::Builder::new()
@@ -406,7 +432,6 @@ impl Gate {
                     gate.pass();
                 }
             })
-            .ok()
     }
 
     /// **One pass**: reads, one chat at a time, until a read neither hibernates nor is refused.
@@ -442,90 +467,103 @@ impl Gate {
 
     /// **Reads once**, and does what [`choose`] says: hibernates one chat, or arms its one
     /// deadline, or neither. Every chat open is put on its project's clock first, under the
-    /// target as over it, so the one rested longest is the one whose clock started first.
+    /// target as over it, so the one rested longest is the one whose clock started first. The
+    /// one deadline is the earliest of the first rest to be up and the first refusal to lapse.
     pub fn read(&self) -> Read {
         let projects = self.projects();
         let now = self.now();
         for held in &projects {
             held.look_again(now);
         }
-        // Only the facts of chats still open are kept: a closed one cannot come back.
-        lock(&self.refused).retain(|chat, _| {
-            projects.iter().any(|held| {
-                held.plane_id() == &chat.0 && held.chats().sessions_open().contains(&chat.1)
-            })
-        });
         let target = lock(&self.target).clone().and_then(|target| target());
         let hot = projects
             .iter()
             .map(|held| crate::diagnostics::hot_in(held))
             .sum();
         let Some(target) = target.filter(|target| hot > *target) else {
+            // At or under the target, every refusal lets go: over it again, each is tried anew.
+            lock(&self.refused).clear();
             self.arm(None);
             return Read::Nothing;
         };
+        // Only the refusals of chats still open, and not lapsed, are kept.
+        lock(&self.refused).retain(|chat, refusal| {
+            refusal.lapses() > now
+                && projects.iter().any(|held| {
+                    held.plane_id() == &chat.0 && held.chats().sessions_open().contains(&chat.1)
+                })
+        });
         let mut candidates = Vec::new();
+        let mut lapses: Option<Instant> = None;
         for held in &projects {
             for session in held.chats().sessions_open() {
                 let facts = crate::hibernation::facts_of(held, session, false);
-                let chat = (held.plane_id().clone(), session);
-                // A refusal is kept only while its facts read the same: one read that finds
-                // any changed (a turn began) lets it go, so it is tried once at rest again.
-                let refused = {
-                    let mut refused = lock(&self.refused);
-                    if refused.get(&chat).is_some_and(|then| *then != facts) {
-                        refused.remove(&chat);
-                    }
-                    refused.contains_key(&chat)
-                };
                 if purlis_core::rested::rested(&facts).is_err()
                     || purlis_core::rested::by_hand(&facts).is_err()
                 {
                     continue;
                 }
-                if refused || lock(&self.passed_over).contains(&chat) {
-                    continue;
-                }
                 let Some(since) = held.looked().rests_since(session, now) else {
                     continue;
                 };
+                let chat = (held.plane_id().clone(), session);
+                // Read before the pass's own skip, so one refused in this pass arms its lapse.
+                if let Some(refusal) = self.still_refused(&chat, turns_of(held, session)) {
+                    lapses = Some(lapses.map_or(refusal.lapses(), |at| at.min(refusal.lapses())));
+                    continue;
+                }
+                if lock(&self.passed_over).contains(&chat) {
+                    continue;
+                }
                 candidates.push(Candidate { chat, since });
             }
         }
+        let armed = |deadline: Option<Instant>| {
+            self.arm(deadline);
+            deadline.map_or(Read::Nothing, Read::Armed)
+        };
         match choose(hot, target, &candidates, now, AFTER) {
-            Choice::Nothing => {
-                self.arm(None);
-                Read::Nothing
-            }
-            Choice::ArmFor(deadline) => {
-                self.arm(Some(deadline));
-                Read::Armed(deadline)
-            }
+            Choice::Nothing => armed(lapses),
+            Choice::ArmFor(due) => armed(Some(lapses.map_or(due, |at| at.min(due)))),
             Choice::Hibernate(chat) => {
                 self.arm(None);
                 let Some(held) = projects.iter().find(|held| held.plane_id() == &chat.0) else {
                     return Read::Nothing;
                 };
+                let turns = turns_of(held, chat.1);
                 match held.hibernate_chat_idle(chat.1, &|| self.over()) {
                     Ok(()) => {
                         held.tell_hibernated(chat.1);
                         Read::Hibernated(chat)
                     }
-                    Err(why) => self.refused(held, chat, &why),
+                    Err(why) => self.refused(chat, turns, &why),
                 }
             }
         }
     }
 
-    /// **The act refused `chat`** for `why`. At the target, or with the app quitting, the pass
-    /// ends. Any other refusal passes it over for the rest of the pass, and the next goes; and,
-    /// except a look the clock will count anyway, keeps the facts read of it **after** the
-    /// refusal, so it is tried again once they change (a turn that began has ended), never on
-    /// each keystroke while they read the same.
+    /// Chat `chat`'s refusal, while it holds: it lets go once the chat has begun a turn since.
+    fn still_refused(&self, chat: &Chat, turns: u32) -> Option<Refusal> {
+        let mut refused = lock(&self.refused);
+        let refusal = *refused.get(chat)?;
+        if refusal.turns != turns {
+            refused.remove(chat);
+            return None;
+        }
+        Some(refusal)
+    }
+
+    /// **The act refused `chat`**, which had begun `turns` turns as it was tried, for `why`. At
+    /// the target, or with the app quitting, the pass ends. Any other refusal passes it over for
+    /// the rest of the pass, and the next goes. One the chat's facts gave
+    /// ([`crate::hibernation::Refused::Not`]) is not kept: the facts are read again at every
+    /// read, and pick it only once they allow it. One the act could not do
+    /// ([`crate::hibernation::Refused::Said`]) is kept ([`Refusal`]), so it is not tried again
+    /// on each keystroke while nothing changed.
     pub(crate) fn refused(
         &self,
-        held: &Held,
         chat: Chat,
+        turns: u32,
         why: &crate::hibernation::Refused,
     ) -> Read {
         use crate::hibernation::Refused;
@@ -540,12 +578,18 @@ impl Gate {
             return Read::Nothing;
         }
         lock(&self.passed_over).insert(chat.clone());
-        if *why != Refused::Not(purlis_core::rested::NotRested::LookedAt) {
-            let facts = crate::hibernation::facts_of(held, chat.1, false);
-            lock(&self.refused).insert(chat.clone(), facts);
+        if let Refused::Said(_) = why {
+            let at = self.now();
+            lock(&self.refused).insert(chat.clone(), Refusal { turns, at });
         }
         Read::Refused(chat)
     }
+}
+
+/// How many turns chat `session` has begun this run: a count that only goes up, so a turn
+/// begun and ended between two reads still shows.
+fn turns_of(held: &Held, session: u32) -> u32 {
+    held.board().glance(session).turns
 }
 
 #[cfg(test)]

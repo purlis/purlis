@@ -164,7 +164,8 @@ pub struct DiagnosticsHere {
     /// The chats open in every project this app holds, a shell tab not among them.
     pub open: u32,
     /// The open chats whose run has a process (the glossary's **hot chat**): `starting`,
-    /// `working`, `input-required` or `paused`. A queued or hibernated run is open, not hot.
+    /// `working`, `input-required` or `paused`, on this device. A queued or hibernated run is
+    /// open, not hot, and so is a runner's or a pool's chat, whose program runs elsewhere.
     pub hot: u32,
     /// The device's RAM class and its hot target.
     pub device: DeviceClass,
@@ -182,11 +183,18 @@ fn run_of(state: State) -> RunState {
     }
 }
 
-/// The open and hot chats among runs in `runs`, one current run for each open chat.
-fn counted(runs: impl IntoIterator<Item = RunState>) -> (u32, u32) {
-    runs.into_iter().fold((0, 0), |(open, hot), run| {
-        (open + 1, hot + u32::from(run.has_a_process()))
+/// The open and hot chats among `runs`, one current run for each open chat with whether its
+/// program runs on this device: only one that does can be hot.
+fn counted_where(runs: impl IntoIterator<Item = (RunState, bool)>) -> (u32, u32) {
+    runs.into_iter().fold((0, 0), |(open, hot), (run, here)| {
+        (open + 1, hot + u32::from(here && run.has_a_process()))
     })
+}
+
+/// The open and hot chats among `runs`, each run on this device.
+#[cfg(test)]
+fn counted(runs: impl IntoIterator<Item = RunState>) -> (u32, u32) {
+    counted_where(runs.into_iter().map(|run| (run, true)))
 }
 
 /// Copy diagnostics' answer: the system, the open and hot chats of every project held, and the
@@ -207,30 +215,34 @@ pub fn diagnostics_here(
     here(purlis_core::adopt::system(), (open, hot), device.class())
 }
 
-/// **Chat `session`'s current run, as far as this device's hot count goes**: `None` for a
-/// shell tab, and for a runner's or a pool's chat, whose program does not use this device's
-/// memory; `hibernated` for one hibernated; else what its board state stands for.
+/// **Chat `session`'s current run**: `None` for a shell tab; `hibernated` for one hibernated;
+/// else what its board state stands for.
 fn current_run(held: &Held, session: u32) -> Option<RunState> {
-    let chats = held.chats();
-    if chats.harness(session).is_none()
-        || chats.runner_of(session).is_some()
-        || chats.pool_of(session).is_some()
-    {
-        return None;
-    }
+    held.chats().harness(session)?;
     if held.hibernated().of(session).is_some() {
         return Some(RunState::Hibernated);
     }
     Some(run_of(held.board().glance(session).state))
 }
 
-/// The open and hot chats of `held` that count on this device ([`current_run`]).
-fn counted_in(held: &Held) -> (u32, u32) {
-    counted(
+/// Whether chat `session`'s program runs on this device: not a runner's or a pool's chat,
+/// whose program does not use this device's memory.
+fn runs_here(held: &Held, session: u32) -> bool {
+    let chats = held.chats();
+    chats.runner_of(session).is_none() && chats.pool_of(session).is_none()
+}
+
+/// **The open and hot chats of `held`**: every chat with a harness is open, wherever it runs;
+/// only one whose program runs on this device ([`runs_here`]) can be hot.
+pub(crate) fn counted_in(held: &Held) -> (u32, u32) {
+    counted_where(
         held.chats()
             .sessions_open()
             .into_iter()
-            .filter_map(|session| current_run(held, session)),
+            .filter_map(|session| {
+                let run = current_run(held, session)?;
+                Some((run, runs_here(held, session)))
+            }),
     )
 }
 
