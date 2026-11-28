@@ -7739,6 +7739,12 @@ export const PlaneView = memo(function PlaneView({
   const restartingNow = useRef(new Set<number>());
   /** The chats a restart is under way for, which each one's pane says while it is. */
   const [restartsRunning, setRestartsRunning] = useState<readonly number[]>([]);
+  /** Counts the restarts the core said to ask again (#7950): each one drives the owed list
+   *  again, so a chat already at a pause is restarted now and one mid-turn at its next pause. */
+  const [restartsAskedAgain, askRestartsAgain] = useState(0);
+  /** The chats those were for: one that reports no state has no pause to wait for, and the
+   *  person pressed for it, so it is asked again at once, as their press was. */
+  const askedAgain = useRef(new Set<number>());
   useEffect(() => {
     let gone = false;
     void commands
@@ -7783,6 +7789,7 @@ export const PlaneView = memo(function PlaneView({
       if (restartingNow.current.has(session)) return;
       restartingNow.current.add(session);
       setRestartsRunning((running) => [...running, session]);
+      let again = false;
       const failed = (why: string) => {
         setOwedRestarts((owed) => owed.filter((one) => one !== session));
         setRestartNotYet((was) => withoutKey(was, session));
@@ -7813,12 +7820,17 @@ export const PlaneView = memo(function PlaneView({
             // Said on its pane in the core's sentence, so a press is never answered by nothing.
             const why = done.data.not_yet ?? NOT_YET;
             setRestartNotYet((was) => (was[session] === why ? was : { ...was, [session]: why }));
+            // It waited on the person's answer to what the project needs while the chat ran on
+            // (#7950): asked again now, at a pause only, once this ask is no longer under way.
+            again = done.data.ask_again === true;
+            if (again) askedAgain.current.add(session);
           }
         })
         .catch((err: unknown) => failed(`purlis could not restart the chat: ${String(err)}`))
         .finally(() => {
           restartingNow.current.delete(session);
           setRestartsRunning((running) => running.filter((one) => one !== session));
+          if (again) askRestartsAgain((asked) => asked + 1);
         });
     },
     [plane, chatRestarted],
@@ -7935,7 +7947,14 @@ export const PlaneView = memo(function PlaneView({
     const drive = () => {
       const states = chats.store.statesFor(chats.plane);
       const due = restartsDue(owedRestarts, states);
-      for (const session of due.restart) restartOwed(session);
+      for (const session of askedAgain.current) {
+        if (!owedRestarts.includes(session)) askedAgain.current.delete(session);
+        else if (stateOf(states, session) === "unknown") due.restart.push(session);
+      }
+      for (const session of due.restart) {
+        askedAgain.current.delete(session);
+        restartOwed(session);
+      }
       // Dropped only once the core, which hears the program itself end, owes it nothing: a
       // hook can say the session ended while its program runs on ({@link owedAfterEnded}).
       if (due.ended.length > 0)
@@ -7954,7 +7973,7 @@ export const PlaneView = memo(function PlaneView({
     };
     drive();
     return chats.store.subscribe(drive);
-  }, [owedRestarts, chats, plane, restartOwed]);
+  }, [owedRestarts, chats, plane, restartOwed, restartsAskedAgain]);
   /**
    * The state of each chat owed a restart, by session (#1888): the pane's words follow the
    * chat's state as well as the owed list, so a chat owed a restart before it said it was

@@ -18,10 +18,24 @@
 //! machine's policy file, the acceptance record and the never-dispatch list), on a new seal key,
 //! and after every answer ([`Kept::accept`], [`Kept::accept_with_new_key`]). Where its watch
 //! misses a file, at a read too, at most once a second ([`Kept::lapsed`]).
+//!
+//! **While one is open, the core holds the chats the person starts in that project**
+//! ([`Kept::hold`], ADR 0130 §5): a chat they start from the window or the CLI, a pool or runner
+//! chat among them, waits until they answer. Every other start ([`Starter`]) starts at once,
+//! under the policy in force ([`enforcement::in_force`]), as running chats keep running under it.
+//! The window only shows the hold and releases it, through an answer.
+//!
+//! **The answer that grants nothing** ([`Kept::defer`], ADR 0130 §6) is kept in this list's
+//! memory, against the digest and reasons it was shown for, and never written anywhere: it ends
+//! with the app's run, and an entry whose digest or reasons differ from every answer kept is
+//! open again, while one back at a digest and reasons already answered this run is not.
+//! Meanwhile the entry reads [`State::Deferred`], which holds no start. It grants nothing: the
+//! policy in force is what it was.
 
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::ThreadId;
 use std::time::{Duration, Instant};
 
@@ -49,7 +63,7 @@ pub enum State {
 }
 
 /// **Why the policy prerequisite is open**: one or both, Broken first.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Reason {
     /// An acceptance was kept on this machine, and what is here now is not it.
     Broken,
@@ -132,7 +146,160 @@ impl List {
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
+
+    /// **Whether it holds the person's starts**: an entry is open, unanswered this run.
+    pub fn holds(&self) -> bool {
+        self.entries
+            .iter()
+            .any(|entry| entry.state() == State::Open)
+    }
+
+    /// This list, each entry deferred whose digest and reasons an answer kept (`answers`) was
+    /// shown for, once `answers` has noted each pair it holds as held this run.
+    fn deferred_by(mut self, answers: &mut Answers) -> Self {
+        for entry in &mut self.entries {
+            match entry {
+                Prerequisite::Policy(policy) => {
+                    let pair = (policy.digest.clone(), policy.reasons.clone());
+                    if answers.held(pair) {
+                        policy.state = State::Deferred;
+                    }
+                }
+                #[cfg(test)]
+                Prerequisite::StandIn => {}
+            }
+        }
+        self
+    }
 }
+
+/// **Who starts a chat**, as an open prerequisite holds it (ADR 0130 §5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Starter {
+    /// **The person**: a chat they start from the window or the CLI, a session they resume,
+    /// and a pool or runner chat they start, which waits as a local one does. It waits.
+    Person,
+    /// **The app, on its own**: a chat put back at a project's open, started again in its
+    /// place, or woken for its schedule or its loop. It starts at once.
+    App,
+    /// **A running chat**: a task it dispatches, or a chat it hands work to, which starts under
+    /// the policy in force as a dispatched task does. It starts at once.
+    AChat,
+}
+
+impl Starter {
+    /// Who made a start made as `made` says, from the app's own record of it.
+    pub fn of(made: &crate::sandbox::Made) -> Self {
+        use crate::sandbox::Made;
+        match made {
+            Made::Window | Made::Resume => Self::Person,
+            Made::Relaunch => Self::App,
+            Made::Asked { .. } => Self::AChat,
+            // A start that does not say how it was made is never the person's own: it waits on
+            // no answer of theirs, and runs under the policy in force.
+            Made::Unnamed => Self::App,
+        }
+    }
+
+    /// Whether its start waits while a prerequisite is open: the person's alone.
+    pub fn waits(self) -> bool {
+        self == Self::Person
+    }
+}
+
+/// **How a held start ended** ([`Kept::hold`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Held {
+    /// Nothing held it: its starter does not wait, or nothing was open.
+    AtOnce,
+    /// It waited, and an answer released it: it starts now, under the policy in force.
+    Released,
+    /// It waited, and its caller stopped it before an answer (the person's Cancel). `why` is
+    /// what is still open, in the core's words ([`waiting_for`]).
+    Stopped { why: String },
+    /// It waited as long as its caller gave it, and nothing answered. `why` is what is still
+    /// open, in the core's words ([`waiting_for`]).
+    RanOut { why: String },
+}
+
+/// **What the window showed when the person gave the answer that grants nothing**
+/// ([`Kept::defer`]): the answer is kept against it, never against what is there by the time it
+/// lands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Shown {
+    /// The policy prerequisite, with the digest and the reasons it was shown with.
+    Policy {
+        digest: String,
+        reasons: Vec<Reason>,
+    },
+}
+
+/// A policy entry as it can be answered: its digest and its reasons.
+type Answered = (String, Vec<Reason>);
+
+/// **The digest and reasons pairs the list has held this run**, oldest first, each with whether
+/// the answer that grants nothing was given for it ([`Kept::defer`]). An answer is kept only for
+/// a pair the list held, so what a link sends that nobody was shown is dropped, and the pairs
+/// are bounded ([`ANSWERS_KEPT_AT_MOST`]): past that the oldest goes, and is asked again.
+#[derive(Debug, Default)]
+struct Answers(VecDeque<(Answered, bool)>);
+
+impl Answers {
+    /// Notes `pair` as held this run: whether it was answered.
+    fn held(&mut self, pair: Answered) -> bool {
+        if let Some((_, answered)) = self.0.iter().find(|(held, _)| *held == pair) {
+            return *answered;
+        }
+        if self.0.len() >= ANSWERS_KEPT_AT_MOST {
+            self.0.pop_front();
+        }
+        self.0.push_back((pair, false));
+        false
+    }
+
+    /// Answers `pair`, where the list held it this run: whether it did.
+    fn answer(&mut self, pair: &Answered) -> bool {
+        self.0
+            .iter_mut()
+            .find(|(held, _)| held == pair)
+            .map(|(_, answered)| *answered = true)
+            .is_some()
+    }
+
+    /// How many pairs are kept.
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+/// **What a held start waits on**, in the core's words: each open entry of `list`, for the
+/// project at `root`, by its folder's name. What a held start is told, and says where it stops.
+pub fn waiting_for(root: &Path, list: &List) -> String {
+    let project = root.file_name().map_or_else(
+        || root.display().to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    list.entries()
+        .iter()
+        .filter(|entry| entry.state() == State::Open)
+        .map(|entry| match entry {
+            Prerequisite::Policy(_) => {
+                format!("{project}'s policy needs your answer in the purlis window on this machine")
+            }
+            #[cfg(test)]
+            Prerequisite::StandIn => format!("{project} needs a stand-in's answer"),
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// **The most digest and reasons pairs a list keeps for a run** ([`Kept::defer`]): far past
+/// the policies one project goes through in a run, so an old answer goes only after many.
+const ANSWERS_KEPT_AT_MOST: usize = 32;
+
+/// How long a held start waits at most between looks at whether its caller stopped it.
+const LOOKS_EVERY: Duration = Duration::from_millis(100);
 
 #[cfg(test)]
 thread_local! {
@@ -250,6 +417,12 @@ pub type Told = Arc<dyn Fn(&List) + Send + Sync + 'static>;
 pub struct Kept {
     /// The list as last evaluated, and when; `None` before the first evaluation.
     list: Mutex<Option<(List, Instant)>>,
+    /// Woken each time a list is kept: what a held start waits on ([`Self::hold`]).
+    kept_again: Condvar,
+    /// **The answers that grant nothing given this run** ([`Self::defer`]), each against what
+    /// it was shown for, among the pairs the list held. In memory only: a restart is when the
+    /// person is asked again.
+    answered: Mutex<Answers>,
     /// Held across an evaluation, its keeping and its telling, so two evaluations at once are
     /// told in the order they were kept, and the last one told is the one kept.
     evaluating: Mutex<()>,
@@ -268,6 +441,8 @@ impl Kept {
     pub fn new(told: Told) -> Self {
         Self {
             list: Mutex::new(None),
+            kept_again: Condvar::new(),
+            answered: Mutex::new(Answers::default()),
             evaluating: Mutex::new(()),
             evaluator: Mutex::new(None),
             fresh_for: LAPSED_FRESH_FOR,
@@ -296,13 +471,15 @@ impl Kept {
     /// [`Self::evaluate`], with its lock `_evaluating` taken.
     fn evaluate_holding(&self, _evaluating: MutexGuard<'_, ()>, root: &Path) -> List {
         *self.evaluator() = Some(std::thread::current().id());
-        let now = evaluate(root);
+        let now = evaluate(root)
+            .deferred_by(&mut self.answered.lock().unwrap_or_else(PoisonError::into_inner));
         let changed = {
             let mut kept = self.list.lock().unwrap_or_else(PoisonError::into_inner);
             let changed = kept.as_ref().map(|(list, _)| list) != Some(&now);
             *kept = Some((now.clone(), Instant::now()));
             changed
         };
+        self.kept_again.notify_all();
         // After it is kept, and outside the lock a read takes.
         if changed {
             (self.told)(&now);
@@ -365,6 +542,82 @@ impl Kept {
         let pressed = enforcement::press(root, shown);
         let list = self.evaluate(root);
         pressed.map(|()| list)
+    }
+
+    /// **The answer that grants nothing** ("Work in strict mode" under Broken, "Keep my current
+    /// rules" under Waiting; ADR 0130 §6), kept against what was `shown`, then the list
+    /// evaluated again: an entry shown so reads [`State::Deferred`] and holds no start, while
+    /// one whose digest or reasons moved since is open still. An answer for a pair the list
+    /// has not held this run is kept nowhere: a linked page may send it, and nobody was shown
+    /// it. It grants nothing and writes nothing: the policy in force is what it was.
+    pub fn defer(&self, root: &Path, shown: Shown) -> List {
+        let Shown::Policy { digest, reasons } = shown;
+        let pair = (digest, reasons);
+        if !self
+            .answered
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .answer(&pair)
+        {
+            tracing::info!(
+                "purlis: an answer for a policy {} did not hold this run was not kept",
+                root.display()
+            );
+        }
+        self.evaluate(root)
+    }
+
+    /// **Holds a start `starter` makes in the project at `root` while a prerequisite is open**
+    /// (ADR 0130 §5), until an answer releases it ([`Self::defer`], [`Self::accept`]).
+    ///
+    /// A start the person does not make ([`Starter::waits`]) is never held, and neither is one
+    /// where nothing is open: both are [`Held::AtOnce`]. A held one is told once, at first, what
+    /// it waits on (`waiting`, [`waiting_for`]), and ends [`Held::Released`] once no entry is
+    /// open, [`Held::Stopped`] once `stopped` says so, or [`Held::RanOut`] after `within`, where
+    /// its caller gives it one. This never changes the policy in force, which it starts under.
+    pub fn hold(
+        &self,
+        root: &Path,
+        starter: Starter,
+        within: Option<Duration>,
+        stopped: &dyn Fn() -> bool,
+        waiting: impl FnOnce(&str),
+    ) -> Held {
+        if !starter.waits() {
+            return Held::AtOnce;
+        }
+        let by = within.map(|within| Instant::now() + within);
+        let mut waiting = Some(waiting);
+        loop {
+            let list = self.current(root);
+            if !list.holds() {
+                return if waiting.is_some() {
+                    Held::AtOnce
+                } else {
+                    Held::Released
+                };
+            }
+            let why = waiting_for(root, &list);
+            if let Some(say) = waiting.take() {
+                say(&why);
+            }
+            if stopped() {
+                return Held::Stopped { why };
+            }
+            let now = Instant::now();
+            let left = match by {
+                Some(by) if now >= by => return Held::RanOut { why },
+                Some(by) => (by - now).min(LOOKS_EVERY),
+                None => LOOKS_EVERY,
+            };
+            // Woken by the next list kept, or after a moment to look at `stopped` again: a list
+            // kept between the read above and this wait is read at the next look.
+            let kept = self.list.lock().unwrap_or_else(PoisonError::into_inner);
+            let _ = self
+                .kept_again
+                .wait_timeout(kept, left)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
     }
 
     /// **The person's Make a new key and accept** ([`enforcement::press_with_new_key`]), then

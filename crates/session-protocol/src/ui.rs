@@ -1561,6 +1561,9 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     // What the project needs from you before its chats can work (ADR 0130 §8): a read, so a
     // linked page shows the modal; its Accepts stay the window's.
     "project_prerequisites",
+    // The answer that grants nothing (ADR 0130 §8): given in the window or on a linked page;
+    // it grants nothing and writes nothing, and Accept stays the window's.
+    "defer_project_prerequisite",
     // What the project's `[policy]` let through and logged (Q308a): a read of rule ids,
     // families, chat numbers and the host:port a rule was about, never a command, a path or a
     // value.
