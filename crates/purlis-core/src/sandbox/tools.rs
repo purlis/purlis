@@ -2915,8 +2915,8 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     "rw-max",
     "cronitor",
     // The interpreters and runtimes #7964 names beside REFUSED_NAMES' own, refused on this
-    // list and not on that one, as `jshell` and `irb` were not (a persona may still declare
-    // one in a reviewed line): each runs the code, the script or the module it is handed.
+    // list and not on that one, so a persona may still declare one in a reviewed line (ADR 0112,
+    // amended 2026-11-28): each runs the code, the script or the module it is handed.
     // `kotlin`, `scala`, `groovy`, `clojure`, `boot`, `elixir`, `erl`, `escript`, `ghc`
     // (`-e`, and Template Haskell in any build), `runghc`, `crystal`, `nim`, `v`, `dart`,
     // `tcc` (`-run`), `mono`, the WebAssembly runtimes `wasmtime`, `wasmer` and `wasm3`,
