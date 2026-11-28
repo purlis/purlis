@@ -244,7 +244,7 @@ fn every_start() -> Vec<Facts> {
 fn every_action_has_a_fail_closed_point_or_a_gap_that_a_start_declares() {
     purlis_core::unsteered!();
     let actions = purlis_core::policy::actions();
-    assert_eq!(actions.len(), 62, "the schema's actions: {actions:?}");
+    assert_eq!(actions.len(), 63, "the schema's actions: {actions:?}");
     let floor = Resolved::all(Mode::Enforce);
     for facts in every_start() {
         let declared = Declared::at(&facts, &floor);

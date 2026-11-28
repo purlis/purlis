@@ -178,10 +178,18 @@ impl Project for Fake {
                 },
                 action,
                 resource,
-                context: serde_json::json!({
-                    "sandbox": "off", "attended": true, "harness_mode": "default", "depth": 0,
-                    "via": "hook"
-                }),
+                context: {
+                    let mut context = serde_json::json!({
+                        "sandbox": "off", "attended": true, "harness_mode": "default",
+                        "depth": 0, "via": "hook"
+                    });
+                    // A merge's context names its owner, "none" until #7035 reads the head
+                    // branch (#7748).
+                    if action == "merge" {
+                        context["owner"] = "none".into();
+                    }
+                    context
+                },
             },
         ))
     }
@@ -1090,7 +1098,7 @@ fn the_host_raises_no_ask_its_own_policy_does_not_hold() {
             resource: ("Branch", "o/r#12"),
             context: serde_json::json!({
                 "sandbox": "off", "attended": true, "harness_mode": "default", "depth": 0,
-                "via": "hook"
+                "via": "hook", "owner": "none"
             }),
         });
     allowed.after_mode = Outcome::Allow;

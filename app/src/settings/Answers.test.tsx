@@ -7,7 +7,14 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Answers, AnswersView, deviceSaid, stateSaid } from "./Answers";
 import { AnswersNotices } from "../AnswersNotices";
 import { SETTINGS_LINK, type SettingsLinkAsk } from "./links";
-import { DENIED, HOLDS, IMPORTED, IMPORT_FAILED, WAITING_FOR_CONFIRM } from "./answersFixture";
+import {
+  DENIED,
+  HOLDS,
+  IMPORTED,
+  IMPORT_FAILED,
+  OWNER_RECORDS_LOST,
+  WAITING_FOR_CONFIRM,
+} from "./answersFixture";
 
 afterEach(() => {
   cleanup();
@@ -128,6 +135,81 @@ describe("the sealed answers' Notices", () => {
       expect(document.querySelector('[data-cause="answers-import-failed"]')).not.toBeNull(),
     );
     expect(document.querySelector('[data-cause^="answers-deny"]')).not.toBeNull();
+  });
+
+  it("a_lost_owner_record_is_a_notice_that_links_to_the_sealed_answers", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "answers_shown") return OWNER_RECORDS_LOST;
+      throw new Error(`unexpected ${cmd}`);
+    });
+    const links: SettingsLinkAsk[] = [];
+    const hear = (event: Event) => links.push((event as CustomEvent<SettingsLinkAsk>).detail);
+    window.addEventListener(SETTINGS_LINK, hear);
+    render(<AnswersNotices plane={PLANE} />);
+    const notice = await waitFor(() => {
+      const found = document.querySelector('[data-cause="answers-owner-records-lost"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect(notice).toHaveTextContent("missing or was changed");
+    expect(notice).toHaveTextContent("records no new owner");
+    fireEvent.click(screen.getByRole("button", { name: "Show sealed answers" }));
+    window.removeEventListener(SETTINGS_LINK, hear);
+    expect(links[0]?.link).toEqual({
+      group: "project.sandbox",
+      setting: "project.sandbox.sealedAnswers",
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Dismiss/ }));
+    await waitFor(() =>
+      expect(document.querySelector('[data-cause="answers-owner-records-lost"]')).toBeNull(),
+    );
+  });
+
+  it("the_lost_owner_records_notice_says_what_to_press_and_forgetting_them_clears_it", async () => {
+    const sent: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "answers_shown") return OWNER_RECORDS_LOST;
+      if (cmd === "forget_lost_owner_records") {
+        sent.push(args);
+        return HOLDS;
+      }
+      throw new Error(`unexpected ${cmd}`);
+    });
+    render(<AnswersNotices plane={PLANE} />);
+    const notice = await waitFor(() => {
+      const found = document.querySelector('[data-cause="answers-owner-records-lost"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect(notice).toHaveTextContent("Press Forget the lost owner records");
+    expect(notice).toHaveTextContent("the next chat to claim one owns it");
+    fireEvent.click(screen.getByRole("button", { name: "Forget the lost owner records" }));
+    await waitFor(() =>
+      expect(document.querySelector('[data-cause="answers-owner-records-lost"]')).toBeNull(),
+    );
+    expect(sent).toEqual([{ plane: PLANE }]);
+  });
+
+  it("a_forget_that_fails_says_why_and_keeps_the_notice", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "answers_shown") return OWNER_RECORDS_LOST;
+      if (cmd === "forget_lost_owner_records") {
+        throw "purlis could not forget the lost owner records, so nothing changed: the plane's answers are in the deny state";
+      }
+      throw new Error(`unexpected ${cmd}`);
+    });
+    render(<AnswersNotices plane={PLANE} />);
+    await waitFor(() =>
+      expect(document.querySelector('[data-cause="answers-owner-records-lost"]')).not.toBeNull(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Forget the lost owner records" }));
+    const failed = await waitFor(() => {
+      const found = document.querySelector('[data-cause^="answers-owner-records-not-forgotten"]');
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    expect(failed).toHaveTextContent("could not forget the lost owner records");
+    expect(document.querySelector('[data-cause="answers-owner-records-lost"]')).not.toBeNull();
   });
 
   it("answers_that_hold_say_nothing", async () => {

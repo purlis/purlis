@@ -11,6 +11,7 @@ export const HOLDS: AnswersShown = {
   old_files: [],
   import_failed: null,
   notices: [],
+  owner_records_lost: false,
   device: { state: "confirmed", id: "01JABCDEFGHJKMNPQRSTVWXYZ0" },
 };
 
@@ -38,4 +39,9 @@ export const IMPORT_FAILED: AnswersShown = {
   deny: ["the nevers you said before are still in their old files and are not imported yet"],
   import_failed:
     "purlis could not read the nevers you said before, so it did not import them: they stay in their old file.",
+};
+
+export const OWNER_RECORDS_LOST: AnswersShown = {
+  ...HOLDS,
+  owner_records_lost: true,
 };

@@ -72,7 +72,7 @@ fn a_plane_less_process_runs_local_strict_with_the_organisations_files() {
         resource: ("Branch", "acme/web#main"),
         context: serde_json::json!({
             "sandbox": "floor", "attended": true, "harness_mode": "default", "depth": 0,
-            "via": "hook"
+            "via": "hook", "owner": "none"
         }),
         ..connect("x")
     });

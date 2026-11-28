@@ -850,7 +850,8 @@ pub fn accept(root: &Path, press: &answers::Press, shown: &str) -> io::Result<()
     if standing.is_deny() {
         let mut keep: Vec<answers::Entry> = Vec::new();
         // A commit past the cap leaves a store that verified: what it held but the floor, the
-        // old accepted copy and the nevers (which the mend keeps itself) is kept.
+        // old accepted copy, the nevers and the owner records (which the mend keeps itself) is
+        // kept.
         if held.reason == Reason::PastTheCap {
             keep.extend(
                 standing
@@ -862,6 +863,7 @@ pub fn accept(root: &Path, press: &answers::Press, shown: &str) -> io::Result<()
                             answers::ACCEPTED,
                             answers::PAST_THE_CAP,
                             answers::NEVER,
+                            answers::OWNER,
                         ]
                         .contains(&entry.kind.as_str())
                     })

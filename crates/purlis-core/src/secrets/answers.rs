@@ -42,7 +42,7 @@
 //! # Which state a plane is in
 //!
 //! [`standing`]: **deny** (a [`Deny`] cause each), **fresh** (no anchor, no store), or **holds**,
-//! where only a grant that is missing or fails its seal reads as "no answer"
+//! where only a grant or an owner record that is missing or fails its seal reads as "no answer"
 //! ([`Standing::no_answer`]) and any other entry that does is the deny state.
 //!
 //! # Where it is weaker
@@ -75,9 +75,15 @@ pub const FLOOR: &str = "floor";
 /// **A commit went past the accepted floor's cap** (M75-14): present until the person's press
 /// ([`recommit`]), which is the deny state's cause [`Deny::PastTheFloorCap`] while it is.
 pub const PAST_THE_CAP: &str = "past-the-cap";
+/// **A host-held owner fact** (#7748): which chat owns a forge branch or a branch folder, or which
+/// chat a task was dispatched by. Not the person's answer but the app's own record, kept here
+/// because this is the store only the app can seal ([`crate::policy::owner`]). The second kind,
+/// after [`GRANT`], that reads as "no answer" where it fails: an owner record that is missing or
+/// fails its seal is no record, so its resource's owner reads `"none"`, never the deny state.
+pub const OWNER: &str = "owner";
 
 /// The kinds a store holds.
-pub const KINDS: [&str; 8] = [
+pub const KINDS: [&str; 9] = [
     ACCEPTED,
     ACCEPTANCE,
     GRANT,
@@ -86,6 +92,7 @@ pub const KINDS: [&str; 8] = [
     PASS,
     FLOOR,
     PAST_THE_CAP,
+    OWNER,
 ];
 
 /// What `bind` an Everywhere entry is sealed to: neither a plane nor a clone.
@@ -998,7 +1005,8 @@ pub struct Standing {
     /// seal): [`Standing::everywhere`] is then empty, which must not read as "no nevers" (M75-20
     /// review round 2, F6).
     pub everywhere_unreadable: bool,
-    /// Grants that are missing or fail their seal: "no answer", each as kind and digest.
+    /// Grants and owner records that are missing or fail their seal: "no answer", each as kind
+    /// and digest.
     pub no_answer: Vec<String>,
     /// What the window says: sealed files the manifest does not list, ignored.
     pub notices: Vec<String>,
@@ -1023,6 +1031,16 @@ impl Standing {
     /// no store.
     pub fn fresh() -> Self {
         Self::of(State::Fresh)
+    }
+
+    /// **Whether the store lists an owner record that does not load** (Q339.8, #7748): missing or
+    /// failing its seal. Its resource reads `"none"`, and no new owner record is made while it is
+    /// listed ([`crate::policy::owner::record_owner`]).
+    pub fn owner_records_lost(&self) -> bool {
+        self.no_answer.iter().any(|lost| {
+            lost.strip_prefix(OWNER)
+                .is_some_and(|digest| digest.starts_with(' '))
+        })
     }
 
     /// Whether the plane is in the deny state.
@@ -1254,8 +1272,10 @@ fn read_place(place: &Place, plane: Option<&Registered>) -> Found {
             for listed in &manifest.entries {
                 match load_entry(place, listed) {
                     Ok(entry) => found.entries.push(entry),
-                    Err(missing) if listed.kind == GRANT => {
-                        found.no_answer.push(format!("grant {}", listed.digest));
+                    Err(missing) if listed.kind == GRANT || listed.kind == OWNER => {
+                        found
+                            .no_answer
+                            .push(format!("{} {}", listed.kind, listed.digest));
                         let _ = missing;
                     }
                     Err(true) => found.denies.push(Deny::EntryMissing {
@@ -1498,6 +1518,10 @@ pub struct Draft {
     /// Why the commit is refused: a kind that is not one of [`KINDS`], or a removal that is not
     /// narrowing and came without a press.
     refused: Option<String>,
+    /// **The owner records the manifest lists that do not load** (Q339.8, #7748), each as the
+    /// manifest lists it. A commit lists them again as they were, so a record deleted or edited
+    /// by hand leaves its trace and keeps every new owner record refused.
+    lost_owner_records: Vec<Listed>,
 }
 
 impl Draft {
@@ -1508,8 +1532,11 @@ impl Draft {
 
     /// Adds an answer the person gave just now (their [`Press`]). A `kind` that is not one of
     /// [`KINDS`] (it names a file in the store's folder) adds nothing, and the commit is refused.
+    ///
+    /// An owner record ([`OWNER`]) is not added here: it moves only through
+    /// [`crate::policy::owner`], by a hand-over or the person's press of "Let this chat push it".
     pub fn add(&mut self, _press: &Press, kind: &str, text: &str) {
-        if !KINDS.contains(&kind) {
+        if !KINDS.contains(&kind) || kind == OWNER {
             self.refused = Some(format!(
                 "{kind:?} is not a kind of answer the store keeps, so nothing was changed"
             ));
@@ -1545,9 +1572,56 @@ impl Draft {
     }
 
     /// Takes any answer out, **the person's press** ([`Press`]): a never's or a floor's removal
-    /// widens what a chat may do.
+    /// widens what a chat may do. An owner record ([`OWNER`]) is not taken out here (see
+    /// [`Draft::add`]).
     pub fn remove(&mut self, _press: &Press, kind: &str, text: &str) {
+        if kind == OWNER {
+            self.refused = Some(
+                "an owner record moves only by a hand-over or the person's press of \
+                 \"Let this chat push it\", so nothing was changed"
+                    .to_owned(),
+            );
+            return;
+        }
         self.take_out(kind, text);
+    }
+
+    /// **Records a host-held owner fact** ([`OWNER`]), with no press: the app's own record of what
+    /// it saw (a branch the forge route made, a folder's first claim, a dispatch). Called by
+    /// [`crate::policy::owner`] alone, which holds the rule that a record, once made, moves only
+    /// by a hand-over or the person's press.
+    pub(crate) fn add_owner_record(&mut self, text: &str) {
+        if !self
+            .entries
+            .iter()
+            .any(|e| e.kind == OWNER && e.text == text)
+        {
+            self.entries.push(Entry::new(OWNER, text));
+        }
+    }
+
+    /// **Takes an owner record out**, as a hand-over or a press moves it ([`crate::policy::owner`]).
+    pub(crate) fn take_out_owner_record(&mut self, text: &str) {
+        self.take_out(OWNER, text);
+    }
+
+    /// **Whether the store lists an owner record that does not load** (Q339.8): while it does, no
+    /// new owner record is made ([`crate::policy::owner::record_owner`]).
+    pub(crate) fn owner_records_lost(&self) -> bool {
+        !self.lost_owner_records.is_empty()
+    }
+
+    /// **The person's press that forgets the lost owner records** (#7748 round 3): the listings of
+    /// owner records that do not load are taken out, so the keys they named are free for a first
+    /// claim again and a file put back afterwards is listed nowhere and ignored. Returns how many
+    /// were forgotten.
+    pub(crate) fn forget_lost_owner_records(&mut self, _press: &Press) -> usize {
+        std::mem::take(&mut self.lost_owner_records).len()
+    }
+
+    /// **Refuses the commit**, with nothing written, saying `why`.
+    pub(crate) fn refuse(&mut self, why: &str) {
+        self.refused = Some(why.to_owned());
     }
 
     /// **An acceptance only ever widens**, so its withdrawal narrows and needs no press. If an
@@ -1579,6 +1653,24 @@ impl Draft {
     }
 }
 
+/// The owner records `found`'s manifest lists that did not load: missing, or failing their seal.
+fn lost_owner_records(found: &Found) -> Vec<Listed> {
+    let Some(manifest) = manifest_of(found) else {
+        return Vec::new();
+    };
+    manifest
+        .entries
+        .iter()
+        .filter(|listed| listed.kind == OWNER)
+        .filter(|listed| {
+            !found.entries.iter().any(|entry| {
+                entry.kind == OWNER && entry_digest(OWNER, &entry.text) == listed.digest
+            })
+        })
+        .cloned()
+        .collect()
+}
+
 fn manifest_of(found: &Found) -> Option<&Manifest> {
     found.manifest.as_ref()
 }
@@ -1607,6 +1699,7 @@ pub fn commit(root: &Path, change: impl FnOnce(&mut Draft)) -> io::Result<u64> {
     };
     let found = read_place(&place, None);
     let mut draft = Draft {
+        lost_owner_records: lost_owner_records(&found),
         entries: here.entries,
         imported_nevers: manifest_of(&found).is_some_and(|m| m.imported_nevers),
         ..Draft::default()
@@ -1724,12 +1817,28 @@ fn highest_counter(place: &Place) -> io::Result<u64> {
 /// `entries`, at a counter past every one seen (see [`highest_counter`]), so no older copy ever
 /// replays. A registry that does not hold its seal, or is missing where something is kept, is
 /// replaced first ([`mend_registry`]). Needs the person's [`Press`], an empty `entries` included.
+///
+/// **It keeps the nevers and the owner records itself**, whatever the deny cause: `entries` never
+/// holds an owner record ([`Draft::add`] refuses the kind, and the whole mend with it), since an
+/// owner moves only by a hand-over or "Let this chat push it" ([`crate::policy::owner`]). Where the
+/// last manifest is this clone's and as new as the anchor, its owner records that load are kept
+/// and the ones that do not stay listed as lost (#7748 round 3). Where it is older, missing,
+/// another clone's or unsealed, what it named may have moved since, so none of it is kept and the
+/// store starts **with its owner records lost** ([`OWNER_RECORDS_UNKNOWN`]): no new owner is
+/// recorded until the person forgets them ([`Draft::forget_lost_owner_records`]).
 pub fn recommit(root: &Path, press: &Press, entries: &[Entry]) -> io::Result<u64> {
     let place = plane_place(root).ok_or_else(no_home)?;
     let _turn = store_lock()?;
     // Asked before the registry is mended, so a refusal here changes nothing (#7234 final check,
     // item 4).
     let counter = highest_counter(&place)?;
+    let kept_before = counter > 0
+        || store_exists(&place)
+        || sealed_here(root)
+        || matches!(read_registry(), Read::Value(registry) if registry
+            .planes
+            .iter()
+            .any(|plane| plane.anchor == place.anchor_bind && plane.sealed));
     mend_registry(press, Some(root))?;
     let id = match register_unlocked(root)? {
         Registration::Registered(id) => id,
@@ -1757,10 +1866,37 @@ pub fn recommit(root: &Path, press: &Press, entries: &[Entry]) -> io::Result<u64
         // the plane stays denied until they read or are gone (#7251, item 3).
         crate::dispatchnever::Left::Unread => {}
     }
+    if manifest_is_current(&place, &last) {
+        for entry in last.entries.iter().filter(|e| e.kind == OWNER) {
+            draft.add_owner_record(&entry.text);
+        }
+        draft.lost_owner_records = lost_owner_records(&last);
+    } else if kept_before {
+        draft.lost_owner_records.push(Listed {
+            kind: OWNER.to_owned(),
+            digest: OWNER_RECORDS_UNKNOWN.to_owned(),
+            mac: String::new(),
+        });
+    }
     for entry in entries {
         draft.add(press, &entry.kind, &entry.text);
     }
     write(&place, Some((root, &id)), draft, None, counter)
+}
+
+/// **The listing a mend leaves where it could not tell which owner records the store held**
+/// ([`recommit`]): an owner record no file can ever load (no digest is these words, and no seal is
+/// empty), so it reads as lost and no new owner is recorded until the person forgets it.
+const OWNER_RECORDS_UNKNOWN: &str = "unknown-at-a-mend";
+
+/// Whether `found`'s manifest is this clone's and as new as its anchor says: what it lists is the
+/// store as it was last written, not an older copy put back.
+fn manifest_is_current(place: &Place, found: &Found) -> bool {
+    matches!(
+        (&found.anchor, &found.manifest),
+        (Some(anchor), Some(manifest))
+            if manifest.bind == place.bind && manifest.counter >= anchor.counter
+    )
 }
 
 /// **Commits a change to the Everywhere entry** (the nevers every plane shares), as [`commit`].
@@ -1780,6 +1916,7 @@ pub fn commit_everywhere(change: impl FnOnce(&mut Draft)) -> io::Result<u64> {
     }
     let found = read_place(&place, None);
     let mut draft = Draft {
+        lost_owner_records: lost_owner_records(&found),
         entries: here.entries,
         imported_nevers: manifest_of(&found).is_some_and(|m| m.imported_nevers),
         ..Draft::default()
@@ -1944,6 +2081,16 @@ fn write_sealed(
             digest,
             mac,
         });
+    }
+    // An owner record that did not load is listed again as it was (Q339.8): never dropped by a
+    // commit, so its loss stays seen. One the draft holds again whole needs no second line.
+    for lost in draft.lost_owner_records {
+        if !listed
+            .iter()
+            .any(|l| l.kind == lost.kind && l.digest == lost.digest)
+        {
+            listed.push(lost);
+        }
     }
     listed.sort_by(|a, b| (&a.kind, &a.digest).cmp(&(&b.kind, &b.digest)));
     let mut manifest = Manifest {

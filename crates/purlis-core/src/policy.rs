@@ -48,6 +48,7 @@ pub mod limits;
 pub mod locality;
 pub mod needsyou;
 pub mod organisation;
+pub mod owner;
 pub mod press;
 pub mod resolver;
 pub mod running;

@@ -15,9 +15,9 @@
 //!   cross-workspace form `resource.workspace != principal.workspace` and its guarded form
 //!   `resource has workspace && resource.workspace != principal.workspace` (S2, S2-SF7). Anything
 //!   else (`like`, another attribute, any other `&&`) is refused, **naming the rule**
-//!   ([`Refusal`]). `attended` and `harness_mode` are refused at load, before any chat starts
-//!   ([`Policy::sandbox_problems`]): a fixed profile cannot follow either, and a hook fallback
-//!   would leave shell commands unguarded.
+//!   ([`Refusal`]). `attended`, `harness_mode` and `owner` (Q339.7) are refused at load, before
+//!   any chat starts ([`Policy::sandbox_problems`]): a fixed profile cannot follow any of them,
+//!   and a hook fallback would leave shell commands unguarded.
 //! - **The compiled form** ([`Compiled`]) is, per action, the permits and the forbids, each with
 //!   its `@id` and the terms it was compiled from, so a decision made from it names the rule
 //!   ([`ActionRules::decide`], the same `Decision` the authorizer's path gives). A profile is
@@ -480,10 +480,12 @@ fn compile_action(
         .ok_or_else(|| whole("the schema has no such action".into()))?;
     let mut context = serde_json::json!({
         "sandbox": chat.sandbox,
-        // A rule naming either is refused at load ([`Policy::sandbox_problems`]), so no rule
-        // here reads these two.
+        // A rule naming any of these three is refused at load ([`Policy::sandbox_problems`]), so
+        // no rule here reads them. `owner` is "none": a fixed profile cannot tell whose a path is
+        // (Q339.7).
         "attended": false,
         "harness_mode": "default",
+        "owner": "none",
         "depth": chat.depth,
     });
     if let Some(machine) = chat.machine {
@@ -1020,9 +1022,10 @@ impl Policy {
         )
     }
 
-    /// **What load refuses of a sandbox action's rules** (§11.3): one that names `attended` or
-    /// `harness_mode`, or uses `like`. Read from the rule's text alone, so it is cheap enough for
-    /// every load; the rest of the subset is [`Self::sandbox_problems`]'s and the start's.
+    /// **What load refuses of a sandbox action's rules** (§11.3): one that names `attended`,
+    /// `harness_mode` or `owner` (Q339.7), or uses `like`. Read from the rule's text alone, so it
+    /// is cheap enough for every load; the rest of the subset is [`Self::sandbox_problems`]'s and
+    /// the start's.
     pub(super) fn sandbox_names_problems(&self) -> Vec<Problem> {
         let mut problems = Vec::new();
         let at = |rule: &Rule, what: String| Problem {
@@ -1053,7 +1056,7 @@ impl Policy {
             };
             for clause in policy.body().clauses() {
                 let (pst::Clause::When(expr) | pst::Clause::Unless(expr)) = clause;
-                for word in ["attended", "harness_mode"] {
+                for word in ["attended", "harness_mode", "owner"] {
                     if any_node(expr, &names(word)) {
                         problems.push(at(
                             rule,

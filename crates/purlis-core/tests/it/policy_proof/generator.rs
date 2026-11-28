@@ -272,6 +272,14 @@ fn context_of(action: &str, sandbox: &str, attended: bool, depth: i64) -> serde_
     for (key, value) in extra.as_object().expect("an object").clone() {
         context[key] = value;
     }
+    // `context.owner` is the host's, never the generator's to vary: a cell at the root owns
+    // nothing it acts on, one three deep acts on another chat's (#7748).
+    if purlis_core::policy::context_fields(action)
+        .iter()
+        .any(|field| field == "owner")
+    {
+        context["owner"] = if depth == 0 { "none" } else { "other" }.into();
+    }
     context
 }
 

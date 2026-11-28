@@ -1705,6 +1705,7 @@ export const commands = {
 	chatKnownGaps: (plane: PlaneId, session: number) => typedError<KnownGapShown[], string>(__TAURI_INVOKE("chat_known_gaps", { plane, session })),
 	answersShown: __WINDOW_ONLY_RESULT,
 	confirmDeviceId: __WINDOW_ONLY_RESULT,
+	forgetLostOwnerRecords: __WINDOW_ONLY_RESULT,
 	askOffered: __WINDOW_ONLY_RESULT,
 	giveTimedGrant: __WINDOW_ONLY_RESULT,
 	allowedAnswers: __WINDOW_ONLY_RESULT,
@@ -3389,6 +3390,11 @@ export type AnswersShown = {
 	import_failed: string | null,
 	/**  What purlis ignored or cannot do, one sentence each. */
 	notices: string[],
+	/**
+	 *  Whether the store lists an owner record that is missing or fails its seal (Q339.8, #7748):
+	 *  it reads as no one's, and no new owner record is made while it is listed.
+	 */
+	owner_records_lost: boolean,
 	/**  The device id. */
 	device: DeviceShown,
 };

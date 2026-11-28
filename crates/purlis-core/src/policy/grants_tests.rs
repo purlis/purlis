@@ -410,6 +410,7 @@ fn a_never_holds_under_the_open_template() {
     let merge = request("merge", ("Branch", "acme/web#main"), {
         let mut context = base();
         context["via"] = "hook".into();
+        context["owner"] = "none".into();
         context
     });
     let sealed_with = |entries: Vec<Entry>| Sealed {
@@ -418,6 +419,7 @@ fn a_never_holds_under_the_open_template() {
         chat: Some(ULID.to_owned()),
         now: None,
         retired: Default::default(),
+        touched: None,
     };
     let ask = |sealed: &Sealed, resource| {
         decide::in_plane(&root, &asker, "merge", ("Branch", resource), sealed)
@@ -453,6 +455,7 @@ fn a_never_holds_under_the_open_template() {
         chat: Some(ULID.to_owned()),
         now: None,
         retired: Default::default(),
+        touched: None,
     };
     let everywhere = ask(&sealed, "acme/web#main");
     assert_eq!(everywhere.after_mode, Outcome::Deny, "{everywhere:?}");
@@ -512,6 +515,7 @@ fn an_unreadable_nevers_store_denies_in_every_mode() {
         chat: Some(ULID.to_owned()),
         now: None,
         retired: Default::default(),
+        touched: None,
     };
     let said = decide::in_plane(&root, &asker, "exec", ("Command", "ls"), &sealed);
     assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
@@ -770,6 +774,7 @@ fn two_once_grants_are_spent_together_or_not_at_all() {
         chat: Some(ULID.to_owned()),
         now: None,
         retired: Default::default(),
+        touched: None,
     };
     let said = decide::in_plane(&root, &asker(), "exec", ("Command", "ls"), &sealed);
     assert_eq!(said.after_mode, Outcome::Ask, "{said:?}");
@@ -829,6 +834,7 @@ fn a_grant_given_for_the_merge_hold_serves_a_chat_the_floor_enforces_it_for() {
     let floor = Resolved::parse("guards.merge=enforce");
     let mut context = base();
     context["via"] = "hook".into();
+    context["owner"] = "none".into();
     let merge = request("merge", ("Branch", "acme/web#main"), context);
     for scope in [Scope::Once, Scope::Workspace, Scope::Chat] {
         let m = machine();
@@ -917,6 +923,7 @@ fn a_grant_of_a_rule_an_uncommitted_edit_took_from_the_tree_is_not_taken_out_of_
 fn merge_asked_of_a_hook() -> Request<'static> {
     let mut context = base();
     context["via"] = "hook".into();
+    context["owner"] = "none".into();
     request("merge", ("Branch", "acme/web#main"), context)
 }
 
@@ -973,6 +980,7 @@ fn a_grant_for_the_projects_own_merge_ask_does_not_serve_while_the_floor_holds_t
         chat: Some(ULID.to_owned()),
         now: None,
         retired: Default::default(),
+        touched: None,
     };
     let said = for_the_merge(
         &root,

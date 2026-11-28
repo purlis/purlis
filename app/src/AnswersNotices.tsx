@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { commands, type AnswersShown, type PlaneId } from "./bindings";
-import { Notice } from "./Notice";
+import { Notice, type NoticeAction } from "./Notice";
 import { askSettingsLink } from "./settings/links";
 import { SEALED_ANSWERS } from "./settings/Answers";
 
@@ -17,6 +17,13 @@ export function importedSays(nevers: readonly string[]): string {
 export function denySays(deny: readonly string[]): string {
   return `Your answers for this project are in the deny state, so nothing they allow holds: ${deny.join("; ")}. Accepting again in the window mends it.`;
 }
+
+/** What the Notice says where an owner record in the store is missing or was changed (Q339.8). */
+export const OWNER_RECORDS_LOST_SAYS =
+  "A record of which chat owns a branch or folder in this project is missing or was changed outside purlis. purlis treats what it named as no chat's, and records no new owner here until you forget the lost records. Press Forget the lost owner records to go on: purlis forgets who owned those branches and folders, and the next chat to claim one owns it.";
+
+/** The press that forgets them: the Notice's way out (#7748). */
+export const FORGET_LOST_OWNER_RECORDS = "Forget the lost owner records";
 
 /** Whether `data` is the shape the core answers: a window under test may answer anything. */
 function readable(data: unknown): data is AnswersShown {
@@ -32,15 +39,19 @@ function readable(data: unknown): data is AnswersShown {
 }
 
 /**
- * **What the sealed answers say at a project's window** (M75-07a, #7015): the nevers imported
- * from the old files (once, listed), the deny state and why, and what purlis can't do (no
- * keyring). Each is a standing line with Dismiss, and the deny state's way out is Settings'
- * Sealed answers, where the cause is told in full and the device id confirmed. Reading the state
- * registers the project and imports the nevers, so it is the first thing the window asks.
+ * **What the sealed answers say at a project's window** (M75-07a, #7015): the nevers imported from
+ * the old files (once, listed), the deny state and why, an owner record that is missing or was
+ * changed (Q339.8, #7748), and what purlis can't do (no keyring). Each is a standing line with
+ * Dismiss, and the deny state's way out is Settings' Sealed answers, where the cause is told in
+ * full and the device id confirmed. A lost owner record's way out is the person's press of Forget
+ * the lost owner records, here. Reading the state registers the project and imports the nevers,
+ * so it is the first thing the window asks.
  */
 export function AnswersNotices({ plane }: { plane: PlaneId }) {
   const [shown, setShown] = useState<AnswersShown>();
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
+  const [forgetting, setForgetting] = useState(false);
+  const [forgetFailed, setForgetFailed] = useState<string>();
   useEffect(() => {
     let gone = false;
     void commands
@@ -55,6 +66,19 @@ export function AnswersNotices({ plane }: { plane: PlaneId }) {
   }, [plane]);
   if (shown === undefined) return null;
   const dismiss = (cause: string) => setDismissed((was) => new Set(was).add(cause));
+  const forget = () => {
+    if (forgetting) return;
+    setForgetting(true);
+    setForgetFailed(undefined);
+    void commands
+      .forgetLostOwnerRecords(plane)
+      .then((done) => {
+        if (done.status === "ok" && readable(done.data)) setShown(done.data);
+        else if (done.status === "error") setForgetFailed(done.error);
+      })
+      .catch((why: unknown) => setForgetFailed(String(why)))
+      .finally(() => setForgetting(false));
+  };
   const link = {
     label: "Show sealed answers",
     onPress: () => askSettingsLink(plane, { group: "project.sandbox", setting: SEALED_ANSWERS }),
@@ -65,6 +89,7 @@ export function AnswersNotices({ plane }: { plane: PlaneId }) {
     label: string;
     text: string;
     link?: typeof link;
+    fixes?: readonly [NoticeAction, ...NoticeAction[]];
   }[] = [];
   if (shown.import_failed !== null) {
     lines.push({
@@ -81,6 +106,25 @@ export function AnswersNotices({ plane }: { plane: PlaneId }) {
       tone: "trouble",
       label: "Answers in the deny state",
       text: denySays(shown.deny),
+      link,
+    });
+  }
+  if (shown.owner_records_lost === true) {
+    lines.push({
+      cause: "answers-owner-records-lost",
+      tone: "trouble",
+      label: "Owner records lost",
+      text: OWNER_RECORDS_LOST_SAYS,
+      fixes: [{ label: FORGET_LOST_OWNER_RECORDS, onPress: forget, busy: forgetting }],
+      link,
+    });
+  }
+  if (forgetFailed !== undefined) {
+    lines.push({
+      cause: `answers-owner-records-not-forgotten:${forgetFailed}`,
+      tone: "trouble",
+      label: "Owner records not forgotten",
+      text: forgetFailed,
       link,
     });
   }
@@ -106,6 +150,7 @@ export function AnswersNotices({ plane }: { plane: PlaneId }) {
             tone={line.tone}
             label={line.label}
             link={line.link}
+            fixes={line.fixes}
             onDismiss={() => dismiss(line.cause)}
           >
             {line.text}
