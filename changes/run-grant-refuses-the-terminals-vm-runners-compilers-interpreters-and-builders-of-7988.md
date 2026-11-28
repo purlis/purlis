@@ -3,10 +3,11 @@
 - **A run's notice offers no Allow for more terminals** (`xfce4-terminal`, `mate-terminal`,
   `terminator`, `tilix`, `foot`, `footclient`, `urxvt`, `rxvt`, `st`, `ghostty`, `kitten`,
   `x-terminal-emulator`, `lxterminal`, `qterminal`, `terminology`, `kgx`, `ptyxis`), **for tmux's
-  session runners** (`tmuxinator`, `tmuxp`, `tmate`), **for VM and container runners** (`orb`,
-  `prlctl`, `utmctl`, `tart`, `VBoxManage`, `lxc`, `incus`, `virsh`, every `qemu-system-*`, `wsl`)
-  **or for tracers** (`stap`, `heaptrack`). Each runs the command it is handed, in a window, a
-  pane, a guest or under a trace. A persona can still declare any of them as a tool (#7988).
+  session runners and fork** (`tmuxinator`, `tmuxp`, `tmate`), **for VM and container runners**
+  (`orb`, `prlctl`, `utmctl`, `tart`, `VBoxManage`, `lxc`, `incus`, `virsh`, every
+  `qemu-system-*`, `wsl`) **or for tracers** (`stap`, `heaptrack`). Each runs the command it is
+  handed, in a window, a pane, a guest or under a trace. A persona can still declare any of them
+  as a tool (#7988).
 - **A run's notice offers no Allow for more compilers, shells, interpreters and runtimes**
   (`runhaskell`, `ghci`, `kotlinc`, `scalac`, `groovysh`, `clj`, `iex`, `erlc`, `qjsc`, `jbang`,
   `bb`, `nbb`, `janet`, `fennel`, `moon`, `chez`, `scheme`, `csi`, `gsi`, `ecl`, `ccl`, `abcl`,

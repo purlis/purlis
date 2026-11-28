@@ -3008,7 +3008,7 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // The terminals #7988 names beside #7964's, refused whole on what each is for, as `xterm` and
     // `kitty` are: `xfce4-terminal`, `mate-terminal`, `terminator`, `tilix`, `foot`, `urxvt` and
     // `rxvt`, suckless `st`, `ghostty`, `lxterminal`, `qterminal`, `terminology`, GNOME
-    // Console's `kgx` and `ptyxis` each run the command they are handed in the window they open,
+    // Console's `kgx`, and `ptyxis` each run the command they are handed in the window they open,
     // most of them by `-e` as `xterm` does; `footclient` has a `foot` server open one, kitty's
     // `kitten` has the running kitty launch one (`kitten @ launch`), and Debian's
     // `x-terminal-emulator` is whichever terminal the system names. Then the tmux session runners

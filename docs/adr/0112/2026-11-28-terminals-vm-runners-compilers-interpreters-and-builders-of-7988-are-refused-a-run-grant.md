@@ -89,7 +89,9 @@ keeps a row of its own and a unit test. None of #7988's names was reached alread
 reach four rows that were there before: `lxc` reaches `lxc-attach`, `lxc-execute` and
 `lxc-init` by their first part, and `rebar` reaches #7964's `rebar3` by its unversioned form.
 Each one's `run_grants` test passes through either row, so two unit tests pin the four rows,
-each seen red with its rows taken off.
+each seen red with its rows taken off. Within a family, `scheme` also reaches `chibi-scheme` by its
+last part; both are rows of the interpreters' family, so `chibi-scheme` keeps its own row and
+needs no pin.
 
 ## What the name forms cost
 
