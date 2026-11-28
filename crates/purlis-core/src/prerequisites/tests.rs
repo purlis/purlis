@@ -119,6 +119,21 @@ fn never_alone_raises_none_and_nothing_kept_with_a_policy_looser_than_watch_is_w
 }
 
 #[test]
+fn waiting_says_whether_nothing_was_kept_so_the_window_names_the_shipped_default() {
+    let _home = OwnConfigHome::new();
+    let never = plane(OPEN);
+    assert!(the_policy(&evaluate(never.path())).nothing_kept);
+
+    let kept = accepted(WATCH);
+    std::fs::write(kept.path().join("charter.toml"), OPEN).expect("loosened");
+    assert!(!the_policy(&evaluate(kept.path())).nothing_kept);
+
+    let broken = accepted(WATCH);
+    unseal(broken.path());
+    assert!(!the_policy(&evaluate(broken.path())).nothing_kept);
+}
+
+#[test]
 fn broken_and_waiting_together_are_one_entry_with_both_reasons() {
     let _home = OwnConfigHome::new();
     let root = accepted(WATCH);

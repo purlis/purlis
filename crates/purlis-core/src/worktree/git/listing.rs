@@ -19,7 +19,8 @@
 //! - **Never kept**: a listing with an include or a conditional include in it (what it reads can
 //!   change with no file changing, or come from a file that does not exist yet), one read from
 //!   anything but a file or the command line, one asked on a thread an isolation pins, one whose
-//!   files changed while it was read, and anything off unix.
+//!   files changed while it was read, one read where a test counts what is started
+//!   ([`crate::forklock::counting::is_counting`]), and anything off unix.
 //!
 //! Whatever cannot be checked is listed again. The race the listing already has, a configuration
 //! rewritten between the listing and the call, is the same with the kept one and no wider.
@@ -119,6 +120,11 @@ pub(super) fn kept(asked: &Asked) -> Option<Vec<u8>> {
 /// `asked`, unless it is one that is never kept ([module docs](self)). `started` is when the
 /// listing's git was started.
 pub(super) fn keep(asked: Asked, listing: &[u8], started: SystemTime) {
+    // Whether a listing is kept turns on how long ago its files changed ([`SETTLED`]), so a
+    // count of what a read starts would move with how long a test took (#7892).
+    if crate::forklock::counting::is_counting() {
+        return;
+    }
     let (Some(stamps), Some(listing)) = (
         stamps_for(&asked, listing, started),
         without_origins(listing),

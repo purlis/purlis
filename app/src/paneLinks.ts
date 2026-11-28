@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type {
+  IBufferCell,
   IBufferLine,
   IBufferRange,
   IDisposable,
@@ -42,14 +43,22 @@ import type { LinkCandidate, LinkFrom, LinkOpened, LinkSeen } from "./bindings";
  *   harness's environment to coax them out of it.
  */
 
-/** A pattern's candidate on a line: its kind hint, its text and where in the line it sits. */
-export type Found = LinkCandidate & { start: number; end: number };
+/**
+ * A pattern's candidate on a line: its kind hint, its text and where in the line it sits. One
+ * joined across a line break the program wrote at the pane's edge ({@link candidatesAcross})
+ * keeps the `pieces` each row read alone, which stand where the core says the joined words
+ * are no link.
+ */
+export type Found = LinkCandidate & { start: number; end: number; pieces?: Found[] };
+
+/** An address's scheme and the `://` after it, as {@link WEB} reads one. */
+const SCHEME = String.raw`\p{L}[\p{L}\p{N}+.-]*:\/\/`;
 
 /**
  * An address as a pane prints it, `scheme://` and up to the first space, quote or angle bracket:
  * http(s), which opens, and any other scheme, which the core says it will not open.
  */
-const WEB = /(?<![\p{L}\p{N}+.-])\p{L}[\p{L}\p{N}+.-]*:\/\/[^\s<>"'`\p{Cc}]+/giu;
+const WEB = new RegExp(String.raw`(?<![\p{L}\p{N}+.-])${SCHEME}[^\s<>"'${"`"}\p{Cc}]+`, "giu");
 
 /**
  * **A chat's number** (#6217): the word `chat` and a number, as a word of its own. A bare `#641`
@@ -205,16 +214,21 @@ function held(kept: Kept, key: string): Promise<LinkSeen | null> | undefined {
   return undefined;
 }
 
-/** **What a link is kept and listed by**: its kind, its text and, for one a program marked, the
- *  target it named. */
-export const linkKey = (link: Pick<LinkCandidate, "kind" | "text" | "target">) =>
-  `${link.kind}\u0000${link.text}\u0000${link.target ?? ""}`;
+/** **What a link is kept and listed by**: its kind, its text, for one a program marked the
+ *  target it named, and whether it was read across rows the program broke (#7819), which the
+ *  core answers apart. */
+export const linkKey = (link: Pick<LinkCandidate, "kind" | "text" | "target" | "joined">) =>
+  `${link.kind}\u0000${link.text}\u0000${link.target ?? ""}${link.joined === true ? "\u0000joined" : ""}`;
 
-/** **`link` as the core is handed it**: its kind and text, and a marked link's target. */
-export const candidateOf = (link: LinkCandidate): LinkCandidate =>
-  link.target === undefined || link.target === null
-    ? { kind: link.kind, text: link.text }
-    : { kind: link.kind, text: link.text, target: link.target };
+/** **`link` as the core is handed it**: its kind and text, a marked link's target, and whether
+ *  it was read across rows the program broke at the pane's edge (#7819): a web address read so
+ *  asks before it opens. */
+export const candidateOf = (link: LinkCandidate): LinkCandidate => ({
+  kind: link.kind,
+  text: link.text,
+  ...(link.target === undefined || link.target === null ? {} : { target: link.target }),
+  ...(link.joined === true ? { joined: true } : {}),
+});
 
 /**
  * **Keeps the core's answer for `link`**, the oldest let go of once a pane keeps
@@ -240,14 +254,18 @@ function keep(
 }
 
 /**
- * A line as xterm holds it across the rows it wraps over: its text, each character's cell, and
- * whether the line went on before or after the part read.
+ * A line as xterm holds it across the rows it wraps over: its text, each character's cell,
+ * whether the line went on before or after the part read, its first and last rows, and where in
+ * its text the program broke it at the pane's edge and the reading joined it again (`joints`).
  */
 type Wrapped = {
   text: string;
   cells: { x: number; y: number }[];
   cutBefore: boolean;
   cutAfter: boolean;
+  first: number;
+  last: number;
+  joints: number[];
 };
 
 /** Buffer line `y` (zero-based) as one line with the rows it wraps over, and each character's cell. */
@@ -273,7 +291,318 @@ function wrappedAt(pane: Terminal, y: number): Wrapped | undefined {
       for (let unit = 0; unit < chars.length; unit += 1) cells.push({ x, y: row });
     }
   }
-  return { text, cells, cutBefore, cutAfter };
+  return { text, cells, cutBefore, cutAfter, first, last, joints: [] };
+}
+
+/** A character that draws a blank, as a space does: White_Space, the braille blank U+2800 and
+ *  the Hangul fillers. */
+const LOOKS_BLANK = /^[\s\u115F\u1160\u2800\u3164\uFFA0]$/u;
+
+/**
+ * A cell's colour as it was written: the default foreground and the default background are
+ * colours of their own, each the theme's, and never one another.
+ */
+function colourOf(cell: IBufferCell, ground: "fg" | "bg"): string {
+  if (ground === "fg") {
+    if (cell.isFgDefault()) return "fg";
+    return `${cell.isFgRGB() ? "rgb" : "palette"} ${cell.getFgColor()}`;
+  }
+  if (cell.isBgDefault()) return "bg";
+  return `${cell.isBgRGB() ? "rgb" : "palette"} ${cell.getBgColor()}`;
+}
+
+/**
+ * Whether `cell`'s characters are drawn in the colour they are drawn on: they show nothing.
+ * Inverting them (SGR 7) swaps the two and changes nothing, and the default colours inverted
+ * still differ. Bold drawn in a bright colour is taken as the colour written, so a bold cell
+ * in a dark palette colour on itself reads as drawing nothing, where the theme brightens it.
+ */
+const inItsBackground = (cell: IBufferCell) => colourOf(cell, "fg") === colourOf(cell, "bg");
+
+/**
+ * **What cell `x` of `line` draws** (#7819): its characters, or `""` where it draws nothing. A
+ * cell no program wrote draws nothing, as do one the program concealed (SGR 8), one drawn in
+ * its own background colour ({@link inItsBackground}) and one whose
+ * characters are each a blank ({@link LOOKS_BLANK}) or draw nothing by the core's rule
+ * (`nothing`, {@link LinkCore.drawsNothing}). The one rule the pane reads a row's ink by: its
+ * indent, whether it reaches the edge, and where its written cells end.
+ */
+function drawnAt(line: IBufferLine | undefined, x: number, nothing: DrawsNothing): string {
+  const cell = line?.getCell(x);
+  // A wide character's second half is drawn by its first.
+  const own = cell?.getWidth() === 0 ? line?.getCell(x - 1) : cell;
+  if (own === undefined || own.isInvisible() || inItsBackground(own)) return "";
+  const chars = own.getChars();
+  return [...chars].every((ch) => LOOKS_BLANK.test(ch) || nothing(ch)) ? "" : chars;
+}
+
+/** How many cells row `line` starts with that draw nothing: the indent a program put on it. */
+function indentOf(line: IBufferLine, nothing: DrawsNothing): number {
+  let x = 0;
+  while (x < line.length && drawnAt(line, x, nothing) === "") x += 1;
+  return x;
+}
+
+/**
+ * The markers a row may open with before words the rows after it hang under (#7930): the
+ * bullets Claude Code (`⏺ `), Markdown and common command-line programs put before a reply or
+ * a list item. A short fixed set, so a row opening with any other character and a blank hangs
+ * nothing.
+ */
+const MARKERS = new Set([..."\u23FA\u2022\u25CF\u25E6\u25AA\u2023\u002D\u002A\u002B"]);
+
+/** The most digits a numbered list item's number is read with. */
+const MOST_DIGITS = 3;
+
+/**
+ * Where a numbered list item's marker that opens at column `at` of `line` ends: one to
+ * {@link MOST_DIGITS} digits then `.` or `)`, as `1. ` and `12) ` number a list. Just past it,
+ * or `undefined` where no such marker opens there.
+ */
+function pastANumber(line: IBufferLine, at: number, nothing: DrawsNothing): number | undefined {
+  let x = at;
+  while (x - at < MOST_DIGITS && /^\d$/u.test(drawnAt(line, x, nothing))) x += 1;
+  if (x === at || !/^[.)]$/u.test(drawnAt(line, x, nothing))) return undefined;
+  return x + 1;
+}
+
+/** Where a marker that opens at column `at` of `line` ends, a bullet ({@link MARKERS}) or a
+ *  number ({@link pastANumber}): just past it, or `undefined` where none opens there. */
+function pastAMarker(line: IBufferLine, at: number, nothing: DrawsNothing): number | undefined {
+  if (MARKERS.has(drawnAt(line, at, nothing)))
+    return at + Math.max(1, line.getCell(at)?.getWidth() ?? 1);
+  return pastANumber(line, at, nothing);
+}
+
+/**
+ * **The hanging indent of `line`, the first row of a line** (#7930): the blank cells it starts
+ * with, and where those are followed by a marker ({@link pastAMarker}) and one blank before a
+ * written cell, the marker's cells and that blank as well, where the line's words start.
+ */
+function hangingIndentOf(line: IBufferLine, nothing: DrawsNothing): number {
+  const indent = indentOf(line, nothing);
+  const past = pastAMarker(line, indent, nothing);
+  if (past === undefined) return indent;
+  const words = past + 1;
+  const hangs = drawnAt(line, past, nothing) === "" && drawnAt(line, words, nothing) !== "";
+  return hangs ? words : indent;
+}
+
+/**
+ * Whether row `line`, past `indent`, opens as an item of its own: one character that is no
+ * letter or digit (a list's marker, a bullet, Claude Code's `⎿`), or a list item's number
+ * ({@link pastANumber}), then a blank. Under a row that opens with a marker it is the next
+ * item, never words going on (#7930).
+ */
+function opensAnItem(line: IBufferLine, indent: number, nothing: DrawsNothing): boolean {
+  const opens = drawnAt(line, indent, nothing);
+  if (opens === "") return false;
+  const after = /^[\p{L}\p{N}]/u.test(opens)
+    ? pastANumber(line, indent, nothing)
+    : indent + Math.max(1, line.getCell(indent)?.getWidth() ?? 1);
+  return after !== undefined && drawnAt(line, after, nothing) === "";
+}
+
+/**
+ * A character a link goes on with past a break the program wrote: a letter (with its marks), a
+ * digit, or the punctuation an address or a path holds (RFC 3986's unreserved and reserved
+ * characters, and `%`). A frame's border, a bullet, a reply's marker, a check mark, an arrow or
+ * an ellipsis is none of them, so a link never runs on into one or out of one.
+ */
+const GOES_ON_WITH = /^[\p{L}\p{M}\p{N}\-._~:/?#[\]@!$&'()*+,;=%]$/u;
+
+/** Whether every character of `text` is one a link goes on with ({@link GOES_ON_WITH}). */
+const goesOnWith = (text: string) => [...text].every((ch) => GOES_ON_WITH.test(ch));
+
+/**
+ * **Where a row's words may go on onto the next row the program wrote** (#7819), and the indent
+ * they go on after: `row` fills the pane to its last column, and the row after it is a line of
+ * its own (no soft wrap) that starts with as many blank cells as the hanging indent of the first
+ * row of `row`'s line ({@link hangingIndentOf}), then a cell a link goes on with
+ * ({@link GOES_ON_WITH}) that does not open an item of its own ({@link opensAnItem}). What
+ * draws is read by {@link drawnAt}. Only then may a link's words
+ * that reach the edge be read on there. On the alternate screen (a full-screen program such as
+ * an editor, a pager or a multiplexer) a row is never read on: its rows are a picture the
+ * program drew, which may be cut at the edge, not text it broke there.
+ */
+function goesOnAfter(pane: Terminal, row: number, nothing: DrawsNothing): number | undefined {
+  const buffer = pane.buffer.active;
+  if (buffer.type === "alternate") return undefined;
+  const line = buffer.getLine(row);
+  const next = buffer.getLine(row + 1);
+  if (line === undefined || next === undefined || next.isWrapped) return undefined;
+  if (drawnAt(line, line.length - 1, nothing) === "") return undefined;
+  let first = row;
+  while (first > 0 && row - first < MOST_ROWS && buffer.getLine(first)?.isWrapped) first -= 1;
+  const start = buffer.getLine(first);
+  const indent = start === undefined ? 0 : hangingIndentOf(start, nothing);
+  if (indentOf(next, nothing) !== indent || opensAnItem(next, indent, nothing)) return undefined;
+  const opens = drawnAt(next, indent, nothing);
+  return opens === "" || !goesOnWith(opens) ? undefined : indent;
+}
+
+/** A row that starts a link of its own, an address or a path from `~` or `.`: never the end of
+ *  the link on the row before. */
+const STARTS_A_LINK = new RegExp(String.raw`^(?:${SCHEME}|~\/|\.{1,2}\/)`, "u");
+
+/**
+ * `line` with the blank cells it starts with, its first `indent` columns, left out: the
+ * characters of its first row's cells left of column `indent`, however many each holds (a
+ * combining mark, a wide character's two columns).
+ */
+function unindented(line: Wrapped, indent: number): Wrapped {
+  let cut = 0;
+  while (cut < line.cells.length && line.cells[cut].y === line.first && line.cells[cut].x < indent)
+    cut += 1;
+  return { ...line, text: line.text.slice(cut), cells: line.cells.slice(cut) };
+}
+
+/** `before` and `after`, the lines either side of a line break the program wrote at the pane's
+ *  edge, read as one, the break a joint. */
+function joined(before: Wrapped, after: Wrapped): Wrapped {
+  return {
+    text: before.text + after.text,
+    cells: [...before.cells, ...after.cells],
+    cutBefore: before.cutBefore,
+    cutAfter: after.cutAfter,
+    first: before.first,
+    last: after.last,
+    joints: [
+      ...before.joints,
+      before.text.length,
+      ...after.joints.map((at) => at + before.text.length),
+    ],
+  };
+}
+
+/** Whether a candidate of `line` reaches its very end: a link the next row may go on with. */
+const endsInALink = (line: Wrapped) =>
+  candidatesAcross(line).some((one) => one.end === line.text.length);
+
+/** How many rows `line` is drawn over. */
+const rowsIn = (line: Wrapped) => line.last - line.first + 1;
+
+/**
+ * **`line` read on across the line breaks the program wrote after it** while a link's words
+ * reach the pane's edge ({@link goesOnAfter}) and the next line, past its indent, does not
+ * start a link of its own, to at most {@link MOST_ROWS} rows; a line that goes on past them is
+ * cut.
+ */
+function readOn(pane: Terminal, from: Wrapped, nothing: DrawsNothing): Wrapped {
+  let line = from;
+  for (;;) {
+    const indent = line.cutAfter ? undefined : goesOnAfter(pane, line.last, nothing);
+    if (indent === undefined || !endsInALink(line)) break;
+    const next = wrappedAt(pane, line.last + 1);
+    if (next === undefined) break;
+    const after = unindented(next, indent);
+    if (STARTS_A_LINK.test(after.text)) break;
+    if (rowsIn(line) + rowsIn(after) > MOST_ROWS) return { ...line, cutAfter: true };
+    line = joined(line, after);
+  }
+  return line;
+}
+
+/**
+ * **Buffer line `y` as it reads, across the rows it wraps over** (#7819): the rows the terminal
+ * wrapped (`isWrapped`), and the lines a link's words go on with past a line break the program
+ * wrote at the pane's edge ({@link readOn}). It is read from the first row of the run of such
+ * breaks `y` is in, so every row of a link reads the same line whichever the pointer is on.
+ */
+function lineAt(pane: Terminal, y: number, nothing: DrawsNothing): Wrapped | undefined {
+  let start = wrappedAt(pane, y);
+  if (start === undefined) return undefined;
+  let rows = rowsIn(start);
+  let cut = false;
+  for (;;) {
+    const indent =
+      start.cutBefore || start.first === 0
+        ? undefined
+        : goesOnAfter(pane, start.first - 1, nothing);
+    if (indent === undefined || STARTS_A_LINK.test(unindented(start, indent).text)) break;
+    const before = wrappedAt(pane, start.first - 1);
+    if (before === undefined) break;
+    rows += rowsIn(before);
+    if (rows > MOST_ROWS) {
+      cut = true;
+      break;
+    }
+    start = before;
+  }
+  let line = readOn(pane, cut ? { ...start, cutBefore: true } : start, nothing);
+  while (line.last < y) {
+    const next = wrappedAt(pane, line.last + 1);
+    if (next === undefined) return undefined;
+    // After a line cut at its end, the next goes on from words not read.
+    line = readOn(pane, line.cutAfter ? { ...next, cutBefore: true } : next, nothing);
+  }
+  return line;
+}
+
+/**
+ * A number at a line's edge, an issue's or a chat's, or a path's line and column: digits on the
+ * next row are as likely a word of their own, and taken on they name another target (#7819).
+ */
+const endsInItsNumber = (one: Found) =>
+  one.kind === "issue" || one.kind === "chat" || (one.kind === "file" && /:\d+$/u.test(one.text));
+
+/** An issue's number as a word of its own at a row's start, `#12` then a blank or the end. */
+const OPENS_WITH_A_NUMBER = /^#\d+(?![\p{L}\p{N}_-])/u;
+
+/**
+ * **Whether `last`, a candidate that reaches a joint, goes on as `whole` into `next`**, the words
+ * past the joint: `whole` is read from the same start, is of the same kind and reaches past the
+ * joint, and the join takes in nothing that reads as words of their own. Nothing either side of
+ * the joint a link does not go on with ({@link GOES_ON_WITH}: a frame's border, a bullet, a
+ * marker), no digits onto a number ({@link endsInItsNumber}),
+ * no issue's number (`#12`) onto an address as its fragment, and no second `/` after one.
+ */
+function goesOn(last: Found, whole: Found, at: number, next: string): boolean {
+  if (whole.start !== 0 || whole.kind !== last.kind) return false;
+  if (last.start + whole.end <= at) return false;
+  // Both sides of the joint, and every character taken on past it, are a link's.
+  const joint = at - last.start;
+  if (!goesOnWith(whole.text.slice(joint - 1))) return false;
+  if (endsInItsNumber(last) && /^\d/u.test(next)) return false;
+  if (OPENS_WITH_A_NUMBER.test(next)) return false;
+  return !(last.text.endsWith("/") && next.startsWith("/"));
+}
+
+/**
+ * **The candidates of `line`, read across its joints** (#7819): each part between them is read
+ * alone ({@link candidatesIn}), and a candidate that reaches a joint is read on into the next
+ * part where the words joined make one candidate of the same kind from the same start. The
+ * joined one keeps the `pieces` it was read from. Every candidate still goes to the core, which
+ * decides what it is as it does any other: nothing is opened on the strength of the join.
+ */
+function candidatesAcross(line: Wrapped): Found[] {
+  const bounds = [0, ...line.joints, line.text.length];
+  const found: Found[] = [];
+  for (let at = 0; at + 1 < bounds.length; at += 1) {
+    const from = bounds[at];
+    const to = bounds[at + 1];
+    const here = candidatesIn(line.text.slice(from, to)).map((one) => ({
+      ...one,
+      start: one.start + from,
+      end: one.end + from,
+    }));
+    const last = found.at(-1);
+    if (last !== undefined && last.end === from) {
+      const [whole] = candidatesIn(line.text.slice(last.start, to));
+      if (whole !== undefined && goesOn(last, whole, from, line.text.slice(from))) {
+        const end = last.start + whole.end;
+        found.pop();
+        const pieces = [...(last.pieces ?? [last]), ...here.filter((one) => one.start < end)];
+        found.push(
+          { kind: whole.kind, text: whole.text, start: last.start, end, pieces, joined: true },
+          ...here.filter((one) => one.start >= end),
+        );
+        continue;
+      }
+    }
+    found.push(...here);
+  }
+  return found;
 }
 
 /** Whether `found` runs off the part of its line read: it would open cut short. */
@@ -375,6 +704,25 @@ export function openLink(
   );
 }
 
+/** The first of `rows` on screen, which a link's tooltip and card stand beside: a link whose
+ *  first rows have scrolled off is placed where it shows (#7819). */
+function shownFirst(pane: Terminal, rows: CellRun[]): CellRun | undefined {
+  const top = pane.buffer.active.viewportY;
+  return rows.find((row) => row.y >= top && row.y < top + pane.rows) ?? rows[0];
+}
+
+/** How many columns the character at `cell` takes: two for a wide one, else one. */
+const widthAt = (pane: Terminal, cell: Cell) =>
+  Math.max(1, pane.buffer.active.getLine(cell.y)?.getCell(cell.x)?.getWidth() ?? 1);
+
+/** The column just past the last cell of `line` that draws ({@link drawnAt}), or 0: blanks
+ *  after a row's words are no part of them. */
+function writtenTo(line: IBufferLine | undefined, nothing: DrawsNothing): number {
+  if (line === undefined) return 0;
+  for (let x = line.length - 1; x >= 0; x -= 1) if (drawnAt(line, x, nothing) !== "") return x + 1;
+  return 0;
+}
+
 /** Where cells `x`..`x + width` of buffer row `y` are drawn in the window's viewport. */
 function placeOf(pane: Terminal, x: number, y: number, width: number): LinkPlace {
   const screen = pane.element?.querySelector<HTMLElement>(".xterm-screen")?.getBoundingClientRect();
@@ -426,6 +774,11 @@ export const withFolder = (from: LinkFrom, folder: string | null | undefined): L
  */
 type Marked = {
   target: string;
+  /**
+   * Which link it is ({@link linkOf}): the cells of two links with the same identity are one
+   * link, whichever was written last.
+   */
+  link: string;
   /** Which buffer it was written to: the normal one, or the alternate screen. */
   buffer: "normal" | "alternate";
   /** Its first cell. */
@@ -438,7 +791,32 @@ type Marked = {
    * start to its end, so its whole rows are read.
    */
   moved: boolean;
+  /**
+   * What its cells held as the program closed it ({@link spanOf}), for one it did not move the
+   * cursor inside: a later write over them (the program going back up and drawing again) leaves
+   * the record standing over cells that no longer hold the link.
+   */
+  drew?: string;
 };
+
+/**
+ * **What the cells of `marked` hold now**, from its start to its end, at most
+ * {@link MOST_ROWS} rows: each cell's characters, a cell no program wrote as a blank.
+ */
+function spanOf(pane: Terminal, marked: Pick<Marked, "start" | "end">): string {
+  const buffer = pane.buffer.active;
+  const last = Math.min(marked.end.y, marked.start.y + MOST_ROWS - 1);
+  let text = "";
+  for (let y = marked.start.y; y <= last; y += 1) {
+    const line = buffer.getLine(y);
+    if (line === undefined) break;
+    const from = y === marked.start.y ? marked.start.x : 0;
+    const to = y === marked.end.y ? marked.end.x : line.length;
+    for (let x = from; x < to; x += 1) text += line.getCell(x)?.getChars() || " ";
+    text += "\n";
+  }
+  return text;
+}
 
 /** **A cell held by a marker**: its row moves with the buffer as lines scroll off, so it is
  *  read from the marker each time, and the cell is a {@link Cell} wherever it is read. */
@@ -488,9 +866,29 @@ const MOST_MARKED = 256;
 /** The cell `[x, y]` comes before cell `[x2, y2]`, read as text is. */
 const precedes = (y: number, x: number, y2: number, x2: number) => y < y2 || (y === y2 && x < x2);
 
+/**
+ * **A marked link's identity** (OSC 8): its target, with the `id` the program gave it where it
+ * gave one. Two links with the same target and id are the same link, as the terminal reads them.
+ */
+function linkOf(params: string, target: string): string {
+  const id = params
+    .split(":")
+    .find((one) => one.startsWith("id="))
+    ?.slice("id=".length);
+  return id === undefined || id === "" ? target : `${id}\u0000${target}`;
+}
+
 /** Whether buffer cell (`x`, `y`) is one of `marked`'s. */
 const covers = (marked: Marked, x: number, y: number) =>
   !precedes(y, x, marked.start.y, marked.start.x) && precedes(y, x, marked.end.y, marked.end.x);
+
+/** **Which link cell (`x`, `y`) holds now** ({@link Marked.link}): the last one of `marked`
+ *  whose span, from where it opened to where it closed, holds the cell, or none. */
+function linkAtCell(marked: Marked[], x: number, y: number): string | undefined {
+  for (let at = marked.length - 1; at >= 0; at -= 1)
+    if (covers(marked[at], x, y)) return marked[at].link;
+  return undefined;
+}
 
 /**
  * **Records each link a program marks on `pane`** (OSC 8): `ESC ] 8 ; params ; target ST`
@@ -517,6 +915,7 @@ function marking(pane: Terminal, marked: Marked[]): IDisposable {
   const handler = pane.parser.registerOscHandler(8, (data) => {
     const split = data.indexOf(";");
     const target = split < 0 ? "" : data.slice(split + 1);
+    const params = split < 0 ? "" : data.slice(0, split);
     const buffer = pane.buffer.active.type;
     if (open !== undefined) {
       const end = pane.registerMarker(0);
@@ -525,6 +924,7 @@ function marking(pane: Terminal, marked: Marked[]): IDisposable {
       if (end !== undefined && was.buffer === buffer) {
         const one: Marked = { ...was, end: markedCell(end, at()) };
         if (one.moved || precedes(one.start.y, one.start.x, one.end.y, one.end.x)) {
+          if (!one.moved) one.drew = spanOf(pane, one);
           marked.push(one);
           while (marked.length > MOST_MARKED) {
             const oldest = marked.shift();
@@ -543,6 +943,7 @@ function marking(pane: Terminal, marked: Marked[]): IDisposable {
       if (start !== undefined)
         open = {
           target: cutTarget(target),
+          link: linkOf(params, target),
           buffer,
           start: markedCell(start, at()),
           moved: false,
@@ -578,20 +979,25 @@ function wordsOf(pane: Terminal, marked: Marked, nothing: DrawsNothing): string 
     const to = !marked.moved && y === marked.end.y ? marked.end.x : line.length;
     let row = "";
     let blank = "";
+    // Whether a program wrote one of the blanks: a space it wrote is one, if it ends a row.
+    let wrote = false;
     for (let x = from; x < to; x += 1) {
       const cell = line.getCell(x);
       if (cell === undefined || cell.getWidth() === 0) continue;
-      const chars = cell.getChars();
+      // A cell that draws nothing ({@link drawnAt}) is a blank, as the pane reads every row.
+      const chars = drawnAt(line, x, nothing);
       if (chars === "") {
         blank += " ";
+        wrote ||= cell.getChars() !== "";
         continue;
       }
       row += blank + chars;
       blank = "";
+      wrote = false;
     }
     // A row's cells no program wrote, to its end, are no space inside one link: its words go on
     // on the next row, where a hard line break put them.
-    text += marked.moved || y === last ? row + blank : row;
+    text += marked.moved || y === last || wrote ? row + blank : row;
   }
   if (marked.moved) return text.trim();
   return withBeside(pane, nothing, text, marked.start, marked.end);
@@ -698,6 +1104,23 @@ function rowsOf(range: IBufferRange, cols: number): CellRun[] {
 }
 
 /**
+ * **`found` with the core's answer for it** and, where it was joined across a line break the
+ * program wrote (#7819) and the core says the joined words are no link, each of its `pieces`
+ * that `keeps` with its answer instead: the words each row read alone link as they did before.
+ */
+async function answeredWithPieces(
+  found: Found,
+  keeps: (piece: Found) => boolean,
+  seenOf: (candidate: LinkCandidate) => Promise<LinkSeen | null>,
+): Promise<[Found, LinkSeen | null][]> {
+  const seen = await seenOf(found);
+  if (seen !== null || found.pieces === undefined) return [[found, seen]];
+  const pieces = found.pieces.filter(keeps);
+  const answers = await Promise.all(pieces.map(seenOf));
+  return pieces.map((piece, at) => [piece, answers[at]]);
+}
+
+/**
  * **Registers the link hook on `pane`**: its links are found, resolved by the core and opened
  * as {@link LinkHands} says. Disposing it lets go of the provider and of the colour drawn.
  */
@@ -793,6 +1216,8 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
     candidate: LinkCandidate,
     link: Omit<HoveredLink, "place">,
   ) => {
+    const top = shownFirst(pane, rows);
+    if (top === undefined) return;
     if (leaving !== undefined) {
       clearTimeout(leaving);
       leaving = undefined;
@@ -800,7 +1225,6 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
       leave();
     }
     on = here;
-    const top = rows[0];
     const place = placeOf(pane, top.x, top.y, top.width);
     current = { candidate: candidateOf(candidate), seen: link.seen, place };
     if (link.seen.does.does !== "refused") draw(rows);
@@ -809,9 +1233,10 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
 
   /** The marked link a range xterm hands the link handler is part of, with its target. */
   const markedAt = (range: IBufferRange, target: string): Marked | undefined =>
-    markedNow(pane, marked).find(
-      (one) => one.target === target && covers(one, range.start.x - 1, range.start.y - 1),
-    );
+    // The newest: the one the cells hold now.
+    markedNow(pane, marked)
+      .reverse()
+      .find((one) => one.target === target && covers(one, range.start.x - 1, range.start.y - 1));
   /**
    * **What a marked link is, as the core is handed it**: the target the program named, as xterm
    * hands it (cut past {@link MOST_TARGET}), and its words: the cells xterm links under the
@@ -845,6 +1270,50 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
     const text = [words, ...more].filter(Boolean).join(" ");
     return { kind: "osc8", text, target: cut };
   };
+  /**
+   * **The rows a marked link is drawn over** (#7819): xterm hands the link handler one row's part
+   * of a link whose words wrap, so the whole of it, as it was recorded, is drawn in the link
+   * colour from any of its rows. One the program moved the cursor inside is only the part
+   * xterm hands, as is one whose cells were written over after it closed, whose other rows may
+   * now hold another link: other words, or a later link of another identity
+   * ({@link Marked.link}) over any of its cells, whatever words it draws. `at` says which link
+   * it is, the same from each of its rows.
+   */
+  const drawnOver = (target: string, range: IBufferRange): { rows: CellRun[]; at: string } => {
+    const one = markedAt(range, cutTarget(target));
+    // As its words are read (wordsOf): at most MOST_ROWS rows. Hovered past them, it is the
+    // part xterm hands, as is one the program moved the cursor inside.
+    const last = one === undefined ? 0 : Math.min(one.end.y, one.start.y + MOST_ROWS - 1);
+    const xterms = { rows: rowsOf(range, pane.cols), at: `${range.start.x},${range.start.y}` };
+    if (
+      one === undefined ||
+      one.moved ||
+      range.start.y - 1 > last ||
+      spanOf(pane, one) !== one.drew
+    )
+      return xterms;
+    const rows: CellRun[] = [];
+    // On a row it goes on from, only the cells written.
+    for (let y = one.start.y; y <= last; y += 1) {
+      const from = y === one.start.y ? one.start.x : 0;
+      const to =
+        y === one.end.y
+          ? one.end.x
+          : writtenTo(pane.buffer.active.getLine(y), hands.core.drawsNothing);
+      if (to > from) rows.push({ x: from, y, width: to - from });
+    }
+    // A cell a later link was written over, even with the same words, is that link's. Only a
+    // link over its rows can be.
+    const now = markedNow(pane, marked).filter(
+      (other) => other.start.y <= last && other.end.y >= one.start.y,
+    );
+    const another = rows.some((run) =>
+      Array.from({ length: run.width }, (_, at) => run.x + at).some(
+        (x) => linkAtCell(now, x, run.y) !== one.link,
+      ),
+    );
+    return another ? xterms : { rows, at: `${one.start.x + 1},${one.start.y + 1}` };
+  };
   /** Which hover of a marked link the core's answer is for: one that came after it wins. */
   let markedHovers = 0;
   const handler: ILinkHandler = {
@@ -855,15 +1324,15 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
       if (!opensALink(event, hands.mac())) return;
       event.preventDefault();
       // The core resolves it again, and a refusal is shown: xterm drew it as a link.
-      const top = rowsOf(range, pane.cols)[0];
+      const top = shownFirst(pane, drawnOver(target, range).rows);
       if (top === undefined) return;
       void openLink(markedCandidate(target, range), hands, placeOf(pane, top.x, top.y, top.width));
     },
     hover(_event, target, range) {
       const candidate = markedCandidate(target, range);
-      const rows = rowsOf(range, pane.cols);
+      const { rows, at } = drawnOver(target, range);
       if (rows.length === 0) return;
-      const here = `osc8\u0000${range.start.x},${range.start.y}\u0000${linkKey(candidate)}`;
+      const here = `osc8\u0000${at}\u0000${linkKey(candidate)}`;
       markedHovers += 1;
       const asked = markedHovers;
       void seenOf(candidate).then((seen) => {
@@ -881,10 +1350,10 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
   const provider = pane.registerLinkProvider({
     provideLinks(line, give) {
       const y = line - 1;
-      const wrapped = wrappedAt(pane, y);
+      const wrapped = lineAt(pane, y, hands.core.drawsNothing);
       if (wrapped === undefined) return give(undefined);
       const markedHere = markedNow(pane, marked);
-      const onRow = candidatesIn(wrapped.text).filter((found) => {
+      const onTheRow = (found: Found) => {
         const cells = wrapped.cells.slice(found.start, found.end);
         return (
           !cutShort(found, wrapped) &&
@@ -892,51 +1361,56 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
           // A program's own link over the same words is the link there (#6218).
           !cells.some((cell) => markedHere.some((one) => covers(one, cell.x, cell.y)))
         );
-      });
+      };
+      const onRow = candidatesAcross(wrapped).filter(onTheRow);
       if (onRow.length === 0) return give(undefined);
-      void Promise.all(onRow.map(seenOf)).then((answers) => {
-        const links: ILink[] = [];
-        onRow.forEach((found, at) => {
-          const seen = answers[at];
-          if (seen === null) return;
-          const cells = wrapped.cells.slice(found.start, found.end);
-          const first = cells[0];
-          const end = cells[cells.length - 1];
-          // Each row the link is drawn over, and the cells of it.
-          const rows = new Map<number, CellRun>();
-          for (const cell of cells) {
-            const row = rows.get(cell.y);
-            if (row === undefined) rows.set(cell.y, { x: cell.x, y: cell.y, width: 1 });
-            else row.width = cell.x - row.x + 1;
-          }
-          const candidate: LinkCandidate = { kind: found.kind, text: found.text };
-          // What purlis will not open says why on its hover, and is drawn as no link.
-          const opens = seen.does.does !== "refused";
-          links.push({
-            range: {
-              start: { x: first.x + 1, y: first.y + 1 },
-              end: { x: end.x + 1, y: end.y + 1 },
-            },
-            text: found.text,
-            decorations: { pointerCursor: opens, underline: opens },
-            activate(event) {
-              // A plain click is the selection's, as in any terminal.
-              if (!opens || !opensALink(event, hands.mac())) return;
-              event.preventDefault();
-              const top = [...rows.values()][0];
-              void openLink(candidate, hands, placeOf(pane, top.x, top.y, top.width));
-            },
-            hover() {
-              hoverOn(`${first.x},${first.y}\u0000${found.text}`, [...rows.values()], candidate, {
-                seen,
-                text: found.text,
-              });
-            },
-            leave: leaveSoon,
+      void Promise.all(onRow.map((found) => answeredWithPieces(found, onTheRow, seenOf))).then(
+        (answered) => {
+          const links: ILink[] = [];
+          answered.flat().forEach(([found, seen]) => {
+            if (seen === null) return;
+            const cells = wrapped.cells.slice(found.start, found.end);
+            const first = cells[0];
+            const end = cells[cells.length - 1];
+            // Each row the link is drawn over, and the cells of it.
+            const rows = new Map<number, CellRun>();
+            for (const cell of cells) {
+              const row = rows.get(cell.y);
+              const past = cell.x + widthAt(pane, cell);
+              if (row === undefined)
+                rows.set(cell.y, { x: cell.x, y: cell.y, width: past - cell.x });
+              else row.width = past - row.x;
+            }
+            const candidate = candidateOf(found);
+            // What purlis will not open says why on its hover, and is drawn as no link.
+            const opens = seen.does.does !== "refused";
+            links.push({
+              range: {
+                start: { x: first.x + 1, y: first.y + 1 },
+                end: { x: end.x + widthAt(pane, end), y: end.y + 1 },
+              },
+              text: found.text,
+              decorations: { pointerCursor: opens, underline: opens },
+              activate(event) {
+                // A plain click is the selection's, as in any terminal.
+                if (!opens || !opensALink(event, hands.mac())) return;
+                event.preventDefault();
+                const top = shownFirst(pane, [...rows.values()]);
+                if (top === undefined) return;
+                void openLink(candidate, hands, placeOf(pane, top.x, top.y, top.width));
+              },
+              hover() {
+                hoverOn(`${first.x},${first.y}\u0000${found.text}`, [...rows.values()], candidate, {
+                  seen,
+                  text: found.text,
+                });
+              },
+              leave: leaveSoon,
+            });
           });
-        });
-        give(links.length > 0 ? links : undefined);
-      });
+          give(links.length > 0 ? links : undefined);
+        },
+      );
     },
   });
   return {
@@ -962,8 +1436,16 @@ export function linkPane(pane: Terminal, hands: LinkHands): LinkedPane {
  */
 export const INERT_LINKS: ILinkHandler = { activate: () => {} };
 
-/** A candidate on screen, the cell it starts at, which orders the list, and where it is drawn. */
-type OnScreen = { candidate: LinkCandidate; y: number; x: number; place: LinkPlace };
+/** A candidate on screen, the cell it starts at, which orders the list, and where it is drawn;
+ *  for one joined across a line break the program wrote (#7819), the pieces listed where the
+ *  core says the joined words are no link. */
+type OnScreen = {
+  candidate: LinkCandidate;
+  y: number;
+  x: number;
+  place: LinkPlace;
+  pieces?: OnScreen[];
+};
 
 /** The candidates on `pane`'s screen, newest first, each once: {@link LinkedPane.onScreen}.
  *  `marked` are the program's own links, which the patterns' candidates under them give way to. */
@@ -973,28 +1455,33 @@ function onScreenNewestFirst(pane: Terminal, marked: Marked[], nothing: DrawsNot
   const bottom = top + pane.rows - 1;
   const found: OnScreen[] = [];
   for (let y = top; y <= bottom;) {
-    const wrapped = wrappedAt(pane, y);
+    const wrapped = lineAt(pane, y, nothing);
     if (wrapped === undefined) break;
-    const rows = wrapped.cells.map((cell) => cell.y);
-    const last = rows.length === 0 ? y : Math.max(y, ...rows);
-    for (const one of candidatesIn(wrapped.text)) {
-      if (cutShort(one, wrapped)) continue;
+    /** Where `one` is drawn: its first row on screen, from its first cell there. */
+    const shownAs = (one: Found): OnScreen | undefined => {
+      if (cutShort(one, wrapped)) return undefined;
       const cells = wrapped.cells.slice(one.start, one.end);
       const under = cells.some((cell) => marked.some((link) => covers(link, cell.x, cell.y)));
-      // Where it is drawn: its first row on screen, from its first cell there.
       const shown = cells.filter((cell) => cell.y >= top && cell.y <= bottom);
       const first = shown[0];
-      if (under || first === undefined) continue;
+      if (under || first === undefined) return undefined;
       const onItsRow = shown.filter((cell) => cell.y === first.y);
-      const width = onItsRow[onItsRow.length - 1].x - first.x + 1;
-      found.push({
-        candidate: { kind: one.kind, text: one.text },
+      const end = onItsRow[onItsRow.length - 1];
+      const width = end.x + widthAt(pane, end) - first.x;
+      return {
+        candidate: candidateOf(one),
         y: cells[0].y,
         x: cells[0].x,
         place: placeOf(pane, first.x, first.y, width),
-      });
+      };
+    };
+    for (const one of candidatesAcross(wrapped)) {
+      const shown = shownAs(one);
+      if (shown === undefined) continue;
+      const pieces = one.pieces?.flatMap((piece) => shownAs(piece) ?? []);
+      found.push(pieces === undefined ? shown : { ...shown, pieces });
     }
-    y = last + 1;
+    y = Math.max(y, wrapped.last) + 1;
   }
   for (const link of marked) {
     const { start, end } = link;
@@ -1029,20 +1516,57 @@ async function screenLinks(
   marked: Marked[],
 ): Promise<ScreenLink[]> {
   const found = onScreenNewestFirst(pane, marked, hands.core.drawsNothing);
+  const answers = await answersFrom(
+    hands,
+    kept,
+    found.map((one) => one.candidate),
+  );
+  const answerOf = (one: OnScreen) => answers.get(linkKey(one.candidate)) ?? null;
+  // A joined link the core says is none lists the pieces its rows read alone (#7819).
+  const listed = found.flatMap((one) => (answerOf(one) === null ? (one.pieces ?? []) : []));
+  const pieceAnswers = await answersFrom(
+    hands,
+    kept,
+    listed.map((one) => one.candidate),
+  );
+  const whole = new Set(found.map((one) => linkKey(one.candidate)));
+  const once = new Set<string>();
+  return found.flatMap((one): ScreenLink[] => {
+    const seen = answerOf(one);
+    if (seen !== null) return [{ candidate: candidateOf(one.candidate), seen, place: one.place }];
+    return (one.pieces ?? []).flatMap((each) => {
+      const key = linkKey(each.candidate);
+      const its = pieceAnswers.get(key) ?? null;
+      if (its === null || once.has(key) || whole.has(key)) return [];
+      once.add(key);
+      return [{ candidate: candidateOf(each.candidate), seen: its, place: each.place }];
+    });
+  });
+}
+
+/** The core's answer for each of `candidates`, by its {@link linkKey}: from `kept`, or asked in
+ *  one call and kept there. The same words twice are asked once. */
+async function answersFrom(
+  hands: Pick<LinkHands, "core" | "from">,
+  kept: Kept,
+  candidates: LinkCandidate[],
+): Promise<Map<string, LinkSeen | null>> {
   /** Each candidate's answer, held here too: one the pane lets go of still counts now. */
   const answerOf = new Map<string, Promise<LinkSeen | null>>();
-  const unasked: LinkCandidate[] = [];
-  for (const { candidate } of found) {
-    const had = held(kept, linkKey(candidate));
-    if (had === undefined) unasked.push(candidate);
-    else answerOf.set(linkKey(candidate), had);
+  const unasked = new Map<string, LinkCandidate>();
+  for (const candidate of candidates) {
+    const key = linkKey(candidate);
+    if (answerOf.has(key) || unasked.has(key)) continue;
+    const had = held(kept, key);
+    if (had === undefined) unasked.set(key, candidate);
+    else answerOf.set(key, had);
   }
-  if (unasked.length > 0) {
-    const asked = hands.core.resolve(hands.from(), unasked.map(candidateOf));
-    unasked.forEach((one, at) => {
-      const key = linkKey(one);
+  if (unasked.size > 0) {
+    const ones = [...unasked.values()];
+    const asked = hands.core.resolve(hands.from(), ones.map(candidateOf));
+    ones.forEach((one, at) => {
       answerOf.set(
-        key,
+        linkKey(one),
         keep(
           kept,
           one,
@@ -1051,11 +1575,7 @@ async function screenLinks(
       );
     });
   }
-  const answers = await Promise.all(
-    found.map((one) => answerOf.get(linkKey(one.candidate)) ?? null),
-  );
-  return found.flatMap((one, at) => {
-    const seen = answers[at];
-    return seen === null ? [] : [{ candidate: candidateOf(one.candidate), seen, place: one.place }];
-  });
+  const keys = [...answerOf.keys()];
+  const answers = await Promise.all(answerOf.values());
+  return new Map(keys.map((key, at) => [key, answers[at]]));
 }

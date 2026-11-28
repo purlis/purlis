@@ -510,16 +510,18 @@ fn refresh_installed_plugin(binary: PathBuf, plugin: PathBuf) {
 /// one whose data home is refused, runs without it and says why: every chat still works, and
 /// only the record of its hook calls is missing.
 ///
-/// **Not opened while chats run in the session host** (#2003): the host writes it then, and the
-/// window hands it every write (`where_chats_run`), so the device has one writer.
+/// **Never opened by the window where chats run in the session host** (#2003, #2005): the host
+/// writes it, and the window hands it every write (`where_chats_run`), so the device has one
+/// writer.
 fn events() -> Option<hooks::Events> {
-    #[cfg(unix)]
-    if hostedsessions::chats_run_in_the_host() {
+    // The session host writes it: the window only says where it is.
+    if cfg!(unix) {
         if let Some(dir) = purlis_core::eventlog::Recorder::dir_on_this_machine() {
             let _ = EVENT_LOG.set(Ok(dir));
         }
         return None;
     }
+    // Where there is no session host the window still holds the log, though no chat runs.
     let opened = purlis_core::eventlog::Recorder::open();
     let _ = EVENT_LOG.set(match &opened {
         Ok(recorder) => Ok(recorder.dir().to_path_buf()),
@@ -901,6 +903,11 @@ struct OpenChat {
     /// a shell, a harness that cannot, or a host that would refuse it.
     #[specta(optional)]
     hibernates: Option<bool>,
+    /// Why its row's Hibernate is greyed, where it is (#7877): one of the core's reasons it may
+    /// not be hibernated (SC-4c, #7632), today `on_a_runner` alone, whose link refuses the act.
+    /// `null` for a chat offered Hibernate, and for one offered none.
+    #[specta(optional)]
+    hibernate_greyed: Option<crate::hibernation::Why>,
     /// The persona it adopted.
     persona: Option<String>,
     /// What its harness cannot tell charter, said on the chat — none where it tells all.
@@ -1024,13 +1031,18 @@ fn drawn_of(held: &planes::Held, open: chats::Open) -> OpenChat {
     let browser_sites = browser_sites_of(held, open.session);
     let pool = held.chats().pool_of(open.session);
     let clones_come_back = held.chats().clones_come_back(open.session).then_some(true);
-    let hibernates = crate::hibernation::offered(held, open.session).then_some(true);
+    let (hibernates, hibernate_greyed) = match crate::hibernation::offered(held, open.session) {
+        crate::hibernation::Offer::None => (None, None),
+        crate::hibernation::Offer::Hibernate => (Some(true), None),
+        crate::hibernation::Offer::Greyed(why) => (None, Some(why.into())),
+    };
     OpenChat {
         id,
         browser_sites,
         pool,
         clones_come_back,
         hibernates,
+        hibernate_greyed,
         ..OpenChat::from(open)
     }
 }
@@ -1136,19 +1148,28 @@ async fn plane_sidebar(
 /// Runs `read` on a blocking thread, so a command that walks the plane's files never holds the
 /// thread that draws the window (SC-2). `what` names it in the one failure this adds: the
 /// thread ending without an answer.
+///
+/// **The app's one door for a blocking answer**: every other way a command hands work off the
+/// window's thread comes through here, and what a command's work costs is counted through it
+/// (#7892): the scope the asking thread counts in is carried to the blocking thread
+/// ([`purlis_core::forklock::counting`]), which holds nothing outside a test build.
 async fn off_the_window<T: Send + 'static>(
     what: &str,
     read: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
     #[cfg(test)]
     let gate = off_the_main_thread::gate::of(what);
+    let counting = purlis_core::forklock::counting::carried();
     tauri::async_runtime::spawn_blocking(move || {
-        // A test holds the work here to see what the window can do while it runs (#1949).
-        #[cfg(test)]
-        if let Some(gate) = gate {
-            gate.wait();
-        }
-        read()
+        counting.within(|| {
+            purlis_core::forklock::counting::note_a_door();
+            // A test holds the work here to see what the window can do while it runs (#1949).
+            #[cfg(test)]
+            if let Some(gate) = gate {
+                gate.wait();
+            }
+            read()
+        })
     })
     .await
     .map_err(|err| format!("{what} did not finish: {err}"))?
@@ -3228,6 +3249,7 @@ impl From<chats::Open> for OpenChat {
             pool: None,
             clones_come_back: None,
             hibernates: None,
+            hibernate_greyed: None,
             workspace: open.workspace,
             persona: open.persona,
             in_front: open.in_front,
@@ -3919,53 +3941,43 @@ fn hosting_here(place: &purlis_host::Place) -> purlis_host::Hosting {
     }
 }
 
-/// Where every project's chats run, chosen once as the app starts: in the session host the
-/// window started, the default since #2004, or in the window's own process, where the
-/// start-time switch says so (`hostedsessions`, #1998) until #2005 deletes that path. With no
-/// host of the window's own, its chats are refused with the reason, never run in the window
-/// instead (ADR 0068, Ruled 3).
+/// Where every project's chats run: in the session host the window started, and nowhere else
+/// (#2005). With no host of the window's own, its chats are refused with the reason, never run
+/// in the window instead (ADR 0068, Ruled 3); a platform with no session host runs none.
 fn where_chats_run(app: &tauri::App, planes: Planes) -> Planes {
-    // The chats' browsers run in the window's session host, wherever its chats run (#2013).
+    // A way back a person set while there was one is ignored, and said so once (#2005).
+    if purlis_core::envvar::var(hostedsessions::RETIRED_SWITCH).is_some() {
+        tracing::info!(
+            "purlis: {} is no longer read; chats run in the session host",
+            hostedsessions::RETIRED_SWITCH
+        );
+    }
+    // The chats' browsers run in the window's session host too (#2013).
     #[cfg(unix)]
-    let planes = match app.try_state::<std::sync::Arc<browsers::WindowBrowsers>>() {
-        Some(browsers) => planes.driving_browsers_with(
-            std::sync::Arc::clone(&*browsers) as std::sync::Arc<dyn chatbrowsers::Driver>
-        ),
-        None => planes,
-    };
-    #[cfg(unix)]
-    if hostedsessions::chats_run_in_the_host() {
+    {
+        let planes =
+            match app.try_state::<std::sync::Arc<browsers::WindowBrowsers>>() {
+                Some(browsers) => planes
+                    .driving_browsers_with(std::sync::Arc::clone(&*browsers)
+                        as std::sync::Arc<dyn chatbrowsers::Driver>),
+                None => planes,
+            };
+        // The relaunch check reads this line (`tools/relaunch.mjs`).
         tracing::info!("purlis: chats run in the session host on this launch");
         let host = app.state::<sessionhost::SessionHost>();
         let connection = host.connection();
         hold_the_switch_in_the_host(app.handle(), &planes, &connection);
-        return hostedsessions::chats_in_the_host(planes, &connection)
+        hostedsessions::chats_in_the_host(planes, &connection)
             // The host saves the projects too (#2002): a quit it does not answer in time ends
             // it before the save at quit.
-            .ending_the_host_with(host.ender());
+            .ending_the_host_with(host.ender())
     }
-    #[cfg(unix)]
+    #[cfg(not(unix))]
     {
-        tracing::info!(
-            "purlis: chats run in the window's own process on this launch, as {}=0 asks",
-            hostedsessions::SWITCH
-        );
-        // No chat is put back while a host a crashed window left may still run it (#2004).
-        if let Some(host) = app.try_state::<sessionhost::SessionHost>() {
-            return planes.putting_back_chats_after(
-                host.before_chats_are_put_back(PUT_BACK_WAITS_FOR_THE_HOST),
-            );
-        }
+        let _ = app;
+        planes
     }
-    let _ = app;
-    planes
 }
-
-/// How long a window whose chats run in its own process waits for its session host to settle
-/// before it puts chats back (#2004): long enough for a host a crashed window left to end the
-/// chats it kept as a quit, and for this window's own to start.
-#[cfg(unix)]
-const PUT_BACK_WAITS_FOR_THE_HOST: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// The kill switch is the session host's too while chats run in it (#2001, ADR 0071): every
 /// stop reaches the host, a re-arm is the host's first, and once the host answers, the two are
@@ -4347,11 +4359,6 @@ pub fn run() {
                     })
                 });
                 app.manage(failing);
-                // With chats in the window's own process, a host a crashed window left is ended,
-                // with the chats it kept, before this window puts any back (#2004).
-                if !hostedsessions::chats_run_in_the_host() {
-                    host.ending_a_host_it_finds();
-                }
                 // While something keeps the host running, its service manager runs it, and the
                 // window connects to that one (FD-17, ADR 0068 §3).
                 if let Some((manager, runs_it)) = loginitems::manager() {

@@ -338,6 +338,23 @@ describe("Restart chat on a chat's tab", () => {
     expect(asked("restart_chat")).toEqual([]);
   });
 
+  // #7962: a chat put back from the session host is owed its restart as it comes back, after the
+  // view first read the list, where its program holds the forge route of the app before.
+  it("restarts at its pause a chat the core owes a restart once the project is ready", async () => {
+    const { asked, core: now } = await aChat();
+    await act(() => moved(WAITING));
+    await settled();
+    expect(asked("restart_chat")).toEqual([]);
+
+    now.owed = [4];
+    await act(() =>
+      emit("project-ready", { plane: PLANE, outcome: { kind: "ready", back: 1, wanted: 1 } }),
+    );
+
+    await waitFor(() => expect(asked("restart_chat")).toEqual(RESTARTED));
+    expect(await screen.findByText("session 9")).toBeInTheDocument();
+  });
+
   it("says the wait beside the row of a chat whose turns purlis can see", async () => {
     await aChat();
     await act(() => moved(WAITING));

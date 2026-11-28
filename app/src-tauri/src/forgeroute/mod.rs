@@ -996,6 +996,7 @@ impl ForgeRoutes {
             run: run.to_owned(),
             params,
             armed: true,
+            unhanded: false,
         }
     }
 
@@ -1063,7 +1064,9 @@ impl ForgeRoutes {
     /// for the run is kept as it is, since the chat's sandbox may be wired to it; otherwise one is
     /// started by [`Self::start_for`], through every gate a start's goes through (the recorded
     /// repos, the pin, the person's sign-ins). The running program is handed nothing: it holds no
-    /// sentinel of the new route, and its own git keeps what it had.
+    /// sentinel of the new route, and its own git keeps what it had, so the guard says so
+    /// ([`RouteGuard::leaves_its_program_without_a_route`]) and the chat is owed a restart on its
+    /// conversation, whose new run is handed a route of its own (#7962).
     pub fn guard_reattached(
         &self,
         chat: &str,
@@ -1077,10 +1080,12 @@ impl ForgeRoutes {
                 run: run.to_owned(),
                 params: None,
                 armed: false,
+                unhanded: false,
             };
         }
         let mut guard = self.guard(chat, run, project, chain);
         guard.params = None;
+        guard.unhanded = true;
         guard
     }
 
@@ -1452,12 +1457,26 @@ pub struct RouteGuard<'a> {
     run: String,
     params: Option<RouteParams>,
     armed: bool,
+    /// **A route made for a program that holds none of it** (#7962): a chat put back from the
+    /// session host whose route went with the app that started it. Its program still sends that
+    /// app's sentinel, which this route refuses ([`Self::leaves_its_program_without_a_route`]).
+    unhanded: bool,
 }
 
 impl RouteGuard<'_> {
     /// What the run is handed (slice B), where it has a route.
     pub fn params(&self) -> Option<&RouteParams> {
         self.params.as_ref()
+    }
+
+    /// **Whether the run's program holds no sentinel of its route** (#7962; ADR 0128, amended
+    /// 2026-11-27): a chat put back from the session host, for which this app made a route anew
+    /// because the one its program was handed went with the app that started it. Only the app's
+    /// own git can use that route. A sentinel is handed only in a program's environment at its
+    /// start (D3b), so the program's own `git` and `gh` reach the forge again only once the chat
+    /// is started again on its conversation: the caller owes it that restart.
+    pub fn leaves_its_program_without_a_route(&self) -> bool {
+        self.unhanded && self.routes.is_live(&self.run)
     }
 
     /// The chat is open as `session`: the route now stops with that session, by its close, its

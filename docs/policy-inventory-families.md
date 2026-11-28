@@ -1444,8 +1444,8 @@ point asks it.
 | 69 | Which credential variables a profile's sign-in may hand a harness, per kind; only by vault reference | crates/purlis-core/src/profilesignin.rs:142 (`handed`), :99 | `vaults` |
 | 70 | Cloud sign-in refused for Codex/Azure and Vertex; cloud not handed in this version; an api-key profile waits for the key proxy (does not start) | crates/purlis-core/src/profilesignin.rs:656 (`handing`) | `trust` |
 | 71 | A chat's model: the profile's command (`--model`) or harness default; a sandboxed Claude chat may take `model` from the project's `.claude/settings.json` | crates/purlis-core/src/harness/claude.rs:1245; crates/purlis-core/src/harness/claude/project.rs:31; docs/adr/0087 (D-2036-6) | `trust` |
-| 72 | A chat whose profile hands vault credentials is not started in the session host; a person's sandbox opt-out is not sent to a runner | app/src-tauri/src/hostedsessions.rs:130, :4904, :142, :4952 | `vaults` |
-| 73 | Chats run in the session host unless `PURLIS_CHATS_IN_THE_HOST=0` | app/src-tauri/src/hostedsessions.rs:82 (`SWITCH`) | `runners` |
+| 72 | A chat whose profile hands vault credentials is not started in the session host; a person's sandbox opt-out is not sent to a runner | app/src-tauri/src/hostedsessions.rs:119, :5047, :130, :5095 | `vaults` |
+| 73 | Chats run only in the session host; with none, every start is refused with why, and `PURLIS_CHATS_IN_THE_HOST` is no longer read (#2005) | app/src-tauri/src/host.rs (`NoHost`, `NO_SESSION_HOST`); app/src-tauri/src/planes.rs (`no_host_yet`) | `runners` |
 | 74 | Extension approval: an installed extension contributes nothing until the person approves its fingerprint (every file in its dir); any change asks again | crates/purlis-core/src/extension.rs:1017 (`standing`), :2715 (`approve`) | `trust` |
 | 75 | Built-in extensions are approved without a prompt only at the app's bundle path; an install with a built-in's id is refused | crates/purlis-core/src/extension.rs:1027-1029, :2672 (`install`) | `trust` |
 | 76 | A themes-only extension needs no approval (runs nothing) | crates/purlis-core/src/extension.rs:825, :830 | `trust` |

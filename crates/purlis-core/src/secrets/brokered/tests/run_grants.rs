@@ -3686,3 +3686,314 @@ fn the_dnf_and_yum_utilities_and_svscanboot_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The supervisors, init systems, queues and schedulers #7833 names, refused on what each is for:
+/// `tini`, `catatonit`, `daemonize` and libslack's `daemon` run the program after them; `pm2
+/// start` and `supervisord -c` run the scripts and `[program:x]` commands they are handed;
+/// sysvinit's `startpar` the init scripts it is named; runit's `runit` its stage scripts and
+/// `runsvchdir` switches the folder `runsvdir` runs; `dinit`, GNU Shepherd's `shepherd` and
+/// OpenRC's old `runscript` run the services of a folder or file they are named, and `dinitctl`
+/// and `herd` start them; perp's `perpd` and `perpboot` supervise a folder's services, and its
+/// `tinylog` is `multilog`'s twin; s6's `s6-svscanctl` has a running `s6-svscan` start what a
+/// chat wrote into its folder, `s6-instance-create` starts a service, `s6-sudoc` hands
+/// `s6-sudod` a command line, `s6-notifywhenup` runs the program after it, `s6-fdholder-daemon`
+/// runs `s6-fdholderd` under `s6-ipcserver`'s access rules (`s6-fdholderd` kept with it), and
+/// `s6-linux-init-shutdownd` runs the `rc.shutdown` of the folder its `-c` names; the Procfile
+/// runners (`overmind`, `foreman`, `honcho`, `hivemind`, `goreman`), the queues (`pueue`,
+/// `pueued`, `tsp`, `nq`), `ubic-admin`, `reflex`, s6-overlay's `with-contenv` and
+/// `cloud-init-per` run the commands they are handed; `transactional-update run` and `shell`
+/// run a command or a shell; `fcrontab` and `incrontab` hand a daemon a table of commands;
+/// `logrotate` runs a file's `prerotate` and `postrotate` scripts; and `lefthook` and `husky`
+/// run a repository's hooks.
+#[test]
+fn the_supervisors_init_systems_queues_and_schedulers_of_7833_are_offered_no_run_grant() {
+    for name in [
+        "tini",
+        "catatonit",
+        "daemonize",
+        "daemon",
+        "pm2",
+        "supervisord",
+        "startpar",
+        "runit",
+        "runsvchdir",
+        "dinit",
+        "dinitctl",
+        "shepherd",
+        "herd",
+        "runscript",
+        "perpd",
+        "perpboot",
+        "tinylog",
+        "s6-svscanctl",
+        "s6-instance-create",
+        "s6-sudoc",
+        "s6-notifywhenup",
+        "s6-fdholder-daemon",
+        "s6-fdholderd",
+        "s6-linux-init-shutdownd",
+        "overmind",
+        "foreman",
+        "honcho",
+        "hivemind",
+        "goreman",
+        "pueue",
+        "pueued",
+        "tsp",
+        "nq",
+        "ubic-admin",
+        "reflex",
+        "with-contenv",
+        "cloud-init-per",
+        "transactional-update",
+        "fcrontab",
+        "incrontab",
+        "logrotate",
+        "lefthook",
+        "husky",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The chain loaders and command runners #7833 names, each of which runs the command, the
+/// program or the shell after it, or one its settings name: ucspi-tcp's `tcpserver`,
+/// `tcpclient`, `recordio` and `argv0`, busybox's `tcpsvd`, s6-networking's `s6-tcpserverd`,
+/// `s6-ucspitlsc` and `s6-ucspitlsd` and the older `s6-tcpserver4-socketbinder` and
+/// `s6-tcpserver6-socketbinder`; execline's `execlineb` and the programs of its that run the
+/// program after them; perp's `runuid`, `runlimit`, `runlock` and `runenv`; moreutils' `pee`,
+/// `mispipe`, `vipe` and `vidir` (`$EDITOR`), and sensible-utils' `sensible-editor`,
+/// `sensible-pager` and `sensible-browser`; mime-support's `run-mailcap` and its `see`, `edit`,
+/// `print` and `compose` (a mailcap entry's command); the jails, containers and VMs (`nsjail`,
+/// `minijail0`, `cgexec`, `lxc-attach`, `lxc-execute`, `schroot`, `dchroot`, `newgrp`,
+/// SELinux's `newrole` and `sandbox`, `distrobox`, `toolbox`, `snap`, `guix`, `apptainer`,
+/// `singularity`, `runc`, `crun`, `ctr`, `limactl`, `colima`, `ip netns exec`); `setarch`'s other
+/// names; util-linux's `coresched`, `enosys`, `setpgid` and `scriptlive`; `catchsegv`,
+/// `pseudo`, `datefudge`, `limitcpu`, `torify`, `tsocks`, `autoexpect`, `cronic`, `sem`,
+/// `dtach`, `abduco`, `perf`, `gpg-agent --daemon`, `dbus-launch`, `startx`, `xinit`,
+/// `keyctl session`, `opam exec`, `xvfb-maybe` and run-one's other names; and the compiler
+/// wrappers `ccache`, `sccache`, `distcc`, its `pump`, and `icecc`.
+#[test]
+fn the_chain_loaders_and_command_runners_of_7833_are_offered_no_run_grant() {
+    for name in [
+        "tcpserver",
+        "tcpclient",
+        "recordio",
+        "argv0",
+        "tcpsvd",
+        "s6-tcpserverd",
+        "s6-ucspitlsc",
+        "s6-ucspitlsd",
+        "s6-tcpserver4-socketbinder",
+        "s6-tcpserver6-socketbinder",
+        "execlineb",
+        "fdmove",
+        "redirfd",
+        "background",
+        "foreground",
+        "pipeline",
+        "if",
+        "ifelse",
+        "emptyenv",
+        "forx",
+        "runuid",
+        "runlimit",
+        "runlock",
+        "runenv",
+        "pee",
+        "mispipe",
+        "vipe",
+        "vidir",
+        "sensible-editor",
+        "sensible-pager",
+        "sensible-browser",
+        "run-mailcap",
+        "see",
+        "edit",
+        "print",
+        "compose",
+        "nsjail",
+        "minijail0",
+        "cgexec",
+        "lxc-attach",
+        "lxc-execute",
+        "schroot",
+        "dchroot",
+        "newgrp",
+        "newrole",
+        "sandbox",
+        "distrobox",
+        "toolbox",
+        "snap",
+        "guix",
+        "apptainer",
+        "singularity",
+        "runc",
+        "crun",
+        "ctr",
+        "limactl",
+        "colima",
+        "ip",
+        "linux32",
+        "linux64",
+        "i386",
+        "x86_64",
+        "uname26",
+        "coresched",
+        "enosys",
+        "setpgid",
+        "scriptlive",
+        "catchsegv",
+        "pseudo",
+        "datefudge",
+        "limitcpu",
+        "torify",
+        "tsocks",
+        "autoexpect",
+        "cronic",
+        "sem",
+        "dtach",
+        "abduco",
+        "perf",
+        "gpg-agent",
+        "dbus-launch",
+        "startx",
+        "xinit",
+        "keyctl",
+        "opam",
+        "xvfb-maybe",
+        "run-one-constantly",
+        "run-one-until-success",
+        "run-one-until-failure",
+        "ccache",
+        "sccache",
+        "distcc",
+        "pump",
+        "icecc",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The package managers and installers #7833 names, each of which runs a package's install
+/// scripts, a build script or plugins: `pacman -U`, `apk add`, macOS's `installer -pkg`,
+/// Gentoo's `emerge` and `ebuild`, `xbps-install`, `opkg`, FreeBSD's `pkg`, `slackpkg`,
+/// `installpkg`, `yay` and `paru` (`makepkg`), `urpmi`, `pkgin`, `pkg_add`, `pkcon install`,
+/// the apt front-ends `nala`, `gdebi`, `wajig`, `aptdcon` and `tasksel`, `fink`, Raku's `zef`
+/// and `rakubrew`, `unattended-upgrade`, `debi` and `debpkg` (`dpkg -i`), `checkinstall` (the
+/// install command it is handed), `alien --scripts` and `installkernel`; dnf5's
+/// `dnf5daemon-server` and `dnf5daemon-client` and yum-utils' `yumdb`, `repo-rss`,
+/// `verifytree`, `show-installed` and `show-changed-rco`, which load plugins as `dnf` and `yum`
+/// do; the configuration managers `salt-call`, `puppet` and `rex`, which run a state or a
+/// manifest; `needrestart`, whose `-c` file is Perl it evaluates, and `etckeeper`, which runs
+/// its hook folders and `vcs` commands. `debconf-apt-progress` is refused by `debconf`'s row,
+/// its own family's, and stays so.
+#[test]
+fn the_package_managers_and_installers_of_7833_are_offered_no_run_grant() {
+    for name in [
+        "pacman",
+        "apk",
+        "installer",
+        "emerge",
+        "ebuild",
+        "xbps-install",
+        "opkg",
+        "pkg",
+        "slackpkg",
+        "installpkg",
+        "yay",
+        "paru",
+        "urpmi",
+        "pkgin",
+        "pkg_add",
+        "pkcon",
+        "nala",
+        "gdebi",
+        "wajig",
+        "aptdcon",
+        "tasksel",
+        "fink",
+        "zef",
+        "rakubrew",
+        "unattended-upgrade",
+        "debi",
+        "debpkg",
+        "checkinstall",
+        "alien",
+        "installkernel",
+        "dnf5daemon-server",
+        "dnf5daemon-client",
+        "yumdb",
+        "repo-rss",
+        "verifytree",
+        "show-installed",
+        "show-changed-rco",
+        "salt-call",
+        "puppet",
+        "rex",
+        "needrestart",
+        "etckeeper",
+        "debconf-apt-progress",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The build, test and packaging tools #7833 names, each of which runs a package's build system,
+/// tests, maintainer scripts, hooks or the code it is pointed at: Debian's `dh_<name>` helpers,
+/// by their stem, as `dh` is refused; `debootstrap`, `mmdebstrap`, `autopkgtest`, `piuparts`,
+/// `mk-build-deps`, `equivs-build`, `quilt shell`, `debspawn`, `uscan`, `cvs-buildpackage`,
+/// `svn-buildpackage`, `dput` and `dupload` (their hook commands); `rpkg`, `mockchain`,
+/// openSUSE's `osc` and obs-build's `build`, `kiwi` and `kiwi-ng` (an image's `config.sh`) and
+/// `koji` (plugins from the path its settings name); MacPorts' `portmirror`; the Perl builders
+/// `cpan2dist`, `cpan2deb`, `cpanspec`, `cpan2rpm` and `pinto`, PAR's `pp`, whose `-x` runs the
+/// script, `plx`, and the PSGI servers `twiggy` and `corona`; and `meson`, `scons`, `ctest` and
+/// `buck2`, which run a project's build files or tests. `pbuilder-dist` and `cowbuilder-dist`
+/// are refused by `pbuilder`'s and `cowbuilder`'s rows, their own family's, and stay so.
+#[test]
+fn the_build_test_and_packaging_tools_of_7833_are_offered_no_run_grant() {
+    for name in [
+        "dh_auto_build",
+        "dh_auto_test",
+        "dh_install",
+        "dh_strip_nondeterminism",
+        "debootstrap",
+        "mmdebstrap",
+        "autopkgtest",
+        "piuparts",
+        "mk-build-deps",
+        "equivs-build",
+        "quilt",
+        "debspawn",
+        "uscan",
+        "cvs-buildpackage",
+        "svn-buildpackage",
+        "dput",
+        "dupload",
+        "rpkg",
+        "mockchain",
+        "osc",
+        "build",
+        "kiwi",
+        "kiwi-ng",
+        "koji",
+        "portmirror",
+        "cpan2dist",
+        "cpan2deb",
+        "cpanspec",
+        "cpan2rpm",
+        "pinto",
+        "pp",
+        "plx",
+        "twiggy",
+        "corona",
+        "meson",
+        "scons",
+        "ctest",
+        "buck2",
+        "pbuilder-dist",
+        "cowbuilder-dist",
+    ] {
+        refused_as_running_others(name);
+    }
+}

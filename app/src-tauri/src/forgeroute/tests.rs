@@ -2710,6 +2710,96 @@ fn a_chat_put_back_whose_route_is_still_live_keeps_it_as_it_was() {
     );
 }
 
+// ---- a chat put back whose program holds the old app's sentinel (#7962) ----
+
+#[test]
+fn a_chat_put_back_on_a_route_made_anew_is_one_whose_program_holds_no_live_sentinel() {
+    // The old app's route went with it, sentinel and all: the program the session host kept
+    // still sends that sentinel, and this app's route for the same run refuses it.
+    let scene = Scene::new();
+    let gone = scene.start("chat-1", "run-1", "/p/one");
+    scene.routes.stop("run-1");
+
+    let guard = scene
+        .routes
+        .guard_reattached("chat-1", "run-1", Path::new("/p/one"), None);
+    assert!(
+        guard.leaves_its_program_without_a_route(),
+        "its program needs a start of its own to be handed a sentinel"
+    );
+    guard.commit(7);
+
+    assert!(matches!(
+        comment(&scene, "run-1", &gone.sentinel),
+        Outcome::Refused(Refusal::WrongSentinel)
+    ));
+}
+
+#[test]
+fn a_chat_put_back_whose_route_is_still_live_or_that_has_none_needs_no_new_one() {
+    // Still live: the program's sentinel is the route's own.
+    let scene = Scene::new();
+    let _live = scene.start("chat-1", "run-1", "/p/one");
+    let guard = scene
+        .routes
+        .guard_reattached("chat-1", "run-1", Path::new("/p/one"), None);
+    assert!(!guard.leaves_its_program_without_a_route());
+    guard.commit(7);
+
+    // Nothing recorded on an unpinned forge: a start would have had no route either.
+    let pinned = Scene::pinning(&["github.com", "gitlab.com"]);
+    let guard = pinned
+        .routes
+        .guard_reattached("chat-1", "run-1", Path::new("/p/one"), None);
+    assert!(!guard.leaves_its_program_without_a_route());
+    guard.commit(7);
+}
+
+#[test]
+fn a_chat_restarted_on_its_conversation_after_it_was_put_back_pushes_its_own_branch_and_the_old_sentinel_is_refused()
+ {
+    let scene = Scene::new();
+    scene.recorded.cut_for("/p/one", "chat-1", "task/forms");
+    // The old app's run, whose sentinel the program the session host kept still sends.
+    let old = scene.start("chat-1", "run-1", "/p/one");
+    scene.routes.stop("run-1");
+    let put_back = scene
+        .routes
+        .guard_reattached("chat-1", "run-1", Path::new("/p/one"), None);
+    put_back.commit(7);
+    assert!(matches!(
+        push_update(&scene, "run-1", &old.sentinel, "task/forms"),
+        Outcome::Refused(Refusal::WrongSentinel)
+    ));
+
+    // The restart on its conversation: the same chat, a new run, a route handed to its program.
+    let restarted = scene
+        .routes
+        .guard("chat-1", "run-2", Path::new("/p/one"), None);
+    let fresh = restarted
+        .params()
+        .expect("a restart is handed a route")
+        .sentinel
+        .clone();
+    assert!(!restarted.leaves_its_program_without_a_route());
+    assert_ne!(fresh, old.sentinel, "a new sentinel, never the old one");
+    restarted.commit(8);
+    // The put-back run ends as the restart replaces it.
+    scene.routes.stop_session(7);
+    assert!(!scene.routes.is_live("run-1"));
+
+    // Its own branch, by the ownership record kept under the chat's id, through its own git…
+    let pushed = push_update(&scene, "run-2", &fresh, "task/forms");
+    assert!(matches!(pushed, Outcome::Forward(_)), "{pushed:?}");
+    // …and through the app's git (`purlis worktree push`).
+    assert!(matches!(scene.routes.git_route(8), Some(Ok(_))));
+    // The old sentinel reaches nothing on the new run.
+    assert!(matches!(
+        push_update(&scene, "run-2", &old.sentinel, "task/forms"),
+        Outcome::Refused(Refusal::WrongSentinel)
+    ));
+}
+
 // ---- what a forge refusal counts (#7779) ----
 
 #[test]

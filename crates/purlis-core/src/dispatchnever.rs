@@ -338,11 +338,19 @@ const UNVOUCHED_LISTED: &str = "a list purlis cannot vouch for names this projec
      seal key was replaced";
 
 /// **What a person can do where a list purlis cannot vouch for names the plane** (M1 of #7734's
-/// round 5). Only a slot whose seal does not hold is named to delete, by account; purlis's own
-/// list is never, since deleting it would make every plane it keeps read as never accepted, or
-/// its nevers as none. Where purlis's own list carries the entry, marked `?`, no delete helps:
-/// the nevers stay unread, which only ever asks the person.
+/// round 5, #7852). Only a slot whose seal does not hold is named to delete, by account; purlis's
+/// own list is never, since deleting it would make every plane it keeps read as never accepted,
+/// or its nevers as none. While the key of now is another program's, no slot can be told to be
+/// purlis's, so the words point at a new key first. Where purlis's own list carries the entry,
+/// marked `?`, no delete helps: Seal these nevers is the way out ([`seal_shown_unvouched`]).
 fn unvouched_way_out() -> String {
+    if crate::secrets::seal::key_is_foreign() {
+        return "purlis cannot trust its seal key on this machine, because another program made \
+             it, so it can vouch for no list yet. Make a new seal key first, as Accept in \
+             Settings › Project › Policy says, and delete no keychain item named purlis-seal \
+             with the account seal-key-replaced or seal-key-replaced-next."
+            .to_owned();
+    }
     match crate::secrets::seal::unvouched_list_items_said() {
         Some(items) => format!(
             "Delete only {items} in Keychain Access, which purlis did not seal, and keep every \
@@ -350,12 +358,23 @@ fn unvouched_way_out() -> String {
              as never accepted. Then, if the list still does not read, restore that file as \
              purlis last wrote it."
         ),
-        None => "The entry is on purlis's own list of projects whose seal key it replaced, \
-             which keeps other projects from reading as never accepted, so delete no keychain \
-             item named purlis-seal."
-            .to_owned(),
+        None => format!(
+            "Settings › Project › Policy shows the pairs that file holds now. {SEAL_UNVOUCHED_MEANS}"
+        ),
     }
 }
+
+/// What Seal these nevers means, as the core says it (#7852): the window says the same.
+const SEAL_UNVOUCHED_MEANS: &str = "Seal these nevers there seals exactly those, although purlis \
+     cannot vouch the list is whole and something other than purlis may have changed it, and it \
+     clears this project's dispatch grants on this machine, so every dispatch to another persona \
+     asks you again until you grant it.";
+
+/// What Seal these nevers says in a process that is not the app (#7852): the press is the
+/// window's alone.
+const ONLY_THE_WINDOW_SEALS: &str = "only purlis's window can seal a list of pairs you said never \
+     to, so nothing was sealed and no grant was cleared; press Seal these nevers in Settings › \
+     Project › Policy";
 
 /// Reads the file, changes its pairs with `how` and writes it back, under purlis's lock on its
 /// directory. **Refuses a file that does not read**, and leaves it as it is.
@@ -485,10 +504,98 @@ pub fn to_keep_after_a_new_key(root: &Path) -> Option<ToKeep> {
 
 /// **Whether the list a new seal key left unread holds a name purlis cannot show faithfully**
 /// (M1 of #7734's round 4): one no persona can have, which could read as another name or as
-/// several pairs. Then no pair is offered to keep, and the window says why.
+/// several pairs. Then no pair is offered to keep or to seal, and the window says why.
 pub fn holds_a_name_it_cannot_show(root: &Path) -> bool {
-    vouched_for_a_new_key(root)
+    (vouched_for_a_new_key(root) || unvouched_for_a_new_key(root))
         && pairs_on_disk(root).is_some_and(|pairs| !shows_faithfully(&pairs))
+}
+
+/// **Whether the plane's nevers stay unread on a list of a replaced seal key that purlis cannot
+/// vouch for, and no keychain item can be named to delete** (#7852): the entry is on purlis's
+/// own list marked `?`, carried from a list another program made. No delete helps there, so the
+/// window offers Seal these nevers ([`seal_shown_unvouched`]). Never while the key of now is
+/// another program's, nor where it cannot seal, nor where a slot purlis did not seal is there to
+/// delete ([`crate::secrets::seal::unvouched_list_items_said`]), which is the way out then.
+pub fn unvouched_for_a_new_key(root: &Path) -> bool {
+    listed_for_a_new_key(root)
+        && !vouched_for_a_new_key(root)
+        && !crate::secrets::seal::key_is_foreign()
+        && crate::secrets::seal::can_seal()
+        && crate::secrets::seal::unvouched_list_items_said().is_none()
+}
+
+/// **The pairs Seal these nevers offers to seal** (#7852): those the file holds now, a file wiped
+/// since holding none, where [`unvouched_for_a_new_key`]. None anywhere else, where the file does
+/// not read, or where it holds a name purlis cannot show faithfully.
+pub fn to_seal_unvouched(root: &Path) -> Option<ToKeep> {
+    if !unvouched_for_a_new_key(root) {
+        return None;
+    }
+    let pairs = pairs_on_disk(root).filter(|pairs| shows_faithfully(pairs))?;
+    Some(ToKeep {
+        digest: digest_of_pairs(&pairs),
+        pairs,
+    })
+}
+
+/// **The person's press sealing the pairs the window showed, where purlis cannot vouch for the
+/// list that keeps them unread** (#7852, the person's ruling of 2026-11-27): the window's alone.
+/// Its words say purlis cannot vouch the list is whole and that something other than purlis may
+/// have changed it. As [`keep_shown_after_a_new_key`]: only where the file holds exactly the
+/// pairs `shown` digests, each shown faithfully, checked again under purlis's lock on the file;
+/// then the plane's nevers leave the list, and nothing else does. **And it clears this project's
+/// dispatch grants on this machine first** ([`crate::sandbox::local::clear_dispatch_grants`]),
+/// then `clear_also`, the grants the app holds in memory, so no grant made while the list could
+/// not be vouched for counts once it reads: every dispatch across personas asks until the person
+/// grants it again. A press refused before the clear clears nothing. One refused or cut short
+/// after it says the grants were cleared, and leaves them cleared and the nevers unread, which
+/// only asks more.
+pub fn seal_shown_unvouched(root: &Path, shown: &str, clear_also: &dyn Fn()) -> io::Result<()> {
+    // The press's own gate: in a process that is not the app (a chat's, the CLI's), nothing is
+    // sealed and nothing cleared, whatever else would let it through.
+    if !crate::secrets::sealed_set::decides() {
+        return Err(io::Error::other(ONLY_THE_WINDOW_SEALS));
+    }
+    if !unvouched_for_a_new_key(root) {
+        return Err(io::Error::other(if vouched_for_a_new_key(root) {
+            "purlis vouches for this list of pairs you said never to, so Keep these nevers keeps \
+             it, and Seal these nevers sealed nothing"
+                .to_owned()
+        } else if listed_for_a_new_key(root) {
+            format!(
+                "{UNVOUCHED_LISTED}, so purlis sealed nothing. {}",
+                unvouched_way_out()
+            )
+        } else {
+            "purlis has no list of pairs you said never to in this project to seal, so it sealed \
+             nothing"
+                .to_owned()
+        }));
+    }
+    if holds_a_name_it_cannot_show(root) {
+        return Err(io::Error::other(CANNOT_SHOW));
+    }
+    if to_seal_unvouched(root).map(|now| now.digest).as_deref() != Some(shown) {
+        return Err(io::Error::other(CHANGED_SINCE_SHOWN));
+    }
+    crate::sandbox::local::clear_dispatch_grants(root).map_err(|why| {
+        io::Error::other(format!(
+            "purlis could not clear this project's dispatch grants, so it sealed nothing ({why})"
+        ))
+    })?;
+    clear_also();
+    seal_as_they_stand(root, Some(shown)).map_err(|why| {
+        io::Error::other(format!(
+            "purlis cleared this project's dispatch grants on this machine, but sealed nothing: \
+             {why}"
+        ))
+    })?;
+    let anchor = crate::sandbox::local::anchor_key(root);
+    crate::secrets::seal::unlist_replaced(&ANCHOR_KINDS, &anchor).map_err(|why| {
+        io::Error::other(format!(
+            "purlis sealed the pairs and cleared this project's dispatch grants, but {why}"
+        ))
+    })
 }
 
 /// What the nevers' press says where the file changed since the window showed its pairs.
@@ -521,14 +628,10 @@ pub fn keep_shown_after_a_new_key(root: &Path, shown: &str) -> io::Result<()> {
     }
     seal_as_they_stand(root, Some(shown))?;
     let anchor = crate::sandbox::local::anchor_key(root);
-    if crate::secrets::seal::unlist_replaced(&ANCHOR_KINDS, &anchor) {
-        Ok(())
-    } else {
-        Err(io::Error::other(
-            "purlis sealed the pairs, but could not take the project off the list of its old \
-             seal key; press again",
-        ))
-    }
+    // What stops the list being rewritten is said as it is (#7852, item 3): a slot in the way is
+    // named, so the press is never "press again" for ever.
+    crate::secrets::seal::unlist_replaced(&ANCHOR_KINDS, &anchor)
+        .map_err(|why| io::Error::other(format!("purlis sealed the pairs, but {why}")))
 }
 
 /// The sealed set the file holds: its counter and live list, and each entry the app sealed.

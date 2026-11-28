@@ -35,6 +35,8 @@ function core(
     if (cmd === "accept_project_policy") return accept();
     if (cmd === "keep_project_nevers")
       return { ...state, nevers_new_key: false, nevers_to_keep: null };
+    if (cmd === "seal_unvouched_project_nevers")
+      return { ...state, nevers_unvouched: false, nevers_to_seal: null };
     if (cmd === "policy_log") return log;
     return null;
   });
@@ -130,6 +132,37 @@ describe("the project's policy in Settings", () => {
       expect(sent("keep_project_nevers")).toEqual([{ plane: PLANE, shown: "n1" }]),
     );
     expect(sent("accept_project_policy")).toEqual([]);
+  });
+
+  it("where purlis cannot vouch for the never-dispatch list, Seal these nevers seals exactly the pairs shown", async () => {
+    // #7852: the way out of a list no delete helps, with the grants it clears said beside it.
+    const sent = core({
+      ...WATCH,
+      nevers_unvouched: true,
+      nevers_to_seal: { pairs: [{ asking: "steward", target: "devops" }], digest: "u1" },
+    });
+    render(<PolicyStanding plane={PLANE} ids={IDS} canAccept />);
+    expect(
+      await screen.findByText(/cannot vouch that your never-dispatch list is whole/),
+    ).toBeTruthy();
+    const pairs = screen.getByRole("list", { name: "The pairs Seal these nevers seals" });
+    expect(pairs.textContent).toContain("steward never dispatches to devops");
+    await userEvent.click(screen.getByRole("button", { name: "Seal these nevers" }));
+    await waitFor(() =>
+      expect(sent("seal_unvouched_project_nevers")).toEqual([{ plane: PLANE, shown: "u1" }]),
+    );
+    expect(sent("keep_project_nevers")).toEqual([]);
+  });
+
+  it("offers no Seal these nevers where the page is not the window", async () => {
+    core({
+      ...WATCH,
+      nevers_unvouched: true,
+      nevers_to_seal: { pairs: [], digest: "u0" },
+    });
+    render(<PolicyStanding plane={PLANE} ids={IDS} canAccept={false} />);
+    expect(await screen.findByText(/Seal them from purlis's own window/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Seal these nevers" })).toBeNull();
   });
 
   it("where the list's file does not read, offers nothing to keep", async () => {

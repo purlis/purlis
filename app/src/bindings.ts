@@ -793,6 +793,15 @@ export const commands = {
 	 */
 	keepProjectNevers: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("keep_project_nevers", { plane, shown })),
 	/**
+	 *  **Your press: seal the never-dispatch pairs the window showed, where purlis cannot vouch for
+	 *  the list that keeps them unread, and clear this project's dispatch grants** (#7852, the
+	 *  person's ruling of 2026-11-27), on the project `plane` names. `shown` is the digest of the
+	 *  pairs shown, so a list that changed since seals nothing. Every grant on this machine goes, the
+	 *  grants made for one chat included, so every dispatch across personas asks again until you
+	 *  grant it. The window's alone: it says purlis cannot vouch the list is whole.
+	 */
+	sealUnvouchedProjectNevers: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("seal_unvouched_project_nevers", { plane, shown })),
+	/**
 	 *  **What the project's `[policy]` let through and logged** (Q308a: the "would have blocked"
 	 *  count, which opens the log): every chat's lines, newest first. A read, off the window's
 	 *  thread.
@@ -8012,9 +8021,14 @@ export type By =
 "operator" | 
 /**
  *  The app did, by itself, for a rested chat while the device was over its hot target
- *  (SC-4g, #7636).
+ *  (SC-4g, #7636), or read back from the record at a restart (SC-4e, #7634).
  */
-"idle";
+"idle" | 
+/**
+ *  Its session host ended while it rested at a turn's end (#2278), read back from the
+ *  record at a restart (SC-4e, #7634): it has no kept screen.
+ */
+"host_crash";
 
 /**
  *  A harness the operator started by hand in a shell tab, as the window draws its banner.
@@ -12361,6 +12375,11 @@ export type LinkCandidate = {
 	kind: KindHint,
 	text: string,
 	target?: string | null,
+	/**
+	 *  Whether the pane read the words across a line break the program wrote at its edge
+	 *  (#7819): a web address read so asks before it opens. Left out, it is not.
+	 */
+	joined?: boolean | null,
 };
 
 /**  **What ⌘-click on a link would do**, said on its hover. */
@@ -13671,6 +13690,12 @@ export type OpenChat = {
 	 *  a shell, a harness that cannot, or a host that would refuse it.
 	 */
 	hibernates?: boolean | null,
+	/**
+	 *  Why its row's Hibernate is greyed, where it is (#7877): one of the core's reasons it may
+	 *  not be hibernated (SC-4c, #7632), today `on_a_runner` alone, whose link refuses the act.
+	 *  `null` for a chat offered Hibernate, and for one offered none.
+	 */
+	hibernate_greyed?: Why | null,
 	/**  The persona it adopted. */
 	persona: string | null,
 	/**  What its harness cannot tell charter, said on the chat — none where it tells all. */
@@ -14871,6 +14896,11 @@ export type PolicyPrerequisite = {
 	 *  (#7714), never because something edited it.
 	 */
 	after_new_key: boolean,
+	/**
+	 *  Whether nothing was ever kept on this machine for the project: under Waiting, the chats
+	 *  keep the shipped `watch` until the press, and the window says so.
+	 */
+	nothing_kept: boolean,
 	/**  The project's policy as it stands, from the same read: the waiting rows among it. */
 	policy: PolicyState,
 };
@@ -14936,9 +14966,17 @@ export type PolicyState = {
 	nevers_to_keep: NeversToKeep | null,
 	/**
 	 *  Whether that list holds a name purlis cannot show faithfully (#7734's round 4): no pair
-	 *  is offered to keep, and the window says so.
+	 *  is offered to keep or to seal, and the window says so.
 	 */
 	nevers_unshowable: boolean,
+	/**
+	 *  Whether this project's never-dispatch list reads as unread because a list of a replaced
+	 *  seal key that purlis cannot vouch for names it, and no keychain item can be named to
+	 *  delete (#7852): the window offers Seal these nevers ([`seal_unvouched_project_nevers`]).
+	 */
+	nevers_unvouched: boolean,
+	/**  The pairs Seal these nevers seals, where `nevers_unvouched` and the list's file reads. */
+	nevers_to_seal: NeversToKeep | null,
 	/**
 	 *  The digest of the committed text this was read from: what Accept names, so a press on a
 	 *  file that changed since it was shown accepts nothing.

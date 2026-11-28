@@ -607,6 +607,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Keep these nevers (#7714, H1 of #7734's round 3): it seals the never-dispatch pairs the
     // window showed with the new seal key, so it is the person's press alone, as Accept is.
     "keep_project_nevers",
+    // Seal these nevers (#7852): it seals the never-dispatch pairs the window showed where purlis
+    // cannot vouch for the list, and clears the project's dispatch grants, so it is the person's
+    // press alone, as Accept is.
+    "seal_unvouched_project_nevers",
     // Remove on the Allowed list (#1927): the person's standing answers are taken back in
     // their own window.
     "revoke_sandbox_grant",

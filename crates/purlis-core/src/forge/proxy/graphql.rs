@@ -713,6 +713,7 @@ impl<'d> Context<'_, 'd> {
         &self,
         parent: &Ty,
         set: &SelectionSet<'d, String>,
+        vars: &Vars<'_>,
         depth: usize,
     ) -> Result<(), Refusal> {
         if depth > MAX_DEPTH {
@@ -723,11 +724,14 @@ impl<'d> Context<'_, 'd> {
                 Selection::Field(field) => {
                     let ty = schema::field(self.kind, parent, &field.name)
                         .ok_or(Refusal::GraphqlOtherRepo)?;
+                    if *parent == Ty::Obj("Ref") && field.name == "compare" {
+                        self.check_compare(field, vars)?;
+                    }
                     let selects = !field.selection_set.items.is_empty();
                     match (ty, selects) {
                         (Ty::Leaf, false) => {}
                         (Ty::Leaf, true) | (_, false) => return Err(Refusal::GraphqlOtherRepo),
-                        (ty, true) => self.walk(&ty, &field.selection_set, depth + 1)?,
+                        (ty, true) => self.walk(&ty, &field.selection_set, vars, depth + 1)?,
                     }
                 }
                 Selection::InlineFragment(fragment) => {
@@ -736,7 +740,7 @@ impl<'d> Context<'_, 'd> {
                             .ok_or(Refusal::GraphqlOtherRepo)?,
                         None => *parent,
                     };
-                    self.walk(&ty, &fragment.selection_set, depth + 1)?;
+                    self.walk(&ty, &fragment.selection_set, vars, depth + 1)?;
                 }
                 Selection::FragmentSpread(spread) => {
                     let fragment = self
@@ -746,11 +750,38 @@ impl<'d> Context<'_, 'd> {
                     let TypeCondition::On(name) = &fragment.type_condition;
                     let ty =
                         schema::narrow(self.kind, parent, name).ok_or(Refusal::GraphqlOtherRepo)?;
-                    self.walk(&ty, &fragment.selection_set, depth + 1)?;
+                    self.walk(&ty, &fragment.selection_set, vars, depth + 1)?;
                 }
             }
         }
         Ok(())
+    }
+
+    /// `Ref.compare(headRef:)` (#7957) reads the head it is given, so that head must be a branch
+    /// of the repo the ref is in, as a REST compare's sides must be ([`rest::side_is_own`]; ADR
+    /// 0128 D3d): a bare branch, or `owner:branch` naming the repo's owner. A pull request's
+    /// head ref has no `compare` ([`schema::HEAD_REF`]), so a ref met here is one of a repo the
+    /// document already named, and the head is read against each repo it named. It is refused
+    /// unless it is given once, as one string, variables resolved, and nothing else is given.
+    fn check_compare(&self, field: &Field<'_, String>, vars: &Vars<'_>) -> Result<(), Refusal> {
+        let refuse = Refusal::GraphqlOtherRepo;
+        let [(name, value)] = field.arguments.as_slice() else {
+            return Err(refuse);
+        };
+        if name != "headRef" {
+            return Err(refuse);
+        }
+        let Ok(Val::Str(head)) = vars.resolve(value) else {
+            return Err(refuse);
+        };
+        let touched = self.touched.borrow();
+        let own = !touched.is_empty()
+            && touched.iter().all(|at| {
+                self.repos
+                    .get(*at)
+                    .is_some_and(|r| rest::side_is_own(&head, r))
+            });
+        if own { Ok(()) } else { Err(refuse) }
     }
 
     fn check_query(&self, set: &SelectionSet<'d, String>, vars: &Vars<'_>) -> Result<(), Refusal> {
@@ -800,7 +831,7 @@ impl<'d> Context<'_, 'd> {
             if field.selection_set.items.is_empty() {
                 return Err(Refusal::GraphqlOtherRepo);
             }
-            self.walk(&ty, &field.selection_set, 0)?;
+            self.walk(&ty, &field.selection_set, vars, 0)?;
         }
         Ok(())
     }
@@ -1036,7 +1067,7 @@ impl<'d> Context<'_, 'd> {
                 self.check_update_branch_head(&field.arguments, vars)?;
             }
             // What a mutation asks back is read like any query: it may not walk out of the repo.
-            self.walk(&Ty::Obj("Payload"), &field.selection_set, 0)?;
+            self.walk(&Ty::Obj("Payload"), &field.selection_set, vars, 0)?;
             class = Some(Class::GraphqlMutation(field.name.clone()));
         }
         class.ok_or(Refusal::GraphqlUnknownMutation)

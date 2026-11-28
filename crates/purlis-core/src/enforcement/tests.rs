@@ -2317,10 +2317,9 @@ fn a_project_purlis_own_list_carries_unvouched_stays_unread_and_no_delete_is_ask
     assert!(!standing(root).nevers_new_key);
     assert_eq!(crate::secrets::seal::unvouched_list_items_said(), None);
     let said = crate::dispatchnever::unread_said(root);
-    assert!(
-        said.contains("delete no keychain item named purlis-seal"),
-        "{said}"
-    );
+    // #7852: no delete helps, so the words point at the press that does.
+    assert!(said.contains("Seal these nevers"), "{said}");
+    assert!(said.contains("cannot vouch the list is whole"), "{said}");
     assert!(!said.contains("Delete only"), "{said}");
     assert!(!said.contains("new seal key on this machine"), "{said}");
     for account in crate::secrets::seal::LIST_ACCOUNTS_FOR_TESTS {
@@ -2329,8 +2328,451 @@ fn a_project_purlis_own_list_carries_unvouched_stays_unread_and_no_delete_is_ask
     let why = keep_shown_after_a_new_key(root, &digest_of_pairs(&pairs(&[("steward", "devops")])))
         .expect_err("nothing kept")
         .to_string();
-    assert!(why.contains("delete no keychain item"), "{why}");
+    assert!(why.contains("Seal these nevers"), "{why}");
     assert_eq!(read(root), Nevers::Unread);
+}
+
+// ---- a way out of an unvouched list (#7852) ----------------------------------------------------
+
+/// A plane whose nevers (`steward` to `devops`) and acceptance are on purlis's own list marked
+/// `?` once a new key is made, carried from a list another program made, as in M1 of #7734's
+/// round 5; with the other accounts `more` named on that planted list too. Made first: it
+/// forgets every keychain item a test kept before.
+fn unvouched_plane(more: &[String]) -> tempfile::TempDir {
+    use crate::sandbox::local::anchor_key;
+    let ghost = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(ghost.path());
+    crate::secrets::seal::forget_kept_for_this_test();
+    let mut named = vec![
+        format!("dispatch-nevers-live:{}", anchor_key(ghost.path())),
+        format!("policy-accepted:{}", anchor_key(ghost.path())),
+    ];
+    named.extend_from_slice(more);
+    crate::secrets::seal::set_replaced_for_this_test(
+        &crate::secrets::seal::a_foreign_list_for_this_test(&named),
+    );
+    ghost
+}
+
+/// What the window shows Seal these nevers would seal in the plane at `root`.
+fn shown_to_seal(root: &std::path::Path) -> crate::dispatchnever::ToKeep {
+    crate::dispatchnever::to_seal_unvouched(root).expect("the pairs are shown to seal")
+}
+
+/// Grants of every kind this machine keeps for the plane at `root`, made after the new key so
+/// they count (#7952's round 2, L3): a pair and "any persona" of yours, one of yours limited to a
+/// workspace, this machine's yes to a pair, an "any persona" and a grant limited to a workspace
+/// of the project's, and a grant of yours and an acceptance set aside.
+fn grants_here(root: &std::path::Path) {
+    use crate::sandbox::local::{self, DispatchIn, Limited};
+    let limited = |asking: &str, target: &str| DispatchIn {
+        asking: asking.to_owned(),
+        target: target.to_owned(),
+        any: false,
+        workspace: "runners".to_owned(),
+        seen: 0,
+    };
+    local::grant_dispatch(root, "steward", "ops").expect("a pair granted");
+    local::grant_dispatch_any(root, "qa").expect("any persona granted");
+    local::keep_dispatch_in(root, Limited::Mine, &limited("steward", "web"))
+        .expect("one of yours in a workspace");
+    local::acknowledge_dispatch(root, &["steward -> docs".to_owned()])
+        .expect("a pair of the project's accepted");
+    local::acknowledge_dispatch_any(root, "dev").expect("an any persona accepted");
+    local::keep_dispatch_in(root, Limited::Accepted, &limited("steward", "infra"))
+        .expect("one of the project's in a workspace accepted");
+    local::grant_dispatch(root, "steward", "gone-mine").expect("a pair to set aside");
+    local::acknowledge_dispatch(
+        root,
+        &[
+            "steward -> docs".to_owned(),
+            "steward -> gone-seen".to_owned(),
+        ],
+    )
+    .expect("an acceptance to set aside");
+    local::set_aside_dispatch(root, &|name| name == "gone-mine" || name == "gone-seen")
+        .expect("set aside");
+    for (list, held) in grant_lists(root) {
+        assert!(held, "{list} holds a grant before the press");
+    }
+}
+
+/// Whether each of this machine's grant lists for the plane at `root` holds one that counts, or
+/// is kept aside to give back.
+fn grant_lists(root: &std::path::Path) -> [(&'static str, bool); 8] {
+    use crate::sandbox::local;
+    [
+        ("dispatch_mine", !local::granted_dispatch(root).is_empty()),
+        (
+            "dispatch_any",
+            !local::granted_dispatch_any(root).is_empty(),
+        ),
+        (
+            "dispatch_mine_in",
+            !local::dispatch_mine_in(root).is_empty(),
+        ),
+        (
+            "dispatch_seen",
+            !local::dispatch_seen(root).unwrap_or_default().is_empty(),
+        ),
+        (
+            "dispatch_any_seen",
+            !local::dispatch_any_seen(root).is_empty(),
+        ),
+        (
+            "dispatch_seen_in",
+            !local::dispatch_seen_in(root).is_empty(),
+        ),
+        (
+            "dispatch_dormant",
+            !local::dormant_dispatch(root).is_empty(),
+        ),
+        (
+            "dispatch_accepted_aside",
+            !local::accepted_aside_dispatch(root).is_empty(),
+        ),
+    ]
+}
+
+/// That no grant list of the plane at `root` holds anything.
+fn no_grant_left(root: &std::path::Path) {
+    for (list, held) in grant_lists(root) {
+        assert!(!held, "{list} cleared");
+    }
+}
+
+#[test]
+fn seal_these_nevers_seals_exactly_the_shown_pairs_and_clears_the_projects_grants() {
+    // #7852, the person's ruling: where purlis's own list carries the plane marked `?`, the press
+    // that shows the pairs seals exactly them, takes the plane's nevers off the list, and clears
+    // the project's dispatch grants, so every dispatch across personas asks again.
+    use crate::dispatchnever::{Nevers, read, seal_shown_unvouched};
+    let _home = OwnConfigHome::new();
+    let ghost = unvouched_plane(&[]);
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::an_update_for_this_test();
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    let root = ghost.path();
+    grants_here(root);
+    let now = standing(root);
+    assert!(now.nevers_unvouched && !now.nevers_new_key, "{now:?}");
+    let shown = shown_to_seal(root);
+    assert_eq!(now.nevers_to_seal, Some(shown.clone()));
+    assert_eq!(shown.pairs, pairs(&[("steward", "devops")]));
+    seal_shown_unvouched(root, &shown.digest, &|| {}).expect("sealed as shown");
+    assert!(!crate::dispatchnever::listed_for_a_new_key(root));
+    // Its acceptance is on the list too, and only Accept takes it off: until then the nevers
+    // read as unread by the policy, as any plane's do under a broken acceptance.
+    assert_eq!(read(root), Nevers::Unread);
+    press(root, &digest_of(root)).expect("accepted again");
+    assert_eq!(read(root), Nevers::Read(pairs(&[("steward", "devops")])));
+    let after = standing(root);
+    assert!(
+        !after.nevers_unvouched && after.nevers_to_seal.is_none(),
+        "{after:?}"
+    );
+    no_grant_left(root);
+    assert_eq!(crate::sandbox::local::dispatch_seen(root), Some(Vec::new()));
+}
+
+/// A plane on purlis's own list marked `?`, with a new key made and every grant list seeded:
+/// where each test of Seal these nevers' clear starts. Answers the plane, and the other kept for
+/// the new key.
+fn unvouched_with_grants() -> (tempfile::TempDir, tempfile::TempDir) {
+    let ghost = unvouched_plane(&[]);
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::an_update_for_this_test();
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    grants_here(ghost.path());
+    (ghost, here)
+}
+
+#[test]
+fn seals_hidden_before_seal_these_nevers_never_count_once_put_back() {
+    // #7952's round 2, M1: a program takes the seals' entries out of this machine's file, and
+    // leaves the live list and the counter, so a clear that rewrote only what verified wrote no
+    // seal again. The clear always writes the sealed set again: the file as it was, put back
+    // whole after the press, holds no grant that counts.
+    use crate::dispatchnever::seal_shown_unvouched;
+    use crate::sandbox::local::DispatchKind;
+    let _home = OwnConfigHome::new();
+    let (ghost, _here) = unvouched_with_grants();
+    let root = ghost.path();
+    let file = crate::sandbox::local::path(root);
+    let before = std::fs::read_to_string(&file).expect("the file");
+    let mut hidden: serde_json::Value = serde_json::from_str(&before).expect("json");
+    hidden["dispatch_sealed"]
+        .as_object_mut()
+        .expect("a sealed set")
+        .remove("entries")
+        .expect("its entries");
+    std::fs::write(&file, hidden.to_string()).expect("hidden");
+    seal_shown_unvouched(root, &shown_to_seal(root).digest, &|| {}).expect("sealed");
+    assert!(crate::sandbox::local::dispatch_unsealed(root).is_empty());
+    std::fs::write(&file, &before).expect("put back");
+    // What is set aside is shown to give back, sealed or not: what counts is that no answer of
+    // any kind put back is sealed.
+    let unsealed: Vec<DispatchKind> = crate::sandbox::local::dispatch_unsealed(root)
+        .into_iter()
+        .map(|(kind, _)| kind)
+        .collect();
+    for kind in [
+        DispatchKind::Mine,
+        DispatchKind::Any,
+        DispatchKind::MineIn,
+        DispatchKind::Seen,
+        DispatchKind::AnySeen,
+        DispatchKind::SeenIn,
+        DispatchKind::Dormant,
+        DispatchKind::Aside,
+    ] {
+        assert!(unsealed.contains(&kind), "{kind:?} counts: {unsealed:?}");
+    }
+    assert!(crate::dispatchgrant::yours(root).is_empty());
+    assert!(crate::dispatchgrant::any_yours(root).is_empty());
+    assert_eq!(crate::sandbox::local::dispatch_seen(root), Some(Vec::new()));
+}
+
+#[test]
+fn seal_these_nevers_clears_every_grant_before_the_nevers_read() {
+    // #7952's round 2, L1: the grants the app holds in memory go after this machine's file's
+    // grants and before the seal, so nothing reads the nevers while a grant still counts.
+    use crate::dispatchnever::{Nevers, read, seal_shown_unvouched};
+    let _home = OwnConfigHome::new();
+    let (ghost, _here) = unvouched_with_grants();
+    let root = ghost.path();
+    let cleared_also = std::cell::Cell::new(false);
+    let unsealed = std::fs::read_to_string(crate::dispatchnever::path(root)).expect("the list");
+    seal_shown_unvouched(root, &shown_to_seal(root).digest, &|| {
+        no_grant_left(root);
+        assert_eq!(
+            std::fs::read_to_string(crate::dispatchnever::path(root)).expect("the list"),
+            unsealed,
+            "the list is not sealed yet"
+        );
+        assert_eq!(read(root), Nevers::Unread, "not sealed yet");
+        assert!(crate::dispatchnever::listed_for_a_new_key(root));
+        cleared_also.set(true);
+    })
+    .expect("sealed");
+    assert!(cleared_also.get(), "the app's grants cleared too");
+    assert!(!crate::dispatchnever::listed_for_a_new_key(root));
+}
+
+#[test]
+fn a_seal_refused_after_the_clear_says_the_grants_were_cleared() {
+    // #7952's round 2, L2: the list is checked again under purlis's lock on it, after the clear.
+    // A list changed in that moment seals nothing, and the words say the grants went.
+    use crate::dispatchnever::{Nevers, read, seal_shown_unvouched};
+    let _home = OwnConfigHome::new();
+    let (ghost, _here) = unvouched_with_grants();
+    let root = ghost.path();
+    let why = seal_shown_unvouched(root, &shown_to_seal(root).digest, &|| {
+        std::fs::write(
+            crate::dispatchnever::path(root),
+            r#"{"never": [{"asking": "steward", "target": "ops"}]}"#,
+        )
+        .expect("changed meanwhile");
+    })
+    .expect_err("nothing sealed")
+    .to_string();
+    assert!(
+        why.contains("cleared this project's dispatch grants on this machine, but sealed nothing"),
+        "{why}"
+    );
+    assert!(why.contains("changed since it was shown"), "{why}");
+    assert_eq!(read(root), Nevers::Unread);
+    assert!(crate::dispatchnever::listed_for_a_new_key(root));
+    no_grant_left(root);
+}
+
+#[test]
+fn seal_these_nevers_refuses_a_list_changed_since_it_was_shown_and_clears_nothing() {
+    // #7852: bound to the pairs shown by their digest, as Keep these nevers is. A refusal seals
+    // nothing and leaves every grant as it was.
+    use crate::dispatchnever::{Nevers, read, seal_shown_unvouched};
+    let _home = OwnConfigHome::new();
+    let ghost = unvouched_plane(&[]);
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::an_update_for_this_test();
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    let root = ghost.path();
+    grants_here(root);
+    let shown = shown_to_seal(root);
+    std::fs::write(
+        crate::dispatchnever::path(root),
+        r#"{"never": [{"asking": "steward", "target": "ops"}]}"#,
+    )
+    .expect("changed meanwhile");
+    for named in [shown.digest.as_str(), "not what was shown"] {
+        let why = seal_shown_unvouched(root, named, &|| {})
+            .expect_err("nothing sealed")
+            .to_string();
+        assert!(why.contains("changed since it was shown"), "{why}");
+        assert_eq!(read(root), Nevers::Unread);
+        assert!(crate::dispatchnever::listed_for_a_new_key(root));
+        for (list, held) in grant_lists(root) {
+            assert!(held, "{list}: nothing cleared");
+        }
+    }
+}
+
+#[test]
+fn seal_these_nevers_is_refused_where_purlis_vouches_for_the_list() {
+    // #7852: the press is only the way out of a list purlis cannot vouch for. A vouched plane is
+    // Keep these nevers'.
+    use crate::dispatchnever::{Nevers, read, seal_shown_unvouched};
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let vouched = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(vouched.path());
+    crate::secrets::seal::an_update_for_this_test();
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    let shown = shown_nevers(vouched.path());
+    assert!(!standing(vouched.path()).nevers_unvouched);
+    let why = seal_shown_unvouched(vouched.path(), &shown.digest, &|| {})
+        .expect_err("Keep these nevers' plane")
+        .to_string();
+    assert!(why.contains("Keep these nevers"), "{why}");
+    assert_eq!(read(vouched.path()), Nevers::Unread);
+}
+
+#[test]
+fn while_the_key_is_foreign_seal_these_nevers_is_refused_and_the_words_point_at_a_new_key() {
+    // #7852, item 4: after an update, before the new-key press, no list can be told to be
+    // purlis's: the words point at a new key, never at "purlis's own list".
+    use crate::dispatchnever::{digest_of_pairs, seal_shown_unvouched};
+    let _home = OwnConfigHome::new();
+    let ghost = unvouched_plane(&[]);
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    assert!(!standing(ghost.path()).nevers_unvouched);
+    let why = seal_shown_unvouched(
+        ghost.path(),
+        &digest_of_pairs(&pairs(&[("steward", "devops")])),
+        &|| {},
+    )
+    .expect_err("a foreign key seals nothing")
+    .to_string();
+    assert!(why.contains("Make a new seal key first"), "{why}");
+    let said = crate::dispatchnever::file_unread_said(ghost.path());
+    assert!(said.contains("Make a new seal key first"), "{said}");
+    assert!(!said.contains("on purlis's own list"), "{said}");
+    crate::secrets::seal::set_foreign_for_this_test(false);
+}
+
+#[test]
+fn seal_these_nevers_is_refused_outside_the_app_and_clears_nothing() {
+    // #7852: no chat reaches the press. The command is the window's alone (`WINDOW_ONLY`), and
+    // the core seals and clears nothing in a process that is not the app, a chat's or the CLI's.
+    use crate::dispatchnever::{Nevers, read, seal_shown_unvouched};
+    let _home = OwnConfigHome::new();
+    let ghost = unvouched_plane(&[]);
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::an_update_for_this_test();
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    let root = ghost.path();
+    grants_here(root);
+    let shown = shown_to_seal(root);
+    let cleared_also = std::cell::Cell::new(false);
+    set_in_the_app_for_this_test(false);
+    let refused = seal_shown_unvouched(root, &shown.digest, &|| cleared_also.set(true));
+    set_in_the_app_for_this_test(true);
+    let why = refused.expect_err("not the app").to_string();
+    // Refused by the press's own gate, before anything else is asked (#7952's round 2, L3).
+    assert!(why.contains("only purlis's window can seal"), "{why}");
+    assert!(!cleared_also.get(), "the app's grants are not cleared");
+    assert_eq!(read(root), Nevers::Unread);
+    assert!(crate::dispatchnever::listed_for_a_new_key(root));
+    for (list, held) in grant_lists(root) {
+        assert!(held, "{list}: nothing cleared");
+    }
+}
+
+#[test]
+fn seal_these_nevers_turns_no_plane_never_or_fresh() {
+    // #7852: the press takes only this plane's nevers off the list. Every other plane the list
+    // keeps stays on it as it was, vouched for or not, so none reads as never accepted or its
+    // nevers as none; this plane's own acceptance stays listed too.
+    use crate::dispatchnever::{Nevers, read, seal_shown_unvouched};
+    use crate::sandbox::local::{PolicyAccepted, anchor_key, policy_accepted_record};
+    let _home = OwnConfigHome::new();
+    // The planted list names another plane's nevers too, and only it does.
+    let elsewhere = plane("[policy]\ntemplate = \"open\"\n", None);
+    let ghost = unvouched_plane(&[format!(
+        "dispatch-nevers-live:{}",
+        anchor_key(elsewhere.path())
+    )]);
+    let other = accepted_plane("[policy]\ntemplate = \"strict\"\n");
+    let nevers = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(nevers.path());
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::an_update_for_this_test();
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    let before = crate::secrets::seal::replaced();
+    seal_shown_unvouched(ghost.path(), &shown_to_seal(ghost.path()).digest, &|| {})
+        .expect("sealed");
+    let after = crate::secrets::seal::replaced();
+    let ghost_anchor = anchor_key(ghost.path());
+    assert!(!after.lists(&crate::dispatchnever::ANCHOR_KINDS, &ghost_anchor));
+    assert!(
+        after.lists(&["policy-accepted"], &ghost_anchor),
+        "{after:?}"
+    );
+    for (kinds, root) in [
+        (&["policy-accepted"][..], other.path()),
+        (&crate::dispatchnever::ANCHOR_KINDS[..], nevers.path()),
+        (&crate::dispatchnever::ANCHOR_KINDS[..], elsewhere.path()),
+    ] {
+        let anchor = anchor_key(root);
+        assert!(after.lists(kinds, &anchor), "{root:?}: {after:?}");
+        assert_eq!(
+            after.vouches(kinds, &anchor),
+            before.vouches(kinds, &anchor),
+            "{root:?}"
+        );
+    }
+    assert_eq!(policy_accepted_record(other.path()), PolicyAccepted::Broken);
+    assert_ne!(policy_accepted_record(ghost.path()), PolicyAccepted::Never);
+    for root in [nevers.path(), elsewhere.path()] {
+        assert_eq!(read(root), Nevers::Unread, "{root:?}");
+    }
+    assert!(standing(nevers.path()).nevers_new_key);
+}
+
+#[test]
+fn a_keep_press_past_a_planted_list_names_the_item_in_the_way_never_press_again() {
+    // #7852, item 3: with a list another program planted beside purlis's own, the keep press's
+    // unlist cannot rewrite the list. It says which item is in the way, so the person can act,
+    // instead of "press again" for ever.
+    use crate::dispatchnever::keep_shown_after_a_new_key;
+    use crate::sandbox::local::anchor_key;
+    let _home = OwnConfigHome::new();
+    let here = plane("[policy]\ntemplate = \"open\"\n", None);
+    let nevers = plane("[policy]\ntemplate = \"open\"\n", None);
+    a_never(nevers.path());
+    let ghost = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::an_update_for_this_test();
+    press_with_new_key(here.path(), &digest_of(here.path())).expect("a new key");
+    let shown = shown_nevers(nevers.path());
+    let planted = crate::secrets::seal::plant_in_the_free_slot_for_this_test(
+        &crate::secrets::seal::a_foreign_list_for_this_test(&[format!(
+            "dispatch-nevers-live:{}",
+            anchor_key(ghost.path())
+        )]),
+    );
+    for _ in 0..2 {
+        let why = keep_shown_after_a_new_key(nevers.path(), &shown.digest)
+            .expect_err("in the way")
+            .to_string();
+        assert!(
+            why.contains(&format!("the account {planted} lists")),
+            "{why}"
+        );
+        assert!(why.contains("Delete only that item"), "{why}");
+        assert!(!why.contains("could not take the project off"), "{why}");
+    }
+    crate::secrets::seal::delete_in_keychain_access_for_this_test(planted);
+    keep_shown_after_a_new_key(nevers.path(), &shown.digest).expect("kept once it is gone");
 }
 
 #[test]

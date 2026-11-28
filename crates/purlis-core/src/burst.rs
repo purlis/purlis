@@ -100,8 +100,8 @@ impl<V: Clone> Burst<V> {
     }
 
     /// How many asks are waiting for a read now: for a test that must know they all are.
-    #[cfg(test)]
-    fn waiting(&self) -> usize {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn waiting(&self) -> usize {
         self.lock().waiting
     }
 }

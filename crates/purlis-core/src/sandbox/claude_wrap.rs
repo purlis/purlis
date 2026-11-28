@@ -456,8 +456,15 @@ pub const PROJECT_MCP_CHOICES: [&str; 5] = [
     "disabledMcpjsonServers",
 ];
 
+/// **What Claude Code's state file says, beside its projects, that a chat chose on the runner**:
+/// the computer-use choice of each organisation and account (`computerUseChoices`, `"on"` or
+/// `"off"`, saved as its first-use ask is answered, in Claude Code 2.1.332). It is absent by
+/// default, and with none Claude Code asks again.
+pub const ACCOUNT_CHOICES: [&str; 1] = ["computerUseChoices"];
+
 /// **`servers` as the user-scope MCP servers in the state file `state`** (#3846), and no
-/// project's own (ruled 2026-11-08), nor any project's [`PROJECT_MCP_CHOICES`], with what else it
+/// project's own (ruled 2026-11-08), nor any project's [`PROJECT_MCP_CHOICES`], nor any of
+/// [`ACCOUNT_CHOICES`] (ruled 2026-11-27), with what else it
 /// holds as it is. A chat can add a server to its folder's entry, or turn one on or off there,
 /// which every later chat in that folder would follow, so each keep takes them out, as it puts the
 /// desktop's user-scope ones back: the desktop sends no choice for a runner's folders, so each is
@@ -498,6 +505,11 @@ pub fn keep_mcp_servers(state: &Path, servers: Option<&serde_json::Value>) {
     {
         doc["mcpServers"] = servers.clone();
         changed = true;
+    }
+    if let Some(doc) = doc.as_object_mut() {
+        for key in ACCOUNT_CHOICES {
+            changed |= doc.remove(key).is_some();
+        }
     }
     if let Some(projects) = doc
         .get_mut("projects")

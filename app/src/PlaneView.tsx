@@ -584,6 +584,7 @@ import { RunnerLinkDownNotice } from "./RunnerLinkDownNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
 import { ProjectPolicyNotice } from "./ProjectPolicyNotice";
+import { PrerequisiteDialog } from "./PrerequisiteDialog";
 import { PolicyWatchAnnounced } from "./PolicyWatchAnnounced";
 import { ProjectPresetsNotice } from "./ProjectPresetsNotice";
 import { PersonaHostsNotice } from "./PersonaHostsNotice";
@@ -8200,13 +8201,26 @@ export const PlaneView = memo(function PlaneView({
    *  `session.rs`'s `KNOWS_HIBERNATE` does: a harness that resumes by id, on a host that can
    *  hibernate it. Never a shell, a chat in this process, or one on an older host. A chat the
    *  picker started is in the sidebar's rows only, so those are read too, as `glances` does. */
-  const hibernatable = useCallback(
+  const rowOf = useCallback(
     (session: number) =>
       [
         ...(sidebar ? [...sidebar.workspaces.flatMap((ws) => ws.chats), ...sidebar.unfiled] : []),
         ...reopened,
-      ].find((one) => one.session === session)?.hibernates === true,
+      ].find((one) => one.session === session),
     [reopened, sidebar],
+  );
+  const hibernatable = useCallback(
+    (session: number) => rowOf(session)?.hibernates === true,
+    [rowOf],
+  );
+  /** Why a chat's Hibernate row is greyed (#7877): the core's typed reason, today a runner's
+   *  chat, whose link refuses the act, in the words a refusal says. */
+  const hibernateGreyed = useCallback(
+    (session: number) => {
+      const why = rowOf(session)?.hibernate_greyed;
+      return why == null ? undefined : NOT_HIBERNATED[why];
+    },
+    [rowOf],
   );
   /** Hibernates chat `session` by hand (#7630): where it may not be, the core says why as a
    *  typed reason (#7632), and its words are said on the chat's pane; where the act could not be
@@ -8501,6 +8515,16 @@ export const PlaneView = memo(function PlaneView({
         .chatsThatWouldNotStart(plane)
         .then((trouble) => {
           if (trouble.status === "ok") setWouldNotStart(trouble.data ?? []);
+        })
+        .catch(() => undefined);
+      // A chat put back from the session host is owed a restart as it comes back, after this
+      // view first read the list, where its program holds the old app's forge route (#7962).
+      void commands
+        .owedRestarts(plane)
+        .then((owed) => {
+          if (owed.status !== "ok" || !Array.isArray(owed.data)) return;
+          const core: readonly number[] = owed.data;
+          setOwedRestarts((was) => core.reduce((all, one) => withRestartOwed(all, one), was));
         })
         .catch(() => undefined);
     }).catch(() => undefined);
@@ -10118,6 +10142,7 @@ export const PlaneView = memo(function PlaneView({
             planeUpdated: planeUpdates,
             restartable,
             hibernatable,
+            hibernateGreyed,
             movesTo,
             movesOnceAPoolIsSetUp: movesOnceSetUp,
             movesWith: movesWithChat,
@@ -10197,6 +10222,7 @@ export const PlaneView = memo(function PlaneView({
       planeUpdates,
       restartable,
       hibernatable,
+      hibernateGreyed,
       movesTo,
       movesOnceSetUp,
       movesWithChat,
@@ -12167,6 +12193,12 @@ export const PlaneView = memo(function PlaneView({
       {/* **A loosening of the project's `[policy]`** (Q308a): reaches each person only on their
           one Accept; a value it could not read is said beside it, enforced meanwhile. */}
       <ProjectPolicyNotice plane={plane} />
+      {/* **What the project needs from you before its chats can work** (ADR 0130 §4): each open
+          prerequisite raised as an alert of the dialog family, one at a time. */}
+      <PrerequisiteDialog
+        plane={plane}
+        onOpenPolicy={() => openSettingsAt({ group: "project.policy" })}
+      />
       {/* **Blocks are off by default** (Q308a): the upgrade to `watch`, said once on this
           machine, in a project that names no policy. */}
       <PolicyWatchAnnounced plane={plane} />

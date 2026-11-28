@@ -15,7 +15,7 @@ use crate::planes::{PlaneId, Planes};
 
 /// A project whose sandbox is on, with a local settings file beside its manifest (which is
 /// what makes `sandbox_state` ask git), a persona, a session record and a usage file.
-fn a_project() -> tempfile::TempDir {
+pub(super) fn a_project() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("a temp dir");
     let root = dir.path();
     std::fs::write(
@@ -639,44 +639,57 @@ const SYNCHRONOUS: &[(&str, &[&str])] = &[
     ),
 ];
 
-/// Every `#[tauri::command]` in this crate that is a plain `fn`, by name.
-fn synchronous_commands() -> Vec<String> {
-    fn walk(dir: &Path, found: &mut Vec<String>) {
+/// One `#[tauri::command]` of this crate, as its source has it.
+struct InSource {
+    name: String,
+    asynchronous: bool,
+    /// The function's body: its lines up to the brace that closes it at its own indent.
+    body: String,
+    /// The file it is in, and the 0-based lines its body spans there.
+    file: std::path::PathBuf,
+    lines: std::ops::Range<usize>,
+}
+
+/// Every Rust file of this crate's sources, with its lines: the files tests alone build
+/// (`tests.rs`, `*_tests.rs`, anything under a `tests/` folder) left out, and a
+/// `#[cfg(test)] mod … { … }` written inline blanked, so a line's number is still its own.
+fn sources() -> Vec<(std::path::PathBuf, Vec<String>)> {
+    fn walk(dir: &Path, found: &mut Vec<(std::path::PathBuf, Vec<String>)>) {
         for entry in std::fs::read_dir(dir).expect("the crate's sources") {
             let path = entry.expect("an entry").path();
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default();
             if path.is_dir() {
-                walk(&path, found);
+                if name != "tests" {
+                    walk(&path, found);
+                }
                 continue;
             }
-            if path.extension().is_none_or(|ext| ext != "rs") {
+            if path.extension().is_none_or(|ext| ext != "rs")
+                || name == "tests.rs"
+                || name.ends_with("_tests.rs")
+            {
                 continue;
             }
             let text = std::fs::read_to_string(&path).expect("a source file");
-            let lines: Vec<&str> = text.lines().collect();
-            for (at, line) in lines.iter().enumerate() {
-                if !line.trim_start().starts_with("#[tauri::command") {
+            let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
+            let mut at = 0;
+            while at + 1 < lines.len() {
+                let inline_test_module = lines[at].trim() == "#[cfg(test)]"
+                    && lines[at + 1].starts_with("mod ")
+                    && lines[at + 1].trim_end().ends_with('{');
+                if !inline_test_module {
+                    at += 1;
                     continue;
                 }
-                let Some(signature) = lines[at + 1..]
-                    .iter()
-                    .take(8)
-                    .find(|line| line.contains("fn "))
-                else {
-                    continue;
-                };
-                let before = signature.split("fn ").next().unwrap_or_default();
-                if before.contains("async") {
-                    continue;
+                while at < lines.len() && lines[at] != "}" {
+                    lines[at].clear();
+                    at += 1;
                 }
-                let name: String = signature
-                    .split("fn ")
-                    .nth(1)
-                    .unwrap_or_default()
-                    .chars()
-                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-                    .collect();
-                found.push(name);
             }
+            found.push((path, lines));
         }
     }
     let mut found = Vec::new();
@@ -684,8 +697,67 @@ fn synchronous_commands() -> Vec<String> {
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
         &mut found,
     );
-    found.sort();
     found
+}
+
+/// Every `#[tauri::command]` in this crate's sources. The `fn` is the first line after the
+/// attribute that names one, however many attributes and comments come between.
+fn commands_in_source() -> Vec<InSource> {
+    let mut found = Vec::new();
+    for (file, lines) in sources() {
+        for (at, line) in lines.iter().enumerate() {
+            if !line.trim_start().starts_with("#[tauri::command") {
+                continue;
+            }
+            let (from, signature) = lines[at + 1..]
+                .iter()
+                .enumerate()
+                .find(|(_, line)| line.contains("fn "))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{}:{}: a command with no `fn` after it",
+                        file.display(),
+                        at + 1
+                    )
+                });
+            let before = signature.split("fn ").next().unwrap_or_default();
+            let name: String = signature
+                .split("fn ")
+                .nth(1)
+                .unwrap_or_default()
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            let indent = signature.len() - signature.trim_start().len();
+            let closes = |line: &String| {
+                line.len() - line.trim_start().len() == indent && line.trim_start().starts_with('}')
+            };
+            let opens = at + 1 + from + 1;
+            let body: Vec<&str> = lines[opens..]
+                .iter()
+                .take_while(|line| !closes(line))
+                .map(String::as_str)
+                .collect();
+            found.push(InSource {
+                name,
+                asynchronous: before.contains("async"),
+                lines: opens..opens + body.len(),
+                body: body.join("\n"),
+                file: file.clone(),
+            });
+        }
+    }
+    found.sort_by(|a, b| a.name.cmp(&b.name));
+    found
+}
+
+/// Every `#[tauri::command]` in this crate that is a plain `fn`, by name.
+fn synchronous_commands() -> Vec<String> {
+    commands_in_source()
+        .into_iter()
+        .filter(|command| !command.asynchronous)
+        .map(|command| command.name)
+        .collect()
 }
 
 #[test]
@@ -710,6 +782,219 @@ fn a_command_is_synchronous_only_where_the_list_says_why() {
     let mut once = listed.clone();
     once.dedup();
     assert_eq!(once, listed, "a command listed twice");
+}
+
+/// Every command the window can invoke, in every build: `ipc_commands.rs`'s list.
+fn registered() -> Vec<&'static str> {
+    let (value_free, vault_values): (&[&str], &[&str]) = app_commands!(command_names);
+    let e2e_only: &[&str] = app_commands!(e2e_command_names);
+    let mut all: Vec<&str> = [value_free, vault_values, e2e_only].concat();
+    all.sort_unstable();
+    all
+}
+
+#[test]
+fn every_registered_command_has_one_answer_class() {
+    // #7892: a command the window can invoke and the table does not class is one no gate
+    // counts; give it its class in `off_the_main_thread::ANSWER_CLASSES`.
+    let mut classed: Vec<&str> = crate::off_the_main_thread::ANSWER_CLASSES
+        .iter()
+        .flat_map(|(_, commands)| commands.iter().copied())
+        .collect();
+    classed.sort_unstable();
+    let mut once = classed.clone();
+    once.dedup();
+    let twice: Vec<&&str> = once
+        .iter()
+        .filter(|name| classed.iter().filter(|c| c == name).count() > 1)
+        .collect();
+    assert!(twice.is_empty(), "classed more than once: {twice:?}");
+    let registered = registered();
+    let unclassed: Vec<&&str> = registered.iter().filter(|n| !classed.contains(n)).collect();
+    assert!(
+        unclassed.is_empty(),
+        "registered with no answer class: {unclassed:?}"
+    );
+    let unregistered: Vec<&&str> = classed.iter().filter(|n| !registered.contains(n)).collect();
+    assert!(
+        unregistered.is_empty(),
+        "classed, but not registered: {unregistered:?}"
+    );
+}
+
+#[test]
+fn a_commands_answer_class_is_what_its_source_does() {
+    // #7892. A synchronous command answers on the window's thread. An `async` one whose own body
+    // hands its work to a raw `spawn_blocking`, or names no door, is not counted, and once it
+    // goes through `crate::off_the_window` alone it must be given a class the gate counts, with
+    // its ceiling recorded (`counts.rs`).
+    use crate::off_the_main_thread::{Class, answer_class};
+    let registered = registered();
+    let mut wrong = Vec::new();
+    for command in commands_in_source() {
+        if !registered.contains(&command.name.as_str()) {
+            continue;
+        }
+        let through_the_door =
+            command.body.contains("off_the_window") && !command.body.contains("spawn_blocking");
+        let should = if !command.asynchronous {
+            "Window"
+        } else if through_the_door {
+            "Model, Git or Unmeasured"
+        } else {
+            "Uncounted"
+        };
+        let class = answer_class(&command.name);
+        let right = match class {
+            Class::Window => !command.asynchronous,
+            Class::Uncounted => command.asynchronous && !through_the_door,
+            Class::Model | Class::Git | Class::Unmeasured => {
+                command.asynchronous && through_the_door
+            }
+        };
+        if !right {
+            wrong.push(format!(
+                "{} is {class:?}; its source says {should}",
+                command.name
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn every_registered_command_is_found_in_the_source_the_class_test_reads() {
+    // #7892: a command the scan above missed would be checked by nothing there.
+    let mut found: Vec<String> = commands_in_source().into_iter().map(|c| c.name).collect();
+    found.sort();
+    found.dedup();
+    let missed: Vec<&str> = registered()
+        .into_iter()
+        .filter(|name| !found.iter().any(|f| f == name))
+        .collect();
+    assert!(
+        missed.is_empty(),
+        "registered, but not found in source: {missed:?}"
+    );
+}
+
+#[test]
+fn the_door_is_the_one_off_the_window_and_no_counted_command_reaches_a_raw_hand_off() {
+    // #7892: the class test trusts a body that names `off_the_window` to go through the door,
+    // so there is one of that name; and no command the gate holds to a number (Model, Git)
+    // reaches a raw `spawn_blocking`, in its own body or in a function of its file (or one it
+    // names by path) that it calls. One a helper calls in turn is not followed.
+    use crate::off_the_main_thread::{Class, answer_class};
+    let lib = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("lib.rs");
+    let sources = sources();
+    let defined: Vec<String> = sources
+        .iter()
+        .flat_map(|(file, lines)| {
+            lines.iter().enumerate().filter_map(move |(at, line)| {
+                // The name itself, not one it begins (`off_the_window_refused` hands its work
+                // to the door, and a raw hand-off in it would be caught below).
+                let names = [
+                    "fn off_the_window<",
+                    "fn off_the_window(",
+                    "as off_the_window;",
+                ]
+                .iter()
+                .any(|named| line.contains(named))
+                    || line.contains("macro_rules! off_the_window ");
+                names.then(|| format!("{}:{}", file.display(), at + 1))
+            })
+        })
+        .collect();
+    assert_eq!(defined.len(), 1, "`off_the_window` defined at {defined:?}");
+    assert!(
+        defined[0].starts_with(&lib.display().to_string()),
+        "{defined:?}"
+    );
+
+    let door_at: usize = defined[0].rsplit(':').next().unwrap().parse().unwrap();
+    let lib_lines = &sources
+        .iter()
+        .find(|(file, _)| *file == lib)
+        .expect("lib.rs")
+        .1;
+    let door_ends = door_at
+        + lib_lines[door_at..]
+            .iter()
+            .take_while(|l| *l != "}")
+            .count();
+    let commands = commands_in_source();
+    // Held to a number: an Unmeasured one is counted where a test drives it, but no number
+    // holds it, so what escapes the count cannot pass a gate.
+    let counted = |c: &&InSource| {
+        c.asynchronous && matches!(answer_class(&c.name), Class::Model | Class::Git)
+    };
+    // Whether `body` calls the function `name`: as a word, not a method of that name.
+    let calls = |body: &str, name: &str| {
+        body.match_indices(name).any(|(at, _)| {
+            let before = body[..at].chars().next_back();
+            let after = &body[at + name.len()..];
+            !before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.')
+                && (after.starts_with('(') || after.starts_with("::<"))
+        })
+    };
+    let mut stray = Vec::new();
+    for (file, lines) in &sources {
+        for (at, line) in lines.iter().enumerate() {
+            if !line.contains("spawn_blocking") || line.trim_start().starts_with("//") {
+                continue;
+            }
+            if *file == lib && (door_at..door_ends).contains(&at) {
+                continue;
+            }
+            // A command's own body: only one nothing counts may hand off raw.
+            if let Some(command) = commands
+                .iter()
+                .find(|c| c.file == *file && c.lines.contains(&at))
+            {
+                if counted(&command) {
+                    stray.push(format!("{}:{} in {}", file.display(), at + 1, command.name));
+                }
+                continue;
+            }
+            // A helper's: no command the gate counts may call it, in its file or by its path.
+            let Some(helper) = lines[..=at].iter().rev().find_map(|l| {
+                let name: String = l
+                    .split("fn ")
+                    .nth(1)?
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                    .collect();
+                (!name.is_empty()).then_some(name)
+            }) else {
+                continue;
+            };
+            let callers: Vec<&str> = commands
+                .iter()
+                .filter(counted)
+                .filter(|c| {
+                    (c.file == *file && calls(&c.body, &helper))
+                        || c.body.contains(&format!("::{helper}("))
+                        || c.body.contains(&format!("::{helper}::<"))
+                })
+                .map(|c| c.name.as_str())
+                .collect();
+            if !callers.is_empty() {
+                stray.push(format!(
+                    "{}:{} in {helper}, which {callers:?} call",
+                    file.display(),
+                    at + 1
+                ));
+            }
+        }
+    }
+    assert!(
+        stray.is_empty(),
+        "a raw `spawn_blocking` a command held to a number reaches past the door: hand it to \
+         `crate::off_the_window` first\n{}",
+        stray.join("\n")
+    );
 }
 
 /// A project with its manifest and nothing else: a chat starts in it without a sandbox.

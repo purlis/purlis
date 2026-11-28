@@ -145,6 +145,9 @@ something to do:
 | A sub-agent's run                         | _Not hibernated: this is a sub-agent of a chat, not a chat of its own._                                                     |
 | Looked at recently                        | _Not hibernated: someone looked at this chat or typed in it recently._                                                      |
 
+A chat that may never be hibernated where it runs has its Hibernate row greyed, with the same
+words as the reason it cannot run: today a runner's chat, whose link refuses the act (#7877).
+
 ### What was typed into a hibernated chat
 
 What the person types into a chat once its program is ending is kept, never sent to a program
