@@ -69,6 +69,7 @@ import { settled } from "../PlaneEdits";
 import { NETWORK, networkGroup } from "./GrantedList";
 import { dispatchGroup } from "./dispatch";
 import { projectRunsOnSetting } from "./runsOn";
+import { hibernateAfterSetting } from "./hibernateAfter";
 import { teamPolicyRow } from "./teamPolicy";
 import { policyGroup, policyLogGroup } from "./policy";
 import {
@@ -796,6 +797,19 @@ function declaredGroups(
     // Dispatch (#1439, #1437): the limits, the grants and the policy's locks. It reads the core
     // on its own, as the Network page does.
     ...(read.plane !== undefined ? [dispatchGroup(read.plane, read.shared.file, read.shared)] : []),
+    // When its chats hibernate by themselves (SC-4h, #7637): this machine's alone.
+    ...(read.plane !== undefined
+      ? [
+          {
+            id: "project.chats",
+            label: "Chats",
+            help: "When purlis hibernates this project's chats that nobody is looking at.",
+            also: ["hibernate", "idle", "rest"],
+            kept: "Kept on this machine only, never in a committed file.",
+            settings: [hibernateAfterSetting(read.plane)],
+          },
+        ]
+      : []),
     // Where its chats run (#4536): this machine's, whatever the project's file says.
     ...(read.plane !== undefined
       ? [

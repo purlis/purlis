@@ -443,6 +443,9 @@ pub struct Held {
     hibernation_told: crate::hibernation::Teller,
     /// When each chat was last looked at or typed in (SC-4g, #7636).
     looked: crate::autohibernate::LookedAt,
+    /// How long its chats rest before the app may hibernate one: its `[chats]
+    /// hibernate_after` (SC-4h, #7637).
+    rests_for: purlis_core::hibernateafter::Kept,
     /// The device's gate of automatic hibernation, told what may change what it reads (SC-4g,
     /// #7636).
     gate: Arc<crate::autohibernate::Gate>,
@@ -1072,6 +1075,21 @@ impl Held {
     /// When each chat was last looked at or typed in (SC-4g, #7636).
     pub fn looked(&self) -> &crate::autohibernate::LookedAt {
         &self.looked
+    }
+
+    /// **How long a chat of this project nobody looks at rests before the app may hibernate it**:
+    /// its `[chats] hibernate_after`, `None` where it is `off` (SC-4h, #7637).
+    pub fn rests_for(&self) -> Option<std::time::Duration> {
+        self.rests_for.at(&self.root)
+    }
+
+    /// **Sets `[chats] hibernate_after` to `text`** (SC-4h, #7637), and answers what is in
+    /// force then. The gate reads it again at once, so its one deadline is armed anew.
+    pub fn set_rests_for(&self, text: &str) -> Result<Option<std::time::Duration>, String> {
+        let set = purlis_core::hibernateafter::set(&self.root, text);
+        self.rests_for.forget();
+        self.gate.poke();
+        set
     }
 
     /// **What is on screen may have changed** (SC-4g, #7636): the looked-at clock is told the
@@ -2230,9 +2248,12 @@ impl Held {
         session: u32,
         over: &dyn Fn() -> bool,
     ) -> Result<(), crate::hibernation::Refused> {
-        let looked_at =
-            self.looked
-                .looked_at_within(session, self.gate.now(), crate::autohibernate::AFTER);
+        let Some(after) = self.rests_for() else {
+            return Err(crate::hibernation::OFF_HERE.to_owned().into());
+        };
+        let looked_at = self
+            .looked
+            .looked_at_within(session, self.gate.now(), after);
         let facts = crate::hibernation::facts_of(self, session, looked_at);
         purlis_core::rested::rested(&facts)
             .and_then(|()| purlis_core::rested::by_hand(&facts))
@@ -6291,6 +6312,7 @@ impl Planes {
             hibernated,
             hibernation_told: Arc::clone(&self.hibernation_told),
             looked: crate::autohibernate::LookedAt::default(),
+            rests_for: purlis_core::hibernateafter::Kept::default(),
             gate: Arc::clone(&self.hibernate_gate),
             dispatch_grants: crate::dispatchgrants::Store::default(),
             held_dispatches: crate::handoff::HeldDispatches::default(),

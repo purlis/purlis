@@ -1348,6 +1348,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Settings' row alone. A chat never reads how many are kept nor deletes them.
     "task_screens",
     "set_task_screens",
+    // When this machine's chats of a project hibernate by themselves (SC-4h, #7637): Settings'
+    // row alone. A chat never turns off, or shortens, when the app may end another chat.
+    "hibernate_after",
+    "set_hibernate_after",
 ];
 
 /// **The commands of who may dispatch to whom**, by name (spec #1483): every one is on

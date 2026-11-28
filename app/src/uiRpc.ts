@@ -579,6 +579,8 @@ export const commands = {
 	/**  The chats of `plane` that are hibernated: what the window reads its rows by as it opens. */
 	hibernatedChats: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("hibernated_chats", { plane })),
 	hibernateChat: __WINDOW_ONLY_RESULT,
+	hibernateAfter: __WINDOW_ONLY_RESULT,
+	setHibernateAfter: __WINDOW_ONLY_RESULT,
 	/**
 	 *  Chat `session`, where its program ended with its session host and the person has not put
 	 *  it away.

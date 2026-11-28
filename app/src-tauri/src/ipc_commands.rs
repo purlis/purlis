@@ -217,6 +217,8 @@ macro_rules! app_commands {
                 hibernation::hibernated_chat_screen,
                 hibernation::hibernated_chats,
                 hibernation::hibernate_chat,
+                hibernation::hibernate_after,
+                hibernation::set_hibernate_after,
                 hostlost::chat_lost_with_the_host,
                 hostlost::put_away_lost_chat,
                 reconnecting::chats_reconnecting,

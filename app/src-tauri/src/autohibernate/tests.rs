@@ -9,7 +9,15 @@ const MINUTE: Duration = Duration::from_secs(60);
 const DAY: Duration = Duration::from_secs(24 * 60 * 60);
 
 fn resting(chat: u32, since: Instant) -> Candidate<u32> {
-    Candidate { chat, since }
+    Candidate {
+        chat,
+        since,
+        after: AFTER,
+    }
+}
+
+fn resting_for(chat: u32, since: Instant, after: Duration) -> Candidate<u32> {
+    Candidate { chat, since, after }
 }
 
 #[test]
@@ -17,7 +25,7 @@ fn under_the_target_a_chat_rested_a_day_is_not_hibernated_and_nothing_is_armed()
     let start = Instant::now();
     let rested = [resting(1, start), resting(2, start)];
     for hot in [1, 2, 3] {
-        assert_eq!(choose(hot, 3, &rested, start + DAY, AFTER), Choice::Nothing);
+        assert_eq!(choose(hot, 3, &rested, start + DAY), Choice::Nothing);
     }
 }
 
@@ -25,7 +33,7 @@ fn under_the_target_a_chat_rested_a_day_is_not_hibernated_and_nothing_is_armed()
 fn at_the_target_it_stops() {
     let start = Instant::now();
     assert_eq!(
-        choose(2, 2, &[resting(1, start)], start + DAY, AFTER),
+        choose(2, 2, &[resting(1, start)], start + DAY),
         Choice::Nothing
     );
 }
@@ -39,7 +47,7 @@ fn over_the_target_one_deadline_is_armed_for_the_first_chat_to_become_rested() {
         resting(3, start + 5 * MINUTE),
     ];
     assert_eq!(
-        choose(4, 2, &candidates, start + MINUTE, AFTER),
+        choose(4, 2, &candidates, start + MINUTE),
         Choice::ArmFor(start + AFTER)
     );
 }
@@ -52,19 +60,34 @@ fn over_the_target_the_longest_rested_chat_goes_first() {
         resting(2, start),
         resting(3, start + 5 * MINUTE),
     ];
-    assert_eq!(
-        choose(4, 2, &candidates, start + DAY, AFTER),
-        Choice::Hibernate(2)
-    );
+    assert_eq!(choose(4, 2, &candidates, start + DAY), Choice::Hibernate(2));
 }
 
 #[test]
 fn over_the_target_with_nothing_that_can_become_rested_nothing_is_armed() {
     let start = Instant::now();
+    assert_eq!(choose::<u32>(9, 2, &[], start + DAY), Choice::Nothing);
+}
+
+#[test]
+fn each_chat_rests_its_own_project_s_time_and_the_first_due_goes_though_another_rested_longer() {
+    // Two projects, two times, one count: the chat of the project at two hours rested longer,
+    // but the one at ten minutes is due first.
+    let start = Instant::now();
+    let candidates = [
+        resting_for(1, start, 120 * MINUTE),
+        resting_for(2, start + 5 * MINUTE, 10 * MINUTE),
+    ];
     assert_eq!(
-        choose::<u32>(9, 2, &[], start + DAY, AFTER),
-        Choice::Nothing
+        choose(3, 2, &candidates, start + MINUTE),
+        Choice::ArmFor(start + 15 * MINUTE)
     );
+    assert_eq!(
+        choose(3, 2, &candidates, start + 15 * MINUTE),
+        Choice::Hibernate(2)
+    );
+    // Both due: the one rested longest goes first.
+    assert_eq!(choose(3, 2, &candidates, start + DAY), Choice::Hibernate(1));
 }
 
 #[test]

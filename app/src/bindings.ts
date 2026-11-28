@@ -1320,6 +1320,18 @@ export const commands = {
 	 */
 	hibernateChat: (plane: PlaneId, session: number, ownWorkNamed: string[] | null) => typedError<Hibernation, string>(__TAURI_INVOKE("hibernate_chat", { plane, session, ownWorkNamed })),
 	/**
+	 *  **How long a chat of project `plane` nobody looks at rests before the app may hibernate it**
+	 *  (SC-4h, #7637): its `[chats] hibernate_after`, as the files spell it, `off` where it is off.
+	 *  What the row Settings › Project › Chats › Hibernate after draws.
+	 */
+	hibernateAfter: (plane: PlaneId) => typedError<string, string>(__TAURI_INVOKE("hibernate_after", { plane })),
+	/**
+	 *  **Sets project `plane`'s `[chats] hibernate_after` to `after`** (SC-4h, #7637), in its local
+	 *  file alone, and answers it as the files spell it. Refused for a value under 10 minutes or of
+	 *  another shape, with nothing written. The gate arms its one deadline anew.
+	 */
+	setHibernateAfter: (plane: PlaneId, after: string) => typedError<string, string>(__TAURI_INVOKE("set_hibernate_after", { plane, after })),
+	/**
 	 *  Chat `session`, where its program ended with its session host and the person has not put
 	 *  it away.
 	 */
