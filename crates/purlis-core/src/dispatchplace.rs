@@ -1151,7 +1151,7 @@ pub fn kept_from_removal(
                 .unwrap_or(record.worker.chat.name.clone());
             let tab = "Changes tab in the purlis window";
             match finished_for_its_task(root, workspace, repo, piece, &record, force, forge) {
-                Some(Ok(())) => return None,
+                Some(Ok(_)) => return None,
                 Some(Err(why)) if !goes => return Some(not_finished(&task, piece, &why, tab)),
                 _ => {}
             }
@@ -1202,7 +1202,7 @@ fn finished_for_its_task(
     record: &Record,
     force: bool,
     forge: crate::finished::Forge<'_>,
-) -> Option<Result<(), String>> {
+) -> Option<Result<crate::finished::Commits, String>> {
     let there = worktree::path_for(root, workspace, repo, piece)
         .is_ok_and(|folder| folder.symlink_metadata().is_ok());
     if force || !there {
@@ -1212,9 +1212,7 @@ fn finished_for_its_task(
         return Some(Err("its task has not ended".to_owned()));
     }
     Some(
-        crate::finished::as_it_stands(root, workspace, repo, piece, forge)
-            .map(|_| ())
-            .map_err(|why| why.why()),
+        crate::finished::as_it_stands(root, workspace, repo, piece, forge).map_err(|why| why.why()),
     )
 }
 
@@ -1251,10 +1249,47 @@ pub fn kept_from_the_explorer(
     no_discard_there: impl FnOnce() -> bool,
     forge: crate::finished::Forge<'_>,
 ) -> Option<String> {
-    let (held, goes) = if merging {
-        (held_in_folder(root, workspace, repo, piece)?, false)
+    explorer_reads(
+        root,
+        workspace,
+        repo,
+        piece,
+        merging,
+        force,
+        no_discard_there,
+        forge,
+    )
+    .err()
+}
+
+/// What [`kept_from_the_explorer`] reads of `piece`, where it does not keep it.
+enum ExplorerRead {
+    /// A task's folder that is finished, and how its commits stand.
+    Finished(crate::finished::Commits),
+    /// A folder the dispatch store does not hold: git's guard and the finished test say.
+    NotATask,
+    /// A task's folder a removal goes on with all the same ([`holding`]).
+    Goes,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn explorer_reads(
+    root: &Path,
+    workspace: &str,
+    repo: &str,
+    piece: &str,
+    merging: bool,
+    force: bool,
+    no_discard_there: impl FnOnce() -> bool,
+    forge: crate::finished::Forge<'_>,
+) -> Result<ExplorerRead, String> {
+    let held = if merging {
+        held_in_folder(root, workspace, repo, piece).map(|held| (held, false))
     } else {
-        holding(root, workspace, repo, piece, no_discard_there)?
+        holding(root, workspace, repo, piece, no_discard_there)
+    };
+    let Some((held, goes)) = held else {
+        return Ok(ExplorerRead::NotATask);
     };
     if let InFolder::Task(record) = &held
         && !merging
@@ -1264,17 +1299,17 @@ pub fn kept_from_the_explorer(
             .clone()
             .unwrap_or(record.worker.chat.name.clone());
         match finished_for_its_task(root, workspace, repo, piece, record, force, forge) {
-            Some(Ok(())) => return None,
+            Some(Ok(commits)) => return Ok(ExplorerRead::Finished(commits)),
             Some(Err(why)) if !goes => {
-                return Some(not_finished(&task, piece, &why, "Changes tab"));
+                return Err(not_finished(&task, piece, &why, "Changes tab"));
             }
             _ => {}
         }
     }
     if goes {
-        return None;
+        return Ok(ExplorerRead::Goes);
     }
-    Some(match held {
+    Err(match held {
         InFolder::Unread(id) => unread_holds(root, &id, piece, "try again", merging),
         InFolder::Task(record) => left_to_its_task(
             &record.task.unwrap_or(record.worker.chat.name),
@@ -1282,6 +1317,47 @@ pub fn kept_from_the_explorer(
             merging,
         ),
     })
+}
+
+/// **The explorer's Remove of `piece`** (#5476, ADR 0110 as amended 2026-11-28): what
+/// [`kept_from_the_explorer`] keeps is refused in its words. A finished folder, a task's or a
+/// plain one, goes past git's guard where [`crate::finished`] reads its commits as safe and git
+/// does not (carried, found in history, inside a request's head), as `purlis worktree remove`
+/// takes it. Anything else is removed as git removes it, `force` only where the person said so.
+/// The window never deletes a branch.
+pub fn remove_from_the_explorer(
+    root: &Path,
+    workspace: &str,
+    repo: &str,
+    piece: &str,
+    force: bool,
+    no_discard_there: impl FnOnce() -> bool,
+    forge: crate::finished::Forge<'_>,
+) -> Result<(), String> {
+    let commits = match explorer_reads(
+        root,
+        workspace,
+        repo,
+        piece,
+        false,
+        force,
+        no_discard_there,
+        forge,
+    )? {
+        ExplorerRead::Finished(commits) => Some(commits),
+        // A plain folder's own reading; links into it are not read, as git's guard never did.
+        ExplorerRead::NotATask if !force => {
+            crate::finished::own(root, workspace, repo, piece, forge).ok()
+        }
+        ExplorerRead::NotATask | ExplorerRead::Goes => None,
+    };
+    let removed = match commits {
+        Some(commits) if !commits.git_sees_it_safe() => {
+            worktree::remove_keeping_branch(root, workspace, repo, piece)
+        }
+        _ => worktree::remove(root, workspace, repo, piece, force, false),
+    };
+    removed.map(|_| ()).map_err(|refusal| refusal.in_window())
 }
 
 /// What [`held_in_folder`] finds in `piece`, and whether a removal of it goes on all the same:

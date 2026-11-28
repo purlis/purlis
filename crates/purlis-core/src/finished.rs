@@ -48,6 +48,13 @@ pub enum Commits {
 }
 
 impl Commits {
+    /// Whether git's own guard sees nothing lost with its folder (#5476): on its base, or on
+    /// no branch at a commit its base has. Any other finished folder goes past that guard, its
+    /// branch kept, as `git branch -d` would refuse it.
+    pub fn git_sees_it_safe(self) -> bool {
+        matches!(self, Self::OnBase | Self::NoBranch)
+    }
+
     /// Why deleting a branch that stands so loses nothing, as a clause: "it is on its base".
     pub fn why_its_branch_goes(self) -> String {
         match self {
