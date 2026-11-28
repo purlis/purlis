@@ -72,7 +72,7 @@ jobs:
           displaysleep=$(pmset -g 2>/dev/null | awk '$1 == "displaysleep" { print $2 }')
           echo "$USER's session: ${mine:-none}"
           echo "displays: $displays; display sleep after: ${displaysleep:-unknown} min (0 is never)"
-          said="docs/updating.md, \"The outcome bars on a self-hosted Mac\""
+          said="docs/updating.md, \"The budget run on the benchmark Mac\""
           case "$mine" in
             "") echo "::error title=No session::$USER has no login session on this Mac, so the app's window is drawn nowhere ($said)"; exit 1 ;;
             *'"CGSSessionScreenIsLocked"=Yes'*) echo "::error title=Screen locked::$USER's screen is locked, so WebKit paints no frame of the app's window ($said)"; exit 1 ;;
@@ -240,12 +240,18 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
-    concurrency:
-      group: budget-record
-      cancel-in-progress: false
+    # **No concurrency group** (#7944): GitHub keeps one pending job per group, so a third record
+    # job queued in one would replace the one waiting and lose its point. Two at once are
+    # github-action-benchmark's to settle: it fetches the branch again and retries a push that
+    # lost the race.
     # No cache: the job that writes restores nothing another job saved.
     steps:
+      # **The token is never left in `.git/config`** (#7944), beside the artifact this job
+      # downloads: the step that makes the branch hands it to its one push, and
+      # github-action-benchmark pushes with the token it is given.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: budget-run
@@ -258,11 +264,18 @@ jobs:
           GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
           GIT_COMMITTER_NAME: github-actions[bot]
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           if ! git ls-remote --exit-code --heads origin benchmarks; then
             empty=$(git hash-object -t tree /dev/null)
             root=$(git commit-tree "$empty" -m "benchmarks: github-action-benchmark's data for ADR 0086's CI relative rows")
-            git push origin "$root:refs/heads/benchmarks"
+            auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+            echo "::add-mask::$auth"
+            # A record job beside this one may have made it first: then it is there, which is all
+            # this step is for.
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin "$root:refs/heads/benchmarks" \
+              || git ls-remote --exit-code --heads origin benchmarks
           fi
       - if: hashFiles('budget/series.json') != ''
         uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
