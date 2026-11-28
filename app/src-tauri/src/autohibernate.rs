@@ -43,9 +43,11 @@ use std::time::{Duration, Instant};
 
 use crate::planes::{Held, PlaneId};
 
-/// **How long a chat nobody looks at rests before the app may hibernate it**: the spec's
-/// default, 30 minutes. SC-4h (#7637) makes it each project's `[chats] hibernate_after`.
-pub const AFTER: Duration = Duration::from_secs(30 * 60);
+/// **How long a chat nobody looks at rests before the app may hibernate it, where its project
+/// sets nothing**: the spec's default, 30 minutes. Each project's own is its
+/// `[chats] hibernate_after` ([`purlis_core::hibernateafter::Kept`], SC-4h, #7637). It is also how long a refusal the
+/// act could not do holds ([`Refusal`]).
+pub const AFTER: Duration = purlis_core::hibernateafter::DEFAULT;
 
 /// What tells the time to the looked-at clock and the gate: **an [`Instant`], never the wall
 /// clock's time**, so nothing a wall clock does can rest a chat. The app's is
@@ -200,6 +202,15 @@ pub struct Candidate<K> {
     pub chat: K,
     /// Since when nobody has looked at it.
     pub since: Instant,
+    /// How long it rests before it may go: its own project's `[chats] hibernate_after`.
+    pub after: Duration,
+}
+
+impl<K> Candidate<K> {
+    /// When its time is up.
+    fn due(&self) -> Instant {
+        self.since + self.after
+    }
 }
 
 /// What the gate does, read once.
@@ -215,26 +226,30 @@ pub enum Choice<K> {
 
 /// **The gate's one decision** (ADR 0082 as amended 2026-11-25): with `hot` chats hot on this
 /// device and a target of `target`, among `candidates` (the chats rested in every fact but
-/// time), at `now`, resting `after` before they may go.
+/// time, each resting its own project's time), at `now`. Of those whose time is up, the one
+/// rested longest goes; with none, the one deadline is the first time to be up. One count of
+/// hot chats for the device, each chat's time its own project's (SC-4h, #7637).
 pub fn choose<K: Clone>(
     hot: u32,
     target: u32,
     candidates: &[Candidate<K>],
     now: Instant,
-    after: Duration,
 ) -> Choice<K> {
     if hot <= target {
         return Choice::Nothing;
     }
-    let Some(longest) = candidates.iter().min_by_key(|candidate| candidate.since) else {
-        return Choice::Nothing;
-    };
-    let due = longest.since + after;
-    if due <= now {
-        Choice::Hibernate(longest.chat.clone())
-    } else {
-        Choice::ArmFor(due)
+    if let Some(longest) = candidates
+        .iter()
+        .filter(|candidate| candidate.due() <= now)
+        .min_by_key(|candidate| candidate.since)
+    {
+        return Choice::Hibernate(longest.chat.clone());
     }
+    candidates
+        .iter()
+        .map(Candidate::due)
+        .min()
+        .map_or(Choice::Nothing, Choice::ArmFor)
 }
 
 /// A chat, by its project and number.
@@ -496,6 +511,10 @@ impl Gate {
         let mut candidates = Vec::new();
         let mut lapses: Option<Instant> = None;
         for held in &projects {
+            // A project whose `[chats] hibernate_after` is `off` gives none (SC-4h, #7637).
+            let Some(after) = held.rests_for() else {
+                continue;
+            };
             for session in held.chats().sessions_open() {
                 let facts = crate::hibernation::facts_of(held, session, false);
                 if purlis_core::rested::rested(&facts).is_err()
@@ -515,14 +534,14 @@ impl Gate {
                 if lock(&self.passed_over).contains(&chat) {
                     continue;
                 }
-                candidates.push(Candidate { chat, since });
+                candidates.push(Candidate { chat, since, after });
             }
         }
         let armed = |deadline: Option<Instant>| {
             self.arm(deadline);
             deadline.map_or(Read::Nothing, Read::Armed)
         };
-        match choose(hot, target, &candidates, now, AFTER) {
+        match choose(hot, target, &candidates, now) {
             Choice::Nothing => armed(lapses),
             Choice::ArmFor(due) => armed(Some(lapses.map_or(due, |at| at.min(due)))),
             Choice::Hibernate(chat) => {
@@ -573,6 +592,7 @@ impl Gate {
         );
         if let Refused::Said(said) = why
             && (said == crate::hibernation::AT_THE_TARGET
+                || said == crate::hibernation::OFF_HERE
                 || said == crate::planes::QUIT_AS_IT_HIBERNATED)
         {
             return Read::Nothing;

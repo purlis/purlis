@@ -338,6 +338,7 @@ describe("the Project level", () => {
         "Persona hosts",
         "Network",
         "Dispatch",
+        "Chats",
         "Runs on",
         "Forges",
         "Extensions",

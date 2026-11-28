@@ -10159,6 +10159,11 @@ fn a_mark_whose_host_cannot_say_yet_what_it_runs_is_read_hot_at_a_restart() {
 /// board, not sent over the plane's socket, so no hook is heard and nothing pokes the gate:
 /// the test reads it.
 fn a_claude_chat_resting(held: &Held, dir: &Path, name: &str) -> u32 {
+    a_claude_chat_resting_in(held, &dir.join("plane"), name)
+}
+
+/// [`a_claude_chat_resting`], in the project at `root`.
+fn a_claude_chat_resting_in(held: &Held, root: &Path, name: &str) -> u32 {
     use purlis_core::state::Event::{SessionStart, Stop, UserPromptSubmit};
     let beside = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/hibernate-stand-ins");
     std::fs::create_dir_all(&beside).expect("a folder for the stand-in");
@@ -10166,7 +10171,7 @@ fn a_claude_chat_resting(held: &Held, dir: &Path, name: &str) -> u32 {
     let claude = stand_in::claude_code(beside.path(), "claude", "#!/bin/sh\nexit 0\n");
     let mut chat = one_chat_on(&claude.display().to_string()).chats.remove(0);
     chat.name = name.to_owned();
-    let here = dir.join("plane/workspaces/alpha");
+    let here = root.join("workspaces/alpha");
     std::fs::create_dir_all(&here).expect("a folder of the project");
     chat.cwd = Some(here);
     let session = held
@@ -10418,6 +10423,123 @@ fn the_app_s_act_reads_the_looked_at_clock_and_the_count_again() {
         held.hibernated().of(session),
         Some(crate::hibernation::By::Idle)
     );
+}
+
+/// Project `held`'s `[chats] hibernate_after`, written by hand into its local file.
+fn rests_for_by_hand(held: &Held, value: &str) {
+    let file = held
+        .root()
+        .join(purlis_core::settings::Which::Local.file_at(held.root()));
+    // Appended: the file already holds the test's sandbox opt-out, which must stay.
+    let mut text = std::fs::read_to_string(&file).unwrap_or_default();
+    text.push_str(&format!("\n[chats]\nhibernate_after = \"{value}\"\n"));
+    std::fs::write(file, text).expect("the local settings file");
+}
+
+#[test]
+fn off_hibernates_nothing_by_itself_however_long_and_far_over_the_target_and_hibernate_still_works()
+{
+    use crate::autohibernate::Read;
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 0);
+    rests_for_by_hand(&held, "off");
+    let one = a_claude_chat_resting(&held, dir.path(), "one");
+    let two = a_claude_chat_resting(&held, dir.path(), "two");
+    let three = a_claude_chat_resting(&held, dir.path(), "three");
+    nothing_on_screen(&held);
+
+    assert_eq!(planes.gate().read(), Read::Nothing);
+    clock.advance(std::time::Duration::from_secs(7 * 24 * 60 * 60));
+    assert_eq!(planes.gate().read(), Read::Nothing);
+    assert_eq!(planes.gate().armed(), None);
+    assert_eq!(
+        held.hibernate_chat_idle(one, &|| true),
+        Err(crate::hibernation::Refused::Said(
+            crate::hibernation::OFF_HERE.to_owned()
+        )),
+        "nor does the act take it, had the gate picked it before the setting changed"
+    );
+    assert_eq!(host.hibernated(), Vec::<u32>::new());
+
+    // The person's own Hibernate does not read the setting.
+    held.hibernate_chat(two).expect("it hibernates");
+    assert_eq!(
+        held.hibernated().of(two),
+        Some(crate::hibernation::By::Operator)
+    );
+    assert_eq!(held.hibernated().of(three), None);
+}
+
+#[test]
+fn two_projects_rest_their_chats_each_by_its_own_time_over_one_device_wide_count() {
+    use crate::autohibernate::{Clock, Read};
+    const MINUTE: std::time::Duration = std::time::Duration::from_secs(60);
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, slow) = gated_on(&host, dir.path(), &clock, 1);
+    let other = a_plane(&dir.path().join("other"));
+    crate::sandboxing::no_sandbox_here_for_tests(&other);
+    let quick = planes.held(&planes.open(&other)).expect("it is held");
+    rests_for_by_hand(&slow, "2h");
+    rests_for_by_hand(&quick, "15m");
+    // The slow project's chat rests first and longest. One chat in each: two hot, target 1.
+    let resting_longest = a_claude_chat_resting(&slow, dir.path(), "slow");
+    nothing_on_screen(&slow);
+    let start = clock.now();
+    assert_eq!(planes.gate().read(), Read::Nothing, "one hot is the target");
+    clock.advance(5 * MINUTE);
+    let due_first = a_claude_chat_resting_in(&quick, &other, "quick");
+    nothing_on_screen(&quick);
+
+    assert_eq!(planes.gate().hot(), 2, "one count across both projects");
+    assert_eq!(
+        planes.gate().read(),
+        Read::Armed(start + 20 * MINUTE),
+        "the quick project's chat is the first due, though the other rested longer"
+    );
+    clock.advance(15 * MINUTE);
+    assert_eq!(
+        planes.gate().read(),
+        Read::Hibernated((quick.plane_id().clone(), due_first))
+    );
+    assert_eq!(
+        planes.gate().read(),
+        Read::Nothing,
+        "it stops at the target"
+    );
+    assert_eq!(slow.hibernated().of(resting_longest), None);
+}
+
+#[test]
+fn changing_the_setting_arms_the_deadline_anew() {
+    use crate::autohibernate::{AFTER, Clock, Read};
+    const MINUTE: std::time::Duration = std::time::Duration::from_secs(60);
+    let dir = tempfile::tempdir().expect("a directory");
+    let host = Pretend::default();
+    let clock = crate::autohibernate::HeldClock::new();
+    let (planes, _logs, held) = gated_on(&host, dir.path(), &clock, 1);
+    let first = a_claude_chat_resting(&held, dir.path(), "first");
+    let second = a_claude_chat_resting(&held, dir.path(), "second");
+    nothing_on_screen(&held);
+    let start = clock.now();
+    assert_eq!(planes.gate().read(), Read::Armed(start + AFTER));
+
+    assert_eq!(
+        held.set_rests_for("1h"),
+        Ok(Some(60 * MINUTE)),
+        "Settings sets it"
+    );
+    assert_eq!(planes.gate().read(), Read::Armed(start + 60 * MINUTE));
+    // Past the old time and not the new: nothing goes, and the new deadline stays armed.
+    clock.advance(AFTER + MINUTE);
+    assert_eq!(planes.gate().read(), Read::Armed(start + 60 * MINUTE));
+    assert_eq!(held.hibernated().of(first), None);
+    assert_eq!(held.hibernated().of(second), None);
+    clock.advance(30 * MINUTE);
+    assert!(matches!(planes.gate().read(), Read::Hibernated(_)));
 }
 
 /// Chat `session`'s harness reports `events`, in its own conversation, to the board.

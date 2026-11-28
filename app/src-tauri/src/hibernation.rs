@@ -52,6 +52,11 @@ pub const STILL_HIBERNATING: &str =
 pub const AT_THE_TARGET: &str =
     "Not hibernated: the device is no longer over its target of hot chats.";
 
+/// Why the app's own hibernation did not take: the chat's project turned
+/// `[chats] hibernate_after` off since the gate picked it (SC-4h, #7637). Logged, never said.
+pub const OFF_HERE: &str =
+    "Not hibernated: this project's setting says to hibernate none of its chats by themselves.";
+
 /// Why a hibernation did not take: the chat's program ended another way as it ended.
 pub const ENDED_ANOTHER_WAY: &str =
     "Not hibernated: this chat ended another way while purlis hibernated it.";
@@ -726,6 +731,40 @@ pub(crate) fn screen_of(held: &crate::planes::Held, session: u32) -> Option<Stri
     held.hibernated().of(session)?;
     let id = held.chats().recorded_chat(session)?.identity.id?;
     purlis_core::hibernatedscreens::kept(held.root(), &id)
+}
+
+/// **How long a chat of project `plane` nobody looks at rests before the app may hibernate it**
+/// (SC-4h, #7637): its `[chats] hibernate_after`, as the files spell it, `off` where it is off.
+/// What the row Settings › Project › Chats › Hibernate after draws.
+#[tauri::command]
+#[specta::specta]
+pub async fn hibernate_after(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<String, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("reading when chats hibernate", move || {
+        Ok(purlis_core::hibernateafter::spelled_as(held.rests_for()))
+    })
+    .await
+}
+
+/// **Sets project `plane`'s `[chats] hibernate_after` to `after`** (SC-4h, #7637), in its local
+/// file alone, and answers it as the files spell it. Refused for a value under 10 minutes or of
+/// another shape, with nothing written. The gate arms its one deadline anew.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_hibernate_after(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+    after: String,
+) -> Result<String, String> {
+    let held = planes.held(&plane)?;
+    crate::off_the_window("setting when chats hibernate", move || {
+        held.set_rests_for(&after)
+            .map(purlis_core::hibernateafter::spelled_as)
+    })
+    .await
 }
 
 /// Hibernate on a chat's row (SC-4a, #7630): the person's act. Where the chat may not be

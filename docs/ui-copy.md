@@ -148,6 +148,20 @@ something to do:
 A chat that may never be hibernated where it runs has its Hibernate row greyed, with the same
 words as the reason it cannot run: today a runner's chat, whose link refuses the act (#7877).
 
+### When a project's chats hibernate by themselves
+
+Settings › Project › Chats › Hibernate after is `[chats] hibernate_after` (SC-4h): a time such
+as `30m` or `2h`, at least 10 minutes, or `off`. The core refuses what it cannot take, and the
+row says its sentence under the box, word for word:
+
+| Value            | Words                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------- |
+| Under 10 minutes | _{value} is under 10 minutes, the least it may be. Set 10m or more, or off._                      |
+| Not a time       | _{value} is not a time purlis reads. Write a whole number and m or h, such as 45m or 2h, or off._ |
+
+The same sentence follows _[chats] hibernate_after in charter.local.toml is not read, so chats
+hibernate after 30m._ where the file holds such a value by hand.
+
 ### What was typed into a hibernated chat
 
 What the person types into a chat once its program is ending is kept, never sent to a program
