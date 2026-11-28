@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795869817018,
+  "lastUpdate": 1795873171452,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -59052,6 +59052,48 @@ window.BENCHMARK_DATA = {
             "value": 101.5601235,
             "unit": "ms",
             "extra": "median of 5 runs: 101.376, 101.530, 101.560, 101.819, 101.851 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "753ea51bbac5de7a2c03be032ee55493abd96dd8",
+          "message": "Container check hand-off: 3 s, kept only after the pin matches (#7922) (#8035)\n\n* Container check hand-off: 3 s, kept only after the pin matches, tested (#7922)\n\nPIN_SAID_FOR goes from 30 s to 3 s: on a link the daemon check follows the pin's\ndocker info within milliseconds. engine_holds now reads the pin (engine_id_read,\nengine_pin_read) and hands what docker info said on (Docker::hand_on) only after\nthe engine matches the pin; engine_id_said and engine_pin_said keep nothing.\nPinSaid's docs name every check that may take the hand-off: the container check,\nmake_for's daemon check, and the drain's parallel checks. Tests: the hand-off\nexpires (clock handed in), two docker_of results never share a slot, and an\nengine that is not the pinned one hands nothing on.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GKFZHX06D8HJ1ND8T5SK1D\nPurlis-Persona: steward\n\n* Review of #7922: the shared-slot guard goes through pointed; clearer names\n\nThe guard that two links never share what their pins said now goes through\nsshroute::pool::pointed, which every docker_of result is made with, in place of\na hand-made copy of it; seen red with keeping_what_its_pin_said keeping a slot it\nwas handed. Docker::hand_on is keep_for_the_daemon_check, PinRead's field is\nengine, the expiry test's name says its bound, the handed-on guard records how it\nwas seen red, and the sshroute tests reuse dockerpool's info_of and runs_of.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GKFZHX06D8HJ1ND8T5SK1D\nPurlis-Persona: steward\n\n* sshroute::pool: its tests move to pool/tests.rs, unchanged (CONTRIBUTING.md:132-134)\n\nMove only: the in-file mod tests block, with use super::*, now in its\nown file. rustfmt re-flows three statements once dedented; no token\nchanges.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GRQP7XJXFJYZRP3RNSECAF\nPurlis-Persona: steward\n\n* Container check hand-off: its tests stop the clock; review nits (#7922)\n\nThe tests of the hand-off that check through check() or resumed() take\nwhat the pin read with the machine's clock, so a slow run past 3 s took\nnothing and went red. A test-only stopped clock on PinSaid, carried by\nkeeping_what_its_pin_said so pointed keeps it, is read by both keep and\ntake. Seen: with PIN_SAID_FOR at 0 the four stay green on the stopped\nclock and go red on the machine's.\n\nAlso: engine_id_read's id is named id again, as in engine_pin_read, and\ntwo doc lines are re-wrapped to 100 columns.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GRQP7XJXFJYZRP3RNSECAF\nPurlis-Persona: steward\n\n* Container check hand-off: the stopped clock is test-only; pointed's doc names every taker (#7922)\n\nFrom the branch's two-axis review: PinSaid.stopped_at and the now()\nthat reads it are #[cfg(test)], so a build that ships has no field to\nstop the hand-off's clock; pointed's doc says the first daemon check\ntakes what the pin read, as PinSaid's does, not only the container's.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8GRQP7XJXFJYZRP3RNSECAF\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T12:53:05Z",
+          "tree_id": "b917b7b20de21e8d4e266361a2a642525261041c",
+          "url": "https://github.com/purlis/purlis/commit/753ea51bbac5de7a2c03be032ee55493abd96dd8"
+        },
+        "date": 1795873163003,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.43110099999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.421, 0.430, 0.431, 0.460, 0.461 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 18.372622999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 17.368, 17.407, 18.373, 19.100, 19.167 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 108.957068,
+            "unit": "ms",
+            "extra": "median of 5 runs: 104.652, 104.744, 108.957, 113.624, 113.666 ms"
           }
         ]
       }
