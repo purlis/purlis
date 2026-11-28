@@ -1213,6 +1213,9 @@ pub(crate) mod pretend {
         /// Why a hibernation fails, while a test says one does, and whether its program has
         /// ended by then ([`Pretend::hibernates_none`], [`Pretend::hibernates_unanswered`]).
         hibernate_fails: Mutex<Option<(String, bool)>>,
+        /// The chats whose hibernation fails, each with why, before its program ends
+        /// ([`Pretend::hibernates_not`]).
+        hibernate_fails_of: Mutex<std::collections::HashMap<u32, String>>,
         /// What happens while a hibernation takes its chat's screen, once ([`Pretend::at_the_screen`]).
         at_the_screen: Mutex<Option<Box<dyn FnOnce() + Send>>>,
         /// What happens once a hibernation is asked of the host, before its program ends, once
@@ -1517,6 +1520,16 @@ pub(crate) mod pretend {
         /// hibernates them again (#7630).
         pub fn hibernates_none(&self, why: Option<&str>) {
             *lock(&self.seen.hibernate_fails) = why.map(|why| (why.to_owned(), false));
+        }
+
+        /// Fails chat `id`'s hibernation from now with `why`, before its program ends; `None`
+        /// hibernates it again (SC-4g, #7636).
+        pub fn hibernates_not(&self, id: u32, why: Option<&str>) {
+            let mut fails = lock(&self.seen.hibernate_fails_of);
+            match why {
+                Some(why) => fails.insert(id, why.to_owned()),
+                None => fails.remove(&id),
+            };
         }
 
         /// Ends the program of every hibernation from now, then fails to answer with `why`: a
@@ -1979,6 +1992,9 @@ pub(crate) mod pretend {
                 then();
             }
             self.here(id)?;
+            if let Some(why) = lock(&self.seen.hibernate_fails_of).get(&id).cloned() {
+                return Err(why);
+            }
             let fails = lock(&self.seen.hibernate_fails).clone();
             if let Some((why, false)) = fails {
                 return Err(why);

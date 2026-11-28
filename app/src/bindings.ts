@@ -8028,8 +8028,8 @@ export type By =
 /**  The person did, from its row. */
 "operator" | 
 /**
- *  The app did, by itself, for a rested chat: read back from the record at a restart
- *  (SC-4e, #7634).
+ *  The app did, by itself, for a rested chat while the device was over its hot target
+ *  (SC-4g, #7636), or read back from the record at a restart (SC-4e, #7634).
  */
 "idle" | 
 /**
@@ -9311,7 +9311,8 @@ export type DiagnosticsHere = {
 	open: number,
 	/**
 	 *  The open chats whose run has a process (the glossary's **hot chat**): `starting`,
-	 *  `working`, `input-required` or `paused`. A queued or hibernated run is open, not hot.
+	 *  `working`, `input-required` or `paused`, on this device. A queued or hibernated run is
+	 *  open, not hot, and so is a runner's or a pool's chat, whose program runs elsewhere.
 	 */
 	hot: number,
 	/**  The device's RAM class and its hot target. */

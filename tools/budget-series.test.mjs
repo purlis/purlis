@@ -92,6 +92,21 @@ test("a run in any screen mode but the pinned one is evidence only, never a seri
   assert.match(warnings.join("\n"), /not the pinned 1920x1080 HiDPI @ 60 Hz.*evidence only/);
 });
 
+test("a screen that only nearly matches the pinned one is evidence only too", () => {
+  // Each is one way a looser match than the pinned mode, whole, would pass it into the trend.
+  for (const screen of [
+    "1920x1080 @ 60 Hz", // not HiDPI: the dummy plug's mode without its scaling
+    "1920x1080 HiDPI @ 59.94 Hz", // the NTSC rate, not the pinned 60 Hz
+    `${PINNED_SCREEN} + 1920x1080`, // a second display beside the pinned one
+    "no display",
+    undefined, // no screen read at all
+  ]) {
+    const { series, evidence } = seriesPoints(results, { ...machine, screen });
+    assert.deepEqual(series, [], String(screen));
+    assert.equal(evidence.length, 4, String(screen));
+  }
+});
+
 test("a row that recorded nothing, or one switch, is left out with a warning", () => {
   const thin = {
     machine: results.machine,
@@ -112,6 +127,10 @@ test("the screen mode is what the display looks like, HiDPI when it draws more p
   assert.equal(screenMode(displays("1920 x 1080 (1080p FHD - Full High Definition)", "1920 x 1080 @ 60.00Hz")), "1920x1080 @ 60 Hz");
   assert.equal(screenMode(displays("3456 x 2234 Retina", "1728 x 1117 @ 120.00Hz")), "1728x1117 HiDPI @ 120 Hz");
   assert.equal(screenMode(displays("2560 x 1440", null)), "2560x1440");
+  // **59.94 Hz is not the pinned 60 Hz** (#7944): a rate is rounded to its hundredths, never to a
+  // whole hertz, so a Mac that came up in the NTSC mode reads as another screen and is evidence.
+  assert.equal(screenMode(displays("3840 x 2160", "1920 x 1080 @ 59.94Hz")), "1920x1080 HiDPI @ 59.94 Hz");
+  assert.equal(screenMode(displays("3840 x 2160", "1920 x 1080 @ 60.00Hz")), PINNED_SCREEN);
   assert.equal(screenMode("Graphics/Displays:\n\n    Apple M1 Max:\n\n      Chipset Model: Apple M1 Max\n"), "no display");
   const two = displays("3840 x 2160", "1920 x 1080 @ 60.00Hz") + "        Other:\n          Resolution: 1920 x 1080\n";
   assert.equal(screenMode(two), `${PINNED_SCREEN} + 1920x1080`);
@@ -139,6 +158,23 @@ test("the command writes the series and the evidence apart, and no file for an e
   const point = JSON.parse(readFileSync(out, "utf8"))[0];
   // The OS comes from the bench's own record of the machine.
   assert.match(point.extra, /macOS 15\.6\.1/);
+
+  // Anything but the pinned screen: the points go to the evidence alone, and no series is written.
+  const otherOut = join(dir, "other-series.json");
+  const otherEvidence = join(dir, "other-evidence.json");
+  writeFileSync(shown, displays("1920 x 1080 (1080p FHD - Full High Definition)", "1920 x 1080 @ 60.00Hz"));
+  const other = spawnSync(
+    process.execPath,
+    [script, "--results", input, "--displays", shown, "--model", "Mac13,1", "--commit", "7a54a9065", "--out", otherOut, "--evidence-out", otherEvidence],
+    { encoding: "utf8", env: { ...process.env, GITHUB_STEP_SUMMARY: join(dir, "other-summary.md") } },
+  );
+  assert.equal(other.status, 0, other.stderr);
+  assert.equal(existsSync(otherOut), false);
+  const kept = JSON.parse(readFileSync(otherEvidence, "utf8"));
+  assert.equal(kept.length, 4);
+  assert.match(kept[0].extra, /screen 1920x1080 @ 60 Hz/);
+  assert.match(other.stdout, /0 series point\(s\), 4 evidence point\(s\); screen 1920x1080 @ 60 Hz/);
+  assert.match(readFileSync(join(dir, "other-summary.md"), "utf8"), /recorded as evidence only/);
 
   const missing = spawnSync(process.execPath, [script, "--results", join(dir, "none.json"), "--displays", shown, "--model", "m", "--commit", "c", "--out", join(dir, "x.json"), "--evidence-out", join(dir, "y.json")], { encoding: "utf8" });
   assert.equal(missing.status, 0, missing.stderr);

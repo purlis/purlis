@@ -400,8 +400,8 @@ performance budgets, so that one machine's timings make each series. No pull req
 _Avoid_: CI Mac, runner (alone)
 
 **Budget run**:
-The job on the **Benchmark Mac** that measures the window and felt rows after each push to `main`
-and nightly, and records each as a point of its series. It judges nothing as it runs: a
+The job on the **Benchmark Mac** that measures the window and felt rows of the **performance
+budgets** after each push to `main` and nightly, and records each as a point of its series. It judges nothing as it runs: a
 regression is detected from the series, after the merge that caused it.
 _Avoid_: benchmark (alone), perf job, bench run
 

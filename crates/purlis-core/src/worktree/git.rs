@@ -2105,7 +2105,11 @@ pub fn run_status_writing_index(dir: &Path, tuning: Tuning) -> Option<Result<Run
         Err(why) => return Some(Err(why)),
     };
     Some(counted(dir, &args, || {
-        Ok(wait(spawn_with(dir, &args, &extra)?, WRITES_INDEX)?)
+        Ok(wait(
+            spawn_with(dir, &args, &extra)?,
+            WRITES_INDEX,
+            GIT_DEADLINE,
+        )?)
     }))
 }
 
@@ -2259,7 +2263,7 @@ pub(crate) fn run_with_vars(
         Err(answer) => return Ok(as_text(answer)),
     };
     counted(dir, args, || {
-        Ok(wait(spawn_with(dir, args, &extra)?, timeout)?)
+        Ok(wait(spawn_with(dir, args, &extra)?, timeout, GIT_DEADLINE)?)
     })
 }
 
@@ -2275,7 +2279,7 @@ pub fn run(dir: &Path, args: &[&str], timeout: Duration) -> Result<Run, GitUnava
         Err(answer) => return Ok(as_text(answer)),
     };
     counted(dir, args, || {
-        Ok(wait(spawn_with(dir, args, &extra)?, timeout)?)
+        Ok(wait(spawn_with(dir, args, &extra)?, timeout, GIT_DEADLINE)?)
     })
 }
 
@@ -2905,6 +2909,7 @@ fn run_network_shaped(
             None,
             stall,
             watch,
+            GIT_DEADLINE,
         )?))
     })?;
     // Listed once git has run (#959): a call refused before it started reached nobody. Each
@@ -2994,7 +2999,7 @@ pub(crate) fn run_network_handing(
     };
     let started = Instant::now();
     let run = counted(dir, args, || {
-        Ok::<_, GitUnavailable>(wait(spawn_with(dir, args, &extra)?, NETWORK)?)
+        Ok::<_, GitUnavailable>(wait(spawn_with(dir, args, &extra)?, NETWORK, GIT_DEADLINE)?)
     })?;
     for (operation, remote) in destinations(dir, args) {
         crate::netlog::git_call(operation, &remote, run.ok(), started.elapsed());
@@ -3204,8 +3209,10 @@ pub(crate) fn spawn_persons_clone(
 ///
 /// Shared with the forge CLI runner (`crate::forge`), which has the same two hazards: an
 /// undrained pipe that deadlocks the wait, and a child that never answers.
-pub(crate) fn wait(child: Child, timeout: Duration) -> std::io::Result<Run> {
-    let raw = wait_raw(child, timeout)?;
+///
+/// `named` is the deadline's name where it expires ([`crate::applog::expired`]).
+pub(crate) fn wait(child: Child, timeout: Duration, named: &'static str) -> std::io::Result<Run> {
+    let raw = wait_raw_until_named(child, timeout, None, None, named)?;
     Ok(Run {
         code: raw.code,
         out: String::from_utf8_lossy(&raw.out).into_owned(),
@@ -3227,8 +3234,26 @@ fn wait_raw_until(
     called_off: Option<&AtomicBool>,
     stall: Option<Duration>,
 ) -> std::io::Result<RawRun> {
-    wait_raw_watched(child, timeout, called_off, stall, None)
+    wait_raw_until_named(child, timeout, called_off, stall, GIT_DEADLINE)
 }
+
+/// [`wait_raw_until`], its deadline named `named` where it expires.
+fn wait_raw_until_named(
+    child: Child,
+    timeout: Duration,
+    called_off: Option<&AtomicBool>,
+    stall: Option<Duration>,
+    named: &'static str,
+) -> std::io::Result<RawRun> {
+    wait_raw_watched(child, timeout, called_off, stall, None, named)
+}
+
+/// What a git call's deadline is called where it expires ([`crate::applog::expired`]).
+const GIT_DEADLINE: &str = "git's deadline";
+
+/// What a git call's silence limit is called where it expires: the call wrote nothing for that
+/// long.
+const GIT_SILENCE: &str = "git's silence limit";
 
 /// [`wait_raw_until`], handing `watch` each chunk of stderr as the child writes it.
 fn wait_raw_watched(
@@ -3237,6 +3262,7 @@ fn wait_raw_watched(
     called_off: Option<&AtomicBool>,
     stall: Option<Duration>,
     watch: Option<Watch>,
+    named: &'static str,
 ) -> std::io::Result<RawRun> {
     // A caller that reads the output as it comes ([`run_capped`]) took it already.
     let stdout = child.stdout.take();
@@ -3279,6 +3305,11 @@ fn wait_raw_watched(
         if now >= deadline || silent || called_off.is_some_and(|off| off.load(Ordering::Relaxed)) {
             timed_out = now >= deadline;
             stalled = silent;
+            if timed_out {
+                crate::applog::expired(named, timeout);
+            } else if let Some(limit) = stall.filter(|_| silent) {
+                crate::applog::expired(GIT_SILENCE, limit);
+            }
             stop(&mut child);
             break None;
         }

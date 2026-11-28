@@ -441,6 +441,11 @@ pub struct Held {
     hibernated: Arc<crate::hibernation::Hibernated>,
     /// The window, each time a hibernated chat's unsent text changes (SC-4d, #7633).
     hibernation_told: crate::hibernation::Teller,
+    /// When each chat was last looked at or typed in (SC-4g, #7636).
+    looked: crate::autohibernate::LookedAt,
+    /// The device's gate of automatic hibernation, told what may change what it reads (SC-4g,
+    /// #7636).
+    gate: Arc<crate::autohibernate::Gate>,
     /// The dispatches waiting on the person, and the dispatch grants made for one chat
     /// (#1437).
     dispatch_grants: crate::dispatchgrants::Store,
@@ -1064,6 +1069,52 @@ impl Held {
         &self.hibernated
     }
 
+    /// When each chat was last looked at or typed in (SC-4g, #7636).
+    pub fn looked(&self) -> &crate::autohibernate::LookedAt {
+        &self.looked
+    }
+
+    /// **What is on screen may have changed** (SC-4g, #7636): the looked-at clock is told the
+    /// chats open now, which starts the clock of one it has not seen, and the chats on screen,
+    /// each with the window showing it; the gate is poked where a look changed.
+    pub fn look_again(&self, now: std::time::Instant) {
+        self.looked.open(now, &self.chats.sessions_open());
+        let on_screen = self
+            .chats
+            .looked_at()
+            .into_iter()
+            .map(|chat| (chat, self.chats.window_showing(chat).unwrap_or(0)));
+        let on_screen: Vec<_> = on_screen.collect();
+        if self.looked.on_screen(now, on_screen) {
+            self.gate.poke();
+        }
+    }
+
+    /// Window `window` of this project gained or lost the focus (SC-4g, #7636).
+    pub fn window_focused(&self, window: u32, focused: bool) {
+        self.looked.focused(window, focused);
+        self.look_again(self.gate.now());
+    }
+
+    /// The time on the looked-at clock (SC-4g, #7636): never a wall clock's.
+    pub fn looked_now(&self) -> std::time::Instant {
+        self.gate.now()
+    }
+
+    /// The gate of automatic hibernation: something it reads may have changed (SC-4g, #7636).
+    pub fn poke_the_gate(&self) {
+        self.gate.poke();
+    }
+
+    /// The window is told chat `session` is hibernated.
+    pub fn tell_hibernated(&self, session: u32) {
+        (self.hibernation_told)(crate::hibernation::Changed {
+            plane: self.id.clone(),
+            session,
+            hibernated: true,
+        });
+    }
+
     /// The dispatches waiting on the person, and the grants made for one chat (#1437).
     pub fn dispatch_grants(&self) -> &crate::dispatchgrants::Store {
         &self.dispatch_grants
@@ -1318,6 +1369,11 @@ impl Held {
     fn operator_typing(&self, session: u32, bytes: &[u8]) {
         if !crate::curation::only_the_terminal_answering(bytes) {
             self.typed.operator_sent(session);
+            // A key the person typed is a look at it (SC-4g, #7636): the gate is poked only where
+            // that changed what it reads, not for each key typed in a chat being looked at.
+            if self.looked.typed(session, self.gate.now()) {
+                self.gate.poke();
+            }
         }
         if self
             .closing
@@ -1633,6 +1689,11 @@ impl Held {
         // a line it is typed one now, the lock let go; and it is looked at as a chat that may
         // have nothing left to wait on (#1491). Nothing where nothing waits for it.
         self.told_of_a_close(above);
+        // Its clock goes with it, and there is one hot chat fewer (SC-4g, #7636).
+        if closed.is_ok() {
+            self.looked.forget(session);
+            self.gate.poke();
+        }
         closed
     }
 
@@ -2008,8 +2069,25 @@ impl Held {
     /// offered, only once the host has answered. Where the act fails the latch goes again,
     /// unless the program's end was already heard as the hibernation.
     pub fn hibernate_chat(&self, session: u32) -> Result<(), crate::hibernation::Refused> {
-        self.lanes
-            .in_turn(session, || self.hibernate_in_its_turn(session, None))
+        self.lanes.in_turn(session, || {
+            self.hibernate_in_its_turn(session, Asked::Operator(None))
+        })
+    }
+
+    /// **Hibernates rested chat `session` by the app's own hand** (SC-4g, #7636), with cause
+    /// `idle`: [`Self::hibernate_chat`]'s act, latch and all, but refused where
+    /// [`purlis_core::rested::rested`] says it is not rested by the looked-at clock or any
+    /// other fact, where the act by hand would refuse it ([`purlis_core::rested::by_hand`]),
+    /// or where `over` says the device is no longer over its hot target. All three are read
+    /// before the latch and again after the intent.
+    pub fn hibernate_chat_idle(
+        &self,
+        session: u32,
+        over: &dyn Fn() -> bool,
+    ) -> Result<(), crate::hibernation::Refused> {
+        self.lanes.in_turn(session, || {
+            self.hibernate_in_its_turn(session, Asked::Idle(over))
+        })
     }
 
     /// [`Self::hibernate_chat`], once its caller has asked the person about the chat's own work,
@@ -2022,8 +2100,9 @@ impl Held {
         session: u32,
         named: &[String],
     ) -> Result<(), crate::hibernation::Refused> {
-        self.lanes
-            .in_turn(session, || self.hibernate_in_its_turn(session, Some(named)))
+        self.lanes.in_turn(session, || {
+            self.hibernate_in_its_turn(session, Asked::Operator(Some(named)))
+        })
     }
 
     /// [`Self::hibernate_chat`] with no turn in the chat's lane: for a test of what the latch
@@ -2033,13 +2112,13 @@ impl Held {
         &self,
         session: u32,
     ) -> Result<(), crate::hibernation::Refused> {
-        self.hibernate_in_its_turn(session, None)
+        self.hibernate_in_its_turn(session, Asked::Operator(None))
     }
 
     fn hibernate_in_its_turn(
         &self,
         session: u32,
-        named: Option<&[String]>,
+        asked: Asked<'_>,
     ) -> Result<(), crate::hibernation::Refused> {
         use crate::hibernation::Refused;
         if self.stopping.is_stopping(session) {
@@ -2047,12 +2126,9 @@ impl Held {
                 .to_owned()
                 .into());
         }
-        self.may_hibernate(session, named)?;
+        self.may_hibernate(session, asked)?;
         // Step 1: the latch. A second caller finds it taken and does nothing.
-        if !self
-            .hibernated
-            .latch(session, crate::hibernation::By::Operator)
-        {
+        if !self.hibernated.latch(session, asked.by()) {
             return Err(crate::hibernation::ALREADY_HIBERNATING.to_owned().into());
         }
         let id = self
@@ -2103,7 +2179,7 @@ impl Held {
         } else if self.lanes.typed_waiting(session) {
             Some(Refused::Not(purlis_core::rested::NotRested::LookedAt))
         } else {
-            self.may_hibernate(session, named).err()
+            self.may_hibernate(session, asked).err()
         };
         if let Some(why) = arrived {
             // Its program's end was already heard as the hibernation: it is one.
@@ -2132,8 +2208,12 @@ impl Held {
     fn may_hibernate(
         &self,
         session: u32,
-        named: Option<&[String]>,
+        asked: Asked<'_>,
     ) -> Result<(), crate::hibernation::Refused> {
+        let named = match asked {
+            Asked::Operator(named) => named,
+            Asked::Idle(over) => return self.may_hibernate_idle(session, over),
+        };
         // The looked-at clock holds back only the app's own hibernation.
         let facts = crate::hibernation::facts_of(self, session, false);
         let may = match named {
@@ -2144,6 +2224,26 @@ impl Held {
             Some(_) => purlis_core::rested::by_hand_ending_its_own_work(&facts),
         };
         may.map_err(crate::hibernation::Refused::Not)
+    }
+
+    /// Whether the app may hibernate chat `session` by itself now (SC-4g, #7636): rested, by
+    /// the looked-at clock too; one the act by hand accepts; and the device over its target.
+    fn may_hibernate_idle(
+        &self,
+        session: u32,
+        over: &dyn Fn() -> bool,
+    ) -> Result<(), crate::hibernation::Refused> {
+        let looked_at =
+            self.looked
+                .looked_at_within(session, self.gate.now(), crate::autohibernate::AFTER);
+        let facts = crate::hibernation::facts_of(self, session, looked_at);
+        purlis_core::rested::rested(&facts)
+            .and_then(|()| purlis_core::rested::by_hand(&facts))
+            .map_err(crate::hibernation::Refused::Not)?;
+        if !over() {
+            return Err(crate::hibernation::AT_THE_TARGET.to_owned().into());
+        }
+        Ok(())
     }
 
     /// Wakes hibernated chat `session` (SC-4a, #7630): a new `wake` run on its conversation,
@@ -2171,6 +2271,12 @@ impl Held {
         // Forgotten before its end here, which would otherwise end its run a second time. What
         // its pane typed while it was hibernated goes to the woken run's pane, unsent.
         self.hibernated.awake(session, started);
+        // A woken chat is not rested again for the full time (SC-4g, #7636): its new number's
+        // clock starts now.
+        self.looked.forget(session);
+        self.looked
+            .open(self.gate.now(), &self.chats.sessions_open());
+        self.gate.poke();
         // Its kept screen stays until the new run has drawn (SC-4b, #7631).
         if let Some(id) = id {
             self.hibernated.woke(started, id);
@@ -3093,7 +3199,9 @@ pub struct Planes {
     /// ([`Self::recording_behind_the_window`]). The app's own registry does; one a test makes
     /// writes it as each change is made, so what it reads next is on disk.
     records_behind: bool,
-    open: Mutex<HashMap<PlaneId, Arc<Held>>>,
+    open: Arc<Mutex<HashMap<PlaneId, Arc<Held>>>>,
+    /// The device's gate of automatic hibernation (SC-4g, #7636): it reads every project held.
+    hibernate_gate: Arc<crate::autohibernate::Gate>,
     /// Told when a handoff has opened a chat in any plane (charter-app#204).
     arrivals: crate::handoff::Arrivals,
     /// Told when any plane changes on disk (charter-app#264).
@@ -3416,6 +3524,11 @@ impl Planes {
     /// A registry holding nothing, which is what the app comes up as before a plane is
     /// opened — and stays as, perfectly happily, when there is no plane to open.
     pub fn telling(tell: Teller, shipped: crate::Shipped, config: Option<PathBuf>) -> Self {
+        let open = Arc::new(Mutex::new(HashMap::new()));
+        let hibernate_gate = Arc::new(crate::autohibernate::Gate::on(Arc::new(
+            crate::autohibernate::Monotonic,
+        )));
+        hibernate_gate.reads_projects(Arc::downgrade(&open));
         Self {
             tell,
             shipped,
@@ -3423,7 +3536,8 @@ impl Planes {
             config,
             restores_behind: false,
             records_behind: false,
-            open: Mutex::new(HashMap::new()),
+            open: Arc::clone(&open),
+            hibernate_gate,
             // Nobody to tell yet. A registry with no window still opens a handed-off chat;
             // it simply has no strip to put it on until one asks what is open.
             arrivals: Arc::new(|_| {}),
@@ -4233,6 +4347,9 @@ impl Planes {
                     // A chat told to stop trying mid-turn is typed the line once it waits
                     // (Q267 amended). After a stop's: a chat now in its last turn is told nothing.
                     crate::pausing::reported(&held, report.chat);
+                    // A turn began or ended, an ask came or went: what the gate of automatic
+                    // hibernation reads may have moved (SC-4g, #7636).
+                    held.poke_the_gate();
                 }
             })
         });
@@ -4749,6 +4866,8 @@ impl Planes {
             return id;
         }
         open.insert(id.clone(), Arc::clone(&held));
+        // A project opened: its chats go on their clocks at the gate's next read (SC-4g, #7636).
+        self.hibernate_gate.poke();
         id
     }
 
@@ -5772,10 +5891,17 @@ impl Planes {
                                 .is_some_and(|held| held.chats.recorded_chat(session).is_none()),
                         );
                         if by.is_none() {
-                            // Its run moves to `hibernated` for `operator`, where the window
-                            // writes the log: the host writes it where the host does.
+                            // Its run moves to `hibernated` for its cause, `operator` or
+                            // `idle` (SC-4g, #7636), where the window writes the log: the host
+                            // writes it where the host does.
                             if let Some(log) = events.as_ref().and_then(hooks::Events::held) {
-                                its_run_hibernates(log, &events_root, session);
+                                let cause = match hibernated.latched_by(session) {
+                                    Some(crate::hibernation::By::Idle) => {
+                                        purlis_core::state::run::Cause::Idle
+                                    }
+                                    _ => purlis_core::state::run::Cause::Operator,
+                                };
+                                its_run_hibernates(log, &events_root, session, cause);
                             }
                             return;
                         }
@@ -5958,6 +6084,8 @@ impl Planes {
                         // A chat being stopped whose program ended on its own has ended: the
                         // chat that asked is told, and its tab goes (#1448).
                         crate::stopping::exited(&held, session);
+                        // One hot chat fewer (SC-4g, #7636).
+                        held.poke_the_gate();
                     }
                 }));
         }
@@ -6165,6 +6293,8 @@ impl Planes {
             lost_with_the_host,
             hibernated,
             hibernation_told: Arc::clone(&self.hibernation_told),
+            looked: crate::autohibernate::LookedAt::default(),
+            gate: Arc::clone(&self.hibernate_gate),
             dispatch_grants: crate::dispatchgrants::Store::default(),
             held_dispatches: crate::handoff::HeldDispatches::default(),
             at_limits: crate::atlimit::AtLimits::default(),
@@ -6265,6 +6395,23 @@ impl Planes {
     }
 
     /// Every project this registry holds, the registry's lock let go of.
+    /// The device's gate of automatic hibernation (SC-4g, #7636).
+    pub fn gate(&self) -> &Arc<crate::autohibernate::Gate> {
+        &self.hibernate_gate
+    }
+
+    /// A gate reading `clock` and a hot target of `target`, in place of the app's: a test's,
+    /// set before a project is opened, and started on a thread of its own only where the test
+    /// starts it.
+    #[cfg(test)]
+    pub fn gating_on(mut self, clock: Arc<dyn crate::autohibernate::Clock>, target: u32) -> Self {
+        let gate = crate::autohibernate::Gate::on(clock);
+        gate.reads_projects(Arc::downgrade(&self.open));
+        gate.reads_its_target(Arc::new(move || Some(target)));
+        self.hibernate_gate = Arc::new(gate);
+        self
+    }
+
     pub fn every_held(&self) -> Vec<Arc<Held>> {
         self.map().values().map(Arc::clone).collect()
     }
@@ -6444,6 +6591,24 @@ impl Planes {
     #[track_caller]
     fn map(&self) -> MutexGuard<'_, HashMap<PlaneId, Arc<Held>>> {
         crate::mainwatch::lock(&self.open)
+    }
+}
+
+/// **Who asks for a chat's hibernation** (SC-4g, #7636): the person, having been asked about
+/// the pieces of its own work `named` where they were, or the app's gate, while `over` says
+/// the device is over its hot target.
+#[derive(Clone, Copy)]
+enum Asked<'a> {
+    Operator(Option<&'a [String]>),
+    Idle(&'a dyn Fn() -> bool),
+}
+
+impl Asked<'_> {
+    fn by(self) -> crate::hibernation::By {
+        match self {
+            Self::Operator(_) => crate::hibernation::By::Operator,
+            Self::Idle(_) => crate::hibernation::By::Idle,
+        }
     }
 }
 
@@ -7245,7 +7410,7 @@ impl Drop for Latched<'_> {
 
 /// Why a hibernation did not take when purlis began to quit as it acted (SC-4d, #7633): the
 /// quit ends the chat as it ends every chat.
-const QUIT_AS_IT_HIBERNATED: &str =
+pub(crate) const QUIT_AS_IT_HIBERNATED: &str =
     "Not hibernated: purlis is quitting, and keeps this chat as it keeps the rest.";
 
 #[path = "planes/tab_windows.rs"]

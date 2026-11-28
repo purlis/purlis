@@ -47,6 +47,11 @@ pub const ALREADY_HIBERNATING: &str =
 pub const STILL_HIBERNATING: &str =
     "Not resumed: purlis is still hibernating this chat. Resume it once it is hibernated.";
 
+/// Why the app's own hibernation of a rested chat did not take: the device is no longer over
+/// its hot target (SC-4g, #7636). Logged, never said: the person asked for nothing.
+pub const AT_THE_TARGET: &str =
+    "Not hibernated: the device is no longer over its target of hot chats.";
+
 /// Why a hibernation did not take: the chat's program ended another way as it ended.
 pub const ENDED_ANOTHER_WAY: &str =
     "Not hibernated: this chat ended another way while purlis hibernated it.";
@@ -132,8 +137,8 @@ pub enum Hibernation {
 pub enum By {
     /// The person did, from its row.
     Operator,
-    /// The app did, by itself, for a rested chat: read back from the record at a restart
-    /// (SC-4e, #7634).
+    /// The app did, by itself, for a rested chat while the device was over its hot target
+    /// (SC-4g, #7636), or read back from the record at a restart (SC-4e, #7634).
     Idle,
     /// Its session host ended while it rested at a turn's end (#2278), read back from the
     /// record at a restart (SC-4e, #7634): it has no kept screen.
@@ -412,6 +417,12 @@ impl Hibernated {
             held.ended = true;
             true
         })
+    }
+
+    /// Who latched chat `session`'s hibernation, settled or not: the cause its run moves to
+    /// `hibernated` for (SC-4g, #7636).
+    pub fn latched_by(&self, session: u32) -> Option<By> {
+        self.held().get(&session).map(|held| held.by)
     }
 
     /// How chat `session` is hibernated, once the host has answered.

@@ -3997,3 +3997,214 @@ fn the_build_test_and_packaging_tools_of_7833_are_offered_no_run_grant() {
         refused_as_running_others(name);
     }
 }
+
+/// The rest of execline's programs #7964 names, each a chain loader that runs the program after
+/// it once it has set a variable, a descriptor, a signal or a loop up (`backtick`, `withstdinas`,
+/// `export`, `unexport`, `importas`, `elglob`, `forbacktickx`, `forstdin`, `loopwhilex`, `trap`,
+/// `tryexec`, `piperw`, `fdclose`, `fdblock`, `fdswap`, `fdreserve`, `heredoc`,
+/// `multisubstitute`, `multidefine`, `define`, `runblock`, `shift`, `wait`, `case`, `envfile`,
+/// `getpid`, `getcwd`, `posix-cd`, `posix-umask`), with `homeof`, kept with them on the
+/// conservative side; and the chain loaders of #7964's comment: ucspi-tcp's `rblsmtpd` and
+/// `fixcrio`, busybox's `udpsvd`, and s6-networking's `s6-tcpserver4d` and `s6-tcpserver6d`,
+/// each of which runs the program after it.
+#[test]
+fn execlines_other_programs_and_the_chain_loaders_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "backtick",
+        "withstdinas",
+        "export",
+        "unexport",
+        "importas",
+        "elglob",
+        "forbacktickx",
+        "forstdin",
+        "loopwhilex",
+        "trap",
+        "tryexec",
+        "piperw",
+        "fdclose",
+        "fdblock",
+        "fdswap",
+        "fdreserve",
+        "heredoc",
+        "multisubstitute",
+        "multidefine",
+        "define",
+        "runblock",
+        "shift",
+        "wait",
+        "case",
+        "envfile",
+        "getpid",
+        "getcwd",
+        "homeof",
+        "posix-cd",
+        "posix-umask",
+        "rblsmtpd",
+        "fixcrio",
+        "udpsvd",
+        "s6-tcpserver4d",
+        "s6-tcpserver6d",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The terminals and multiplexers #7964 names, each of which runs the command it is handed in
+/// the window or the pane it opens: `xterm -e`, `kitty`, `alacritty -e`, `wezterm start`,
+/// `gnome-terminal --`, `konsole -e`, `zellij run` and `byobu`, which is `tmux`'s or `screen`'s
+/// front-end.
+#[test]
+fn the_terminals_and_multiplexers_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "xterm",
+        "kitty",
+        "alacritty",
+        "wezterm",
+        "gnome-terminal",
+        "konsole",
+        "zellij",
+        "byobu",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The remote and VM runners and the agents and configuration runners #7964 names, each of
+/// which runs the command, the recipe or the pipeline it is handed: `lima` and `multipass exec`
+/// in a VM, `orbctl run` in OrbStack's, and `pssh`, `pdsh` and `clush` on the hosts they are
+/// named; `chef-client` and `chef-solo` a cookbook's recipes, CFEngine's `cf-agent` (`cfagent`)
+/// a policy's commands, `buildkite-agent` a pipeline's steps, Concourse's `fly execute` a task,
+/// `drone exec` a pipeline, and `garden` a project's actions.
+#[test]
+fn the_remote_runners_agents_and_configuration_runners_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "lima",
+        "multipass",
+        "orbctl",
+        "pssh",
+        "pdsh",
+        "clush",
+        "chef-client",
+        "chef-solo",
+        "cf-agent",
+        "cfagent",
+        "buildkite-agent",
+        "fly",
+        "drone",
+        "garden",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The cron daemons and runners #7964 names, each of which runs the commands of a table it is
+/// handed, or the program after it at a time: `fcron`, `bcron`, `dcron`, cronie's `crond`,
+/// `supercronic`, `ofelia`, `mcron` and `jobber` a table's or a file's commands; `snooze` and
+/// runwhen's `runwhen`, `rw-add`, `rw-match` and `rw-sleep` the program after them, with its
+/// `rw-min` and `rw-max` kept with them on the conservative side; and `cronitor exec` the command
+/// it wraps.
+#[test]
+fn the_cron_daemons_and_runners_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "fcron",
+        "bcron",
+        "dcron",
+        "crond",
+        "supercronic",
+        "ofelia",
+        "mcron",
+        "jobber",
+        "snooze",
+        "runwhen",
+        "rw-add",
+        "rw-match",
+        "rw-sleep",
+        "rw-min",
+        "rw-max",
+        "cronitor",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The interpreters and runtimes #7964 names beside REFUSED_NAMES' own, each of which runs the
+/// code, the script or the module it is handed: `kotlin`, `scala`, `groovy`, `clojure`, `boot`,
+/// `elixir`, `erl`, `escript`, `ghc -e` (and Template Haskell in any build), `runghc`,
+/// `crystal`, `nim`, `v`, `dart`, `tcc -run`, `mono`, the WebAssembly runtimes `wasmtime`,
+/// `wasmer` and `wasm3`, the JavaScript engines `qjs`, `jsc`, `d8`, `hermes`, `rhino` and
+/// `jjs`, and `frida`, which spawns the program it is named and runs a script in it.
+#[test]
+fn the_interpreters_and_runtimes_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "kotlin", "scala", "groovy", "clojure", "boot", "elixir", "erl", "escript", "ghc",
+        "runghc", "crystal", "nim", "v", "dart", "tcc", "mono", "wasmtime", "wasmer", "wasm3",
+        "qjs", "jsc", "d8", "hermes", "rhino", "jjs", "frida",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The tracers #7964 names, each of which runs the command after it to trace it, as `strace`
+/// and `ltrace` do: `bpftrace -c` (whose programs can also run `system()`), `trace-cmd record`,
+/// `uftrace`, `sysdig` (its chisels are Lua) and `cset proc --exec`.
+#[test]
+fn the_tracers_of_7964_are_offered_no_run_grant() {
+    for name in ["bpftrace", "trace-cmd", "uftrace", "sysdig", "cset"] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The build and version managers, builders and compiler wrappers #7964 and its comment name,
+/// each of which runs a project's build files, the command it wraps or what its triggers name:
+/// `rebar3`, SDKMAN's `sdk`, `nvm exec`, `bundler` (macOS's, Bundler 1.17.2, evaluates the
+/// Gemfile as Ruby and `exec`s the command `bundler exec` names), `esy`, `ocamlfind`, the
+/// reloaders `air` and `modd`, `watchman` (its triggers); CMake's `ccmake` and `cpack`, Buck
+/// 1's `buck`, `muon` and `samu`; and icecream's `icerun` and `iceccd` and `distccd`, which run
+/// the compiler commands they are handed.
+#[test]
+fn the_build_and_version_managers_and_compiler_wrappers_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "rebar3",
+        "sdk",
+        "nvm",
+        "bundler",
+        "esy",
+        "ocamlfind",
+        "air",
+        "modd",
+        "watchman",
+        "ccmake",
+        "cpack",
+        "buck",
+        "muon",
+        "samu",
+        "icerun",
+        "iceccd",
+        "distccd",
+    ] {
+        refused_as_running_others(name);
+    }
+}
+
+/// The package managers and installers #7964's comment names, each of which runs a package's
+/// scripts or a build's: Slackware's `upgradepkg`, `xbps-reconfigure` (a package's `INSTALL`
+/// script), the AUR helpers `pikaur`, `trizen`, `aura`, `pamac` and `yaourt` (a `PKGBUILD`),
+/// and Arch's `pacstrap`, which runs `pacman` into a new root, and `arch-chroot`, which runs
+/// the command after it in one.
+#[test]
+fn the_package_managers_and_installers_of_7964_are_offered_no_run_grant() {
+    for name in [
+        "upgradepkg",
+        "xbps-reconfigure",
+        "pikaur",
+        "trizen",
+        "aura",
+        "pamac",
+        "yaourt",
+        "pacstrap",
+        "arch-chroot",
+    ] {
+        refused_as_running_others(name);
+    }
+}
