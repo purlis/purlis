@@ -1231,8 +1231,9 @@ jobs:
       # `tests/parity/fixture-images.json` pins (`parity-fixture-images.yml` builds and pushes
       # them from main), so no run asks Alpine's CDN or Ubuntu's mirror for a package. One whose
       # files this change moved past its pin, or one not pinned yet, is built here and warns. One
-      # that can be had neither way is one error naming it and its image, and every machine and
-      # suite that needs it is skipped, rather than its tests failing as "the fixture is missing".
+      # that can be had neither way is one error naming it and its image, and then every machine
+      # and both suites are skipped, not only what needs it, rather than their tests failing as
+      # "the fixture is missing" (ADR 0123, amended 2026-11-28, says why the gate is one step).
       - name: The other machines' images, by digest
         id: images
         if: steps.scope.outputs.run == 'true'
