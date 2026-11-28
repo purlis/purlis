@@ -88,14 +88,15 @@ the machine's 1,752 program names, before and after the rows went in, found one 
 `ktrace`, a row itself, and nothing reached by a form: no collateral on that machine for #7825.
 Elsewhere, short and common words cost the most. These are examples, not a complete list:
 
-- the short rows `cs`, `amm`, `mux`, `rio` and `smug` cost the most, as every row reaches its
-  `<word>-<name>`, `<name>-<word>`, `g<name>`, `gnu<name>` and versioned forms: `cs` reaches any
-  `cs-<word>`, `gcs` and `cs2`, and `mux` any `<word>-mux`, whatever program each is.
+- the short rows `cs`, `amm`, `mux`, `rio` and `smug`: every row reaches its `<word>-<name>`,
+  `<name>-<word>`, `g<name>`, `gnu<name>` and versioned forms, and a short one reaches the most:
+  `cs` reaches any `cs-<word>`, `gcs` and `cs2`, and `mux` any `<word>-mux`, whatever program
+  each is.
 - one name is two programs: `tabby` is also TabbyML's model server, `contour` Project Contour's
   Kubernetes ingress controller and `csc` the C# compiler. Each loses its Allow with the terminal
   or the interpreter.
-- `lxd` reaches LXD's own `lxd-*` programs by their first part, `lxd-benchmark` and
-  `lxd-to-incus` among them.
+- `lxd` reaches LXD's own `lxd-*` programs by their first part, `lxd-agent` and
+  `lxd-user` among them.
 
 Which of these to give back, and how to do it without giving back the ones that run code, is part
 of #7825.

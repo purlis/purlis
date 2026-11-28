@@ -3173,7 +3173,7 @@ const NOT_FOR_A_RUN_GRANT: &[&str] = &[
     // The tmux session managers #8017 names beside `tmuxinator` and `tmuxp`, refused whole on
     // what each is for: `teamocil`, `smug`, `sesh` and `tmuxifier` run the commands of a layout
     // file in the panes they open, and `mux`, a name `tmuxinator` is often installed or aliased
-    // as by #8017's account, is kept with them on the conservative side.
+    // as, by #8017's account, is kept with them on the conservative side.
     "teamocil",
     "smug",
     "sesh",
