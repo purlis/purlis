@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795829855405,
+  "lastUpdate": 1795830682465,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -58212,6 +58212,48 @@ window.BENCHMARK_DATA = {
             "value": 101.93729099999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.144, 101.597, 101.937, 101.989, 102.556 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a623011fd858e6efd4e7b122124a7de49d7b5dc5",
+          "message": "Forge route: gh api --paginate's /repositories/{id} pages and gh pr update-branch on the chat's repo (#7958, #7957) (#7970)\n\n* Forge route: read /repositories/{id} as the chat's repo, answer gh pr update-branch's compare (#7958, #7957)\n\nGitHub's Link header names the next page by the repo's numeric id, so gh api --paginate\nasked page 2 as /repositories/{id}/... and was refused. A path in that form whose id is the\none the forge's read recorded for the chat's repo is read exactly as /repos/{owner}/{repo}/...\n(ADR 0128: the alias is refused unless that id is recorded); any other id, a second spelling\nof it, or a repo with no recorded id stays OtherRepo.\n\ngh pr update-branch asks baseRef { compare(headRef:) { aheadBy behindBy status } } before its\nmutation, and Ref had no compare, so it was refused as GraphqlOtherRepo. Comparison is added\nwith its counts and status only; the mutation keeps its owns_head policy.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8F7PDJRSR548A0RR0695RCB\nPurlis-Persona: steward\n\n* Forge route: a compare's head must be the chat's repo, and the id alias holds acts as /repos does (#7970 review)\n\nRef.compare(headRef:) was walked by field name only, so it could name another owner's fork.\nIts headRef is now resolved, variables and defaults included, and must be a branch of every\nrepo the document named (rest::side_is_own, as REST's compare; ADR 0128 D3d). It is refused\nwhen it is given twice, is not one string, cannot be resolved, or comes with another argument.\nA pull request's headRef, which may be a fork's ref, is a HeadRef with no compare, and a\nfragment on Ref spread there narrows to that table.\n\nThe held-act recogniser read only /repos/{owner}/{name} and /api/v3/repos/..., so a merge,\nrelease, tag or fork through /repositories/{id} was refused with no ask. It now reads both id\nforms, and RecordedRepos resolves a GitHub id in the one spelling the policy reads (github_id)\nagainst the id the forge's read recorded on that host.\n\nTests: what compare may be given (own branches allowed; another owner, a variable or default\nholding one, a duplicated, missing or non-string head refused; headRef { compare } refused);\nheld acts by id held and asked as by path on github.com and a GHES; the GHES id arm; the\nalias under guards.merge = log; the alias on a wrong host decided as /repos is there.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M8FEAZ4H8TRAPFP4HH9S3VAT\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-28T00:54:47Z",
+          "tree_id": "9d7753e0de3772df9ad89b3a1193aef94b2e7a1f",
+          "url": "https://github.com/purlis/purlis/commit/a623011fd858e6efd4e7b122124a7de49d7b5dc5"
+        },
+        "date": 1795830674586,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5638995,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.555, 0.561, 0.564, 0.573, 0.579 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.301424,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.234, 16.256, 16.301, 16.336, 16.365 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8228165,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.925, 101.641, 101.823, 102.063, 102.597 ms"
           }
         ]
       }
