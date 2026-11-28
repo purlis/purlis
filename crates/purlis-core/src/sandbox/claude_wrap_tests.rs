@@ -735,3 +735,113 @@ fn a_claude_code_chats_own_temporary_folder_is_made_where_claude_code_roots_its_
         "{rooted:?} is past what Claude Code roots its sandbox's $TMPDIR in"
     );
 }
+
+/// A state file holding a computer-use choice a keep takes out, with its lock's folder.
+fn a_state_file_to_keep(dir: &Path) -> (PathBuf, PathBuf, String) {
+    let state = dir.join(claude_wrap::STATE_FILE);
+    let planted = r#"{"computerUseChoices":{"org-1:account-1":"on"},"numStartups":4}"#;
+    std::fs::write(&state, planted).expect("its state");
+    (
+        state.clone(),
+        claude_wrap::state_lock_of(&state),
+        planted.to_owned(),
+    )
+}
+
+/// **A keep fails in words, and leaves the state file as it was, while Claude Code keeps its
+/// lock on it past the wait** (#7947): the lock is Claude Code's, so it stays.
+#[test]
+fn a_keep_fails_in_words_while_claude_code_holds_the_state_files_lock() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let (state, lock, planted) = a_state_file_to_keep(dir.path());
+    std::fs::create_dir(&lock).expect("Claude Code's lock");
+
+    let kept =
+        claude_wrap::keep_mcp_servers_within(&state, None, std::time::Duration::from_millis(200));
+
+    let why = kept.expect_err("the keep fails");
+    assert!(why.contains("stayed locked for 0.2 s"), "{why}");
+    assert!(why.contains("Keep the profile again"), "{why}");
+    assert_eq!(std::fs::read_to_string(&state).expect("it reads"), planted);
+    assert!(lock.is_dir(), "Claude Code's lock stays");
+}
+
+/// **A lock no one has touched for the stale mark is taken over** (#7947), as Claude Code's
+/// `proper-lockfile` takes it over: it was left by a Claude Code that stopped, and would otherwise
+/// fail every keep.
+#[test]
+fn a_keep_takes_over_a_stale_lock_on_the_state_file() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let (state, lock, _) = a_state_file_to_keep(dir.path());
+    std::fs::create_dir(&lock).expect("a lock left behind");
+    let long_ago = std::time::SystemTime::now()
+        - claude_wrap::STATE_LOCK_STALE
+        - std::time::Duration::from_secs(5);
+    std::fs::File::open(&lock)
+        .and_then(|folder| folder.set_modified(long_ago))
+        .expect("the lock is old");
+
+    claude_wrap::keep_mcp_servers_within(&state, None, std::time::Duration::from_millis(200))
+        .expect("the keep takes the lock over");
+
+    assert_eq!(
+        std::fs::read_to_string(&state).expect("it reads"),
+        r#"{"numStartups":4}"#
+    );
+    assert!(!lock.exists(), "the keep let go of the lock it took over");
+}
+
+/// **Readying a chat waits for the lock on the state file too** (#7947), so a keep, or a Claude
+/// Code saving the file outside the wrap, and the chat's start never undo each other: a save made
+/// under the lock while the chat is readied stays beside its trust mark.
+#[test]
+fn readying_a_chat_waits_for_the_state_files_lock_and_loses_no_update() {
+    let place = place(FULL, true);
+    let home = place.home.join("work");
+    std::fs::create_dir_all(&home).expect("a folder");
+    let state = home.join(claude_wrap::STATE_FILE);
+    std::fs::write(&state, r#"{"numStartups":4}"#).expect("its state");
+    let lock = claude_wrap::state_lock_of(&state);
+    std::fs::create_dir(&lock).expect("the lock, held");
+    let wrap = wrap_of(&started(&place, &home));
+
+    std::thread::scope(|scope| {
+        let readying = scope.spawn(|| claude_wrap::prepare(&wrap, place.plane.path()));
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        assert!(
+            !readying.is_finished(),
+            "readying waits while the lock is held"
+        );
+        std::fs::write(&state, r#"{"numStartups":5}"#).expect("a save under the lock");
+        std::fs::remove_dir(&lock).expect("the lock, let go");
+    });
+
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&state).expect("it reads")).expect("JSON");
+    assert_eq!(doc["numStartups"], 5, "{doc}");
+    assert_eq!(doc["hasCompletedOnboarding"], true, "{doc}");
+    assert!(!lock.exists(), "readying let go of the lock");
+}
+
+/// **A lock its holder left as it stopped is waited out within one wait** (#7947), however
+/// lately it was left: Claude Code 2.1.332 sometimes exits with its lock still there, and the
+/// next chat's start must not give up before the lock is stale. Here it was left 6 s ago, so it
+/// turns stale in 4 s, inside the wait.
+#[test]
+fn a_lock_left_by_a_holder_that_stopped_is_waited_out_and_taken_over() {
+    let dir = tempfile::tempdir().expect("a folder");
+    let (state, lock, _) = a_state_file_to_keep(dir.path());
+    std::fs::create_dir(&lock).expect("a lock left behind");
+    let lately = std::time::SystemTime::now() - std::time::Duration::from_secs(6);
+    std::fs::File::open(&lock)
+        .and_then(|folder| folder.set_modified(lately))
+        .expect("the lock was left lately");
+
+    claude_wrap::keep_mcp_servers(&state, None).expect("the keep waits the lock out");
+
+    assert_eq!(
+        std::fs::read_to_string(&state).expect("it reads"),
+        r#"{"numStartups":4}"#
+    );
+    assert!(!lock.exists(), "the keep let go of the lock it took over");
+}

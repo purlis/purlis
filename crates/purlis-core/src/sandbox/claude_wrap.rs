@@ -402,7 +402,10 @@ fn written_in(home: &Path) -> String {
 ///   purlis cannot read is left alone, for Claude Code to say so. The mark is read only by the
 ///   wrapped chats on this profile: on a runner no Claude Code chat starts without the sandbox
 ///   ([`crate::start::profile_refusal`]), and elsewhere only a profile for sandboxed chats only
-///   is wrapped, which starts none without it either.
+///   is wrapped, which starts none without it either. It reads and writes the file under Claude
+///   Code's own lock on it ([`StateLock`], #7947), as a keep does, so neither undoes the other;
+///   where that lock stays held past [`STATE_LOCK_WAIT`] the file is left as it is, and said so
+///   in the log.
 pub fn prepare(wrap: &Wrap, cwd: &Path) {
     let Some(home) = &wrap.home else { return };
     for dir in HOME_DIRS {
@@ -417,6 +420,15 @@ pub fn prepare(wrap: &Wrap, cwd: &Path) {
         no_links_below(&home.join(dir));
     }
     let state = wrap.state.clone().unwrap_or_else(|| home.join(STATE_FILE));
+    let _held = match StateLock::take(&state, STATE_LOCK_WAIT) {
+        Ok(held) => held,
+        Err(why) => {
+            tracing::warn!(
+                "purlis: {why}, so a chat starts without its trust and onboarding marks"
+            );
+            return;
+        }
+    };
     let mut doc = match std::fs::symlink_metadata(&state) {
         Ok(found) if found.is_file() => {
             match std::fs::read_to_string(&state)
@@ -470,10 +482,32 @@ pub const ACCOUNT_CHOICES: [&str; 1] = ["computerUseChoices"];
 /// desktop's user-scope ones back: the desktop sends no choice for a runner's folders, so each is
 /// Claude Code's default again. `None` sent leaves the user-scope ones as they are. No servers and
 /// no file is left as it is, and a link, or a file purlis cannot read, is left alone, for Claude
-/// Code to say so.
-pub fn keep_mcp_servers(state: &Path, servers: Option<&serde_json::Value>) {
+/// Code to say so. It reads and writes the file under Claude Code's own lock on it ([`StateLock`],
+/// #7947), and fails in words where that lock stays held past [`STATE_LOCK_WAIT`], with the file
+/// as it was.
+pub fn keep_mcp_servers(state: &Path, servers: Option<&serde_json::Value>) -> Result<(), String> {
+    keep_mcp_servers_within(state, servers, STATE_LOCK_WAIT)
+}
+
+/// [`keep_mcp_servers`], waiting at most `wait` for Claude Code's lock on `state`.
+pub(crate) fn keep_mcp_servers_within(
+    state: &Path,
+    servers: Option<&serde_json::Value>,
+    wait: std::time::Duration,
+) -> Result<(), String> {
     let empty =
         servers.is_none_or(|servers| servers.as_object().is_none_or(serde_json::Map::is_empty));
+    let absent = std::fs::symlink_metadata(state).is_err();
+    if absent && empty || state.parent().is_some_and(|folder| !folder.is_dir()) {
+        // Nothing to write, or nowhere to write it: no lock is needed.
+        return Ok(());
+    }
+    let _held = StateLock::take(state, wait).map_err(|why| {
+        format!(
+            "purlis kept the profile on this runner, but could not reset Claude Code's state \
+             file there: {why}. Keep the profile again in a few seconds"
+        )
+    })?;
     let mut doc = match std::fs::symlink_metadata(state) {
         Ok(found) if found.is_file() => {
             match std::fs::read_to_string(state)
@@ -485,7 +519,7 @@ pub fn keep_mcp_servers(state: &Path, servers: Option<&serde_json::Value>) {
                     tracing::warn!(
                         "purlis: a runner's state file is not JSON, so its MCP servers stay"
                     );
-                    return;
+                    return Ok(());
                 }
             }
         }
@@ -493,9 +527,9 @@ pub fn keep_mcp_servers(state: &Path, servers: Option<&serde_json::Value>) {
             tracing::warn!(
                 "purlis: a runner's state file is no plain file, so its MCP servers stay"
             );
-            return;
+            return Ok(());
         }
-        Err(_) if empty => return,
+        Err(_) if empty => return Ok(()),
         Err(_) => serde_json::json!({}),
     };
     let mut changed = false;
@@ -525,6 +559,90 @@ pub fn keep_mcp_servers(state: &Path, servers: Option<&serde_json::Value>) {
     }
     if changed {
         super::codex::replace(state, doc.to_string().as_bytes(), 0o600);
+    }
+    Ok(())
+}
+
+/// **How long purlis waits for Claude Code's lock on the state file** (#7947): past the
+/// [`STATE_LOCK_STALE`] mark, so that a lock a holder left as it stopped is always taken over
+/// within one wait, and only a holder still touching its lock outlasts it, for the keep to fail
+/// in words. Claude Code 2.1.332 leaves one now and then: one run of `claude auth status` in three
+/// on a new config folder exited with its `.claude.json.lock` still there, and the standing purlis
+/// asks of a runner runs it. A wait shorter than the stale mark failed the chat started next.
+pub(crate) const STATE_LOCK_WAIT: std::time::Duration =
+    STATE_LOCK_STALE.saturating_add(std::time::Duration::from_secs(2));
+
+/// **When a lock on the state file is stale**: not touched for this long. It is the default of the
+/// `proper-lockfile` package Claude Code 2.1.332 locks the file with, whose holder touches the lock
+/// every half of it; a holder that stops touching it has stopped, and its lock is taken over.
+pub(crate) const STATE_LOCK_STALE: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// How often a keep looks again at a lock that is held.
+const STATE_LOCK_POLL: std::time::Duration = std::time::Duration::from_millis(20);
+
+/// **Claude Code's own lock on its state file, held by purlis** (#7947): the folder
+/// `<state>.lock`, made with `mkdir`, which Claude Code 2.1.332 makes the same way before each
+/// save of the file and reads the file again under. Made, the lock is purlis's until it is
+/// dropped, when the folder goes. A held lock is waited for, up to the wait given; one not
+/// touched for [`STATE_LOCK_STALE`] is taken over. Purlis holds it far less than that, for one
+/// read and one write, so it never touches it.
+///
+/// No crate speaks this protocol, which is `proper-lockfile`'s, so it is written here: a folder
+/// made, looked at, and taken out again.
+struct StateLock(PathBuf);
+
+/// **The folder that is the lock on the state file `state`**: `<state>.lock`, beside it, where
+/// Claude Code 2.1.332 makes its own.
+pub(crate) fn state_lock_of(state: &Path) -> PathBuf {
+    let mut path = state.as_os_str().to_owned();
+    path.push(".lock");
+    PathBuf::from(path)
+}
+
+impl StateLock {
+    /// The lock on `state`, made within `wait`, or why not, in words that follow a colon.
+    fn take(state: &Path, wait: std::time::Duration) -> Result<StateLock, String> {
+        let path = state_lock_of(state);
+        let until = std::time::Instant::now() + wait;
+        loop {
+            match std::fs::create_dir(&path) {
+                Ok(()) => return Ok(StateLock(path)),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(error) => {
+                    return Err(format!(
+                        "its lock {} could not be made: {error}",
+                        path.display()
+                    ));
+                }
+            }
+            let stale = std::fs::symlink_metadata(&path)
+                .and_then(|lock| lock.modified())
+                .ok()
+                .and_then(|touched| touched.elapsed().ok())
+                .is_some_and(|since| since > STATE_LOCK_STALE);
+            if stale {
+                // As proper-lockfile does: the stale folder goes, and the lock is made again. Two
+                // that find it stale at once can both take it out, the second a lock the first
+                // has just made; proper-lockfile leaves the same window, and one past the stale
+                // mark is already a holder that stopped.
+                let _ = std::fs::remove_dir(&path);
+                continue;
+            }
+            if std::time::Instant::now() >= until {
+                return Err(format!(
+                    "{} stayed locked for {} s",
+                    state.display(),
+                    wait.as_secs_f32()
+                ));
+            }
+            std::thread::sleep(STATE_LOCK_POLL);
+        }
+    }
+}
+
+impl Drop for StateLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir(&self.0);
     }
 }
 
