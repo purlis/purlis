@@ -1,0 +1,371 @@
+/* PROTOTYPE, never merged (#7998, map #7990): the narrowed file list a branch click opens.
+   Tokens only; every colour is a theme role. */
+
+.np-stage {
+  display: flex;
+  gap: var(--space-6);
+  align-items: flex-start;
+  min-block-size: 100vh;
+  padding: var(--space-6);
+  padding-block-end: calc(var(--space-6) * 5);
+  background: var(--surface-deep);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+}
+
+/* The window: rail | sidebar | main over the Panel. */
+.np-window {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  grid-template-rows: 1fr 15rem;
+  flex: 0 0 auto;
+  inline-size: 60rem;
+  block-size: 41rem;
+  overflow: hidden;
+  border: var(--pane-border-width) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--surface-base);
+  box-shadow: var(--elevation-raised);
+}
+
+.np-rail {
+  display: flex;
+  flex-direction: column;
+  grid-row: 1 / span 2;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-inline-end: var(--separator-width) solid var(--border-subtle);
+  background: var(--surface-sunken);
+}
+
+.np-side {
+  display: flex;
+  flex-direction: column;
+  grid-row: 1 / span 2;
+  inline-size: 276px;
+  min-block-size: 0;
+  border-inline-end: var(--separator-width) solid var(--border-subtle);
+}
+
+.np-side[hidden] {
+  display: none;
+}
+
+.np-side .region-view {
+  flex: 1 1 0;
+  min-block-size: 0;
+}
+
+.np-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-inline-size: 0;
+  padding: var(--space-5);
+}
+
+.np-main-head {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.np-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.np-tab {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  max-inline-size: 18rem;
+  padding: var(--space-2) var(--space-4);
+  border: var(--separator-width) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+
+.np-tab-where {
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.np-panel {
+  display: flex;
+  flex-direction: column;
+  grid-column: 3;
+  min-block-size: 0;
+  border-block-start: var(--separator-width) solid var(--border-subtle);
+  background: var(--surface-sunken);
+}
+
+.np-panel-head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-3) var(--space-5);
+}
+
+.np-panel-body {
+  flex: 1 1 0;
+  min-block-size: 0;
+  overflow: auto;
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.np-group-head {
+  margin: var(--space-4) var(--space-3) var(--space-2);
+  color: var(--text-secondary);
+}
+
+/* ---- Variant A: a standing line above the tree, then the branch's header ---- */
+
+.np-a-line {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-3) var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  border: var(--separator-width) solid var(--accent-base);
+  border-radius: var(--radius-md);
+  background: var(--accent-surface);
+}
+
+.np-a-line > svg {
+  grid-row: 1 / span 2;
+  margin-block-start: var(--space-1);
+  color: var(--accent-text);
+}
+
+.np-a-line strong {
+  overflow-wrap: anywhere;
+}
+
+.np-a-line .np-a-way {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  color: var(--text-secondary);
+}
+
+.np-a-line[data-gone] {
+  border-color: var(--state-waiting);
+  background: var(--surface-raised);
+}
+
+.np-a-line[data-gone] > svg {
+  color: var(--state-waiting);
+}
+
+.np-a-head {
+  padding: var(--space-4) var(--space-4) 0;
+}
+
+.np-a-head .cockpit-name span {
+  overflow-wrap: anywhere;
+}
+
+/* ---- Variant B: the scope as a chip in the title, removed like a filter ---- */
+
+.np-b-title {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  min-inline-size: 0;
+}
+
+.np-b-chip {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  min-inline-size: 0;
+  padding-inline: var(--space-3) 0;
+  border: var(--separator-width) solid var(--accent-base);
+  border-radius: var(--radius-full);
+  background: var(--accent-surface);
+  color: var(--text-primary);
+}
+
+.np-b-chip[data-gone] {
+  border-color: var(--state-waiting);
+  background: var(--surface-raised);
+  text-decoration: line-through;
+}
+
+.np-b-chip-name {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.np-b-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  border-block-end: var(--separator-width) solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.np-b-strip-actions {
+  display: flex;
+  gap: var(--space-1);
+  margin-inline-start: auto;
+}
+
+/* Explorer's own "repo · branch" beside the title says it a second time here. */
+.np-b .head-beside {
+  display: none;
+}
+
+/* ---- Variant C: the scope is a container: a framed, tinted tree, actions in its foot ---- */
+
+.np-c-frame {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-block-size: 0;
+  margin: var(--space-3);
+  overflow: hidden;
+  border: var(--pane-border-width) solid var(--accent-base);
+  border-radius: var(--radius-lg);
+  background: var(--accent-surface);
+}
+
+.np-c-frame[data-at="repo"] {
+  border-color: var(--state-waiting);
+  border-style: dashed;
+}
+
+.np-c-label {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-3) var(--space-4);
+  border-block-end: var(--separator-width) solid var(--accent-base);
+}
+
+.np-c-label > svg {
+  flex: none;
+  margin-block-start: var(--space-1);
+  color: var(--accent-text);
+}
+
+.np-c-name {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.np-c-chats {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-block-end: var(--separator-width) solid var(--accent-base);
+  list-style: none;
+}
+
+.np-c-chats li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.np-c-frame .region-view {
+  background: var(--surface-base);
+}
+
+.np-c-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-block-start: var(--separator-width) solid var(--accent-base);
+}
+
+.np-c-foot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* ---- The prototype's own chrome: obviously not the design ---- */
+
+.np-notes {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-inline-size: 18rem;
+  max-inline-size: 30rem;
+}
+
+.np-notes section {
+  padding: var(--space-4);
+  border: var(--separator-width) dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+
+.np-notes h2,
+.np-notes h3 {
+  margin: 0 0 var(--space-3);
+}
+
+.np-notes p,
+.np-notes ul {
+  margin: 0 0 var(--space-3);
+}
+
+.np-notes pre {
+  margin: 0;
+  overflow: auto;
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+}
+
+.np-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.np-switcher {
+  position: fixed;
+  inset-block-end: var(--space-6);
+  inset-inline-start: 50%;
+  z-index: 10;
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  transform: translateX(-50%);
+  border: var(--pane-border-width) solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: var(--surface-overlay);
+  box-shadow: var(--overlay-shadow);
+}
+
+.np-switcher-label {
+  min-inline-size: 16rem;
+  text-align: center;
+}
+
+.np-said {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
